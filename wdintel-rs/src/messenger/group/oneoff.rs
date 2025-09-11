@@ -1,6 +1,6 @@
 use crate::entities::{
-    datasource_group, echo_group, sigint_zone_datasource, signal_group,
-    signal_message,
+    datasource_group, echo_group, organism_group, sigint_zone_datasource,
+    signal_group, signal_message,
 };
 use crate::error::AppError;
 use crate::types::{Mode, ShortContext};
@@ -246,32 +246,7 @@ async fn fix_retro_signal_group_mappings(
         .all(db)
         .await
         .context(h!())?;
-    let sigint_zone_datasources = sigint_zone_datasource::Entity::find()
-        .filter(
-            sigint_zone_datasource::Column::GroupMasterKey
-                .is_in(all_keys.clone()),
-        )
-        .all(db)
-        .await
-        .context(h!())?
-        .into_iter()
-        .map(|s| (s.group_master_key.clone(), s))
-        .collect::<HashMap<_, _>>();
     for (group_id, internal_id) in keys_mapping {
-        let from_ds = sigint_zone_datasources.get(&internal_id).cloned();
-        let to_ds = sigint_zone_datasources.get(&group_id).cloned();
-        match (from_ds, to_ds) {
-            (Some(from), Some(_)) => {
-                from.delete(db).await.context(h!())?;
-            }
-            (Some(from), None) => {
-                let mut model = from.into_active_model();
-                model.group_master_key = Set(group_id.clone());
-                model.update(db).await.context(h!())?;
-            }
-            _ => {}
-        }
-
         let from_groups = datasource_groups
             .iter()
             .filter(|g| g.group_master_key.eq(&internal_id))
@@ -368,6 +343,58 @@ async fn fix_retro_signal_group_mappings(
                     .await
                     .context(h!())?;
             }
+        }
+
+        //
+
+        let organism_groups = organism_group::Entity::find()
+            .filter(
+                organism_group::Column::SignalGroupMasterKey
+                    .is_in(all_keys.clone()),
+            )
+            .all(db)
+            .await
+            .context(h!())?
+            .into_iter()
+            .map(|s| (s.signal_group_master_key.clone(), s))
+            .collect::<HashMap<_, _>>();
+        let from_ds = organism_groups.get(&internal_id).cloned();
+        let to_ds = organism_groups.get(&group_id).cloned();
+        match (from_ds, to_ds) {
+            (Some(from), Some(_)) => {
+                from.delete(db).await.context(h!())?;
+            }
+            (Some(from), None) => {
+                let mut model = from.into_active_model();
+                model.signal_group_master_key = Set(group_id.clone());
+                model.update(db).await.context(h!())?;
+            }
+            _ => {}
+        }
+
+        let sigint_zone_datasources = sigint_zone_datasource::Entity::find()
+            .filter(
+                sigint_zone_datasource::Column::GroupMasterKey
+                    .is_in(all_keys.clone()),
+            )
+            .all(db)
+            .await
+            .context(h!())?
+            .into_iter()
+            .map(|s| (s.group_master_key.clone(), s))
+            .collect::<HashMap<_, _>>();
+        let from_ds = sigint_zone_datasources.get(&internal_id).cloned();
+        let to_ds = sigint_zone_datasources.get(&group_id).cloned();
+        match (from_ds, to_ds) {
+            (Some(from), Some(_)) => {
+                from.delete(db).await.context(h!())?;
+            }
+            (Some(from), None) => {
+                let mut model = from.into_active_model();
+                model.group_master_key = Set(group_id.clone());
+                model.update(db).await.context(h!())?;
+            }
+            _ => {}
         }
     }
     Ok(())
