@@ -1,13 +1,13 @@
-module Pages_.RerAnalysis.Filters exposing (leftColumn)
+module Pages_.RerAnalysis.Filters exposing (view)
 
 import Bindings as B
 import Dict
 import Html exposing (..)
-import Html.Attributes as Attr exposing (..)
-import Html.Events as Events exposing (..)
+import Html.Attributes exposing (..)
+import Html.Events exposing (..)
 import Html.Extra as HtmlX
 import Html.Styled
-import Json.Decode as Decode
+import Json.Decode
 import List.Extra as ListX
 import Maybe.Extra as MaybeX
 import Pages_.RerAnalysis.Model exposing (..)
@@ -45,25 +45,25 @@ isSavedFilterSelected filter model =
 
 filterMenuBlockCountOutOf : { unfold : Bool, toggleMsg : msg, label : String, mCountLabel : Maybe String, overallLabel : String, withGreenCircle : Bool } -> Html msg -> Html msg
 filterMenuBlockCountOutOf config content =
-    div [ class "border border-separator mb-1" ]
+    div [ class "bg-[var(--color-card)] border border-[var(--color-border)] rounded mb-2 shadow-sm hover:shadow transition-shadow duration-150" ]
         [ div
-            [ class "flex justify-between items-center p-2 cursor-pointer"
+            [ class "flex items-center px-3 py-2 cursor-pointer hover:bg-[var(--color-bg-muted)] transition-colors duration-150"
             , onClick config.toggleMsg
             ]
-            [ div [ class "flex-fill flex items-center justify-between me-2" ]
-                [ span [ classList [ ( "font-medium", config.unfold ) ] ] [ text config.label ]
+            [ div [ class "flex items-center gap-2 flex-grow" ]
+                [ span [ classList [ ( "font-medium text-[var(--color-text)] text-sm", config.unfold ), ( "font-normal text-[var(--color-text)] text-sm", not config.unfold ) ] ] [ text config.label ]
                 , if config.withGreenCircle then
-                    div [ class "filter-green-circle" ] []
+                    div [ class "w-1.5 h-1.5 bg-[var(--color-success)] rounded-full" ] []
 
                   else
                     text ""
                 ]
-            , div [ class "me-2" ]
+            , div [ class "flex items-center gap-2" ]
                 [ span
-                    [ class "badge badge-sm rounded-pill"
+                    [ class "text-xs font-medium"
                     , classList
-                        [ ( "text-bg-secondary", MaybeX.isNothing config.mCountLabel )
-                        , ( "text-bg-danger", MaybeX.isJust config.mCountLabel )
+                        [ ( "text-[var(--color-text-muted)]", MaybeX.isNothing config.mCountLabel )
+                        , ( "text-[var(--color-secondary)]", MaybeX.isJust config.mCountLabel )
                         ]
                     ]
                   <|
@@ -78,21 +78,20 @@ filterMenuBlockCountOutOf config content =
                     )
                         ++ [ text config.overallLabel ]
                 ]
-            , div []
-                [ i
-                    [ class "bi"
-                    , classList [ ( "bi-chevron-up", config.unfold ) ]
-                    , classList [ ( "bi-chevron-down", not config.unfold ) ]
-                    ]
-                    []
+            , i
+                [ class "bi text-xs transition-transform duration-150 ml-2"
+                , classList [ ( "text-[var(--color-secondary)]", MaybeX.isJust config.mCountLabel ), ( "text-[var(--color-text)]", MaybeX.isNothing config.mCountLabel ) ]
+                , classList [ ( "bi-chevron-up", config.unfold ) ]
+                , classList [ ( "bi-chevron-down", not config.unfold ) ]
                 ]
+                []
             ]
         , HtmlX.viewIf config.unfold content
         ]
 
 
-leftColumn : Bool -> B.User -> Model -> Html Msg
-leftColumn isDark user model =
+view : Bool -> B.User -> Model -> Html Msg
+view isDark user model =
     let
         renderSavedFilter ( filterId, filter ) =
             let
@@ -104,99 +103,84 @@ leftColumn isDark user model =
 
                 filterDiv =
                     div
-                        [ class "p-2 border d-flex justify-content-between align-items-center"
-                        , classList [ ( "d-none", MaybeX.isJust mSavedFilter ) ]
+                        [ class "p-2 bg-[var(--color-card)] border border-[var(--color-border)] rounded mb-1 flex justify-between items-center hover:shadow transition-shadow duration-150"
+                        , classList [ ( "hidden", MaybeX.isJust mSavedFilter ) ]
                         , style "user-select" "none"
+                        , onClick <| SavedFilterMenuClose
                         ]
                         [ div
-                            [ class "flex-grow-1 pointer me-1"
+                            [ class "flex-grow cursor-pointer"
                             , onClick <| SavedFilterSelect filterId
                             ]
                             [ if isSelected then
-                                strong [] [ text filter.name ]
+                                span [ class "font-medium text-[var(--color-action)] text-sm" ] [ text filter.name ]
 
                               else
-                                text filter.name
+                                span [ class "text-[var(--color-text)] hover:text-[var(--color-action)] text-sm" ] [ text filter.name ]
                             ]
-                        , div [ class "flex-shrink dropdown-center" ]
+                        , div [ class "relative" ]
                             [ div
-                                [ class "flex-shrink"
-                                , style "cursor" "pointer"
+                                [ class "p-1 cursor-pointer hover:bg-[var(--color-bg-muted)] rounded transition-colors duration-150"
                                 , attribute "role" "button"
-                                , attribute "data-bs-toggle" "dropdown"
-                                , attribute "aria-expanded" "false"
+                                , onClick <| SavedFilterMenuToggle filter.id
+                                , Html.Events.stopPropagationOn "click" (Json.Decode.succeed ( SavedFilterMenuToggle filter.id, True ))
                                 ]
-                                [ i [ class "bi bi-three-dots" ] []
+                                [ i [ class "bi bi-three-dots text-[var(--color-text)] text-xs" ] []
                                 ]
-                            , ul
-                                [ class "dropdown-menu pt-1 pb-1"
-                                , style "border-radius" "none"
-                                ]
-                                [ li []
-                                    [ span
-                                        [ class "dropdown-item pointer"
-                                        , onClick <| SavedFilterEdit filter.id
-                                        ]
-                                        [ i [ class "bi bi-pen" ] []
-                                        , text " редагувати"
+                            , if model.savedFilterMenuOpen == Just filter.id then
+                                div [ class "absolute right-0 top-full mt-1 w-32 bg-[var(--color-card)] border border-[var(--color-border)] rounded shadow-lg z-10" ]
+                                    [ div [ class "py-1" ]
+                                        [ button
+                                            [ class "w-full px-3 py-2 text-left text-sm text-[var(--color-text)] hover:bg-[var(--color-bg-muted)] transition-colors duration-150"
+                                            , onClick <| SavedFilterEdit filter.id
+                                            ]
+                                            [ text "Редагувати"
+                                            ]
+                                        , button
+                                            [ class "w-full px-3 py-2 text-left text-sm text-[var(--color-text)] hover:bg-[var(--color-bg-muted)] transition-colors duration-150"
+                                            , onClick <| SavedFilterDelete filter.id
+                                            ]
+                                            [ text "Видалити"
+                                            ]
                                         ]
                                     ]
-                                , li []
-                                    [ span
-                                        [ class "dropdown-item pointer"
-                                        , onClick <| SavedFilterUpdate filter.id
-                                        ]
-                                        [ i [ class "bi bi-arrow-clockwise" ] []
-                                        , text " зберегти зміни"
-                                        ]
-                                    ]
-                                , li []
-                                    [ span
-                                        [ class "dropdown-item text-danger pointer"
-                                        , onClick <| SavedFilterDelete filter.id
-                                        ]
-                                        [ i [ class "bi bi-trash" ] []
-                                        , text " видалити"
-                                        ]
-                                    ]
-                                ]
+
+                              else
+                                text ""
                             ]
                         ]
 
                 editDiv inp =
-                    div []
-                        [ div [ class "d-flex justify-content-center align-items-start mb-2" ]
+                    div [ class "p-2 bg-[var(--color-bg-muted)] border border-[var(--color-border)] rounded mb-1" ]
+                        [ div [ class "flex justify-center items-start mb-2" ]
                             [ textarea
-                                [ class "mb-1 p-1 pt-2"
+                                [ class "w-full p-2 border border-[var(--color-border)] rounded bg-[var(--color-card)] text-[var(--color-text)] resize-none focus:ring-1 focus:ring-[var(--color-primary)] focus:border-transparent text-sm"
                                 , onInput <| SavedFilterEditInp filter.id
                                 , value inp
-                                , style "height" "60px"
-                                , style "width" "180px"
+                                , style "height" "50px"
                                 , spellcheck False
                                 ]
                                 []
                             ]
-                        , div [ class "d-flex justify-content-center align-items-start" ]
-                            [ div [ class "mb-2" ] <|
-                                [ button
-                                    [ type_ "button"
-                                    , class "btn btn-light btn-sm text-nowrap me-1"
-                                    , onClick <| SavedFilterEditCancel filterId
-                                    ]
-                                    [ text "відмінити"
-                                    ]
-                                , button
-                                    [ type_ "button"
-                                    , class "btn btn-outline btn-primary btn-sm text-nowrap me-1"
-                                    , onClick <| SavedFilterRename filter.id
-                                    ]
-                                    [ text "зберегти"
-                                    ]
+                        , div [ class "flex justify-center gap-1.5" ]
+                            [ button
+                                [ type_ "button"
+                                , class "px-3 py-1.5 text-xs font-medium text-[var(--color-text)] bg-[var(--color-card)] border border-[var(--color-border)] rounded hover:bg-[var(--color-bg-muted)] focus:ring-1 focus:ring-[var(--color-primary)] transition-colors duration-150"
+                                , onClick <| SavedFilterEditCancel filterId
+                                ]
+                                [ text "відмінити"
+                                ]
+                            , button
+                                [ type_ "button"
+                                , class "px-3 py-1.5 text-xs font-medium text-[var(--color-button-text)] bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] focus:ring-1 focus:ring-[var(--color-primary)] rounded transition-colors duration-150"
+                                , onClick <| SavedFilterRename filter.id
+                                ]
+                                [ text "зберегти"
                                 ]
                             ]
                         ]
             in
-            div [ class "list-item" ] <|
+            div [] <|
                 [ filterDiv
                 , flip HtmlX.viewMaybe (Dict.get filter.id model.savedFilterEditInp) editDiv
                 ]
@@ -692,35 +676,13 @@ leftColumn isDark user model =
                             "всі"
                             { loading = RD.isLoading model.locations, disabled = False, isDark = isDark }
                     )
-                , div
-                    [ class "form-check my-1" ]
-                    [ input
-                        [ class "form-check-input"
-                        , style "margin-top" "6px"
-                        , type_ "checkbox"
-                        , id "includePelengLocations"
-                        , onCheck SetIncludePelengLocations
-                        , checked (not model.includePelengLocations)
-                        ]
-                        []
-                    , node
-                        "sl-tooltip"
-                        [ attribute "content" "якщо вимкнено - включати також повідомлення з усіх частот що запеленговані на даних локаціях"
-                        , attribute "placement" "right"
-                        , class "sl-tooltip-delay sl-tooltip-max-w-250"
-                        ]
-                        [ label
-                            [ class "form-check-label"
-                            , for "includePelengLocations"
-                            ]
+                , div [ class "my-3" ]
+                    [ Shared.Components.Checkbox.new { isChecked = not model.includePelengLocations, onToggle = SetIncludePelengLocations }
+                        |> Shared.Components.Checkbox.withContent
                             [ text "точний збіг "
-                            , sup []
-                                [ i
-                                    [ class "bi-question-circle" ]
-                                    []
-                                ]
+                            , i [ class "bi-question-circle text-xs text-gray-500 dark:text-gray-400" ] []
                             ]
-                        ]
+                        |> Shared.Components.Checkbox.view
                     ]
                 ]
 
@@ -750,93 +712,71 @@ leftColumn isDark user model =
                 ]
     in
     div
-        [ class "filter-col d-flex flex-column pt-1 left-panel"
+        [ class "flex flex-col p-2  min-h-full"
         , style "min-height" "100%"
         ]
     <|
-        ul
-            [ class "nav nav-tabs nav-fill"
-            ]
-            [ li
-                [ class "nav-item"
+        div [ class "flex border-b border-[var(--color-border)] mb-3" ]
+            [ button
+                [ class "flex-1 px-4 py-2 text-sm font-medium border-b-2 transition-colors duration-150"
+                , classList [ ( "border-[var(--color-text)] text-[var(--color-text)]", model.menuTab == TabFilters ), ( "border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:border-[var(--color-border)]", model.menuTab /= TabFilters ) ]
+                , onClick <| SelectTab TabFilters
                 ]
-                [ span
-                    [ class "nav-link"
-                    , classList [ ( "active arrow", model.menuTab == TabFilters ) ]
-                    , classList [ ( "pointer", model.menuTab /= TabFilters ) ]
-                    , onClick <| SelectTab TabFilters
-                    ]
-                    [ text "фільтри" ]
+                [ text "фільтри" ]
+            , button
+                [ class "flex-1 px-4 py-2 text-sm font-medium border-b-2 transition-colors duration-150"
+                , classList [ ( "border-[var(--color-text)] text-[var(--color-text)]", model.menuTab == TabSaved ), ( "border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:border-[var(--color-border)]", model.menuTab /= TabSaved ) ]
+                , onClick <| SelectTab TabSaved
                 ]
-            , li
-                [ class "nav-item"
-                ]
-                [ span
-                    [ class "nav-link"
-                    , classList [ ( "active arrow", model.menuTab == TabSaved ) ]
-                    , classList [ ( "pointer", model.menuTab /= TabSaved ) ]
-                    , onClick <| SelectTab TabSaved
-                    ]
-                    [ text "збережені" ]
-                ]
+                [ text "збережені" ]
             ]
             :: (case model.menuTab of
                     TabFilters ->
                         tabFiltersBlock
 
                     TabSaved ->
-                        div
-                            [ class "text-center mb-2 mt-4"
-                            , style "transform" "translate(8px, 0)"
-                            ]
-                            [ span
-                                [ class "text-action cursor-pointer"
+                        div [ class "text-center mb-3" ]
+                            [ button
+                                [ class "inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-[var(--color-action)] hover:text-[var(--color-action-hovered)] hover:bg-[var(--color-bg-muted)] rounded transition-colors duration-150"
                                 , onClick SaveFilterExpandToggle
                                 ]
-                                [ text "зберегти фільтр як" ]
-                            , sup
-                                [ attribute "data-bs-toggle" "tooltip"
-                                , attribute "data-bs-title" "збережіть поточну вибірку як новий фільтр або замініть параметри існуючого"
-                                ]
-                                [ text " "
-                                , i [ class "bi bi-info-circle" ] []
+                                [ text "зберегти фільтр як"
+                                , i [ class "bi bi-info-circle text-xs" ] []
                                 ]
                             ]
                             :: ifOrEmpty model.saveFilterExpanded
-                                [ div [ class "d-flex justify-content-center align-items-start mb-2" ]
-                                    [ textarea
-                                        [ class "mb-1"
-                                        , onInput <| SaveFilterInp
-                                        , value <| model.saveFilterInp
-                                        , style "height" "60px"
-                                        , style "width" "180px"
-                                        , spellcheck False
+                                [ div [ class "bg-[var(--color-bg-muted)] border border-[var(--color-border)] rounded p-3" ]
+                                    [ div [ class "flex justify-center mb-2" ]
+                                        [ textarea
+                                            [ class "w-full max-w-xs p-2 border border-[var(--color-border)] rounded bg-[var(--color-card)] text-[var(--color-text)] resize-none focus:ring-1 focus:ring-[var(--color-primary)] focus:border-transparent text-sm"
+                                            , onInput <| SaveFilterInp
+                                            , value <| model.saveFilterInp
+                                            , style "height" "50px"
+                                            , spellcheck False
+                                            ]
+                                            []
                                         ]
-                                        []
-                                    ]
-                                , div [ class "d-flex justify-content-center align-items-start" ]
-                                    [ div [ class "mb-2" ] <|
+                                    , div [ class "flex justify-center gap-1.5" ]
                                         [ button
                                             [ type_ "button"
-                                            , class "btn btn-light btn-sm text-nowrap me-1"
+                                            , class "px-3 py-1.5 text-xs font-medium text-[var(--color-text)] bg-[var(--color-card)] border border-[var(--color-border)] rounded hover:bg-[var(--color-bg-muted)] focus:ring-1 focus:ring-[var(--color-primary)] transition-colors duration-150"
                                             , onClick <| SaveFilterExpandToggle
                                             ]
                                             [ text "відмінити"
                                             ]
                                         , button
                                             [ type_ "button"
-                                            , class "btn btn-outline btn-primary btn-sm text-nowrap me-1"
+                                            , class "px-3 py-1.5 text-xs font-medium text-[var(--color-button-text)] bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] focus:ring-1 focus:ring-[var(--color-primary)] rounded transition-colors duration-150 flex items-center gap-1.5"
                                             , onClick <| SaveFilterDo
                                             ]
                                             [ text "зберегти"
+                                            , if model.saveFilterInProgress then
+                                                Shared.Components.Spinner.loadingSpinner2Sm
+
+                                              else
+                                                text ""
                                             ]
                                         ]
-                                            ++ (if model.saveFilterInProgress then
-                                                    [ Shared.Components.Spinner.loadingSpinner2Sm ]
-
-                                                else
-                                                    []
-                                               )
                                     ]
                                 ]
                             ++ (if model.savedFiltersLoading then

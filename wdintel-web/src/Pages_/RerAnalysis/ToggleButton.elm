@@ -25,32 +25,26 @@ toggleButton2 config label mCountLabel =
                 \lbl ->
                     sup []
                         [ span
-                            [ class "badge badge-sm rounded-pill text-bg-secondary"
+                            [ class "bg-secondary text-w text-xs px-1 py-0.5 rounded-full"
                             , style "font-size" ".5rem"
                             ]
                             [ text lbl ]
                         ]
     in
     button
-        ([ type_ "button"
-         , class "btn text-nowrap rounded-0 p-1"
-         , classList [ ( "btn-light", not config.isDark ), ( "btn-secondary", config.isDark ) ]
-         , style "min-height" "40px"
-         , style "min-width" "50px"
-         , onClick config.toggleMsg
-         , attribute "data-tooltip" config.tooltip
-         , attribute "data-position" "bottom"
-         , disabled config.disabled
-         ]
-            ++ (if config.unfold then
-                    [ class "active"
-                    , attribute "aria-pressed" "true"
-                    ]
-
-                else
-                    []
-               )
-        )
+        [ type_ "button"
+        , class "inline-flex items-center justify-center text-nowrap rounded-none p-1 transition-colors duration-200 ease-in-out"
+        , classList 
+            [ ( "bg-neutral-light text-text hover:bg-neutral-light-hover border border-border", not config.isDark && not config.unfold )
+            , ( "bg-neutral-dark text-w hover:bg-neutral-dark-hover", config.isDark && not config.unfold )
+            , ( "bg-[var(--color-secondary)] text-w hover:bg-secondary-hover", config.unfold )
+            ]
+        , style "min-height" "40px"
+        , style "min-width" "50px"
+        , onClick config.toggleMsg
+        , title config.tooltip
+        , disabled config.disabled
+        ]
         [ span [ style "opacity" "0" ] [ countLabel ]
         , label
         , countLabel

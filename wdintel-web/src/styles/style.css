@@ -393,31 +393,6 @@
     cursor: pointer;
 }
 
-/* rer-message component defined in RerMessage.elm */
-
-.rer-message .message {
-    font-size: .85rem;
-}
-
-.rer-message .message input[type="text"] {
-    border: 1px solid #c2ceda;
-}
-
-.rer-message .message input.form-check-input:checked {
-    background-color: #d3d3d3;
-    border-color: #d3d3d3;
-}
-
-.rer-message .unknown-profile-name {
-    font-size: .8rem;
-}
-
-/* .rer-message .unknown-profile-name:hover { */
-/*   font-color: #000; */
-/*   font-weight: 600; */
-/*   /\* cursor: pointer; *\/ */
-/* } */
-
 
 /* Waterfall scrollbar styles moved to _scrollbar.css */
 
@@ -634,12 +609,7 @@
     cursor: pointer;
 }
 
-
-.page-rer-analysis .filter-col {
-    /* height: 100vh; */
-}
-
-.page-rer-analysis .filter-col .list-item:hover {
+.page-rer-analysis .list-item:hover {
     background-color: #eee;
 }
 
@@ -672,6 +642,11 @@ sl-tooltip {
 
 .waterfall sl-tooltip {
     --show-delay: 200ms;
+}
+
+/* Затримка для підказок позивних, щоб не заважали при наведенні на хрестик */
+.callsign-tooltip sl-tooltip {
+    --show-delay: 400ms;
 }
 
 .table-bordered> :not(caption)>.disabled>* {

@@ -76,6 +76,8 @@ type Msg
     | SaveFilterDo
     | SaveFilterDone (Result ApiError (List B.SavedFilter))
     | SavedFiltersGot (Result ApiError (List B.SavedFilter))
+    | SavedFilterMenuToggle Int
+    | SavedFilterMenuClose
     | SavedFilterEdit Int
     | SavedFilterEditCancel Int
     | SavedFilterEditInp Int String
@@ -139,3 +141,7 @@ type Msg
     | GroupsActivityPeriodChanged GroupsActivityPeriod
     | FilterTagsOptionChanged Bool
     | UnitsExactMatchOnlyChanged Bool
+    | CloseEditSidebar
+    | SaveEditSidebar
+    | EditSidebarUpdate Int (B.InboxMessage -> B.InboxMessage)
+    | EditSidebarSaveDone Int (Result ApiError ())

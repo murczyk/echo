@@ -1,4 +1,4 @@
-module Pages_.RerAnalysis.MainBody exposing (filtersAndMainContent)
+module Pages_.RerAnalysis.MainBody exposing (view)
 
 import Bindings as B
 import Dict
@@ -132,7 +132,6 @@ mainBody user model shared route =
                                         vps
                                         renderPs
                                         model.rowsModel
-                                        model.formErrors
                                     )
                                     (enumerate model.messages)
                                 )
@@ -190,8 +189,8 @@ mainBody user model shared route =
     ]
 
 
-featuresBlock : Model -> Shared.Model -> Route () -> Html Msg
-featuresBlock model shared route =
+analysisFeaturesBlock : Model -> Shared.Model -> Route () -> Html Msg
+analysisFeaturesBlock model shared route =
     let
         newCallsignsBlock =
             let
@@ -316,8 +315,8 @@ featuresBlock model shared route =
         ]
 
 
-filtersAndMainContent : B.User -> Model -> Shared.Model -> Route () -> Html Msg
-filtersAndMainContent user model shared route =
+view : B.User -> Model -> Shared.Model -> Route () -> Html Msg
+view user model shared route =
     let
         mapFeatureFlag =
             case shared.serverInfo of
@@ -344,7 +343,7 @@ filtersAndMainContent user model shared route =
                 , div [ class "flex items-center gap-1" ]
                     [ button
                         [ onClick Refresh
-                        , class "outline-0! border-1! border-border rounded-sm! bg-transparent text-[21px]! transition-colors duration-350 hover:bg-action! hover:text-bw! py-[1px] px-[6px]"
+                        , class "outline-0! border-1! border-border rounded-sm! bg-bw text-[21px]! transition-colors duration-350 hover:bg-action! hover:text-bw! py-[1px] px-[6px]"
                         , title "Оновити"
                         ]
                         [ if isLoadingStats model then
@@ -355,7 +354,7 @@ filtersAndMainContent user model shared route =
                         ]
                     , button
                         [ onClick ClearAllFilters
-                        , class "outline-0! border-1! border-border rounded-sm! bg-transparent text-[21px]! transition-colors duration-350 hover:bg-action! hover:text-bw! py-[1px] px-[6px]"
+                        , class "outline-0! border-1! border-border rounded-sm! bg-bw text-[21px]! transition-colors duration-350 hover:bg-action! hover:text-bw! py-[1px] px-[6px]"
                         , title "Скинути фільтри"
                         ]
                         [ i [ class "bi bi-x-octagon" ] []
@@ -364,7 +363,7 @@ filtersAndMainContent user model shared route =
                 , Pages_.RerAnalysis.Date.dateAndPanelsBlock (isDarkMode shared.themeMode) model mapFeatureFlag
                 ]
 
-        reportConstructorBlock =
+        viewReportConstructor =
             modalDialog
                 model.showReportConstructor
                 CloseReportConstructor
@@ -702,56 +701,32 @@ filtersAndMainContent user model shared route =
                 _ ->
                     div [] []
     in
-    div [ class "" ]
+    div [ class "bg-[var(--background-color)]" ]
         [ -- viewIf model.showReportConstructor reportConstructorBlock
-          reportConstructorBlock
+          viewReportConstructor
         , div
-            [ class "flex justify-start items-start"
-            , class "page-rer-analysis"
+            [ class "page-rer-analysis overflow-y-hidden grid grid-cols-24 gap-2"
             , style "height" <| "calc(100vh - " ++ fromInt navbarHeightPx ++ "px)"
-            , style "overflow-y" "hidden"
             ]
             [ div
-                [ class "self-stretch overflow-auto text-sm w-[260px] min-w-[260px]"
-                , style "height" <| "calc(100vh - " ++ fromInt navbarHeightPx ++ "px)"
+                [ class "overflow-auto text-sm col-span-5 h-full "
                 ]
-                [ Pages_.RerAnalysis.Filters.leftColumn (isDarkMode shared.themeMode) user model ]
+                [ Pages_.RerAnalysis.Filters.view (isDarkMode shared.themeMode) user model ]
             , div
-                [ class "border-l border-border self-stretch flex-grow mt-4"
+                [ class "col-span-19 flex flex-col h-full relative  mt-4 overflow-auto"
                 , id "messages-div"
-                , style "max-width" "100"
-                , style "height" <| "calc(100vh - " ++ fromInt navbarHeightPx ++ "px)"
-                , style "overflow-y" "auto"
-                , style "min-width" "1000px"
-                , style "position" "relative"
-                , style "display" "flex"
-                , style "flex-direction" "column"
                 ]
                 [ div
-                    [ style "position" "fixed"
-                    , style "bottom" "20px"
-                    , style "right" "30px"
-                    , style "opacity" ".5"
+                    [ class "fixed bottom-[20px] right-[30px] opacity-50 z-55"
                     , onClick <| ScrollMessagesToTop
                     ]
                     [ span [ class "text-[2rem] cursor-pointer" ]
                         [ i [ class "bi bi-arrow-up-circle" ] [] ]
                     ]
-
-                -- , div
-                --     [ style "float" "right"
-                --     , style "position" "sticky"
-                --     , style "top" "0"
-                --     , style "z-index" "100"
-                --     ]
-                --     [ rightColumn model ]
                 , div
-                    [ style "position" "sticky"
-                    , style "top" "0"
-                    , class "bg-body"
-                    , style "z-index" "50"
+                    [ class "sticky top-0 z-50 bg-[var(--background-color)]"
                     ]
-                    [ div [ class "flex items-center justify-between px-4 mb-2" ]
+                    [ div [ class "flex items-center justify-between px-4 mb-2 " ]
                         [ div [ class "flex items-center" ]
                             [ h1 [ class "text-xl font-semibold" ] [ text "аналіз" ]
                             , headerControls
@@ -762,7 +737,7 @@ filtersAndMainContent user model shared route =
                     (mapBlock
                         :: (if not model.unfoldMapBlock then
                                 [ div []
-                                    [ featuresBlock model shared route
+                                    [ analysisFeaturesBlock model shared route
                                     , div [] (mainBody user model shared route)
                                     ]
                                 ]

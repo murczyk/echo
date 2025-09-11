@@ -36,14 +36,13 @@ view body (Config config) =
                 [ attribute "slot" "content", style "text-transform" "lowercase" ]
                 [ body
                 ]
-            , span
-                [ style "margin-left" "-2px", style "cursor" "pointer" ]
-                [ sup []
-                    [ i
-                        [ class ("bi " ++ config.iconName)
-                        ]
-                        []
+            , sup []
+                [ i
+                    [ class ("bi " ++ config.iconName)
+                    , style "margin-left" "-2px"
+                    , style "cursor" "pointer"
                     ]
+                    []
                 ]
             ]
         ]

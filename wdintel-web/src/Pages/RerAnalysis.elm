@@ -10,6 +10,7 @@ import Dict.Extra as DE
 import Effect as E exposing (Effect)
 import Html exposing (..)
 import Html.Attributes exposing (..)
+import Html.Events exposing (onInput)
 import Html.Styled
 import Json.Decode as Decode
 import Json.Encode as Encode
@@ -28,9 +29,11 @@ import Route.Path
 import Select
 import Set
 import Shared
+import Shared.Components.Button as Button
 import Shared.Components.DateRangePicker
 import Shared.Components.DateTime
 import Shared.Components.RerMessage
+import Shared.Components.Sidebar as Sidebar
 import Shared.Components.Toast
 import Shared.Model exposing (isDarkMode)
 import String exposing (fromInt)
@@ -125,6 +128,7 @@ init route _ =
             , savedFilters = []
             , savedFiltersLoading = True
             , savedFilterEditInp = Dict.empty
+            , savedFilterMenuOpen = Nothing
             , searchInput = ""
             , nolimitShown = False
             , menuTab = TabFilters
@@ -192,6 +196,7 @@ init route _ =
             , groupsActivityPeriod = FilterSelectedRange
             , filterTagsOption = B.OneOfTags
             , unitsExactMatchOnly = True
+            , editSidebar = Nothing
             }
 
         m2 =
@@ -1226,6 +1231,9 @@ update user shared route msg model =
                                             loadCoreStatsAndPushUrl { accM | freqsSelected = [ freq ], unfoldMapBlock = True }
                                     in
                                     ( accM2, accCmds2 :: accCmds )
+
+                                Shared.Components.RerMessage.OutOpenSidebarEdit msgId ->
+                                    ( { accM | editSidebar = Just msgId }, accCmds )
                         )
                         ( m2, [] )
                         res.sigs
@@ -1506,6 +1514,43 @@ update user shared route msg model =
                     { model | unitsExactMatchOnly = val }
             in
             loadCoreStatsAndPushUrl m2
+
+        CloseEditSidebar ->
+            ( { model | editSidebar = Nothing }
+            , E.none
+            )
+
+        SaveEditSidebar ->
+            case model.editSidebar of
+                Just msgId ->
+                    case List.filter (\( id, _ ) -> id == msgId) model.messages |> List.head of
+                        Just ( _, message ) ->
+                            ( model
+                            , Api.rer_importer_inbox_submit (EditSidebarSaveDone msgId) { messages = [ ( msgId, message ) ] }
+                            )
+
+                        Nothing ->
+                            ( model, E.none )
+
+                Nothing ->
+                    ( model, E.none )
+
+        EditSidebarUpdate msgId updateFn ->
+            let
+                messages2 =
+                    updateMessageField msgId updateFn model.messages
+            in
+            ( { model | messages = messages2 }, E.none )
+
+        EditSidebarSaveDone _ (Err e) ->
+            ( model
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка збереження повідомлення" e
+            )
+
+        EditSidebarSaveDone _ (Ok ()) ->
+            ( { model | editSidebar = Nothing }
+            , E.none
+            )
 
         ToggleUnfoldLocationsFilter ->
             ( { model | unfoldLocationsFilter = not model.unfoldLocationsFilter }
@@ -1992,6 +2037,22 @@ update user shared route msg model =
             , E.none
             )
 
+        SavedFilterMenuToggle id ->
+            ( { model
+                | savedFilterMenuOpen = 
+                    if model.savedFilterMenuOpen == Just id then
+                        Nothing
+                    else
+                        Just id
+              }
+            , E.none
+            )
+
+        SavedFilterMenuClose ->
+            ( { model | savedFilterMenuOpen = Nothing }
+            , E.none
+            )
+
         SavedFilterEdit id ->
             case findK id model.savedFilters of
                 Nothing ->
@@ -2001,6 +2062,7 @@ update user shared route msg model =
                     ( { model
                         | savedFilterEditInp =
                             Dict.insert id savedFilter.name model.savedFilterEditInp
+                        , savedFilterMenuOpen = Nothing
                       }
                     , E.none
                     )
@@ -2067,6 +2129,7 @@ update user shared route msg model =
         SavedFilterDelete id ->
             ( { model
                 | savedFilterEditInp = Dict.remove id model.savedFilterEditInp
+                , savedFilterMenuOpen = Nothing
                 , savedFilters = List.filter (\( k, _ ) -> k /= id) model.savedFilters
               }
             , E.deleteSavedAnalysisFilter SavedFilterDeleteDone id
@@ -3029,6 +3092,19 @@ update user shared route msg model =
             loadCoreStats m1
 
 
+updateMessageField : Int -> (B.InboxMessage -> B.InboxMessage) -> List ( Int, B.InboxMessage ) -> List ( Int, B.InboxMessage )
+updateMessageField msgId updateFn messages =
+    List.map
+        (\( id, message ) ->
+            if id == msgId then
+                ( id, updateFn message )
+
+            else
+                ( id, message )
+        )
+        messages
+
+
 getSinceDateForGroupsActivity period dtFromPosix dtToPosix =
     case period of
         FilterSelectedRange ->
@@ -3049,12 +3125,127 @@ subscriptions _ =
     Sub.none
 
 
+
+--VIEW
+
+
 view : Shared.Model -> B.User -> Route () -> Model -> View Msg
 view shared user route model =
     { title = "РЕР-аналіз"
     , body =
-        [ div [ class "w-full" ]
-            [ Pages_.RerAnalysis.MainBody.filtersAndMainContent user model shared route
+        [ div []
+            [ Pages_.RerAnalysis.MainBody.view user model shared route
             ]
+        , Sidebar.view (model.editSidebar /= Nothing) CloseEditSidebar (editSidebarContent model)
         ]
     }
+
+
+
+-- SIDEBARS
+
+
+editSidebarContent : Model -> List (Html Msg)
+editSidebarContent model =
+    case model.editSidebar of
+        Just msgId ->
+            case List.filter (\( id, _ ) -> id == msgId) model.messages |> List.head of
+                Just ( _, message ) ->
+                    [ div [ class "flex flex-col h-full" ]
+                        [ div [ class "p-4 border-b border-b-border" ]
+                            [ h3 [ class "text-lg font-semibold" ] [ text "Редагування додаткових полів" ]
+                            ]
+                        , div [ class "flex-1 overflow-y-auto p-4 space-y-4" ]
+                            [ div []
+                                [ label [ class "block text-sm font-medium mb-2" ] [ text "Дата" ]
+                                , input
+                                    [ type_ "text"
+                                    , class "w-full px-3 py-2 border rounded"
+                                    , value <| Maybe.withDefault "" message.date
+                                    , placeholder "YYYY-MM-DD"
+                                    , onInput <| \v -> EditSidebarUpdate msgId (\m -> { m | date = Just v })
+                                    ]
+                                    []
+                                ]
+                            , div []
+                                [ label [ class "block text-sm font-medium mb-2" ] [ text "Час" ]
+                                , input
+                                    [ type_ "text"
+                                    , class "w-full px-3 py-2 border rounded"
+                                    , value <| Maybe.withDefault "" message.time
+                                    , placeholder "HH:MM"
+                                    , onInput <| \v -> EditSidebarUpdate msgId (\m -> { m | time = Just v })
+                                    ]
+                                    []
+                                ]
+                            , div []
+                                [ label [ class "block text-sm font-medium mb-2" ] [ text "Частота" ]
+                                , input
+                                    [ type_ "text"
+                                    , class "w-full px-3 py-2 border rounded"
+                                    , value <| Maybe.withDefault "" message.freq
+                                    , placeholder "Частота"
+                                    , onInput <| \v -> EditSidebarUpdate msgId (\m -> { m | freq = Just v })
+                                    ]
+                                    []
+                                ]
+                            , div []
+                                [ label [ class "block text-sm font-medium mb-2" ] [ text "Координати" ]
+                                , input
+                                    [ type_ "text"
+                                    , class "w-full px-3 py-2 border rounded"
+                                    , value <| Maybe.withDefault "" message.coords
+                                    , placeholder "Координати"
+                                    , onInput <| \v -> EditSidebarUpdate msgId (\m -> { m | coords = Just v })
+                                    ]
+                                    []
+                                ]
+                            , div []
+                                [ label [ class "block text-sm font-medium mb-2" ] [ text "Пост" ]
+                                , input
+                                    [ type_ "text"
+                                    , class "w-full px-3 py-2 border rounded"
+                                    , value <| Maybe.withDefault "" message.post
+                                    , placeholder "Пост"
+                                    , onInput <| \v -> EditSidebarUpdate msgId (\m -> { m | post = Just v })
+                                    ]
+                                    []
+                                ]
+                            , div []
+                                [ label [ class "block text-sm font-medium mb-2" ] [ text "Підрозділ" ]
+                                , input
+                                    [ type_ "text"
+                                    , class "w-full px-3 py-2 border rounded"
+                                    , value <| Maybe.withDefault "" message.unit
+                                    , placeholder "Підрозділ"
+                                    , onInput <| \v -> EditSidebarUpdate msgId (\m -> { m | unit = Just v })
+                                    ]
+                                    []
+                                ]
+                            , div []
+                                [ label [ class "block text-sm font-medium mb-2" ] [ text "Локація" ]
+                                , input
+                                    [ type_ "text"
+                                    , class "w-full px-3 py-2 border rounded"
+                                    , value <| Maybe.withDefault "" message.location
+                                    , placeholder "Локація"
+                                    , onInput <| \v -> EditSidebarUpdate msgId (\m -> { m | location = Just v })
+                                    ]
+                                    []
+                                ]
+                            ]
+                        , div [ class "p-4 border-t border-t-border flex gap-2 justify-end" ]
+                            [ Button.new { label = "Скасувати", onClick = CloseEditSidebar }
+                                |> Button.withSecondary
+                                |> Button.view
+                            , Button.new { label = "Зберегти", onClick = SaveEditSidebar }
+                                |> Button.view
+                            ]
+                        ]
+                    ]
+
+                Nothing ->
+                    [ div [ class "p-4" ] [ text "Повідомлення не знайдено" ] ]
+
+        Nothing ->
+            []

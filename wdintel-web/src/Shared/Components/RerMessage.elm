@@ -2,11 +2,7 @@ module Shared.Components.RerMessage exposing (Edited, Model, Msg(..), OutSignal(
 
 import Api
 import Bindings as B exposing (..)
-import Shared.Components.ActionMenu
-import Shared.Components.Tag as Tag
-import Shared.Components.Watermark as Watermark exposing (Watermark)
 import Core.Auth
-import Core.Callsign
 import Core.Callsigns.HintStrategy
 import Core.Types exposing (..)
 import Core.Unit
@@ -22,17 +18,14 @@ import Pages_.RerAnalysis.Utils
 import Route exposing (Route)
 import Set exposing (Set)
 import Shared.Callsign
+import Shared.Components.Watermark as Watermark
+import Shared.Icons as Icons
 import Shared.MarkedText
 import Time
 import Utils.Api.ErrorHandling
-import Utils.Components exposing (fieldError, isInvalidCls)
 import Utils.Time
 import Utils.Utils exposing (..)
 import Utils.ViewUtils exposing (tagsBlock)
-
-
-extendedFormWidth =
-    260
 
 
 type alias ViewParams =
@@ -68,6 +61,7 @@ type alias Model =
     { callsignInputs : Dict Int String
     , edited : Dict Int Edited
     , extendedForm : Set Int
+    , focusedTextarea : Maybe Int
     }
 
 
@@ -76,6 +70,7 @@ model0 =
     { callsignInputs = Dict.empty
     , edited = Dict.empty
     , extendedForm = Set.empty
+    , focusedTextarea = Nothing
     }
 
 
@@ -107,6 +102,9 @@ type Msg
     | ImportantRemoveDone (Result ApiError ())
     | DeleteMessage Int
     | SelectFreqAndShowMap String
+    | OpenSidebarEdit Int
+    | TextareaFocus Int
+    | TextareaBlur Int
 
 
 type OutSignal
@@ -118,6 +116,7 @@ type OutSignal
     | OutImportantRm Int
     | OutDeleteMessage Int
     | OutSelectFreqAndShowMap String
+    | OutOpenSidebarEdit Int
 
 
 isOurOrganism : B.User -> Dict String (Maybe B.User) -> String -> Bool
@@ -623,6 +622,27 @@ update vps msg model =
             , messages = vps.messages
             }
 
+        OpenSidebarEdit msgId ->
+            { model = model
+            , cmds = E.none
+            , sigs = [ OutOpenSidebarEdit msgId ]
+            , messages = vps.messages
+            }
+
+        TextareaFocus msgId ->
+            { model = { model | focusedTextarea = Just msgId }
+            , cmds = E.none
+            , sigs = []
+            , messages = vps.messages
+            }
+
+        TextareaBlur _ ->
+            { model = { model | focusedTextarea = Nothing }
+            , cmds = E.none
+            , sigs = []
+            , messages = vps.messages
+            }
+
 
 callsignInputId : Int -> String
 callsignInputId id_ =
@@ -704,18 +724,11 @@ renderRow :
     ViewParams
     -> RenderParams
     -> Model
-    -> Dict String String
     -> ( Int, ( Int, InboxMessage ) )
     -> Html Msg
-renderRow vps renderPs model formErrors ( i_, ( msgId, message ) ) =
+renderRow vps _ model ( i_, ( msgId, message ) ) =
     let
-        idPrefix =
-            "rer-inbox-msg-"
-
-        idExtendedFormTextarea =
-            idPrefix ++ String.fromInt msgId
-
-        callsignBlock ( j, callsign ) =
+        callsignTag ( j, callsign ) =
             let
                 hintResult =
                     Core.Callsigns.HintStrategy.getCallsignHints Core.Callsigns.HintStrategy.MessageContext message vps callsign
@@ -727,17 +740,18 @@ renderRow vps renderPs model formErrors ( i_, ( msgId, message ) ) =
                     else
                         Shared.Callsign.viewDefault callsign False
             in
-            div [ class "d-flex justify-content-between text-uppercase" ]
-                [ div [ class "flex-fill" ]
-                    [ result ]
-                , div [ class "ms-1" ]
-                    [ i
-                        [ class "bi bi-dash-circle text-action cursor-pointer"
-                        , attribute "role" "button"
-                        , onClick <| DeleteCallsign msgId j
-                        ]
-                        []
+            span
+                [ class "inline-flex items-center gap-1 text-secondary hover:text-secondary-hover transition-colors group callsign-tooltip"
+                ]
+                [ span [ class "text-uppercase font-medium" ] [ result ]
+                , button
+                    [ type_ "button"
+                    , class "w-4 h-4 flex items-center justify-center text-secondary hover:text-error transition-colors opacity-60 group-hover:opacity-100"
+                    , onClick <| DeleteCallsign msgId j
+                    , title "Видалити позивний"
                     ]
+                    [ i [ class "bi bi-x text-sm" ] [] ]
+                , text "|"
                 ]
 
         imgWidth =
@@ -757,391 +771,206 @@ renderRow vps renderPs model formErrors ( i_, ( msgId, message ) ) =
                     ]
                 ]
 
-        groupNameBlock =
-            case
-                message.groupMasterKey
-                    |> Maybe.andThen (\groupMasterKey -> Dict.get groupMasterKey vps.groupInfos)
-            of
-                Nothing ->
-                    []
-
-                Just group ->
-                    [ div
-                        [ class "text-center mb-1"
-                        , style "font-size" ".8rem"
-                        ]
-                      <|
-                        (text <| group.name)
-                            :: (case message.duplicateIds of
-                                    Nothing ->
-                                        []
-
-                                    Just duplicateIds ->
-                                        if List.length duplicateIds > 0 then
-                                            let
-                                                lbl =
-                                                    "+" ++ String.fromInt (List.length duplicateIds)
-                                            in
-                                            [ text " "
-                                            , sup
-                                                [ class "badge rounded-pill text-bg-light"
-                                                ]
-                                                [ text lbl ]
-                                            ]
-
-                                        else
-                                            []
-                               )
-                    ]
-
-        senderNameBlock =
-            case message.sender of
-                Nothing ->
-                    []
-
-                Just senderUuid ->
-                    senderNameBlockNoInput senderUuid
-
-        senderNameBlockNoInput _ =
+        timeColumn =
             let
-                emptyName =
-                    "(невідомо)"
+                actionsBlock =
+                    div [ class "flex justify-center gap-4" ]
+                        [ let
+                            bookmarked =
+                                Set.member msgId vps.bookmarks
+                          in
+                          div
+                            [ title "додати в закладки"
+                            , class "cursor-pointer text-action  text-[16px]"
+                            , onClick
+                                (if bookmarked then
+                                    BookmarkRemove msgId
 
-                profile =
-                    message.sender
-                        |> Maybe.andThen (\s -> Dict.get s vps.profiles)
-                        |> MaybeX.join
-                        |> Maybe.withDefault
-                            { givenName = Just emptyName, familyName = Nothing }
+                                 else
+                                    BookmarkAdd msgId
+                                )
+                            ]
+                            [ i
+                                [ class "bi"
+                                , classList
+                                    [ ( "bi-bookmark", not bookmarked )
+                                    , ( "bi-bookmark-fill", bookmarked )
+                                    ]
+                                ]
+                                []
+                            ]
+                        , let
+                            important =
+                                Set.member msgId vps.importants
+                          in
+                          div
+                            [ title "помітити як важливе"
+                            , class "text-[16px] cursor-pointer text-action"
+                            , onClick
+                                (if important then
+                                    ImportantRemove msgId
+
+                                 else
+                                    ImportantAdd msgId
+                                )
+                            ]
+                            [ i
+                                [ class "bi"
+                                , classList
+                                    [ ( "bi-exclamation-triangle", not important )
+                                    , ( "bi-exclamation-triangle-fill text-danger", important )
+                                    ]
+                                ]
+                                []
+                            ]
+                        , HtmlX.viewIf (Core.Auth.hasRole "DeleteMsg" vps.user) <|
+                            div
+                                [ title "видалити повідомлення"
+                                , class "text-[16px] cursor-pointer text-action"
+                                , attribute "data-bs-toggle" "modal"
+                                , attribute "data-bs-target" "#deleteMessageModal"
+                                ]
+                                [ i
+                                    [ class "bi bi-trash3 text-danger"
+                                    , onClick <| DeleteMessage msgId
+                                    ]
+                                    []
+                                ]
+                        , div
+                            [ class "text-center cursor-pointer"
+                            , style "font-size" "16px"
+                            , title "редагувати додаткові поля"
+                            , onClick <| OpenSidebarEdit msgId
+                            ]
+                            [ i [ class "bi bi-pencil text-action" ] []
+                            ]
+                        ]
             in
-            [ div
-                [ class "unknown-profile-name text-center mb-1"
+            [ div [ class "flex flex-col gap-2" ]
+                [ div [ class "flex flex-col gap-1" ]
+                    [ actionsBlock
+                    , div
+                        [ class "flex items-center justify-center"
+                        ]
+                        [ span []
+                            [ text <|
+                                case vps.zone of
+                                    Just zone ->
+                                        Maybe.withDefault ""
+                                            (Maybe.map
+                                                (Utils.Time.renderDateTimeF1 zone << Time.millisToPosix)
+                                                message.timestamp
+                                            )
 
-                -- , onClick <| AddNameInput id_ senderUuid
-                ]
-                [ text <|
-                    case ( profile.givenName, profile.familyName ) of
-                        ( Nothing, Nothing ) ->
-                            emptyName
-
-                        _ ->
-                            Maybe.withDefault "" profile.givenName
-                                ++ " "
-                                ++ Maybe.withDefault "" profile.familyName
+                                    Nothing ->
+                                        ""
+                            ]
+                        ]
+                    ]
+                , metadataBlock
                 ]
             ]
 
-        editedBlock =
-            if renderPs.hideIndividualSave then
-                []
+        metadataBlock =
+            let
+                itemBlock : { iconName : String, iconTitle : String, label : Maybe String } -> List (Html Msg) -> Html Msg
+                itemBlock config actions =
+                    div [ class "flex justify-between items-center" ]
+                        [ div [ class "flex items-center" ]
+                            [ i [ class ("bi mr-2 text-icons leading-none " ++ config.iconName), title config.iconTitle ] []
+                            , span [ class "" ]
+                                [ text <| Maybe.withDefault "" config.label ]
+                            ]
+                        , div [ class "flex items-center gap-1" ]
+                            actions
+                        ]
+            in
+            div [ class "flex flex-col gap-1" ]
+                [ let
+                    mGroup =
+                        message.groupMasterKey
+                            |> Maybe.andThen (\groupMasterKey -> Dict.get groupMasterKey vps.groupInfos)
+                  in
+                  itemBlock { iconTitle = "Група", iconName = "bi-signal", label = Maybe.map .name mGroup } []
+                , let
+                    emptyName =
+                        "(невідомо)"
 
-            else
-                let
-                    show =
-                        case Dict.get msgId model.edited of
-                            Just _ ->
-                                True
+                    profile =
+                        message.sender
+                            |> Maybe.andThen (\s -> Dict.get s vps.profiles)
+                            |> MaybeX.join
+                            |> Maybe.withDefault
+                                { givenName = Just emptyName, familyName = Nothing }
+
+                    label =
+                        case ( profile.givenName, profile.familyName ) of
+                            ( Nothing, Nothing ) ->
+                                emptyName
+
+                            _ ->
+                                Maybe.withDefault "" profile.givenName
+                                    ++ " "
+                                    ++ Maybe.withDefault "" profile.familyName
+                  in
+                  itemBlock { iconTitle = "Відправник", iconName = "bi-person-circle", label = Just label } []
+                , let
+                    updatedRouteString =
+                        case vps.currentRoute of
+                            Just x ->
+                                insertShowMapToQuery (Pages_.RerAnalysis.Utils.updateQueryWithSelectedFreq (message.freq |> def "") x)
 
                             Nothing ->
-                                False
-                in
-                [ div [ classList [ ( "opacity-0", not show ) ], class "flex flex-col gap-2" ]
-                    [ button
-                        [ type_ "button"
-                        , class "btn btn-light btn-sm text-nowrap"
-                        , onClick <| EditCancel msgId
-                        , style "font-size" ".75rem"
-                        ]
-                        [ i [ class "bi bi-x-circle" ] []
-                        ]
-                    , button
-                        [ type_ "button"
-                        , class "btn btn-outline btn-primary btn-sm text-nowrap"
-                        , style "font-size" ".75rem"
-                        , onClick <| EditSave msgId
-                        ]
-                        [ i [ class "bi bi-check" ] []
-                        ]
-                    ]
-                ]
+                                "/rer-analysis"
 
-        actionMenuBody =
-            let
-                updatedRouteString =
-                    case vps.currentRoute of
-                        Just x ->
-                            insertShowMapToQuery (Pages_.RerAnalysis.Utils.updateQueryWithSelectedFreq (message.freq |> def "") x)
-
-                        Nothing ->
-                            "/rer-analysis"
-            in
-            [ span []
-                [ i [ class "bi me-1 bi-pin-map" ] []
-                , button [ class "bg-transparent border-0", onClick (SelectFreqAndShowMap (message.freq |> def "")) ]
-                    [ text "на мапі" ]
-                ]
-            , span []
-                [ i [ class "bi me-1 bi-pin-map" ] []
-                , a [ href updatedRouteString, target "_blank" ]
-                    [ text "на мапі "
-                    , sup []
+                    actionsBlock =
                         [ i
-                            [ class "bi bi-box-arrow-up-right"
+                            [ class "bi bi-map mr-1 text-icons leading-none text-sm cursor-pointer"
+                            , title "Відкрити частоту на мапі"
+                            , onClick (SelectFreqAndShowMap (message.freq |> def ""))
                             ]
                             []
+                        , a [ href updatedRouteString, target "_blank" ]
+                            [ i [ class "bi bi-box-arrow-up-right cursor-pointer text-action text-sm", title "Відкрити частоту на мапі в окремому вікні" ] [] ]
                         ]
-                    ]
+                  in
+                  itemBlock { label = message.freq, iconName = "bi-broadcast", iconTitle = "Частота" } actionsBlock
+                , itemBlock { iconTitle = "Координати", iconName = "bi-geo", label = message.coords } []
+                , itemBlock { iconTitle = "Пости", iconName = "bi-binoculars", label = message.post } []
                 ]
-            ]
-
-        dateInpBlock =
-            [ div [ class "d-flex justify-content-center mb-1" ]
-                [ div [ class "d-flex justify-content-center" ]
-                    [ div [ class "me-2" ] [ i [ class "bi bi-calendar-event" ] [] ]
-                    , input
-                        [ type_ "text"
-                        , class "text-center"
-                        , style "width" "120px"
-                        , value <| Maybe.withDefault "" message.date
-                        , onInput <| InputDate msgId
-                        ]
-                        []
-                    , div [ class "ms-1 opacity-0" ] [ i [ class "bi bi-calendar-event" ] [] ]
-                    ]
-                ]
-            , div [ class "d-flex justify-content-center mb-1" ]
-                [ div [ class "d-flex justify-content-center" ]
-                    [ div [ class "me-2" ] [ i [ class "bi bi-clock" ] [] ]
-                    , div []
-                        [ input
-                            [ type_ "text"
-                            , class "text-center"
-                            , style "width" "120px"
-                            , value <| Maybe.withDefault "" message.time
-                            , onInput <| InputTime msgId
-                            ]
-                            []
-                        ]
-                    , div [ class "ms-1 opacity-0" ] [ i [ class "bi bi-clock" ] [] ]
-                    ]
-                ]
-            , div [ class "d-flex justify-content-center mb-1" ]
-                [ div [ class "d-flex justify-content-center" ]
-                    [ Shared.Components.ActionMenu.actionMenu actionMenuBody "bi-broadcast text-danger"
-                    , div []
-                        [ input
-                            [ type_ "text"
-                            , class "text-center"
-                            , style "width" "120px"
-                            , value <| Maybe.withDefault "" message.freq
-                            , onInput <| InputFreq msgId
-                            ]
-                            []
-                        ]
-                    , div
-                        [ class "ms-1 opacity-0"
-                        ]
-                        [ i [ class "bi bi-broadcast" ] [] ]
-                    ]
-                ]
-            , div [ class "d-flex justify-content-center mb-1" ]
-                [ div [ class "d-flex justify-content-center" ]
-                    [ div [ class "me-2" ] [ i [ class "bi bi-geo" ] [] ]
-                    , div [] <|
-                        input
-                            [ type_ "text"
-                            , class "text-center"
-                            , style "width" "120px"
-                            , value <| Maybe.withDefault "" message.coords
-                            , onInput <| InputCoords msgId
-                            , placeholder "коорд"
-                            , isInvalidCls ("coordinates-" ++ String.fromInt msgId) formErrors
-                            ]
-                            []
-                            :: fieldError ("coordinates-" ++ String.fromInt msgId) formErrors
-                    , div [ class "ms-1 opacity-0" ] [ i [ class "bi bi-geo" ] [] ]
-                    ]
-                ]
-            , div [ class "d-flex justify-content-center mb-1" ]
-                [ div [ class "d-flex justify-content-center" ]
-                    [ div [ class "me-2" ] [ i [ class "bi bi-binoculars" ] [] ]
-                    , div [] <|
-                        input
-                            [ type_ "text"
-                            , class "text-center"
-                            , style "width" "120px"
-                            , value <| Maybe.withDefault "" message.post
-                            , onInput <| InputPost msgId
-                            , placeholder "пост"
-                            , isInvalidCls ("post-" ++ String.fromInt msgId) formErrors
-                            ]
-                            []
-                            :: fieldError ("post-" ++ String.fromInt msgId) formErrors
-                    , div [ class "ms-1 opacity-0" ] [ i [ class "bi bi-binoculars" ] [] ]
-                    ]
-                ]
-            ]
-
-        bookmarkBlock =
-            let
-                bookmarked =
-                    Set.member msgId vps.bookmarks
-            in
-            div
-                ([ style "font-size" "1rem"
-                 , style "cursor" "pointer"
-                 , title "додати в закладки"
-                 , class "me-1"
-                 ]
-                    ++ (if bookmarked then
-                            [ onClick <| BookmarkRemove msgId ]
-
-                        else
-                            [ onClick <| BookmarkAdd msgId
-                            ]
-                       )
-                )
-                [ i
-                    [ class "bi"
-                    , classList
-                        [ ( "bi-bookmark", not bookmarked )
-                        , ( "bi-bookmark-fill", bookmarked )
-                        ]
-                    ]
-                    []
-                ]
-
-        importantBlock =
-            let
-                important =
-                    Set.member msgId vps.importants
-            in
-            div
-                ([ style "font-size" "1rem"
-                 , style "cursor" "pointer"
-                 , title "помітити як важливе"
-                 , class "me-1"
-                 ]
-                    ++ (if important then
-                            [ onClick <| ImportantRemove msgId ]
-
-                        else
-                            [ onClick <| ImportantAdd msgId
-                            ]
-                       )
-                )
-                [ i
-                    [ class "bi"
-                    , classList
-                        [ ( "bi-exclamation-triangle", not important )
-                        , ( "bi-exclamation-triangle-fill text-danger", important )
-                        ]
-                    ]
-                    []
-                ]
-
-        deleteMessageBlock =
-            if Core.Auth.hasRole "DeleteMsg" vps.user then
-                div
-                    [ style "font-size" "1rem"
-                    , style "cursor" "pointer"
-                    , title "видалити повідомлення"
-                    , class "me-1"
-                    , attribute "data-bs-toggle" "modal"
-                    , attribute "data-bs-target" "#deleteMessageModal"
-                    ]
-                    [ i
-                        [ class "bi bi-trash3 text-danger"
-                        , onClick <| DeleteMessage msgId
-                        ]
-                        []
-                    ]
-
-            else
-                text ""
-
-        timeColumn =
-            [ div [] <|
-                div [ class "flex justify-start items-center" ]
-                    [ bookmarkBlock
-                    , importantBlock
-                    , deleteMessageBlock
-                    , div
-                        [ class "text-center"
-                        , style "font-size" ".8rem"
-                        ]
-                        [ text <|
-                            case vps.zone of
-                                Just zone ->
-                                    Maybe.withDefault ""
-                                        (Maybe.map
-                                            (Utils.Time.renderDateTimeF1 zone << Time.millisToPosix)
-                                            message.timestamp
-                                        )
-
-                                Nothing ->
-                                    ""
-                        ]
-                    ]
-                    :: groupNameBlock
-                    ++ senderNameBlock
-                    ++ dateInpBlock
-            ]
 
         messageColumn =
             let
                 networkBlock =
                     case message.networkIds of
                         Just networkIds ->
-                            div [] <|
-                                for_ networkIds <|
-                                    \networkId ->
-                                        case Dict.get networkId vps.networks of
-                                            Just network ->
-                                                Core.Unit.boldMasterUnit vps.masterUnits network
+                            let
+                                networkStrings =
+                                    List.map
+                                        (\networkId ->
+                                            case Dict.get networkId vps.networks of
+                                                Just network ->
+                                                    Core.Unit.createMasterUnitText vps.masterUnits network
 
-                                            _ ->
-                                                text "Невідома мережа"
+                                                _ ->
+                                                    "Невідома мережа"
+                                        )
+                                        networkIds
+
+                                networkBlock_ =
+                                    List.map (\str -> div [ class "font-medium" ] [ text str ]) networkStrings
+                                        |> (\list ->
+                                                div [ class " border-b border-b-border pb-1" ]
+                                                    list
+                                           )
+                            in
+                            networkBlock_
 
                         Nothing ->
                             text ""
             in
             [ div []
-                [ div []
-                    [ div [ class "" ]
-                        [ input
-                            [ type_ "text"
-                            , class "w-100"
-                            , style "padding-left" "5px"
-                            , style "padding-top" "2px"
-                            , style "padding-bottom" "2px"
-
-                            -- , style "font-size" "1rem"
-                            , value <| Maybe.withDefault "" message.unit
-                            , onInput <| InputUnit msgId
-                            , placeholder "підрозділ"
-                            ]
-                            []
-                        , div [] [ networkBlock ]
-                        ]
-                    ]
-                , div [ class "d-flex justify-content-between mt-2" ]
-                    [ div [ class "flex-fill" ]
-                        [ input
-                            [ type_ "text"
-                            , class " w-100"
-                            , style "padding-left" "5px"
-                            , style "padding-top" "2px"
-                            , style "padding-bottom" "2px"
-
-                            -- , style "font-size" "1rem"
-                            , value <| Maybe.withDefault "" message.location
-                            , onInput <| InputLocation msgId
-                            , placeholder "локація"
-                            ]
-                            []
-                        ]
-                    ]
+                [ div [] [ networkBlock ]
                 , div [ class "mt-1" ] <|
                     List.map renderImage message.images
                 , div
@@ -1158,26 +987,15 @@ renderRow vps renderPs model formErrors ( i_, ( msgId, message ) ) =
                 ]
             ]
 
-        proposedCallsignBlock callsign =
-            div
-                [ class "d-flex justify-content-between text-uppercase mt-1"
-                , style "font-size" ".7rem"
+        proposedCallsignTag callsign =
+            span
+                [ class "inline-flex items-center gap-1 text-secondary hover:text-secondary-hover transition-colors cursor-pointer callsign-tooltip"
+                , onClick <| AddCallsignS msgId callsign
+                , title "Додати позивний"
                 ]
-                [ div
-                    [ class "flex-fill"
-                    , onClick <| AddCallsignS msgId callsign
-                    ]
-                    [ span [ class "text-action cursor-pointer" ]
-                        [ text callsign ]
-                    ]
-                , div [ class "ms-1" ]
-                    [ i
-                        [ class "bi bi-dash-circle text-danger"
-                        , attribute "role" "button"
-                        , style "opacity" "0"
-                        ]
-                        []
-                    ]
+                [ span [ class "text-uppercase font-medium" ] [ text callsign ]
+                , i [ class "bi bi-plus text-sm opacity-60" ] []
+                , text "|"
                 ]
 
         callsignsProposed : List String
@@ -1204,14 +1022,22 @@ renderRow vps renderPs model formErrors ( i_, ( msgId, message ) ) =
                 inpVal =
                     Dict.get msgId model.callsignInputs
                         |> Maybe.withDefault ""
+
+                isEdited =
+                    case Dict.get msgId model.edited of
+                        Just _ ->
+                            True
+
+                        Nothing ->
+                            False
             in
-            [ div [] <|
-                div [ class "flex justify-between" ]
-                    [ div [ class "flex-fill" ]
+            div [ class "space-y-2" ] <|
+                [ div [ class "flex justify-between items-center gap-2" ]
+                    [ div [ class "flex items-center gap-2" ]
                         [ input
                             [ type_ "text"
-                            , class "text-center text-uppercase"
-                            , style "width" "130px"
+                            , class "flex-1  px-1 py-1 text-center text-uppercase border border-border rounded bg-card text-text focus:outline-none focus:ring-1 focus:ring-secondary-active"
+                            , style "font-size" ".7rem"
                             , value inpVal
                             , placeholder "позивний"
                             , onInput <| SetCallsignInput msgId
@@ -1219,45 +1045,69 @@ renderRow vps renderPs model formErrors ( i_, ( msgId, message ) ) =
                             , id <| callsignInputId msgId
                             ]
                             []
-                        ]
-                    , div [ class "ms-1" ]
-                        [ i
-                            [ class "bi bi-plus-circle align-middle"
-                            , classList [ ( "text-muted opacity-50", inpVal == "" ) ]
-                            , classList [ ( "text-success", inpVal /= "" ) ]
-                            , attribute "role" "button"
+                        , button
+                            [ type_ "button"
+                            , class "w-5 h-5 flex items-center justify-center bg-secondary text-w rounded hover:bg-secondary-hover transition-colors disabled:opacity-50"
                             , onClick <| AddCallsign msgId
+                            , disabled (inpVal == "")
+                            , title "Додати позивний"
                             ]
-                            []
+                            [ i [ class "bi bi-plus text-xs" ] [] ]
+                        ]
+                    , div [ class "flex gap-1 ml-3 pl-3" ]
+                        [ if isEdited then
+                            button
+                                [ type_ "button"
+                                , class "w-7 h-7 flex items-center justify-center bg-neutral text-w rounded shadow-md hover:bg-neutral-hover hover:shadow-lg transition-all"
+                                , onClick <| EditCancel msgId
+                                , title "Скасувати всі зміни"
+                                ]
+                                [ i [ class "bi bi-x-lg text-sm" ] [] ]
+
+                          else
+                            div [ class "w-7 h-7" ] []
+                        , if isEdited then
+                            button
+                                [ type_ "button"
+                                , class "w-7 h-7 flex items-center justify-center bg-[var(--color-primary)] text-w rounded shadow-md hover:bg-primary-hover hover:shadow-lg transition-all"
+                                , onClick <| EditSave msgId
+                                , title "Зберегти всі зміни"
+                                ]
+                                [ i [ class "bi bi-check-lg text-sm" ] [] ]
+
+                          else
+                            div [ class "w-7 h-7" ] []
                         ]
                     ]
-                    :: List.map callsignBlock (enumerate message.callsigns)
-                    ++ List.map proposedCallsignBlock callsignsProposed
-            ]
+                , div [ class "flex flex-wrap gap-1" ]
+                    (List.map callsignTag (enumerate message.callsigns))
+                , div [ class "flex flex-wrap gap-1" ]
+                    (List.map proposedCallsignTag callsignsProposed)
+                ]
 
         extendedFormColumn =
-            [ div [ class "mb-2" ] <|
+            div [ class "flex flex-col gap-2 h-full my-1" ] <|
                 [ div
-                    [ class "flex justify-center mb-2"
+                    [ class "flex justify-center"
                     ]
                   <|
                     [ tagsBlock message.tags (ToggleTag msgId) vps.tags
                     ]
                 , textarea
-                    [ class "form-control pt-2 rounded-0"
+                    [ class "w-full grow-1 px-3 py-2 border border-border rounded-lg bg-card text-text resize-none focus:outline-none focus:ring-2 focus:ring-secondary-light-active focus:border-transparent transition-all"
+                    , style "min-height" "100px"
                     , style "font-size" ".9rem"
                     , placeholder "коментар"
-                    , id <| idExtendedFormTextarea
                     , onInput (ExtendedFormChanged msgId)
-                    , value <| Maybe.withDefault "" message.extendedForm
-                    , style "min-height" "100px"
+                    , onFocus (TextareaFocus msgId)
+                    , onBlur (TextareaBlur msgId)
+                    , value (Maybe.withDefault "" message.extendedForm)
                     , spellcheck False
                     ]
                     []
+                , HtmlX.viewIf (List.length otherCommentsBlock > 0)
+                    (div [] otherCommentsBlock)
                 ]
-            , HtmlX.viewIf (List.length otherCommentsBlock > 0)
-                (div [ class "mb-2" ] otherCommentsBlock)
-            ]
 
         otherCommentsBlock =
             vps.messageComments
@@ -1274,20 +1124,20 @@ renderRow vps renderPs model formErrors ( i_, ( msgId, message ) ) =
                 , text comment.comment
                 ]
     in
-    div [ class "rer-message mb-4 relative" ]
+    div [ class "mb-3 p-2 bg-bw rounded-lg border border-border relative shadow-sm" ]
         [ div
-            [ class "flex  message"
+            [ class "grid grid-cols-12 gap-2"
             , id <| "message-" ++ String.fromInt msgId
             ]
             [ div
-                [ style "min-width" (String.fromInt imgWidth ++ "px")
+                [ class "border-r border-border m-w-[160p] col-span-2 pr-2"
                 ]
                 timeColumn
-            , div [ class "basis-[45%]" ] messageColumn
-            , div [ class "text-center mx-1" ] callsignsColumn
-            , div [ class "text-center mx-1 basis-[23%]" ] extendedFormColumn
-            , div [ class "" ] editedBlock
+            , div [ class "col-span-6 border-r border-border" ] messageColumn
+            , div [ class "px-2 col-span-4 flex flex-col" ]
+                [ div [] [ callsignsColumn ]
+                , div [ class "flex-1" ] [ extendedFormColumn ]
+                ]
             ]
         , Watermark.new vps.user.name |> Watermark.withPositioning ( 65, 75 ) |> Watermark.withFontSize "1.8rem" |> Watermark.view
-        , Watermark.new vps.user.name |> Watermark.withPositioning ( 25, 30 ) |> Watermark.withFontSize "1.8rem" |> Watermark.view
         ]
