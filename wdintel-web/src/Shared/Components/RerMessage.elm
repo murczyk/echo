@@ -945,24 +945,33 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                     case message.networkIds of
                         Just networkIds ->
                             let
-                                networkStrings =
+                                networkItems =
                                     List.map
                                         (\networkId ->
                                             case Dict.get networkId vps.networks of
                                                 Just network ->
-                                                    Core.Unit.createMasterUnitText vps.masterUnits network
+                                                    let
+                                                        networkText = Core.Unit.createMasterUnitText vps.masterUnits network
+                                                        networkUrl = "/rer-networks/" ++ String.fromInt networkId
+                                                    in
+                                                    div [ class "flex items-center gap-1 font-medium group" ]
+                                                        [ span [] [ text networkText ]
+                                                        , a 
+                                                            [ href networkUrl
+                                                            , target "_blank"
+                                                            , class "text-action opacity-30 group-hover:opacity-100 transition-opacity duration-200 cursor-pointer"
+                                                            , title "Відкрити мережу в новій вкладці"
+                                                            ]
+                                                            [ i [ class "bi bi-box-arrow-up-right text-sm" ] [] ]
+                                                        ]
 
                                                 _ ->
-                                                    "Невідома мережа"
+                                                    div [ class "font-medium" ] [ text "Невідома мережа" ]
                                         )
                                         networkIds
 
                                 networkBlock_ =
-                                    List.map (\str -> div [ class "font-medium" ] [ text str ]) networkStrings
-                                        |> (\list ->
-                                                div [ class " border-b border-b-border pb-1" ]
-                                                    list
-                                           )
+                                    div [ class "border-b border-b-border pb-1" ] networkItems
                             in
                             networkBlock_
 

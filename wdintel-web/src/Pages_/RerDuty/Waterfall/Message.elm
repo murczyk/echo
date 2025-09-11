@@ -849,7 +849,20 @@ rightColumn ( messageId, message ) ps model =
                                             (\networkId ->
                                                 case Dict.get networkId ps.networks of
                                                     Just network ->
-                                                        Core.Unit.boldMasterUnit ps.masterUnits network
+                                                        let
+                                                            networkText = Core.Unit.createMasterUnitText ps.masterUnits network
+                                                            networkUrl = "/rer-networks/" ++ String.fromInt networkId
+                                                        in
+                                                        div [ class "flex items-center gap-1 font-medium group" ]
+                                                            [ span [] [ text networkText ]
+                                                            , a 
+                                                                [ href networkUrl
+                                                                , target "_blank"
+                                                                , class "opacity-30 group-hover:opacity-100 transition-opacity duration-200 cursor-pointer"
+                                                                , title "Відкрити мережу в новій вкладці"
+                                                                ]
+                                                                [ i [ class "bi bi-box-arrow-up-right text-sm" ] [] ]
+                                                            ]
 
                                                     _ ->
                                                         text "Невідома мережа"
