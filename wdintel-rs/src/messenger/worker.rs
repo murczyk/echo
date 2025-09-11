@@ -287,12 +287,16 @@ async fn sync_groups(
         }
     }
     for (master_key, datasource_id) in datasource_groups_to_delete.clone() {
-        datasource_group::Entity::delete_many()
+
+        let up_for_delete = datasource_group::Entity::find()
             .filter(datasource_group::Column::DatasourceId.eq(datasource_id))
             .filter(datasource_group::Column::GroupMasterKey.eq(master_key))
-            .exec(txn)
+            .all(txn)
             .await
             .context(h!())?;
+        for g in up_for_delete {
+            g.delete(txn).await.context(h!())?;
+        }
     }
     client_groups_sync_ts_map.insert(client_name.to_string(), now);
 
