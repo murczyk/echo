@@ -741,7 +741,7 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                         Shared.Callsign.viewDefault callsign False
             in
             span
-                [ class "inline-flex items-center gap-1 text-secondary hover:text-secondary-hover transition-colors group"
+                [ class "inline-flex items-center gap-1 text-secondary hover:text-secondary-hover transition-colors group callsign-tooltip"
                 ]
                 [ span [ class "text-uppercase font-medium" ] [ result ]
                 , button
@@ -774,14 +774,14 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
         timeColumn =
             let
                 actionsBlock =
-                    div [ class "flex justify-between" ]
+                    div [ class "flex justify-center gap-4" ]
                         [ let
                             bookmarked =
                                 Set.member msgId vps.bookmarks
                           in
                           div
                             [ title "додати в закладки"
-                            , class "cursor-pointer text-action  text-[20px]"
+                            , class "cursor-pointer text-action  text-[16px]"
                             , onClick
                                 (if bookmarked then
                                     BookmarkRemove msgId
@@ -805,7 +805,7 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                           in
                           div
                             [ title "помітити як важливе"
-                            , class "text-[20px] cursor-pointer text-action"
+                            , class "text-[16px] cursor-pointer text-action"
                             , onClick
                                 (if important then
                                     ImportantRemove msgId
@@ -826,7 +826,7 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                         , HtmlX.viewIf (Core.Auth.hasRole "DeleteMsg" vps.user) <|
                             div
                                 [ title "видалити повідомлення"
-                                , class "text-[20px] cursor-pointer text-action"
+                                , class "text-[16px] cursor-pointer text-action"
                                 , attribute "data-bs-toggle" "modal"
                                 , attribute "data-bs-target" "#deleteMessageModal"
                                 ]
@@ -838,7 +838,7 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                                 ]
                         , div
                             [ class "text-center cursor-pointer"
-                            , style "font-size" "20px"
+                            , style "font-size" "16px"
                             , title "редагувати додаткові поля"
                             , onClick <| OpenSidebarEdit msgId
                             ]
@@ -989,7 +989,7 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
 
         proposedCallsignTag callsign =
             span
-                [ class "inline-flex items-center gap-1 text-secondary hover:text-secondary-hover transition-colors cursor-pointer"
+                [ class "inline-flex items-center gap-1 text-secondary hover:text-secondary-hover transition-colors cursor-pointer callsign-tooltip"
                 , onClick <| AddCallsignS msgId callsign
                 , title "Додати позивний"
                 ]

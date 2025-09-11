@@ -644,6 +644,11 @@ sl-tooltip {
     --show-delay: 200ms;
 }
 
+/* Затримка для підказок позивних, щоб не заважали при наведенні на хрестик */
+.callsign-tooltip sl-tooltip {
+    --show-delay: 400ms;
+}
+
 .table-bordered> :not(caption)>.disabled>* {
     color: var(--bs-gray-600);
     /* FIXME: change it to normal styles */
