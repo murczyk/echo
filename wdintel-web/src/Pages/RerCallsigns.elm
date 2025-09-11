@@ -3,18 +3,6 @@ module Pages.RerCallsigns exposing (AddState, EditCallsignState, Model, Msg, cel
 import Api
 import Auth
 import Bindings as B
-import Shared.Components.Button as Button
-import Shared.Components.Checkbox as Checkbox
-import Shared.Components.DateTime
-import Shared.Components.FloatingPopup
-import Shared.Components.ModalDialog as ModalDialog
-import Shared.Components.Sidebar as Sidebar
-import Shared.Components.Spinner
-import Shared.Components.Table as Table
-import Shared.Components.Table.Column as TableColumn
-import Shared.Components.Table.Config as TableConfig
-import Shared.Components.Tag as Tag
-import Shared.Components.Watermark as Watermark exposing (Watermark)
 import Core.Auth
 import Core.Types exposing (ApiError)
 import Core.UnitHierarchy
@@ -34,6 +22,18 @@ import Route.Path
 import Select
 import Set exposing (Set)
 import Shared
+import Shared.Components.Button as Button
+import Shared.Components.Checkbox as Checkbox
+import Shared.Components.DateTime
+import Shared.Components.FloatingPopup
+import Shared.Components.ModalDialog as ModalDialog
+import Shared.Components.Sidebar as Sidebar
+import Shared.Components.Spinner
+import Shared.Components.Table as Table
+import Shared.Components.Table.Column as TableColumn
+import Shared.Components.Table.Config as TableConfig
+import Shared.Components.Tag as Tag
+import Shared.Components.Watermark as Watermark exposing (Watermark)
 import Shared.Model exposing (isDarkMode)
 import Task
 import Time
@@ -159,7 +159,7 @@ init req _ =
             , from = Shared.Components.DateTime.init ()
             , to = Shared.Components.DateTime.init ()
             , now = Nothing
-            , isIgnoringDateFilter = False
+            , isIgnoringDateFilter = True
             , sortingOrder = UnitAsc
             , showLoadMore = False
             , loadingMore = False
@@ -1439,6 +1439,30 @@ callsignsTableConfig shared model user =
                 }
                 |> Table.withColumnWidth "12%"
             , Table.veryCustomColumn
+                { name = "Підрозділ"
+                , viewData =
+                    \callsign ->
+                        { attributes = []
+                        , children =
+                            [ case
+                                case shared.masterUnits of
+                                    Success units ->
+                                        ListX.find (\u -> u.id == callsign.unitId) (Dict.values units)
+
+                                    _ ->
+                                        Nothing
+                              of
+                                Nothing ->
+                                    text "<Виберіть підрозділ>"
+
+                                Just unit ->
+                                    text unit.name
+                            ]
+                        }
+                , sorter = Table.unsortable
+                }
+                |> Table.withColumnWidth "16%"
+            , Table.veryCustomColumn
                 { name = "Коментар"
                 , viewData =
                     \callsign ->
@@ -1501,30 +1525,6 @@ callsignsTableConfig shared model user =
                 , sorter = Table.unsortable
                 }
                 |> Table.withColumnWidth "21%"
-            , Table.veryCustomColumn
-                { name = "Підрозділ"
-                , viewData =
-                    \callsign ->
-                        { attributes = []
-                        , children =
-                            [ case
-                                case shared.masterUnits of
-                                    Success units ->
-                                        ListX.find (\u -> u.id == callsign.unitId) (Dict.values units)
-
-                                    _ ->
-                                        Nothing
-                              of
-                                Nothing ->
-                                    text "<Виберіть підрозділ>"
-
-                                Just unit ->
-                                    text unit.name
-                            ]
-                        }
-                , sorter = Table.unsortable
-                }
-                |> Table.withColumnWidth "16%"
             , Table.veryCustomColumn
                 { name = "Зустрічається у підрозділах"
                 , viewData =
