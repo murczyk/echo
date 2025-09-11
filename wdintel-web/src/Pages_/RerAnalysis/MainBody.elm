@@ -343,7 +343,7 @@ view user model shared route =
                 , div [ class "flex items-center gap-1" ]
                     [ button
                         [ onClick Refresh
-                        , class "outline-0! border-1! border-border rounded-sm! bg-transparent text-[21px]! transition-colors duration-350 hover:bg-action! hover:text-bw! py-[1px] px-[6px]"
+                        , class "outline-0! border-1! border-border rounded-sm! bg-bw text-[21px]! transition-colors duration-350 hover:bg-action! hover:text-bw! py-[1px] px-[6px]"
                         , title "Оновити"
                         ]
                         [ if isLoadingStats model then
@@ -354,7 +354,7 @@ view user model shared route =
                         ]
                     , button
                         [ onClick ClearAllFilters
-                        , class "outline-0! border-1! border-border rounded-sm! bg-transparent text-[21px]! transition-colors duration-350 hover:bg-action! hover:text-bw! py-[1px] px-[6px]"
+                        , class "outline-0! border-1! border-border rounded-sm! bg-bw text-[21px]! transition-colors duration-350 hover:bg-action! hover:text-bw! py-[1px] px-[6px]"
                         , title "Скинути фільтри"
                         ]
                         [ i [ class "bi bi-x-octagon" ] []
@@ -701,32 +701,32 @@ view user model shared route =
                 _ ->
                     div [] []
     in
-    div []
+    div [ class "bg-[var(--background-color)]" ]
         [ -- viewIf model.showReportConstructor reportConstructorBlock
           viewReportConstructor
         , div
-            [ class "page-rer-analysis overflow-y-hidden bg-card grid grid-cols-24 gap-2"
+            [ class "page-rer-analysis overflow-y-hidden grid grid-cols-24 gap-2"
             , style "height" <| "calc(100vh - " ++ fromInt navbarHeightPx ++ "px)"
             ]
             [ div
-                [ class "overflow-auto text-sm col-span-5 h-full"
+                [ class "overflow-auto text-sm col-span-5 h-full "
                 ]
-                [ Pages_.RerAnalysis.Filters.leftColumn (isDarkMode shared.themeMode) user model ]
+                [ Pages_.RerAnalysis.Filters.view (isDarkMode shared.themeMode) user model ]
             , div
                 [ class "col-span-19 flex flex-col h-full relative  mt-4 overflow-auto"
                 , id "messages-div"
                 ]
                 [ div
-                    [ class "fixed bottom-[20px] right-[30px] opacity-50"
+                    [ class "fixed bottom-[40px] right-[30px] opacity-50"
                     , onClick <| ScrollMessagesToTop
                     ]
                     [ span [ class "text-[2rem] cursor-pointer" ]
                         [ i [ class "bi bi-arrow-up-circle" ] [] ]
                     ]
                 , div
-                    [ class "bg-body sticky top-0 z-50"
+                    [ class "sticky top-0 z-50 bg-[var(--background-color)]"
                     ]
-                    [ div [ class "flex items-center justify-between px-4 mb-2" ]
+                    [ div [ class "flex items-center justify-between px-4 mb-2 " ]
                         [ div [ class "flex items-center" ]
                             [ h1 [ class "text-xl font-semibold" ] [ text "аналіз" ]
                             , headerControls

@@ -1,4 +1,4 @@
-module Pages_.RerAnalysis.Filters exposing (leftColumn)
+module Pages_.RerAnalysis.Filters exposing (view)
 
 import Bindings as B
 import Dict
@@ -90,8 +90,8 @@ filterMenuBlockCountOutOf config content =
         ]
 
 
-leftColumn : Bool -> B.User -> Model -> Html Msg
-leftColumn isDark user model =
+view : Bool -> B.User -> Model -> Html Msg
+view isDark user model =
     let
         renderSavedFilter ( filterId, filter ) =
             let
@@ -712,7 +712,7 @@ leftColumn isDark user model =
                 ]
     in
     div
-        [ class "flex flex-col p-2 bg-[var(--background-color)] min-h-full"
+        [ class "flex flex-col p-2  min-h-full"
         , style "min-height" "100%"
         ]
     <|
