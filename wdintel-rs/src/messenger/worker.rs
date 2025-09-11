@@ -294,7 +294,9 @@ async fn sync_groups(
             .await
             .context(h!())?;
         for g in up_for_delete {
-            g.delete(txn).await.context(h!())?;
+            if let Err(e) = g.delete(txn).await {
+                error!("{e:?}");
+            }
         }
     }
     client_groups_sync_ts_map.insert(client_name.to_string(), now);
