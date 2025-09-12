@@ -17,6 +17,7 @@ use crate::rer_importer::reports::{
 };
 use crate::sigint::etalonka::query::*;
 use crate::sigint::etalonka::types::*;
+use crate::sigint::etalonka::util::*;
 use std::str::FromStr;
 
 const OLD_CALLSIGNS_COLOR: &str = "696969";
@@ -34,6 +35,7 @@ const TABLE_HEADER_STYLE_NAME: &str = "Table Header";
 
 pub mod query;
 pub mod types;
+pub mod util;
 
 pub enum CallsignTableType {
     MainRadioStations,
@@ -182,7 +184,7 @@ pub async fn generate_networks_docx_report(
     Ok(outpath)
 }
 
-//  Etalonka report according to the MO form
+///  Etalonka report according to the MO form
 pub async fn etalonka_according_the_form(
     env: &actix_web::web::Data<Env>,
     settings: &EtalonkaSettings,
@@ -333,7 +335,7 @@ pub async fn etalonka_according_the_form(
     Ok(doc)
 }
 
-//  Etalonka report according to the MO form
+///  Extended talonka report
 pub async fn etalonka_extended(
     env: &actix_web::web::Data<Env>,
     settings: &EtalonkaExtendedSettings,
@@ -580,7 +582,7 @@ fn add_report_styles(doc: Docx) -> Docx {
         .add_style(table_header_style)
 }
 
-/// Add header to the report
+/// Add header text to the report
 fn add_report_header(doc: Docx) -> Docx {
     doc.add_paragraph(
             Paragraph::new()
@@ -1609,116 +1611,12 @@ pub fn build_network_unit_signals_table(
     build_table(signals, vec![], row_builder, width_unit, None)
 }
 
-fn add_field(
-    doc: Docx,
-    field_name: &str,
-    value: &str,
-    // numbering_id: usize,
-) -> Docx {
-    doc.add_paragraph(
-        Paragraph::new()
-            // .numbering(NumberingId::new(numbering_id), IndentLevel::new(0))
-            .add_run(Run::new().add_text(field_name).bold())
-            .add_run(Run::new().add_text(value)),
-    )
-}
-
-fn gen_style_id_by_name(name: &str) -> String {
-    format!("Style_{}", name.replace(" ", ""))
-}
-
-fn define_new_paragraph_style(
-    name: &str,
-    font_name: &str,
-    font_size: usize,
-    bold: bool,
-    align: AlignmentType,
-) -> Style {
-    let style = Style::new(gen_style_id_by_name(name), StyleType::Paragraph)
-        .name(name)
-        .based_on("Normal")
-        .next("Normal");
-
-    let mut run_property = RunProperty::new()
-        .fonts(RunFonts::new().ascii(font_name))
-        .size(font_size);
-
-    if bold {
-        run_property = run_property.bold();
-    }
-
-    Style {
-        run_property,
-        paragraph_property: ParagraphProperty::new().align(align),
-        ..style
-    }
-}
-
 fn get_color(is_old: bool) -> Option<String> {
     if is_old {
         Some(OLD_CALLSIGNS_COLOR.to_string())
     } else {
         None
     }
-}
-
-fn create_table_header_cell(
-    width: usize,
-    fill: Option<&str>,
-    style_id: &str,
-    text: &str,
-    with_empty_borders: bool,
-    grid_span: usize,
-) -> TableCell {
-    let table_cell_borders = if with_empty_borders {
-        TableCellBorders::with_empty()
-    } else {
-        TableCellBorders::new()
-    };
-
-    let mut cell = TableCell::new()
-        .width(width, WidthType::Dxa)
-        .add_paragraph(
-            Paragraph::new()
-                .style(style_id)
-                .add_run(Run::new().add_text(text)),
-        )
-        .set_borders(table_cell_borders);
-
-    if let Some(fill_color) = fill {
-        cell = cell.shading(Shading::new().fill(fill_color));
-    }
-
-    if grid_span > 0 {
-        cell = cell.grid_span(grid_span);
-    }
-
-    cell
-}
-
-fn create_table_data_cell(
-    width: usize,
-    text: &str,
-    color: Option<String>,
-    with_empty_borders: bool,
-) -> TableCell {
-    let table_cell_borders = if with_empty_borders {
-        TableCellBorders::with_empty()
-    } else {
-        TableCellBorders::new()
-    };
-
-    TableCell::new()
-        .width(width, WidthType::Dxa)
-        .add_paragraph(paragraph_with_linebreaks(text, color.as_deref()))
-        .set_borders(table_cell_borders)
-}
-
-fn format_datetime_field(dt_millis: Option<i64>) -> String {
-    dt_millis
-        .and_then(|millis| dt_from_millis(millis).ok())
-        .map(|dt| dt.format("%d.%m.%Y %H:%M").to_string())
-        .unwrap_or_default()
 }
 
 fn get_unique_field_as_string<T, F>(
@@ -1738,26 +1636,4 @@ where
     } else {
         String::new()
     }
-}
-
-fn paragraph_with_linebreaks(text: &str, color: Option<&str>) -> Paragraph {
-    let mut paragraph = Paragraph::new();
-    let lines: Vec<&str> = text.trim().split('\n').collect();
-
-    for (i, line) in lines.iter().enumerate() {
-        let mut run = Run::new().add_text(line.to_string());
-
-        if let Some(c) = color {
-            run = run.color(c);
-        }
-
-        paragraph = paragraph.add_run(run);
-
-        if i < lines.len() - 1 {
-            paragraph = paragraph
-                .add_run(Run::new().add_break(BreakType::TextWrapping));
-        }
-    }
-
-    paragraph
 }
