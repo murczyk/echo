@@ -1056,7 +1056,7 @@ update user shared route msg model =
 
         GotStatsNetworks (Err e) ->
             ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження мереж" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження мереж" e
             )
 
         GotStatsNetworks (Ok rsp) ->
@@ -2105,9 +2105,10 @@ update user shared route msg model =
 
         SavedFilterMenuToggle id ->
             ( { model
-                | savedFilterMenuOpen = 
+                | savedFilterMenuOpen =
                     if model.savedFilterMenuOpen == Just id then
                         Nothing
+
                     else
                         Just id
               }
@@ -2728,7 +2729,7 @@ update user shared route msg model =
                             Select.update imsg model.selNetworkState
 
                         ( updatedSelectedItems, state ) =
-                            Le.Block.Select.multiUpdMenuOpen mAction model.networksSelected imodel2
+                            Utils.Select.multiUpdMenuOpen mAction model.networksSelected imodel2
 
                         m2 =
                             { model

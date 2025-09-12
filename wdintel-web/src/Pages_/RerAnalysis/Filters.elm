@@ -741,7 +741,7 @@ view isDark user model =
             div [ class "py-1 px-2" ]
                 [ Html.map SelNetworkMsg
                     (Html.Styled.toUnstyled <|
-                        Le.Block.Select.renderSelect
+                        Utils.Select.renderSelect
                             selected
                             model.selNetworkState
                             model.selNetworkMenu
