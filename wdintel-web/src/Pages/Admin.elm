@@ -5,6 +5,7 @@ import Api
 import Auth
 import Bindings as B
 import Shared.Components.Button as Button
+import Shared.Components.Checkbox as Checkbox
 import Shared.Components.ModalDialog as ModalDialog
 import Shared.Components.Pager as Pager
 import Shared.Components.Sidebar as Sidebar
@@ -1313,32 +1314,53 @@ update msg model =
             )
 
         ToggleOrphanGroupZone groupKey zoneId ->
-            case model.orphanGroupZoneSelector of
-                Just selector ->
-                    if selector.groupKey == groupKey then
+            -- First check if we're in the assignment dialog
+            case model.orphanGroupAssignmentDialog of
+                Just dialog ->
+                    if dialog.groupKey == groupKey then
                         let
                             updatedZones =
-                                if List.member zoneId selector.selectedZones then
-                                    List.filter ((/=) zoneId) selector.selectedZones
+                                if List.member zoneId dialog.zoneIds then
+                                    List.filter ((/=) zoneId) dialog.zoneIds
 
                                 else
-                                    zoneId :: selector.selectedZones
+                                    zoneId :: dialog.zoneIds
                         in
-                        ( { model | orphanGroupZoneSelector = Just { selector | selectedZones = updatedZones } }
+                        ( { model | orphanGroupAssignmentDialog = Just { dialog | zoneIds = updatedZones } }
                         , E.none
                         )
 
                     else
-                        -- Переключаємося на іншу групу
-                        ( { model | orphanGroupZoneSelector = Just { groupKey = groupKey, selectedZones = [ zoneId ] } }
-                        , E.none
-                        )
+                        ( model, E.none )
 
                 Nothing ->
-                    -- Створюємо новий селектор для групи
-                    ( { model | orphanGroupZoneSelector = Just { groupKey = groupKey, selectedZones = [ zoneId ] } }
-                    , E.none
-                    )
+                    -- Fall back to the old zone selector logic
+                    case model.orphanGroupZoneSelector of
+                        Just selector ->
+                            if selector.groupKey == groupKey then
+                                let
+                                    updatedZones =
+                                        if List.member zoneId selector.selectedZones then
+                                            List.filter ((/=) zoneId) selector.selectedZones
+
+                                        else
+                                            zoneId :: selector.selectedZones
+                                in
+                                ( { model | orphanGroupZoneSelector = Just { selector | selectedZones = updatedZones } }
+                                , E.none
+                                )
+
+                            else
+                                -- Переключаємося на іншу групу
+                                ( { model | orphanGroupZoneSelector = Just { groupKey = groupKey, selectedZones = [ zoneId ] } }
+                                , E.none
+                                )
+
+                        Nothing ->
+                            -- Створюємо новий селектор для групи
+                            ( { model | orphanGroupZoneSelector = Just { groupKey = groupKey, selectedZones = [ zoneId ] } }
+                            , E.none
+                            )
 
         SaveOrphanGroupZones ->
             let
@@ -2881,7 +2903,31 @@ renderOrphanGroupAssignmentDialog isDark model dialog =
             , div [ class "mb-4" ]
                 [ text ("Група: " ++ getGroupDisplayName model dialog.groupKey)
                 , br [] []
-                , text ("Напрямки: " ++ String.join ", " (List.map (getZoneName model) dialog.zoneIds))
+                , if List.length model.zones > 1 then
+                    -- Multiple zones - show zone selection
+                    div [ class "mt-2" ]
+                        [ label [ class "block text-sm font-medium mb-2" ]
+                            [ text "Виберіть напрямки:" ]
+                        , div [ class "space-y-2" ]
+                            (List.map
+                                (\( zoneId, zone ) ->
+                                    let
+                                        isSelected =
+                                            List.member zoneId dialog.zoneIds
+                                    in
+                                    Checkbox.new
+                                        { isChecked = isSelected
+                                        , onToggle = \_ -> ToggleOrphanGroupZone dialog.groupKey zoneId
+                                        }
+                                        |> Checkbox.withContent [ text zone.name ]
+                                        |> Checkbox.view
+                                )
+                                model.zones
+                            )
+                        ]
+                  else
+                    -- Single zone - just show the zone name
+                    text ("Напрямок: " ++ String.join ", " (List.map (getZoneName model) dialog.zoneIds))
                 ]
             , div [ class "mb-4" ]
                 [ Toggle.new
@@ -3309,44 +3355,13 @@ renderOrphanGroupsTable model groups =
                                     text ""
 
                           else
-                            -- Multiple zones - compact zone selector
-                            let
-                                selectedZones =
-                                    case currentModel.orphanGroupZoneSelector of
-                                        Just selector ->
-                                            if selector.groupKey == group.masterKey then
-                                                selector.selectedZones
-
-                                            else
-                                                []
-
-                                        Nothing ->
-                                            []
-
-                                hasSelection =
-                                    not (List.isEmpty selectedZones)
-                            in
-                            div [ class "flex items-center gap-1" ]
-                                [ -- Zone count indicator
-                                  span [ class "text-xs text-gray-600" ]
-                                    [ text (String.fromInt (List.length selectedZones) ++ "/" ++ String.fromInt zoneCount) ]
-                                , -- Add button if zones selected
-                                  if hasSelection then
-                                    button
-                                        [ class "flex items-center justify-center w-6 h-6 rounded bg-green-100 hover:bg-green-200 text-green-700 transition-colors"
-                                        , onClick (OpenOrphanGroupAssignmentDialog group.masterKey selectedZones)
-                                        , title "Додати до вибраних напрямків"
-                                        ]
-                                        [ i [ class "bi bi-plus text-xs" ] [] ]
-
-                                  else
-                                    button
-                                        [ class "flex items-center justify-center w-6 h-6 rounded bg-gray-100 hover:bg-gray-200 text-gray-600 transition-colors"
-                                        , onClick (OpenOrphanGroupZoneSelector group.masterKey)
-                                        , title "Вибрати напрямки"
-                                        ]
-                                        [ i [ class "bi bi-gear text-xs" ] [] ]
+                            -- Multiple zones - open assignment dialog with all zones
+                            button
+                                [ class "flex items-center justify-center w-6 h-6 rounded bg-green-100 hover:bg-green-200 text-green-700 transition-colors"
+                                , onClick (OpenOrphanGroupAssignmentDialog group.masterKey (List.map Tuple.first currentModel.zones))
+                                , title "Додати до напрямків"
                                 ]
+                                [ i [ class "bi bi-plus text-xs" ] [] ]
                         ]
                 ]
             }
