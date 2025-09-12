@@ -1271,6 +1271,15 @@ organism_group_list toMsg =
         }
 
 
+organism_available_groups : (Result ApiError (List SignalGroupFull) -> msg) -> Int -> Cmd msg
+organism_available_groups toMsg organismId =
+    Http.post
+        { url = "/api/organism/available-groups"
+        , body = Http.jsonBody (Encode.int organismId)
+        , expect = leExpectJson toMsg (Decode.list signalGroupFullDecoder)
+        }
+
+
 create_login_delta : (Result ApiError Login -> msg) -> CreateLoginReq -> Cmd msg
 create_login_delta toMsg req =
     Http.post

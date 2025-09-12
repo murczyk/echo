@@ -16,7 +16,7 @@ import Maybe
 import Page exposing (Page)
 import Route exposing (Route)
 import Select
-import Set
+import Set exposing (Set)
 import Shared
 import Shared.Components.Button as Button
 import Shared.Components.Checkbox as Checkbox
@@ -114,6 +114,69 @@ getAvailableGroupsForOrganism maybeParentId organismGroups allGroups =
                     |> List.filter (\group -> List.member group.masterKey parentGroups)
 
 
+loadComputedGroups : Int -> Model -> ( Model, Effect Msg )
+loadComputedGroups organismId model =
+    if Set.member organismId model.loadingComputedGroups then
+        -- Вже завантажуємо, не робимо повторний запит
+        ( model, E.none )
+
+    else
+        let
+            newModel =
+                { model | loadingComputedGroups = Set.insert organismId model.loadingComputedGroups }
+        in
+        ( newModel, E.sendCmd <| Api.organism_available_groups (GotAvailableGroups organismId) organismId )
+
+
+getComputedGroups : Int -> Model -> List B.SignalGroupFull
+getComputedGroups organismId model =
+    Dict.get organismId model.computedGroups
+        |> Maybe.withDefault []
+
+
+isLoadingComputedGroups : Int -> Model -> Bool
+isLoadingComputedGroups organismId model =
+    Set.member organismId model.loadingComputedGroups
+
+
+hasComputedGroups : Int -> Model -> Bool
+hasComputedGroups organismId model =
+    Dict.member organismId model.computedGroups
+
+
+clearComputedGroups : Int -> Model -> Model
+clearComputedGroups organismId model =
+    { model
+        | computedGroups = Dict.remove organismId model.computedGroups
+        , loadingComputedGroups = Set.remove organismId model.loadingComputedGroups
+    }
+
+
+loadComputedGroupsForAll : Model -> ( Model, Effect Msg )
+loadComputedGroupsForAll model =
+    let
+        organismIds =
+            model.organisms |> List.map .id
+
+        notLoadingIds =
+            organismIds |> List.filter (\id -> not (Set.member id model.loadingComputedGroups))
+
+        notLoadedIds =
+            notLoadingIds |> List.filter (\id -> not (Dict.member id model.computedGroups))
+
+        newModel =
+            { model | loadingComputedGroups = Set.union model.loadingComputedGroups (Set.fromList notLoadedIds) }
+
+        commands =
+            notLoadedIds |> List.map (\id -> Api.organism_available_groups (GotAvailableGroups id) id)
+    in
+    if List.isEmpty commands then
+        ( model, E.none )
+
+    else
+        ( newModel, E.sendCmd <| Cmd.batch commands )
+
+
 type SidebarType
     = CreateSidebar
     | EditSidebar
@@ -153,6 +216,8 @@ type alias Model =
     , groupsValidation : Maybe (List String)
     , aorList : RD.RemoteData ApiError (List B.AreaOfResponsibility)
     , sidebarType : Maybe SidebarType
+    , computedGroups : Dict Int (List B.SignalGroupFull)
+    , loadingComputedGroups : Set Int
     }
 
 
@@ -233,6 +298,8 @@ init _ =
       , aorList = RD.NotAsked
       , tableState = Table.initialSort "Назва"
       , sidebarType = Nothing
+      , computedGroups = Dict.empty
+      , loadingComputedGroups = Set.empty
       }
     , E.sendCmd <|
         Cmd.batch
@@ -270,6 +337,7 @@ type Msg
     | GotAllGroups (Result ApiError (List B.SignalGroupFull))
     | GotOrganismGroups (Result ApiError (List B.OrganismGroup))
     | GotAorList (Result ApiError (List B.AreaOfResponsibility))
+    | GotAvailableGroups Int (Result ApiError (List B.SignalGroupFull))
     | AddGroupToOrganismDone Int String Bool (Result ApiError ())
     | RemoveGroupFromOrganismDone Int String (Result ApiError ())
     | EditOrganismSave
@@ -299,8 +367,11 @@ update msg model =
 
                 inpParentOrganism2 =
                     { inpParentOrganism | items = organismsMenuItems }
+
+                newModel =
+                    { model | organisms = res, inpParentOrganism = inpParentOrganism2 }
             in
-            ( { model | organisms = res, inpParentOrganism = inpParentOrganism2 }, E.none )
+            loadComputedGroupsForAll newModel
 
         AddRoleSelMsg selMsg ->
             let
@@ -667,11 +738,12 @@ update msg model =
             ( m2
             , E.sendCmd <|
                 Cmd.batch
-                    (List.map
-                        (\x ->
-                            Api.add_group_to_organism (AddGroupToOrganismDone organism.id x False) { organismId = organism.id, groupName = x }
-                        )
-                        groupsToAdd
+                    (Api.organism_available_groups (GotAvailableGroups organism.id) organism.id
+                        :: List.map
+                            (\x ->
+                                Api.add_group_to_organism (AddGroupToOrganismDone organism.id x False) { organismId = organism.id, groupName = x }
+                            )
+                            groupsToAdd
                     )
             )
 
@@ -841,6 +913,12 @@ update msg model =
         GotAorList (Err e) ->
             ( { model | aorList = RD.Failure e }, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження смуг відповідальності" e )
 
+        GotAvailableGroups organismId (Ok groups) ->
+            ( { model | computedGroups = Dict.insert organismId groups model.computedGroups, loadingComputedGroups = Set.remove organismId model.loadingComputedGroups }, E.none )
+
+        GotAvailableGroups organismId (Err e) ->
+            ( { model | loadingComputedGroups = Set.remove organismId model.loadingComputedGroups }, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails ("Помилка завантаження computed груп для організму " ++ String.fromInt organismId) e )
+
         AddAorSelMsg selMsg ->
             let
                 ( mAction, iState, iCmd ) =
@@ -988,7 +1066,11 @@ update msg model =
             ( { model | sidebarType = Nothing }, E.none )
 
         EditOrganismDone (Ok o) ->
-            ( { model | editOrganism = Nothing, sidebarType = Nothing, organisms = model.organisms |> ListX.updateIf (\x -> x.id == o.id) (\y -> { y | name = o.name, parentId = o.parentId, roles = o.roles, enabled = o.enabled, aorIds = o.aorIds }) }, E.none )
+            let
+                newModel =
+                    { model | editOrganism = Nothing, sidebarType = Nothing, organisms = model.organisms |> ListX.updateIf (\x -> x.id == o.id) (\y -> { y | name = o.name, parentId = y.parentId, roles = o.roles, enabled = o.enabled, aorIds = o.aorIds }) }
+            in
+            loadComputedGroups o.id newModel
 
         EditOrganismDone (Err e) ->
             ( model, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення організму" e )
@@ -1065,8 +1147,8 @@ subscriptions model =
 -- TABLE CONFIGURATION
 
 
-organismsTableConfig : List B.SignalGroupFull -> List B.OrganismGroup -> List B.Organism -> Maybe Time.Zone -> Maybe Int -> RD.RemoteData ApiError (List B.AreaOfResponsibility) -> Table.Config B.Organism Msg
-organismsTableConfig groups organismGroups allOrganisms timeZone editingOrganismId aorList =
+organismsTableConfig : List B.SignalGroupFull -> List B.OrganismGroup -> List B.Organism -> Maybe Time.Zone -> Maybe Int -> RD.RemoteData ApiError (List B.AreaOfResponsibility) -> Model -> Table.Config B.Organism Msg
+organismsTableConfig groups organismGroups allOrganisms timeZone editingOrganismId aorList model =
     let
         defaultCustomizations =
             Table.defaultCustomizations
@@ -1192,6 +1274,50 @@ organismsTableConfig groups organismGroups allOrganisms timeZone editingOrganism
                 }
                 |> Table.withColumnWidth "19%"
             , Table.veryCustomColumn
+                { name = "Доступні групи"
+                , viewData =
+                    \o ->
+                        { attributes = [ class "col-wide" ]
+                        , children =
+                            [ div [ class "flex flex-wrap gap-1" ]
+                                (let
+                                    computedGroups =
+                                        getComputedGroups o.id model
+
+                                    isLoading =
+                                        isLoadingComputedGroups o.id model
+                                 in
+                                 if isLoading then
+                                    [ span [ class "text-muted-foreground text-sm" ] [ text "Завантаження..." ] ]
+
+                                 else
+                                    computedGroups
+                                        |> List.sortBy (\group -> String.toLower (groupName group))
+                                        |> List.map
+                                            (\group ->
+                                                span
+                                                    [ class "badge badge--ochre-light"
+                                                    , title (groupName group)
+                                                    ]
+                                                    [ text (groupName group) ]
+                                            )
+                                )
+                            ]
+                        }
+                , sorter =
+                    Table.increasingOrDecreasingBy
+                        (\o ->
+                            let
+                                computedGroups =
+                                    getComputedGroups o.id model
+                            in
+                            computedGroups
+                                |> List.map groupName
+                                |> String.join ", "
+                        )
+                }
+                |> Table.withColumnWidth "19%"
+            , Table.veryCustomColumn
                 { name = "Ролі"
                 , viewData =
                     \o ->
@@ -1261,7 +1387,7 @@ organismsTableConfig groups organismGroups allOrganisms timeZone editingOrganism
                                         )
                                     |> List.map
                                         (\aor ->
-                                            span [ class "badge badge--blue-light", title aor.name ]
+                                            span [ class "badge badge--neutral", title aor.name ]
                                                 [ text aor.name ]
                                         )
                                 )
@@ -1684,7 +1810,7 @@ mainBlock isDark model =
             ]
         , div [ class "table-responsive-modern" ]
             [ Table.view
-                (organismsTableConfig model.groups model.organismGroups model.organisms model.timeZone (Maybe.map Tuple.first model.editOrganism) model.aorList)
+                (organismsTableConfig model.groups model.organismGroups model.organisms model.timeZone (Maybe.map Tuple.first model.editOrganism) model.aorList model)
                 model.tableState
                 (filterOrganismsByName model.nameFilter model.organisms)
             ]
