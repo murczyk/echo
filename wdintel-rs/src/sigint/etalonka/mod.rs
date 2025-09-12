@@ -28,6 +28,10 @@ const DEFAULT_OPERATION_TYPE: &str = "ведення службового рад
 const DEFAULT_OPERATION_PERIOD: &str = "цілодобово";
 const DEFAULT_MODULATION: &str = "уточнюється";
 
+const PARAGRAPH_1_STYLE_NAME: &str = "Paragraph 1";
+const PARAGRAPH_2_STYLE_NAME: &str = "Paragraph 2";
+const TABLE_HEADER_STYLE_NAME: &str = "Table Header";
+
 pub mod query;
 pub mod types;
 
@@ -66,7 +70,7 @@ pub async fn report_networks(
     let outpath = generate_networks_docx_report(
         &env,
         &filename,
-        &req.settings,
+        &req.etalonka_type,
         &user_login,
         groups,
         networks_data,
@@ -116,7 +120,7 @@ pub async fn report_networks_batch_id(
     let outpath = generate_networks_docx_report(
         &env,
         &filename,
-        &req.settings,
+        &req.etalonka_type,
         &user_login,
         groups,
         networks_data,
@@ -142,19 +146,11 @@ pub async fn report_networks_batch_id(
 pub async fn generate_networks_docx_report(
     env: &actix_web::web::Data<Env>,
     filename: &str,
-    settings: &EtalonkaSettings,
+    etalonka_type: &EtalonkaReportType,
     user_id: &str,
     groups: Vec<String>,
     networks_data: HashMap<String, Vec<NetworkEtalonkaResult>>,
 ) -> Result<PathBuf, AppError> {
-    let sources: HashMap<i64, String> =
-        crate::sigint::source::bl_list_sources(&env.dbx)
-            .await
-            .context(h!())?
-            .into_iter()
-            .map(|s| (s.id, s.name))
-            .collect();
-
     let storage_dir =
         std::path::PathBuf::from_str(&env.config.storage_dir).context(h!())?;
     let outfolder = storage_dir.join("reports_log");
@@ -163,94 +159,48 @@ pub async fn generate_networks_docx_report(
     let outpath = outfolder.join(filename);
     let file = std::fs::File::create(outpath.clone())?;
 
-    // Define styles for the document
-    let paragraph_1_style_name = "Paragraph 1";
-    let paragraph_1_style_id = gen_style_id_by_name(paragraph_1_style_name);
-    let paragraph_1_style = define_new_paragraph_style(
-        paragraph_1_style_name,
-        "Times New Roman",
-        24,
-        true,
-        AlignmentType::Left,
-    );
+    let doc = match etalonka_type {
+        EtalonkaReportType::AccordingToTheForm(settings) => {
+            etalonka_according_the_form(
+                env,
+                settings,
+                user_id,
+                groups,
+                networks_data,
+            )
+            .await
+            .c(h!())?
+        }
+        EtalonkaReportType::ExtendedReport(settings) => {
+            etalonka_extended(env, settings, user_id, groups, networks_data)
+                .await
+                .c(h!())?
+        }
+    };
 
-    let paragraph_2_style_name = "Paragraph 2";
-    let paragraph_2_style_id = gen_style_id_by_name(paragraph_2_style_name);
-    let paragraph_2_style = define_new_paragraph_style(
-        paragraph_2_style_name,
-        "Times New Roman",
-        24,
-        false,
-        AlignmentType::Left,
-    );
+    doc.build().pack(file).context(h!())?;
+    Ok(outpath)
+}
 
-    let table_header_style_name = "Table Header";
-    let table_header_style_id = gen_style_id_by_name(table_header_style_name);
-    let table_header_style = define_new_paragraph_style(
-        table_header_style_name,
-        "Times New Roman",
-        24,
-        true,
-        AlignmentType::Center,
-    );
-
-    let invisible_paragraph = Paragraph::new()
-        .add_run(Run::new().size(1))
-        .line_spacing(LineSpacing::new().before(0).after(0).line(0));
-
+//  Etalonka report according to the MO form
+pub async fn etalonka_according_the_form(
+    env: &actix_web::web::Data<Env>,
+    settings: &EtalonkaSettings,
+    user_id: &str,
+    groups: Vec<String>,
+    networks_data: HashMap<String, Vec<NetworkEtalonkaResult>>,
+) -> Result<Docx, AppError> {
     // Unit	Twips Equivalent
     // 1 inch	1440 twips
     // 1 cm	~567 twips
     // 1 pt (point)	20 twips
-    let width_unit;
+    let width_unit = 195;
 
-    let mut doc = docx_rs::Docx::new();
+    let mut doc = init_report(PageOrientationType::Portrait, 11906, 16838);
+    doc = add_report_styles(doc);
+    doc = add_report_header(doc);
 
-    if settings.networks_only {
-        width_unit = 195;
-        doc = doc
-            .page_orient(PageOrientationType::Portrait)
-            .page_size(11906, 16838)
-    } else {
-        width_unit = 300;
-        doc = doc
-            .page_orient(PageOrientationType::Landscape)
-            .page_size(16838, 11906)
-    }
-    // Create report document
-    doc = doc
-        .default_size(24)
-        .default_fonts(RunFonts::new().ascii("Times New Roman"))
-        .page_margin(
-            docx_rs::page_margin::PageMargin::new()
-                .left(1984)     // 3.5 cm
-                .right(567)     // 1 cm
-                .top(1134)      // 2 cm
-                .bottom(1134)   // 2 cm
-        )
-        .add_style(table_header_style)
-        .add_style(paragraph_1_style)
-        .add_style(paragraph_2_style)
-        .add_paragraph(
-            Paragraph::new()
-                .style(&paragraph_1_style_id)
-                .add_run(Run::new().add_text(
-                    "ДОНЕСЕННЯ").bold())
-                .align(docx_rs::alignment_type::AlignmentType::Center),
-        )
-        .add_paragraph(
-            Paragraph::new()
-                .style(&paragraph_1_style_id)
-                .add_run(Run::new().add_text(
-                    r#"“Еталонні описи джерел радіовипромінювання противника у зоні відповідальності угруповання військ (сил)”"#).bold())
-                .align(docx_rs::alignment_type::AlignmentType::Center),
-        )
-        .add_paragraph(Paragraph::new());
-
-    // let mut numbering_id = 0;
     for (i, (unit_name, unit_networks)) in networks_data.iter().enumerate() {
-        // doc = doc.add_numbering(Numbering::new(numbering_id, 0));
-
         // Add unit name as title
         doc = doc.add_paragraph(
             Paragraph::new()
@@ -258,21 +208,11 @@ pub async fn generate_networks_docx_report(
         );
 
         for (index, network) in unit_networks.iter().enumerate() {
-            let filter = EtalonkaFilter {
-                since_date_inclusive_ms: Some(
-                    network.active_from.and_utc().timestamp_millis(),
-                ),
-                till_date_noninclusive_ms: Some(
-                    network
-                        .active_to
-                        .map(|dt| dt.and_utc().timestamp_millis())
-                        .unwrap_or_else(|| {
-                            Utc::now().naive_utc().and_utc().timestamp_millis()
-                        }),
-                ),
-                network_id: network.id,
-                filter_further_investigation: None,
-            };
+            let filter = Some(NetworkFreqFilter {
+                since_date_inclusive_ms: None,
+                till_date_inclusive_ms: None,
+                active_freqs_only: settings.active_freqs_only,
+            });
 
             let list_network_callsigns_req = ListNetworkCallsignsReq {
                 network_id: network.id,
@@ -298,125 +238,9 @@ pub async fn generate_networks_docx_report(
                 format!("щонайменше {unique_count} ВЗ.")
             };
 
-            let freqs = load_freqs(
-                &env.dbx,
-                &groups,
-                network.id,
-                settings.active_freqs_only,
-            )
-            .await
-            .context(h!())?;
-
-            let network_descriptions_map =
-                crate::sigint::network::bl::get_networks_descriptions(
-                    &env.dbx,
-                    &[network.id],
-                )
+            let freqs = load_freqs(&env.dbx, &groups, network.id, &filter)
                 .await
                 .context(h!())?;
-            let network_descriptions = network_descriptions_map
-                .get(&network.id)
-                .cloned()
-                .unwrap_or_default();
-
-            // doc = add_field(doc, "0. Id: ", &network.id.to_string());
-            doc = add_field(
-                doc,
-                "1. Назва радіомережі: ",
-                &network.network_full_name,
-            );
-
-            doc = add_field(
-                doc,
-                "2. Район функціонування/розгортання: ",
-                network.location.as_deref().unwrap_or_default(),
-            );
-            doc = add_field(
-                doc,
-                "3. Призначення: ",
-                network.purpose.as_deref().unwrap_or(DEFAULT_PURPOSE),
-            );
-            doc = add_field(
-                doc,
-                "4. Склад кореспондентів: ",
-                &correspondents_number,
-            );
-            doc = add_field(doc, "5. Позивні: ", "");
-            let has_main_radio_station =
-                net_callsigns.iter().any(|nc| nc.main_radio_station);
-            if has_main_radio_station {
-                // add callsigns for main radio station
-                let nc_for_main_radio_station = net_callsigns
-                    .iter()
-                    .filter(|nc| nc.main_radio_station)
-                    .cloned()
-                    .collect();
-
-                if let Some(table) = build_network_callsigns_table(
-                    &CallsignTableType::MainRadioStations,
-                    &nc_for_main_radio_station,
-                    &sources,
-                    width_unit,
-                    &table_header_style_id,
-                    settings.networks_only,
-                ) {
-                    doc = doc.add_table(table).add_paragraph(Paragraph::new());
-                }
-            }
-
-            if !net_callsigns.is_empty() {
-                // add callsigns assignet to the network
-                if let Some(table) = build_network_callsigns_table(
-                    if has_main_radio_station {
-                        &CallsignTableType::OtherStations
-                    } else {
-                        &CallsignTableType::AbsentMainStation
-                    },
-                    &net_callsigns
-                        .iter()
-                        .filter(|nc| !nc.main_radio_station)
-                        .cloned() // requires NetworkCallsign: Clone
-                        .collect(),
-                    &sources,
-                    width_unit,
-                    &table_header_style_id,
-                    settings.networks_only,
-                ) {
-                    doc = doc.add_table(table);
-                }
-            }
-            if !net_callsigns.is_empty() {
-                // add all other callsigns in text
-                let callsigns_other = net_callsigns
-                    .iter()
-                    .filter(|c| c.developing)
-                    .map(|c| c.callsign.to_uppercase().clone())
-                    .collect::<Vec<String>>()
-                    .join(", ");
-
-                if !callsigns_other.is_empty() {
-                    doc = doc.add_paragraph(
-                        Paragraph::new()
-                            .add_run(
-                                Run::new()
-                                    .add_text("Приналежність встановлюється - ")
-                                    .bold(),
-                            )
-                            .add_run(Run::new().add_text(callsigns_other)), // .align(
-                                                                            //     docx_rs::alignment_type::AlignmentType::Justified,
-                                                                            // ),
-                    );
-                }
-            }
-            doc = add_field(doc, "6. Робочі частоти: ", "");
-            if let Some(table) = build_freqs_table(
-                &freqs,
-                width_unit,
-                &table_header_style_id,
-                settings.networks_only,
-            ) {
-                doc = doc.add_table(table);
-            }
 
             let modulations = freqs
                 .iter()
@@ -424,139 +248,73 @@ pub async fn generate_networks_docx_report(
                 .collect::<Vec<String>>();
             let unique_modulation = uniq_via_btreeset(&modulations).join(", ");
 
-            doc = add_field(doc, "7. Вид передачі: ", &unique_modulation);
-            doc = add_field(
+            // Add Section 1-4 with general information
+            doc = add_network_report_section_1_4(
                 doc,
-                "8. Режим роботи радіомережі: ",
-                network
-                    .operation_mode
-                    .as_deref()
-                    .unwrap_or(DEFAULT_OPERATION_MODE),
-            );
-            doc = add_field(
-                doc,
-                "9. Характер роботи: ",
-                network
-                    .operation_type
-                    .as_deref()
-                    .unwrap_or(DEFAULT_OPERATION_TYPE),
-            );
-            doc = add_field(
-                doc,
-                "10. Період функціонування: ",
-                network
-                    .operation_period
-                    .as_deref()
-                    .unwrap_or(DEFAULT_OPERATION_PERIOD),
+                &network.network_full_name,
+                &network.location,
+                &network.purpose,
+                &correspondents_number,
             );
 
-            if settings.include_sigint_signs {
-                doc = add_field(
-                    doc,
-                    "11. Розвідувальні ознаки підрозділу: ",
-                    &String::default(),
-                );
-                // first add network description with Sign type
-                if let Some(table) = build_network_description_table(
-                    &network_descriptions,
-                    NetworkDescrType::Sign,
-                    width_unit,
-                    &table_header_style_id,
-                ) {
-                    doc = doc.add_table(table);
-                }
+            // Add Section 5 with network callsigns
+            doc = add_network_callsigns_section(
+                doc,
+                &net_callsigns,
+                None,
+                width_unit,
+                &EtalonkaReportType::AccordingToTheForm(settings.clone()),
+            );
 
-                // then add network unit signals for each unit in network
-                let network_unit_signals =
-                    load_signals_per_network(&env.dbx, network.id)
-                        .await
-                        .context(h!())?;
+            // Add Section 6 with network freques
+            doc = add_network_freqs_section(
+                doc,
+                &freqs,
+                width_unit,
+                &EtalonkaReportType::AccordingToTheForm(settings.clone()),
+            );
 
-                // add invisible paragraph between two tables to avoid ms word issue with corrupted rendering of the first table
-                if !network_unit_signals.is_empty() {
-                    doc = doc.add_paragraph(invisible_paragraph.clone());
-                }
-                for unit_signals in &network_unit_signals {
-                    // if network has multiple units, add unit name
-                    if network_unit_signals.len() > 1
-                        && !unit_signals.signals.is_empty()
-                    {
-                        doc = doc.add_paragraph(
-                            Paragraph::new()
-                                .style(&paragraph_2_style_id)
-                                .add_run(
-                                    Run::new()
-                                        .add_text(
-                                            format!(
-                                                "{}: ",
-                                                unit_signals.unit_name
-                                            )
-                                            .as_str(),
-                                        )
-                                        .bold(),
-                                ),
-                        );
-                    }
-                    // Add signals table for each unit
-                    if !unit_signals.signals.is_empty() {
-                        if let Some(table) = build_network_unit_signals_table(
-                            &unit_signals.signals,
-                            width_unit,
-                            &table_header_style_id,
-                        ) {
-                            doc = doc.add_table(table);
-                        }
-                    }
-                }
-            }
+            // Add Section 7-10 with general information
+            doc = add_network_report_section_7_10(
+                doc,
+                &unique_modulation,
+                &network.operation_mode,
+                &network.operation_type,
+                &network.operation_period,
+            );
 
-            if settings.include_confirmation {
-                // first add network comments
-                doc = add_field(
-                    doc,
-                    "12. Обгрунтування  прив'язки: ",
-                    &String::default(),
-                );
-
-                // then add network description with Confitmation type
-                if let Some(table) = build_network_description_table(
-                    &network_descriptions,
-                    NetworkDescrType::Confirmation,
-                    width_unit,
-                    &table_header_style_id,
-                ) {
-                    doc = doc.add_table(table);
-                }
-            }
-
-            if !settings.networks_only && settings.include_pelengs_map {
-                let pelengs_map = load_pelengs_map(&env.dbx, &groups, &filter)
+            // Add Section 11-12. Розвідувальні ознаки підрозділу, Обгрунтування  прив'язки
+            if settings.include_sigint_signs || settings.include_confirmation {
+                let network_descriptions_map =
+                    crate::sigint::network::bl::get_networks_descriptions(
+                        &env.dbx,
+                        &[network.id],
+                    )
                     .await
                     .context(h!())?;
+                let network_descriptions = network_descriptions_map
+                    .get(&network.id)
+                    .cloned()
+                    .unwrap_or_default();
 
-                if let Some(img) = pelengs_map {
-                    let pic = Pic::new(&img).size(600 * 9525, 450 * 9525);
+                if settings.include_sigint_signs {
+                    doc = add_network_sigint_signs(
+                        env,
+                        doc,
+                        width_unit,
+                        network.id,
+                        &network_descriptions,
+                    )
+                    .await
+                    .c(h!())?;
+                }
 
-                    doc = doc
-                            // Add map locations
-                            .add_paragraph(
-                                Paragraph::new()
-                                    .add_run(Run::new().add_break(BreakType::Page)),
-                            )
-                            .add_paragraph(
-                                Paragraph::new()
-                                    .style(&paragraph_2_style_id)
-                                    .add_run(Run::new().add_text(
-                                    "Карта пеленгів частот підрозділу за звітний період:",
-                                ).bold()),
-                            )
-                            .add_paragraph(Paragraph::new())
-                            .add_paragraph(
-                                Paragraph::new()
-                                    .add_run(Run::new().add_image(pic))
-                                    .align(docx_rs::alignment_type::AlignmentType::Center),
-                            )
-                            .add_paragraph(Paragraph::new());
+                if settings.include_confirmation {
+                    doc = add_network_confirmation(
+                        doc,
+                        width_unit,
+                        &network_descriptions,
+                    );
                 }
             }
 
@@ -572,207 +330,723 @@ pub async fn generate_networks_docx_report(
         }
     }
 
-    doc.build().pack(file).context(h!())?;
-    Ok(outpath)
+    Ok(doc)
 }
 
-/// Helper: Generate the network callsigns table
-fn build_network_callsigns_table(
-    callsigns_table_type: &CallsignTableType,
-    net_callsigns: &Vec<NetworkCallsign>,
-    sources: &HashMap<i64, String>,
+//  Etalonka report according to the MO form
+pub async fn etalonka_extended(
+    env: &actix_web::web::Data<Env>,
+    settings: &EtalonkaExtendedSettings,
+    user_id: &str,
+    groups: Vec<String>,
+    networks_data: HashMap<String, Vec<NetworkEtalonkaResult>>,
+) -> Result<Docx, AppError> {
+    let sources: HashMap<i64, String> =
+        crate::sigint::source::bl_list_sources(&env.dbx)
+            .await
+            .context(h!())?
+            .into_iter()
+            .map(|s| (s.id, s.name))
+            .collect();
+
+    let all_known_callsigns =
+        find_all_known_callsigns(&env.dbx).await.context(h!())?;
+
+    let width_unit = 300;
+
+    let mut doc = init_report(PageOrientationType::Landscape, 16838, 11906);
+    doc = add_report_styles(doc);
+    doc = add_report_header(doc);
+
+    for (i, (unit_name, unit_networks)) in networks_data.iter().enumerate() {
+        // Add unit name as title
+        doc = doc.add_paragraph(
+            Paragraph::new()
+                .add_run(Run::new().size(28).bold().add_text(unit_name)), // .align(JustificationType::Center),
+        );
+
+        for (index, network) in unit_networks.iter().enumerate() {
+            let filter = Some(NetworkFreqFilter {
+                since_date_inclusive_ms: Some(settings.since_date_inclusive_ms),
+                till_date_inclusive_ms: settings.till_date_inclusive_ms,
+                active_freqs_only: settings.active_freqs_only,
+            });
+
+            let list_network_callsigns_req = ListNetworkCallsignsReq {
+                network_id: network.id,
+                sort_by: None,
+            };
+            // list of callsigns manually assigned to the Network
+            let net_callsigns = bl_get_network_callsigns_list(
+                &list_network_callsigns_req,
+                user_id,
+                &env.dbx,
+            )
+            .await
+            .context(h!())?;
+
+            // list of all other callsigns active per network activity period
+            let callsigns = load_callsigns(
+                &env.dbx,
+                &groups,
+                network.id,
+                &all_known_callsigns,
+                &filter,
+            )
+            .await
+            .context(h!())?;
+
+            let correspondents_number =
+                if net_callsigns.is_empty() && callsigns.is_empty() {
+                    String::new()
+                } else {
+                    let unique_count = net_callsigns
+                        .iter()
+                        .map(|item| &item.callsign)
+                        .chain(callsigns.iter().map(|item| &item.callsign))
+                        .collect::<HashSet<_>>()
+                        .len();
+                    format!("щонайменше {unique_count} ВЗ.")
+                };
+
+            let freqs = load_freqs(&env.dbx, &groups, network.id, &filter)
+                .await
+                .context(h!())?;
+
+            let modulations = freqs
+                .iter()
+                .filter_map(|f| f.modulation.clone())
+                .collect::<Vec<String>>();
+            let unique_modulation = uniq_via_btreeset(&modulations).join(", ");
+
+            // Add Section 1-4 with general information
+            doc = add_network_report_section_1_4(
+                doc,
+                &network.network_full_name,
+                &network.location,
+                &network.purpose,
+                &correspondents_number,
+            );
+
+            // Add Section 5 with network callsigns
+            doc = add_network_callsigns_section(
+                doc,
+                &net_callsigns,
+                Some(&sources),
+                width_unit,
+                &EtalonkaReportType::ExtendedReport(settings.clone()),
+            );
+
+            // Add Section 5b with known callsigns assigned to the Unit, which was present in radio communication
+            // during selected period
+            if settings.include_unit_callsigns {
+                doc = add_unit_callsigns_section(doc, &callsigns, width_unit);
+            }
+
+            // Add Section 6 with network freques
+            doc = add_network_freqs_section(
+                doc,
+                &freqs,
+                width_unit,
+                &EtalonkaReportType::ExtendedReport(settings.clone()),
+            );
+
+            // Add Section 7-10 with general information
+            doc = add_network_report_section_7_10(
+                doc,
+                &unique_modulation,
+                &network.operation_mode,
+                &network.operation_type,
+                &network.operation_period,
+            );
+
+            // Add Section 11-12. Розвідувальні ознаки підрозділу, Обгрунтування  прив'язки
+            if settings.include_sigint_signs || settings.include_confirmation {
+                let network_descriptions_map =
+                    crate::sigint::network::bl::get_networks_descriptions(
+                        &env.dbx,
+                        &[network.id],
+                    )
+                    .await
+                    .context(h!())?;
+                let network_descriptions = network_descriptions_map
+                    .get(&network.id)
+                    .cloned()
+                    .unwrap_or_default();
+
+                if settings.include_sigint_signs {
+                    doc = add_network_sigint_signs(
+                        env,
+                        doc,
+                        width_unit,
+                        network.id,
+                        &network_descriptions,
+                    )
+                    .await
+                    .c(h!())?;
+                }
+
+                if settings.include_confirmation {
+                    doc = add_network_confirmation(
+                        doc,
+                        width_unit,
+                        &network_descriptions,
+                    );
+                }
+            }
+
+            // Section 13. Карти пеленгів для мережі
+            if settings.include_pelengs_map {
+                doc = add_network_pelengs_map(
+                    env,
+                    doc,
+                    &groups,
+                    network.id,
+                    NetworkFreqFilter {
+                        since_date_inclusive_ms: Some(
+                            settings.since_date_inclusive_ms,
+                        ),
+                        till_date_inclusive_ms: settings.till_date_inclusive_ms,
+                        active_freqs_only: settings.active_freqs_only,
+                    },
+                )
+                .await
+                .c(h!())?
+            }
+
+            // Add empty paragraph after each network if this is not the last network
+            if index < unit_networks.len() - 1 {
+                doc = doc.add_paragraph(Paragraph::new());
+            }
+        }
+
+        // Add empty paragraph after each unit if this is NOT the last
+        if i < networks_data.len() - 1 {
+            doc = doc.add_paragraph(Paragraph::new());
+        }
+    }
+
+    Ok(doc)
+}
+
+/// Create blank docx document
+fn init_report(
+    page_orientation: PageOrientationType,
+    page_w: u32,
+    page_h: u32,
+) -> Docx {
+    docx_rs::Docx::new()
+        .page_orient(page_orientation)
+        .page_size(page_w, page_h)
+        .default_size(24)
+        .default_fonts(RunFonts::new().ascii("Times New Roman"))
+        .page_margin(
+            docx_rs::page_margin::PageMargin::new()
+                .left(1984) // 3.5 cm
+                .right(567) // 1 cm
+                .top(1134) // 2 cm
+                .bottom(1134), // 2 cm
+        )
+}
+
+/// Define styles for the report
+fn add_report_styles(doc: Docx) -> Docx {
+    let paragraph_1_style = define_new_paragraph_style(
+        PARAGRAPH_1_STYLE_NAME,
+        "Times New Roman",
+        24,
+        true,
+        AlignmentType::Left,
+    );
+
+    let paragraph_2_style = define_new_paragraph_style(
+        PARAGRAPH_2_STYLE_NAME,
+        "Times New Roman",
+        24,
+        false,
+        AlignmentType::Left,
+    );
+
+    let table_header_style = define_new_paragraph_style(
+        TABLE_HEADER_STYLE_NAME,
+        "Times New Roman",
+        24,
+        true,
+        AlignmentType::Center,
+    );
+
+    doc.add_style(paragraph_1_style)
+        .add_style(paragraph_2_style)
+        .add_style(table_header_style)
+}
+
+/// Add header to the report
+fn add_report_header(doc: Docx) -> Docx {
+    doc.add_paragraph(
+            Paragraph::new()
+                .style(&gen_style_id_by_name(PARAGRAPH_1_STYLE_NAME))
+                .add_run(Run::new().add_text(
+                    "ДОНЕСЕННЯ").bold())
+                .align(docx_rs::alignment_type::AlignmentType::Center),
+        )
+        .add_paragraph(
+            Paragraph::new()
+                .style(&gen_style_id_by_name(PARAGRAPH_1_STYLE_NAME))
+                .add_run(Run::new().add_text(
+                    r#"“Еталонні описи джерел радіовипромінювання противника у зоні відповідальності угруповання військ (сил)”"#).bold())
+                .align(docx_rs::alignment_type::AlignmentType::Center),
+        )
+        .add_paragraph(Paragraph::new())
+}
+
+// Add section 1-4 to the report
+fn add_network_report_section_1_4(
+    mut doc: Docx,
+    network_full_name: &String,
+    network_location: &Option<String>,
+    network_purpose: &Option<String>,
+    correspondents_number: &String,
+) -> Docx {
+    doc = add_field(doc, "1. Назва радіомережі: ", network_full_name);
+
+    doc = add_field(
+        doc,
+        "2. Район функціонування/розгортання: ",
+        network_location.as_deref().unwrap_or_default(),
+    );
+    doc = add_field(
+        doc,
+        "3. Призначення: ",
+        network_purpose.as_deref().unwrap_or(DEFAULT_PURPOSE),
+    );
+    doc = add_field(doc, "4. Склад кореспондентів: ", correspondents_number);
+    doc
+}
+
+// Add section 7-10 to the report
+fn add_network_report_section_7_10(
+    mut doc: Docx,
+    unique_modulation: &String,
+    network_operation_mode: &Option<String>,
+    network_operation_type: &Option<String>,
+    network_operation_period: &Option<String>,
+) -> Docx {
+    doc = add_field(doc, "7. Вид передачі: ", unique_modulation);
+    doc = add_field(
+        doc,
+        "8. Режим роботи радіомережі: ",
+        network_operation_mode
+            .as_deref()
+            .unwrap_or(DEFAULT_OPERATION_MODE),
+    );
+    doc = add_field(
+        doc,
+        "9. Характер роботи: ",
+        network_operation_type
+            .as_deref()
+            .unwrap_or(DEFAULT_OPERATION_TYPE),
+    );
+    doc = add_field(
+        doc,
+        "10. Період функціонування: ",
+        network_operation_period
+            .as_deref()
+            .unwrap_or(DEFAULT_OPERATION_PERIOD),
+    );
+    doc
+}
+
+/// Add network linkege confirmation to the report
+fn add_network_confirmation(
+    mut doc: Docx,
     width_unit: usize,
-    table_header_style_id: &str,
-    networks_only: bool,
+    network_descriptions: &[NetworkDescription],
+) -> Docx {
+    doc = add_field(doc, "12. Обгрунтування  прив'язки: ", &String::default());
+
+    // then add network description with Confitmation type
+    if let Some(table) = build_network_description_table(
+        network_descriptions,
+        NetworkDescrType::Confirmation,
+        width_unit,
+    ) {
+        doc = doc.add_table(table);
+    }
+    doc
+}
+
+/// Add network sigint signs to the report
+async fn add_network_sigint_signs(
+    env: &actix_web::web::Data<Env>,
+    doc: Docx,
+    width_unit: usize,
+    network_id: i64,
+    network_descriptions: &[NetworkDescription],
+) -> Result<Docx, AppError> {
+    let invisible_paragraph = Paragraph::new()
+        .add_run(Run::new().size(1))
+        .line_spacing(LineSpacing::new().before(0).after(0).line(0));
+
+    let mut doc = add_field(
+        doc,
+        "11. Розвідувальні ознаки підрозділу: ",
+        &String::default(),
+    );
+    // first add network description with Sign type
+    if let Some(table) = build_network_description_table(
+        network_descriptions,
+        NetworkDescrType::Sign,
+        width_unit,
+    ) {
+        doc = doc.add_table(table);
+    }
+
+    // then add network unit signals for each unit in network
+    let network_unit_signals = load_signals_per_network(&env.dbx, network_id)
+        .await
+        .context(h!())?;
+
+    // add invisible paragraph between two tables to avoid ms word issue with corrupted rendering of the first table
+    if !network_unit_signals.is_empty() {
+        doc = doc.add_paragraph(invisible_paragraph.clone());
+    }
+    for unit_signals in &network_unit_signals {
+        // if network has multiple units, add unit name
+        if network_unit_signals.len() > 1 && !unit_signals.signals.is_empty() {
+            doc = doc.add_paragraph(
+                Paragraph::new()
+                    .style(&gen_style_id_by_name(PARAGRAPH_2_STYLE_NAME))
+                    .add_run(
+                        Run::new()
+                            .add_text(
+                                format!("{}: ", unit_signals.unit_name)
+                                    .as_str(),
+                            )
+                            .bold(),
+                    ),
+            );
+        }
+        // Add signals table for each unit
+        if !unit_signals.signals.is_empty() {
+            if let Some(table) = build_network_unit_signals_table(
+                &unit_signals.signals,
+                width_unit,
+            ) {
+                doc = doc.add_table(table);
+            }
+        }
+    }
+    Ok(doc)
+}
+
+async fn add_network_pelengs_map(
+    env: &actix_web::web::Data<Env>,
+    mut doc: Docx,
+    groups: &Vec<String>,
+    network_id: i64,
+    filter: NetworkFreqFilter,
+) -> Result<Docx, AppError> {
+    let pelengs_map = load_pelengs_map(&env.dbx, groups, network_id, filter)
+        .await
+        .context(h!())?;
+
+    if let Some(img) = pelengs_map {
+        let pic = Pic::new(&img).size(600 * 9525, 450 * 9525);
+
+        doc = doc
+                .add_paragraph(
+                    Paragraph::new()
+                        .add_run(Run::new().add_break(BreakType::Page)),
+                )
+                .add_paragraph(
+                    Paragraph::new()
+                        .style(&gen_style_id_by_name(PARAGRAPH_2_STYLE_NAME))
+                        .add_run(Run::new().add_text(
+                        "Карта пеленгів частот підрозділу за звітний період:",
+                    ).bold()),
+                )
+                .add_paragraph(Paragraph::new())
+                .add_paragraph(
+                    Paragraph::new()
+                        .add_run(Run::new().add_image(pic))
+                        .align(docx_rs::alignment_type::AlignmentType::Center),
+                )
+                .add_paragraph(Paragraph::new());
+    }
+    Ok(doc)
+}
+
+fn add_network_callsigns_section(
+    mut doc: Docx,
+    net_callsigns: &[NetworkCallsign],
+    sources: Option<&HashMap<i64, String>>,
+    width_unit: usize,
+    report_type: &EtalonkaReportType,
+) -> Docx {
+    // Section title
+    doc = add_field(doc, "5. Позивні: ", "");
+
+    // Helper closure to choose table builder based on report type
+    let build_nc_table = |table_type: &CallsignTableType,
+                          callsigns: &Vec<NetworkCallsign>,
+                          sources: Option<&HashMap<i64, String>>,
+                          width: usize| {
+        match report_type {
+            EtalonkaReportType::AccordingToTheForm(_) => {
+                build_basic_network_callsigns_table(
+                    table_type, callsigns, width,
+                )
+            }
+            EtalonkaReportType::ExtendedReport(_) => {
+                build_extended_network_callsigns_table(
+                    table_type, callsigns, sources, width,
+                )
+            }
+        }
+    };
+
+    // Check if any main radio station exists
+    let has_main_radio_station =
+        net_callsigns.iter().any(|nc| nc.main_radio_station);
+
+    if has_main_radio_station {
+        let nc_for_main_radio_station: Vec<NetworkCallsign> = net_callsigns
+            .iter()
+            .filter(|nc| nc.main_radio_station)
+            .cloned()
+            .collect();
+
+        if let Some(table) = build_nc_table(
+            &CallsignTableType::MainRadioStations,
+            &nc_for_main_radio_station,
+            sources,
+            width_unit,
+        ) {
+            doc = doc.add_table(table).add_paragraph(Paragraph::new());
+        }
+    }
+
+    if !net_callsigns.is_empty() {
+        let nc_filtered: Vec<NetworkCallsign> = net_callsigns
+            .iter()
+            .filter(|nc| !nc.main_radio_station && !nc.developing)
+            .cloned()
+            .collect();
+
+        if let Some(table) = build_nc_table(
+            if has_main_radio_station {
+                &CallsignTableType::OtherStations
+            } else {
+                &CallsignTableType::AbsentMainStation
+            },
+            &nc_filtered,
+            sources,
+            width_unit,
+        ) {
+            doc = doc.add_table(table);
+        }
+    }
+
+    if !net_callsigns.is_empty() {
+        let callsigns_other = net_callsigns
+            .iter()
+            .filter(|c| c.developing)
+            .map(|c| c.callsign.to_uppercase())
+            .collect::<Vec<String>>()
+            .join(", ");
+
+        if !callsigns_other.is_empty() {
+            doc = doc.add_paragraph(
+                Paragraph::new()
+                    .add_run(Run::new().add_text("в дорозвідці - ").bold())
+                    .add_run(Run::new().add_text(callsigns_other)),
+            );
+        }
+    }
+    doc
+}
+
+fn add_unit_callsigns_section(
+    mut doc: Docx,
+    callsigns: &[CallsignRes],
+    width_unit: usize,
+) -> Docx {
+    if !callsigns.is_empty() {
+        let filtered_callsigns: Vec<CallsignRes> = callsigns
+            .iter()
+            .filter(|callsign| {
+                callsign
+                    .known_callsigns
+                    .as_ref()
+                    .is_some_and(|v| !v.is_empty())
+            })
+            .cloned()
+            .collect();
+
+        if !filtered_callsigns.is_empty() {
+            // Section title
+            doc = add_field(doc, "Співпадіння з каталогом: ", "");
+
+            // Add known callsigns linked to the unit in table
+            if let Some(table) =
+                build_unit_callsigns_table(&filtered_callsigns, width_unit)
+            {
+                doc = doc.add_table(table);
+            }
+        }
+
+        // add all other callsigns in text
+        let callsigns_other = callsigns
+            .iter()
+            .filter(|callsign| callsign.known_callsigns.is_none())
+            .map(|callsign| callsign.callsign.to_uppercase().clone())
+            .collect::<Vec<String>>()
+            .join(", ");
+
+        if !callsigns_other.is_empty() {
+            doc = doc.add_paragraph(
+                Paragraph::new()
+                    .add_run(
+                        Run::new()
+                            .add_text("Приналежність встановлюється - ")
+                            .bold(),
+                    )
+                    .add_run(Run::new().add_text(callsigns_other)),
+            );
+        }
+    }
+    doc
+}
+
+fn add_network_freqs_section(
+    mut doc: Docx,
+    net_freqs: &[NetworkFreqsRes],
+    width_unit: usize,
+    report_type: &EtalonkaReportType,
+) -> Docx {
+    // Section title
+    doc = add_field(doc, "6. Робочі частоти: ", "");
+
+    // Helper closure to choose table builder based on report type
+    let build_freqs_table =
+        |freqs: &[NetworkFreqsRes], width: usize| match report_type {
+            EtalonkaReportType::AccordingToTheForm(_) => {
+                build_basic_freqs_table(freqs, width)
+            }
+            EtalonkaReportType::ExtendedReport(_) => {
+                build_extended_freqs_table(freqs, width)
+            }
+        };
+
+    if let Some(table) = build_freqs_table(net_freqs, width_unit) {
+        doc = doc.add_table(table);
+    }
+    doc
+}
+
+/// Generic helper to build a docx table from headers + row builder
+fn build_table<T, F>(
+    items: &[T],
+    headers: Vec<TableCell>,
+    row_builder: F,
+    width_unit: usize,
+    title_row: Option<TableRow>,
+) -> Option<Table>
+where
+    F: Fn(&T) -> Vec<TableCell>,
+{
+    if items.is_empty() {
+        return None;
+    }
+
+    let mut rows: Vec<TableRow> = Vec::new();
+
+    // optional title row (already built by caller if needed)
+    if let Some(tr) = title_row {
+        rows.push(tr);
+    }
+
+    // header row (consumes headers)
+    if !headers.is_empty() {
+        rows.push(TableRow::new(headers));
+    }
+
+    // data rows
+    rows.extend(items.iter().map(|item| TableRow::new(row_builder(item))));
+
+    Some(
+        Table::new(rows)
+            .width(width_unit * 48, WidthType::Dxa)
+            .layout(TableLayoutType::Fixed)
+            .set_borders(TableBorders::new()),
+    )
+}
+
+/// Build the "basic network callsigns" table using `build_table`
+fn build_basic_network_callsigns_table(
+    callsigns_table_type: &CallsignTableType,
+    net_callsigns: &[NetworkCallsign],
+    width_unit: usize,
 ) -> Option<Table> {
     if net_callsigns.is_empty() {
         return None;
     }
 
-    let (headers, row_builder): (
-        Vec<TableCell>,
-        Box<dyn Fn(&NetworkCallsign) -> Vec<TableCell>>,
-    ) = if networks_only {
-        (
-            vec![
-                create_table_header_cell(
-                    width_unit * 11,
-                    None,
-                    table_header_style_id,
-                    "Позивний",
-                    false,
-                ),
-                create_table_header_cell(
-                    width_unit * 27,
-                    None,
-                    table_header_style_id,
-                    "Приналежність",
-                    false,
-                ),
-                create_table_header_cell(
-                    width_unit * 10,
-                    None,
-                    table_header_style_id,
-                    "Останній раз в етері",
-                    false,
-                ),
-            ],
-            Box::new(move |callsign: &NetworkCallsign| {
-                vec![
-                    create_table_data_cell(
-                        width_unit * 11,
-                        &callsign.callsign.to_uppercase(),
-                        None,
-                        false,
-                    ),
-                    create_table_data_cell(
-                        width_unit * 27,
-                        format!(
-                            "{} {}",
-                            callsign.position.clone().unwrap_or_default(),
-                            callsign.unit_name.clone().unwrap_or_default(),
-                        )
-                        .as_str(),
-                        None,
-                        false,
-                    ),
-                    create_table_data_cell(
-                        width_unit * 10,
-                        format_datetime_field(callsign.last_datetime).as_str(),
-                        None,
-                        false,
-                    ),
-                ]
-            }),
-        )
-    } else {
-        (
-            vec![
-                create_table_header_cell(
-                    width_unit * 6,
-                    Some(DEFAULT_TABLE_HEADER_COLOR),
-                    table_header_style_id,
-                    "Позивний",
-                    false,
-                ),
-                create_table_header_cell(
-                    width_unit * 10,
-                    Some(DEFAULT_TABLE_HEADER_COLOR),
-                    table_header_style_id,
-                    "Приналежність",
-                    false,
-                ),
-                create_table_header_cell(
-                    width_unit * 10,
-                    Some(DEFAULT_TABLE_HEADER_COLOR),
-                    table_header_style_id,
-                    "Коментар",
-                    false,
-                ),
-                create_table_header_cell(
-                    width_unit,
-                    Some(DEFAULT_TABLE_HEADER_COLOR),
-                    table_header_style_id,
-                    "К-ть перехоплень",
-                    false,
-                ),
-                create_table_header_cell(
-                    width_unit * 3,
-                    Some(DEFAULT_TABLE_HEADER_COLOR),
-                    table_header_style_id,
-                    "Частоти",
-                    false,
-                ),
-                create_table_header_cell(
-                    width_unit * 7,
-                    Some(DEFAULT_TABLE_HEADER_COLOR),
-                    table_header_style_id,
-                    "Останній раз в етері",
-                    false,
-                ),
-                create_table_header_cell(
-                    width_unit * 7,
-                    Some(DEFAULT_TABLE_HEADER_COLOR),
-                    table_header_style_id,
-                    "Дата прив'язки",
-                    false,
-                ),
-                create_table_header_cell(
-                    width_unit * 5,
-                    Some(DEFAULT_TABLE_HEADER_COLOR),
-                    table_header_style_id,
-                    "Джерело",
-                    false,
-                ),
-            ],
-            Box::new(move |callsign: &NetworkCallsign| {
-                vec![
-                    create_table_data_cell(
-                        width_unit * 6,
-                        &callsign.callsign.to_uppercase(),
-                        None,
-                        false,
-                    ),
-                    create_table_data_cell(
-                        width_unit * 10,
-                        format!(
-                            "{} {}",
-                            callsign.position.clone().unwrap_or_default(),
-                            callsign.unit_name.clone().unwrap_or_default(),
-                        )
-                        .as_str(),
-                        None,
-                        false,
-                    ),
-                    create_table_data_cell(
-                        width_unit * 10,
-                        callsign.comment.as_deref().unwrap_or_default(),
-                        None,
-                        false,
-                    ),
-                    create_table_data_cell(
-                        width_unit,
-                        &callsign.message_count.to_string(),
-                        None,
-                        false,
-                    ),
-                    create_table_data_cell(
-                        width_unit * 3,
-                        get_unique_field_as_string(&callsign.freqs, |f| {
-                            f.clone()
-                        })
-                        .as_str(),
-                        None,
-                        false,
-                    ),
-                    create_table_data_cell(
-                        width_unit * 7,
-                        format_datetime_field(callsign.last_datetime).as_str(),
-                        None,
-                        false,
-                    ),
-                    create_table_data_cell(
-                        width_unit * 7,
-                        format_datetime_field(Some(callsign.created_at))
-                            .as_str(),
-                        None,
-                        false,
-                    ),
-                    create_table_data_cell(
-                        width_unit * 5,
-                        callsign
-                            .source_id
-                            .and_then(|id| sources.get(&id))
-                            .map_or("", |s| s.as_str()),
-                        None,
-                        false,
-                    ),
-                ]
-            }),
-        )
-    };
+    let header_style_id = gen_style_id_by_name(TABLE_HEADER_STYLE_NAME);
 
-    // --- build extra title row if needed ---
+    let headers = vec![
+        create_table_header_cell(
+            width_unit * 7,
+            None,
+            &header_style_id,
+            "Позивний",
+            false,
+        ),
+        create_table_header_cell(
+            width_unit * 28,
+            None,
+            &header_style_id,
+            "Приналежність",
+            false,
+        ),
+        create_table_header_cell(
+            width_unit * 13,
+            None,
+            &header_style_id,
+            "Останній раз в етері",
+            false,
+        ),
+    ];
+
+    let row_builder = Box::new(move |callsign: &NetworkCallsign| {
+        vec![
+            create_table_data_cell(
+                width_unit * 7,
+                &callsign.callsign.to_uppercase(),
+                None,
+                false,
+            ),
+            create_table_data_cell(
+                width_unit * 28,
+                format!(
+                    "{} {}",
+                    callsign.position.clone().unwrap_or_default(),
+                    callsign.unit_name.clone().unwrap_or_default(),
+                )
+                .as_str(),
+                None,
+                false,
+            ),
+            create_table_data_cell(
+                width_unit * 13,
+                format_datetime_field(callsign.last_datetime).as_str(),
+                None,
+                false,
+            ),
+        ]
+    });
+
+    // build optional title row and pass to build_table
     let title_row = match callsigns_table_type {
         CallsignTableType::MainRadioStations => Some("Головна радіостанція"),
         CallsignTableType::OtherStations => Some("Підлеглі радіостанції"),
@@ -782,225 +1056,482 @@ fn build_network_callsigns_table(
         TableRow::new(vec![create_table_header_cell(
             width_unit * 48,
             None,
-            table_header_style_id,
+            &header_style_id,
             title,
             false,
         )])
     });
 
-    // --- assemble rows ---
-    let mut rows = Vec::new();
-    if let Some(r) = title_row {
-        rows.push(r);
-    }
-    rows.push(TableRow::new(headers));
-    rows.extend(
-        net_callsigns
-            .iter()
-            .filter(|nc| !nc.developing)
-            .map(|callsign| TableRow::new(row_builder(callsign))),
-    );
-
-    Some(
-        Table::new(rows)
-            .width(width_unit * 48, WidthType::Dxa)
-            .layout(TableLayoutType::Fixed)
-            .set_borders(TableBorders::with_empty()),
-    )
+    build_table(net_callsigns, headers, row_builder, width_unit, title_row)
 }
 
-/// Helper. Generate table with frequencies
-fn build_freqs_table(
-    freqs: &[NetworkFreqsRes],
+/// Build the "extended network callsigns" table using `build_table`
+fn build_extended_network_callsigns_table(
+    callsigns_table_type: &CallsignTableType,
+    net_callsigns: &[NetworkCallsign],
+    sources: Option<&HashMap<i64, String>>,
     width_unit: usize,
-    table_header_style_id: &str,
-    networks_only: bool,
 ) -> Option<Table> {
-    if freqs.is_empty() {
+    if net_callsigns.is_empty() {
         return None;
     }
 
-    let (headers, row_builder): (
-        Vec<TableCell>,
-        Box<dyn Fn(&NetworkFreqsRes) -> Vec<TableCell>>,
-    ) = if networks_only {
-        (
-            vec![
-                create_table_header_cell(
-                    width_unit * 16,
-                    None,
-                    table_header_style_id,
-                    "Частота",
-                    false,
-                ),
-                create_table_header_cell(
-                    width_unit * 16,
-                    None,
-                    table_header_style_id,
-                    "Модуляція",
-                    false,
-                ),
-                create_table_header_cell(
-                    width_unit * 16,
-                    None,
-                    table_header_style_id,
-                    "Останній раз в етері",
-                    false,
-                ),
-            ],
-            Box::new(move |freq: &NetworkFreqsRes| {
-                vec![
-                    create_table_data_cell(
-                        width_unit * 16,
-                        &freq.freq,
-                        None,
-                        false,
-                    ),
-                    create_table_data_cell(
-                        width_unit * 16,
-                        &freq
-                            .modulation
-                            .clone()
-                            .unwrap_or(DEFAULT_MODULATION.to_string()),
-                        None,
-                        false,
-                    ),
-                    create_table_data_cell(
-                        width_unit * 16,
-                        &format_datetime_field(freq.last_datetime),
-                        get_color(!freq.is_active),
-                        false,
-                    ),
-                ]
-            }),
-        )
-    } else {
-        (
-            vec![
-                create_table_header_cell(
-                    width_unit * 4,
-                    Some(DEFAULT_TABLE_HEADER_COLOR),
-                    table_header_style_id,
-                    "Частота",
-                    false,
-                ),
-                create_table_header_cell(
-                    width_unit * 3,
-                    Some(DEFAULT_TABLE_HEADER_COLOR),
-                    table_header_style_id,
-                    "Модуляція",
-                    false,
-                ),
-                create_table_header_cell(
-                    width_unit * 2,
-                    Some(DEFAULT_TABLE_HEADER_COLOR),
-                    table_header_style_id,
-                    "К-ть перехоплень",
-                    false,
-                ),
-                create_table_header_cell(
-                    width_unit * 25,
-                    Some(DEFAULT_TABLE_HEADER_COLOR),
-                    table_header_style_id,
-                    "Позивні",
-                    false,
-                ),
-                create_table_header_cell(
-                    width_unit * 7,
-                    Some(DEFAULT_TABLE_HEADER_COLOR),
-                    table_header_style_id,
-                    "Останній раз в етері",
-                    false,
-                ),
-                create_table_header_cell(
-                    width_unit * 7,
-                    Some(DEFAULT_TABLE_HEADER_COLOR),
-                    table_header_style_id,
-                    "Дата прив'язки",
-                    false,
-                ),
-            ],
-            Box::new(move |freq: &NetworkFreqsRes| {
-                let formatted_callsigns = freq
-                    .callsigns
-                    .as_ref()
-                    .map(|calls| {
-                        calls
-                            .iter()
-                            .map(|s| s.to_uppercase())
-                            .collect::<Vec<_>>()
-                            .join(", ")
-                    })
-                    .unwrap_or_default();
+    let header_style_id = gen_style_id_by_name(TABLE_HEADER_STYLE_NAME);
 
-                vec![
-                    create_table_data_cell(
-                        width_unit * 4,
-                        &freq.freq,
-                        None,
-                        false,
-                    ),
-                    create_table_data_cell(
-                        width_unit * 3,
-                        &freq
-                            .modulation
-                            .clone()
-                            .unwrap_or(DEFAULT_MODULATION.to_string()),
-                        None,
-                        false,
-                    ),
-                    create_table_data_cell(
-                        width_unit * 2,
-                        &freq.message_count.clone().to_string(),
-                        None,
-                        false,
-                    ),
-                    create_table_data_cell(
-                        width_unit * 25,
-                        &formatted_callsigns,
-                        None,
-                        false,
-                    ),
-                    create_table_data_cell(
-                        width_unit * 7,
-                        &format_datetime_field(freq.last_datetime),
-                        get_color(!freq.is_active),
-                        false,
-                    ),
-                    create_table_data_cell(
-                        width_unit * 7,
-                        &format_datetime_field(Some(freq.created_at)),
-                        get_color(!freq.is_active),
-                        false,
-                    ),
-                ]
-            }),
-        )
+    let headers = vec![
+        create_table_header_cell(
+            width_unit * 6,
+            Some(DEFAULT_TABLE_HEADER_COLOR),
+            &header_style_id,
+            "Позивний",
+            false,
+        ),
+        create_table_header_cell(
+            width_unit * 10,
+            Some(DEFAULT_TABLE_HEADER_COLOR),
+            &header_style_id,
+            "Приналежність",
+            false,
+        ),
+        create_table_header_cell(
+            width_unit * 10,
+            Some(DEFAULT_TABLE_HEADER_COLOR),
+            &header_style_id,
+            "Коментар",
+            false,
+        ),
+        create_table_header_cell(
+            width_unit,
+            Some(DEFAULT_TABLE_HEADER_COLOR),
+            &header_style_id,
+            "К-ть перехоплень",
+            false,
+        ),
+        create_table_header_cell(
+            width_unit * 3,
+            Some(DEFAULT_TABLE_HEADER_COLOR),
+            &header_style_id,
+            "Частоти",
+            false,
+        ),
+        create_table_header_cell(
+            width_unit * 7,
+            Some(DEFAULT_TABLE_HEADER_COLOR),
+            &header_style_id,
+            "Останній раз в етері",
+            false,
+        ),
+        create_table_header_cell(
+            width_unit * 7,
+            Some(DEFAULT_TABLE_HEADER_COLOR),
+            &header_style_id,
+            "Дата прив'язки",
+            false,
+        ),
+        create_table_header_cell(
+            width_unit * 5,
+            Some(DEFAULT_TABLE_HEADER_COLOR),
+            &header_style_id,
+            "Джерело",
+            false,
+        ),
+    ];
+
+    let row_builder = {
+        let sources = sources.cloned(); // move into closure safely
+        Box::new(move |callsign: &NetworkCallsign| {
+            vec![
+                create_table_data_cell(
+                    width_unit * 6,
+                    &callsign.callsign.to_uppercase(),
+                    None,
+                    false,
+                ),
+                create_table_data_cell(
+                    width_unit * 10,
+                    format!(
+                        "{} {}",
+                        callsign.position.clone().unwrap_or_default(),
+                        callsign.unit_name.clone().unwrap_or_default(),
+                    )
+                    .as_str(),
+                    None,
+                    false,
+                ),
+                create_table_data_cell(
+                    width_unit * 10,
+                    callsign.comment.as_deref().unwrap_or_default(),
+                    None,
+                    false,
+                ),
+                create_table_data_cell(
+                    width_unit,
+                    &callsign.message_count.to_string(),
+                    None,
+                    false,
+                ),
+                create_table_data_cell(
+                    width_unit * 3,
+                    get_unique_field_as_string(&callsign.freqs, |f| f.clone())
+                        .as_str(),
+                    None,
+                    false,
+                ),
+                create_table_data_cell(
+                    width_unit * 7,
+                    format_datetime_field(callsign.last_datetime).as_str(),
+                    None,
+                    false,
+                ),
+                create_table_data_cell(
+                    width_unit * 7,
+                    format_datetime_field(Some(callsign.created_at)).as_str(),
+                    None,
+                    false,
+                ),
+                create_table_data_cell(
+                    width_unit * 5,
+                    callsign
+                        .source_id
+                        .and_then(|id| {
+                            sources.as_ref().and_then(|m| m.get(&id))
+                        })
+                        .map_or("", |s| s.as_str()),
+                    None,
+                    false,
+                ),
+            ]
+        })
     };
 
-    Some(
-        Table::new(
-            std::iter::once(TableRow::new(headers))
-                .chain(
-                    freqs.iter().map(|freq| TableRow::new(row_builder(freq))),
-                )
-                .collect(),
-        )
-        .width(width_unit * 48, WidthType::Dxa)
-        .layout(TableLayoutType::Fixed)
-        .set_borders(TableBorders::with_empty()),
-    )
+    // build optional title row and pass to build_table
+    let title_row = match callsigns_table_type {
+        CallsignTableType::MainRadioStations => Some("Головна радіостанція"),
+        CallsignTableType::OtherStations => Some("Підлеглі радіостанції"),
+        _ => None,
+    }
+    .map(|title| {
+        TableRow::new(vec![create_table_header_cell(
+            width_unit * 48,
+            None,
+            &header_style_id,
+            title,
+            false,
+        )])
+    });
+
+    build_table(net_callsigns, headers, row_builder, width_unit, title_row)
+}
+
+/// Helper: Generate the callsigns table
+fn build_unit_callsigns_table(
+    callsigns: &[CallsignRes],
+    width_unit: usize,
+) -> Option<Table> {
+    if callsigns.is_empty() {
+        return None;
+    }
+
+    let header_style_id = gen_style_id_by_name(TABLE_HEADER_STYLE_NAME);
+
+    let headers = vec![
+        create_table_header_cell(
+            width_unit * 6,
+            Some(DEFAULT_TABLE_HEADER_COLOR),
+            &header_style_id,
+            "Позивний",
+            false,
+        ),
+        create_table_header_cell(
+            width_unit * 10,
+            Some(DEFAULT_TABLE_HEADER_COLOR),
+            &header_style_id,
+            "Приналежність",
+            false,
+        ),
+        create_table_header_cell(
+            width_unit * 10,
+            Some(DEFAULT_TABLE_HEADER_COLOR),
+            &header_style_id,
+            "Коментар",
+            false,
+        ),
+        create_table_header_cell(
+            width_unit,
+            Some(DEFAULT_TABLE_HEADER_COLOR),
+            &header_style_id,
+            "К-ть перехоплень",
+            false,
+        ),
+        create_table_header_cell(
+            width_unit * 3,
+            Some(DEFAULT_TABLE_HEADER_COLOR),
+            &header_style_id,
+            "Частоти",
+            false,
+        ),
+        create_table_header_cell(
+            width_unit * 7,
+            Some(DEFAULT_TABLE_HEADER_COLOR),
+            &header_style_id,
+            "Останній раз в етері",
+            false,
+        ),
+        create_table_header_cell(
+            width_unit * 7,
+            Some(DEFAULT_TABLE_HEADER_COLOR),
+            &header_style_id,
+            "Дата прив'язки",
+            false,
+        ),
+        create_table_header_cell(
+            width_unit * 5,
+            Some(DEFAULT_TABLE_HEADER_COLOR),
+            &header_style_id,
+            "Джерело",
+            false,
+        ),
+    ];
+
+    let row_builder = move |callsign: &CallsignRes| {
+        vec![
+            create_table_data_cell(
+                width_unit * 6,
+                &callsign.callsign.to_uppercase(),
+                None,
+                false,
+            ),
+            create_table_data_cell(
+                width_unit * 10,
+                get_unique_field_as_string(&callsign.known_callsigns, |item| {
+                    item.position.clone()
+                })
+                .as_str(),
+                None,
+                false,
+            ),
+            create_table_data_cell(
+                width_unit * 10,
+                get_unique_field_as_string(&callsign.known_callsigns, |item| {
+                    item.comment.clone()
+                })
+                .as_str(),
+                None,
+                false,
+            ),
+            create_table_data_cell(
+                width_unit,
+                &callsign.message_count.to_string(),
+                get_color(callsign.is_old),
+                false,
+            ),
+            create_table_data_cell(
+                width_unit * 3,
+                get_unique_field_as_string(&callsign.freqs, |f| f.clone())
+                    .as_str(),
+                get_color(callsign.is_old),
+                false,
+            ),
+            create_table_data_cell(
+                width_unit * 7,
+                format_datetime_field(callsign.last_datetime).as_str(),
+                get_color(callsign.is_old),
+                false,
+            ),
+            create_table_data_cell(
+                width_unit * 7,
+                get_unique_field_as_string(&callsign.known_callsigns, |item| {
+                    format_datetime_field(Some(item.created_at))
+                })
+                .as_str(),
+                get_color(callsign.is_old),
+                false,
+            ),
+            create_table_data_cell(
+                width_unit * 5,
+                get_unique_field_as_string(&callsign.known_callsigns, |item| {
+                    item.source_name.clone()
+                })
+                .as_str(),
+                get_color(callsign.is_old),
+                false,
+            ),
+        ]
+    };
+
+    build_table(callsigns, headers, row_builder, width_unit, None)
+}
+
+/// Build basic frequency table
+fn build_basic_freqs_table(
+    freqs: &[NetworkFreqsRes],
+    width_unit: usize,
+) -> Option<Table> {
+    let header_style_id = gen_style_id_by_name(TABLE_HEADER_STYLE_NAME);
+
+    let headers = vec![
+        create_table_header_cell(
+            width_unit * 16,
+            None,
+            &header_style_id,
+            "Частота",
+            false,
+        ),
+        create_table_header_cell(
+            width_unit * 16,
+            None,
+            &header_style_id,
+            "Модуляція",
+            false,
+        ),
+        create_table_header_cell(
+            width_unit * 16,
+            None,
+            &header_style_id,
+            "Останній раз в етері",
+            false,
+        ),
+    ];
+
+    let row_builder = move |freq: &NetworkFreqsRes| {
+        vec![
+            create_table_data_cell(width_unit * 16, &freq.freq, None, false),
+            create_table_data_cell(
+                width_unit * 16,
+                &freq
+                    .modulation
+                    .clone()
+                    .unwrap_or(DEFAULT_MODULATION.to_string()),
+                None,
+                false,
+            ),
+            create_table_data_cell(
+                width_unit * 16,
+                &format_datetime_field(freq.last_datetime),
+                get_color(!freq.is_active),
+                false,
+            ),
+        ]
+    };
+
+    build_table(freqs, headers, row_builder, width_unit, None)
+}
+
+/// Build extended frequency table
+fn build_extended_freqs_table(
+    freqs: &[NetworkFreqsRes],
+    width_unit: usize,
+) -> Option<Table> {
+    let header_style_id = gen_style_id_by_name(TABLE_HEADER_STYLE_NAME);
+
+    let headers = vec![
+        create_table_header_cell(
+            width_unit * 4,
+            Some(DEFAULT_TABLE_HEADER_COLOR),
+            &header_style_id,
+            "Частота",
+            false,
+        ),
+        create_table_header_cell(
+            width_unit * 3,
+            Some(DEFAULT_TABLE_HEADER_COLOR),
+            &header_style_id,
+            "Модуляція",
+            false,
+        ),
+        create_table_header_cell(
+            width_unit * 2,
+            Some(DEFAULT_TABLE_HEADER_COLOR),
+            &header_style_id,
+            "К-ть перехоплень",
+            false,
+        ),
+        create_table_header_cell(
+            width_unit * 25,
+            Some(DEFAULT_TABLE_HEADER_COLOR),
+            &header_style_id,
+            "Позивні",
+            false,
+        ),
+        create_table_header_cell(
+            width_unit * 7,
+            Some(DEFAULT_TABLE_HEADER_COLOR),
+            &header_style_id,
+            "Останній раз в етері",
+            false,
+        ),
+        create_table_header_cell(
+            width_unit * 7,
+            Some(DEFAULT_TABLE_HEADER_COLOR),
+            &header_style_id,
+            "Дата прив'язки",
+            false,
+        ),
+    ];
+
+    let row_builder = move |freq: &NetworkFreqsRes| {
+        let formatted_callsigns = freq
+            .callsigns
+            .as_ref()
+            .map(|calls| {
+                calls
+                    .iter()
+                    .map(|s| s.to_uppercase())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            })
+            .unwrap_or_default();
+
+        vec![
+            create_table_data_cell(width_unit * 4, &freq.freq, None, false),
+            create_table_data_cell(
+                width_unit * 3,
+                &freq
+                    .modulation
+                    .clone()
+                    .unwrap_or(DEFAULT_MODULATION.to_string()),
+                None,
+                false,
+            ),
+            create_table_data_cell(
+                width_unit * 2,
+                &freq.message_count.to_string(),
+                None,
+                false,
+            ),
+            create_table_data_cell(
+                width_unit * 25,
+                &formatted_callsigns,
+                None,
+                false,
+            ),
+            create_table_data_cell(
+                width_unit * 7,
+                &format_datetime_field(freq.last_datetime),
+                get_color(!freq.is_active),
+                false,
+            ),
+            create_table_data_cell(
+                width_unit * 7,
+                &format_datetime_field(Some(freq.created_at)),
+                get_color(!freq.is_active),
+                false,
+            ),
+        ]
+    };
+
+    build_table(freqs, headers, row_builder, width_unit, None)
 }
 
 pub fn build_network_description_table(
     network_descriptions: &[NetworkDescription],
     filter_type: NetworkDescrType,
     width_unit: usize,
-    _table_header_style_id: &str,
 ) -> Option<Table> {
     let filtered_descriptions = network_descriptions
         .iter()
         .filter(|desc| desc.descr_type == filter_type)
+        .cloned()
         .collect::<Vec<_>>();
 
     if filtered_descriptions.is_empty() {
@@ -1008,60 +1539,30 @@ pub fn build_network_description_table(
     }
 
     let row_builder = |descr: &NetworkDescription| {
-        vec![
-            create_table_data_cell(
-                width_unit * 48,
-                &descr.description,
-                None,
-                false,
-            ),
-            // create_table_data_cell(
-            //     width_unit * 15,
-            //     &descr.comment.clone().unwrap_or_default(),
-            //     None,
-            //     false,
-            // ),
-        ]
+        vec![create_table_data_cell(
+            width_unit * 48,
+            &descr.description,
+            None,
+            false,
+        )]
     };
 
-    Some(
-        Table::new(
-            filtered_descriptions
-                .iter()
-                .map(|descr| TableRow::new(row_builder(descr)))
-                .collect(),
-        )
-        .width(width_unit * 48, WidthType::Dxa)
-        .layout(TableLayoutType::Fixed)
-        .set_borders(TableBorders::with_empty()),
+    build_table(
+        &filtered_descriptions,
+        vec![],
+        row_builder,
+        width_unit,
+        None,
     )
 }
 
 pub fn build_network_unit_signals_table(
     signals: &[Signal],
     width_unit: usize,
-    _table_header_style_id: &str,
 ) -> Option<Table> {
     if signals.is_empty() {
         return None;
     }
-
-    // let headers = vec![
-    //     create_table_header_cell(
-    //         width_unit * 10,
-    //         None,
-    //         table_header_style_id,
-    //         "Сигнал",
-    //         false,
-    //     ),
-    //     create_table_header_cell(
-    //         width_unit * 30,
-    //         None,
-    //         table_header_style_id,
-    //         "Значення",
-    //         false,
-    //     ),
-    // ];
 
     let row_builder = |signal: &Signal| {
         vec![
@@ -1075,35 +1576,21 @@ pub fn build_network_unit_signals_table(
         ]
     };
 
-    Some(
-        Table::new(
-            // std::iter::once(TableRow::new(headers))
-            //     .chain(
-            signals
-                .iter()
-                .map(|signal| TableRow::new(row_builder(signal)))
-                .collect(),
-        )
-        .width(width_unit * 48, WidthType::Dxa)
-        .layout(TableLayoutType::Fixed)
-        .set_borders(TableBorders::with_empty()),
-    )
+    build_table(signals, vec![], row_builder, width_unit, None)
 }
 
 fn add_field(
-    mut doc: Docx,
+    doc: Docx,
     field_name: &str,
     value: &str,
     // numbering_id: usize,
 ) -> Docx {
-    doc = doc.add_paragraph(
+    doc.add_paragraph(
         Paragraph::new()
             // .numbering(NumberingId::new(numbering_id), IndentLevel::new(0))
             .add_run(Run::new().add_text(field_name).bold())
             .add_run(Run::new().add_text(value)),
-    );
-
-    doc
+    )
 }
 
 fn gen_style_id_by_name(name: &str) -> String {

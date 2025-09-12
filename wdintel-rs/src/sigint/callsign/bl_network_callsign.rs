@@ -703,7 +703,7 @@ where
         .context(h!())?;
 
     let (base_with, callsigns_select) =
-        build_callsigns_queries(&groups, network_id).context(h!())?;
+        build_callsigns_queries(&groups, network_id, &None).context(h!())?;
 
     let callsigns_comm_info = get_communication_info_for_callsigns(
         txn,

@@ -127,7 +127,7 @@ pub async fn load_freqs(
     db: &DatabaseConnection,
     groups: &Vec<String>,
     network_id: i64,
-    active_freqs_only: bool,
+    filter: &Option<NetworkFreqFilter>,
 ) -> Result<Vec<NetworkFreqsRes>, AppError> {
     trace!("> load freqs for network: {network_id:?}");
 
@@ -177,35 +177,77 @@ pub async fn load_freqs(
         Expr::col((SignalMessage::Table, SignalMessage::Deleted)).eq(false),
     )
     .and_where(
-        Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::Deleted)).eq(false),
+        Expr::col((SigintNetwork::Table, SigintNetwork::Deleted)).eq(false),
     )
     .and_where(
-        Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::Deleted)).eq(false),
+        Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::Deleted))
+            .eq(false),
     )
     .and_where(
         Expr::col((SigintNetwork::Table, SigintUnit::Id)).eq(network_id),
-    )
-    .and_where(
-        Expr::col((SigintInboxItem::Table, SigintInboxItem::Datetime)).gte(
-            Expr::col((
-                SigintNetworkFreq::Table,
-                SigintNetworkFreq::ActiveFrom,
-            )),
-        ),
-    )
-    .and_where(
-        Expr::col((SigintInboxItem::Table, SigintInboxItem::Datetime)).lt(
-            Expr::cust("COALESCE(sigint_network_freq.active_to, CURRENT_TIMESTAMP AT TIME ZONE 'UTC')")
-        ),
     );
 
-    if active_freqs_only {
-        q.and_where(
-            Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::ActiveTo))
-                .is_null(),
-        );
-    }
+    // adapt filter logic dynamically depending on NetworkFreqFilter
+    // Lower bound: sigint_inbox_item.datetime >= GREATEST(since_date_inclusive, freq.active_from)
+    // Upper bound: sigint_inbox_item.datetime < LEAST(till_date_inclusive, COALESCE(freq.active_to, now()))
+    if let Some(filter) = &filter {
+        // ---- LOWER BOUND ----
+        if let Some(since_ms) = filter.since_date_inclusive_ms {
+            let since_dt = DateTime::from_timestamp_millis(since_ms)
+                .context(h!())?
+                .naive_utc();
+            let since_expr = Expr::cust_with_values(
+                "GREATEST($1, sigint_network_freq.active_from)",
+                [since_dt],
+            );
 
+            q.and_where(
+                Expr::col((SigintInboxItem::Table, SigintInboxItem::Datetime))
+                    .gte(since_expr),
+            );
+        } else {
+            q.and_where(
+                Expr::col((SigintInboxItem::Table, SigintInboxItem::Datetime))
+                    .gte(Expr::col((
+                        SigintNetworkFreq::Table,
+                        SigintNetworkFreq::ActiveFrom,
+                    ))),
+            );
+        }
+
+        // ---- UPPER BOUND ----
+        if let Some(till_ms) = filter.till_date_inclusive_ms {
+            let till_dt = DateTime::from_timestamp_millis(till_ms)
+                .context(h!())?
+                .naive_utc();
+
+            let till_expr = Expr::cust_with_values(
+            "LEAST($1, COALESCE(sigint_network_freq.active_to, CURRENT_TIMESTAMP AT TIME ZONE 'UTC'))",
+            [till_dt],
+        );
+
+            q.and_where(
+                Expr::col((SigintInboxItem::Table, SigintInboxItem::Datetime))
+                    .lt(till_expr),
+            );
+        } else {
+            q.and_where(
+            Expr::col((SigintInboxItem::Table, SigintInboxItem::Datetime)).lt(
+                Expr::cust("COALESCE(sigint_network_freq.active_to, CURRENT_TIMESTAMP AT TIME ZONE 'UTC')"),
+            ),
+        );
+        }
+
+        if filter.active_freqs_only {
+            q.and_where(
+                Expr::col((
+                    SigintNetworkFreq::Table,
+                    SigintNetworkFreq::ActiveTo,
+                ))
+                .is_null(),
+            );
+        }
+    }
     let network_messages_cte = CommonTableExpression::new()
         .query(q)
         .table_name(Alias::new("network_messages"))
@@ -314,6 +356,15 @@ pub async fn load_freqs(
         .and_where(
             Expr::col((SigintNetwork::Table, SigintUnit::Id)).eq(network_id),
         )
+        .and_where_option(filter.as_ref().filter(|f| f.active_freqs_only).map(
+            |_| {
+                Expr::col((
+                    SigintNetworkFreq::Table,
+                    SigintNetworkFreq::ActiveTo,
+                ))
+                .is_null()
+            },
+        ))
         .order_by_expr(Expr::cust("freq"), Order::Asc)
         .to_owned();
 
@@ -467,13 +518,14 @@ pub async fn load_callsigns(
     groups: &Vec<String>,
     network_id: i64,
     known_callsigns: &BTreeMap<String, Vec<KnownCallsignRes>>,
+    filter: &Option<NetworkFreqFilter>,
 ) -> Result<Vec<CallsignRes>, AppError> {
     let start = std::time::Instant::now();
 
     trace!("> load_callsigns for network: {network_id:?}");
 
     let (base_with, callsigns_select) =
-        build_callsigns_queries(groups, network_id).context(h!())?;
+        build_callsigns_queries(groups, network_id, filter).context(h!())?;
 
     // Step 1. Get all active callsigns for the given network
     let active_callsigns = get_active_callsigns(
@@ -555,6 +607,7 @@ pub async fn load_callsigns(
 pub fn build_callsigns_queries(
     groups: &Vec<String>,
     network_id: i64,
+    filter: &Option<NetworkFreqFilter>,
 ) -> Result<(WithClause, SelectStatement), AppError> {
     let callsigns_lateral_sub_query = Query::select()
         .expr_as(
@@ -602,6 +655,15 @@ pub fn build_callsigns_queries(
             Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::Deleted))
                 .eq(false),
         )
+        .and_where_option(filter.as_ref().filter(|f| f.active_freqs_only).map(
+            |_| {
+                Expr::col((
+                    SigintNetworkFreq::Table,
+                    SigintNetworkFreq::ActiveTo,
+                ))
+                .is_null()
+            },
+        ))
         .and_where(
             Expr::col((SigintNetwork::Table, SigintNetwork::Id)).eq(network_id),
         )
@@ -612,15 +674,59 @@ pub fn build_callsigns_queries(
         .table_name(Alias::new("network_freqs"))
         .to_owned();
 
+    let mut join_condition =
+        Expr::col((SigintInboxItem::Table, SigintInboxItem::Freq))
+            .equals((Alias::new("network_freqs"), Alias::new("freq")));
+
+    let since_ms = filter.as_ref().and_then(|f| f.since_date_inclusive_ms);
+    let till_ms = filter.as_ref().and_then(|f| f.till_date_inclusive_ms);
+
+    let lower_bound = if let Some(since_ms) = since_ms {
+        let since_dt = DateTime::from_timestamp_millis(since_ms)
+            .context(h!())?
+            .naive_utc();
+
+        Expr::cust_with_values(
+            "GREATEST($1, network_freqs.active_from)",
+            [since_dt],
+        )
+    } else {
+        Expr::col((Alias::new("network_freqs"), Alias::new("active_from")))
+            .into()
+    };
+
+    let upper_bound = if let Some(till_ms) = till_ms {
+        let till_dt = DateTime::from_timestamp_millis(till_ms)
+            .context(h!())?
+            .naive_utc();
+
+        Expr::cust_with_values(
+            "LEAST($1, COALESCE(network_freqs.active_to, CURRENT_TIMESTAMP AT TIME ZONE 'UTC'))",
+            [till_dt],
+        )
+    } else {
+        Expr::cust("COALESCE(network_freqs.active_to, CURRENT_TIMESTAMP AT TIME ZONE 'UTC')")
+    };
+
+    join_condition = join_condition
+        .and(
+            Expr::col((SigintInboxItem::Table, SigintInboxItem::Datetime))
+                .gte(lower_bound),
+        )
+        .and(
+            Expr::col((SigintInboxItem::Table, SigintInboxItem::Datetime))
+                .lt(upper_bound),
+        );
+
     let network_messages_select = Query::select()
         .expr_as(
             Expr::col((SigintInboxItem::Table, SigintInboxItem::Callsigns)),
             Alias::new("callsigns"),
         )
         .expr_as(
-                Expr::col((SigintInboxItem::Table, SigintInboxItem::Freq)),
-                Alias::new("freq"),
-            )
+            Expr::col((SigintInboxItem::Table, SigintInboxItem::Freq)),
+            Alias::new("freq"),
+        )
         .expr_as(
             Expr::col((SigintInboxItem::Table, SigintInboxItem::Datetime)),
             Alias::new("datetime"),
@@ -642,24 +748,22 @@ pub fn build_callsigns_queries(
             Expr::col((SignalMessage::Table, SignalMessage::DatasourceGroupId))
                 .equals((DatasourceGroup::Table, DatasourceGroup::Id)),
         )
-		        .join(
+        .join(
             JoinType::InnerJoin,
             Alias::new("network_freqs"),
-            Expr::col((SigintInboxItem::Table, SigintInboxItem::Freq))
-                .equals((Alias::new("network_freqs"), Alias::new("freq")))
-                .and(Expr::col((SigintInboxItem::Table, SigintInboxItem::Datetime))
-                    .gte(Expr::col((Alias::new("network_freqs"), Alias::new("active_from"))))
-                    .and(Expr::col((SigintInboxItem::Table, SigintInboxItem::Datetime))
-                        .lt(Expr::cust("COALESCE(network_freqs.active_to, CURRENT_TIMESTAMP AT TIME ZONE 'UTC')")))),
+            join_condition,
         )
-    .and_where(
-        Expr::col((DatasourceGroup::Table, DatasourceGroup::GroupMasterKey))
+        .and_where(
+            Expr::col((
+                DatasourceGroup::Table,
+                DatasourceGroup::GroupMasterKey,
+            ))
             .is_in(groups),
-    )
-    .and_where(
-        Expr::col((SignalMessage::Table, SignalMessage::Deleted)).eq(false),
-    )
-    .to_owned();
+        )
+        .and_where(
+            Expr::col((SignalMessage::Table, SignalMessage::Deleted)).eq(false),
+        )
+        .to_owned();
 
     let network_messages_cte = CommonTableExpression::new()
         .query(network_messages_select)
@@ -1045,10 +1149,11 @@ fn filter_callsigns(callsigns: Vec<CallsignRes>) -> Vec<CallsignRes> {
 pub async fn load_pelengs_map(
     db: &DatabaseConnection,
     groups: &Vec<String>,
-    filter: &EtalonkaFilter,
+    network_id: i64,
+    filter: NetworkFreqFilter,
 ) -> Result<Option<Vec<u8>>, AppError> {
     let date_since = filter.since_date_inclusive_ms;
-    let date_till = filter.till_date_noninclusive_ms;
+    let date_till = filter.till_date_inclusive_ms;
 
     let mut query = signal_message::Entity::find()
         .join(
@@ -1091,7 +1196,7 @@ pub async fn load_pelengs_map(
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(sigint_network::Column::Deleted.eq(false))
         .filter(sigint_peleng::Column::Deleted.eq(false))
-        .filter(sigint_network::Column::Id.eq(filter.network_id));
+        .filter(sigint_network::Column::Id.eq(network_id));
 
     if let Some(date_since) = date_since {
         query = query.filter(
