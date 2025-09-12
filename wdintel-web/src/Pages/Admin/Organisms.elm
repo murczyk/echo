@@ -20,11 +20,11 @@ import Set exposing (Set)
 import Shared
 import Shared.Components.Button as Button
 import Shared.Components.Checkbox as Checkbox
+import Shared.Components.FloatingPopup as FloatingPopup
 import Shared.Components.Sidebar as Sidebar
 import Shared.Components.Table as Table
 import Shared.Components.Table.Column as TableColumn
 import Shared.Components.Table.Config as TableConfig
-import Shared.Components.FloatingPopup as FloatingPopup
 import Shared.Model exposing (isDarkMode)
 import Task
 import Time
@@ -138,8 +138,6 @@ getComputedGroups organismId model =
 isLoadingComputedGroups : Int -> Model -> Bool
 isLoadingComputedGroups organismId model =
     Set.member organismId model.loadingComputedGroups
-
-
 
 
 loadComputedGroupsForAll : Model -> ( Model, Effect Msg )
@@ -296,9 +294,9 @@ init _ =
       , aorList = RD.NotAsked
       , tableState = Table.initialSort "Назва"
       , sidebarType = Nothing
-        , computedGroups = Dict.empty
-        , loadingComputedGroups = Set.empty
-        , rowShowAllPopupStatus = Nothing
+      , computedGroups = Dict.empty
+      , loadingComputedGroups = Set.empty
+      , rowShowAllPopupStatus = Nothing
       }
     , E.sendCmd <|
         Cmd.batch
@@ -1073,7 +1071,22 @@ update msg model =
         EditOrganismDone (Ok o) ->
             let
                 newModel =
-                    { model | editOrganism = Nothing, sidebarType = Nothing, organisms = model.organisms |> ListX.updateIf (\x -> x.id == o.id) (\y -> { y | name = o.name, parentId = y.parentId, roles = o.roles, enabled = o.enabled, aorIds = o.aorIds }) }
+                    { model
+                        | editOrganism = Nothing
+                        , sidebarType = Nothing
+                        , organisms =
+                            model.organisms
+                                |> ListX.updateIf (\x -> x.id == o.id)
+                                    (\y ->
+                                        { y
+                                            | name = o.name
+                                            , parentId = o.parentId
+                                            , roles = o.roles
+                                            , enabled = o.enabled
+                                            , aorIds = o.aorIds
+                                        }
+                                    )
+                    }
             in
             loadComputedGroups o.id newModel
 
@@ -1255,14 +1268,18 @@ organismsTableConfig groups organismGroups allOrganisms timeZone editingOrganism
                         , children =
                             [ div [ class "flex flex-wrap gap-1" ]
                                 (let
-                                    organismGroupIds = getOrganismGroups o.id organismGroups
-                                    allGroups = organismGroupIds
-                                        |> List.filterMap (\groupId -> ListX.find (\x -> x.masterKey == groupId) groups)
-                                        |> List.sortBy (\group -> String.toLower (groupName group))
-                                    
-                                    visibleGroups = List.take 10 allGroups
-                                in
-                                List.map
+                                    organismGroupIds =
+                                        getOrganismGroups o.id organismGroups
+
+                                    allGroups =
+                                        organismGroupIds
+                                            |> List.filterMap (\groupId -> ListX.find (\x -> x.masterKey == groupId) groups)
+                                            |> List.sortBy (\group -> String.toLower (groupName group))
+
+                                    visibleGroups =
+                                        List.take 10 allGroups
+                                 in
+                                 List.map
                                     (\group ->
                                         span
                                             [ class "badge badge--ochre-light"
@@ -1282,24 +1299,26 @@ organismsTableConfig groups organismGroups allOrganisms timeZone editingOrganism
                                                             False
                                             in
                                             [ FloatingPopup.new
-                                                { anchorContent = span [ class "inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 cursor-pointer rounded-md hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors" ]
-                                                    [ text ("Показати всі " ++ String.fromInt (List.length allGroups))
-                                                    , i [ class "bi bi-chevron-down text-xs" ] []
-                                                    ]
-                                                , popupContent = div [ class "p-1 max-h-[300px] max-w-[400px] overflow-y-auto" ]
-                                                    [ div [ class "mb-3 pb-2 border-b border-gray-200 dark:border-gray-700" ]
-                                                        [ h4 [ class "text-sm font-semibold text-gray-900 dark:text-gray-100" ]
-                                                            [ text ("Групи (" ++ String.fromInt (List.length allGroups) ++ ")") ]
+                                                { anchorContent =
+                                                    span [ class "inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 cursor-pointer rounded-md hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors" ]
+                                                        [ text ("Показати всі " ++ String.fromInt (List.length allGroups))
+                                                        , i [ class "bi bi-chevron-down text-xs" ] []
                                                         ]
-                                                    , div [ class "space-y-2" ]
-                                                        (List.map
-                                                            (\group ->
-                                                                div [ class "px-3 py-2 bg-gray-50 dark:bg-gray-800 rounded-md border border-gray-200 dark:border-gray-700" ]
-                                                                    [ text (groupName group) ]
+                                                , popupContent =
+                                                    div [ class "p-1 max-h-[300px] max-w-[400px] overflow-y-auto" ]
+                                                        [ div [ class "mb-3 pb-2 border-b border-gray-200 dark:border-gray-700" ]
+                                                            [ h4 [ class "text-sm font-semibold text-gray-900 dark:text-gray-100" ]
+                                                                [ text ("Групи (" ++ String.fromInt (List.length allGroups) ++ ")") ]
+                                                            ]
+                                                        , div [ class "space-y-2" ]
+                                                            (List.map
+                                                                (\group ->
+                                                                    div [ class "px-3 py-2 bg-gray-50 dark:bg-gray-800 rounded-md border border-gray-200 dark:border-gray-700" ]
+                                                                        [ text (groupName group) ]
+                                                                )
+                                                                allGroups
                                                             )
-                                                            allGroups
-                                                        )
-                                                    ]
+                                                        ]
                                                 , isOpen = isOpen
                                                 , onClose = RowShowAllPopupChanged Nothing
                                                 , onOpen = RowShowAllPopupChanged <| Just ( o.id, ShowAllGroups )
@@ -1341,60 +1360,65 @@ organismsTableConfig groups organismGroups allOrganisms timeZone editingOrganism
                                  if isLoading then
                                     [ span [ class "text-muted-foreground text-sm" ] [ text "Завантаження..." ] ]
 
-                                  else
-                                      let
-                                          sortedGroups = computedGroups |> List.sortBy (\group -> String.toLower (groupName group))
-                                          visibleGroups = List.take 10 sortedGroups
-                                      in
-                                      List.map
-                                          (\group ->
-                                              span
-                                                  [ class "badge badge--ochre-light"
-                                                  , title (groupName group)
-                                                  ]
-                                                  [ text (groupName group) ]
-                                          )
-                                          visibleGroups
-                                          ++ (if List.length sortedGroups > 10 then
-                                                  let
-                                                      isOpen =
-                                                          case model.rowShowAllPopupStatus of
-                                                              Just ( organismId, ShowAllComputedGroups ) ->
-                                                                  organismId == o.id
+                                 else
+                                    let
+                                        sortedGroups =
+                                            computedGroups |> List.sortBy (\group -> String.toLower (groupName group))
 
-                                                              _ ->
-                                                                  False
-                                                  in
-                                                  [ FloatingPopup.new
-                                                      { anchorContent = span [ class "inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 cursor-pointer rounded-md hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors" ]
-                                                          [ text ("Показати всі " ++ String.fromInt (List.length sortedGroups))
-                                                          , i [ class "bi bi-chevron-down text-xs" ] []
-                                                          ]
-                                                      , popupContent = div [ class "p-1 max-h-[300px] max-w-[400px] overflow-y-auto" ]
-                                                          [ div [ class "mb-3 pb-2 border-b border-gray-200 dark:border-gray-700" ]
-                                                              [ h4 [ class "text-sm font-semibold text-gray-900 dark:text-gray-100" ]
-                                                                  [ text ("Доступні групи (" ++ String.fromInt (List.length sortedGroups) ++ ")") ]
-                                                              ]
-                                                          , div [ class "space-y-2" ]
-                                                              (List.map
-                                                                  (\group ->
-                                                                      div [ class "px-3 py-2 bg-gray-50 dark:bg-gray-800 rounded-md border border-gray-200 dark:border-gray-700" ]
-                                                                          [ text (groupName group) ]
-                                                                  )
-                                                                  sortedGroups
-                                                              )
-                                                          ]
-                                                      , isOpen = isOpen
-                                                      , onClose = RowShowAllPopupChanged Nothing
-                                                      , onOpen = RowShowAllPopupChanged <| Just ( o.id, ShowAllComputedGroups )
-                                                      }
-                                                      |> FloatingPopup.withPlacement FloatingPopup.Top
-                                                      |> FloatingPopup.view
-                                                  ]
+                                        visibleGroups =
+                                            List.take 10 sortedGroups
+                                    in
+                                    List.map
+                                        (\group ->
+                                            span
+                                                [ class "badge badge--ochre-light"
+                                                , title (groupName group)
+                                                ]
+                                                [ text (groupName group) ]
+                                        )
+                                        visibleGroups
+                                        ++ (if List.length sortedGroups > 10 then
+                                                let
+                                                    isOpen =
+                                                        case model.rowShowAllPopupStatus of
+                                                            Just ( organismId, ShowAllComputedGroups ) ->
+                                                                organismId == o.id
 
-                                              else
-                                                  []
-                                             )
+                                                            _ ->
+                                                                False
+                                                in
+                                                [ FloatingPopup.new
+                                                    { anchorContent =
+                                                        span [ class "inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 cursor-pointer rounded-md hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors" ]
+                                                            [ text ("Показати всі " ++ String.fromInt (List.length sortedGroups))
+                                                            , i [ class "bi bi-chevron-down text-xs" ] []
+                                                            ]
+                                                    , popupContent =
+                                                        div [ class "p-1 max-h-[300px] max-w-[400px] overflow-y-auto" ]
+                                                            [ div [ class "mb-3 pb-2 border-b border-gray-200 dark:border-gray-700" ]
+                                                                [ h4 [ class "text-sm font-semibold text-gray-900 dark:text-gray-100" ]
+                                                                    [ text ("Доступні групи (" ++ String.fromInt (List.length sortedGroups) ++ ")") ]
+                                                                ]
+                                                            , div [ class "space-y-2" ]
+                                                                (List.map
+                                                                    (\group ->
+                                                                        div [ class "px-3 py-2 bg-gray-50 dark:bg-gray-800 rounded-md border border-gray-200 dark:border-gray-700" ]
+                                                                            [ text (groupName group) ]
+                                                                    )
+                                                                    sortedGroups
+                                                                )
+                                                            ]
+                                                    , isOpen = isOpen
+                                                    , onClose = RowShowAllPopupChanged Nothing
+                                                    , onOpen = RowShowAllPopupChanged <| Just ( o.id, ShowAllComputedGroups )
+                                                    }
+                                                    |> FloatingPopup.withPlacement FloatingPopup.Top
+                                                    |> FloatingPopup.view
+                                                ]
+
+                                            else
+                                                []
+                                           )
                                 )
                             ]
                         }
@@ -1419,9 +1443,10 @@ organismsTableConfig groups organismGroups allOrganisms timeZone editingOrganism
                         , children =
                             [ div [ class "flex flex-wrap gap-1" ]
                                 (let
-                                    visibleRoles = List.take 10 o.roles
-                                in
-                                List.map
+                                    visibleRoles =
+                                        List.take 10 o.roles
+                                 in
+                                 List.map
                                     (\role ->
                                         span
                                             [ class "badge badge--neutral"
@@ -1441,24 +1466,26 @@ organismsTableConfig groups organismGroups allOrganisms timeZone editingOrganism
                                                             False
                                             in
                                             [ FloatingPopup.new
-                                                { anchorContent = span [ class "inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 cursor-pointer rounded-md hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors" ]
-                                                    [ text ("Показати всі " ++ String.fromInt (List.length o.roles))
-                                                    , i [ class "bi bi-chevron-down text-xs" ] []
-                                                    ]
-                                                , popupContent = div [ class "p-1 max-h-[300px] max-w-[400px] overflow-y-auto" ]
-                                                    [ div [ class "mb-3 pb-2 border-b border-gray-200 dark:border-gray-700" ]
-                                                        [ h4 [ class "text-sm font-semibold text-gray-900 dark:text-gray-100" ]
-                                                            [ text ("Ролі (" ++ String.fromInt (List.length o.roles) ++ ")") ]
+                                                { anchorContent =
+                                                    span [ class "inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 cursor-pointer rounded-md hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors" ]
+                                                        [ text ("Показати всі " ++ String.fromInt (List.length o.roles))
+                                                        , i [ class "bi bi-chevron-down text-xs" ] []
                                                         ]
-                                                    , div [ class "space-y-2" ]
-                                                        (List.map
-                                                            (\role ->
-                                                                div [ class "px-3 py-2 bg-gray-50 dark:bg-gray-800 rounded-md border border-gray-200 dark:border-gray-700" ]
-                                                                    [ text role ]
+                                                , popupContent =
+                                                    div [ class "p-1 max-h-[300px] max-w-[400px] overflow-y-auto" ]
+                                                        [ div [ class "mb-3 pb-2 border-b border-gray-200 dark:border-gray-700" ]
+                                                            [ h4 [ class "text-sm font-semibold text-gray-900 dark:text-gray-100" ]
+                                                                [ text ("Ролі (" ++ String.fromInt (List.length o.roles) ++ ")") ]
+                                                            ]
+                                                        , div [ class "space-y-2" ]
+                                                            (List.map
+                                                                (\role ->
+                                                                    div [ class "px-3 py-2 bg-gray-50 dark:bg-gray-800 rounded-md border border-gray-200 dark:border-gray-700" ]
+                                                                        [ text role ]
+                                                                )
+                                                                o.roles
                                                             )
-                                                            o.roles
-                                                        )
-                                                    ]
+                                                        ]
                                                 , isOpen = isOpen
                                                 , onClose = RowShowAllPopupChanged Nothing
                                                 , onOpen = RowShowAllPopupChanged <| Just ( o.id, ShowAllRoles )
@@ -1513,20 +1540,22 @@ organismsTableConfig groups organismGroups allOrganisms timeZone editingOrganism
                         , children =
                             [ div [ class "flex flex-wrap gap-1" ]
                                 (let
-                                    allAors = o.aorIds
-                                        |> List.filterMap
-                                            (\aorId ->
-                                                case RD.toMaybe aorList of
-                                                    Just aors ->
-                                                        ListX.find (\aor -> aor.id == aorId) aors
+                                    allAors =
+                                        o.aorIds
+                                            |> List.filterMap
+                                                (\aorId ->
+                                                    case RD.toMaybe aorList of
+                                                        Just aors ->
+                                                            ListX.find (\aor -> aor.id == aorId) aors
 
-                                                    Nothing ->
-                                                        Nothing
-                                            )
-                                    
-                                    visibleAors = List.take 10 allAors
-                                in
-                                List.map
+                                                        Nothing ->
+                                                            Nothing
+                                                )
+
+                                    visibleAors =
+                                        List.take 10 allAors
+                                 in
+                                 List.map
                                     (\aor ->
                                         span [ class "badge badge--neutral", title aor.name ]
                                             [ text aor.name ]
@@ -1543,24 +1572,26 @@ organismsTableConfig groups organismGroups allOrganisms timeZone editingOrganism
                                                             False
                                             in
                                             [ FloatingPopup.new
-                                                { anchorContent = span [ class "inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 cursor-pointer rounded-md hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors" ]
-                                                    [ text ("Показати всі " ++ String.fromInt (List.length allAors))
-                                                    , i [ class "bi bi-chevron-down text-xs" ] []
-                                                    ]
-                                                , popupContent = div [ class "p-1 max-h-[300px] max-w-[400px] overflow-y-auto" ]
-                                                    [ div [ class "mb-3 pb-2 border-b border-gray-200 dark:border-gray-700" ]
-                                                        [ h4 [ class "text-sm font-semibold text-gray-900 dark:text-gray-100" ]
-                                                            [ text ("Смуги (" ++ String.fromInt (List.length allAors) ++ ")") ]
+                                                { anchorContent =
+                                                    span [ class "inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 cursor-pointer rounded-md hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors" ]
+                                                        [ text ("Показати всі " ++ String.fromInt (List.length allAors))
+                                                        , i [ class "bi bi-chevron-down text-xs" ] []
                                                         ]
-                                                    , div [ class "space-y-2" ]
-                                                        (List.map
-                                                            (\aor ->
-                                                                div [ class "px-3 py-2 bg-gray-50 dark:bg-gray-800 rounded-md border border-gray-200 dark:border-gray-700" ]
-                                                                    [ text aor.name ]
+                                                , popupContent =
+                                                    div [ class "p-1 max-h-[300px] max-w-[400px] overflow-y-auto" ]
+                                                        [ div [ class "mb-3 pb-2 border-b border-gray-200 dark:border-gray-700" ]
+                                                            [ h4 [ class "text-sm font-semibold text-gray-900 dark:text-gray-100" ]
+                                                                [ text ("Смуги (" ++ String.fromInt (List.length allAors) ++ ")") ]
+                                                            ]
+                                                        , div [ class "space-y-2" ]
+                                                            (List.map
+                                                                (\aor ->
+                                                                    div [ class "px-3 py-2 bg-gray-50 dark:bg-gray-800 rounded-md border border-gray-200 dark:border-gray-700" ]
+                                                                        [ text aor.name ]
+                                                                )
+                                                                allAors
                                                             )
-                                                            allAors
-                                                        )
-                                                    ]
+                                                        ]
                                                 , isOpen = isOpen
                                                 , onClose = RowShowAllPopupChanged Nothing
                                                 , onOpen = RowShowAllPopupChanged <| Just ( o.id, ShowAllAors )
