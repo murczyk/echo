@@ -1030,6 +1030,7 @@ type alias InboxMessagesReq =
     , highlightSignals : Maybe Bool
     , selectedTags : Maybe (List Int)
     , selectedAors : Maybe (List Int)
+    , selectedNetworks : Maybe (List Int)
     , sortBy : Maybe InboxMessagesSortBy
     , reportTagsOnlyThisUnit : Maybe Bool
     , ignoreImportedCoords : Maybe Bool
@@ -1075,6 +1076,7 @@ inboxMessagesReqEncoder struct =
         , ( "highlight_signals", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.highlightSignals )
         , ( "selected_tags", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.int)) struct.selectedTags )
         , ( "selected_aors", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.int)) struct.selectedAors )
+        , ( "selected_networks", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.int)) struct.selectedNetworks )
         , ( "sort_by", (Maybe.withDefault Json.Encode.null << Maybe.map inboxMessagesSortByEncoder) struct.sortBy )
         , ( "report_tags_only_this_unit", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.reportTagsOnlyThisUnit )
         , ( "ignore_imported_coords", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.ignoreImportedCoords )
@@ -1471,6 +1473,7 @@ type alias AnalysisStatsReq =
     , orWithCoords : Maybe Bool
     , search : Maybe String
     , selectedTags : Maybe (List Int)
+    , selectedNetworks : Maybe (List Int)
     , includePelengLocations : Maybe Bool
     , unitsExactMatchOnly : Maybe Bool
     , filterTagsOption : Maybe TagFilterOption
@@ -1496,6 +1499,7 @@ analysisStatsReqEncoder struct =
         , ( "or_with_coords", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.orWithCoords )
         , ( "search", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.search )
         , ( "selected_tags", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.int)) struct.selectedTags )
+        , ( "selected_networks", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.int)) struct.selectedNetworks )
         , ( "include_peleng_locations", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.includePelengLocations )
         , ( "units_exact_match_only", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.unitsExactMatchOnly )
         , ( "filter_tags_option", (Maybe.withDefault Json.Encode.null << Maybe.map tagFilterOptionEncoder) struct.filterTagsOption )
@@ -1602,6 +1606,20 @@ analysisStatsLocationEncoder : AnalysisStatsLocation -> Json.Encode.Value
 analysisStatsLocationEncoder struct =
     Json.Encode.object
         [ ( "location", Json.Encode.string struct.location )
+        , ( "count", Json.Encode.int struct.count )
+        ]
+
+
+type alias AnalysisStatsNetwork =
+    { networkId : Int
+    , count : Int
+    }
+
+
+analysisStatsNetworkEncoder : AnalysisStatsNetwork -> Json.Encode.Value
+analysisStatsNetworkEncoder struct =
+    Json.Encode.object
+        [ ( "network_id", Json.Encode.int struct.networkId )
         , ( "count", Json.Encode.int struct.count )
         ]
 
@@ -1780,6 +1798,7 @@ type alias CallsignsGraphReq =
     , search : Maybe String
     , selectedTags : Maybe (List Int)
     , selectedAors : Maybe (List Int)
+    , selectedNetworks : Maybe (List Int)
     , includePelengLocations : Maybe Bool
     , unitsExactMatchOnly : Maybe Bool
     , filterTagsOption : Maybe TagFilterOption
@@ -1806,6 +1825,7 @@ callsignsGraphReqEncoder struct =
         , ( "search", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.search )
         , ( "selected_tags", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.int)) struct.selectedTags )
         , ( "selected_aors", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.int)) struct.selectedAors )
+        , ( "selected_networks", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.int)) struct.selectedNetworks )
         , ( "include_peleng_locations", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.includePelengLocations )
         , ( "units_exact_match_only", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.unitsExactMatchOnly )
         , ( "filter_tags_option", (Maybe.withDefault Json.Encode.null << Maybe.map tagFilterOptionEncoder) struct.filterTagsOption )
@@ -1833,6 +1853,34 @@ netJsonNodePropertiesEncoder : NetJsonNodeProperties -> Json.Encode.Value
 netJsonNodePropertiesEncoder struct =
     Json.Encode.object
         [ ( "freqs", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.string)) struct.freqs )
+        ]
+
+
+type alias NetworkEntry =
+    { id : Int
+    , name : String
+    }
+
+
+networkEntryEncoder : NetworkEntry -> Json.Encode.Value
+networkEntryEncoder struct =
+    Json.Encode.object
+        [ ( "id", Json.Encode.int struct.id )
+        , ( "name", Json.Encode.string struct.name )
+        ]
+
+
+type alias NetworkStatsRsp =
+    { networks : List AnalysisStatsNetwork
+    , networkNames : List NetworkEntry
+    }
+
+
+networkStatsRspEncoder : NetworkStatsRsp -> Json.Encode.Value
+networkStatsRspEncoder struct =
+    Json.Encode.object
+        [ ( "networks", Json.Encode.list analysisStatsNetworkEncoder struct.networks )
+        , ( "network_names", Json.Encode.list networkEntryEncoder struct.networkNames )
         ]
 
 
@@ -5206,6 +5254,7 @@ type alias CountStatsRsp =
     , locationsCount : Int
     , tagsCount : Int
     , aorsCount : Int
+    , networksCount : Int
     }
 
 
@@ -5223,6 +5272,7 @@ countStatsRspEncoder struct =
         , ( "locations_count", Json.Encode.int struct.locationsCount )
         , ( "tags_count", Json.Encode.int struct.tagsCount )
         , ( "aors_count", Json.Encode.int struct.aorsCount )
+        , ( "networks_count", Json.Encode.int struct.networksCount )
         ]
 
 
@@ -6336,6 +6386,7 @@ inboxMessagesReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "highlight_signals" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_tags" (Json.Decode.nullable (Json.Decode.list Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_aors" (Json.Decode.nullable (Json.Decode.list Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_networks" (Json.Decode.nullable (Json.Decode.list Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sort_by" (Json.Decode.nullable inboxMessagesSortByDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "report_tags_only_this_unit" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ignore_imported_coords" (Json.Decode.nullable Json.Decode.bool)))
@@ -6494,6 +6545,7 @@ analysisStatsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "or_with_coords" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "search" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_tags" (Json.Decode.nullable (Json.Decode.list Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_networks" (Json.Decode.nullable (Json.Decode.list Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_peleng_locations" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "units_exact_match_only" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_tags_option" (Json.Decode.nullable tagFilterOptionDecoder)))
@@ -6554,6 +6606,13 @@ analysisStatsLocationDecoder : Json.Decode.Decoder AnalysisStatsLocation
 analysisStatsLocationDecoder =
     Json.Decode.succeed AnalysisStatsLocation
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "location" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "count" Json.Decode.int))
+
+
+analysisStatsNetworkDecoder : Json.Decode.Decoder AnalysisStatsNetwork
+analysisStatsNetworkDecoder =
+    Json.Decode.succeed AnalysisStatsNetwork
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_id" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "count" Json.Decode.int))
 
 
@@ -6649,6 +6708,7 @@ callsignsGraphReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "search" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_tags" (Json.Decode.nullable (Json.Decode.list Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_aors" (Json.Decode.nullable (Json.Decode.list Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_networks" (Json.Decode.nullable (Json.Decode.list Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_peleng_locations" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "units_exact_match_only" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_tags_option" (Json.Decode.nullable tagFilterOptionDecoder)))
@@ -6664,6 +6724,20 @@ netJsonNodePropertiesDecoder : Json.Decode.Decoder NetJsonNodeProperties
 netJsonNodePropertiesDecoder =
     Json.Decode.succeed NetJsonNodeProperties
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freqs" (Json.Decode.nullable (Json.Decode.list Json.Decode.string))))
+
+
+networkEntryDecoder : Json.Decode.Decoder NetworkEntry
+networkEntryDecoder =
+    Json.Decode.succeed NetworkEntry
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" Json.Decode.string))
+
+
+networkStatsRspDecoder : Json.Decode.Decoder NetworkStatsRsp
+networkStatsRspDecoder =
+    Json.Decode.succeed NetworkStatsRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "networks" (Json.Decode.list analysisStatsNetworkDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_names" (Json.Decode.list networkEntryDecoder)))
 
 
 latLngDecoder : Json.Decode.Decoder LatLng
@@ -8699,6 +8773,7 @@ countStatsRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "locations_count" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tags_count" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aors_count" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "networks_count" Json.Decode.int))
 
 
 groupStatsRspDecoder : Json.Decode.Decoder GroupStatsRsp

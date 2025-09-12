@@ -271,6 +271,8 @@ pub async fn main_server(
             .service(crate::rer_importer::analysis::stats_deprecated)
             .service(crate::rer_importer::analysis::aor_stats)
             .service(crate::rer_importer::analysis::aor_stats_count)
+            .service(crate::rer_importer::analysis::network_stats)
+            .service(crate::rer_importer::analysis::network_stats_count)
             .service(crate::rer_importer::analysis::count_stats)
             .service(crate::rer_importer::analysis::location_stats)
             .service(crate::rer_importer::analysis::unit_stats)

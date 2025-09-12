@@ -1,4 +1,4 @@
-module Utils.Select exposing (SelectType, defaultOptions, multiUpdI, multiUpdIfModified, multiUpdS, multiUpdMenuOpen, renderSelect, renderSelectSingle, renderSelectVirtual, singleUpd, updateSelectItems, updateSelectSelected, updateSelectState, SelectTypeSingle, singleUpdWithDefault, SelectTypeSingleNotEmpty)
+module Utils.Select exposing (SelectType, SelectTypeSingle, SelectTypeSingleNotEmpty, defaultOptions, multiUpdI, multiUpdIfModified, multiUpdMenuOpen, multiUpdS, renderSelect, renderSelectSingle, renderSelectVirtual, singleUpd, singleUpdWithDefault, updateSelectItems, updateSelectSelected, updateSelectState)
 
 import Css
 import Html.Styled as Styled
@@ -12,6 +12,7 @@ type alias SelectType item =
     , selected : List item
     }
 
+
 type alias SelectTypeSingle item =
     { state : Select.State
     , items : List (Select.MenuItem item)
@@ -24,6 +25,8 @@ type alias SelectTypeSingleNotEmpty item =
     , items : List (Select.MenuItem item)
     , selected : item
     }
+
+
 updateSelectState : (Select.State -> Select.State) -> SelectType item -> SelectType item
 updateSelectState updateFn select =
     { select | state = updateFn select.state }
@@ -39,7 +42,7 @@ updateSelectSelected updateFn select =
     { select | selected = updateFn select.selected }
 
 
-singleUpd : Maybe (Select.Action item) -> Maybe  item-> Maybe item
+singleUpd : Maybe (Select.Action item) -> Maybe item -> Maybe item
 singleUpd mAction mValue =
     case mAction of
         Just (Select.Select i) ->
@@ -51,7 +54,8 @@ singleUpd mAction mValue =
         _ ->
             mValue
 
-singleUpdWithDefault : Maybe (Select.Action item) -> item-> item
+
+singleUpdWithDefault : Maybe (Select.Action item) -> item -> item
 singleUpdWithDefault mAction defaultValue =
     case mAction of
         Just (Select.Select i) ->
@@ -62,6 +66,7 @@ singleUpdWithDefault mAction defaultValue =
 
         _ ->
             defaultValue
+
 
 multiUpdS : Maybe (Select.Action String) -> List String -> List String
 multiUpdS mAction xs =
@@ -161,10 +166,10 @@ renderSelect selectedItems selectState menuItems placeholder options =
         controlStyles =
             Select.Styles.getControlConfig Select.Styles.default
                 |> Select.Styles.setControlMinHeight 25.0
-                |> Select.Styles.setControlMultiTagTruncationWidth 160
                 |> Select.Styles.setControlBorderColor (Css.rgb 248 249 250)
                 |> Select.Styles.setControlBorderColorFocus (Css.rgb 248 249 250)
                 |> Select.Styles.setControlBorderColorHover (Css.rgb 248 249 250)
+                |> Select.Styles.setControlMultiTagTruncationWidth 160
 
         styles =
             Select.Styles.setControlStyles controlStyles Select.Styles.default
@@ -297,6 +302,7 @@ draculaControl =
         |> Select.Styles.setControlSelectedColor (Css.hex "#fff")
         |> Select.Styles.setControlLoadingIndicatorColor (Css.hex "#ff79c6")
         |> Select.Styles.setControlMinHeight 25.0
+        |> Select.Styles.setControlMultiTagTruncationWidth 160
 
 
 draculaMenu : Select.Styles.MenuConfig

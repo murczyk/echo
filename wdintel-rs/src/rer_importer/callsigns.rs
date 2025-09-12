@@ -1051,6 +1051,7 @@ pub async fn callsigns_graph(
         selected_callsigns: req.selected_callsigns.clone(),
         selected_units: req.selected_units.clone(),
         selected_locations: req.selected_locations.clone(),
+        selected_networks: req.selected_networks.clone(),
         or_with_extended_form: req.or_with_extended_form,
         or_bookmarked: req.or_bookmarked,
         or_important: req.or_important,

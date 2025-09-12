@@ -108,6 +108,7 @@ init route _ =
             , unfoldUnitsFilter = False
             , unfoldLocationsFilter = False
             , unfoldTagsFilter = False
+            , unfoldNetworksFilter = False
             , unfoldPostsFilter = False
             , unfoldSumTable = False
             , unfoldCallsignGraph = False
@@ -148,6 +149,8 @@ init route _ =
             , selPostMenu = []
             , selUnitState = Select.initState (Select.selectIdentifier "selUnitState")
             , selUnitMenu = []
+            , selNetworkState = Select.initState (Select.selectIdentifier "selNetworkState")
+            , selNetworkMenu = []
             , filterUnits = ""
             , now = Nothing
             , tags = []
@@ -181,6 +184,9 @@ init route _ =
             , locations = NotAsked
             , units = NotAsked
             , counts = NotAsked
+            , networksStats = NotAsked
+            , networkNames = []
+            , networksSelected = []
             , posts = NotAsked
             , statsTags = NotAsked
             , focusedFilterItemsBeforeChange = Nothing
@@ -273,6 +279,10 @@ getInboxReq model =
     , filterTagsOption = Just model.filterTagsOption
     , pageId = Just "rer-analysis"
     , unitsExactMatchOnly = Just model.unitsExactMatchOnly
+    , selectedNetworks =
+        model.networksSelected
+            |> List.filterMap String.toInt
+            |> emptyToNothing
     }
 
 
@@ -303,6 +313,10 @@ cmdLoadCallsignGraph model { dtFromPosix, dtToPosix } =
             , selectedTags = emptyToNothing model.tagsSelected
             , filterTagsOption = Just model.filterTagsOption
             , unitsExactMatchOnly = Just model.unitsExactMatchOnly
+            , selectedNetworks =
+                model.networksSelected
+                    |> List.filterMap String.toInt
+                    |> emptyToNothing
             }
 
     else
@@ -700,8 +714,11 @@ update user shared route msg model =
                                 GroupsFilter ->
                                     List.length model.groupsSelected > 0
 
+                                NetworksFilter ->
+                                    List.length model.networksSelected > 0
+
                         all =
-                            [ AorsFilter, LocationsFilter, PostsFilter, UnitsFilter, FreqsFilter, CallsignsFilter, SendersFilter, GroupsFilter ]
+                            [ AorsFilter, LocationsFilter, PostsFilter, UnitsFilter, FreqsFilter, CallsignsFilter, SendersFilter, GroupsFilter, NetworksFilter ]
 
                         preselectedFilters =
                             List.filter (\filterName -> filterNameToListLength filterName) all
@@ -743,6 +760,7 @@ update user shared route msg model =
                                 , groups = NeedsReload (RD.withDefault [] model.groups)
                                 , callsigns = NeedsReload (RD.withDefault [] model.callsigns)
                                 , aors = NeedsReload (RD.withDefault [] model.aors)
+                                , networksStats = NeedsReload (RD.withDefault [] model.networksStats)
                             }
                         )
 
@@ -1036,6 +1054,37 @@ update user shared route msg model =
             , E.none
             )
 
+        GotStatsNetworks (Err e) ->
+            ( model
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження мереж" e
+            )
+
+        GotStatsNetworks (Ok rsp) ->
+            ( { model
+                | networksStats = Success rsp.networks
+                , networkNames = rsp.networkNames
+                , selNetworkMenu =
+                    List.map
+                        (\network ->
+                            let
+                                networkName =
+                                    rsp.networkNames
+                                        |> List.filter (\name -> name.id == network.networkId)
+                                        |> List.head
+                                        |> Maybe.map .name
+                                        |> Maybe.withDefault ("Network " ++ String.fromInt network.networkId)
+                            in
+                            Select.customMenuItem
+                                { item = String.fromInt network.networkId
+                                , label = networkName
+                                , view = Html.Styled.fromUnstyled (menuItemWithCount networkName network.count)
+                                }
+                        )
+                        rsp.networks
+              }
+            , E.none
+            )
+
         GotStatsGroups (Err e) ->
             ( model
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження груп" e
@@ -1088,6 +1137,7 @@ update user shared route msg model =
                         , callsigns = NeedsReload (RD.withDefault [] model.callsigns)
                         , groups = NeedsReload (RD.withDefault [] model.groups)
                         , aors = NeedsReload (RD.withDefault [] model.aors)
+                        , networksStats = NeedsReload (RD.withDefault [] model.networksStats)
                     }
 
         SelectOneFreq freqS ->
@@ -1105,6 +1155,7 @@ update user shared route msg model =
                         , callsigns = NeedsReload (RD.withDefault [] model.callsigns)
                         , groups = NeedsReload (RD.withDefault [] model.groups)
                         , aors = NeedsReload (RD.withDefault [] model.aors)
+                        , networksStats = NeedsReload (RD.withDefault [] model.networksStats)
                     }
 
         ToggleTagSelection tagId ->
@@ -1125,6 +1176,7 @@ update user shared route msg model =
                         , callsigns = NeedsReload (RD.withDefault [] model.callsigns)
                         , groups = NeedsReload (RD.withDefault [] model.groups)
                         , aors = NeedsReload (RD.withDefault [] model.aors)
+                        , networksStats = NeedsReload (RD.withDefault [] model.networksStats)
                     }
             in
             loadCoreStatsAndPushUrl m2
@@ -1142,6 +1194,7 @@ update user shared route msg model =
                         , callsigns = NeedsReload (RD.withDefault [] model.callsigns)
                         , groups = NeedsReload (RD.withDefault [] model.groups)
                         , aors = NeedsReload (RD.withDefault [] model.aors)
+                        , networksStats = NeedsReload (RD.withDefault [] model.networksStats)
                     }
             in
             loadCoreStatsAndPushUrl m2
@@ -1297,6 +1350,10 @@ update user shared route msg model =
                 , filterTagsOption = Just model.filterTagsOption
                 , pageId = Just "rer-analysis"
                 , unitsExactMatchOnly = Just model.unitsExactMatchOnly
+                , selectedNetworks =
+                    model.networksSelected
+                        |> List.filterMap String.toInt
+                        |> emptyToNothing
                 }
             )
 
@@ -1402,6 +1459,7 @@ update user shared route msg model =
                         , callsigns = NeedsReload (RD.withDefault [] model.callsigns)
                         , groups = NeedsReload (RD.withDefault [] model.groups)
                         , aors = NeedsReload (RD.withDefault [] model.aors)
+                        , networksStats = NeedsReload (RD.withDefault [] model.networksStats)
                     }
             in
             loadCoreStatsAndPushUrl m2
@@ -1440,6 +1498,7 @@ update user shared route msg model =
                         , callsigns = NeedsReload (RD.withDefault [] model.callsigns)
                         , groups = NeedsReload (RD.withDefault [] model.groups)
                         , aors = NeedsReload (RD.withDefault [] model.aors)
+                        , networksStats = NeedsReload (RD.withDefault [] model.networksStats)
                     }
             in
             loadCoreStatsAndPushUrl m2
@@ -1457,6 +1516,7 @@ update user shared route msg model =
                         , callsigns = NeedsReload (RD.withDefault [] model.callsigns)
                         , groups = NeedsReload (RD.withDefault [] model.groups)
                         , aors = NeedsReload (RD.withDefault [] model.aors)
+                        , networksStats = NeedsReload (RD.withDefault [] model.networksStats)
                     }
             in
             loadCoreStatsAndPushUrl m2
@@ -1474,6 +1534,7 @@ update user shared route msg model =
                         , callsigns = NeedsReload (RD.withDefault [] model.callsigns)
                         , groups = NeedsReload (RD.withDefault [] model.groups)
                         , aors = NeedsReload (RD.withDefault [] model.aors)
+                        , networksStats = NeedsReload (RD.withDefault [] model.networksStats)
                     }
             in
             loadCoreStatsAndPushUrl m2
@@ -1559,6 +1620,11 @@ update user shared route msg model =
 
         ToggleUnfoldTagsFilter ->
             ( { model | unfoldTagsFilter = not model.unfoldTagsFilter }
+            , E.none
+            )
+
+        ToggleUnfoldNetworksFilter ->
+            ( { model | unfoldNetworksFilter = not model.unfoldNetworksFilter }
             , E.none
             )
 
@@ -2039,9 +2105,10 @@ update user shared route msg model =
 
         SavedFilterMenuToggle id ->
             ( { model
-                | savedFilterMenuOpen = 
+                | savedFilterMenuOpen =
                     if model.savedFilterMenuOpen == Just id then
                         Nothing
+
                     else
                         Just id
               }
@@ -2171,6 +2238,7 @@ update user shared route msg model =
                     , callsigns = NeedsReload (RD.withDefault [] model.callsigns)
                     , groups = NeedsReload (RD.withDefault [] model.groups)
                     , aors = NeedsReload (RD.withDefault [] model.aors)
+                    , networksStats = NeedsReload (RD.withDefault [] model.networksStats)
                 }
 
         SearchInputKeyDown key ->
@@ -2195,6 +2263,7 @@ update user shared route msg model =
                     , callsigns = NeedsReload (RD.withDefault [] model.callsigns)
                     , groups = NeedsReload (RD.withDefault [] model.groups)
                     , aors = NeedsReload (RD.withDefault [] model.aors)
+                    , networksStats = NeedsReload (RD.withDefault [] model.networksStats)
                 }
 
         SelectTab tab ->
@@ -2645,6 +2714,61 @@ update user shared route msg model =
                     ( m3
                     , E.batch <|
                         [ E.sendCmd <| Cmd.map SelUnitMsg icmd
+                        , eff3
+                        ]
+                    )
+
+                _ ->
+                    ( model, E.none )
+
+        SelNetworkMsg imsg ->
+            case ( model.from.datePosix, model.to.datePosix ) of
+                ( Just dtFromPosix, Just dtToPosix ) ->
+                    let
+                        ( mAction, imodel2, icmd ) =
+                            Select.update imsg model.selNetworkState
+
+                        ( updatedSelectedItems, state ) =
+                            Utils.Select.multiUpdMenuOpen mAction model.networksSelected imodel2
+
+                        m2 =
+                            { model
+                                | selNetworkState = state
+                                , networksSelected = updatedSelectedItems
+                            }
+
+                        result =
+                            FiltersReloading.handleFilterState m2.focusedFilterItemsBeforeChange mAction m2.networksSelected m2.networksStats
+
+                        ( m3, eff3 ) =
+                            case result of
+                                BeforeInteraction Outdated ->
+                                    ( { m2 | focusedFilterItemsBeforeChange = Just model.networksSelected, networksStats = Loading }
+                                    , E.getNetworks GotStatsNetworks (Query.analysisStatsParams dtFromPosix dtToPosix m2)
+                                    )
+
+                                BeforeInteraction UpToDate ->
+                                    ( { m2 | focusedFilterItemsBeforeChange = Just model.networksSelected }, E.none )
+
+                                AfterInteraction Outdated ->
+                                    let
+                                        ( m_, eff_ ) =
+                                            loadCoreStatsAndPushUrl m2
+
+                                        m1_ =
+                                            invalidateFiltersState NetworksFilter m_
+                                    in
+                                    ( { m1_ | focusedFilterItemsBeforeChange = Nothing }, eff_ )
+
+                                AfterInteraction UpToDate ->
+                                    ( { m2 | focusedFilterItemsBeforeChange = Nothing }, E.none )
+
+                                _ ->
+                                    ( m2, E.none )
+                    in
+                    ( m3
+                    , E.batch <|
+                        [ E.sendCmd <| Cmd.map SelNetworkMsg icmd
                         , eff3
                         ]
                     )

@@ -642,7 +642,7 @@
 						"header": [],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"network_id\":39,\n    \"callsign\": \"Олень\",\n    \"position\": \"Оператор БпЛА\",\n    \"comment\": \"Олень, превее лесополки 50 малих, подлетай по тихоньку\",\n    \"source_id\": 2\n}",
+							"raw": "{\n    \"network_id\":7,\n    \"callsign\": \"Босс\",\n    \"position\": \"Командир\",\n    \"comment\": \"Олень, Босс сегодня после обеда будет, что б порядок бьіл\",\n    \"source_id\": 2,\n    \"radio_freq\": null,\n    \"unit_id\": null,\n    \"unit_developing\": true,\n    \"developing\": false,\n    \"main_radio_station\": true\n}",
 							"options": {
 								"raw": {
 									"language": "json"
@@ -1035,7 +1035,7 @@
 				"header": [],
 				"body": {
 					"mode": "raw",
-					"raw": "{\n    \"since_id_noninclusive\":null,\n    \"before_id_noninclusive\":null,\n    \"since_date_inclusive_ms\":1752958800000,\n    \"till_date_inclusive_ms\":1754600400000,\n    \"only_show_unprocessed\":null,\n    \"checked_only\":false,\n    \"selected_groups\":null,\n    \"selected_senders\":null,\n    \"denied_senders\":null,\n    \"selected_freqs\":[\"154.2500\"],\n    \"selected_posts\":null,\n    \"denied_posts\":null,\n    \"denied_freqs\":null,\n    \"selected_callsigns\":null,\n \t\"selected_units\": [\n\t\t\"10 тп 20 мсд\",\n\t\t\"123 омсбр 3 А\"\n\t],\n    \"selected_locations\":null,\n    \"nolimit\":null,\n    \"or_with_extended_form\":false,\n    \"load_latest\":null,\n    \"return_duplicates\":null,\n    \"or_bookmarked\":false,\n    \"or_important\":false,\n    \"or_with_coords\":false,\n    \"newest_first\":true,\n    \"search\":null,\n    \"highlight_callsigns\":null,\n    \"highlight_keywords\":null,\n    \"highlight_searchres\":true,\n    \"highlight_signals\":null,\n    \"selected_tags\":null,\n    \"selected_aors\":[1],\n    \"sort_by\":null,\n    \"report_tags_only_this_unit\":false,\n    \"ignore_imported_coords\":null,\n    \"include_peleng_locations\":true,\n    \"units_exact_match_only\":null,\n    \"calculate_freq_pelengs_summary\":null,\n    \"filter_tags_option\":\"OneOfTags\",\n    \"page_id\":\"rer-analysis\"\n    }",
+					"raw": "{\n    \"since_id_noninclusive\":null,\n    \"before_id_noninclusive\":null,\n    \"since_date_inclusive_ms\":1756684800000,\n    \"till_date_inclusive_ms\":1757116799000,\n    \"only_show_unprocessed\":null,\n    \"checked_only\":false,\n    \"selected_groups\":null,\n    \"selected_senders\":null,\n    \"denied_senders\":null,\n    \"selected_freqs\":null,\n    \"selected_posts\":null,\n    \"denied_posts\":null,\n    \"denied_freqs\":null,\n    \"selected_callsigns\":null,\n \t\"selected_units\": null,\n    \"selected_locations\":null,\n    \"nolimit\":null,\n    \"or_with_extended_form\":false,\n    \"load_latest\":null,\n    \"return_duplicates\":null,\n    \"or_bookmarked\":false,\n    \"or_important\":false,\n    \"or_with_coords\":false,\n    \"newest_first\":true,\n    \"search\":null,\n    \"highlight_callsigns\":null,\n    \"highlight_keywords\":null,\n    \"highlight_searchres\":true,\n    \"highlight_signals\":null,\n    \"selected_tags\":null,\n    \"selected_aors\":null,\n    \"selected_networks\":[69],\n    \"sort_by\":null,\n    \"report_tags_only_this_unit\":false,\n    \"ignore_imported_coords\":null,\n    \"include_peleng_locations\":true,\n    \"units_exact_match_only\":null,\n    \"calculate_freq_pelengs_summary\":null,\n    \"filter_tags_option\":\"OneOfTags\",\n    \"page_id\":\"rer-analysis\"\n    }",
 					"options": {
 						"raw": {
 							"language": "json"
@@ -1090,6 +1090,39 @@
 			"response": []
 		},
 		{
+			"name": "rer/analysis/stats/networks",
+			"request": {
+				"auth": {
+					"type": "noauth"
+				},
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"since_date_inclusive_ms\":1756684800000,\n    \"till_date_noninclusive_ms\":1757116799000,\n    \"selected_groups\":null,\n    \"selected_senders\":null,\n    \"selected_freqs\":null,\n    \"selected_posts\":null,\n    \"denied_posts\":null,\n    \"denied_freqs\":null,\n    \"selected_callsigns\":null,\n    \"selected_units\":null,\n    \"selected_locations\":null,\n    \"selected_tags\":null,\n    \"selected_aors\":null,\n    \"selected_networks\":null,\n    \"or_with_extended_form\":false,\n    \"or_bookmarked\":false,\n    \"or_important\":false,\n    \"or_with_coords\":false,\n    \"search\":null,\n    \"include_peleng_locations\":true,\n    \"units_exact_match_only\":null,\n    \"filter_tags_option\":null\n    }",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{base_url}}/api/rer/analysis/stats/networks",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"api",
+						"rer",
+						"analysis",
+						"stats",
+						"networks"
+					]
+				}
+			},
+			"response": []
+		},
+		{
 			"name": "rer/analysis/stats/aors/count",
 			"request": {
 				"auth": {
@@ -1117,6 +1150,40 @@
 						"analysis",
 						"stats",
 						"aors",
+						"count"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "rer/analysis/stats/networks/count",
+			"request": {
+				"auth": {
+					"type": "noauth"
+				},
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"since_date_inclusive_ms\":1756684800000,\n    \"till_date_noninclusive_ms\":1757116799000,\n    \"selected_groups\":null,\n    \"selected_senders\":null,\n    \"selected_freqs\":null,\n    \"selected_posts\":null,\n    \"denied_posts\":null,\n    \"denied_freqs\":null,\n    \"selected_callsigns\":null,\n    \"selected_units\":null,\n    \"selected_locations\":null,\n    \"selected_tags\":null,\n    \"selected_aors\":null,\n    \"selected_networks\":null,\n    \"or_with_extended_form\":false,\n    \"or_bookmarked\":false,\n    \"or_important\":false,\n    \"or_with_coords\":false,\n    \"search\":null,\n    \"include_peleng_locations\":true,\n    \"units_exact_match_only\":null,\n    \"filter_tags_option\":null\n    }",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{base_url}}/api/rer/analysis/stats/networks/count",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"api",
+						"rer",
+						"analysis",
+						"stats",
+						"networks",
 						"count"
 					]
 				}
@@ -1257,15 +1324,6 @@
 				},
 				"method": "POST",
 				"header": [],
-				"body": {
-					"mode": "raw",
-					"raw": "{\n\"since_date_inclusive_ms\":1750063071917,\n\"freq\":\"155.1250\"\n}",
-					"options": {
-						"raw": {
-							"language": "json"
-						}
-					}
-				},
 				"url": {
 					"raw": "{{base_url}}/api/datasources/list",
 					"host": [

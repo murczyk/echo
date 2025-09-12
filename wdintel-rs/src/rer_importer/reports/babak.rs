@@ -54,6 +54,7 @@ pub async fn report_docx_kind_babak(
         or_with_coords: req.req.or_with_coords,
         search: req.req.search.clone(),
         selected_tags: req.req.selected_tags.clone(),
+        selected_networks: req.req.selected_networks.clone(),
         include_peleng_locations: req.req.include_peleng_locations,
         units_exact_match_only: req.req.units_exact_match_only,
         filter_tags_option: req.req.filter_tags_option,
@@ -634,6 +635,8 @@ pub async fn get_inbox_messages_report_unit(
     let q = filter_selected_posts(q, &req.selected_posts)?;
     let q = filter_denied_freqs(q, &req.denied_freqs)?;
     let q = filter_selected_callsigns(q, &req.selected_callsigns)?;
+    let q =
+        filter_selected_networks(q, &req.selected_networks).context(h!())?;
     let q = filter_search(q, &req.search)?;
     let q = filter_selected_units(
         q,

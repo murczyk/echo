@@ -48,6 +48,7 @@ type Msg
     | ToggleUnfoldUnitsFilter
     | ToggleUnfoldLocationsFilter
     | ToggleUnfoldTagsFilter
+    | ToggleUnfoldNetworksFilter
     | ToggleUnfoldPostsFilter
     | ToggleUnfoldSumTable
     | ToggleUnfoldGraphs
@@ -100,6 +101,7 @@ type Msg
     | SelLocationMsg (Select.Msg String)
     | SelPostMsg (Select.Msg String)
     | SelUnitMsg (Select.Msg String)
+    | SelNetworkMsg (Select.Msg String)
     | FilterUnitsInp String
     | GotTags (Result ApiError (List ( Int, B.Tag )))
     | ReportTemplateSelect ReportTemplate
@@ -128,6 +130,7 @@ type Msg
     | GotStatsTags (Result ApiError B.TagStatsRsp)
     | GotStatsUnits (Result ApiError B.UnitStatsRsp)
     | GotStatsSenders (Result ApiError B.SenderStatsRsp)
+    | GotStatsNetworks (Result ApiError B.NetworkStatsRsp)
     | GotGdocCallsignsForSumTable (Result ApiError (List B.CallsignInfoRes))
     | GotStatsGroups (Result ApiError B.GroupStatsRsp)
     | GotMapPoints (Result ApiError B.MapPointsRsp)

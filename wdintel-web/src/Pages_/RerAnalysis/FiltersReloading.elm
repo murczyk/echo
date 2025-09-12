@@ -32,6 +32,7 @@ type alias AnalysisFiltersData a =
         , groups : RemoteData ApiError (List B.AnalysisStatsGroup)
         , freqs : RemoteData ApiError (List B.AnalysisStatsFreq)
         , callsigns : RemoteData ApiError (List B.AnalysisStatsCallsign)
+        , networksStats : RemoteData ApiError (List B.AnalysisStatsNetwork)
     }
 
 
@@ -51,6 +52,7 @@ invalidateFiltersState filterTriggeredChange model =
                 , callsigns = NeedsReload (RD.withDefault [] model.callsigns)
                 , groups = NeedsReload (RD.withDefault [] model.groups)
                 , senders = NeedsReload (RD.withDefault [] model.senders)
+                , networksStats = NeedsReload (RD.withDefault [] model.networksStats)
             }
 
         SendersFilter ->
@@ -62,6 +64,7 @@ invalidateFiltersState filterTriggeredChange model =
                 , callsigns = NeedsReload (RD.withDefault [] model.callsigns)
                 , groups = NeedsReload (RD.withDefault [] model.groups)
                 , aors = NeedsReload (RD.withDefault [] model.aors)
+                , networksStats = NeedsReload (RD.withDefault [] model.networksStats)
             }
 
         GroupsFilter ->
@@ -73,6 +76,7 @@ invalidateFiltersState filterTriggeredChange model =
                 , callsigns = NeedsReload (RD.withDefault [] model.callsigns)
                 , senders = NeedsReload (RD.withDefault [] model.senders)
                 , aors = NeedsReload (RD.withDefault [] model.aors)
+                , networksStats = NeedsReload (RD.withDefault [] model.networksStats)
             }
 
         FreqsFilter ->
@@ -84,6 +88,7 @@ invalidateFiltersState filterTriggeredChange model =
                 , callsigns = NeedsReload (RD.withDefault [] model.callsigns)
                 , groups = NeedsReload (RD.withDefault [] model.groups)
                 , aors = NeedsReload (RD.withDefault [] model.aors)
+                , networksStats = NeedsReload (RD.withDefault [] model.networksStats)
             }
 
         CallsignsFilter ->
@@ -95,6 +100,7 @@ invalidateFiltersState filterTriggeredChange model =
                 , freqs = NeedsReload (RD.withDefault [] model.freqs)
                 , groups = NeedsReload (RD.withDefault [] model.groups)
                 , aors = NeedsReload (RD.withDefault [] model.aors)
+                , networksStats = NeedsReload (RD.withDefault [] model.networksStats)
             }
 
         LocationsFilter ->
@@ -106,6 +112,7 @@ invalidateFiltersState filterTriggeredChange model =
                 , freqs = NeedsReload (RD.withDefault [] model.freqs)
                 , groups = NeedsReload (RD.withDefault [] model.groups)
                 , aors = NeedsReload (RD.withDefault [] model.aors)
+                , networksStats = NeedsReload (RD.withDefault [] model.networksStats)
             }
 
         PostsFilter ->
@@ -117,6 +124,7 @@ invalidateFiltersState filterTriggeredChange model =
                 , freqs = NeedsReload (RD.withDefault [] model.freqs)
                 , groups = NeedsReload (RD.withDefault [] model.groups)
                 , aors = NeedsReload (RD.withDefault [] model.aors)
+                , networksStats = NeedsReload (RD.withDefault [] model.networksStats)
             }
 
         UnitsFilter ->
@@ -128,6 +136,19 @@ invalidateFiltersState filterTriggeredChange model =
                 , freqs = NeedsReload (RD.withDefault [] model.freqs)
                 , groups = NeedsReload (RD.withDefault [] model.groups)
                 , aors = NeedsReload (RD.withDefault [] model.aors)
+                , networksStats = NeedsReload (RD.withDefault [] model.networksStats)
+            }
+
+        NetworksFilter ->
+            { model
+                | callsigns = NeedsReload (RD.withDefault [] model.callsigns)
+                , posts = NeedsReload (RD.withDefault [] model.posts)
+                , locations = NeedsReload (RD.withDefault [] model.locations)
+                , senders = NeedsReload (RD.withDefault [] model.senders)
+                , freqs = NeedsReload (RD.withDefault [] model.freqs)
+                , groups = NeedsReload (RD.withDefault [] model.groups)
+                , aors = NeedsReload (RD.withDefault [] model.aors)
+                , units = NeedsReload (RD.withDefault [] model.units)
             }
 
 
