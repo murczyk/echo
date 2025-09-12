@@ -16,11 +16,13 @@ import Maybe
 import Page exposing (Page)
 import Route exposing (Route)
 import Select
-import Set
+import Set exposing (Set)
 import Shared
 import Shared.Components.Button as Button
 import Shared.Components.Checkbox as Checkbox
+import Shared.Components.FloatingPopup as FloatingPopup
 import Shared.Components.Sidebar as Sidebar
+import Shared.Components.Spinner as Spinner
 import Shared.Components.Table as Table
 import Shared.Components.Table.Column as TableColumn
 import Shared.Components.Table.Config as TableConfig
@@ -114,9 +116,56 @@ getAvailableGroupsForOrganism maybeParentId organismGroups allGroups =
                     |> List.filter (\group -> List.member group.masterKey parentGroups)
 
 
+loadComputedGroups : Int -> Model -> ( Model, Effect Msg )
+loadComputedGroups organismId model =
+    if Set.member organismId model.loadingComputedGroups then
+        -- Вже завантажуємо, не робимо повторний запит
+        ( model, E.none )
+
+    else
+        let
+            newModel =
+                { model | loadingComputedGroups = Set.insert organismId model.loadingComputedGroups }
+        in
+        ( newModel, E.sendCmd <| Api.organism_available_groups (GotAvailableGroups organismId) organismId )
+
+
+getComputedGroups : Int -> Model -> List B.SignalGroupFull
+getComputedGroups organismId model =
+    Dict.get organismId model.computedGroups
+        |> Maybe.withDefault []
+
+
+isLoadingComputedGroups : Int -> Model -> Bool
+isLoadingComputedGroups organismId model =
+    Set.member organismId model.loadingComputedGroups
+
+
+loadComputedGroupsForAll : Model -> ( Model, Effect Msg )
+loadComputedGroupsForAll model =
+    let
+        organismIds =
+            model.organisms |> List.map .id
+
+        newModel =
+            { model | loadingComputedGroups = Set.fromList organismIds }
+    in
+    if List.isEmpty organismIds then
+        ( model, E.none )
+    else
+        ( newModel, E.sendCmd <| Api.organism_available_groups_batch GotAvailableGroupsBatch organismIds )
+
+
 type SidebarType
     = CreateSidebar
     | EditSidebar
+
+
+type ShowAllPopupFor
+    = ShowAllGroups
+    | ShowAllComputedGroups
+    | ShowAllRoles
+    | ShowAllAors
 
 
 type alias Model =
@@ -153,6 +202,9 @@ type alias Model =
     , groupsValidation : Maybe (List String)
     , aorList : RD.RemoteData ApiError (List B.AreaOfResponsibility)
     , sidebarType : Maybe SidebarType
+    , computedGroups : Dict Int (List B.SignalGroupFull)
+    , loadingComputedGroups : Set Int
+    , rowShowAllPopupStatus : Maybe ( Int, ShowAllPopupFor )
     }
 
 
@@ -233,6 +285,9 @@ init _ =
       , aorList = RD.NotAsked
       , tableState = Table.initialSort "Назва"
       , sidebarType = Nothing
+      , computedGroups = Dict.empty
+      , loadingComputedGroups = Set.empty
+      , rowShowAllPopupStatus = Nothing
       }
     , E.sendCmd <|
         Cmd.batch
@@ -270,6 +325,9 @@ type Msg
     | GotAllGroups (Result ApiError (List B.SignalGroupFull))
     | GotOrganismGroups (Result ApiError (List B.OrganismGroup))
     | GotAorList (Result ApiError (List B.AreaOfResponsibility))
+    | GotAvailableGroups Int (Result ApiError (List B.SignalGroupFull))
+    | GotAvailableGroupsBatch (Result ApiError (Dict Int (List B.SignalGroupFull)))
+    | RowShowAllPopupChanged (Maybe ( Int, ShowAllPopupFor ))
     | AddGroupToOrganismDone Int String Bool (Result ApiError ())
     | RemoveGroupFromOrganismDone Int String (Result ApiError ())
     | EditOrganismSave
@@ -299,8 +357,11 @@ update msg model =
 
                 inpParentOrganism2 =
                     { inpParentOrganism | items = organismsMenuItems }
+
+                newModel =
+                    { model | organisms = res, inpParentOrganism = inpParentOrganism2 }
             in
-            ( { model | organisms = res, inpParentOrganism = inpParentOrganism2 }, E.none )
+            loadComputedGroupsForAll newModel
 
         AddRoleSelMsg selMsg ->
             let
@@ -667,11 +728,12 @@ update msg model =
             ( m2
             , E.sendCmd <|
                 Cmd.batch
-                    (List.map
-                        (\x ->
-                            Api.add_group_to_organism (AddGroupToOrganismDone organism.id x False) { organismId = organism.id, groupName = x }
-                        )
-                        groupsToAdd
+                    (Api.organism_available_groups (GotAvailableGroups organism.id) organism.id
+                        :: List.map
+                            (\x ->
+                                Api.add_group_to_organism (AddGroupToOrganismDone organism.id x False) { organismId = organism.id, groupName = x }
+                            )
+                            groupsToAdd
                     )
             )
 
@@ -841,6 +903,23 @@ update msg model =
         GotAorList (Err e) ->
             ( { model | aorList = RD.Failure e }, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження смуг відповідальності" e )
 
+        GotAvailableGroups organismId (Ok groups) ->
+            ( { model | computedGroups = Dict.insert organismId groups model.computedGroups, loadingComputedGroups = Set.remove organismId model.loadingComputedGroups }, E.none )
+
+        GotAvailableGroups organismId (Err e) ->
+            ( { model | loadingComputedGroups = Set.remove organismId model.loadingComputedGroups }, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails ("Помилка завантаження computed груп для організму " ++ String.fromInt organismId) e )
+
+        GotAvailableGroupsBatch (Ok groupsDict) ->
+            ( { model | computedGroups = Dict.union groupsDict model.computedGroups, loadingComputedGroups = Set.empty }, E.none )
+
+        GotAvailableGroupsBatch (Err e) ->
+            ( { model | loadingComputedGroups = Set.empty }, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження computed груп для всіх організмів" e )
+
+        RowShowAllPopupChanged popupStatus ->
+            ( { model | rowShowAllPopupStatus = popupStatus }
+            , E.none
+            )
+
         AddAorSelMsg selMsg ->
             let
                 ( mAction, iState, iCmd ) =
@@ -988,7 +1067,26 @@ update msg model =
             ( { model | sidebarType = Nothing }, E.none )
 
         EditOrganismDone (Ok o) ->
-            ( { model | editOrganism = Nothing, sidebarType = Nothing, organisms = model.organisms |> ListX.updateIf (\x -> x.id == o.id) (\y -> { y | name = o.name, parentId = o.parentId, roles = o.roles, enabled = o.enabled, aorIds = o.aorIds }) }, E.none )
+            let
+                newModel =
+                    { model
+                        | editOrganism = Nothing
+                        , sidebarType = Nothing
+                        , organisms =
+                            model.organisms
+                                |> ListX.updateIf (\x -> x.id == o.id)
+                                    (\y ->
+                                        { y
+                                            | name = o.name
+                                            , parentId = o.parentId
+                                            , roles = o.roles
+                                            , enabled = o.enabled
+                                            , aorIds = o.aorIds
+                                        }
+                                    )
+                    }
+            in
+            loadComputedGroups o.id newModel
 
         EditOrganismDone (Err e) ->
             ( model, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення організму" e )
@@ -1065,8 +1163,8 @@ subscriptions model =
 -- TABLE CONFIGURATION
 
 
-organismsTableConfig : List B.SignalGroupFull -> List B.OrganismGroup -> List B.Organism -> Maybe Time.Zone -> Maybe Int -> RD.RemoteData ApiError (List B.AreaOfResponsibility) -> Table.Config B.Organism Msg
-organismsTableConfig groups organismGroups allOrganisms timeZone editingOrganismId aorList =
+organismsTableConfig : List B.SignalGroupFull -> List B.OrganismGroup -> List B.Organism -> Maybe Time.Zone -> Maybe Int -> RD.RemoteData ApiError (List B.AreaOfResponsibility) -> Model -> Table.Config B.Organism Msg
+organismsTableConfig groups organismGroups allOrganisms timeZone editingOrganismId aorList model =
     let
         defaultCustomizations =
             Table.defaultCustomizations
@@ -1161,23 +1259,75 @@ organismsTableConfig groups organismGroups allOrganisms timeZone editingOrganism
                 }
                 |> Table.withColumnWidth "14%"
             , Table.veryCustomColumn
-                { name = "Групи"
+                { name = "Лише групи"
                 , viewData =
                     \o ->
                         { attributes = [ class "col-wide" ]
                         , children =
                             [ div [ class "flex flex-wrap gap-1" ]
-                                (getOrganismGroups o.id organismGroups
-                                    |> List.filterMap (\groupId -> ListX.find (\x -> x.masterKey == groupId) groups)
-                                    |> List.sortBy (\group -> String.toLower (groupName group))
-                                    |> List.map
-                                        (\group ->
-                                            span
-                                                [ class "badge badge--ochre-light"
-                                                , title (groupName group)
-                                                ]
-                                                [ text (groupName group) ]
-                                        )
+                                (let
+                                    organismGroupIds =
+                                        getOrganismGroups o.id organismGroups
+
+                                    allGroups =
+                                        organismGroupIds
+                                            |> List.filterMap (\groupId -> ListX.find (\x -> x.masterKey == groupId) groups)
+                                            |> List.sortBy (\group -> String.toLower (groupName group))
+
+                                    visibleGroups =
+                                        List.take 10 allGroups
+                                 in
+                                 List.map
+                                    (\group ->
+                                        span
+                                            [ class "badge badge--ochre-light"
+                                            , title (groupName group)
+                                            ]
+                                            [ text (groupName group) ]
+                                    )
+                                    visibleGroups
+                                    ++ (if List.length allGroups > 10 then
+                                            let
+                                                isOpen =
+                                                    case model.rowShowAllPopupStatus of
+                                                        Just ( organismId, ShowAllGroups ) ->
+                                                            organismId == o.id
+
+                                                        _ ->
+                                                            False
+                                            in
+                                            [ FloatingPopup.new
+                                                { anchorContent =
+                                                    span [ class "inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 cursor-pointer rounded-md hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors" ]
+                                                        [ text ("Показати всі " ++ String.fromInt (List.length allGroups))
+                                                        , i [ class "bi bi-chevron-down text-xs" ] []
+                                                        ]
+                                                , popupContent =
+                                                    div [ class "p-1 max-h-[300px] max-w-[400px] overflow-y-auto" ]
+                                                        [ div [ class "mb-3 pb-2 border-b border-gray-200 dark:border-gray-700" ]
+                                                            [ h4 [ class "text-sm font-semibold text-gray-900 dark:text-gray-100" ]
+                                                                [ text ("Групи (" ++ String.fromInt (List.length allGroups) ++ ")") ]
+                                                            ]
+                                                        , div [ class "space-y-2" ]
+                                                            (List.map
+                                                                (\group ->
+                                                                    div [ class "px-3 py-2 bg-gray-50 dark:bg-gray-800 rounded-md border border-gray-200 dark:border-gray-700" ]
+                                                                        [ text (groupName group) ]
+                                                                )
+                                                                allGroups
+                                                            )
+                                                        ]
+                                                , isOpen = isOpen
+                                                , onClose = RowShowAllPopupChanged Nothing
+                                                , onOpen = RowShowAllPopupChanged <| Just ( o.id, ShowAllGroups )
+                                                }
+                                                |> FloatingPopup.withPlacement FloatingPopup.Top
+                                                |> FloatingPopup.view
+                                            ]
+
+                                        else
+                                            []
+                                       )
                                 )
                             ]
                         }
@@ -1192,21 +1342,159 @@ organismsTableConfig groups organismGroups allOrganisms timeZone editingOrganism
                 }
                 |> Table.withColumnWidth "19%"
             , Table.veryCustomColumn
+                { name = "Групи"
+                , viewData =
+                    \o ->
+                        { attributes = [ class "col-wide" ]
+                        , children =
+                            [ div [ class "flex flex-wrap gap-1" ]
+                                (let
+                                    computedGroups =
+                                        getComputedGroups o.id model
+
+                                    isLoading =
+                                        isLoadingComputedGroups o.id model
+                                 in
+                                 if isLoading then
+                                    [ Spinner.loadingSpinner2Sm ]
+
+                                 else
+                                    let
+                                        sortedGroups =
+                                            computedGroups |> List.sortBy (\group -> String.toLower (groupName group))
+
+                                        visibleGroups =
+                                            List.take 10 sortedGroups
+                                    in
+                                    List.map
+                                        (\group ->
+                                            span
+                                                [ class "badge badge--ochre-light"
+                                                , title (groupName group)
+                                                ]
+                                                [ text (groupName group) ]
+                                        )
+                                        visibleGroups
+                                        ++ (if List.length sortedGroups > 10 then
+                                                let
+                                                    isOpen =
+                                                        case model.rowShowAllPopupStatus of
+                                                            Just ( organismId, ShowAllComputedGroups ) ->
+                                                                organismId == o.id
+
+                                                            _ ->
+                                                                False
+                                                in
+                                                [ FloatingPopup.new
+                                                    { anchorContent =
+                                                        span [ class "inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 cursor-pointer rounded-md hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors" ]
+                                                            [ text ("Показати всі " ++ String.fromInt (List.length sortedGroups))
+                                                            , i [ class "bi bi-chevron-down text-xs" ] []
+                                                            ]
+                                                    , popupContent =
+                                                        div [ class "p-1 max-h-[300px] max-w-[400px] overflow-y-auto" ]
+                                                            [ div [ class "mb-3 pb-2 border-b border-gray-200 dark:border-gray-700" ]
+                                                                [ h4 [ class "text-sm font-semibold text-gray-900 dark:text-gray-100" ]
+                                                                    [ text ("Доступні групи (" ++ String.fromInt (List.length sortedGroups) ++ ")") ]
+                                                                ]
+                                                            , div [ class "space-y-2" ]
+                                                                (List.map
+                                                                    (\group ->
+                                                                        div [ class "px-3 py-2 bg-gray-50 dark:bg-gray-800 rounded-md border border-gray-200 dark:border-gray-700" ]
+                                                                            [ text (groupName group) ]
+                                                                    )
+                                                                    sortedGroups
+                                                                )
+                                                            ]
+                                                    , isOpen = isOpen
+                                                    , onClose = RowShowAllPopupChanged Nothing
+                                                    , onOpen = RowShowAllPopupChanged <| Just ( o.id, ShowAllComputedGroups )
+                                                    }
+                                                    |> FloatingPopup.withPlacement FloatingPopup.Top
+                                                    |> FloatingPopup.view
+                                                ]
+
+                                            else
+                                                []
+                                           )
+                                )
+                            ]
+                        }
+                , sorter =
+                    Table.increasingOrDecreasingBy
+                        (\o ->
+                            let
+                                computedGroups =
+                                    getComputedGroups o.id model
+                            in
+                            computedGroups
+                                |> List.map groupName
+                                |> String.join ", "
+                        )
+                }
+                |> Table.withColumnWidth "19%"
+            , Table.veryCustomColumn
                 { name = "Ролі"
                 , viewData =
                     \o ->
                         { attributes = []
                         , children =
                             [ div [ class "flex flex-wrap gap-1" ]
-                                (o.roles
-                                    |> List.map
-                                        (\role ->
-                                            span
-                                                [ class "badge badge--neutral"
-                                                , title role
-                                                ]
-                                                [ text role ]
-                                        )
+                                (let
+                                    visibleRoles =
+                                        List.take 10 o.roles
+                                 in
+                                 List.map
+                                    (\role ->
+                                        span
+                                            [ class "badge badge--neutral"
+                                            , title role
+                                            ]
+                                            [ text role ]
+                                    )
+                                    visibleRoles
+                                    ++ (if List.length o.roles > 10 then
+                                            let
+                                                isOpen =
+                                                    case model.rowShowAllPopupStatus of
+                                                        Just ( organismId, ShowAllRoles ) ->
+                                                            organismId == o.id
+
+                                                        _ ->
+                                                            False
+                                            in
+                                            [ FloatingPopup.new
+                                                { anchorContent =
+                                                    span [ class "inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 cursor-pointer rounded-md hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors" ]
+                                                        [ text ("Показати всі " ++ String.fromInt (List.length o.roles))
+                                                        , i [ class "bi bi-chevron-down text-xs" ] []
+                                                        ]
+                                                , popupContent =
+                                                    div [ class "p-1 max-h-[300px] max-w-[400px] overflow-y-auto" ]
+                                                        [ div [ class "mb-3 pb-2 border-b border-gray-200 dark:border-gray-700" ]
+                                                            [ h4 [ class "text-sm font-semibold text-gray-900 dark:text-gray-100" ]
+                                                                [ text ("Ролі (" ++ String.fromInt (List.length o.roles) ++ ")") ]
+                                                            ]
+                                                        , div [ class "space-y-2" ]
+                                                            (List.map
+                                                                (\role ->
+                                                                    div [ class "px-3 py-2 bg-gray-50 dark:bg-gray-800 rounded-md border border-gray-200 dark:border-gray-700" ]
+                                                                        [ text role ]
+                                                                )
+                                                                o.roles
+                                                            )
+                                                        ]
+                                                , isOpen = isOpen
+                                                , onClose = RowShowAllPopupChanged Nothing
+                                                , onOpen = RowShowAllPopupChanged <| Just ( o.id, ShowAllRoles )
+                                                }
+                                                |> FloatingPopup.withPlacement FloatingPopup.Top
+                                                |> FloatingPopup.view
+                                            ]
+
+                                        else
+                                            []
+                                       )
                                 )
                             ]
                         }
@@ -1249,21 +1537,70 @@ organismsTableConfig groups organismGroups allOrganisms timeZone editingOrganism
                         { attributes = []
                         , children =
                             [ div [ class "flex flex-wrap gap-1" ]
-                                (o.aorIds
-                                    |> List.filterMap
-                                        (\aorId ->
-                                            case RD.toMaybe aorList of
-                                                Just aors ->
-                                                    ListX.find (\aor -> aor.id == aorId) aors
+                                (let
+                                    allAors =
+                                        o.aorIds
+                                            |> List.filterMap
+                                                (\aorId ->
+                                                    case RD.toMaybe aorList of
+                                                        Just aors ->
+                                                            ListX.find (\aor -> aor.id == aorId) aors
 
-                                                Nothing ->
-                                                    Nothing
-                                        )
-                                    |> List.map
-                                        (\aor ->
-                                            span [ class "badge badge--blue-light", title aor.name ]
-                                                [ text aor.name ]
-                                        )
+                                                        Nothing ->
+                                                            Nothing
+                                                )
+
+                                    visibleAors =
+                                        List.take 10 allAors
+                                 in
+                                 List.map
+                                    (\aor ->
+                                        span [ class "badge badge--neutral", title aor.name ]
+                                            [ text aor.name ]
+                                    )
+                                    visibleAors
+                                    ++ (if List.length allAors > 10 then
+                                            let
+                                                isOpen =
+                                                    case model.rowShowAllPopupStatus of
+                                                        Just ( organismId, ShowAllAors ) ->
+                                                            organismId == o.id
+
+                                                        _ ->
+                                                            False
+                                            in
+                                            [ FloatingPopup.new
+                                                { anchorContent =
+                                                    span [ class "inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 cursor-pointer rounded-md hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors" ]
+                                                        [ text ("Показати всі " ++ String.fromInt (List.length allAors))
+                                                        , i [ class "bi bi-chevron-down text-xs" ] []
+                                                        ]
+                                                , popupContent =
+                                                    div [ class "p-1 max-h-[300px] max-w-[400px] overflow-y-auto" ]
+                                                        [ div [ class "mb-3 pb-2 border-b border-gray-200 dark:border-gray-700" ]
+                                                            [ h4 [ class "text-sm font-semibold text-gray-900 dark:text-gray-100" ]
+                                                                [ text ("Смуги (" ++ String.fromInt (List.length allAors) ++ ")") ]
+                                                            ]
+                                                        , div [ class "space-y-2" ]
+                                                            (List.map
+                                                                (\aor ->
+                                                                    div [ class "px-3 py-2 bg-gray-50 dark:bg-gray-800 rounded-md border border-gray-200 dark:border-gray-700" ]
+                                                                        [ text aor.name ]
+                                                                )
+                                                                allAors
+                                                            )
+                                                        ]
+                                                , isOpen = isOpen
+                                                , onClose = RowShowAllPopupChanged Nothing
+                                                , onOpen = RowShowAllPopupChanged <| Just ( o.id, ShowAllAors )
+                                                }
+                                                |> FloatingPopup.withPlacement FloatingPopup.Top
+                                                |> FloatingPopup.view
+                                            ]
+
+                                        else
+                                            []
+                                       )
                                 )
                             ]
                         }
@@ -1684,7 +2021,7 @@ mainBlock isDark model =
             ]
         , div [ class "table-responsive-modern" ]
             [ Table.view
-                (organismsTableConfig model.groups model.organismGroups model.organisms model.timeZone (Maybe.map Tuple.first model.editOrganism) model.aorList)
+                (organismsTableConfig model.groups model.organismGroups model.organisms model.timeZone (Maybe.map Tuple.first model.editOrganism) model.aorList model)
                 model.tableState
                 (filterOrganismsByName model.nameFilter model.organisms)
             ]

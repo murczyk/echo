@@ -1271,6 +1271,24 @@ organism_group_list toMsg =
         }
 
 
+organism_available_groups : (Result ApiError (List SignalGroupFull) -> msg) -> Int -> Cmd msg
+organism_available_groups toMsg organismId =
+    Http.post
+        { url = "/api/organism/available-groups"
+        , body = Http.jsonBody (Encode.int organismId)
+        , expect = leExpectJson toMsg (Decode.list signalGroupFullDecoder)
+        }
+
+
+organism_available_groups_batch : (Result ApiError (Dict Int (List SignalGroupFull)) -> msg) -> List Int -> Cmd msg
+organism_available_groups_batch toMsg organismIds =
+    Http.post
+        { url = "/api/organism/available-groups-batch"
+        , body = Http.jsonBody (Encode.list Encode.int organismIds)
+        , expect = leExpectJson toMsg (Decode.keyValuePairs (Decode.list signalGroupFullDecoder) |> Decode.map (Dict.fromList << List.map (\(k, v) -> (Maybe.withDefault 0 (String.toInt k), v))))
+        }
+
+
 create_login_delta : (Result ApiError Login -> msg) -> CreateLoginReq -> Cmd msg
 create_login_delta toMsg req =
     Http.post
