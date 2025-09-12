@@ -996,18 +996,20 @@ fn build_basic_network_callsigns_table(
 
     let headers = vec![
         create_table_header_cell(
-            width_unit * 7,
+            width_unit * 9,
             None,
             &header_style_id,
             "Позивний",
             false,
+            0,
         ),
         create_table_header_cell(
-            width_unit * 28,
+            width_unit * 26,
             None,
             &header_style_id,
             "Приналежність",
             false,
+            0,
         ),
         create_table_header_cell(
             width_unit * 13,
@@ -1015,19 +1017,20 @@ fn build_basic_network_callsigns_table(
             &header_style_id,
             "Останній раз в етері",
             false,
+            0,
         ),
     ];
 
     let row_builder = Box::new(move |callsign: &NetworkCallsign| {
         vec![
             create_table_data_cell(
-                width_unit * 7,
+                width_unit * 9,
                 &callsign.callsign.to_uppercase(),
                 None,
                 false,
             ),
             create_table_data_cell(
-                width_unit * 28,
+                width_unit * 26,
                 format!(
                     "{} {}",
                     callsign.position.clone().unwrap_or_default(),
@@ -1059,6 +1062,7 @@ fn build_basic_network_callsigns_table(
             &header_style_id,
             title,
             false,
+            3,
         )])
     });
 
@@ -1085,6 +1089,7 @@ fn build_extended_network_callsigns_table(
             &header_style_id,
             "Позивний",
             false,
+            0,
         ),
         create_table_header_cell(
             width_unit * 10,
@@ -1092,6 +1097,7 @@ fn build_extended_network_callsigns_table(
             &header_style_id,
             "Приналежність",
             false,
+            0,
         ),
         create_table_header_cell(
             width_unit * 10,
@@ -1099,34 +1105,39 @@ fn build_extended_network_callsigns_table(
             &header_style_id,
             "Коментар",
             false,
+            0,
         ),
         create_table_header_cell(
-            width_unit,
+            width_unit * 2,
             Some(DEFAULT_TABLE_HEADER_COLOR),
             &header_style_id,
-            "К-ть перехоплень",
+            "К-ть",
             false,
+            0,
         ),
         create_table_header_cell(
-            width_unit * 3,
+            width_unit * 4,
             Some(DEFAULT_TABLE_HEADER_COLOR),
             &header_style_id,
             "Частоти",
             false,
+            0,
         ),
         create_table_header_cell(
-            width_unit * 7,
+            width_unit * 6,
             Some(DEFAULT_TABLE_HEADER_COLOR),
             &header_style_id,
             "Останній раз в етері",
             false,
+            0,
         ),
         create_table_header_cell(
-            width_unit * 7,
+            width_unit * 6,
             Some(DEFAULT_TABLE_HEADER_COLOR),
             &header_style_id,
             "Дата прив'язки",
             false,
+            0,
         ),
         create_table_header_cell(
             width_unit * 5,
@@ -1134,6 +1145,7 @@ fn build_extended_network_callsigns_table(
             &header_style_id,
             "Джерело",
             false,
+            0,
         ),
     ];
 
@@ -1165,26 +1177,26 @@ fn build_extended_network_callsigns_table(
                     false,
                 ),
                 create_table_data_cell(
-                    width_unit,
+                    width_unit*2,
                     &callsign.message_count.to_string(),
                     None,
                     false,
                 ),
                 create_table_data_cell(
-                    width_unit * 3,
+                    width_unit * 4,
                     get_unique_field_as_string(&callsign.freqs, |f| f.clone())
                         .as_str(),
                     None,
                     false,
                 ),
                 create_table_data_cell(
-                    width_unit * 7,
+                    width_unit * 6,
                     format_datetime_field(callsign.last_datetime).as_str(),
                     None,
                     false,
                 ),
                 create_table_data_cell(
-                    width_unit * 7,
+                    width_unit * 6,
                     format_datetime_field(Some(callsign.created_at)).as_str(),
                     None,
                     false,
@@ -1217,6 +1229,7 @@ fn build_extended_network_callsigns_table(
             &header_style_id,
             title,
             false,
+            8,
         )])
     });
 
@@ -1241,6 +1254,7 @@ fn build_unit_callsigns_table(
             &header_style_id,
             "Позивний",
             false,
+            0,
         ),
         create_table_header_cell(
             width_unit * 10,
@@ -1248,6 +1262,7 @@ fn build_unit_callsigns_table(
             &header_style_id,
             "Приналежність",
             false,
+            0,
         ),
         create_table_header_cell(
             width_unit * 10,
@@ -1255,34 +1270,39 @@ fn build_unit_callsigns_table(
             &header_style_id,
             "Коментар",
             false,
+            0,
         ),
         create_table_header_cell(
-            width_unit,
+            width_unit * 2,
             Some(DEFAULT_TABLE_HEADER_COLOR),
             &header_style_id,
-            "К-ть перехоплень",
+            "К-ть",
             false,
+            0,
         ),
         create_table_header_cell(
-            width_unit * 3,
+            width_unit * 4,
             Some(DEFAULT_TABLE_HEADER_COLOR),
             &header_style_id,
             "Частоти",
             false,
+            0,
         ),
         create_table_header_cell(
-            width_unit * 7,
+            width_unit * 6,
             Some(DEFAULT_TABLE_HEADER_COLOR),
             &header_style_id,
             "Останній раз в етері",
             false,
+            0,
         ),
         create_table_header_cell(
-            width_unit * 7,
+            width_unit * 6,
             Some(DEFAULT_TABLE_HEADER_COLOR),
             &header_style_id,
             "Дата прив'язки",
             false,
+            0,
         ),
         create_table_header_cell(
             width_unit * 5,
@@ -1290,6 +1310,7 @@ fn build_unit_callsigns_table(
             &header_style_id,
             "Джерело",
             false,
+            0,
         ),
     ];
 
@@ -1320,26 +1341,26 @@ fn build_unit_callsigns_table(
                 false,
             ),
             create_table_data_cell(
-                width_unit,
+                width_unit * 2,
                 &callsign.message_count.to_string(),
                 get_color(callsign.is_old),
                 false,
             ),
             create_table_data_cell(
-                width_unit * 3,
+                width_unit * 4,
                 get_unique_field_as_string(&callsign.freqs, |f| f.clone())
                     .as_str(),
                 get_color(callsign.is_old),
                 false,
             ),
             create_table_data_cell(
-                width_unit * 7,
+                width_unit * 6,
                 format_datetime_field(callsign.last_datetime).as_str(),
                 get_color(callsign.is_old),
                 false,
             ),
             create_table_data_cell(
-                width_unit * 7,
+                width_unit * 6,
                 get_unique_field_as_string(&callsign.known_callsigns, |item| {
                     format_datetime_field(Some(item.created_at))
                 })
@@ -1371,11 +1392,12 @@ fn build_basic_freqs_table(
 
     let headers = vec![
         create_table_header_cell(
-            width_unit * 16,
+            width_unit * 19,
             None,
             &header_style_id,
             "Частота",
             false,
+            0,
         ),
         create_table_header_cell(
             width_unit * 16,
@@ -1383,19 +1405,21 @@ fn build_basic_freqs_table(
             &header_style_id,
             "Модуляція",
             false,
+            0,
         ),
         create_table_header_cell(
-            width_unit * 16,
+            width_unit * 13,
             None,
             &header_style_id,
             "Останній раз в етері",
             false,
+            0,
         ),
     ];
 
     let row_builder = move |freq: &NetworkFreqsRes| {
         vec![
-            create_table_data_cell(width_unit * 16, &freq.freq, None, false),
+            create_table_data_cell(width_unit * 19, &freq.freq, None, false),
             create_table_data_cell(
                 width_unit * 16,
                 &freq
@@ -1406,7 +1430,7 @@ fn build_basic_freqs_table(
                 false,
             ),
             create_table_data_cell(
-                width_unit * 16,
+                width_unit * 13,
                 &format_datetime_field(freq.last_datetime),
                 get_color(!freq.is_active),
                 false,
@@ -1431,27 +1455,31 @@ fn build_extended_freqs_table(
             &header_style_id,
             "Частота",
             false,
+            0,
         ),
         create_table_header_cell(
-            width_unit * 3,
+            width_unit * 5,
             Some(DEFAULT_TABLE_HEADER_COLOR),
             &header_style_id,
             "Модуляція",
             false,
+            0,
         ),
         create_table_header_cell(
             width_unit * 2,
             Some(DEFAULT_TABLE_HEADER_COLOR),
             &header_style_id,
-            "К-ть перехоплень",
+            "К-ть",
             false,
+            0,
         ),
         create_table_header_cell(
-            width_unit * 25,
+            width_unit * 23,
             Some(DEFAULT_TABLE_HEADER_COLOR),
             &header_style_id,
             "Позивні",
             false,
+            0,
         ),
         create_table_header_cell(
             width_unit * 7,
@@ -1459,6 +1487,7 @@ fn build_extended_freqs_table(
             &header_style_id,
             "Останній раз в етері",
             false,
+            0,
         ),
         create_table_header_cell(
             width_unit * 7,
@@ -1466,6 +1495,7 @@ fn build_extended_freqs_table(
             &header_style_id,
             "Дата прив'язки",
             false,
+            0,
         ),
     ];
 
@@ -1485,7 +1515,7 @@ fn build_extended_freqs_table(
         vec![
             create_table_data_cell(width_unit * 4, &freq.freq, None, false),
             create_table_data_cell(
-                width_unit * 3,
+                width_unit * 5,
                 &freq
                     .modulation
                     .clone()
@@ -1500,7 +1530,7 @@ fn build_extended_freqs_table(
                 false,
             ),
             create_table_data_cell(
-                width_unit * 25,
+                width_unit * 23,
                 &formatted_callsigns,
                 None,
                 false,
@@ -1638,6 +1668,7 @@ fn create_table_header_cell(
     style_id: &str,
     text: &str,
     with_empty_borders: bool,
+    grid_span: usize,
 ) -> TableCell {
     let table_cell_borders = if with_empty_borders {
         TableCellBorders::with_empty()
@@ -1656,6 +1687,10 @@ fn create_table_header_cell(
 
     if let Some(fill_color) = fill {
         cell = cell.shading(Shading::new().fill(fill_color));
+    }
+
+    if grid_span > 0 {
+        cell = cell.grid_span(grid_span);
     }
 
     cell
