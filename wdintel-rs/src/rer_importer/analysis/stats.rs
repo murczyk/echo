@@ -1424,7 +1424,6 @@ fn build_networks_query(
         &req.or_with_extended_form,
         &req.filter_tags_option,
         user.id()?.as_str(),
-        false,
     )
     .context(h!())?;
 
