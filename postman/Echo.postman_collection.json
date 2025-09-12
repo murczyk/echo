@@ -19,7 +19,7 @@
 						"header": [],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"network_ids\":[2830],\n    \"sort_by\":null,\n    \"settings\":\n    {\n        \"networks_only\":true,\n        \"active_freqs_only\":true,\n        \"include_pelengs_map\":false,\n        \"include_sigint_signs\":false,\n        \"include_confirmation\":false\n    }\n}",
+							"raw": "{\n  \"network_ids\": [8],\n  \"sort_by\": null,\n  \"etalonka_type\": {\n    \"ExtendedReport\": {\n      \"since_date_inclusive_ms\":1756699200000,\n      \"till_date_inclusive_ms\":1757548799000,\n      \"active_freqs_only\": false,\n\t  \"include_unit_callsigns\":true,\n      \"include_sigint_signs\": true,\n      \"include_confirmation\": true,\n\t  \"include_pelengs_map\":true\n    }\n  }\n}",
 							"options": {
 								"raw": {
 									"language": "json"

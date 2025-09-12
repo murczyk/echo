@@ -1177,7 +1177,7 @@ fn build_extended_network_callsigns_table(
                     false,
                 ),
                 create_table_data_cell(
-                    width_unit*2,
+                    width_unit * 2,
                     &callsign.message_count.to_string(),
                     None,
                     false,
