@@ -22,6 +22,7 @@ import Shared.Components.Button as Button
 import Shared.Components.Checkbox as Checkbox
 import Shared.Components.FloatingPopup as FloatingPopup
 import Shared.Components.Sidebar as Sidebar
+import Shared.Components.Spinner as Spinner
 import Shared.Components.Table as Table
 import Shared.Components.Table.Column as TableColumn
 import Shared.Components.Table.Config as TableConfig
@@ -146,23 +147,13 @@ loadComputedGroupsForAll model =
         organismIds =
             model.organisms |> List.map .id
 
-        notLoadingIds =
-            organismIds |> List.filter (\id -> not (Set.member id model.loadingComputedGroups))
-
-        notLoadedIds =
-            notLoadingIds |> List.filter (\id -> not (Dict.member id model.computedGroups))
-
         newModel =
-            { model | loadingComputedGroups = Set.union model.loadingComputedGroups (Set.fromList notLoadedIds) }
-
-        commands =
-            notLoadedIds |> List.map (\id -> Api.organism_available_groups (GotAvailableGroups id) id)
+            { model | loadingComputedGroups = Set.fromList organismIds }
     in
-    if List.isEmpty commands then
+    if List.isEmpty organismIds then
         ( model, E.none )
-
     else
-        ( newModel, E.sendCmd <| Cmd.batch commands )
+        ( newModel, E.sendCmd <| Api.organism_available_groups_batch GotAvailableGroupsBatch organismIds )
 
 
 type SidebarType
@@ -335,6 +326,7 @@ type Msg
     | GotOrganismGroups (Result ApiError (List B.OrganismGroup))
     | GotAorList (Result ApiError (List B.AreaOfResponsibility))
     | GotAvailableGroups Int (Result ApiError (List B.SignalGroupFull))
+    | GotAvailableGroupsBatch (Result ApiError (Dict Int (List B.SignalGroupFull)))
     | RowShowAllPopupChanged (Maybe ( Int, ShowAllPopupFor ))
     | AddGroupToOrganismDone Int String Bool (Result ApiError ())
     | RemoveGroupFromOrganismDone Int String (Result ApiError ())
@@ -917,6 +909,12 @@ update msg model =
         GotAvailableGroups organismId (Err e) ->
             ( { model | loadingComputedGroups = Set.remove organismId model.loadingComputedGroups }, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails ("Помилка завантаження computed груп для організму " ++ String.fromInt organismId) e )
 
+        GotAvailableGroupsBatch (Ok groupsDict) ->
+            ( { model | computedGroups = Dict.union groupsDict model.computedGroups, loadingComputedGroups = Set.empty }, E.none )
+
+        GotAvailableGroupsBatch (Err e) ->
+            ( { model | loadingComputedGroups = Set.empty }, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження computed груп для всіх організмів" e )
+
         RowShowAllPopupChanged popupStatus ->
             ( { model | rowShowAllPopupStatus = popupStatus }
             , E.none
@@ -1261,7 +1259,7 @@ organismsTableConfig groups organismGroups allOrganisms timeZone editingOrganism
                 }
                 |> Table.withColumnWidth "14%"
             , Table.veryCustomColumn
-                { name = "Групи"
+                { name = "Лише групи"
                 , viewData =
                     \o ->
                         { attributes = [ class "col-wide" ]
@@ -1344,7 +1342,7 @@ organismsTableConfig groups organismGroups allOrganisms timeZone editingOrganism
                 }
                 |> Table.withColumnWidth "19%"
             , Table.veryCustomColumn
-                { name = "Доступні групи"
+                { name = "Групи"
                 , viewData =
                     \o ->
                         { attributes = [ class "col-wide" ]
@@ -1358,7 +1356,7 @@ organismsTableConfig groups organismGroups allOrganisms timeZone editingOrganism
                                         isLoadingComputedGroups o.id model
                                  in
                                  if isLoading then
-                                    [ span [ class "text-muted-foreground text-sm" ] [ text "Завантаження..." ] ]
+                                    [ Spinner.loadingSpinner2Sm ]
 
                                  else
                                     let
