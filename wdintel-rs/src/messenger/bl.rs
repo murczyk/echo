@@ -391,7 +391,7 @@ where
             )
         } else {
             let Some(phone) = a.datasource_phone_number else {
-                warn!(
+                trace!(
                     "no phone number for datasource {}, skipping, at {}",
                     a.id,
                     h!()

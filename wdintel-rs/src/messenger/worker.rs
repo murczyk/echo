@@ -359,13 +359,12 @@ async fn sync_inbox(
     rq: &Client,
     settlements: Arc<RwLock<SettlementsData>>,
 ) -> anyhow::Result<()> {
-    debug!("syncing inbox for client_name={client_name}");
     let datasource = load_client_datasource(db, client_name)
         .await
         .context(h!())?;
     let datasource_id = datasource.id;
     if datasource.echo_client_lock_id.is_none() {
-        trace!("datasource {datasource_id} is not linked, skipping");
+        trace!("[{client_name}] datasource {datasource_id} is not linked, skipping");
         return Ok(());
     }
     let time = inbox_sync_at - TimeDelta::seconds(100); // double-check maybe we missed messages not labeled as seen
@@ -382,14 +381,14 @@ async fn sync_inbox(
     for (i, m) in inbox_messages.into_iter().enumerate() {
         {
             debug!(
-                "processing inbox message {} of {}; m.id={}",
+                "[{client_name}] processing inbox message {} of {}; m.id={}",
                 i + 1,
                 total_num,
                 m.id.clone().unwrap_or("".to_string())
             );
             let txn = db.begin().await.context(h!())?;
             debug!(
-                "process_inbox_message_nofail client_name={}; message_id={}",
+                "[{client_name}] process_inbox_message_nofail client_name={}; message_id={}",
                 client_name,
                 m.id.clone().unwrap_or("".to_string())
             );
@@ -402,7 +401,7 @@ async fn sync_inbox(
             //     return;
             // }
             let Some(group_id) = m.group_id else {
-                warn!("skipping message {:?} with no group, possibly a private message: {}", m.id, m.text);
+                warn!("[{client_name}] skipping message {:?} with no group, possibly a private message: {}", m.id, m.text);
                 continue;
             };
             let message = Message {
@@ -424,7 +423,7 @@ async fn sync_inbox(
             )
             .await
             {
-                warn!("bot failed to process a message: {e:?}");
+                warn!("[{client_name}] bot failed to process a message: {e:?}");
             }
             echo_im::mark_inbox_as_seen(client_name, vec![m.internal_id], &txn)
                 .await
