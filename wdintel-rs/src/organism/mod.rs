@@ -206,6 +206,56 @@ pub async fn organism_available_groups(
             .collect(),
     ))
 }
+#[post("/api/organism/available-groups-batch")]
+pub async fn organism_available_groups_batch(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<Vec<i64>>,
+) -> Result<Json<HashMap<i64, Vec<SignalGroupFull>>>, AppError> {
+    crate::users::has_role(&env.dbx, &user.id()?, "Admin").await?;
+    let mut keys_map = HashMap::new();
+    let mut keys_list = HashSet::new();
+    for organism_id in req.into_inner() {
+        let groups = load_organism_group_ids(&env.dbx, organism_id)
+            .await
+            .context(h!())?;
+        keys_map.insert(organism_id, groups.available_keys.clone());
+        for key in groups.available_keys {
+            keys_list.insert(key);
+        }
+    }
+    let keys_list = keys_list.into_iter().collect_vec();
+
+    let groups_dictionary = signal_group::Entity::find()
+        .filter(signal_group::Column::Deleted.eq(false))
+        .filter(signal_group::Column::MasterKey.is_in(keys_list))
+        .all(&env.dbx)
+        .await
+        .context(h!())?
+        .into_iter()
+        .map(|g| {
+            (
+                g.master_key.clone(),
+                SignalGroupFull {
+                    master_key: g.master_key,
+                    name: g.name.unwrap_or("".to_string()),
+                    origin_datasource_id: g.datasource_id.unwrap_or(0),
+                },
+            )
+        })
+        .collect::<HashMap<_, _>>();
+    let result = keys_map
+        .into_iter()
+        .map(|(organism_id, groups)| {
+            let groups = groups
+                .into_iter()
+                .flat_map(|id| groups_dictionary.get(&id).cloned())
+                .collect();
+            (organism_id, groups)
+        })
+        .collect();
+    Ok(Json(result))
+}
 
 #[post("/api/organism/create")]
 pub async fn create_organism(
