@@ -9,7 +9,6 @@ pub struct Organism {
     pub parent_id: Option<i64>,
     pub name: String,
     pub created_at: i64,
-    pub group_auto_link: bool,
     pub roles: Vec<String>,
     pub enabled: bool,
     pub aor_ids: Vec<i64>,
@@ -39,7 +38,6 @@ pub struct CreateOrganismReq {
     pub name: String,
     pub parent_id: Option<i64>,
     pub roles: Vec<String>,
-    pub group_auto_link: Option<bool>,
     pub aor_ids: Option<Vec<i64>>,
 }
 
@@ -51,7 +49,6 @@ pub struct UpdateOrganismReq {
     pub parent_id: Option<i64>,
     pub name: Option<String>,
     pub roles: Option<Vec<String>>,
-    pub group_auto_link: Option<bool>,
     pub enabled: bool,
     pub aor_ids: Option<Vec<i64>>,
 }

@@ -158,7 +158,6 @@ type alias Model =
 
 type alias OrganismEdit =
     { inpName : String
-    , autoAddGroups : Bool
     , enabled : Bool
     , inpRole :
         { selectState : Select.State
@@ -579,7 +578,6 @@ update msg model =
                         Api.create_organism AddOrganismDone
                             { name = model.inpName
                             , parentId = model.inpParentOrganism.selectedItem
-                            , groupAutoLink = Just False
                             , roles = model.inpRole.selectedItems
                             , aorIds = emptyToNothing model.inpAors.selectedItems
                             }
@@ -745,7 +743,6 @@ update msg model =
                             (\o ->
                                 ( rowId
                                 , { inpName = o.name
-                                  , autoAddGroups = False
                                   , enabled = o.enabled
                                   , inpRole =
                                         { selectState = Select.initState (Select.selectIdentifier "sel-role-edit")
@@ -949,7 +946,6 @@ update msg model =
                                         { name = Just editOrganism.inpName
                                         , parentId = editOrganism.inpParentOrganism.selectedItem
                                         , roles = Utils.Utils.emptyToNothing editOrganism.inpRole.selectedItems
-                                        , groupAutoLink = Just editOrganism.autoAddGroups
                                         , id = id
                                         , enabled = editOrganism.enabled
                                         , aorIds = Just editOrganism.inpAors.selectedItems
@@ -992,7 +988,7 @@ update msg model =
             ( { model | sidebarType = Nothing }, E.none )
 
         EditOrganismDone (Ok o) ->
-            ( { model | editOrganism = Nothing, sidebarType = Nothing, organisms = model.organisms |> ListX.updateIf (\x -> x.id == o.id) (\y -> { y | name = o.name, parentId = o.parentId, roles = o.roles, groupAutoLink = o.groupAutoLink, enabled = o.enabled, aorIds = o.aorIds }) }, E.none )
+            ( { model | editOrganism = Nothing, sidebarType = Nothing, organisms = model.organisms |> ListX.updateIf (\x -> x.id == o.id) (\y -> { y | name = o.name, parentId = o.parentId, roles = o.roles, enabled = o.enabled, aorIds = o.aorIds }) }, E.none )
 
         EditOrganismDone (Err e) ->
             ( model, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення організму" e )
@@ -1217,35 +1213,6 @@ organismsTableConfig groups organismGroups allOrganisms timeZone editingOrganism
                 , sorter = Table.increasingOrDecreasingBy (\o -> String.join ", " o.roles)
                 }
                 |> Table.withColumnWidth "10%"
-            , Table.veryCustomColumn
-                { name = "Автододавання груп"
-                , viewData =
-                    \o ->
-                        { attributes = [ class "col-narrow" ]
-                        , children =
-                            [ i
-                                [ class
-                                    (if o.groupAutoLink then
-                                        "bi bi-check-circle-fill text-green-500"
-
-                                     else
-                                        "bi bi-x-circle-fill text-red-500"
-                                    )
-                                ]
-                                []
-                            ]
-                        }
-                , sorter =
-                    Table.increasingOrDecreasingBy
-                        (\o ->
-                            if o.groupAutoLink then
-                                "1"
-
-                            else
-                                "0"
-                        )
-                }
-                |> Table.withColumnWidth "6%"
             , Table.veryCustomColumn
                 { name = "Активна"
                 , viewData =

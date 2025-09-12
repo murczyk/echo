@@ -130,7 +130,6 @@ pub async fn update_organism(
         name: organism.name,
         created_at: organism.created_at.and_utc().timestamp_millis(),
         roles: serde_json::from_value(organism.roles).unwrap_or_default(),
-        group_auto_link: req.group_auto_link.unwrap_or(false),
         enabled: req.enabled,
         aor_ids: req.aor_ids.clone().unwrap_or_default(),
     }))
@@ -224,7 +223,6 @@ pub async fn create_organism(
         name: organism.name,
         created_at: organism.created_at.and_utc().timestamp_millis(),
         roles: serde_json::from_value(organism.roles).unwrap_or_default(),
-        group_auto_link: req.group_auto_link.unwrap_or(false),
         enabled: organism.enabled,
         aor_ids: req.aor_ids.clone().unwrap_or_default(),
     }))
@@ -274,7 +272,6 @@ pub async fn list_organisms(
             enabled: o.enabled,
             created_at: o.created_at.and_utc().timestamp_millis(),
             roles: serde_json::from_value(o.roles).unwrap_or_default(),
-            group_auto_link: o.group_auto_link.unwrap_or(false),
         };
         list.push(org);
     }

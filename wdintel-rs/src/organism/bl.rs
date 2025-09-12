@@ -209,7 +209,6 @@ pub async fn create_organism(
         id: NotSet,
         name: Set(req.name.clone()),
         roles: Set(serde_json::to_value(req.roles.clone()).context(h!())?),
-        group_auto_link: Set(Some(req.group_auto_link.unwrap_or(false))),
         created_at: NotSet,
         enabled: NotSet,
         parent_id: Set(parent_id),
@@ -265,9 +264,6 @@ pub async fn update_organism(
     organism.parent_id = Set(parent_id);
     if let Some(roles) = req.roles.clone() {
         organism.roles = Set(serde_json::to_value(roles).context(h!())?);
-    }
-    if let Some(group_auto_link) = req.group_auto_link {
-        organism.group_auto_link = Set(Some(group_auto_link));
     }
     organism.enabled = Set(req.enabled);
 
@@ -378,7 +374,6 @@ mod tests {
             name: "".to_string(),
             created_at: Default::default(),
             roles: Default::default(),
-            group_auto_link: None,
             enabled: true,
             deleted_permanently: false,
         }
