@@ -15,7 +15,6 @@ pub struct Model {
     pub created_at: DateTime,
     #[sea_orm(column_type = "JsonBinary")]
     pub roles: Json,
-    pub group_auto_link: Option<bool>,
     pub enabled: bool,
     pub parent_id: Option<i64>,
     pub deleted_permanently: bool,
