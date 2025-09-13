@@ -38,8 +38,15 @@ pub async fn receive_thread_nofail(mode: Mode) {
                 continue;
             }
         };
+        let client_names = clients
+            .iter()
+            .map(|c| c.display_name.clone())
+            .collect_vec()
+            .join(", ");
+        trace!("[{}] updating clients: {client_names}", h!());
         for cli in clients {
             let Some(client_name) = cli.system_service_name else {
+                trace!("client name is missing, skipping: {cli:?}");
                 continue;
             };
             if let Err(e) = receive_thread(
