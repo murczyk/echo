@@ -3886,9 +3886,33 @@ updateNetworkCallsignReqEncoder struct =
         ]
 
 
+type alias EtalonkaExtendedSettings =
+    { sinceDateInclusiveMs : Int
+    , tillDateInclusiveMs : Maybe Int
+    , activeFreqsOnly : Bool
+    , includeUnitCallsigns : Bool
+    , includeSigintSigns : Bool
+    , includeConfirmation : Bool
+    , includePelengsMap : Bool
+    }
+
+
+etalonkaExtendedSettingsEncoder : EtalonkaExtendedSettings -> Json.Encode.Value
+etalonkaExtendedSettingsEncoder struct =
+    Json.Encode.object
+        [ ( "since_date_inclusive_ms", Json.Encode.int struct.sinceDateInclusiveMs )
+        , ( "till_date_inclusive_ms", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.tillDateInclusiveMs )
+        , ( "active_freqs_only", Json.Encode.bool struct.activeFreqsOnly )
+        , ( "include_unit_callsigns", Json.Encode.bool struct.includeUnitCallsigns )
+        , ( "include_sigint_signs", Json.Encode.bool struct.includeSigintSigns )
+        , ( "include_confirmation", Json.Encode.bool struct.includeConfirmation )
+        , ( "include_pelengs_map", Json.Encode.bool struct.includePelengsMap )
+        ]
+
+
 type alias EtalonkaJimForksReq =
     { req : ListNetworksReq
-    , settings : EtalonkaSettings
+    , etalonkaType : EtalonkaReportType
     }
 
 
@@ -3896,34 +3920,14 @@ etalonkaJimForksReqEncoder : EtalonkaJimForksReq -> Json.Encode.Value
 etalonkaJimForksReqEncoder struct =
     Json.Encode.object
         [ ( "req", listNetworksReqEncoder struct.req )
-        , ( "settings", etalonkaSettingsEncoder struct.settings )
-        ]
-
-
-type alias EtalonkaSettings =
-    { networksOnly : Bool
-    , activeFreqsOnly : Bool
-    , includePelengsMap : Bool
-    , includeSigintSigns : Bool
-    , includeConfirmation : Bool
-    }
-
-
-etalonkaSettingsEncoder : EtalonkaSettings -> Json.Encode.Value
-etalonkaSettingsEncoder struct =
-    Json.Encode.object
-        [ ( "networks_only", Json.Encode.bool struct.networksOnly )
-        , ( "active_freqs_only", Json.Encode.bool struct.activeFreqsOnly )
-        , ( "include_pelengs_map", Json.Encode.bool struct.includePelengsMap )
-        , ( "include_sigint_signs", Json.Encode.bool struct.includeSigintSigns )
-        , ( "include_confirmation", Json.Encode.bool struct.includeConfirmation )
+        , ( "etalonka_type", etalonkaReportTypeEncoder struct.etalonkaType )
         ]
 
 
 type alias EtalonkaNetworkBatchReq =
     { networkIds : List Int
     , sortBy : Maybe (List ListNetworksSortBy)
-    , settings : EtalonkaSettings
+    , etalonkaType : EtalonkaReportType
     }
 
 
@@ -3932,8 +3936,39 @@ etalonkaNetworkBatchReqEncoder struct =
     Json.Encode.object
         [ ( "network_ids", Json.Encode.list Json.Encode.int struct.networkIds )
         , ( "sort_by", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list listNetworksSortByEncoder)) struct.sortBy )
-        , ( "settings", etalonkaSettingsEncoder struct.settings )
+        , ( "etalonka_type", etalonkaReportTypeEncoder struct.etalonkaType )
         ]
+
+
+type alias EtalonkaSettings =
+    { activeFreqsOnly : Bool
+    , includeSigintSigns : Bool
+    , includeConfirmation : Bool
+    }
+
+
+etalonkaSettingsEncoder : EtalonkaSettings -> Json.Encode.Value
+etalonkaSettingsEncoder struct =
+    Json.Encode.object
+        [ ( "active_freqs_only", Json.Encode.bool struct.activeFreqsOnly )
+        , ( "include_sigint_signs", Json.Encode.bool struct.includeSigintSigns )
+        , ( "include_confirmation", Json.Encode.bool struct.includeConfirmation )
+        ]
+
+
+type EtalonkaReportType
+    = AccordingToTheForm EtalonkaSettings
+    | ExtendedReport EtalonkaExtendedSettings
+
+
+etalonkaReportTypeEncoder : EtalonkaReportType -> Json.Encode.Value
+etalonkaReportTypeEncoder enum =
+    case enum of
+        AccordingToTheForm inner ->
+            Json.Encode.object [ ( "AccordingToTheForm", etalonkaSettingsEncoder inner ) ]
+
+        ExtendedReport inner ->
+            Json.Encode.object [ ( "ExtendedReport", etalonkaExtendedSettingsEncoder inner ) ]
 
 
 type alias NetworkFreqsRes =
@@ -7991,21 +8026,23 @@ updateNetworkCallsignReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "main_radio_station" Json.Decode.bool))
 
 
+etalonkaExtendedSettingsDecoder : Json.Decode.Decoder EtalonkaExtendedSettings
+etalonkaExtendedSettingsDecoder =
+    Json.Decode.succeed EtalonkaExtendedSettings
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "since_date_inclusive_ms" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "till_date_inclusive_ms" (Json.Decode.nullable Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active_freqs_only" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_unit_callsigns" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_sigint_signs" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_confirmation" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_pelengs_map" Json.Decode.bool))
+
+
 etalonkaJimForksReqDecoder : Json.Decode.Decoder EtalonkaJimForksReq
 etalonkaJimForksReqDecoder =
     Json.Decode.succeed EtalonkaJimForksReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "req" listNetworksReqDecoder))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "settings" etalonkaSettingsDecoder))
-
-
-etalonkaSettingsDecoder : Json.Decode.Decoder EtalonkaSettings
-etalonkaSettingsDecoder =
-    Json.Decode.succeed EtalonkaSettings
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "networks_only" Json.Decode.bool))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active_freqs_only" Json.Decode.bool))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_pelengs_map" Json.Decode.bool))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_sigint_signs" Json.Decode.bool))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_confirmation" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "etalonka_type" etalonkaReportTypeDecoder))
 
 
 etalonkaNetworkBatchReqDecoder : Json.Decode.Decoder EtalonkaNetworkBatchReq
@@ -8013,7 +8050,23 @@ etalonkaNetworkBatchReqDecoder =
     Json.Decode.succeed EtalonkaNetworkBatchReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_ids" (Json.Decode.list Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sort_by" (Json.Decode.nullable (Json.Decode.list listNetworksSortByDecoder))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "settings" etalonkaSettingsDecoder))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "etalonka_type" etalonkaReportTypeDecoder))
+
+
+etalonkaSettingsDecoder : Json.Decode.Decoder EtalonkaSettings
+etalonkaSettingsDecoder =
+    Json.Decode.succeed EtalonkaSettings
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active_freqs_only" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_sigint_signs" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_confirmation" Json.Decode.bool))
+
+
+etalonkaReportTypeDecoder : Json.Decode.Decoder EtalonkaReportType
+etalonkaReportTypeDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.map AccordingToTheForm (Json.Decode.field "AccordingToTheForm" etalonkaSettingsDecoder)
+        , Json.Decode.map ExtendedReport (Json.Decode.field "ExtendedReport" etalonkaExtendedSettingsDecoder)
+        ]
 
 
 networkFreqsResDecoder : Json.Decode.Decoder NetworkFreqsRes

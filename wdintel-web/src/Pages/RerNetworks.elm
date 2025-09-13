@@ -4,17 +4,6 @@ import Api
 import Auth
 import Bindings as B
 import Bytes exposing (Bytes)
-import Shared.Components.Button as Button
-import Shared.Components.Checkbox as Checkbox
-import Shared.Components.DateTime
-import Shared.Components.ModalDialog as ModalDialog
-import Shared.Components.RadioGroup as RadioGroup
-import Shared.Components.SegmentedControl as SegmentedControl
-import Shared.Components.Sidebar as Sidebar
-import Shared.Components.Spinner
-import Shared.Components.Table as Table
-import Shared.Components.Table.Column as TableColumn
-import Shared.Components.Table.Config as TableConfig
 import Core.Auth
 import Core.Types exposing (ApiError, GroupsActivityPerDayRsp)
 import Core.Unit as Unit
@@ -43,6 +32,17 @@ import Set
 import Shared
 import Shared.Callsign
 import Shared.CallsignsPopup as CallsignsPopup exposing (PopupCallerOrigin(..))
+import Shared.Components.Button as Button
+import Shared.Components.Checkbox as Checkbox
+import Shared.Components.DateTime
+import Shared.Components.ModalDialog as ModalDialog
+import Shared.Components.RadioGroup as RadioGroup
+import Shared.Components.SegmentedControl as SegmentedControl
+import Shared.Components.Sidebar as Sidebar
+import Shared.Components.Spinner
+import Shared.Components.Table as Table
+import Shared.Components.Table.Column as TableColumn
+import Shared.Components.Table.Config as TableConfig
 import Shared.Model exposing (isDarkMode)
 import Task
 import Time exposing (Posix)
@@ -61,6 +61,30 @@ type NetworksMergeStatus
     = NotCalculatedSuggestionsYet
     | CalculatedSuggestions (List ( B.Network, B.Network ))
     | Merging ( B.Network, B.Network ) B.Network (List ( B.Network, B.Network ))
+
+
+type ReportType
+    = AccordingToForm CommonReportSettings
+    | ExtendedReport ExtendedReportSettings
+
+
+type ReportTypeOption
+    = AccordingToFormOption
+    | ExtendedReportOption
+
+
+type alias CommonReportSettings =
+    { activeFreqsOnly : Bool
+    , includeSigintSigns : Bool
+    , includeConfirmation : Bool
+    }
+
+
+type alias ExtendedReportSettings =
+    { common : CommonReportSettings
+    , includeUnitCallsigns : Bool
+    , includePelengsMap : Bool
+    }
 
 
 type alias Model =
@@ -83,11 +107,9 @@ type alias Model =
     , unitStats : RemoteData ApiError (List B.FreqUnitStatRow)
     , reportModalOpened : Bool
     , reportDownloadInProgress : Bool
-    , reportGUROnly : Bool
-    , reportActiveFreqsOnly : Bool
-    , reportIncludePelengsMap : Bool
-    , reportIncludeSigintSigns : Bool
-    , reportIncludeConfirmation : Bool
+    , report : ReportType
+    , reportFromDate : Shared.Components.DateTime.Model
+    , reportToDate : Shared.Components.DateTime.Model
     , showSidebar : Bool
     , expandedArmies : Set.Set String
     , expandedDivisions : Set.Set String
@@ -146,11 +168,14 @@ init _ =
             , unitStats = Loading
             , reportModalOpened = False
             , reportDownloadInProgress = False
-            , reportGUROnly = False
-            , reportActiveFreqsOnly = True
-            , reportIncludePelengsMap = True
-            , reportIncludeSigintSigns = True
-            , reportIncludeConfirmation = True
+            , report =
+                AccordingToForm
+                    { activeFreqsOnly = True
+                    , includeSigintSigns = True
+                    , includeConfirmation = True
+                    }
+            , reportFromDate = Shared.Components.DateTime.init ()
+            , reportToDate = Shared.Components.DateTime.init ()
             , showSidebar = False
             , expandedArmies = Set.empty
             , expandedDivisions = Set.empty
@@ -261,11 +286,9 @@ type Msg
     | ReportModalClosedByUser
     | ReportDownloadClickedByUser
     | ReportDownloadReturnedByApi (Result ApiError Bytes)
-    | ReportGURCheckedByUser Bool
-    | ReportActiveFreqsOnlyCheckedByUser Bool
-    | ReportIncludePelengsMapCheckedByUser Bool
-    | ReportIncludeConfirmationCheckedByUser Bool
-    | ReportIncludeSigintSignsCheckedByUser Bool
+    | ReportChanged ReportType
+    | ReportDateTimeFromMsg (Shared.Components.DateTime.Msg Msg)
+    | ReportDateTimeToMsg (Shared.Components.DateTime.Msg Msg)
     | ToggleShowOnlyInvestigating Bool
     | ToggleArmyExpanded String
     | ToggleDivisionExpanded String String
@@ -284,46 +307,54 @@ type Msg
 
 prepareReportDownloadCmd : Model -> Effect Msg
 prepareReportDownloadCmd model =
-    case ( model.from.datePosix, model.to.datePosix ) of
-        ( Just dtFromPosix, Just dtToPosix ) ->
-            let
-                req =
-                    { -- sinceDateInclusiveMs = Just <| Time.posixToMillis dtFromPosix
-                      -- , tillDateNoninclusiveMs = Just <| Time.posixToMillis dtToPosix
-                      filterFreq = emptySToNothing model.filterState.freq
-                    , filterUnit = emptySToNothing model.filterState.unit
-                    , sortBy = Nothing
-                    , showOnlyFurtherInverstigation =
-                        if model.showOnlyInvestigating then
-                            Just True
+    let
+        req =
+            { filterFreq = emptySToNothing model.filterState.freq
+            , filterUnit = emptySToNothing model.filterState.unit
+            , sortBy = Nothing
+            , showOnlyFurtherInverstigation =
+                if model.showOnlyInvestigating then
+                    Just True
+                else
+                    Nothing
+            , showInactive = Just (not model.showOnlyActive)
+            , showOnlyDeleted = Just model.showArchived
+            , aorIds =
+                if List.isEmpty model.aorFilterSelect.selected then
+                    Nothing
+                else
+                    Just model.aorFilterSelect.selected
+            }
 
-                        else
-                            Nothing
-                    , showInactive = Just (not model.showOnlyActive)
-                    , showOnlyDeleted = Just model.showArchived
-                    , aorIds =
-                        if List.isEmpty model.aorFilterSelect.selected then
-                            Nothing
+        payload =
+            { req = req
+            , etalonkaType =
+                case model.report of
+                    AccordingToForm settings ->
+                        B.AccordingToTheForm
+                            { activeFreqsOnly = settings.activeFreqsOnly
+                            , includeSigintSigns = settings.includeSigintSigns
+                            , includeConfirmation = settings.includeConfirmation
+                            }
 
-                        else
-                            Just model.aorFilterSelect.selected
-                    }
-
-                payload =
-                    { req = req
-                    , settings =
-                        { networksOnly = model.reportGUROnly
-                        , activeFreqsOnly = model.reportActiveFreqsOnly
-                        , includePelengsMap = model.reportIncludePelengsMap
-                        , includeSigintSigns = model.reportIncludeSigintSigns
-                        , includeConfirmation = model.reportIncludeConfirmation
-                        }
-                    }
-            in
-            E.getNetworksReport ReportDownloadReturnedByApi payload
-
-        _ ->
-            E.none
+                    ExtendedReport settings ->
+                        B.ExtendedReport
+                            { sinceDateInclusiveMs =
+                                model.reportFromDate.datePosix
+                                    |> Maybe.map Time.posixToMillis
+                                    |> Maybe.withDefault 0
+                            , tillDateInclusiveMs =
+                                model.reportToDate.datePosix
+                                    |> Maybe.map Time.posixToMillis
+                            , activeFreqsOnly = settings.common.activeFreqsOnly
+                            , includeUnitCallsigns = settings.includeUnitCallsigns
+                            , includeSigintSigns = settings.common.includeSigintSigns
+                            , includeConfirmation = settings.common.includeConfirmation
+                            , includePelengsMap = settings.includePelengsMap
+                            }
+            }
+    in
+    E.getNetworksReport ReportDownloadReturnedByApi payload
 
 
 generatePreview : ( B.Network, B.Network ) -> B.Network
@@ -421,11 +452,20 @@ update shared msg model =
                 to =
                     Shared.Components.DateTime.initFromPosix { datePosix = now_, zone = zone }
 
+                -- Ініціалізуємо дати звіту тими ж значеннями
+                reportFromDate =
+                    Shared.Components.DateTime.initFromPosix { datePosix = Utils.Time.xDaysAgo 7 now_, zone = zone }
+
+                reportToDate =
+                    Shared.Components.DateTime.initFromPosix { datePosix = now_, zone = zone }
+
                 m2 =
                     { model
                         | from = from
                         , to = to
                         , now = Just now_
+                        , reportFromDate = reportFromDate
+                        , reportToDate = reportToDate
                     }
             in
             loadNetworks m2
@@ -677,38 +717,34 @@ update shared msg model =
                     bytes
             )
 
-        ReportGURCheckedByUser isChecked ->
+        ReportChanged newReport ->
+            ( { model | report = newReport }, E.none )
+
+        ReportDateTimeFromMsg imsg ->
             let
-                m1 =
-                    if isChecked then
-                        { model | reportIncludeConfirmation = False, reportIncludePelengsMap = False }
-
-                    else
-                        model
+                ( m2, eff2 ) =
+                    Shared.Components.DateTime.update
+                        { zone = model.zone
+                        , msg = imsg
+                        , model = model.reportFromDate
+                        , toModel = \reportFromDate -> { model | reportFromDate = reportFromDate }
+                        , toMsg = ReportDateTimeFromMsg
+                        }
             in
-            ( { m1 | reportGUROnly = isChecked }, E.none )
+            ( m2, eff2 )
 
-        ReportActiveFreqsOnlyCheckedByUser isChecked ->
-            ( { model | reportActiveFreqsOnly = isChecked }, E.none )
-
-        ReportIncludePelengsMapCheckedByUser isChecked ->
+        ReportDateTimeToMsg imsg ->
             let
-                -- If user tries to enable pelengs map, automatically disable "Згідно форми"
-                -- since backend doesn't support this combination
-                updatedModel =
-                    if isChecked && model.reportGUROnly then
-                        { model | reportGUROnly = False }
-
-                    else
-                        model
+                ( m2, eff2 ) =
+                    Shared.Components.DateTime.update
+                        { zone = model.zone
+                        , msg = imsg
+                        , model = model.reportToDate
+                        , toModel = \reportToDate -> { model | reportToDate = reportToDate }
+                        , toMsg = ReportDateTimeToMsg
+                        }
             in
-            ( { updatedModel | reportIncludePelengsMap = isChecked }, E.none )
-
-        ReportIncludeConfirmationCheckedByUser isChecked ->
-            ( { model | reportIncludeConfirmation = isChecked }, E.none )
-
-        ReportIncludeSigintSignsCheckedByUser isChecked ->
-            ( { model | reportIncludeSigintSigns = isChecked }, E.none )
+            ( m2, eff2 )
 
         ToggleShowOnlyInvestigating val ->
             let
@@ -1522,26 +1558,8 @@ filterPanel user shared model =
                     [ div [ class "pb-12" ]
                         [ h2 [] [ text "Звіт \"еталонка\"" ]
                         , p [] [ text "Еталонка по фільтру частота/підрозділ/смуга" ]
-                        , div [ class "grid grid-cols-2 gap-[8px] h-[80px]" ]
-                            [ Checkbox.new { isChecked = model.reportGUROnly, onToggle = ReportGURCheckedByUser }
-                                |> Checkbox.withContent [ span [] [ text "Згідно форми" ] ]
-                                |> Checkbox.view
-                            , Checkbox.new { isChecked = model.reportActiveFreqsOnly, onToggle = ReportActiveFreqsOnlyCheckedByUser }
-                                |> Checkbox.withContent [ span [] [ text "Лише активні частоти" ] ]
-                                |> Checkbox.view
-                            , Checkbox.new { isChecked = model.reportIncludePelengsMap, onToggle = ReportIncludePelengsMapCheckedByUser }
-                                |> Checkbox.withContent [ span [] [ text "Включити карту пеленгів" ] ]
-                                |> Checkbox.withDisabled model.reportGUROnly
-                                |> Checkbox.view
-                            , Checkbox.new { isChecked = model.reportIncludeSigintSigns, onToggle = ReportIncludeSigintSignsCheckedByUser }
-                                |> Checkbox.withContent [ span [] [ text "Додати сигнали" ] ]
-                                |> Checkbox.view
-                            , Checkbox.new { isChecked = model.reportIncludeConfirmation, onToggle = ReportIncludeConfirmationCheckedByUser }
-                                |> Checkbox.withContent [ span [] [ text "Додати підтвердження" ] ]
-                                |> Checkbox.view
-                            ]
-                        , div [ class "text-xs text-gray-600 dark:text-gray-400 mt-2" ]
-                            [ text "Якщо вибрано \"Згідно форми\", то карта пеленгів недоступна." ]
+                        , reportTypeSelector model
+                        , reportSettingsForm model
                         ]
                     , div [ class "flex justify-between" ]
                         [ Button.new { label = "Назад", onClick = ReportModalClosedByUser } |> Button.withStyleSecondary |> Button.view
@@ -1582,6 +1600,191 @@ contentBlock user shared model =
             _ ->
                 div [ class "flex items-center justify-center w-full h-full" ] [ Shared.Components.Spinner.loadingSpinner ]
         ]
+
+
+reportTypeSelector : Model -> Html Msg
+reportTypeSelector model =
+    let
+        currentType =
+            case model.report of
+                AccordingToForm _ ->
+                    AccordingToFormOption
+
+                ExtendedReport _ ->
+                    ExtendedReportOption
+
+        options =
+            [ ( AccordingToFormOption, "Згідно форми" )
+            , ( ExtendedReportOption, "Розширений звіт" )
+            ]
+
+        onRadioChange selectedOption =
+            case selectedOption of
+                AccordingToFormOption ->
+                    ReportChanged
+                        (AccordingToForm
+                            { activeFreqsOnly = True
+                            , includeSigintSigns = True
+                            , includeConfirmation = True
+                            }
+                        )
+
+                ExtendedReportOption ->
+                    ReportChanged
+                        (ExtendedReport
+                            { common =
+                                { activeFreqsOnly = True
+                                , includeSigintSigns = True
+                                , includeConfirmation = True
+                                }
+                            , includeUnitCallsigns = False
+                            , includePelengsMap = True
+                            }
+                        )
+    in
+    div [ class "mb-4" ]
+        [ RadioGroup.new "report-type" options currentType onRadioChange
+            |> RadioGroup.view
+        ]
+
+
+reportSettingsForm : Model -> Html Msg
+reportSettingsForm model =
+    case model.report of
+        AccordingToForm settings ->
+            div [ class "border rounded p-3" ]
+                [ h4 [ class "mb-3 font-medium" ] [ text "Налаштування" ]
+                , div [ class "space-y-2" ]
+                    [ Checkbox.new
+                        { isChecked = settings.activeFreqsOnly
+                        , onToggle =
+                            \checked ->
+                                ReportChanged
+                                    (AccordingToForm { settings | activeFreqsOnly = checked })
+                        }
+                        |> Checkbox.withContent [ text "Лише активні частоти" ]
+                        |> Checkbox.view
+                    , Checkbox.new
+                        { isChecked = settings.includeSigintSigns
+                        , onToggle =
+                            \checked ->
+                                ReportChanged
+                                    (AccordingToForm { settings | includeSigintSigns = checked })
+                        }
+                        |> Checkbox.withContent [ text "Включити сигнали SIGINT" ]
+                        |> Checkbox.view
+                    , Checkbox.new
+                        { isChecked = settings.includeConfirmation
+                        , onToggle =
+                            \checked ->
+                                ReportChanged
+                                    (AccordingToForm { settings | includeConfirmation = checked })
+                        }
+                        |> Checkbox.withContent [ text "Включити підтвердження" ]
+                        |> Checkbox.view
+                    ]
+                , div [ class "text-xs text-gray-600 dark:text-gray-400 mt-2" ]
+                    [ text "📄 Стандартний звіт згідно встановленої форми" ]
+                ]
+
+        ExtendedReport settings ->
+            div [ class "border rounded p-3" ]
+                [ h4 [ class "mb-3 font-medium" ] [ text "Діапазон дат" ]
+                , div [ class "mb-4 flex flex-col gap-2" ]
+                    [ div [ class "flex items-center gap-2" ]
+                        ([ span [ class "text-sm font-medium w-16" ] [ text "Від:" ] ]
+                            ++ (Shared.Components.DateTime.new
+                                    { model = model.reportFromDate
+                                    , toMsg = ReportDateTimeFromMsg
+                                    }
+                                    |> Shared.Components.DateTime.view
+                               )
+                        )
+                    , div [ class "flex items-center gap-2" ]
+                        ([ span [ class "text-sm font-medium w-16" ] [ text "До:" ] ]
+                            ++ (Shared.Components.DateTime.new
+                                    { model = model.reportToDate
+                                    , toMsg = ReportDateTimeToMsg
+                                    }
+                                    |> Shared.Components.DateTime.view
+                               )
+                        )
+                    ]
+                , h4 [ class "mb-3 font-medium" ] [ text "Основні налаштування" ]
+                , div [ class "space-y-2 mb-4" ]
+                    [ Checkbox.new
+                        { isChecked = settings.common.activeFreqsOnly
+                        , onToggle =
+                            \checked ->
+                                let
+                                    newCommon =
+                                        { activeFreqsOnly = checked
+                                        , includeSigintSigns = settings.common.includeSigintSigns
+                                        , includeConfirmation = settings.common.includeConfirmation
+                                        }
+                                in
+                                ReportChanged
+                                    (ExtendedReport { settings | common = newCommon })
+                        }
+                        |> Checkbox.withContent [ text "Лише активні частоти" ]
+                        |> Checkbox.view
+                    , Checkbox.new
+                        { isChecked = settings.common.includeSigintSigns
+                        , onToggle =
+                            \checked ->
+                                let
+                                    newCommon =
+                                        { activeFreqsOnly = settings.common.activeFreqsOnly
+                                        , includeSigintSigns = checked
+                                        , includeConfirmation = settings.common.includeConfirmation
+                                        }
+                                in
+                                ReportChanged
+                                    (ExtendedReport { settings | common = newCommon })
+                        }
+                        |> Checkbox.withContent [ text "Включити сигнали SIGINT" ]
+                        |> Checkbox.view
+                    , Checkbox.new
+                        { isChecked = settings.common.includeConfirmation
+                        , onToggle =
+                            \checked ->
+                                let
+                                    newCommon =
+                                        { activeFreqsOnly = settings.common.activeFreqsOnly
+                                        , includeSigintSigns = settings.common.includeSigintSigns
+                                        , includeConfirmation = checked
+                                        }
+                                in
+                                ReportChanged
+                                    (ExtendedReport { settings | common = newCommon })
+                        }
+                        |> Checkbox.withContent [ text "Включити підтвердження" ]
+                        |> Checkbox.view
+                    ]
+                , h4 [ class "mb-3 font-medium" ] [ text "Додаткові опції" ]
+                , div [ class "space-y-2" ]
+                    [ Checkbox.new
+                        { isChecked = settings.includeUnitCallsigns
+                        , onToggle =
+                            \checked ->
+                                ReportChanged
+                                    (ExtendedReport { settings | includeUnitCallsigns = checked })
+                        }
+                        |> Checkbox.withContent [ text "Включити позивні підрозділів" ]
+                        |> Checkbox.view
+                    , Checkbox.new
+                        { isChecked = settings.includePelengsMap
+                        , onToggle =
+                            \checked ->
+                                ReportChanged
+                                    (ExtendedReport { settings | includePelengsMap = checked })
+                        }
+                        |> Checkbox.withContent [ text "Включити карту пеленгів" ]
+                        |> Checkbox.view
+                    ]
+                , div [ class "text-xs text-gray-600 dark:text-gray-400 mt-2" ]
+                    [ text "📊 Детальний звіт з додатковими параметрами та даними" ]
+                ]
 
 
 leftPanel : Shared.Model -> Model -> Html Msg

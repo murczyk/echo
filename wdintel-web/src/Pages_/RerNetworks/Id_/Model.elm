@@ -71,6 +71,25 @@ type ShowAllPopupFor
     = ShowAllComment
 
 
+type ReportType
+    = AccordingToForm CommonReportSettings
+    | ExtendedReport ExtendedReportSettings
+
+
+type alias CommonReportSettings =
+    { activeFreqsOnly : Bool
+    , includeSigintSigns : Bool
+    , includeConfirmation : Bool
+    }
+
+
+type alias ExtendedReportSettings =
+    { common : CommonReportSettings
+    , includeUnitCallsigns : Bool
+    , includePelengsMap : Bool
+    }
+
+
 type alias CallsignTableRow =
     { id : Int
     , callsign : String
@@ -108,11 +127,7 @@ type alias Model =
     , signals : RemoteData ApiError (List B.NetworkSignalsRes)
     , reportModalOpened : Bool
     , reportDownloadInProgress : Bool
-    , reportNetworksOnly : Bool
-    , reportActiveFreqsOnly : Bool
-    , reportIncludePelengsMap : Bool
-    , reportIncludeSigintSigns : Bool
-    , reportIncludeConfirmation : Bool
+    , report : ReportType
     , freqsActivityFilter : FreqActivityFilter
     , freqsTableState : Table.State
     , callsignsTableState : Table.State
