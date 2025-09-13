@@ -143,6 +143,7 @@ pub async fn link_account(
                 .is_some()
         })
         .filter(|a| a.phone_number.eq(phone_number))
+        .filter(|a| a.phone_number.eq(phone_number))
         .find(|a| a.messenger.eq(&src_name));
 
     if let Some(acc) = existing_account {
@@ -341,6 +342,8 @@ where
         pub system_service_name: Option<String>,
         pub source: Option<sea_orm_active_enums::EchoMessageSource>,
         pub echo_phone_number: Option<String>,
+        pub api_login: Option<String>,
+        pub api_endpoint: Option<String>,
         pub is_linked: Option<bool>,
         pub is_client_deleted: Option<bool>,
     }
@@ -366,6 +369,8 @@ where
         .select_only()
         .column(datasource::Column::Id)
         .column_as(datasource::Column::DefaultAorId, "aor_id")
+        .column(datasource::Column::ApiLogin)
+        .column(datasource::Column::ApiEndpoint)
         .column(datasource::Column::Kind)
         .column_as(datasource::Column::SignalPhone, "datasource_phone_number")
         .column(datasource::Column::DisplayName)
@@ -425,6 +430,8 @@ where
             system_service_name: a.system_service_name,
             messenger,
             phone_number,
+            api_login: a.api_login,
+            api_endpoint: a.api_endpoint,
             is_linked: a.is_linked.unwrap_or(false),
             description: a.description,
             is_imported,

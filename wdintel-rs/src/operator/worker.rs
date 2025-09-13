@@ -17,7 +17,7 @@ pub async fn run_operator_inbox_worker_nofail(mode: Mode) {
         let now = Utc::now().naive_utc();
         if datasource_list_next_sync_at <= now {
             datasource_list_next_sync_at =
-                (Utc::now() + tokio::time::Duration::from_secs(30)).naive_utc();
+                (Utc::now() + tokio::time::Duration::from_secs(5)).naive_utc();
             all_datasources = datasource::Entity::find()
                 .filter(datasource::Column::Kind.eq("echo_operator"))
                 .order_by_asc(datasource::Column::Id)
@@ -27,7 +27,7 @@ pub async fn run_operator_inbox_worker_nofail(mode: Mode) {
                 .unwrap_or(vec![]);
         }
         if all_datasources.is_empty() {
-            tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
+            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
             continue;
         }
         for datasource in all_datasources.iter() {

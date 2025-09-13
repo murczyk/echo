@@ -26,6 +26,8 @@ pub struct EchoAccountF1 {
     pub description: Option<String>,
     pub messenger: String,
     pub phone_number: String,
+    pub api_login: Option<String>,
+    pub api_endpoint: Option<String>,
     pub is_linked: bool,
     pub is_imported: bool,
 }

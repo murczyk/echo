@@ -186,11 +186,10 @@ pub async fn link_operator(
         .cae(h!())?;
     let txn = env.dbx.begin().await.cae(h!())?;
     only_alphanumeric_and_hyphen(&req.system_service_name)?;
-    valid_phone_number(&req.phone)?;
 
     let account = bl::link_account(
         None,
-        req.phone.as_str(),
+        "",
         req.display_name.as_str(),
         req.system_service_name.as_str(),
         req.messenger.as_str(),
@@ -199,8 +198,8 @@ pub async fn link_operator(
         &txn,
         &login,
     )
-        .await
-        .cae(h!())?;
+    .await
+    .cae(h!())?;
     txn.commit().await.cae(h!())?;
     Ok(Json(LinkAccountRsp { account }))
 }

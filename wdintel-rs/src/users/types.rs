@@ -75,6 +75,7 @@ pub enum ListLoginsSortBy {
 )]
 pub struct ListLoginsReq {
     pub sort_by: Option<ListLoginsSortBy>,
+    pub filter_by_roles: Option<Vec<String>>,
 }
 
 #[derive(
