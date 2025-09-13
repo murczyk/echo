@@ -85,6 +85,8 @@ pub async fn edit(
         req.is_active,
         req.display_name.to_string(),
         req.description.clone(),
+        req.api_login.clone(),
+        req.api_endpoint.clone(),
         &txn,
         &login,
     )
@@ -168,6 +170,37 @@ pub async fn link(
     )
     .await
     .cae(h!())?;
+    txn.commit().await.cae(h!())?;
+    Ok(Json(LinkAccountRsp { account }))
+}
+
+#[post("/api/messenger/link-operator")]
+pub async fn link_operator(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<LinkAccountReq>,
+) -> Result<Json<LinkAccountRsp>, AppError> {
+    let login = user.id()?;
+    crate::users::has_any_role(&env.dbx, &login, vec!["Admin"])
+        .await
+        .cae(h!())?;
+    let txn = env.dbx.begin().await.cae(h!())?;
+    only_alphanumeric_and_hyphen(&req.system_service_name)?;
+    valid_phone_number(&req.phone)?;
+
+    let account = bl::link_account(
+        None,
+        req.phone.as_str(),
+        req.display_name.as_str(),
+        req.system_service_name.as_str(),
+        req.messenger.as_str(),
+        req.description.clone(),
+        req.aor_id,
+        &txn,
+        &login,
+    )
+        .await
+        .cae(h!())?;
     txn.commit().await.cae(h!())?;
     Ok(Json(LinkAccountRsp { account }))
 }

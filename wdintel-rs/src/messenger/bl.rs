@@ -45,6 +45,8 @@ pub async fn edit_account(
     set_active: bool,
     display_name: String,
     description: Option<String>,
+    api_login: Option<String>,
+    api_endpoint: Option<String>,
     txn: &DatabaseTransaction,
     login: &String,
 ) -> Result<EchoAccountF1, AppError> {
@@ -64,6 +66,8 @@ pub async fn edit_account(
     account.description = Set(description);
     account.status = Set(new_status);
     account.updated_by = Set(Some(login.to_string()));
+    account.api_login = Set(api_login);
+    account.api_endpoint = Set(api_endpoint);
     let result = account.update(txn).await.context(h!())?;
     let account = list_accounts(Some(result.id), txn)
         .await

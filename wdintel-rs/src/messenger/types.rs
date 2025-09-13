@@ -91,6 +91,8 @@ pub struct AccountStatusReq {
     pub is_active: bool,
     pub display_name: String,
     pub description: Option<String>,
+    pub api_login: Option<String>,
+    pub api_endpoint: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Elm, ElmEncode, ElmDecode)]
@@ -100,6 +102,16 @@ pub struct DeleteAccountReq {
 
 #[derive(Debug, Serialize, Deserialize, Elm, ElmEncode, ElmDecode)]
 pub struct LinkAccountReq {
+    pub phone: String,
+    pub messenger: String,
+    pub display_name: String,
+    pub system_service_name: String,
+    pub description: Option<String>,
+    pub aor_id: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Elm, ElmEncode, ElmDecode)]
+pub struct LinkEchoOperatorReq {
     pub phone: String,
     pub messenger: String,
     pub display_name: String,
