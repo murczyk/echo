@@ -366,9 +366,13 @@ async fn fix_retro_signal_group_mappings(
                 from.delete(db).await.context(h!())?;
             }
             (Some(from), None) => {
-                let mut model = from.into_active_model();
+                let mut model = from.clone().into_active_model();
                 model.signal_group_master_key = Set(group_id.clone());
-                model.update(db).await.context(h!())?;
+                if let Err(e) = model.update(db).await {
+                    error!(
+                        "[unexpected] failed to update group {from:?}: {e:?}"
+                    );
+                }
             }
             _ => {}
         }
