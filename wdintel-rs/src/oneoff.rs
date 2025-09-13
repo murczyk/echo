@@ -66,6 +66,9 @@ pub async fn oneoff_fix_areas_of_responsibility(
     )
     .await
     .context(h!())?;
+    crate::organism::oneoff::oneoff_fix_organism_aors(&db)
+        .await
+        .context(h!())?;
     info!("done oneoff_fix_areas_of_responsibility");
     Ok(())
 }

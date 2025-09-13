@@ -1,8 +1,6 @@
 use crate::entities::*;
 use crate::error::AppError;
-use crate::organism::types::{
-    CreateOrganismReq, OrganismGroups, UpdateOrganismReq,
-};
+use crate::organism::types::*;
 use crate::types::*;
 use actix_web::web::Json;
 use sea_orm::*;
@@ -27,6 +25,12 @@ where
         .all(txn)
         .await
         .context(h!())?;
+    if organism_aors.is_empty() {
+        return Ok(OrganismGroups {
+            available_keys: vec![],
+            selected_keys: vec![],
+        });
+    }
     let m_aor_filter = if organism_aors.is_empty() {
         None
     } else {

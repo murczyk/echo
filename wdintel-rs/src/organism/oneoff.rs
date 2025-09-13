@@ -1,5 +1,6 @@
 use crate::entities::*;
 use crate::error::AppError;
+use crate::sigint::aor::load_default_aor;
 use crate::types::*;
 use crate::utils::string::master_key_shortcut;
 use sea_orm::*;
@@ -44,5 +45,34 @@ pub async fn oneoff_print_organism_groups(
         );
     }
 
+    Ok(())
+}
+
+pub async fn oneoff_fix_organism_aors(
+    dbx: &DatabaseConnection,
+) -> anyhow::Result<()> {
+    let organisms_without_aors = organism::Entity::find()
+        .join(JoinType::LeftJoin, organism::Relation::OrganismAor.def())
+        .filter(organism::Column::DeletedPermanently.eq(false))
+        .filter(organism::Column::Enabled.eq(true))
+        .filter(organism_aor::Column::Id.is_null())
+        .all(dbx)
+        .await
+        .c(h!())?;
+    if organisms_without_aors.is_empty() {
+        return Ok(());
+    };
+    let default_aor = load_default_aor(dbx).await.c(h!())?;
+    for o in organisms_without_aors {
+        organism_aor::ActiveModel {
+            id: NotSet,
+            organism_id: Set(o.id),
+            aor_id: Set(default_aor.id),
+            created_at: NotSet,
+        }
+        .insert(dbx)
+        .await
+        .c(h!())?;
+    }
     Ok(())
 }
