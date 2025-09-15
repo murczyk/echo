@@ -315,6 +315,7 @@ prepareReportDownloadCmd model =
             , showOnlyFurtherInverstigation =
                 if model.showOnlyInvestigating then
                     Just True
+
                 else
                     Nothing
             , showInactive = Just (not model.showOnlyActive)
@@ -322,6 +323,7 @@ prepareReportDownloadCmd model =
             , aorIds =
                 if List.isEmpty model.aorFilterSelect.selected then
                     Nothing
+
                 else
                     Just model.aorFilterSelect.selected
             }
@@ -1554,14 +1556,17 @@ filterPanel user shared model =
             ]
         , let
             dialogContent =
-                [ div [ class "flex flex-col justify-between gap-4 p-2 w-[400px]" ]
-                    [ div [ class "pb-12" ]
-                        [ h2 [] [ text "Звіт \"еталонка\"" ]
-                        , p [] [ text "Еталонка по фільтру частота/підрозділ/смуга" ]
+                [ div [ class "flex flex-col gap-4 p-4 w-[700px]" ]
+                    [ -- Header
+                      div []
+                        [ h2 [ class "text-xl font-semibold mb-2" ] [ text "Звіт \"Еталонка\"" ]
+                        , p [ class "text-gray-600 dark:text-gray-400 mb-4" ] [ text "Еталонка по фільтру частота/підрозділ/смуга" ]
                         , reportTypeSelector model
-                        , reportSettingsForm model
                         ]
-                    , div [ class "flex justify-between" ]
+                    , -- Two-column content
+                      reportSettingsFormTwoColumn model
+                    , -- Footer buttons
+                      div [ class "flex justify-between pt-4 border-t border-gray-200 dark:border-gray-700" ]
                         [ Button.new { label = "Назад", onClick = ReportModalClosedByUser } |> Button.withStyleSecondary |> Button.view
                         , Button.new { label = "Згенерувати", onClick = ReportDownloadClickedByUser }
                             |> (if model.reportDownloadInProgress then
@@ -1648,142 +1653,159 @@ reportTypeSelector model =
         ]
 
 
-reportSettingsForm : Model -> Html Msg
-reportSettingsForm model =
+reportSettingsFormTwoColumn : Model -> Html Msg
+reportSettingsFormTwoColumn model =
     case model.report of
         AccordingToForm settings ->
-            div [ class "border rounded p-3" ]
-                [ h4 [ class "mb-3 font-medium" ] [ text "Налаштування" ]
-                , div [ class "space-y-2" ]
-                    [ Checkbox.new
-                        { isChecked = settings.activeFreqsOnly
-                        , onToggle =
-                            \checked ->
-                                ReportChanged
-                                    (AccordingToForm { settings | activeFreqsOnly = checked })
-                        }
-                        |> Checkbox.withContent [ text "Лише активні частоти" ]
-                        |> Checkbox.view
-                    , Checkbox.new
-                        { isChecked = settings.includeSigintSigns
-                        , onToggle =
-                            \checked ->
-                                ReportChanged
-                                    (AccordingToForm { settings | includeSigintSigns = checked })
-                        }
-                        |> Checkbox.withContent [ text "Включити сигнали SIGINT" ]
-                        |> Checkbox.view
-                    , Checkbox.new
-                        { isChecked = settings.includeConfirmation
-                        , onToggle =
-                            \checked ->
-                                ReportChanged
-                                    (AccordingToForm { settings | includeConfirmation = checked })
-                        }
-                        |> Checkbox.withContent [ text "Включити підтвердження" ]
-                        |> Checkbox.view
+            div [ class "grid grid-cols-2 gap-6 min-h-[281px]" ]
+                [ -- Left column: Basic settings
+                  div [ class "border rounded-lg p-4" ]
+                    [ h4 [ class "text-lg font-medium mb-3 text-gray-900 dark:text-gray-100" ] [ text "Основні налаштування" ]
+                    , div [ class "space-y-3" ]
+                        [ Checkbox.new
+                            { isChecked = settings.activeFreqsOnly
+                            , onToggle =
+                                \checked ->
+                                    ReportChanged
+                                        (AccordingToForm { settings | activeFreqsOnly = checked })
+                            }
+                            |> Checkbox.withContent [ text "Лише активні частоти" ]
+                            |> Checkbox.view
+                        , Checkbox.new
+                            { isChecked = settings.includeSigintSigns
+                            , onToggle =
+                                \checked ->
+                                    ReportChanged
+                                        (AccordingToForm { settings | includeSigintSigns = checked })
+                            }
+                            |> Checkbox.withContent [ text "Включити сигнали SIGINT" ]
+                            |> Checkbox.view
+                        , Checkbox.new
+                            { isChecked = settings.includeConfirmation
+                            , onToggle =
+                                \checked ->
+                                    ReportChanged
+                                        (AccordingToForm { settings | includeConfirmation = checked })
+                            }
+                            |> Checkbox.withContent [ text "Включити підтвердження" ]
+                            |> Checkbox.view
+                        ]
                     ]
-                , div [ class "text-xs text-gray-600 dark:text-gray-400 mt-2" ]
-                    [ text "📄 Стандартний звіт згідно встановленої форми" ]
+                , -- Right column: Empty for standard form
+                  div [ class "border rounded-lg p-4 bg-gray-50 dark:bg-gray-800 opacity-50" ]
+                    [ h4 [ class "text-lg font-medium mb-3 text-gray-500" ] [ text "Додаткові опції" ]
+                    , p [ class "text-sm text-gray-500" ] [ text "Доступні тільки в розширеному звіті" ]
+                    ]
                 ]
 
         ExtendedReport settings ->
-            div [ class "border rounded p-3" ]
-                [ h4 [ class "mb-3 font-medium" ] [ text "Діапазон дат" ]
-                , div [ class "mb-4 flex flex-col gap-2" ]
-                    [ div [ class "flex items-center gap-2" ]
-                        ([ span [ class "text-sm font-medium w-16" ] [ text "Від:" ] ]
-                            ++ (Shared.Components.DateTime.new
-                                    { model = model.reportFromDate
-                                    , toMsg = ReportDateTimeFromMsg
-                                    }
-                                    |> Shared.Components.DateTime.view
-                               )
-                        )
-                    , div [ class "flex items-center gap-2" ]
-                        ([ span [ class "text-sm font-medium w-16" ] [ text "До:" ] ]
-                            ++ (Shared.Components.DateTime.new
-                                    { model = model.reportToDate
-                                    , toMsg = ReportDateTimeToMsg
-                                    }
-                                    |> Shared.Components.DateTime.view
-                               )
-                        )
+            div [ class "grid grid-cols-2 gap-6 min-h-[281px]" ]
+                [ -- Left column: Basic settings
+                  div [ class "border rounded-lg p-4" ]
+                    [ h4 [ class "text-lg font-medium mb-3 text-gray-900 dark:text-gray-100" ] [ text "Основні налаштування" ]
+                    , div [ class "space-y-3" ]
+                        [ Checkbox.new
+                            { isChecked = settings.common.activeFreqsOnly
+                            , onToggle =
+                                \checked ->
+                                    let
+                                        newCommon =
+                                            { activeFreqsOnly = checked
+                                            , includeSigintSigns = settings.common.includeSigintSigns
+                                            , includeConfirmation = settings.common.includeConfirmation
+                                            }
+                                    in
+                                    ReportChanged
+                                        (ExtendedReport { settings | common = newCommon })
+                            }
+                            |> Checkbox.withContent [ text "Лише активні частоти" ]
+                            |> Checkbox.view
+                        , Checkbox.new
+                            { isChecked = settings.common.includeSigintSigns
+                            , onToggle =
+                                \checked ->
+                                    let
+                                        newCommon =
+                                            { activeFreqsOnly = settings.common.activeFreqsOnly
+                                            , includeSigintSigns = checked
+                                            , includeConfirmation = settings.common.includeConfirmation
+                                            }
+                                    in
+                                    ReportChanged
+                                        (ExtendedReport { settings | common = newCommon })
+                            }
+                            |> Checkbox.withContent [ text "Включити сигнали SIGINT" ]
+                            |> Checkbox.view
+                        , Checkbox.new
+                            { isChecked = settings.common.includeConfirmation
+                            , onToggle =
+                                \checked ->
+                                    let
+                                        newCommon =
+                                            { activeFreqsOnly = settings.common.activeFreqsOnly
+                                            , includeSigintSigns = settings.common.includeSigintSigns
+                                            , includeConfirmation = checked
+                                            }
+                                    in
+                                    ReportChanged
+                                        (ExtendedReport { settings | common = newCommon })
+                            }
+                            |> Checkbox.withContent [ text "Включити підтвердження" ]
+                            |> Checkbox.view
+                        ]
                     ]
-                , h4 [ class "mb-3 font-medium" ] [ text "Основні налаштування" ]
-                , div [ class "space-y-2 mb-4" ]
-                    [ Checkbox.new
-                        { isChecked = settings.common.activeFreqsOnly
-                        , onToggle =
-                            \checked ->
-                                let
-                                    newCommon =
-                                        { activeFreqsOnly = checked
-                                        , includeSigintSigns = settings.common.includeSigintSigns
-                                        , includeConfirmation = settings.common.includeConfirmation
-                                        }
-                                in
-                                ReportChanged
-                                    (ExtendedReport { settings | common = newCommon })
-                        }
-                        |> Checkbox.withContent [ text "Лише активні частоти" ]
-                        |> Checkbox.view
-                    , Checkbox.new
-                        { isChecked = settings.common.includeSigintSigns
-                        , onToggle =
-                            \checked ->
-                                let
-                                    newCommon =
-                                        { activeFreqsOnly = settings.common.activeFreqsOnly
-                                        , includeSigintSigns = checked
-                                        , includeConfirmation = settings.common.includeConfirmation
-                                        }
-                                in
-                                ReportChanged
-                                    (ExtendedReport { settings | common = newCommon })
-                        }
-                        |> Checkbox.withContent [ text "Включити сигнали SIGINT" ]
-                        |> Checkbox.view
-                    , Checkbox.new
-                        { isChecked = settings.common.includeConfirmation
-                        , onToggle =
-                            \checked ->
-                                let
-                                    newCommon =
-                                        { activeFreqsOnly = settings.common.activeFreqsOnly
-                                        , includeSigintSigns = settings.common.includeSigintSigns
-                                        , includeConfirmation = checked
-                                        }
-                                in
-                                ReportChanged
-                                    (ExtendedReport { settings | common = newCommon })
-                        }
-                        |> Checkbox.withContent [ text "Включити підтвердження" ]
-                        |> Checkbox.view
+                , -- Right column: Additional options with date range
+                  div [ class "border rounded-lg p-4" ]
+                    [ h4 [ class "text-lg font-medium mb-3 text-gray-900 dark:text-gray-100" ] [ text "Додаткові опції" ]
+                    , div [ class "space-y-4" ]
+                        [ -- Date range section
+                          div []
+                            [ div [ class "space-y-2" ]
+                                [ div []
+                                    [ span [ class "text-sm font-medium w-8" ] [ text "Від:" ]
+                                    , div [ class "flex gap-1" ]
+                                        (Shared.Components.DateTime.new
+                                            { model = model.reportFromDate
+                                            , toMsg = ReportDateTimeFromMsg
+                                            }
+                                            |> Shared.Components.DateTime.view
+                                        )
+                                    ]
+                                , div [ class "" ]
+                                    [ span [ class "text-sm font-medium w-8" ] [ text "До:" ]
+                                    , div [ class "flex gap-1" ]
+                                        (Shared.Components.DateTime.new
+                                            { model = model.reportToDate
+                                            , toMsg = ReportDateTimeToMsg
+                                            }
+                                            |> Shared.Components.DateTime.view
+                                        )
+                                    ]
+                                ]
+                            ]
+                        , -- Checkboxes section
+                          div [ class "space-y-2" ]
+                            [ Checkbox.new
+                                { isChecked = settings.includeUnitCallsigns
+                                , onToggle =
+                                    \checked ->
+                                        ReportChanged
+                                            (ExtendedReport { settings | includeUnitCallsigns = checked })
+                                }
+                                |> Checkbox.withContent [ text "Включити позивні підрозділів" ]
+                                |> Checkbox.view
+                            , Checkbox.new
+                                { isChecked = settings.includePelengsMap
+                                , onToggle =
+                                    \checked ->
+                                        ReportChanged
+                                            (ExtendedReport { settings | includePelengsMap = checked })
+                                }
+                                |> Checkbox.withContent [ text "Включити карту пеленгів" ]
+                                |> Checkbox.view
+                            ]
+                        ]
                     ]
-                , h4 [ class "mb-3 font-medium" ] [ text "Додаткові опції" ]
-                , div [ class "space-y-2" ]
-                    [ Checkbox.new
-                        { isChecked = settings.includeUnitCallsigns
-                        , onToggle =
-                            \checked ->
-                                ReportChanged
-                                    (ExtendedReport { settings | includeUnitCallsigns = checked })
-                        }
-                        |> Checkbox.withContent [ text "Включити позивні підрозділів" ]
-                        |> Checkbox.view
-                    , Checkbox.new
-                        { isChecked = settings.includePelengsMap
-                        , onToggle =
-                            \checked ->
-                                ReportChanged
-                                    (ExtendedReport { settings | includePelengsMap = checked })
-                        }
-                        |> Checkbox.withContent [ text "Включити карту пеленгів" ]
-                        |> Checkbox.view
-                    ]
-                , div [ class "text-xs text-gray-600 dark:text-gray-400 mt-2" ]
-                    [ text "📊 Детальний звіт з додатковими параметрами та даними" ]
                 ]
 
 
