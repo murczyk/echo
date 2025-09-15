@@ -1,16 +1,16 @@
 module Pages_.RerNetworks.ReportForm exposing
     ( Config
-    , view
-    , typeSelector
     , settingsForm
+    , typeSelector
+    , view
     )
 
 import Html exposing (..)
 import Html.Attributes exposing (..)
+import Pages_.RerNetworks.ReportConfig as ReportConfig exposing (ReportType(..), ReportTypeOption(..))
 import Shared.Components.Checkbox as Checkbox
 import Shared.Components.DateTime
 import Shared.Components.RadioGroup as RadioGroup
-import Pages_.RerNetworks.ReportConfig as ReportConfig exposing (ReportType(..), ReportTypeOption(..))
 
 
 {-| Конфігурація для форми звіту
@@ -130,7 +130,7 @@ commonSettingsView config settings =
             { isChecked = settings.includeSigintSigns
             , onToggle = config.onIncludeSigintSignsChanged
             }
-            |> Checkbox.withContent [ text "Включити сигнали SIGINT" ]
+            |> Checkbox.withContent [ text "Включити сигнали" ]
             |> Checkbox.view
         , Checkbox.new
             { isChecked = settings.includeConfirmation
