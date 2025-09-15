@@ -7,6 +7,7 @@ use crate::event_stream::types::*;
 use crate::sigint::etalonka::query::*;
 use crate::sigint::etalonka::types::*;
 use crate::sigint::network::bl::*;
+use crate::sigint::network::merge::*;
 use crate::types::*;
 use crate::utils::*;
 use chrono::*;
@@ -27,6 +28,7 @@ use sqlx::FromRow;
 use time::{Duration as TimeDuration, PrimitiveDateTime};
 
 pub mod bl;
+pub mod merge;
 pub mod oneoff;
 pub mod types;
 
@@ -1787,12 +1789,15 @@ pub async fn merge_network(
         .await
         .context(h!())?;
 
-    // debug!("> merge networks");
+    info!(
+        "> Merge network {} into {} begin",
+        req.network_id_from, req.network_id_to
+    );
     let txn = env.dbx.begin().await.context(h!())?;
 
     merge_two_networks(
         &txn,
-        login.clone(),
+        &login,
         false,
         req.network_id_from,
         req.network_id_to,
@@ -1802,7 +1807,7 @@ pub async fn merge_network(
 
     txn.commit().await.context(h!())?;
 
-    debug!(
+    info!(
         "> Merge successful! Merged network {} into {}",
         req.network_id_from, req.network_id_to
     );
