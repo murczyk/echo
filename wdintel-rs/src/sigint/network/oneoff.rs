@@ -3,6 +3,7 @@ use crate::error::AppError;
 use crate::event_stream::fanout;
 use crate::event_stream::types::*;
 use crate::sigint::network::bl::*;
+use crate::sigint::network::merge::*;
 use crate::types::*;
 use chrono::*;
 use sea_orm::*;
@@ -67,7 +68,7 @@ pub async fn oneoff_merge_all_possible_networks(
                     // Merge networks
                     if let Err(e) = merge_two_networks(
                         &txn,
-                        MERGE_NETWORKS_API_LOGIN.to_string(),
+                        MERGE_NETWORKS_API_LOGIN,
                         true,
                         secondary_id,
                         primary_id,
@@ -108,7 +109,7 @@ pub async fn oneoff_merge_two_networks(
 
     match merge_two_networks(
         &txn,
-        MERGE_NETWORKS_API_LOGIN.to_string(),
+        MERGE_NETWORKS_API_LOGIN,
         true,
         ps.network_id_from,
         ps.network_id_to,
