@@ -9,21 +9,48 @@ use std::cmp::Ordering;
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub enum EtalonkaReportType {
+    AccordingToTheForm(EtalonkaSettings),
+    ExtendedReport(EtalonkaExtendedSettings),
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct EtalonkaJimForksReq {
     pub req: ListNetworksReq,
-    pub settings: EtalonkaSettings,
+    pub etalonka_type: EtalonkaReportType,
+}
+
+#[derive(
+    Debug, Elm, ElmEncode, ElmDecode, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct EtalonkaNetworkBatchReq {
+    pub network_ids: Vec<i64>,
+    pub sort_by: Option<Vec<ListNetworksSortBy>>,
+    pub etalonka_type: EtalonkaReportType,
 }
 
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub struct EtalonkaSettings {
-    /// Ознака імпорту лише тих атрибутів мережі, що відповідають формі
-    pub networks_only: bool,
     pub active_freqs_only: bool,
-    pub include_pelengs_map: bool,
     pub include_sigint_signs: bool,
     pub include_confirmation: bool,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct EtalonkaExtendedSettings {
+    pub since_date_inclusive_ms: i64,
+    pub till_date_inclusive_ms: Option<i64>,
+    pub active_freqs_only: bool,
+    pub include_unit_callsigns: bool,
+    pub include_sigint_signs: bool,
+    pub include_confirmation: bool,
+    pub include_pelengs_map: bool,
 }
 
 #[derive(Debug, FromQueryResult)]
@@ -39,6 +66,13 @@ pub struct NetworkEtalonkaResult {
     pub unit_name: Option<String>,
     pub active_from: NaiveDateTime,
     pub active_to: Option<NaiveDateTime>,
+}
+
+#[derive(Debug)]
+pub struct NetworkFreqFilter {
+    pub active_freqs_only: bool,
+    pub since_date_inclusive_ms: Option<i64>,
+    pub till_date_inclusive_ms: Option<i64>,
 }
 
 #[derive(Debug, FromQueryResult, Default)]
@@ -206,13 +240,4 @@ impl PartialOrd for KnownCallsignShortRes {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
-}
-
-#[derive(
-    Debug, Elm, ElmEncode, ElmDecode, Serialize, Deserialize, PartialEq, Clone,
-)]
-pub struct EtalonkaNetworkBatchReq {
-    pub network_ids: Vec<i64>,
-    pub sort_by: Option<Vec<ListNetworksSortBy>>,
-    pub settings: EtalonkaSettings,
 }

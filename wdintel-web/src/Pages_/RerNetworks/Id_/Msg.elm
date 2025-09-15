@@ -20,6 +20,7 @@ import Layouts
 import List.Extra as ListX
 import Page exposing (Page)
 import Pages_.RerNetworks.Id_.Model as Types exposing (CallsignCreateMode(..), CallsignTableRow, FreqActivityFilter(..), Mode(..), ShowAllPopupFor(..))
+import Pages_.RerNetworks.ReportConfig as ReportConfig
 import Route exposing (Route)
 import Route.Path
 import Select
@@ -102,11 +103,12 @@ type
     | ReportModalClosedByUser
     | ReportDownloadClickedByUser
     | ReportDownloadReturnedByApi (Result ApiError Bytes)
-    | ReportNetworksOnlyCheckedByUser Bool
-    | ReportActiveFreqsOnlyCheckedByUser Bool
-    | ReportIncludePelengsMapCheckedByUser Bool
-    | ReportIncludeConfirmationCheckedByUser Bool
-    | ReportIncludeSigintSignsCheckedByUser Bool
+    | ReportTypeChanged ReportConfig.ReportTypeOption
+    | ReportActiveFreqsOnlyChanged Bool
+    | ReportIncludeSigintSignsChanged Bool
+    | ReportIncludeConfirmationChanged Bool
+    | ReportIncludeUnitCallsignsChanged Bool
+    | ReportIncludePelengsMapChanged Bool
 
 
 type CallsignsMsg

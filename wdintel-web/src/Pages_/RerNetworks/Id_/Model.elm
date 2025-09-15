@@ -3,6 +3,7 @@ module Pages_.RerNetworks.Id_.Model exposing (..)
 import Api
 import Auth
 import Bindings as B
+import Pages_.RerNetworks.ReportConfig as ReportConfig
 import Bytes exposing (Bytes)
 import Char
 import Core.Auth
@@ -71,6 +72,8 @@ type ShowAllPopupFor
     = ShowAllComment
 
 
+
+
 type alias CallsignTableRow =
     { id : Int
     , callsign : String
@@ -108,11 +111,7 @@ type alias Model =
     , signals : RemoteData ApiError (List B.NetworkSignalsRes)
     , reportModalOpened : Bool
     , reportDownloadInProgress : Bool
-    , reportNetworksOnly : Bool
-    , reportActiveFreqsOnly : Bool
-    , reportIncludePelengsMap : Bool
-    , reportIncludeSigintSigns : Bool
-    , reportIncludeConfirmation : Bool
+    , report : ReportConfig.ReportType
     , freqsActivityFilter : FreqActivityFilter
     , freqsTableState : Table.State
     , callsignsTableState : Table.State

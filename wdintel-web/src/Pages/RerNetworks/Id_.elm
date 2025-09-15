@@ -24,6 +24,9 @@ import Pages_.RerNetworks.Id_.Descriptions as Descriptions
 import Pages_.RerNetworks.Id_.FrequenciesTable as FrequenciesTable
 import Pages_.RerNetworks.Id_.Model as Types exposing (CallsignCreateMode(..), CallsignTableRow, FreqActivityFilter(..), Mode(..), ShowAllPopupFor(..))
 import Pages_.RerNetworks.Id_.Msg as Msgs exposing (Msg(..))
+import Pages_.RerNetworks.ReportConfig as ReportConfig exposing (ReportTypeOption(..))
+import Pages_.RerNetworks.ReportModal as ReportModal
+import Pages_.RerNetworks.ReportUpdate as ReportUpdate
 import Pages_.RerNetworks.Id_.NetworkInfo as NetworkInfo
 import Pages_.RerNetworks.Utils as IdUtils
 import Route exposing (Route)
@@ -138,11 +141,7 @@ init route shared () =
       , signals = NotAsked
       , reportModalOpened = False
       , reportDownloadInProgress = False
-      , reportNetworksOnly = False
-      , reportActiveFreqsOnly = True
-      , reportIncludePelengsMap = True
-      , reportIncludeSigintSigns = True
-      , reportIncludeConfirmation = True
+      , report = ReportConfig.AccordingToForm ReportConfig.defaultCommonSettings
       , freqsActivityFilter = AllFreqs
       , freqsTableState = Table.initialSort "Частота"
       , callsignsTableState = Table.initialSort "Позивний"
@@ -754,98 +753,80 @@ update shared msg model =
         ReportDownloadClickedByUser ->
             case model.network of
                 Success network ->
-                    ( { model | reportDownloadInProgress = True }
-                    , E.getNetworkReportBatch ReportDownloadReturnedByApi
-                        { networkIds = [ network.id ]
-                        , sortBy = Nothing
-                        , settings =
-                            { networksOnly = model.reportNetworksOnly
-                            , activeFreqsOnly = model.reportActiveFreqsOnly
-                            , includePelengsMap = model.reportIncludePelengsMap
-                            , includeSigintSigns = model.reportIncludeSigintSigns
-                            , includeConfirmation = model.reportIncludeConfirmation
+                    let
+                        context =
+                            { fromDate = Nothing
+                            , toDate = Nothing
+                            , zone = Nothing
+                            , networkId = Just network.id
                             }
-                        }
+
+                        apiCall reportType ctx =
+                            E.getNetworkReportBatch ReportDownloadReturnedByApi
+                                { networkIds = [ network.id ]
+                                , sortBy = Nothing
+                                , etalonkaType = ReportConfig.toApiEtalonkaType reportType ctx
+                                }
+                    in
+                    ( { model | reportDownloadInProgress = True }
+                    , ReportUpdate.createReportDownloadEffect model.report context apiCall
                     )
 
                 _ ->
                     ( model, E.none )
 
-        ReportDownloadReturnedByApi (Err e) ->
-            ( { model | reportDownloadInProgress = False }
-            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка генерації звіту" e
-            )
-
-        ReportDownloadReturnedByApi (Ok bytes) ->
+        ReportDownloadReturnedByApi result ->
             let
-                m2 =
-                    { model | reportDownloadInProgress = False }
+                context =
+                    { fromDate = Nothing
+                    , toDate = Nothing
+                    , zone = Nothing
+                    , networkId = 
+                        case model.network of
+                            Success network -> Just network.id
+                            _ -> Nothing
+                    }
 
-                extension =
-                    "docx"
-
-                fname =
-                    "etalonka_network_"
-                        ++ (case model.network of
-                                Success network ->
-                                    String.fromInt network.id
-
-                                _ ->
-                                    "unknown"
-                           )
-                        ++ "."
-                        ++ extension
+                updateDownloading isDownloading m =
+                    { m | reportDownloadInProgress = isDownloading }
             in
-            ( m2
-            , E.sendCmd <|
-                Download.bytes fname
-                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                    bytes
-            )
+            ReportUpdate.handleReportDownloadResponse result context updateDownloading model
 
-        ReportNetworksOnlyCheckedByUser isChecked ->
+        ReportTypeChanged option ->
             let
-                -- When "Згідно форми" is selected, automatically disable pelengs map
-                -- since backend doesn't support networks_only + include_pelengs_map
-                -- When unchecked, restore default values for better UX
-                updatedModel =
-                    if isChecked then
-                        { model | reportIncludePelengsMap = False }
-
-                    else
-                        { model
-                            | reportIncludePelengsMap = True
-                            , reportIncludeSigintSigns = True
-                            , reportIncludeConfirmation = True
-                        }
+                newReport = ReportUpdate.updateReportFromForm option
             in
-            ( { updatedModel | reportNetworksOnly = isChecked }, E.none )
+            ( { model | report = newReport }, E.none )
 
-        ReportActiveFreqsOnlyCheckedByUser isChecked ->
-            ( { model | reportActiveFreqsOnly = isChecked }, E.none )
-
-        ReportIncludePelengsMapCheckedByUser isChecked ->
+        ReportActiveFreqsOnlyChanged checked ->
             let
-                -- If user tries to enable pelengs map, automatically disable "Згідно форми"
-                -- since backend doesn't support this combination
-                -- If user disables pelengs map, automatically enable "Згідно форми" for better UX
-                updatedModel =
-                    if isChecked && model.reportNetworksOnly then
-                        { model | reportNetworksOnly = False }
-
-                    else if not isChecked && not model.reportNetworksOnly then
-                        { model | reportNetworksOnly = True }
-
-                    else
-                        model
+                newReport = ReportUpdate.updateCommonSetting "activeFreqsOnly" checked model.report
             in
-            ( { updatedModel | reportIncludePelengsMap = isChecked }, E.none )
+            ( { model | report = newReport }, E.none )
 
-        ReportIncludeConfirmationCheckedByUser isChecked ->
-            ( { model | reportIncludeConfirmation = isChecked }, E.none )
+        ReportIncludeSigintSignsChanged checked ->
+            let
+                newReport = ReportUpdate.updateCommonSetting "includeSigintSigns" checked model.report
+            in
+            ( { model | report = newReport }, E.none )
 
-        ReportIncludeSigintSignsCheckedByUser isChecked ->
-            ( { model | reportIncludeSigintSigns = isChecked }, E.none )
+        ReportIncludeConfirmationChanged checked ->
+            let
+                newReport = ReportUpdate.updateCommonSetting "includeConfirmation" checked model.report
+            in
+            ( { model | report = newReport }, E.none )
+
+        ReportIncludeUnitCallsignsChanged checked ->
+            let
+                newReport = ReportUpdate.updateExtendedSetting "includeUnitCallsigns" checked model.report
+            in
+            ( { model | report = newReport }, E.none )
+
+        ReportIncludePelengsMapChanged checked ->
+            let
+                newReport = ReportUpdate.updateExtendedSetting "includePelengsMap" checked model.report
+            in
+            ( { model | report = newReport }, E.none )
 
         ModulationsReturnedByApi (Err e) ->
             ( { model | modulations = Failure e }
@@ -1026,49 +1007,32 @@ view user shared model =
                 , Html.map Callsigns <| CallsignsTables.editCallsignsSidebar model user shared
                 , Html.map Callsigns <| CallsignsTables.deleteCallsignModal model
                 , let
-                    dialogContent =
-                        [ div [ class "flex flex-col justify-between gap-4 p-2 w-[400px]" ]
-                            [ div [ class "pb-12" ]
-                                [ h2 [] [ text "Звіт \"еталонка\"" ]
-                                , p [] [ text "Еталонка для мережі" ]
-                                , div [ class "grid grid-cols-2 gap-[8px] h-[80px]" ]
-                                    [ Checkbox.new { isChecked = model.reportNetworksOnly, onToggle = ReportNetworksOnlyCheckedByUser }
-                                        |> Checkbox.withContent [ span [] [ text "Згідно форми" ] ]
-                                        |> Checkbox.view
-                                    , Checkbox.new { isChecked = model.reportActiveFreqsOnly, onToggle = ReportActiveFreqsOnlyCheckedByUser }
-                                        |> Checkbox.withContent [ span [] [ text "Лише активні частоти" ] ]
-                                        |> Checkbox.view
-                                    , Checkbox.new { isChecked = model.reportIncludePelengsMap, onToggle = ReportIncludePelengsMapCheckedByUser }
-                                        |> Checkbox.withContent [ span [] [ text "Включити карту пеленгів" ] ]
-                                        |> Checkbox.withDisabled model.reportNetworksOnly
-                                        |> Checkbox.view
-                                    , Checkbox.new { isChecked = model.reportIncludeSigintSigns, onToggle = ReportIncludeSigintSignsCheckedByUser }
-                                        |> Checkbox.withContent [ span [] [ text "Додати сигнали" ] ]
-                                        |> Checkbox.view
-                                    , Checkbox.new { isChecked = model.reportIncludeConfirmation, onToggle = ReportIncludeConfirmationCheckedByUser }
-                                        |> Checkbox.withContent [ span [] [ text "Додати підтвердження" ] ]
-                                        |> Checkbox.view
-                                    ]
-                                , div [ class "text-xs text-gray-600 dark:text-gray-400 mt-2" ]
-                                    [ text "Якщо вибрано \"Згідно форми\", то карта пеленгів недоступна." ]
-                                ]
-                            , div [ class "flex justify-between" ]
-                                [ Button.new { label = "Назад", onClick = ReportModalClosedByUser } |> Button.withStyleSecondary |> Button.view
-                                , Button.new { label = "Згенерувати", onClick = ReportDownloadClickedByUser }
-                                    |> (if model.reportDownloadInProgress then
-                                            Button.withIcon
-                                                [ Shared.Components.Spinner.loadingSpinner2Sm
-                                                ]
+                    reportFormConfig =
+                        { onReportTypeChanged = ReportTypeChanged
+                        , onActiveFreqsOnlyChanged = ReportActiveFreqsOnlyChanged
+                        , onIncludeSigintSignsChanged = ReportIncludeSigintSignsChanged
+                        , onIncludeConfirmationChanged = ReportIncludeConfirmationChanged
+                        , onIncludeUnitCallsignsChanged = ReportIncludeUnitCallsignsChanged
+                        , onIncludePelengsMapChanged = ReportIncludePelengsMapChanged
+                        , reportFromDate = Nothing
+                        , reportToDate = Nothing
+                        , onReportFromDateMsg = Nothing
+                        , onReportToDateMsg = Nothing
+                        , showDateRange = False  -- Для окремої мережі не показуємо діапазон дат
+                        }
 
-                                        else
-                                            identity
-                                       )
-                                    |> Button.view
-                                ]
-                            ]
-                        ]
+                    modalConfig =
+                        { isOpen = model.reportModalOpened
+                        , onClose = ReportModalClosedByUser
+                        , onDownload = ReportDownloadClickedByUser
+                        , isDownloading = model.reportDownloadInProgress
+                        , reportType = model.report
+                        , reportFormConfig = reportFormConfig
+                        , title = "Звіт \"Еталонка\""
+                        , description = "Еталонка для мережі"
+                        }
                   in
-                  ModalDialog.modalDialog model.reportModalOpened ReportModalClosedByUser [] dialogContent
+                  ReportModal.view modalConfig
                 , let
                     deleteDialogContent =
                         [ div [ class "flex flex-col justify-between gap-4 p-2 w-[400px]" ]

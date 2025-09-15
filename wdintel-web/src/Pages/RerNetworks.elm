@@ -4,30 +4,15 @@ import Api
 import Auth
 import Bindings as B
 import Bytes exposing (Bytes)
-import Shared.Components.Button as Button
-import Shared.Components.Checkbox as Checkbox
-import Shared.Components.DateTime
-import Shared.Components.ModalDialog as ModalDialog
-import Shared.Components.RadioGroup as RadioGroup
-import Shared.Components.SegmentedControl as SegmentedControl
-import Shared.Components.Sidebar as Sidebar
-import Shared.Components.Spinner
-import Shared.Components.Table as Table
-import Shared.Components.Table.Column as TableColumn
-import Shared.Components.Table.Config as TableConfig
 import Core.Auth
 import Core.Types exposing (ApiError, GroupsActivityPerDayRsp)
-import Core.Unit as Unit
 import Core.UnitHierarchy
 import Debounce exposing (Debounce)
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
-import File.Download as Download
 import Html exposing (..)
 import Html.Attributes as Attr exposing (..)
 import Html.Events exposing (..)
-import Html.Extra as HtmlX
-import Html.Keyed
 import Html.Styled as Styled
 import Http
 import Json.Decode as Decode
@@ -36,18 +21,28 @@ import Layouts
 import List.Extra as ListX
 import Page exposing (Page)
 import Pages_.RerFreqs.Model exposing (FurtherInvestigationFilter(..))
+import Pages_.RerNetworks.ReportConfig as ReportConfig exposing (ReportTypeOption(..))
+import Pages_.RerNetworks.ReportModal as ReportModal
+import Pages_.RerNetworks.ReportUpdate as ReportUpdate
 import Route exposing (Route)
 import Route.Path
 import Select
 import Set
 import Shared
-import Shared.Callsign
-import Shared.CallsignsPopup as CallsignsPopup exposing (PopupCallerOrigin(..))
+import Shared.CallsignsPopup exposing (PopupCallerOrigin(..))
+import Shared.Components.Button as Button
+import Shared.Components.Checkbox as Checkbox
+import Shared.Components.DateTime
+import Shared.Components.SegmentedControl as SegmentedControl
+import Shared.Components.Sidebar as Sidebar
+import Shared.Components.Spinner
+import Shared.Components.Table as Table
+import Shared.Components.Table.Column as TableColumn
+import Shared.Components.Table.Config as TableConfig
 import Shared.Model exposing (isDarkMode)
 import Task
 import Time exposing (Posix)
 import TimeZone
-import Url.Builder
 import Utils.Api.ErrorHandling
 import Utils.NetworksUtils as EUtils
 import Utils.RemoteData as RD exposing (RemoteData(..))
@@ -61,6 +56,8 @@ type NetworksMergeStatus
     = NotCalculatedSuggestionsYet
     | CalculatedSuggestions (List ( B.Network, B.Network ))
     | Merging ( B.Network, B.Network ) B.Network (List ( B.Network, B.Network ))
+
+
 
 
 type alias Model =
@@ -83,11 +80,9 @@ type alias Model =
     , unitStats : RemoteData ApiError (List B.FreqUnitStatRow)
     , reportModalOpened : Bool
     , reportDownloadInProgress : Bool
-    , reportGUROnly : Bool
-    , reportActiveFreqsOnly : Bool
-    , reportIncludePelengsMap : Bool
-    , reportIncludeSigintSigns : Bool
-    , reportIncludeConfirmation : Bool
+    , report : ReportConfig.ReportType
+    , reportFromDate : Shared.Components.DateTime.Model
+    , reportToDate : Shared.Components.DateTime.Model
     , showSidebar : Bool
     , expandedArmies : Set.Set String
     , expandedDivisions : Set.Set String
@@ -146,11 +141,9 @@ init _ =
             , unitStats = Loading
             , reportModalOpened = False
             , reportDownloadInProgress = False
-            , reportGUROnly = False
-            , reportActiveFreqsOnly = True
-            , reportIncludePelengsMap = True
-            , reportIncludeSigintSigns = True
-            , reportIncludeConfirmation = True
+            , report = ReportConfig.AccordingToForm ReportConfig.defaultCommonSettings
+            , reportFromDate = Shared.Components.DateTime.init ()
+            , reportToDate = Shared.Components.DateTime.init ()
             , showSidebar = False
             , expandedArmies = Set.empty
             , expandedDivisions = Set.empty
@@ -261,11 +254,14 @@ type Msg
     | ReportModalClosedByUser
     | ReportDownloadClickedByUser
     | ReportDownloadReturnedByApi (Result ApiError Bytes)
-    | ReportGURCheckedByUser Bool
-    | ReportActiveFreqsOnlyCheckedByUser Bool
-    | ReportIncludePelengsMapCheckedByUser Bool
-    | ReportIncludeConfirmationCheckedByUser Bool
-    | ReportIncludeSigintSignsCheckedByUser Bool
+    | ReportTypeChanged ReportConfig.ReportTypeOption
+    | ReportActiveFreqsOnlyChanged Bool
+    | ReportIncludeSigintSignsChanged Bool
+    | ReportIncludeConfirmationChanged Bool
+    | ReportIncludeUnitCallsignsChanged Bool
+    | ReportIncludePelengsMapChanged Bool
+    | ReportDateTimeFromMsg (Shared.Components.DateTime.Msg Msg)
+    | ReportDateTimeToMsg (Shared.Components.DateTime.Msg Msg)
     | ToggleShowOnlyInvestigating Bool
     | ToggleArmyExpanded String
     | ToggleDivisionExpanded String String
@@ -282,48 +278,6 @@ type Msg
     | AorFilterSelMsg (Select.Msg Int)
 
 
-prepareReportDownloadCmd : Model -> Effect Msg
-prepareReportDownloadCmd model =
-    case ( model.from.datePosix, model.to.datePosix ) of
-        ( Just dtFromPosix, Just dtToPosix ) ->
-            let
-                req =
-                    { -- sinceDateInclusiveMs = Just <| Time.posixToMillis dtFromPosix
-                      -- , tillDateNoninclusiveMs = Just <| Time.posixToMillis dtToPosix
-                      filterFreq = emptySToNothing model.filterState.freq
-                    , filterUnit = emptySToNothing model.filterState.unit
-                    , sortBy = Nothing
-                    , showOnlyFurtherInverstigation =
-                        if model.showOnlyInvestigating then
-                            Just True
-
-                        else
-                            Nothing
-                    , showInactive = Just (not model.showOnlyActive)
-                    , showOnlyDeleted = Just model.showArchived
-                    , aorIds =
-                        if List.isEmpty model.aorFilterSelect.selected then
-                            Nothing
-
-                        else
-                            Just model.aorFilterSelect.selected
-                    }
-
-                payload =
-                    { req = req
-                    , settings =
-                        { networksOnly = model.reportGUROnly
-                        , activeFreqsOnly = model.reportActiveFreqsOnly
-                        , includePelengsMap = model.reportIncludePelengsMap
-                        , includeSigintSigns = model.reportIncludeSigintSigns
-                        , includeConfirmation = model.reportIncludeConfirmation
-                        }
-                    }
-            in
-            E.getNetworksReport ReportDownloadReturnedByApi payload
-
-        _ ->
-            E.none
 
 
 generatePreview : ( B.Network, B.Network ) -> B.Network
@@ -421,11 +375,20 @@ update shared msg model =
                 to =
                     Shared.Components.DateTime.initFromPosix { datePosix = now_, zone = zone }
 
+                -- Ініціалізуємо дати звіту тими ж значеннями
+                reportFromDate =
+                    Shared.Components.DateTime.initFromPosix { datePosix = Utils.Time.xDaysAgo 7 now_, zone = zone }
+
+                reportToDate =
+                    Shared.Components.DateTime.initFromPosix { datePosix = now_, zone = zone }
+
                 m2 =
                     { model
                         | from = from
                         , to = to
                         , now = Just now_
+                        , reportFromDate = reportFromDate
+                        , reportToDate = reportToDate
                     }
             in
             loadNetworks m2
@@ -443,7 +406,7 @@ update shared msg model =
                 , networksMergeStatus = CalculatedSuggestions (findSuggestedToMergeNetworks networks)
               }
             , case ( model.from.datePosix, model.to.datePosix ) of
-                ( Just dtFromPosix, Just dtToPosix ) ->
+                ( Just _, Just dtToPosix ) ->
                     E.batch
                         [ E.getNetworksGroupsActivity NetworksGroupsActivityReturnedByApi
                             { networkIds = networks |> List.map .id
@@ -629,86 +592,119 @@ update shared msg model =
             ( { model | reportModalOpened = False }, E.none )
 
         ReportDownloadClickedByUser ->
+            let
+                context =
+                    { fromDate = model.reportFromDate.datePosix
+                    , toDate = model.reportToDate.datePosix
+                    , zone = model.zone
+                    , networkId = Nothing
+                    }
+
+                req =
+                    { filterFreq = emptySToNothing model.filterState.freq
+                    , filterUnit = emptySToNothing model.filterState.unit
+                    , sortBy = Nothing
+                    , showOnlyFurtherInverstigation =
+                        if model.showOnlyInvestigating then
+                            Just True
+
+                        else
+                            Nothing
+                    , showInactive = Just (not model.showOnlyActive)
+                    , showOnlyDeleted = Just model.showArchived
+                    , aorIds =
+                        if List.isEmpty model.aorFilterSelect.selected then
+                            Nothing
+
+                        else
+                            Just model.aorFilterSelect.selected
+                    }
+
+                apiCall reportType ctx =
+                    E.getNetworksReport ReportDownloadReturnedByApi
+                        { req = req
+                        , etalonkaType = ReportConfig.toApiEtalonkaType reportType ctx
+                        }
+            in
             ( { model | reportDownloadInProgress = True }
-            , prepareReportDownloadCmd model
+            , ReportUpdate.createReportDownloadEffect model.report context apiCall
             )
 
-        ReportDownloadReturnedByApi (Err e) ->
+        ReportDownloadReturnedByApi result ->
             let
-                m2 =
-                    { model | reportDownloadInProgress = False }
-            in
-            ( m2
-            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка генерації звіту" e
-            )
+                context =
+                    { fromDate = model.from.datePosix
+                    , toDate = model.to.datePosix
+                    , zone = model.zone
+                    , networkId = Nothing
+                    }
 
-        ReportDownloadReturnedByApi (Ok bytes) ->
+                updateDownloading isDownloading m =
+                    { m | reportDownloadInProgress = isDownloading }
+            in
+            ReportUpdate.handleReportDownloadResponse result context updateDownloading model
+
+        ReportTypeChanged option ->
             let
-                m2 =
-                    { model | reportDownloadInProgress = False }
-
-                extension =
-                    "docx"
-
-                -- filename like "etalonka_2023-07-17-12-00_2023-07-18-12-00"
-                fname =
-                    case model.zone of
-                        Nothing ->
-                            "etalonka." ++ extension
-
-                        Just zone ->
-                            "etalonka_"
-                                ++ (model.from.datePosix
-                                        |> mmap (Utils.Time.renderDateTimeF6 zone)
-                                        |> def ""
-                                   )
-                                ++ "_"
-                                ++ (model.to.datePosix
-                                        |> mmap (Utils.Time.renderDateTimeF6 zone)
-                                        |> def ""
-                                   )
-                                ++ "."
-                                ++ extension
+                newReport = ReportUpdate.updateReportFromForm option
             in
-            ( m2
-            , E.sendCmd <|
-                Download.bytes fname
-                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                    bytes
-            )
+            ( { model | report = newReport }, E.none )
 
-        ReportGURCheckedByUser isChecked ->
+        ReportActiveFreqsOnlyChanged checked ->
             let
-                m1 =
-                    if isChecked then
-                        { model | reportIncludeConfirmation = False, reportIncludePelengsMap = False }
-
-                    else
-                        model
+                newReport = ReportUpdate.updateCommonSetting "activeFreqsOnly" checked model.report
             in
-            ( { m1 | reportGUROnly = isChecked }, E.none )
+            ( { model | report = newReport }, E.none )
 
-        ReportActiveFreqsOnlyCheckedByUser isChecked ->
-            ( { model | reportActiveFreqsOnly = isChecked }, E.none )
-
-        ReportIncludePelengsMapCheckedByUser isChecked ->
+        ReportIncludeSigintSignsChanged checked ->
             let
-                -- If user tries to enable pelengs map, automatically disable "Згідно форми"
-                -- since backend doesn't support this combination
-                updatedModel =
-                    if isChecked && model.reportGUROnly then
-                        { model | reportGUROnly = False }
-
-                    else
-                        model
+                newReport = ReportUpdate.updateCommonSetting "includeSigintSigns" checked model.report
             in
-            ( { updatedModel | reportIncludePelengsMap = isChecked }, E.none )
+            ( { model | report = newReport }, E.none )
 
-        ReportIncludeConfirmationCheckedByUser isChecked ->
-            ( { model | reportIncludeConfirmation = isChecked }, E.none )
+        ReportIncludeConfirmationChanged checked ->
+            let
+                newReport = ReportUpdate.updateCommonSetting "includeConfirmation" checked model.report
+            in
+            ( { model | report = newReport }, E.none )
 
-        ReportIncludeSigintSignsCheckedByUser isChecked ->
-            ( { model | reportIncludeSigintSigns = isChecked }, E.none )
+        ReportIncludeUnitCallsignsChanged checked ->
+            let
+                newReport = ReportUpdate.updateExtendedSetting "includeUnitCallsigns" checked model.report
+            in
+            ( { model | report = newReport }, E.none )
+
+        ReportIncludePelengsMapChanged checked ->
+            let
+                newReport = ReportUpdate.updateExtendedSetting "includePelengsMap" checked model.report
+            in
+            ( { model | report = newReport }, E.none )
+
+        ReportDateTimeFromMsg imsg ->
+            let
+                ( m2, eff2 ) =
+                    Shared.Components.DateTime.update
+                        { zone = model.zone
+                        , msg = imsg
+                        , model = model.reportFromDate
+                        , toModel = \reportFromDate -> { model | reportFromDate = reportFromDate }
+                        , toMsg = ReportDateTimeFromMsg
+                        }
+            in
+            ( m2, eff2 )
+
+        ReportDateTimeToMsg imsg ->
+            let
+                ( m2, eff2 ) =
+                    Shared.Components.DateTime.update
+                        { zone = model.zone
+                        , msg = imsg
+                        , model = model.reportToDate
+                        , toModel = \reportToDate -> { model | reportToDate = reportToDate }
+                        , toMsg = ReportDateTimeToMsg
+                        }
+            in
+            ( m2, eff2 )
 
         ToggleShowOnlyInvestigating val ->
             let
@@ -1517,49 +1513,32 @@ filterPanel user shared model =
             , span [ class "grow-1" ] []
             ]
         , let
-            dialogContent =
-                [ div [ class "flex flex-col justify-between gap-4 p-2 w-[400px]" ]
-                    [ div [ class "pb-12" ]
-                        [ h2 [] [ text "Звіт \"еталонка\"" ]
-                        , p [] [ text "Еталонка по фільтру частота/підрозділ/смуга" ]
-                        , div [ class "grid grid-cols-2 gap-[8px] h-[80px]" ]
-                            [ Checkbox.new { isChecked = model.reportGUROnly, onToggle = ReportGURCheckedByUser }
-                                |> Checkbox.withContent [ span [] [ text "Згідно форми" ] ]
-                                |> Checkbox.view
-                            , Checkbox.new { isChecked = model.reportActiveFreqsOnly, onToggle = ReportActiveFreqsOnlyCheckedByUser }
-                                |> Checkbox.withContent [ span [] [ text "Лише активні частоти" ] ]
-                                |> Checkbox.view
-                            , Checkbox.new { isChecked = model.reportIncludePelengsMap, onToggle = ReportIncludePelengsMapCheckedByUser }
-                                |> Checkbox.withContent [ span [] [ text "Включити карту пеленгів" ] ]
-                                |> Checkbox.withDisabled model.reportGUROnly
-                                |> Checkbox.view
-                            , Checkbox.new { isChecked = model.reportIncludeSigintSigns, onToggle = ReportIncludeSigintSignsCheckedByUser }
-                                |> Checkbox.withContent [ span [] [ text "Додати сигнали" ] ]
-                                |> Checkbox.view
-                            , Checkbox.new { isChecked = model.reportIncludeConfirmation, onToggle = ReportIncludeConfirmationCheckedByUser }
-                                |> Checkbox.withContent [ span [] [ text "Додати підтвердження" ] ]
-                                |> Checkbox.view
-                            ]
-                        , div [ class "text-xs text-gray-600 dark:text-gray-400 mt-2" ]
-                            [ text "Якщо вибрано \"Згідно форми\", то карта пеленгів недоступна." ]
-                        ]
-                    , div [ class "flex justify-between" ]
-                        [ Button.new { label = "Назад", onClick = ReportModalClosedByUser } |> Button.withStyleSecondary |> Button.view
-                        , Button.new { label = "Згенерувати", onClick = ReportDownloadClickedByUser }
-                            |> (if model.reportDownloadInProgress then
-                                    Button.withIcon
-                                        [ Shared.Components.Spinner.loadingSpinner2Sm
-                                        ]
+            reportFormConfig =
+                { onReportTypeChanged = ReportTypeChanged
+                , onActiveFreqsOnlyChanged = ReportActiveFreqsOnlyChanged
+                , onIncludeSigintSignsChanged = ReportIncludeSigintSignsChanged
+                , onIncludeConfirmationChanged = ReportIncludeConfirmationChanged
+                , onIncludeUnitCallsignsChanged = ReportIncludeUnitCallsignsChanged
+                , onIncludePelengsMapChanged = ReportIncludePelengsMapChanged
+                , reportFromDate = Just model.reportFromDate
+                , reportToDate = Just model.reportToDate
+                , onReportFromDateMsg = Just ReportDateTimeFromMsg
+                , onReportToDateMsg = Just ReportDateTimeToMsg
+                , showDateRange = True
+                }
 
-                                else
-                                    identity
-                               )
-                            |> Button.view
-                        ]
-                    ]
-                ]
+            modalConfig =
+                { isOpen = model.reportModalOpened
+                , onClose = ReportModalClosedByUser
+                , onDownload = ReportDownloadClickedByUser
+                , isDownloading = model.reportDownloadInProgress
+                , reportType = model.report
+                , reportFormConfig = reportFormConfig
+                , title = "Звіт \"Еталонка\""
+                , description = "Еталонка по фільтру частота/підрозділ/смуга"
+                }
           in
-          ModalDialog.modalDialog model.reportModalOpened ReportModalClosedByUser [] dialogContent
+          ReportModal.view modalConfig
         ]
 
 
@@ -1582,6 +1561,8 @@ contentBlock user shared model =
             _ ->
                 div [ class "flex items-center justify-center w-full h-full" ] [ Shared.Components.Spinner.loadingSpinner ]
         ]
+
+
 
 
 leftPanel : Shared.Model -> Model -> Html Msg
@@ -1668,7 +1649,7 @@ unitsBlock shared model =
 
 
 view : Bool -> Shared.Model -> Auth.User -> Model -> View Msg
-view dark shared user model =
+view _ shared user model =
     { title = "мережі"
     , body =
         [ div [ class "flex rer-networks", style "height" "calc(-50px + 100vh)" ]
@@ -1700,7 +1681,7 @@ view dark shared user model =
                       div [ class "flex gap-[16px]" ] buttons
                     ]
                 , case model.networksMergeStatus of
-                    CalculatedSuggestions (x :: xs) ->
+                    CalculatedSuggestions (_ :: xs) ->
                         div [ class "w-full bg-[#F5F28A]/[40%] h-[70px] mb-[16px] border-1 border-[#F5F28A] rounded-lg flex justify-between items-center px-[16px] py-[8px] font-medium" ]
                             [ text <| (String.fromInt (List.length xs + 1) ++ " неопрацьованих пропозицій по злиттю мереж")
                             , Button.new { label = "Поєднати мережі", onClick = NetworksMergeStart }
@@ -1853,7 +1834,7 @@ page user shared _ =
 
 
 toLayout : Auth.User -> Model -> Layouts.Layout Msg
-toLayout user model =
+toLayout user _ =
     Layouts.Navbar
         { user = user
         , activeName = "rer"
