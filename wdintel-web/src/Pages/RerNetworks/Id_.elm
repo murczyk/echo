@@ -22,8 +22,11 @@ import Page exposing (Page)
 import Pages_.RerNetworks.Id_.CallsignsTables as CallsignsTables exposing (getDevelopingCallsigns, getRegularCallsigns)
 import Pages_.RerNetworks.Id_.Descriptions as Descriptions
 import Pages_.RerNetworks.Id_.FrequenciesTable as FrequenciesTable
-import Pages_.RerNetworks.Id_.Model as Types exposing (CallsignCreateMode(..), CallsignTableRow, FreqActivityFilter(..), Mode(..), ShowAllPopupFor(..), ReportType(..), CommonReportSettings, ExtendedReportSettings)
+import Pages_.RerNetworks.Id_.Model as Types exposing (CallsignCreateMode(..), CallsignTableRow, FreqActivityFilter(..), Mode(..), ShowAllPopupFor(..))
 import Pages_.RerNetworks.Id_.Msg as Msgs exposing (Msg(..))
+import Pages_.RerNetworks.ReportConfig as ReportConfig exposing (ReportTypeOption(..))
+import Pages_.RerNetworks.ReportModal as ReportModal
+import Pages_.RerNetworks.ReportUpdate as ReportUpdate
 import Pages_.RerNetworks.Id_.NetworkInfo as NetworkInfo
 import Pages_.RerNetworks.Utils as IdUtils
 import Route exposing (Route)
@@ -138,12 +141,7 @@ init route shared () =
       , signals = NotAsked
       , reportModalOpened = False
       , reportDownloadInProgress = False
-      , report =
-          AccordingToForm
-              { activeFreqsOnly = True
-              , includeSigintSigns = True
-              , includeConfirmation = True
-              }
+      , report = ReportConfig.AccordingToForm ReportConfig.defaultCommonSettings
       , freqsActivityFilter = AllFreqs
       , freqsTableState = Table.initialSort "Частота"
       , callsignsTableState = Table.initialSort "Позивний"
@@ -755,86 +753,80 @@ update shared msg model =
         ReportDownloadClickedByUser ->
             case model.network of
                 Success network ->
-                    ( { model | reportDownloadInProgress = True }
-                    , E.getNetworkReportBatch ReportDownloadReturnedByApi
-                        { networkIds = [ network.id ]
-                        , sortBy = Nothing
-                        , etalonkaType =
-                            case model.report of
-                                AccordingToForm settings ->
-                                    B.AccordingToTheForm
-                                        { activeFreqsOnly = settings.activeFreqsOnly
-                                        , includeSigintSigns = settings.includeSigintSigns
-                                        , includeConfirmation = settings.includeConfirmation
-                                        }
+                    let
+                        context =
+                            { fromDate = Nothing
+                            , toDate = Nothing
+                            , zone = Nothing
+                            , networkId = Just network.id
+                            }
 
-                                ExtendedReport settings ->
-                                    B.ExtendedReport
-                                        { sinceDateInclusiveMs = 0  -- TODO: Додати дати з фільтрів
-                                        , tillDateInclusiveMs = Nothing
-                                        , activeFreqsOnly = settings.common.activeFreqsOnly
-                                        , includeUnitCallsigns = settings.includeUnitCallsigns
-                                        , includeSigintSigns = settings.common.includeSigintSigns
-                                        , includeConfirmation = settings.common.includeConfirmation
-                                        , includePelengsMap = settings.includePelengsMap
-                                        }
-                        }
+                        apiCall reportType ctx =
+                            E.getNetworkReportBatch ReportDownloadReturnedByApi
+                                { networkIds = [ network.id ]
+                                , sortBy = Nothing
+                                , etalonkaType = ReportConfig.toApiEtalonkaType reportType ctx
+                                }
+                    in
+                    ( { model | reportDownloadInProgress = True }
+                    , ReportUpdate.createReportDownloadEffect model.report context apiCall
                     )
 
                 _ ->
                     ( model, E.none )
 
-        ReportDownloadReturnedByApi (Err e) ->
-            ( { model | reportDownloadInProgress = False }
-            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка генерації звіту" e
-            )
-
-        ReportDownloadReturnedByApi (Ok bytes) ->
+        ReportDownloadReturnedByApi result ->
             let
-                m2 =
-                    { model | reportDownloadInProgress = False }
+                context =
+                    { fromDate = Nothing
+                    , toDate = Nothing
+                    , zone = Nothing
+                    , networkId = 
+                        case model.network of
+                            Success network -> Just network.id
+                            _ -> Nothing
+                    }
 
-                extension =
-                    "docx"
-
-                fname =
-                    "etalonka_network_"
-                        ++ (case model.network of
-                                Success network ->
-                                    String.fromInt network.id
-
-                                _ ->
-                                    "unknown"
-                           )
-                        ++ "."
-                        ++ extension
+                updateDownloading isDownloading m =
+                    { m | reportDownloadInProgress = isDownloading }
             in
-            ( m2
-            , E.sendCmd <|
-                Download.bytes fname
-                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                    bytes
-            )
+            ReportUpdate.handleReportDownloadResponse result context updateDownloading model
 
-        ReportNetworksOnlyCheckedByUser _ ->
-            -- TODO: Тимчасова заглушка - замінити на новий ReportChanged 
-            ( model, E.none )
+        ReportTypeChanged option ->
+            let
+                newReport = ReportUpdate.updateReportFromForm option
+            in
+            ( { model | report = newReport }, E.none )
 
-        ReportActiveFreqsOnlyCheckedByUser _ ->
-            -- TODO: Тимчасова заглушка - замінити на новий ReportChanged
-            ( model, E.none )
+        ReportActiveFreqsOnlyChanged checked ->
+            let
+                newReport = ReportUpdate.updateCommonSetting "activeFreqsOnly" checked model.report
+            in
+            ( { model | report = newReport }, E.none )
 
-        ReportIncludePelengsMapCheckedByUser _ ->
-            -- TODO: Тимчасова заглушка - замінити на новий ReportChanged
-            ( model, E.none )
+        ReportIncludeSigintSignsChanged checked ->
+            let
+                newReport = ReportUpdate.updateCommonSetting "includeSigintSigns" checked model.report
+            in
+            ( { model | report = newReport }, E.none )
 
-        ReportIncludeConfirmationCheckedByUser _ ->
-            -- TODO: Тимчасова заглушка - замінити на новий ReportChanged
-            ( model, E.none )
+        ReportIncludeConfirmationChanged checked ->
+            let
+                newReport = ReportUpdate.updateCommonSetting "includeConfirmation" checked model.report
+            in
+            ( { model | report = newReport }, E.none )
 
-        ReportIncludeSigintSignsCheckedByUser _ ->
-            -- TODO: Тимчасова заглушка - замінити на новий ReportChanged
-            ( model, E.none )
+        ReportIncludeUnitCallsignsChanged checked ->
+            let
+                newReport = ReportUpdate.updateExtendedSetting "includeUnitCallsigns" checked model.report
+            in
+            ( { model | report = newReport }, E.none )
+
+        ReportIncludePelengsMapChanged checked ->
+            let
+                newReport = ReportUpdate.updateExtendedSetting "includePelengsMap" checked model.report
+            in
+            ( { model | report = newReport }, E.none )
 
         ModulationsReturnedByApi (Err e) ->
             ( { model | modulations = Failure e }
@@ -1015,34 +1007,32 @@ view user shared model =
                 , Html.map Callsigns <| CallsignsTables.editCallsignsSidebar model user shared
                 , Html.map Callsigns <| CallsignsTables.deleteCallsignModal model
                 , let
-                    dialogContent =
-                        [ div [ class "flex flex-col justify-between gap-4 p-2 w-[400px]" ]
-                            [ div [ class "pb-12" ]
-                                [ h2 [] [ text "Звіт \"еталонка\"" ]
-                                , p [] [ text "Еталонка для мережі" ]
-                                , div [ class "p-4 border rounded bg-gray-50 dark:bg-gray-800" ]
-                                    [ text "🚧 Налаштування звіту для окремої мережі будуть оновлені незабаром"
-                                    , br [] []
-                                    , text "📊 Зараз використовуються налаштування за замовчуванням"
-                                    ]
-                                ]
-                            , div [ class "flex justify-between" ]
-                                [ Button.new { label = "Назад", onClick = ReportModalClosedByUser } |> Button.withStyleSecondary |> Button.view
-                                , Button.new { label = "Згенерувати", onClick = ReportDownloadClickedByUser }
-                                    |> (if model.reportDownloadInProgress then
-                                            Button.withIcon
-                                                [ Shared.Components.Spinner.loadingSpinner2Sm
-                                                ]
+                    reportFormConfig =
+                        { onReportTypeChanged = ReportTypeChanged
+                        , onActiveFreqsOnlyChanged = ReportActiveFreqsOnlyChanged
+                        , onIncludeSigintSignsChanged = ReportIncludeSigintSignsChanged
+                        , onIncludeConfirmationChanged = ReportIncludeConfirmationChanged
+                        , onIncludeUnitCallsignsChanged = ReportIncludeUnitCallsignsChanged
+                        , onIncludePelengsMapChanged = ReportIncludePelengsMapChanged
+                        , reportFromDate = Nothing
+                        , reportToDate = Nothing
+                        , onReportFromDateMsg = Nothing
+                        , onReportToDateMsg = Nothing
+                        , showDateRange = False  -- Для окремої мережі не показуємо діапазон дат
+                        }
 
-                                        else
-                                            identity
-                                       )
-                                    |> Button.view
-                                ]
-                            ]
-                        ]
+                    modalConfig =
+                        { isOpen = model.reportModalOpened
+                        , onClose = ReportModalClosedByUser
+                        , onDownload = ReportDownloadClickedByUser
+                        , isDownloading = model.reportDownloadInProgress
+                        , reportType = model.report
+                        , reportFormConfig = reportFormConfig
+                        , title = "Звіт \"Еталонка\""
+                        , description = "Еталонка для мережі"
+                        }
                   in
-                  ModalDialog.modalDialog model.reportModalOpened ReportModalClosedByUser [] dialogContent
+                  ReportModal.view modalConfig
                 , let
                     deleteDialogContent =
                         [ div [ class "flex flex-col justify-between gap-4 p-2 w-[400px]" ]

@@ -3,6 +3,7 @@ module Pages_.RerNetworks.Id_.Model exposing (..)
 import Api
 import Auth
 import Bindings as B
+import Pages_.RerNetworks.ReportConfig as ReportConfig
 import Bytes exposing (Bytes)
 import Char
 import Core.Auth
@@ -71,23 +72,6 @@ type ShowAllPopupFor
     = ShowAllComment
 
 
-type ReportType
-    = AccordingToForm CommonReportSettings
-    | ExtendedReport ExtendedReportSettings
-
-
-type alias CommonReportSettings =
-    { activeFreqsOnly : Bool
-    , includeSigintSigns : Bool
-    , includeConfirmation : Bool
-    }
-
-
-type alias ExtendedReportSettings =
-    { common : CommonReportSettings
-    , includeUnitCallsigns : Bool
-    , includePelengsMap : Bool
-    }
 
 
 type alias CallsignTableRow =
@@ -127,7 +111,7 @@ type alias Model =
     , signals : RemoteData ApiError (List B.NetworkSignalsRes)
     , reportModalOpened : Bool
     , reportDownloadInProgress : Bool
-    , report : ReportType
+    , report : ReportConfig.ReportType
     , freqsActivityFilter : FreqActivityFilter
     , freqsTableState : Table.State
     , callsignsTableState : Table.State
