@@ -183,71 +183,66 @@ pub async fn load_freqs(
         Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::Deleted))
             .eq(false),
     )
-    .and_where(
-        Expr::col((SigintNetwork::Table, SigintUnit::Id)).eq(network_id),
-    );
+    .and_where(Expr::col((SigintNetwork::Table, SigintUnit::Id)).eq(network_id))
+    .and_where_option(filter.as_ref().filter(|f| f.active_freqs_only).map(
+        |_| {
+            Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::ActiveTo))
+                .is_null()
+        },
+    ));
 
     // adapt filter logic dynamically depending on NetworkFreqFilter
     // Lower bound: sigint_inbox_item.datetime >= GREATEST(since_date_inclusive, freq.active_from)
     // Upper bound: sigint_inbox_item.datetime < LEAST(till_date_inclusive, COALESCE(freq.active_to, now()))
-    if let Some(filter) = &filter {
-        // ---- LOWER BOUND ----
-        if let Some(since_ms) = filter.since_date_inclusive_ms {
-            let since_dt = DateTime::from_timestamp_millis(since_ms)
-                .context(h!())?
-                .naive_utc();
-            let since_expr = Expr::cust_with_values(
-                "GREATEST($1, sigint_network_freq.active_from)",
-                [since_dt],
-            );
+    let since_ms = filter.as_ref().and_then(|f| f.since_date_inclusive_ms);
+    let till_ms = filter.as_ref().and_then(|f| f.till_date_inclusive_ms);
 
-            q.and_where(
-                Expr::col((SigintInboxItem::Table, SigintInboxItem::Datetime))
-                    .gte(since_expr),
-            );
-        } else {
-            q.and_where(
-                Expr::col((SigintInboxItem::Table, SigintInboxItem::Datetime))
-                    .gte(Expr::col((
-                        SigintNetworkFreq::Table,
-                        SigintNetworkFreq::ActiveFrom,
-                    ))),
-            );
-        }
-
-        // ---- UPPER BOUND ----
-        if let Some(till_ms) = filter.till_date_inclusive_ms {
-            let till_dt = DateTime::from_timestamp_millis(till_ms)
-                .context(h!())?
-                .naive_utc();
-
-            let till_expr = Expr::cust_with_values(
-            "LEAST($1, COALESCE(sigint_network_freq.active_to, CURRENT_TIMESTAMP AT TIME ZONE 'UTC'))",
-            [till_dt],
+    // ---- LOWER BOUND ---
+    if let Some(since_ms) = since_ms {
+        let since_dt = DateTime::from_timestamp_millis(since_ms)
+            .context(h!())?
+            .naive_utc();
+        let since_expr = Expr::cust_with_values(
+            "GREATEST($1, sigint_network_freq.active_from)",
+            [since_dt],
         );
 
-            q.and_where(
-                Expr::col((SigintInboxItem::Table, SigintInboxItem::Datetime))
-                    .lt(till_expr),
+        q.and_where(
+            Expr::col((SigintInboxItem::Table, SigintInboxItem::Datetime))
+                .gte(since_expr),
+        );
+    } else {
+        q.and_where(
+            Expr::col((SigintInboxItem::Table, SigintInboxItem::Datetime)).gte(
+                Expr::col((
+                    SigintNetworkFreq::Table,
+                    SigintNetworkFreq::ActiveFrom,
+                )),
+            ),
+        );
+    }
+
+    // ---- UPPER BOUND ----
+    if let Some(till_ms) = till_ms {
+        let till_dt = DateTime::from_timestamp_millis(till_ms)
+            .context(h!())?
+            .naive_utc();
+        let till_expr = Expr::cust_with_values(
+            "LEAST($1, COALESCE(sigint_network_freq.active_to, CURRENT_TIMESTAMP AT TIME ZONE 'UTC'))",
+            [till_dt],
             );
-        } else {
-            q.and_where(
-            Expr::col((SigintInboxItem::Table, SigintInboxItem::Datetime)).lt(
+        q.and_where(
+            Expr::col((SigintInboxItem::Table, SigintInboxItem::Datetime))
+                .lte(till_expr),
+        );
+    } else {
+        q.and_where(
+            Expr::col((SigintInboxItem::Table, SigintInboxItem::Datetime)).lte(
                 Expr::cust("COALESCE(sigint_network_freq.active_to, CURRENT_TIMESTAMP AT TIME ZONE 'UTC')"),
             ),
         );
-        }
-
-        if filter.active_freqs_only {
-            q.and_where(
-                Expr::col((
-                    SigintNetworkFreq::Table,
-                    SigintNetworkFreq::ActiveTo,
-                ))
-                .is_null(),
-            );
-        }
     }
+
     let network_messages_cte = CommonTableExpression::new()
         .query(q)
         .table_name(Alias::new("network_messages"))
@@ -715,7 +710,7 @@ pub fn build_callsigns_queries(
         )
         .and(
             Expr::col((SigintInboxItem::Table, SigintInboxItem::Datetime))
-                .lt(upper_bound),
+                .lte(upper_bound),
         );
 
     let network_messages_select = Query::select()
@@ -1207,7 +1202,7 @@ pub async fn load_pelengs_map(
 
     if let Some(date_till) = date_till {
         query = query.filter(
-            sigint_inbox_item::Column::Datetime.gte(dt_from_millis(date_till)?),
+            sigint_inbox_item::Column::Datetime.lte(dt_from_millis(date_till)?),
         )
     }
 
