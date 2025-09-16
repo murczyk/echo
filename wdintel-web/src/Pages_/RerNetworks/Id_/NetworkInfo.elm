@@ -94,14 +94,14 @@ view network model user shared =
 
 activityBlock : Shared.Model -> Model -> List (Html Msg)
 activityBlock shared model =
-    [ div [ class "mb-[8px] flex justify-between items-center" ]
+    [ div [ class "flex justify-between items-center" ]
         [ h5 [] [ text "Активність мережі" ]
         ]
     , div [ class "space-y-4" ]
-        [ div [ class "mb-4" ]
+        [ div [ class "mb-2" ]
             [ span [ class "opacity-70 text-sm" ] [ text "Графік активності мережі за місяць" ]
             ]
-        , div [ class "h-[300px]" ]
+        , div [ class "h-[200px]" ]
             [ case model.groupsActivity of
                 Success data ->
                     let
@@ -368,7 +368,7 @@ viewNetworkInfoForm updNetworkReq network networkFreqs shared model =
                 [ input
                     [ value updNetworkReq.location
                     , onInput <| NetworkEditingMsg << (\v -> { updNetworkReq | location = v })
-                    , class "form-input w-full h-[40px]"
+                    , class "form-input w-full"
                     , placeholder "введіть район функціонування/розгортання"
                     ]
                     []
@@ -380,7 +380,7 @@ viewNetworkInfoForm updNetworkReq network networkFreqs shared model =
                 [ input
                     [ value <| Maybe.withDefault "" updNetworkReq.purpose
                     , onInput <| NetworkEditingMsg << (\v -> { updNetworkReq | purpose = Just v })
-                    , class "form-input w-full h-[40px]"
+                    , class "form-input w-full"
                     , placeholder "введіть призначення"
                     ]
                     []
@@ -408,7 +408,7 @@ viewNetworkInfoForm updNetworkReq network networkFreqs shared model =
                 [ input
                     [ value <| Maybe.withDefault "" updNetworkReq.operationMode
                     , onInput <| NetworkEditingMsg << (\v -> { updNetworkReq | operationMode = Just v })
-                    , class "form-input w-full h-[40px]"
+                    , class "form-input w-full"
                     , placeholder "введіть режим роботи радіомережі"
                     ]
                     []
@@ -420,7 +420,7 @@ viewNetworkInfoForm updNetworkReq network networkFreqs shared model =
                 [ input
                     [ value <| Maybe.withDefault "" updNetworkReq.operationType
                     , onInput <| NetworkEditingMsg << (\v -> { updNetworkReq | operationType = Just v })
-                    , class "form-input w-full h-[40px]"
+                    , class "form-input w-full"
                     , placeholder "введіть характер роботи"
                     ]
                     []
@@ -432,7 +432,7 @@ viewNetworkInfoForm updNetworkReq network networkFreqs shared model =
                 [ input
                     [ value <| Maybe.withDefault "" updNetworkReq.operationPeriod
                     , onInput <| NetworkEditingMsg << (\v -> { updNetworkReq | operationPeriod = Just v })
-                    , class "form-input w-full h-[40px]"
+                    , class "form-input w-full"
                     , placeholder "введіть період функціонування"
                     ]
                     []
@@ -482,7 +482,7 @@ viewNetworkInfoForm updNetworkReq network networkFreqs shared model =
                 [ input
                     [ value (Maybe.withDefault "" updNetworkReq.radioStation)
                     , onInput <| NetworkEditingMsg << (\v -> { updNetworkReq | radioStation = Just v })
-                    , class "form-input w-full h-[40px]"
+                    , class "form-input w-full"
                     , placeholder "введіть радіостанцію"
                     ]
                     []
