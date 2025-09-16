@@ -58,28 +58,12 @@ import View exposing (View)
 
 view network model user shared =
     [ div [ class "bg-w dark:bg-[#1C1C21] p-[16px]" ]
-        (case model.missingFieldsMode of
-            Readonly ->
-                missingFieldsBlock user network shared model
+        (case ( model.mode, Core.Auth.hasRole "Admin" user || Core.Auth.hasRole "UnitsEditor" user ) of
+            ( Editing eNetwork, True ) ->
+                viewNetworkInfoForm eNetwork network network.freqs shared model
 
-            Editing eNetwork ->
-                missingFieldsEditBlock user network eNetwork shared model
-        )
-    , div [ class "bg-w dark:bg-[#1C1C21] p-[16px]" ]
-        (case model.mode of
-            Readonly ->
-                if Core.Auth.hasRole "Admin" user || Core.Auth.hasRole "UnitsEditor" user then
-                    mainInfoBlock user network shared model
-
-                else
-                    mainInfoBlock user network shared model
-
-            Editing eNetwork ->
-                if Core.Auth.hasRole "Admin" user || Core.Auth.hasRole "UnitsEditor" user then
-                    mainInfoEditBlock eNetwork network network.freqs shared model
-
-                else
-                    mainInfoBlock user network shared model
+            _ ->
+                viewNetworkInfoReadonly user network shared model
         )
     , div [ class "bg-w dark:bg-[#1C1C21] p-[16px]" ] <|
         activityBlock shared model
@@ -116,8 +100,8 @@ activityBlock shared model =
     ]
 
 
-missingFieldsBlock : Auth.User -> B.Network -> Shared.Model -> Model -> List (Html Msg)
-missingFieldsBlock user network shared model =
+viewNetworkInfoReadonly : Auth.User -> B.Network -> Shared.Model -> Model -> List (Html Msg)
+viewNetworkInfoReadonly user network shared model =
     [ div [ class "mb-[8px] flex justify-between items-center" ]
         [ h5 [] [ text "Загальне" ]
         , if Core.Auth.hasRole "Admin" user || Core.Auth.hasRole "UnitsEditor" user then
@@ -215,11 +199,54 @@ missingFieldsBlock user network shared model =
                 ]
             ]
         ]
+    , div [ class "space-y-3" ]
+        [ div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+            [ span [ class "text-[13px] font-medium" ] [ text "Район функціонування/розгортання:" ]
+            , div [ class "col-span-2 h-[40px] flex items-center" ]
+                [ text network.location ]
+            ]
+        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+            [ span [ class "text-[13px] font-medium" ] [ text "Призначення:" ]
+            , div [ class "col-span-2 h-[40px] flex items-center" ]
+                [ text <| Maybe.withDefault "" network.purpose ]
+            ]
+        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+            [ span [ class "text-[13px] font-medium" ] [ text "Склад кореспондентів:" ]
+            , div [ class "col-span-2 h-[40px] flex items-center" ]
+                [ RD.withDefault [] model.callsigns |> List.length |> String.fromInt |> text ]
+            ]
+        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+            [ span [ class "text-[13px] font-medium" ] [ text "Вид передачі:" ]
+            , div [ class "col-span-2 h-[40px] flex items-center" ]
+                [ List.map (\freqObj -> freqObj.kind) network.freqs
+                    |> List.map NetworksUtils.networkStringToLabel
+                    |> Set.fromList
+                    |> Set.toList
+                    |> String.join ", "
+                    |> text
+                ]
+            ]
+        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+            [ span [ class "text-[13px] font-medium" ] [ text "Режим роботи радіомережі:" ]
+            , div [ class "col-span-2 h-[40px] flex items-center" ]
+                [ text <| Maybe.withDefault "" network.operationMode ]
+            ]
+        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+            [ span [ class "text-[13px] font-medium" ] [ text "Характер роботи:" ]
+            , div [ class "col-span-2 h-[40px] flex items-center" ]
+                [ text <| Maybe.withDefault "" network.operationType ]
+            ]
+        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+            [ span [ class "text-[13px] font-medium" ] [ text "Період функціонування:" ]
+            , div [ class "col-span-2 h-[40px] flex items-center" ]
+                [ text <| Maybe.withDefault "" network.operationPeriod ]
+            ]
+        ]
     ]
 
 
-missingFieldsEditBlock : Auth.User -> B.Network -> B.UpdateNetworkReq -> Shared.Model -> Model -> List (Html Msg)
-missingFieldsEditBlock user network updNetworkReq shared model =
+viewNetworkInfoForm : B.UpdateNetworkReq -> B.Network -> List B.NetworkFreq -> Shared.Model -> Model -> List (Html Msg)
+viewNetworkInfoForm updNetworkReq network networkFreqs shared model =
     [ div [ class "mb-[8px] flex justify-between items-center" ]
         [ h5 [] [ text "Загальне" ]
         , div [ class "flex gap-[8px]" ]
@@ -386,69 +413,7 @@ missingFieldsEditBlock user network updNetworkReq shared model =
                 ]
             ]
         ]
-    ]
-
-
-mainInfoBlock : Auth.User -> B.Network -> Shared.Model -> Model -> List (Html Msg)
-mainInfoBlock user network shared model =
-    [ div [ class "mb-[8px] flex justify-between items-center" ]
-        [ h5 []
-            [ text "Згідно форми" ]
-        , if Core.Auth.hasRole "Admin" user || Core.Auth.hasRole "UnitsEditor" user then
-            i [ class "bi bi-pencil-square text-action cursor-pointer text-[20px]", onClick NetworkEditStartedByUser ] []
-
-          else
-            text ""
-        ]
-    , div [ class "space-y-3" ]
-        [ div [ class "grid grid-cols-3 gap-x-4 items-center" ]
-            [ span [ class "text-[13px] font-medium" ] [ text "Район функціонування/розгортання:" ]
-            , div [ class "col-span-2 h-[40px] flex items-center" ]
-                [ text network.location ]
-            ]
-        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
-            [ span [ class "text-[13px] font-medium" ] [ text "Призначення:" ]
-            , div [ class "col-span-2 h-[40px] flex items-center" ]
-                [ text <| Maybe.withDefault "" network.purpose ]
-            ]
-        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
-            [ span [ class "text-[13px] font-medium" ] [ text "Склад кореспондентів:" ]
-            , div [ class "col-span-2 h-[40px] flex items-center" ]
-                [ RD.withDefault [] model.callsigns |> List.length |> String.fromInt |> text ]
-            ]
-        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
-            [ span [ class "text-[13px] font-medium" ] [ text "Вид передачі:" ]
-            , div [ class "col-span-2 h-[40px] flex items-center" ]
-                [ List.map (\freqObj -> freqObj.kind) network.freqs
-                    |> List.map NetworksUtils.networkStringToLabel
-                    |> Set.fromList
-                    |> Set.toList
-                    |> String.join ", "
-                    |> text
-                ]
-            ]
-        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
-            [ span [ class "text-[13px] font-medium" ] [ text "Режим роботи радіомережі:" ]
-            , div [ class "col-span-2 h-[40px] flex items-center" ]
-                [ text <| Maybe.withDefault "" network.operationMode ]
-            ]
-        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
-            [ span [ class "text-[13px] font-medium" ] [ text "Характер роботи:" ]
-            , div [ class "col-span-2 h-[40px] flex items-center" ]
-                [ text <| Maybe.withDefault "" network.operationType ]
-            ]
-        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
-            [ span [ class "text-[13px] font-medium" ] [ text "Період функціонування:" ]
-            , div [ class "col-span-2 h-[40px] flex items-center" ]
-                [ text <| Maybe.withDefault "" network.operationPeriod ]
-            ]
-        ]
-    ]
-
-
-mainInfoEditBlock : B.UpdateNetworkReq -> B.Network -> List B.NetworkFreq -> Shared.Model -> Model -> List (Html Msg)
-mainInfoEditBlock updNetworkReq network networkFreqs shared model =
-    [ div [ class "mb-[8px] flex justify-between items-center" ]
+    , div [ class "mb-[8px] flex justify-between items-center" ]
         [ h5 []
             [ text "Згідно форми" ]
         , div [ class "flex gap-[8px]" ]
