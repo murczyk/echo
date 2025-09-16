@@ -101,8 +101,7 @@ init route shared () =
       , callsignsEditingState = Readonly
       , callsignsOpenedPopupId = Nothing
       , mode = Readonly
-      , missingFieldsMode = Readonly
-      , missingFieldsEditLoading = False
+      , editLoading = False
       , editKindSelect =
             { state = Select.initState (Select.selectIdentifier "edit-network-kind-state")
             , items =
@@ -438,55 +437,6 @@ update shared msg model =
                                 , restoreNetwork = Nothing
                                 , areaOfResponsibilityIds = Nothing
                                 }
-                      }
-                    , E.none
-                    )
-
-                _ ->
-                    ( model, E.none )
-
-        NetworkEditingSavedByUser ->
-            case model.mode of
-                Editing edit ->
-                    ( model, E.updateNetworkPosts (NetworkPostsUpdatedByApi edit) { networkId = edit.id, postIds = model.editPostsSelect.selected } )
-
-                Readonly ->
-                    ( model, E.none )
-
-        NetworkEditingCanceledByUser ->
-            ( { model | mode = Readonly }, E.none )
-
-        NetworkEditingMsg updNetworkReq ->
-            ( { model
-                | mode =
-                    case model.mode of
-                        Editing _ ->
-                            Editing updNetworkReq
-
-                        Readonly ->
-                            Readonly
-              }
-            , E.none
-            )
-
-        MissingFieldsEditStartedByUser ->
-            case model.network of
-                Success network ->
-                    ( { model
-                        | missingFieldsMode =
-                            Editing
-                                { id = network.id
-                                , name = network.name
-                                , location = network.location
-                                , radioStation = network.radioStation
-                                , purpose = network.purpose
-                                , operationMode = network.operationMode
-                                , operationType = network.operationType
-                                , operationPeriod = network.operationPeriod
-                                , descriptions = Nothing
-                                , restoreNetwork = Nothing
-                                , areaOfResponsibilityIds = Nothing
-                                }
                         , editAorSelect =
                             let
                                 items =
@@ -512,21 +462,21 @@ update shared msg model =
                 _ ->
                     ( model, E.none )
 
-        MissingFieldsEditSavedByUser ->
-            case model.missingFieldsMode of
+        NetworkEditingSavedByUser ->
+            case model.mode of
                 Editing edit ->
-                    ( { model | missingFieldsEditLoading = True }, E.updateNetworkPosts (NetworkPostsUpdatedByApi edit) { networkId = edit.id, postIds = model.editPostsSelect.selected } )
+                    ( { model | editLoading = True }, E.updateNetworkPosts (NetworkPostsUpdatedByApi edit) { networkId = edit.id, postIds = model.editPostsSelect.selected } )
 
                 Readonly ->
                     ( model, E.none )
 
-        MissingFieldsEditCanceledByUser ->
-            ( { model | missingFieldsMode = Readonly }, E.none )
+        NetworkEditingCanceledByUser ->
+            ( { model | mode = Readonly }, E.none )
 
-        MissingFieldsEditingMsg updNetworkReq ->
+        NetworkEditingMsg updNetworkReq ->
             ( { model
-                | missingFieldsMode =
-                    case model.missingFieldsMode of
+                | mode =
+                    case model.mode of
                         Editing _ ->
                             Editing updNetworkReq
 
@@ -536,8 +486,9 @@ update shared msg model =
             , E.none
             )
 
+
         NetworkPostsUpdatedByApi _ (Err e) ->
-            ( { model | missingFieldsEditLoading = False }
+            ( { model | editLoading = False }
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення постів мережі" e
             )
 
@@ -559,25 +510,18 @@ update shared msg model =
             ( model, E.updateNetwork NetworkUpdatedByApi editWithAors )
 
         NetworkUnitsUpdatedByApi editState (Err e) ->
-            ( { model | missingFieldsEditLoading = False }
+            ( { model | editLoading = False }
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення підрозділів мережі" e
             )
 
         NetworkUpdatedByApi (Err e) ->
-            ( { model | missingFieldsEditLoading = False }
+            ( { model | editLoading = False }
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення мережі" e
             )
 
         NetworkUpdatedByApi (Ok network) ->
-            ( { model | network = Success network, mode = Readonly, missingFieldsMode = Readonly, missingFieldsEditLoading = False }, E.none )
+            ( { model | network = Success network, mode = Readonly, editLoading = False }, E.none )
 
-        MissingFieldsUpdatedByApi (Err e) ->
-            ( model
-            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення полів мережі" e
-            )
-
-        MissingFieldsUpdatedByApi (Ok network) ->
-            ( { model | network = Success network, missingFieldsMode = Readonly }, E.none )
 
         EditNetworkKindSelMsg imsg ->
             case model.mode of
@@ -614,7 +558,7 @@ update shared msg model =
                     )
 
         NetworkEditPostsSelMsg imsg ->
-            case model.missingFieldsMode of
+            case model.mode of
                 Editing editNetworkState ->
                     let
                         ( mAct, imodel, icmd ) =
@@ -648,7 +592,7 @@ update shared msg model =
                     in
                     ( { model
                         | editPostsSelect = postsSelect2
-                        , missingFieldsMode = Editing editNetworkState
+                        , mode = Editing editNetworkState
                       }
                     , E.sendCmd <|
                         Cmd.map
@@ -660,7 +604,7 @@ update shared msg model =
                     ( model, E.none )
 
         NetworkEditUnitsSelMsg imsg ->
-            case model.missingFieldsMode of
+            case model.mode of
                 Editing editNetworkState ->
                     let
                         ( mAct, imodel, icmd ) =
@@ -690,7 +634,7 @@ update shared msg model =
                     in
                     ( { model
                         | editUnitsSelect = unitsSelect2
-                        , missingFieldsMode = Editing editNetworkState
+                        , mode = Editing editNetworkState
                       }
                     , E.sendCmd <|
                         Cmd.map
@@ -702,7 +646,7 @@ update shared msg model =
                     ( model, E.none )
 
         NetworkEditAorSelMsg imsg ->
-            case model.missingFieldsMode of
+            case model.mode of
                 Editing editNetworkState ->
                     let
                         ( mAct, imodel, icmd ) =
@@ -731,7 +675,7 @@ update shared msg model =
                     in
                     ( { model
                         | editAorSelect = aorSelect2
-                        , missingFieldsMode = Editing editNetworkState
+                        , mode = Editing editNetworkState
                       }
                     , E.sendCmd <| Cmd.map NetworkEditAorSelMsg icmd
                     )

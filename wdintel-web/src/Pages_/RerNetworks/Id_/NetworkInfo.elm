@@ -102,14 +102,13 @@ activityBlock shared model =
 
 viewNetworkInfoReadonly : Auth.User -> B.Network -> Shared.Model -> Model -> List (Html Msg)
 viewNetworkInfoReadonly user network shared model =
-    [ div [ class "mb-[8px] flex justify-between items-center" ]
-        [ h5 [] [ text "Загальне" ]
-        , if Core.Auth.hasRole "Admin" user || Core.Auth.hasRole "UnitsEditor" user then
-            i [ class "bi bi-pencil-square text-action cursor-pointer text-[20px]", onClick MissingFieldsEditStartedByUser ] []
+    [ if Core.Auth.hasRole "Admin" user || Core.Auth.hasRole "UnitsEditor" user then
+        div [ class "mb-[8px] flex justify-end items-center" ]
+            [ i [ class "bi bi-pencil-square text-action cursor-pointer text-[20px]", onClick NetworkEditStartedByUser ] []
+            ]
 
-          else
-            text ""
-        ]
+      else
+        text ""
     , div [ class "space-y-3" ]
         [ if Core.Auth.hasRole "UnitsEditor" user then
             div [ class "grid grid-cols-3 gap-x-4 items-center" ]
@@ -247,19 +246,11 @@ viewNetworkInfoReadonly user network shared model =
 
 viewNetworkInfoForm : B.UpdateNetworkReq -> B.Network -> List B.NetworkFreq -> Shared.Model -> Model -> List (Html Msg)
 viewNetworkInfoForm updNetworkReq network networkFreqs shared model =
-    [ div [ class "mb-[8px] flex justify-between items-center" ]
-        [ h5 [] [ text "Загальне" ]
-        , div [ class "flex gap-[8px]" ]
-            [ if model.missingFieldsEditLoading then
-                i [ class "bi bi-x-square text-gray-400 text-[20px]", title "Скасувати" ] []
-
-              else
-                i [ class "bi bi-x-square text-action cursor-pointer text-[20px]", onClick MissingFieldsEditCanceledByUser, title "Скасувати" ] []
-            , if model.missingFieldsEditLoading then
-                i [ class "text-[20px]" ] [ Shared.Components.Spinner.loadingSpinner2Sm ]
-
-              else
-                i [ class "bi bi-check-square text-action cursor-pointer text-[20px]", onClick MissingFieldsEditSavedByUser, title "Зберегти" ] []
+    [ div [ class "mb-[8px] flex justify-end items-center" ]
+        [ -- Без заголовка для економії місця
+          div [ class "flex gap-[8px]" ]
+            [ i [ class "bi bi-x-square text-action cursor-pointer text-[20px]", onClick NetworkEditingCanceledByUser, title "Скасувати" ] []
+            , i [ class "bi bi-check-square text-action cursor-pointer text-[20px]", onClick NetworkEditingSavedByUser, title "Зберегти" ] []
             ]
         ]
     , div [ class "space-y-3" ]
@@ -305,7 +296,7 @@ viewNetworkInfoForm updNetworkReq network networkFreqs shared model =
             , div [ class "col-span-2" ]
                 [ input
                     [ value updNetworkReq.name
-                    , onInput <| MissingFieldsEditingMsg << (\v -> { updNetworkReq | name = v })
+                    , onInput <| NetworkEditingMsg << (\v -> { updNetworkReq | name = v })
                     , class "form-input w-full h-[40px]"
                     , placeholder "введіть назву"
                     ]
@@ -317,7 +308,7 @@ viewNetworkInfoForm updNetworkReq network networkFreqs shared model =
             , div [ class "col-span-2" ]
                 [ input
                     [ value (Maybe.withDefault "" updNetworkReq.radioStation)
-                    , onInput <| MissingFieldsEditingMsg << (\v -> { updNetworkReq | radioStation = Just v })
+                    , onInput <| NetworkEditingMsg << (\v -> { updNetworkReq | radioStation = Just v })
                     , class "form-input w-full h-[40px]"
                     , placeholder "введіть радіостанцію"
                     ]
@@ -413,14 +404,8 @@ viewNetworkInfoForm updNetworkReq network networkFreqs shared model =
                 ]
             ]
         ]
-    , div [ class "mb-[8px] flex justify-between items-center" ]
-        [ h5 []
-            [ text "Згідно форми" ]
-        , div [ class "flex gap-[8px]" ]
-            [ i [ class "bi bi-x-square text-action cursor-pointer text-[20px]", onClick NetworkEditingCanceledByUser ] []
-            , i [ class "bi bi-check-square text-action cursor-pointer text-[20px]", onClick NetworkEditingSavedByUser ] []
-            ]
-        ]
+
+    -- Прибираємо другий заголовок, залишаємо тільки поля
     , div [ class "space-y-3" ]
         [ div [ class "grid grid-cols-3 gap-x-4 items-center" ]
             [ span [ class "text-[13px] font-medium" ] [ text "Район функціонування/розгортання:" ]

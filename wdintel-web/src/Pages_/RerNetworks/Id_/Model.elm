@@ -97,8 +97,7 @@ type alias Model =
     , callsignsEditingState : Mode (Dict String Bool)
     , callsignsOpenedPopupId : Maybe String
     , mode : Mode B.UpdateNetworkReq
-    , missingFieldsMode : Mode B.UpdateNetworkReq
-    , missingFieldsEditLoading : Bool
+    , editLoading : Bool
     , editKindSelect : Utils.Select.SelectTypeSingleNotEmpty NetworksUtils.NetworkKind
     , editPostsSelect : Utils.Select.SelectType Int
     , editUnitsSelect : Utils.Select.SelectType Int
