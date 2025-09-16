@@ -314,7 +314,7 @@ viewNetworkInfoForm updNetworkReq network networkFreqs shared model =
                             model.editAorSelect.state
                             model.editAorSelect.items
                             "виберіть смуги"
-                            defaultOptions
+                            { defaultOptions | trunc = Utils.Select.Shortest }
                 ]
             ]
         , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
@@ -358,7 +358,7 @@ viewNetworkInfoForm updNetworkReq network networkFreqs shared model =
                                 model.editUnitsSelect.state
                                 model.editUnitsSelect.items
                                 "почніть вводити назву підрозділу"
-                                defaultOptions
+                                { defaultOptions | trunc = Utils.Select.Short }
                     ]
                 ]
             ]

@@ -2471,6 +2471,7 @@ renderOrphanGroupEditSidebar isDark model dialog =
                                         , disabled = dialog.isLoading
                                         , isDark = isDark
                                         , clearable = True
+                                        , trunc = Utils.Select.Long
                                         }
                                   in
                                   Html.map OrphanGroupAreaSelectMsg <|
@@ -2658,6 +2659,7 @@ renderGroupEditSidebar isDark model dialog =
                                         , disabled = dialog.isLoading
                                         , isDark = isDark
                                         , clearable = True
+                                        , trunc = Utils.Select.Long
                                         }
                                   in
                                   Html.map GroupAreaSelectMsg <|
@@ -3760,6 +3762,8 @@ mainBlock isDark model user =
                             , disabled = False
                             , isDark = isDark
                             , clearable = True
+                            , trunc = Utils.Select.Long
+
                             }
                       in
                       div [ class "w-64" ]

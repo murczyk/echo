@@ -1,4 +1,22 @@
-module Utils.Select exposing (SelectType, SelectTypeSingle, SelectTypeSingleNotEmpty, defaultOptions, multiUpdI, multiUpdIfModified, multiUpdMenuOpen, multiUpdS, renderSelect, renderSelectSingle, renderSelectVirtual, singleUpd, singleUpdWithDefault, updateSelectItems, updateSelectSelected, updateSelectState)
+module Utils.Select exposing
+    ( SelectType
+    , SelectTypeSingle
+    , SelectTypeSingleNotEmpty
+    , TruncationMode(..)
+    , defaultOptions
+    , multiUpdI
+    , multiUpdIfModified
+    , multiUpdMenuOpen
+    , multiUpdS
+    , renderSelect
+    , renderSelectSingle
+    , renderSelectVirtual
+    , singleUpd
+    , singleUpdWithDefault
+    , updateSelectItems
+    , updateSelectSelected
+    , updateSelectState
+    )
 
 import Css
 import Html.Styled as Styled
@@ -154,12 +172,31 @@ multiUpdIfModified mAction task =
         Cmd.none
 
 
+type TruncationMode
+    = Short
+    | Long
+    | Shortest
+
+
+truncationWidth : TruncationMode -> Float
+truncationWidth trunc =
+    case trunc of
+        Short ->
+            80
+
+        Shortest ->
+            60
+
+        Long ->
+            160
+
+
 renderSelect :
     List (Select.MenuItem a)
     -> Select.State
     -> List (Select.MenuItem a)
     -> String
-    -> { isDark : Bool, loading : Bool, disabled : Bool, clearable : Bool }
+    -> { isDark : Bool, loading : Bool, disabled : Bool, clearable : Bool, trunc : TruncationMode }
     -> Styled.Html (Select.Msg a)
 renderSelect selectedItems selectState menuItems placeholder options =
     let
@@ -169,7 +206,7 @@ renderSelect selectedItems selectState menuItems placeholder options =
                 |> Select.Styles.setControlBorderColor (Css.rgb 248 249 250)
                 |> Select.Styles.setControlBorderColorFocus (Css.rgb 248 249 250)
                 |> Select.Styles.setControlBorderColorHover (Css.rgb 248 249 250)
-                |> Select.Styles.setControlMultiTagTruncationWidth 160
+                |> Select.Styles.setControlMultiTagTruncationWidth (truncationWidth options.trunc)
 
         styles =
             Select.Styles.setControlStyles controlStyles Select.Styles.default
@@ -185,7 +222,7 @@ renderSelect selectedItems selectState menuItems placeholder options =
             |> Select.loading options.loading
             |> Select.disabled options.disabled
             |> (if options.isDark then
-                    Select.setStyles dracula
+                    Select.setStyles (dracula styles)
 
                 else
                     identity
@@ -222,7 +259,7 @@ renderSelectVirtual selectedItems selectState menuItems placeholder options =
             |> Select.setStyles styles
             |> Select.placeholder placeholder
             |> (if options.isDark then
-                    Select.setStyles dracula
+                    Select.setStyles (dracula styles)
 
                 else
                     identity
@@ -232,9 +269,9 @@ renderSelectVirtual selectedItems selectState menuItems placeholder options =
         )
 
 
-defaultOptions : Bool -> { isDark : Bool, loading : Bool, disabled : Bool, clearable : Bool }
+defaultOptions : Bool -> { isDark : Bool, loading : Bool, disabled : Bool, clearable : Bool, trunc : TruncationMode }
 defaultOptions isDark =
-    { isDark = isDark, loading = False, disabled = False, clearable = True }
+    { isDark = isDark, loading = False, disabled = False, clearable = True, trunc = Long }
 
 
 renderSelectSingle :
@@ -242,14 +279,14 @@ renderSelectSingle :
     -> Select.State
     -> List (Select.MenuItem a)
     -> String
-    -> { isDark : Bool, loading : Bool, disabled : Bool, clearable : Bool }
+    -> { isDark : Bool, loading : Bool, disabled : Bool, clearable : Bool, trunc : TruncationMode }
     -> Styled.Html (Select.Msg a)
 renderSelectSingle selectedItem selectState menuItems placeholder options =
     let
         controlStyles =
             Select.Styles.getControlConfig Select.Styles.default
                 |> Select.Styles.setControlMinHeight 25.0
-                |> Select.Styles.setControlMultiTagTruncationWidth 160
+                |> Select.Styles.setControlMultiTagTruncationWidth (truncationWidth options.trunc)
                 |> Select.Styles.setControlBorderColor (Css.rgb 248 249 250)
                 |> Select.Styles.setControlBorderColorFocus (Css.rgb 248 249 250)
                 |> Select.Styles.setControlBorderColorHover (Css.rgb 248 249 250)
@@ -268,7 +305,7 @@ renderSelectSingle selectedItem selectState menuItems placeholder options =
             |> Select.disabled options.disabled
             |> Select.loading options.loading
             |> (if options.isDark then
-                    Select.setStyles dracula
+                    Select.setStyles (dracula styles)
 
                 else
                     identity
@@ -276,33 +313,25 @@ renderSelectSingle selectedItem selectState menuItems placeholder options =
         )
 
 
-dracula : Select.Styles.Config
-dracula =
-    Select.Styles.default
-        |> Select.Styles.setControlStyles draculaControl
+dracula : Select.Styles.Config -> Select.Styles.Config
+dracula config =
+    let
+        control =
+            Select.Styles.getControlConfig config
+                |> Select.Styles.setControlSeparatorColor (Css.hex "#898BA9")
+                |> Select.Styles.setControlDropdownIndicatorColorHover (Css.hex "#dedede")
+                |> Select.Styles.setControlClearIndicatorColorHover (Css.hex "#dedede")
+                |> Select.Styles.setControlBackgroundColor (Css.hex "#282a36")
+                |> Select.Styles.setControlBackgroundColorHover (Css.hex "#282a36")
+                |> Select.Styles.setControlColor (Css.hex "#dedede")
+                |> Select.Styles.setControlSelectedColor (Css.hex "#fff")
+                |> Select.Styles.setControlLoadingIndicatorColor (Css.hex "#ff79c6")
+                |> Select.Styles.setControlBorderColor (Css.hex "#5E5E64")
+    in
+    config
+        |> Select.Styles.setControlStyles control
         |> Select.Styles.setMenuStyles draculaMenu
         |> Select.Styles.setMenuItemStyles draculaMenuItem
-
-
-draculaControl : Select.Styles.ControlConfig
-draculaControl =
-    Select.Styles.getControlConfig Select.Styles.default
-        -- |> Select.Styles.setControlBorderColor (Css.hex "#ff79c6")
-        -- |> Select.Styles.setControlBorderColorHover (Css.hex "#ff79c6")
-        -- |> Select.Styles.setControlBorderColorFocus (Css.hex "#ff79c6")
-        |> Select.Styles.setControlSeparatorColor (Css.hex "#898BA9")
-        -- |> Select.Styles.setControlDropdownIndicatorColor (Css.hex "#ff79c6")
-        |> Select.Styles.setControlDropdownIndicatorColorHover (Css.hex "#dedede")
-        -- |> Select.Styles.setControlClearIndicatorColor (Css.hex "#ff79c6")
-        |> Select.Styles.setControlClearIndicatorColorHover (Css.hex "#dedede")
-        |> Select.Styles.setControlBackgroundColor (Css.hex "#282a36")
-        |> Select.Styles.setControlBackgroundColorHover (Css.hex "#282a36")
-        |> Select.Styles.setControlColor (Css.hex "#dedede")
-        -- |> Select.Styles.setControlColor (Css.hex "#ff79c6")
-        |> Select.Styles.setControlSelectedColor (Css.hex "#fff")
-        |> Select.Styles.setControlLoadingIndicatorColor (Css.hex "#ff79c6")
-        |> Select.Styles.setControlMinHeight 25.0
-        |> Select.Styles.setControlMultiTagTruncationWidth 160
 
 
 draculaMenu : Select.Styles.MenuConfig
