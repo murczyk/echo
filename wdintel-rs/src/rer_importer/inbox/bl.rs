@@ -347,10 +347,24 @@ pub async fn load_messages_networks(
         .column(sigint_network_freq::Column::NetworkId)
         .column(sigint_network_freq::Column::Freq)
         .filter(sigint_network_freq::Column::Freq.is_in(freqs.clone()))
-        .filter(sigint_network_freq::Column::ActiveTo.is_null())
+        .filter(
+            Condition::any()
+                .add(sigint_network_freq::Column::ActiveTo.is_null())
+                .add(
+                    sigint_network_freq::Column::ActiveTo
+                        .gte(Utc::now().naive_utc()),
+                ),
+        )
         .filter(sigint_network_freq::Column::Deleted.eq(false))
         .filter(sigint_network::Column::Deleted.eq(false))
-        .filter(sigint_network::Column::ActiveTo.is_null())
+        .filter(
+            Condition::any()
+                .add(sigint_network::Column::ActiveTo.is_null())
+                .add(
+                    sigint_network::Column::ActiveTo
+                        .gte(Utc::now().naive_utc()),
+                ),
+        )
         .into_model::<NetworkFreqResult>()
         .all(dbx)
         .await
