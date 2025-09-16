@@ -746,7 +746,12 @@ view isDark user model =
                             model.selNetworkState
                             model.selNetworkMenu
                             "всі"
-                            { loading = RD.isLoading model.networksStats, clearable = True, disabled = False, isDark = isDark }
+                            { loading = RD.isLoading model.networksStats
+                            , clearable = True
+                            , disabled = False
+                            , isDark = isDark
+                            , trunc = Utils.Select.Long
+                            }
                     )
                 ]
     in

@@ -67,7 +67,6 @@ type
     | NetworkUnitsUpdatedByApi B.UpdateNetworkReq (Result ApiError B.Network)
     | AorListReturnedByApi (Result ApiError (List B.AreaOfResponsibility))
     | SignalsForNetworkLoaded (Result ApiError B.NetworkSignalsListRes)
-    | MissingFieldsUpdatedByApi (Result ApiError B.Network)
     | DeleteNetworkReturnedByApi (Result ApiError B.Network)
     | NetworkEditStartedByUser
     | NetworkEditingSavedByUser
@@ -77,10 +76,6 @@ type
     | NetworkEditPostsSelMsg (Select.Msg Int)
     | NetworkEditUnitsSelMsg (Select.Msg Int)
     | NetworkEditAorSelMsg (Select.Msg Int)
-    | MissingFieldsEditStartedByUser
-    | MissingFieldsEditSavedByUser
-    | MissingFieldsEditCanceledByUser
-    | MissingFieldsEditingMsg B.UpdateNetworkReq
     | DeleteNetworkClickedByUser
     | DeleteNetworkConfirmedByUser
     | DeleteNetworkCanceledByUser
