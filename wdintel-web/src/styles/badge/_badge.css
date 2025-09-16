@@ -103,6 +103,31 @@ html[data-bs-theme="dark"] .badge-no-unit {
     border-color: var(--ochre-normal);
 }
 
+.badge-no-unit-sm {
+    background-color: var(--ochre-light);
+    color: var(--ochre-dark);
+    border: 1px solid var(--ochre-light-active);
+
+    font-size: 0.65rem;
+    font-weight: 500;
+    line-height: 1;
+
+    border-radius: 9999px;
+    padding: 0.15rem 0.4rem;
+
+    margin-left: 4px;         /* just a small space after text */
+    display: inline-block;    /* make it flow with text */
+    vertical-align: baseline; /* align with the text baseline */
+
+    transition: all 0.15s ease;
+}
+
+html[data-bs-theme="dark"] .badge-no-unit-sm {
+    background-color: var(--ochre-dark);
+    color: var(--ochre-light);
+    border-color: var(--ochre-normal);
+}
+
 /* Badge Selected - Interactive badge state */
 .badge-selected {
     cursor: pointer;

@@ -951,12 +951,30 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                                             case Dict.get networkId vps.networks of
                                                 Just network ->
                                                     let
-                                                        networkText = Core.Unit.createMasterUnitText vps.masterUnits network
-                                                        networkUrl = "/rer-networks/" ++ String.fromInt networkId
+                                                        networkText =
+                                                            Core.Unit.createMasterUnitText vps.masterUnits network
+
+                                                        networkUrl =
+                                                            "/rer-networks/" ++ String.fromInt networkId
+
+                                                        noUnitsBadge =
+                                                            case network.unitIds of
+                                                                Nothing ->
+                                                                    span [ class "ml-2 badge badge-no-unit-sm" ] [ text "в дорозвідці" ]
+
+                                                                Just ids ->
+                                                                    if List.isEmpty ids then
+                                                                        span [ class "ml-2 badge badge-no-unit-sm" ] [ text "в дорозвідці" ]
+
+                                                                    else
+                                                                        text ""
                                                     in
                                                     div [ class "flex items-center gap-1 font-medium group" ]
-                                                        [ span [] [ text networkText ]
-                                                        , a 
+                                                        [ span []
+                                                            [ text networkText
+                                                            , noUnitsBadge
+                                                            ]
+                                                        , a
                                                             [ href networkUrl
                                                             , target "_blank"
                                                             , class "text-action opacity-30 group-hover:opacity-100 transition-opacity duration-200 cursor-pointer"

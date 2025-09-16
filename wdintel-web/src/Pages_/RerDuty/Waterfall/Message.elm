@@ -3,9 +3,6 @@ module Pages_.RerDuty.Waterfall.Message exposing (ClipboardObject(..), InternalM
 import Api
 import Bindings as B
 import Browser.Dom
-import Shared.Components.Popup as Popup
-import Shared.Components.RerMessage
-import Shared.Components.Watermark as Watermark
 import Config
 import Core.Auth
 import Core.Callsigns.HintStrategy
@@ -21,6 +18,9 @@ import Json.Encode as Encode
 import List.Extra as ListX
 import Maybe.Extra as MaybeX
 import Set exposing (Set)
+import Shared.Components.Popup as Popup
+import Shared.Components.RerMessage
+import Shared.Components.Watermark as Watermark
 import Shared.MarkedText
 import Task
 import Time
@@ -850,12 +850,30 @@ rightColumn ( messageId, message ) ps model =
                                                 case Dict.get networkId ps.networks of
                                                     Just network ->
                                                         let
-                                                            networkText = Core.Unit.createMasterUnitText ps.masterUnits network
-                                                            networkUrl = "/rer-networks/" ++ String.fromInt networkId
+                                                            networkText =
+                                                                Core.Unit.createMasterUnitText ps.masterUnits network
+
+                                                            networkUrl =
+                                                                "/rer-networks/" ++ String.fromInt networkId
+
+                                                            noUnitsBadge =
+                                                                case network.unitIds of
+                                                                    Nothing ->
+                                                                        span [ class "ml-2 badge badge-no-unit-sm" ] [ text "в дорозвідці" ]
+
+                                                                    Just ids ->
+                                                                        if List.isEmpty ids then
+                                                                            span [ class "ml-2 badge badge-no-unit-sm" ] [ text "в дорозвідці" ]
+
+                                                                        else
+                                                                            text ""
                                                         in
                                                         div [ class "flex items-center gap-1 font-medium group" ]
-                                                            [ span [] [ text networkText ]
-                                                            , a 
+                                                            [ span []
+                                                                [ text networkText
+                                                                , noUnitsBadge
+                                                                ]
+                                                            , a
                                                                 [ href networkUrl
                                                                 , target "_blank"
                                                                 , class "opacity-30 group-hover:opacity-100 transition-opacity duration-200 cursor-pointer"
