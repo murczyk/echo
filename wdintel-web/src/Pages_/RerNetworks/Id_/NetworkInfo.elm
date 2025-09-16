@@ -67,6 +67,28 @@ view network model user shared =
         )
     , div [ class "bg-w dark:bg-[#1C1C21] p-[16px]" ] <|
         activityBlock shared model
+    , div [ class "bg-w dark:bg-[#1C1C21] p-[16px] flex flex-col h-[250px]" ]
+        [ h4 [] [ text "Пеленги" ]
+        , let
+            mapPoints =
+                case model.mapPoints of
+                    Success points ->
+                        points
+
+                    _ ->
+                        []
+          in
+          if List.length mapPoints > 0 then
+            Html.node "small-map"
+                [ property "points" (Encode.list B.networkPointEncoder mapPoints)
+                , class "flex-1"
+                , property "withExitButton" (Encode.bool False)
+                ]
+                []
+
+          else
+            div [ class "flex-1 flex justify-center items-center" ] [ text "Пеленги відсутні" ]
+        ]
     ]
 
 
@@ -98,6 +120,28 @@ activityBlock shared model =
             ]
         ]
     ]
+
+
+createActivityStr : Maybe Int -> Maybe Int -> Time.Zone -> String
+createActivityStr mActiveFrom mActiveTo timeZone =
+    let
+        fromStr =
+            case mActiveFrom of
+                Just activeFrom ->
+                    Utils.Time.renderDateF6 timeZone (Time.millisToPosix activeFrom)
+
+                Nothing ->
+                    "Помилка"
+
+        toStr =
+            case mActiveTo of
+                Just millis ->
+                    Utils.Time.renderDateF6 timeZone (Time.millisToPosix millis)
+
+                Nothing ->
+                    "Досі"
+    in
+    fromStr ++ " - " ++ toStr
 
 
 viewNetworkInfoReadonly : Auth.User -> B.Network -> Shared.Model -> Model -> List (Html Msg)
@@ -137,11 +181,6 @@ viewNetworkInfoReadonly user network shared model =
                 [ text network.name ]
             ]
         , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
-            [ span [ class "text-[13px] font-medium" ] [ text "Радіостанція:" ]
-            , div [ class "col-span-2 h-[40px] flex items-center" ]
-                [ text (Maybe.withDefault "" network.radioStation) ]
-            ]
-        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
             [ span [ class "text-[13px] font-medium" ] [ text "Підрозділи:" ]
             , div [ class "col-span-2 h-[40px] flex items-center" ]
                 [ case network.unitIds of
@@ -161,45 +200,6 @@ viewNetworkInfoReadonly user network shared model =
                 ]
             ]
         , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
-            [ span [ class "text-[13px] font-medium" ] [ text "Пости:" ]
-            , div [ class "col-span-2 h-[40px] flex items-center" ]
-                [ case shared.posts of
-                    Success posts ->
-                        List.map (\postId -> Dict.get postId posts) network.postIds
-                            |> List.filterMap identity
-                            |> List.map .name
-                            |> String.join ", "
-                            |> text
-
-                    _ ->
-                        text ""
-                ]
-            ]
-        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
-            [ span [ class "text-[13px] font-medium" ] [ text "Активна з:" ]
-            , div [ class "col-span-2 h-[40px] flex items-center" ]
-                [ case network.activeFrom of
-                    Just activeFrom ->
-                        text <| Utils.Time.renderDateF6 shared.timeZone (Time.millisToPosix activeFrom)
-
-                    Nothing ->
-                        text ""
-                ]
-            ]
-        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
-            [ span [ class "text-[13px] font-medium" ] [ text "Активна по:" ]
-            , div [ class "col-span-2 h-[40px] flex items-center" ]
-                [ case network.activeTo of
-                    Just millis ->
-                        Utils.Time.renderDateF6 shared.timeZone (Time.millisToPosix millis) |> text
-
-                    Nothing ->
-                        text ""
-                ]
-            ]
-        ]
-    , div [ class "space-y-3" ]
-        [ div [ class "grid grid-cols-3 gap-x-4 items-center" ]
             [ span [ class "text-[13px] font-medium" ] [ text "Район функціонування/розгортання:" ]
             , div [ class "col-span-2 h-[40px] flex items-center" ]
                 [ text network.location ]
@@ -239,6 +239,32 @@ viewNetworkInfoReadonly user network shared model =
             [ span [ class "text-[13px] font-medium" ] [ text "Період функціонування:" ]
             , div [ class "col-span-2 h-[40px] flex items-center" ]
                 [ text <| Maybe.withDefault "" network.operationPeriod ]
+            ]
+        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+            [ span [ class "text-[13px] font-medium" ] [ text "Активність:" ]
+            , div [ class "col-span-2 h-[40px] flex items-center" ]
+                [ text <| createActivityStr network.activeFrom network.activeTo shared.timeZone
+                ]
+            ]
+        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+            [ span [ class "text-[13px] font-medium" ] [ text "Пости:" ]
+            , div [ class "col-span-2 h-[40px] flex items-center" ]
+                [ case shared.posts of
+                    Success posts ->
+                        List.map (\postId -> Dict.get postId posts) network.postIds
+                            |> List.filterMap identity
+                            |> List.map .name
+                            |> String.join ", "
+                            |> text
+
+                    _ ->
+                        text ""
+                ]
+            ]
+        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+            [ span [ class "text-[13px] font-medium" ] [ text "Радіостанція:" ]
+            , div [ class "col-span-2 h-[40px] flex items-center" ]
+                [ text (Maybe.withDefault "" network.radioStation) ]
             ]
         ]
     ]
@@ -297,20 +323,8 @@ viewNetworkInfoForm updNetworkReq network networkFreqs shared model =
                 [ input
                     [ value updNetworkReq.name
                     , onInput <| NetworkEditingMsg << (\v -> { updNetworkReq | name = v })
-                    , class "form-input w-full h-[40px]"
+                    , class "form-input w-full"
                     , placeholder "введіть назву"
-                    ]
-                    []
-                ]
-            ]
-        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
-            [ span [ class "text-[13px] font-medium" ] [ text "Радіостанція:" ]
-            , div [ class "col-span-2" ]
-                [ input
-                    [ value (Maybe.withDefault "" updNetworkReq.radioStation)
-                    , onInput <| NetworkEditingMsg << (\v -> { updNetworkReq | radioStation = Just v })
-                    , class "form-input w-full h-[40px]"
-                    , placeholder "введіть радіостанцію"
                     ]
                     []
                 ]
@@ -349,65 +363,6 @@ viewNetworkInfoForm updNetworkReq network networkFreqs shared model =
                 ]
             ]
         , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
-            [ span [ class "text-[13px] font-medium" ] [ text "Пости:" ]
-            , div [ class "col-span-2 h-[40px] flex items-center" ]
-                [ div [ class "w-full" ]
-                    [ let
-                        selectedItems =
-                            List.map
-                                (\postId ->
-                                    Select.basicMenuItem
-                                        { item = postId
-                                        , label =
-                                            RD.withDefault Dict.empty shared.posts
-                                                |> Dict.get postId
-                                                |> Maybe.map .name
-                                                |> Maybe.withDefault ""
-                                        }
-                                )
-                                model.editPostsSelect.selected
-
-                        defaultOptions =
-                            Utils.Select.defaultOptions (isDarkMode shared.themeMode)
-                      in
-                      Html.map NetworkEditPostsSelMsg <|
-                        Styled.toUnstyled <|
-                            Utils.Select.renderSelect
-                                selectedItems
-                                model.editPostsSelect.state
-                                model.editPostsSelect.items
-                                "виберіть пости"
-                                defaultOptions
-                    ]
-                ]
-            ]
-        , div [ class "grid grid-cols-3 gap-x-4 items-center mt-[24px]" ]
-            [ span [ class "text-[13px] font-medium" ] [ text "Активна з:" ]
-            , div [ class "col-span-2 h-[40px] flex items-center" ]
-                [ case network.activeFrom of
-                    Just activeFrom ->
-                        text <| Utils.Time.renderDateF6 shared.timeZone (Time.millisToPosix activeFrom)
-
-                    Nothing ->
-                        text ""
-                ]
-            ]
-        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
-            [ span [ class "text-[13px] font-medium" ] [ text "Активна по:" ]
-            , div [ class "col-span-2 h-[40px] flex items-center" ]
-                [ case network.activeTo of
-                    Just millis ->
-                        text <| Utils.Time.renderDateF6 shared.timeZone (Time.millisToPosix millis)
-
-                    Nothing ->
-                        text ""
-                ]
-            ]
-        ]
-
-    -- Прибираємо другий заголовок, залишаємо тільки поля
-    , div [ class "space-y-3" ]
-        [ div [ class "grid grid-cols-3 gap-x-4 items-center" ]
             [ span [ class "text-[13px] font-medium" ] [ text "Район функціонування/розгортання:" ]
             , div [ class "col-span-2" ]
                 [ input
@@ -483,5 +438,57 @@ viewNetworkInfoForm updNetworkReq network networkFreqs shared model =
                     []
                 ]
             ]
+        , div [ class "grid grid-cols-3 gap-x-4 items-center mt-[24px]" ]
+            [ span [ class "text-[13px] font-medium" ] [ text "Активність:" ]
+            , div [ class "col-span-2 h-[40px] flex items-center" ]
+                [ text <| createActivityStr network.activeFrom network.activeTo shared.timeZone ]
+            ]
+        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+            [ span [ class "text-[13px] font-medium" ] [ text "Пости:" ]
+            , div [ class "col-span-2 h-[40px] flex items-center" ]
+                [ div [ class "w-full" ]
+                    [ let
+                        selectedItems =
+                            List.map
+                                (\postId ->
+                                    Select.basicMenuItem
+                                        { item = postId
+                                        , label =
+                                            RD.withDefault Dict.empty shared.posts
+                                                |> Dict.get postId
+                                                |> Maybe.map .name
+                                                |> Maybe.withDefault ""
+                                        }
+                                )
+                                model.editPostsSelect.selected
+
+                        defaultOptions =
+                            Utils.Select.defaultOptions (isDarkMode shared.themeMode)
+                      in
+                      Html.map NetworkEditPostsSelMsg <|
+                        Styled.toUnstyled <|
+                            Utils.Select.renderSelect
+                                selectedItems
+                                model.editPostsSelect.state
+                                model.editPostsSelect.items
+                                "виберіть пости"
+                                defaultOptions
+                    ]
+                ]
+            ]
+        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+            [ span [ class "text-[13px] font-medium" ] [ text "Радіостанція:" ]
+            , div [ class "col-span-2" ]
+                [ input
+                    [ value (Maybe.withDefault "" updNetworkReq.radioStation)
+                    , onInput <| NetworkEditingMsg << (\v -> { updNetworkReq | radioStation = Just v })
+                    , class "form-input w-full h-[40px]"
+                    , placeholder "введіть радіостанцію"
+                    ]
+                    []
+                ]
+            ]
         ]
+
+    -- Прибираємо другий заголовок, залишаємо тільки поля
     ]

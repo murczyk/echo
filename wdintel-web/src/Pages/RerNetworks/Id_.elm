@@ -486,7 +486,6 @@ update shared msg model =
             , E.none
             )
 
-
         NetworkPostsUpdatedByApi _ (Err e) ->
             ( { model | editLoading = False }
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення постів мережі" e
@@ -521,7 +520,6 @@ update shared msg model =
 
         NetworkUpdatedByApi (Ok network) ->
             ( { model | network = Success network, mode = Readonly, editLoading = False }, E.none )
-
 
         EditNetworkKindSelMsg imsg ->
             case model.mode of
@@ -907,33 +905,11 @@ contentBlock user shared network model =
                 text ""
             ]
         ]
-    , div [ class "grid grid-cols-12 gap-[30px]" ]
-        [ div [ class "col-span-7 flex flex-col gap-[16px]" ] <|
+    , div [ class "grid grid-cols-12 gap-[16px]" ]
+        [ div [ class "col-span-6 flex flex-col gap-[16px] h-full" ] <|
             NetworkInfo.view network model user shared
-        , div [ class "col-span-5 flex flex-col gap-[16px] h-full" ]
-            [ div [ class "bg-w dark:bg-[#1C1C21] p-[16px] flex flex-col h-[250px]" ]
-                [ h4 [] [ text "Пеленги" ]
-                , let
-                    mapPoints =
-                        case model.mapPoints of
-                            Success points ->
-                                points
-
-                            _ ->
-                                []
-                  in
-                  if List.length mapPoints > 0 then
-                    Html.node "small-map"
-                        [ property "points" (Encode.list B.networkPointEncoder mapPoints)
-                        , class "flex-1"
-                        , property "withExitButton" (Encode.bool False)
-                        ]
-                        []
-
-                  else
-                    div [ class "flex-1 flex justify-center items-center" ] [ text "Пеленги відсутні" ]
-                ]
-            , Html.map Descriptions <| Descriptions.view network model user shared
+        , div [ class "col-span-6 flex flex-col gap-[16px] h-full" ]
+            [ Html.map Descriptions <| Descriptions.view network model user shared
             ]
         ]
     , Html.map Frequencies <| FrequenciesTable.view model user shared
