@@ -21,6 +21,7 @@ import List.Extra as ListX
 import Page exposing (Page)
 import Pages_.RerNetworks.Id_.Model as Types exposing (CallsignCreateMode(..), CallsignTableRow, FreqActivityFilter(..), Mode(..), ShowAllPopupFor(..))
 import Pages_.RerNetworks.ReportConfig as ReportConfig
+import Shared.Components.DateTime
 import Route exposing (Route)
 import Route.Path
 import Select
@@ -109,6 +110,8 @@ type
     | ReportIncludeConfirmationChanged Bool
     | ReportIncludeUnitCallsignsChanged Bool
     | ReportIncludePelengsMapChanged Bool
+    | ReportDateTimeFromMsg (Shared.Components.DateTime.Msg Msg)
+    | ReportDateTimeToMsg (Shared.Components.DateTime.Msg Msg)
 
 
 type CallsignsMsg

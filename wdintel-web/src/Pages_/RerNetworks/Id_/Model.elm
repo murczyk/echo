@@ -3,7 +3,6 @@ module Pages_.RerNetworks.Id_.Model exposing (..)
 import Api
 import Auth
 import Bindings as B
-import Pages_.RerNetworks.ReportConfig as ReportConfig
 import Bytes exposing (Bytes)
 import Char
 import Core.Auth
@@ -20,6 +19,7 @@ import Json.Encode as Encode
 import Layouts
 import List.Extra as ListX
 import Page exposing (Page)
+import Pages_.RerNetworks.ReportConfig as ReportConfig
 import Route exposing (Route)
 import Route.Path
 import Select
@@ -28,6 +28,7 @@ import Shared
 import Shared.CallsignsPopup as CallsignsPopup exposing (PopupCallerOrigin(..))
 import Shared.Components.Button as Button
 import Shared.Components.Checkbox as Checkbox
+import Shared.Components.DateTime
 import Shared.Components.DropdownBadge as DropdownBadge exposing (DropdownAction(..))
 import Shared.Components.ModalDialog as ModalDialog
 import Shared.Components.Pager as Pager
@@ -72,8 +73,6 @@ type ShowAllPopupFor
     = ShowAllComment
 
 
-
-
 type alias CallsignTableRow =
     { id : Int
     , callsign : String
@@ -112,6 +111,8 @@ type alias Model =
     , reportModalOpened : Bool
     , reportDownloadInProgress : Bool
     , report : ReportConfig.ReportType
+    , reportFromDate : Shared.Components.DateTime.Model
+    , reportToDate : Shared.Components.DateTime.Model
     , freqsActivityFilter : FreqActivityFilter
     , freqsTableState : Table.State
     , callsignsTableState : Table.State

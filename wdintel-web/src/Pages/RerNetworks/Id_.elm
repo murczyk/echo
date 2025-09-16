@@ -24,10 +24,10 @@ import Pages_.RerNetworks.Id_.Descriptions as Descriptions
 import Pages_.RerNetworks.Id_.FrequenciesTable as FrequenciesTable
 import Pages_.RerNetworks.Id_.Model as Types exposing (CallsignCreateMode(..), CallsignTableRow, FreqActivityFilter(..), Mode(..), ShowAllPopupFor(..))
 import Pages_.RerNetworks.Id_.Msg as Msgs exposing (Msg(..))
+import Pages_.RerNetworks.Id_.NetworkInfo as NetworkInfo
 import Pages_.RerNetworks.ReportConfig as ReportConfig exposing (ReportTypeOption(..))
 import Pages_.RerNetworks.ReportModal as ReportModal
 import Pages_.RerNetworks.ReportUpdate as ReportUpdate
-import Pages_.RerNetworks.Id_.NetworkInfo as NetworkInfo
 import Pages_.RerNetworks.Utils as IdUtils
 import Route exposing (Route)
 import Route.Path
@@ -37,6 +37,7 @@ import Shared
 import Shared.CallsignsPopup as CallsignsPopup exposing (PopupCallerOrigin(..))
 import Shared.Components.Button as Button
 import Shared.Components.Checkbox as Checkbox
+import Shared.Components.DateTime
 import Shared.Components.DropdownBadge as DropdownBadge exposing (DropdownAction(..))
 import Shared.Components.ModalDialog as ModalDialog
 import Shared.Components.Pager as Pager
@@ -142,6 +143,8 @@ init route shared () =
       , reportModalOpened = False
       , reportDownloadInProgress = False
       , report = ReportConfig.AccordingToForm ReportConfig.defaultCommonSettings
+      , reportFromDate = Shared.Components.DateTime.init ()
+      , reportToDate = Shared.Components.DateTime.init ()
       , freqsActivityFilter = AllFreqs
       , freqsTableState = Table.initialSort "Частота"
       , callsignsTableState = Table.initialSort "Позивний"
@@ -755,9 +758,9 @@ update shared msg model =
                 Success network ->
                     let
                         context =
-                            { fromDate = Nothing
-                            , toDate = Nothing
-                            , zone = Nothing
+                            { fromDate = model.reportFromDate.datePosix
+                            , toDate = model.reportToDate.datePosix
+                            , zone = Just shared.timeZone
                             , networkId = Just network.id
                             }
 
@@ -778,13 +781,16 @@ update shared msg model =
         ReportDownloadReturnedByApi result ->
             let
                 context =
-                    { fromDate = Nothing
-                    , toDate = Nothing
-                    , zone = Nothing
-                    , networkId = 
+                    { fromDate = model.reportFromDate.datePosix
+                    , toDate = model.reportToDate.datePosix
+                    , zone = Just shared.timeZone
+                    , networkId =
                         case model.network of
-                            Success network -> Just network.id
-                            _ -> Nothing
+                            Success network ->
+                                Just network.id
+
+                            _ ->
+                                Nothing
                     }
 
                 updateDownloading isDownloading m =
@@ -794,39 +800,71 @@ update shared msg model =
 
         ReportTypeChanged option ->
             let
-                newReport = ReportUpdate.updateReportFromForm option
+                newReport =
+                    ReportUpdate.updateReportFromForm option
             in
             ( { model | report = newReport }, E.none )
 
         ReportActiveFreqsOnlyChanged checked ->
             let
-                newReport = ReportUpdate.updateCommonSetting "activeFreqsOnly" checked model.report
+                newReport =
+                    ReportUpdate.updateCommonSetting "activeFreqsOnly" checked model.report
             in
             ( { model | report = newReport }, E.none )
 
         ReportIncludeSigintSignsChanged checked ->
             let
-                newReport = ReportUpdate.updateCommonSetting "includeSigintSigns" checked model.report
+                newReport =
+                    ReportUpdate.updateCommonSetting "includeSigintSigns" checked model.report
             in
             ( { model | report = newReport }, E.none )
 
         ReportIncludeConfirmationChanged checked ->
             let
-                newReport = ReportUpdate.updateCommonSetting "includeConfirmation" checked model.report
+                newReport =
+                    ReportUpdate.updateCommonSetting "includeConfirmation" checked model.report
             in
             ( { model | report = newReport }, E.none )
 
         ReportIncludeUnitCallsignsChanged checked ->
             let
-                newReport = ReportUpdate.updateExtendedSetting "includeUnitCallsigns" checked model.report
+                newReport =
+                    ReportUpdate.updateExtendedSetting "includeUnitCallsigns" checked model.report
             in
             ( { model | report = newReport }, E.none )
 
         ReportIncludePelengsMapChanged checked ->
             let
-                newReport = ReportUpdate.updateExtendedSetting "includePelengsMap" checked model.report
+                newReport =
+                    ReportUpdate.updateExtendedSetting "includePelengsMap" checked model.report
             in
             ( { model | report = newReport }, E.none )
+
+        ReportDateTimeFromMsg imsg ->
+            let
+                ( m2, eff2 ) =
+                    Shared.Components.DateTime.update
+                        { zone = Just shared.timeZone
+                        , msg = imsg
+                        , model = model.reportFromDate
+                        , toModel = \reportFromDate -> { model | reportFromDate = reportFromDate }
+                        , toMsg = ReportDateTimeFromMsg
+                        }
+            in
+            ( m2, eff2 )
+
+        ReportDateTimeToMsg imsg ->
+            let
+                ( m2, eff2 ) =
+                    Shared.Components.DateTime.update
+                        { zone = Just shared.timeZone
+                        , msg = imsg
+                        , model = model.reportToDate
+                        , toModel = \reportToDate -> { model | reportToDate = reportToDate }
+                        , toMsg = ReportDateTimeToMsg
+                        }
+            in
+            ( m2, eff2 )
 
         ModulationsReturnedByApi (Err e) ->
             ( { model | modulations = Failure e }
@@ -1014,11 +1052,11 @@ view user shared model =
                         , onIncludeConfirmationChanged = ReportIncludeConfirmationChanged
                         , onIncludeUnitCallsignsChanged = ReportIncludeUnitCallsignsChanged
                         , onIncludePelengsMapChanged = ReportIncludePelengsMapChanged
-                        , reportFromDate = Nothing
-                        , reportToDate = Nothing
-                        , onReportFromDateMsg = Nothing
-                        , onReportToDateMsg = Nothing
-                        , showDateRange = False  -- Для окремої мережі не показуємо діапазон дат
+                        , reportFromDate = Just model.reportFromDate
+                        , reportToDate = Just model.reportToDate
+                        , onReportFromDateMsg = Just ReportDateTimeFromMsg
+                        , onReportToDateMsg = Just ReportDateTimeToMsg
+                        , showDateRange = True -- Показуємо дати для розширеного звіту
                         }
 
                     modalConfig =
