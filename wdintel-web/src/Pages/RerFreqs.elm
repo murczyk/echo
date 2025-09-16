@@ -219,7 +219,22 @@ initLoad model =
         [ E.sendCmd <| loadFreqs model False
         , E.sendCmd <|
             Api.sigint_freq_unit_stats UnitStatsReturnedByApi
+        , E.sendCmd <| loadCallsignsForFilter model
         ]
+
+
+loadCallsignsForFilter : Model -> Cmd Msg
+loadCallsignsForFilter model =
+    case ( model.from.datePosix, model.to.datePosix ) of
+        ( Just dtFromPosix, Just dtToPosix ) ->
+            let
+                callsignsPs =
+                    callsignsForFilterParams dtFromPosix dtToPosix model
+            in
+            Api.rer_freqs_callsigns GotFilterCallsigns callsignsPs
+
+        _ ->
+            Cmd.none
 
 
 loadFreqs : Model -> Bool -> Cmd Msg

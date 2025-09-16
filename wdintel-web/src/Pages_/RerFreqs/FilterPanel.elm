@@ -47,7 +47,28 @@ view shared model =
 
         tabFiltersCallsigns =
             let
-                items =
+                -- Get available callsigns from callsignsForFilter
+                availableCallsigns =
+                    case model.callsignsForFilter of
+                        Success callsigns ->
+                            List.map .callsign callsigns
+                        
+                        _ ->
+                            []
+                
+                -- Create menu items from available callsigns
+                menuItems =
+                    List.map
+                        (\callsign ->
+                            Select.basicMenuItem
+                                { item = callsign
+                                , label = callsign
+                                }
+                        )
+                        availableCallsigns
+                
+                -- Selected items (currently filtered callsigns)
+                selectedItems =
                     List.map
                         (\callsign ->
                             Select.basicMenuItem
@@ -64,9 +85,9 @@ view shared model =
                 [ Html.map SelCallsignMsg
                     (Styled.toUnstyled <|
                         Utils.Select.renderSelectVirtual
-                            items
+                            selectedItems
                             model.selCallsignState
-                            model.selCallsignMenu
+                            menuItems
                             "всі"
                             { loading = RD.isLoading model.callsignsForFilter, disabled = False, isDark = isDarkMode shared.themeMode }
                     )
