@@ -20,6 +20,7 @@ app := "echo"
 interactive_setup := "true"
 origin := ""
 echo_bin := "wdintel-rs"
+discord_webhook := "https://discord.com/api/webhooks/1417084833384890398/7jgZyC1zpmrJVXzUwDz-OQV6_UwqxUUl9GHehVyV9-UwxQRZjMg9ZwYYNJGPcAmuiGRA"
 since_ts := "1645664400000"
 till_ts := "1961204400000"
 datasource_id := "1"
@@ -268,7 +269,7 @@ deploy:
     curl -sS -X POST \
       -H 'Content-Type: application/json' \
       -d "{\"content\":\"deploying {{ server }} (version $VERSION); waiting for CI from $(hostname)\"}" \
-      'https://discord.com/api/webhooks/1406993055956865125/7i5kRgYYJNqlROHRij2eZ3bLWmHQa1X3zpgmZ2Q7--jhO3GjXUq4sJ0Xm6yYPy1lf20B' || true
+      '{{ discord_webhook }}' || true
 
     # Helpful link to CI runs
     echo "CI: https://github.com/echoua/echo/actions"
@@ -317,7 +318,7 @@ deploy:
     curl -sS -X POST \
       -H 'Content-Type: application/json' \
       -d "{\"content\":\"✅ Deployed {{ server }} (version $VERSION) via apt-get\"}" \
-      'https://discord.com/api/webhooks/1406993055956865125/7i5kRgYYJNqlROHRij2eZ3bLWmHQa1X3zpgmZ2Q7--jhO3GjXUq4sJ0Xm6yYPy1lf20B' || true
+      '{{ discord_webhook }}' || true
 
 deploy-old:
     #!/bin/bash
@@ -329,7 +330,7 @@ deploy-old:
     curl -sS -X POST \
       -H 'Content-Type: application/json' \
       -d "{\"content\":\"legacy deploy-old {{ server }} from $(hostname)\"}" \
-      'https://discord.com/api/webhooks/1406993055956865125/7i5kRgYYJNqlROHRij2eZ3bLWmHQa1X3zpgmZ2Q7--jhO3GjXUq4sJ0Xm6yYPy1lf20B' || true
+      '{{ discord_webhook }}' || true
     if [[ "{{ server }}" == "jvln" ]]; then
         just _jvln-deploy;
     else
@@ -839,7 +840,7 @@ config-deploy:
     curl -sS -X POST \
       -H 'Content-Type: application/json' \
       -d "{\"content\":\"deploying config for {{ server }} from $(hostname)\"}" \
-      'https://discord.com/api/webhooks/1406993055956865125/7i5kRgYYJNqlROHRij2eZ3bLWmHQa1X3zpgmZ2Q7--jhO3GjXUq4sJ0Xm6yYPy1lf20B' || true
+      '{{ discord_webhook }}' || true
     bw_sync "{{ server }}" "echo-config-{{ server }}" "/etc/echo/config.toml" "wdintel-rs"
 
 stop-processing:
