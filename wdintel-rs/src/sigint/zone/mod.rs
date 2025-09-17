@@ -83,8 +83,10 @@ pub async fn zones_datasources_group_update(
     user: actix_identity::Identity,
     req: Json<ZoneDatasourceGroupUpdateReq>,
 ) -> Result<Json<ZoneDatasourceGroup>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Admin").await?;
+    let login = user.id()?;
+    crate::users::has_role(&env.dbx, &login, "Admin").await?;
     let req = req.into_inner();
+    info!("zone-datasource-group-update login={login} payload={req:?}");
 
     let txn = env.dbx.begin().await?;
     let szd = sigint_zone_datasource::Entity::find_by_id(req.id)
@@ -116,10 +118,12 @@ pub async fn zones_datasources_group_add(
     user: actix_identity::Identity,
     req: Json<ZoneDatasourceGroupAddReq>,
 ) -> Result<Json<ZoneDatasourceGroupAddRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Admin").await?;
+    let login = user.id()?;
+    crate::users::has_role(&env.dbx, &login, "Admin").await?;
+    let req = req.into_inner();
+    info!("zone-datasource-group-add login={login} payload={req:?}");
 
     let txn = env.dbx.begin().await.c(h!())?;
-    let req = req.into_inner();
     let szd = sigint_zone_datasource::ActiveModel {
         sigint_zone_id: Set(req.zone_id),
         datasource_id: Set(req.datasource_id),
@@ -210,7 +214,9 @@ pub async fn zones_datasources_group_delete(
     user: actix_identity::Identity,
     req: Json<i64>,
 ) -> Result<Json<()>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Admin").await?;
+    let login = user.id()?;
+    crate::users::has_role(&env.dbx, &login, "Admin").await?;
+    info!("zone-datasource-group-delete login={login} id={}", req.0);
 
     let txn = env.dbx.begin().await?;
 
