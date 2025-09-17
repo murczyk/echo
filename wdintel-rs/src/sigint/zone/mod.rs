@@ -246,12 +246,12 @@ pub async fn zones_datasources_group_delete(
 fn log_sigint_zone_datasource_event(
     szd: &sigint_zone_datasource::Model,
     event_name: &str,
-    login: &str,
+    user_login: &str,
 ) {
     let key = &szd.group_master_key;
     let datasource_id = &szd.datasource_id;
     let sigint_zone_id = &szd.sigint_zone_id;
-    info!("{event_name} login={login} master_key={key} datasource_id={datasource_id} sigint_zone_id={sigint_zone_id}");
+    info!("{event_name} login={user_login} master_key={key} datasource_id={datasource_id} sigint_zone_id={sigint_zone_id}");
 }
 
 pub fn filter_out_ineligible_secret_chats<E: EntityTrait>(
