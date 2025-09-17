@@ -442,10 +442,23 @@ _copy-db:
 copy-db-gpu:
     #!/bin/bash
     set -euxo pipefail
-    if [[ "{{ server }}" == "" ]]; then
-        just _print-servers; exit 1;
-    fi
-    just server={{ server }} target='echo-gpu' copy-db-to-target
+    echo 'please use just copy-db-pivnich or just pgdb=wd_rat copy-db-pivnich'
+    exit 1
+
+copy-db-pivnich:
+    #!/bin/bash
+    set -euxo pipefail
+    ssh -t echo-pivnich-replica "sudo -u postgres psql -c 'SELECT pg_wal_replay_pause();'"
+    ssh -t echo-pivnich-replica '(cd /var/tmp && PGPASSWORD="{{ pgpwd }}" pg_dump --user wd -Fc wd > wd-{{ dt1 }}.pgrestore && ls -lah wd-{{ dt1 }}.pgrestore)'
+    ssh -t echo-pivnich-replica "sudo -u postgres psql -c 'SELECT pg_wal_replay_resume();'"
+    ssh -t echo-pivnich-replica 'gzip -c /var/tmp/wd-{{ dt1 }}.pgrestore > /var/tmp/wd-{{ dt1 }}.pgrestore.gz'
+    ssh -t echo-pivnich-dev 'rsync echo-pivnich-replica:/var/tmp/wd-{{ dt1 }}.pgrestore.gz /var/tmp/'
+    ssh -t echo-pivnich-replica '(rm /var/tmp/wd-{{ dt1 }}.pgrestore && rm /var/tmp/wd-{{ dt1 }}.pgrestore.gz) | echo "ok"'
+    ssh -t echo-pivnich-dev '(cd /var/tmp && gunzip wd-{{ dt1 }}.pgrestore.gz)'
+    ssh -t echo-pivnich-dev "sudo -u postgres psql -c 'drop database {{ pgdb }} with (FORCE)' | echo 'ok'"
+    ssh -t echo-pivnich-dev "sudo -u postgres psql -c 'create database {{ pgdb }}'"
+    ssh -t echo-pivnich-dev "sudo -u postgres pg_restore -d {{ pgdb }} /var/tmp/wd-{{ dt1 }}.pgrestore && sudo rm /var/tmp/wd-{{ dt1 }}.pgrestore"
+
 
 copy-db-to-target:
     #!/bin/bash
