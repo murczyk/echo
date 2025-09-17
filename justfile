@@ -459,7 +459,6 @@ copy-db-pivnich:
     ssh -t echo-pivnich-dev "sudo -u postgres psql -c 'create database {{ pgdb }}'"
     ssh -t echo-pivnich-dev "sudo -u postgres pg_restore -d {{ pgdb }} /var/tmp/wd-{{ dt1 }}.pgrestore && sudo rm /var/tmp/wd-{{ dt1 }}.pgrestore"
 
-
 copy-db-to-target:
     #!/bin/bash
     set -euxo pipefail

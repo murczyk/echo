@@ -1,5 +1,6 @@
 use self::bl::*;
 use super::types::*;
+use crate::entities::sigint_zone_datasource;
 use crate::entities::*;
 use crate::sigint::aor::bl::collect_group_aors;
 use crate::sigint::aor::render_aor;
@@ -86,7 +87,6 @@ pub async fn zones_datasources_group_update(
     let login = user.id()?;
     crate::users::has_role(&env.dbx, &login, "Admin").await?;
     let req = req.into_inner();
-    info!("zone-datasource-group-update login={login} payload={req:?}");
 
     let txn = env.dbx.begin().await?;
     let szd = sigint_zone_datasource::Entity::find_by_id(req.id)
@@ -96,6 +96,11 @@ pub async fn zones_datasources_group_update(
         .c(h!())?;
 
     let rsp = bl_szd_group_update(&req, &szd, &txn).await.c(h!())?;
+    log_sigint_zone_datasource_event(
+        &szd,
+        "zone-datasource-group-update",
+        &login,
+    );
 
     txn.commit().await.c(h!())?;
 
@@ -121,7 +126,6 @@ pub async fn zones_datasources_group_add(
     let login = user.id()?;
     crate::users::has_role(&env.dbx, &login, "Admin").await?;
     let req = req.into_inner();
-    info!("zone-datasource-group-add login={login} payload={req:?}");
 
     let txn = env.dbx.begin().await.c(h!())?;
     let szd = sigint_zone_datasource::ActiveModel {
@@ -190,6 +194,7 @@ pub async fn zones_datasources_group_add(
             .remove(&group_master_key);
 
     txn.commit().await.c(h!())?;
+    log_sigint_zone_datasource_event(&szd, "zone-datasource-group-add", &login);
 
     Ok(Json(ZoneDatasourceGroupAddRsp {
         zone_id: req.zone_id,
@@ -216,7 +221,6 @@ pub async fn zones_datasources_group_delete(
 ) -> Result<Json<()>, AppError> {
     let login = user.id()?;
     crate::users::has_role(&env.dbx, &login, "Admin").await?;
-    info!("zone-datasource-group-delete login={login} id={}", req.0);
 
     let txn = env.dbx.begin().await?;
 
@@ -225,12 +229,29 @@ pub async fn zones_datasources_group_delete(
         .await
         .c(h!())?
     {
-        szd.delete(&txn).await.c(h!())?;
+        szd.clone().delete(&txn).await.c(h!())?;
+        txn.commit().await?;
+        log_sigint_zone_datasource_event(
+            &szd,
+            "zone-datasource-group-delete",
+            &login,
+        );
+    } else {
+        txn.commit().await?;
     }
 
-    txn.commit().await?;
-
     Ok(Json(()))
+}
+
+fn log_sigint_zone_datasource_event(
+    szd: &sigint_zone_datasource::Model,
+    event_name: &str,
+    login: &str,
+) {
+    let key = &szd.group_master_key;
+    let datasource_id = &szd.datasource_id;
+    let sigint_zone_id = &szd.sigint_zone_id;
+    info!("{event_name} login={login} master_key={key} datasource_id={datasource_id} sigint_zone_id={sigint_zone_id}");
 }
 
 pub fn filter_out_ineligible_secret_chats<E: EntityTrait>(
