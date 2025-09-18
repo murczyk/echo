@@ -1,5 +1,6 @@
 use crate::entities::*;
 use crate::error::AppError;
+use crate::rer_importer::analysis::filter_selected_networks;
 use crate::sigint::network::types::ListNetworksSortBy;
 use crate::sigint::signal::types::Signal;
 use crate::types::*;
@@ -131,9 +132,12 @@ pub async fn load_freqs(
 ) -> Result<Vec<NetworkFreqsRes>, AppError> {
     trace!("> load freqs for network: {network_id:?}");
 
+    let nf = Alias::new("network_freqs");
+    let join_condition = build_network_freq_join_condition(filter).c(h!())?;
+
     let mut q: SelectStatement = Query::select();
     q.expr_as(
-        Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::Id)),
+        Expr::col((nf.clone(), SigintNetworkFreq::Id)),
         Alias::new("network_freq_id"),
     )
     .expr_as(
@@ -157,17 +161,17 @@ pub async fn load_freqs(
         Expr::col((SignalMessage::Table, SignalMessage::DatasourceGroupId))
             .equals((DatasourceGroup::Table, DatasourceGroup::Id)),
     )
-    .join(
+    .join_as(
         JoinType::InnerJoin,
         SigintNetworkFreq::Table,
-        Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::Freq))
-            .equals((SigintInboxItem::Table, SigintInboxItem::Freq)),
+        nf.clone(),
+        join_condition,
     )
     .join(
         JoinType::InnerJoin,
         SigintNetwork::Table,
         Expr::col((SigintNetwork::Table, SigintNetwork::Id))
-            .equals((SigintNetworkFreq::Table, SigintNetworkFreq::NetworkId)),
+            .equals((nf.clone(), SigintNetworkFreq::NetworkId)),
     )
     .and_where(
         Expr::col((DatasourceGroup::Table, DatasourceGroup::GroupMasterKey))
@@ -179,69 +183,11 @@ pub async fn load_freqs(
     .and_where(
         Expr::col((SigintNetwork::Table, SigintNetwork::Deleted)).eq(false),
     )
-    .and_where(
-        Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::Deleted))
-            .eq(false),
-    )
+    .and_where(Expr::col((nf.clone(), SigintNetworkFreq::Deleted)).eq(false))
     .and_where(Expr::col((SigintNetwork::Table, SigintUnit::Id)).eq(network_id))
     .and_where_option(filter.as_ref().filter(|f| f.active_freqs_only).map(
-        |_| {
-            Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::ActiveTo))
-                .is_null()
-        },
+        |_| Expr::col((nf.clone(), SigintNetworkFreq::ActiveTo)).is_null(),
     ));
-
-    // adapt filter logic dynamically depending on NetworkFreqFilter
-    // Lower bound: sigint_inbox_item.datetime >= GREATEST(since_date_inclusive, freq.active_from)
-    // Upper bound: sigint_inbox_item.datetime < LEAST(till_date_inclusive, COALESCE(freq.active_to, now()))
-    let since_ms = filter.as_ref().and_then(|f| f.since_date_inclusive_ms);
-    let till_ms = filter.as_ref().and_then(|f| f.till_date_inclusive_ms);
-
-    // ---- LOWER BOUND ---
-    if let Some(since_ms) = since_ms {
-        let since_dt = DateTime::from_timestamp_millis(since_ms)
-            .context(h!())?
-            .naive_utc();
-        let since_expr = Expr::cust_with_values(
-            "GREATEST($1, sigint_network_freq.active_from)",
-            [since_dt],
-        );
-
-        q.and_where(
-            Expr::col((SigintInboxItem::Table, SigintInboxItem::Datetime))
-                .gte(since_expr),
-        );
-    } else {
-        q.and_where(
-            Expr::col((SigintInboxItem::Table, SigintInboxItem::Datetime)).gte(
-                Expr::col((
-                    SigintNetworkFreq::Table,
-                    SigintNetworkFreq::ActiveFrom,
-                )),
-            ),
-        );
-    }
-
-    // ---- UPPER BOUND ----
-    if let Some(till_ms) = till_ms {
-        let till_dt = DateTime::from_timestamp_millis(till_ms)
-            .context(h!())?
-            .naive_utc();
-        let till_expr = Expr::cust_with_values(
-            "LEAST($1, COALESCE(sigint_network_freq.active_to, CURRENT_TIMESTAMP AT TIME ZONE 'UTC'))",
-            [till_dt],
-            );
-        q.and_where(
-            Expr::col((SigintInboxItem::Table, SigintInboxItem::Datetime))
-                .lte(till_expr),
-        );
-    } else {
-        q.and_where(
-            Expr::col((SigintInboxItem::Table, SigintInboxItem::Datetime)).lte(
-                Expr::cust("COALESCE(sigint_network_freq.active_to, CURRENT_TIMESTAMP AT TIME ZONE 'UTC')"),
-            ),
-        );
-    }
 
     let network_messages_cte = CommonTableExpression::new()
         .query(q)
@@ -664,54 +610,14 @@ pub fn build_callsigns_queries(
         )
         .to_owned();
 
+    let nf = Alias::new("network_freqs");
+
     let network_freqs_cte = CommonTableExpression::new()
         .query(network_freqs_select)
-        .table_name(Alias::new("network_freqs"))
+        .table_name(nf.clone())
         .to_owned();
 
-    let mut join_condition =
-        Expr::col((SigintInboxItem::Table, SigintInboxItem::Freq))
-            .equals((Alias::new("network_freqs"), Alias::new("freq")));
-
-    let since_ms = filter.as_ref().and_then(|f| f.since_date_inclusive_ms);
-    let till_ms = filter.as_ref().and_then(|f| f.till_date_inclusive_ms);
-
-    let lower_bound = if let Some(since_ms) = since_ms {
-        let since_dt = DateTime::from_timestamp_millis(since_ms)
-            .context(h!())?
-            .naive_utc();
-
-        Expr::cust_with_values(
-            "GREATEST($1, network_freqs.active_from)",
-            [since_dt],
-        )
-    } else {
-        Expr::col((Alias::new("network_freqs"), Alias::new("active_from")))
-            .into()
-    };
-
-    let upper_bound = if let Some(till_ms) = till_ms {
-        let till_dt = DateTime::from_timestamp_millis(till_ms)
-            .context(h!())?
-            .naive_utc();
-
-        Expr::cust_with_values(
-            "LEAST($1, COALESCE(network_freqs.active_to, CURRENT_TIMESTAMP AT TIME ZONE 'UTC'))",
-            [till_dt],
-        )
-    } else {
-        Expr::cust("COALESCE(network_freqs.active_to, CURRENT_TIMESTAMP AT TIME ZONE 'UTC')")
-    };
-
-    join_condition = join_condition
-        .and(
-            Expr::col((SigintInboxItem::Table, SigintInboxItem::Datetime))
-                .gte(lower_bound),
-        )
-        .and(
-            Expr::col((SigintInboxItem::Table, SigintInboxItem::Datetime))
-                .lte(upper_bound),
-        );
+    let join_condition = build_network_freq_join_condition(filter).c(h!())?;
 
     let network_messages_select = Query::select()
         .expr_as(
@@ -727,7 +633,7 @@ pub fn build_callsigns_queries(
             Alias::new("datetime"),
         )
         .expr_as(
-            Expr::col((Alias::new("network_freqs"), Alias::new("network_id"))),
+            Expr::col((nf.clone(), Alias::new("network_id"))),
             Alias::new("network_id"),
         )
         .from(SignalMessage::Table)
@@ -743,11 +649,7 @@ pub fn build_callsigns_queries(
             Expr::col((SignalMessage::Table, SignalMessage::DatasourceGroupId))
                 .equals((DatasourceGroup::Table, DatasourceGroup::Id)),
         )
-        .join(
-            JoinType::InnerJoin,
-            Alias::new("network_freqs"),
-            join_condition,
-        )
+        .join(JoinType::InnerJoin, nf.clone(), join_condition)
         .and_where(
             Expr::col((
                 DatasourceGroup::Table,
@@ -847,6 +749,59 @@ pub fn build_callsigns_queries(
         .clone();
 
     Ok((base_with, callsigns_select))
+}
+
+/// Helper to build join condition for sigint_inbox_item adn sigint_network_freqs based on the filter.
+///
+/// sigint_inbox_item.freq = network_freqs.freq  
+/// AND sigint_inbox_item.datetime >= GREATEST(since_date_inclusive, network_freqs.active_from)  
+/// AND sigint_inbox_item.datetime <= LEAST(till_date_inclusive, COALESCE(network_freqs.active_to, now()))  
+pub fn build_network_freq_join_condition(
+    filter: &Option<NetworkFreqFilter>,
+) -> Result<SimpleExpr, AppError> {
+    let since_ms = filter.as_ref().and_then(|f| f.since_date_inclusive_ms);
+    let till_ms = filter.as_ref().and_then(|f| f.till_date_inclusive_ms);
+
+    let lower_bound = if let Some(since_ms) = since_ms {
+        let since_dt = DateTime::from_timestamp_millis(since_ms)
+            .context(h!())?
+            .naive_utc();
+
+        Expr::cust_with_values(
+            "GREATEST($1, network_freqs.active_from)",
+            [since_dt],
+        )
+    } else {
+        Expr::col((Alias::new("network_freqs"), Alias::new("active_from")))
+            .into()
+    };
+
+    let upper_bound = if let Some(till_ms) = till_ms {
+        let till_dt = DateTime::from_timestamp_millis(till_ms)
+            .context(h!())?
+            .naive_utc();
+
+        Expr::cust_with_values(
+            "LEAST($1, COALESCE(network_freqs.active_to, CURRENT_TIMESTAMP AT TIME ZONE 'UTC'))",
+            [till_dt],
+        )
+    } else {
+        Expr::cust("COALESCE(network_freqs.active_to, CURRENT_TIMESTAMP AT TIME ZONE 'UTC')")
+    };
+
+    let join_condition =
+        Expr::col((SigintInboxItem::Table, SigintInboxItem::Freq))
+            .equals((Alias::new("network_freqs"), Alias::new("freq")))
+            .and(
+                Expr::col((SigintInboxItem::Table, SigintInboxItem::Datetime))
+                    .gte(lower_bound),
+            )
+            .and(
+                Expr::col((SigintInboxItem::Table, SigintInboxItem::Datetime))
+                    .lte(upper_bound),
+            );
+
+    Ok(join_condition)
 }
 
 /// Активні позивні на частотах мережі, які не входять до вже прив'язаних до мережі позивних
@@ -1142,15 +1097,44 @@ fn filter_callsigns(callsigns: Vec<CallsignRes>) -> Vec<CallsignRes> {
 }
 
 pub async fn load_pelengs_map(
-    db: &DatabaseConnection,
+    dbx: &DatabaseConnection,
     groups: &Vec<String>,
     network_id: i64,
     filter: NetworkFreqFilter,
 ) -> Result<Option<Vec<u8>>, AppError> {
-    let date_since = filter.since_date_inclusive_ms;
-    let date_till = filter.till_date_inclusive_ms;
+    let map_points =
+        bl_get_network_points(dbx, groups, network_id, &Some(filter))
+            .await
+            .c(h!())?
+            .into_iter()
+            .map(|p| PelengsQueryRes {
+                freq: p.freq,
+                lat: format!("{:02.6}", p.lat),
+                lng: format!("{:02.6}", p.lng),
+            })
+            .collect::<Vec<PelengsQueryRes>>();
+    let map_points = uniq_via_btreeset(&map_points);
 
-    let mut query = signal_message::Entity::find()
+    if map_points.is_empty() {
+        return Ok(None);
+    }
+
+    let res = get_map_image(map_points).await?;
+
+    Ok(Some(res))
+}
+
+pub async fn bl_get_network_points(
+    dbx: &DatabaseConnection,
+    groups: &Vec<String>,
+    network_id: i64,
+    filter: &Option<NetworkFreqFilter>,
+) -> Result<Vec<NetworkPointQueryRes>, AppError> {
+    let join_condition = build_network_freq_join_condition(filter).c(h!())?;
+
+    let nf_alias = Alias::new("network_freqs");
+
+    let mut q = signal_message::Entity::find()
         .join(
             JoinType::InnerJoin,
             signal_message::Relation::DatasourceGroup.def(),
@@ -1163,67 +1147,49 @@ pub async fn load_pelengs_map(
             JoinType::InnerJoin,
             sigint_inbox_item::Relation::SigintPeleng.def(),
         )
-        .join(
+        .join_as(
             JoinType::InnerJoin,
             sigint_inbox_item::Relation::SigintNetworkFreq.def(),
+            nf_alias.clone(),
         )
         .join(
             JoinType::InnerJoin,
-            sigint_network_freq::Relation::SigintNetwork.def(),
+            sigint_network_freq::Relation::SigintNetwork
+                .def()
+                .from_alias(nf_alias.clone()),
         )
-        .distinct()
         .select_only()
-        .column(sigint_inbox_item::Column::Freq)
-        .column_as(
-            SimpleExpr::Custom(
-                "to_char(sigint_peleng.lat,'FM90.000000')".to_string(),
-            ),
-            "lat",
-        )
-        .column_as(
-            SimpleExpr::Custom(
-                "to_char(sigint_peleng.lng,'FM90.000000')".to_string(),
-            ),
-            "lng",
-        )
+        .column_as(signal_message::Column::Id, "id")
+        .column_as(sigint_inbox_item::Column::Freq, "freq")
+        .column_as(sigint_peleng::Column::Lat, "lat")
+        .column_as(sigint_peleng::Column::Lng, "lng")
+        .column_as(signal_message::Column::Body, "body")
         .filter(datasource_group::Column::GroupMasterKey.is_in(groups))
+        .filter(sigint_network::Column::Id.eq(network_id))
         .filter(sigint_inbox_item::Column::Coords.is_not_null())
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(sigint_network::Column::Deleted.eq(false))
         .filter(sigint_peleng::Column::Deleted.eq(false))
-        .filter(sigint_network::Column::Id.eq(network_id));
-
-    if let Some(date_since) = date_since {
-        query = query.filter(
-            sigint_inbox_item::Column::Datetime
-                .gte(dt_from_millis(date_since)?),
-        )
+        .filter(join_condition);
+    if filter.as_ref().is_some_and(|f| f.active_freqs_only) {
+        q = q.filter(
+            Expr::col((nf_alias.clone(), SigintNetworkFreq::ActiveTo))
+                .is_null(),
+        );
     }
-
-    if let Some(date_till) = date_till {
-        query = query.filter(
-            sigint_inbox_item::Column::Datetime.lte(dt_from_millis(date_till)?),
-        )
-    }
+    q = filter_selected_networks(q, &Some(vec![network_id])).c(h!())?;
 
     // debug!(
     //     "> pelengs per unir sql: {}\n",
-    //     query.build(DbBackend::Postgres).to_string()
+    //     q.build(DbBackend::Postgres).to_string()
     // );
 
-    let map_points = query
-        .into_model::<PelengsQueryRes>()
-        .all(db)
+    let res = q
+        .into_model::<NetworkPointQueryRes>()
+        .all(dbx)
         .await
         .context(h!())?;
-
-    if map_points.is_empty() {
-        return Ok(None);
-    }
-
-    let res = get_map_image(map_points).await?;
-
-    Ok(Some(res))
+    Ok(res)
 }
 
 async fn get_map_image(

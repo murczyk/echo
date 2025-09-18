@@ -206,6 +206,15 @@ pub struct UnregistredNetworksRes {
 }
 
 #[derive(Debug, FromQueryResult)]
+pub struct NetworkPointQueryRes {
+    pub id: i64,
+    pub freq: String,
+    pub lat: f64,
+    pub lng: f64,
+    pub body: String,
+}
+
+#[derive(Debug, Clone, FromQueryResult, PartialEq, Eq, PartialOrd, Ord)]
 pub struct PelengsQueryRes {
     pub freq: String,
     pub lat: String,

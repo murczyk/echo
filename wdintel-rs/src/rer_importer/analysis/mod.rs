@@ -583,6 +583,24 @@ pub fn filter_selected_networks<Q>(
 where
     Q: QueryFilter + QueryTrait,
 {
+    if let Some(expr) = network_filter_expr(selected_networks) {
+        q = q.filter(expr);
+    }
+    Ok(q)
+}
+
+pub fn filter_selected_networks_stmt(
+    mut q: SelectStatement,
+    selected_networks: &Option<Vec<i64>>,
+) -> SelectStatement
+{
+    if let Some(expr) = network_filter_expr(selected_networks) {
+        q.and_where(expr);
+    }
+    q
+}
+
+fn network_filter_expr(selected_networks: &Option<Vec<i64>>) -> Option<SimpleExpr> {
     if let Some(ids) = selected_networks.as_ref().filter(|v| !v.is_empty()) {
         let ga = Alias::new("ga"); // signal_group_aor
         let gaor = Alias::new("gaor"); // area_of_responsibility for the group
@@ -726,10 +744,10 @@ where
             .and_where(condition.into())
             .to_owned();
 
-        q = q.filter(Expr::exists(sub));
+        Some(Expr::exists(sub))
+    } else {
+        None
     }
-
-    Ok(q)
 }
 
 pub fn filter_search<Q>(q: Q, search: &Option<String>) -> Result<Q, AppError>

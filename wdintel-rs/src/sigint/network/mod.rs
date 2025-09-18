@@ -1013,60 +1013,35 @@ pub async fn list_network_points(
     crate::users::has_role(&env.dbx, &user.id()?, "Rer")
         .await
         .context(h!())?;
-    let dt_since = dt_from_millis(req.since_date_inclusive_ms)?;
-    let mut query = signal_message::Entity::find()
-        .join(
-            JoinType::InnerJoin,
-            signal_message::Relation::DatasourceGroup.def(),
-        )
-        .join_as(
-            JoinType::InnerJoin,
-            signal_message::Relation::SigintInboxItem.def(),
-            Alias::new("sigint_inbox_item"),
-        )
-        .join_as(
-            JoinType::InnerJoin,
-            sigint_inbox_item::Relation::SigintNetworkFreq.def(),
-            Alias::new("sigint_network_freq"),
-        )
-        .join_as(
-            JoinType::InnerJoin,
-            sigint_inbox_item::Relation::SigintPeleng.def(),
-            Alias::new("sigint_peleng"),
-        )
-        .select_only()
-        .column_as(signal_message::Column::Id, "id")
-        .column_as(signal_message::Column::Body, "body")
-        .column_as(sigint_peleng::Column::Lat, "lat")
-        .column_as(sigint_peleng::Column::Lng, "lng")
-        .filter(signal_message::Column::Deleted.eq(false))
-        .filter(
-            datasource_group::Column::GroupMasterKey.is_in(
-                crate::users::get_identity_sigint_groups_noimport(
-                    &env.dbx,
-                    &user,
-                    &env.config,
-                )
-                .await
-                .context(h!())?,
-            ),
-        )
-        .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
-        .filter(sigint_network_freq::Column::NetworkId.eq(req.network_id));
 
-    if let Some(dt_till) = req.till_date_noninclusive_ms {
-        query = query.filter(
-            sigint_inbox_item::Column::Datetime.lte(dt_from_millis(dt_till)?),
-        );
-    }
+    let filter = NetworkFreqFilter {
+        active_freqs_only: false,
+        since_date_inclusive_ms: Some(req.since_date_inclusive_ms),
+        till_date_inclusive_ms: req.till_date_noninclusive_ms,
+    };
 
-    Ok(Json(ListNetworkPointsRsp {
-        points: query
-            .into_model::<NetworkPoint>()
-            .all(&env.dbx)
+    let groups = crate::users::get_identity_sigint_groups_noimport(
+        &env.dbx,
+        &user,
+        &env.config,
+    )
+    .await
+    .context(h!())?;
+
+    let map_points =
+        bl_get_network_points(&env.dbx, &groups, req.network_id, &Some(filter))
             .await
-            .context(h!())?,
-    }))
+            .c(h!())?
+            .into_iter()
+            .map(|p| NetworkPoint {
+                id: p.id,
+                body: p.body,
+                lat: p.lat,
+                lng: p.lng,
+            })
+            .collect::<Vec<NetworkPoint>>();
+
+    Ok(Json(ListNetworkPointsRsp { points: map_points }))
 }
 
 #[post("/api/sigint/update-freq-networks")]
