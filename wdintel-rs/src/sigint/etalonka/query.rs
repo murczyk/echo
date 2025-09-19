@@ -1,6 +1,8 @@
 use crate::entities::*;
 use crate::error::AppError;
-use crate::rer_importer::analysis::filter_selected_networks;
+use crate::rer_importer::analysis::{
+    filter_selected_networks, filter_selected_networks_stmt,
+};
 use crate::sigint::network::types::ListNetworksSortBy;
 use crate::sigint::signal::types::Signal;
 use crate::types::*;
@@ -188,6 +190,7 @@ pub async fn load_freqs(
     .and_where_option(filter.as_ref().filter(|f| f.active_freqs_only).map(
         |_| Expr::col((nf.clone(), SigintNetworkFreq::ActiveTo)).is_null(),
     ));
+    q = filter_selected_networks_stmt(q, &Some(vec![network_id])).c(h!())?;
 
     let network_messages_cte = CommonTableExpression::new()
         .query(q)
@@ -619,7 +622,8 @@ pub fn build_callsigns_queries(
 
     let join_condition = build_network_freq_join_condition(filter).c(h!())?;
 
-    let network_messages_select = Query::select()
+    let mut network_messages_select = Query::select();
+    network_messages_select
         .expr_as(
             Expr::col((SigintInboxItem::Table, SigintInboxItem::Callsigns)),
             Alias::new("callsigns"),
@@ -659,11 +663,15 @@ pub fn build_callsigns_queries(
         )
         .and_where(
             Expr::col((SignalMessage::Table, SignalMessage::Deleted)).eq(false),
-        )
-        .to_owned();
+        );
+    network_messages_select = filter_selected_networks_stmt(
+        network_messages_select,
+        &Some(vec![network_id]),
+    )
+    .c(h!())?;
 
     let network_messages_cte = CommonTableExpression::new()
-        .query(network_messages_select)
+        .query(network_messages_select.to_owned())
         .table_name(Alias::new("network_messages"))
         .to_owned();
 
