@@ -242,6 +242,10 @@ async fn fill_comp_freq(
         .add(sigint_inbox_item::Column::Datetime.lt(end));
 
     let count = signal_message::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::SigintInboxItem.def(),
+        )    
         .filter(filter.clone())
         .clone()
         .count(dbx)
@@ -251,6 +255,10 @@ async fn fill_comp_freq(
 
     let mut stream = signal_message::Entity::find()
         .find_with_related(datasource_group::Entity)
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::SigintInboxItem.def(),
+        )        
         .filter(filter)
         .order_by_asc(signal_message::Column::Id)
         .stream(dbx)
