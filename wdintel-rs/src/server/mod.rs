@@ -174,14 +174,21 @@ pub async fn main_server(
         });
     }
 
-    if let Err(e) =
-        echo_im::enable_signal_cli_verbose_logging("echo", SIGNAL_CLIENT_PORT)
-            .await
-    {
-        error!("failed to configure signal cli: {e:?}");
-    }
+    tokio::spawn(async move {
+        info!("Starting enable_signal_cli_verbose_logging");
+        if let Err(e) = echo_im::enable_signal_cli_verbose_logging(
+            "echo",
+            SIGNAL_CLIENT_PORT,
+        )
+        .await
+        {
+            error!("failed to configure signal cli: {e:?}");
+        }
+        info!("Done starting enable_signal_cli_verbose_logging");
+    });
 
     if config.feature_tmp_in_memory.unwrap_or(false) {
+        info!("Starting cleanup_tmp_worker_nofail");
         tokio::spawn(async move {
             echo_install_utils::tmpdir::cleanup_tmp_worker_nofail().await;
         });

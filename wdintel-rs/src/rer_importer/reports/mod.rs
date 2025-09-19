@@ -245,7 +245,7 @@ async fn fill_comp_freq(
         .join(
             JoinType::InnerJoin,
             signal_message::Relation::SigintInboxItem.def(),
-        )    
+        )
         .filter(filter.clone())
         .clone()
         .count(dbx)
@@ -258,7 +258,7 @@ async fn fill_comp_freq(
         .join(
             JoinType::InnerJoin,
             signal_message::Relation::SigintInboxItem.def(),
-        )        
+        )
         .filter(filter)
         .order_by_asc(signal_message::Column::Id)
         .stream(dbx)
