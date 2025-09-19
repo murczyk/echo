@@ -409,7 +409,7 @@ pub async fn fill_comp_freq_worker(dbx: &DatabaseConnection) {
         match fill_comp_freq_worker_1(dbx).await {
             Ok(_) => {}
             Err(e) => {
-                println!("fill_comp_freq_worker error: {e}");
+                println!("fill_comp_freq_worker error: {e:#?}");
             }
         }
         tokio::time::sleep(std::time::Duration::from_secs(10 * 60)).await;
