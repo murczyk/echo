@@ -487,7 +487,7 @@ pub async fn load_callsigns(
             let callsign = row.callsign.clone();
 
             let short_known_callsigns =
-                crate::sigint::callsign::match_known_callsigns(
+                crate::sigint::callsign::bl::match_known_callsigns(
                     known_callsigns.get(&callsign),
                     &callsign,
                     row.unit_id,
