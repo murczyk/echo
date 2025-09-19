@@ -592,12 +592,12 @@ where
 pub fn filter_selected_networks_stmt(
     mut q: SelectStatement,
     selected_networks: &Option<Vec<i64>>,
-) -> SelectStatement
+) ->  Result<SelectStatement, AppError>
 {
     if let Some(expr) = network_filter_expr(selected_networks) {
         q.and_where(expr);
     }
-    q
+    Ok(q)
 }
 
 fn network_filter_expr(selected_networks: &Option<Vec<i64>>) -> Option<SimpleExpr> {
