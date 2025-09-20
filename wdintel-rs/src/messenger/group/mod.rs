@@ -66,26 +66,49 @@ pub async fn collect_groups_f2(
     keys: Vec<String>,
     txn: &DatabaseConnection,
 ) -> Result<Vec<types::SignalGroupEntryF2>, AppError> {
+    #[derive(FromQueryResult, Eq, PartialEq, Hash)]
+    struct GroupRow {
+        pub name: String,
+        pub master_key: String,
+        pub kind: String,
+    }
     let signal_groups = signal_group::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            signal_group::Relation::DatasourceGroup.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            datasource_group::Relation::Datasource.def(),
+        )
         .filter(signal_group::Column::Deleted.eq(false))
+        .filter(signal_group::Column::Name.is_not_null())
         .filter(signal_group::Column::MasterKey.is_in(keys.clone()))
+        .select_only()
+        .column(signal_group::Column::Name)
+        .column(signal_group::Column::MasterKey)
+        .column(datasource::Column::Kind)
+        .into_model::<GroupRow>()
         .all(txn)
         .await
-        .context(h!())?;
+        .context(h!())?
+        .into_iter()
+        .collect::<HashSet<_>>();
     let group_stats =
         collect_group_stats(keys.clone(), txn).await.context(h!())?;
     let data: Vec<types::SignalGroupEntryF2> = signal_groups
-        .iter()
-        .filter_map(|g| {
+        .into_iter()
+        .map(|group| {
             let stats = group_stats
-                .get(g.master_key.as_str())
+                .get(group.master_key.as_str())
                 .cloned()
                 .unwrap_or_default();
-            g.name.clone().map(|name| types::SignalGroupEntryF2 {
-                name,
-                master_key: g.master_key.clone(),
+            types::SignalGroupEntryF2 {
+                name: group.name,
+                master_key: group.master_key.clone(),
+                kind: group.kind,
                 group_stats: stats,
-            })
+            }
         })
         .collect();
     Ok(data)

@@ -40,6 +40,7 @@ pub struct SignalGroupEntry {
 pub struct SignalGroupEntryF2 {
     pub master_key: String,
     pub name: String,
+    pub kind: String,
     pub group_stats: SignalGroupStats,
 }
 
