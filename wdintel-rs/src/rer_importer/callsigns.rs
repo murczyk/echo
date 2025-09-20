@@ -381,7 +381,7 @@ fn add_callsign(
         return false;
     };
     let callsign = callsign.to_lowercase();
-    if (callsign == "й") || callsign == "нв" {
+    if callsign == "й" || callsign == "нв" || callsign == "укх" {
         return false;
     }
     if !callsign.chars().any(|c| c.is_alphabetic())
@@ -812,9 +812,16 @@ fn extract_avia_callsigns(input: &str) -> Result<Vec<CNCallsign>, AppError> {
         .sum::<usize>()
         + 1;
 
+    let mut lines = lines
+        .iter()
+        .skip(skip_lines)
+        .cloned()
+        .collect::<Vec<String>>();
+    lines.truncate(crate::config::CALLSIGNS_MAX_LINES);
+
     const LITERAL_CALLSIGN_STR: &str =
         r"[\p{Cyrillic}]+((-[\p{Cyrillic}]+)|(\s+\d{1,2}))?";
-    const DIGITAL_CALLSIGN_STR: &str = r"(\d{1,3}[\s-]?[Йй])|(\d{5})";
+    const DIGITAL_CALLSIGN_STR: &str = r"(\d{1,3}[\s-]?[Йй])|(\d{4,5})";
 
     lazy_static! {
         // Regex for matching a single callsign
@@ -847,7 +854,7 @@ fn is_avia_format(lines: &Vec<String>) -> Result<bool, AppError> {
     // 🟠 УКХ р/м НВ підрозділу 128.900 МГц
     lazy_static! {
         static ref RE_POST: Regex = Regex::new(
-            r#"^\s*Отримано з поста\s+[\p{Cyrillic}0-9A-Z-_"]+\s*$"#
+            r#"^\s*Отримано з поста\s+[\p{Cyrillic}0-9A-Z-_/"]+\s*$"#
         )
         .unwrap();
         static ref RE_SEPARATOR: Regex =
@@ -858,7 +865,7 @@ fn is_avia_format(lines: &Vec<String>) -> Result<bool, AppError> {
         static ref RE_FREQ: Regex =
             Regex::new(r"^\s*\d{3}.\d{3,4}\s*$").unwrap();
         static ref RE_NETWORK: Regex =
-            Regex::new(r"^\s*(🟠|🔴|🔷|🟡)?\s*(УКХ р/м .*)\s*$").unwrap();
+            Regex::new(r"^(🟠|🔴|🔷|🟡)|(\s*УКХ р/м).*$").unwrap();
     }
 
     if lines.len() < 8 {
@@ -1938,6 +1945,26 @@ mod tests {
         assert_eq!(ress2, expected2);
     }
 
+    #[tokio::test]
+    async fn extract_callsigns_kazhanchik_exclude_uhw() {
+        let rq = reqwest::Client::new();
+        let body = r#"19-09 01:14:12
+145.915
+УКХ
+ЧАО
+МОЗДОК
+
+– Продолжает работать вражеский миномет с азимута 240.
+
+Коментар: T2"#;
+        let res = find_known_callsigns(&rq, body).await.unwrap();
+        let expected: Vec<String> =
+            vec!["ЧАО".to_string(), "МОЗДОК".to_string()];
+        let ress: Vec<String> =
+            res.iter().cloned().take(2).map(|x| x.text).collect();
+        assert_eq!(ress, expected);
+    }
+
     #[test]
     fn extract_callsigns_buran_01() {
         let body = r#"Дата: 2024-02-21;
@@ -2824,5 +2851,75 @@ async fn test_extract_callsigns_avia_format_no_net_line() {
     let res = extract_avia_callsigns(body).unwrap();
     let expected: Vec<String> = vec![];
     let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+    assert_eq!(ress, expected);
+}
+
+#[tokio::test]
+async fn test_extract_callsigns_avia_format_net_name_without_uhw() {
+    let body = r#"Отримано з поста "31"
+--------------------------------------
+19.09.2025, 17:13:35
+128.5000
+🟠 р/м Єдиної системи управління повітряним рухом ПКС зс рф (ПОВІТРЯНИЙ ПРОСТІР ЗС РФ)
+12705
+САКСОФОН
+
+— Контроль 12705, с Ильменем отработали, пролет зоны разрешений ... 1 8 0.
+— Займу эшелон 1 8 0, доложу 12705.."#;
+    let res = extract_avia_callsigns(body).unwrap();
+    let expected: Vec<String> =
+        vec!["12705".to_string(), "САКСОФОН".to_string()];
+    let ress: Vec<String> =
+        res.iter().cloned().take(2).map(|x| x.text).collect();
+    assert_eq!(ress, expected);
+}
+
+#[tokio::test]
+async fn test_extract_callsigns_avia_format_slash_in_post() {
+    let body = r#"Отримано з поста "31/1"
+--------------------------------------
+19.09.2025, 15:31:00
+128.500
+🟠Єдиної системи управління повітряним рухом ПКС зс рф
+
+61112
+ВОРСОВКА
+ИЛЬМЕНЬ
+
+— ... канале запрашивают, 61112.
+— 61112 день добрый от экипажа курсом Беплу на ЭШ 280 прошу разрешения на пролет вашей зоны
+— Разрешили Ворсовка спс до свидание 61...
+— Ильмень 61112.
+— 61.... Подхожу к точке Беплу. На эшелоне....
+— Курсом Готби, разрешите пролет вашей зоны на эшелоне 2 8 0.
+— С Ильменем и Ворсовкой установил, пролет зоны на ЭШ 280 не возражает"#;
+    let res = extract_avia_callsigns(body).unwrap();
+    let expected: Vec<String> = vec![
+        "61112".to_string(),
+        "ВОРСОВКА".to_string(),
+        "ИЛЬМЕНЬ".to_string(),
+    ];
+    let ress: Vec<String> =
+        res.iter().cloned().take(3).map(|x| x.text).collect();
+    assert_eq!(ress, expected);
+}
+
+#[tokio::test]
+async fn test_extract_callsigns_avia_format_catch_four_digits() {
+    let body = r#"Отримано з поста "31/1"
+--------------------------------------
+19.09.2025, 17:51:53
+118.900
+🟠УКХ р/м НВ підрозділу 118.900 МГц
+
+ДВОР
+3346
+
+
+— Двор, 3346, работу закончил, разрешите по обратному ..."#;
+    let res = extract_avia_callsigns(body).unwrap();
+    let expected: Vec<String> = vec!["ДВОР".to_string(), "3346".to_string()];
+    let ress: Vec<String> =
+        res.iter().cloned().take(2).map(|x| x.text).collect();
     assert_eq!(ress, expected);
 }
