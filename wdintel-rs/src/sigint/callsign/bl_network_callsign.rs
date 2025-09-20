@@ -698,9 +698,10 @@ pub async fn get_callsigns_communication_info<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
-    let groups = crate::users::get_identity_sigint_groups(txn, login)
-        .await
-        .context(h!())?;
+    let groups =
+        crate::messenger::group::get_identity_sigint_groups(txn, login)
+            .await
+            .context(h!())?;
 
     let (base_with, callsigns_select) =
         build_callsigns_queries(&groups, network_id, &None).context(h!())?;

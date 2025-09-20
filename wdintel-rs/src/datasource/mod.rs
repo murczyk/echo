@@ -73,7 +73,7 @@ pub async fn datasource_group_list(
         if !is_admin {
             select = select.filter(
                 datasource_group::Column::GroupMasterKey.is_in(
-                    crate::users::get_identity_sigint_groups(
+                    crate::messenger::group::get_identity_sigint_groups(
                         &env.dbx,
                         &user.id()?,
                     )

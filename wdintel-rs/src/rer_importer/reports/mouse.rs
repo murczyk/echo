@@ -159,9 +159,10 @@ pub async fn report_docx_kind_mouse(
             });
     }
 
-    let groups = crate::users::get_identity_sigint_groups(&env.dbx, &login)
-        .await
-        .context(h!())?;
+    let groups =
+        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
+            .await
+            .context(h!())?;
 
     let importants = sigint_important::Entity::find()
         .filter(sigint_important::Column::UserId.eq(&login))

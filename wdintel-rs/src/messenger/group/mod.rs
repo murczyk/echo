@@ -1,8 +1,10 @@
 use crate::entities::*;
-use crate::rer_importer::count_group_messages;
-use crate::rer_importer::types::SignalGroupStats;
+use crate::organism::bl::load_organism_group_ids;
+use crate::organism::types::OrganismGroups;
+use crate::sigint::aor::bl::collect_group_aors;
 use crate::types::*;
-use echo_migration::JoinType;
+use chrono::Utc;
+use echo_migration::{Alias, Expr, JoinType};
 use sea_orm::*;
 
 pub mod handlers;
@@ -10,6 +12,84 @@ pub mod oneoff;
 #[cfg(test)]
 pub mod tests;
 pub mod types;
+
+pub async fn collect_groups(
+    keys: Vec<String>,
+    txn: &DatabaseConnection,
+    is_admin: bool,
+) -> Result<Vec<types::SignalGroupEntry>, AppError> {
+    let signal_groups = signal_group::Entity::find()
+        .filter(signal_group::Column::Deleted.eq(false))
+        .filter(signal_group::Column::MasterKey.is_in(keys.clone()))
+        .all(txn)
+        .await
+        .context(h!())?;
+    let group_stats =
+        collect_group_stats(keys.clone(), txn).await.context(h!())?;
+
+    let group_aors = if is_admin {
+        collect_group_aors(keys.clone(), txn).await.context(h!())?
+    } else {
+        BTreeMap::new()
+    };
+
+    let group_admin_data = if is_admin {
+        collect_group_admin_data(keys, txn).await.context(h!())?
+    } else {
+        BTreeMap::new()
+    };
+
+    let data: Vec<types::SignalGroupEntry> = signal_groups
+        .iter()
+        .filter_map(|g| {
+            let stats = group_stats
+                .get(g.master_key.as_str())
+                .cloned()
+                .unwrap_or_default();
+            let aors = group_aors.get(g.master_key.as_str()).cloned();
+            let group_admin_data =
+                group_admin_data.get(g.master_key.as_str()).cloned();
+            g.name.clone().map(|name| types::SignalGroupEntry {
+                name,
+                master_key: g.master_key.clone(),
+                ignore_operativny: g.ignore_operativny,
+                group_stats: stats,
+                admin_data: group_admin_data,
+                areas_of_responsibility: aors,
+            })
+        })
+        .collect();
+    Ok(data)
+}
+
+pub async fn collect_groups_f2(
+    keys: Vec<String>,
+    txn: &DatabaseConnection,
+) -> Result<Vec<types::SignalGroupEntryF2>, AppError> {
+    let signal_groups = signal_group::Entity::find()
+        .filter(signal_group::Column::Deleted.eq(false))
+        .filter(signal_group::Column::MasterKey.is_in(keys.clone()))
+        .all(txn)
+        .await
+        .context(h!())?;
+    let group_stats =
+        collect_group_stats(keys.clone(), txn).await.context(h!())?;
+    let data: Vec<types::SignalGroupEntryF2> = signal_groups
+        .iter()
+        .filter_map(|g| {
+            let stats = group_stats
+                .get(g.master_key.as_str())
+                .cloned()
+                .unwrap_or_default();
+            g.name.clone().map(|name| types::SignalGroupEntryF2 {
+                name,
+                master_key: g.master_key.clone(),
+                group_stats: stats,
+            })
+        })
+        .collect();
+    Ok(data)
+}
 
 pub async fn add_group<'a, 'async_trait, C>(
     group: signal_group::ActiveModel,
@@ -20,8 +100,8 @@ where
 {
     // Capture the master_key before the insert consumes the model
     let master_key = match group.master_key.clone() {
-        sea_orm::ActiveValue::Set(v) => v,
-        _ => anyhow::bail!("master_key must be set when adding group"),
+        Set(v) => v,
+        _ => bail!("master_key must be set when adding group"),
     };
 
     // Upsert by primary key to avoid duplicate key violations when the group
@@ -138,7 +218,7 @@ where
 pub async fn collect_group_stats<'a, 'async_trait, C>(
     keys: Vec<String>,
     txn: &'a C,
-) -> Result<BTreeMap<String, SignalGroupStats>, AppError>
+) -> Result<BTreeMap<String, types::SignalGroupStats>, AppError>
 where
     C: ConnectionTrait + 'async_trait,
 {
@@ -160,7 +240,7 @@ where
             .unwrap_or(0);
         result.insert(
             k,
-            SignalGroupStats {
+            types::SignalGroupStats {
                 activity_last_day,
                 activity_last_week,
             },
@@ -215,4 +295,166 @@ where
     .await
     .context(h!())?;
     Ok(new_group.id)
+}
+
+pub async fn collect_group_admin_data<'a, 'async_trait, C>(
+    keys: Vec<String>,
+    txn: &'a C,
+) -> Result<BTreeMap<String, types::GroupAdminData>, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let result = group_admin_data::Entity::find()
+        .filter(group_admin_data::Column::GroupMasterKey.is_in(keys.clone()))
+        .all(txn)
+        .await
+        .context(h!())?
+        .into_iter()
+        .map(|g| {
+            (
+                g.group_master_key.clone(),
+                types::GroupAdminData {
+                    short_note: g.short_note,
+                    long_note: g.long_note,
+                },
+            )
+        })
+        .flat_map(|(m_id, data)| m_id.map(|m_id| (m_id, data)))
+        .collect::<BTreeMap<String, types::GroupAdminData>>();
+    Ok(result)
+}
+
+pub async fn count_group_messages<'a, 'async_trait, C>(
+    keys: Vec<String>,
+    txn: &'a C,
+    num_days: i64,
+) -> Result<BTreeMap<String, i64>, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let cutoff = Utc::now().naive_utc() - chrono::Duration::days(num_days);
+    let signal_message_counts = signal_message::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::SigintInboxItem.def(),
+        )
+        .join_as(
+            JoinType::LeftJoin,
+            datasource_group::Relation::SignalGroup.def(),
+            Alias::new("signal_group"),
+        )
+        .select_only()
+        .column(datasource_group::Column::GroupMasterKey)
+        .column_as(Expr::cust("count(*)"), "count")
+        .group_by(Expr::cust("group_master_key"))
+        .filter(signal_group::Column::Deleted.eq(false))
+        .filter(signal_group::Column::MasterKey.is_in(keys))
+        .filter(signal_message::Column::Timestamp.gte(cutoff))
+        .into_tuple::<(String, i64)>()
+        .all(txn)
+        .await
+        .context(h!())?
+        .into_iter()
+        .collect();
+    Ok(signal_message_counts)
+}
+
+pub async fn get_identity_sigint_groups<'a, 'async_trait, C>(
+    txn: &'a C,
+    login: &str,
+) -> Result<Vec<String>, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let login_obj = login::Entity::find()
+        .filter(login::Column::Login.eq(login))
+        .filter(login::Column::DeletedPermanently.eq(false))
+        .one(txn)
+        .await
+        .context(h!())?
+        .context(h!())?;
+    let zone_id: i64 = login_obj
+        .sigint_zone_id
+        .context(h!())
+        .context(format!("Zone must be set for user: {login}"))?;
+    let organism_id: i64 = login_obj
+        .organism_id
+        .context(h!())
+        .context(format!("Organism must be set for user: {login}"))?;
+
+    let organism_groups: OrganismGroups =
+        load_organism_group_ids(txn, organism_id)
+            .await
+            .context(h!())?;
+    let group_query = signal_group::Entity::find()
+        .filter(signal_group::Column::Deleted.eq(false))
+        .filter(
+            signal_group::Column::MasterKey
+                .is_in(organism_groups.available_keys),
+        )
+        .filter(
+            Expr::col((signal_group::Entity, signal_group::Column::MasterKey))
+                .equals((
+                    sigint_zone_datasource::Entity,
+                    sigint_zone_datasource::Column::GroupMasterKey,
+                )),
+        )
+        .join(
+            JoinType::InnerJoin,
+            signal_group::Relation::DatasourceGroup.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            datasource_group::Relation::Datasource.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            datasource::Relation::SigintZoneDatasource.def(),
+        )
+        .filter(sigint_zone_datasource::Column::SigintZoneId.eq(zone_id));
+    let organism_groups_obj =
+        crate::sigint::zone::filter_out_ineligible_secret_chats(
+            group_query,
+            login,
+        )
+        .all(txn)
+        .await
+        .context(h!())?
+        .into_iter()
+        .map(|og| og.master_key)
+        .collect();
+
+    Ok(organism_groups_obj)
+}
+
+/// Gets group keys similar to get_identity_sigint_groups but without the import group id
+pub async fn get_identity_sigint_groups_noimport(
+    dbx: &DatabaseConnection,
+    user: &actix_identity::Identity,
+    _config: &crate::config::Config,
+) -> Result<Vec<String>, AppError> {
+    let login = user.id()?;
+    let master_keys = get_identity_sigint_groups(dbx, &login)
+        .await
+        .context(h!())?;
+    // let mut master_keys = get_identity_sigint_groups(dbx, user).await.context(h!())?;
+    // if let Some(import_group) = signal_group::Entity::find()
+    //     .filter(
+    //         signal_group::Column::Name
+    //             .eq(config.signal_import_group_name.clone()),
+    //     )
+    //     .one(dbx)
+    //     .await.context(h!())?
+    // {
+    //     master_keys = master_keys
+    //         .clone()
+    //         .into_iter()
+    //         .filter(|key| key != &import_group.master_key)
+    //         .collect::<Vec<_>>();
+    // }
+    Ok(master_keys)
 }

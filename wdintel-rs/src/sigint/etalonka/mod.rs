@@ -56,7 +56,7 @@ pub async fn report_networks(
     let user_login = user.id().context(h!())?;
     crate::users::has_role(&env.dbx, &user_login, "Rer").await?;
     cleanup_old_reports_nofail(&env.dbx, &env.config).await;
-    let groups = crate::users::get_identity_sigint_groups_noimport(
+    let groups = crate::messenger::group::get_identity_sigint_groups_noimport(
         &env.dbx,
         &user,
         &env.config,
@@ -106,7 +106,7 @@ pub async fn report_networks_batch_id(
     let user_login = user.id().context(h!())?;
     crate::users::has_role(&env.dbx, &user_login, "Rer").await?;
     cleanup_old_reports_nofail(&env.dbx, &env.config).await;
-    let groups = crate::users::get_identity_sigint_groups_noimport(
+    let groups = crate::messenger::group::get_identity_sigint_groups_noimport(
         &env.dbx,
         &user,
         &env.config,

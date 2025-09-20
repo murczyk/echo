@@ -153,7 +153,7 @@ pub async fn list_alt_unit_by_freqs(
         .column_as(sigint_inbox_item::Column::Freq, "freq")
         .filter(
             datasource_group::Column::GroupMasterKey.is_in(
-                crate::users::get_identity_sigint_groups_noimport(
+                crate::messenger::group::get_identity_sigint_groups_noimport(
                     &env.dbx,
                     &user,
                     &env.config,
@@ -226,7 +226,7 @@ pub async fn list_points_by_freq(
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(
             datasource_group::Column::GroupMasterKey.is_in(
-                crate::users::get_identity_sigint_groups_noimport(
+                crate::messenger::group::get_identity_sigint_groups_noimport(
                     &env.dbx,
                     &user,
                     &env.config,
@@ -287,7 +287,7 @@ pub async fn list_groups_by_freqs_per_day(
         .filter(signal_group::Column::Deleted.eq(false))
         .filter(
             datasource_group::Column::GroupMasterKey.is_in(
-                crate::users::get_identity_sigint_groups_noimport(
+                crate::messenger::group::get_identity_sigint_groups_noimport(
                     &env.dbx,
                     &user,
                     &env.config,
@@ -373,7 +373,7 @@ pub async fn list_callsigns_by_freqs(
         .group_by(sigint_inbox_item::Column::Freq)
         .filter(
             datasource_group::Column::GroupMasterKey.is_in(
-                crate::users::get_identity_sigint_groups_noimport(
+                crate::messenger::group::get_identity_sigint_groups_noimport(
                     &env.dbx,
                     &user,
                     &env.config,
@@ -642,9 +642,14 @@ pub async fn list_freqs(
         )
         .select_only()
         .column_as(Expr::col(sigint_inbox_item::Column::Freq), "freq")
-        .filter(datasource_group::Column::GroupMasterKey.is_in(
-            crate::users::get_identity_sigint_groups(&env.dbx, &login).await?,
-        ))
+        .filter(
+            datasource_group::Column::GroupMasterKey.is_in(
+                crate::messenger::group::get_identity_sigint_groups(
+                    &env.dbx, &login,
+                )
+                .await?,
+            ),
+        )
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(sigint_inbox_item::Column::Datetime.gte(before_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(before_till))
@@ -971,9 +976,14 @@ pub async fn list_freqs_v2(
         )
         .select_only()
         .column_as(Expr::col(sigint_inbox_item::Column::Freq), "freq")
-        .filter(datasource_group::Column::GroupMasterKey.is_in(
-            crate::users::get_identity_sigint_groups(&env.dbx, &login).await?,
-        ))
+        .filter(
+            datasource_group::Column::GroupMasterKey.is_in(
+                crate::messenger::group::get_identity_sigint_groups(
+                    &env.dbx, &login,
+                )
+                .await?,
+            ),
+        )
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(sigint_inbox_item::Column::Datetime.gte(before_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(before_till))
@@ -1087,7 +1097,7 @@ where
 
     q = q.filter(
         datasource_group::Column::GroupMasterKey.is_in(
-            crate::users::get_identity_sigint_groups_noimport(
+            crate::messenger::group::get_identity_sigint_groups_noimport(
                 &env.dbx,
                 user,
                 &env.config,
@@ -1189,9 +1199,14 @@ pub async fn latest_frequencies(
         )
         .select_only()
         .column_as(Expr::col(sigint_inbox_item::Column::Freq), "freq")
-        .filter(datasource_group::Column::GroupMasterKey.is_in(
-            crate::users::get_identity_sigint_groups(&env.dbx, &login).await?,
-        ))
+        .filter(
+            datasource_group::Column::GroupMasterKey.is_in(
+                crate::messenger::group::get_identity_sigint_groups(
+                    &env.dbx, &login,
+                )
+                .await?,
+            ),
+        )
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(sigint_inbox_item::Column::Datetime.gte(week_ago))
         .group_by(sea_query::expr::SimpleExpr::Custom("freq".to_string()))
@@ -1283,7 +1298,8 @@ pub async fn callsigns_for_filter(
     let dt_till = dt_from_millis(req.till_date_noninclusive_ms)?;
     let login = user.id()?;
     let master_keys =
-        crate::users::get_identity_sigint_groups(&env.dbx, &login).await?;
+        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
+            .await?;
 
     let instant = std::time::Instant::now();
 
@@ -1385,7 +1401,8 @@ pub async fn freq_exists(
     let login = user.id()?;
 
     let master_keys =
-        crate::users::get_identity_sigint_groups(&env.dbx, &login).await?;
+        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
+            .await?;
     let dt_since = dt_from_millis(req.since_date_inclusive_ms)?;
 
     let freq_exists = signal_message::Entity::find()
@@ -1436,7 +1453,8 @@ pub async fn list_freqs_for_period(
     let login = user.id()?;
 
     let master_keys =
-        crate::users::get_identity_sigint_groups(&env.dbx, &login).await?;
+        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
+            .await?;
     let dt_since = dt_from_millis(req.since_date_inclusive_ms)?;
 
     let mut q = signal_message::Entity::find()

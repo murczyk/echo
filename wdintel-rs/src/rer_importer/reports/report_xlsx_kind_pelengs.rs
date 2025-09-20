@@ -106,7 +106,7 @@ pub async fn get_inbox_messages_report(
         .group_by(datasource_group::Column::DatasourceId)
         .group_by(datasource_group::Column::GroupMasterKey)
         .filter(datasource_group::Column::GroupMasterKey.is_in(
-            crate::users::get_identity_sigint_groups(&env.dbx, &login).await?,
+            crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login).await?,
         ));
 
     q = crate::rer_importer::inbox::query::get_order_by(env, req, q.clone())

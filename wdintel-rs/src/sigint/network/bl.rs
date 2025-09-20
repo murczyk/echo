@@ -388,7 +388,7 @@ pub async fn network_group_activity_bl(
         .filter(signal_group::Column::Deleted.eq(false))
         .filter(
             datasource_group::Column::GroupMasterKey.is_in(
-                crate::users::get_identity_sigint_groups_noimport(
+                crate::messenger::group::get_identity_sigint_groups_noimport(
                     &env.dbx,
                     &user,
                     &env.config,

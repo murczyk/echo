@@ -1105,9 +1105,14 @@ pub async fn callsigns_graph(
         .select_only()
         .column_as(Expr::cust("distinct callsigns"), "callsigns")
         .column_as(Expr::col(signal_message::Entity).count(), "count")
-        .filter(datasource_group::Column::GroupMasterKey.is_in(
-            crate::users::get_identity_sigint_groups(&env.dbx, &login).await?,
-        ))
+        .filter(
+            datasource_group::Column::GroupMasterKey.is_in(
+                crate::messenger::group::get_identity_sigint_groups(
+                    &env.dbx, &login,
+                )
+                .await?,
+            ),
+        )
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
@@ -1183,9 +1188,14 @@ pub async fn callsigns_graph(
         .column_as(sigint_inbox_item::Column::Freq, "freq")
         .column_as(sigint_inbox_item::Column::Callsigns, "callsigns")
         .filter(signal_message::Column::Deleted.eq(false))
-        .filter(datasource_group::Column::GroupMasterKey.is_in(
-            crate::users::get_identity_sigint_groups(&env.dbx, &login).await?,
-        ))
+        .filter(
+            datasource_group::Column::GroupMasterKey.is_in(
+                crate::messenger::group::get_identity_sigint_groups(
+                    &env.dbx, &login,
+                )
+                .await?,
+            ),
+        )
         .join(
             JoinType::InnerJoin,
             signal_message::Relation::SigintInboxItem.def(),

@@ -42,9 +42,14 @@ pub async fn rer_analysis_download_kmz(
         .column_as(Expr::col(signal_message::Column::Body), "body")
         .column_as(Expr::col(sigint_inbox_item::Column::Lat), "lat")
         .column_as(Expr::col(sigint_inbox_item::Column::Lng), "lng")
-        .filter(datasource_group::Column::GroupMasterKey.is_in(
-            crate::users::get_identity_sigint_groups(&env.dbx, &login).await?,
-        ))
+        .filter(
+            datasource_group::Column::GroupMasterKey.is_in(
+                crate::messenger::group::get_identity_sigint_groups(
+                    &env.dbx, &login,
+                )
+                .await?,
+            ),
+        )
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))

@@ -54,9 +54,14 @@ pub async fn rer_analysis_download_geojson(
         .column_as(Expr::col(sigint_inbox_item::Column::Lng), "lng")
         .column_as(sigint_inbox_item::Column::Datetime, "datetime")
         .filter(signal_message::Column::Deleted.eq(false))
-        .filter(datasource_group::Column::GroupMasterKey.is_in(
-            crate::users::get_identity_sigint_groups(&env.dbx, &login).await?,
-        ))
+        .filter(
+            datasource_group::Column::GroupMasterKey.is_in(
+                crate::messenger::group::get_identity_sigint_groups(
+                    &env.dbx, &login,
+                )
+                .await?,
+            ),
+        )
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
         .filter(sigint_inbox_item::Column::Lat.is_not_null())

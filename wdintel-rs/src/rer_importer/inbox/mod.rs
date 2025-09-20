@@ -92,7 +92,8 @@ async fn messages_by_id(
         .context(h!())?;
 
     let sigint_groups =
-        crate::users::get_identity_sigint_groups(&env.dbx, &login).await?;
+        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
+            .await?;
     let mut messages = SignalMessage::find()
         .join(
             JoinType::InnerJoin,
@@ -188,7 +189,8 @@ async fn inbox_group_stats(
     crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
     let login = user.id()?;
     let sigint_groups =
-        crate::users::get_identity_sigint_groups(&env.dbx, &login).await?;
+        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
+            .await?;
     let one_hour_ago = Utc::now() - Duration::hours(1);
     let signal_message_timestamps = signal_message::Entity::find()
         .join(

@@ -4,11 +4,12 @@ use crate::delta::types::GeoJson;
 use crate::entities::*;
 use crate::kml::types::*;
 use crate::location::utils::*;
-use crate::messenger::group::collect_group_stats;
-use crate::rer_importer::collect_group_admin_data;
+use crate::messenger::group::collect_group_admin_data;
+use crate::messenger::group::types::SignalGroupEntry;
+use crate::messenger::group::types::*;
+use crate::messenger::group::*;
 use crate::sigint::aor::bl::collect_group_aors;
 use crate::types::*;
-use crate::users;
 use crate::users::*;
 use crate::utils::string::*;
 use crate::utils::*;
@@ -1288,9 +1289,14 @@ async fn correlated_freqs(
             JoinType::InnerJoin,
             signal_message::Relation::DatasourceGroup.def(),
         )
-        .filter(datasource_group::Column::GroupMasterKey.is_in(
-            crate::users::get_identity_sigint_groups(&env.dbx, &login).await?,
-        ))
+        .filter(
+            datasource_group::Column::GroupMasterKey.is_in(
+                crate::messenger::group::get_identity_sigint_groups(
+                    &env.dbx, &login,
+                )
+                .await?,
+            ),
+        )
         .select_only()
         .column_as(
             Expr::cust("jsonb_array_elements_text(callsigns)"),
@@ -1327,8 +1333,10 @@ async fn correlated_freqs(
             )
             .filter(
                 datasource_group::Column::GroupMasterKey.is_in(
-                    crate::users::get_identity_sigint_groups(&env.dbx, &login)
-                        .await?,
+                    crate::messenger::group::get_identity_sigint_groups(
+                        &env.dbx, &login,
+                    )
+                    .await?,
                 ),
             )
             .filter(signal_message::Column::Deleted.eq(false))
@@ -1407,9 +1415,14 @@ pub async fn edit_freq_unit_name(
         .select_only()
         .column_as(Expr::cust("signal_message.id"), "id")
         // .column_as(Expr::col(signal_message::Column::Id), "id")
-        .filter(datasource_group::Column::GroupMasterKey.is_in(
-            crate::users::get_identity_sigint_groups(&env.dbx, &login).await?,
-        ))
+        .filter(
+            datasource_group::Column::GroupMasterKey.is_in(
+                crate::messenger::group::get_identity_sigint_groups(
+                    &env.dbx, &login,
+                )
+                .await?,
+            ),
+        )
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
@@ -2047,9 +2060,10 @@ async fn post_stats(
 ) -> Result<Json<PostStatsRsp>, AppError> {
     let login = user.id()?;
     crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
-    let master_keys = users::get_identity_sigint_groups(&env.dbx, &login)
-        .await
-        .context(h!())?;
+    let master_keys =
+        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
+            .await
+            .context(h!())?;
     let posts = stats::fetch_posts(&req, &user, &env, master_keys)
         .await
         .context(h!())?;
@@ -2067,7 +2081,7 @@ async fn freq_stats(
         .await?;
 
     let master_keys =
-        crate::users::get_identity_sigint_groups(&env.dbx, &login)
+        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
             .context(h!())?;
     let freqs = stats::fetch_freqs(&req, &user, &env, master_keys)
@@ -2085,7 +2099,8 @@ async fn callsign_stats(
     crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
     let login = user.id()?;
     let master_keys =
-        users::get_identity_sigint_groups(&env.dbx, &login).await?;
+        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
+            .await?;
     let callsigns = stats::fetch_callsigns(&req, &env, master_keys)
         .await
         .context(h!())?;
@@ -2101,7 +2116,8 @@ async fn tag_stats(
     let login = user.id()?;
     crate::users::has_role(&env.dbx, &login, "Rer").await?;
     let master_keys =
-        users::get_identity_sigint_groups(&env.dbx, &login).await?;
+        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
+            .await?;
     let tags = stats::fetch_tags(&req, &env, master_keys)
         .await
         .context(h!())?;
@@ -2117,7 +2133,7 @@ async fn unit_stats(
     let login = user.id()?;
     crate::users::has_role(&env.dbx, &login, "Rer").await?;
     let master_keys =
-        crate::users::get_identity_sigint_groups(&env.dbx, &login)
+        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
             .context(h!())?;
     let units = stats::fetch_units(&req, &user, &env, master_keys)
@@ -2134,9 +2150,10 @@ async fn location_stats(
 ) -> Result<Json<LocationStatsRsp>, AppError> {
     let login = user.id()?;
     crate::users::has_role(&env.dbx, &login, "Rer").await?;
-    let master_keys = users::get_identity_sigint_groups(&env.dbx, &login)
-        .await
-        .context(h!())?;
+    let master_keys =
+        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
+            .await
+            .context(h!())?;
     let locations = fetch_locations(&user, &env, &req, master_keys).await?;
     Ok(Json(LocationStatsRsp { locations }))
 }
@@ -2165,7 +2182,7 @@ async fn aor_stats(
     let login = user.id()?;
     crate::users::has_role(&env.dbx, &login, "Rer").await?;
     let master_keys =
-        crate::users::get_identity_sigint_groups(&env.dbx, &login)
+        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
             .context(h!())?;
     let aors = stats::fetch_aors(&req, &user, &env, master_keys)
@@ -2223,7 +2240,7 @@ async fn network_stats(
     let login = user.id()?;
     crate::users::has_role(&env.dbx, &login, "Rer").await?;
     let master_keys =
-        crate::users::get_identity_sigint_groups(&env.dbx, &login)
+        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
             .context(h!())?;
     let networks = stats::fetch_networks(&req, &user, &env, master_keys)
@@ -2409,9 +2426,10 @@ async fn post_stats_count(
 ) -> Result<Json<i64>, AppError> {
     let login = user.id()?;
     crate::users::has_role(&env.dbx, &login, "Rer").await?;
-    let master_keys = users::get_identity_sigint_groups(&env.dbx, &login)
-        .await
-        .context(h!())?;
+    let master_keys =
+        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
+            .await
+            .context(h!())?;
     let posts_count = stats::count_posts(&req, &user, &env, master_keys)
         .await
         .context(h!())?;
@@ -2428,7 +2446,7 @@ async fn freq_stats_count(
     crate::users::has_any_role(&env.dbx, &login, vec!["Rer", "Api"]).await?;
 
     let master_keys =
-        crate::users::get_identity_sigint_groups(&env.dbx, &login)
+        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
             .context(h!())?;
     let freqs_count = stats::count_freqs(&req, &user, &env, master_keys)
@@ -2446,7 +2464,8 @@ async fn callsign_stats_count(
     let login = user.id()?;
     crate::users::has_role(&env.dbx, &login, "Rer").await?;
     let master_keys =
-        users::get_identity_sigint_groups(&env.dbx, &login).await?;
+        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
+            .await?;
     let callsigns_count = stats::count_callsigns(&req, &env, master_keys)
         .await
         .context(h!())?;
@@ -2462,7 +2481,8 @@ async fn tag_stats_count(
     let login = user.id()?;
     crate::users::has_role(&env.dbx, &login, "Rer").await?;
     let master_keys =
-        users::get_identity_sigint_groups(&env.dbx, &login).await?;
+        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
+            .await?;
     let tags_count = stats::count_tags(&req, &env, master_keys)
         .await
         .context(h!())?;
@@ -2478,7 +2498,7 @@ async fn unit_stats_count(
     let login = user.id()?;
     crate::users::has_role(&env.dbx, &login, "Rer").await?;
     let master_keys =
-        crate::users::get_identity_sigint_groups(&env.dbx, &login)
+        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
             .context(h!())?;
     let units_count = stats::count_units(&req, &user, &env, master_keys)
@@ -2495,9 +2515,10 @@ async fn location_stats_count(
 ) -> Result<Json<i64>, AppError> {
     let login = user.id()?;
     crate::users::has_role(&env.dbx, &login, "Rer").await?;
-    let master_keys = users::get_identity_sigint_groups(&env.dbx, &login)
-        .await
-        .context(h!())?;
+    let master_keys =
+        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
+            .await
+            .context(h!())?;
     let locations_count =
         stats::count_locations(&req, &user, &env, master_keys)
             .await
@@ -2528,7 +2549,7 @@ async fn aor_stats_count(
     let login = user.id()?;
     crate::users::has_role(&env.dbx, &login, "Rer").await?;
     let master_keys =
-        crate::users::get_identity_sigint_groups(&env.dbx, &login)
+        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
             .context(h!())?;
     let aors_count = stats::count_aors(&req, &user, &env, master_keys)
@@ -2559,7 +2580,7 @@ async fn network_stats_count(
     let login = user.id()?;
     crate::users::has_role(&env.dbx, &login, "Rer").await?;
     let master_keys =
-        crate::users::get_identity_sigint_groups(&env.dbx, &login)
+        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
             .context(h!())?;
     let networks_count = stats::count_networks(&req, &user, &env, master_keys)

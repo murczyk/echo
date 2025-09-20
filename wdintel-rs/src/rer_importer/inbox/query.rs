@@ -18,7 +18,8 @@ pub(crate) async fn build_inbox_query(
     req: &InboxMessagesReq,
 ) -> Result<Select<signal_message::Entity>, AppError> {
     let sigint_groups =
-        crate::users::get_identity_sigint_groups(&env.dbx, login).await?;
+        crate::messenger::group::get_identity_sigint_groups(&env.dbx, login)
+            .await?;
     let mut q = SignalMessage::find()
         .join(
             JoinType::LeftJoin,

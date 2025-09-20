@@ -330,6 +330,7 @@ pub async fn main_server(
             .service(crate::users::user_logout)
             .service(crate::users::settings_save)
             .service(crate::users::user_sigint_groups)
+            .service(crate::users::user_sigint_groups_detailed)
             .service(crate::users::list_logins)
             .service(crate::users::create_login)
             .service(crate::users::create_delta_login)

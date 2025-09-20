@@ -1,4 +1,4 @@
-use crate::rer_importer::types::SignalGroupStats;
+use crate::messenger::group::types::SignalGroupStats;
 use crate::sigint::aor::types::AreaOfResponsibility;
 use chrono::NaiveDateTime;
 use elm_rs::{Elm, ElmDecode, ElmEncode};

@@ -77,9 +77,11 @@ pub async fn report_docx_kind_tag(
         )
         .filter(
             datasource_group::Column::GroupMasterKey.is_in(
-                crate::users::get_identity_sigint_groups(&txn, &login)
-                    .await
-                    .context(h!())?,
+                crate::messenger::group::get_identity_sigint_groups(
+                    &txn, &login,
+                )
+                .await
+                .context(h!())?,
             ),
         )
         .filter(

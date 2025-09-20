@@ -697,13 +697,13 @@ async fn main() -> Result<(), AppError> {
             .await
         }
         Cmd::OneoffPopulateSignalMessageGroupIds => {
-            messenger::group::oneoff::oneoff_populate_signal_message_group_ids(
+            crate::messenger::group::oneoff::oneoff_populate_signal_message_group_ids(
                 mode,
             )
             .await
         }
         Cmd::OneoffFixEchoimGroups(ps) => {
-            messenger::group::oneoff::oneoff_fix_echoim_groups(
+            crate::messenger::group::oneoff::oneoff_fix_echoim_groups(
                 mode,
                 !ps.noninteractive,
             )

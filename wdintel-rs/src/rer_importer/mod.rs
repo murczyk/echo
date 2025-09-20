@@ -5,13 +5,10 @@ use crate::entities::*;
 use crate::error::AppError;
 use crate::location::peleng::reset_inbox_pelengs;
 use crate::location::utils;
-use crate::messenger::group::collect_group_stats;
-use crate::sigint::aor::bl::collect_group_aors;
 use crate::types::*;
 use actix_web::web::Json;
 use actix_web::{get, post, HttpRequest, HttpResponse};
 use chrono::prelude::*;
-use echo_migration::Alias;
 use futures_util::TryStreamExt;
 use indicatif::ProgressBar;
 use itertools::Itertools;
@@ -137,7 +134,7 @@ async fn list_messages(
         .await
         .context(h!())?;
 
-    let groups = crate::users::get_identity_sigint_groups_noimport(
+    let groups = crate::messenger::group::get_identity_sigint_groups_noimport(
         &env.dbx,
         &user,
         &env.config,
@@ -367,7 +364,7 @@ pub async fn signal_group_info_batch(
     env: actix_web::web::Data<Env>,
     req: Json<BatchSignalGroupReq>,
 ) -> Result<Json<SignalGroupsRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer")
+    crate::users::has_any_role(&env.dbx, &user.id()?, vec!["Rer", "Api"])
         .await
         .context(h!())?;
     let is_admin = crate::users::has_role(&env.dbx, &user.id()?, "Admin")
@@ -375,9 +372,10 @@ pub async fn signal_group_info_batch(
         .is_ok();
     let keys: Vec<String> =
         req.groups.iter().map(|b| b.master_key.clone()).collect();
-    let data = collect_groups(keys, &env.dbx, is_admin)
-        .await
-        .context(h!())?;
+    let data =
+        crate::messenger::group::collect_groups(keys, &env.dbx, is_admin)
+            .await
+            .context(h!())?;
     Ok(Json(SignalGroupsRsp { data }))
 }
 
@@ -622,9 +620,10 @@ pub async fn latest_senders(
         sender: String,
     }
     let txn = env.dbx.begin().await.context(h!())?;
-    let master_keys = crate::users::get_identity_sigint_groups(&txn, &login)
-        .await
-        .context(h!())?;
+    let master_keys =
+        crate::messenger::group::get_identity_sigint_groups(&txn, &login)
+            .await
+            .context(h!())?;
     let sender_uuids: Vec<String> = signal_message::Entity::find()
         .join(
             JoinType::InnerJoin,
@@ -677,119 +676,4 @@ where
         data.insert(id, m_profile);
     }
     Ok(data)
-}
-
-pub async fn collect_groups(
-    keys: Vec<String>,
-    txn: &DatabaseConnection,
-    is_admin: bool,
-) -> Result<Vec<SignalGroupEntry>, AppError> {
-    let signal_groups = signal_group::Entity::find()
-        .filter(signal_group::Column::Deleted.eq(false))
-        .filter(signal_group::Column::MasterKey.is_in(keys.clone()))
-        .all(txn)
-        .await
-        .context(h!())?;
-    let group_stats =
-        collect_group_stats(keys.clone(), txn).await.context(h!())?;
-
-    let group_aors = if is_admin {
-        collect_group_aors(keys.clone(), txn).await.context(h!())?
-    } else {
-        BTreeMap::new()
-    };
-
-    let group_admin_data = if is_admin {
-        collect_group_admin_data(keys, txn).await.context(h!())?
-    } else {
-        BTreeMap::new()
-    };
-
-    let data: Vec<SignalGroupEntry> = signal_groups
-        .iter()
-        .filter_map(|g| {
-            let stats = group_stats
-                .get(g.master_key.as_str())
-                .cloned()
-                .unwrap_or_default();
-            let aors = group_aors.get(g.master_key.as_str()).cloned();
-            let group_admin_data =
-                group_admin_data.get(g.master_key.as_str()).cloned();
-            g.name.clone().map(|name| SignalGroupEntry {
-                name,
-                master_key: g.master_key.clone(),
-                ignore_operativny: g.ignore_operativny,
-                group_stats: stats,
-                admin_data: group_admin_data,
-                areas_of_responsibility: aors,
-            })
-        })
-        .collect();
-    Ok(data)
-}
-
-pub async fn collect_group_admin_data<'a, 'async_trait, C>(
-    keys: Vec<String>,
-    txn: &'a C,
-) -> Result<BTreeMap<String, GroupAdminData>, AppError>
-where
-    C: ConnectionTrait + 'async_trait,
-{
-    let result = group_admin_data::Entity::find()
-        .filter(group_admin_data::Column::GroupMasterKey.is_in(keys.clone()))
-        .all(txn)
-        .await
-        .context(h!())?
-        .into_iter()
-        .map(|g| {
-            (
-                g.group_master_key.clone(),
-                GroupAdminData {
-                    short_note: g.short_note,
-                    long_note: g.long_note,
-                },
-            )
-        })
-        .flat_map(|(m_id, data)| m_id.map(|m_id| (m_id, data)))
-        .collect::<BTreeMap<String, GroupAdminData>>();
-    Ok(result)
-}
-
-pub async fn count_group_messages<'a, 'async_trait, C>(
-    keys: Vec<String>,
-    txn: &'a C,
-    num_days: i64,
-) -> Result<BTreeMap<String, i64>, AppError>
-where
-    C: ConnectionTrait + 'async_trait,
-{
-    let cutoff = Utc::now().naive_utc() - chrono::Duration::days(num_days);
-    let signal_message_counts = signal_message::Entity::find()
-        .join(
-            JoinType::InnerJoin,
-            signal_message::Relation::DatasourceGroup.def(),
-        )
-        .join(
-            JoinType::InnerJoin,
-            signal_message::Relation::SigintInboxItem.def(),
-        )
-        .join_as(
-            JoinType::LeftJoin,
-            datasource_group::Relation::SignalGroup.def(),
-            Alias::new("signal_group"),
-        )
-        .select_only()
-        .column(datasource_group::Column::GroupMasterKey)
-        .column_as(Expr::cust("count(*)"), "count")
-        .group_by(Expr::cust("group_master_key"))
-        .filter(signal_group::Column::Deleted.eq(false))
-        .filter(signal_group::Column::MasterKey.is_in(keys))
-        .filter(signal_message::Column::Timestamp.gte(cutoff))
-        .into_tuple::<(String, i64)>()
-        .all(txn)
-        .await
-        .context(h!())?
-        .into_iter()
-        .collect();
-    Ok(signal_message_counts)
 }

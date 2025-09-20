@@ -114,7 +114,7 @@ async fn get_inbox_messages_report(
         .group_by(sigint_important::Column::SignalMessageId)
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(datasource_group::Column::GroupMasterKey.is_in(
-            crate::users::get_identity_sigint_groups(&env.dbx, &login).await?,
+            crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login).await?,
         ));
 
     if req.report_tags_only_this_unit == Some(true) {

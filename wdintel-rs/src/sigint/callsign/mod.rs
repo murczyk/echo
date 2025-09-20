@@ -253,7 +253,8 @@ pub async fn get_callsigns_with_units_from_inbox(
     );
 
     let groups =
-        crate::users::get_identity_sigint_groups(&env.dbx, &login).await?;
+        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
+            .await?;
     let callsigns_array: Vec<String> =
         sanitizied_callsigns.iter().cloned().collect();
 

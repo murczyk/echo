@@ -5,6 +5,7 @@ use crate::entities::sea_orm_active_enums::AccountStatus;
 use crate::entities::*;
 use crate::error::ContextAndError;
 use crate::messenger::group::collect_group_stats;
+use crate::messenger::group::types::SignalGroupStats;
 use crate::messenger::types::{EchoAccountF1, GroupUpdateReq};
 use crate::sigint::aor::{load_default_aor, render_aor};
 use crate::types::AppError;
@@ -519,7 +520,7 @@ pub async fn upsert_group_area_of_responsibility(
 pub struct BlGroupUpdateRes {
     pub group: signal_group::Model,
     pub group_data: group_admin_data::Model,
-    pub stats: crate::rer_importer::types::SignalGroupStats,
+    pub stats: SignalGroupStats,
     pub aors: Vec<Model>,
 }
 

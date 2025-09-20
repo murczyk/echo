@@ -1,5 +1,5 @@
 use crate::location::SettlementDetails;
-use crate::sigint::aor::types::AreaOfResponsibility;
+use crate::messenger::group::types::SignalGroupEntry;
 use chrono::NaiveDateTime;
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 use sea_orm::FromQueryResult;
@@ -360,50 +360,6 @@ pub struct SignalGroupRsp {
 )]
 pub struct SignalGroupsRsp {
     pub data: Vec<SignalGroupEntry>,
-}
-
-#[derive(
-    Debug, Serialize, Deserialize, Elm, ElmEncode, ElmDecode, PartialEq, Clone,
-)]
-pub struct SignalGroupEntry {
-    pub master_key: String,
-    pub name: String,
-    pub ignore_operativny: bool,
-    pub group_stats: SignalGroupStats,
-    pub admin_data: Option<GroupAdminData>,
-    pub areas_of_responsibility: Option<Vec<AreaOfResponsibility>>,
-}
-
-#[derive(
-    Elm,
-    ElmEncode,
-    ElmDecode,
-    Debug,
-    Serialize,
-    Deserialize,
-    PartialEq,
-    Clone,
-    Default,
-)]
-pub struct SignalGroupStats {
-    pub activity_last_day: i64,
-    pub activity_last_week: i64,
-}
-
-#[derive(
-    Elm,
-    ElmEncode,
-    ElmDecode,
-    Debug,
-    Serialize,
-    Deserialize,
-    PartialEq,
-    Clone,
-    Default,
-)]
-pub struct GroupAdminData {
-    pub short_note: Option<String>,
-    pub long_note: Option<String>,
 }
 
 #[derive(

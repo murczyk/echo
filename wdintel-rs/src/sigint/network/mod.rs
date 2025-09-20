@@ -634,7 +634,7 @@ pub async fn network_callsigns(
         .await
         .context(h!())?;
 
-    let groups = crate::users::get_identity_sigint_groups_noimport(
+    let groups = crate::messenger::group::get_identity_sigint_groups_noimport(
         &env.dbx,
         &user,
         &env.config,
@@ -880,7 +880,7 @@ pub async fn network_freqs_activity_one(
         .await
         .context(h!())?;
 
-    let groups = crate::users::get_identity_sigint_groups_noimport(
+    let groups = crate::messenger::group::get_identity_sigint_groups_noimport(
         &env.dbx,
         &user,
         &env.config,
@@ -1020,7 +1020,7 @@ pub async fn list_network_points(
         till_date_inclusive_ms: req.till_date_noninclusive_ms,
     };
 
-    let groups = crate::users::get_identity_sigint_groups_noimport(
+    let groups = crate::messenger::group::get_identity_sigint_groups_noimport(
         &env.dbx,
         &user,
         &env.config,
@@ -1813,7 +1813,7 @@ pub async fn network_callsigns_list(
     let _network =
         find_network(&env.dbx, req.network_id).await.context(h!())?;
 
-    let groups = crate::users::get_identity_sigint_groups_noimport(
+    let groups = crate::messenger::group::get_identity_sigint_groups_noimport(
         &env.dbx,
         &user,
         &env.config,
@@ -1866,7 +1866,7 @@ pub async fn network_freqs_list(
     let _network =
         find_network(&env.dbx, req.network_id).await.context(h!())?;
 
-    let groups = crate::users::get_identity_sigint_groups_noimport(
+    let groups = crate::messenger::group::get_identity_sigint_groups_noimport(
         &env.dbx,
         &user,
         &env.config,

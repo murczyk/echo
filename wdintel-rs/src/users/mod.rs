@@ -3,8 +3,8 @@ use crate::config::*;
 use crate::entities::sea_orm_active_enums::DeactivationReasonEnum;
 use crate::entities::*;
 use crate::error::AppError;
-use crate::organism::bl::*;
-use crate::organism::types::OrganismGroups;
+use crate::messenger::group::get_identity_sigint_groups;
+use crate::messenger::group::types::SignalGroupEntryF2;
 use crate::session::{record_new_session, record_page_visit};
 use crate::types::*;
 use actix_identity::Identity;
@@ -720,6 +720,43 @@ pub async fn user_sigint_groups(
     Ok(Json(res))
 }
 
+#[post("/api/user/sigint-groups-detailed")]
+pub async fn user_sigint_groups_detailed(
+    env: actix_web::web::Data<Env>,
+    req: Json<SigintGroupsReq>,
+    user: Identity,
+) -> Result<Json<Vec<SignalGroupEntryF2>>, AppError> {
+    // let res = get_identity_sigint_groups_since(&env.dbx, &user, req.since_date_inclusive_ms).await.context(h!())?;
+    let login = user.id()?;
+    has_any_role(&env.dbx, &login, vec!["Rer", "Admin"])
+        .await
+        .context(h!())?;
+    let mut keys = get_identity_sigint_groups(&env.dbx, &login)
+        .await
+        .context(h!())?;
+    if let Some(since_ts) = &req.since_date_inclusive_ms {
+        let ts = crate::utils::dt_from_millis(*since_ts).context(h!())?;
+        keys = signal_message::Entity::find()
+            .join(
+                JoinType::InnerJoin,
+                signal_message::Relation::DatasourceGroup.def(),
+            )
+            .select_only()
+            .column(datasource_group::Column::GroupMasterKey)
+            .filter(signal_message::Column::Timestamp.gt(ts))
+            .filter(datasource_group::Column::GroupMasterKey.is_in(keys))
+            .group_by(datasource_group::Column::GroupMasterKey)
+            .into_tuple::<String>()
+            .all(&env.dbx)
+            .await
+            .context(h!())?;
+    }
+    let groups = crate::messenger::group::collect_groups_f2(keys, &env.dbx)
+        .await
+        .context(h!())?;
+    Ok(Json(groups))
+}
+
 // THIS FAILED BADLY. Soledar user was seeing Donetsk groups in Operatyvnyi
 
 // pub async fn get_identity_sigint_groups_since<'a, 'async_trait, C>(
@@ -790,102 +827,6 @@ pub async fn user_sigint_groups(
 //         .into_iter()
 //         .collect())
 // }
-
-pub async fn get_identity_sigint_groups<'a, 'async_trait, C>(
-    txn: &'a C,
-    login: &str,
-) -> Result<Vec<String>, AppError>
-where
-    C: ConnectionTrait + 'async_trait,
-{
-    let login_obj = login::Entity::find()
-        .filter(login::Column::Login.eq(login))
-        .filter(login::Column::DeletedPermanently.eq(false))
-        .one(txn)
-        .await
-        .context(h!())?
-        .context(h!())?;
-    let zone_id: i64 = login_obj
-        .sigint_zone_id
-        .context(h!())
-        .context(format!("Zone must be set for user: {login}"))?;
-    let organism_id: i64 = login_obj
-        .organism_id
-        .context(h!())
-        .context(format!("Organism must be set for user: {login}"))?;
-
-    let organism_groups: OrganismGroups =
-        load_organism_group_ids(txn, organism_id)
-            .await
-            .context(h!())?;
-    let group_query = signal_group::Entity::find()
-        .filter(signal_group::Column::Deleted.eq(false))
-        .filter(
-            signal_group::Column::MasterKey
-                .is_in(organism_groups.available_keys),
-        )
-        .filter(
-            Expr::col((signal_group::Entity, signal_group::Column::MasterKey))
-                .equals((
-                    sigint_zone_datasource::Entity,
-                    sigint_zone_datasource::Column::GroupMasterKey,
-                )),
-        )
-        .join(
-            JoinType::InnerJoin,
-            signal_group::Relation::DatasourceGroup.def(),
-        )
-        .join(
-            JoinType::InnerJoin,
-            datasource_group::Relation::Datasource.def(),
-        )
-        .join(
-            JoinType::InnerJoin,
-            datasource::Relation::SigintZoneDatasource.def(),
-        )
-        .filter(sigint_zone_datasource::Column::SigintZoneId.eq(zone_id));
-    let organism_groups_obj =
-        crate::sigint::zone::filter_out_ineligible_secret_chats(
-            group_query,
-            login,
-        )
-        .all(txn)
-        .await
-        .context(h!())?
-        .into_iter()
-        .map(|og| og.master_key)
-        .collect();
-
-    Ok(organism_groups_obj)
-}
-
-/// Gets group keys similar to get_identity_sigint_groups but without the import group id
-pub async fn get_identity_sigint_groups_noimport(
-    dbx: &sea_orm::DatabaseConnection,
-    user: &actix_identity::Identity,
-    _config: &crate::config::Config,
-) -> Result<Vec<String>, AppError> {
-    let login = user.id()?;
-    let master_keys = get_identity_sigint_groups(dbx, &login)
-        .await
-        .context(h!())?;
-    // let mut master_keys = get_identity_sigint_groups(dbx, user).await.context(h!())?;
-    // if let Some(import_group) = signal_group::Entity::find()
-    //     .filter(
-    //         signal_group::Column::Name
-    //             .eq(config.signal_import_group_name.clone()),
-    //     )
-    //     .one(dbx)
-    //     .await.context(h!())?
-    // {
-    //     master_keys = master_keys
-    //         .clone()
-    //         .into_iter()
-    //         .filter(|key| key != &import_group.master_key)
-    //         .collect::<Vec<_>>();
-    // }
-    Ok(master_keys)
-}
 
 pub async fn oneoff_register_user(
     mode: Mode,

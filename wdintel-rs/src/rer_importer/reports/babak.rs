@@ -602,7 +602,7 @@ pub async fn get_inbox_messages_report_unit(
             .add(sigint_unit::Column::Deleted.is_null())
         )
         .filter(datasource_group::Column::GroupMasterKey.is_in(
-            crate::users::get_identity_sigint_groups(&env.dbx, &login).await?,
+            crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login).await?,
         ));
 
     if !req.or_with_extended_form.unwrap_or(false) {

@@ -148,9 +148,10 @@ pub async fn oneoff_network_activity_stat(
         NaiveDateTime::parse_from_str(&ps.end, "%Y-%m-%dT%H:%M:%S")?;
 
     let dbx = crate::new_pg_pool_from_mode(mode).await.context(h!())?;
-    let groups = crate::users::get_identity_sigint_groups(&dbx, &ps.login)
-        .await
-        .context(h!())?;
+    let groups =
+        crate::messenger::group::get_identity_sigint_groups(&dbx, &ps.login)
+            .await
+            .context(h!())?;
 
     let freqs_count =
         bl_get_network_active_freqs_count(&dbx, &groups, start_dt, end_dt)

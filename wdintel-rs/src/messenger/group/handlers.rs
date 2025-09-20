@@ -1,7 +1,6 @@
 use super::types::*;
 use crate::entities::*;
-use crate::messenger::group::collect_group_stats;
-use crate::rer_importer::collect_group_admin_data;
+use crate::messenger::group::{collect_group_admin_data, collect_group_stats};
 use crate::sigint::aor::bl::collect_group_aors;
 use crate::types::*;
 use actix_web::post;
