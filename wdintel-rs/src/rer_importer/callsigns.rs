@@ -381,7 +381,7 @@ fn add_callsign(
         return false;
     };
     let callsign = callsign.to_lowercase();
-    if (callsign == "й") || callsign == "нв" {
+    if callsign == "й" || callsign == "нв" || callsign == "укх" {
         return false;
     }
     if !callsign.chars().any(|c| c.is_alphabetic())
@@ -812,9 +812,16 @@ fn extract_avia_callsigns(input: &str) -> Result<Vec<CNCallsign>, AppError> {
         .sum::<usize>()
         + 1;
 
+    let mut lines = lines
+        .iter()
+        .skip(skip_lines)
+        .cloned()
+        .collect::<Vec<String>>();
+    lines.truncate(crate::config::CALLSIGNS_MAX_LINES);
+
     const LITERAL_CALLSIGN_STR: &str =
         r"[\p{Cyrillic}]+((-[\p{Cyrillic}]+)|(\s+\d{1,2}))?";
-    const DIGITAL_CALLSIGN_STR: &str = r"(\d{1,3}[\s-]?[Йй])|(\d{5})";
+    const DIGITAL_CALLSIGN_STR: &str = r"(\d{1,3}[\s-]?[Йй])|(\d{4,5})";
 
     lazy_static! {
         // Regex for matching a single callsign
@@ -847,7 +854,7 @@ fn is_avia_format(lines: &Vec<String>) -> Result<bool, AppError> {
     // 🟠 УКХ р/м НВ підрозділу 128.900 МГц
     lazy_static! {
         static ref RE_POST: Regex = Regex::new(
-            r#"^\s*Отримано з поста\s+[\p{Cyrillic}0-9A-Z-_"]+\s*$"#
+            r#"^\s*Отримано з поста\s+[\p{Cyrillic}0-9A-Z-_/"]+\s*$"#
         )
         .unwrap();
         static ref RE_SEPARATOR: Regex =
@@ -858,7 +865,7 @@ fn is_avia_format(lines: &Vec<String>) -> Result<bool, AppError> {
         static ref RE_FREQ: Regex =
             Regex::new(r"^\s*\d{3}.\d{3,4}\s*$").unwrap();
         static ref RE_NETWORK: Regex =
-            Regex::new(r"^\s*(🟠|🔴|🔷|🟡)?\s*(УКХ р/м .*)\s*$").unwrap();
+            Regex::new(r"^(🟠|🔴|🔷|🟡)|(\s*УКХ р/м).*$").unwrap();
     }
 
     if lines.len() < 8 {
@@ -1336,7 +1343,7 @@ mod tests {
 УКХ радіомережа управління 1-й мсб 38 омсбр 35А (УКРАЇНСЬКЕ, ЗАГІРНЕ, КОСТЯНТИНІВКА)
 "узнай,  ему довели информацию что документы его у Иваныча должны быть ?""#;
         let res = find_known_callsigns(&rq, body).await.unwrap();
-        let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+        let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
         assert!(!ress.contains(&"1-й".to_string()))
     }
 
@@ -1353,7 +1360,7 @@ mod tests {
 1. ну да
 2. принял""#;
         let res = find_known_callsigns(&rq, body).await.unwrap();
-        let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+        let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
         assert_eq!(ress, vec!["1-Й"])
     }
 
@@ -1376,7 +1383,7 @@ mod tests {
 1. да принял."
 ""#;
         let res = find_known_callsigns(&rq, body).await.unwrap();
-        let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+        let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
         assert_eq!(
             crate::utils::uniq_via_btreeset(&ress)
                 .into_iter()
@@ -1401,7 +1408,7 @@ mod tests {
 (💥 Обстріл/планування обстрілу противником
 )"#;
         let res = find_known_callsigns(&rq, body).await.unwrap();
-        let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+        let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
         assert_eq!(
             crate::utils::uniq_via_btreeset(&ress)
                 .into_iter()
@@ -1424,7 +1431,7 @@ mod tests {
 —4-й принял.
 — Вот так , да?"#;
         let res = find_known_callsigns(&rq, body).await.unwrap();
-        let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+        let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
         assert_eq!(
             crate::utils::uniq_via_btreeset(&ress)
                 .into_iter()
@@ -1448,7 +1455,7 @@ mod tests {
 2— А я его еле-еле, как слышу.
 2— Понятно, сейчас прошу."#;
         let res = find_known_callsigns(&rq, body).await.unwrap();
-        let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+        let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
         assert_eq!(
             crate::utils::uniq_via_btreeset(&ress)
                 .into_iter()
@@ -1473,7 +1480,7 @@ mod tests {
 1) Ангар, все работает?
 2 ..... по светлому его отставлю....потом тут до утра....."#;
         let res = find_known_callsigns(&rq, body).await.unwrap();
-        let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+        let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
         assert_eq!(
             crate::utils::uniq_via_btreeset(&ress)
                 .into_iter()
@@ -1500,7 +1507,7 @@ mod tests {
 — Я Крона проверку маршрута совершил. Прием.
 — Глава 07, я Крона не прошло."#;
         let res = find_known_callsigns(&rq, body).await.unwrap();
-        let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+        let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
         assert_eq!(
             crate::utils::uniq_via_btreeset(&ress)
                 .into_iter()
@@ -1521,7 +1528,7 @@ mod tests {
 - Тридцать пятый, принял.
 - Киндер заканчивает готовить 35-й"#;
         let res = find_known_callsigns(&rq, body).await.unwrap();
-        let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+        let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
         assert_eq!(
             crate::utils::uniq_via_btreeset(&ress)
                 .into_iter()
@@ -1541,7 +1548,7 @@ mod tests {
 1-Волна, Волна, Демону, коробочка дома.
 2-Принял тебя, Демон."#;
         let res = find_known_callsigns(&rq, body).await.unwrap();
-        let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+        let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
         assert_eq!(
             crate::utils::uniq_via_btreeset(&ress)
                 .into_iter()
@@ -1562,7 +1569,7 @@ mod tests {
 - Выйди на Каплю, скажи что бы в готовности были.
 - Тридцать пятый, принял."#;
         let res = find_known_callsigns(&rq, body).await.unwrap();
-        let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+        let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
         assert_eq!(
             crate::utils::uniq_via_btreeset(&ress)
                 .into_iter()
@@ -1584,7 +1591,7 @@ mod tests {
 — Волна 6, Волна 8, я Волна 7.
 — ... уберите, сейчас через две минуты."#;
         let res = find_known_callsigns(&rq, body).await.unwrap();
-        let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+        let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
         assert_eq!(
             crate::utils::uniq_via_btreeset(&ress)
                 .into_iter()
@@ -1605,7 +1612,7 @@ mod tests {
 2. Ёж 22, по небу пока 10
 1. Курск, да, принял"#;
         let res = find_known_callsigns(&rq, body).await.unwrap();
-        let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+        let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
         assert_eq!(
             crate::utils::uniq_via_btreeset(&ress)
                 .into_iter()
@@ -1636,7 +1643,7 @@ mod tests {
 1. Студент я Коба прием
 1. все братишка одна малая и движем"#;
         let res = find_known_callsigns(&rq, body).await.unwrap();
-        let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+        let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
         assert_eq!(
             crate::utils::uniq_via_btreeset(&ress)
                 .into_iter()
@@ -1659,7 +1666,7 @@ mod tests {
 2. Орёл 22, принял
 3. ГСМ 22"#;
         let res = find_known_callsigns(&rq, body).await.unwrap();
-        let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+        let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
         assert_eq!(
             crate::utils::uniq_via_btreeset(&ress)
                 .into_iter()
@@ -1681,7 +1688,7 @@ mod tests {
 — Я Пляж 409 с запада на восток, по северам.
 — Закуп я Ива 4 зимут выхода 280, 290 120й ..."#;
         let res = find_known_callsigns(&rq, body).await.unwrap();
-        let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+        let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
         assert_eq!(
             crate::utils::uniq_via_btreeset(&ress)
                 .into_iter()
@@ -1705,7 +1712,7 @@ mod tests {
 — Гусар, Гусар, я Дуб 3. Проверка связи. Как меня слышно?
 — Гусар, Гусар, я Дуб 3. Как меня слышишь? Прием."#;
         let res = find_known_callsigns(&rq, body).await.unwrap();
-        let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+        let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
         assert_eq!(
             crate::utils::uniq_via_btreeset(&ress)
                 .into_iter()
@@ -1758,7 +1765,7 @@ mod tests {
 - Принял, пусть сразу.."
 ""#;
         let res = extract_kazhanchik_callsigns(body).unwrap();
-        let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+        let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
         assert_eq!(ress, vec!["КУБАНЬ", "КАЗАНЬ"])
     }
 
@@ -1771,7 +1778,7 @@ mod tests {
 "- Кто стрелял ??//Я на посту Артик позивний 33 било розрешение взяли пострелять сегодня постреляли успокоилися что за паника если конкретно нада кто стрелял значит можна узнать и поговорить""#;
         let res = extract_kazhanchik_callsigns(body).unwrap();
         let expected: Vec<String> = vec![];
-        let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+        let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
         assert_eq!(ress, expected)
     }
 
@@ -1783,7 +1790,7 @@ mod tests {
 АМПЕР (НВ)
 "1.- АМПЕР АМПЕР - прогревайся подьезжай к СЕРОМУ КИРПИЧУ буем загружать""#;
         let res = extract_kazhanchik_callsigns(body).unwrap();
-        let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+        let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
         assert_eq!(ress, vec!["КИРПИЧ", "АМПЕР"])
     }
 
@@ -1796,7 +1803,7 @@ mod tests {
 "- (1) Колак11 стакан полный "
 "#;
         let res = extract_kazhanchik_callsigns(body).unwrap();
-        let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+        let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
         assert_eq!(ress, vec!["КОЛАК11"])
     }
 
@@ -1808,7 +1815,7 @@ mod tests {
 "#;
         let res = extract_kazhanchik_callsigns(body).unwrap();
         let expected: Vec<String> = vec![];
-        let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+        let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
         assert_eq!(ress, expected)
     }
 
@@ -1826,7 +1833,7 @@ mod tests {
         let res = extract_kazhanchik_callsigns(body).unwrap();
         let expected: Vec<String> =
             vec!["МАЛЫШ".to_string(), "КАСПЕР".to_string()];
-        let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+        let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
         assert_eq!(ress, expected)
     }
 
@@ -1856,7 +1863,7 @@ mod tests {
             "АЗОВ".to_string(),
             "АЙРОН".to_string(),
         ];
-        let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+        let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
         assert_eq!(ress, expected)
     }
 
@@ -1884,7 +1891,7 @@ mod tests {
             "СУХОЙ".to_string(),
             "ЗВЕЗДА".to_string(),
         ];
-        let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+        let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
         assert_eq!(ress, expected)
     }
 
@@ -1902,7 +1909,7 @@ mod tests {
         let res = extract_kazhanchik_callsigns(body).unwrap();
         let expected: Vec<String> =
             vec!["ИРТЫШ 2".to_string(), "ЗОРЯ 2".to_string()];
-        let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+        let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
         assert_eq!(ress, expected)
     }
     #[test]
@@ -1938,6 +1945,26 @@ mod tests {
         assert_eq!(ress2, expected2);
     }
 
+    #[tokio::test]
+    async fn extract_callsigns_kazhanchik_exclude_uhw() {
+        let rq = reqwest::Client::new();
+        let body = r#"19-09 01:14:12
+145.915
+УКХ
+ЧАО
+МОЗДОК
+
+– Продолжает работать вражеский миномет с азимута 240.
+
+Коментар: T2"#;
+        let res = find_known_callsigns(&rq, body).await.unwrap();
+        let expected: Vec<String> =
+            vec!["ЧАО".to_string(), "МОЗДОК".to_string()];
+        let ress: Vec<String> =
+            res.into_iter().take(2).map(|x| x.text).collect();
+        assert_eq!(ress, expected);
+    }
+
     #[test]
     fn extract_callsigns_buran_01() {
         let body = r#"Дата: 2024-02-21;
@@ -1956,7 +1983,7 @@ mod tests {
         let res = extract_buran_callsigns(body).unwrap();
         let expected: Vec<String> =
             vec!["Змей".to_string(), "Чёрный".to_string()];
-        let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+        let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
         assert_eq!(ress, expected)
     }
 
@@ -1977,7 +2004,7 @@ mod tests {
         let res = extract_buran_callsigns(body).unwrap();
         let expected: Vec<String> =
             vec!["АМИГА".to_string(), "ТИХИЙ".to_string()];
-        let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+        let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
         assert_eq!(ress, expected)
     }
 
@@ -2007,7 +2034,7 @@ mod tests {
             "ВЕТЕР -4".to_string(),
             "712-Й".to_string(),
         ];
-        let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+        let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
         assert_eq!(ress, expected)
     }
 
@@ -2031,7 +2058,7 @@ mod tests {
             "ТИХИЙ".to_string(),
             "ГРОМКИЙ".to_string(),
         ];
-        let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+        let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
         assert_eq!(ress, expected)
     }
 
@@ -2054,7 +2081,7 @@ mod tests {
         let res = extract_kazhanchik_callsigns(body).unwrap();
         let expected: Vec<String> =
             vec!["ГЛАДИАТОР".to_string(), "РОЩА".to_string()];
-        let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+        let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
         assert_eq!(ress, expected)
     }
 
@@ -2088,7 +2115,7 @@ mod tests {
     // НВ (НВ)
     // "1. наблюдаю звьоздачку на вастоке но не над нами а висако очень  такая светица далеко далеко, летит в сторану как би  Белагорье туда на север"""#;
     //         let res = find_known_callsigns(&dbx, &rq, body).await.unwrap();
-    //         let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+    //         let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
     //         assert_eq!(ress, vec!["север"]);
     //         assert_eq!(
     //             res,
@@ -2252,7 +2279,7 @@ mod tests {
 "#;
         let res = extract_kazhanchik_callsigns(body).unwrap();
         let expected: Vec<String> = vec!["ЗАЯЦ".to_string()];
-        let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+        let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
         assert_eq!(ress, expected);
     }
 
@@ -2279,7 +2306,7 @@ mod tests {
         let res = extract_kazhanchik_callsigns(body).unwrap();
         let expected: Vec<String> =
             vec!["БЕЛКА".to_string(), "ДЮШЕС".to_string()];
-        let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+        let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
         assert_eq!(ress, expected);
     }
 
@@ -2300,7 +2327,7 @@ mod tests {
             "КУБА".to_string(),
             "ИМАН".to_string(),
         ];
-        let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+        let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
         assert_eq!(ress, expected);
     }
 
@@ -2324,7 +2351,7 @@ mod tests {
             "ТРАМВАЙ".to_string(),
             "САМОРЕЗ".to_string(),
         ];
-        let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+        let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
         assert_eq!(ress, expected);
     }
 
@@ -2341,7 +2368,7 @@ mod tests {
         let res = extract_kazhanchik_callsigns(body).unwrap();
         let expected: Vec<String> =
             vec!["РУБИН".to_string(), "КУПОЛ-6".to_string()];
-        let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+        let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
         assert_eq!(ress, expected);
     }
 
@@ -2360,7 +2387,7 @@ mod tests {
         let res = extract_callsigns(body).unwrap();
         let expected: Vec<String> =
             vec!["РУБИН".to_string(), "КУПОЛ-6".to_string()];
-        let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+        let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
         assert_eq!(ress, expected);
     }
 
@@ -2377,7 +2404,7 @@ mod tests {
         let res = extract_kharkiv_callsigns(body).unwrap();
         let expected: Vec<String> =
             vec!["ПАТРИОТ".to_string(), "ГЮРЗА".to_string()];
-        let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+        let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
         assert_eq!(ress, expected);
     }
 
@@ -2389,7 +2416,7 @@ mod tests {
         let res = extract_kharkiv_callsigns(body).unwrap();
         let expected: Vec<String> =
             vec!["БАТЯ".to_string(), "СУББОТА".to_string(), "ГАЛ".to_string()];
-        let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+        let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
         assert_eq!(ress, expected);
     }
 
@@ -2402,7 +2429,7 @@ mod tests {
 (3)"#;
         let res = extract_kharkiv_callsigns(body).unwrap();
         let expected: Vec<String> = vec!["7-Й".to_string(), "УРАЛ".to_string()];
-        let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+        let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
         assert_eq!(ress, expected);
     }
 
@@ -2415,7 +2442,7 @@ mod tests {
 СТАРЫЙ
 1. Так, Монах, Монах, я старый, просто ответь, всё, принял, смотри, щас пойдёт наш карандашик, позывной Череп, он мимо тебя пройдёт, мимо тебя, не надо его баранить, там, кричать ему привет, просто мимо тебя пройдёт, как меня принял?"#;
         let res = find_known_callsigns(&rq, body).await.unwrap();
-        let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+        let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
         assert_eq!(
             ress.into_iter().take(2).collect::<Vec<String>>(),
             vec!["МОНАХ", "СТАРЫЙ"]
@@ -2440,7 +2467,7 @@ mod tests {
 "#;
         let res = extract_non_caps_callsigns(body).unwrap();
         let expected: Vec<String> = vec!["Гранит".to_string()];
-        let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+        let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
         assert_eq!(ress, expected);
     }
 
@@ -2460,7 +2487,7 @@ mod tests {
         let res = extract_non_caps_callsigns(body).unwrap();
         let expected: Vec<String> =
             vec!["Барс".to_string(), "Борец".to_string()];
-        let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+        let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
         assert_eq!(ress, expected);
     }
 
@@ -2483,7 +2510,7 @@ mod tests {
         let res = extract_sender_receiver_pair(body).unwrap();
         let expected: Vec<String> =
             vec!["БАРС".to_string(), "БОРЕЦ".to_string()];
-        let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+        let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
         assert_eq!(ress, expected);
     }
 
@@ -2506,7 +2533,7 @@ mod tests {
         let res = extract_sender_receiver_pair(body).unwrap();
         let expected: Vec<String> =
             vec!["БАРС".to_string(), "БОРЕЦ".to_string()];
-        let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+        let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
         assert_eq!(ress, expected);
     }
 
@@ -2526,7 +2553,7 @@ mod tests {
         let res = extract_callsigns(body).unwrap();
         let expected: Vec<String> =
             vec!["Хитмен".to_string(), "Сибирь".to_string()];
-        let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+        let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
         assert_eq!(ress, expected);
     }
 
@@ -2549,7 +2576,7 @@ mod tests {
             "Псих".to_string(),
             "Люстра".to_string(),
         ];
-        let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+        let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
         assert_eq!(ress, expected);
     }
 
@@ -2572,7 +2599,7 @@ mod tests {
             "Псих".to_string(),
             "1234".to_string(),
         ];
-        let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+        let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
         assert_eq!(ress, expected);
     }
 
@@ -2591,7 +2618,7 @@ mod tests {
         let res = extract_sender_receiver_pair(body).unwrap();
         let expected: Vec<String> =
             vec!["Тор".to_string(), "Топаз".to_string(), "Тору".to_string()];
-        let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+        let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
         assert_eq!(ress, expected);
     }
 
@@ -2618,7 +2645,7 @@ mod tests {
             "Картон".to_string(),
             "Коробка".to_string(),
         ];
-        let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+        let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
         assert_eq!(ress, expected);
     }
 }
@@ -2637,7 +2664,7 @@ async fn test_extract_callsigns_avia_format_no_caps_5_digits() {
     let res = extract_avia_callsigns(body).unwrap();
     let expected: Vec<String> =
         vec!["44307".to_string(), "Саксофон".to_string()];
-    let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+    let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
     assert_eq!(ress, expected);
 }
 
@@ -2655,7 +2682,7 @@ async fn test_extract_callsigns_avia_format_nv() {
 — Э, условия принял. Посадочный  2 7 0."#;
     let res = extract_avia_callsigns(body).unwrap();
     let expected: Vec<String> = vec![];
-    let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+    let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
     assert_eq!(ress, expected);
 }
 
@@ -2672,7 +2699,7 @@ async fn test_extract_callsigns_avia_format_3_digits() {
 - с вами контрольная эш 245"#;
     let res = extract_avia_callsigns(body).unwrap();
     let expected: Vec<String> = vec!["669-й".to_string(), "16Й".to_string()];
-    let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+    let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
     assert_eq!(ress, expected);
 }
 
@@ -2690,7 +2717,7 @@ async fn test_extract_callsigns_avia_format_5_digits_caps() {
     let res = extract_avia_callsigns(body).unwrap();
     let expected: Vec<String> =
         vec!["46131".to_string(), "САКСОФОН".to_string()];
-    let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+    let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
     assert_eq!(ress, expected);
 }
 
@@ -2708,7 +2735,7 @@ async fn test_extract_callsigns_avia_format_callsign_with_digit() {
     let res = extract_avia_callsigns(body).unwrap();
     let expected: Vec<String> =
         vec!["16-Й".to_string(), "КОРШУН 4".to_string()];
-    let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+    let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
     assert_eq!(ress, expected);
 }
 
@@ -2726,7 +2753,7 @@ async fn test_extract_callsigns_avia_format_callsign_with_defis() {
     let res = extract_avia_callsigns(body).unwrap();
     let expected: Vec<String> =
         vec!["321Й".to_string(), "Саксофон-контроль".to_string()];
-    let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+    let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
     assert_eq!(ress, expected);
 }
 
@@ -2742,7 +2769,7 @@ async fn test_extract_callsigns_avia_format_no_post_line() {
 — С Ворсовко отработал не возражает проход"#;
     let res = extract_avia_callsigns(body).unwrap();
     let expected: Vec<String> = vec![];
-    let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+    let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
     assert_eq!(ress, expected);
 }
 
@@ -2758,7 +2785,7 @@ async fn test_extract_callsigns_avia_format_no_date_line() {
 — С Ворсовко отработал не возражает проход"#;
     let res = extract_avia_callsigns(body).unwrap();
     let expected: Vec<String> = vec![];
-    let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+    let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
     assert_eq!(ress, expected);
 }
 
@@ -2775,7 +2802,7 @@ async fn test_extract_callsigns_avia_format_unexpected_date_line() {
 — С Ворсовко отработал не возражает проход"#;
     let res = extract_avia_callsigns(body).unwrap();
     let expected: Vec<String> = vec![];
-    let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+    let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
     assert_eq!(ress, expected);
 }
 
@@ -2791,7 +2818,7 @@ async fn test_extract_callsigns_avia_format_no_sep_line() {
 — С Ворсовко отработал не возражает проход"#;
     let res = extract_avia_callsigns(body).unwrap();
     let expected: Vec<String> = vec![];
-    let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+    let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
     assert_eq!(ress, expected);
 }
 
@@ -2807,7 +2834,7 @@ async fn test_extract_callsigns_avia_format_no_freq_line() {
 — С Ворсовко отработал не возражает проход"#;
     let res = extract_avia_callsigns(body).unwrap();
     let expected: Vec<String> = vec![];
-    let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+    let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
     assert_eq!(ress, expected);
 }
 
@@ -2823,6 +2850,76 @@ async fn test_extract_callsigns_avia_format_no_net_line() {
 — С Ворсовко отработал не возражает проход"#;
     let res = extract_avia_callsigns(body).unwrap();
     let expected: Vec<String> = vec![];
-    let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+    let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
+    assert_eq!(ress, expected);
+}
+
+#[tokio::test]
+async fn test_extract_callsigns_avia_format_net_name_without_uhw() {
+    let body = r#"Отримано з поста "31"
+--------------------------------------
+19.09.2025, 17:13:35
+128.5000
+🟠 р/м Єдиної системи управління повітряним рухом ПКС зс рф (ПОВІТРЯНИЙ ПРОСТІР ЗС РФ)
+12705
+САКСОФОН
+
+— Контроль 12705, с Ильменем отработали, пролет зоны разрешений ... 1 8 0.
+— Займу эшелон 1 8 0, доложу 12705.."#;
+    let res = extract_avia_callsigns(body).unwrap();
+    let expected: Vec<String> =
+        vec!["12705".to_string(), "САКСОФОН".to_string()];
+    let ress: Vec<String> =
+        res.into_iter().take(2).map(|x| x.text).collect();
+    assert_eq!(ress, expected);
+}
+
+#[tokio::test]
+async fn test_extract_callsigns_avia_format_slash_in_post() {
+    let body = r#"Отримано з поста "31/1"
+--------------------------------------
+19.09.2025, 15:31:00
+128.500
+🟠Єдиної системи управління повітряним рухом ПКС зс рф
+
+61112
+ВОРСОВКА
+ИЛЬМЕНЬ
+
+— ... канале запрашивают, 61112.
+— 61112 день добрый от экипажа курсом Беплу на ЭШ 280 прошу разрешения на пролет вашей зоны
+— Разрешили Ворсовка спс до свидание 61...
+— Ильмень 61112.
+— 61.... Подхожу к точке Беплу. На эшелоне....
+— Курсом Готби, разрешите пролет вашей зоны на эшелоне 2 8 0.
+— С Ильменем и Ворсовкой установил, пролет зоны на ЭШ 280 не возражает"#;
+    let res = extract_avia_callsigns(body).unwrap();
+    let expected: Vec<String> = vec![
+        "61112".to_string(),
+        "ВОРСОВКА".to_string(),
+        "ИЛЬМЕНЬ".to_string(),
+    ];
+    let ress: Vec<String> =
+        res.into_iter().take(3).map(|x| x.text).collect();
+    assert_eq!(ress, expected);
+}
+
+#[tokio::test]
+async fn test_extract_callsigns_avia_format_catch_four_digits() {
+    let body = r#"Отримано з поста "31/1"
+--------------------------------------
+19.09.2025, 17:51:53
+118.900
+🟠УКХ р/м НВ підрозділу 118.900 МГц
+
+ДВОР
+3346
+
+
+— Двор, 3346, работу закончил, разрешите по обратному ..."#;
+    let res = extract_avia_callsigns(body).unwrap();
+    let expected: Vec<String> = vec!["ДВОР".to_string(), "3346".to_string()];
+    let ress: Vec<String> =
+        res.into_iter().take(2).map(|x| x.text).collect();
     assert_eq!(ress, expected);
 }
