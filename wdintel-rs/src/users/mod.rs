@@ -550,6 +550,52 @@ async fn user_logout(user: Identity) -> Result<HttpResponse, AppError> {
         .body("Success. Redirecting.."))
 }
 
+/// does not initiate a new session. use this for API integrations only
+#[post("/api/user/test-api-login")]
+pub async fn user_test_api_login(
+    env: actix_web::web::Data<Env>,
+    http_req: HttpRequest,
+    req: Json<LoginReq>,
+) -> Result<Json<()>, AppError> {
+    let user_id = req.user.clone();
+    has_role(&env.dbx, &user_id, "Api").await.context(h!())?;
+    let login_obj = match validate_login(&env.dbx, &user_id).await {
+        Ok(obj) => obj,
+        Err(e) => match e {
+            AppError::Form(_) => {
+                return Err(AppError::Form(BTreeMap::from_iter([(
+                    "login".to_string(),
+                    "Не вдалося залогінитись".to_string(),
+                )])));
+            }
+            _ => {
+                return Err(e);
+            }
+        },
+    };
+    if let Some(err) = login_obj.validation_error {
+        return Err(err);
+    }
+    let login_obj = login_obj.login_model.context(h!())?;
+    let password = login_obj.password.clone().ok_or(AppError::Form(
+        BTreeMap::from_iter([(
+            "login".to_string(),
+            "Не вдалося залогінитись".to_string(),
+        )]),
+    ))?;
+    let is_valid = argon2::verify_encoded(&password, req.password.as_bytes())?;
+    if !is_valid {
+        println!("> warning: invalid password attempt: {}", req.user);
+        return Err(AppError::Form(BTreeMap::from_iter([(
+            "password".to_string(),
+            "Не вдалося залогінитись".to_string(),
+        )])));
+    };
+
+    Identity::login(&http_req.extensions(), user_id.clone()).context(h!())?;
+    Ok(Json(()))
+}
+
 #[post("/api/user/login")]
 pub async fn user_login(
     env: actix_web::web::Data<Env>,

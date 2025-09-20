@@ -325,6 +325,7 @@ pub async fn main_server(
             .service(crate::location::find_locations)
             .service(crate::location::fetch_regions)
             .service(crate::users::user_login)
+            .service(crate::users::user_test_api_login)
             .service(crate::users::api_user)
             .service(crate::users::api_user_info)
             .service(crate::users::user_logout)
