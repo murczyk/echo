@@ -82,6 +82,7 @@ pub async fn collect_inbox_pelengs(
 ) -> anyhow::Result<Vec<sigint_peleng::Model>> {
     sigint_peleng::Entity::find()
         .filter(sigint_peleng::Column::SourceInboxItemId.is_in(inbox_item_ids))
+        .filter(sigint_peleng::Column::Deleted.eq(false))
         .all(dbx)
         .await
         .context(h!())
