@@ -15,6 +15,21 @@ use std::collections::BTreeMap;
 use geoconvert::{LatLon, Mgrs};
 use std::path::PathBuf;
 
+#[derive(Debug, Clone, FromQueryResult)]
+struct Message {
+    pub id: i64,
+    pub body: String,
+    pub timestamp: Option<chrono::NaiveDateTime>,
+    pub sender: String,
+    pub date: Option<String>,
+    pub time: Option<String>,
+    pub freq: Option<String>,
+    pub callsigns: Option<serde_json::Value>,
+    pub checked: Option<bool>,
+    pub unit: Option<String>,
+    pub location: Option<String>,
+}
+
 pub async fn get_inbox_messages_report(
     user: &Identity,
     env: &Env,
@@ -24,32 +39,13 @@ pub async fn get_inbox_messages_report(
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
 
-    #[derive(FromQueryResult)]
-    struct Message {
-        pub id: i64,
-        pub body: String,
-        pub datasource_id: i64,
-        pub timestamp: Option<chrono::NaiveDateTime>,
-        pub group_master_key: String,
-        pub sender: String,
-        pub date: Option<String>,
-        pub time: Option<String>,
-        pub freq: Option<String>,
-        pub callsigns: Option<serde_json::Value>,
-        pub checked: Option<bool>,
-        pub unit: Option<String>,
-        pub location: Option<String>,
-        pub has_coords: bool,
-    }
-
     let mut q = SignalMessage::find()
         .inner_join(sigint_inbox_item::Entity)
         .inner_join(datasource_group::Entity)
+        .select_only()
         .column(signal_message::Column::Id)
         .column(signal_message::Column::Body)
-        .column(datasource_group::Column::DatasourceId)
         .column(signal_message::Column::Timestamp)
-        .column(datasource_group::Column::GroupMasterKey)
         .column(signal_message::Column::Sender)
         .column(sigint_inbox_item::Column::Date)
         .column(sigint_inbox_item::Column::Time)
@@ -57,14 +53,15 @@ pub async fn get_inbox_messages_report(
         .column(sigint_inbox_item::Column::Callsigns)
         .column(sigint_inbox_item::Column::Checked)
         .column_as(sigint_inbox_item::Column::LocationV2, "location")
-        .filter(signal_message::Column::Deleted.eq(false))
         .column_as(
             SimpleExpr::Custom(r#"
                 COALESCE(
                     array_to_string(
                         NULLIF(
                             array_agg(
-                                sigint_network_freq.kind || ' р/м ' || sigint_network.name || ' ' || sigint_unit.name || ' (' || UPPER(sigint_network.location) || ')'
+                                CASE sigint_network_freq.kind
+                                  WHEN 'VHF' THEN 'УКХ'
+                                  ELSE sigint_network_freq.kind::text END || ' р/м ' || sigint_network.name || ' ' || sigint_unit.name || ' (' || UPPER(sigint_network.location) || ')'
                             )
                             FILTER
                             (WHERE sigint_unit.name IS NOT NULL),
@@ -76,11 +73,12 @@ pub async fn get_inbox_messages_report(
             "#.to_string()),
             "unit",
         )
-        .column_as(
-            SimpleExpr::Custom(r#"
-                sigint_inbox_item.lng IS NOT NULL AND sigint_inbox_item.lat IS NOT NULL"#.to_string()),
-            "has_coords",
-        )
+        .filter(signal_message::Column::Deleted.eq(false))
+        .filter(sigint_network::Column::Deleted.eq(false))
+        .filter(sigint_network_freq::Column::Deleted.eq(false))
+        .filter(sigint_unit::Column::Deleted.eq(false))
+        .filter(sigint_inbox_item::Column::Lng.is_not_null())
+        .filter(sigint_inbox_item::Column::Lat.is_not_null())
         .join(
             JoinType::LeftJoin,
             sigint_inbox_item::Relation::SigintNetworkFreq.def(),
@@ -103,8 +101,6 @@ pub async fn get_inbox_messages_report(
         )
         .group_by(signal_message::Column::Id)
         .group_by(sigint_inbox_item::Column::Id)
-        .group_by(datasource_group::Column::DatasourceId)
-        .group_by(datasource_group::Column::GroupMasterKey)
         .filter(datasource_group::Column::GroupMasterKey.is_in(
             crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login).await?,
         ));
@@ -158,10 +154,12 @@ pub async fn get_inbox_messages_report(
     let messages: Vec<Message> =
         q.into_model::<Message>().all(&env.dbx).await?;
 
+    let messages = deduplicate(&messages).context(h!())?;
+
     let mut item_ids = vec![];
     let mut sigint_pelengs = vec![];
     let mut items_map = BTreeMap::new();
-    for item in messages.into_iter().filter(|x| x.has_coords) {
+    for item in messages {
         item_ids.push(item.id);
         items_map.insert(item.id, item);
         if item_ids.len() > 1000 {
@@ -226,7 +224,7 @@ pub async fn get_inbox_messages_report(
                     timestamp: m
                         .timestamp
                         .map(|x| x.and_utc().timestamp_millis()),
-                    group_master_key: Some(m.group_master_key.clone()),
+                    group_master_key: None,
                     sender: Some(m.sender.clone()),
                     duplicate_ids: None,
                     extended_form: None,
@@ -238,7 +236,7 @@ pub async fn get_inbox_messages_report(
                     post: None,
                     post_id: None,
                     no_headers_body: None,
-                    datasource_id: Some(m.datasource_id),
+                    datasource_id: None,
                     tags: None,
                     callsigns_alg2: vec![],
                     network_ids: None,
@@ -248,6 +246,17 @@ pub async fn get_inbox_messages_report(
     }
 
     info!("[get_inbox_messages_report] {}: query done", Utc::now());
+    Ok(res)
+}
+
+fn deduplicate(messages: &Vec<Message>) -> Result<Vec<Message>, AppError> {
+    let mut seen: BTreeSet<String> = BTreeSet::new();
+    let mut res = vec![];
+    for msg in messages {
+        if seen.insert(msg.body.clone()) {
+            res.push(msg.clone());
+        }
+    }
     Ok(res)
 }
 
