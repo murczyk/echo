@@ -210,46 +210,36 @@ initAnalysisRanges ps =
     ( from, to )
 
 
-setDateModelValue : Model -> String -> Maybe Time.Zone -> Model
+setDateModelValue : Model -> String -> Time.Zone -> Model
 setDateModelValue model v zone =
     let
         m2 =
             { model | dateStr = v, formErrors = Dict.empty }
     in
-    case zone of
-        Nothing ->
-            m2
+    case Utils.Time.parseDatetimeParts (m2.dateStr ++ "T" ++ m2.timeStr) of
+        Err e ->
+            { m2 | formErrors = Dict.insert dateFormErrId e m2.formErrors }
 
-        Just zone_ ->
-            case Utils.Time.parseDatetimeParts (m2.dateStr ++ "T" ++ m2.timeStr) of
-                Err e ->
-                    { m2 | formErrors = Dict.insert dateFormErrId e m2.formErrors }
-
-                Ok parts ->
-                    { m2 | datePosix = Just (Time.Extra.partsToPosix zone_ parts) }
+        Ok parts ->
+            { m2 | datePosix = Just (Time.Extra.partsToPosix zone parts) }
 
 
-setTimeModelValue : Model -> String -> Maybe Time.Zone -> Model
+setTimeModelValue : Model -> String -> Time.Zone -> Model
 setTimeModelValue model v zone =
     let
         m2 =
             { model | timeStr = v, formErrors = Dict.empty }
     in
-    case zone of
-        Nothing ->
-            m2
+    case Utils.Time.parseDatetimeParts (m2.dateStr ++ "T" ++ m2.timeStr) of
+        Err e ->
+            { m2 | formErrors = Dict.insert dateFormErrId e m2.formErrors }
 
-        Just zone_ ->
-            case Utils.Time.parseDatetimeParts (m2.dateStr ++ "T" ++ m2.timeStr) of
-                Err e ->
-                    { m2 | formErrors = Dict.insert dateFormErrId e m2.formErrors }
-
-                Ok parts ->
-                    let
-                        posix =
-                            Time.Extra.partsToPosix zone_ parts
-                    in
-                    { m2 | datePosix = Just posix }
+        Ok parts ->
+            let
+                posix =
+                    Time.Extra.partsToPosix zone parts
+            in
+            { m2 | datePosix = Just posix }
 
 
 type Msg msg
@@ -262,7 +252,7 @@ dateFormErrId =
 
 
 update :
-    { zone : Maybe Time.Zone
+    { zone : Time.Zone
     , msg : Msg msg
     , model : Model
     , toModel : Model -> model

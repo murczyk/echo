@@ -486,11 +486,6 @@ posixToString posix zone =
     ( date, time )
 
 
-renderDateF5FromMillis : Int -> Maybe Zone -> String
-renderDateF5FromMillis createdAt mZone =
-    case mZone of
-        Just zone ->
-            createdAt |> Time.millisToPosix |> renderDateF5 zone
-
-        Nothing ->
-            ""
+renderDateF5FromMillis : Int -> Zone -> String
+renderDateF5FromMillis createdAt zone =
+    createdAt |> Time.millisToPosix |> renderDateF5 zone

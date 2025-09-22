@@ -33,8 +33,7 @@ type Msg
     | GotFreqNetworks String (Result ApiError (List B.Network))
     | DateTimeFromMsg (Shared.Components.DateTime.Msg Msg)
     | DateTimeToMsg (Shared.Components.DateTime.Msg Msg)
-    | GotZone (Result TimeZone.Error ( String, Time.Zone ))
-    | GotTime Time.Zone Posix
+    | GotTime Posix
     | NetworkAddUnitSelMsg (Select.Msg Int)
     | NetworkAddExistingKindSelMsg (Select.Msg NetworksUtils.NetworkKind)
     | NetworkAddExistingModulationSelMsg (Select.Msg Int)

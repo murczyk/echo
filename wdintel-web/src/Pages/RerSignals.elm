@@ -3,14 +3,6 @@ module Pages.RerSignals exposing (EditSignalState, Model, Msg, page)
 import Api
 import Auth
 import Bindings as B
-import Shared.Components.Button as Button
-import Shared.Components.ModalDialog as ModalDialog
-import Shared.Components.Sidebar as Sidebar
-import Shared.Components.Spinner
-import Shared.Components.Table as Table
-import Shared.Components.Table.Column as TableColumn
-import Shared.Components.Table.Config as TableConfig
-import Shared.Components.Watermark as Watermark
 import Core.Auth
 import Core.Types exposing (ApiError)
 import Debounce exposing (Debounce)
@@ -27,6 +19,14 @@ import Page exposing (Page)
 import Route exposing (Route)
 import Select
 import Shared
+import Shared.Components.Button as Button
+import Shared.Components.ModalDialog as ModalDialog
+import Shared.Components.Sidebar as Sidebar
+import Shared.Components.Spinner
+import Shared.Components.Table as Table
+import Shared.Components.Table.Column as TableColumn
+import Shared.Components.Table.Config as TableConfig
+import Shared.Components.Watermark as Watermark
 import Shared.Model exposing (isDarkMode)
 import Task
 import Time
@@ -59,8 +59,7 @@ toLayout user model =
 
 
 type alias Model =
-    { zone : Maybe Time.Zone
-    , inpUnitSelState : Select.State
+    { inpUnitSelState : Select.State
     , signals : List B.Signal
     , deleteSignalConfirmation : Maybe Int
     , deleteDialogOpen : Bool
@@ -85,8 +84,7 @@ type alias Model =
 
 
 type Msg
-    = InitGotZone (Result TimeZone.Error ( String, Time.Zone ))
-    | GotSignals (Result ApiError B.ListSignalsRsp)
+    = GotSignals (Result ApiError B.ListSignalsRsp)
     | AddUnitSelMsg (Select.Msg Int)
     | EditUnitSelMsg (Select.Msg Int)
     | InpText String
@@ -152,8 +150,7 @@ init _ =
     let
         m2 : Model
         m2 =
-            { zone = Nothing
-            , inpUnitSelState = Select.initState (Select.selectIdentifier "sel-unit-add")
+            { inpUnitSelState = Select.initState (Select.selectIdentifier "sel-unit-add")
             , signals = []
             , deleteSignalConfirmation = Nothing
             , deleteDialogOpen = False
@@ -178,8 +175,7 @@ init _ =
     in
     ( m2
     , E.batch
-        [ E.sendCmd <| Task.attempt InitGotZone Utils.Time.getZone
-        , loadSignals m2
+        [ loadSignals m2
         , loadUnitStats
         ]
     )
@@ -193,17 +189,6 @@ subscriptions _ =
 update : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
 update shared msg model =
     case msg of
-        InitGotZone (Err e) ->
-            ( model
-            , E.showError
-                ("Error getting timezone: " ++ renderZoneError e)
-            )
-
-        InitGotZone (Ok ( _, zone )) ->
-            ( { model | zone = Just zone }
-            , E.none
-            )
-
         GotSignals (Err err) ->
             ( model
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження сигналів" err
@@ -725,12 +710,7 @@ signalsTableConfig shared model user editingSignalId =
                 |> Table.withColumnWidth "15%"
             , Table.stringColumn "Дата внесення"
                 (\signal ->
-                    case model.zone of
-                        Nothing ->
-                            "Loading..."
-
-                        Just zone ->
-                            Utils.Time.renderDateTimeF1 zone (Time.millisToPosix signal.createdAt)
+                    Utils.Time.renderDateTimeF1 shared.timeZone (Time.millisToPosix signal.createdAt)
                 )
                 |> Table.withColumnWidth "15%"
             , Table.veryCustomColumn
@@ -1018,13 +998,8 @@ renderSignalTrEdit shared model user signal editState =
             ]
         , td []
             [ text <|
-                case model.zone of
-                    Nothing ->
-                        "Loading..."
-
-                    Just zone ->
-                        Utils.Time.renderDateTimeF1 zone
-                            (Time.millisToPosix signal.createdAt)
+                Utils.Time.renderDateTimeF1 shared.timeZone
+                    (Time.millisToPosix signal.createdAt)
             ]
         , td [ style "font-size" ".8rem" ]
             [ div [ class "d-flex justify-content-start align-items-center" ]

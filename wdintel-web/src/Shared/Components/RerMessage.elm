@@ -31,7 +31,7 @@ import Utils.ViewUtils exposing (tagsBlock)
 type alias ViewParams =
     { profiles : Dict String (Maybe B.SignalProfileEntry)
     , groupInfos : Dict String B.SignalGroupEntry
-    , zone : Maybe Time.Zone
+    , zone : Time.Zone
     , messages : List ( Int, InboxMessage )
     , bookmarks : Set Int
     , importants : Set Int
@@ -854,16 +854,11 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                         ]
                         [ span []
                             [ text <|
-                                case vps.zone of
-                                    Just zone ->
-                                        Maybe.withDefault ""
-                                            (Maybe.map
-                                                (Utils.Time.renderDateTimeF1 zone << Time.millisToPosix)
-                                                message.timestamp
-                                            )
-
-                                    Nothing ->
-                                        ""
+                                Maybe.withDefault ""
+                                    (Maybe.map
+                                        (Utils.Time.renderDateTimeF1 vps.zone << Time.millisToPosix)
+                                        message.timestamp
+                                    )
                             ]
                         ]
                     ]

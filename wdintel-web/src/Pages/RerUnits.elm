@@ -3,11 +3,6 @@ module Pages.RerUnits exposing (EditUnitState, Model, Msg, RemovingDuplicateProc
 import Api
 import Auth
 import Bindings as B
-import Shared.Components.Button as Button
-import Shared.Components.Checkbox as Checkbox
-import Shared.Components.Console
-import Shared.Components.Popup
-import Shared.Components.Spinner
 import Core.Auth
 import Core.Types exposing (ApiError)
 import Dict exposing (Dict)
@@ -25,6 +20,11 @@ import Process
 import Route exposing (Route)
 import Select
 import Shared
+import Shared.Components.Button as Button
+import Shared.Components.Checkbox as Checkbox
+import Shared.Components.Console
+import Shared.Components.Popup
+import Shared.Components.Spinner
 import Shared.Model exposing (isDarkMode)
 import Task
 import Time
@@ -57,8 +57,7 @@ toLayout user model =
 
 
 type alias Model =
-    { zone : Maybe Time.Zone
-    , units : List B.Unit
+    { units : List B.Unit
     , inpCompany : String
     , inpBattalion : String
     , inpRegiment : String
@@ -98,8 +97,7 @@ loadUnits =
 
 init : () -> ( Model, Effect Msg )
 init _ =
-    ( { zone = Nothing
-      , units = []
+    ( { units = []
       , inpCompany = ""
       , inpBattalion = ""
       , inpRegiment = ""
@@ -121,15 +119,13 @@ init _ =
       , filterCompany = ""
       }
     , E.batch
-        [ E.sendCmd <| Task.attempt InitGotZone Utils.Time.getZone
-        , loadUnits
+        [ loadUnits
         ]
     )
 
 
 type Msg
-    = InitGotZone (Result TimeZone.Error ( String, Time.Zone ))
-    | GotUnits (Result ApiError B.ListUnitsRsp)
+    = GotUnits (Result ApiError B.ListUnitsRsp)
     | InpCompany String
     | InpBattalion String
     | InpRegiment String
@@ -184,17 +180,6 @@ type alias EditUnitState =
 update : Msg -> Model -> ( Model, Effect Msg )
 update msg model =
     case msg of
-        InitGotZone (Err e) ->
-            ( model
-            , E.showError
-                ("Error getting timezone: " ++ renderZoneError e)
-            )
-
-        InitGotZone (Ok ( _, zone )) ->
-            ( { model | zone = Just zone }
-            , E.none
-            )
-
         GotUnits (Err err) ->
             ( model
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження підрозділів" err
@@ -660,14 +645,9 @@ contentBlock shared model =
                 , td [] [ text <| unit.division ]
                 , td [] [ text <| unit.army ]
                 , td []
-                    [ case model.zone of
-                        Nothing ->
-                            text "Loading..."
-
-                        Just zone ->
-                            text <|
-                                Utils.Time.renderDateTimeF1 zone
-                                    (Time.millisToPosix unit.createdAt)
+                    [ text <|
+                        Utils.Time.renderDateTimeF1 shared.timeZone
+                            (Time.millisToPosix unit.createdAt)
                     ]
                 , td [] [ div [ style "white-space" "pre-line" ] [ text unit.comment ] ]
                 , td [ class "text-center align-middle" ]
@@ -816,13 +796,8 @@ contentBlock shared model =
                     ]
                 , td []
                     [ text <|
-                        case model.zone of
-                            Nothing ->
-                                "Loading..."
-
-                            Just zone ->
-                                Utils.Time.renderDateTimeF1 zone
-                                    (Time.millisToPosix unit.createdAt)
+                        Utils.Time.renderDateTimeF1 shared.timeZone
+                            (Time.millisToPosix unit.createdAt)
                     ]
                 , td []
                     [ input

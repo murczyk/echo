@@ -152,6 +152,7 @@ loadComputedGroupsForAll model =
     in
     if List.isEmpty organismIds then
         ( model, E.none )
+
     else
         ( newModel, E.sendCmd <| Api.organism_available_groups_batch GotAvailableGroupsBatch organismIds )
 
@@ -170,7 +171,6 @@ type ShowAllPopupFor
 
 type alias Model =
     { formErrors : Dict String String
-    , timeZone : Maybe Time.Zone
     , organisms : List B.Organism
     , tableState : Table.State
     , nameFilter : String
@@ -277,7 +277,6 @@ init _ =
             , selectedItems = []
             }
       , fieldsErrors = []
-      , timeZone = Nothing
       , groups = []
       , organismGroups = []
       , editOrganism = Nothing
@@ -295,7 +294,6 @@ init _ =
             , Api.organism_all_groups GotAllGroups
             , Api.organism_group_list GotOrganismGroups
             , Api.aor_list GotAorList { sortBy = Nothing }
-            , Task.attempt GotTimeZone Utils.Time.getZone
             ]
     )
 
@@ -319,7 +317,6 @@ type Msg
     | CloseEditSidebar
     | OpenCreateSidebar
     | CloseCreateSidebar
-    | GotTimeZone (Result TimeZone.Error ( String, Time.Zone ))
     | SetName String
     | SetEditName String
     | GotAllGroups (Result ApiError (List B.SignalGroupFull))
@@ -840,16 +837,6 @@ update msg model =
             in
             ( { model | editOrganism = organism, sidebarType = Just EditSidebar }, E.none )
 
-        GotTimeZone (Ok ( _, zone )) ->
-            ( { model | timeZone = Just zone }
-            , E.none
-            )
-
-        GotTimeZone (Err e) ->
-            ( model
-            , E.showError "Помилка завантаження часового поясу"
-            )
-
         SetName value ->
             ( { model | inpName = value }, E.none )
 
@@ -1163,7 +1150,7 @@ subscriptions model =
 -- TABLE CONFIGURATION
 
 
-organismsTableConfig : List B.SignalGroupFull -> List B.OrganismGroup -> List B.Organism -> Maybe Time.Zone -> Maybe Int -> RD.RemoteData ApiError (List B.AreaOfResponsibility) -> Model -> Table.Config B.Organism Msg
+organismsTableConfig : List B.SignalGroupFull -> List B.OrganismGroup -> List B.Organism -> Time.Zone -> Maybe Int -> RD.RemoteData ApiError (List B.AreaOfResponsibility) -> Model -> Table.Config B.Organism Msg
 organismsTableConfig groups organismGroups allOrganisms timeZone editingOrganismId aorList model =
     let
         defaultCustomizations =
@@ -1996,13 +1983,13 @@ body dark shared user model =
                     CloseCreateSidebar
             )
             sidebarContent
-        , div [] (mainBlock dark model)
+        , div [] (mainBlock dark model shared)
         ]
     ]
 
 
-mainBlock : Bool -> Model -> List (Html Msg)
-mainBlock isDark model =
+mainBlock : Bool -> Model -> Shared.Model -> List (Html Msg)
+mainBlock isDark model shared =
     [ div []
         [ div [ class "flex justify-between items-center mb-6" ]
             [ div [ class "flex items-center gap-4" ]
@@ -2021,7 +2008,7 @@ mainBlock isDark model =
             ]
         , div [ class "table-responsive-modern" ]
             [ Table.view
-                (organismsTableConfig model.groups model.organismGroups model.organisms model.timeZone (Maybe.map Tuple.first model.editOrganism) model.aorList model)
+                (organismsTableConfig model.groups model.organismGroups model.organisms shared.timeZone (Maybe.map Tuple.first model.editOrganism) model.aorList model)
                 model.tableState
                 (filterOrganismsByName model.nameFilter model.organisms)
             ]
