@@ -74,9 +74,15 @@ pub async fn get_inbox_messages_report(
             "unit",
         )
         .filter(signal_message::Column::Deleted.eq(false))
-        .filter(sigint_network::Column::Deleted.eq(false))
-        .filter(sigint_network_freq::Column::Deleted.eq(false))
-        .filter(sigint_unit::Column::Deleted.eq(false))
+        .filter(Condition::any()
+        .add(sigint_network::Column::Deleted.eq(false))
+        .add(sigint_network::Column::Id.is_null()))
+        .filter(Condition::any()
+        .add(sigint_network_freq::Column::Deleted.eq(false))
+        .add(sigint_network_freq::Column::Id.is_null()))
+        .filter(Condition::any()
+        .add(sigint_unit::Column::Deleted.eq(false))
+        .add(sigint_unit::Column::Id.is_null()))
         .filter(sigint_inbox_item::Column::Lng.is_not_null())
         .filter(sigint_inbox_item::Column::Lat.is_not_null())
         .join(
