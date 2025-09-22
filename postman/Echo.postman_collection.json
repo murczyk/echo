@@ -633,6 +633,38 @@
 					"response": []
 				},
 				{
+					"name": "sigint/network-callsigns/activity",
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\"network_id\":14,\n\"callsigns\": [\"аврора\",\"войка\",\"волна\",\"сокол\",\"солдат\"]\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/api/sigint/network-callsigns/activity",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"sigint",
+								"network-callsigns",
+								"activity"
+							]
+						}
+					},
+					"response": []
+				},
+				{
 					"name": "sigint/network-callsign/create",
 					"request": {
 						"auth": {

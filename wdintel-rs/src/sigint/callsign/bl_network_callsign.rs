@@ -799,3 +799,31 @@ async fn create_network_callsign_changelog(
 
     Ok(())
 }
+
+/// Get communication activity for a list of callsigns within a network
+pub async fn bl_get_network_callsigns_activity(
+    req: &NetworkCallsignsActivityReq,
+    user_id: &str,
+    dbx: &DatabaseConnection,
+) -> Result<Vec<CallsignActivityRecord>, AppError> {
+    let res = get_callsigns_communication_info(
+        dbx,
+        user_id,
+        req.network_id,
+        req.callsigns.as_slice(),
+    )
+    .await
+    .context(h!())?
+    .into_iter()
+    .map(|(callsign, info)| CallsignActivityRecord {
+        callsign,
+        activity: CallsignActivityItem {
+            message_count: info.message_count,
+            last_datetime: info.last_datetime,
+            freqs: info.freqs,
+        },
+    })
+    .collect();
+
+    Ok(res)
+}

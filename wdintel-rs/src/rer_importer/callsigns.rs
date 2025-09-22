@@ -2869,8 +2869,7 @@ async fn test_extract_callsigns_avia_format_net_name_without_uhw() {
     let res = extract_avia_callsigns(body).unwrap();
     let expected: Vec<String> =
         vec!["12705".to_string(), "САКСОФОН".to_string()];
-    let ress: Vec<String> =
-        res.into_iter().take(2).map(|x| x.text).collect();
+    let ress: Vec<String> = res.into_iter().take(2).map(|x| x.text).collect();
     assert_eq!(ress, expected);
 }
 
@@ -2899,8 +2898,7 @@ async fn test_extract_callsigns_avia_format_slash_in_post() {
         "ВОРСОВКА".to_string(),
         "ИЛЬМЕНЬ".to_string(),
     ];
-    let ress: Vec<String> =
-        res.into_iter().take(3).map(|x| x.text).collect();
+    let ress: Vec<String> = res.into_iter().take(3).map(|x| x.text).collect();
     assert_eq!(ress, expected);
 }
 
@@ -2919,7 +2917,6 @@ async fn test_extract_callsigns_avia_format_catch_four_digits() {
 — Двор, 3346, работу закончил, разрешите по обратному ..."#;
     let res = extract_avia_callsigns(body).unwrap();
     let expected: Vec<String> = vec!["ДВОР".to_string(), "3346".to_string()];
-    let ress: Vec<String> =
-        res.into_iter().take(2).map(|x| x.text).collect();
+    let ress: Vec<String> = res.into_iter().take(2).map(|x| x.text).collect();
     assert_eq!(ress, expected);
 }

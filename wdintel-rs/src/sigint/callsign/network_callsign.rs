@@ -279,3 +279,39 @@ pub async fn delete_network_callsign(
 
     Ok(Json(res))
 }
+
+/// Для списку позивних і заданої мережі повертає активності цих позивних в етері на частотах мережі
+///
+/// # API URL
+/// - POST: /api/sigint/network-callsigns/activity
+///
+/// # Параметри
+///
+/// * `user`: [`actix_identity::Identity`] - Ідентифікатор користувача, що виконує запит. Використовується для перевірки дозволів.
+/// * `env`: [`actix_web::web::Data<Env>`] - де [`Env`] Середовище програми, що містить конфігурацію та підключення до бази даних.
+/// * `req`: [`Json<NetworkCallsignsActivityReq>`] - де [`NetworkCallsignsActivityReq`] Тіло запиту, що містить ідентифікатор мережі та список позивних для перевірки їх активності.
+///
+/// # Повертає
+///
+/// [`Json<NetworkCallsignsActivityRsp>`], де [`NetworkCallsignsActivityRsp`] тип що містить список [`CallsignActivityItem`] - структура, що представляє статистику по активності одного позивного
+///
+#[post("/api/sigint/network-callsigns/activity")]
+pub async fn network_callsigns_activity(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<NetworkCallsignsActivityReq>,
+) -> Result<Json<NetworkCallsignsActivityRsp>, AppError> {
+    let user_id = user.id()?;
+    crate::users::has_role(&env.dbx, &user_id, "Rer").await?;
+
+    trace!("network callsigns activity; login: {user_id}; req: {req:?}");
+    let req = req.into_inner();
+
+    let res = bl_get_network_callsigns_activity(&req, &user_id, &env.dbx)
+        .await
+        .context(h!())?;
+
+    Ok(Json(NetworkCallsignsActivityRsp {
+        callsigns_activity: res,
+    }))
+}

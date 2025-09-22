@@ -939,6 +939,11 @@ where
 
     let combined_query = base_with.clone().cte(callsigns_cte).clone().query(q);
 
+    // debug!(
+    //     "> communication info query: {}",
+    //     combined_query.to_string(PostgresQueryBuilder)
+    // );
+
     let rows = txn
         .query_all(Statement::from_string(
             DatabaseBackend::Postgres,

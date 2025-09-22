@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
-use self::types::*;
 use self::bl::*;
+use self::types::*;
 use crate::entities::*;
 use crate::event_stream::fanout;
 use crate::event_stream::types::*;
