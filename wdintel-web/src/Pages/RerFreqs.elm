@@ -4,16 +4,6 @@ import Api
 import Auth
 import Bindings as B
 import Bytes exposing (Bytes)
-import Shared.Components.ActionMenu
-import Shared.Components.Button as Button
-import Shared.Components.DateTime
-import Shared.Components.Popup
-import Shared.Components.Sidebar as Sidebar
-import Shared.Components.Spinner
-import Shared.Components.Table as Table
-import Shared.Components.Table.Column as TableColumn
-import Shared.Components.Table.Config as TableConfig
-import Shared.Components.Watermark as Watermark exposing (Watermark)
 import Core.Auth
 import Core.Types as Types exposing (ApiError, GroupsActivityPerDayRsp)
 import Core.UnitHierarchy
@@ -44,6 +34,16 @@ import Select
 import Set
 import Shared
 import Shared.CallsignsPopup as CallsignsPopup exposing (PopupCallerOrigin(..))
+import Shared.Components.ActionMenu
+import Shared.Components.Button as Button
+import Shared.Components.DateTime
+import Shared.Components.Popup
+import Shared.Components.Sidebar as Sidebar
+import Shared.Components.Spinner
+import Shared.Components.Table as Table
+import Shared.Components.Table.Column as TableColumn
+import Shared.Components.Table.Config as TableConfig
+import Shared.Components.Watermark as Watermark exposing (Watermark)
 import Shared.Model exposing (isDarkMode)
 import Task
 import Time exposing (Posix)
@@ -71,8 +71,7 @@ init _ =
     let
         m2 : Model
         m2 =
-            { zone = Nothing
-            , now = Nothing
+            { now = Nothing
             , loading = False
             , loadingMore = False
             , currentRequestTracker = Nothing
@@ -198,7 +197,8 @@ init _ =
     in
     ( m2
     , E.batch
-        [ E.sendCmd <| Task.attempt GotZone Utils.Time.getZone
+        [ E.sendCmd <|
+            Task.perform GotTime Time.now
         , initLoad m2
         , E.getModulations ModulationsReturnedByApi
         , E.loadPostsFromShared { sortBy = Nothing }
@@ -496,18 +496,6 @@ filterNameToCmd filterName =
 update : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
 update shared msg model =
     case msg of
-        GotZone (Err e) ->
-            ( model
-            , E.showError
-                ("Error getting timezone: " ++ renderZoneError e)
-            )
-
-        GotZone (Ok ( _, zone )) ->
-            ( { model | zone = Just zone }
-            , E.sendCmd <|
-                Task.perform (GotTime zone) Time.now
-            )
-
         Refresh ->
             ( { model | loading = True }
             , initLoad model
@@ -601,7 +589,7 @@ update shared msg model =
             let
                 ( m2, eff2 ) =
                     Shared.Components.DateTime.update
-                        { zone = model.zone
+                        { zone = shared.timeZone
                         , msg = imsg
                         , model = model.from
                         , toModel = \from -> { model | from = from }
@@ -619,7 +607,7 @@ update shared msg model =
             let
                 ( m2, eff2 ) =
                     Shared.Components.DateTime.update
-                        { zone = model.zone
+                        { zone = shared.timeZone
                         , msg = imsg
                         , model = model.to
                         , toModel = \to -> { model | to = to }
@@ -630,13 +618,13 @@ update shared msg model =
             , E.batch [ eff2, initLoad m2 ]
             )
 
-        GotTime zone now_ ->
+        GotTime now_ ->
             let
                 from =
-                    Shared.Components.DateTime.initFromPosix { datePosix = Utils.Time.xDaysAgo 7 now_, zone = zone }
+                    Shared.Components.DateTime.initFromPosix { datePosix = Utils.Time.xDaysAgo 7 now_, zone = shared.timeZone }
 
                 to =
-                    Shared.Components.DateTime.initFromPosix { datePosix = now_, zone = zone }
+                    Shared.Components.DateTime.initFromPosix { datePosix = now_, zone = shared.timeZone }
 
                 m2 =
                     { model
@@ -1609,17 +1597,17 @@ freqsTableConfig shared model user =
                 analysisHref withMap =
                     let
                         dateFromStr =
-                            case ( model.zone, model.now ) of
-                                ( Just zone, Just time ) ->
-                                    Utils.Time.renderDateF4 zone (Utils.Time.xDaysAgo 15 time)
+                            case model.now of
+                                Just time ->
+                                    Utils.Time.renderDateF4 shared.timeZone (Utils.Time.xDaysAgo 15 time)
 
                                 _ ->
                                     ""
 
                         dateToStr =
-                            case ( model.zone, model.now ) of
-                                ( Just zone, Just time ) ->
-                                    Utils.Time.renderDateF4 zone (Utils.Time.xDaysAgo -1 time)
+                            case model.now of
+                                Just time ->
+                                    Utils.Time.renderDateF4 shared.timeZone (Utils.Time.xDaysAgo -1 time)
 
                                 _ ->
                                     ""
@@ -1935,11 +1923,11 @@ freqsTableConfig shared model user =
                     \freq ->
                         { attributes = []
                         , children =
-                            case ( freq.lastUpdatedAt, model.zone ) of
-                                ( Just updatedAt, Just zone ) ->
+                            case freq.lastUpdatedAt of
+                                Just updatedAt ->
                                     let
                                         updatedAtString =
-                                            Utils.Time.renderDateF6 zone
+                                            Utils.Time.renderDateF6 shared.timeZone
                                                 (Time.millisToPosix updatedAt)
 
                                         updatedByString =
@@ -1948,7 +1936,7 @@ freqsTableConfig shared model user =
                                         createdAtString =
                                             case freq.createdAt of
                                                 Just createdAt ->
-                                                    Utils.Time.renderDateF6 zone
+                                                    Utils.Time.renderDateF6 shared.timeZone
                                                         (Time.millisToPosix createdAt)
 
                                                 Nothing ->

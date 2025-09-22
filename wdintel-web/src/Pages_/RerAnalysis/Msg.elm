@@ -15,8 +15,7 @@ import TimeZone
 type Msg
     = NoOp
     | ToastMsg Shared.Components.Toast.Msg
-    | InitGotZone (Result TimeZone.Error ( String, Time.Zone ))
-    | InitGotTime Time.Zone Posix
+    | InitGotTime Posix
     | DateRangePickerMsg Shared.Components.DateRangePicker.Msg
     | GotInbox (Result ApiError B.InboxMessagesRsp)
     | GotInboxMore (Result ApiError B.InboxMessagesRsp)

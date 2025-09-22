@@ -1,17 +1,17 @@
 module Shared.Components.DateRangePicker exposing (Model, Msg(..), ViewParams, init, initFromData, update, view)
 
-import Shared.Components.DateTime exposing (..)
-import Shared.Components.Popup
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (..)
+import Shared.Components.DateTime exposing (..)
+import Shared.Components.Popup
 import Time exposing (Posix, Zone)
 import Utils.Components exposing (hasError, isInvalidCls)
 import Utils.Time
 
 
 type alias ViewParams =
-    { zone : Maybe Time.Zone
+    { zone : Time.Zone
     , from : Shared.Components.DateTime.Model
     , to : Shared.Components.DateTime.Model
     }
@@ -106,10 +106,10 @@ update vps msg model =
             { model | isOpen = False }
 
 
-renderSelectedDate : Maybe Zone -> Maybe Posix -> String
-renderSelectedDate mZone mPosix =
-    case ( mZone, mPosix ) of
-        ( Just zone, Just posix ) ->
+renderSelectedDate : Zone -> Maybe Posix -> String
+renderSelectedDate zone mPosix =
+    case mPosix of
+        Just posix ->
             Utils.Time.renderDateTimeF7 zone posix
 
         _ ->

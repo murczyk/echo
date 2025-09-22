@@ -58,11 +58,8 @@ type NetworksMergeStatus
     | Merging ( B.Network, B.Network ) B.Network (List ( B.Network, B.Network ))
 
 
-
-
 type alias Model =
-    { zone : Maybe Time.Zone
-    , now : Maybe Time.Posix
+    { now : Maybe Time.Posix
     , from : Shared.Components.DateTime.Model
     , to : Shared.Components.DateTime.Model
     , networksGroupsActivity : RemoteData ApiError GroupsActivityPerDayRsp
@@ -117,8 +114,7 @@ init _ =
     let
         m2 : Model
         m2 =
-            { zone = Nothing
-            , now = Nothing
+            { now = Nothing
             , from = Shared.Components.DateTime.init ()
             , to = Shared.Components.DateTime.init ()
             , networks = NotAsked
@@ -165,7 +161,8 @@ init _ =
     in
     ( m2
     , E.batch
-        [ E.sendCmd <| Task.attempt GotZone Utils.Time.getZone
+        [ E.sendCmd <|
+            Task.perform GotTime Time.now
         , E.getUnitStatsForNetworks UnitStatsReturnedByApi
         , E.sendCmd (Api.aor_list AorListReturnedByApi { sortBy = Nothing })
         ]
@@ -229,8 +226,7 @@ loadNetworksWithTracker model tracker =
 
 
 type Msg
-    = GotZone (Result TimeZone.Error ( String, Time.Zone ))
-    | GotTime Time.Zone Posix
+    = GotTime Posix
     | NetworksReturnedByApi (Result ApiError (List B.Network))
     | NetworksGroupsActivityReturnedByApi (Result ApiError GroupsActivityPerDayRsp)
     | NetworkPointsReturnedByApi Int (Result ApiError B.ListNetworkPointsRsp)
@@ -276,8 +272,6 @@ type Msg
     | ToggleShowArchived Bool
     | AorListReturnedByApi (Result ApiError (List B.AreaOfResponsibility))
     | AorFilterSelMsg (Select.Msg Int)
-
-
 
 
 generatePreview : ( B.Network, B.Network ) -> B.Network
@@ -356,31 +350,20 @@ generatePreview x =
 update : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
 update shared msg model =
     case msg of
-        GotZone (Err e) ->
-            ( model
-            , E.showErrorWithDetails "Помилка отримання часового поясу" ("Error getting timezone: " ++ renderZoneError e)
-            )
-
-        GotZone (Ok ( _, zone )) ->
-            ( { model | zone = Just zone }
-            , E.sendCmd <|
-                Task.perform (GotTime zone) Time.now
-            )
-
-        GotTime zone now_ ->
+        GotTime now_ ->
             let
                 from =
-                    Shared.Components.DateTime.initFromPosix { datePosix = Utils.Time.xDaysAgo 7 now_, zone = zone }
+                    Shared.Components.DateTime.initFromPosix { datePosix = Utils.Time.xDaysAgo 7 now_, zone = shared.timeZone }
 
                 to =
-                    Shared.Components.DateTime.initFromPosix { datePosix = now_, zone = zone }
+                    Shared.Components.DateTime.initFromPosix { datePosix = now_, zone = shared.timeZone }
 
                 -- Ініціалізуємо дати звіту тими ж значеннями
                 reportFromDate =
-                    Shared.Components.DateTime.initFromPosix { datePosix = Utils.Time.xDaysAgo 7 now_, zone = zone }
+                    Shared.Components.DateTime.initFromPosix { datePosix = Utils.Time.xDaysAgo 7 now_, zone = shared.timeZone }
 
                 reportToDate =
-                    Shared.Components.DateTime.initFromPosix { datePosix = now_, zone = zone }
+                    Shared.Components.DateTime.initFromPosix { datePosix = now_, zone = shared.timeZone }
 
                 m2 =
                     { model
@@ -534,7 +517,7 @@ update shared msg model =
             let
                 ( m2, eff2 ) =
                     Shared.Components.DateTime.update
-                        { zone = model.zone
+                        { zone = shared.timeZone
                         , msg = imsg
                         , model = model.from
                         , toModel = \from -> { model | from = from }
@@ -555,7 +538,7 @@ update shared msg model =
             let
                 ( m2, eff2 ) =
                     Shared.Components.DateTime.update
-                        { zone = model.zone
+                        { zone = shared.timeZone
                         , msg = imsg
                         , model = model.to
                         , toModel = \to -> { model | to = to }
@@ -596,7 +579,7 @@ update shared msg model =
                 context =
                     { fromDate = model.reportFromDate.datePosix
                     , toDate = model.reportToDate.datePosix
-                    , zone = model.zone
+                    , zone = shared.timeZone
                     , networkId = Nothing
                     }
 
@@ -635,7 +618,7 @@ update shared msg model =
                 context =
                     { fromDate = model.from.datePosix
                     , toDate = model.to.datePosix
-                    , zone = model.zone
+                    , zone = shared.timeZone
                     , networkId = Nothing
                     }
 
@@ -646,37 +629,43 @@ update shared msg model =
 
         ReportTypeChanged option ->
             let
-                newReport = ReportUpdate.updateReportFromForm option
+                newReport =
+                    ReportUpdate.updateReportFromForm option
             in
             ( { model | report = newReport }, E.none )
 
         ReportActiveFreqsOnlyChanged checked ->
             let
-                newReport = ReportUpdate.updateCommonSetting "activeFreqsOnly" checked model.report
+                newReport =
+                    ReportUpdate.updateCommonSetting "activeFreqsOnly" checked model.report
             in
             ( { model | report = newReport }, E.none )
 
         ReportIncludeSigintSignsChanged checked ->
             let
-                newReport = ReportUpdate.updateCommonSetting "includeSigintSigns" checked model.report
+                newReport =
+                    ReportUpdate.updateCommonSetting "includeSigintSigns" checked model.report
             in
             ( { model | report = newReport }, E.none )
 
         ReportIncludeConfirmationChanged checked ->
             let
-                newReport = ReportUpdate.updateCommonSetting "includeConfirmation" checked model.report
+                newReport =
+                    ReportUpdate.updateCommonSetting "includeConfirmation" checked model.report
             in
             ( { model | report = newReport }, E.none )
 
         ReportIncludeUnitCallsignsChanged checked ->
             let
-                newReport = ReportUpdate.updateExtendedSetting "includeUnitCallsigns" checked model.report
+                newReport =
+                    ReportUpdate.updateExtendedSetting "includeUnitCallsigns" checked model.report
             in
             ( { model | report = newReport }, E.none )
 
         ReportIncludePelengsMapChanged checked ->
             let
-                newReport = ReportUpdate.updateExtendedSetting "includePelengsMap" checked model.report
+                newReport =
+                    ReportUpdate.updateExtendedSetting "includePelengsMap" checked model.report
             in
             ( { model | report = newReport }, E.none )
 
@@ -684,7 +673,7 @@ update shared msg model =
             let
                 ( m2, eff2 ) =
                     Shared.Components.DateTime.update
-                        { zone = model.zone
+                        { zone = shared.timeZone
                         , msg = imsg
                         , model = model.reportFromDate
                         , toModel = \reportFromDate -> { model | reportFromDate = reportFromDate }
@@ -697,7 +686,7 @@ update shared msg model =
             let
                 ( m2, eff2 ) =
                     Shared.Components.DateTime.update
-                        { zone = model.zone
+                        { zone = shared.timeZone
                         , msg = imsg
                         , model = model.reportToDate
                         , toModel = \reportToDate -> { model | reportToDate = reportToDate }
@@ -1279,30 +1268,25 @@ networksTableConfig user shared model =
                             \network ->
                                 { attributes = []
                                 , children =
-                                    case ( network.lastUpdatedAt, model.zone ) of
-                                        ( updatedAt, Just zone ) ->
-                                            let
-                                                updatedAtString =
-                                                    Utils.Time.renderDateF6 zone (Time.millisToPosix updatedAt)
+                                    let
+                                        updatedAtString =
+                                            Utils.Time.renderDateF6 shared.timeZone (Time.millisToPosix network.lastUpdatedAt)
 
-                                                updatedByString =
-                                                    Maybe.withDefault "невідомий" network.lastUpdatedBy
+                                        updatedByString =
+                                            Maybe.withDefault "невідомий" network.lastUpdatedBy
 
-                                                createdAtString =
-                                                    Utils.Time.renderDateF6 zone (Time.millisToPosix network.createdAt)
-                                            in
-                                            [ div [ style "padding-left" "4px", title ("Прив'язку створено " ++ createdAtString) ]
-                                                [ i [ class "bi bi-calendar-date" ] []
-                                                , text (" " ++ createdAtString)
-                                                ]
-                                            , div [ style "padding-left" "4px", title ("Востаннє прив'язка редагована " ++ updatedAtString ++ " користувачем " ++ updatedByString) ]
-                                                [ i [ class "bi bi-pencil-square" ] []
-                                                , text (" " ++ updatedAtString ++ " (" ++ updatedByString ++ ")")
-                                                ]
-                                            ]
-
-                                        _ ->
-                                            [ text "" ]
+                                        createdAtString =
+                                            Utils.Time.renderDateF6 shared.timeZone (Time.millisToPosix network.createdAt)
+                                    in
+                                    [ div [ style "padding-left" "4px", title ("Прив'язку створено " ++ createdAtString) ]
+                                        [ i [ class "bi bi-calendar-date" ] []
+                                        , text (" " ++ createdAtString)
+                                        ]
+                                    , div [ style "padding-left" "4px", title ("Востаннє прив'язка редагована " ++ updatedAtString ++ " користувачем " ++ updatedByString) ]
+                                        [ i [ class "bi bi-pencil-square" ] []
+                                        , text (" " ++ updatedAtString ++ " (" ++ updatedByString ++ ")")
+                                        ]
+                                    ]
                                 }
                         , sorter = Table.increasingOrDecreasingBy (\network -> String.fromInt network.lastUpdatedAt)
                         }
@@ -1561,8 +1545,6 @@ contentBlock user shared model =
             _ ->
                 div [ class "flex items-center justify-center w-full h-full" ] [ Shared.Components.Spinner.loadingSpinner ]
         ]
-
-
 
 
 leftPanel : Shared.Model -> Model -> Html Msg

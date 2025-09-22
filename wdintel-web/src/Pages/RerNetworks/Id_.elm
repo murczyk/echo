@@ -702,7 +702,7 @@ update shared msg model =
                         context =
                             { fromDate = model.reportFromDate.datePosix
                             , toDate = model.reportToDate.datePosix
-                            , zone = Just shared.timeZone
+                            , zone = shared.timeZone
                             , networkId = Just network.id
                             }
 
@@ -725,7 +725,7 @@ update shared msg model =
                 context =
                     { fromDate = model.reportFromDate.datePosix
                     , toDate = model.reportToDate.datePosix
-                    , zone = Just shared.timeZone
+                    , zone = shared.timeZone
                     , networkId =
                         case model.network of
                             Success network ->
@@ -786,7 +786,7 @@ update shared msg model =
             let
                 ( m2, eff2 ) =
                     Shared.Components.DateTime.update
-                        { zone = Just shared.timeZone
+                        { zone = shared.timeZone
                         , msg = imsg
                         , model = model.reportFromDate
                         , toModel = \reportFromDate -> { model | reportFromDate = reportFromDate }
@@ -799,7 +799,7 @@ update shared msg model =
             let
                 ( m2, eff2 ) =
                     Shared.Components.DateTime.update
-                        { zone = Just shared.timeZone
+                        { zone = shared.timeZone
                         , msg = imsg
                         , model = model.reportToDate
                         , toModel = \reportToDate -> { model | reportToDate = reportToDate }

@@ -104,7 +104,7 @@ mainBody user model shared route =
                         vps =
                             { profiles = model.profiles
                             , groupInfos = model.groupInfos
-                            , zone = model.zone
+                            , zone = shared.timeZone
                             , messages = model.messages
                             , tags = model.tags
                             , bookmarks = model.bookmarks
@@ -360,7 +360,7 @@ view user model shared route =
                         [ i [ class "bi bi-x-octagon" ] []
                         ]
                     ]
-                , Pages_.RerAnalysis.Date.dateAndPanelsBlock (isDarkMode shared.themeMode) model mapFeatureFlag
+                , Pages_.RerAnalysis.Date.dateAndPanelsBlock (isDarkMode shared.themeMode) shared.timeZone model mapFeatureFlag
                 ]
 
         viewReportConstructor =

@@ -1,15 +1,15 @@
 module Pages_.RerNetworks.ReportConfig exposing
-    ( ReportType(..)
-    , CommonReportSettings
+    ( CommonReportSettings
     , ExtendedReportSettings
+    , ReportContext
+    , ReportType(..)
     , ReportTypeOption(..)
     , defaultCommonSettings
     , defaultExtendedSettings
-    , reportTypeToOption
-    , optionToReportType
-    , toApiEtalonkaType
     , generateFileName
-    , ReportContext
+    , optionToReportType
+    , reportTypeToOption
+    , toApiEtalonkaType
     )
 
 import Bindings as B
@@ -54,7 +54,7 @@ type alias ExtendedReportSettings =
 type alias ReportContext =
     { fromDate : Maybe Time.Posix
     , toDate : Maybe Time.Posix
-    , zone : Maybe Time.Zone
+    , zone : Time.Zone
     , networkId : Maybe Int
     }
 
@@ -149,18 +149,18 @@ generateFileName context =
                     "etalonka"
 
         withDates =
-            case ( context.zone, context.fromDate, context.toDate ) of
-                ( Just zone, Just fromDate, Just toDate ) ->
+            case ( context.fromDate, context.toDate ) of
+                ( Just fromDate, Just toDate ) ->
                     baseFileName
                         ++ "_"
-                        ++ Utils.Time.renderDateTimeF6 zone fromDate
+                        ++ Utils.Time.renderDateTimeF6 context.zone fromDate
                         ++ "_"
-                        ++ Utils.Time.renderDateTimeF6 zone toDate
+                        ++ Utils.Time.renderDateTimeF6 context.zone toDate
 
-                ( Just zone, Just fromDate, Nothing ) ->
+                ( Just fromDate, Nothing ) ->
                     baseFileName
                         ++ "_"
-                        ++ Utils.Time.renderDateTimeF6 zone fromDate
+                        ++ Utils.Time.renderDateTimeF6 context.zone fromDate
 
                 _ ->
                     baseFileName

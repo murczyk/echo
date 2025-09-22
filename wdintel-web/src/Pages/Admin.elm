@@ -2215,8 +2215,8 @@ renderFullNoteModal isDark model =
         Nothing ->
             text ""
 
-renderOrphanGroupsSection : Bool -> Model -> B.User -> Html Msg
-renderOrphanGroupsSection isDark model user =
+renderOrphanGroupsSection : Bool -> Time.Zone -> Model -> B.User -> Html Msg
+renderOrphanGroupsSection isDark timeZone model user =
     case model.orphanGroups of
         RD.NotAsked ->
             div [ class "bg-[var(--bs-body-bg)] rounded-lg border p-6" ]
@@ -2246,7 +2246,7 @@ renderOrphanGroupsSection isDark model user =
                     [ h3 [ class "text-lg font-semibold mb-4" ]
                         [ text <| "Неприв'язані групи (" ++ String.fromInt (List.length groups) ++ ")" ]
                     , div [ class "table-responsive-modern" ]
-                        [ renderOrphanGroupsTable model groups ]
+                        [ renderOrphanGroupsTable model timeZone groups ]
                     ]
 
         RD.NeedsReload _ ->
@@ -2985,8 +2985,8 @@ renderOrphanGroupAssignmentDialog isDark model dialog =
         ]
 
 
-renderOrphanGroupsTable : Model -> List B.OrphanSignalGroupEntry -> Html Msg
-renderOrphanGroupsTable model groups =
+renderOrphanGroupsTable : Model -> Time.Zone -> List B.OrphanSignalGroupEntry -> Html Msg
+renderOrphanGroupsTable model timeZone groups =
     let
         pager =
             model.orphanGroupsPager
@@ -3138,10 +3138,6 @@ renderOrphanGroupsTable model groups =
                         let
                             posixTime =
                                 Time.millisToPosix timestamp
-
-                            -- Use Europe/Kyiv timezone (hardcoded for now)
-                            timeZone =
-                                TimeZone.europe__kyiv ()
                         in
                         Utils.Time.renderDateF6 timeZone posixTime
                             |> String.replace "." "-"
@@ -3673,10 +3669,10 @@ zoneCard2 isDark model user ( zoneId, zone ) =
         ]
 
 
-mainBlock : Bool -> Model -> B.User -> Html Msg
-mainBlock isDark model user =
+mainBlock : Bool -> Model -> B.User -> Shared.Model -> Html Msg
+mainBlock isDark model user shared =
     div [ class "space-y-6" ]
-        [ renderOrphanGroupsSection isDark model user
+        [ renderOrphanGroupsSection isDark shared.timeZone model user
         , renderFullNoteModal isDark model
         , div [ class "bg-[var(--bs-body-bg)] rounded-lg border p-6" ]
             [ h2 [ class "text-xl font-semibold mb-4" ] [ text "Напрямки" ]
@@ -3785,7 +3781,7 @@ mainBlock isDark model user =
 
 body : Bool -> Shared.Model -> B.User -> Model -> List (Html Msg)
 body dark shared user model =
-    [ div [ class "mt-2 w-5/6 mx-auto" ] [ mainBlock dark model user ]
+    [ div [ class "mt-2 w-5/6 mx-auto" ] [ mainBlock dark model user shared ]
     ]
         ++ (case model.userSelectorDialog of
                 Just dialog ->

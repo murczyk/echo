@@ -91,7 +91,6 @@ statusToLabel status =
 
 type alias Model =
     { formErrors : Dict String String
-    , timeZone : Maybe Time.Zone
     , logins : List B.Login
     , inpLogin : String
     , inpPassword : String
@@ -169,7 +168,6 @@ roles =
 init : ( Model, Effect Msg )
 init =
     ( { formErrors = Dict.empty
-      , timeZone = Nothing
       , logins = []
       , zones = []
       , organisms = []
@@ -217,7 +215,6 @@ init =
             [ Api.list_logins GotLogins { sortBy = Just B.LoginCreatedAtDesc }
             , Api.sigint_zones_list GotZoneList
             , Api.list_organisms GotOrganisms { sortBy = Nothing }
-            , Task.attempt GotTimeZone Utils.Time.getZone
             ]
     )
 
@@ -226,7 +223,6 @@ type Msg
     = GotLogins (Result ApiError B.ListLoginsRsp)
     | GotZoneList (Result ApiError (List ( Int, B.SigintZone )))
     | GotOrganisms (Result ApiError (List B.Organism))
-    | GotTimeZone (Result TimeZone.Error ( String, Time.Zone ))
     | SetLogin String
     | SetEditDeltaLogin String
     | SetPassword String
@@ -361,14 +357,6 @@ update msg model =
                     { filterOrganismSelect | items = organismMenuItems }
             in
             ( { model | organisms = res, inpOrganism = inpOrganism2, filterOrganismSelect = filterOrganismSelect2 }, E.none )
-
-        GotTimeZone (Err e) ->
-            ( model, E.showError "Timezone Error" )
-
-        GotTimeZone (Ok ( _, zone )) ->
-            ( { model | timeZone = Just zone }
-            , E.none
-            )
 
         SetLogin value ->
             ( { model | inpLogin = value }, E.none )
@@ -839,7 +827,7 @@ viewFormErrors field errors =
         |> div [ class "text-red-500 text-sm" ]
 
 
-viewDeletedStatus : Maybe Time.Zone -> B.Login -> Html msg
+viewDeletedStatus : Time.Zone -> B.Login -> Html msg
 viewDeletedStatus timeZone login =
     if login.deleted then
         case login.deactivationReason of
@@ -1782,7 +1770,7 @@ usersTableConfig shared model =
                 |> Table.withColumnWidth "15%"
             , Table.customColumn
                 { name = "Створено"
-                , viewData = \login -> Utils.Time.renderDateF5FromMillis login.createdAt model.timeZone
+                , viewData = \login -> Utils.Time.renderDateF5FromMillis login.createdAt shared.timeZone
                 , sorter = Table.increasingOrDecreasingBy (\login -> String.fromInt login.createdAt)
                 }
                 |> Table.withColumnWidth "12%"
@@ -1791,7 +1779,7 @@ usersTableConfig shared model =
                 , viewData =
                     \login ->
                         { attributes = [ class "text-center" ]
-                        , children = [ viewDeletedStatus model.timeZone login ]
+                        , children = [ viewDeletedStatus shared.timeZone login ]
                         }
                 , sorter =
                     Table.increasingOrDecreasingBy

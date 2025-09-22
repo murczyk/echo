@@ -16,7 +16,6 @@ import Utils.RemoteData exposing (RemoteData)
 type alias Model =
     { formErrors : Dict String String
     , toasts : Shared.Components.Toast.Model
-    , zone : Maybe Time.Zone
     , from : Shared.Components.DateTime.Model
     , to : Shared.Components.DateTime.Model
     , dateRangePicker : Shared.Components.DateRangePicker.Model

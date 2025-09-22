@@ -67,8 +67,7 @@ toLayout user model =
 
 
 type alias Model =
-    { zone : Maybe Time.Zone
-    , callsigns : List B.Callsign
+    { callsigns : List B.Callsign
     , callsignsWithUnitsFromInbox : RemoteData ApiError (List ( String, List String ))
     , addState : EnumeratedList AddState
     , inpUnitSelState : Select.State
@@ -134,8 +133,7 @@ init req _ =
 
         m2 : Model
         m2 =
-            { zone = Nothing
-            , callsigns = []
+            { callsigns = []
             , callsignsWithUnitsFromInbox = NotAsked
             , addState = EL.fromList [ initAddState mCallsignName ]
             , inpUnitSelState = Select.initState (Select.selectIdentifier "sel-unit-add")
@@ -179,15 +177,14 @@ init req _ =
     in
     ( m2
     , E.batch
-        [ E.sendCmd <| Task.attempt InitGotZone Utils.Time.getZone
+        [ E.sendCmd <| Task.perform InitGotTime Time.now
         , E.replaceRoute { path = Route.Path.RerCallsigns, hash = Nothing, query = Dict.remove "callsign" req.query }
         ]
     )
 
 
 type Msg
-    = InitGotZone (Result TimeZone.Error ( String, Time.Zone ))
-    | GotCallsigns (Result ApiError B.ListCallsignsRsp)
+    = GotCallsigns (Result ApiError B.ListCallsignsRsp)
     | GotCallsignsWithUnitsFromInbox (Result ApiError B.GetCallsignsWithUnitsFromInboxRsp)
     | AddStateMsg Int AddState
     | InpSource String
@@ -218,7 +215,7 @@ type Msg
     | GotUnitStats (Result ApiError B.CallsignUnitStatsRsp)
     | DateTimeFromMsg (Shared.Components.DateTime.Msg Msg)
     | DateTimeToMsg (Shared.Components.DateTime.Msg Msg)
-    | InitGotTime Time.Zone Time.Posix
+    | InitGotTime Time.Posix
     | ToggleIsIgnoringDateFilter Bool
     | SortByCallsignName
     | SortByCreatedAt
@@ -506,25 +503,13 @@ filterUnitDebounceConfig =
 update : Route () -> Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
 update req shared msg model =
     case msg of
-        InitGotZone (Err e) ->
-            ( model
-            , E.showError
-                ("Error getting timezone: " ++ renderZoneError e)
-            )
-
-        InitGotZone (Ok ( _, zone )) ->
-            ( { model | zone = Just zone }
-            , E.sendCmd <|
-                Task.perform (InitGotTime zone) Time.now
-            )
-
-        InitGotTime zone now_ ->
+        InitGotTime now_ ->
             let
                 from =
-                    Shared.Components.DateTime.initFromPosix { datePosix = Utils.Time.xDaysAgo 7 now_, zone = zone }
+                    Shared.Components.DateTime.initFromPosix { datePosix = Utils.Time.xDaysAgo 7 now_, zone = shared.timeZone }
 
                 to =
-                    Shared.Components.DateTime.initFromPosix { datePosix = now_, zone = zone }
+                    Shared.Components.DateTime.initFromPosix { datePosix = now_, zone = shared.timeZone }
 
                 m2 =
                     { model
@@ -1038,7 +1023,7 @@ update req shared msg model =
             let
                 ( m2, eff2 ) =
                     Shared.Components.DateTime.update
-                        { zone = model.zone
+                        { zone = shared.timeZone
                         , msg = imsg
                         , model = model.from
                         , toModel = \from -> { model | from = from }
@@ -1056,7 +1041,7 @@ update req shared msg model =
             let
                 ( m2, eff2 ) =
                     Shared.Components.DateTime.update
-                        { zone = model.zone
+                        { zone = shared.timeZone
                         , msg = imsg
                         , model = model.to
                         , toModel = \to -> { model | to = to }
@@ -1680,14 +1665,9 @@ callsignsTableConfig shared model user =
                     \callsign ->
                         { attributes = []
                         , children =
-                            [ case model.zone of
-                                Nothing ->
-                                    text "Loading..."
-
-                                Just zone ->
-                                    text <|
-                                        Utils.Time.renderDateF6 zone
-                                            (Time.millisToPosix callsign.createdAt)
+                            [ text <|
+                                Utils.Time.renderDateF6 shared.timeZone
+                                    (Time.millisToPosix callsign.createdAt)
                             ]
                         }
                 , sorter = Table.unsortable

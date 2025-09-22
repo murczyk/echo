@@ -70,7 +70,6 @@ init route _ =
         model =
             { formErrors = Dict.empty
             , toasts = Shared.Components.Toast.init
-            , zone = Nothing
             , from = Shared.Components.DateTime.init ()
             , to = Shared.Components.DateTime.init ()
             , dateRangePicker = Shared.Components.DateRangePicker.init
@@ -227,7 +226,7 @@ init route _ =
     in
     ( m3
     , E.batch
-        [ E.getTimeZone InitGotZone
+        [ E.getCurrentTime InitGotTime
         , E.getAnalysisSavedFilters SavedFiltersGot
         , E.getTags GotTags
         , E.map RowsMsg Shared.Components.RerMessage.init
@@ -654,23 +653,13 @@ update user shared route msg model =
             , E.sendCmd <| Cmd.map ToastMsg icmds
             )
 
-        InitGotZone (Err e) ->
-            ( model
-            , E.sendCmd <| Shared.Components.Toast.addError ToastMsg ("Error getting timezone: " ++ renderZoneError e)
-            )
-
-        InitGotZone (Ok ( _, zone )) ->
-            ( { model | zone = Just zone }
-            , E.getCurrentTime (InitGotTime zone)
-            )
-
-        InitGotTime zone now_ ->
+        InitGotTime now_ ->
             let
                 ( from, to ) =
                     Shared.Components.DateTime.initAnalysisRanges
                         { from = model.from
                         , to = model.to
-                        , zone = zone
+                        , zone = shared.timeZone
                         , now = now_
                         }
 
@@ -741,7 +730,7 @@ update user shared route msg model =
         DateRangePickerMsg imsg ->
             let
                 m2 =
-                    { model | dateRangePicker = Shared.Components.DateRangePicker.update { zone = model.zone, from = model.from, to = model.to } imsg model.dateRangePicker }
+                    { model | dateRangePicker = Shared.Components.DateRangePicker.update { zone = shared.timeZone, from = model.from, to = model.to } imsg model.dateRangePicker }
             in
             case imsg of
                 Shared.Components.DateRangePicker.Submit ->
@@ -1213,7 +1202,7 @@ update user shared route msg model =
                 vps =
                     { profiles = model.profiles
                     , groupInfos = model.groupInfos
-                    , zone = model.zone
+                    , zone = shared.timeZone
                     , messages = model.messages
                     , tags = model.tags
                     , bookmarks = model.bookmarks
@@ -1928,8 +1917,8 @@ update user shared route msg model =
             )
 
         ClearAllFilters ->
-            case ( model.zone, model.now ) of
-                ( Just zone, Just now ) ->
+            case model.now of
+                Just now ->
                     let
                         m2 =
                             Query.updModelFromQueryState model Query.emptyQueryState
@@ -1938,7 +1927,7 @@ update user shared route msg model =
                             Shared.Components.DateTime.initAnalysisRanges
                                 { from = m2.from
                                 , to = m2.to
-                                , zone = zone
+                                , zone = shared.timeZone
                                 , now = now
                                 }
 
@@ -2858,23 +2847,18 @@ update user shared route msg model =
 
                 -- filename like "report_2023-07-17-12-00_2023-07-18-12-00"
                 fname =
-                    case model.zone of
-                        Nothing ->
-                            "report." ++ extension
-
-                        Just zone ->
-                            "report_"
-                                ++ (model.from.datePosix
-                                        |> mmap (Utils.Time.renderDateTimeF6 zone)
-                                        |> def ""
-                                   )
-                                ++ "_"
-                                ++ (model.to.datePosix
-                                        |> mmap (Utils.Time.renderDateTimeF6 zone)
-                                        |> def ""
-                                   )
-                                ++ "."
-                                ++ extension
+                    "report_"
+                        ++ (model.from.datePosix
+                                |> mmap (Utils.Time.renderDateTimeF6 shared.timeZone)
+                                |> def ""
+                           )
+                        ++ "_"
+                        ++ (model.to.datePosix
+                                |> mmap (Utils.Time.renderDateTimeF6 shared.timeZone)
+                                |> def ""
+                           )
+                        ++ "."
+                        ++ extension
             in
             ( m2
             , E.downloadFile fname "application/vnd.openxmlformats-officedocument.wordprocessingml.document" bytes

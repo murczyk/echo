@@ -10,13 +10,14 @@ import Pages_.RerAnalysis.ToggleButton exposing (toggleButton2)
 import Shared.Components.DateRangePicker
 import String
 import Utils.Utils exposing (..)
+import Time
 
 
-dateAndPanelsBlock : Bool -> Model -> Bool -> Html Msg
-dateAndPanelsBlock isDark model mapFeatureFlag =
+dateAndPanelsBlock : Bool -> Time.Zone -> Model -> Bool -> Html Msg
+dateAndPanelsBlock isDark timeZone model mapFeatureFlag =
     div [ class "d-inline-block align-middle ms-2" ]
         [ div [ class "d-flex align-items-center", style "gap" "8px", style "padding-top" "1px" ]
-            [ Shared.Components.DateRangePicker.view { zone = model.zone, from = model.from, to = model.to } model.dateRangePicker
+            [ Shared.Components.DateRangePicker.view { zone = timeZone, from = model.from, to = model.to } model.dateRangePicker
                 |> Html.map DateRangePickerMsg
             , div [ class "d-flex align-items-center" ]
                 [ if mapFeatureFlag then
