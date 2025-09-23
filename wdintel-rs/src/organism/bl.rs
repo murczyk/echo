@@ -230,17 +230,15 @@ pub async fn create_organism(
 }
 
 pub async fn update_organism(
-    dbx: &DatabaseConnection,
+    txn: &DatabaseTransaction,
     req: &UpdateOrganismReq,
 ) -> Result<organism::Model, AppError> {
-    let txn = dbx.begin().await.context(h!())?;
-
     let parent_id = match req.parent_id {
         None => None,
         Some(parent_id) => {
             let has_organism = organism::Entity::find_by_id(parent_id)
                 .filter(organism::Column::DeletedPermanently.eq(false))
-                .count(&txn)
+                .count(txn)
                 .await
                 .context(h!())?
                 == 1;
@@ -255,7 +253,7 @@ pub async fn update_organism(
     let organism_obj = organism::Entity::find()
         .filter(organism::Column::DeletedPermanently.eq(false))
         .filter(organism::Column::Id.eq(req.id))
-        .one(&txn)
+        .one(txn)
         .await
         .context(h!())?
         .ok_or(AppError::NotFound)?;
@@ -271,13 +269,11 @@ pub async fn update_organism(
     }
     organism.enabled = Set(req.enabled);
 
-    let organism = organism.update(&txn).await.context(h!())?;
+    let organism = organism.update(txn).await.context(h!())?;
 
-    upsert_organism_aors(&txn, req.aor_ids.clone(), req.id)
+    upsert_organism_aors(txn, req.aor_ids.clone(), req.id)
         .await
         .context(h!())?;
-
-    txn.commit().await.context(h!())?;
     Ok(organism)
 }
 
