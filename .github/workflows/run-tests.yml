@@ -44,7 +44,7 @@ jobs:
         with:
           # Ensure LFS files are fetched as real binaries
           lfs: true
-          clean: true
+          clean: false
 
       - name: Ensure git-lfs installed and checkout LFS objects
         timeout-minutes: 5
