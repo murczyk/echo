@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -euxo pipefail
 
 # Publish built .deb packages to an echo-ci server running aptly.
+# Mirrors the signed publish flow used by echo-install-utils / echo-gpu / echo-operator.
 #
 # Required env (via GitHub secrets or local env):
 #   ECHO_CI_SSH_HOST, ECHO_CI_SSH_USER, ECHO_CI_SSH_KEY (PEM content)
@@ -9,15 +10,29 @@ set -euo pipefail
 #   ECHO_CI_REPO (default: echo)
 #   ECHO_CI_DIST (default: jammy)
 #   ECHO_CI_COMPONENT (default: main)
+# Optional signing vars (if set, publishing is signed):
+#   ECHO_CI_GPG_KEYID           GPG key id to sign with
+#   ECHO_CI_GPG_PASSPHRASE_FILE Path to passphrase file on echo-ci host
+#   ECHO_CI_GPG_PROVIDER        gpg provider (e.g. gpg, gpg2)
 
 : "${ECHO_CI_REPO:=echo}"
 : "${ECHO_CI_DIST:=jammy}"
 : "${ECHO_CI_COMPONENT:=main}"
-
 : "${ECHO_CI_SSH_HOST:=echo-ci.eagle-atria.ts.net}"
 : "${ECHO_CI_SSH_USER:=echo}"
+GPG_KEYID="${ECHO_CI_GPG_KEYID:-}"
+GPG_PASS_FILE="${ECHO_CI_GPG_PASSPHRASE_FILE:-}"
+GPG_PROVIDER="${ECHO_CI_GPG_PROVIDER:-}"
 
-# Prepare SSH options
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+cd "$REPO_ROOT"
+
+if ! compgen -G "target/debian/*.deb" > /dev/null; then
+  echo "No .deb files found in target/debian; did you run deploy/ci/build_debs.sh?" >&2
+  exit 1
+fi
+
 mkdir -p ~/.ssh
 chmod 700 ~/.ssh
 ssh-keyscan -H "$ECHO_CI_SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
@@ -29,80 +44,123 @@ if [[ -n "${ECHO_CI_SSH_KEY:-}" ]]; then
   SSH_IDENTITY_ARGS=(-i ~/.ssh/echo_ci)
 fi
 
-# Use the shared echo-ci layout like echo-install-utils/echo-gpu
 DEBS_DIR_REMOTE="/home/echo/echo-debs/$ECHO_CI_REPO"
 
-# Quick connectivity probe with small retry; fail the job on inability to reach CI
 retries=3
+connected=0
 for attempt in $(seq 1 $retries); do
-  if ssh -o BatchMode=yes -o ConnectTimeout=5 "${SSH_IDENTITY_ARGS[@]}" \
+  if ssh -o BatchMode=yes -o ConnectTimeout=10 "${SSH_IDENTITY_ARGS[@]}" \
     "$ECHO_CI_SSH_USER@$ECHO_CI_SSH_HOST" true 2>/dev/null; then
+    connected=1
     break
   fi
   echo "warn: SSH attempt $attempt/$retries to $ECHO_CI_SSH_USER@$ECHO_CI_SSH_HOST failed" >&2
   sleep 2
-  if [[ $attempt -eq $retries ]]; then
-    echo "::error::echo-ci publish failed: cannot SSH to $ECHO_CI_SSH_USER@$ECHO_CI_SSH_HOST" >&2
-    exit 1
-  fi
 done
 
-# Upload debs
+if [[ $connected -eq 0 ]]; then
+  echo "::error::echo-ci publish failed: cannot SSH to $ECHO_CI_SSH_USER@$ECHO_CI_SSH_HOST" >&2
+  exit 1
+fi
+
 ssh "${SSH_IDENTITY_ARGS[@]}" "$ECHO_CI_SSH_USER@$ECHO_CI_SSH_HOST" "mkdir -p \"$DEBS_DIR_REMOTE\""
 scp "${SSH_IDENTITY_ARGS[@]}" target/debian/*.deb "$ECHO_CI_SSH_USER@$ECHO_CI_SSH_HOST:$DEBS_DIR_REMOTE/"
 
-# Trigger aptly import + publish remotely
 ssh "${SSH_IDENTITY_ARGS[@]}" "$ECHO_CI_SSH_USER@$ECHO_CI_SSH_HOST" bash -s -- \
-  "$ECHO_CI_REPO" "$ECHO_CI_DIST" "$ECHO_CI_COMPONENT" "$DEBS_DIR_REMOTE" <<'REMOTE'
-set -euo pipefail
-REPO="$1"; DIST="$2"; COMP="$3"; DEBS_DIR="$4"
+  "$ECHO_CI_REPO" "$ECHO_CI_DIST" "$ECHO_CI_COMPONENT" "$DEBS_DIR_REMOTE" "$GPG_KEYID" "$GPG_PASS_FILE" "$GPG_PROVIDER" <<'REMOTE'
+set -euxo pipefail
+REPO="$1"
+DIST="$2"
+COMP="$3"
+DEBS_DIR="$4"
+GPG_KEYID="${5-}"
+GPG_PASS_FILE="${6-}"
+GPG_PROVIDER="${7-}"
 
-# Initialize aptly repo if missing
-if ! aptly repo show "$REPO" >/dev/null 2>&1; then
+aptly repo show "$REPO" >/dev/null 2>&1 || \
   aptly repo create -distribution="$DIST" -component="$COMP" "$REPO"
-fi
 
-# Import debs
-aptly repo add -force-replace=true "$REPO" "$DEBS_DIR"/*.deb
-# Clean uploaded debs to keep staging dir tidy and avoid re-adding next run
-rm -f "$DEBS_DIR"/*.deb || true
+cd /home/echo/echo-debs
+for f in "$REPO"/*.deb; do
+  if [[ -f "$f" ]]; then
+    if ! aptly repo add "$REPO" "$f"; then
+      echo "::notice::$(basename "$f") already exists in $REPO; continuing"
+    fi
+    rm -f -- "$f" || true
+  fi
+done
 
-# Create timestamped snapshot of this repo
-DT=$(date -u +%Y%m%d%H%M%S)
+DT="$(date -u +%Y-%m-%d-%H-%M-%S)"
+
+snapshot_exists() {
+  local name="$1"
+  aptly snapshot show "$name" >/dev/null 2>&1
+}
+
+create_snapshot_if_missing() {
+  local name="$1"; shift
+  if snapshot_exists "$name"; then
+    echo "::notice::snapshot '$name' already exists; reusing"
+    return 0
+  fi
+  if ! aptly snapshot create "$name" "$@"; then
+    if snapshot_exists "$name"; then
+      echo "::notice::snapshot '$name' appeared during create; reusing"
+      return 0
+    fi
+    echo "::error::failed to create snapshot '$name' and it does not exist" >&2
+    return 1
+  fi
+}
+
 SNAP_REPO="$REPO-$DT"
-MERGED="$REPO-merged-$DT"
-aptly snapshot create "$SNAP_REPO" from repo "$REPO"
+create_snapshot_if_missing "$SNAP_REPO" from repo "$REPO"
 
-# If echo-install-utils repo exists, merge its snapshot into this snapshot
+SNAP_TO_PUBLISH="$SNAP_REPO"
+MERGE_LIST=("$SNAP_REPO")
+
 if aptly repo show echo-install-utils >/dev/null 2>&1; then
   SNAP_UTILS="echo-install-utils-$DT"
-  aptly snapshot create "$SNAP_UTILS" from repo echo-install-utils
-  # -latest to prefer latest versions on conflicts
-  aptly snapshot merge -latest "$MERGED" "$SNAP_REPO" "$SNAP_UTILS"
-  SNAP_TO_PUBLISH="$MERGED"
-else
-  SNAP_TO_PUBLISH="$SNAP_REPO"
+  create_snapshot_if_missing "$SNAP_UTILS" from repo echo-install-utils
+  MERGE_LIST+=("$SNAP_UTILS")
 fi
 
-echo "Snapshot to publish: $SNAP_TO_PUBLISH"
-echo "Preview packages in snapshot (first 40 lines):"
-aptly snapshot show -with-packages "$SNAP_TO_PUBLISH" | sed -n '1,40p' || true
+if (( ${#MERGE_LIST[@]} > 1 )); then
+  MERGED="$REPO-$DT-merged"
+  if snapshot_exists "$MERGED"; then
+    echo "::notice::merged snapshot '$MERGED' already exists; reusing"
+  else
+    aptly snapshot merge -latest "$MERGED" "${MERGE_LIST[@]}"
+  fi
+  SNAP_TO_PUBLISH="$MERGED"
+fi
 
-# Save a marker with the last snapshot name for troubleshooting
+ABH=
+if aptly publish switch -help 2>&1 | grep -q 'acquire-by-hash'; then
+  ABH='-acquire-by-hash'
+fi
+
+if [[ -n "$GPG_KEYID" ]]; then
+  SIGN_ARGS=(-batch $ABH -gpg-key "$GPG_KEYID")
+  [[ -n "$GPG_PASS_FILE" ]] && SIGN_ARGS+=( -passphrase-file "$GPG_PASS_FILE" )
+  [[ -n "$GPG_PROVIDER" ]] && SIGN_ARGS+=( -gpg-provider "$GPG_PROVIDER" )
+  mkdir -p "$HOME/.aptly/public/keys"
+  gpg --armor --export "$GPG_KEYID" > "$HOME/.aptly/public/keys/echo-ci-archive-keyring.asc" || true
+  gpg --export "$GPG_KEYID" > "$HOME/.aptly/public/keys/echo-ci-archive-keyring.gpg" || true
+else
+  SIGN_ARGS=(-skip-signing $ABH)
+fi
+
 echo "$SNAP_TO_PUBLISH" > "$DEBS_DIR/$REPO.LAST_SNAPSHOT" || true
-# Also store a copy under home for convenience
 echo "$SNAP_TO_PUBLISH" > "$HOME/.aptly/${REPO}.LAST_SNAPSHOT" || true
 
-# publish under prefix "$REPO" (e.g., /echo), switching to new (possibly merged) snapshot
-# Try switch first (robust if already published), then fallback to drop+publish snapshot.
-if ! aptly publish switch -skip-signing -acquire-by-hash "$DIST" "$REPO" "$SNAP_TO_PUBLISH"; then
+if ! aptly publish switch -force-overwrite "${SIGN_ARGS[@]}" "$DIST" "$REPO" "$SNAP_TO_PUBLISH"; then
   echo "Publish switch failed, attempting drop+publish..."
   aptly publish drop -force-drop "$DIST" "$REPO" || true
-  aptly publish snapshot -skip-signing -acquire-by-hash -component="$COMP" -distribution="$DIST" "$SNAP_TO_PUBLISH" "$REPO"
+  aptly publish snapshot -force-overwrite "${SIGN_ARGS[@]}" -component="$COMP" -distribution="$DIST" "$SNAP_TO_PUBLISH" "$REPO"
 fi
 
-echo "Published prefix/path: /$REPO dists: $DIST"
-aptly publish show "$DIST" "$REPO" || true
+ls -lah "$HOME/.aptly/public/$REPO/dists/$DIST" || true
 REMOTE
 
 echo "Published to echo-ci ($ECHO_CI_SSH_HOST)"
