@@ -114,10 +114,9 @@ pub struct LinkAccountReq {
 
 #[derive(Debug, Serialize, Deserialize, Elm, ElmEncode, ElmDecode)]
 pub struct LinkEchoOperatorReq {
-    pub phone: String,
-    pub messenger: String,
+    pub api_login: String,
+    pub api_endpoint: String,
     pub display_name: String,
-    pub system_service_name: String,
     pub description: Option<String>,
     pub aor_id: i64,
 }
