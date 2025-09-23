@@ -65,7 +65,7 @@ type alias ViewParams =
     , datasources : List ( Int, B.Datasource )
     , serverInfo : Maybe B.ServerInfo
     , networks : Dict Int B.Network
-    , zone : Maybe Time.Zone
+    , zone : Time.Zone
     , time : Maybe Time.Posix
     , profiles : Dict String (Maybe B.SignalProfileEntry)
     , message : ( Int, B.InboxMessage )
@@ -209,36 +209,31 @@ computeDateTimeRenderParts message ps =
                     defVal
 
                 Ok prts ->
-                    case ps.zone of
+                    case ps.time of
                         Nothing ->
                             defVal
 
-                        Just zone ->
-                            case ps.time of
-                                Nothing ->
-                                    defVal
+                        Just time ->
+                            let
+                                timeS =
+                                    message.timestamp
+                                        |> mmap Time.millisToPosix
+                                        |> mmap (Utils.Time.renderTimeF4 ps.zone)
+                                        |> def (message.time |> def "")
+                            in
+                            if
+                                Utils.Time.partsAreSameDay
+                                    (Time.Extra.posixToParts ps.zone time)
+                                    prts
+                            then
+                                { time = timeS
+                                , date = Nothing
+                                }
 
-                                Just time ->
-                                    let
-                                        timeS =
-                                            message.timestamp
-                                                |> mmap Time.millisToPosix
-                                                |> mmap (Utils.Time.renderTimeF4 zone)
-                                                |> def (message.time |> def "")
-                                    in
-                                    if
-                                        Utils.Time.partsAreSameDay
-                                            (Time.Extra.posixToParts zone time)
-                                            prts
-                                    then
-                                        { time = timeS
-                                        , date = Nothing
-                                        }
-
-                                    else
-                                        { time = timeS
-                                        , date = Just (Utils.Time.renderPartsF1 prts)
-                                        }
+                            else
+                                { time = timeS
+                                , date = Just (Utils.Time.renderPartsF1 prts)
+                                }
 
 
 type InternalMsg
@@ -677,17 +672,17 @@ leftColumn ( messageId, message ) ps model =
                     analysisHref withMap =
                         let
                             dateFromStr =
-                                case ( ps.zone, ps.time ) of
-                                    ( Just zone, Just time ) ->
-                                        Utils.Time.renderDateF4 zone (Utils.Time.xDaysAgo 15 time)
+                                case ps.time of
+                                    Just time ->
+                                        Utils.Time.renderDateF4 ps.zone (Utils.Time.xDaysAgo 15 time)
 
                                     _ ->
                                         ""
 
                             dateToStr =
-                                case ( ps.zone, ps.time ) of
-                                    ( Just zone, Just time ) ->
-                                        Utils.Time.renderDateF4 zone (Utils.Time.xDaysAgo -1 time)
+                                case ps.time of
+                                    Just time ->
+                                        Utils.Time.renderDateF4 ps.zone (Utils.Time.xDaysAgo -1 time)
 
                                     _ ->
                                         ""
@@ -924,17 +919,12 @@ rightColumn ( messageId, message ) ps model =
                                                 []
 
                                             Just event ->
-                                                case ps.zone of
-                                                    Nothing ->
-                                                        []
-
-                                                    Just zone ->
-                                                        [ text <|
-                                                            Utils.Time.renderDistanceF1
-                                                                zone
-                                                                (Time.millisToPosix event)
-                                                                now
-                                                        ]
+                                                [ text <|
+                                                    Utils.Time.renderDistanceF1
+                                                        ps.zone
+                                                        (Time.millisToPosix event)
+                                                        now
+                                                ]
                         in
                         [ div
                             [ style "font-size" ".8rem"

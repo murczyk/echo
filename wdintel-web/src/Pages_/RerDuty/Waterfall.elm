@@ -15,16 +15,6 @@ module Pages_.RerDuty.Waterfall exposing
 import Api
 import Bindings as B
 import Browser.Dom exposing (Element)
-import Shared.Components.Badges exposing (badgeNotSelectedHtml, badgeSelectedCloseCounter, badgeSelectedHtml)
-import Shared.Components.RerMessage exposing (model0)
-import Shared.Components.Spinner
-import Shared.Components.Toast
-import Shared.Components.Tooltip as Tooltip
-import Pages_.RerDuty.Waterfall.Filters as Filters exposing (Filter, FilterMsg(..))
-import Pages_.RerDuty.Waterfall.Message
-import Pages_.RerDuty.Waterfall.Messages as Messages
-import Pages_.RerDuty.Waterfall.Types exposing (..)
-import Pages_.RerDuty.Waterfall.Utils as WUtils
 import Config
 import Core.Callsign
 import Core.Types exposing (..)
@@ -45,10 +35,20 @@ import Maybe
 import Maybe.Extra as MaybeX
 import PagePorts.WaterfallPorts as Ports
 import Pages_.RerAnalysis.Query as Query
+import Pages_.RerDuty.Waterfall.Filters as Filters exposing (Filter, FilterMsg(..))
+import Pages_.RerDuty.Waterfall.Message
+import Pages_.RerDuty.Waterfall.Messages as Messages
+import Pages_.RerDuty.Waterfall.Types exposing (..)
+import Pages_.RerDuty.Waterfall.Utils as WUtils
 import Process
 import Select
 import Set exposing (Set)
 import Shared
+import Shared.Components.Badges exposing (badgeNotSelectedHtml, badgeSelectedCloseCounter, badgeSelectedHtml)
+import Shared.Components.RerMessage exposing (model0)
+import Shared.Components.Spinner
+import Shared.Components.Toast
+import Shared.Components.Tooltip as Tooltip
 import Shared.Model exposing (isDarkMode)
 import Task
 import Time exposing (Posix)
@@ -63,10 +63,9 @@ import Utils.Utils exposing (andThen, def, emptyToNothing, findK, getLabelOrDefa
 type Msg
     = NoOp
       -- TIME
-    | InitGotZone (Result TimeZone.Error ( String, Time.Zone ))
     | TickTimeTick Posix
     | TickTimeSlept
-    | InitGotTime Time.Zone Posix
+    | InitGotTime Posix
     | GotTime Posix
     | InboxLoopSleptBeforeLoadNewer
       -- API CALLS
@@ -155,7 +154,6 @@ type alias Model =
     , scrollThrottle : Debounce ()
     , scrollDebounce : Debounce ()
     , scrollManual : Debounce ()
-    , zone : Maybe Time.Zone
     , time : Maybe Posix
     , initTime : Maybe Posix
     , dtFromPosix : Maybe Posix
@@ -230,7 +228,6 @@ init id_ ms =
       , scrollThrottle = Debounce.init
       , scrollDebounce = Debounce.init
       , scrollManual = Debounce.init
-      , zone = Nothing
       , time = Nothing
       , initTime = Nothing
       , dtFromPosix = Nothing
@@ -349,7 +346,7 @@ initCmd : String -> Effect Msg
 initCmd id_ =
     E.batch
         [ E.getElementById (waterfallDivId id_) GotWaterfallDiv
-        , E.getTimeZone InitGotZone
+        , E.getCurrentTime InitGotTime
         , E.sendCmd <| Api.sigint_latest_frequencies GotLatestFrequencies
         ]
 
@@ -1166,17 +1163,7 @@ update shared user msg model =
         NoOp ->
             ( model, E.none )
 
-        InitGotZone (Err e) ->
-            ( model
-            , E.showError ("Error getting timezone: " ++ renderZoneError e)
-            )
-
-        InitGotZone (Ok ( _, zone )) ->
-            ( { model | zone = Just zone }
-            , E.getCurrentTime (InitGotTime zone)
-            )
-
-        InitGotTime _ now_ ->
+        InitGotTime now_ ->
             let
                 dtFromPosix =
                     now_
@@ -2091,7 +2078,7 @@ update shared user msg model =
                                         Dict.empty
                             , callsignsInfo = model.callsignsInfo
                             , networks = networksDict
-                            , zone = model.zone
+                            , zone = shared.timeZone
                             , time = model.time
                             , profiles = model.profiles
                             , tags = model.tags
@@ -2422,7 +2409,7 @@ waterfallDiv user isDarkMode duplicates datasources serverInfo masterUnits model
                                             , masterUnits = masterUnits
                                             , callsignsInfo = model.callsignsInfo
                                             , networks = networksDict
-                                            , zone = model.zone
+                                            , zone = shared.timeZone
                                             , time = model.time
                                             , profiles = model.profiles
                                             , tags = model.tags
