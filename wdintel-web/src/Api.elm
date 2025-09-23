@@ -1467,6 +1467,15 @@ messenger_link_account toMsg req =
         }
 
 
+messenger_link_operator : (Result ApiError LinkAccountRsp -> msg) -> LinkAccountReq -> Cmd msg
+messenger_link_operator toMsg req =
+    Http.post
+        { url = "/api/messenger/link-operator"
+        , body = Http.jsonBody (linkAccountReqEncoder req)
+        , expect = leExpectJson toMsg linkAccountRspDecoder
+        }
+
+
 messenger_edit_group : (Result ApiError GroupEntryF1 -> msg) -> GroupUpdateReq -> Cmd msg
 messenger_edit_group toMsg req =
     Http.post
