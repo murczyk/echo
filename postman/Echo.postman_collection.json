@@ -951,6 +951,105 @@
 			]
 		},
 		{
+			"name": "freq",
+			"item": [
+				{
+					"name": "sigint/freqs",
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n\"since_date_inclusive_ms\":1750063071917,\n\"till_date_noninclusive_ms\":1750667871917,\n\"new_only\":false,\n\"include_non_active\":false,\n\"filter_freq\":null,\n\"filter_unit\":null,\n\"filter_callsigns\":null,\n\"filter_further_investigation\":true,\n\"filter_group_master_keys\":null,\n\"filter_sender_profile_ids\":null,\n\"after_freq_nonincl\":null,\n\"sort_by\":null\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/api/sigint/freqs",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"sigint",
+								"freqs"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "sigint/freq/callsigns-filter",
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n\"freq\":\"150\",\n\"unit\":null,\n\"callsign\":\"мо\",\n\"since_date_inclusive_ms\":1756684800000,\n\"till_date_noninclusive_ms\":1756857600000\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/api/sigint/freq/callsigns-filter",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"sigint",
+								"freq",
+								"callsigns-filter"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "sigint/freqs-for-period",
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n\"since_date_inclusive_ms\":1751317200000,\n\"till_date_noninclusive_ms\":1752699600000\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/api/sigint/freqs-for-period",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"sigint",
+								"freqs-for-period"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
 			"name": "user/login",
 			"request": {
 				"method": "POST",
@@ -1217,68 +1316,6 @@
 						"stats",
 						"networks",
 						"count"
-					]
-				}
-			},
-			"response": []
-		},
-		{
-			"name": "sigint/freqs",
-			"request": {
-				"auth": {
-					"type": "noauth"
-				},
-				"method": "POST",
-				"header": [],
-				"body": {
-					"mode": "raw",
-					"raw": "{\n\"since_date_inclusive_ms\":1750063071917,\n\"till_date_noninclusive_ms\":1750667871917,\n\"new_only\":false,\n\"include_non_active\":false,\n\"filter_freq\":null,\n\"filter_unit\":null,\n\"filter_callsigns\":null,\n\"filter_further_investigation\":true,\n\"filter_group_master_keys\":null,\n\"filter_sender_profile_ids\":null,\n\"after_freq_nonincl\":null,\n\"sort_by\":null\n}",
-					"options": {
-						"raw": {
-							"language": "json"
-						}
-					}
-				},
-				"url": {
-					"raw": "{{base_url}}/api/sigint/freqs",
-					"host": [
-						"{{base_url}}"
-					],
-					"path": [
-						"api",
-						"sigint",
-						"freqs"
-					]
-				}
-			},
-			"response": []
-		},
-		{
-			"name": "sigint/freqs-for-period",
-			"request": {
-				"auth": {
-					"type": "noauth"
-				},
-				"method": "POST",
-				"header": [],
-				"body": {
-					"mode": "raw",
-					"raw": "{\n\"since_date_inclusive_ms\":1751317200000,\n\"till_date_noninclusive_ms\":1752699600000\n}",
-					"options": {
-						"raw": {
-							"language": "json"
-						}
-					}
-				},
-				"url": {
-					"raw": "{{base_url}}/api/sigint/freqs-for-period",
-					"host": [
-						"{{base_url}}"
-					],
-					"path": [
-						"api",
-						"sigint",
-						"freqs-for-period"
 					]
 				}
 			},

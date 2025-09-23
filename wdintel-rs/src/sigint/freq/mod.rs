@@ -13,15 +13,14 @@ use sea_orm::{sea_query::PostgresQueryBuilder, *};
 use sea_orm::{
     ColumnTrait, Condition, EntityTrait, QueryFilter, QuerySelect, Statement,
 };
-use sea_query::{
-    extension::postgres::PgExpr, Alias, CommonTableExpression, Expr, Query,
-    SimpleExpr,
-};
+use sea_query::{Alias, CommonTableExpression, Expr, Query, SimpleExpr};
 
 use std::collections::{BTreeSet, HashMap};
 
+use self::bl::*;
 use self::types::*;
 
+pub mod bl;
 pub mod types;
 pub mod util;
 
@@ -1285,6 +1284,22 @@ pub async fn freq_unit_stats(
     Ok(Json(FreqUnitStatsRsp { units: res }))
 }
 
+/// Повертає список позивних що були присутні в радіообміні відповідно до умов фільтрації (період дат, частота, підрозділ, позивний) 
+/// для подальшого формування фільтру
+///
+/// # API URL
+/// - POST: /api/sigint/freq/callsigns-filter
+///
+/// # Параметри
+///
+/// * `user`: [`actix_identity::Identity`] - Ідентифікатор користувача, що виконує запит. Використовується для перевірки дозволів.
+/// * `env`: [`actix_web::web::Data<Env>`] - де [`Env`] Середовище програми, що містить конфігурацію та підключення до бази даних.
+/// * `req`: [`Json<CallsignsForFreqReq>`] - де [`CallsignsForFreqReq`] Тіло запиту, що містить параметри для фільтрації позивних
+///
+/// # Повертає
+///
+///  Функція повертає [`Json<CallsignsForFreqRsp>`], де [`CallsignsForFreqRsp`] - це масив позивних.
+///
 #[post("/api/sigint/freq/callsigns-filter")]
 pub async fn callsigns_for_filter(
     user: actix_identity::Identity,
@@ -1292,70 +1307,21 @@ pub async fn callsigns_for_filter(
     req: Json<CallsignsForFreqReq>,
 ) -> Result<Json<CallsignsForFreqRsp>, AppError> {
     println!("getting filters for callsigns-filter call: {:?}", req.freq);
-
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
-    let dt_since = dt_from_millis(req.since_date_inclusive_ms)?;
-    let dt_till = dt_from_millis(req.till_date_noninclusive_ms)?;
     let login = user.id()?;
-    let master_keys =
-        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
-            .await?;
+    crate::users::has_role(&env.dbx, &login, "Rer").await?;
 
+    let req = req.into_inner();
     let instant = std::time::Instant::now();
 
-    #[derive(FromQueryResult)]
-    struct CallsignsRes {
-        callsign: Option<String>,
-    }
-
-    let mut callsigns_res = sigint_inbox_item::Entity::find()
-        .join(
-            JoinType::InnerJoin,
-            sigint_inbox_item::Relation::SignalMessage.def(),
-        )
-        .join(
-            JoinType::InnerJoin,
-            signal_message::Relation::DatasourceGroup.def(),
-        )
-        .select_only()
-        .column_as(
-            Expr::cust("jsonb_array_elements_text(callsigns)"),
-            "callsign",
-        )
-        .distinct()
-        .filter(datasource_group::Column::GroupMasterKey.is_in(master_keys))
-        .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
-        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
-    if let Some(freq) = &req.freq {
-        callsigns_res = callsigns_res.filter(
-            Expr::col(sigint_inbox_item::Column::Freq)
-                .ilike(format!("{freq}%")),
-        );
-    };
-
-    if let Some(unit) = &req.unit {
-        callsigns_res = callsigns_res.filter(
-            Expr::col(sigint_inbox_item::Column::UnitV2)
-                .ilike(format!("%{unit}%")),
-        );
-    };
-
-    callsigns_res = callsigns_res.order_by(Expr::cust("callsign"), Order::Asc);
-
-    let callsigns_res: Vec<CallsignsRes> = callsigns_res
-        .into_model::<CallsignsRes>()
-        .all(&env.dbx)
-        .await?;
-
-    let mut callsigns = vec![];
-    for x in callsigns_res {
-        let Some(callsign) = x.callsign else { continue };
-        callsigns.push(FreqCallsign { callsign });
-    }
+    let callsigns_res = bl_callsigns_for_filter(&env.dbx, &login, &req)
+        .await
+        .c(h!())?;
 
     debug!("callsigns op took: {:?}", instant.elapsed());
 
-    Ok(Json(CallsignsForFreqRsp { callsigns }))
+    Ok(Json(CallsignsForFreqRsp {
+        callsigns: callsigns_res,
+    }))
 }
 
 fn validate_callsigns(callsigns: &Vec<String>) -> Result<(), String> {
