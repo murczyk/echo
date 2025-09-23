@@ -21,14 +21,17 @@ echo "deb [arch=${ARCH} signed-by=/usr/share/keyrings/echo-ci-archive-keyring.gp
 https://echo-ci.eagle-atria.ts.net/echo jammy main" | \
   sudo tee /etc/apt/sources.list.d/echo.list
 sudo apt-get update
-sudo apt-get install -y echo-install
+```
+
+і потім гола інсталяція:
+
+```
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y echo-install
 sudo echo-install install
 ```
 
-    - Альтернатива: якщо потрібно самостійно згенерувати keyring через ASCII-ключ,
-      виконайте окремо:
+або оновлення:
 
 ```
-curl -fsSL https://echo-ci.eagle-atria.ts.net/keys/echo-ci-archive-keyring.asc | \
-  sudo gpg --dearmor -o /usr/share/keyrings/echo-ci-archive-keyring.gpg
+sudo DEBIAN_FRONTEND=noninteractive apt install -y wdintel-rs
 ```
