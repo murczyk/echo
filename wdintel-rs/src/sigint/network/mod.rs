@@ -1029,7 +1029,7 @@ pub async fn list_network_points(
     .context(h!())?;
 
     let map_points =
-        bl_get_network_points(&env.dbx, &groups, req.network_id, &Some(filter))
+        bl_get_network_points(&env.dbx, &groups, req.network_id, Some(&filter))
             .await
             .c(h!())?
             .into_iter()
@@ -1829,7 +1829,7 @@ pub async fn network_callsigns_list(
         &groups,
         req.network_id,
         &all_known_callsigns,
-        &None,
+        None,
     )
     .await
     .context(h!())?;
@@ -1874,7 +1874,7 @@ pub async fn network_freqs_list(
     .await
     .context(h!())?;
 
-    let freqs = load_freqs(&env.dbx, &groups, req.network_id, &None)
+    let freqs = load_freqs(&env.dbx, &groups, req.network_id, None)
         .await
         .context(h!())?;
 

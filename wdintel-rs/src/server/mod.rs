@@ -373,6 +373,7 @@ pub async fn main_server(
             .service(crate::sigint::callsign::network_callsign::create_network_callsign)
             .service(crate::sigint::callsign::network_callsign::delete_network_callsign)
             .service(crate::sigint::callsign::network_callsign::list_network_callsigns)
+            .service(crate::sigint::callsign::network_callsign::network_callsigns_activity)
             .service(crate::sigint::callsign::network_callsign::update_network_callsign)
             .service(crate::sigint::freq::freq_exists)
             .service(crate::sigint::freq::list_freqs)

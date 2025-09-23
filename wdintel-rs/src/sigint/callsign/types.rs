@@ -197,3 +197,34 @@ pub struct AddAsKnownNetworkCallsignReq {
     pub network_id: i64,
     pub known_callsign_ids: Vec<i64>,
 }
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct NetworkCallsignsActivityReq {
+    pub network_id: i64,
+    pub callsigns: Vec<String>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct NetworkCallsignsActivityRsp {
+    pub callsigns_activity: Vec<CallsignActivityRecord>,
+}
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct CallsignActivityRecord {
+    pub callsign: String,
+    pub activity: CallsignActivityItem,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct CallsignActivityItem {
+    pub message_count: i64,
+    pub last_datetime: Option<i64>,
+    pub freqs: Option<Vec<String>>,
+}

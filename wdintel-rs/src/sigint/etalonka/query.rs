@@ -11,7 +11,7 @@ use actix_web::web::Json;
 use chrono::prelude::*;
 use futures::stream::TryStreamExt;
 use log::*;
-use sea_orm::{sea_query::PostgresQueryBuilder, *};
+use sea_orm::{sea_query::PostgresQueryBuilder, Value, *};
 use sea_query::{
     Alias, CommonTableExpression, Expr, Iden, Query, SelectStatement,
     SimpleExpr, WithClause,
@@ -130,7 +130,7 @@ pub async fn load_freqs(
     db: &DatabaseConnection,
     groups: &Vec<String>,
     network_id: i64,
-    filter: &Option<NetworkFreqFilter>,
+    filter: Option<&NetworkFreqFilter>,
 ) -> Result<Vec<NetworkFreqsRes>, AppError> {
     trace!("> load freqs for network: {network_id:?}");
 
@@ -462,14 +462,15 @@ pub async fn load_callsigns(
     groups: &Vec<String>,
     network_id: i64,
     known_callsigns: &BTreeMap<String, Vec<KnownCallsignRes>>,
-    filter: &Option<NetworkFreqFilter>,
+    filter: Option<&NetworkFreqFilter>,
 ) -> Result<Vec<CallsignRes>, AppError> {
     let start = std::time::Instant::now();
 
     trace!("> load_callsigns for network: {network_id:?}");
 
     let (base_with, callsigns_select) =
-        build_callsigns_queries(groups, network_id, filter).context(h!())?;
+        build_callsigns_queries(groups, network_id, None, filter)
+            .context(h!())?;
 
     // Step 1. Get all active callsigns for the given network
     let active_callsigns = get_active_callsigns(
@@ -487,7 +488,7 @@ pub async fn load_callsigns(
             let callsign = row.callsign.clone();
 
             let short_known_callsigns =
-                crate::sigint::callsign::match_known_callsigns(
+                crate::sigint::callsign::bl::match_known_callsigns(
                     known_callsigns.get(&callsign),
                     &callsign,
                     row.unit_id,
@@ -551,7 +552,8 @@ pub async fn load_callsigns(
 pub fn build_callsigns_queries(
     groups: &Vec<String>,
     network_id: i64,
-    filter: &Option<NetworkFreqFilter>,
+    callsigns: Option<&Vec<String>>,
+    net_freq_filter: Option<&NetworkFreqFilter>,
 ) -> Result<(WithClause, SelectStatement), AppError> {
     let callsigns_lateral_sub_query = Query::select()
         .expr_as(
@@ -599,15 +601,18 @@ pub fn build_callsigns_queries(
             Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::Deleted))
                 .eq(false),
         )
-        .and_where_option(filter.as_ref().filter(|f| f.active_freqs_only).map(
-            |_| {
-                Expr::col((
-                    SigintNetworkFreq::Table,
-                    SigintNetworkFreq::ActiveTo,
-                ))
-                .is_null()
-            },
-        ))
+        .and_where_option(
+            net_freq_filter
+                .as_ref()
+                .filter(|f| f.active_freqs_only)
+                .map(|_| {
+                    Expr::col((
+                        SigintNetworkFreq::Table,
+                        SigintNetworkFreq::ActiveTo,
+                    ))
+                    .is_null()
+                }),
+        )
         .and_where(
             Expr::col((SigintNetwork::Table, SigintNetwork::Id)).eq(network_id),
         )
@@ -620,7 +625,8 @@ pub fn build_callsigns_queries(
         .table_name(nf.clone())
         .to_owned();
 
-    let join_condition = build_network_freq_join_condition(filter).c(h!())?;
+    let join_condition =
+        build_network_freq_join_condition(net_freq_filter).c(h!())?;
 
     let mut network_messages_select = Query::select();
     network_messages_select
@@ -664,6 +670,29 @@ pub fn build_callsigns_queries(
         .and_where(
             Expr::col((SignalMessage::Table, SignalMessage::Deleted)).eq(false),
         );
+    if let Some(callsigns) = callsigns {
+        if !callsigns.is_empty() {
+            // Create boxed values for the array
+            let array_values: Vec<Value> = callsigns
+                .iter()
+                .map(|s| Value::String(Some(Box::new(s.clone()))))
+                .collect();
+
+            // Create properly typed array value
+            let callsigns_value = Value::Array(
+                sea_query::ArrayType::String,
+                Some(Box::new(array_values)),
+            );
+
+            let expr = Expr::cust_with_values(
+                r#""sigint_inbox_item"."callsigns" ?| $1"#,
+                [callsigns_value],
+            );
+
+            network_messages_select.and_where(expr);
+        }
+    }
+
     network_messages_select = filter_selected_networks_stmt(
         network_messages_select,
         &Some(vec![network_id]),
@@ -765,7 +794,7 @@ pub fn build_callsigns_queries(
 /// AND sigint_inbox_item.datetime >= GREATEST(since_date_inclusive, network_freqs.active_from)  
 /// AND sigint_inbox_item.datetime <= LEAST(till_date_inclusive, COALESCE(network_freqs.active_to, now()))  
 pub fn build_network_freq_join_condition(
-    filter: &Option<NetworkFreqFilter>,
+    filter: Option<&NetworkFreqFilter>,
 ) -> Result<SimpleExpr, AppError> {
     let since_ms = filter.as_ref().and_then(|f| f.since_date_inclusive_ms);
     let till_ms = filter.as_ref().and_then(|f| f.till_date_inclusive_ms);
@@ -939,6 +968,11 @@ where
 
     let combined_query = base_with.clone().cte(callsigns_cte).clone().query(q);
 
+    // debug!(
+    //     "> communication info query: {}",
+    //     combined_query.to_string(PostgresQueryBuilder)
+    // );
+
     let rows = txn
         .query_all(Statement::from_string(
             DatabaseBackend::Postgres,
@@ -1111,7 +1145,7 @@ pub async fn load_pelengs_map(
     filter: NetworkFreqFilter,
 ) -> Result<Option<Vec<u8>>, AppError> {
     let map_points =
-        bl_get_network_points(dbx, groups, network_id, &Some(filter))
+        bl_get_network_points(dbx, groups, network_id, Some(&filter))
             .await
             .c(h!())?
             .into_iter()
@@ -1136,7 +1170,7 @@ pub async fn bl_get_network_points(
     dbx: &DatabaseConnection,
     groups: &Vec<String>,
     network_id: i64,
-    filter: &Option<NetworkFreqFilter>,
+    filter: Option<&NetworkFreqFilter>,
 ) -> Result<Vec<NetworkPointQueryRes>, AppError> {
     let join_condition = build_network_freq_join_condition(filter).c(h!())?;
 
