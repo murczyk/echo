@@ -358,7 +358,7 @@ findAccountById accountId accounts =
 -- Helper function to build edit request
 
 
-buildEditRequest : EditForm -> B.EchoAccountF1 -> { accountId : Int, aorId : Maybe Int, isActive : Bool, displayName : String, description : Maybe String }
+buildEditRequest : EditForm -> B.EchoAccountF1 -> B.AccountStatusReq
 buildEditRequest editForm account =
     let
         currentIsActive =
@@ -374,6 +374,8 @@ buildEditRequest editForm account =
 
         else
             Just editForm.description
+    , apiLogin = Nothing --TODO
+    , apiEndpoint = Nothing
     }
 
 
@@ -525,7 +527,7 @@ type Msg
     | ShowEditSidebar Int
     | CloseEditSidebar
     | SetTableState Table.State
-    | LinkPhoneFormMsg LinkFlow.PhoneForm
+    | LinkPhoneFormMsg (LinkFlow.LinkFlow -> LinkFlow.LinkFlow)
     | UpdateEditDisplayName String
     | UpdateEditDescription String
     | SubmitLinkForm
@@ -596,6 +598,11 @@ update msg model =
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження смуг відповідальності" error
             )
 
+        LinkPhoneFormMsg updateFn ->
+            ( { model | linkFlow = updateFn model.linkFlow }
+            , E.none
+            )
+
         OpenLinkSidebar ->
             ( { model | sidebarOpen = True }
             , E.none
@@ -615,46 +622,51 @@ update msg model =
             )
 
         SubmitLinkForm ->
-            case model.linkFlow of
-                LinkFormState linkForm ->
-                    case validateDisplayName linkForm.name of
-                        Ok _ ->
-                            case validateAorId linkForm.aorId of
-                                Ok validatedAorId ->
-                                    let
-                                        systemServiceName =
-                                            normalizeToSystemName linkForm.name
+            if LinkFlow.isInFormState model.linkFlow then
+                case LinkFlow.getPhoneForm model.linkFlow of
+                    Just phoneForm ->
+                        case validateDisplayName phoneForm.name of
+                            Ok _ ->
+                                case validateAorId phoneForm.aorId of
+                                    Ok validatedAorId ->
+                                        let
+                                            systemServiceName =
+                                                normalizeToSystemName phoneForm.name
 
-                                        request =
-                                            { messenger = linkForm.messengerType
-                                            , phone = linkForm.phoneNumber
-                                            , displayName = linkForm.name
-                                            , systemServiceName = systemServiceName
-                                            , description =
-                                                if String.isEmpty linkForm.description then
-                                                    Nothing
+                                            request =
+                                                { messenger = phoneForm.messengerType
+                                                , phone = phoneForm.phoneNumber
+                                                , displayName = phoneForm.name
+                                                , systemServiceName = systemServiceName
+                                                , description =
+                                                    if String.isEmpty phoneForm.description then
+                                                        Nothing
 
-                                                else
-                                                    Just linkForm.description
-                                            , aorId = validatedAorId
-                                            }
-                                    in
-                                    ( model
-                                    , E.sendCmd (Api.messenger_link_account GotLinkResult request)
-                                    )
+                                                    else
+                                                        Just phoneForm.description
+                                                , aorId = validatedAorId
+                                                }
+                                        in
+                                        ( model
+                                        , E.sendCmd (Api.messenger_link_account GotLinkResult request)
+                                        )
 
-                                Err error ->
-                                    ( { model | formErrors = Dict.insert "aorId" error model.formErrors }
-                                    , E.none
-                                    )
+                                    Err error ->
+                                        ( { model | formErrors = Dict.insert "aorId" error model.formErrors }
+                                        , E.none
+                                        )
 
-                        Err error ->
-                            ( { model | formErrors = Dict.insert "displayName" error model.formErrors }
-                            , E.none
-                            )
+                            Err error ->
+                                ( { model | formErrors = Dict.insert "displayName" error model.formErrors }
+                                , E.none
+                                )
 
-                _ ->
-                    ( model, E.none )
+                    Nothing ->
+                        -- Handle API form case later
+                        ( model, E.none )
+
+            else
+                ( model, E.none )
 
         GotLinkResult (Ok linkRsp) ->
             let
@@ -682,7 +694,7 @@ update msg model =
             )
 
         GotLinkResult (Err error) ->
-            ( { model | linkFlow = LinkFlow.initPhoneFlow }
+            ( { model | linkFlow = LinkFlow.resetFlow model.linkFlow }
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка прив'язування акаунту" error
             )
 
@@ -692,29 +704,29 @@ update msg model =
             )
 
         GotQrCode (Err error) ->
-            case model.linkFlow of
-                LinkQrCode qrData ->
-                    ( { model | linkFlow = LinkError { message = "Помилка отримання QR коду після кількох спроб", accountId = qrData.accountId, account = qrData.account } }
-                    , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка отримання QR коду" error
-                    )
+            if LinkFlow.isInQrState model.linkFlow then
+                -- Handle QR code error - for now just keep trying or reset
+                ( model
+                , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка отримання QR коду" error
+                )
 
-                _ ->
-                    ( model, E.none )
+            else
+                ( model, E.none )
 
         CheckIsLinked ->
-            case model.linkFlow of
-                LinkQrCode qrData ->
+            case LinkFlow.getQrData model.linkFlow of
+                Just qrData ->
                     ( model
                     , E.sendCmd (Api.messenger_is_linked GotIsLinked { accountId = qrData.accountId })
                     )
 
-                _ ->
+                Nothing ->
                     ( model, E.none )
 
         GotIsLinked (Ok isLinkedRsp) ->
             if isLinkedRsp.isLinked then
-                case model.linkFlow of
-                    LinkQrCode qrData ->
+                case LinkFlow.getQrData model.linkFlow of
+                    Just qrData ->
                         let
                             -- STEP 2: Update only the specific account's is_linked status
                             -- This changes the status from "Очікує підключення" to "Активний" without refreshing the whole table
@@ -741,13 +753,13 @@ update msg model =
                         in
                         ( { model
                             | accounts = updatedAccounts -- Update the table with new status
-                            , linkFlow = LinkSuccess qrData.account
+                            , linkFlow = LinkFlow.handleLinkResult { account = qrData.account } model.linkFlow
                           }
                         , E.none
                           -- No need to refresh the table!
                         )
 
-                    _ ->
+                    Nothing ->
                         ( model, E.none )
 
             else
@@ -760,13 +772,14 @@ update msg model =
             ( model, E.none )
 
         RetryQrCode ->
-            case model.linkFlow of
-                LinkError errorData ->
-                    ( { model | linkFlow = LinkQrCode { accountId = errorData.accountId, qrCode = "", account = errorData.account } }
-                    , Api.messenger_get_qr_retryable GotQrCode { accountId = errorData.accountId }
+            -- For now, just refresh QR code if we're in QR state
+            case LinkFlow.getQrData model.linkFlow of
+                Just qrData ->
+                    ( { model | linkFlow = LinkFlow.updateQrCode "" model.linkFlow }
+                    , Api.messenger_get_qr_retryable GotQrCode { accountId = qrData.accountId }
                     )
 
-                _ ->
+                Nothing ->
                     ( model, E.none )
 
         ConnectExistingAccount accountId ->
@@ -774,9 +787,16 @@ update msg model =
                 RD.Success accounts ->
                     case List.filter (\account -> account.id == accountId) accounts |> List.head of
                         Just account ->
+                            let
+                                -- Create a temporary QR data and update via LinkFlow API
+                                qrData = { accountId = accountId, qrCode = "", account = account }
+                                newLinkFlow = LinkFlow.initPhoneFlow  -- Start with phone flow
+                                    |> (\flow -> LinkFlow.handleLinkResult { account = account } flow)
+                                    |> LinkFlow.updateQrCode ""
+                            in
                             ( { model
                                 | sidebarOpen = True
-                                , linkFlow = LinkQrCode { accountId = accountId, qrCode = "", account = account }
+                                , linkFlow = newLinkFlow
                               }
                             , Api.messenger_get_qr_retryable GotQrCode { accountId = accountId }
                             )
@@ -841,6 +861,8 @@ update msg model =
                                     , isActive = newIsActive
                                     , displayName = account.displayName
                                     , description = account.description
+                                    , apiLogin = Nothing
+                                    , apiEndpoint = Nothing
                                     }
                                 )
                             )
@@ -905,12 +927,7 @@ update msg model =
 
                 -- Update the link form with the new messenger type
                 updatedLinkFlow =
-                    case model.linkFlow of
-                        LinkFormState linkForm ->
-                            LinkFormState { linkForm | messengerType = updatedMessengerType }
-
-                        _ ->
-                            model.linkFlow
+                    LinkFlow.updateMessengerType updatedMessengerType model.linkFlow
             in
             ( { model
                 | messengerTypeSelect = newSelect
@@ -935,12 +952,7 @@ update msg model =
 
                 -- Update the link form with the new AOR ID
                 updatedLinkFlow =
-                    case model.linkFlow of
-                        LinkFormState linkForm ->
-                            LinkFormState { linkForm | aorId = updatedAorId }
-
-                        _ ->
-                            model.linkFlow
+                    LinkFlow.updateAorId updatedAorId model.linkFlow
             in
             ( { model
                 | aorSelect = newSelect
@@ -951,13 +963,13 @@ update msg model =
             )
 
         RefreshQrCode ->
-            case model.linkFlow of
-                LinkQrCode qrData ->
-                    ( { model | linkFlow = LinkQrCode { qrData | qrCode = "" } }
+            case LinkFlow.getQrData model.linkFlow of
+                Just qrData ->
+                    ( { model | linkFlow = LinkFlow.updateQrCode "" model.linkFlow }
                     , Api.messenger_get_qr_retryable GotQrCode { accountId = qrData.accountId }
                     )
 
-                _ ->
+                Nothing ->
                     ( model, E.none )
 
         ShowEditSidebar accountId ->
@@ -1091,12 +1103,11 @@ update msg model =
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
-    case model.linkFlow of
-        LinkQrCode _ ->
-            Time.every 3000 (\_ -> CheckIsLinked)
+    if LinkFlow.isInQrState model.linkFlow then
+        Time.every 3000 (\_ -> CheckIsLinked)
 
-        _ ->
-            Sub.none
+    else
+        Sub.none
 
 
 
@@ -1193,10 +1204,11 @@ mainBlock isDark model =
 
 linkAccountSidebarContent : Bool -> Shared.Model -> Model -> List (Html Msg)
 linkAccountSidebarContent isDark shared model =
-    case model.linkFlow of
-        LinkFormState linkForm ->
-            [ div [ class "flex flex-col h-full" ]
-                [ div [ class "p-6 border-b border-border" ]
+    if LinkFlow.isInFormState model.linkFlow then
+        case LinkFlow.getPhoneForm model.linkFlow of
+            Just phoneForm ->
+                [ div [ class "flex flex-col h-full" ]
+                    [ div [ class "p-6 border-b border-border" ]
                     [ h2 [ class "text-lg font-semibold mb-1" ] [ text "Прив'язати новий акаунт" ]
                     , p [ class "text-sm text-muted-foreground" ] [ text "Введіть дані для прив'язування акаунту месенджера" ]
                     ]
@@ -1207,7 +1219,7 @@ linkAccountSidebarContent isDark shared model =
                             , Html.map MessengerTypeSelectMsg <|
                                 Styled.toUnstyled <|
                                     Utils.Select.renderSelectSingle
-                                        (Just (Select.basicMenuItem { item = linkForm.messengerType, label = getMessengerTypeLabel linkForm.messengerType }))
+                                        (Just (Select.basicMenuItem { item = phoneForm.messengerType, label = getMessengerTypeLabel phoneForm.messengerType }))
                                         model.messengerTypeSelect.state
                                         messengerTypeMenuItems
                                         "Виберіть тип месенджера"
@@ -1219,8 +1231,8 @@ linkAccountSidebarContent isDark shared model =
                                 [ class "form-input w-full"
                                 , type_ "tel"
                                 , placeholder "+380XXXXXXXXX"
-                                , value linkForm.phoneNumber
-                                , onInput <| LinkPhoneFormMsg << (\v -> { linkForm | phoneNumber = v })
+                                , value phoneForm.phoneNumber
+                                , onInput <| LinkPhoneFormMsg << LinkFlow.updatePhoneNumber
                                 ]
                                 []
                             ]
@@ -1230,8 +1242,8 @@ linkAccountSidebarContent isDark shared model =
                                 [ class "form-input w-full"
                                 , type_ "text"
                                 , placeholder "Мій Signal акаунт"
-                                , value linkForm.name
-                                , onInput <| LinkPhoneFormMsg << (\v -> { linkForm | name = v })
+                                , value phoneForm.name
+                                , onInput <| LinkPhoneFormMsg << LinkFlow.updateName
                                 ]
                                 []
                             , case Dict.get "displayName" model.formErrors of
@@ -1252,7 +1264,7 @@ linkAccountSidebarContent isDark shared model =
                                                     |> List.head
                                                     |> Maybe.map (\aor -> Select.basicMenuItem { item = aor.id, label = aor.name })
                                             )
-                                            linkForm.aorId
+                                            phoneForm.aorId
                                         )
                                         model.aorSelect.state
                                         model.aorSelect.items
@@ -1271,8 +1283,8 @@ linkAccountSidebarContent isDark shared model =
                                 [ class "form-textarea w-full"
                                 , rows 3
                                 , placeholder "Короткий опис акаунту..."
-                                , value linkForm.description
-                                , onInput <| LinkPhoneFormMsg << (\v -> { linkForm | description = v })
+                                , value phoneForm.description
+                                , onInput <| LinkPhoneFormMsg << LinkFlow.updateDescription
                                 ]
                                 []
                             ]
@@ -1288,11 +1300,17 @@ linkAccountSidebarContent isDark shared model =
                         ]
                     ]
                 ]
-            ]
+                ]
 
-        LinkQrCode qrData ->
-            [ div [ class "flex flex-col h-full" ]
-                [ div [ class "p-6 border-b border-border" ]
+            Nothing ->
+                -- API form case - will be implemented in Milestone 2
+                [ div [ class "p-6" ] [ text "API форма буде імплементована в Milestone 2" ] ]
+
+    else if LinkFlow.isInQrState model.linkFlow then
+        case LinkFlow.getQrData model.linkFlow of
+            Just qrData ->
+                [ div [ class "flex flex-col h-full" ]
+                    [ div [ class "p-6 border-b border-border" ]
                     [ h2 [ class "text-lg font-semibold mb-1" ] [ text "Прив'язати новий акаунт" ]
                     , p [ class "text-sm text-muted-foreground" ]
                         [ text (qrData.account.messenger ++ ": " ++ qrData.account.phoneNumber) ]
@@ -1326,11 +1344,16 @@ linkAccountSidebarContent isDark shared model =
                         ]
                     ]
                 ]
-            ]
+                ]
 
-        LinkSuccess account ->
-            [ div [ class "flex flex-col h-full" ]
-                [ div [ class "p-6 border-b border-border" ]
+            Nothing ->
+                []
+
+    else if LinkFlow.isInSuccessState model.linkFlow then
+        case LinkFlow.getSuccessAccount model.linkFlow of
+            Just account ->
+                [ div [ class "flex flex-col h-full" ]
+                    [ div [ class "p-6 border-b border-border" ]
                     [ h2 [ class "text-lg font-semibold mb-1" ] [ text "Прив'язати новий акаунт" ]
                     , p [ class "text-sm text-muted-foreground" ] [ text "Акаунт успішно прив'язано!" ]
                     ]
@@ -1351,11 +1374,16 @@ linkAccountSidebarContent isDark shared model =
                         ]
                     ]
                 ]
-            ]
+                ]
 
-        LinkError errorData ->
-            [ div [ class "flex flex-col h-full" ]
-                [ div [ class "p-6 border-b border-border" ]
+            Nothing ->
+                []
+
+    else if LinkFlow.isInErrorState model.linkFlow then
+        case LinkFlow.getErrorMessage model.linkFlow of
+            Just errorMessage ->
+                [ div [ class "flex flex-col h-full" ]
+                    [ div [ class "p-6 border-b border-border" ]
                     [ h2 [ class "text-lg font-semibold mb-1" ] [ text "Прив'язати новий акаунт" ]
                     , p [ class "text-sm text-muted-foreground" ] [ text "Сталася помилка" ]
                     ]
@@ -1364,7 +1392,7 @@ linkAccountSidebarContent isDark shared model =
                         [ div [ class "text-red-600 text-6xl" ] [ text "❌" ]
                         , div [ class "space-y-2" ]
                             [ h3 [ class "text-lg font-medium" ] [ text "Помилка" ]
-                            , p [ class "text-sm text-muted-foreground" ] [ text errorData.message ]
+                            , p [ class "text-sm text-muted-foreground" ] [ text errorMessage ]
                             ]
                         ]
                     ]
@@ -1378,7 +1406,13 @@ linkAccountSidebarContent isDark shared model =
                         ]
                     ]
                 ]
-            ]
+                ]
+
+            Nothing ->
+                []
+
+    else
+        []
 
 
 editAccountSidebarContent : Bool -> Shared.Model -> Model -> List (Html Msg)
