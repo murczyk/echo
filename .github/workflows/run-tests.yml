@@ -27,11 +27,20 @@ jobs:
       ECHO_CI_DIST: ${{ secrets.ECHO_CI_DIST || 'jammy' }}
       ECHO_CI_COMPONENT: ${{ secrets.ECHO_CI_COMPONENT || 'main' }}
     steps:
+      - name: Ensure fresh workspace
+        shell: "bash --noprofile --norc {0}"
+        run: |
+          set -euo pipefail
+          echo "Cleaning $GITHUB_WORKSPACE to ensure a fresh checkout..."
+          if [ -d "$GITHUB_WORKSPACE" ]; then
+            find "$GITHUB_WORKSPACE" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+          fi
+
       - uses: actions/checkout@v4
         with:
           # Ensure LFS files are fetched as real binaries
           lfs: true
-          clean: false
+          clean: true
 
       - name: Ensure git-lfs installed and checkout LFS objects
         timeout-minutes: 5
