@@ -12,6 +12,7 @@ import Html.Events exposing (..)
 import Html.Styled as Styled
 import Layouts
 import Page exposing (Page)
+import Pages_.Admin.Messanger.LinkFlow as LinkFlow
 import Route exposing (Route)
 import Select
 import Shared
@@ -60,7 +61,7 @@ type alias Model =
     , sidebarOpen : Bool
     , formErrors : Dict String String
     , tableState : Table.State
-    , linkFlow : LinkFlow
+    , linkFlow : LinkFlow.LinkFlow
     , deleteConfirmDialog : Maybe Int
     , deleteLoading : Bool
     , messengerTypeSelect : Utils.Select.SelectTypeSingle String
@@ -69,22 +70,6 @@ type alias Model =
     , editForm : Maybe EditForm
     , showEditSidebar : Bool
     , editLoading : Bool
-    }
-
-
-type LinkFlow
-    = LinkFormState LinkForm
-    | LinkQrCode { accountId : Int, qrCode : String, account : B.EchoAccountF1 }
-    | LinkSuccess B.EchoAccountF1
-    | LinkError { message : String, accountId : Int, account : B.EchoAccountF1 }
-
-
-type alias LinkForm =
-    { messengerType : String
-    , phoneNumber : String
-    , name : String
-    , description : String
-    , aorId : Maybe Int
     }
 
 
@@ -102,7 +87,7 @@ init () =
       , sidebarOpen = False
       , formErrors = Dict.empty
       , tableState = Table.initialSort "Створено"
-      , linkFlow = LinkFormState { messengerType = "signal", phoneNumber = "", name = "", description = "", aorId = Nothing }
+      , linkFlow = LinkFlow.initPhoneFlow
       , deleteConfirmDialog = Nothing
       , deleteLoading = False
       , messengerTypeSelect =
@@ -540,10 +525,7 @@ type Msg
     | ShowEditSidebar Int
     | CloseEditSidebar
     | SetTableState Table.State
-    | SetLinkMessengerType String
-    | SetLinkPhoneNumber String
-    | SetLinkName String
-    | SetLinkDescription String
+    | LinkPhoneFormMsg LinkFlow.PhoneForm
     | UpdateEditDisplayName String
     | UpdateEditDescription String
     | SubmitLinkForm
@@ -620,7 +602,10 @@ update msg model =
             )
 
         CloseLinkSidebar ->
-            ( { model | sidebarOpen = False, linkFlow = LinkFormState { messengerType = "signal", phoneNumber = "", name = "", description = "", aorId = Nothing } }
+            ( { model
+                | sidebarOpen = False
+                , linkFlow = LinkFlow.resetFlow model.linkFlow
+              }
             , E.none
             )
 
@@ -628,65 +613,6 @@ update msg model =
             ( { model | tableState = newTableState }
             , E.none
             )
-
-        SetLinkMessengerType value ->
-            case model.linkFlow of
-                LinkFormState linkForm ->
-                    let
-                        updatedForm =
-                            { linkForm | messengerType = value }
-                    in
-                    ( { model | linkFlow = LinkFormState updatedForm }
-                    , E.none
-                    )
-
-                _ ->
-                    ( model, E.none )
-
-        SetLinkPhoneNumber value ->
-            case model.linkFlow of
-                LinkFormState linkForm ->
-                    let
-                        updatedForm =
-                            { linkForm | phoneNumber = value }
-                    in
-                    ( { model | linkFlow = LinkFormState updatedForm }
-                    , E.none
-                    )
-
-                _ ->
-                    ( model, E.none )
-
-        SetLinkName value ->
-            case model.linkFlow of
-                LinkFormState linkForm ->
-                    let
-                        updatedForm =
-                            { linkForm | name = value }
-                    in
-                    ( { model
-                        | linkFlow = LinkFormState updatedForm
-                        , formErrors = Dict.remove "displayName" model.formErrors
-                      }
-                    , E.none
-                    )
-
-                _ ->
-                    ( model, E.none )
-
-        SetLinkDescription value ->
-            case model.linkFlow of
-                LinkFormState linkForm ->
-                    let
-                        updatedForm =
-                            { linkForm | description = value }
-                    in
-                    ( { model | linkFlow = LinkFormState updatedForm }
-                    , E.none
-                    )
-
-                _ ->
-                    ( model, E.none )
 
         SubmitLinkForm ->
             case model.linkFlow of
@@ -746,25 +672,24 @@ update msg model =
             in
             ( { model
                 | accounts = updatedAccounts -- Update the table with new account
-                , linkFlow = LinkQrCode { accountId = linkRsp.account.id, qrCode = "", account = linkRsp.account }
+                , linkFlow = LinkFlow.handleLinkResult linkRsp model.linkFlow
               }
-            , Api.messenger_get_qr_retryable GotQrCode { accountId = linkRsp.account.id }
+            , if LinkFlow.isApi model.linkFlow then
+                E.none
+
+              else
+                Api.messenger_get_qr_retryable GotQrCode { accountId = linkRsp.account.id }
             )
 
         GotLinkResult (Err error) ->
-            ( { model | linkFlow = LinkFormState { messengerType = "signal", phoneNumber = "", name = "", description = "", aorId = Nothing } }
+            ( { model | linkFlow = LinkFlow.initPhoneFlow }
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка прив'язування акаунту" error
             )
 
         GotQrCode (Ok qrRsp) ->
-            case model.linkFlow of
-                LinkQrCode qrData ->
-                    ( { model | linkFlow = LinkQrCode { qrData | qrCode = qrRsp.qrCodeBase64 } }
-                    , E.none
-                    )
-
-                _ ->
-                    ( model, E.none )
+            ( { model | linkFlow = LinkFlow.updateQrCode qrRsp.qrCodeBase64 model.linkFlow }
+            , E.none
+            )
 
         GotQrCode (Err error) ->
             case model.linkFlow of
@@ -1295,7 +1220,7 @@ linkAccountSidebarContent isDark shared model =
                                 , type_ "tel"
                                 , placeholder "+380XXXXXXXXX"
                                 , value linkForm.phoneNumber
-                                , onInput SetLinkPhoneNumber
+                                , onInput <| LinkPhoneFormMsg << (\v -> { linkForm | phoneNumber = v })
                                 ]
                                 []
                             ]
@@ -1306,7 +1231,7 @@ linkAccountSidebarContent isDark shared model =
                                 , type_ "text"
                                 , placeholder "Мій Signal акаунт"
                                 , value linkForm.name
-                                , onInput SetLinkName
+                                , onInput <| LinkPhoneFormMsg << (\v -> { linkForm | name = v })
                                 ]
                                 []
                             , case Dict.get "displayName" model.formErrors of
@@ -1347,7 +1272,7 @@ linkAccountSidebarContent isDark shared model =
                                 , rows 3
                                 , placeholder "Короткий опис акаунту..."
                                 , value linkForm.description
-                                , onInput SetLinkDescription
+                                , onInput <| LinkPhoneFormMsg << (\v -> { linkForm | description = v })
                                 ]
                                 []
                             ]

@@ -2790,6 +2790,7 @@ listLoginsSortByEncoder enum =
 
 type alias ListLoginsReq =
     { sortBy : Maybe ListLoginsSortBy
+    , filterByRoles : Maybe (List String)
     }
 
 
@@ -2797,6 +2798,7 @@ listLoginsReqEncoder : ListLoginsReq -> Json.Encode.Value
 listLoginsReqEncoder struct =
     Json.Encode.object
         [ ( "sort_by", (Maybe.withDefault Json.Encode.null << Maybe.map listLoginsSortByEncoder) struct.sortBy )
+        , ( "filter_by_roles", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.string)) struct.filterByRoles )
         ]
 
 
@@ -5543,6 +5545,8 @@ type alias EchoAccountF1 =
     , description : Maybe String
     , messenger : String
     , phoneNumber : String
+    , apiLogin : Maybe String
+    , apiEndpoint : Maybe String
     , isLinked : Bool
     , isImported : Bool
     }
@@ -5561,6 +5565,8 @@ echoAccountF1Encoder struct =
         , ( "description", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.description )
         , ( "messenger", Json.Encode.string struct.messenger )
         , ( "phone_number", Json.Encode.string struct.phoneNumber )
+        , ( "api_login", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.apiLogin )
+        , ( "api_endpoint", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.apiEndpoint )
         , ( "is_linked", Json.Encode.bool struct.isLinked )
         , ( "is_imported", Json.Encode.bool struct.isImported )
         ]
@@ -5632,6 +5638,8 @@ type alias AccountStatusReq =
     , isActive : Bool
     , displayName : String
     , description : Maybe String
+    , apiLogin : Maybe String
+    , apiEndpoint : Maybe String
     }
 
 
@@ -5643,6 +5651,8 @@ accountStatusReqEncoder struct =
         , ( "is_active", Json.Encode.bool struct.isActive )
         , ( "display_name", Json.Encode.string struct.displayName )
         , ( "description", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.description )
+        , ( "api_login", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.apiLogin )
+        , ( "api_endpoint", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.apiEndpoint )
         ]
 
 
@@ -7305,6 +7315,7 @@ listLoginsReqDecoder : Json.Decode.Decoder ListLoginsReq
 listLoginsReqDecoder =
     Json.Decode.succeed ListLoginsReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sort_by" (Json.Decode.nullable listLoginsSortByDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_by_roles" (Json.Decode.nullable (Json.Decode.list Json.Decode.string))))
 
 
 listLoginsRspDecoder : Json.Decode.Decoder ListLoginsRsp
@@ -9086,6 +9097,8 @@ echoAccountF1Decoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "description" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messenger" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "phone_number" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "api_login" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "api_endpoint" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_linked" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_imported" Json.Decode.bool))
 
@@ -9128,6 +9141,8 @@ accountStatusReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_active" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "display_name" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "description" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "api_login" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "api_endpoint" (Json.Decode.nullable Json.Decode.string)))
 
 
 deleteAccountReqDecoder : Json.Decode.Decoder DeleteAccountReq
