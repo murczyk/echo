@@ -9,21 +9,25 @@ package main
 import (
 	"bufio"
 	"context"
+	b64 "encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"mime"
 	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
+	"unicode"
 
 	"github.com/BurntSushi/toml"
 	_ "github.com/mattn/go-sqlite3"
@@ -46,9 +50,11 @@ import (
 )
 
 var cli *whatsmeow.Client
-var log waLog.Logger
+var senderJid *types.JID
+var log waLog.Logger = waLog.Stdout("Main", logLevel, true)
 
-var logLevel = "INFO"
+// var logLevel = "INFO"
+var logLevel = "DEBUG"
 var debugLogs = flag.Bool("debug", false, "Enable debug logs?")
 var dbDialect = flag.String("db-dialect", "sqlite3", "Database dialect (sqlite3 or postgres)")
 var dbAddress = flag.String("db-address", "file:mdtest.db?_foreign_keys=on", "Database address")
@@ -56,31 +62,646 @@ var requestFullSync = flag.Bool("request-full-sync", false, "Request full (1 yea
 var pairRejectChan = make(chan bool, 1)
 
 type Config struct {
-	WhatsappApiPhone string `toml:"whatsapp_api_phone"`
+	PgUser     string `toml:"pg_user"`
+	PgPassword string `toml:"pg_password"`
+	PgHost     string `toml:"pg_host"`
+	PgPort     int64  `toml:"pg_port"`
+	PgDbname   string `toml:"pg_dbname"`
+}
+
+type WhatsappMsg struct {
+	Id            int64
+	GroupId       *int64
+	RecipientId   *int64
+	Body          string
+	EchoMessageId int64
+	QuoteId       *string
+}
+
+type WhatsappMsgPatch struct {
+	Id            int64
+	AttachmentB64 *string
+	MessageId     string
+	GroupId       *int64
+	RecipientId   *int64
+	Body          string
+	QuoteId       *string
+}
+
+type WhatsappReaction struct {
+	Id        int64
+	GroupId   *int64
+	SenderId  *int64
+	Code      string
+	MessageId *string
+}
+
+type WhatsappApiCmd struct {
+	Id      int64
+	Command string
+	Args    string
+}
+
+type WhatsappMessageMeta struct {
+	chatJid     *types.JID
+	receiverJid *types.JID
+	key         *waCommon.MessageKey
+	chat        *waE2E.Chat
+}
+
+func handleApiCmds(dbpool *pgxpool.Pool, lastGroupInfoSync time.Time, groupsSeen map[types.JID]struct{}, accountId int, clientId int) {
+	fuel := 1000
+	for fuel >= 0 {
+		fuel -= 1
+		var q = "select id, type, args from echo_api_command where client_id = $1 order by created_at asc limit 1;"
+		rows, err := dbpool.Query(context.Background(), q, clientId)
+		defer rows.Close()
+		if err != nil {
+			log.Errorf("QueryRow 'select echo_api_command' failed: %v\n", err)
+			return
+		}
+		toBreak := true
+		for rows.Next() {
+			toBreak = false
+			var data WhatsappApiCmd
+			err = rows.Scan(&data.Id, &data.Command, &data.Args)
+			if err != nil {
+				log.Errorf("Failed to map echo_api_command rec: %v\n", err)
+				continue
+			}
+			handleApiCmd(dbpool, data.Command, data.Args, accountId, clientId)
+			_, err2 := dbpool.Exec(context.Background(), "delete from echo_api_command where id = $1;", &data.Id)
+			if err2 != nil {
+				log.Errorf("QueryRow failed: %v\n", err2)
+				continue
+			}
+		}
+		if toBreak {
+			break
+		}
+	}
+}
+
+func handleQueue(dbpool *pgxpool.Pool, lastGroupInfoSync time.Time, groupsSeen map[types.JID]struct{}, accountId int, clientId int) {
+	sendNewReactions(dbpool, lastGroupInfoSync, groupsSeen, accountId, clientId)
+	sendNewMessages(dbpool, lastGroupInfoSync, groupsSeen, accountId, clientId)
+	editMessages(dbpool, lastGroupInfoSync, groupsSeen, accountId, clientId)
+}
+
+func sendNewReactions(dbpool *pgxpool.Pool, lastGroupInfoSync time.Time, groupsSeen map[types.JID]struct{}, accountId int, clientId int) {
+	var q = `select r.id, eim.group_id, eim.sender_id,  r.code, eim.internal_id as message_id
+	    from echo_message_reaction_queue r inner join echo_inbox_message eim on eim.id = r.inbox_message_id
+    	where r.account_id = $1 and eim.client_id = $2 order by r.created_at asc limit 100;`
+	rows, err := dbpool.Query(context.Background(), q, accountId, clientId)
+	defer rows.Close()
+	if err != nil {
+		log.Errorf("QueryRow 'select whatsapp insert queue' failed: %v\n", err)
+		return
+	}
+	for rows.Next() {
+		var data WhatsappReaction
+		log.Debugf("Processing reaction - GroupId: %v, SenderId: %v, MessageId: %v", data.GroupId, data.SenderId, data.MessageId)
+		err = rows.Scan(&data.Id, &data.GroupId, &data.SenderId, &data.Code, &data.MessageId)
+		if err != nil {
+			continue
+		}
+		dbpool.Exec(context.Background(), "delete from echo_message_reaction_queue where id = $1;", &data.Id)
+		sendNewReaction(data, dbpool, lastGroupInfoSync, groupsSeen, accountId, clientId)
+	}
+}
+
+func sendNewMessages(dbpool *pgxpool.Pool, lastGroupInfoSync time.Time, groupsSeen map[types.JID]struct{}, accountId int, clientId int) {
+	var q = `select mi.id as id, mi.group_id as group_id, eim.sender_id as recipient_id, m.body as body,
+	m.id as echo_message_id, eim.internal_id as quote_id
+	from echo_outbox_message_instance mi join echo_outbox_message m on m.id = mi.message_id
+	left join echo_inbox_message eim on eim.id = mi.reply_to_inbox_message_id
+	where mi.account_id = $1 and m.client_id = $2 and mi.status = 'scheduled' order by mi.updated_at asc limit 100;`
+	rows, err := dbpool.Query(context.Background(), q, accountId, clientId)
+	defer rows.Close()
+	if err != nil {
+		log.Errorf("QueryRow 'select whatsapp insert queue' failed: %v\n", err)
+		return
+	}
+	for rows.Next() {
+		var data WhatsappMsg
+		err = rows.Scan(&data.Id, &data.GroupId, &data.RecipientId, &data.Body, &data.EchoMessageId, &data.QuoteId)
+		if err != nil {
+			continue
+		}
+		dbpool.Exec(context.Background(), "update echo_outbox_message_instance set updated_at=now(), status='sent' where id = $1;", &data.Id)
+		var resp *whatsmeow.SendResponse = nil
+		resp = sendNewMessage(data, dbpool, lastGroupInfoSync, groupsSeen, accountId, clientId)
+		if resp != nil {
+			log.Infof("Echo message sent (server timestamp: %s)", resp.Timestamp)
+			_, err2 := dbpool.Exec(context.Background(), "update echo_outbox_message_instance set whatsapp_id = $2, updated_at=now(), status='sent', send_ok = true where id = $1;", &data.Id, &resp.ID)
+			if err2 != nil {
+				log.Errorf("QueryRow failed: %v\n", err2)
+			}
+		}
+	}
+}
+
+func editMessages(dbpool *pgxpool.Pool, lastGroupInfoSync time.Time, groupsSeen map[types.JID]struct{}, accountId int, clientId int) {
+	var q = `select ep.id as id, mi.whatsapp_id, mi.group_id as group_id, eim.sender_id as recipient_id,
+	ep.new_text as body, eim.internal_id as quote_id
+	from echo_outbox_message_patch ep
+	inner join echo_outbox_message eom on eom.id = ep.message_id
+	inner join echo_outbox_message_instance mi on mi.message_id = eom.id
+	join echo_inbox_message eim on eim.id = mi.reply_to_inbox_message_id
+	where mi.account_id = $1 and eom.client_id = $2 and mi.whatsapp_id is not null order by ep.created_at asc limit 100;`
+	rows, err := dbpool.Query(context.Background(), q, accountId, clientId)
+	defer rows.Close()
+	if err != nil {
+		log.Errorf("QueryRow 'select whatsapp update queue' failed: %v\n", err)
+		return
+	}
+	for rows.Next() {
+		var data WhatsappMsgPatch
+		err = rows.Scan(&data.Id, &data.MessageId, &data.GroupId, &data.RecipientId, &data.Body, &data.QuoteId)
+		if err != nil {
+			log.Errorf("QueryRow 'select whatsapp update queue' failed: %v\n", err)
+			continue
+		}
+		var attach_q = `select ap.id, a.content_base64, a.path from echo_outbox_message_attachment a
+	    	inner join echo_outbox_message_attachment_patch ap on a.id = ap.attachment_id 	where ap.patch_id = $1;`
+		attach_rows, attach_err := dbpool.Query(context.Background(), attach_q, &data.Id)
+		defer attach_rows.Close()
+		if attach_err != nil {
+			log.Errorf("QueryRow 'select whatsapp attachment queue' failed: %v\n", attach_err)
+			continue
+		}
+
+		var attachment_id *int64
+		var content_b64 *string
+		var path *string
+
+		for attach_rows.Next() {
+			attach_rows.Scan(&attachment_id, &content_b64, &path)
+		}
+
+		if attachment_id != nil {
+			// Prefer DB inline content if present; otherwise, fall back to reading file by path
+			if content_b64 != nil && *content_b64 != "" {
+				data.AttachmentB64 = content_b64
+				dbpool.Exec(context.Background(), "delete from echo_outbox_message_attachment_patch where id = $1;", attachment_id)
+			} else if path != nil && *path != "" {
+				binData, readErr := os.ReadFile(*path)
+				if readErr != nil {
+					log.Errorf("Failed to read attachment file '%s': %v", *path, readErr)
+				} else {
+					b64s := b64.StdEncoding.EncodeToString(binData)
+					data.AttachmentB64 = &b64s
+					dbpool.Exec(context.Background(), "delete from echo_outbox_message_attachment_patch where id = $1;", attachment_id)
+				}
+			}
+		}
+		dbpool.Exec(context.Background(), "delete from echo_outbox_message_patch where id = $1;", &data.Id)
+		resp := editMessage(data, dbpool, lastGroupInfoSync, groupsSeen, accountId, clientId)
+		if resp != nil {
+			log.Infof("Echo message edited (server timestamp: %s)", resp.Timestamp)
+			//             _, err2 := dbpool.Exec(context.Background(), "update echo_outbox_message_instance set whatsapp_id = $2, updated_at=now(), status='sent', send_ok = true where id = $1;", &data.Id, &resp.ID)
+			//             if err2 != nil {
+			//                 log.Errorf("QueryRow failed: %v\n", err2)
+			//             }
+		}
+	}
+}
+
+func sendNewReaction(
+	data WhatsappReaction,
+	dbpool *pgxpool.Pool,
+	lastGroupInfoSync time.Time,
+	groupsSeen map[types.JID]struct{},
+	accountId int,
+	clientId int) *whatsmeow.SendResponse {
+	log.Debugf("sendNewReaction starting. Data: %+v", data)
+	//chatJid, receiverJid, key, chat, ok
+	messageMeta := load_whatsapp_message_meta(dbpool, data.GroupId, data.SenderId, nil, data.MessageId)
+	log.Debugf("Loaded messageMeta: %+v", messageMeta)
+	if messageMeta == nil {
+		log.Infof("messageData not found for GroupId: %v, SenderId: %v, MessageId: %v", data.GroupId, data.SenderId, data.MessageId)
+		return nil
+	}
+
+	log.Debugf("Building reaction - ChatJid: %s, SenderJid: %s, MessageId: %s, Code: %s",
+		messageMeta.chatJid.String(), senderJid.String(), *data.MessageId, data.Code)
+
+	msg := cli.BuildReaction(*messageMeta.chatJid, *senderJid, *data.MessageId, data.Code)
+	msg.ReactionMessage.Key = messageMeta.key
+
+	log.Debugf("Reaction message key - ID: %s, RemoteJID: %s, FromMe: %v, Participant: %v",
+		*messageMeta.key.ID, *messageMeta.key.RemoteJID, *messageMeta.key.FromMe,
+		func() string {
+			if messageMeta.key.Participant != nil {
+				return *messageMeta.key.Participant
+			} else {
+				return "nil"
+			}
+		}())
+
+	log.Debugf("cli.SendMessage starting: %s", *messageMeta.chatJid)
+	resp, err := cli.SendMessage(context.Background(), *messageMeta.chatJid, msg)
+	if err != nil {
+		log.Errorf("Error sending reaction message: %v", err)
+	} else {
+		log.Infof("Reaction message sent (server timestamp: %s)", resp.Timestamp)
+		return &resp
+	}
+	return nil
+}
+
+func editMessage(
+	data WhatsappMsgPatch,
+	dbpool *pgxpool.Pool,
+	lastGroupInfoSync time.Time,
+	groupsSeen map[types.JID]struct{},
+	accountId int,
+	clientId int) *whatsmeow.SendResponse {
+	messageMeta := load_whatsapp_message_meta(dbpool, data.GroupId, data.RecipientId, nil, &data.MessageId)
+	if messageMeta == nil {
+		return nil
+	}
+
+	var uploaded *whatsmeow.UploadResponse
+	var mimeType *string
+	var fileLength *uint64
+
+	if data.AttachmentB64 != nil {
+		binData, err_b64 := b64.StdEncoding.DecodeString(*data.AttachmentB64)
+		if err_b64 == nil {
+			mimeType = proto.String(http.DetectContentType(binData))
+			fileLength = proto.Uint64(uint64(len(binData)))
+			res_uploaded, err_upload := cli.Upload(context.Background(), binData, whatsmeow.MediaImage)
+			if err_upload != nil {
+				log.Errorf("Failed to upload file: %v", err_upload)
+				return nil
+			}
+			uploaded = &res_uploaded
+		} else {
+			log.Errorf("Failed to decode base64 string: %v", err_b64)
+		}
+
+	}
+
+	var participant *string
+	if messageMeta.receiverJid != nil {
+		// Use non-AD JID form for participant in quoted replies to avoid incorrect group-wide notifications
+		receiver := messageMeta.receiverJid.ToNonAD().String()
+		participant = &receiver
+	}
+
+	if uploaded != nil {
+		imgMsg := &waE2E.ImageMessage{
+			Caption:       proto.String(data.Body),
+			URL:           proto.String(uploaded.URL),
+			DirectPath:    proto.String(uploaded.DirectPath),
+			MediaKey:      uploaded.MediaKey,
+			Mimetype:      mimeType,
+			FileEncSHA256: uploaded.FileEncSHA256,
+			FileSHA256:    uploaded.FileSHA256,
+			FileLength:    fileLength,
+		}
+		if data.QuoteId != nil {
+			imgMsg.ContextInfo = &waE2E.ContextInfo{
+				StanzaID:    data.QuoteId,
+				Participant: participant,
+			}
+		}
+		new_message := waE2E.Message{ImageMessage: imgMsg}
+		payload := cli.BuildEdit(*messageMeta.chatJid, data.MessageId, &new_message)
+		// 		payload.EditedMessage.Message.ProtocolMessage.Key = messageMeta.key
+
+		resp, err := cli.SendMessage(context.Background(), *messageMeta.chatJid, payload, whatsmeow.SendRequestExtra{
+			MediaHandle: uploaded.Handle,
+		})
+		if err != nil {
+			log.Errorf("Error sending image message: %v", err)
+		} else {
+			log.Infof("Image message sent (server timestamp: %s)", resp.Timestamp)
+			return &resp
+		}
+	} else {
+		msg := &waE2E.ExtendedTextMessage{Text: proto.String(data.Body)}
+		if data.QuoteId != nil {
+			msg.ContextInfo = &waE2E.ContextInfo{
+				StanzaID:    data.QuoteId,
+				Participant: participant,
+			}
+		}
+
+		new_message := waE2E.Message{ExtendedTextMessage: msg}
+		payload := cli.BuildEdit(*messageMeta.chatJid, data.MessageId, &new_message)
+		// 		payload.EditedMessage.Message.ProtocolMessage.Key = messageMeta.key
+
+		resp, err_send := cli.SendMessage(context.Background(), *messageMeta.chatJid, payload)
+		if err_send != nil {
+			log.Errorf("Error sending image message: %v", err_send)
+		} else {
+			log.Infof("Image message sent (server timestamp: %s)", resp.Timestamp)
+			return &resp
+		}
+	}
+	return nil
+}
+
+func sendNewMessage(
+	data WhatsappMsg,
+	dbpool *pgxpool.Pool,
+	lastGroupInfoSync time.Time,
+	groupsSeen map[types.JID]struct{},
+	accountId int,
+	clientId int) *whatsmeow.SendResponse {
+	messageMeta := load_whatsapp_message_meta(dbpool, data.GroupId, data.RecipientId, nil, nil)
+	if messageMeta == nil {
+		return nil
+	}
+
+	var attach_q = `select content_base64, path from echo_outbox_message_attachment where message_id = $1 limit 1;`
+	attach_rows, attach_err := dbpool.Query(context.Background(), attach_q, &data.EchoMessageId)
+	defer attach_rows.Close()
+	if attach_err != nil {
+		log.Errorf("QueryRow 'select echo_outbox_message' failed: %v\n", attach_err)
+		return nil
+	}
+
+	var uploaded *whatsmeow.UploadResponse
+	var contentBase64 *string
+	var contentPath *string
+	var mimeType *string
+	var fileLength *uint64
+
+	for attach_rows.Next() {
+		err_scan := attach_rows.Scan(&contentBase64, &contentPath)
+		if err_scan != nil {
+			log.Errorf("Failed to read attachment row: %v", err_scan)
+			continue
+		}
+
+		var binData []byte
+		var haveData bool
+
+		if contentBase64 != nil {
+			decoded, err_b64 := b64.StdEncoding.DecodeString(*contentBase64)
+			if err_b64 != nil {
+				log.Errorf("Failed to decode base64 string: %v", err_b64)
+			} else {
+				binData = decoded
+				haveData = true
+			}
+		}
+
+		if !haveData {
+			fileBytes, readErr := os.ReadFile(*contentPath)
+			if readErr != nil {
+				log.Errorf("Failed to read attachment file '%s': %v", *contentPath, readErr)
+			} else {
+				binData = fileBytes
+				haveData = true
+			}
+		}
+
+		if haveData {
+			mimeType = proto.String(http.DetectContentType(binData))
+			fileLength = proto.Uint64(uint64(len(binData)))
+			res_uploaded, err_upload := cli.Upload(context.Background(), binData, whatsmeow.MediaImage)
+			if err_upload != nil {
+				log.Errorf("Failed to upload file: %v", err_upload)
+				return nil
+			}
+			uploaded = &res_uploaded
+		}
+	}
+
+	var participant *string
+	if messageMeta.receiverJid != nil {
+		// Use non-AD JID form for participant in quoted replies to avoid incorrect group-wide notifications
+		receiver := messageMeta.receiverJid.ToNonAD().String()
+		participant = &receiver
+	}
+
+	if uploaded != nil {
+		imgMsg := &waE2E.ImageMessage{
+			Caption:       proto.String(data.Body),
+			URL:           proto.String(uploaded.URL),
+			DirectPath:    proto.String(uploaded.DirectPath),
+			MediaKey:      uploaded.MediaKey,
+			Mimetype:      mimeType,
+			FileEncSHA256: uploaded.FileEncSHA256,
+			FileSHA256:    uploaded.FileSHA256,
+			FileLength:    fileLength,
+		}
+		if data.QuoteId != nil {
+			imgMsg.ContextInfo = &waE2E.ContextInfo{
+				StanzaID:    data.QuoteId,
+				Participant: participant,
+			}
+		}
+		resp, err := cli.SendMessage(context.Background(), *messageMeta.chatJid, &waE2E.Message{ImageMessage: imgMsg}, whatsmeow.SendRequestExtra{
+			MediaHandle: uploaded.Handle,
+		})
+		if err != nil {
+			log.Errorf("Error sending image message %d: %v", data.Id, err)
+		} else {
+			log.Infof("Image message %d sent (server timestamp: %s)", data.Id, resp.Timestamp)
+			return &resp
+		}
+	} else {
+		msg := &waE2E.ExtendedTextMessage{Text: proto.String(data.Body)}
+		if data.QuoteId != nil {
+			msg.ContextInfo = &waE2E.ContextInfo{
+				StanzaID:    data.QuoteId,
+				Participant: participant,
+			}
+		}
+		resp, err_send := cli.SendMessage(context.Background(), *messageMeta.chatJid, &waE2E.Message{ExtendedTextMessage: msg})
+		if err_send != nil {
+			log.Errorf("Error sending text message %d: %v", data.Id, err_send)
+		} else {
+			log.Infof("Text message %d sent (server timestamp: %s)", data.Id, resp.Timestamp)
+			return &resp
+		}
+	}
+	return nil
+}
+
+func load_whatsapp_message_meta(dbpool *pgxpool.Pool, group_id *int64, sender_id *int64, _recipient_id *int64, messageID *string) *WhatsappMessageMeta {
+	var groupJid *types.JID
+	var receiverJid *types.JID
+
+	if group_id != nil {
+		q := "select group_id from echo_group where id = $1"
+		groupJid = loadJid(dbpool, q, group_id)
+	}
+
+	if sender_id != nil {
+		q := "select uuid from echo_sender where id = $1"
+		receiverJid = loadJid(dbpool, q, sender_id)
+	}
+
+	chatJid := groupJid
+	if chatJid == nil {
+		chatJid = receiverJid
+	}
+
+	if chatJid == nil {
+		log.Errorf("WhatsappMsg must have either GroupId or RecipientId")
+		return nil
+	}
+
+	var key *waCommon.MessageKey
+	var chat *waE2E.Chat
+
+	if chatJid != nil {
+		id := chatJid.String()
+		chat = &waE2E.Chat{ID: &id}
+	}
+
+	if messageID != nil {
+		key = cli.BuildMessageKey(*chatJid, *senderJid, *messageID)
+		log.Debugf("Initial key built - Chat: %s, Sender: %s, MessageID: %s", chatJid.String(), senderJid.String(), *messageID)
+
+		if receiverJid != nil && groupJid != nil {
+			// For group reactions, keep the group as chat but set participant to original sender
+			participant := receiverJid.ToNonAD().String()
+			fromMe := false
+			key.Participant = &participant
+			key.FromMe = &fromMe
+			log.Debugf("Group reaction key - Chat: %s, Participant: %s, FromMe: %v", chatJid.String(), participant, fromMe)
+		} else if receiverJid != nil {
+			// For direct message reactions
+			participant := receiverJid.ToNonAD().String()
+			fromMe := false
+			key = cli.BuildMessageKey(*receiverJid, *senderJid, *messageID)
+			key.Participant = &participant
+			key.FromMe = &fromMe
+			log.Debugf("Direct reaction key - Chat: %s, Participant: %s, FromMe: %v", receiverJid.String(), participant, fromMe)
+		}
+	}
+	result := WhatsappMessageMeta{chatJid: chatJid, receiverJid: receiverJid, key: key, chat: chat}
+	log.Debugf("WhatsappMessageMeta built: key=%s", key.String())
+	return &result
+}
+
+var pattern = regexp.MustCompile(`^(\d+):\d+@lid$`)
+
+func trimLid(input string) string {
+	matches := pattern.FindStringSubmatch(input)
+	if len(matches) < 2 {
+		return input
+	}
+	return fmt.Sprintf("%s@lid", matches[1])
+}
+
+func loadJid(dbpool *pgxpool.Pool, q string, arg *int64) *types.JID {
+	var resultJid *types.JID
+	rows, err := dbpool.Query(context.Background(), q, arg)
+	defer rows.Close()
+	if err != nil {
+		log.Errorf("QueryRow '%s' failed: %v\n", q, err)
+	} else {
+		var jid *string
+		for rows.Next() {
+			err = rows.Scan(&jid)
+			if err != nil {
+				log.Errorf("Failed to map group rec: %v\n", err)
+			}
+		}
+
+		if jid != nil {
+			jidValue, ok := parseJID(trimLid(*jid))
+			if !ok {
+				log.Errorf("Failed to parse jid: %s", ok)
+			} else {
+				resultJid = &jidValue
+			}
+		}
+	}
+	return resultJid
+}
+
+func handleApiCmd(dbpool *pgxpool.Pool, command string, args string, accountId int, clientId int) {
+	if strings.Compare(command, "unlink") == 0 {
+		err := cli.Logout(context.Background())
+		if err != nil {
+			log.Errorf("Error logging out: %v", err)
+		}
+		var q string
+		q = "update echo_account set is_linked = false where source = 'whatsapp' and id = $1;"
+		_, err = dbpool.Exec(context.Background(), q, accountId)
+		if err != nil {
+			log.Errorf("Failed to delete from whatsapp_account_status: %v", err)
+		}
+		q = "delete from echo_client_lock where account_id = $1 and client_id = $2;"
+		_, err = dbpool.Exec(context.Background(), q, accountId, clientId)
+		if err != nil {
+			log.Errorf("Failed to delete from echo_client_lock: %v", err)
+		}
+		log.Infof("Successfully logged out")
+	} else if strings.Compare(command, "mk_qr") == 0 {
+		log.Infof("get QR code command received with args ", args)
+		requestQr(dbpool, args, accountId)
+	} else {
+		log.Infof("unsupported command received: ", command)
+	}
 }
 
 func main() {
-	// Read config file in /etc/echo/config.toml for whatsapp_api_phone string. If it's empty -- sleep in a loop infinitely. If it's not empty -- print value and continue.
+	clientNamePtr := flag.String("client-name", "test", "Client Name")
+	configPathPtr := flag.String("config-path", "./echo-im-whatsapp/config-debug.toml", "Path to CLI config")
+	flag.Parse()
+	clientName := *clientNamePtr
+	configPath := *configPathPtr
+
+	log.Infof("clientName=%s, configPath=%s\n", clientName, configPath)
+
+	// Read config file ./config.toml for whatsapp_api_phone string. If it's empty -- sleep in a loop infinitely. If it's not empty -- print value and continue.
 	var config Config
-	if _, err := toml.DecodeFile("/etc/echo/config.toml", &config); err != nil {
+	if _, err := toml.DecodeFile(configPath, &config); err != nil {
 		fmt.Println(err)
 	}
-	if config.WhatsappApiPhone == "" {
-		fmt.Println("WhatsappApiPhone is empty. Please fill it in /etc/echo/config.toml")
-		for {
-			time.Sleep(1 * time.Second)
-		}
-	}
-	fmt.Println("WhatsappApiPhone is", config.WhatsappApiPhone)
 
-	pgConnS := "postgres://wd:fee_-_-_-FnoeKFBeebu87bf@localhost:5432/wd"
+	pgConnS := fmt.Sprintf("postgres://%s:%s@%s:%d/%s", config.PgUser, config.PgPassword, config.PgHost, config.PgPort, config.PgDbname)
+	pgConnSLog := fmt.Sprintf("postgres://%s:<...>@%s:%d/%s", config.PgUser, config.PgHost, config.PgPort, config.PgDbname)
 
 	dbpool, err := pgxpool.New(context.Background(), pgConnS)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Unable to connect to database: %v\n", err)
+		log.Errorf("Unable to connect to database %s: %v\n", pgConnSLog, err)
 		os.Exit(1)
 	}
 	defer dbpool.Close()
+
+	var q = "select ecc.whatsapp_app_name as app_name, ea.phone_number, ecl.client_id, ea.id from echo_account ea join echo_client_lock ecl on ea.id = ecl.account_id join echo_client ec on ec.id = ecl.client_id join echo_client_config ecc on ecl.client_id = ecc.client_id where ea.source = 'whatsapp' and ec.name = $1;"
+	rows, err := dbpool.Query(context.Background(), q, clientName)
+	defer rows.Close()
+	if err != nil {
+		log.Errorf("QueryRow 'select phone number by client' failed: %v\n", err)
+		return
+	}
+	var app_name string
+	var phoneNumber string
+	var accountId int
+	var clientId int
+	var has_phone_number = false
+	for rows.Next() {
+		has_phone_number = true
+		err = rows.Scan(&app_name, &phoneNumber, &clientId, &accountId)
+		if err != nil {
+			log.Errorf("Failed to map phone_number rec: %v\n", err)
+			return
+		}
+	}
+	if !has_phone_number {
+		log.Errorf("Missing Whastapp phone number in DB for client '%s'\n", clientName)
+		return
+	}
+	fmt.Println("WhatsappApiPhone is", phoneNumber)
+
+	jid, ok := parseJID(phoneNumber)
+	if !ok {
+		log.Errorf("Failed to parse sender JID: %s", ok)
+		return
+	}
+	senderJid = &jid
 
 	lastGroupInfoSync := time.Now()
 	groupsSeen := make(map[types.JID]struct{})
@@ -88,6 +709,7 @@ func main() {
 	waBinary.IndentXML = true
 	flag.Parse()
 
+	store.DeviceProps.Os = proto.String(app_name)
 	if *debugLogs {
 		logLevel = "DEBUG"
 	}
@@ -99,7 +721,6 @@ func main() {
 			StorageQuotaMb:      proto.Uint32(102400),
 		}
 	}
-	log = waLog.Stdout("Main", logLevel, true)
 
 	dbLog := waLog.Stdout("Database", logLevel, true)
 	storeContainer, err := sqlstore.New(context.Background(), *dbDialect, *dbAddress, dbLog)
@@ -131,25 +752,9 @@ func main() {
 		return true
 	}
 
-	ch, err := cli.GetQRChannel(context.Background())
-	if err != nil {
-		// This error means that we're already logged in, so ignore it.
-		if !errors.Is(err, whatsmeow.ErrQRStoreContainsID) {
-			log.Errorf("Failed to get QR channel: %v", err)
-		}
-	} else {
-		go func() {
-			for evt := range ch {
-				if evt.Event == "code" {
-					qrterminal.GenerateHalfBlock(evt.Code, qrterminal.L, os.Stdout)
-				} else {
-					log.Infof("QR channel result: %s", evt.Event)
-				}
-			}
-		}()
-	}
+	requestQr(dbpool, phoneNumber, accountId)
 
-	cli.AddEventHandler(mkHandler(dbpool, lastGroupInfoSync, groupsSeen))
+	cli.AddEventHandler(mkHandler(dbpool, lastGroupInfoSync, groupsSeen, accountId, clientId))
 	err = cli.Connect()
 	if err != nil {
 		log.Errorf("Failed to connect: %v", err)
@@ -167,6 +772,13 @@ func main() {
 			if len(line) > 0 {
 				input <- line
 			}
+		}
+	}()
+	go func() {
+		for {
+			handleApiCmds(dbpool, lastGroupInfoSync, groupsSeen, accountId, clientId)
+			handleQueue(dbpool, lastGroupInfoSync, groupsSeen, accountId, clientId)
+			time.Sleep(1 * time.Second)
 		}
 	}()
 	for {
@@ -196,6 +808,47 @@ func main() {
 				go handleCmd(strings.ToLower(cmd), args)
 			}
 		}
+	}
+}
+
+func requestQr(dbpool *pgxpool.Pool, whatsappApiPhone string, accountId int) {
+	ch, err := cli.GetQRChannel(context.Background())
+	if err != nil {
+		// This error means that we're already logged in, so ignore it.
+		if !errors.Is(err, whatsmeow.ErrQRStoreContainsID) {
+		}
+	} else {
+		go func() {
+			for evt := range ch {
+				if evt.Event == "code" {
+					done := capture()
+					_, err = dbpool.Exec(context.Background(),
+						"update echo_account set is_linked = false where id = $1;",
+						accountId,
+					)
+					if err != nil {
+						log.Errorf("Failed to set is_linked = false: %v", err)
+					}
+					_, err = dbpool.Exec(context.Background(),
+						"WITH old_qr_codes AS (DELETE FROM echo_qr_code WHERE account_id = $1 and source = 'whatsapp' RETURNING *) insert into echo_qr_code (account_id, source, content_base64) values ($1, 'whatsapp', $2);",
+						accountId,
+						evt.Code,
+					)
+					if err != nil {
+						log.Errorf("Failed to insert into qr: %v", err)
+					}
+					qrterminal.GenerateHalfBlock(evt.Code, qrterminal.L, os.Stdout)
+					capturedOutput, err := done()
+					if err != nil {
+						log.Errorf("Failed to get QR channel: %v", err)
+					} else {
+						log.Infof("QR: \n%s", capturedOutput)
+					}
+				} else {
+					log.Infof("QR channel result: %s", evt.Event)
+				}
+			}
+		}()
 	}
 }
 
@@ -577,7 +1230,7 @@ func handleCmd(cmd string, args []string) {
 			log.Infof("Community participants: %+v", resp)
 		}
 	case "listgroups":
-		groups, err := cli.GetJoinedGroups()
+		groups, err := cli.GetJoinedGroups(context.Background())
 		if err != nil {
 			log.Errorf("Failed to get group list: %v", err)
 		} else {
@@ -723,7 +1376,7 @@ func handleCmd(cmd string, args []string) {
 		if !ok {
 			return
 		}
-		err = cli.SetDisappearingTimer(recipient, time.Duration(days)*24*time.Hour)
+		err = cli.SetDisappearingTimer(recipient, time.Duration(days)*24*time.Hour, time.Now())
 		if err != nil {
 			log.Errorf("Failed to set disappearing timer: %v", err)
 		}
@@ -1063,12 +1716,49 @@ func handleCmd(cmd string, args []string) {
 var historySyncID int32
 var startupTime = time.Now().Unix()
 
-func mkHandler(dbpool *pgxpool.Pool, lastGroupInfoSync time.Time, groupsSeen map[types.JID]struct{}) func(interface{}) {
+func mkHandler(dbpool *pgxpool.Pool, lastGroupInfoSync time.Time, groupsSeen map[types.JID]struct{}, accountId int, clientId int) func(interface{}) {
 	return func(rawEvt interface{}) {
 		switch evt := rawEvt.(type) {
+		case *events.LoggedOut:
+			q := "update echo_account set is_linked = false where source = 'whatsapp' and id = $1;"
+			_, err := dbpool.Exec(context.Background(), q, accountId)
+			if err != nil {
+				log.Errorf("Failed to delete from whatsapp_account_status: %v", err)
+			}
+			q = "delete from echo_client_lock where account_id = $1 and client_id = $2;"
+			_, err = dbpool.Exec(context.Background(), q, accountId, clientId)
+			if err != nil {
+				log.Errorf("Failed to delete from echo_client_lock: %v", err)
+			}
+			log.Infof("Successfully logged out")
+		case *events.PairSuccess:
+			log.Infof("PairSuccess: %s", evt.ID.String())
+			parts := strings.Split(evt.ID.String(), ":")
+			if len(parts) > 0 {
+				whatsappApiPhone := parts[0]
+				is_number := true
+				for _, char := range whatsappApiPhone {
+					if !unicode.IsDigit(char) {
+						is_number = false
+						break
+					}
+				}
+				if is_number {
+					whatsappApiPhone = "+" + whatsappApiPhone
+					q := "update echo_account set is_linked = true where phone_number = $1 and source = 'whatsapp' and id = $2;"
+					_, err := dbpool.Exec(context.Background(), q, whatsappApiPhone, accountId)
+					if err != nil {
+						log.Errorf("Failed to update echo_account: %v", err)
+					}
+				}
+			}
+
 		case *events.AppStateSyncComplete:
 			if len(cli.Store.PushName) > 0 && evt.Name == appstate.WAPatchCriticalBlock {
 				err := cli.SendPresence(types.PresenceAvailable)
+				is_ok := err == nil
+				q := "update echo_account set is_linked = $1 where source = 'whatsapp' and id = $2;"
+				dbpool.Exec(context.Background(), q, is_ok, accountId)
 				if err != nil {
 					log.Warnf("Failed to send available presence: %v", err)
 				} else {
@@ -1090,6 +1780,7 @@ func mkHandler(dbpool *pgxpool.Pool, lastGroupInfoSync time.Time, groupsSeen map
 		case *events.StreamReplaced:
 			os.Exit(0)
 		case *events.Message:
+			has_content := false
 			metaParts := []string{fmt.Sprintf("pushname: %s", evt.Info.PushName), fmt.Sprintf("timestamp: %s", evt.Info.Timestamp)}
 			if evt.Info.Type != "" {
 				metaParts = append(metaParts, fmt.Sprintf("type: %s", evt.Info.Type))
@@ -1115,40 +1806,68 @@ func mkHandler(dbpool *pgxpool.Pool, lastGroupInfoSync time.Time, groupsSeen map
 
 			log.Infof("Received message %s from %s (%s): %+v", evt.Info.ID, evt.Info.SourceString(), strings.Join(metaParts, ", "), evt.Message)
 
-			// must be like "2024-03-02 14:01:42.460" in UTC
+			// 			must be like "2024-03-02 14:01:42.460" in UTC
 			timestamp := evt.Info.Timestamp
 			timestampS := timestamp.UTC().Format("2006-01-02 15:04:05.000")
+
+			var source_message_id *string
 			message := evt.Message
-			has_content := false
+			protocol_message := evt.Message.ProtocolMessage
+			if protocol_message != nil {
+				edit_message := protocol_message.EditedMessage
+				if edit_message != nil {
+					message = edit_message
+					source_message_id = protocol_message.Key.ID
+				}
+			}
 
 			conversation := message.GetConversation()
-            if message.ExtendedTextMessage != nil {
-                conversation = message.ExtendedTextMessage.GetText()
-            }
-            if message.VideoMessage != nil {
-                has_content = true
-                conversation = message.VideoMessage.GetCaption()
-            }
-            if message.ImageMessage != nil {
-                has_content = true
-                conversation = message.ImageMessage.GetCaption()
-            }
-            if message.DocumentMessage != nil {
-                has_content = true
-                conversation = message.DocumentMessage.GetCaption()
-            }
-            if conversation != "" || has_content {
-				if conversation == "" && evt.Message.ImageMessage.GetCaption() != "" {
-					conversation = evt.Message.ImageMessage.GetCaption()
+			var quote_id *string
+			if message.ExtendedTextMessage != nil {
+				conversation = message.ExtendedTextMessage.GetText()
+				context := message.ExtendedTextMessage.ContextInfo
+				if context != nil {
+					quote_id = context.StanzaID
 				}
+			}
+			if message.VideoMessage != nil {
+				has_content = true
+				conversation = message.VideoMessage.GetCaption()
+				context := message.VideoMessage.ContextInfo
+				if context != nil {
+					quote_id = context.StanzaID
+				}
+			}
+			if message.ImageMessage != nil {
+				has_content = true
+				conversation = message.ImageMessage.GetCaption()
+				context := message.ImageMessage.ContextInfo
+				if context != nil {
+					quote_id = context.StanzaID
+				}
+			}
+			if message.DocumentMessage != nil {
+				has_content = true
+				conversation = message.DocumentMessage.GetCaption()
+				context := message.DocumentMessage.ContextInfo
+				if context != nil {
+					quote_id = context.StanzaID
+				}
+			}
+			if conversation != "" || has_content {
+				q := "insert into echo_whatsapp_queue (from_jid, from_pushname, group_jid, timestamp, body, whatsapp_id, account_id, client_id, source_message_id, quoted_message_id) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)"
 				_, err := dbpool.Exec(context.Background(),
-					"insert into whatsapp_queue (from_jid, from_pushname, group_jid, timestamp, body, whatsapp_id) values ($1, $2, $3, $4, $5, $6)",
+					q,
 					evt.Info.Sender.String(),
 					evt.Info.PushName,
 					evt.Info.Chat,
 					timestampS,
 					conversation,
 					evt.Info.ID,
+					accountId,
+					clientId,
+					source_message_id,
+					quote_id,
 				)
 				if err != nil {
 					log.Errorf("Failed to insert into whatsapp_queue: %v", err)
@@ -1156,13 +1875,41 @@ func mkHandler(dbpool *pgxpool.Pool, lastGroupInfoSync time.Time, groupsSeen map
 			}
 
 			// upsert
-			_, err := dbpool.Exec(context.Background(),
-				"insert into signal_profile (uuid, given_name) values ($1, $2) on conflict (uuid) do update set given_name = $2",
-				evt.Info.Sender.String(),
-				evt.Info.PushName,
-			)
+			var profile_id *int64
+			var uuid = evt.Info.Sender.String()
+			var name = evt.Info.PushName
+			var q = "select id from echo_whatsapp_profile where account_id=$1 and uuid=$2;"
+			rows, err := dbpool.Query(context.Background(), q, accountId, uuid)
+			defer rows.Close()
 			if err != nil {
-				log.Errorf("Failed to insert into signal_profile: %v", err)
+				log.Errorf("QueryRow 'select echo_whatsapp_profile' failed: %v\n", err)
+			} else {
+				for rows.Next() {
+					err = rows.Scan(&profile_id)
+					if err != nil {
+						log.Errorf("Failed to map echo_whatsapp_profile rec: %v\n", err)
+					}
+				}
+			}
+			if profile_id != nil {
+				_, err := dbpool.Exec(context.Background(),
+					"update echo_whatsapp_profile set given_name = $1 where id = $2",
+					name,
+					profile_id,
+				)
+				if err != nil {
+					log.Errorf("Failed to update in echo_whatsapp_profile: %v", err)
+				}
+			} else {
+				_, err := dbpool.Exec(context.Background(),
+					"insert into echo_whatsapp_profile (uuid, given_name, account_id) values ($1, $2, $3)",
+					uuid,
+					name,
+					accountId,
+				)
+				if err != nil {
+					log.Errorf("Failed to insert into echo_whatsapp_profile: %v", err)
+				}
 			}
 
 			// add groupsSeen
@@ -1180,14 +1927,48 @@ func mkHandler(dbpool *pgxpool.Pool, lastGroupInfoSync time.Time, groupsSeen map
 						log.Errorf("Failed to get group info for %s: %v", group, err)
 						continue
 					}
-					groupJid := group.String()
-					log.Infof("Syncing group %s (%s)", groupJid, groupInfo.GroupName.Name)
-					_, err = dbpool.Exec(context.Background(),
-						"insert into whatsapp_group (jid, owner_jid, name) values ($1, $2, $3) on conflict (jid) do nothing",
-						groupJid, groupInfo.OwnerJID, groupInfo.GroupName.Name,
-					)
+
+					var group_id *int64
+					var groupJid = group.String()
+					var owner_jid = groupInfo.OwnerJID
+					var name = groupInfo.GroupName.Name
+
+					log.Infof("Syncing group %s (%s)", groupJid, name)
+
+					var q = "select id from echo_whatsapp_group where account_id=$1 and jid=$2;"
+					rows, err := dbpool.Query(context.Background(), q, accountId, groupJid)
+					defer rows.Close()
 					if err != nil {
-						log.Errorf("Failed to insert into whatsapp_group: %v", err)
+						log.Errorf("QueryRow 'select echo_whatsapp_group' failed: %v\n", err)
+					} else {
+						for rows.Next() {
+							err = rows.Scan(&group_id)
+							if err != nil {
+								log.Errorf("Failed to map echo_whatsapp_group rec: %v\n", err)
+							}
+						}
+					}
+					if group_id != nil {
+						_, err := dbpool.Exec(context.Background(),
+							"update echo_whatsapp_group set owner_jid = $1, name = $2 where id = $3",
+							owner_jid,
+							name,
+							group_id,
+						)
+						if err != nil {
+							log.Errorf("Failed to update in echo_whatsapp_group: %v", err)
+						}
+					} else {
+						_, err := dbpool.Exec(context.Background(),
+							"insert into echo_whatsapp_group (jid, owner_jid, name, account_id) values ($1, $2, $3, $4) ",
+							groupJid,
+							owner_jid,
+							name,
+							accountId,
+						)
+						if err != nil {
+							log.Errorf("Failed to insert into echo_whatsapp_group: %v", err)
+						}
 					}
 				}
 				groupsSeen = make(map[types.JID]struct{})
@@ -1233,75 +2014,66 @@ func mkHandler(dbpool *pgxpool.Pool, lastGroupInfoSync time.Time, groupsSeen map
 					log.Errorf("Failed to get absolute path: %v", err)
 					return
 				}
-				_, err = dbpool.Exec(context.Background(),
-					"insert into whatsapp_queue_attachment (whatsapp_id, path) values ($1, $2)",
-					evt.Info.ID,
-					fullOsPath,
-				)
+				q := "insert into echo_whatsapp_queue_attachment (whatsapp_id, path, account_id) values ($1, $2, $3)"
+				_, err = dbpool.Exec(context.Background(), q, evt.Info.ID, fullOsPath, accountId)
 				if err != nil {
 					log.Errorf("Failed to insert into whatsapp_queue_attachment: %v", err)
 				}
 			}
 
-//         video := evt.Message.GetVideoMessage()
-//         if video != nil {
-//             data, err := cli.Download(context.Background(), video)
-//             if err != nil {
-//                 log.Errorf("Failed to download video: %v", err)
-//                 return
-//             }
-//             exts, _ := mime.ExtensionsByType(video.GetMimetype())
-//             path := fmt.Sprintf("%s%s", evt.Info.ID, exts[0])
-//             err = os.WriteFile(path, data, 0600)
-//             if err != nil {
-//                 log.Errorf("Failed to save video: %v", err)
-//                 return
-//             }
-//             log.Infof("Saved video in message to %s", path)
-//             fullOsPath, err := filepath.Abs(path)
-//             if err != nil {
-//                 log.Errorf("Failed to get absolute path: %v", err)
-//                 return
-//             }
-//             _, err = dbpool.Exec(context.Background(),
-//                 "insert into whatsapp_queue_attachment (whatsapp_id, path) values ($1, $2)",
-//                 evt.Info.ID,
-//                 fullOsPath,
-//             )
-//             if err != nil {
-//                 log.Errorf("Failed to insert into whatsapp_queue_attachment: %v", err)
-//             }
-//         }
-//
-//         document := evt.Message.GetDocumentMessage()
-//         if document != nil {
-//             data, err := cli.Download(context.Background(), document)
-//             if err != nil {
-//                 log.Errorf("Failed to download document: %v", err)
-//                 return
-//             }
-//             exts, _ := mime.ExtensionsByType(document.GetMimetype())
-//             path := fmt.Sprintf("%s%s", evt.Info.ID, exts[0])
-//             err = os.WriteFile(path, data, 0600)
-//             if err != nil {
-//                 log.Errorf("Failed to save document: %v", err)
-//                 return
-//             }
-//             log.Infof("Saved document in message to %s", path)
-//             fullOsPath, err := filepath.Abs(path)
-//             if err != nil {
-//                 log.Errorf("Failed to get absolute path: %v", err)
-//                 return
-//             }
-//             _, err = dbpool.Exec(context.Background(),
-//                 "insert into whatsapp_queue_attachment (whatsapp_id, path) values ($1, $2)",
-//                 evt.Info.ID,
-//                 fullOsPath,
-//             )
-//             if err != nil {
-//                 log.Errorf("Failed to insert into whatsapp_queue_attachment: %v", err)
-//             }
-//         }
+			video := evt.Message.GetVideoMessage()
+			if video != nil {
+				data, err := cli.Download(context.Background(), video)
+				if err != nil {
+					log.Errorf("Failed to download video: %v", err)
+					return
+				}
+				exts, _ := mime.ExtensionsByType(video.GetMimetype())
+				path := fmt.Sprintf("%s%s", evt.Info.ID, exts[0])
+				err = os.WriteFile(path, data, 0600)
+				if err != nil {
+					log.Errorf("Failed to save video: %v", err)
+					return
+				}
+				log.Infof("Saved video in message to %s", path)
+				fullOsPath, err := filepath.Abs(path)
+				if err != nil {
+					log.Errorf("Failed to get absolute path: %v", err)
+					return
+				}
+				q := "insert into echo_whatsapp_queue_attachment (whatsapp_id, path, account_id) values ($1, $2, $3)"
+				_, err = dbpool.Exec(context.Background(), q, evt.Info.ID, fullOsPath, accountId)
+				if err != nil {
+					log.Errorf("Failed to insert into whatsapp_queue_attachment: %v", err)
+				}
+			}
+
+			document := evt.Message.GetDocumentMessage()
+			if document != nil {
+				data, err := cli.Download(context.Background(), document)
+				if err != nil {
+					log.Errorf("Failed to download document: %v", err)
+					return
+				}
+				exts, _ := mime.ExtensionsByType(document.GetMimetype())
+				path := fmt.Sprintf("%s%s", evt.Info.ID, exts[0])
+				err = os.WriteFile(path, data, 0600)
+				if err != nil {
+					log.Errorf("Failed to save document: %v", err)
+					return
+				}
+				log.Infof("Saved document in message to %s", path)
+				fullOsPath, err := filepath.Abs(path)
+				if err != nil {
+					log.Errorf("Failed to get absolute path: %v", err)
+					return
+				}
+				q := "insert into echo_whatsapp_queue_attachment (whatsapp_id, path, account_id) values ($1, $2, $3)"
+				_, err = dbpool.Exec(context.Background(), q, evt.Info.ID, fullOsPath, accountId)
+				if err != nil {
+					log.Errorf("Failed to insert into whatsapp_queue_attachment: %v", err)
+				}
+			}
 		case *events.Receipt:
 			if evt.Type == types.ReceiptTypeRead || evt.Type == types.ReceiptTypeReadSelf {
 				log.Infof("%v was read by %s at %s", evt.MessageIDs, evt.SourceString(), evt.Timestamp)
@@ -1344,5 +2116,32 @@ func mkHandler(dbpool *pgxpool.Pool, lastGroupInfoSync time.Time, groupsSeen map
 		case *events.Blocklist:
 			log.Infof("Blocklist event: %+v", evt)
 		}
+	}
+}
+
+func capture() func() (string, error) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		panic(err)
+	}
+
+	done := make(chan error, 1)
+
+	save := os.Stdout
+	os.Stdout = w
+
+	var buf strings.Builder
+
+	go func() {
+		_, err := io.Copy(&buf, r)
+		r.Close()
+		done <- err
+	}()
+
+	return func() (string, error) {
+		os.Stdout = save
+		w.Close()
+		err := <-done
+		return buf.String(), err
 	}
 }
