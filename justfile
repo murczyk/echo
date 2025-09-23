@@ -951,7 +951,7 @@ setup-server-interactive:
     ssh {{ server }} 'sudo wdintel-rs --mode=live oneoff-install --interactive'
 
 _build-whatsapp-bin-local:
-    (cd echo-whatsapp/whatsmeow/echo-whatsapp && /usr/local/go/bin/go mod tidy && go build)
+    (cd echo-whatsapp/whatsmeow/echo-whatsapp && go mod tidy && go build)
     mv echo-whatsapp/whatsmeow/echo-whatsapp/echo-whatsapp deploy/echo-whatsapp/echo-whatsapp
 
 deploy-rustdocs:
