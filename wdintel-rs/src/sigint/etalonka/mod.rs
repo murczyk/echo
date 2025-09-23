@@ -210,11 +210,11 @@ pub async fn etalonka_according_the_form(
         );
 
         for (index, network) in unit_networks.iter().enumerate() {
-            let filter = Some(NetworkFreqFilter {
+            let filter = NetworkFreqFilter {
                 since_date_inclusive_ms: None,
                 till_date_inclusive_ms: None,
                 active_freqs_only: settings.active_freqs_only,
-            });
+            };
 
             let list_network_callsigns_req = ListNetworkCallsignsReq {
                 network_id: network.id,
@@ -240,9 +240,10 @@ pub async fn etalonka_according_the_form(
                 format!("щонайменше {unique_count} ВЗ.")
             };
 
-            let freqs = load_freqs(&env.dbx, &groups, network.id, &filter)
-                .await
-                .context(h!())?;
+            let freqs =
+                load_freqs(&env.dbx, &groups, network.id, Some(&filter))
+                    .await
+                    .context(h!())?;
 
             let modulations = freqs
                 .iter()
@@ -368,11 +369,11 @@ pub async fn etalonka_extended(
         );
 
         for (index, network) in unit_networks.iter().enumerate() {
-            let filter = Some(NetworkFreqFilter {
+            let filter = NetworkFreqFilter {
                 since_date_inclusive_ms: Some(settings.since_date_inclusive_ms),
                 till_date_inclusive_ms: settings.till_date_inclusive_ms,
                 active_freqs_only: settings.active_freqs_only,
-            });
+            };
 
             let list_network_callsigns_req = ListNetworkCallsignsReq {
                 network_id: network.id,
@@ -393,7 +394,7 @@ pub async fn etalonka_extended(
                 &groups,
                 network.id,
                 &all_known_callsigns,
-                &filter,
+                Some(&filter),
             )
             .await
             .context(h!())?;
@@ -411,9 +412,10 @@ pub async fn etalonka_extended(
                     format!("щонайменше {unique_count} ВЗ.")
                 };
 
-            let freqs = load_freqs(&env.dbx, &groups, network.id, &filter)
-                .await
-                .context(h!())?;
+            let freqs =
+                load_freqs(&env.dbx, &groups, network.id, Some(&filter))
+                    .await
+                    .context(h!())?;
 
             let modulations = freqs
                 .iter()

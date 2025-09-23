@@ -73,7 +73,6 @@ pub struct NetworkFreqFilter {
     pub active_freqs_only: bool,
     pub since_date_inclusive_ms: Option<i64>,
     pub till_date_inclusive_ms: Option<i64>,
-    pub callsigns: Option<Vec<String>>,
 }
 
 #[derive(Debug, FromQueryResult, Default)]
