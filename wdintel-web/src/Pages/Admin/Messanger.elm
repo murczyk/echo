@@ -18,6 +18,7 @@ import Select
 import Shared
 import Shared.Components.Button as Button
 import Shared.Components.ModalDialog as ModalDialog
+import Shared.Components.SegmentedControl as SegmentedControl
 import Shared.Components.Sidebar as Sidebar
 import Shared.Components.Table as Table
 import Shared.Components.Table.Column as TableColumn
@@ -528,6 +529,7 @@ type Msg
     | CloseEditSidebar
     | SetTableState Table.State
     | LinkPhoneFormMsg (LinkFlow.LinkFlow -> LinkFlow.LinkFlow)
+    | SwitchFlowType String
     | UpdateEditDisplayName String
     | UpdateEditDescription String
     | SubmitLinkForm
@@ -603,6 +605,23 @@ update msg model =
             , E.none
             )
 
+        SwitchFlowType flowType ->
+            let
+                newLinkFlow =
+                    case flowType of
+                        "phone" ->
+                            LinkFlow.initPhoneFlow
+
+                        "api" ->
+                            LinkFlow.initApiFlow
+
+                        _ ->
+                            model.linkFlow
+            in
+            ( { model | linkFlow = newLinkFlow, formErrors = Dict.empty }
+            , E.none
+            )
+
         OpenLinkSidebar ->
             ( { model | sidebarOpen = True }
             , E.none
@@ -662,8 +681,61 @@ update msg model =
                                 )
 
                     Nothing ->
-                        -- Handle API form case later
-                        ( model, E.none )
+                        -- Handle API form case
+                        case LinkFlow.getApiForm model.linkFlow of
+                            Just apiForm ->
+                                Result.map2 (\_ validatedAorId ->
+                                                let
+                                                    systemServiceName =
+                                                        normalizeToSystemName apiForm.name
+
+                                                    request =
+                                                        { apiEndpoint = apiForm.apiEndpoint
+                                                        , apiUser = apiForm.apiUser
+                                                        , displayName = apiForm.name
+                                                        , systemServiceName = systemServiceName
+                                                        , description =
+                                                            if String.isEmpty apiForm.description then
+                                                                Nothing
+
+                                                            else
+                                                                Just apiForm.description
+                                                        , aorId = validatedAorId
+                                                        }
+                                                in
+                                                -- TODO: Create API-specific endpoint when available
+                                                -- For now, use the existing endpoint
+                                                ( model
+                                                , E.sendCmd
+                                                    (Api.messenger_link_account GotLinkResult
+                                                        { messenger = "api"
+                                                        , phone = apiForm.apiEndpoint -- Use endpoint as phone temporarily
+                                                        , displayName = apiForm.name
+                                                        , systemServiceName = systemServiceName
+                                                        , description =
+                                                            if String.isEmpty apiForm.description then
+                                                                Nothing
+
+                                                            else
+                                                                Just apiForm.description
+                                                        , aorId = validatedAorId
+                                                        }
+                                                    )
+                                                )
+                                    ) (validateDisplayName apiForm.name) (validateAorId apiForm.aorId)
+
+                                            Err error ->
+                                                ( { model | formErrors = Dict.insert "aorId" error model.formErrors }
+                                                , E.none
+                                                )
+
+                                    Err error ->
+                                        ( { model | formErrors = Dict.insert "displayName" error model.formErrors }
+                                        , E.none
+                                        )
+
+                            Nothing ->
+                                ( model, E.none )
 
             else
                 ( model, E.none )
@@ -789,10 +861,14 @@ update msg model =
                         Just account ->
                             let
                                 -- Create a temporary QR data and update via LinkFlow API
-                                qrData = { accountId = accountId, qrCode = "", account = account }
-                                newLinkFlow = LinkFlow.initPhoneFlow  -- Start with phone flow
-                                    |> (\flow -> LinkFlow.handleLinkResult { account = account } flow)
-                                    |> LinkFlow.updateQrCode ""
+                                qrData =
+                                    { accountId = accountId, qrCode = "", account = account }
+
+                                newLinkFlow =
+                                    LinkFlow.initPhoneFlow
+                                        -- Start with phone flow
+                                        |> (\flow -> LinkFlow.handleLinkResult { account = account } flow)
+                                        |> LinkFlow.updateQrCode ""
                             in
                             ( { model
                                 | sidebarOpen = True
@@ -1205,145 +1281,225 @@ mainBlock isDark model =
 linkAccountSidebarContent : Bool -> Shared.Model -> Model -> List (Html Msg)
 linkAccountSidebarContent isDark shared model =
     if LinkFlow.isInFormState model.linkFlow then
-        case LinkFlow.getPhoneForm model.linkFlow of
-            Just phoneForm ->
-                [ div [ class "flex flex-col h-full" ]
-                    [ div [ class "p-6 border-b border-border" ]
-                    [ h2 [ class "text-lg font-semibold mb-1" ] [ text "Прив'язати новий акаунт" ]
-                    , p [ class "text-sm text-muted-foreground" ] [ text "Введіть дані для прив'язування акаунту месенджера" ]
-                    ]
-                , div [ class "flex-1 overflow-y-auto p-6" ]
-                    [ div [ class "space-y-6" ]
-                        [ div [ class "space-y-2" ]
-                            [ label [ class "text-sm font-medium text-foreground" ] [ text "Тип месенджера" ]
-                            , Html.map MessengerTypeSelectMsg <|
-                                Styled.toUnstyled <|
-                                    Utils.Select.renderSelectSingle
-                                        (Just (Select.basicMenuItem { item = phoneForm.messengerType, label = getMessengerTypeLabel phoneForm.messengerType }))
-                                        model.messengerTypeSelect.state
-                                        messengerTypeMenuItems
-                                        "Виберіть тип месенджера"
-                                        (Utils.Select.defaultOptions isDark)
+        [ div [ class "flex flex-col h-full" ]
+            [ div [ class "p-6 border-b border-border" ]
+                [ h2 [ class "text-lg font-semibold mb-1" ] [ text "Прив'язати новий акаунт" ]
+                , p [ class "text-sm text-muted-foreground" ] [ text "Введіть дані для прив'язування акаунту месенджера" ]
+                ]
+            , div [ class "flex-1 overflow-y-auto p-6" ]
+                [ div [ class "space-y-6" ]
+                    [ div [ class "space-y-2" ]
+                        [ SegmentedControl.new
+                            (LinkFlow.getCurrentFlowType model.linkFlow)
+                            SwitchFlowType
+                            [ { value = "phone", label = "Телефон" }
+                            , { value = "api", label = "API" }
                             ]
-                        , div [ class "space-y-2" ]
-                            [ label [ class "text-sm font-medium text-foreground" ] [ text "Номер телефону" ]
-                            , input
-                                [ class "form-input w-full"
-                                , type_ "tel"
-                                , placeholder "+380XXXXXXXXX"
-                                , value phoneForm.phoneNumber
-                                , onInput <| LinkPhoneFormMsg << LinkFlow.updatePhoneNumber
-                                ]
-                                []
-                            ]
-                        , div [ class "space-y-2" ]
-                            [ label [ class "text-sm font-medium text-foreground" ] [ text "Назва акаунту" ]
-                            , input
-                                [ class "form-input w-full"
-                                , type_ "text"
-                                , placeholder "Мій Signal акаунт"
-                                , value phoneForm.name
-                                , onInput <| LinkPhoneFormMsg << LinkFlow.updateName
-                                ]
-                                []
-                            , case Dict.get "displayName" model.formErrors of
-                                Just error ->
-                                    p [ class "text-xs text-red-600" ] [ text error ]
+                            |> SegmentedControl.view
+                        ]
+                    , if LinkFlow.getCurrentFlowType model.linkFlow == "phone" then
+                        case LinkFlow.getPhoneForm model.linkFlow of
+                            Just phoneForm ->
+                                div [ class "space-y-4" ]
+                                    [ div [ class "space-y-2" ]
+                                        [ label [ class "text-sm font-medium text-foreground" ] [ text "Тип месенджера" ]
+                                        , Html.map MessengerTypeSelectMsg <|
+                                            Styled.toUnstyled <|
+                                                Utils.Select.renderSelectSingle
+                                                    (Just (Select.basicMenuItem { item = phoneForm.messengerType, label = getMessengerTypeLabel phoneForm.messengerType }))
+                                                    model.messengerTypeSelect.state
+                                                    messengerTypeMenuItems
+                                                    "Виберіть тип месенджера"
+                                                    (Utils.Select.defaultOptions isDark)
+                                        ]
+                                    , div [ class "space-y-2" ]
+                                        [ label [ class "text-sm font-medium text-foreground" ] [ text "Номер телефону" ]
+                                        , input
+                                            [ class "form-input w-full"
+                                            , type_ "tel"
+                                            , placeholder "+380XXXXXXXXX"
+                                            , value phoneForm.phoneNumber
+                                            , onInput <| LinkPhoneFormMsg << LinkFlow.updatePhoneNumber
+                                            ]
+                                            []
+                                        ]
+                                    ]
 
-                                Nothing ->
-                                    text ""
+                            Nothing ->
+                                div [] [ text "Помилка: не вдалося завантажити Phone форму" ]
+
+                      else
+                        -- API поля
+                        case LinkFlow.getApiForm model.linkFlow of
+                            Just apiForm ->
+                                div [ class "space-y-4" ]
+                                    [ div [ class "space-y-2" ]
+                                        [ label [ class "text-sm font-medium text-foreground" ] [ text "API Endpoint" ]
+                                        , input
+                                            [ class "form-input w-full"
+                                            , type_ "url"
+                                            , placeholder "https://api.example.com/webhook"
+                                            , value apiForm.apiEndpoint
+                                            , onInput <| LinkPhoneFormMsg << LinkFlow.updateApiEndpoint
+                                            ]
+                                            []
+                                        ]
+                                    , div [ class "space-y-2" ]
+                                        [ label [ class "text-sm font-medium text-foreground" ] [ text "API User/Token" ]
+                                        , input
+                                            [ class "form-input w-full"
+                                            , type_ "text"
+                                            , placeholder "API ключ або токен"
+                                            , value apiForm.apiUser
+                                            , onInput <| LinkPhoneFormMsg << LinkFlow.updateApiUser
+                                            ]
+                                            []
+                                        ]
+                                    ]
+
+                            Nothing ->
+                                div [] [ text "Помилка: не вдалося завантажити API форму" ]
+
+                    -- Спільні поля для обох типів
+                    , div [ class "space-y-2" ]
+                        [ label [ class "text-sm font-medium text-foreground" ] [ text "Назва акаунту" ]
+                        , input
+                            [ class "form-input w-full"
+                            , type_ "text"
+                            , placeholder
+                                (if LinkFlow.getCurrentFlowType model.linkFlow == "phone" then
+                                    "Мій Signal акаунт"
+
+                                 else
+                                    "Мій API Integration"
+                                )
+                            , value
+                                (case ( LinkFlow.getPhoneForm model.linkFlow, LinkFlow.getApiForm model.linkFlow ) of
+                                    ( Just pForm, _ ) ->
+                                        pForm.name
+
+                                    ( _, Just aForm ) ->
+                                        aForm.name
+
+                                    _ ->
+                                        ""
+                                )
+                            , onInput <| LinkPhoneFormMsg << LinkFlow.updateName
                             ]
-                        , div [ class "space-y-2" ]
-                            [ label [ class "text-sm font-medium text-foreground" ] [ text "Смуга відповідальності" ]
-                            , Html.map AorSelectMsg <|
-                                Styled.toUnstyled <|
-                                    Utils.Select.renderSelectSingle
-                                        (Maybe.andThen
-                                            (\aorId ->
-                                                List.filter (\aor -> aor.id == aorId) (RD.withDefault [] model.aorList)
-                                                    |> List.head
-                                                    |> Maybe.map (\aor -> Select.basicMenuItem { item = aor.id, label = aor.name })
-                                            )
-                                            phoneForm.aorId
+                            []
+                        , case Dict.get "displayName" model.formErrors of
+                            Just error ->
+                                p [ class "text-xs text-red-600" ] [ text error ]
+
+                            Nothing ->
+                                text ""
+                        ]
+                    , div [ class "space-y-2" ]
+                        [ label [ class "text-sm font-medium text-foreground" ] [ text "Смуга відповідальності" ]
+                        , Html.map AorSelectMsg <|
+                            Styled.toUnstyled <|
+                                Utils.Select.renderSelectSingle
+                                    (Maybe.andThen
+                                        (\aorId ->
+                                            List.filter (\aor -> aor.id == aorId) (RD.withDefault [] model.aorList)
+                                                |> List.head
+                                                |> Maybe.map (\aor -> Select.basicMenuItem { item = aor.id, label = aor.name })
                                         )
-                                        model.aorSelect.state
-                                        model.aorSelect.items
-                                        "Оберіть смугу відповідальності"
-                                        (Utils.Select.defaultOptions isDark)
-                            , case Dict.get "aorId" model.formErrors of
-                                Just error ->
-                                    p [ class "text-xs text-red-600" ] [ text error ]
+                                        (case ( LinkFlow.getPhoneForm model.linkFlow, LinkFlow.getApiForm model.linkFlow ) of
+                                            ( Just pForm, _ ) ->
+                                                pForm.aorId
 
-                                Nothing ->
-                                    text ""
-                            ]
-                        , div [ class "space-y-2" ]
-                            [ label [ class "text-sm font-medium text-foreground" ] [ text "Опис (необов'язково)" ]
-                            , textarea
-                                [ class "form-textarea w-full"
-                                , rows 3
-                                , placeholder "Короткий опис акаунту..."
-                                , value phoneForm.description
-                                , onInput <| LinkPhoneFormMsg << LinkFlow.updateDescription
-                                ]
-                                []
-                            ]
+                                            ( _, Just aForm ) ->
+                                                aForm.aorId
+
+                                            _ ->
+                                                Nothing
+                                        )
+                                    )
+                                    model.aorSelect.state
+                                    model.aorSelect.items
+                                    "Оберіть смугу відповідальності"
+                                    (Utils.Select.defaultOptions isDark)
+                        , case Dict.get "aorId" model.formErrors of
+                            Just error ->
+                                p [ class "text-xs text-red-600" ] [ text error ]
+
+                            Nothing ->
+                                text ""
                         ]
-                    ]
-                , div [ class "p-6 border-t border-border" ]
-                    [ div [ class "flex gap-3" ]
-                        [ Button.new { label = "Скасувати", onClick = CloseLinkSidebar }
-                            |> Button.withStyleSecondary
-                            |> Button.view
-                        , Button.new { label = "Прив'язати", onClick = SubmitLinkForm }
-                            |> Button.view
+                    , div [ class "space-y-2" ]
+                        [ label [ class "text-sm font-medium text-foreground" ] [ text "Опис (необов'язково)" ]
+                        , textarea
+                            [ class "form-textarea w-full"
+                            , rows 3
+                            , placeholder "Короткий опис акаунту..."
+                            , value
+                                (case ( LinkFlow.getPhoneForm model.linkFlow, LinkFlow.getApiForm model.linkFlow ) of
+                                    ( Just pForm, _ ) ->
+                                        pForm.description
+
+                                    ( _, Just aForm ) ->
+                                        aForm.description
+
+                                    _ ->
+                                        ""
+                                )
+                            , onInput <| LinkPhoneFormMsg << LinkFlow.updateDescription
+                            ]
+                            []
                         ]
                     ]
                 ]
+            , div [ class "p-6 border-t border-border" ]
+                [ div [ class "flex gap-3" ]
+                    [ Button.new { label = "Скасувати", onClick = CloseLinkSidebar }
+                        |> Button.withStyleSecondary
+                        |> Button.view
+                    , Button.new { label = "Прив'язати", onClick = SubmitLinkForm }
+                        |> Button.view
+                    ]
                 ]
-
-            Nothing ->
-                -- API form case - will be implemented in Milestone 2
-                [ div [ class "p-6" ] [ text "API форма буде імплементована в Milestone 2" ] ]
+            ]
+        ]
 
     else if LinkFlow.isInQrState model.linkFlow then
         case LinkFlow.getQrData model.linkFlow of
             Just qrData ->
                 [ div [ class "flex flex-col h-full" ]
                     [ div [ class "p-6 border-b border-border" ]
-                    [ h2 [ class "text-lg font-semibold mb-1" ] [ text "Прив'язати новий акаунт" ]
-                    , p [ class "text-sm text-muted-foreground" ]
-                        [ text (qrData.account.messenger ++ ": " ++ qrData.account.phoneNumber) ]
-                    ]
-                , div [ class "flex-1 overflow-y-auto p-6" ]
-                    [ div [ class "space-y-6 text-center" ]
-                        [ if qrData.qrCode /= "" then
-                            div [ class "space-y-4" ]
-                                [ img [ src qrData.qrCode, class "mx-auto max-w-xs" ] []
-                                , p [ class "text-sm text-muted-foreground" ]
-                                    [ text "Відскануйте QR код вашим месенджером" ]
-                                ]
+                        [ h2 [ class "text-lg font-semibold mb-1" ] [ text "Прив'язати новий акаунт" ]
+                        , p [ class "text-sm text-muted-foreground" ]
+                            [ text (qrData.account.messenger ++ ": " ++ qrData.account.phoneNumber) ]
+                        ]
+                    , div [ class "flex-1 overflow-y-auto p-6" ]
+                        [ div [ class "space-y-6 text-center" ]
+                            [ if qrData.qrCode /= "" then
+                                div [ class "space-y-4" ]
+                                    [ img [ src qrData.qrCode, class "mx-auto max-w-xs" ] []
+                                    , p [ class "text-sm text-muted-foreground" ]
+                                        [ text "Відскануйте QR код вашим месенджером" ]
+                                    ]
 
-                          else
-                            div [ class "py-8" ]
-                                [ text "Завантаження QR коду..." ]
-                        , div [ class "flex items-center justify-center space-x-2" ]
-                            [ div [ class "w-2 h-2 bg-blue-500 rounded-full animate-pulse" ] []
-                            , span [ class "text-sm text-muted-foreground" ] [ text "Очікування підключення..." ]
+                              else
+                                div [ class "py-8" ]
+                                    [ text "Завантаження QR коду..." ]
+                            , div [ class "flex items-center justify-center space-x-2" ]
+                                [ div [ class "w-2 h-2 bg-blue-500 rounded-full animate-pulse" ] []
+                                , span [ class "text-sm text-muted-foreground" ] [ text "Очікування підключення..." ]
+                                ]
+                            ]
+                        ]
+                    , div [ class "p-6 border-t border-border" ]
+                        [ div [ class "flex gap-3" ]
+                            [ Button.new { label = "Скасувати", onClick = CloseLinkSidebar }
+                                |> Button.withStyleSecondary
+                                |> Button.view
+                            , Button.new { label = "Оновити QR код", onClick = RefreshQrCode }
+                                |> Button.withStyleSecondary
+                                |> Button.view
                             ]
                         ]
                     ]
-                , div [ class "p-6 border-t border-border" ]
-                    [ div [ class "flex gap-3" ]
-                        [ Button.new { label = "Скасувати", onClick = CloseLinkSidebar }
-                            |> Button.withStyleSecondary
-                            |> Button.view
-                        , Button.new { label = "Оновити QR код", onClick = RefreshQrCode }
-                            |> Button.withStyleSecondary
-                            |> Button.view
-                        ]
-                    ]
-                ]
                 ]
 
             Nothing ->
@@ -1354,26 +1510,26 @@ linkAccountSidebarContent isDark shared model =
             Just account ->
                 [ div [ class "flex flex-col h-full" ]
                     [ div [ class "p-6 border-b border-border" ]
-                    [ h2 [ class "text-lg font-semibold mb-1" ] [ text "Прив'язати новий акаунт" ]
-                    , p [ class "text-sm text-muted-foreground" ] [ text "Акаунт успішно прив'язано!" ]
-                    ]
-                , div [ class "flex-1 overflow-y-auto p-6" ]
-                    [ div [ class "space-y-6 text-center" ]
-                        [ div [ class "text-green-600 text-6xl" ] [ text "✅" ]
-                        , div [ class "space-y-2" ]
-                            [ h3 [ class "text-lg font-medium" ] [ text "Акаунт підключено!" ]
-                            , p [ class "text-sm text-muted-foreground" ]
-                                [ text (account.messenger ++ ": " ++ account.phoneNumber) ]
+                        [ h2 [ class "text-lg font-semibold mb-1" ] [ text "Прив'язати новий акаунт" ]
+                        , p [ class "text-sm text-muted-foreground" ] [ text "Акаунт успішно прив'язано!" ]
+                        ]
+                    , div [ class "flex-1 overflow-y-auto p-6" ]
+                        [ div [ class "space-y-6 text-center" ]
+                            [ div [ class "text-green-600 text-6xl" ] [ text "✅" ]
+                            , div [ class "space-y-2" ]
+                                [ h3 [ class "text-lg font-medium" ] [ text "Акаунт підключено!" ]
+                                , p [ class "text-sm text-muted-foreground" ]
+                                    [ text (account.messenger ++ ": " ++ account.phoneNumber) ]
+                                ]
+                            ]
+                        ]
+                    , div [ class "p-6 border-t border-border" ]
+                        [ div [ class "flex gap-3" ]
+                            [ Button.new { label = "Закрити", onClick = CloseLinkSidebar }
+                                |> Button.view
                             ]
                         ]
                     ]
-                , div [ class "p-6 border-t border-border" ]
-                    [ div [ class "flex gap-3" ]
-                        [ Button.new { label = "Закрити", onClick = CloseLinkSidebar }
-                            |> Button.view
-                        ]
-                    ]
-                ]
                 ]
 
             Nothing ->
@@ -1384,28 +1540,28 @@ linkAccountSidebarContent isDark shared model =
             Just errorMessage ->
                 [ div [ class "flex flex-col h-full" ]
                     [ div [ class "p-6 border-b border-border" ]
-                    [ h2 [ class "text-lg font-semibold mb-1" ] [ text "Прив'язати новий акаунт" ]
-                    , p [ class "text-sm text-muted-foreground" ] [ text "Сталася помилка" ]
-                    ]
-                , div [ class "flex-1 overflow-y-auto p-6" ]
-                    [ div [ class "space-y-6 text-center" ]
-                        [ div [ class "text-red-600 text-6xl" ] [ text "❌" ]
-                        , div [ class "space-y-2" ]
-                            [ h3 [ class "text-lg font-medium" ] [ text "Помилка" ]
-                            , p [ class "text-sm text-muted-foreground" ] [ text errorMessage ]
+                        [ h2 [ class "text-lg font-semibold mb-1" ] [ text "Прив'язати новий акаунт" ]
+                        , p [ class "text-sm text-muted-foreground" ] [ text "Сталася помилка" ]
+                        ]
+                    , div [ class "flex-1 overflow-y-auto p-6" ]
+                        [ div [ class "space-y-6 text-center" ]
+                            [ div [ class "text-red-600 text-6xl" ] [ text "❌" ]
+                            , div [ class "space-y-2" ]
+                                [ h3 [ class "text-lg font-medium" ] [ text "Помилка" ]
+                                , p [ class "text-sm text-muted-foreground" ] [ text errorMessage ]
+                                ]
+                            ]
+                        ]
+                    , div [ class "p-6 border-t border-border" ]
+                        [ div [ class "flex gap-3" ]
+                            [ Button.new { label = "Скасувати", onClick = CloseLinkSidebar }
+                                |> Button.withStyleSecondary
+                                |> Button.view
+                            , Button.new { label = "Спробувати знову", onClick = RetryQrCode }
+                                |> Button.view
                             ]
                         ]
                     ]
-                , div [ class "p-6 border-t border-border" ]
-                    [ div [ class "flex gap-3" ]
-                        [ Button.new { label = "Скасувати", onClick = CloseLinkSidebar }
-                            |> Button.withStyleSecondary
-                            |> Button.view
-                        , Button.new { label = "Спробувати знову", onClick = RetryQrCode }
-                            |> Button.view
-                        ]
-                    ]
-                ]
                 ]
 
             Nothing ->
