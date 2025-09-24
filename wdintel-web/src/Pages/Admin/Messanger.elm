@@ -401,13 +401,13 @@ validateAorIdField maybeAorId errors =
 validateApiEndpoint : String -> Result String String
 validateApiEndpoint endpoint =
     if String.isEmpty endpoint then
-        Err "API Endpoint не може бути порожнім"
+        Err "API посилання не може бути порожнім"
 
     else if not (String.startsWith "https" endpoint) then
-        Err "API Endpoint має бути валідним URL (починається з https://)"
+        Err "API посиланян має бути валідним URL (починається з https://)"
 
     else if String.length endpoint < 10 then
-        Err "API Endpoint занадто короткий"
+        Err "API посилання занадто короткe"
 
     else
         Ok endpoint
@@ -749,6 +749,7 @@ update msg model =
                 newLinkFlow =
                     if LinkFlow.isPhoneFlowType flowType then
                         LinkFlow.initPhoneFlow
+
                     else
                         LinkFlow.initApiFlow
 
@@ -885,16 +886,25 @@ update msg model =
                             -- If accounts list is empty/loading, create new list with just this account
                             RD.Success [ linkRsp.account ]
             in
-            ( { model
-                | accounts = updatedAccounts -- Update the table with new account
-                , linkFlow = LinkFlow.handleLinkResult linkRsp model.linkFlow
-              }
-            , if LinkFlow.isApi model.linkFlow then
-                E.none
+            if LinkFlow.isApi model.linkFlow then
+                -- For API accounts, close sidebar immediately after successful creation
+                ( { model
+                    | accounts = updatedAccounts
+                    , sidebarOpen = False
+                    , linkFlow = LinkFlow.initPhoneFlow -- Reset to default
+                    , formErrors = Dict.empty
+                  }
+                , E.none
+                )
 
-              else
-                Api.messenger_get_qr_retryable GotQrCode { accountId = linkRsp.account.id }
-            )
+            else
+                -- For phone accounts, continue with QR code flow
+                ( { model
+                    | accounts = updatedAccounts -- Update the table with new account
+                    , linkFlow = LinkFlow.handleLinkResult linkRsp model.linkFlow
+                  }
+                , Api.messenger_get_qr_retryable GotQrCode { accountId = linkRsp.account.id }
+                )
 
         GotLinkResult (Err error) ->
             ( { model | linkFlow = LinkFlow.resetFlow model.linkFlow }
@@ -1448,10 +1458,13 @@ linkAccountSidebarContent isDark shared model =
                     [ div [ class "space-y-2" ]
                         [ SegmentedControl.new
                             (LinkFlow.flowTypeToString (LinkFlow.getCurrentFlowType model.linkFlow))
-                            (\str -> 
+                            (\str ->
                                 case LinkFlow.stringToFlowType str of
-                                    Just flowType -> SwitchFlowType flowType
-                                    Nothing -> NoOp
+                                    Just flowType ->
+                                        SwitchFlowType flowType
+
+                                    Nothing ->
+                                        NoOp
                             )
                             [ { value = "phone", label = "Телефон" }
                             , { value = "api", label = "API" }
@@ -1495,7 +1508,7 @@ linkAccountSidebarContent isDark shared model =
                             Just apiForm ->
                                 div [ class "space-y-4" ]
                                     [ div [ class "space-y-2" ]
-                                        [ label [ class "text-sm font-medium text-foreground" ] [ text "API Endpoint" ]
+                                        [ label [ class "text-sm font-medium text-foreground" ] [ text "API посилання" ]
                                         , input
                                             [ class "form-input w-full"
                                             , type_ "url"
@@ -1694,6 +1707,7 @@ linkAccountSidebarContent isDark shared model =
                 []
 
     else if LinkFlow.isInSuccessState model.linkFlow then
+        -- Success state is now only used for phone flows, API flows close sidebar immediately
         case LinkFlow.getSuccessAccount model.linkFlow of
             Just account ->
                 [ div [ class "flex flex-col h-full" ]
@@ -1929,7 +1943,7 @@ messengerAccountsTableConfig isLoading aorList =
                             [ if account.messenger == "echo_operator" then
                                 case account.apiLogin of
                                     Just apiLogin ->
-                                        span [ class "text-blue-600" ] [ text ("API: " ++ apiLogin) ]
+                                        span [ class "" ] [ text ("API: " ++ apiLogin) ]
 
                                     Nothing ->
                                         span [ class "text-muted-foreground" ] [ text "—" ]
