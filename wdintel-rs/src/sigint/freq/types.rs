@@ -234,6 +234,7 @@ pub struct CallsignsForFreqReq {
     pub unit: Option<String>,
     pub since_date_inclusive_ms: i64,
     pub till_date_noninclusive_ms: i64,
+    pub callsign: Option<String>,
 }
 
 #[derive(
