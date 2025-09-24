@@ -141,6 +141,17 @@ isLoadingComputedGroups organismId model =
     Set.member organismId model.loadingComputedGroups
 
 
+buildUpdateOrganismReq : Int -> OrganismEdit -> B.UpdateOrganismReq
+buildUpdateOrganismReq organismId editOrganism =
+    { id = organismId
+    , parentId = editOrganism.inpParentOrganism.selectedItem
+    , name = Just editOrganism.inpName
+    , roles = Just editOrganism.inpRole.selectedItems
+    , enabled = editOrganism.enabled
+    , aorIds = Just editOrganism.inpAors.selectedItems
+    }
+
+
 loadComputedGroupsForAll : Model -> ( Model, Effect Msg )
 loadComputedGroupsForAll model =
     let
@@ -233,6 +244,7 @@ type alias OrganismEdit =
         }
     , fieldsErrors : List FieldError
     , groupsValidation : Maybe (List String)
+    , computedAvailableGroups : Maybe (List B.SignalGroupFull)
     }
 
 
@@ -324,6 +336,7 @@ type Msg
     | GotAorList (Result ApiError (List B.AreaOfResponsibility))
     | GotAvailableGroups Int (Result ApiError (List B.SignalGroupFull))
     | GotAvailableGroupsBatch (Result ApiError (Dict Int (List B.SignalGroupFull)))
+    | GotComputedAvailableGroups (Result ApiError (List B.SignalGroupFull))
     | RowShowAllPopupChanged (Maybe ( Int, ShowAllPopupFor ))
     | AddGroupToOrganismDone Int String Bool (Result ApiError ())
     | RemoveGroupFromOrganismDone Int String (Result ApiError ())
@@ -831,11 +844,23 @@ update msg model =
                                         }
                                   , fieldsErrors = []
                                   , groupsValidation = Nothing
+                                  , computedAvailableGroups = Nothing
                                   }
                                 )
                             )
             in
-            ( { model | editOrganism = organism, sidebarType = Just EditSidebar }, E.none )
+            case organism of
+                Just ( id, editOrg ) ->
+                    let
+                        updateReq =
+                            buildUpdateOrganismReq id editOrg
+                    in
+                    ( { model | editOrganism = organism, sidebarType = Just EditSidebar }
+                    , E.sendCmd <| Api.organism_compute_available_groups GotComputedAvailableGroups updateReq
+                    )
+
+                Nothing ->
+                    ( { model | editOrganism = organism, sidebarType = Just EditSidebar }, E.none )
 
         SetName value ->
             ( { model | inpName = value }, E.none )
@@ -901,6 +926,21 @@ update msg model =
 
         GotAvailableGroupsBatch (Err e) ->
             ( { model | loadingComputedGroups = Set.empty }, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження computed груп для всіх організмів" e )
+
+        GotComputedAvailableGroups (Ok groups) ->
+            case model.editOrganism of
+                Just ( id, editOrganism ) ->
+                    let
+                        editOrganism2 =
+                            { editOrganism | computedAvailableGroups = Just groups }
+                    in
+                    ( { model | editOrganism = Just ( id, editOrganism2 ) }, E.none )
+
+                Nothing ->
+                    ( model, E.none )
+
+        GotComputedAvailableGroups (Err e) ->
+            ( model, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження computed груп для редагування" e )
 
         RowShowAllPopupChanged popupStatus ->
             ( { model | rowShowAllPopupStatus = popupStatus }
@@ -1246,38 +1286,39 @@ organismsTableConfig groups organismGroups allOrganisms timeZone editingOrganism
                 }
                 |> Table.withColumnWidth "14%"
             , Table.veryCustomColumn
-                { name = "Лише групи"
+                { name = "Смуги"
                 , viewData =
                     \o ->
-                        { attributes = [ class "col-wide" ]
+                        { attributes = []
                         , children =
                             [ div [ class "flex flex-wrap gap-1" ]
                                 (let
-                                    organismGroupIds =
-                                        getOrganismGroups o.id organismGroups
+                                    allAors =
+                                        o.aorIds
+                                            |> List.filterMap
+                                                (\aorId ->
+                                                    case RD.toMaybe aorList of
+                                                        Just aors ->
+                                                            ListX.find (\aor -> aor.id == aorId) aors
 
-                                    allGroups =
-                                        organismGroupIds
-                                            |> List.filterMap (\groupId -> ListX.find (\x -> x.masterKey == groupId) groups)
-                                            |> List.sortBy (\group -> String.toLower (groupName group))
+                                                        Nothing ->
+                                                            Nothing
+                                                )
 
-                                    visibleGroups =
-                                        List.take 10 allGroups
+                                    visibleAors =
+                                        List.take 10 allAors
                                  in
                                  List.map
-                                    (\group ->
-                                        span
-                                            [ class "badge badge--ochre-light"
-                                            , title (groupName group)
-                                            ]
-                                            [ text (groupName group) ]
+                                    (\aor ->
+                                        span [ class "badge badge--neutral", title aor.name ]
+                                            [ text aor.name ]
                                     )
-                                    visibleGroups
-                                    ++ (if List.length allGroups > 10 then
+                                    visibleAors
+                                    ++ (if List.length allAors > 10 then
                                             let
                                                 isOpen =
                                                     case model.rowShowAllPopupStatus of
-                                                        Just ( organismId, ShowAllGroups ) ->
+                                                        Just ( organismId, ShowAllAors ) ->
                                                             organismId == o.id
 
                                                         _ ->
@@ -1286,27 +1327,27 @@ organismsTableConfig groups organismGroups allOrganisms timeZone editingOrganism
                                             [ FloatingPopup.new
                                                 { anchorContent =
                                                     span [ class "inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 cursor-pointer rounded-md hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors" ]
-                                                        [ text ("Показати всі " ++ String.fromInt (List.length allGroups))
+                                                        [ text ("Показати всі " ++ String.fromInt (List.length allAors))
                                                         , i [ class "bi bi-chevron-down text-xs" ] []
                                                         ]
                                                 , popupContent =
                                                     div [ class "p-1 max-h-[300px] max-w-[400px] overflow-y-auto" ]
                                                         [ div [ class "mb-3 pb-2 border-b border-gray-200 dark:border-gray-700" ]
                                                             [ h4 [ class "text-sm font-semibold text-gray-900 dark:text-gray-100" ]
-                                                                [ text ("Групи (" ++ String.fromInt (List.length allGroups) ++ ")") ]
+                                                                [ text ("Смуги (" ++ String.fromInt (List.length allAors) ++ ")") ]
                                                             ]
                                                         , div [ class "space-y-2" ]
                                                             (List.map
-                                                                (\group ->
+                                                                (\aor ->
                                                                     div [ class "px-3 py-2 bg-gray-50 dark:bg-gray-800 rounded-md border border-gray-200 dark:border-gray-700" ]
-                                                                        [ text (groupName group) ]
+                                                                        [ text aor.name ]
                                                                 )
-                                                                allGroups
+                                                                allAors
                                                             )
                                                         ]
                                                 , isOpen = isOpen
                                                 , onClose = RowShowAllPopupChanged Nothing
-                                                , onOpen = RowShowAllPopupChanged <| Just ( o.id, ShowAllGroups )
+                                                , onOpen = RowShowAllPopupChanged <| Just ( o.id, ShowAllAors )
                                                 }
                                                 |> FloatingPopup.withPlacement FloatingPopup.Top
                                                 |> FloatingPopup.view
@@ -1321,13 +1362,18 @@ organismsTableConfig groups organismGroups allOrganisms timeZone editingOrganism
                 , sorter =
                     Table.increasingOrDecreasingBy
                         (\o ->
-                            getOrganismGroups o.id organismGroups
-                                |> List.filterMap (\groupId -> ListX.find (\x -> x.masterKey == groupId) groups)
-                                |> List.map groupName
-                                |> String.join ", "
+                            case RD.toMaybe aorList of
+                                Just aors ->
+                                    o.aorIds
+                                        |> List.filterMap (\aorId -> ListX.find (\aor -> aor.id == aorId) aors)
+                                        |> List.map .name
+                                        |> String.join ", "
+
+                                Nothing ->
+                                    ""
                         )
                 }
-                |> Table.withColumnWidth "19%"
+                |> Table.withColumnWidth "14%"
             , Table.veryCustomColumn
                 { name = "Групи"
                 , viewData =
@@ -1518,39 +1564,38 @@ organismsTableConfig groups organismGroups allOrganisms timeZone editingOrganism
                 }
                 |> Table.withColumnWidth "6%"
             , Table.veryCustomColumn
-                { name = "Смуги"
+                { name = "Обмежити групами"
                 , viewData =
                     \o ->
-                        { attributes = []
+                        { attributes = [ class "col-wide" ]
                         , children =
                             [ div [ class "flex flex-wrap gap-1" ]
                                 (let
-                                    allAors =
-                                        o.aorIds
-                                            |> List.filterMap
-                                                (\aorId ->
-                                                    case RD.toMaybe aorList of
-                                                        Just aors ->
-                                                            ListX.find (\aor -> aor.id == aorId) aors
+                                    organismGroupIds =
+                                        getOrganismGroups o.id organismGroups
 
-                                                        Nothing ->
-                                                            Nothing
-                                                )
+                                    allGroups =
+                                        organismGroupIds
+                                            |> List.filterMap (\groupId -> ListX.find (\x -> x.masterKey == groupId) groups)
+                                            |> List.sortBy (\group -> String.toLower (groupName group))
 
-                                    visibleAors =
-                                        List.take 10 allAors
+                                    visibleGroups =
+                                        List.take 10 allGroups
                                  in
                                  List.map
-                                    (\aor ->
-                                        span [ class "badge badge--neutral", title aor.name ]
-                                            [ text aor.name ]
+                                    (\group ->
+                                        span
+                                            [ class "badge badge--ochre-light"
+                                            , title (groupName group)
+                                            ]
+                                            [ text (groupName group) ]
                                     )
-                                    visibleAors
-                                    ++ (if List.length allAors > 10 then
+                                    visibleGroups
+                                    ++ (if List.length allGroups > 10 then
                                             let
                                                 isOpen =
                                                     case model.rowShowAllPopupStatus of
-                                                        Just ( organismId, ShowAllAors ) ->
+                                                        Just ( organismId, ShowAllGroups ) ->
                                                             organismId == o.id
 
                                                         _ ->
@@ -1559,27 +1604,27 @@ organismsTableConfig groups organismGroups allOrganisms timeZone editingOrganism
                                             [ FloatingPopup.new
                                                 { anchorContent =
                                                     span [ class "inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 cursor-pointer rounded-md hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors" ]
-                                                        [ text ("Показати всі " ++ String.fromInt (List.length allAors))
+                                                        [ text ("Показати всі " ++ String.fromInt (List.length allGroups))
                                                         , i [ class "bi bi-chevron-down text-xs" ] []
                                                         ]
                                                 , popupContent =
                                                     div [ class "p-1 max-h-[300px] max-w-[400px] overflow-y-auto" ]
                                                         [ div [ class "mb-3 pb-2 border-b border-gray-200 dark:border-gray-700" ]
                                                             [ h4 [ class "text-sm font-semibold text-gray-900 dark:text-gray-100" ]
-                                                                [ text ("Смуги (" ++ String.fromInt (List.length allAors) ++ ")") ]
+                                                                [ text ("Групи (" ++ String.fromInt (List.length allGroups) ++ ")") ]
                                                             ]
                                                         , div [ class "space-y-2" ]
                                                             (List.map
-                                                                (\aor ->
+                                                                (\group ->
                                                                     div [ class "px-3 py-2 bg-gray-50 dark:bg-gray-800 rounded-md border border-gray-200 dark:border-gray-700" ]
-                                                                        [ text aor.name ]
+                                                                        [ text (groupName group) ]
                                                                 )
-                                                                allAors
+                                                                allGroups
                                                             )
                                                         ]
                                                 , isOpen = isOpen
                                                 , onClose = RowShowAllPopupChanged Nothing
-                                                , onOpen = RowShowAllPopupChanged <| Just ( o.id, ShowAllAors )
+                                                , onOpen = RowShowAllPopupChanged <| Just ( o.id, ShowAllGroups )
                                                 }
                                                 |> FloatingPopup.withPlacement FloatingPopup.Top
                                                 |> FloatingPopup.view
@@ -1594,18 +1639,13 @@ organismsTableConfig groups organismGroups allOrganisms timeZone editingOrganism
                 , sorter =
                     Table.increasingOrDecreasingBy
                         (\o ->
-                            case RD.toMaybe aorList of
-                                Just aors ->
-                                    o.aorIds
-                                        |> List.filterMap (\aorId -> ListX.find (\aor -> aor.id == aorId) aors)
-                                        |> List.map .name
-                                        |> String.join ", "
-
-                                Nothing ->
-                                    ""
+                            getOrganismGroups o.id organismGroups
+                                |> List.filterMap (\groupId -> ListX.find (\x -> x.masterKey == groupId) groups)
+                                |> List.map groupName
+                                |> String.join ", "
                         )
                 }
-                |> Table.withColumnWidth "14%"
+                |> Table.withColumnWidth "19%"
             , Table.veryCustomColumn
                 { name = "Створено"
                 , viewData =
@@ -1840,30 +1880,6 @@ editOrganismSidebarContent isDark model organismId editState =
                         ]
                     ]
                 , div [ class "space-y-2" ]
-                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Групи" ]
-                    , div [ class "w-full" ]
-                        [ Html.map EditGroupSelMsg <|
-                            Styled.toUnstyled <|
-                                Utils.Select.renderSelect
-                                    groupsSelectedItems
-                                    editState.inpGroups.selectState
-                                    (availableGroups |> List.map (\x -> Select.basicMenuItem { item = x.masterKey, label = x.name }))
-                                    "групи"
-                                    (Utils.Select.defaultOptions isDark)
-                        ]
-                    , case editState.groupsValidation of
-                        Just groups ->
-                            div [ class "mt-2 p-3 rounded-md bg-yellow-50 border border-yellow-200 dark:bg-yellow-900/20 dark:border-yellow-800" ]
-                                [ p [ class "text-sm text-yellow-800 dark:text-yellow-200" ]
-                                    [ text "⚠️ Попередження: при виборі цього батьківського організму буде втрачено доступ до груп: "
-                                    , strong [] [ text (String.join ", " groups) ]
-                                    ]
-                                ]
-
-                        Nothing ->
-                            text ""
-                    ]
-                , div [ class "space-y-2" ]
                     [ label [ class "text-sm font-medium text-foreground" ] [ text "Ролі" ]
                     , div [ class "w-full" ]
                         [ Html.map EditRoleSelMsg <|
@@ -1906,6 +1922,30 @@ editOrganismSidebarContent isDark model organismId editState =
                                     "смуги"
                                     (Utils.Select.defaultOptions isDark)
                         ]
+                    ]
+                , div [ class "space-y-2" ]
+                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Групи" ]
+                    , div [ class "w-full" ]
+                        [ Html.map EditGroupSelMsg <|
+                            Styled.toUnstyled <|
+                                Utils.Select.renderSelect
+                                    groupsSelectedItems
+                                    editState.inpGroups.selectState
+                                    (availableGroups |> List.map (\x -> Select.basicMenuItem { item = x.masterKey, label = x.name }))
+                                    "групи"
+                                    (Utils.Select.defaultOptions isDark)
+                        ]
+                    , case editState.groupsValidation of
+                        Just groups ->
+                            div [ class "mt-2 p-3 rounded-md bg-yellow-50 border border-yellow-200 dark:bg-yellow-900/20 dark:border-yellow-800" ]
+                                [ p [ class "text-sm text-yellow-800 dark:text-yellow-200" ]
+                                    [ text "⚠️ Попередження: при виборі цього батьківського організму буде втрачено доступ до груп: "
+                                    , strong [] [ text (String.join ", " groups) ]
+                                    ]
+                                ]
+
+                        Nothing ->
+                            text ""
                     ]
                 , div [ class "grid grid-cols-2 gap-4" ]
                     [ div [ class "flex items-center" ]
