@@ -71,6 +71,8 @@ type alias Model =
     , editForm : Maybe EditForm
     , showEditSidebar : Bool
     , editLoading : Bool
+    , apiUsers : RemoteData ApiError (List B.Login)
+    , apiUserSelect : Utils.Select.SelectTypeSingle String
     }
 
 
@@ -105,6 +107,12 @@ init () =
       , editForm = Nothing
       , showEditSidebar = False
       , editLoading = False
+      , apiUsers = RD.NotAsked
+      , apiUserSelect =
+            { state = Select.initState (Select.selectIdentifier "api-user-select")
+            , items = []
+            , selected = Nothing
+            }
       }
     , E.batch
         [ E.sendCmd (Api.messenger_list_accounts GotAccounts)
@@ -338,7 +346,7 @@ validateApiForm apiForm =
                 |> validateDisplayNameField apiForm.name
                 |> validateAorIdField apiForm.aorId
                 |> validateApiEndpointField apiForm.apiEndpoint
-                |> validateApiUserField apiForm.apiUser
+                |> validateApiUserField apiForm.selectedApiUser
     in
     if Dict.isEmpty errors then
         Ok apiForm
@@ -431,14 +439,19 @@ validateApiUser user =
         Ok user
 
 
-validateApiUserField : String -> Dict String String -> Dict String String
-validateApiUserField user errors =
-    case validateApiUser user of
-        Ok _ ->
-            errors
+validateApiUserField : Maybe String -> Dict String String -> Dict String String
+validateApiUserField maybeUser errors =
+    case maybeUser of
+        Just user ->
+            case validateApiUser user of
+                Ok _ ->
+                    errors
 
-        Err error ->
-            Dict.insert "apiUser" error errors
+                Err error ->
+                    Dict.insert "apiUser" error errors
+
+        Nothing ->
+            Dict.insert "apiUser" "Потрібно вибрати API користувача" errors
 
 
 
@@ -618,6 +631,8 @@ type Msg
     | LoadAccounts
     | GotAccounts (Result ApiError B.AccountsRsp)
     | GotAorList (Result ApiError (List B.AreaOfResponsibility))
+    | LoadApiUsers
+    | GotApiUsers (Result ApiError B.ListLoginsRsp)
     | OpenLinkSidebar
     | CloseLinkSidebar
     | ShowEditSidebar Int
@@ -646,6 +661,7 @@ type Msg
     | EditAorSelectMsg (Select.Msg Int)
     | MessengerTypeSelectMsg (Select.Msg String)
     | AorSelectMsg (Select.Msg Int)
+    | ApiUserSelectMsg (Select.Msg String)
     | RefreshQrCode
 
 
@@ -695,6 +711,34 @@ update msg model =
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження смуг відповідальності" error
             )
 
+        LoadApiUsers ->
+            ( { model | apiUsers = RD.Loading }
+            , E.sendCmd (Api.list_logins GotApiUsers { sortBy = Nothing, filterByRoles = Just ["Api"] })
+            )
+
+        GotApiUsers (Ok loginsRsp) ->
+            let
+                apiUserItems =
+                    List.map (\user -> Select.basicMenuItem { item = user.login, label = user.login }) loginsRsp.users
+
+                currentApiUserSelect =
+                    model.apiUserSelect
+
+                updatedApiUserSelect =
+                    { currentApiUserSelect | items = apiUserItems }
+            in
+            ( { model
+                | apiUsers = RD.Success loginsRsp.users
+                , apiUserSelect = updatedApiUserSelect
+              }
+            , E.none
+            )
+
+        GotApiUsers (Err error) ->
+            ( { model | apiUsers = RD.Failure error }
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження API користувачів" error
+            )
+
         LinkPhoneFormMsg updateFn ->
             ( { model | linkFlow = updateFn model.linkFlow }
             , E.none
@@ -712,9 +756,15 @@ update msg model =
 
                         _ ->
                             model.linkFlow
+
+                effect =
+                    if flowType == "api" && model.apiUsers == RD.NotAsked then
+                        E.sendCmd (Api.list_logins GotApiUsers { sortBy = Nothing, filterByRoles = Just ["Api"] })
+                    else
+                        E.none
             in
             ( { model | linkFlow = newLinkFlow, formErrors = Dict.empty }
-            , E.none
+            , effect
             )
 
         OpenLinkSidebar ->
@@ -784,22 +834,29 @@ update msg model =
                                     Ok validForm ->
                                         case validForm.aorId of
                                             Just validatedAorId ->
-                                                ( model
-                                                , E.sendCmd
-                                                    (Api.messenger_link_operator GotLinkResult
-                                                        { displayName = validForm.name
-                                                        , description =
-                                                            if String.isEmpty apiForm.description then
-                                                                Nothing
+                                                case validForm.selectedApiUser of
+                                                    Just selectedUser ->
+                                                        ( model
+                                                        , E.sendCmd
+                                                            (Api.messenger_link_operator GotLinkResult
+                                                                { displayName = validForm.name
+                                                                , description =
+                                                                    if String.isEmpty apiForm.description then
+                                                                        Nothing
 
-                                                            else
-                                                                Just apiForm.description
-                                                        , aorId = validatedAorId
-                                                        , apiLogin = validForm.apiUser
-                                                        , apiEndpoint = validForm.apiEndpoint
-                                                        }
-                                                    )
-                                                )
+                                                                    else
+                                                                        Just apiForm.description
+                                                                , aorId = validatedAorId
+                                                                , apiLogin = selectedUser
+                                                                , apiEndpoint = validForm.apiEndpoint
+                                                                }
+                                                            )
+                                                        )
+
+                                                    Nothing ->
+                                                        ( { model | formErrors = Dict.insert "apiUser" "Потрібно вибрати API користувача" model.formErrors }
+                                                        , E.none
+                                                        )
 
                                             Nothing ->
                                                 -- This shouldn't happen if validation passed
@@ -1116,6 +1173,32 @@ update msg model =
             , E.sendCmd <| Cmd.map AorSelectMsg selectCmd
             )
 
+        ApiUserSelectMsg selectMsg ->
+            let
+                ( mAction, newState, selectCmd ) =
+                    Select.update selectMsg model.apiUserSelect.state
+
+                updatedApiUser =
+                    Utils.Select.singleUpd mAction model.apiUserSelect.selected
+
+                newSelect =
+                    { state = newState
+                    , items = model.apiUserSelect.items
+                    , selected = updatedApiUser
+                    }
+
+                -- Update the link form with the new API user
+                updatedLinkFlow =
+                    LinkFlow.updateSelectedApiUser updatedApiUser model.linkFlow
+            in
+            ( { model
+                | apiUserSelect = newSelect
+                , linkFlow = updatedLinkFlow
+                , formErrors = Dict.remove "apiUser" model.formErrors
+              }
+            , E.sendCmd <| Cmd.map ApiUserSelectMsg selectCmd
+            )
+
         RefreshQrCode ->
             case LinkFlow.getQrData model.linkFlow of
                 Just qrData ->
@@ -1429,15 +1512,36 @@ linkAccountSidebarContent isDark shared model =
                                                 text ""
                                         ]
                                     , div [ class "space-y-2" ]
-                                        [ label [ class "text-sm font-medium text-foreground" ] [ text "API User/Token" ]
-                                        , input
-                                            [ class "form-input w-full"
-                                            , type_ "text"
-                                            , placeholder "API ключ або токен"
-                                            , value apiForm.apiUser
-                                            , onInput <| LinkPhoneFormMsg << LinkFlow.updateApiUser
-                                            ]
-                                            []
+                                        [ label [ class "text-sm font-medium text-foreground" ] [ text "API Користувач" ]
+                                        , case model.apiUsers of
+                                            RD.Loading ->
+                                                div [ class "text-sm text-muted-foreground p-2" ] [ text "Завантаження користувачів..." ]
+
+                                            RD.Failure _ ->
+                                                div [ class "text-sm text-red-600 p-2" ] [ text "Помилка завантаження користувачів" ]
+
+                                            RD.Success _ ->
+                                                Html.map ApiUserSelectMsg <|
+                                                    Styled.toUnstyled <|
+                                                        Utils.Select.renderSelectSingle
+                                                            (Maybe.andThen
+                                                                (\selectedLogin ->
+                                                                    List.filter (\user -> user.login == selectedLogin) (RD.withDefault [] model.apiUsers)
+                                                                        |> List.head
+                                                                        |> Maybe.map (\user -> Select.basicMenuItem { item = user.login, label = user.login })
+                                                                )
+                                                                apiForm.selectedApiUser
+                                                            )
+                                                            model.apiUserSelect.state
+                                                            model.apiUserSelect.items
+                                                            "Оберіть API користувача"
+                                                            (Utils.Select.defaultOptions isDark)
+
+                                            RD.NotAsked ->
+                                                div [ class "text-sm text-muted-foreground p-2" ] [ text "Натисніть 'API' щоб завантажити користувачів" ]
+
+                                            RD.NeedsReload _ ->
+                                                div [ class "text-sm text-muted-foreground p-2" ] [ text "Потрібно перезавантажити" ]
                                         , case Dict.get "apiUser" model.formErrors of
                                             Just error ->
                                                 p [ class "text-xs text-red-600" ] [ text error ]

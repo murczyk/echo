@@ -16,6 +16,7 @@ module Pages_.Admin.Messanger.LinkFlow exposing
     , updateAorId
     , updateApiEndpoint
     , updateApiUser
+    , updateSelectedApiUser
     , getPhoneForm
     , getApiForm
     , getQrData
@@ -63,7 +64,7 @@ type alias PhoneForm =
 
 
 type alias ApiForm =
-    { apiUser : String
+    { selectedApiUser : Maybe String
     , apiEndpoint : String
     , name : String
     , description : String
@@ -78,7 +79,7 @@ defaultPhoneForm =
 
 defaultApiForm : ApiForm
 defaultApiForm =
-    { apiEndpoint = "", apiUser = "", name = "", description = "", aorId = Nothing }
+    { apiEndpoint = "", selectedApiUser = Nothing, name = "", description = "", aorId = Nothing }
 
 
 initPhoneFlow : LinkFlow
@@ -209,7 +210,17 @@ updateApiUser : String -> LinkFlow -> LinkFlow
 updateApiUser apiUser linkFlow =
     case linkFlow of
         LinkApi (ApiFormState form) ->
-            LinkApi <| ApiFormState { form | apiUser = apiUser }
+            LinkApi <| ApiFormState { form | selectedApiUser = Just apiUser }
+
+        _ ->
+            linkFlow
+
+
+updateSelectedApiUser : Maybe String -> LinkFlow -> LinkFlow
+updateSelectedApiUser selectedApiUser linkFlow =
+    case linkFlow of
+        LinkApi (ApiFormState form) ->
+            LinkApi <| ApiFormState { form | selectedApiUser = selectedApiUser }
 
         _ ->
             linkFlow
