@@ -437,6 +437,49 @@ where
             is_imported,
         });
     }
+    let operator_datasources = datasource::Entity::find()
+        .filter(datasource::Column::Kind.eq("echo_operator"))
+        .filter(datasource::Column::Deleted.eq(false))
+        .all(txn)
+        .await
+        .context(h!())?;
+    if !operator_datasources.is_empty() {
+        let aor_ids = operator_datasources
+            .iter()
+            .filter_map(|a| a.default_aor_id)
+            .collect::<Vec<_>>();
+        let aors = if aor_ids.is_empty() {
+            HashMap::new()
+        } else {
+            area_of_responsibility::Entity::find()
+                .filter(area_of_responsibility::Column::Id.is_in(aor_ids))
+                .all(txn)
+                .await
+                .context(h!())?
+                .into_iter()
+                .map(|aor| (aor.id, render_aor(aor)))
+                .collect::<HashMap<_, _>>()
+        };
+        for ods in operator_datasources {
+            let aor = ods.default_aor_id.and_then(|id| aors.get(&id).cloned());
+            datasources.push(EchoAccountF1 {
+                id: ods.id,
+                area_of_responsibility: aor,
+                status: ods.status.into_value().to_string().to_string(),
+                created_at: ods.created_at.and_utc().timestamp_millis(),
+                client_id: None,
+                display_name: ods.display_name,
+                system_service_name: None,
+                messenger: ods.kind,
+                phone_number: "".to_string(),
+                api_login: ods.api_login,
+                api_endpoint: ods.api_endpoint,
+                is_linked: true,
+                description: ods.description,
+                is_imported: false,
+            })
+        }
+    }
     Ok(datasources)
 }
 
