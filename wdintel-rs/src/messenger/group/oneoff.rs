@@ -21,7 +21,9 @@ pub async fn oneoff_unlink_reserve_group_dupes(
     let dbx = crate::new_pg_pool_from_config(&config)
         .await
         .context(h!())?;
-    crate::sigint::zone::bl::unlink_reserve_group_dupes(&dbx).await.context(h!())?;
+    crate::sigint::zone::bl::unlink_reserve_group_dupes(&dbx)
+        .await
+        .context(h!())?;
     Ok(())
 }
 
