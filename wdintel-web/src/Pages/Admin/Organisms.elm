@@ -245,6 +245,7 @@ type alias OrganismEdit =
     , fieldsErrors : List FieldError
     , groupsValidation : Maybe (List String)
     , computedAvailableGroups : Maybe (List B.SignalGroupFull)
+    , limitGroupsList : Bool
     }
 
 
@@ -325,6 +326,7 @@ type Msg
     | AddOrganism
     | AddOrganismDone (Result ApiError B.Organism)
     | ToggleEditEnabled
+    | ToggleLimitGroupsList
     | EditOrganism Int
     | CloseEditSidebar
     | OpenCreateSidebar
@@ -806,6 +808,18 @@ update msg model =
                 Nothing ->
                     ( model, E.none )
 
+        ToggleLimitGroupsList ->
+            case model.editOrganism of
+                Just ( id, editOrganism ) ->
+                    let
+                        editOrganism2 =
+                            { editOrganism | limitGroupsList = not editOrganism.limitGroupsList }
+                    in
+                    ( { model | editOrganism = Just ( id, editOrganism2 ) }, E.none )
+
+                Nothing ->
+                    ( model, E.none )
+
         EditOrganism rowId ->
             let
                 organism =
@@ -845,6 +859,7 @@ update msg model =
                                   , fieldsErrors = []
                                   , groupsValidation = Nothing
                                   , computedAvailableGroups = Nothing
+                                  , limitGroupsList = False
                                   }
                                 )
                             )
@@ -1923,30 +1938,75 @@ editOrganismSidebarContent isDark model organismId editState =
                                     (Utils.Select.defaultOptions isDark)
                         ]
                     ]
-                , div [ class "space-y-2" ]
-                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Групи" ]
-                    , div [ class "w-full" ]
-                        [ Html.map EditGroupSelMsg <|
-                            Styled.toUnstyled <|
-                                Utils.Select.renderSelect
-                                    groupsSelectedItems
-                                    editState.inpGroups.selectState
-                                    (availableGroups |> List.map (\x -> Select.basicMenuItem { item = x.masterKey, label = x.name }))
-                                    "групи"
-                                    (Utils.Select.defaultOptions isDark)
-                        ]
-                    , case editState.groupsValidation of
-                        Just groups ->
-                            div [ class "mt-2 p-3 rounded-md bg-yellow-50 border border-yellow-200 dark:bg-yellow-900/20 dark:border-yellow-800" ]
-                                [ p [ class "text-sm text-yellow-800 dark:text-yellow-200" ]
-                                    [ text "⚠️ Попередження: при виборі цього батьківського організму буде втрачено доступ до груп: "
-                                    , strong [] [ text (String.join ", " groups) ]
-                                    ]
+                -- Computed Available Groups (read-only display)
+                , case editState.computedAvailableGroups of
+                    Just computedGroups ->
+                        div [ class "space-y-2" ]
+                            [ label [ class "text-sm font-medium text-foreground" ] [ text "Доступні групи для організму" ]
+                            , div [ class "p-3 rounded-md bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700" ]
+                                [ if List.isEmpty computedGroups then
+                                    p [ class "text-sm text-muted-foreground italic" ] [ text "Немає доступних груп" ]
+                                  else
+                                    div [ class "flex flex-wrap gap-2" ]
+                                        (computedGroups
+                                            |> List.map (\group ->
+                                                span [ class "inline-flex items-center px-2 py-1 text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-300 rounded-md" ]
+                                                    [ text (if String.isEmpty group.name then 
+                                                        "Без назви (id=" ++ String.left 6 group.masterKey ++ "...)"
+                                                      else 
+                                                        group.name)
+                                                    ]
+                                            )
+                                        )
                                 ]
+                            , p [ class "text-xs text-muted-foreground" ]
+                                [ text "Ці групи будуть доступні організму на основі вибраних смуг та батьківського організму" ]
+                            ]
 
-                        Nothing ->
-                            text ""
+                    Nothing ->
+                        div [ class "space-y-2" ]
+                            [ label [ class "text-sm font-medium text-foreground" ] [ text "Доступні групи для організму" ]
+                            , div [ class "p-3 rounded-md bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700" ]
+                                [ p [ class "text-sm text-muted-foreground italic" ] [ text "Завантаження..." ] ]
+                            ]
+
+                -- Checkbox to limit groups list
+                , div [ class "space-y-2" ]
+                    [ Checkbox.new { isChecked = editState.limitGroupsList, onToggle = \_ -> ToggleLimitGroupsList }
+                        |> Checkbox.withContent [ text "Обмежити перелік груп" ]
+                        |> Checkbox.view
+                    , p [ class "text-xs text-muted-foreground ml-6" ]
+                        [ text "За замовчуванням організм має доступ до всіх груп від смуг. Увімкніть для додаткового обмеження." ]
                     ]
+
+                -- Groups selector (only when checkbox is enabled)
+                , if editState.limitGroupsList then
+                    div [ class "space-y-2" ]
+                        [ label [ class "text-sm font-medium text-foreground" ] [ text "Обмежити групами" ]
+                        , div [ class "w-full" ]
+                            [ Html.map EditGroupSelMsg <|
+                                Styled.toUnstyled <|
+                                    Utils.Select.renderSelect
+                                        groupsSelectedItems
+                                        editState.inpGroups.selectState
+                                        (availableGroups |> List.map (\x -> Select.basicMenuItem { item = x.masterKey, label = x.name }))
+                                        "групи"
+                                        (Utils.Select.defaultOptions isDark)
+                            ]
+                        , case editState.groupsValidation of
+                            Just groups ->
+                                div [ class "mt-2 p-3 rounded-md bg-yellow-50 border border-yellow-200 dark:bg-yellow-900/20 dark:border-yellow-800" ]
+                                    [ p [ class "text-sm text-yellow-800 dark:text-yellow-200" ]
+                                        [ text "⚠️ Попередження: при виборі цього батьківського організму буде втрачено доступ до груп: "
+                                        , strong [] [ text (String.join ", " groups) ]
+                                        ]
+                                    ]
+
+                            Nothing ->
+                                text ""
+                        ]
+                  else
+                    text ""
                 , div [ class "grid grid-cols-2 gap-4" ]
                     [ div [ class "flex items-center" ]
                         [ Checkbox.new { isChecked = editState.enabled, onToggle = \_ -> ToggleEditEnabled }
