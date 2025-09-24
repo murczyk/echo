@@ -383,6 +383,7 @@ enum Cmd {
     OneoffGetNetworksActivityStats(OneoffGetNetworksActivityStatsPs),
     OneoffPopulateSignalMessageGroupIds,
     OneoffFixEchoimGroups(OneoffFixEchoimGroups),
+    OneoffUnlinkReserveGroupDupes,
 }
 
 #[derive(clap::Parser, Debug)]
@@ -707,7 +708,13 @@ async fn main() -> Result<(), AppError> {
                 mode,
                 !ps.noninteractive,
             )
-            .await
+                .await
+        }
+        Cmd::OneoffUnlinkReserveGroupDupes => {
+            crate::messenger::group::oneoff::oneoff_unlink_reserve_group_dupes(
+                mode,
+            )
+                .await
         }
     }
 }

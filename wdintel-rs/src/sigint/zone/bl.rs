@@ -1,3 +1,4 @@
+use chrono::Utc;
 use crate::entities::*;
 use crate::sigint::zone::ZoneDatasourceGroup;
 use crate::types::*;
@@ -155,7 +156,56 @@ pub async fn bl_zones_datasources_group_update_or_add(
             .c(h!())?;
         }
     }
+    unlink_reserve_group_dupes(txn).await.c(h!())?;
+    Ok(())
+}
 
+pub async fn unlink_reserve_group_dupes<'a, 'async_trait, C>(
+    dbx: &'a C,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let cutoff = Utc::now() - chrono::Duration::hours(3);
+    let live_groups = signal_message::Entity::find()
+        .filter(signal_message::Column::CreatedAt.gte(cutoff.naive_utc()))
+        .select_only()
+        .column(signal_message::Column::DatasourceGroupId)
+        .distinct()
+        .into_tuple::<i64>()
+        .all(dbx)
+        .await
+        .context(h!())?;
+    if live_groups.is_empty() {
+        warn!("no live groups, exiting.");
+        return Ok(());
+    }
+    let groups = datasource_group::Entity::find()
+        .filter(datasource_group::Column::Id.is_in(live_groups))
+        .all(dbx)
+        .await
+        .context(h!())?;
+    let links = sigint_zone_datasource::Entity::find()
+        .all(dbx)
+        .await
+        .context(h!())?;
+    let mut active_links = HashSet::new();
+    for rec in links {
+        let master_key = &rec.group_master_key;
+        if active_links.contains(master_key) {
+            rec.delete(dbx).await.context(h!())?;
+            continue;
+        }
+        let is_active = groups
+            .iter()
+            .filter(|g| g.group_master_key.eq(master_key))
+            .find(|g| g.datasource_id.eq(&rec.datasource_id))
+            .is_some();
+        if !is_active {
+            continue;
+        }
+        active_links.insert(master_key.to_string());
+    }
     Ok(())
 }
 

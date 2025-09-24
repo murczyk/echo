@@ -12,7 +12,18 @@ use dialoguer::Confirm;
 use echo_migration::Expr;
 use log::*;
 use sea_orm::*;
-use std::collections::{HashMap, HashSet};
+use std::collections::*;
+
+pub async fn oneoff_unlink_reserve_group_dupes(
+    mode: Mode,
+) -> Result<(), AppError> {
+    let config = config::read_config(mode).context(h!())?;
+    let dbx = crate::new_pg_pool_from_config(&config)
+        .await
+        .context(h!())?;
+    crate::sigint::zone::bl::unlink_reserve_group_dupes(&dbx).await.context(h!())?;
+    Ok(())
+}
 
 pub async fn oneoff_fix_echoim_groups(
     mode: Mode,
