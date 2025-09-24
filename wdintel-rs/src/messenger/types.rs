@@ -26,6 +26,8 @@ pub struct EchoAccountF1 {
     pub description: Option<String>,
     pub messenger: String,
     pub phone_number: String,
+    pub api_login: Option<String>,
+    pub api_endpoint: Option<String>,
     pub is_linked: bool,
     pub is_imported: bool,
 }
@@ -91,6 +93,8 @@ pub struct AccountStatusReq {
     pub is_active: bool,
     pub display_name: String,
     pub description: Option<String>,
+    pub api_login: Option<String>,
+    pub api_endpoint: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Elm, ElmEncode, ElmDecode)]
@@ -104,6 +108,15 @@ pub struct LinkAccountReq {
     pub messenger: String,
     pub display_name: String,
     pub system_service_name: String,
+    pub description: Option<String>,
+    pub aor_id: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Elm, ElmEncode, ElmDecode)]
+pub struct LinkEchoOperatorReq {
+    pub api_login: String,
+    pub api_endpoint: String,
+    pub display_name: String,
     pub description: Option<String>,
     pub aor_id: i64,
 }

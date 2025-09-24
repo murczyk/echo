@@ -782,7 +782,7 @@ update msg model =
         OpenUserSelector zoneId sourceId groupKey selected ->
             if List.isEmpty model.allLogins then
                 ( { model | userSelectorDialog = Just { zoneId = zoneId, sourceId = sourceId, groupKey = groupKey }, userSelectorLoading = True, userSelectorError = Nothing }
-                , E.sendCmd <| Api.list_logins UserSelectorLoginsLoaded { sortBy = Nothing }
+                , E.sendCmd <| Api.list_logins UserSelectorLoginsLoaded { sortBy = Nothing, filterByRoles = Nothing  }
                 )
 
             else
@@ -1449,7 +1449,7 @@ update msg model =
                             , userSelectState = Select.initState (Select.selectIdentifier "orphan-group-users")
                             }
                   }
-                , E.sendCmd <| Api.list_logins UserSelectorLoginsLoaded { sortBy = Nothing }
+                , E.sendCmd <| Api.list_logins UserSelectorLoginsLoaded { sortBy = Nothing,filterByRoles = Nothing }
                 )
 
             else
@@ -1617,7 +1617,7 @@ update msg model =
                                     , error = Nothing
                                     }
                           }
-                        , E.sendCmd <| Api.list_logins UserSelectorLoginsLoaded { sortBy = Nothing }
+                        , E.sendCmd <| Api.list_logins UserSelectorLoginsLoaded { sortBy = Nothing, filterByRoles = Nothing }
                         )
 
                     else

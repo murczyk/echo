@@ -212,7 +212,7 @@ init =
       }
     , E.sendCmd <|
         Cmd.batch
-            [ Api.list_logins GotLogins { sortBy = Just B.LoginCreatedAtDesc }
+            [ Api.list_logins GotLogins { sortBy = Just B.LoginCreatedAtDesc, filterByRoles = Nothing }
             , Api.sigint_zones_list GotZoneList
             , Api.list_organisms GotOrganisms { sortBy = Nothing }
             ]

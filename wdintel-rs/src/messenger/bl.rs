@@ -45,6 +45,8 @@ pub async fn edit_account(
     set_active: bool,
     display_name: String,
     description: Option<String>,
+    api_login: Option<String>,
+    api_endpoint: Option<String>,
     txn: &DatabaseTransaction,
     login: &String,
 ) -> Result<EchoAccountF1, AppError> {
@@ -64,6 +66,8 @@ pub async fn edit_account(
     account.description = Set(description);
     account.status = Set(new_status);
     account.updated_by = Set(Some(login.to_string()));
+    account.api_login = Set(api_login);
+    account.api_endpoint = Set(api_endpoint);
     let result = account.update(txn).await.context(h!())?;
     let account = list_accounts(Some(result.id), txn)
         .await
@@ -138,6 +142,7 @@ pub async fn link_account(
                 .map(|s| s.eq(system_service_name))
                 .is_some()
         })
+        .filter(|a| a.phone_number.eq(phone_number))
         .filter(|a| a.phone_number.eq(phone_number))
         .find(|a| a.messenger.eq(&src_name));
 
@@ -337,6 +342,8 @@ where
         pub system_service_name: Option<String>,
         pub source: Option<sea_orm_active_enums::EchoMessageSource>,
         pub echo_phone_number: Option<String>,
+        pub api_login: Option<String>,
+        pub api_endpoint: Option<String>,
         pub is_linked: Option<bool>,
         pub is_client_deleted: Option<bool>,
     }
@@ -362,6 +369,8 @@ where
         .select_only()
         .column(datasource::Column::Id)
         .column_as(datasource::Column::DefaultAorId, "aor_id")
+        .column(datasource::Column::ApiLogin)
+        .column(datasource::Column::ApiEndpoint)
         .column(datasource::Column::Kind)
         .column_as(datasource::Column::SignalPhone, "datasource_phone_number")
         .column(datasource::Column::DisplayName)
@@ -421,10 +430,55 @@ where
             system_service_name: a.system_service_name,
             messenger,
             phone_number,
+            api_login: a.api_login,
+            api_endpoint: a.api_endpoint,
             is_linked: a.is_linked.unwrap_or(false),
             description: a.description,
             is_imported,
         });
+    }
+    let operator_datasources = datasource::Entity::find()
+        .filter(datasource::Column::Kind.eq("echo_operator"))
+        .filter(datasource::Column::Deleted.eq(false))
+        .all(txn)
+        .await
+        .context(h!())?;
+    if !operator_datasources.is_empty() {
+        let aor_ids = operator_datasources
+            .iter()
+            .filter_map(|a| a.default_aor_id)
+            .collect::<Vec<_>>();
+        let aors = if aor_ids.is_empty() {
+            HashMap::new()
+        } else {
+            area_of_responsibility::Entity::find()
+                .filter(area_of_responsibility::Column::Id.is_in(aor_ids))
+                .all(txn)
+                .await
+                .context(h!())?
+                .into_iter()
+                .map(|aor| (aor.id, render_aor(aor)))
+                .collect::<HashMap<_, _>>()
+        };
+        for ods in operator_datasources {
+            let aor = ods.default_aor_id.and_then(|id| aors.get(&id).cloned());
+            datasources.push(EchoAccountF1 {
+                id: ods.id,
+                area_of_responsibility: aor,
+                status: ods.status.into_value().to_string().to_string(),
+                created_at: ods.created_at.and_utc().timestamp_millis(),
+                client_id: None,
+                display_name: ods.display_name,
+                system_service_name: None,
+                messenger: ods.kind,
+                phone_number: "".to_string(),
+                api_login: ods.api_login,
+                api_endpoint: ods.api_endpoint,
+                is_linked: true,
+                description: ods.description,
+                is_imported: false,
+            })
+        }
     }
     Ok(datasources)
 }

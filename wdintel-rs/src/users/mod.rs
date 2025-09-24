@@ -443,9 +443,22 @@ pub async fn list_logins(
 
     let mut users = vec![];
     for login in users_iter {
+        let roles: Vec<String> =
+            serde_json::from_value(login.roles).context(h!())?;
+        let mut skip = false;
+        if let Some(filter_roles) = &req.filter_by_roles {
+            for role in filter_roles {
+                if !roles.contains(role) {
+                    skip = true;
+                }
+            }
+        }
+        if skip {
+            continue;
+        }
         let user = Login {
             login: login.login,
-            roles: serde_json::from_value(login.roles).context(h!())?,
+            roles,
             created_at: login.created_at.and_utc().timestamp_millis(),
             deleted: login.deleted,
             sigint_zone_id: login.sigint_zone_id,

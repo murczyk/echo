@@ -1,8 +1,9 @@
-use crate::entities::{group_admin_data, signal_group};
+use crate::entities::{datasource, group_admin_data, signal_group};
 use crate::error::ContextAndError;
 use crate::h;
+use crate::messenger::bl::load_echo_account;
 use crate::messenger::types::*;
-use crate::sigint::aor::render_aor;
+use crate::sigint::aor::{load_default_aor, render_aor};
 use crate::types::{AppError, Env};
 use actix_web::post;
 use actix_web::web::Json;
@@ -85,6 +86,8 @@ pub async fn edit(
         req.is_active,
         req.display_name.to_string(),
         req.description.clone(),
+        req.api_login.clone(),
+        req.api_endpoint.clone(),
         &txn,
         &login,
     )
@@ -168,6 +171,48 @@ pub async fn link(
     )
     .await
     .cae(h!())?;
+    txn.commit().await.cae(h!())?;
+    Ok(Json(LinkAccountRsp { account }))
+}
+
+#[post("/api/messenger/link-operator")]
+pub async fn link_operator(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<LinkEchoOperatorReq>,
+) -> Result<Json<LinkAccountRsp>, AppError> {
+    let login = user.id()?;
+    crate::users::has_any_role(&env.dbx, &login, vec!["Admin"])
+        .await
+        .cae(h!())?;
+    let txn = env.dbx.begin().await.cae(h!())?;
+    let aor_id = load_default_aor(&txn).await.context(h!())?.id;
+    let new_datasource_id = datasource::ActiveModel {
+        echo_client_lock_id: NotSet,
+        id: NotSet,
+        status: NotSet,
+        created_at: NotSet,
+        display_name: Set(req.display_name.to_string()),
+        signal_phone: Set(None),
+        signal_docker_port: NotSet,
+        api_endpoint: Set(Some(req.api_endpoint.clone())),
+        api_login: Set(Some(req.api_login.clone())),
+        enabled: Set(Some(true)),
+        group_master_key: NotSet,
+        sender_uuid: NotSet,
+        description: Set(req.description.clone()),
+        kind: Set("echo_operator".to_string()),
+        default_aor_id: Set(Some(aor_id)),
+        updated_by: Set(Some(login.to_string())),
+        deleted: NotSet,
+    }
+    .insert(&txn)
+    .await
+    .context(h!())?
+    .id;
+    let account = load_echo_account(new_datasource_id, &txn)
+        .await
+        .context(h!())?;
     txn.commit().await.cae(h!())?;
     Ok(Json(LinkAccountRsp { account }))
 }

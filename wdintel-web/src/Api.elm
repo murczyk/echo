@@ -2,7 +2,6 @@ module Api exposing (..)
 
 import Bindings exposing (..)
 import Bytes exposing (Bytes)
-import Shared.Components.Toast
 import Core.Types exposing (ApiError, ModelWithErrorFields)
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
@@ -10,6 +9,7 @@ import File exposing (File)
 import Http
 import Json.Decode as Decode
 import Json.Encode as Encode
+import Shared.Components.Toast
 import Url.Builder
 import Utils.Api.RetryableHttp as RetryableHttp
 import Utils.Api.Temp exposing (jsonPair, leExpectJson, resolve)
@@ -1285,7 +1285,7 @@ organism_available_groups_batch toMsg organismIds =
     Http.post
         { url = "/api/organism/available-groups-batch"
         , body = Http.jsonBody (Encode.list Encode.int organismIds)
-        , expect = leExpectJson toMsg (Decode.keyValuePairs (Decode.list signalGroupFullDecoder) |> Decode.map (Dict.fromList << List.map (\(k, v) -> (Maybe.withDefault 0 (String.toInt k), v))))
+        , expect = leExpectJson toMsg (Decode.keyValuePairs (Decode.list signalGroupFullDecoder) |> Decode.map (Dict.fromList << List.map (\( k, v ) -> ( Maybe.withDefault 0 (String.toInt k), v ))))
         }
 
 
@@ -1463,6 +1463,15 @@ messenger_link_account toMsg req =
     Http.post
         { url = "/api/messenger/link"
         , body = Http.jsonBody (linkAccountReqEncoder req)
+        , expect = leExpectJson toMsg linkAccountRspDecoder
+        }
+
+
+messenger_link_operator : (Result ApiError LinkAccountRsp -> msg) -> LinkEchoOperatorReq -> Cmd msg
+messenger_link_operator toMsg req =
+    Http.post
+        { url = "/api/messenger/link-operator"
+        , body = Http.jsonBody (linkEchoOperatorReqEncoder req)
         , expect = leExpectJson toMsg linkAccountRspDecoder
         }
 
