@@ -2011,18 +2011,20 @@ async fn group_stats(
         .await
         .context(h!())?
         .context(h!())?;
-    debug!(
-        "User: {} has master keys num: {}; organism id: {:?}",
-        &login,
-        master_keys_noimport.len(),
-        login_obj.organism_id
-    );
     let groups = stats::fetch_groups(&req, &user, &env, master_keys_noimport)
         .await
         .context(h!())?;
     let group_names = collect_group_names(&groups, &env.dbx, is_admin)
         .await
         .context(h!())?;
+    debug!(
+        "User: {} has groups num: master_keys - {}, via fetch_groups - {}, in group_names - {}; organism id: {:?}",
+        &login,
+        master_keys_noimport.len(),
+        groups.len(),
+        group_names.len(),
+        login_obj.organism_id
+    );
     Ok(Json(GroupStatsRsp {
         groups,
         group_names,
