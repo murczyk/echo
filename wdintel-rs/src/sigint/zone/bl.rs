@@ -199,8 +199,7 @@ where
         let is_active = groups
             .iter()
             .filter(|g| g.group_master_key.eq(master_key))
-            .find(|g| g.datasource_id.eq(&rec.datasource_id))
-            .is_some();
+            .any(|g| g.datasource_id.eq(&rec.datasource_id));
         if !is_active {
             continue;
         }
