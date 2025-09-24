@@ -310,6 +310,7 @@ validateAorId maybeAorId =
 
 -- Helper function to validate phone form
 
+
 validatePhoneForm : LinkFlow.PhoneForm -> Result (Dict String String) LinkFlow.PhoneForm
 validatePhoneForm phoneForm =
     let
@@ -320,11 +321,14 @@ validatePhoneForm phoneForm =
     in
     if Dict.isEmpty errors then
         Ok phoneForm
+
     else
         Err errors
 
 
+
 -- Helper function to validate API form
+
 
 validateApiForm : LinkFlow.ApiForm -> Result (Dict String String) LinkFlow.ApiForm
 validateApiForm apiForm =
@@ -338,8 +342,10 @@ validateApiForm apiForm =
     in
     if Dict.isEmpty errors then
         Ok apiForm
+
     else
         Err errors
+
 
 
 -- Helper function to validate edit form
@@ -380,16 +386,21 @@ validateAorIdField maybeAorId errors =
             Dict.insert "aorId" error errors
 
 
+
 -- Helper function to validate API endpoint
+
 
 validateApiEndpoint : String -> Result String String
 validateApiEndpoint endpoint =
     if String.isEmpty endpoint then
         Err "API Endpoint не може бути порожнім"
+
     else if not (String.startsWith "https" endpoint) then
         Err "API Endpoint має бути валідним URL (починається з https://)"
+
     else if String.length endpoint < 10 then
         Err "API Endpoint занадто короткий"
+
     else
         Ok endpoint
 
@@ -404,14 +415,18 @@ validateApiEndpointField endpoint errors =
             Dict.insert "apiEndpoint" error errors
 
 
+
 -- Helper function to validate API user/token
+
 
 validateApiUser : String -> Result String String
 validateApiUser user =
     if String.isEmpty user then
         Err "API User/Token не може бути порожнім"
+
     else if String.length user < 3 then
         Err "API User/Token занадто короткий (мінімум 3 символи)"
+
     else
         Ok user
 
@@ -769,20 +784,10 @@ update msg model =
                                     Ok validForm ->
                                         case validForm.aorId of
                                             Just validatedAorId ->
-                                                let
-                                                    systemServiceName =
-                                                        normalizeToSystemName validForm.name
-
-                                                   
-                                                in
-                                                -- Use the dedicated API operator endpoint
                                                 ( model
                                                 , E.sendCmd
                                                     (Api.messenger_link_operator GotLinkResult
-                                                        { messenger = "echo_operator" -- API integration type
-                                                        , phone = "" -- Empty phone for API integrations
-                                                        , displayName = validForm.name
-                                                        , systemServiceName = systemServiceName
+                                                        { displayName = validForm.name
                                                         , description =
                                                             if String.isEmpty apiForm.description then
                                                                 Nothing
@@ -790,6 +795,8 @@ update msg model =
                                                             else
                                                                 Just apiForm.description
                                                         , aorId = validatedAorId
+                                                        , apiLogin = validForm.apiUser
+                                                        , apiEndpoint = validForm.apiEndpoint
                                                         }
                                                     )
                                                 )
@@ -1449,8 +1456,7 @@ linkAccountSidebarContent isDark shared model =
                         , input
                             [ class "form-input w-full"
                             , type_ "text"
-                            , placeholder"Назва акаунту"
-
+                            , placeholder "Назва акаунту"
                             , value
                                 (case ( LinkFlow.getPhoneForm model.linkFlow, LinkFlow.getApiForm model.linkFlow ) of
                                     ( Just pForm, _ ) ->
