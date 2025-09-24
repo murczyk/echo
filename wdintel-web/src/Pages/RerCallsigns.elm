@@ -68,7 +68,6 @@ toLayout user model =
 
 type alias Model =
     { callsigns : List B.Callsign
-    , callsignsWithUnitsFromInbox : RemoteData ApiError (List ( String, List String ))
     , addState : EnumeratedList AddState
     , inpUnitSelState : Select.State
     , inpUnit : Maybe Int
@@ -134,7 +133,6 @@ init req _ =
         m2 : Model
         m2 =
             { callsigns = []
-            , callsignsWithUnitsFromInbox = NotAsked
             , addState = EL.fromList [ initAddState mCallsignName ]
             , inpUnitSelState = Select.initState (Select.selectIdentifier "sel-unit-add")
             , inpUnit = Nothing
@@ -185,7 +183,6 @@ init req _ =
 
 type Msg
     = GotCallsigns (Result ApiError B.ListCallsignsRsp)
-    | GotCallsignsWithUnitsFromInbox (Result ApiError B.GetCallsignsWithUnitsFromInboxRsp)
     | AddStateMsg Int AddState
     | InpSource String
     | AddUnitSelMsg (Select.Msg Int)
@@ -376,46 +373,6 @@ loadMoreCallsignsCmd model =
                 }
 
 
-callsignsInpoxItemsPeriodLimit : Int
-callsignsInpoxItemsPeriodLimit =
-    14
-
-
-loadCallsignsWithUnitsFromInbox : Model -> Effect Msg
-loadCallsignsWithUnitsFromInbox model =
-    case ( model.now, ( model.from.datePosix, model.to.datePosix ) ) of
-        ( Just now, ( Just dateFrom, Just dateTo ) ) ->
-            let
-                tillDateInclusiveMs =
-                    if model.isIgnoringDateFilter then
-                        Time.posixToMillis now
-
-                    else
-                        Time.posixToMillis dateTo
-
-                sinceDateInclusiveMs =
-                    if model.isIgnoringDateFilter then
-                        Time.posixToMillis (Utils.Time.xDaysAgo callsignsInpoxItemsPeriodLimit now)
-
-                    else if (Time.posixToMillis dateTo - Time.posixToMillis dateFrom) < Utils.Time.xDaysInMillis callsignsInpoxItemsPeriodLimit then
-                        Time.posixToMillis dateFrom
-
-                    else
-                        Time.posixToMillis (Utils.Time.xDaysAgo callsignsInpoxItemsPeriodLimit dateTo)
-            in
-            E.sendCmd
-                (Api.sigint_callsigns_with_units_from_inbox
-                    GotCallsignsWithUnitsFromInbox
-                    { callsigns = model.callsigns |> List.map (\callsign -> callsign.callsign)
-                    , sinceDateInclusiveMs = sinceDateInclusiveMs
-                    , tillDateInclusiveMs = tillDateInclusiveMs
-                    }
-                )
-
-        _ ->
-            E.none
-
-
 loadCallsigns : Model -> Effect Msg
 loadCallsigns model =
     E.sendCmd (loadCallsignsCmd model)
@@ -537,25 +494,12 @@ update req shared msg model =
 
                             else
                                 rsp.callsigns
-                        , callsignsWithUnitsFromInbox = Loading
                         , loading = False
                         , loadingMore = False
                         , showLoadMore = rsp.showLoadMore
                     }
             in
-            ( m2, loadCallsignsWithUnitsFromInbox m2 )
-
-        GotCallsignsWithUnitsFromInbox (Err err) ->
-            ( { model | callsignsWithUnitsFromInbox = Failure err }
-            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження позивних з підрозділами" err
-            )
-
-        GotCallsignsWithUnitsFromInbox (Ok rsp) ->
-            ( { model
-                | callsignsWithUnitsFromInbox = Success rsp.callsignsWithUnits
-              }
-            , E.none
-            )
+            ( m2, E.none )
 
         AddStateMsg pos state ->
             let
@@ -1510,129 +1454,6 @@ callsignsTableConfig shared model user =
                 , sorter = Table.unsortable
                 }
                 |> Table.withColumnWidth "21%"
-            , Table.veryCustomColumn
-                { name = "Зустрічається у підрозділах"
-                , viewData =
-                    \callsign ->
-                        { attributes = []
-                        , children =
-                            case model.callsignsWithUnitsFromInbox of
-                                Loading ->
-                                    [ Shared.Components.Spinner.loadingSpinner2Sm ]
-
-                                Success callsignsWithUnitsFromInbox ->
-                                    let
-                                        unit =
-                                            case shared.masterUnits of
-                                                Success units ->
-                                                    ListX.find (\u -> u.id == callsign.unitId) (Dict.values units)
-
-                                                _ ->
-                                                    Nothing
-
-                                        callsignWithUnitsFromInbox =
-                                            ListX.find
-                                                (\callsignWithUnitsFromInbox_ ->
-                                                    String.contains (Tuple.first callsignWithUnitsFromInbox_) callsign.callsign
-                                                )
-                                                callsignsWithUnitsFromInbox
-
-                                        unitsList =
-                                            case callsignWithUnitsFromInbox of
-                                                Nothing ->
-                                                    []
-
-                                                Just callsignWithUnitsFromInbox_ ->
-                                                    case unit of
-                                                        Nothing ->
-                                                            callsignWithUnitsFromInbox_
-                                                                |> Tuple.second
-
-                                                        Just unit_ ->
-                                                            callsignWithUnitsFromInbox_
-                                                                |> Tuple.second
-                                                                |> List.filter (\s -> not (String.contains s unit_.name))
-                                    in
-                                    [ div [ class "flex flex-col gap-[4px]" ]
-                                        ((List.map (\u -> span [] [ text u ]) unitsList
-                                            |> List.take 1
-                                         )
-                                            ++ (if List.length unitsList > 1 then
-                                                    let
-                                                        body =
-                                                            span
-                                                                [ class "inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 cursor-pointer rounded-md hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
-                                                                , style "cursor"
-                                                                    (if isOpen then
-                                                                        "default"
-
-                                                                     else
-                                                                        "pointer"
-                                                                    )
-                                                                , style "pointer-events"
-                                                                    (if isOpen then
-                                                                        "none"
-
-                                                                     else
-                                                                        "auto"
-                                                                    )
-                                                                ]
-                                                                [ text ("Показати всі " ++ (unitsList |> List.length |> String.fromInt))
-                                                                , i [ class "bi bi-chevron-down text-xs" ] []
-                                                                ]
-
-                                                        popupBody =
-                                                            div
-                                                                [ class "p-1 max-h-[300px] max-w-[400px] overflow-y-auto"
-                                                                , style "position" "relative"
-                                                                , style "z-index" "40"
-                                                                ]
-                                                                [ div [ class "mb-3 pb-2 border-b border-gray-200 dark:border-gray-700" ]
-                                                                    [ h4 [ class "text-sm font-semibold text-gray-900 dark:text-gray-100" ]
-                                                                        [ text ("Підрозділи (" ++ (unitsList |> List.length |> String.fromInt) ++ ")") ]
-                                                                    ]
-                                                                , div [ class "space-y-2" ]
-                                                                    (List.map
-                                                                        (\unitName ->
-                                                                            div
-                                                                                [ class "px-3 py-2 bg-gray-50 dark:bg-gray-800 rounded-md border border-gray-200 dark:border-gray-700" ]
-                                                                                [ text unitName ]
-                                                                        )
-                                                                        unitsList
-                                                                    )
-                                                                ]
-
-                                                        isOpen =
-                                                            case model.rowShowAllPopupStatus of
-                                                                Just ( callsignId, ShowAllUnits ) ->
-                                                                    callsignId == callsign.id
-
-                                                                _ ->
-                                                                    False
-                                                    in
-                                                    [ Shared.Components.FloatingPopup.new
-                                                        { anchorContent = body
-                                                        , popupContent = popupBody
-                                                        , isOpen = isOpen
-                                                        , onClose = RowShowAllPopupChanged Nothing
-                                                        , onOpen = RowShowAllPopupChanged <| Just ( callsign.id, ShowAllUnits )
-                                                        }
-                                                        |> Shared.Components.FloatingPopup.withPlacement Shared.Components.FloatingPopup.Top
-                                                        |> Shared.Components.FloatingPopup.view
-                                                    ]
-
-                                                else
-                                                    [ text "" ]
-                                               )
-                                        )
-                                    ]
-
-                                _ ->
-                                    []
-                        }
-                , sorter = Table.unsortable
-                }
-                |> Table.withColumnWidth "15%"
             , Table.veryCustomColumn
                 { name = "Джерело"
                 , viewData =
