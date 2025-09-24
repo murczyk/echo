@@ -3,6 +3,7 @@ module Pages_.Admin.Messanger.LinkFlow exposing
     , PhoneForm
     , ApiForm
     , QrData
+    , FlowType
     , initPhoneFlow
     , initApiFlow
     , isApi
@@ -27,9 +28,20 @@ module Pages_.Admin.Messanger.LinkFlow exposing
     , isInSuccessState
     , isInErrorState
     , getCurrentFlowType
+    , flowTypeToString
+    , stringToFlowType
+    , phoneFlowType
+    , apiFlowType
+    , isPhoneFlowType
+    , isApiFlowType
     )
 
 import Bindings as B
+
+
+type FlowType
+    = PhoneFlow
+    | ApiFlow
 
 
 type LinkFlow
@@ -335,11 +347,68 @@ isInErrorState linkFlow =
             False
 
 
--- Helper function to get current flow type as string for UI
-getCurrentFlowType : LinkFlow -> String
+-- Helper function to get current flow type
+getCurrentFlowType : LinkFlow -> FlowType
 getCurrentFlowType linkFlow =
     if isApi linkFlow then
-        "api"
+        ApiFlow
 
     else
-        "phone"
+        PhoneFlow
+
+
+-- Helper function to convert FlowType to string for UI
+flowTypeToString : FlowType -> String
+flowTypeToString flowType =
+    case flowType of
+        PhoneFlow ->
+            "phone"
+
+        ApiFlow ->
+            "api"
+
+
+-- Helper function to convert string to FlowType
+stringToFlowType : String -> Maybe FlowType
+stringToFlowType str =
+    case str of
+        "phone" ->
+            Just PhoneFlow
+
+        "api" ->
+            Just ApiFlow
+
+        _ ->
+            Nothing
+
+
+-- Utility functions for creating FlowType instances
+phoneFlowType : FlowType
+phoneFlowType =
+    PhoneFlow
+
+
+apiFlowType : FlowType
+apiFlowType =
+    ApiFlow
+
+
+-- Utility functions for checking FlowType
+isPhoneFlowType : FlowType -> Bool
+isPhoneFlowType flowType =
+    case flowType of
+        PhoneFlow ->
+            True
+
+        ApiFlow ->
+            False
+
+
+isApiFlowType : FlowType -> Bool
+isApiFlowType flowType =
+    case flowType of
+        ApiFlow ->
+            True
+
+        PhoneFlow ->
+            False

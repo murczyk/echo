@@ -430,10 +430,10 @@ validateApiEndpointField endpoint errors =
 validateApiUser : String -> Result String String
 validateApiUser user =
     if String.isEmpty user then
-        Err "API User/Token не може бути порожнім"
+        Err "API користувач не може бути порожнім"
 
     else if String.length user < 3 then
-        Err "API User/Token занадто короткий (мінімум 3 символи)"
+        Err "API користувач занадто короткий (мінімум 3 символи)"
 
     else
         Ok user
@@ -483,8 +483,8 @@ buildEditRequest editForm account =
 
         else
             Just editForm.description
-    , apiLogin = account.apiLogin -- Зберігаємо існуючий API логін
-    , apiEndpoint = account.apiEndpoint -- Зберігаємо існуючий API endpoint
+    , apiLogin = account.apiLogin
+    , apiEndpoint = account.apiEndpoint
     }
 
 
@@ -639,7 +639,7 @@ type Msg
     | CloseEditSidebar
     | SetTableState Table.State
     | LinkPhoneFormMsg (LinkFlow.LinkFlow -> LinkFlow.LinkFlow)
-    | SwitchFlowType String
+    | SwitchFlowType LinkFlow.FlowType
     | UpdateEditDisplayName String
     | UpdateEditDescription String
     | SubmitLinkForm
@@ -713,7 +713,7 @@ update msg model =
 
         LoadApiUsers ->
             ( { model | apiUsers = RD.Loading }
-            , E.sendCmd (Api.list_logins GotApiUsers { sortBy = Nothing, filterByRoles = Just ["Api"] })
+            , E.sendCmd (Api.list_logins GotApiUsers { sortBy = Nothing, filterByRoles = Just [ "Api" ] })
             )
 
         GotApiUsers (Ok loginsRsp) ->
@@ -747,19 +747,15 @@ update msg model =
         SwitchFlowType flowType ->
             let
                 newLinkFlow =
-                    case flowType of
-                        "phone" ->
-                            LinkFlow.initPhoneFlow
-
-                        "api" ->
-                            LinkFlow.initApiFlow
-
-                        _ ->
-                            model.linkFlow
+                    if LinkFlow.isPhoneFlowType flowType then
+                        LinkFlow.initPhoneFlow
+                    else
+                        LinkFlow.initApiFlow
 
                 effect =
-                    if flowType == "api" && model.apiUsers == RD.NotAsked then
-                        E.sendCmd (Api.list_logins GotApiUsers { sortBy = Nothing, filterByRoles = Just ["Api"] })
+                    if LinkFlow.isApiFlowType flowType && model.apiUsers == RD.NotAsked then
+                        E.sendCmd (Api.list_logins GotApiUsers { sortBy = Nothing, filterByRoles = Just [ "Api" ] })
+
                     else
                         E.none
             in
@@ -1451,14 +1447,18 @@ linkAccountSidebarContent isDark shared model =
                 [ div [ class "space-y-6" ]
                     [ div [ class "space-y-2" ]
                         [ SegmentedControl.new
-                            (LinkFlow.getCurrentFlowType model.linkFlow)
-                            SwitchFlowType
+                            (LinkFlow.flowTypeToString (LinkFlow.getCurrentFlowType model.linkFlow))
+                            (\str -> 
+                                case LinkFlow.stringToFlowType str of
+                                    Just flowType -> SwitchFlowType flowType
+                                    Nothing -> NoOp
+                            )
                             [ { value = "phone", label = "Телефон" }
                             , { value = "api", label = "API" }
                             ]
                             |> SegmentedControl.view
                         ]
-                    , if LinkFlow.getCurrentFlowType model.linkFlow == "phone" then
+                    , if LinkFlow.isPhoneFlowType (LinkFlow.getCurrentFlowType model.linkFlow) then
                         case LinkFlow.getPhoneForm model.linkFlow of
                             Just phoneForm ->
                                 div [ class "space-y-4" ]
@@ -1930,9 +1930,10 @@ messengerAccountsTableConfig isLoading aorList =
                                 case account.apiLogin of
                                     Just apiLogin ->
                                         span [ class "text-blue-600" ] [ text ("API: " ++ apiLogin) ]
-                                    
+
                                     Nothing ->
                                         span [ class "text-muted-foreground" ] [ text "—" ]
+
                               else
                                 text account.phoneNumber
                             ]
@@ -1980,10 +1981,20 @@ messengerAccountsTableConfig isLoading aorList =
                                     case account.apiEndpoint of
                                         Just endpoint ->
                                             div [ class "text-xs text-gray-500" ]
-                                                [ text ("Endpoint: " ++ (if String.length endpoint > 30 then String.left 30 endpoint ++ "..." else endpoint)) ]
+                                                [ text
+                                                    ("Endpoint: "
+                                                        ++ (if String.length endpoint > 30 then
+                                                                String.left 30 endpoint ++ "..."
+
+                                                            else
+                                                                endpoint
+                                                           )
+                                                    )
+                                                ]
 
                                         Nothing ->
                                             text ""
+
                                   else
                                     text ""
                                 ]
