@@ -483,8 +483,8 @@ buildEditRequest editForm account =
 
         else
             Just editForm.description
-    , apiLogin = Nothing --TODO
-    , apiEndpoint = Nothing
+    , apiLogin = account.apiLogin -- Зберігаємо існуючий API логін
+    , apiEndpoint = account.apiEndpoint -- Зберігаємо існуючий API endpoint
     }
 
 
@@ -1072,8 +1072,8 @@ update msg model =
                                     , isActive = newIsActive
                                     , displayName = account.displayName
                                     , description = account.description
-                                    , apiLogin = Nothing
-                                    , apiEndpoint = Nothing
+                                    , apiLogin = account.apiLogin -- Зберігаємо існуючий API логін
+                                    , apiEndpoint = account.apiEndpoint -- Зберігаємо існуючий API endpoint
                                     }
                                 )
                             )
@@ -1922,14 +1922,23 @@ messengerAccountsTableConfig isLoading aorList =
                 }
                 |> Table.withColumnWidth "12%"
             , Table.veryCustomColumn
-                { name = "Номер"
+                { name = "Номер/API Користувач"
                 , viewData =
                     \account ->
                         TableColumn.HtmlDetails []
-                            [ text account.phoneNumber ]
+                            [ if account.messenger == "echo_operator" then
+                                case account.apiLogin of
+                                    Just apiLogin ->
+                                        span [ class "text-blue-600" ] [ text ("API: " ++ apiLogin) ]
+                                    
+                                    Nothing ->
+                                        span [ class "text-muted-foreground" ] [ text "—" ]
+                              else
+                                text account.phoneNumber
+                            ]
                 , sorter = Table.unsortable
                 }
-                |> Table.withColumnWidth "12%"
+                |> Table.withColumnWidth "14%"
             , Table.veryCustomColumn
                 { name = "Месенджер"
                 , viewData =
@@ -1956,20 +1965,32 @@ messengerAccountsTableConfig isLoading aorList =
                 , viewData =
                     \account ->
                         TableColumn.HtmlDetails []
-                            [ case account.description of
-                                Just desc ->
-                                    if String.length desc > 50 then
-                                        span [ title desc ] [ text (String.left 50 desc ++ "...") ]
+                            [ div [ class "space-y-1" ]
+                                [ case account.description of
+                                    Just desc ->
+                                        if String.length desc > 50 then
+                                            span [ title desc ] [ text (String.left 50 desc ++ "...") ]
 
-                                    else
-                                        span [] [ text desc ]
+                                        else
+                                            span [] [ text desc ]
 
-                                Nothing ->
-                                    span [ class "text-muted-foreground" ] [ text "—" ]
+                                    Nothing ->
+                                        span [ class "text-muted-foreground" ] [ text "—" ]
+                                , if account.messenger == "echo_operator" then
+                                    case account.apiEndpoint of
+                                        Just endpoint ->
+                                            div [ class "text-xs text-gray-500" ]
+                                                [ text ("Endpoint: " ++ (if String.length endpoint > 30 then String.left 30 endpoint ++ "..." else endpoint)) ]
+
+                                        Nothing ->
+                                            text ""
+                                  else
+                                    text ""
+                                ]
                             ]
                 , sorter = Table.unsortable
                 }
-                |> Table.withColumnWidth "17%"
+                |> Table.withColumnWidth "20%"
             , Table.veryCustomColumn
                 { name = "Смуга відповідальності"
                 , viewData =
