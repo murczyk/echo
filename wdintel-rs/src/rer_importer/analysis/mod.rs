@@ -2011,6 +2011,7 @@ async fn group_stats(
         .await
         .context(h!())?
         .context(h!())?;
+    let master_keys_noimport_count = master_keys_noimport.len();
     let groups = stats::fetch_groups(&req, &user, &env, master_keys_noimport)
         .await
         .context(h!())?;
@@ -2018,9 +2019,8 @@ async fn group_stats(
         .await
         .context(h!())?;
     debug!(
-        "User: {} has groups num: master_keys - {}, via fetch_groups - {}, in group_names - {}; organism id: {:?}",
+        "User: {} has groups num: master_keys - {master_keys_noimport_count}, via fetch_groups - {}, in group_names - {}; organism id: {:?}",
         &login,
-        master_keys_noimport.len(),
         groups.len(),
         group_names.len(),
         login_obj.organism_id
