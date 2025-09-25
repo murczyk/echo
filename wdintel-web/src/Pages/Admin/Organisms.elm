@@ -157,6 +157,17 @@ buildUpdateOrganismReq organismId editOrganism =
     }
 
 
+buildUpdateOrganismReqForCreate : Model -> B.UpdateOrganismReq
+buildUpdateOrganismReqForCreate model =
+    { id = 0  -- Dummy ID for create form (not used by API)
+    , parentId = model.inpParentOrganism.selectedItem
+    , name = Just model.inpName
+    , roles = Just model.inpRole.selectedItems
+    , enabled = True  -- Always enabled for new organisms
+    , aorIds = Just model.inpAors.selectedItems
+    }
+
+
 loadComputedGroupsForAll : Model -> ( Model, Effect Msg )
 loadComputedGroupsForAll model =
     let
@@ -221,6 +232,9 @@ type alias Model =
     , computedGroups : Dict Int (List B.SignalGroupFull)
     , loadingComputedGroups : Set Int
     , rowShowAllPopupStatus : Maybe ( Int, ShowAllPopupFor )
+    , createComputedAvailableGroups : Maybe (List B.SignalGroupFull)
+    , createLimitGroupsList : Bool
+    , createIsLoadingComputedGroups : Bool
     }
 
 
@@ -306,6 +320,9 @@ init _ =
       , computedGroups = Dict.empty
       , loadingComputedGroups = Set.empty
       , rowShowAllPopupStatus = Nothing
+      , createComputedAvailableGroups = Nothing
+      , createLimitGroupsList = False
+      , createIsLoadingComputedGroups = False
       }
     , E.sendCmd <|
         Cmd.batch
@@ -333,6 +350,7 @@ type Msg
     | AddOrganismDone (Result ApiError B.Organism)
     | ToggleEditEnabled
     | ToggleLimitGroupsList
+    | ToggleLimitGroupsListCreate
     | EditOrganism Int
     | CloseEditSidebar
     | OpenCreateSidebar
@@ -345,6 +363,7 @@ type Msg
     | GotAvailableGroups Int (Result ApiError (List B.SignalGroupFull))
     | GotAvailableGroupsBatch (Result ApiError (Dict Int (List B.SignalGroupFull)))
     | GotComputedAvailableGroups (Result ApiError (List B.SignalGroupFull))
+    | GotComputedAvailableGroupsCreate (Result ApiError (List B.SignalGroupFull))
     | RowShowAllPopupChanged (Maybe ( Int, ShowAllPopupFor ))
     | AddGroupToOrganismDone Int String Bool (Result ApiError ())
     | RemoveGroupFromOrganismDone Int String (Result ApiError ())
@@ -851,6 +870,9 @@ update msg model =
                 Nothing ->
                     ( model, E.none )
 
+        ToggleLimitGroupsListCreate ->
+            ( { model | createLimitGroupsList = not model.createLimitGroupsList }, E.none )
+
         EditOrganism rowId ->
             let
                 organism =
@@ -1002,6 +1024,17 @@ update msg model =
 
                 Nothing ->
                     ( model, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження computed груп для редагування" e )
+
+        GotComputedAvailableGroupsCreate (Ok groups) ->
+            ( { model 
+              | createComputedAvailableGroups = Just groups
+              , createIsLoadingComputedGroups = False
+              }, E.none )
+
+        GotComputedAvailableGroupsCreate (Err e) ->
+            ( { model | createIsLoadingComputedGroups = False }
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження computed груп для створення" e
+            )
 
         RowShowAllPopupChanged popupStatus ->
             ( { model | rowShowAllPopupStatus = popupStatus }
@@ -1804,30 +1837,6 @@ addOrganismSidebarContent isDark model =
                         ]
                     ]
                 , div [ class "space-y-2" ]
-                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Групи" ]
-                    , div [ class "w-full" ]
-                        [ Html.map AddGroupSelMsg <|
-                            Styled.toUnstyled <|
-                                Utils.Select.renderSelect
-                                    groupsSelectedItems
-                                    model.inpGroups.selectState
-                                    (availableGroups |> List.map (\x -> Select.basicMenuItem { item = x.masterKey, label = x.name }))
-                                    "групи"
-                                    (Utils.Select.defaultOptions isDark)
-                        ]
-                    , case model.groupsValidation of
-                        Just groups ->
-                            div [ class "mt-2 p-3 rounded-md bg-yellow-50 border border-yellow-200 dark:bg-yellow-900/20 dark:border-yellow-800" ]
-                                [ p [ class "text-sm text-yellow-800 dark:text-yellow-200" ]
-                                    [ text "⚠️ Попередження: при виборі цього батьківського організму буде втрачено доступ до груп: "
-                                    , strong [] [ text (String.join ", " groups) ]
-                                    ]
-                                ]
-
-                        Nothing ->
-                            text ""
-                    ]
-                , div [ class "space-y-2" ]
                     [ label [ class "text-sm font-medium text-foreground" ] [ text "Ролі" ]
                     , div [ class "w-full" ]
                         [ Html.map AddRoleSelMsg <|
@@ -1841,7 +1850,7 @@ addOrganismSidebarContent isDark model =
                         ]
                     ]
                 , div [ class "space-y-2" ]
-                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Смуги відповідальності" ]
+                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Смуги" ]
                     , div [ class "w-full" ]
                         [ Html.map AddAorSelMsg <|
                             Styled.toUnstyled <|
@@ -1871,6 +1880,81 @@ addOrganismSidebarContent isDark model =
                                     (Utils.Select.defaultOptions isDark)
                         ]
                     ]
+
+                -- Computed Available Groups (read-only display)
+                , div [ class "space-y-2" ]
+                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Доступні групи для організму" ]
+                    , div [ class "p-3 rounded-md bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700" ]
+                        [ if model.createIsLoadingComputedGroups then
+                            div [ class "flex items-center gap-2" ]
+                                [ Spinner.loadingSpinner2Sm
+                                , p [ class "text-sm text-muted-foreground italic" ] [ text "Завантаження доступних груп..." ]
+                                ]
+                          else
+                            case model.createComputedAvailableGroups of
+                                Just computedGroups ->
+                                    if List.isEmpty computedGroups then
+                                        p [ class "text-sm text-muted-foreground italic" ] [ text "Немає доступних груп" ]
+                                    else
+                                        div [ class "flex flex-wrap gap-1" ]
+                                            (computedGroups
+                                                |> List.map (\group ->
+                                                    span [ class "badge badge--ochre-light", title (if String.isEmpty group.name then 
+                                                            "Без назви (id=" ++ String.left 6 group.masterKey ++ "...)"
+                                                          else 
+                                                            group.name) ]
+                                                        [ text (if String.isEmpty group.name then 
+                                                            "Без назви (id=" ++ String.left 6 group.masterKey ++ "...)"
+                                                          else 
+                                                            group.name)
+                                                        ]
+                                                )
+                                            )
+
+                                Nothing ->
+                                    p [ class "text-sm text-muted-foreground italic" ] [ text "Оберіть смуги для отримання доступних груп" ]
+                        ]
+                    , p [ class "text-xs text-muted-foreground" ]
+                        [ text "Ці групи будуть доступні організму на основі вибраних смуг та батьківського організму" ]
+                    ]
+
+                -- Checkbox to limit groups list
+                , div [ class "space-y-2" ]
+                    [ Checkbox.new { isChecked = model.createLimitGroupsList, onToggle = \_ -> ToggleLimitGroupsListCreate }
+                        |> Checkbox.withContent [ text "Обмежити перелік груп" ]
+                        |> Checkbox.view
+                    , p [ class "text-xs text-muted-foreground ml-6" ]
+                        [ text "За замовчуванням організм має доступ до всіх груп від смуг. Увімкніть для додаткового обмеження." ]
+                    ]
+
+                -- Groups selector (only when checkbox is enabled)
+                , if model.createLimitGroupsList then
+                    div [ class "space-y-2" ]
+                        [ label [ class "text-sm font-medium text-foreground" ] [ text "Обмежити групами" ]
+                        , div [ class "w-full" ]
+                            [ Html.map AddGroupSelMsg <|
+                                Styled.toUnstyled <|
+                                    Utils.Select.renderSelect
+                                        groupsSelectedItems
+                                        model.inpGroups.selectState
+                                        (availableGroups |> List.map (\x -> Select.basicMenuItem { item = x.masterKey, label = x.name }))
+                                        "групи"
+                                        (Utils.Select.defaultOptions isDark)
+                            ]
+                        , case model.groupsValidation of
+                            Just groups ->
+                                div [ class "mt-2 p-3 rounded-md bg-yellow-50 border border-yellow-200 dark:bg-yellow-900/20 dark:border-yellow-800" ]
+                                    [ p [ class "text-sm text-yellow-800 dark:text-yellow-200" ]
+                                        [ text "⚠️ Попередження: при виборі цього батьківського організму буде втрачено доступ до груп: "
+                                        , strong [] [ text (String.join ", " groups) ]
+                                        ]
+                                    ]
+
+                            Nothing ->
+                                text ""
+                        ]
+                  else
+                    text ""
                 ]
             ]
         , div [ class "p-6 border-t border-border bg-muted/30" ]
@@ -1878,7 +1962,19 @@ addOrganismSidebarContent isDark model =
                 [ Button.new { label = "Скасувати", onClick = CloseCreateSidebar }
                     |> Button.withStyleSecondary
                     |> Button.view
-                , Button.new { label = "Створити", onClick = AddOrganism }
+                , Button.new
+                    { label =
+                        case model.groupsValidation of
+                            Just groups ->
+                                "Створити (втратити " ++ String.fromInt (List.length groups) ++ " груп)"
+
+                            Nothing ->
+                                if model.createLimitGroupsList then
+                                    "Створити з обмеженням груп"
+                                else
+                                    "Створити (доступ до всіх груп від смуг)"
+                    , onClick = AddOrganism
+                    }
                     |> Button.view
                 ]
             ]
