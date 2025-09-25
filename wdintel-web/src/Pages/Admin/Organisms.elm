@@ -94,6 +94,11 @@ getParentGroups parentId organismGroups =
     getOrganismGroups parentId organismGroups
 
 
+hasGroupRestrictions : Int -> List B.OrganismGroup -> Bool
+hasGroupRestrictions organismId organismGroups =
+    not (List.isEmpty (getOrganismGroups organismId organismGroups))
+
+
 getAvailableGroupsForOrganism : Maybe Int -> List B.OrganismGroup -> List B.SignalGroupFull -> List B.SignalGroupFull
 getAvailableGroupsForOrganism maybeParentId organismGroups allGroups =
     case maybeParentId of
@@ -885,7 +890,7 @@ update msg model =
                                   , fieldsErrors = []
                                   , groupsValidation = Nothing
                                   , computedAvailableGroups = Nothing
-                                  , limitGroupsList = False
+                                  , limitGroupsList = hasGroupRestrictions o.id model.organismGroups
                                   , isLoadingComputedGroups = True
                                   }
                                 )
