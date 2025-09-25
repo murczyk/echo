@@ -243,6 +243,40 @@ pub async fn organism_compute_available_groups(
     ))
 }
 
+// this method returns actual list of all groups that are available for users after create
+#[post("/api/organism/compute-available-groups-for-new")]
+pub async fn organism_compute_available_groups_for_new(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<CreateOrganismReq>,
+) -> Result<Json<Vec<SignalGroupFull>>, AppError> {
+    crate::users::has_role(&env.dbx, &user.id()?, "Admin").await?;
+
+    let txn = env.dbx.begin().await.context(h!())?; // DO NOT COMMIT IT!!!
+    let organism = bl::create_organism(&env.dbx, &req).await.context(h!())?;
+
+    let groups = load_organism_group_ids(&txn, organism.id)
+        .await
+        .context(h!())?;
+
+    let groups_list = signal_group::Entity::find()
+        .filter(signal_group::Column::Deleted.eq(false))
+        .filter(signal_group::Column::MasterKey.is_in(groups.available_keys))
+        .all(&txn)
+        .await
+        .context(h!())?;
+    Ok(Json(
+        groups_list
+            .into_iter()
+            .map(|g| SignalGroupFull {
+                master_key: g.master_key,
+                name: g.name.unwrap_or("".to_string()),
+                origin_datasource_id: g.datasource_id.unwrap_or(0),
+            })
+            .collect(),
+    ))
+}
+
 #[post("/api/organism/available-groups-batch")]
 pub async fn organism_available_groups_batch(
     user: actix_identity::Identity,
