@@ -2008,10 +2008,13 @@ editOrganismSidebarContent isDark model organismId editState =
                                     if List.isEmpty computedGroups then
                                         p [ class "text-sm text-muted-foreground italic" ] [ text "Немає доступних груп" ]
                                     else
-                                        div [ class "flex flex-wrap gap-2" ]
+                                        div [ class "flex flex-wrap gap-1" ]
                                             (computedGroups
                                                 |> List.map (\group ->
-                                                    span [ class "inline-flex items-center px-2 py-1 text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-300 rounded-md" ]
+                                                    span [ class "badge badge--ochre-light", title (if String.isEmpty group.name then 
+                                                            "Без назви (id=" ++ String.left 6 group.masterKey ++ "...)"
+                                                          else 
+                                                            group.name) ]
                                                         [ text (if String.isEmpty group.name then 
                                                             "Без назви (id=" ++ String.left 6 group.masterKey ++ "...)"
                                                           else 
