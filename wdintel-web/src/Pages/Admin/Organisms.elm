@@ -157,13 +157,11 @@ buildUpdateOrganismReq organismId editOrganism =
     }
 
 
-buildUpdateOrganismReqForCreate : Model -> B.UpdateOrganismReq
-buildUpdateOrganismReqForCreate model =
-    { id = 0  -- Dummy ID for create form (not used by API)
+buildCreateOrganismReq : Model -> B.CreateOrganismReq
+buildCreateOrganismReq model =
+    { name = model.inpName
     , parentId = model.inpParentOrganism.selectedItem
-    , name = Just model.inpName
-    , roles = Just model.inpRole.selectedItems
-    , enabled = True  -- Always enabled for new organisms
+    , roles = model.inpRole.selectedItems
     , aorIds = Just model.inpAors.selectedItems
     }
 
@@ -600,13 +598,38 @@ update msg model =
                         _ ->
                             model.groupsValidation
 
-                -- Keep existing validation state
+                -- Check if we need to reload computed groups (only on meaningful actions)
+                shouldReloadComputedGroups =
+                    case mAction of
+                        Just (Select.Select _) -> True
+                        Just (Select.Deselect _) -> True
+                        Just Select.Clear -> True
+                        _ -> False
+
+                modelWithUpdatedParent =
+                    { model | inpParentOrganism = inpParentOrganism2, groupsValidation = groupsValidation }
+
+                modelFinal =
+                    if shouldReloadComputedGroups then
+                        { modelWithUpdatedParent 
+                        | createIsLoadingComputedGroups = True
+                        , createComputedAvailableGroups = Nothing
+                        }
+                    else
+                        modelWithUpdatedParent
+
+                effects =
+                    if shouldReloadComputedGroups then
+                        let
+                            createReq = buildCreateOrganismReq modelFinal
+                        in
+                        [ E.sendCmd <| Cmd.map AddParentSelMsg iCmd
+                        , E.sendCmd <| Api.organism_compute_available_groups_for_new GotComputedAvailableGroupsCreate createReq
+                        ]
+                    else
+                        [ E.sendCmd <| Cmd.map AddParentSelMsg iCmd ]
             in
-            ( { model | inpParentOrganism = inpParentOrganism2, groupsValidation = groupsValidation }
-            , E.batch
-                [ E.sendCmd <| Cmd.map AddParentSelMsg iCmd
-                ]
-            )
+            ( modelFinal, E.batch effects )
 
         EditParentSelMsg selMsg ->
             case model.editOrganism of
@@ -746,46 +769,30 @@ update msg model =
                         , fieldsErrors = []
                         , groupsValidation = Nothing
                         , sidebarType = Nothing
+                        , createComputedAvailableGroups = Nothing
+                        , createLimitGroupsList = False
+                        , createIsLoadingComputedGroups = False
                     }
             in
             let
-                selectedParentId =
-                    model.inpParentOrganism.selectedItem
-
-                -- Filter groups based on parent constraints
+                {- NEW LOGIC: Groups to save based on createLimitGroupsList checkbox
+                
+                   Previous behavior: Always saved selected groups as restrictions with parent filtering
+                   
+                   New behavior:
+                   - createLimitGroupsList = False: No organism-group restrictions (empty list)
+                     → Organism gets ALL groups from bands automatically
+                   - createLimitGroupsList = True: Save selected groups as restrictions
+                     → Organism limited to only these specific groups
+                -}
                 groupsToAdd =
-                    case selectedParentId of
-                        Nothing ->
-                            model.inpGroups.selectedItems
-
-                        Just pId ->
-                            let
-                                parentOrganism =
-                                    model.organisms |> ListX.find (\o -> o.id == pId)
-
-                                parentGroups =
-                                    case parentOrganism of
-                                        Nothing ->
-                                            []
-
-                                        Just p ->
-                                            getOrganismGroups p.id model.organismGroups
-
-                                -- If parent has empty groups list, it means access to all groups
-                                -- Only filter if parent has specific groups defined
-                            in
-                            if List.isEmpty parentGroups then
-                                model.inpGroups.selectedItems
-
-                            else
-                                let
-                                    parentGroupsSet =
-                                        Set.fromList parentGroups
-
-                                    selectedGroupsSet =
-                                        Set.fromList model.inpGroups.selectedItems
-                                in
-                                Set.toList (Set.intersect selectedGroupsSet parentGroupsSet)
+                    if model.createLimitGroupsList then
+                        -- User wants to limit groups - use selected groups from selector
+                        model.inpGroups.selectedItems
+                    else
+                        -- User wants NO additional limitations - organism gets all groups from bands
+                        -- Save empty list (no organism-group restrictions)
+                        []
             in
             ( m2
             , E.sendCmd <|
@@ -1051,10 +1058,39 @@ update msg model =
 
                 inpAors2 =
                     { inpAors | selectedItems = Utils.Select.multiUpdI mAction inpAors.selectedItems, selectState = iState }
+
+                -- Check if we need to reload computed groups (only on meaningful actions)
+                shouldReloadComputedGroups =
+                    case mAction of
+                        Just (Select.Select _) -> True
+                        Just (Select.Deselect _) -> True
+                        Just Select.Clear -> True
+                        _ -> False
+
+                modelWithUpdatedAors =
+                    { model | inpAors = inpAors2 }
+
+                modelFinal =
+                    if shouldReloadComputedGroups then
+                        { modelWithUpdatedAors 
+                        | createIsLoadingComputedGroups = True
+                        , createComputedAvailableGroups = Nothing
+                        }
+                    else
+                        modelWithUpdatedAors
+
+                effects =
+                    if shouldReloadComputedGroups then
+                        let
+                            createReq = buildCreateOrganismReq modelFinal
+                        in
+                        [ E.sendCmd <| Cmd.map AddAorSelMsg iCmd
+                        , E.sendCmd <| Api.organism_compute_available_groups_for_new GotComputedAvailableGroupsCreate createReq
+                        ]
+                    else
+                        [ E.sendCmd <| Cmd.map AddAorSelMsg iCmd ]
             in
-            ( { model | inpAors = inpAors2 }
-            , E.batch [ E.sendCmd <| Cmd.map AddAorSelMsg iCmd ]
-            )
+            ( modelFinal, E.batch effects )
 
         EditAorSelMsg selMsg ->
             case model.editOrganism of
@@ -1191,10 +1227,27 @@ update msg model =
             ( { model | editOrganism = Nothing, sidebarType = Nothing }, E.none )
 
         OpenCreateSidebar ->
-            ( { model | sidebarType = Just CreateSidebar }, E.none )
+            let
+                modelWithSidebar =
+                    { model 
+                    | sidebarType = Just CreateSidebar
+                    , createIsLoadingComputedGroups = True
+                    , createComputedAvailableGroups = Nothing
+                    }
+
+                createReq = buildCreateOrganismReq modelWithSidebar
+            in
+            ( modelWithSidebar
+            , E.sendCmd <| Api.organism_compute_available_groups_for_new GotComputedAvailableGroupsCreate createReq
+            )
 
         CloseCreateSidebar ->
-            ( { model | sidebarType = Nothing }, E.none )
+            ( { model 
+              | sidebarType = Nothing
+              , createComputedAvailableGroups = Nothing
+              , createLimitGroupsList = False
+              , createIsLoadingComputedGroups = False
+              }, E.none )
 
         EditOrganismDone (Ok o) ->
             let
