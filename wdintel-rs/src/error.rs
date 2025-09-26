@@ -1,4 +1,3 @@
-use crate::config;
 use crate::server::middleware::request_log_context;
 use anyhow::Context;
 // use aws_sdk_s3::error::SdkError;
@@ -212,42 +211,41 @@ impl actix_web::error::ResponseError for AppError {
             }
             _ => {
                 let base_message = format!("Internal server error: {self:?}");
-                let mut message = format!("{base_message}; user=<unknown>");
-
-                if config::FEATURE_ERROR_CONTEXT {
-                    if let Some(ctx) = request_log_context() {
-                        let query_string =
-                            ctx.query_string.as_deref().unwrap_or("");
-                        let request_url = if query_string.is_empty() {
-                            ctx.path.clone()
-                        } else {
-                            format!("{}?{}", ctx.path, query_string)
-                        };
-                        let params_json = ctx
-                            .query_params
-                            .as_ref()
-                            .map(|params| {
-                                serde_json::to_string(params)
-                                    .unwrap_or_else(|_| "{}".to_string())
-                            })
-                            .unwrap_or_else(|| "{}".to_string());
-                        message = format!(
-                            "{base_message}; request_id={}; user={}; session_id={}; ip={}; method={}; url={}; query_params={}; user_agent={}",
-                            ctx.request_id,
-                            ctx.username.as_deref().unwrap_or("<unknown>"),
-                            ctx.session_id.as_deref().unwrap_or("<unknown>"),
-                            ctx.client_ip.as_deref().unwrap_or("<unknown>"),
-                            ctx.method,
-                            request_url,
-                            params_json,
-                            ctx.user_agent.as_deref().unwrap_or("<unknown>"),
-                        );
-                    }
+                if let Some(ctx) = request_log_context() {
+                    let query_string =
+                        ctx.query_string.as_deref().unwrap_or("");
+                    let request_url = if query_string.is_empty() {
+                        ctx.path.clone()
+                    } else {
+                        format!("{}?{}", ctx.path, query_string)
+                    };
+                    let params_json = ctx
+                        .query_params
+                        .as_ref()
+                        .map(|params| {
+                            serde_json::to_string(params)
+                                .unwrap_or_else(|_| "{}".to_string())
+                        })
+                        .unwrap_or_else(|| "{}".to_string());
+                    let message = format!(
+                        "{base_message}; request_id={}; user={}; session_id={}; ip={}; method={}; url={}; query_params={}; user_agent={}",
+                        ctx.request_id,
+                        ctx.username.as_deref().unwrap_or("<unknown>"),
+                        ctx.session_id.as_deref().unwrap_or("<unknown>"),
+                        ctx.client_ip.as_deref().unwrap_or("<unknown>"),
+                        ctx.method,
+                        request_url,
+                        params_json,
+                        ctx.user_agent.as_deref().unwrap_or("<unknown>"),
+                    );
+                    error!("{message}");
+                    println!("{message}");
+                    println!("{message}");
+                } else {
+                    error!("{base_message}");
+                    println!("{base_message}");
+                    println!("{base_message}");
                 }
-
-                error!("{message}");
-                println!("{message}");
-                println!("{message}");
                 match self {
                     AppError::IO { .. }
                     | AppError::OpendalError { .. }
