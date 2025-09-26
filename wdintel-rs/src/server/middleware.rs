@@ -1,6 +1,4 @@
 use crate::types::*;
-use actix_identity::Identity;
-use actix_session::SessionExt;
 use actix_web::{
     body::MessageBody,
     dev::{ServiceRequest, ServiceResponse},
@@ -9,12 +7,9 @@ use actix_web::{
 };
 use redis::aio::ConnectionManager;
 use redis::{AsyncCommands, RedisResult};
-use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
 use std::time::Instant;
-use tokio::task_local;
-use uuid::Uuid;
 
 /// JSON value stored in Redis representing request, response and timing details
 /// We store both request before and after the response is sent in order to track hanging requests.
@@ -34,83 +29,6 @@ pub struct ActivityDetails {
     pub event_type: String, // "request" or "response"
     pub client_ip: Option<String>,
     pub user_agent: Option<String>,
-}
-
-#[derive(Clone, Debug)]
-pub struct RequestLogContext {
-    pub request_id: String,
-    pub method: String,
-    pub path: String,
-    pub query_string: Option<String>,
-    pub query_params: Option<HashMap<String, String>>,
-    pub client_ip: Option<String>,
-    pub user_agent: Option<String>,
-    pub username: Option<String>,
-    pub session_id: Option<String>,
-}
-
-task_local! {
-    static REQUEST_LOG_CONTEXT: RequestLogContext;
-}
-
-pub fn request_log_context() -> Option<RequestLogContext> {
-    REQUEST_LOG_CONTEXT.try_with(|ctx| ctx.clone()).ok()
-}
-
-pub async fn request_context_middleware<B>(
-    mut req: ServiceRequest,
-    next: Next<B>,
-) -> Result<ServiceResponse<B>, Error>
-where
-    B: MessageBody,
-{
-    let method = req.method().to_string();
-    let path = req.path().to_string();
-    let query_string = {
-        let raw = req.query_string();
-        if raw.is_empty() {
-            None
-        } else {
-            Some(raw.to_string())
-        }
-    };
-    let query_params = query_string.as_ref().map(|qs| parse_query_params(qs));
-    let client_ip = req
-        .connection_info()
-        .realip_remote_addr()
-        .map(|s| s.to_string());
-    let user_agent = req
-        .headers()
-        .get("user-agent")
-        .and_then(|ua| ua.to_str().ok())
-        .map(|s| s.to_string());
-    let session_id = req.get_session().get::<String>("id").ok().flatten();
-    let username = match req.extract::<Option<Identity>>().await {
-        Ok(Some(identity)) => identity.id().ok(),
-        _ => None,
-    };
-
-    let context = RequestLogContext {
-        request_id: Uuid::new_v4().to_string(),
-        method,
-        path,
-        query_string,
-        query_params,
-        client_ip,
-        user_agent,
-        username,
-        session_id,
-    };
-
-    REQUEST_LOG_CONTEXT
-        .scope(context, async move { next.call(req).await })
-        .await
-}
-
-fn parse_query_params(query: &str) -> HashMap<String, String> {
-    url::form_urlencoded::parse(query.as_bytes())
-        .map(|(k, v)| (k.into_owned(), v.into_owned()))
-        .collect()
 }
 
 /// Activity middleware with Redis connection for tracking requests.
@@ -143,10 +61,14 @@ where
     let query_string = req.query_string();
 
     // Parse query parameters
-    let query_params = if query_string.is_empty() {
-        None
+    let query_params = if !query_string.is_empty() {
+        Some(
+            url::form_urlencoded::parse(query_string.as_bytes())
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect::<HashMap<String, String>>(),
+        )
     } else {
-        Some(parse_query_params(query_string))
+        None
     };
 
     // Extract headers

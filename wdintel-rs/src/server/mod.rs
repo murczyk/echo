@@ -205,7 +205,6 @@ pub async fn main_server(
         let redis_for_middleware = env.redis.clone();
         App::new()
             .wrap(actix_web::middleware::Compress::default())
-            .wrap(actix_web::middleware::from_fn(middleware::request_context_middleware))
             .app_data(actix_web::web::Data::from(env))
             // .wrap(
             //     actix_web::middleware::Logger::default()
