@@ -60,8 +60,7 @@ pub async fn get_inbox_map_items(
 ) -> Result<Vec<InboxMapItem>, AppError> {
     let q = build_inbox_query(login, logins, env, req).await?;
     let q = format!(
-        r#"SELECT id, "freq" as freq, "coords" as coords from ({}) q"#,
-        q.build(DbBackend::Postgres)
+        r#"SELECT id, "freq" as freq, "coords" as coords from ({q}) q"#
     );
 
     let query_res: Vec<QueryResult> = env

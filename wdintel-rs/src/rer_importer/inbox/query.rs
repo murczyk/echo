@@ -5,21 +5,25 @@ use crate::error::AppError;
 use crate::rer_importer::analysis::*;
 use crate::types::*;
 use crate::utils::*;
-use chrono::NaiveDateTime;
+use chrono::{Duration, NaiveDateTime, Utc};
 use log::*;
-use sea_orm::*;
+use sea_orm::{sea_query::PostgresQueryBuilder, *};
 use sea_query::types::IntoColumnRef;
-use sea_query::{Expr, SimpleExpr};
+use sea_query::{
+    Alias, ColumnRef, CommonTableExpression, Expr, Query, SelectStatement,
+    SimpleExpr,
+};
 
 pub(crate) async fn build_inbox_query(
     login: &str,
     _logins: &Vec<String>,
     env: &Env,
     req: &InboxMessagesReq,
-) -> Result<Select<signal_message::Entity>, AppError> {
+) -> Result<String, AppError> {
     let sigint_groups =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, login)
             .await?;
+    let dedup_key_alias = Alias::new("dedup_key");
     let mut q = SignalMessage::find()
         .join(
             JoinType::LeftJoin,
@@ -50,13 +54,13 @@ pub(crate) async fn build_inbox_query(
     // }
     //
 
-    q = get_order_by(env, req, q.clone()).await?;
     if req.only_show_unprocessed == Some(true) {
         q = q.filter(sigint_inbox_item::Column::Reviewed.ne(Some(true)));
     }
     if req.checked_only == Some(true) {
         q = q.filter(sigint_inbox_item::Column::Checked.eq(Some(true)));
     }
+    q = q.distinct_on([dedup_key_alias]);
 
     let q = filter_selected_groups(q, &req.selected_groups)?;
     let q = filter_selected_senders(q, &req.selected_senders)?;
@@ -94,12 +98,45 @@ pub(crate) async fn build_inbox_query(
         include_peleng_locations,
     )?;
 
-    if req.nolimit != Some(true) {
-        q = q.limit(20);
+    if req.since_id_noninclusive.is_none()
+        && req.since_date_inclusive_ms.is_none()
+    {
+        // TODO FIXME filter by 1 days
+        q = q.filter(
+            signal_message::Column::Timestamp
+                .gte(Utc::now().naive_utc() - Duration::days(1)),
+        );
     }
 
-    trace!("inbox items query sql: {}", q.build(DbBackend::Postgres));
-    Ok(q)
+    q = get_order_by(env, req, q.clone()).await?;
+
+    let dd_cte = Alias::new("inbox_items_cte");
+
+    let deduped_cte = CommonTableExpression::new()
+        .query(q.clone().into_query())
+        .table_name(dd_cte.clone())
+        .to_owned();
+
+    let mut main_query = SelectStatement::new();
+    main_query
+        .column(ColumnRef::Asterisk)
+        .from(dd_cte.clone())
+        .order_by_expr(Expr::cust("datetime"), Order::Desc)
+        .order_by_expr(Expr::cust("id"), Order::Desc);
+
+    if req.nolimit != Some(true) {
+        main_query.limit(20);
+    }
+
+    let combined_query = Query::with()
+        .cte(deduped_cte)
+        .clone()
+        .query(main_query)
+        .to_string(PostgresQueryBuilder);
+
+    trace!("> Deduplicated inbox items query: {combined_query}");
+
+    Ok(combined_query)
 }
 
 pub async fn get_order_by<Q>(
@@ -289,6 +326,17 @@ where
             );
         }
     }
+
+    // First, add order by for DISTINCT ON deduplication
+    q = q
+        .order_by(Expr::cust("dedup_key"), Order::Asc)
+        // emulate NULLS FIRST: order nulls before non-nulls
+        .order_by(
+            Expr::cust("(signal_message.duplicate_of IS NULL)"),
+            Order::Desc,
+        );
+
+    // Then, business logic ordering
     if let Some(true) = req.load_latest {
         m_order_asc = Some(false);
         match req_sort_by {
@@ -376,4 +424,15 @@ where
         .column_as(sigint_inbox_item::Column::Datetime, "datetime")
         .column_as(sigint_post::Column::Name, "post_name")
         .column_as(sigint_inbox_item::Column::Tags, "tags")
+        .column_as(
+            Expr::col((
+                signal_message::Entity,
+                signal_message::Column::DuplicateOf,
+            ))
+            .if_null(Expr::col((
+                signal_message::Entity,
+                signal_message::Column::Id,
+            ))),
+            "dedup_key",
+        )
 }
