@@ -787,7 +787,7 @@ pub async fn user_sigint_groups_detailed(
 ) -> Result<Json<Vec<SignalGroupEntryF2>>, AppError> {
     // let res = get_identity_sigint_groups_since(&env.dbx, &user, req.since_date_inclusive_ms).await.context(h!())?;
     let login = user.id()?;
-    has_any_role(&env.dbx, &login, vec!["Rer", "Admin"])
+    has_any_role(&env.dbx, &login, vec!["Rer", "Admin", "Api"])
         .await
         .context(h!())?;
     let mut keys = get_identity_sigint_groups(&env.dbx, &login)
