@@ -33,6 +33,7 @@ pub const SIGNAL_DATASOURCE_ID: i64 = 1;
 pub const FEATURE_DESKTOP_YOUTUBE_KEYS: bool = true;
 pub const DISCORD_WEBHOOK: &str = "https://discord.com/api/webhooks/1417084833384890398/7jgZyC1zpmrJVXzUwDz-OQV6_UwqxUUl9GHehVyV9-UwxQRZjMg9ZwYYNJGPcAmuiGRA";
 pub const FEATURE_CALLSIGNS_ALG2: bool = false;
+pub const FEATURE_ERROR_CONTEXT: bool = false;
 /// Safety limit: cut network-callsigns time window if too wide
 pub const NETWORK_CALLSIGNS_MAX_WINDOW_DAYS: i64 = 60;
 /// Ukraine boundaries WGS84

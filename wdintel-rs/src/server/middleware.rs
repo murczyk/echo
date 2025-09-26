@@ -1,3 +1,4 @@
+use crate::config;
 use crate::types::*;
 use actix_identity::Identity;
 use actix_session::SessionExt;
@@ -64,6 +65,10 @@ pub async fn request_context_middleware<B>(
 where
     B: MessageBody,
 {
+    if !config::FEATURE_ERROR_CONTEXT {
+        return next.call(req).await;
+    }
+
     let method = req.method().to_string();
     let path = req.path().to_string();
     let query_string = {
