@@ -88,7 +88,7 @@ pub async fn has_any_role(
     }
     if !is_any_good {
         return Err(AppError::Forbidden(format!(
-            "required role {}, only has {}",
+            "user_id: {user_id}, required role {}, only has {}",
             roles_list.join(", "),
             roles.join(", ")
         )));
