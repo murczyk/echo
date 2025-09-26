@@ -11,6 +11,104 @@ use std::future::Future;
 use std::pin::Pin;
 use std::time::Instant;
 
+/// Prefixes of request paths that should not appear in the access log.
+const ACCESS_LOG_SKIP_PATTERNS: &[&str] = &[
+    "/api/rer-importer/get-inbox-count",
+    "/api/event-stream/long-poll",
+];
+
+fn should_skip_access_log(path: &str) -> bool {
+    ACCESS_LOG_SKIP_PATTERNS
+        .iter()
+        .any(|pattern| path.starts_with(pattern))
+}
+
+fn log_access_event(
+    method: &str,
+    path: &str,
+    status: u16,
+    elapsed_ms: u128,
+    client_ip: Option<&str>,
+    user_agent: Option<&str>,
+    error: Option<&str>,
+) {
+    match error {
+        Some(err) => info!(
+            target: "access_log",
+            "method={method} path={path} status={status} duration_ms={elapsed_ms} ip={} ua={} error={err}",
+            client_ip.unwrap_or("-"),
+            user_agent.unwrap_or("-"),
+        ),
+        None => info!(
+            target: "access_log",
+            "method={method} path={path} status={status} duration_ms={elapsed_ms} ip={} ua={}",
+            client_ip.unwrap_or("-"),
+            user_agent.unwrap_or("-"),
+        ),
+    }
+}
+
+pub async fn access_log_middleware<B>(
+    req: ServiceRequest,
+    next: Next<B>,
+) -> Result<ServiceResponse<B>, Error>
+where
+    B: MessageBody,
+{
+    let method = req.method().to_string();
+    let path = req.path().to_owned();
+    let client_ip = req
+        .connection_info()
+        .realip_remote_addr()
+        .map(|ip| ip.to_string());
+    let user_agent = req
+        .headers()
+        .get("user-agent")
+        .and_then(|ua| ua.to_str().ok())
+        .map(|ua| ua.to_string());
+
+    let skip_logging = should_skip_access_log(&path);
+    let started = Instant::now();
+
+    match next.call(req).await {
+        Ok(res) => {
+            if !skip_logging {
+                let status = res.response().status().as_u16();
+                let elapsed_ms = started.elapsed().as_millis();
+                log_access_event(
+                    &method,
+                    &path,
+                    status,
+                    elapsed_ms,
+                    client_ip.as_deref(),
+                    user_agent.as_deref(),
+                    None,
+                );
+            }
+
+            Ok(res)
+        }
+        Err(err) => {
+            if !skip_logging {
+                let status = err.as_response_error().status_code().as_u16();
+                let elapsed_ms = started.elapsed().as_millis();
+                let error_message = err.to_string();
+                log_access_event(
+                    &method,
+                    &path,
+                    status,
+                    elapsed_ms,
+                    client_ip.as_deref(),
+                    user_agent.as_deref(),
+                    Some(error_message.as_str()),
+                );
+            }
+
+            Err(err)
+        }
+    }
+}
+
 /// JSON value stored in Redis representing request, response and timing details
 /// We store both request before and after the response is sent in order to track hanging requests.
 #[derive(Serialize, Deserialize, Clone, Debug)]

@@ -224,6 +224,11 @@ pub async fn main_server(
                     middleware::mk_activity_middleware(Some(redis_for_middleware))
                 )
             )
+            .wrap(
+                actix_web::middleware::from_fn(
+                    middleware::access_log_middleware
+                )
+            )
             .service(self::monitoring::ping)
             .service(self::monitoring::public_ping)
             .service(self::monitoring::server_info)

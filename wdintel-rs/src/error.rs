@@ -187,20 +187,29 @@ impl actix_web::error::ResponseError for AppError {
             .body("Service unavailable: server is shutting down");
         }
         match self {
-            AppError::NotFound => actix_web::HttpResponseBuilder::new(
-                actix_web::http::StatusCode::NOT_FOUND,
-            )
-            .body("Not found"),
-            AppError::Unauthenticated => actix_web::HttpResponseBuilder::new(
-                actix_web::http::StatusCode::UNAUTHORIZED,
-            )
-            .body("Unauthenticated"),
-            AppError::Forbidden(msg) => actix_web::HttpResponseBuilder::new(
-                actix_web::http::StatusCode::FORBIDDEN,
-            )
-            .body(format!("Forbidden: {msg}")),
+            AppError::NotFound => {
+                warn!(target: "not_found_details", "Not found error triggered");
+                actix_web::HttpResponseBuilder::new(
+                    actix_web::http::StatusCode::NOT_FOUND,
+                )
+                .body("Not found")
+            }
+            AppError::Unauthenticated => {
+                warn!(target: "unauthenticated_details", "Unauthenticated access detected");
+                actix_web::HttpResponseBuilder::new(
+                    actix_web::http::StatusCode::UNAUTHORIZED,
+                )
+                .body("Unauthenticated")
+            }
+            AppError::Forbidden(msg) => {
+                error!(target: "forbidden_details", "Forbidden access: {msg}");
+                actix_web::HttpResponseBuilder::new(
+                    actix_web::http::StatusCode::FORBIDDEN,
+                )
+                .body("Forbidden")
+            }
             AppError::Form(es) => {
-                println!("Form errors: {es:?}");
+                error!(target: "form_error_details", "Form errors: {es:?}");
                 actix_web::HttpResponseBuilder::new(
                     actix_web::http::StatusCode::BAD_REQUEST,
                 )
