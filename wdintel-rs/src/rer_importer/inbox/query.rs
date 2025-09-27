@@ -118,11 +118,8 @@ pub(crate) async fn build_inbox_query(
         .to_owned();
 
     let mut main_query = SelectStatement::new();
-    main_query
-        .column(ColumnRef::Asterisk)
-        .from(dd_cte.clone())
-        .order_by_expr(Expr::cust("datetime"), Order::Desc)
-        .order_by_expr(Expr::cust("id"), Order::Desc);
+    main_query.column(ColumnRef::Asterisk).from(dd_cte.clone());
+    main_query = get_bl_ordering_stmt(req, main_query).await.context(h!())?;
 
     if req.nolimit != Some(true) {
         main_query.limit(20);
@@ -157,7 +154,6 @@ where
             crate::kv::get_kv(&env.dbx, "rer_importer_id_cursor").await?
     };
 
-    let mut m_order_asc: Option<bool> = None;
     let req_sort_by = req.sort_by.unwrap_or(InboxMessagesSortBy::IMSDatetime);
     '_if: {
         if let Some(since_id_noninclusive) = since_id_noninclusive {
@@ -337,6 +333,23 @@ where
         );
 
     // Then, business logic ordering
+    q = get_bl_ordering_select(req, q).await.context(h!())?;
+
+    Ok(q)
+}
+
+/// Build business logic ordering for Select<Entity> which inherits QueryFilter + QueryOrder
+pub async fn get_bl_ordering_select<Q>(
+    req: &InboxMessagesReq,
+    q: Q,
+) -> Result<Q, AppError>
+where
+    Q: QueryFilter + QueryOrder,
+{
+    let mut q = q;
+
+    let req_sort_by = req.sort_by.unwrap_or(InboxMessagesSortBy::IMSDatetime);
+    let mut m_order_asc: Option<bool> = None;
     if let Some(true) = req.load_latest {
         m_order_asc = Some(false);
         match req_sort_by {
@@ -381,6 +394,65 @@ where
                     q = q
                         .order_by_asc(signal_message::Column::Timestamp)
                         .order_by_asc(signal_message::Column::Id);
+                }
+            }
+            // m_order_asc = Some(true);
+        }
+    }
+
+    Ok(q)
+}
+
+/// Build business logic ordering for SelectStatement
+pub async fn get_bl_ordering_stmt(
+    req: &InboxMessagesReq,
+    q: SelectStatement,
+) -> Result<SelectStatement, AppError> {
+    let mut q = q;
+
+    let req_sort_by = req.sort_by.unwrap_or(InboxMessagesSortBy::IMSDatetime);
+    let mut m_order_asc: Option<bool> = None;
+    if let Some(true) = req.load_latest {
+        m_order_asc = Some(false);
+        match req_sort_by {
+            InboxMessagesSortBy::IMSDatetime => {
+                q.order_by(sigint_inbox_item::Column::Datetime, Order::Desc)
+                    .order_by(signal_message::Column::Id, Order::Desc);
+            }
+            InboxMessagesSortBy::IMSTimestamp => {
+                q.order_by(signal_message::Column::Timestamp, Order::Desc)
+                    .order_by(signal_message::Column::Id, Order::Desc);
+            }
+        }
+    }
+
+    if m_order_asc.is_none() {
+        if req.newest_first == Some(true)
+            || req.before_id_noninclusive.is_some()
+        {
+            match req_sort_by {
+                InboxMessagesSortBy::IMSDatetime => {
+                    q.order_by(
+                        sigint_inbox_item::Column::Datetime,
+                        Order::Desc,
+                    )
+                    .order_by(signal_message::Column::Id, Order::Desc);
+                }
+                InboxMessagesSortBy::IMSTimestamp => {
+                    q.order_by(signal_message::Column::Timestamp, Order::Desc)
+                        .order_by(signal_message::Column::Id, Order::Desc);
+                }
+            }
+            // m_order_asc = Some(false);
+        } else {
+            match req_sort_by {
+                InboxMessagesSortBy::IMSDatetime => {
+                    q.order_by(sigint_inbox_item::Column::Datetime, Order::Asc)
+                        .order_by(signal_message::Column::Id, Order::Asc);
+                }
+                InboxMessagesSortBy::IMSTimestamp => {
+                    q.order_by(signal_message::Column::Timestamp, Order::Asc)
+                        .order_by(signal_message::Column::Id, Order::Asc);
                 }
             }
             // m_order_asc = Some(true);
