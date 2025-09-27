@@ -297,8 +297,7 @@ async fn inbox_messages_count(
         .await
         .context(h!())?;
     let q = format!(
-        "SELECT COUNT(*) AS count, MIN(q.\"timestamp\") AS first_element_ts from ({}) q",
-        q.build(DbBackend::Postgres));
+        "SELECT COUNT(*) AS count, MIN(q.\"timestamp\") AS first_element_ts from ({q}) q");
 
     let query_res: Option<QueryResult> = env
         .dbx
@@ -470,27 +469,22 @@ pub async fn get_inbox_messages(
     env: &Env,
     req: &InboxMessagesReq,
 ) -> Result<Vec<(i64, InboxMessage)>, AppError> {
-    let mut q = build_inbox_query(login, logins, env, req).await?;
-    if req.since_id_noninclusive.is_none()
-        && req.since_date_inclusive_ms.is_none()
-    {
-        // TODO FIXME filter by 1 days
-        q = q.filter(
-            signal_message::Column::Timestamp
-                .gte(Utc::now().naive_utc() - Duration::days(1)),
-        );
-    }
+    let q = build_inbox_query(login, logins, env, req).await?;
 
-    trace!(
-        ">get_inbox_messages inbox items query sql: {}",
-        q.build(DbBackend::Postgres)
-    );
-
-    let messages = q
-        .into_model::<InboxMessageDesc>()
-        .all(&env.dbx)
+    // First execute the query to get QueryResult
+    let results = env
+        .dbx
+        .query_all(Statement::from_string(DatabaseBackend::Postgres, q))
         .await
         .context(h!())?;
+
+    // Then convert results to your model
+    let messages: Vec<InboxMessageDesc> = results
+        .iter()
+        .map(|qr| InboxMessageDesc::from_query_result(qr, ""))
+        .collect::<Result<Vec<_>, DbErr>>()
+        .context(h!())?;
+
     let res = aggregate_to_inbox_messages(messages, logins, &req, &env)
         .await
         .context(h!())?;
@@ -552,13 +546,12 @@ async fn get_freq_pelengs_summary(
 
     let q = format!(
         r#"SELECT "freq" as freq, COUNT(*) AS count
-            FROM ({}) q
+            FROM ({q}) q
             INNER JOIN sigint_peleng sp ON sp.source_inbox_item_id = q."id"
             WHERE sp.deleted = false
             AND "freq" IS NOT NULL
             GROUP BY "freq"
-            "#,
-        q.build(DbBackend::Postgres)
+            "#
     );
 
     let query_res = env
