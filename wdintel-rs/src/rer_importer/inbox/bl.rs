@@ -250,23 +250,6 @@ pub async fn aggregate_to_inbox_messages(
         res.reverse();
     }
 
-    if req.return_duplicates != Some(true) {
-        res = deduplicate(&res)?;
-    }
-    Ok(res)
-}
-
-fn deduplicate(
-    items: &Vec<(i64, InboxMessage)>,
-) -> Result<Vec<(i64, InboxMessage)>, AppError> {
-    let mut seen: BTreeSet<String> = BTreeSet::new();
-    let mut res = vec![];
-    for (k, item) in items.iter() {
-        if !seen.contains(&item.text) {
-            res.push((*k, item.clone()));
-            seen.insert(item.text.clone());
-        }
-    }
     Ok(res)
 }
 
