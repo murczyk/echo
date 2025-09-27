@@ -205,6 +205,7 @@ clean-deps:
 lint:
     ( cd wdintel-rs && cargo clippy)
 
+# sudo apt install exuberant-ctags
 tags:
     rm TAGS || true
     rusty-tags -s ./wdintel-rs emacs
