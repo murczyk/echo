@@ -54,9 +54,13 @@ pub async fn network_list(
     env: actix_web::web::Data<Env>,
     req: Json<ListNetworksReq>,
 ) -> Result<Json<Vec<Network>>, AppError> {
-    crate::users::has_any_role(&env.dbx, &user.id()?, vec!["Rer", "Api"])
-        .await
-        .context(h!())?;
+    crate::users::has_any_role(
+        &env.dbx,
+        &user.id().c(h!())?,
+        vec!["Rer", "Api"],
+    )
+    .await
+    .context(h!())?;
 
     let mut networks = sigint_network::Entity::find()
         .join_as(
@@ -155,7 +159,7 @@ pub async fn restore_network(
     env: actix_web::web::Data<Env>,
     req: Json<RestoreNetworkReq>,
 ) -> Result<Json<Network>, AppError> {
-    let user_id = user.id()?;
+    let user_id = user.id().c(h!())?;
     crate::users::has_any_role(&env.dbx, &user_id, vec!["Rer", "Api"])
         .await
         .context(h!())?;
@@ -193,9 +197,13 @@ pub async fn network_info_batch_freq(
     env: actix_web::web::Data<Env>,
     req: Json<Vec<String>>,
 ) -> Result<Json<Vec<Network>>, AppError> {
-    crate::users::has_any_role(&env.dbx, &user.id()?, vec!["Rer", "Api"])
-        .await
-        .context(h!())?;
+    crate::users::has_any_role(
+        &env.dbx,
+        &user.id().c(h!())?,
+        vec!["Rer", "Api"],
+    )
+    .await
+    .context(h!())?;
     let txn = env.dbx.begin().await.context(h!())?;
     let res = bl_network_info_freqs(req.into_inner(), &txn)
         .await
@@ -210,9 +218,13 @@ pub async fn network_info_batch_id(
     env: actix_web::web::Data<Env>,
     req: Json<Vec<i64>>,
 ) -> Result<Json<Vec<Network>>, AppError> {
-    crate::users::has_any_role(&env.dbx, &user.id()?, vec!["Rer", "Api"])
-        .await
-        .context(h!())?;
+    crate::users::has_any_role(
+        &env.dbx,
+        &user.id().c(h!())?,
+        vec!["Rer", "Api"],
+    )
+    .await
+    .context(h!())?;
     let txn = env.dbx.begin().await.context(h!())?;
     let res = bl_network_info_batch(req.clone(), &txn)
         .await
@@ -227,9 +239,13 @@ pub async fn network_info_one(
     env: actix_web::web::Data<Env>,
     req: Json<i64>,
 ) -> Result<Json<Network>, AppError> {
-    crate::users::has_any_role(&env.dbx, &user.id()?, vec!["Rer", "Api"])
-        .await
-        .context(h!())?;
+    crate::users::has_any_role(
+        &env.dbx,
+        &user.id().c(h!())?,
+        vec!["Rer", "Api"],
+    )
+    .await
+    .context(h!())?;
     let txn = env.dbx.begin().await.context(h!())?;
     let res = bl_network_info_batch(vec![req.0], &txn)
         .await
@@ -246,13 +262,13 @@ pub async fn create_network(
 ) -> Result<Json<Network>, AppError> {
     let mut network_descr: Vec<sigint_network_description::ActiveModel> =
         vec![];
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer")
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
         .await
         .context(h!())?;
-    crate::users::has_role(&env.dbx, &user.id()?, "UnitsEditor")
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "UnitsEditor")
         .await
         .context(h!())?;
-    let user_login = user.id()?.to_string();
+    let user_login = user.id().c(h!())?.to_string();
 
     let txn = env.dbx.begin().await.context(h!())?;
 
@@ -445,10 +461,10 @@ pub async fn update_network(
     env: actix_web::web::Data<Env>,
     req: Json<UpdateNetworkReq>,
 ) -> Result<Json<Network>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer")
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
         .await
         .context(h!())?;
-    crate::users::has_role(&env.dbx, &user.id()?, "UnitsEditor")
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "UnitsEditor")
         .await
         .context(h!())?;
 
@@ -478,7 +494,7 @@ pub async fn update_network(
     network_model.operation_mode = Set(req.operation_mode.clone());
     network_model.operation_type = Set(req.operation_type.clone());
     network_model.operation_period = Set(req.operation_period.clone());
-    network_model.updated_by = Set(Some(user.id()?.to_string()));
+    network_model.updated_by = Set(Some(user.id().c(h!())?.to_string()));
     network_model.updated_at = Set(Utc::now().naive_utc());
 
     let network = network_model.update(&txn).await.context(h!())?;
@@ -558,10 +574,13 @@ pub async fn delete_network(
     env: actix_web::web::Data<Env>,
     req: Json<DeleteNetworkReq>,
 ) -> Result<Json<Network>, AppError> {
-    let user_login = user.id()?.to_string();
-    crate::users::has_role(&env.dbx, &user_login, "Rer").await?;
+    let user_login = user.id().c(h!())?.to_string();
+    crate::users::has_role(&env.dbx, &user_login, "Rer")
+        .await
+        .c(h!())?;
     crate::users::has_role(&env.dbx, user_login.as_str(), "UnitsEditor")
-        .await?;
+        .await
+        .c(h!())?;
     let req: DeleteNetworkReq = req.into_inner();
     let network = find_network(&env.dbx, req.network_id).await.context(h!())?;
     let network_json_old = sigint_network::Entity::find_by_id(network.id)
@@ -630,7 +649,7 @@ pub async fn network_callsigns(
     env: actix_web::web::Data<Env>,
     req: Json<NetworkCallsignsReq>,
 ) -> Result<Json<HashMap<String, Vec<String>>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer")
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
         .await
         .context(h!())?;
 
@@ -876,7 +895,7 @@ pub async fn network_freqs_activity_one(
     env: actix_web::web::Data<Env>,
     req: Json<NetworkFreqsActivityReq>,
 ) -> Result<Json<HashMap<String, HashMap<String, i64>>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer")
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
         .await
         .context(h!())?;
 
@@ -1010,7 +1029,7 @@ pub async fn list_network_points(
     env: actix_web::web::Data<Env>,
     req: Json<ListNetworkPointsReq>,
 ) -> Result<Json<ListNetworkPointsRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer")
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
         .await
         .context(h!())?;
 
@@ -1050,16 +1069,16 @@ pub async fn update_freq_networks(
     env: actix_web::web::Data<Env>,
     req: Json<UpdateFreqNetworksReq>,
 ) -> Result<Json<Vec<Network>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer")
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
         .await
         .context(h!())?;
-    crate::users::has_role(&env.dbx, &user.id()?, "UnitsEditor")
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "UnitsEditor")
         .await
         .context(h!())?;
 
     info!(
         "update freq networks; login = {}; req = {:?}",
-        user.id()?,
+        user.id().c(h!())?,
         req
     );
 
@@ -1080,7 +1099,7 @@ pub async fn update_freq_networks(
         let id = network.id;
         if !req_network_ids.contains(&id) {
             let mut network = network.into_active_model();
-            network.updated_by = Set(Some(user.id()?.to_string()));
+            network.updated_by = Set(Some(user.id().c(h!())?.to_string()));
             network.updated_at = NotSet;
             network.deleted = Set(true);
             network.save(&txn).await.context(h!())?;
@@ -1106,7 +1125,7 @@ pub async fn update_freq_networks(
                 network.location = Set(req_network.location.clone());
                 network.radio_station = Set(req_network.radio_station.clone());
                 network.deleted = Set(false);
-                network.updated_by = Set(Some(user.id()?.to_string()));
+                network.updated_by = Set(Some(user.id().c(h!())?.to_string()));
                 network.updated_at = NotSet;
                 network.save(&txn).await.context(h!())?;
 
@@ -1128,7 +1147,7 @@ pub async fn update_freq_networks(
                 name: Set(req_network.name.clone()),
                 location: Set(req_network.location.clone()),
                 radio_station: Set(req_network.radio_station.clone()),
-                updated_by: Set(Some(user.id()?.to_string())),
+                updated_by: Set(Some(user.id().c(h!())?.to_string())),
                 updated_at: NotSet,
                 deleted: Set(false),
                 created_at: NotSet,
@@ -1230,7 +1249,7 @@ pub async fn add_network_freq(
     env: actix_web::web::Data<Env>,
     req: Json<AddNetworkFreqReq>,
 ) -> Result<Json<Network>, AppError> {
-    let user_login = user.id()?;
+    let user_login = user.id().c(h!())?;
     crate::users::has_role(&env.dbx, &user_login, "Rer")
         .await
         .context(h!())?;
@@ -1242,7 +1261,7 @@ pub async fn add_network_freq(
         "Adding frequency {} to network {}; user={}",
         req.freq_rec.freq,
         req.network_id,
-        user.id()?
+        user.id().c(h!())?
     );
 
     let txn = env.dbx.begin().await.context(h!())?;
@@ -1345,7 +1364,7 @@ pub async fn network_unit_stats(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<NetworkUnitStatsRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer")
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
         .await
         .context(h!())?;
 
@@ -1403,13 +1422,13 @@ pub async fn update_network_freq(
     env: actix_web::web::Data<Env>,
     req: Json<UpdateNetworkFreqReq>,
 ) -> Result<Json<Network>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer")
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
         .await
         .context(h!())?;
-    crate::users::has_role(&env.dbx, &user.id()?, "UnitsEditor")
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "UnitsEditor")
         .await
         .context(h!())?;
-    let user_login = user.id()?.to_string();
+    let user_login = user.id().c(h!())?.to_string();
 
     info!(
         "Updating frequency {} for network {}; user={}",
@@ -1481,10 +1500,10 @@ pub async fn delete_network_freq(
     env: actix_web::web::Data<Env>,
     req: Json<DeleteNetworkFreqReq>,
 ) -> Result<Json<Network>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer")
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
         .await
         .context(h!())?;
-    crate::users::has_role(&env.dbx, &user.id()?, "UnitsEditor")
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "UnitsEditor")
         .await
         .context(h!())?;
     let req = req.into_inner();
@@ -1494,7 +1513,7 @@ pub async fn delete_network_freq(
         req.id,
         req.freq,
         req.network_id,
-        user.id()?
+        user.id().c(h!())?
     );
 
     let txn = env.dbx.begin().await.context(h!())?;
@@ -1546,7 +1565,8 @@ pub async fn delete_network_freq(
             // Update the network's updated_at timestamp as well as new active_from and active_to
             let mut network_model = network.into_active_model();
             network_model.updated_at = Set(Utc::now().naive_utc());
-            network_model.updated_by = Set(Some(user.id()?.to_string()));
+            network_model.updated_by =
+                Set(Some(user.id().c(h!())?.to_string()));
             network_model.active_from = Set(network_active_from);
             network_model.active_to = Set(network_active_to);
             network_model.update(&txn).await.context(h!())?;
@@ -1756,11 +1776,11 @@ pub async fn merge_network(
     env: actix_web::web::Data<Env>,
     req: Json<MergeNetworkReq>,
 ) -> Result<Json<Network>, AppError> {
-    let login = user.id()?.to_string();
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer")
+    let login = user.id().c(h!())?.to_string();
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
         .await
         .context(h!())?;
-    crate::users::has_role(&env.dbx, &user.id()?, "UnitsEditor")
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "UnitsEditor")
         .await
         .context(h!())?;
 
@@ -1806,9 +1826,13 @@ pub async fn network_callsigns_list(
     env: actix_web::web::Data<Env>,
     req: Json<SingleNetworkCallsignsReq>,
 ) -> Result<Json<SingleNetworkCallsignsListRsp>, AppError> {
-    crate::users::has_any_role(&env.dbx, &user.id()?, vec!["Rer", "Api"])
-        .await
-        .context(h!())?;
+    crate::users::has_any_role(
+        &env.dbx,
+        &user.id().c(h!())?,
+        vec!["Rer", "Api"],
+    )
+    .await
+    .context(h!())?;
 
     let _network =
         find_network(&env.dbx, req.network_id).await.context(h!())?;
@@ -1859,9 +1883,13 @@ pub async fn network_freqs_list(
     env: actix_web::web::Data<Env>,
     req: Json<SingleNetworkFreqsReq>,
 ) -> Result<Json<SingleNetworkFreqsListRsp>, AppError> {
-    crate::users::has_any_role(&env.dbx, &user.id()?, vec!["Rer", "Api"])
-        .await
-        .context(h!())?;
+    crate::users::has_any_role(
+        &env.dbx,
+        &user.id().c(h!())?,
+        vec!["Rer", "Api"],
+    )
+    .await
+    .context(h!())?;
 
     let _network =
         find_network(&env.dbx, req.network_id).await.context(h!())?;
@@ -1888,9 +1916,13 @@ pub async fn modulations_list(
     env: actix_web::web::Data<Env>,
     user: actix_identity::Identity,
 ) -> Result<Json<Vec<ModulationRec>>, AppError> {
-    crate::users::has_any_role(&env.dbx, &user.id()?, vec!["Rer", "Api"])
-        .await
-        .context(h!())?;
+    crate::users::has_any_role(
+        &env.dbx,
+        &user.id().c(h!())?,
+        vec!["Rer", "Api"],
+    )
+    .await
+    .context(h!())?;
     let modulations = modulation::Entity::find()
         .all(&env.dbx)
         .await
@@ -1914,9 +1946,13 @@ pub async fn network_signals_list(
     env: actix_web::web::Data<Env>,
     req: Json<NetworkSignalsListReq>,
 ) -> Result<Json<NetworkSignalsListRes>, AppError> {
-    crate::users::has_any_role(&env.dbx, &user.id()?, vec!["Rer", "Api"])
-        .await
-        .context(h!())?;
+    crate::users::has_any_role(
+        &env.dbx,
+        &user.id().c(h!())?,
+        vec!["Rer", "Api"],
+    )
+    .await
+    .context(h!())?;
 
     let signals = load_signals_per_network(&env.dbx, req.network_id)
         .await
@@ -1935,13 +1971,13 @@ pub async fn update_network_posts(
     env: actix_web::web::Data<Env>,
     req: Json<UpdateNetworkPostsReq>,
 ) -> Result<Json<Network>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer")
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
         .await
         .context(h!())?;
-    crate::users::has_role(&env.dbx, &user.id()?, "UnitsEditor")
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "UnitsEditor")
         .await
         .context(h!())?;
-    let user_login = user.id()?.to_string();
+    let user_login = user.id().c(h!())?.to_string();
 
     debug!(
         "Update {} posts for network {}; user={}",
@@ -2010,7 +2046,7 @@ pub async fn update_network_posts(
     if is_network_updated {
         let mut network_model = network.into_active_model();
         network_model.updated_at = Set(Utc::now().naive_utc());
-        network_model.updated_by = Set(Some(user.id()?.to_string()));
+        network_model.updated_by = Set(Some(user.id().c(h!())?.to_string()));
         network_model.update(&txn).await.context(h!())?;
     }
 
@@ -2049,13 +2085,13 @@ pub async fn update_network_units(
     env: actix_web::web::Data<Env>,
     req: Json<UpdateNetworkUnitsReq>,
 ) -> Result<Json<Network>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer")
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
         .await
         .context(h!())?;
-    crate::users::has_role(&env.dbx, &user.id()?, "UnitsEditor")
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "UnitsEditor")
         .await
         .context(h!())?;
-    let user_login = user.id()?.to_string();
+    let user_login = user.id().c(h!())?.to_string();
 
     debug!(
         "Update {} units for network {}; user={}",
@@ -2126,7 +2162,7 @@ pub async fn update_network_units(
     if is_network_updated {
         let mut network_model = network.into_active_model();
         network_model.updated_at = Set(Utc::now().naive_utc());
-        network_model.updated_by = Set(Some(user.id()?.to_string()));
+        network_model.updated_by = Set(Some(user.id().c(h!())?.to_string()));
         network_model.update(&txn).await.context(h!())?;
     }
 
@@ -2150,13 +2186,13 @@ pub async fn add_network_descriptions(
     env: actix_web::web::Data<Env>,
     req: Json<AddNetworkDescriptionsReq>,
 ) -> Result<Json<Network>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer")
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
         .await
         .context(h!())?;
-    crate::users::has_role(&env.dbx, &user.id()?, "UnitsEditor")
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "UnitsEditor")
         .await
         .context(h!())?;
-    let user_login = user.id()?.to_string();
+    let user_login = user.id().c(h!())?.to_string();
 
     let txn = env.dbx.begin().await.context(h!())?;
 
@@ -2234,13 +2270,13 @@ pub async fn update_network_description(
     env: actix_web::web::Data<Env>,
     req: Json<UpdateNetworkDescriptionReq>,
 ) -> Result<Json<Network>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer")
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
         .await
         .context(h!())?;
-    crate::users::has_role(&env.dbx, &user.id()?, "UnitsEditor")
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "UnitsEditor")
         .await
         .context(h!())?;
-    let user_login = user.id()?.to_string();
+    let user_login = user.id().c(h!())?.to_string();
 
     info!(
         "Updating description {} for network {}; user={}",
@@ -2305,20 +2341,20 @@ pub async fn delete_network_description(
     env: actix_web::web::Data<Env>,
     req: Json<DeleteNetworkDescriptionReq>,
 ) -> Result<Json<Network>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer")
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
         .await
         .context(h!())?;
-    crate::users::has_role(&env.dbx, &user.id()?, "UnitsEditor")
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "UnitsEditor")
         .await
         .context(h!())?;
-    let user_login = user.id()?.to_string();
+    let user_login = user.id().c(h!())?.to_string();
 
     info!(
         "Removing description {} from network {}; user={}",
         req.description_id, req.network_id, user_login
     );
 
-    let txn = env.dbx.begin().await?;
+    let txn = env.dbx.begin().await.c(h!())?;
 
     // Check if network exists
     let network = find_network(&txn, req.network_id).await.context(h!())?;

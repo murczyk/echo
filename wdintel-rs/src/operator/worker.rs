@@ -1,8 +1,7 @@
 use crate::entities::*;
 use crate::error::AppError;
 use crate::h;
-use crate::types::Mode;
-use anyhow::Context;
+use crate::types::{Mode, ShortContext};
 use chrono::Utc;
 use echo_migration::JoinType;
 use sea_orm::*;
@@ -23,7 +22,7 @@ pub async fn run_operator_inbox_worker_nofail(mode: Mode) {
                 .order_by_asc(datasource::Column::Id)
                 .all(&dbx)
                 .await
-                .context(h!())
+                .c(h!())
                 .unwrap_or(vec![]);
         }
         if all_datasources.is_empty() {
@@ -40,7 +39,7 @@ pub async fn run_operator_inbox_worker_nofail(mode: Mode) {
                 datasource,
             )
             .await
-            .context(h!())
+            .c(h!())
             {
                 println!("> echo_operator::receive_thread_nofail error: {e:?}");
             }
@@ -79,9 +78,9 @@ async fn receive_once(
         .into_tuple::<i64>()
         .all(dbx)
         .await
-        .context(h!())?;
+        .c(h!())?;
     for id in echo_operator_queue {
-        let txn = dbx.begin().await.context(h!())?;
+        let txn = dbx.begin().await.c(h!())?;
         crate::rer_importer::bgworker::inbox_item_oneoff_nofail(
             settlements.clone(),
             &txn,
@@ -95,8 +94,8 @@ async fn receive_once(
 
         crate::sigint::worker::incoming_message_after_insert(&txn, id)
             .await
-            .context(h!())?;
-        txn.commit().await.context(h!())?;
+            .c(h!())?;
+        txn.commit().await.c(h!())?;
     }
     Ok(())
 }

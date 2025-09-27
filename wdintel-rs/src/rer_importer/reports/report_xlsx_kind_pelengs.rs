@@ -35,7 +35,7 @@ pub async fn get_inbox_messages_report(
     env: &Env,
     req: &InboxMessagesReq,
 ) -> Result<Vec<(i64, Option<(f64, f64)>, InboxMessage)>, AppError> {
-    let login = user.id()?;
+    let login = user.id().c(h!())?;
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
 
@@ -108,11 +108,12 @@ pub async fn get_inbox_messages_report(
         .group_by(signal_message::Column::Id)
         .group_by(sigint_inbox_item::Column::Id)
         .filter(datasource_group::Column::GroupMasterKey.is_in(
-            crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login).await?,
+            crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login).await.c(h!())?,
         ));
 
     q = crate::rer_importer::inbox::query::get_order_by(env, req, q.clone())
-        .await?;
+        .await
+        .c(h!())?;
     if req.only_show_unprocessed == Some(true) {
         q = q.filter(sigint_inbox_item::Column::Reviewed.ne(Some(true)));
     }
@@ -140,7 +141,7 @@ pub async fn get_inbox_messages_report(
         &req.or_with_coords,
         &req.or_with_extended_form,
         &req.filter_tags_option,
-        &user.id()?,
+        &user.id().c(h!())?,
     )?;
     let q = filter_selected_locations(
         q,
@@ -158,7 +159,7 @@ pub async fn get_inbox_messages_report(
     info!("[get_inbox_messages_report] {}", Utc::now());
 
     let messages: Vec<Message> =
-        q.into_model::<Message>().all(&env.dbx).await?;
+        q.into_model::<Message>().all(&env.dbx).await.c(h!())?;
 
     let messages = deduplicate(&messages).context(h!())?;
 
@@ -364,7 +365,7 @@ pub async fn report_xlsx_kind_pelengs1(
             env,
             &req.req,
         )
-        .await?;
+        .await.c(h!())?;
     info!("[report_xlsx_kind_pelengs1] {}: query done", Utc::now());
 
     // Build sender display names map (uuid -> profile entry)
@@ -393,7 +394,7 @@ pub async fn report_xlsx_kind_pelengs1(
         let Some(date) = m.date.as_ref() else {
             continue;
         };
-        let date = NaiveDate::parse_from_str(date, "%Y-%m-%d")?;
+        let date = NaiveDate::parse_from_str(date, "%Y-%m-%d").context(h!())?;
         let Some(time) = m.time.as_ref() else {
             continue;
         };

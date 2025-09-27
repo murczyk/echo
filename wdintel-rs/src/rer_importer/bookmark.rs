@@ -22,13 +22,16 @@ async fn bookmark_add(
     env: actix_web::web::Data<Env>,
     req: Json<BookmarkAddReq>,
 ) -> Result<Json<()>, AppError> {
-    let login = user.id()?;
-    crate::users::has_role(&env.dbx, &login, "Rer").await?;
-    let txn = env.dbx.begin().await?;
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
+        .await
+        .c(h!())?;
+    let txn = env.dbx.begin().await.c(h!())?;
 
     let bookmarks =
         crate::rer_importer::inbox::find_all_duplicates(&txn, req.message_id)
-            .await?
+            .await
+            .c(h!())?
             .into_iter()
             .map(|id| sigint_bookmark::ActiveModel {
                 id: NotSet,
@@ -42,14 +45,15 @@ async fn bookmark_add(
     if !bookmarks.is_empty() {
         sigint_bookmark::Entity::insert_many(bookmarks)
             .exec(&env.dbx)
-            .await?;
+            .await
+            .c(h!())?;
     }
 
     println!(
         "Bookmark added for message_id: {} by {}",
         req.message_id, login
     );
-    txn.commit().await?;
+    txn.commit().await.c(h!())?;
 
     Ok(Json(()))
 }
@@ -75,10 +79,15 @@ async fn bookmarks_list(
     env: actix_web::web::Data<Env>,
     req: Json<BookmarkListReq>,
 ) -> Result<Json<Vec<Bookmark>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .c(h!())?;
     Ok(Json(
         sigint_bookmark::Entity::find()
-            .filter(sigint_bookmark::Column::UserId.eq(user.id()?.to_string()))
+            .filter(
+                sigint_bookmark::Column::UserId
+                    .eq(user.id().c(h!())?.to_string()),
+            )
             .filter(sigint_bookmark::Column::CreatedAt.gte(
                 if let Some(since_ts_millis) = req.since_ts_millis {
                     dt_from_millis(since_ts_millis)?
@@ -88,7 +97,8 @@ async fn bookmarks_list(
             ))
             .filter(sigint_bookmark::Column::Deleted.eq(false))
             .all(&env.dbx)
-            .await?
+            .await
+            .c(h!())?
             .into_iter()
             .map(|b| Bookmark {
                 message_id: b.signal_message_id,
@@ -110,31 +120,37 @@ async fn bookmark_rm(
     env: actix_web::web::Data<Env>,
     req: Json<BookmarkRmReq>,
 ) -> Result<Json<()>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
-    let txn = env.dbx.begin().await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .c(h!())?;
+    let txn = env.dbx.begin().await.c(h!())?;
 
     sigint_bookmark::Entity::update_many()
         .col_expr(sigint_bookmark::Column::Deleted, Expr::value(true))
-        .filter(sigint_bookmark::Column::UserId.eq(user.id()?.to_string()))
+        .filter(
+            sigint_bookmark::Column::UserId.eq(user.id().c(h!())?.to_string()),
+        )
         .filter(
             sigint_bookmark::Column::SignalMessageId.is_in(
                 crate::rer_importer::inbox::find_all_duplicates(
                     &txn,
                     req.message_id,
                 )
-                .await?,
+                .await
+                .c(h!())?,
             ),
         )
         .filter(sigint_bookmark::Column::Deleted.eq(false))
         .exec(&env.dbx)
-        .await?;
+        .await
+        .c(h!())?;
 
     println!(
         "Bookmark removed for message_id: {} by {}",
         req.message_id,
-        user.id()?
+        user.id().c(h!())?
     );
-    txn.commit().await?;
+    txn.commit().await.c(h!())?;
 
     Ok(Json(()))
 }

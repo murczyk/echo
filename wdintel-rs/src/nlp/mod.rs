@@ -1,8 +1,8 @@
 use self::types::*;
 use crate::error::AppError;
 use crate::h;
+use crate::types::ShortContext;
 use crate::utils::*;
-use anyhow::Context;
 
 pub mod types;
 
@@ -17,18 +17,18 @@ pub async fn tokenize_words(
     let rsp = rq
         .post(&local_url)
         .header("content-type", "application/json")
-        .body(serde_json::to_string(&req).context(h!())?)
+        .body(serde_json::to_string(&req).c(h!())?)
         .send()
         .await
-        .context(h!())?;
-    let rsp = check_status(rsp).context(h!())?;
-    let rsp_t = rsp.text().await.context(h!())?;
+        .c(h!())?;
+    let rsp = check_status(rsp).c(h!())?;
+    let rsp_t = rsp.text().await.c(h!())?;
     let rsp_e: Result<TokenizeWordsPyRsp, serde_json::Error> =
         serde_json::from_str(&rsp_t);
     if let Err(ref e) = rsp_e {
         println!("> error: {e:?}\nrsp_t: {rsp_t}");
     }
-    let rsp_data = rsp_e.context(h!())?;
+    let rsp_data = rsp_e.c(h!())?;
     Ok(rsp_data.words)
 }
 
@@ -43,16 +43,17 @@ pub async fn token_lexemes(
     let rsp = rq
         .post(&local_url)
         .header("content-type", "application/json")
-        .body(serde_json::to_string(&req).context(h!())?)
+        .body(serde_json::to_string(&req).c(h!())?)
         .send()
-        .await?;
-    let rsp_t = rsp.text().await?;
+        .await
+        .c(h!())?;
+    let rsp_t = rsp.text().await.c(h!())?;
     let rsp_e: Result<TokenNormalFormPyRsp, serde_json::Error> =
         serde_json::from_str(&rsp_t);
     if let Err(ref e) = rsp_e {
         println!("> error: {e:?}\nrsp_t: {rsp_t}");
     }
-    let rsp_data = rsp_e.context(h!())?;
+    let rsp_data = rsp_e.c(h!())?;
     Ok(rsp_data.lexeme)
 }
 
@@ -71,16 +72,17 @@ pub async fn complete_callsigns(
     let rsp = rq
         .post(&local_url)
         .header("content-type", "application/json")
-        .body(serde_json::to_string(&req).context(h!())?)
+        .body(serde_json::to_string(&req).c(h!())?)
         .send()
-        .await?;
-    let rsp_t = rsp.text().await?;
+        .await
+        .c(h!())?;
+    let rsp_t = rsp.text().await.c(h!())?;
     let rsp_e: Result<CompleteCallsignRsp, serde_json::Error> =
         serde_json::from_str(&rsp_t);
     if let Err(ref e) = rsp_e {
         println!("> error: {e:?}\nrsp_t: {rsp_t}");
     }
-    let rsp_data = rsp_e.context(h!())?;
+    let rsp_data = rsp_e.c(h!())?;
     if rsp_data.completions.is_empty() {
         return Ok(vec![]);
     }

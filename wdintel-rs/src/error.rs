@@ -23,11 +23,6 @@ pub enum AppError {
         #[from]
         source: std::io::Error,
     },
-    #[error("opendal error")]
-    OpendalError {
-        #[from]
-        source: opendal::Error,
-    },
     #[error("join error")]
     JoinErr {
         #[from]
@@ -38,61 +33,8 @@ pub enum AppError {
         #[from]
         source: fs_extra::error::Error,
     },
-    #[error("tl parse error")]
-    HtmlParserError {
-        #[from]
-        source: tl::errors::ParseError,
-    },
-    #[error("reqwest error")]
-    ReqwestError {
-        #[from]
-        source: reqwest::Error,
-    },
-    #[error("reqwest to str error")]
-    ReqwestToStrError {
-        #[from]
-        source: reqwest::header::ToStrError,
-    },
-    #[error("walkdir error")]
-    WalkdirError {
-        #[from]
-        source: walkdir::Error,
-    },
-    #[error("csv error")]
-    CsvError {
-        #[from]
-        source: csv::Error,
-    },
-    #[error("sqlx error")]
-    SqlxError {
-        #[from]
-        source: sqlx::Error,
-    },
-    #[error("strip prefix error")]
-    StripPrefixError {
-        #[from]
-        source: std::path::StripPrefixError,
-    },
-    #[error("uuid error")]
-    UuidError {
-        #[from]
-        source: uuid::Error,
-    },
     #[error("anyhow error")]
-    AnyhowError {
-        #[from]
-        source: anyhow::Error,
-    },
-    #[error("seaorm error")]
-    SeaormError {
-        #[from]
-        source: sea_orm::DbErr,
-    },
-    #[error("calamine error")]
-    CalamineErr {
-        #[from]
-        source: calamine::Error,
-    },
+    AnyhowError { source: anyhow::Error },
     #[error("notify error")]
     NotifyErr {
         #[from]
@@ -103,60 +45,10 @@ pub enum AppError {
         #[from]
         source: actix_web::error::ParseError,
     },
-    #[error("system time error")]
-    SystemTimeError {
-        #[from]
-        source: std::time::SystemTimeError,
-    },
-    #[error("chrono parse error")]
-    ChronoParseError {
-        #[from]
-        source: chrono::ParseError,
-    },
-    #[error("indicatif template error")]
-    IndicatifTemplateError {
-        #[from]
-        source: indicatif::style::TemplateError,
-    },
     #[error("PayloadError")]
     PayloadError {
         #[from]
         source: actix_web::error::PayloadError,
-    },
-    #[error("Base64DecodeError")]
-    Base64DecodeError {
-        #[from]
-        source: base64::DecodeError,
-    },
-    #[error("Argon2 error")]
-    Argon2Error {
-        #[from]
-        source: argon2::Error,
-    },
-    #[error("Argon2 error")]
-    QueryPayloadError {
-        #[from]
-        source: actix_web::error::QueryPayloadError,
-    },
-    #[error("addr parse error")]
-    AddrParseError {
-        #[from]
-        source: std::net::AddrParseError,
-    },
-    #[error("Toml De Error")]
-    TomlDeError {
-        #[from]
-        source: Box<toml::de::Error>,
-    },
-    #[error("GetIdentityError")]
-    GetIdentityError {
-        #[from]
-        source: actix_identity::error::GetIdentityError,
-    },
-    #[error("xshell::Error")]
-    XshellError {
-        #[from]
-        source: xshell::Error,
     },
     #[error("milgeo_rs::MilGeoError")]
     MilgeoError {
@@ -168,6 +60,19 @@ pub enum AppError {
 impl From<String> for AppError {
     fn from(v: String) -> Self {
         AppError::BL { msg: v }
+    }
+}
+
+impl From<anyhow::Error> for AppError {
+    fn from(value: anyhow::Error) -> Self {
+        for err in value.chain() {
+            if let Some(AppError::Forbidden(msg)) =
+                err.downcast_ref::<AppError>()
+            {
+                return AppError::Forbidden(msg.clone());
+            }
+        }
+        AppError::AnyhowError { source: value }
     }
 }
 
@@ -223,33 +128,12 @@ impl actix_web::error::ResponseError for AppError {
                 println!("Internal server error: {self:?}");
                 match self {
                     AppError::IO { .. }
-                    | AppError::OpendalError { .. }
                     | AppError::JoinErr { .. }
                     | AppError::FsExtraErr { .. }
-                    | AppError::HtmlParserError { .. }
-                    | AppError::ReqwestError { .. }
-                    | AppError::ReqwestToStrError { .. }
-                    | AppError::WalkdirError { .. }
-                    | AppError::CsvError { .. }
-                    | AppError::SqlxError { .. }
-                    | AppError::StripPrefixError { .. }
-                    | AppError::UuidError { .. }
                     | AppError::AnyhowError { .. }
-                    | AppError::SeaormError { .. }
-                    | AppError::CalamineErr { .. }
                     | AppError::NotifyErr { .. }
                     | AppError::ActixParseErr { .. }
-                    | AppError::SystemTimeError { .. }
-                    | AppError::ChronoParseError { .. }
-                    | AppError::IndicatifTemplateError { .. }
                     | AppError::PayloadError { .. }
-                    | AppError::Base64DecodeError { .. }
-                    | AppError::Argon2Error { .. }
-                    | AppError::QueryPayloadError { .. }
-                    | AppError::AddrParseError { .. }
-                    | AppError::TomlDeError { .. }
-                    | AppError::GetIdentityError { .. }
-                    | AppError::XshellError { .. }
                     | AppError::MilgeoError { .. } => {
                         error!("{self:#?}");
                     }
@@ -275,17 +159,20 @@ impl From<&str> for AppError {
 }
 
 impl AppError {
-    /// Detects the common shutdown error propagated from SQLx/SeaORM/Tokio
-    /// when the Actix/Tokio runtime is terminating.
+    /// Detects the Tokio/SQLx shutdown sentinel propagated when the runtime is terminating.
+    ///
+    /// The string "A Tokio 1.x context was found, but it is being shutdown." originates in
+    /// Tokio's runtime guard (see tokio-rs/tokio#4091). SQLx/SeaORM surface the same text when
+    /// the connection pool is torn down during graceful shutdown.
     fn is_runtime_shutting_down(&self) -> bool {
-        // Helper: check error and its source chain for the shutdown marker.
-        fn chain_has_shutdown(err: &dyn StdError) -> bool {
+        fn message_indicates_shutdown(msg: &str) -> bool {
+            msg.contains("Tokio 1.x context") && msg.contains("being shutdown")
+        }
+
+        fn chain_has_shutdown(err: &(dyn StdError)) -> bool {
             let mut cur: Option<&(dyn StdError)> = Some(err);
             while let Some(e) = cur {
-                let msg = e.to_string();
-                if msg.contains("Tokio 1.x context")
-                    && msg.contains("being shutdown")
-                {
+                if message_indicates_shutdown(&e.to_string()) {
                     return true;
                 }
                 cur = e.source();
@@ -295,24 +182,18 @@ impl AppError {
 
         match self {
             AppError::AnyhowError { source } => {
-                // anyhow::Error implements StdError, traverse its chain
-                if let Some(inner) = source.source() {
-                    if chain_has_shutdown(inner) {
-                        return true;
-                    }
-                }
-                // Fallback to message check
-                source.to_string().contains("being shutdown")
+                chain_has_shutdown(source.as_ref())
             }
-            AppError::SeaormError { source } => {
-                chain_has_shutdown(source)
-                    || source.to_string().contains("being shutdown")
-            }
-            AppError::SqlxError { source } => {
-                chain_has_shutdown(source)
-                    || source.to_string().contains("being shutdown")
-            }
+            AppError::IO { source } => chain_has_shutdown(source),
             _ => false,
+        }
+    }
+}
+
+impl From<sea_orm::DbErr> for AppError {
+    fn from(value: sea_orm::DbErr) -> Self {
+        AppError::AnyhowError {
+            source: anyhow::Error::new(value),
         }
     }
 }

@@ -1,4 +1,5 @@
 use super::*;
+use crate::types::ShortContext;
 use actix_web::post;
 use std::collections::HashMap;
 use tempfile::TempDir;
@@ -11,8 +12,10 @@ pub async fn rer_analysis_download_geojson(
     req: Json<AnalysisStatsReq>,
     http_req: HttpRequest,
 ) -> Result<HttpResponse, AppError> {
-    let login = user.id()?;
-    crate::users::has_role(&env.dbx, &login.clone(), "Rer").await?;
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login.clone(), "Rer")
+        .await
+        .c(h!())?;
     let dt_since = dt_from_millis(req.since_date_inclusive_ms)?;
     let dt_since_minus_24h =
         dt_from_millis(req.since_date_inclusive_ms - 24 * 60 * 60 * 1000)?;
@@ -59,7 +62,8 @@ pub async fn rer_analysis_download_geojson(
                 crate::messenger::group::get_identity_sigint_groups(
                     &env.dbx, &login,
                 )
-                .await?,
+                .await
+                .c(h!())?,
             ),
         )
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
@@ -84,7 +88,7 @@ pub async fn rer_analysis_download_geojson(
         &req.or_with_coords,
         &req.or_with_extended_form,
         &req.filter_tags_option,
-        &user.id()?,
+        &user.id().c(h!())?,
     )?;
     let items =
         filter_selected_aors(items, &req.selected_aors).context(h!())?;
@@ -100,7 +104,7 @@ pub async fn rer_analysis_download_geojson(
     //     "> download kmz items query: {}",
     //     items.build(DbBackend::Postgres).to_string()
     // );
-    let items = items.into_model::<Res>().all(&env.dbx).await?;
+    let items = items.into_model::<Res>().all(&env.dbx).await.c(h!())?;
     // Collect unique freqs from main query results
     let unique_freqs: HashSet<String> =
         items.iter().filter_map(|item| item.freq.clone()).collect();
@@ -234,6 +238,6 @@ pub async fn rer_analysis_download_geojson(
     let geojson = serde_json::to_string(&geojson).context(h!())?;
     std::fs::write(&outpath, geojson)?;
 
-    let file = actix_files::NamedFile::open_async(&outpath).await?;
+    let file = actix_files::NamedFile::open_async(&outpath).await.c(h!())?;
     Ok(file.into_response(&http_req))
 }

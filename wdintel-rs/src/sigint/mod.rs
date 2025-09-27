@@ -57,7 +57,9 @@ pub fn base64(bs: &[u8]) -> String {
 }
 
 pub fn from_base64(s: &str) -> Result<Vec<u8>, AppError> {
-    Ok(base64::engine::general_purpose::STANDARD_NO_PAD.decode(s)?)
+    Ok(base64::engine::general_purpose::STANDARD_NO_PAD
+        .decode(s)
+        .c(h!())?)
 }
 
 pub async fn oneoff_reprocess_coords(
@@ -66,8 +68,8 @@ pub async fn oneoff_reprocess_coords(
 ) -> Result<(), AppError> {
     println!("> oneoff_reprocess_coords {ps:?}");
     let dbx = crate::new_pg_pool_from_mode(mode).await.c(h!())?;
-    let cutoff_ts = Utc::now().naive_utc()
-        - chrono::TimeDelta::try_days(30).context(h!())?;
+    let cutoff_ts =
+        Utc::now().naive_utc() - chrono::TimeDelta::try_days(30).c(h!())?;
     let condition_1 = sigint_inbox_item::Column::Coords
         .is_null()
         .or(sigint_inbox_item::Column::Coords.eq(""));
@@ -82,8 +84,7 @@ pub async fn oneoff_reprocess_coords(
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(condition_1.or(condition_2));
     if let Some(days) = ps.clone().days {
-        let ts =
-            Utc::now() - chrono::TimeDelta::try_days(days).context(h!())?;
+        let ts = Utc::now() - chrono::TimeDelta::try_days(days).c(h!())?;
         q = q.filter(sigint_inbox_item::Column::Datetime.gte(ts.naive_utc()));
     }
     let count = q.clone().count(&dbx).await.c(h!())?;
@@ -209,13 +210,13 @@ pub async fn save_attachment_restapi(
 fn display_message(message: &restapi::Message) -> Result<String, AppError> {
     // message example in json: {"exception":null,"envelope":{"source":"+380969540887","sourceNumber":"+380969540887","sourceUuid":"d39ae116-5141-4dcb-a10c-328d3acdfcf4","sourceName":"пост Майк 140","sourceDevice":4,"timestamp":1701448256350,"dataMessage":{"timestamp":1701448256350,"message":"01.12, 18:28:53\n415.4150\nУКХ р/м НВ підрозділу 415.415 МГц\nНВ\nНВ\n\n— Сейчас надо наводиться... 268.","expiresInSeconds":0,"viewOnce":false,"attachments":null,"reaction":null,"quote":null,"groupInfo":{"groupId":"GbjoAAUhQKZ46SSA8UIl+ApktWIH/t4E1YgbxiH0zMk=","type":"DELIVER"}}},"account":"+380502711438"}
     if message.exception.is_some() {
-        return Ok(serde_json::to_string(message).context(h!())?);
+        return Ok(serde_json::to_string(message).c(h!())?);
     };
     let timestamp = message.envelope.timestamp;
     let Some(datetime) = chrono::DateTime::from_timestamp_millis(timestamp)
         .map(|x| x.naive_utc())
     else {
-        return Ok(serde_json::to_string(message).context(h!())?);
+        return Ok(serde_json::to_string(message).c(h!())?);
     };
     let datetime = datetime.format("%Y-%m-%d %H:%M:%S").to_string();
     let source_name = message
@@ -247,12 +248,13 @@ pub async fn oneoff_sigint_import_mouse(
 
     let config = crate::config::read_config(mode)?;
     let dbx = crate::new_pg_pool_from_mode(mode).await.c(h!())?;
-    let mut redis = crate::new_redis(&config).await.context(h!())?;
+    let mut redis = crate::new_redis(&config).await.c(h!())?;
     let rq: reqwest::Client = reqwest::Client::builder()
         .timeout(core::time::Duration::from_secs(
             crate::config::RQ_TIMEOUT_SIGNAL_API,
         ))
-        .build()?;
+        .build()
+        .c(h!())?;
     let settlements = Arc::new(RwLock::new(
         crate::location::load_from_file(
             config.settlement_paths().unwrap(),
@@ -262,7 +264,7 @@ pub async fn oneoff_sigint_import_mouse(
     ));
 
     let mut workbook: calamine::Xlsx<_> =
-        calamine::open_workbook(ps.input.clone()).context(h!())?;
+        calamine::open_workbook(ps.input.clone()).c(h!())?;
     let mut cur_network: String = "".to_string();
     let mut cur_freq: String = "".to_string();
     let mut cur_date: String = "".to_string();
@@ -369,7 +371,8 @@ async fn xlsx_import_process_one(
     let timestamp = NaiveDateTime::parse_from_str(
         &format!("{date} {time}"),
         "%Y-%m-%d %H:%M",
-    )?;
+    )
+    .c(h!())?;
     // like this:
     // 31.08.2023_14:13 F=404,1350(МГц) П52
     // УКХ р/м управління 3 мсб 291 мсп 42 мсд 58 А (КОПАНІ);
@@ -412,7 +415,7 @@ async fn xlsx_import_process_one(
             datasource_id,
         )
         .await
-        .context(h!())?;
+        .c(h!())?;
 
     let message = signal_message::ActiveModel {
         id: NotSet,
@@ -429,12 +432,12 @@ async fn xlsx_import_process_one(
     }
     .insert(dbx)
     .await
-    .context(h!())?;
+    .c(h!())?;
     let db_message_id = message.id;
 
     id::update_message_with_uid(dbx, config, message)
         .await
-        .context(h!())?;
+        .c(h!())?;
     crate::rer_importer::bgworker::inbox_item_oneoff_nofail(
         settlements.clone(),
         dbx,

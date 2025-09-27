@@ -20,7 +20,8 @@ pub async fn bl_callsigns_for_filter(
 
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(dbx, user_id)
-            .await?;
+            .await
+            .c(h!())?;
 
     let callsign_alias = Alias::new("callsign");
     let mut q = Query::select();

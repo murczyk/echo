@@ -20,7 +20,9 @@ pub async fn list_signals(
     env: actix_web::web::Data<Env>,
     req: Json<ListSignalsReq>,
 ) -> Result<Json<ListSignalsRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .c(h!())?;
     const LIMIT: u64 = 100000;
     let q = sigint_signal::Entity::find()
         .find_also_related(sigint_unit::Entity)
@@ -53,7 +55,8 @@ pub async fn list_signals(
     let signals: Vec<types::Signal> = q
         .limit(LIMIT)
         .all(&env.dbx)
-        .await?
+        .await
+        .c(h!())?
         .into_iter()
         .map(move |(signal, unit)| render_signal(&signal, unit))
         .collect();
@@ -71,7 +74,8 @@ pub async fn find_signal(
     sigint_signal::Entity::find_by_id(id)
         .filter(sigint_signal::Column::Deleted.eq(false))
         .one(dbx)
-        .await?
+        .await
+        .c(h!())?
         .ok_or(AppError::NotFound)
 }
 
@@ -81,7 +85,9 @@ pub async fn signal_unit_stats(
     env: actix_web::web::Data<Env>,
     _req: Json<()>,
 ) -> Result<Json<SignalUnitStatsRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .c(h!())?;
     #[derive(FromQueryResult)]
     struct Row {
         unit_id: i64,
@@ -111,7 +117,8 @@ pub async fn signal_unit_stats(
         .group_by(sigint_unit::Column::Company)
         .into_model::<Row>()
         .all(&env.dbx)
-        .await?;
+        .await
+        .c(h!())?;
     let mut res = vec![];
     for unit in units {
         res.push(SignalUnitStatRow {
@@ -128,8 +135,12 @@ pub async fn create_signal(
     env: actix_web::web::Data<Env>,
     req: Json<CreateSignalReq>,
 ) -> Result<Json<i64>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
-    crate::users::has_role(&env.dbx, &user.id()?, "UnitsEditor").await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .c(h!())?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "UnitsEditor")
+        .await
+        .c(h!())?;
 
     let res = sigint_signal::ActiveModel {
         id: NotSet,
@@ -137,7 +148,10 @@ pub async fn create_signal(
         meaning: Set(req.meaning.clone()),
         unit: if let Some(unit_id) = req.unit {
             Set(Some(
-                crate::sigint::unit::find_unit(&env.dbx, unit_id).await?.id,
+                crate::sigint::unit::find_unit(&env.dbx, unit_id)
+                    .await
+                    .c(h!())?
+                    .id,
             ))
         } else {
             NotSet
@@ -155,7 +169,7 @@ pub async fn create_signal(
     sigint_signal_changelog::ActiveModel {
         id: NotSet,
         sigint_signal_id: Set(res.id),
-        login: Set(user.id()?),
+        login: Set(user.id().c(h!())?),
         action: Set(
             sea_orm_active_enums::SigintSignalChangelogActionEnum::Create,
         ),
@@ -182,8 +196,12 @@ pub async fn update_signal(
     env: actix_web::web::Data<Env>,
     req: Json<UpdateSignalReq>,
 ) -> Result<Json<i64>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
-    crate::users::has_role(&env.dbx, &user.id()?, "UnitsEditor").await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .c(h!())?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "UnitsEditor")
+        .await
+        .c(h!())?;
 
     let mut signal: sigint_signal::ActiveModel =
         find_signal(&env.dbx, req.id).await.context(h!())?.into();
@@ -207,7 +225,7 @@ pub async fn update_signal(
     sigint_signal_changelog::ActiveModel {
         id: NotSet,
         sigint_signal_id: Set(res.id),
-        login: Set(user.id()?),
+        login: Set(user.id().c(h!())?),
         action: Set(
             sea_orm_active_enums::SigintSignalChangelogActionEnum::Update,
         ),
@@ -234,8 +252,12 @@ pub async fn delete_signal(
     env: actix_web::web::Data<Env>,
     req: Json<i64>,
 ) -> Result<Json<i64>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
-    crate::users::has_role(&env.dbx, &user.id()?, "UnitsEditor").await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .c(h!())?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "UnitsEditor")
+        .await
+        .c(h!())?;
 
     let mut signal: sigint_signal::ActiveModel =
         find_signal(&env.dbx, req.0).await.context(h!())?.into();
@@ -247,7 +269,7 @@ pub async fn delete_signal(
     sigint_signal_changelog::ActiveModel {
         id: NotSet,
         sigint_signal_id: Set(res_id),
-        login: Set(user.id()?),
+        login: Set(user.id().c(h!())?),
         action: Set(
             sea_orm_active_enums::SigintSignalChangelogActionEnum::Delete,
         ),

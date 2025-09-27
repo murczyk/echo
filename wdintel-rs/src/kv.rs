@@ -13,7 +13,8 @@ where
     let existing_kv: Option<delta_kv::Model> = delta_kv::Entity::find()
         .filter(delta_kv::Column::K.eq(k.to_string()))
         .one(dbx)
-        .await?;
+        .await
+        .c(h!())?;
     match existing_kv {
         None => Ok(None),
         Some(kv) => {
@@ -33,7 +34,8 @@ where
     let existing_kv: Option<delta_kv::Model> = delta_kv::Entity::find()
         .filter(delta_kv::Column::K.eq(k.to_string()))
         .one(dbx)
-        .await?;
+        .await
+        .c(h!())?;
     match existing_kv {
         None => {
             delta_kv::ActiveModel {
@@ -42,12 +44,13 @@ where
                 v: Set(serde_json::to_value(v.clone()).context(h!())?),
             }
             .insert(dbx)
-            .await?;
+            .await
+            .c(h!())?;
         }
         Some(kv) => {
             let mut kv: delta_kv::ActiveModel = kv.into();
             kv.v = Set(serde_json::to_value(v.clone()).context(h!())?);
-            kv.update(dbx).await?;
+            kv.update(dbx).await.c(h!())?;
         }
     }
     Ok(())

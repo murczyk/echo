@@ -33,8 +33,10 @@ pub async fn create_settlement(
     env: actix_web::web::Data<Env>,
     req: Json<CreateSettlementReq>,
 ) -> Result<Json<i64>, AppError> {
-    let user_id = user.id()?;
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    let user_id = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .c(h!())?;
 
     let res = sigint_settlement::ActiveModel {
         id: NotSet,
@@ -49,7 +51,8 @@ pub async fn create_settlement(
         openstreetmap_id: Set(req.openstreetmap_id),
     }
     .insert(&env.dbx)
-    .await?;
+    .await
+    .c(h!())?;
 
     Ok(Json(res.id))
 }
@@ -60,7 +63,9 @@ async fn find_locations(
     env: actix_web::web::Data<Env>,
     req: Json<FindSettlementReq>,
 ) -> Result<Json<Vec<SettlementDetails>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .c(h!())?;
     let req = req.into_inner();
     let locations = find_locations_by_name(
         env.settlements.clone(),
@@ -68,7 +73,7 @@ async fn find_locations(
         req.region,
         req.related_coordinates,
     )
-    .context(h!())?;
+    .c(h!())?;
     Ok(Json(locations))
 }
 
@@ -78,9 +83,10 @@ async fn fetch_regions(
     _http_req: HttpRequest,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<Vec<String>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
-    let region_names =
-        get_region_names(env.settlements.clone()).context(h!())?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .c(h!())?;
+    let region_names = get_region_names(env.settlements.clone()).c(h!())?;
     Ok(Json(region_names))
 }
 
@@ -90,7 +96,7 @@ fn get_region_names(
     let settlements_lock = settlements
         .read()
         .map_err(|e| AppError::from(format!("{e:?}")))
-        .context(h!())?;
+        .c(h!())?;
     let config: &SettlementsData = &settlements_lock;
     let (region_names, _, _, _) = config;
     Ok(region_names.clone())
@@ -105,7 +111,7 @@ fn find_locations_by_name(
     let settlements_lock = settlements
         .read()
         .map_err(|e| AppError::from(format!("{e:?}")))
-        .context(h!())?;
+        .c(h!())?;
     let config: &SettlementsData = &settlements_lock;
     let (_, _, _, settlements) = config;
     let mut matches: Vec<SettlementDetails> = Vec::new();
@@ -157,7 +163,7 @@ pub fn parse_location(
     let settlements_lock = settlements
         .read()
         .map_err(|e| AppError::from(format!("{e:?}")))
-        .context(h!())?;
+        .c(h!())?;
     lazy_static! {
         static ref JUNK_CHAR_RE: Regex =
             Regex::new(r#"[ \(\)\.\-\,\/\:";!\?\*\%\$@0-9]"#).unwrap();
@@ -182,8 +188,7 @@ pub fn parse_location(
         .split_whitespace()
         .map(|x| x.to_string())
         .collect_vec();
-    let result =
-        find_matching_settlements(words, &settlements_lock).context(h!())?;
+    let result = find_matching_settlements(words, &settlements_lock).c(h!())?;
     if result.is_empty() {
         return Ok(vec![]);
     }
@@ -257,17 +262,17 @@ fn find_matching_settlements(
     let mut i = 0;
     while i + 2 < words.len() {
         i = handle_three_words_group(regions, trie, &mut result, &mut cache, i)
-            .context(h!())?;
+            .c(h!())?;
     }
     let remainder = words.len() - i;
     if remainder == 1 {
-        let new_data = cache.get(i).cloned().context(h!())?.to_owned().1.data;
+        let new_data = cache.get(i).cloned().c(h!())?.to_owned().1.data;
         for (row, coords) in new_data {
             result.insert(row, coords);
         }
     } else {
         handle_two_words_group(regions, trie, &mut result, &mut cache, i)
-            .context(h!())?;
+            .c(h!())?;
     }
     let mut result = result.into_iter().collect_vec();
     result.sort_by_key(|(key, _data)| key.clone());
@@ -285,8 +290,8 @@ fn handle_two_words_group(
     cache: &mut [(String, trie::Result<SettlementDetails>)],
     i: usize,
 ) -> anyhow::Result<()> {
-    let (word0, res0) = cache.get(i).context(h!())?;
-    let (word1, res1) = cache.get(i + 1).context(h!())?;
+    let (word0, res0) = cache.get(i).c(h!())?;
+    let (word1, res1) = cache.get(i + 1).c(h!())?;
     let query = &format!("{word0} {word1}");
     let joined_res = match_settlement(query, trie);
     let is_region =
@@ -312,8 +317,8 @@ fn handle_three_words_group(
     cache: &mut [(String, trie::Result<SettlementDetails>)],
     i: usize,
 ) -> anyhow::Result<usize> {
-    let (word0, res0) = cache.get(i).context(h!())?;
-    let (word1, _) = cache.get(i + 1).context(h!())?;
+    let (word0, res0) = cache.get(i).c(h!())?;
+    let (word1, _) = cache.get(i + 1).c(h!())?;
     let mut i = i + 1;
     let joined0 = format!("{word0} {word1}");
     let joined_res = match_settlement(&joined0, trie);
@@ -350,7 +355,7 @@ pub fn load_from_file(
     let mut trie = Trie::<SettlementDetails>::new();
     let mut regions = vec![];
 
-    let root_dir = crate::config::get_data_folder(mode).context(h!())?;
+    let root_dir = crate::config::get_data_folder(mode).c(h!())?;
     let mut region_names = BTreeSet::new();
 
     let mut settlements = BTreeMap::new();
@@ -360,22 +365,21 @@ pub fn load_from_file(
         // let path = format!("{}/{}", dir, source.clone());
         let path = root_dir.join(source.clone());
         let text = match path.exists() {
-            true => fs::read_to_string(path.clone()).context(h!())?,
+            true => fs::read_to_string(path.clone()).c(h!())?,
             false => {
                 warn!(
                     "[{}] cannot load source at {}, loading settlements.json",
                     &source,
                     path.display()
                 );
-                fs::read_to_string("/etc/echo/settlements.json")
-                    .context(h!())?
+                fs::read_to_string("/etc/echo/settlements.json").c(h!())?
             }
         };
         if mode != Mode::Test {
             debug!("[{}] loaded source successfully", &source);
         }
         let data: BTreeMap<String, Vec<SettlementFileRow>> =
-            serde_json::from_str(&text).context(h!())?;
+            serde_json::from_str(&text).c(h!())?;
 
         for (region, rows) in data {
             region_names.insert(region.clone());

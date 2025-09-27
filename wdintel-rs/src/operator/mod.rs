@@ -5,9 +5,9 @@ use crate::error::AppError;
 use crate::h;
 use crate::messenger::types::Message;
 use crate::types::Env;
+use crate::types::ShortContext;
 use actix_web::post;
 use actix_web::web::{Data, Json};
-use anyhow::Context;
 use chrono::Utc;
 use sea_orm::*;
 
@@ -20,21 +20,18 @@ async fn message_submit(
     env: actix_web::web::Data<Env>,
     req: Json<types::OperatorInboxMessage>,
 ) -> Result<Json<types::SubmitMessageRsp>, AppError> {
-    let login = user.id().context(h!())?;
+    let login = user.id().c(h!())?;
     crate::users::has_role(&env.dbx, &login, "Api")
         .await
-        .context(h!())?;
-    let datasource_id =
-        load_api_datasource(&env, &login).await.context(h!())?;
-    let txn = env.dbx.begin().await.context(h!())?;
-    let sender_id = ensure_profile(&txn, req.profile.clone())
-        .await
-        .context(h!())?;
+        .c(h!())?;
+    let datasource_id = load_api_datasource(&env, &login).await.c(h!())?;
+    let txn = env.dbx.begin().await.c(h!())?;
+    let sender_id = ensure_profile(&txn, req.profile.clone()).await.c(h!())?;
     let group_master_key = ensure_group(datasource_id, &txn, req.group.clone())
         .await
-        .context(h!())?;
+        .c(h!())?;
     let timestamp = chrono::DateTime::from_timestamp_millis(req.timestamp)
-        .context(h!())?
+        .c(h!())?
         .naive_utc();
 
     let message = Message {
@@ -55,8 +52,8 @@ async fn message_submit(
         true,
     )
     .await
-    .context(h!())?;
-    txn.commit().await.context(h!())?;
+    .c(h!())?;
+    txn.commit().await.c(h!())?;
     Ok(Json(types::SubmitMessageRsp { message_uid }))
 }
 
@@ -72,8 +69,8 @@ async fn load_api_datasource(
         .into_tuple::<i64>()
         .one(&env.dbx)
         .await
-        .context(h!())?;
-    id.context(h!())
+        .c(h!())?;
+    id.c(h!())
 }
 
 async fn ensure_profile(
@@ -87,7 +84,7 @@ async fn ensure_profile(
         .into_tuple::<String>()
         .one(txn)
         .await
-        .context(h!())?;
+        .c(h!())?;
     let already_exists = old_name.is_some();
     let up_to_date = match &old_name {
         None => false,
@@ -103,9 +100,9 @@ async fn ensure_profile(
         created_at: NotSet,
     };
     if already_exists {
-        model.update(txn).await.context(h!())?;
+        model.update(txn).await.c(h!())?;
     } else {
-        model.insert(txn).await.context(h!())?;
+        model.insert(txn).await.c(h!())?;
     }
     Ok(echo_id)
 }
@@ -123,7 +120,7 @@ async fn ensure_group(
         .into_tuple::<String>()
         .one(txn)
         .await
-        .context(h!())?;
+        .c(h!())?;
     let already_exists = old_name.is_some();
     let up_to_date = match &old_name {
         None => false,
@@ -142,21 +139,21 @@ async fn ensure_group(
         deleted: NotSet,
     };
     if already_exists {
-        model.update(txn).await.context(h!())?;
+        model.update(txn).await.c(h!())?;
     } else {
-        model.insert(txn).await.context(h!())?;
+        model.insert(txn).await.c(h!())?;
     }
     let datasource_groups = datasource_group::Entity::find()
         .filter(datasource_group::Column::DatasourceId.eq(datasource_id))
         .filter(datasource_group::Column::GroupMasterKey.eq(echo_id.clone()))
         .one(txn)
         .await
-        .context(h!())?;
+        .c(h!())?;
     match datasource_groups {
         Some(d) => {
             let mut rec = d.into_active_model();
             rec.last_sync_at = Set(Utc::now().naive_utc());
-            rec.update(txn).await.context(h!())?;
+            rec.update(txn).await.c(h!())?;
         }
         None => {
             datasource_group::ActiveModel {
@@ -170,7 +167,7 @@ async fn ensure_group(
             }
             .insert(txn)
             .await
-            .context(h!())?;
+            .c(h!())?;
         }
     }
     Ok(echo_id)

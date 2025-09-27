@@ -1,15 +1,14 @@
 use super::*;
 use crate::messenger::id;
+use crate::types::ShortContext;
 use log::*;
 
 pub async fn sigint_worker(mode: Mode) -> Result<(), AppError> {
     let config = crate::config::read_config(mode)?;
 
-    crate::migration::run_migration_1(mode)
-        .await
-        .context(h!())?;
+    crate::migration::run_migration_1(mode).await.c(h!())?;
 
-    let redis = crate::new_redis(&config).await.context(h!())?;
+    let redis = crate::new_redis(&config).await.c(h!())?;
     let settlements = Arc::new(RwLock::new(
         crate::location::load_from_file(
             config.settlement_paths().unwrap(),
@@ -24,7 +23,7 @@ pub async fn sigint_worker(mode: Mode) -> Result<(), AppError> {
         .order_by_asc(datasource::Column::Id)
         .all(&dbx)
         .await
-        .context(h!())?;
+        .c(h!())?;
     let mut datasources = vec![];
     for datasource in all_datasources {
         if datasource.echo_client_lock_id.is_some() {
@@ -120,7 +119,8 @@ async fn receive_thread_signal_restapi(
         .timeout(core::time::Duration::from_secs(
             crate::config::RQ_TIMEOUT_SIGNAL_API,
         ))
-        .build()?;
+        .build()
+        .c(h!())?;
 
     let mut sync_state = SyncState {
         groups: BTreeSet::new(),
@@ -133,7 +133,7 @@ async fn receive_thread_signal_restapi(
             .filter(datasource::Column::EchoClientLockId.is_not_null())
             .count(dbx)
             .await
-            .context(h!())?
+            .c(h!())?
             > 0;
         if should_exit {
             info!("datasource {datasource_id} is handled by echo-im, quitting legacy worker...");
@@ -143,7 +143,7 @@ async fn receive_thread_signal_restapi(
         let mut messages =
             crate::sigint::restapi::receive_messages(config, &rq, dbx)
                 .await
-                .context(h!())?;
+                .c(h!())?;
         if !messages.is_empty() {
             println!("> received {} messages", messages.len());
         }
@@ -168,7 +168,7 @@ async fn receive_thread_signal_restapi(
                     &mut sync_state,
                 )
                 .await
-                .context(h!())?;
+                .c(h!())?;
             }
         }
 
@@ -176,13 +176,15 @@ async fn receive_thread_signal_restapi(
             println!("> received {messages_len} messages done");
         }
 
-        if std::time::SystemTime::now().duration_since(last_sync_t)?
+        if std::time::SystemTime::now()
+            .duration_since(last_sync_t)
+            .c(h!())?
             > std::time::Duration::from_secs(SYNC_SECS)
         {
             println!("> syncing accumulated group names and profiles");
             let groups = crate::sigint::restapi::receive_groups(config, &rq)
                 .await
-                .context(h!())?;
+                .c(h!())?;
             for group in groups {
                 sync_state.groups.insert(SyncStateGroup {
                     master_key: group.internal_id.clone(),
@@ -220,7 +222,7 @@ pub async fn do_sync_state(
             .filter(signal_group::Column::MasterKey.eq(&group.master_key))
             .one(dbx)
             .await
-            .context(h!())?;
+            .c(h!())?;
         match m_exising_signal_group {
             Some(existing) => {
                 if existing.name.as_ref() != Some(&group_name)
@@ -235,7 +237,7 @@ pub async fn do_sync_state(
                     let mut existing: signal_group::ActiveModel =
                         existing.clone().into();
                     existing.name = Set(Some(group_name.clone()));
-                    existing.update(dbx).await.context(h!())?;
+                    existing.update(dbx).await.c(h!())?;
                 }
                 // ensure mapping exists for this datasource
                 let exists = datasource_group::Entity::find()
@@ -249,7 +251,7 @@ pub async fn do_sync_state(
                     )
                     .count(dbx)
                     .await
-                    .context(h!())?
+                    .c(h!())?
                     > 0;
                 if !exists {
                     datasource_group::ActiveModel {
@@ -278,7 +280,7 @@ pub async fn do_sync_state(
                 };
                 let inserted = crate::messenger::group::add_group(group, dbx)
                     .await
-                    .context(h!())?;
+                    .c(h!())?;
                 let _ = datasource_group::ActiveModel {
                     id: NotSet,
                     group_master_key: Set(inserted.master_key.clone()),
@@ -303,7 +305,7 @@ pub async fn do_sync_state(
                 )
                 .one(dbx)
                 .await
-                .context(h!())?;
+                .c(h!())?;
             match m_existing_profile {
                 Some(existing) => {
                     let prof_name = Some((Some(name.clone()), None));
@@ -316,7 +318,7 @@ pub async fn do_sync_state(
                             existing.into();
                         existing.given_name = Set(Some(name.clone()));
                         existing.family_name = Set(None);
-                        existing.update(dbx).await.context(h!())?;
+                        existing.update(dbx).await.c(h!())?;
                     }
                 }
                 None => {
@@ -328,7 +330,7 @@ pub async fn do_sync_state(
                     }
                     .insert(dbx)
                     .await
-                    .context(h!())?;
+                    .c(h!())?;
                 }
             }
         }
@@ -408,8 +410,7 @@ pub async fn process_incoming_message_restapi(
     }
     // Normalize body
     let body = body.replace("\r\n", "\n");
-    let m_duplicate =
-        find_duplicate(dbx, &body, timestamp).await.context(h!())?;
+    let m_duplicate = find_duplicate(dbx, &body, timestamp).await.c(h!())?;
     let m_duplicate_id =
     // skip if this is same-group duplicate
     if let Some((duplicate, group)) = m_duplicate {
@@ -436,7 +437,7 @@ pub async fn process_incoming_message_restapi(
             datasource_id,
         )
         .await
-        .context(h!())?;
+        .c(h!())?;
 
     let message = signal_message::ActiveModel {
         id: NotSet,
@@ -453,12 +454,12 @@ pub async fn process_incoming_message_restapi(
     }
     .insert(dbx)
     .await
-    .context(h!())?;
+    .c(h!())?;
     let db_message_id = message.id;
 
     id::update_message_with_uid(dbx, config, message)
         .await
-        .context(h!())?;
+        .c(h!())?;
 
     if let Some(ref attachments) = data_message.attachments {
         for attachment in attachments.iter() {
@@ -469,7 +470,7 @@ pub async fn process_incoming_message_restapi(
                 Some(db_message_id),
             )
             .await
-            .context(h!())?;
+            .c(h!())?;
         }
     }
     if let Some(ref quote) = data_message.quote {
@@ -481,7 +482,7 @@ pub async fn process_incoming_message_restapi(
                 Some(db_message_id),
             )
             .await
-            .context(h!())?;
+            .c(h!())?;
         }
     }
 
@@ -502,9 +503,9 @@ pub async fn process_incoming_message_restapi(
 
     incoming_message_after_insert(dbx, db_message_id)
         .await
-        .context(h!())?;
+        .c(h!())?;
     sync_state.senders.insert(SyncStateSender {
-        uuid: Uuid::parse_str(&source_uuid)?,
+        uuid: Uuid::parse_str(&source_uuid).c(h!())?,
         name: Some(source_name.clone()),
     });
 
@@ -527,6 +528,6 @@ where
                 where sii.id = $1"#,
         [db_message_id.into()],
     );
-    txn.execute(statement).await.context(h!())?;
+    txn.execute(statement).await.c(h!())?;
     Ok(())
 }

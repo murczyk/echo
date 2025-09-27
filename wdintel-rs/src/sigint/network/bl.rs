@@ -342,7 +342,7 @@ pub async fn network_group_activity_bl(
     env: actix_web::web::Data<Env>,
     req: Json<NetworkGroupsActivityReq>,
 ) -> Result<HashMap<String, HashMap<String, HashMap<String, i64>>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer")
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
         .await
         .context(h!())?;
     let dt_till = if let Some(till) = req.till_date_noninclusive_ms {
@@ -798,7 +798,8 @@ pub async fn fetch_count(
         Statement::from_sql_and_values(DbBackend::Postgres, sql, values),
     )
     .one(dbx)
-    .await?;
+    .await
+    .c(h!())?;
 
     Ok(result.map_or(0, |r| r.count))
 }

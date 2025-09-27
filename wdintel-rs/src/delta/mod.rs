@@ -50,7 +50,7 @@ pub fn kmz_to_geojson_1(
     output: &PathBuf,
 ) -> Result<(), AppError> {
     let input: String = std::fs::read_to_string(input_path)?;
-    let kml: Kml = quick_xml::de::from_str(&input[..]).context(h!())?;
+    let kml: Kml = quick_xml::de::from_str(&input[..]).c(h!())?;
     let style_map = crate::kml::extract_style_maps(&kml.nodes)?;
 
     let mut features: Vec<Feature> = vec![];
@@ -64,8 +64,8 @@ pub fn kmz_to_geojson_1(
                     milgeo_rs::coordinates::parse_point_coordinates(
                         coordinates,
                     )?;
-                let lat_f: f64 = lat.parse().context(h!())?;
-                let lng_f: f64 = lng.parse().context(h!())?;
+                let lat_f: f64 = lat.parse().c(h!())?;
+                let lng_f: f64 = lng.parse().c(h!())?;
                 let mut comments: Vec<String> = vec![];
                 if let Some(name) = &placemark.name {
                     comments.push(name.to_string());
@@ -112,7 +112,7 @@ pub fn kmz_to_geojson_1(
                                 .cloned()
                                 .collect(),
                         )
-                        .context(h!())?,
+                        .c(h!())?,
                         None => body.clone(),
                     };
                     let sidc =
@@ -146,7 +146,7 @@ pub fn kmz_to_geojson_1(
                                 .cloned()
                                 .collect(),
                         )
-                        .context(h!())?,
+                        .c(h!())?,
                         None => icon.clone(),
                     };
                     let sidc =
@@ -199,11 +199,8 @@ pub fn kmz_to_geojson_1(
         features,
     };
 
-    std::fs::write(
-        output,
-        serde_json::to_string_pretty(&geo_json).context(h!())?,
-    )?;
-    let kml_output = quick_xml::se::to_string(&kml).context(h!())?;
+    std::fs::write(output, serde_json::to_string_pretty(&geo_json).c(h!())?)?;
+    let kml_output = quick_xml::se::to_string(&kml).c(h!())?;
     std::fs::write(
         input_path.with_extension(TEMPORARY_KML_FILE_EXTENSION),
         kml_output,
@@ -231,7 +228,7 @@ fn feature_from_line_string(coord_s: &str) -> Result<Feature, AppError> {
 }
 
 fn extract_comments(s: &str) -> Result<Vec<String>, AppError> {
-    let document = tl::parse(s, tl::ParserOptions::default())?;
+    let document = tl::parse(s, tl::ParserOptions::default()).c(h!())?;
     let parser = document.parser();
     let children = document.children();
     let mut res = vec![];
@@ -277,12 +274,14 @@ async fn download_geojson(
     env: actix_web::web::Data<Env>,
     req: Json<crate::importer::DownloadKmzReq>,
 ) -> Result<Json<GeoJson>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Basic").await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Basic")
+        .await
+        .c(h!())?;
     let mut features = vec![];
     let now = Utc::now();
     for row in req.rows.iter() {
-        let lat_f: f64 = row.lat.parse().context(h!())?;
-        let lng_f: f64 = row.lng.parse().context(h!())?;
+        let lat_f: f64 = row.lat.parse().c(h!())?;
+        let lng_f: f64 = row.lng.parse().c(h!())?;
         let mut comments: Vec<String> =
             row.content.lines().map(|x| x.to_string()).collect();
         for image_url in row.image_urls.iter() {
@@ -320,23 +319,26 @@ async fn radios_convert(
     env: actix_web::web::Data<Env>,
     mut payload: Multipart,
 ) -> Result<Json<i64>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Basic").await?;
-    let (field, val) = multipart::extract(&mut payload).await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Basic")
+        .await
+        .c(h!())?;
+    let (field, val) = multipart::extract(&mut payload).await.c(h!())?;
     let tmp_dir = TempDir::new()?;
     println!("> tmp_dir {}", &tmp_dir.path().display());
-    let data_file = tmp_dir.path().join(field.name().context(h!())?);
+    let data_file = tmp_dir.path().join(field.name().c(h!())?);
     println!("> data_file: {}", &data_file.display());
     std::fs::write(&data_file, val)?;
     let loglines: Vec<String> = vec![];
     let bgtask = bgtask::ActiveModel {
         id: NotSet,
         progress: Set(0),
-        loglines: Set(serde_json::to_value(loglines).context(h!())?),
+        loglines: Set(serde_json::to_value(loglines).c(h!())?),
         running: Set(true),
         finished_with_error: Set(None),
     }
     .insert(&env.dbx)
-    .await?;
+    .await
+    .c(h!())?;
     let bgtask_id = bgtask.id;
 
     let dbx2 = env.dbx.clone();
@@ -346,7 +348,9 @@ async fn radios_convert(
         let config2 = config;
         let data_file2 = data_file;
         let dbx3 = dbx2;
-        radios_convert_go(&config2, &data_file2, Some(bgtask), &dbx3).await?;
+        radios_convert_go(&config2, &data_file2, Some(bgtask), &dbx3)
+            .await
+            .c(h!())?;
         Ok::<(), AppError>(())
     });
 
@@ -360,7 +364,9 @@ pub async fn radios_convert_go(
     dbx: &sea_orm::DatabaseConnection,
 ) -> Result<(), AppError> {
     let res = radios_convert_go2(config, data_file, &m_bgtask, dbx).await;
-    finish_bgtask(m_bgtask.map(|x| x.id), dbx, &res).await?;
+    finish_bgtask(m_bgtask.map(|x| x.id), dbx, &res)
+        .await
+        .c(h!())?;
     res
 }
 
@@ -375,7 +381,9 @@ pub async fn radios_convert_go2(
         .map(|x| x.id)
         .ok_or("Must have bgtask id")?;
     let m_bgtask_id = Some(bgtask_id);
-    bgtask_log(m_bgtask_id, "Starting radios_convert_go2", dbx).await?;
+    bgtask_log(m_bgtask_id, "Starting radios_convert_go2", dbx)
+        .await
+        .c(h!())?;
 
     crate::kml::oneoff_radio_per_day_per_abonent(
         config,
@@ -385,9 +393,12 @@ pub async fn radios_convert_go2(
         m_bgtask_id,
         Some(dbx),
     )
-    .await?;
+    .await
+    .c(h!())?;
 
-    bgtask_log(m_bgtask_id, "Finished radios_convert_go2", dbx).await?;
+    bgtask_log(m_bgtask_id, "Finished radios_convert_go2", dbx)
+        .await
+        .c(h!())?;
 
     Ok(())
 }
@@ -408,13 +419,17 @@ pub async fn radios_download_result_per_radio(
     env: actix_web::web::Data<Env>,
     req: Json<RadiosDownloadResultReq>,
 ) -> Result<HttpResponse, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Basic").await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Basic")
+        .await
+        .c(h!())?;
     let res_file = PathBuf::from(env.config.storage_dir.clone())
         .join(format!("radios-{}-radio.kmz", req.bgtask_id));
     if !res_file.exists() {
         return Err(AppError::NotFound);
     }
-    let file = actix_files::NamedFile::open_async(&res_file).await?;
+    let file = actix_files::NamedFile::open_async(&res_file)
+        .await
+        .c(h!())?;
     Ok(file.into_response(&http_req))
 }
 
@@ -425,13 +440,17 @@ pub async fn radios_download_result_per_date(
     env: actix_web::web::Data<Env>,
     req: Json<RadiosDownloadResultReq>,
 ) -> Result<HttpResponse, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Basic").await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Basic")
+        .await
+        .c(h!())?;
     let res_file = PathBuf::from(env.config.storage_dir.clone())
         .join(format!("radios-{}-date.kmz", req.bgtask_id));
     if !res_file.exists() {
         return Err(AppError::NotFound);
     }
-    let file = actix_files::NamedFile::open_async(&res_file).await?;
+    let file = actix_files::NamedFile::open_async(&res_file)
+        .await
+        .c(h!())?;
     Ok(file.into_response(&http_req))
 }
 
@@ -442,7 +461,9 @@ pub async fn radios_download_result_csv(
     env: actix_web::web::Data<Env>,
     req: Json<RadiosDownloadResultReq>,
 ) -> Result<HttpResponse, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Basic").await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Basic")
+        .await
+        .c(h!())?;
     let page_part = match req.csv_page {
         None => "".to_string(),
         Some(page) => format!("-page-{page}"),
@@ -453,7 +474,9 @@ pub async fn radios_download_result_csv(
     if !res_file.exists() {
         return Err(AppError::NotFound);
     }
-    let file = actix_files::NamedFile::open_async(&res_file).await?;
+    let file = actix_files::NamedFile::open_async(&res_file)
+        .await
+        .c(h!())?;
     Ok(file.into_response(&http_req))
 }
 
@@ -469,7 +492,8 @@ pub async fn bgtask_log(
     match Bgtask::find()
         .filter(bgtask::Column::Id.eq(bgtask_id))
         .one(dbx)
-        .await?
+        .await
+        .c(h!())?
     {
         None => {
             println!("> couldn't find bgtask {bgtask_id}. skipping");
@@ -477,12 +501,10 @@ pub async fn bgtask_log(
         Some(bgtask) => {
             let mut bgtask_a: bgtask::ActiveModel = bgtask.clone().into();
             let mut loglines2: Vec<String> =
-                serde_json::from_value(bgtask.loglines.clone())
-                    .context(h!())?;
+                serde_json::from_value(bgtask.loglines.clone()).c(h!())?;
             loglines2.push(s.to_string());
-            bgtask_a.loglines =
-                Set(serde_json::to_value(loglines2).context(h!())?);
-            bgtask_a.update(dbx).await?;
+            bgtask_a.loglines = Set(serde_json::to_value(loglines2).c(h!())?);
+            bgtask_a.update(dbx).await.c(h!())?;
         }
     };
     Ok(())
@@ -497,7 +519,7 @@ pub async fn bgtask_log2(
         println!("{s}");
         return Ok(());
     };
-    bgtask_log(m_bgtask_id, s, dbx).await?;
+    bgtask_log(m_bgtask_id, s, dbx).await.c(h!())?;
     Ok(())
 }
 
@@ -522,7 +544,9 @@ pub async fn get_geojson(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<GeoJson>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Basic").await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Basic")
+        .await
+        .c(h!())?;
 
     let geojson = EnemyUnitsGeojson::find()
         .filter(
@@ -531,14 +555,15 @@ pub async fn get_geojson(
         )
         .order_by_desc(enemy_units_geojson::Column::Id)
         .one(&env.dbx)
-        .await?
+        .await
+        .c(h!())?
         .unwrap();
 
     let geojson_file = PathBuf::from(env.config.storage_dir.clone())
         .join(format!("enemy-units-{}.geojson", geojson.id));
     if geojson_file.exists() {
         let geojson = std::fs::read_to_string(&geojson_file)?;
-        let geojson: GeoJson = serde_json::from_str(&geojson).context(h!())?;
+        let geojson: GeoJson = serde_json::from_str(&geojson).c(h!())?;
         Ok(Json(geojson))
     } else {
         Err(AppError::NotFound)
@@ -551,7 +576,9 @@ pub async fn get_kml(
     http_req: HttpRequest,
     env: actix_web::web::Data<Env>,
 ) -> Result<HttpResponse, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Basic").await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Basic")
+        .await
+        .c(h!())?;
     match EnemyUnitsGeojson::find()
         .filter(
             enemy_units_geojson::Column::Status
@@ -559,7 +586,8 @@ pub async fn get_kml(
         )
         .order_by_desc(enemy_units_geojson::Column::Id)
         .one(&env.dbx)
-        .await?
+        .await
+        .c(h!())?
     {
         None => Err(AppError::NotFound),
         Some(ref geojson) => {
@@ -567,8 +595,9 @@ pub async fn get_kml(
                 PathBuf::from(config::get_assets_folder(&env.config))
                     .join(format!("enemy-units-{}.kml", geojson.id));
             if kml_file.exists() {
-                let file =
-                    actix_files::NamedFile::open_async(&kml_file).await?;
+                let file = actix_files::NamedFile::open_async(&kml_file)
+                    .await
+                    .c(h!())?;
                 Ok(file.into_response(&http_req))
             } else {
                 Err(AppError::NotFound)
@@ -583,28 +612,32 @@ pub async fn import_map(
     env: actix_web::web::Data<Env>,
     mut payload: Multipart,
 ) -> Result<Json<i64>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
-    let (field, val) = multipart::extract(&mut payload).await?;
-    let filename = field.name().context(h!())?.to_string();
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .c(h!())?;
+    let (field, val) = multipart::extract(&mut payload).await.c(h!())?;
+    let filename = field.name().c(h!())?.to_string();
     let convert = enemy_units_geojson::ActiveModel {
         id: NotSet,
         status: Set(Some(sea_orm_active_enums::StatusEnum::Pending)),
         created_at: Set(Utc::now().naive_utc()),
-        created_by: Set(user.id()?),
+        created_by: Set(user.id().c(h!())?),
     }
     .insert(&env.dbx)
-    .await?;
+    .await
+    .c(h!())?;
 
     let loglines: Vec<String> = vec![];
     let bgtask = bgtask::ActiveModel {
         id: NotSet,
         progress: Set(0),
-        loglines: Set(serde_json::to_value(loglines).context(h!())?),
+        loglines: Set(serde_json::to_value(loglines).c(h!())?),
         running: Set(true),
         finished_with_error: Set(None),
     }
     .insert(&env.dbx)
-    .await?;
+    .await
+    .c(h!())?;
     let bgtask_id = bgtask.id;
     let config = env.config.clone();
     let dbx = env.dbx.clone();
@@ -618,7 +651,8 @@ pub async fn import_map(
                 &format!("> tmp_dir {}", &tmp_dir.path().display()),
                 &dbx,
             )
-            .await?;
+            .await
+            .c(h!())?;
             let geojson_file = Path::new(&filename).with_extension("geojson");
             let geojson_file = geojson_file.file_name().ok_or("impossible")?;
             let kmz_file = tmp_dir.path().join(filename);
@@ -627,7 +661,8 @@ pub async fn import_map(
                 &format!("> kmz_file: {}", &kmz_file.display()),
                 &dbx,
             )
-            .await?;
+            .await
+            .c(h!())?;
             std::fs::write(&kmz_file, val)?;
             std::process::Command::new("ls")
                 .args([tmp_dir.path()])
@@ -637,9 +672,12 @@ pub async fn import_map(
                 &format!("> running unzip {}", &kmz_file.display()),
                 &dbx,
             )
-            .await?;
+            .await
+            .c(h!())?;
             crate::zip::unzip(&kmz_file)?;
-            bgtask_log(Some(bgtask_id), "> unzip done", &dbx).await?;
+            bgtask_log(Some(bgtask_id), "> unzip done", &dbx)
+                .await
+                .c(h!())?;
             crate::utils::backup_tmp_dir(tmp_dir.path())?;
             let mut doc_kml = tmp_dir
                 .path()
@@ -668,7 +706,8 @@ pub async fn import_map(
                 &format!("> doc_kml: {}", &doc_kml.display()),
                 &dbx,
             )
-            .await?;
+            .await
+            .c(h!())?;
 
             let geojson_name = format!("enemy-units-{convert_id}.geojson");
             let raw_kmz_output = PathBuf::from(config.storage_dir.clone())
@@ -689,7 +728,8 @@ pub async fn import_map(
                 &format!("> copy to storage: {}", &output2.display()),
                 &dbx,
             )
-            .await?;
+            .await
+            .c(h!())?;
             let kmz_dir = output.parent().unwrap();
             let geojson_id = PathBuf::from(geojson_name).with_extension("");
             let processed_kml_path =
@@ -720,7 +760,7 @@ pub async fn import_map(
                 })
                 .map(|_| ());
 
-            finish_bgtask(Some(bgtask_id), &dbx, &res).await?;
+            finish_bgtask(Some(bgtask_id), &dbx, &res).await.c(h!())?;
             Ok::<(), AppError>(())
         };
 
@@ -790,11 +830,14 @@ async fn bgtask_get_status_and_logs(
     bgtask_id: actix_web::web::Path<(i64,)>,
     q: actix_web::web::Query<BgtaskStatusAndLogsQuery>,
 ) -> Result<Json<BgtaskStatusAndLogsRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Basic").await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Basic")
+        .await
+        .c(h!())?;
     match Bgtask::find()
         .filter(bgtask::Column::Id.eq(bgtask_id.0))
         .one(&env.dbx)
-        .await?
+        .await
+        .c(h!())?
     {
         None => {
             println!("> couldn't find bgtask {}. skipping", bgtask_id.0);
@@ -804,7 +847,7 @@ async fn bgtask_get_status_and_logs(
         }
         Some(bgtask) => {
             let loglines: Vec<String> =
-                serde_json::from_value(bgtask.loglines).context(h!())?;
+                serde_json::from_value(bgtask.loglines).c(h!())?;
             let loglines =
                 loglines.iter().skip(q.skip as usize).cloned().collect();
             Ok(Json(BgtaskStatusAndLogsRsp {
@@ -825,14 +868,15 @@ pub async fn finish_bgtask(
         if let Some(bgtask) = Bgtask::find()
             .filter(bgtask::Column::Id.eq(bgtask_id))
             .one(dbx)
-            .await?
+            .await
+            .c(h!())?
         {
             let mut bgtask: bgtask::ActiveModel = bgtask.into();
             bgtask.running = Set(false);
             if let Err(ref e) = res {
                 bgtask.finished_with_error = Set(Some(format!("{e:?}")));
             }
-            bgtask.update(dbx).await?;
+            bgtask.update(dbx).await.c(h!())?;
         }
     }
     Ok(())
@@ -845,9 +889,11 @@ pub async fn kmz_to_geojson(
     env: actix_web::web::Data<Env>,
     mut payload: Multipart,
 ) -> Result<actix_web::HttpResponse, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Basic").await?;
-    let (field, val) = multipart::extract(&mut payload).await?;
-    let filename = field.name().context(h!())?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Basic")
+        .await
+        .c(h!())?;
+    let (field, val) = multipart::extract(&mut payload).await.c(h!())?;
+    let filename = field.name().c(h!())?;
     let tmp_dir = TempDir::new()?;
     println!("> tmp_dir {}", &tmp_dir.path().display());
     let geojson_file = Path::new(&filename).with_extension("geojson");
@@ -890,7 +936,7 @@ pub async fn kmz_to_geojson(
     let output = tmp_dir.path().join(geojson_file);
     kmz_to_geojson_1(&doc_kml, &output)?;
 
-    let file = actix_files::NamedFile::open_async(&output).await?;
+    let file = actix_files::NamedFile::open_async(&output).await.c(h!())?;
     Ok(file.into_response(&http_req))
 }
 
@@ -1160,7 +1206,7 @@ pub fn delta_objs_to_kmz(
         nodes: vec![Node::Folder(root_folder)],
     };
 
-    // bgtask_log(m_bgtask_id, "Wrapping in kmz", dbx).await?;
+    // bgtask_log(m_bgtask_id, "Wrapping in kmz", dbx).await.c(h!())?;
 
     let tmp_dir = TempDir::new()?;
     let res_path = crate::importer::package_up_kmz2(config, &tmp_dir, &kml)?;
@@ -1399,17 +1445,20 @@ async fn download_layer_result(
     env: actix_web::web::Data<Env>,
     req: Json<DownloadLayerResultReq>,
 ) -> Result<HttpResponse, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Bpla").await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Bpla")
+        .await
+        .c(h!())?;
     let bgtask_res = BgtaskRes::find_by_id(req.bgtask_id)
         .one(&env.dbx)
-        .await?
+        .await
+        .c(h!())?
         .ok_or(format!("Result not found for task id: {}", req.bgtask_id))?;
     let res_json = bgtask_res.res_json.ok_or(format!(
         "res_json must be non empty for task id: {}",
         req.bgtask_id
     ))?;
     let downloaded_layer: DownloadedLayer =
-        serde_json::from_value(res_json).context(h!())?;
+        serde_json::from_value(res_json).c(h!())?;
     let tmp_dir = TempDir::new()?;
     let filename = format!("{}.kmz", downloaded_layer.overlay_name);
     let outfile = tmp_dir.path().join(filename);
@@ -1418,7 +1467,7 @@ async fn download_layer_result(
         req.bgtask_id
     ))?;
     std::fs::write(&outfile, &res_bytes)?;
-    let file = actix_files::NamedFile::open_async(outfile).await?;
+    let file = actix_files::NamedFile::open_async(outfile).await.c(h!())?;
     Ok(file.into_response(&http_req))
 }
 

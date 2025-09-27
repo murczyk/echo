@@ -1,7 +1,6 @@
 use crate::error::AppError;
 use crate::h;
-use crate::types::Mode;
-use anyhow::Context;
+use crate::types::{Mode, ShortContext};
 use log::info;
 use milgeo_rs::coordinates::usk2000::usk2000_to_wgs84;
 use milgeo_rs::coordinates::Usk2000;
@@ -35,11 +34,11 @@ pub fn oneoff_batch_usk_to_wgs(
     }
     println!("> converted to wgs84");
     let output = format!("{}-wgs84.csv", ps.input);
-    let mut wtr = csv::Writer::from_path(&output)?;
+    let mut wtr = csv::Writer::from_path(&output).c(h!())?;
     for wgs84 in wgs84s {
-        wtr.serialize(wgs84)?;
+        wtr.serialize(wgs84).c(h!())?;
     }
-    wtr.flush()?;
+    wtr.flush().c(h!())?;
     println!("> written to {output}");
     Ok(())
 }
@@ -49,26 +48,17 @@ pub async fn oneoff_fix_areas_of_responsibility(
     force_all_networks: bool,
 ) -> Result<(), AppError> {
     info!("starting oneoff_fix_areas_of_responsibility...");
-    let config = crate::config::read_config(mode).context(h!())?;
-    let db = crate::new_pg_pool_from_config(&config)
-        .await
-        .context(h!())?;
+    let config = crate::config::read_config(mode)?;
+    let db = crate::new_pg_pool_from_config(&config).await?;
     // Step 1: ensure each datasource has default_aor_id set
-    crate::datasource::fix_datasource_default_aor(&db)
-        .await
-        .context(h!())?;
-    crate::messenger::group::fix_group_areas_of_responsibility(&db)
-        .await
-        .context(h!())?;
+    crate::datasource::fix_datasource_default_aor(&db).await?;
+    crate::messenger::group::fix_group_areas_of_responsibility(&db).await?;
     crate::sigint::network::fix_network_areas_of_responsibility(
         &db,
         force_all_networks,
     )
-    .await
-    .context(h!())?;
-    crate::organism::oneoff::oneoff_fix_organism_aors(&db)
-        .await
-        .context(h!())?;
+    .await?;
+    crate::organism::oneoff::oneoff_fix_organism_aors(&db).await?;
     info!("done oneoff_fix_areas_of_responsibility");
     Ok(())
 }

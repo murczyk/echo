@@ -22,7 +22,7 @@ pub async fn backup(mode: Mode) -> Result<(), AppError> {
         return Ok(());
     }
     info!("starting backup");
-    let sh = Shell::new()?;
+    let sh = Shell::new().c(h!())?;
     let pgpwd = crate::config::DEFAULT_PG_PASSWORD.to_string();
     let server = config.public_host;
     let now = Utc::now();
@@ -35,26 +35,35 @@ pub async fn backup(mode: Mode) -> Result<(), AppError> {
         return Ok(());
     };
     info!("> postgresql backup begin");
-    cmd!(sh, "mkdir -p /tmp2/backup").run()?;
+    cmd!(sh, "mkdir -p /tmp2/backup").run().c(h!())?;
     cmd!(
         sh,
         "pg_dump --user wd -Fc wd --file wd-{server}-{dt1}.pgrestore"
     )
     .env("PGPASSWORD", pgpwd)
-    .run()?;
-    cmd!(sh, "ls -lah wd-{server}-{dt1}.pgrestore").run()?;
+    .run()
+    .c(h!())?;
+    cmd!(sh, "ls -lah wd-{server}-{dt1}.pgrestore")
+        .run()
+        .c(h!())?;
     cmd!(
         sh,
         "gpg --encrypt --recipient 'Echo' wd-{server}-{dt1}.pgrestore"
     )
-    .run()?;
-    cmd!(sh, "ls -lah wd-{server}-{dt1}.pgrestore.gpg").run()?;
+    .run()
+    .c(h!())?;
+    cmd!(sh, "ls -lah wd-{server}-{dt1}.pgrestore.gpg")
+        .run()
+        .c(h!())?;
     cmd!(sh, "b2 file upload echouabackup ./wd-{server}-{dt1}.pgrestore.gpg backup/echo/{day_s}/wd-{server}-{dt1}.pgrestore.gpg")
         .env("B2_APPLICATION_KEY_ID", backup_key_id.clone())
         .env("B2_APPLICATION_KEY", backup_key.clone())
-        .run()?;
-    cmd!(sh, "rm wd-{server}-{dt1}.pgrestore.gpg").run()?;
-    cmd!(sh, "rm wd-{server}-{dt1}.pgrestore").run()?;
+        .run()
+        .c(h!())?;
+    cmd!(sh, "rm wd-{server}-{dt1}.pgrestore.gpg")
+        .run()
+        .c(h!())?;
+    cmd!(sh, "rm wd-{server}-{dt1}.pgrestore").run().c(h!())?;
     info!("postgresql backup done");
     Ok(())
 }
@@ -78,7 +87,7 @@ pub async fn backup_to_b2(mode: Mode) -> Result<(), AppError> {
         return Ok(());
     }
     info!("starting backup");
-    let sh = Shell::new()?;
+    let sh = Shell::new().c(h!())?;
     let pgpwd = crate::config::DEFAULT_PG_PASSWORD.to_string();
     let server = config.public_host;
     let now = Utc::now();
@@ -91,26 +100,35 @@ pub async fn backup_to_b2(mode: Mode) -> Result<(), AppError> {
         return Ok(());
     };
     info!("> postgresql backup begin");
-    cmd!(sh, "mkdir -p /tmp2/backup").run()?;
+    cmd!(sh, "mkdir -p /tmp2/backup").run().c(h!())?;
     cmd!(
         sh,
         "pg_dump --user wd -Fc wd --file wd-{server}-{dt1}.pgrestore"
     )
     .env("PGPASSWORD", pgpwd)
-    .run()?;
-    cmd!(sh, "ls -lah wd-{server}-{dt1}.pgrestore").run()?;
+    .run()
+    .c(h!())?;
+    cmd!(sh, "ls -lah wd-{server}-{dt1}.pgrestore")
+        .run()
+        .c(h!())?;
     cmd!(
         sh,
         "gpg --encrypt --recipient 'Echo' wd-{server}-{dt1}.pgrestore"
     )
-    .run()?;
-    cmd!(sh, "ls -lah wd-{server}-{dt1}.pgrestore.gpg").run()?;
+    .run()
+    .c(h!())?;
+    cmd!(sh, "ls -lah wd-{server}-{dt1}.pgrestore.gpg")
+        .run()
+        .c(h!())?;
     cmd!(sh, "b2 upload-file echouabackup ./wd-{server}-{dt1}.pgrestore.gpg backup/echo/{day_s}/wd-{server}-{dt1}.pgrestore.gpg")
         .env("B2_APPLICATION_KEY_ID", backup_key_id.clone())
         .env("B2_APPLICATION_KEY", backup_key.clone())
-        .run()?;
-    cmd!(sh, "rm wd-{server}-{dt1}.pgrestore.gpg").run()?;
-    cmd!(sh, "rm wd-{server}-{dt1}.pgrestore").run()?;
+        .run()
+        .c(h!())?;
+    cmd!(sh, "rm wd-{server}-{dt1}.pgrestore.gpg")
+        .run()
+        .c(h!())?;
+    cmd!(sh, "rm wd-{server}-{dt1}.pgrestore").run().c(h!())?;
     info!("postgresql backup done");
     Ok(())
 }

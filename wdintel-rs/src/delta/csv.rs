@@ -46,8 +46,8 @@ fn extract_lat_lng(cor_pair: &str) -> Result<(f64, f64), AppError> {
             msg: format!("Bad wgs yx pair: {cor_pair}"),
         });
     }
-    let lat: f64 = res[0].parse().context(h!())?;
-    let lng: f64 = res[1].parse().context(h!())?;
+    let lat: f64 = res[0].parse().c(h!())?;
+    let lng: f64 = res[1].parse().c(h!())?;
     Ok((lat, lng))
 }
 
@@ -58,12 +58,12 @@ pub fn csv_to_kmz(
     println!("> starting csv_to_kmz");
     let config = crate::config::read_config(mode)?;
     let inpath = Path::new(&ps.path);
-    let mut rdr = csv::Reader::from_path(inpath)?;
+    let mut rdr = csv::Reader::from_path(inpath).c(h!())?;
     let mut objs: Vec<ObjectContract> = vec![];
     let obj_detail: BTreeMap<String, ObjectRsp> = BTreeMap::new();
     let obj_attachments: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for e_rec in rdr.deserialize() {
-        let rec: Record = e_rec?;
+        let rec: Record = e_rec.c(h!())?;
         let mut line_points: Vec<LocationGeometryRsp> = vec![];
         let cors: Vec<String> = rec
             .coordinates_wgs
@@ -179,11 +179,13 @@ pub async fn api_delta_csv_to_kmz(
     env: actix_web::web::Data<Env>,
     mut payload: Multipart,
 ) -> Result<actix_web::HttpResponse, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Bpla").await?;
-    let (field, val) = multipart::extract(&mut payload).await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Bpla")
+        .await
+        .c(h!())?;
+    let (field, val) = multipart::extract(&mut payload).await.c(h!())?;
     let tmp_dir = TempDir::new()?;
     println!("> tmp_dir {}", &tmp_dir.path().display());
-    let csv_file = tmp_dir.path().join(field.name().context(h!())?);
+    let csv_file = tmp_dir.path().join(field.name().c(h!())?);
     println!("> csv_file: {}", &csv_file.display());
     std::fs::write(&csv_file, val)?;
     crate::utils::backup_tmp_dir(tmp_dir.path())?;
@@ -195,6 +197,6 @@ pub async fn api_delta_csv_to_kmz(
         },
     )?;
 
-    let file = actix_files::NamedFile::open_async(&output).await?;
+    let file = actix_files::NamedFile::open_async(&output).await.c(h!())?;
     Ok(file.into_response(&http_req))
 }

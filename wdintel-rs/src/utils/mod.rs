@@ -1,5 +1,6 @@
 use crate::config::{read_config, Config};
 use crate::error::AppError;
+use crate::h;
 use crate::location::SettlementsData;
 use crate::new_redis;
 use crate::types::*;
@@ -107,7 +108,10 @@ where
 }
 
 pub fn get_pb_style() -> Result<indicatif::ProgressStyle, AppError> {
-    Ok(indicatif::ProgressStyle::with_template("{spinner:.green} [{prefix}] [{wide_bar:.cyan/blue}] {human_pos}/{human_len} ({eta})")?
+    Ok(indicatif::ProgressStyle::with_template(
+        "{spinner:.green} [{prefix}] [{wide_bar:.cyan/blue}] {human_pos}/{human_len} ({eta})",
+    )
+    .c(h!())?
         .with_key(
             "eta",
             |state: &indicatif::ProgressState, w: &mut dyn core::fmt::Write|
@@ -132,10 +136,7 @@ pub fn m_cap_s(capts: &regex::Captures, name: &str) -> Option<String> {
 }
 
 pub fn parse_mongo_dt(inp: &str) -> Result<NaiveDateTime, AppError> {
-    Ok(NaiveDateTime::parse_from_str(
-        inp,
-        "%Y-%m-%dT%H:%M:%S.%3fZ",
-    )?)
+    Ok(NaiveDateTime::parse_from_str(inp, "%Y-%m-%dT%H:%M:%S.%3fZ").c(h!())?)
 }
 
 pub fn from_m_val_vec<A>(
@@ -146,7 +147,7 @@ where
 {
     match inp {
         None => Ok(vec![]),
-        Some(jv) => Ok(serde_json::from_value(jv).context(h!())?),
+        Some(jv) => Ok(serde_json::from_value(jv).c(h!())?),
     }
 }
 
@@ -161,12 +162,12 @@ pub fn pop_vector<T>(data: &mut Vec<T>) -> Option<T> {
 pub async fn read_lines_from_file<P: AsRef<Path>>(
     path: P,
 ) -> anyhow::Result<Vec<String>> {
-    let file = tokio::fs::File::open(path).await?;
+    let file = tokio::fs::File::open(path).await.c(h!())?;
     let reader = tokio::io::BufReader::new(file);
     let mut lines = Vec::new();
     let mut stream = reader.lines();
     loop {
-        let Some(line) = stream.next_line().await? else {
+        let Some(line) = stream.next_line().await.c(h!())? else {
             break;
         };
         lines.push(line);
@@ -183,20 +184,17 @@ pub async fn setup_worker(
     ConnectionManager,
     DatabaseConnection,
 )> {
-    let config = read_config(mode).context(h!())?;
-    let db = crate::new_pg_pool_from_config(&config)
-        .await
-        .context(h!())?;
-    let settlement_paths = config.settlement_paths().context(h!())?;
+    let config = read_config(mode).c(h!())?;
+    let db = crate::new_pg_pool_from_config(&config).await.c(h!())?;
+    let settlement_paths = config.settlement_paths().c(h!())?;
     let settlements = Arc::new(RwLock::new(
-        crate::location::load_from_file(settlement_paths, mode)
-            .context(h!())?,
+        crate::location::load_from_file(settlement_paths, mode).c(h!())?,
     ));
     let rq = Client::builder()
         .timeout(core::time::Duration::from_secs(crate::config::RQ_TIMEOUT))
         .build()
-        .context(h!())?;
-    let redis = new_redis(&config).await.context(h!())?;
+        .c(h!())?;
+    let redis = new_redis(&config).await.c(h!())?;
     Ok((config, settlements, rq, redis, db))
 }
 

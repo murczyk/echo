@@ -25,7 +25,7 @@ async fn get_inbox_map(
     env: actix_web::web::Data<Env>,
     req: Json<MapPointsReq>,
 ) -> Result<Json<MapPointsRsp>, AppError> {
-    let user_id = user.id()?;
+    let user_id = user.id().c(h!())?;
     let page_id = req.page_id.clone();
     let req = req.into_inner();
 
@@ -33,8 +33,10 @@ async fn get_inbox_map(
     record_page_visit(&user_id, &page_id, &env, Some(payload))
         .await
         .context(h!())?;
-    crate::users::has_role(&env.dbx, &user_id, "Rer").await?;
-    let login = user.id()?;
+    crate::users::has_role(&env.dbx, &user_id, "Rer")
+        .await
+        .c(h!())?;
+    let login = user.id().c(h!())?;
     let logins = crate::users::get_organism_logins(&env.dbx, user)
         .await
         .context(h!())?;
@@ -85,15 +87,18 @@ async fn messages_by_id(
     env: actix_web::web::Data<Env>,
     req: Json<MessageIdsReq>,
 ) -> Result<Json<MessageIdsRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
-    let login = user.id()?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .c(h!())?;
+    let login = user.id().c(h!())?;
     let logins = crate::users::get_organism_logins(&env.dbx, user)
         .await
         .context(h!())?;
 
     let sigint_groups =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
-            .await?;
+            .await
+            .c(h!())?;
     let mut messages = SignalMessage::find()
         .join(
             JoinType::InnerJoin,
@@ -136,7 +141,7 @@ async fn inbox_messages(
     env: actix_web::web::Data<Env>,
     req: Json<InboxMessagesReq>,
 ) -> Result<Json<InboxMessagesRsp>, AppError> {
-    let user_id = user.id()?;
+    let user_id = user.id().c(h!())?;
     let page_id = req.page_id.clone();
     let req = req.into_inner();
 
@@ -144,11 +149,14 @@ async fn inbox_messages(
     record_page_visit(&user_id, &page_id, &env, Some(payload))
         .await
         .context(h!())?;
-    crate::users::has_role(&env.dbx, &user_id, "Rer").await?;
-    let is_admin = crate::users::has_role(&env.dbx, &user.id()?, "Admin")
+    crate::users::has_role(&env.dbx, &user_id, "Rer")
         .await
-        .is_ok();
-    let login = user.id()?;
+        .c(h!())?;
+    let is_admin =
+        crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
+            .await
+            .is_ok();
+    let login = user.id().c(h!())?;
     let logins = crate::users::get_organism_logins(&env.dbx, user)
         .await
         .context(h!())?;
@@ -157,11 +165,14 @@ async fn inbox_messages(
         .context(h!())?;
     let txn = env.dbx.begin().await.context(h!())?;
     let callsigns: Vec<CallsignInfoRes> =
-        load_inbox_callsigns(&inbox_items, &env).await?;
-    let signal_profiles =
-        load_inbox_signal_profiles(&inbox_items, &env.dbx).await?;
+        load_inbox_callsigns(&inbox_items, &env).await.c(h!())?;
+    let signal_profiles = load_inbox_signal_profiles(&inbox_items, &env.dbx)
+        .await
+        .c(h!())?;
     let signal_groups =
-        load_inbox_signal_groups(&inbox_items, &env.dbx, is_admin).await?;
+        load_inbox_signal_groups(&inbox_items, &env.dbx, is_admin)
+            .await
+            .c(h!())?;
 
     let freq_pelengs_summary = match req.calculate_freq_pelengs_summary {
         Some(true) => load_inbox_freq_pelengs_summary(&inbox_items, &env.dbx)
@@ -186,11 +197,14 @@ async fn inbox_group_stats(
     user: Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<InboxByGroupDigestRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
-    let login = user.id()?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .c(h!())?;
+    let login = user.id().c(h!())?;
     let sigint_groups =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
-            .await?;
+            .await
+            .c(h!())?;
     let one_hour_ago = Utc::now() - Duration::hours(1);
     let signal_message_timestamps = signal_message::Entity::find()
         .join(
@@ -279,7 +293,7 @@ async fn inbox_messages_count(
     env: actix_web::web::Data<Env>,
     req: Json<InboxMessagesReq>,
 ) -> Result<Json<InboxMessagesDigestRsp>, AppError> {
-    let user_id = user.id()?;
+    let user_id = user.id().c(h!())?;
     let page_id = req.page_id.clone();
     let req = req.into_inner();
 
@@ -287,7 +301,9 @@ async fn inbox_messages_count(
     record_page_visit(&user_id, &page_id, &env, Some(payload))
         .await
         .context(h!())?;
-    crate::users::has_role(&env.dbx, &user_id, "Rer").await?;
+    crate::users::has_role(&env.dbx, &user_id, "Rer")
+        .await
+        .c(h!())?;
     let login = user_id;
     let logins = crate::users::get_organism_logins(&env.dbx, user)
         .await
@@ -302,7 +318,8 @@ async fn inbox_messages_count(
     let query_res: Option<QueryResult> = env
         .dbx
         .query_one(Statement::from_string(DatabaseBackend::Postgres, q))
-        .await?;
+        .await
+        .c(h!())?;
     let query_res = query_res.unwrap();
     let quantity: i64 = query_res.try_get("", "count")?;
     let first_element_ts: Option<NaiveDateTime> =
@@ -321,7 +338,9 @@ async fn delete_message(
     env: actix_web::web::Data<Env>,
     req: Json<InboxDeleteReq>,
 ) -> Result<Json<()>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .c(h!())?;
     let txn = env.dbx.begin().await.context(h!())?;
     let result = match signal_message::Entity::find_by_id(req.id)
         .filter(signal_message::Column::Deleted.eq(false))
@@ -337,7 +356,7 @@ async fn delete_message(
             Ok(Json(()))
         }
     };
-    txn.commit().await?;
+    txn.commit().await.c(h!())?;
     result
 }
 
@@ -347,12 +366,14 @@ async fn inbox_submit(
     env: actix_web::web::Data<Env>,
     req: Json<InboxSubmitReq>,
 ) -> Result<Json<()>, AppError> {
-    let login = user.id()?;
-    crate::users::has_role(&env.dbx, &login, "Rer").await?;
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
+        .await
+        .c(h!())?;
     let logins = crate::users::get_organism_logins(&env.dbx, user)
         .await
         .context(h!())?;
-    let txn = env.dbx.begin().await?;
+    let txn = env.dbx.begin().await.c(h!())?;
 
     let Some(new_cursor_val) = req.messages.iter().map(|(id, _x)| id).max()
     else {
@@ -378,7 +399,7 @@ async fn inbox_submit(
                 .map(|x| x.to_lowercase())
                 .collect::<Vec<String>>(),
         );
-        fill_callsigns(&env.rq, &txn, &callsigns).await?;
+        fill_callsigns(&env.rq, &txn, &callsigns).await.c(h!())?;
         message.callsigns = callsigns.clone();
         message.callsign_tokens = Some(
             crate::rer_importer::callsigns::highlight_callsigns(
@@ -386,12 +407,13 @@ async fn inbox_submit(
                 &message.text,
                 &callsigns,
             )
-            .await?,
+            .await
+            .c(h!())?,
         );
         message.keyword_tokens = Some(
             crate::rer_importer::highlight::extract_keywords(&message.text)?,
         );
-        let all_ids = find_all_duplicates(&txn, *id).await?;
+        let all_ids = find_all_duplicates(&txn, *id).await.c(h!())?;
         for id in all_ids {
             submit_upsert_inbox_item(
                 env.settlements.clone(),
@@ -401,10 +423,11 @@ async fn inbox_submit(
                 &login,
                 &logins,
             )
-            .await?;
+            .await
+            .c(h!())?;
         }
     }
-    txn.commit().await?;
+    txn.commit().await.c(h!())?;
     Ok(Json(()))
 }
 
@@ -414,11 +437,14 @@ async fn inbox_cursor(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<Option<i64>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .c(h!())?;
     let since_id_noninclusive: Option<i64> = match DeltaKv::find()
         .filter(delta_kv::Column::K.eq("rer_importer_id_cursor".to_string()))
         .one(&env.dbx)
-        .await?
+        .await
+        .c(h!())?
     {
         None => None,
         Some(kv) => Some(serde_json::from_value(kv.v).context(h!())?),
@@ -433,12 +459,15 @@ async fn update_inbox_cursor(
     env: actix_web::web::Data<Env>,
     req: Json<UpdateCursorReq>,
 ) -> Result<Json<()>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
-    let txn = env.dbx.begin().await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .c(h!())?;
+    let txn = env.dbx.begin().await.c(h!())?;
     let cursor_existing = DeltaKv::find()
         .filter(delta_kv::Column::K.eq("rer_importer_id_cursor".to_string()))
         .one(&txn)
-        .await?;
+        .await
+        .c(h!())?;
     // {
     //     None => None,
     //     Some(kv) => Some(serde_json::from_value(kv.v)?),
@@ -450,15 +479,15 @@ async fn update_inbox_cursor(
                 k: Set("rer_importer_id_cursor".to_string()),
                 v: Set(serde_json::to_value(req.cursor).context(h!())?),
             };
-            kv.insert(&txn).await?;
+            kv.insert(&txn).await.c(h!())?;
         }
         Some(kv) => {
             let mut kv: delta_kv::ActiveModel = kv.into();
             kv.v = Set(serde_json::to_value(req.cursor).context(h!())?);
-            kv.update(&txn).await?;
+            kv.update(&txn).await.c(h!())?;
         }
     }
-    txn.commit().await?;
+    txn.commit().await.c(h!())?;
 
     Ok(Json(()))
 }
@@ -469,7 +498,7 @@ pub async fn get_inbox_messages(
     env: &Env,
     req: &InboxMessagesReq,
 ) -> Result<Vec<(i64, InboxMessage)>, AppError> {
-    let q = build_inbox_query(login, logins, env, req).await?;
+    let q = build_inbox_query(login, logins, env, req).await.c(h!())?;
 
     // First execute the query to get QueryResult
     let results = env
@@ -504,13 +533,15 @@ where
     let m_signal_message = SignalMessage::find_by_id(id)
         .filter(signal_message::Column::Deleted.eq(false))
         .one(txn)
-        .await?;
+        .await
+        .c(h!())?;
     if let Some(signal_message) = m_signal_message {
         let our_dups = SignalMessage::find()
             .filter(signal_message::Column::Deleted.eq(false))
             .filter(signal_message::Column::DuplicateOf.eq(id))
             .all(txn)
-            .await?;
+            .await
+            .c(h!())?;
         for dup in our_dups.iter() {
             res.insert(dup.id);
         }
@@ -519,7 +550,8 @@ where
                 .filter(signal_message::Column::Deleted.eq(false))
                 .filter(signal_message::Column::DuplicateOf.eq(duplicate_of))
                 .all(txn)
-                .await?;
+                .await
+                .c(h!())?;
             for dup in sibling_dups.iter() {
                 res.insert(dup.id);
             }
@@ -534,8 +566,10 @@ async fn get_freq_pelengs_summary(
     env: actix_web::web::Data<Env>,
     req: Json<InboxMessagesReq>,
 ) -> Result<Json<FreqPelengsActivityRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
-    let login = user.id()?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .c(h!())?;
+    let login = user.id().c(h!())?;
     let logins = crate::users::get_organism_logins(&env.dbx, user)
         .await
         .context(h!())?;

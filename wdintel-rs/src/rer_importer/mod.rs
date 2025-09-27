@@ -50,15 +50,15 @@ async fn attachment(
     env: actix_web::web::Data<Env>,
     path: actix_web::web::Path<(i64,)>,
 ) -> Result<HttpResponse, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer")
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
         .await
-        .context(h!())?;
+        .c(h!())?;
     let attachment_id = path.0;
     let attachment: signal_attachment::Model =
         signal_attachment::Entity::find_by_id(attachment_id)
             .one(&env.dbx)
             .await
-            .context(h!())?
+            .c(h!())?
             .ok_or(AppError::NotFound)?;
     let file = actix_files::NamedFile::open_async(&Path::new(&attachment.path))
         .await
@@ -72,9 +72,9 @@ async fn rer_importer_callsigns(
     env: actix_web::web::Data<Env>,
     req: Json<RerImporterCallsignsReq>,
 ) -> Result<Json<Vec<CallsignWithFrequencies>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer")
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
         .await
-        .context(h!())?;
+        .c(h!())?;
     let sixty_days_ago_offset =
         OffsetDateTime::now_utc() - TimeDuration::days(60);
     let sixty_days_ago_primitive = PrimitiveDateTime::new(
@@ -96,10 +96,10 @@ where sm.created_at >= $1 and sii.checked and l.login=$2
  group by 1"#,
     )
     .bind(sixty_days_ago_primitive)
-    .bind(user.id()?)
+    .bind(user.id().c(h!())?)
     .fetch_all(env.dbx.get_postgres_connection_pool())
     .await
-    .context(h!())?;
+    .c(h!())?;
 
     let mut res = vec![];
     for row in res1_rows.iter() {
@@ -130,9 +130,9 @@ async fn list_messages(
     env: actix_web::web::Data<Env>,
     req: actix_web::web::Query<MessagesReq>,
 ) -> Result<Json<Vec<MessageRsp>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer")
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
         .await
-        .context(h!())?;
+        .c(h!())?;
 
     let groups = crate::messenger::group::get_identity_sigint_groups_noimport(
         &env.dbx,
@@ -140,7 +140,7 @@ async fn list_messages(
         &env.config,
     )
     .await
-    .context(h!())?;
+    .c(h!())?;
 
     let result = signal_message::Entity::find()
         .join(
@@ -197,7 +197,7 @@ async fn list_messages(
         .into_model::<MessageRsp>()
         .all(&env.dbx)
         .await
-        .context(h!())?;
+        .c(h!())?;
     Ok(Json(result))
 }
 
@@ -206,13 +206,13 @@ async fn callsigns_alchemy(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<CallsignsAlchemyRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer")
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
         .await
-        .context(h!())?;
+        .c(h!())?;
     let callsigns = network_callsign::Entity::find()
         .all(&env.dbx)
         .await
-        .context(h!())?;
+        .c(h!())?;
     let mut callsigns_s = vec![];
     for callsign in callsigns.iter() {
         if !callsigns_s.contains(&callsign.callsign) {
@@ -298,9 +298,9 @@ pub async fn unread_counters(
     env: actix_web::web::Data<Env>,
     req: Json<UnreadCountersReq>,
 ) -> Result<Json<UnreadCountersRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer")
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
         .await
-        .context(h!())?;
+        .c(h!())?;
     let newer_msg_count = match req.only_show_unprocessed {
         Some(true) => sqlx::query(
             r#"
@@ -341,15 +341,15 @@ pub async fn signal_group_info(
     env: actix_web::web::Data<Env>,
     req: Json<SignalGroupReq>,
 ) -> Result<Json<SignalGroupRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer")
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
         .await
-        .context(h!())?;
+        .c(h!())?;
     let m_signal_group = signal_group::Entity::find()
         .filter(signal_group::Column::Deleted.eq(false))
         .filter(signal_group::Column::MasterKey.eq(&req.master_key))
         .one(&env.dbx)
         .await
-        .context(h!())?;
+        .c(h!())?;
     match m_signal_group {
         None => Ok(Json(SignalGroupRsp { name: None })),
         Some(signal_group) => Ok(Json(SignalGroupRsp {
@@ -364,18 +364,23 @@ pub async fn signal_group_info_batch(
     env: actix_web::web::Data<Env>,
     req: Json<BatchSignalGroupReq>,
 ) -> Result<Json<SignalGroupsRsp>, AppError> {
-    crate::users::has_any_role(&env.dbx, &user.id()?, vec!["Rer", "Api"])
-        .await
-        .context(h!())?;
-    let is_admin = crate::users::has_role(&env.dbx, &user.id()?, "Admin")
-        .await
-        .is_ok();
+    crate::users::has_any_role(
+        &env.dbx,
+        &user.id().c(h!())?,
+        vec!["Rer", "Api"],
+    )
+    .await
+    .c(h!())?;
+    let is_admin =
+        crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
+            .await
+            .is_ok();
     let keys: Vec<String> =
         req.groups.iter().map(|b| b.master_key.clone()).collect();
     let data =
         crate::messenger::group::collect_groups(keys, &env.dbx, is_admin)
             .await
-            .context(h!())?;
+            .c(h!())?;
     Ok(Json(SignalGroupsRsp { data }))
 }
 
@@ -385,9 +390,9 @@ pub async fn signal_profile_info(
     env: actix_web::web::Data<Env>,
     req: Json<SignalProfileReq>,
 ) -> Result<Json<Option<SignalProfileRsp>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer")
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
         .await
-        .context(h!())?;
+        .c(h!())?;
     // signal_profile::Column::Uuid
     //     .eq(&req.uuid)
     //     .or(signal_profile::Column::GivenName.eq(&req.uuid)),
@@ -395,7 +400,7 @@ pub async fn signal_profile_info(
         .filter(signal_profile::Column::Uuid.eq(&req.uuid))
         .one(&env.dbx)
         .await
-        .context(h!())?;
+        .c(h!())?;
     match m_signal_profile {
         None => Ok(Json(None)),
         Some(signal_profile) => Ok(Json(Some(SignalProfileRsp {
@@ -411,17 +416,17 @@ pub async fn signal_profile_info_batch(
     env: actix_web::web::Data<Env>,
     req: Json<BatchSignalProfileReq>,
 ) -> Result<Json<SignalProfilesRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer")
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
         .await
-        .context(h!())?;
-    let txn = env.dbx.begin().await.context(h!())?;
+        .c(h!())?;
+    let txn = env.dbx.begin().await.c(h!())?;
     // signal_profile::Column::Uuid
     //     .eq(&req.uuid)
     //     .or(signal_profile::Column::GivenName.eq(&req.uuid)),
     let ids: Vec<String> =
         req.profiles.iter().map(|p| p.uuid.clone()).collect();
-    let data = collect_profiles_data(&txn, ids).await.context(h!())?;
-    txn.commit().await.context(h!())?;
+    let data = collect_profiles_data(&txn, ids).await.c(h!())?;
+    txn.commit().await.c(h!())?;
     Ok(Json(SignalProfilesRsp { data }))
 }
 
@@ -431,9 +436,9 @@ pub async fn signal_profile_save(
     env: actix_web::web::Data<Env>,
     req: Json<SignalProfileSaveReq>,
 ) -> Result<Json<()>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer")
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
         .await
-        .context(h!())?;
+        .c(h!())?;
     signal_profile::Entity::insert(signal_profile::ActiveModel {
         uuid: Set(req.uuid.clone()),
         given_name: Set(req.given_name.clone()),
@@ -450,13 +455,13 @@ pub async fn signal_profile_save(
     )
     .exec(&env.dbx)
     .await
-    .context(h!())?;
+    .c(h!())?;
     Ok(Json(()))
 }
 
 pub async fn oneoff_round_freq(mode: Mode) -> Result<(), AppError> {
     println!("> starting oneoff_round_freq");
-    let dbx = crate::new_pg_pool_from_mode(mode).await.context(h!())?;
+    let dbx = crate::new_pg_pool_from_mode(mode).await.c(h!())?;
 
     let group = crate::config::read_config(mode)?.signal_import_group_name;
 
@@ -486,7 +491,7 @@ pub async fn oneoff_round_freq(mode: Mode) -> Result<(), AppError> {
 
     // println!("Query: {}", q);
 
-    let res = dbx.execute(q).await.context(h!())?;
+    let res = dbx.execute(q).await.c(h!())?;
 
     println!("> rounded {} freqs", res.rows_affected());
 
@@ -495,18 +500,18 @@ pub async fn oneoff_round_freq(mode: Mode) -> Result<(), AppError> {
 
 pub async fn oneoff_nominalize_freq(mode: Mode) -> Result<(), AppError> {
     println!("> starting oneoff_nominalize_freq");
-    let dbx = crate::new_pg_pool_from_mode(mode).await.context(h!())?;
+    let dbx = crate::new_pg_pool_from_mode(mode).await.c(h!())?;
     let inbox_items = sigint_inbox_item::Entity::find()
         .order_by_asc(sigint_inbox_item::Column::Id);
     // println!(
     //     "> inbox items query: {}",
     //     inbox_items.build(DbBackend::Postgres).to_string()
     // );
-    let count: u64 = inbox_items.clone().count(&dbx).await.context(h!())?;
+    let count: u64 = inbox_items.clone().count(&dbx).await.c(h!())?;
     println!("> overall: {count}");
-    let mut inbox_items = inbox_items.stream(&dbx).await.context(h!())?;
+    let mut inbox_items = inbox_items.stream(&dbx).await.c(h!())?;
     let pb = ProgressBar::new(count);
-    while let Some(item) = inbox_items.try_next().await.context(h!())? {
+    while let Some(item) = inbox_items.try_next().await.c(h!())? {
         pb.inc(1);
 
         if let Some(freq) = item.freq.as_ref() {
@@ -514,7 +519,7 @@ pub async fn oneoff_nominalize_freq(mode: Mode) -> Result<(), AppError> {
             if &freq2 != freq {
                 let mut item: sigint_inbox_item::ActiveModel = item.into();
                 item.freq = Set(Some(freq2));
-                item.update(&dbx).await.context(h!())?;
+                item.update(&dbx).await.c(h!())?;
             }
         }
     }
@@ -523,11 +528,11 @@ pub async fn oneoff_nominalize_freq(mode: Mode) -> Result<(), AppError> {
 
 pub async fn oneoff_reprocess_unit_names(mode: Mode) -> Result<(), AppError> {
     println!("> oneoff_reprocess_coords");
-    let dbx = crate::new_pg_pool_from_mode(mode).await.context(h!())?;
+    let dbx = crate::new_pg_pool_from_mode(mode).await.c(h!())?;
     let config = crate::config::read_config(mode)?;
     let settlements = Arc::new(RwLock::new(
         crate::location::load_from_file(
-            config.settlement_paths().context(h!())?,
+            config.settlement_paths().c(h!())?,
             mode,
         )
         .unwrap(),
@@ -545,22 +550,22 @@ pub async fn oneoff_reprocess_unit_names(mode: Mode) -> Result<(), AppError> {
         .filter(signal_message::Column::Deleted.eq(false))
         .order_by_asc(sigint_inbox_item::Column::Id);
     // let count = q.clone().count(&dbx).await
-    let mut inbox_items = q.stream(&dbx).await.context(h!())?;
+    let mut inbox_items = q.stream(&dbx).await.c(h!())?;
     // let pb = ProgressBar::new(count);
-    while let Some(item) = inbox_items.try_next().await.context(h!())? {
+    while let Some(item) = inbox_items.try_next().await.c(h!())? {
         // pb.inc(1);
         let id = item.id;
         let inbox_message = signal_message::Entity::find_by_id(id)
             .filter(signal_message::Column::Deleted.eq(false))
             .one(&dbx)
             .await
-            .context(h!())?
+            .c(h!())?
             .ok_or("error 17263")?;
 
         let unit_old = item.unit.clone();
         if let Some(body) = inbox_message.body {
             let callsigns: Vec<String> = match item.callsigns.as_ref() {
-                Some(v) => serde_json::from_value(v.clone()).context(h!())?,
+                Some(v) => serde_json::from_value(v.clone()).c(h!())?,
                 None => vec![],
             };
             let callsigns = callsigns
@@ -588,7 +593,7 @@ pub async fn oneoff_reprocess_unit_names(mode: Mode) -> Result<(), AppError> {
                             settlements.clone(),
                             location,
                         )
-                        .context(h!())?;
+                        .c(h!())?;
                         Some(utils::format_settlements_list(locations))
                     }
                     _ => None,
@@ -598,8 +603,8 @@ pub async fn oneoff_reprocess_unit_names(mode: Mode) -> Result<(), AppError> {
             item.location = Set(result.locality);
             item.location_v2 = Set(location_v2);
             item.parsed_unit_v2 = Set(false);
-            item.update(&dbx).await.context(h!())?;
-            reset_inbox_pelengs(id, &dbx).await.context(h!())?;
+            item.update(&dbx).await.c(h!())?;
+            reset_inbox_pelengs(id, &dbx).await.c(h!())?;
         }
     }
     Ok(())
@@ -610,20 +615,20 @@ pub async fn latest_senders(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<SignalProfilesRsp>, AppError> {
-    let login = user.id()?;
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer")
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
         .await
-        .context(h!())?;
+        .c(h!())?;
     let now = Utc::now();
     #[derive(FromQueryResult)]
     struct Res {
         sender: String,
     }
-    let txn = env.dbx.begin().await.context(h!())?;
+    let txn = env.dbx.begin().await.c(h!())?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&txn, &login)
             .await
-            .context(h!())?;
+            .c(h!())?;
     let sender_uuids: Vec<String> = signal_message::Entity::find()
         .join(
             JoinType::InnerJoin,
@@ -641,14 +646,12 @@ pub async fn latest_senders(
         .into_model::<Res>()
         .all(&txn)
         .await
-        .context(h!())?
+        .c(h!())?
         .iter()
         .map(|x| x.sender.clone())
         .collect();
-    let data = collect_profiles_data(&txn, sender_uuids)
-        .await
-        .context(h!())?;
-    txn.commit().await.context(h!())?;
+    let data = collect_profiles_data(&txn, sender_uuids).await.c(h!())?;
+    txn.commit().await.c(h!())?;
     Ok(Json(SignalProfilesRsp { data }))
 }
 
@@ -663,7 +666,7 @@ where
         .filter(signal_profile::Column::Uuid.is_in(sender_uuids.clone()))
         .all(txn)
         .await
-        .context(h!())?
+        .c(h!())?
         .iter()
         .map(|p| (p.uuid.clone(), p.clone()))
         .collect();

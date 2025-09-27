@@ -1,4 +1,6 @@
 use crate::error::AppError;
+use crate::h;
+use crate::types::{ShortContext, ShortContextErr};
 use opendal::Operator;
 use rand::Rng;
 use std::time::Duration;
@@ -13,21 +15,24 @@ pub async fn s3_put_object(
     let mut retries_left: u32 = 2;
     while retries_left > 0 {
         // Use writer_with builder to set content type and write all bytes
-        let write_res = async {
-            let mut writer =
-                store.writer_with(key).content_type(content_type).await?;
+        let res: Result<(), AppError> = async {
+            let mut writer = store
+                .writer_with(key)
+                .content_type(content_type)
+                .await
+                .c(h!())?;
             // Write all bytes, then close
-            writer.write(body.clone()).await?;
-            writer.close().await
+            writer.write(body.clone()).await.c(h!())?;
+            writer.close().await.c(h!())?;
+            Ok(())
         }
         .await;
-        let res = write_res;
         match res {
             Err(e) => {
                 retries_left -= 1;
                 random_sleep().await;
                 if retries_left == 0 {
-                    return Err(AppError::from(e));
+                    return Err(e.c(h!()));
                 }
             }
             Ok(_) => return Ok(()),

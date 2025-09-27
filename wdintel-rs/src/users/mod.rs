@@ -31,13 +31,12 @@ pub async fn has_any_role(
     user_id: &str,
     roles_list: Vec<&str>,
 ) -> Result<(), AppError> {
-    let login_obj = validate_login(dbx, user_id).await.context(h!())?;
+    let login_obj = validate_login(dbx, user_id).await.c(h!())?;
     if let Some(e) = login_obj.validation_error {
         return Err(e);
     };
-    let login_obj = login_obj.login_model.context(h!())?;
-    let roles: Vec<String> =
-        serde_json::from_value(login_obj.roles).context(h!())?;
+    let login_obj = login_obj.login_model.c(h!())?;
+    let roles: Vec<String> = serde_json::from_value(login_obj.roles).c(h!())?;
     let mut is_any_good = false;
     for role in roles_list.clone() {
         let is_good = match role {
@@ -103,13 +102,11 @@ async fn keep_alive(
     req: Json<KeepAliveReq>,
 ) -> Result<Json<()>, AppError> {
     let req = req.into_inner();
-    let user_id = user.id()?;
-    update_last_active_at(&env.dbx, &user_id)
-        .await
-        .context(h!())?;
+    let user_id = user.id().c(h!())?;
+    update_last_active_at(&env.dbx, &user_id).await.c(h!())?;
     record_page_visit(&user_id, &req.page_id, &env, None)
         .await
-        .context(h!())?;
+        .c(h!())?;
     Ok(Json(()))
 }
 
@@ -119,14 +116,16 @@ pub async fn update_login(
     env: actix_web::web::Data<Env>,
     req: Json<UpdateLoginReq>,
 ) -> Result<Json<Login>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Admin").await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
+        .await
+        .c(h!())?;
 
     let login_obj = login::Entity::find()
         .filter(login::Column::DeletedPermanently.eq(false))
         .filter(login::Column::Login.eq(req.login.clone()))
         .one(&env.dbx)
         .await
-        .context(h!())?
+        .c(h!())?
         .ok_or(AppError::NotFound)?;
 
     let delta_id = match login_obj.delta_login_id {
@@ -139,7 +138,7 @@ pub async fn update_login(
                 }
                 .insert(&env.dbx)
                 .await
-                .context(h!())?;
+                .c(h!())?;
                 Some(result.id)
             } else {
                 None
@@ -153,8 +152,8 @@ pub async fn update_login(
                 .one(&env.dbx)
                 .await
                 .context(format!("delta_id: {id}"))
-                .context(h!())?
-                .context(h!())?;
+                .c(h!())?
+                .c(h!())?;
             match &req.delta_login {
                 None => {
                     let logins = login::Entity::find()
@@ -162,13 +161,13 @@ pub async fn update_login(
                         .filter(login::Column::DeletedPermanently.eq(false))
                         .all(&env.dbx)
                         .await
-                        .context(h!())?;
+                        .c(h!())?;
                     for l in logins {
                         let mut l = l.into_active_model();
                         l.delta_login_id = Set(None);
-                        l.update(&env.dbx).await.context(h!())?;
+                        l.update(&env.dbx).await.c(h!())?;
                     }
-                    login.delete(&env.dbx).await.context(h!())?;
+                    login.delete(&env.dbx).await.c(h!())?;
                     None
                 }
                 Some(d_login) => {
@@ -176,7 +175,7 @@ pub async fn update_login(
                         let id = login.id;
                         let mut model = login.into_active_model();
                         model.login = Set(d_login.clone());
-                        model.update(&env.dbx).await.context(h!())?;
+                        model.update(&env.dbx).await.c(h!())?;
                         Some(id)
                     } else {
                         let result = delta_login::ActiveModel {
@@ -186,7 +185,7 @@ pub async fn update_login(
                         }
                         .insert(&env.dbx)
                         .await
-                        .context(h!())?;
+                        .c(h!())?;
                         Some(result.id)
                     }
                 }
@@ -210,15 +209,15 @@ pub async fn update_login(
         let salt = salt_s.as_bytes();
         let config = argon2::Config::original();
         let hash = argon2::hash_encoded(
-            req.password.clone().context(h!())?.as_bytes(),
+            req.password.clone().c(h!())?.as_bytes(),
             salt,
             &config,
-        )?;
+        )
+        .c(h!())?;
         login_obj.password = Set(Some(hash.to_string()));
     }
     if req.roles.is_some() {
-        login_obj.roles =
-            Set(serde_json::to_value(req.roles.clone()).context(h!())?);
+        login_obj.roles = Set(serde_json::to_value(req.roles.clone()).c(h!())?);
     }
     if req.sigint_zone_id.is_some() {
         login_obj.sigint_zone_id = Set(req.sigint_zone_id);
@@ -230,13 +229,13 @@ pub async fn update_login(
             .clone()
             .map(DeactivationReasonEnum::from));
     }
-    let res = login_obj.update(&env.dbx).await.context(h!())?;
+    let res = login_obj.update(&env.dbx).await.c(h!())?;
     let (organism_name, organism_enabled) = match organism::Entity::find()
         .filter(organism::Column::DeletedPermanently.eq(false))
         .filter(organism::Column::Id.eq(res.organism_id))
         .one(&env.dbx)
         .await
-        .context(h!())?
+        .c(h!())?
     {
         None => (None, None),
         Some(organism) => (Some(organism.name.clone()), Some(organism.enabled)),
@@ -246,7 +245,7 @@ pub async fn update_login(
         organism_enabled,
         delta_login: req.delta_login.clone(),
         login: res.login,
-        roles: serde_json::from_value(res.roles).context(h!())?,
+        roles: serde_json::from_value(res.roles).c(h!())?,
         created_at: res.created_at.and_utc().timestamp_millis(),
         deleted: res.deleted,
         sigint_zone_id: res.sigint_zone_id,
@@ -254,7 +253,7 @@ pub async fn update_login(
             .filter(sigint_zone::Column::Id.eq(res.sigint_zone_id))
             .one(&env.dbx)
             .await
-            .context(h!())?
+            .c(h!())?
             .map(|sz| sz.name),
         organism_id: res.organism_id,
         last_active_at: res
@@ -272,18 +271,20 @@ pub async fn delete_login(
     env: actix_web::web::Data<Env>,
     req: Json<String>,
 ) -> Result<Json<()>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Admin").await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
+        .await
+        .c(h!())?;
 
     let login_obj = login::Entity::find()
         .filter(login::Column::DeletedPermanently.eq(false))
         .filter(login::Column::Login.eq(req.clone()))
         .one(&env.dbx)
         .await
-        .context(h!())?
+        .c(h!())?
         .ok_or(AppError::NotFound)?;
     let mut login_obj: login::ActiveModel = login_obj.into();
     login_obj.deleted = Set(true);
-    login_obj.update(&env.dbx).await.context(h!())?;
+    login_obj.update(&env.dbx).await.c(h!())?;
     Ok(Json(()))
 }
 
@@ -293,13 +294,16 @@ pub async fn create_login(
     env: actix_web::web::Data<Env>,
     req: Json<CreateLoginReq>,
 ) -> Result<Json<Login>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Admin").await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
+        .await
+        .c(h!())?;
 
     let salt_s =
         format!("{}{}", crate::config::IDENTITY_SALT, req.login.clone());
     let salt = salt_s.as_bytes();
     let config = argon2::Config::original();
-    let hash = argon2::hash_encoded(req.password.as_bytes(), salt, &config)?;
+    let hash =
+        argon2::hash_encoded(req.password.as_bytes(), salt, &config).c(h!())?;
 
     let res = resurrect_or_insert_login(
         &env.dbx,
@@ -308,7 +312,7 @@ pub async fn create_login(
             delta_login_id: Set(None),
             login: Set(req.login.trim().to_string()),
             password: Set(Some(hash.to_string())),
-            roles: Set(serde_json::to_value(req.roles.clone()).context(h!())?),
+            roles: Set(serde_json::to_value(req.roles.clone()).c(h!())?),
             created_at: NotSet,
             sigint_zone_id: Set(req.sigint_zone_id),
             organism_id: Set(req.organism_id),
@@ -319,14 +323,14 @@ pub async fn create_login(
         },
     )
     .await
-    .context(h!())?;
+    .c(h!())?;
 
     let (organism_name, organism_enabled) = match organism::Entity::find()
         .filter(organism::Column::Id.eq(res.organism_id))
         .filter(organism::Column::DeletedPermanently.eq(false))
         .one(&env.dbx)
         .await
-        .context(h!())?
+        .c(h!())?
     {
         None => (None, None),
         Some(organism) => (Some(organism.name.clone()), Some(organism.enabled)),
@@ -337,7 +341,7 @@ pub async fn create_login(
         organism_name,
         organism_enabled,
         login: res.login,
-        roles: serde_json::from_value(res.roles).context(h!())?,
+        roles: serde_json::from_value(res.roles).c(h!())?,
         created_at: res.created_at.and_utc().timestamp_millis(),
         deleted: res.deleted,
         sigint_zone_id: res.sigint_zone_id,
@@ -345,7 +349,7 @@ pub async fn create_login(
             .filter(sigint_zone::Column::Id.eq(res.sigint_zone_id))
             .one(&env.dbx)
             .await
-            .context(h!())?
+            .c(h!())?
             .map(|sz| sz.name),
         organism_id: res.organism_id,
         last_active_at: res
@@ -363,9 +367,9 @@ pub async fn create_delta_login(
     env: actix_web::web::Data<Env>,
     req: Json<CreateDeltaLoginReq>,
 ) -> Result<Json<Login>, AppError> {
-    has_role(&env.dbx, &user.id()?, "Admin")
+    has_role(&env.dbx, &user.id().c(h!())?, "Admin")
         .await
-        .context(h!())?;
+        .c(h!())?;
 
     let login = req.login.clone();
     let roles = req.roles.clone();
@@ -375,7 +379,7 @@ pub async fn create_delta_login(
     let result =
         register_delta_user(&env.dbx, login, roles, sigint_zone, organism_id)
             .await
-            .context(h!())?;
+            .c(h!())?;
     Ok(Json(result))
 }
 
@@ -385,7 +389,9 @@ pub async fn list_logins(
     env: actix_web::web::Data<Env>,
     req: Json<ListLoginsReq>,
 ) -> Result<Json<ListLoginsRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Admin").await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
+        .await
+        .c(h!())?;
 
     #[derive(FromQueryResult)]
     struct LoginRes {
@@ -438,13 +444,12 @@ pub async fn list_logins(
         .into_model::<LoginRes>()
         .all(&env.dbx)
         .await
-        .context(h!())?
+        .c(h!())?
         .into_iter();
 
     let mut users = vec![];
     for login in users_iter {
-        let roles: Vec<String> =
-            serde_json::from_value(login.roles).context(h!())?;
+        let roles: Vec<String> = serde_json::from_value(login.roles).c(h!())?;
         let mut skip = false;
         if let Some(filter_roles) = &req.filter_by_roles {
             for role in filter_roles {
@@ -487,13 +492,13 @@ async fn api_user(
     let Some(user) = user else {
         return Err(AppError::Unauthenticated);
     };
-    let username = user.id()?;
+    let username = user.id().c(h!())?;
     let Some(login_obj) = login::Entity::find()
         .filter(login::Column::Login.eq(username.clone()))
         .filter(login::Column::DeletedPermanently.eq(false))
         .one(&env.dbx)
         .await
-        .context(h!())?
+        .c(h!())?
     else {
         println!("user not found: {}", username.clone());
         return Err(AppError::Unauthenticated);
@@ -504,13 +509,13 @@ async fn api_user(
             .filter(delta_login::Column::Id.eq(id))
             .one(&env.dbx)
             .await
-            .context(h!())?
+            .c(h!())?
             .map(|x| x.login),
     };
     Ok(Json(User {
         delta_login,
         name: username.clone(),
-        roles: serde_json::from_value(login_obj.roles).context(h!())?,
+        roles: serde_json::from_value(login_obj.roles).c(h!())?,
         sigint_zone_id: login_obj.sigint_zone_id,
         organism_id: login_obj.organism_id,
     }))
@@ -531,7 +536,7 @@ async fn api_user_info(
         .filter(login::Column::DeletedPermanently.eq(false))
         .one(&env.dbx)
         .await
-        .context(h!())?
+        .c(h!())?
     else {
         println!("user not found: {}", username.clone());
         return Err(AppError::NotFound);
@@ -542,13 +547,13 @@ async fn api_user_info(
             .filter(delta_login::Column::Id.eq(id))
             .one(&env.dbx)
             .await
-            .context(h!())?
+            .c(h!())?
             .map(|x| x.login),
     };
     Ok(Json(User {
         delta_login,
         name: username.clone(),
-        roles: serde_json::from_value(login_obj.roles).context(h!())?,
+        roles: serde_json::from_value(login_obj.roles).c(h!())?,
         sigint_zone_id: login_obj.sigint_zone_id,
         organism_id: login_obj.organism_id,
     }))
@@ -571,7 +576,7 @@ pub async fn user_test_api_login(
     req: Json<LoginReq>,
 ) -> Result<Json<()>, AppError> {
     let user_id = req.user.clone();
-    has_role(&env.dbx, &user_id, "Api").await.context(h!())?;
+    has_role(&env.dbx, &user_id, "Api").await.c(h!())?;
     let login_obj = match validate_login(&env.dbx, &user_id).await {
         Ok(obj) => obj,
         Err(e) => match e {
@@ -589,14 +594,15 @@ pub async fn user_test_api_login(
     if let Some(err) = login_obj.validation_error {
         return Err(err);
     }
-    let login_obj = login_obj.login_model.context(h!())?;
+    let login_obj = login_obj.login_model.c(h!())?;
     let password = login_obj.password.clone().ok_or(AppError::Form(
         BTreeMap::from_iter([(
             "login".to_string(),
             "Не вдалося залогінитись".to_string(),
         )]),
     ))?;
-    let is_valid = argon2::verify_encoded(&password, req.password.as_bytes())?;
+    let is_valid =
+        argon2::verify_encoded(&password, req.password.as_bytes()).c(h!())?;
     if !is_valid {
         println!("> warning: invalid password attempt: {}", req.user);
         return Err(AppError::Form(BTreeMap::from_iter([(
@@ -605,7 +611,7 @@ pub async fn user_test_api_login(
         )])));
     };
 
-    Identity::login(&http_req.extensions(), user_id.clone()).context(h!())?;
+    Identity::login(&http_req.extensions(), user_id.clone()).c(h!())?;
     Ok(Json(()))
 }
 
@@ -644,7 +650,7 @@ pub async fn user_login(
     if let Some(err) = login_obj.validation_error {
         return Err(err);
     }
-    let login_obj = login_obj.login_model.context(h!())?;
+    let login_obj = login_obj.login_model.c(h!())?;
     let password = login_obj.password.clone().ok_or(AppError::Form(
         BTreeMap::from_iter([(
             "login".to_string(),
@@ -654,7 +660,8 @@ pub async fn user_login(
         ),
         )]),
     ))?;
-    let is_valid = argon2::verify_encoded(&password, req.password.as_bytes())?;
+    let is_valid =
+        argon2::verify_encoded(&password, req.password.as_bytes()).c(h!())?;
     if !is_valid {
         println!("> warning: invalid password attempt: {}", req.user);
         return Err(AppError::Form(BTreeMap::from_iter([(
@@ -663,10 +670,10 @@ pub async fn user_login(
         )])));
     };
 
-    Identity::login(&http_req.extensions(), user_id.clone()).context(h!())?;
+    Identity::login(&http_req.extensions(), user_id.clone()).c(h!())?;
 
     let session_id = Uuid::now_v7();
-    session.insert("id", session_id.to_string()).context(h!())?;
+    session.insert("id", session_id.to_string()).c(h!())?;
 
     let account_id = login_obj.login.clone();
     crate::session::add_session(
@@ -675,21 +682,19 @@ pub async fn user_login(
         &account_id,
     )
     .await
-    .context(h!())?;
+    .c(h!())?;
     crate::event_stream::create_redis_stream(
         &mut env.redis.clone(),
         session_id,
     )
     .await
-    .context(h!())?;
+    .c(h!())?;
 
-    update_last_active_at(&env.dbx, &user_id)
-        .await
-        .context(h!())?;
+    update_last_active_at(&env.dbx, &user_id).await.c(h!())?;
 
     record_new_session(&user_id, session_id, &env)
         .await
-        .context(h!())?;
+        .c(h!())?;
 
     Ok(Json(()))
 }
@@ -701,15 +706,15 @@ pub async fn settings_save(
     req: Json<SettingsSaveReq>,
 ) -> Result<Json<()>, AppError> {
     let login_obj = login::Entity::find()
-        .filter(login::Column::Login.eq(user.id()?))
+        .filter(login::Column::Login.eq(user.id().c(h!())?))
         .filter(login::Column::DeletedPermanently.eq(false))
         .one(&env.dbx)
         .await
-        .context(h!())?
+        .c(h!())?
         .ok_or(AppError::NotFound)?;
     let mut login_obj: login::ActiveModel = login_obj.into();
     login_obj.sigint_zone_id = Set(req.sigint_zone_id);
-    login_obj.update(&env.dbx).await.context(h!())?;
+    login_obj.update(&env.dbx).await.c(h!())?;
     Ok(Json(()))
 }
 
@@ -721,16 +726,16 @@ pub async fn register_user(
     sigint_zone_id: i64,
     organism_id: Option<i64>,
 ) -> Result<(), AppError> {
-    let txn = dbx.begin().await.context(h!())?;
+    let txn = dbx.begin().await.c(h!())?;
     let salt_s = format!("{}{}", crate::config::IDENTITY_SALT, user);
     let salt = salt_s.as_bytes();
     let config = argon2::Config::original();
-    let hash = argon2::hash_encoded(password.as_bytes(), salt, &config)?;
-    let hash_s = hash.to_string();
+    let hash_s =
+        argon2::hash_encoded(password.as_bytes(), salt, &config).c(h!())?;
     login::ActiveModel {
         login: Set(user.to_string()),
         password: Set(Some(hash_s.clone())),
-        roles: Set(serde_json::to_value(roles.to_owned()).context(h!())?),
+        roles: Set(serde_json::to_value(roles.to_owned()).c(h!())?),
         created_at: NotSet,
         sigint_zone_id: Set(Some(sigint_zone_id)),
         organism_id: Set(organism_id),
@@ -742,8 +747,8 @@ pub async fn register_user(
     }
     .insert(&txn)
     .await
-    .context(h!())?;
-    txn.commit().await.context(h!())?;
+    .c(h!())?;
+    txn.commit().await.c(h!())?;
     Ok(())
 }
 
@@ -753,15 +758,14 @@ pub async fn user_sigint_groups(
     req: Json<SigintGroupsReq>,
     user: Identity,
 ) -> Result<Json<Vec<String>>, AppError> {
-    // let res = get_identity_sigint_groups_since(&env.dbx, &user, req.since_date_inclusive_ms).await.context(h!())?;
-    let login = user.id()?;
-    let all_groups = get_identity_sigint_groups(&env.dbx, &login)
-        .await
-        .context(h!())?;
+    // let res = get_identity_sigint_groups_since(&env.dbx, &user, req.since_date_inclusive_ms).await.c(h!())?;
+    let login = user.id().c(h!())?;
+    let all_groups =
+        get_identity_sigint_groups(&env.dbx, &login).await.c(h!())?;
     let Some(since_ts) = &req.since_date_inclusive_ms else {
         return Ok(Json(all_groups));
     };
-    let ts = crate::utils::dt_from_millis(*since_ts).context(h!())?;
+    let ts = crate::utils::dt_from_millis(*since_ts).c(h!())?;
     let res = signal_message::Entity::find()
         .join(
             JoinType::InnerJoin,
@@ -775,7 +779,7 @@ pub async fn user_sigint_groups(
         .into_tuple::<String>()
         .all(&env.dbx)
         .await
-        .context(h!())?;
+        .c(h!())?;
     Ok(Json(res))
 }
 
@@ -785,16 +789,15 @@ pub async fn user_sigint_groups_detailed(
     req: Json<SigintGroupsReq>,
     user: Identity,
 ) -> Result<Json<Vec<SignalGroupEntryF2>>, AppError> {
-    // let res = get_identity_sigint_groups_since(&env.dbx, &user, req.since_date_inclusive_ms).await.context(h!())?;
-    let login = user.id()?;
+    // let res = get_identity_sigint_groups_since(&env.dbx, &user, req.since_date_inclusive_ms).await.c(h!())?;
+    let login = user.id().c(h!())?;
     has_any_role(&env.dbx, &login, vec!["Rer", "Admin", "Api"])
         .await
-        .context(h!())?;
-    let mut keys = get_identity_sigint_groups(&env.dbx, &login)
-        .await
-        .context(h!())?;
+        .c(h!())?;
+    let mut keys =
+        get_identity_sigint_groups(&env.dbx, &login).await.c(h!())?;
     if let Some(since_ts) = &req.since_date_inclusive_ms {
-        let ts = crate::utils::dt_from_millis(*since_ts).context(h!())?;
+        let ts = crate::utils::dt_from_millis(*since_ts).c(h!())?;
         keys = signal_message::Entity::find()
             .join(
                 JoinType::InnerJoin,
@@ -808,11 +811,11 @@ pub async fn user_sigint_groups_detailed(
             .into_tuple::<String>()
             .all(&env.dbx)
             .await
-            .context(h!())?;
+            .c(h!())?;
     }
     let groups = crate::messenger::group::collect_groups_f2(keys, &env.dbx)
         .await
-        .context(h!())?;
+        .c(h!())?;
     Ok(Json(groups))
 }
 
@@ -827,12 +830,12 @@ pub async fn user_sigint_groups_detailed(
 //     C: ConnectionTrait + 'async_trait,
 // {
 //     let login_obj = login::Entity::find()
-//         .filter(login::Column::Login.eq(user.id()?))
+//         .filter(login::Column::Login.eq(user.id().c(h!())?))
 //         .one(txn)
-//         .await.context(h!())?
+//         .await.c(h!())?
 //         .ok_or(AppError::NotFound)?;
 //     let zone_id: i64 = login_obj.sigint_zone_id.ok_or(AppError::BL {
-//         msg: format!("Zone must be set for user: {}", user.id()?),
+//         msg: format!("Zone must be set for user: {}", user.id().c(h!())?),
 //     })?;
 
 //     let since_ms = if let Some(since) = since_date_inclusive_ms {
@@ -882,7 +885,7 @@ pub async fn user_sigint_groups_detailed(
 //         .group_by(signal_message::Column::GroupMasterKey)
 //         .into_tuple::<String>()
 //         .all(txn)
-//         .await.context(h!())?
+//         .await.c(h!())?
 //         .into_iter()
 //         .collect())
 // }
@@ -892,7 +895,7 @@ pub async fn oneoff_register_user(
     ps: &crate::OneoffRegisterUserPs,
 ) -> Result<(), AppError> {
     println!("> starting oneoff_register_user");
-    let dbx = crate::new_pg_pool_from_mode(mode).await.context(h!())?;
+    let dbx = crate::new_pg_pool_from_mode(mode).await.c(h!())?;
     register_user(
         &dbx,
         &ps.login,
@@ -902,7 +905,7 @@ pub async fn oneoff_register_user(
         ps.organism_id,
     )
     .await
-    .context(h!())?;
+    .c(h!())?;
     Ok(())
 }
 
@@ -911,7 +914,7 @@ pub async fn oneoff_register_delta_user(
     ps: &crate::OneoffRegisterDeltaUserPs,
 ) -> Result<(), AppError> {
     println!("> starting oneoff_register_delta_user");
-    let dbx = crate::new_pg_pool_from_mode(mode).await.context(h!())?;
+    let dbx = crate::new_pg_pool_from_mode(mode).await.c(h!())?;
     register_delta_user(
         &dbx,
         ps.login.clone(),
@@ -920,7 +923,7 @@ pub async fn oneoff_register_delta_user(
         ps.organism_id,
     )
     .await
-    .context(h!())?;
+    .c(h!())?;
     Ok(())
 }
 
@@ -932,13 +935,13 @@ pub async fn get_organism_logins<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
-    let login_s = user.id()?;
+    let login_s = user.id().c(h!())?;
     let login = login::Entity::find()
         .filter(login::Column::Login.eq(login_s.to_string()))
         .filter(login::Column::DeletedPermanently.eq(false))
         .one(txn)
         .await
-        .context(h!())?
+        .c(h!())?
         .ok_or(AppError::Unauthenticated)?;
     if login.deleted {
         user.logout();
@@ -951,7 +954,7 @@ where
             .filter(login::Column::DeletedPermanently.eq(false))
             .all(txn)
             .await
-            .context(h!())?;
+            .c(h!())?;
         for login in logins {
             if !res.contains(&login.login) {
                 res.push(login.login.to_string());
@@ -972,7 +975,7 @@ pub async fn validate_login(
         .filter(login::Column::DeletedPermanently.eq(false))
         .all(dbx)
         .await
-        .context(h!());
+        .c(h!());
     let login_data = match login_result {
         Ok(data) => data,
         Err(e) => {
@@ -1054,7 +1057,7 @@ async fn register_delta_user(
         .filter(login::Column::DeletedPermanently.eq(false))
         .all(dbx)
         .await
-        .context(h!())?
+        .c(h!())?
         .into_iter()
         .flat_map(|(_, logins)| logins.into_iter())
         .map(|x| x.login)
@@ -1075,7 +1078,7 @@ async fn register_delta_user(
     }
     .insert(dbx)
     .await
-    .context(h!())?;
+    .c(h!())?;
 
     // Create or resurrect the login row and attach the new delta login
     let login_obj = resurrect_or_insert_login(
@@ -1083,7 +1086,7 @@ async fn register_delta_user(
         login::ActiveModel {
             login: Set(login),
             password: Set(None),
-            roles: Set(serde_json::to_value(roles).context(h!())?),
+            roles: Set(serde_json::to_value(roles).c(h!())?),
             created_at: NotSet,
             sigint_zone_id: Set(sigint_zone),
             organism_id: Set(organism_id),
@@ -1095,22 +1098,22 @@ async fn register_delta_user(
         },
     )
     .await
-    .context(h!())?;
+    .c(h!())?;
 
     let res = login::Entity::find()
         .filter(login::Column::Login.eq(login_obj.login))
         .filter(login::Column::DeletedPermanently.eq(false))
         .one(dbx)
         .await
-        .context(h!())?
-        .context(h!())?;
+        .c(h!())?
+        .c(h!())?;
 
     let (organism_name, organism_enabled) = match organism::Entity::find()
         .filter(organism::Column::Id.eq(res.organism_id))
         .filter(organism::Column::DeletedPermanently.eq(false))
         .one(dbx)
         .await
-        .context(h!())?
+        .c(h!())?
     {
         None => (None, None),
         Some(organism) => (Some(organism.name.clone()), Some(organism.enabled)),
@@ -1121,7 +1124,7 @@ async fn register_delta_user(
         organism_name,
         organism_enabled,
         login: res.login,
-        roles: serde_json::from_value(res.roles).context(h!())?,
+        roles: serde_json::from_value(res.roles).c(h!())?,
         created_at: res.created_at.and_utc().timestamp_millis(),
         deleted: res.deleted,
         sigint_zone_id: res.sigint_zone_id,
@@ -1129,7 +1132,7 @@ async fn register_delta_user(
             .filter(sigint_zone::Column::Id.eq(res.sigint_zone_id))
             .one(dbx)
             .await
-            .context(h!())?
+            .c(h!())?
             .map(|sz| sz.name),
         organism_id: res.organism_id,
         last_active_at: res
@@ -1160,10 +1163,8 @@ async fn resurrect_or_insert_login(
         }
     };
 
-    if let Some(existing) = login::Entity::find_by_id(key)
-        .one(dbx)
-        .await
-        .context(h!())?
+    if let Some(existing) =
+        login::Entity::find_by_id(key).one(dbx).await.c(h!())?
     {
         if existing.deleted_permanently {
             let mut model = existing.into_active_model();
@@ -1176,11 +1177,11 @@ async fn resurrect_or_insert_login(
             model.last_active_at = Set(Some(Utc::now().naive_utc()));
             model.deactivation_reason = Set(None);
             model.deleted_permanently = Set(false);
-            return Ok(model.update(dbx).await.context(h!())?);
+            return Ok(model.update(dbx).await.c(h!())?);
         }
     }
 
-    Ok(desired.insert(dbx).await.context(h!())?)
+    Ok(desired.insert(dbx).await.c(h!())?)
 }
 
 pub async fn inactive_users_worker(dbx: &DatabaseConnection) {
@@ -1219,7 +1220,7 @@ async fn inactive_users_worker_1(
         ))
         .all(dbx)
         .await
-        .context(h!())?;
+        .c(h!())?;
 
     for user in inactive_users {
         let login_name = user.login.clone();
@@ -1227,7 +1228,7 @@ async fn inactive_users_worker_1(
         model.deleted = Set(true);
         model.deactivation_reason =
             Set(Some(sea_orm_active_enums::DeactivationReasonEnum::Inactive));
-        model.update(dbx).await.context(h!())?;
+        model.update(dbx).await.c(h!())?;
 
         info!("> Deactivating user {login_name} due to inactivity");
     }
@@ -1242,13 +1243,14 @@ pub async fn update_last_active_at(
     let mut user: login::ActiveModel = login::Entity::find_by_id(user_id)
         .filter(login::Column::DeletedPermanently.eq(false))
         .one(dbx)
-        .await?
+        .await
+        .c(h!())?
         .ok_or(AppError::NotFound)
-        .context(h!())?
+        .c(h!())?
         .into_active_model();
 
     user.last_active_at = Set(Some(Utc::now().naive_utc()));
-    user.update(dbx).await.context(h!())?;
+    user.update(dbx).await.c(h!())?;
 
     Ok(())
 }

@@ -28,8 +28,10 @@ pub async fn list_network_callsigns(
     env: actix_web::web::Data<Env>,
     req: Json<ListNetworkCallsignsReq>,
 ) -> Result<Json<ListNetworkCallsignsRes>, AppError> {
-    let user_id = user.id()?;
-    crate::users::has_role(&env.dbx, &user_id, "Rer").await?;
+    let user_id = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &user_id, "Rer")
+        .await
+        .c(h!())?;
 
     trace!("network_callsigns; login: {user_id}; req: {req:?}");
     let req = req.into_inner();
@@ -67,7 +69,7 @@ pub async fn create_network_callsign(
     env: actix_web::web::Data<Env>,
     req: Json<CreateNetworkCallsignReq>,
 ) -> Result<Json<NetworkCallsign>, AppError> {
-    let user_id = user.id()?;
+    let user_id = user.id().c(h!())?;
     crate::users::has_role(&env.dbx, &user_id, "Rer")
         .await
         .context(h!())?;
@@ -129,7 +131,7 @@ pub async fn add_as_known_network_callsigns(
     env: actix_web::web::Data<Env>,
     req: Json<AddAsKnownNetworkCallsignReq>,
 ) -> Result<Json<Vec<NetworkCallsign>>, AppError> {
-    let user_id = user.id()?;
+    let user_id = user.id().c(h!())?;
     crate::users::has_role(&env.dbx, &user_id, "Rer")
         .await
         .context(h!())?;
@@ -191,7 +193,7 @@ pub async fn update_network_callsign(
     env: actix_web::web::Data<Env>,
     req: Json<UpdateNetworkCallsignReq>,
 ) -> Result<Json<NetworkCallsign>, AppError> {
-    let user_id = user.id()?;
+    let user_id = user.id().c(h!())?;
     crate::users::has_role(&env.dbx, &user_id, "Rer")
         .await
         .context(h!())?;
@@ -252,9 +254,13 @@ pub async fn delete_network_callsign(
     env: actix_web::web::Data<Env>,
     req: Json<i64>,
 ) -> Result<Json<NetworkCallsign>, AppError> {
-    let user_id = user.id()?;
-    crate::users::has_role(&env.dbx, &user_id, "Rer").await?;
-    crate::users::has_role(&env.dbx, &user_id, "UnitsEditor").await?;
+    let user_id = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &user_id, "Rer")
+        .await
+        .c(h!())?;
+    crate::users::has_role(&env.dbx, &user_id, "UnitsEditor")
+        .await
+        .c(h!())?;
 
     info!("Delete network callsign; login: {user_id}; req: {req:?}");
     let txn = env.dbx.begin().await.context(h!())?;
@@ -301,8 +307,10 @@ pub async fn network_callsigns_activity(
     env: actix_web::web::Data<Env>,
     req: Json<NetworkCallsignsActivityReq>,
 ) -> Result<Json<NetworkCallsignsActivityRsp>, AppError> {
-    let user_id = user.id()?;
-    crate::users::has_role(&env.dbx, &user_id, "Rer").await?;
+    let user_id = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &user_id, "Rer")
+        .await
+        .c(h!())?;
 
     trace!("network callsigns activity; login: {user_id}; req: {req:?}");
     let req = req.into_inner();

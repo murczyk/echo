@@ -1,5 +1,6 @@
 use self::types::*;
 use crate::error::AppError;
+use crate::h;
 use crate::types::*;
 use actix_web::get;
 use actix_web::HttpRequest;
@@ -181,7 +182,7 @@ fn folder_to_data_package_zip(
     std::fs::create_dir(base_path.join("MANIFEST"))?;
     std::fs::write(
         base_path.join("MANIFEST").join("manifest.xml"),
-        quick_xml::se::to_string(&manifest).context(h!())?,
+        quick_xml::se::to_string(&manifest).c(h!())?,
     )?;
     for cot in cots.iter() {
         std::fs::create_dir(base_path.join(&cot.uid))?;
@@ -189,7 +190,7 @@ fn folder_to_data_package_zip(
             r###"<?xml version='1.0' encoding='UTF-8' standalone='yes'?>
 {}
 "###,
-            quick_xml::se::to_string(&cot).context(h!())?
+            quick_xml::se::to_string(&cot).c(h!())?
         );
         std::fs::write(
             base_path.join(&cot.uid).join(format!("{}.cot", &cot.uid)),
@@ -235,7 +236,7 @@ pub fn main_test_xml_lib(mode: Mode) -> Result<(), AppError> {
     // println!("{}", serde_xml_rs::to_string(&manifest)?);
 
     let _manifest2: MissionPackageManifest =
-        quick_xml::de::from_str(input).context(h!())?;
+        quick_xml::de::from_str(input).c(h!())?;
     // println!("{:?}", manifest2);
     // println!("");
     // println!("{}", quick_xml::se::to_string(&manifest2)?);
@@ -258,7 +259,7 @@ pub fn main_test_xml_lib(mode: Mode) -> Result<(), AppError> {
 </event>
 "###;
 
-    let _event: Event = quick_xml::de::from_str(input2).context(h!())?;
+    let _event: Event = quick_xml::de::from_str(input2).c(h!())?;
     // println!("{:?}", event);
     // println!("");
     // println!("{}", quick_xml::se::to_string(&event)?);
@@ -296,7 +297,9 @@ async fn operatyvka_download(
     http_req: HttpRequest,
     req: actix_web::web::Query<OperatyvkaDownloadReq>,
 ) -> Result<actix_web::HttpResponse, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Bpla").await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Bpla")
+        .await
+        .c(h!())?;
     let kml = crate::kml::read_myplaces(env.mode)?;
     let style_maps = crate::kml::extract_style_maps(&kml.nodes.clone())?;
     let folders = crate::kml::extract_operatyvka_folders(&kml)?;
@@ -305,7 +308,8 @@ async fn operatyvka_download(
             let tmp_dir = TempDir::new()?;
             let dst_file =
                 folder_to_data_package_zip(&tmp_dir, folder, &style_maps)?;
-            let file = actix_files::NamedFile::open_async(dst_file).await?;
+            let file =
+                actix_files::NamedFile::open_async(dst_file).await.c(h!())?;
             return Ok(file.into_response(&http_req));
         }
     }

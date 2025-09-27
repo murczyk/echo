@@ -95,7 +95,7 @@ pub async fn record_page_visit(
         // deadpool_postgres fails to write JSON, so we manually convert to Vec<u8> here
         let payload: Option<Vec<u8>> = match payload {
             Some(ref p) => {
-                let str = serde_json::to_string(&p).context(h!())?;
+                let str = serde_json::to_string(&p).c(h!())?;
                 let bytes = str.as_bytes().to_vec();
                 Some(bytes)
             }
@@ -152,7 +152,7 @@ pub async fn get_all_sessions(
     redis: &mut redis::aio::ConnectionManager,
 ) -> Result<Vec<RedisSession>, AppError> {
     let session_ids_s: HashSet<String> =
-        redis.smembers(REDIS_SESSIONS_KEY).await.context(h!())?;
+        redis.smembers(REDIS_SESSIONS_KEY).await.c(h!())?;
     let mut session_ids: HashSet<Uuid> = HashSet::new();
     for id in session_ids_s {
         if let Ok(session_id) = Uuid::parse_str(&id) {
@@ -169,7 +169,7 @@ pub async fn get_all_sessions(
 
     if !session_keys.is_empty() {
         let sessions: Vec<Option<RedisSession>> =
-            redis.mget(session_keys).await.context(h!())?;
+            redis.mget(session_keys).await.c(h!())?;
 
         trace!("sessions: {sessions:?}");
         let existing_sessions = sessions
@@ -202,7 +202,7 @@ pub async fn get_all_sessions(
                     orphan_ids_str,
                 )
                 .await
-                .context(h!())?;
+                .c(h!())?;
         }
 
         return Ok(existing_sessions);
@@ -222,7 +222,7 @@ pub async fn add_session(
             session_id.to_string(),
         )
         .await
-        .context(h!())?;
+        .c(h!())?;
 
     let current_datetime = Utc::now().naive_utc();
     let session = RedisSession {
@@ -232,12 +232,12 @@ pub async fn add_session(
         heartbeat_at: current_datetime,
     };
     let key = crate::event_stream::get_sess_key(session_id);
-    let _res: () = redis.set(key.clone(), &session).await.context(h!())?;
+    let _res: () = redis.set(key.clone(), &session).await.c(h!())?;
 
     let _res: () = redis
         .expire(key, SESSION_STREAM_LIFETIME_SEC)
         .await
-        .context(h!())?;
+        .c(h!())?;
 
     Ok(session)
 }
@@ -251,12 +251,12 @@ pub async fn update_heartbeat(
     session.account_id = account_id.to_owned();
 
     let key = crate::event_stream::get_sess_key(session.session_id);
-    let _res: () = redis.set(key.clone(), &session).await.context(h!())?;
+    let _res: () = redis.set(key.clone(), &session).await.c(h!())?;
 
     let _res: () = redis
         .expire(key, crate::config::SESSION_STREAM_LIFETIME_SEC)
         .await
-        .context(h!())?;
+        .c(h!())?;
 
     Ok(session)
 }
@@ -268,6 +268,6 @@ pub async fn get_session_by_id(
     let session: Option<RedisSession> = redis
         .get(crate::event_stream::get_sess_key(session_id))
         .await
-        .context(h!())?;
+        .c(h!())?;
     Ok(session)
 }

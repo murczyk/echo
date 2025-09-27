@@ -1,7 +1,7 @@
 use crate::entities::signal_message;
 use crate::error::AppError;
 use crate::h;
-use anyhow::Context;
+use crate::types::ShortContext;
 use log::{error, warn};
 use sea_orm::*;
 
@@ -37,7 +37,7 @@ where
     let id = message.id;
     let mut model = message.clone().into_active_model();
     model.deleted = Set(true);
-    model.update(txn).await.context(h!())?;
+    model.update(txn).await.c(h!())?;
 
     if new_messages.len() > 1 {
         warn!(
@@ -51,7 +51,7 @@ where
             model.body = Set(Some(body));
             model.deleted = Set(deleted);
             let result = model.save(txn).await;
-            if let Some(id) = result.context(h!())?.id.take() {
+            if let Some(id) = result.c(h!())?.id.take() {
                 models.push(id)
             }
         }

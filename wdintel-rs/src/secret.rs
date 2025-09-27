@@ -92,8 +92,9 @@ async fn do_fetch_config(
             password: secret_config.password.clone(),
         })
         .send()
-        .await;
-    let response: LoginResp = login_response?.json().await?;
+        .await
+        .c(h!())?;
+    let response: LoginResp = login_response.json().await.c(h!())?;
     let token = response.auth.client_token;
     let config_url = format!(
         "{}/v1/echo/data/{}/config",
@@ -103,8 +104,9 @@ async fn do_fetch_config(
         .get(config_url)
         .header("X-Vault-Token", token)
         .send()
-        .await;
-    let response: SecretResp = secret_response?.json().await?;
+        .await
+        .c(h!())?;
+    let response: SecretResp = secret_response.json().await.c(h!())?;
     info!("successfully fetched secret");
     Ok(response.data.data)
 }

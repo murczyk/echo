@@ -75,9 +75,13 @@ pub async fn post_list(
     env: actix_web::web::Data<Env>,
     req: Json<ListPostsReq>,
 ) -> Result<Json<Vec<Post>>, AppError> {
-    crate::users::has_any_role(&env.dbx, &user.id()?, vec!["Rer", "Api"])
-        .await
-        .context(h!())?;
+    crate::users::has_any_role(
+        &env.dbx,
+        &user.id().c(h!())?,
+        vec!["Rer", "Api"],
+    )
+    .await
+    .context(h!())?;
 
     let posts = sigint_post::Entity::find()
         .filter(sigint_post::Column::Deleted.eq(false))
@@ -116,7 +120,7 @@ pub async fn create_post(
     env: actix_web::web::Data<Env>,
     req: Json<CreatePostReq>,
 ) -> Result<Json<Post>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Admin")
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
         .await
         .context(h!())?;
 
@@ -150,7 +154,7 @@ pub async fn update_post(
     env: actix_web::web::Data<Env>,
     req: Json<UpdatePostReq>,
 ) -> Result<Json<Post>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Admin")
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
         .await
         .context(h!())?;
 
@@ -191,7 +195,7 @@ pub async fn delete_post(
     env: actix_web::web::Data<Env>,
     req: Json<DeletePostReq>,
 ) -> Result<Json<()>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Admin")
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
         .await
         .context(h!())?;
 

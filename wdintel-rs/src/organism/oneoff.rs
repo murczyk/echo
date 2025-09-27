@@ -10,23 +10,21 @@ pub async fn oneoff_print_organism_groups(
     ps: &crate::OneoffPrintOrganismGroupsPs,
 ) -> Result<(), AppError> {
     info!("starting oneoff_print_organism_groups...");
-    let config = crate::config::read_config(mode).context(h!())?;
-    let db = crate::new_pg_pool_from_config(&config)
-        .await
-        .context(h!())?;
+    let config = crate::config::read_config(mode).c(h!())?;
+    let db = crate::new_pg_pool_from_config(&config).await.c(h!())?;
     let organism_name = ps.organism_name.clone();
     let organism = organism::Entity::find()
         .filter(organism::Column::DeletedPermanently.eq(false))
         .filter(organism::Column::Name.eq(organism_name))
         .one(&db)
         .await
-        .context(h!())?
-        .context(h!())?;
+        .c(h!())?
+        .c(h!())?;
 
     let organism_groups =
         crate::organism::load_organism_group_ids(&db, organism.id)
             .await
-            .context(h!())?;
+            .c(h!())?;
     let available_keys = organism_groups.available_keys;
     info!("Available groups: {}", available_keys.len());
     for available_key in available_keys {
@@ -35,7 +33,7 @@ pub async fn oneoff_print_organism_groups(
             .filter(signal_group::Column::MasterKey.eq(available_key.clone()))
             .one(&db)
             .await
-            .context(h!())?
+            .c(h!())?
             .context(available_key.clone())?;
         let master_key_short = master_key_shortcut(group.master_key.as_str());
         info!(

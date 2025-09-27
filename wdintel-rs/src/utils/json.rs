@@ -42,7 +42,7 @@ pub fn parse_partial(inp: &str) -> Result<ParsePartialRes, AppError> {
             unlines.push_str(&last_line);
             unlines.push(']');
             // println!("> unlines: {unlines}");
-            let res2 = serde_json::from_str(&unlines).context(h!())?;
+            let res2 = serde_json::from_str(&unlines).c(h!())?;
             Ok(ParsePartialRes {
                 value: res2,
                 error: Some(err_s.to_string()),

@@ -21,7 +21,7 @@ pub async fn oneoff_rer_csv_import_go(
     bgid: Option<i64>,
 ) -> Result<(), AppError> {
     let res = oneoff_rer_csv_import_1(mode, redis, ps, bgid).await;
-    crate::delta::finish_bgtask(bgid, dbx, &res).await?;
+    crate::delta::finish_bgtask(bgid, dbx, &res).await.c(h!())?;
     res
 }
 
@@ -32,7 +32,7 @@ pub async fn oneoff_rer_csv_import_1(
     bgid: Option<i64>,
 ) -> Result<(), AppError> {
     let config = crate::config::read_config(mode)?;
-    let dbx = crate::new_pg_pool_from_config(&config).await?;
+    let dbx = crate::new_pg_pool_from_config(&config).await.c(h!())?;
     bgtask_log(
         bgid,
         &format!(
@@ -41,7 +41,7 @@ pub async fn oneoff_rer_csv_import_1(
         &dbx,
     )
     .await
-    .context(h!())?;
+    .c(h!())?;
     let settlements = Arc::new(RwLock::new(
         crate::location::load_from_file(
             config.settlement_paths().unwrap(),
@@ -53,14 +53,16 @@ pub async fn oneoff_rer_csv_import_1(
         .timeout(core::time::Duration::from_secs(
             crate::config::RQ_TIMEOUT_SIGNAL_API,
         ))
-        .build()?;
+        .build()
+        .c(h!())?;
 
     let mut rdr = csv::ReaderBuilder::new()
         .has_headers(false)
-        .from_path(&ps.input)?;
+        .from_path(&ps.input)
+        .c(h!())?;
     let mut bodies: Vec<String> = vec![];
     for e_rec in rdr.deserialize() {
-        let rec: (String,) = e_rec?;
+        let rec: (String,) = e_rec.c(h!())?;
         let body = rec.0.trim().to_string();
         if !body.is_empty() {
             bodies.push(body);
@@ -68,7 +70,8 @@ pub async fn oneoff_rer_csv_import_1(
     }
 
     bgtask_log(bgid, &format!("> gathered bodies: {}", bodies.len()), &dbx)
-        .await?;
+        .await
+        .c(h!())?;
 
     let group_name = config.signal_import_group_name.clone();
     let group = signal_group::Entity::find()
@@ -76,7 +79,8 @@ pub async fn oneoff_rer_csv_import_1(
         .filter(signal_group::Column::Name.eq(group_name))
         .order_by_desc(signal_group::Column::CreatedAt)
         .one(&dbx)
-        .await?;
+        .await
+        .c(h!())?;
     let Some(group) = group else {
         return Err(AppError::BL {
             msg: format!(
@@ -91,7 +95,8 @@ pub async fn oneoff_rer_csv_import_1(
         .filter(signal_profile::Column::GivenName.eq(sender_name))
         .order_by_desc(signal_profile::Column::CreatedAt)
         .one(&dbx)
-        .await?;
+        .await
+        .c(h!())?;
     let Some(signal_profile) = signal_profile else {
         return Err(AppError::BL {
             msg: format!(
@@ -114,7 +119,9 @@ pub async fn oneoff_rer_csv_import_1(
     for body in bodies {
         // Normalize body
         let body = body.replace("\r\n", "\n");
-        bgtask_log(bgid, &format!("> body: {body}"), &dbx).await?;
+        bgtask_log(bgid, &format!("> body: {body}"), &dbx)
+            .await
+            .c(h!())?;
 
         let timestamp = Utc::now().naive_utc();
 
@@ -126,7 +133,7 @@ pub async fn oneoff_rer_csv_import_1(
                 datasource_id,
             )
             .await
-            .context(h!())?;
+            .c(h!())?;
 
         let message = signal_message::ActiveModel {
             id: NotSet,
@@ -143,12 +150,12 @@ pub async fn oneoff_rer_csv_import_1(
         }
         .insert(&dbx)
         .await
-        .context(h!())?;
+        .c(h!())?;
         let db_message_id = message.id;
 
         id::update_message_with_uid(&dbx, &config, message)
             .await
-            .context(h!())?;
+            .c(h!())?;
 
         crate::rer_importer::bgworker::inbox_item_oneoff_nofail(
             settlements.clone(),
@@ -164,7 +171,8 @@ pub async fn oneoff_rer_csv_import_1(
             &dbx,
             db_message_id,
         )
-        .await?;
+        .await
+        .c(h!())?;
     }
     Ok(())
 }
@@ -173,8 +181,8 @@ pub async fn oneoff_rer_csv_import(
     mode: Mode,
     ps: &crate::OneoffRerCsvImportPs,
 ) -> Result<(), AppError> {
-    let config = crate::config::read_config(mode).context(h!())?;
-    let mut redis = crate::new_redis(&config).await.context(h!())?;
+    let config = crate::config::read_config(mode).c(h!())?;
+    let mut redis = crate::new_redis(&config).await.c(h!())?;
     oneoff_rer_csv_import_1(mode, &mut redis, ps, None).await
 }
 
@@ -184,11 +192,13 @@ pub async fn rer_csv_import(
     env: actix_web::web::Data<Env>,
     mut payload: Multipart,
 ) -> Result<Json<i64>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
-    let (field, val) = multipart::extract(&mut payload).await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .c(h!())?;
+    let (field, val) = multipart::extract(&mut payload).await.c(h!())?;
     let tmp_dir = TempDir::new()?;
     println!("> tmp_dir {}", &tmp_dir.path().display());
-    let csv_file = tmp_dir.path().join(field.name().context(h!())?);
+    let csv_file = tmp_dir.path().join(field.name().c(h!())?);
     println!("> csv_file: {}", &csv_file.display());
     std::fs::write(&csv_file, val)?;
     crate::utils::backup_tmp_dir(tmp_dir.path())?;
@@ -197,12 +207,13 @@ pub async fn rer_csv_import(
     let bgtask = bgtask::ActiveModel {
         id: NotSet,
         progress: Set(0),
-        loglines: Set(serde_json::to_value(loglines).context(h!())?),
+        loglines: Set(serde_json::to_value(loglines).c(h!())?),
         running: Set(true),
         finished_with_error: Set(None),
     }
     .insert(&env.dbx)
-    .await?;
+    .await
+    .c(h!())?;
     let bgtask_id = bgtask.id;
 
     let dbx2 = env.dbx.clone();
@@ -245,11 +256,13 @@ pub async fn rer_delta_csv_import(
     env: actix_web::web::Data<Env>,
     mut payload: Multipart,
 ) -> Result<Json<i64>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
-    let (field, val) = multipart::extract(&mut payload).await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .c(h!())?;
+    let (field, val) = multipart::extract(&mut payload).await.c(h!())?;
     let tmp_dir = TempDir::new()?;
     println!("> tmp_dir {}", &tmp_dir.path().display());
-    let csv_file = tmp_dir.path().join(field.name().context(h!())?);
+    let csv_file = tmp_dir.path().join(field.name().c(h!())?);
     println!("> csv_file: {}", &csv_file.display());
     std::fs::write(&csv_file, val)?;
     crate::utils::backup_tmp_dir(tmp_dir.path())?;
@@ -258,12 +271,13 @@ pub async fn rer_delta_csv_import(
     let bgtask = bgtask::ActiveModel {
         id: NotSet,
         progress: Set(0),
-        loglines: Set(serde_json::to_value(loglines).context(h!())?),
+        loglines: Set(serde_json::to_value(loglines).c(h!())?),
         running: Set(true),
         finished_with_error: Set(None),
     }
     .insert(&env.dbx)
-    .await?;
+    .await
+    .c(h!())?;
     let bgtask_id = bgtask.id;
 
     let dbx2 = env.dbx.clone();
@@ -327,11 +341,13 @@ pub async fn rer_delta_csv_import_go(
         ),
         dbx,
     )
-    .await?;
+    .await
+    .c(h!())?;
 
     let recs = parse_delta_csv(csv_file)?;
     bgtask_log(bgtask_id, &format!("> parsed {} records", recs.len()), dbx)
-        .await?;
+        .await
+        .c(h!())?;
 
     let group_name = config.signal_import_group_name.clone();
     let group = signal_group::Entity::find()
@@ -339,7 +355,8 @@ pub async fn rer_delta_csv_import_go(
         .filter(signal_group::Column::Name.eq(group_name))
         .order_by_desc(signal_group::Column::CreatedAt)
         .one(dbx)
-        .await?;
+        .await
+        .c(h!())?;
     let Some(group) = group else {
         return Err(AppError::BL {
             msg: format!(
@@ -363,7 +380,8 @@ pub async fn rer_delta_csv_import_go(
         .filter(signal_profile::Column::GivenName.eq(sender_name))
         .order_by_desc(signal_profile::Column::CreatedAt)
         .one(dbx)
-        .await?;
+        .await
+        .c(h!())?;
     let Some(signal_profile) = signal_profile else {
         return Err(AppError::BL {
             msg: format!(
@@ -374,7 +392,9 @@ pub async fn rer_delta_csv_import_go(
     let source_uuid = signal_profile.uuid;
 
     for rec in recs {
-        bgtask_log(bgtask_id, &format!("> rec: {rec:?}"), dbx).await?;
+        bgtask_log(bgtask_id, &format!("> rec: {rec:?}"), dbx)
+            .await
+            .c(h!())?;
 
         let timestamp = Utc::now().naive_utc();
         let body: String = format!(
@@ -397,7 +417,7 @@ pub async fn rer_delta_csv_import_go(
                 datasource_id,
             )
             .await
-            .context(h!())?;
+            .c(h!())?;
 
         let message = signal_message::ActiveModel {
             id: NotSet,
@@ -414,13 +434,13 @@ pub async fn rer_delta_csv_import_go(
         }
         .insert(dbx)
         .await
-        .context(h!())?;
+        .c(h!())?;
 
         let db_message_id = message.id;
 
         id::update_message_with_uid(dbx, config, message)
             .await
-            .context(h!())?;
+            .c(h!())?;
         crate::rer_importer::bgworker::inbox_item_oneoff_nofail(
             settlements.clone(),
             dbx,
@@ -435,7 +455,8 @@ pub async fn rer_delta_csv_import_go(
             dbx,
             db_message_id,
         )
-        .await?;
+        .await
+        .c(h!())?;
     }
     Ok(())
 }
@@ -478,10 +499,10 @@ pub fn parse_delta_csv_method1(
         comment: String,
     }
 
-    let mut rdr = csv::Reader::from_path(&csv_file)?;
+    let mut rdr = csv::Reader::from_path(&csv_file).c(h!())?;
     let mut res: Vec<DeltaCsvFreqRec> = vec![];
     for e_rec in rdr.deserialize() {
-        let rec: Rec = e_rec?;
+        let rec: Rec = e_rec.c(h!())?;
         if rec.r#type != "10061500002001000000" {
             println!("Only type 10061500002001000000 (Antennae) is supported. Skpiing record: {rec:?}");
             continue;
@@ -495,10 +516,8 @@ pub fn parse_delta_csv_method1(
             freq: crate::rer_importer::frequency::round_to_nearest_005(freq),
             lat: rec.y,
             lon: rec.x,
-            time: NaiveDateTime::parse_from_str(
-                &rec.time,
-                "%Y-%m-%dT%H:%M:%S",
-            )?,
+            time: NaiveDateTime::parse_from_str(&rec.time, "%Y-%m-%dT%H:%M:%S")
+                .c(h!())?,
             comment: rec.comment,
         };
         res.push(rec);
@@ -517,10 +536,10 @@ pub fn parse_delta_csv_method2(
         coordinates: String,
     }
 
-    let mut rdr = csv::Reader::from_path(&csv_file)?;
+    let mut rdr = csv::Reader::from_path(&csv_file).c(h!())?;
     let mut res: Vec<DeltaCsvFreqRec> = vec![];
     for e_rec in rdr.deserialize() {
-        let rec: Rec = e_rec?;
+        let rec: Rec = e_rec.c(h!())?;
         if rec.sidc != "10061500002001000000" {
             println!("Only type 10061500002001000000 (Antennae) is supported. Skpiing record: {rec:?}");
             continue;
@@ -541,11 +560,11 @@ pub fn parse_delta_csv_method2(
         let Some(lat) = m_cap_s(&capts, "lat") else {
             continue;
         };
-        let lat: f64 = lat.parse().context(h!())?;
+        let lat: f64 = lat.parse().c(h!())?;
         let Some(lng) = m_cap_s(&capts, "lng") else {
             continue;
         };
-        let lng: f64 = lng.parse().context(h!())?;
+        let lng: f64 = lng.parse().c(h!())?;
         let rec: DeltaCsvFreqRec = DeltaCsvFreqRec {
             freq: crate::rer_importer::frequency::round_to_nearest_005(freq),
             lat,
@@ -553,7 +572,8 @@ pub fn parse_delta_csv_method2(
             time: NaiveDateTime::parse_from_str(
                 &rec.observation_datetime,
                 "%Y-%m-%dT%H:%M:%S",
-            )?,
+            )
+            .c(h!())?,
             comment: "".to_string(),
         };
         res.push(rec);
@@ -576,10 +596,10 @@ pub fn parse_delta_csv_method3(
         comments: String,
     }
 
-    let mut rdr = csv::Reader::from_path(&csv_file)?;
+    let mut rdr = csv::Reader::from_path(&csv_file).c(h!())?;
     let mut res: Vec<DeltaCsvFreqRec> = vec![];
     for e_rec in rdr.deserialize() {
-        let rec: Rec = e_rec?;
+        let rec: Rec = e_rec.c(h!())?;
         println!("rec: {rec:?}");
         if rec.sidc != "10061500002001000000" {
             println!("Only type 10061500002001000000 (Antennae) is supported. Skpiing record: {rec:?}");
@@ -601,11 +621,11 @@ pub fn parse_delta_csv_method3(
         let Some(lat) = m_cap_s(&capts, "lat") else {
             continue;
         };
-        let lat: f64 = lat.parse().context(h!())?;
+        let lat: f64 = lat.parse().c(h!())?;
         let Some(lng) = m_cap_s(&capts, "lng") else {
             continue;
         };
-        let lng: f64 = lng.parse().context(h!())?;
+        let lng: f64 = lng.parse().c(h!())?;
         println!("lat: {lat}, lng: {lng}");
         let rec: DeltaCsvFreqRec = DeltaCsvFreqRec {
             freq: super::frequency::round_to_nearest_005(freq),
@@ -629,7 +649,7 @@ pub async fn ensure_import_group_exists(
         .filter(datasource::Column::Id.eq(1_i64))
         .one(dbx)
         .await
-        .context(h!())?;
+        .c(h!())?;
     let datasource_id = match datasource {
         Some(datasource) => datasource.id,
         None => {
@@ -645,7 +665,7 @@ pub async fn ensure_import_group_exists(
             }
             .insert(dbx)
             .await
-            .context(h!())?
+            .c(h!())?
             .id
         }
     };
@@ -657,7 +677,7 @@ pub async fn ensure_import_group_exists(
         .order_by_desc(signal_group::Column::CreatedAt)
         .one(dbx)
         .await
-        .context(h!())?;
+        .c(h!())?;
     let master_key = match group {
         Some(group) => group.master_key,
         None => {
@@ -670,7 +690,7 @@ pub async fn ensure_import_group_exists(
 
             let inserted = crate::messenger::group::add_group(group, dbx)
                 .await
-                .context(h!())?;
+                .c(h!())?;
             // ensure datasource_group mapping
             let _ = datasource_group::ActiveModel {
                 id: NotSet,
@@ -694,7 +714,7 @@ pub async fn ensure_import_group_exists(
         .order_by_desc(signal_profile::Column::CreatedAt)
         .one(dbx)
         .await
-        .context(h!())?;
+        .c(h!())?;
     let _signal_profile = match signal_profile {
         Some(signal_profile) => signal_profile,
         None => {
@@ -706,7 +726,7 @@ pub async fn ensure_import_group_exists(
             }
             .insert(dbx)
             .await
-            .context(h!())?
+            .c(h!())?
         }
     };
     let sigint_zone_datasource = sigint_zone_datasource::Entity::find()
@@ -714,7 +734,7 @@ pub async fn ensure_import_group_exists(
         .order_by_desc(sigint_zone_datasource::Column::CreatedAt)
         .one(dbx)
         .await
-        .context(h!())?;
+        .c(h!())?;
     let _sigint_zone_datasource = match sigint_zone_datasource {
         Some(sigint_zone_datasource) => sigint_zone_datasource,
         None => {
@@ -729,14 +749,14 @@ pub async fn ensure_import_group_exists(
             }
             .insert(dbx)
             .await
-            .context(h!())?
+            .c(h!())?
         }
     };
 
     let group = signal_group::Entity::find_by_id(IMPORT_DIRECTION_FINDING_UUID)
         .one(dbx)
         .await
-        .context(h!())?;
+        .c(h!())?;
     let _master_key = match group {
         Some(group) => group.master_key,
         None => {
@@ -749,7 +769,7 @@ pub async fn ensure_import_group_exists(
             };
             let inserted = crate::messenger::group::add_group(group, dbx)
                 .await
-                .context(h!())?;
+                .c(h!())?;
             let _ = datasource_group::ActiveModel {
                 id: NotSet,
                 group_master_key: Set(inserted.master_key.clone()),

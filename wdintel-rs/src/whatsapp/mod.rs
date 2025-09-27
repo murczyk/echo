@@ -23,7 +23,7 @@ pub async fn receive_thread_nofail(
             .filter(datasource::Column::EchoClientLockId.is_not_null())
             .count(dbx)
             .await
-            .context(h!())
+            .c(h!())
             .unwrap_or(1)
             > 0;
         if should_exit {
@@ -51,9 +51,10 @@ async fn receive_thread(
         .timeout(core::time::Duration::from_secs(
             crate::config::RQ_TIMEOUT_SIGNAL_API,
         ))
-        .build()?;
+        .build()
+        .c(h!())?;
     let mut last_groups_sync_t = std::time::SystemTime::now();
-    if let Err(e) = sync_groups(dbx, datasource).await.context(h!()) {
+    if let Err(e) = sync_groups(dbx, datasource).await.c(h!()) {
         error!("failed to sync whatsapp groups: {e:?}");
     }
 
@@ -63,7 +64,7 @@ async fn receive_thread(
             .map(|ts| ts.as_secs() > 60)
             .unwrap_or(true);
         if groups_are_stale {
-            if let Err(e) = sync_groups(dbx, datasource).await.context(h!()) {
+            if let Err(e) = sync_groups(dbx, datasource).await.c(h!()) {
                 error!("failed to sync whatsapp groups: {e:?}");
             } else {
                 last_groups_sync_t = std::time::SystemTime::now();
@@ -105,22 +106,22 @@ async fn receive_once(
         .limit(50)
         .all(dbx)
         .await
-        .context(h!())?;
+        .c(h!())?;
     for wq in whatsapp_queue {
         if wq.group_jid.is_empty() || wq.group_jid.ends_with("@s.whatsapp.net")
         {
             info!("deleting whatsapp queue entry: {wq:?}");
-            wq.delete(dbx).await.context(h!())?;
+            wq.delete(dbx).await.c(h!())?;
             continue;
         }
-        let txn = dbx.begin().await.context(h!())?;
+        let txn = dbx.begin().await.c(h!())?;
         let body = wq.body.clone();
         // Normalize body
         let body = body.replace("\r\n", "\n");
         let m_duplicate =
             crate::sigint::find_duplicate(&txn, &body, Some(wq.timestamp))
                 .await
-                .context(h!())?;
+                .c(h!())?;
         let m_duplicate_id = m_duplicate.map(|(message, _)| message.id);
 
         let datasource_group_id =
@@ -130,7 +131,7 @@ async fn receive_once(
                 datasource.id,
             )
             .await
-            .context(h!())?;
+            .c(h!())?;
 
         let message = signal_message::ActiveModel {
             id: NotSet,
@@ -147,11 +148,11 @@ async fn receive_once(
         }
         .insert(&txn)
         .await
-        .context(h!())?;
+        .c(h!())?;
 
         let signal_message = id::update_message_with_uid(&txn, config, message)
             .await
-            .context(h!())?;
+            .c(h!())?;
 
         if let Some(whatsapp_id) = wq.whatsapp_id.as_ref() {
             // attachments if any
@@ -162,7 +163,7 @@ async fn receive_once(
                 )
                 .all(&txn)
                 .await
-                .context(h!())?;
+                .c(h!())?;
             for a in attachments {
                 let _signal_attachment = signal_attachment::ActiveModel {
                     id: NotSet,
@@ -172,8 +173,8 @@ async fn receive_once(
                 }
                 .insert(&txn)
                 .await
-                .context(h!())?;
-                a.delete(&txn).await.context(h!())?;
+                .c(h!())?;
+                a.delete(&txn).await.c(h!())?;
             }
         }
 
@@ -193,10 +194,10 @@ async fn receive_once(
             signal_message.id,
         )
         .await
-        .context(h!())?;
+        .c(h!())?;
 
-        wq.delete(&txn).await.context(h!())?;
-        txn.commit().await.context(h!())?;
+        wq.delete(&txn).await.c(h!())?;
+        txn.commit().await.c(h!())?;
     }
     Ok(())
 }
@@ -209,7 +210,7 @@ pub async fn sync_groups(
         .filter(whatsapp_group::Column::Deleted.eq(false))
         .all(dbx)
         .await
-        .context(h!())?;
+        .c(h!())?;
 
     for wg in whatsapp_groups {
         let signal_group = signal_group::Entity::find()
@@ -217,7 +218,7 @@ pub async fn sync_groups(
             .filter(signal_group::Column::MasterKey.eq(wg.jid.clone()))
             .one(dbx)
             .await
-            .context(h!())?;
+            .c(h!())?;
         match signal_group {
             Some(signal_group) => {
                 // update name
@@ -232,7 +233,7 @@ pub async fn sync_groups(
                     );
                     let mut signal_group = signal_group.into_active_model();
                     signal_group.name = Set(Some(wg.name.clone()));
-                    signal_group.update(dbx).await.context(h!())?;
+                    signal_group.update(dbx).await.c(h!())?;
                 }
             }
             None => {
@@ -248,7 +249,7 @@ pub async fn sync_groups(
                 let signal_group =
                     crate::messenger::group::add_group(group, dbx)
                         .await
-                        .context(h!())?;
+                        .c(h!())?;
                 // ensure datasource_group mapping
                 let _ = datasource_group::ActiveModel {
                     id: NotSet,

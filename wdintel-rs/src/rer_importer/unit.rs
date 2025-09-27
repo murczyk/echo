@@ -42,7 +42,7 @@ pub async fn export_unit(
     mode: Mode,
     ps: &crate::ExportUnitPs,
 ) -> Result<(), AppError> {
-    let dbx = crate::new_pg_pool_from_mode(mode).await.context(h!())?;
+    let dbx = crate::new_pg_pool_from_mode(mode).await.c(h!())?;
     let mut unit_ids = vec![];
 
     let units_with_callsigns = sigint_unit::Entity::find()
@@ -68,7 +68,7 @@ pub async fn export_unit(
         })
         .all(&dbx)
         .await
-        .context(h!())?
+        .c(h!())?
         .into_iter()
         .map(|(u, cs)| {
             unit_ids.push(u.id);
@@ -101,7 +101,7 @@ pub async fn export_unit(
         .filter(sigint_signal::Column::Unit.is_in(unit_ids))
         .all(&dbx)
         .await
-        .context(h!())?;
+        .c(h!())?;
 
     for mut unit in units_with_callsigns {
         let unit_id = unit.id;
@@ -119,11 +119,11 @@ pub async fn export_unit(
         unit.signals = signals;
         result.push(unit);
     }
-    let content = serde_json::to_string_pretty(&Json(result)).context(h!())?;
+    let content = serde_json::to_string_pretty(&Json(result)).c(h!())?;
     println!("result: \n{content}");
     if let Some(path) = &ps.dest_path {
-        let mut file = File::create(path.clone()).await.context(h!())?;
-        file.write_all(content.as_bytes()).await.context(h!())?;
+        let mut file = File::create(path.clone()).await.c(h!())?;
+        file.write_all(content.as_bytes()).await.c(h!())?;
         info!("done writing result to {path}")
     } else {
         info!("skipping writing result to file. \npass dest_path variable if you want to write it to filesystem.")
@@ -135,20 +135,20 @@ pub async fn import_unit(
     mode: Mode,
     ps: &crate::ImportUnitPs,
 ) -> Result<(), AppError> {
-    let dbx = crate::new_pg_pool_from_mode(mode).await.context(h!())?;
+    let dbx = crate::new_pg_pool_from_mode(mode).await.c(h!())?;
     let sigint_origin_id = sigint_origin::Entity::find()
         .filter(sigint_origin::Column::Name.eq(ps.origin.to_string()))
         .one(&dbx)
         .await
-        .context(h!())?
+        .c(h!())?
         .map(|o| o.id)
-        .context(h!())?;
+        .c(h!())?;
 
     let json_units = if let Some(src_path) = ps.src_path.to_owned() {
         info!("importing unit from {src_path}");
-        let mut file_read = File::open(src_path).await.context(h!())?;
+        let mut file_read = File::open(src_path).await.c(h!())?;
         let mut buffer = Vec::new();
-        file_read.read_to_end(&mut buffer).await.context(h!())?;
+        file_read.read_to_end(&mut buffer).await.c(h!())?;
         String::from_utf8_lossy(&buffer).to_string()
     } else {
         info!("paste your unit json:");
@@ -160,7 +160,7 @@ pub async fn import_unit(
     };
 
     let json_units: Vec<JsonUnit> =
-        serde_json::from_str(&json_units).context(h!())?;
+        serde_json::from_str(&json_units).c(h!())?;
 
     let mut unit_id: i64;
     for json_unit in json_units {
@@ -168,7 +168,7 @@ pub async fn import_unit(
             .filter(sigint_unit::Column::Name.eq(&json_unit.name))
             .one(&dbx)
             .await
-            .context(h!())?;
+            .c(h!())?;
 
         if let Some(unit) = unit_res {
             unit_id = unit.id;
@@ -193,7 +193,7 @@ pub async fn import_unit(
                     unit.comment = Set(comment.clone());
                 }
                 info!("updating unit {unit_id}");
-                unit.update(&dbx).await.context(h!())?;
+                unit.update(&dbx).await.c(h!())?;
             }
         } else {
             let insert_res =
@@ -222,7 +222,7 @@ pub async fn import_unit(
                 })
                 .exec(&dbx)
                 .await
-                .context(h!())?;
+                .c(h!())?;
             unit_id = insert_res.last_insert_id;
             info!("inserting unit {}", json_unit.name);
         }
@@ -235,7 +235,7 @@ pub async fn import_unit(
                 )
                 .one(&dbx)
                 .await
-                .context(h!())?;
+                .c(h!())?;
 
             if let Some(callsign) = callsign_res {
                 if !ps.upsert {
@@ -253,7 +253,7 @@ pub async fn import_unit(
                     callsign.radio_freq = Set(freq.clone());
                 }
 
-                callsign.update(&dbx).await.context(h!())?;
+                callsign.update(&dbx).await.c(h!())?;
             } else {
                 sigint_callsign::Entity::insert(sigint_callsign::ActiveModel {
                     id: NotSet,
@@ -278,7 +278,7 @@ pub async fn import_unit(
                 })
                 .exec(&dbx)
                 .await
-                .context(h!())?;
+                .c(h!())?;
             }
         }
 
@@ -288,7 +288,7 @@ pub async fn import_unit(
                 .filter(sigint_signal::Column::Text.eq(&json_signal.text))
                 .one(&dbx)
                 .await
-                .context(h!())?;
+                .c(h!())?;
 
             if let Some(signal) = signal_res {
                 if !ps.upsert {
@@ -297,7 +297,7 @@ pub async fn import_unit(
                 let mut signal: sigint_signal::ActiveModel = signal.into();
                 signal.coordinates = Set(json_signal.coordinates);
                 signal.meaning = Set(json_signal.meaning);
-                signal.update(&dbx).await.context(h!())?;
+                signal.update(&dbx).await.c(h!())?;
             } else {
                 sigint_signal::Entity::insert(sigint_signal::ActiveModel {
                     id: NotSet,
@@ -311,7 +311,7 @@ pub async fn import_unit(
                 })
                 .exec(&dbx)
                 .await
-                .context(h!())?;
+                .c(h!())?;
             }
         }
     }

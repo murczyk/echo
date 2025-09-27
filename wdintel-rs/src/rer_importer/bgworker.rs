@@ -70,14 +70,15 @@ where
     let message = signal_message::Entity::find_by_id(message_id)
         .filter(signal_message::Column::Deleted.eq(false))
         .one(txn)
-        .await?
+        .await
+        .c(h!())?
         .ok_or(format!("Couldn't find a message id={message_id}"))?;
 
     let body = message.body.clone().unwrap_or("".to_string());
     if should_try_split_message(&body) {
         let spawned = spawn_multiple_messages(txn, &message, &body)
             .await
-            .context(h!())?;
+            .c(h!())?;
         if !spawned.is_empty() {
             return Ok(spawned);
         }
@@ -113,8 +114,9 @@ where
     let coords_vec = milgeo_rs::coordinates::rer_extract_coords(&body).await;
     let mut other_coords = coords_vec.clone();
     let coords = pop_vector(&mut other_coords);
-    let callsign_tokens =
-        super::callsigns::find_known_callsigns(rq, &body).await?;
+    let callsign_tokens = super::callsigns::find_known_callsigns(rq, &body)
+        .await
+        .c(h!())?;
     let keyword_tokens = super::highlight::extract_keywords(&body)?;
     let callsigns: Vec<String> = crate::utils::uniq_via_btreeset(
         &callsign_tokens
@@ -128,12 +130,16 @@ where
         crate::rer_importer::body_noheader::extract_text(&body)?;
     // let location = crate::rer_importer::location::extract_location(&body)?;
     let post = crate::rer_importer::post::extract_post(&body)?;
-    let post_id =
-        crate::sigint::post::get_or_create_post_id(txn, &post).await?;
+    let post_id = crate::sigint::post::get_or_create_post_id(txn, &post)
+        .await
+        .c(h!())?;
     let callsigns_alg1 = callsigns.clone();
-    let callsigns_alg2 = crate::nlp::complete_callsigns(rq, &body).await?;
+    let callsigns_alg2 =
+        crate::nlp::complete_callsigns(rq, &body).await.c(h!())?;
     let signal_tokens =
-        super::signals::find_signal_tokens(txn, &body, &body_noheader).await?;
+        super::signals::find_signal_tokens(txn, &body, &body_noheader)
+            .await
+            .c(h!())?;
     let all_callsigns = callsigns_alg1
         .clone()
         .into_iter()
@@ -146,14 +152,14 @@ where
         all_callsigns,
     )?;
     let unit = unit_and_loc.unit;
-    let unit_v2 = find_unit_v2(txn, cache, &unit).await.context(h!())?;
+    let unit_v2 = find_unit_v2(txn, cache, &unit).await.c(h!())?;
     let location = unit_and_loc.locality.clone();
     let settlement_list =
         match (unit_and_loc.locality, unit_and_loc.locality_v2) {
             (Some(_), Some(locations)) => locations,
             (Some(location), None) => {
                 crate::location::parse_location(settlements.clone(), location)
-                    .context(h!())?
+                    .c(h!())?
             }
             _ => vec![],
         };
@@ -173,10 +179,13 @@ where
             created_at: NotSet,
         })
         .exec(txn)
-        .await?;
+        .await
+        .c(h!())?;
     }
 
-    let message = try_set_commintify_sender(&body, message, txn).await?;
+    let message = try_set_commintify_sender(&body, message, txn)
+        .await
+        .c(h!())?;
 
     let (date_v, time_v) = match m_created_at {
         None => (date_v, time_v),
@@ -191,43 +200,41 @@ where
         coords: Set(coords.clone().map(|x| x.text)),
         lat: Set(coords.clone().map(|x| x.lat)),
         lng: Set(coords.clone().map(|x| x.lng)),
-        callsigns: Set(Some(serde_json::to_value(callsigns).context(h!())?)),
+        callsigns: Set(Some(serde_json::to_value(callsigns).c(h!())?)),
         checked: Set(Some(checked)),
         reviewed: Set(Some(reviewed)),
         unit: Set(unit.clone()),
         callsign_tokens: Set(Some(
-            serde_json::to_value(callsign_tokens).context(h!())?,
+            serde_json::to_value(callsign_tokens).c(h!())?,
         )),
         keyword_tokens: Set(Some(
-            serde_json::to_value(keyword_tokens).context(h!())?,
+            serde_json::to_value(keyword_tokens).c(h!())?,
         )),
         nominatimres_id: NotSet,
         location: Set(location),
         location_v2: Set(location_v2),
-        body_noheader: Set(Some(
-            serde_json::to_value(body_noheader).context(h!())?,
-        )),
+        body_noheader: Set(Some(serde_json::to_value(body_noheader).c(h!())?)),
         tags: NotSet,
         callsigns_alg1: Set(Some(
-            serde_json::to_value(callsigns_alg1).context(h!())?,
+            serde_json::to_value(callsigns_alg1).c(h!())?,
         )),
         callsigns_alg2: Set(Some(
-            serde_json::to_value(callsigns_alg2).context(h!())?,
+            serde_json::to_value(callsigns_alg2).c(h!())?,
         )),
         datetime: NotSet,
-        signal_tokens: Set(Some(
-            serde_json::to_value(signal_tokens).context(h!())?,
-        )),
+        signal_tokens: Set(Some(serde_json::to_value(signal_tokens).c(h!())?)),
         post_id: Set(post_id),
         unit_v2: Set(unit_v2),
         parsed_unit_v2: Set(true),
     }
     .insert(txn)
-    .await?;
+    .await
+    .c(h!())?;
 
     let ts = result.datetime.unwrap_or(message.created_at);
     crate::location::peleng::insert_pelengs(coords_vec, result.id, ts, txn)
-        .await?;
+        .await
+        .c(h!())?;
 
     // In case then some coords exists, change signal_group for this message grom RER Import
     // to MPORT_DIRECTION_FINDING
@@ -245,7 +252,7 @@ where
             .filter(signal_group::Column::Name.eq(group_name))
             .all(txn)
             .await
-            .context(h!())?
+            .c(h!())?
             .into_iter()
             .next()
             .and_then(|(m, gs)| gs.into_iter().next().map(|g| (m, g)))
@@ -256,14 +263,14 @@ where
             group.datasource_id,
         )
         .await
-        .context(h!())?;
+        .c(h!())?;
         let mut signal_message = signal_message.into_active_model();
         signal_message.datasource_group_id = Set(Some(datasource_group_id));
-        signal_message.update(txn).await.context(h!())?;
+        signal_message.update(txn).await.c(h!())?;
     }
 
     let event = EventMsg::new(EventType::ETInboxChanged(result.id));
-    fanout(redis, event).await.context(h!())?;
+    fanout(redis, event).await.c(h!())?;
 
     Ok(vec![])
 }
@@ -284,7 +291,7 @@ where
                 .order_by_desc(signal_profile::Column::CreatedAt)
                 .one(txn)
                 .await
-                .context(h!())?;
+                .c(h!())?;
             if let Some(sender) = sender {
                 if let Some(given_name) = sender.given_name {
                     if given_name == "Commintify sender" {
@@ -312,7 +319,7 @@ where
         .order_by_desc(signal_profile::Column::CreatedAt)
         .one(txn)
         .await
-        .context(h!())?;
+        .c(h!())?;
 
     let oper_id = match oper_record {
         Some(oper_record) => oper_record.uuid,
@@ -324,14 +331,15 @@ where
                 family_name: Set(Some("Commintify sender".to_string())),
             })
             .exec(txn)
-            .await?
+            .await
+            .c(h!())?
             .last_insert_id
         }
     };
 
     let mut signal_message = signal_message.clone().into_active_model();
     signal_message.sender = Set(Some(oper_id));
-    Ok(signal_message.update(txn).await.context(h!())?)
+    Ok(signal_message.update(txn).await.c(h!())?)
 }
 
 async fn find_unit_v2<'a, 'async_trait, C>(
@@ -349,7 +357,7 @@ where
     if cached_m_unit.is_none() {
         let parsed_unit = crate::unit::parse_unit(unit, txn)
             .await
-            .context(h!())?
+            .c(h!())?
             .unwrap_or("".to_string());
         cache.put(unit.clone(), parsed_unit.clone());
         cached_m_unit = Some(parsed_unit);

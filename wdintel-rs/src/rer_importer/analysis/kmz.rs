@@ -1,4 +1,5 @@
 use super::*;
+use crate::types::ShortContext;
 use actix_web::post;
 use tempfile::TempDir;
 
@@ -10,8 +11,10 @@ pub async fn rer_analysis_download_kmz(
     req: Json<super::AnalysisStatsReq>,
     http_req: HttpRequest,
 ) -> Result<HttpResponse, AppError> {
-    let login = user.id()?;
-    crate::users::has_role(&env.dbx, &login, "Rer").await?;
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
+        .await
+        .c(h!())?;
     let dt_since = dt_from_millis(req.since_date_inclusive_ms)?;
     let dt_till = dt_from_millis(req.till_date_noninclusive_ms)?;
 
@@ -47,7 +50,8 @@ pub async fn rer_analysis_download_kmz(
                 crate::messenger::group::get_identity_sigint_groups(
                     &env.dbx, &login,
                 )
-                .await?,
+                .await
+                .c(h!())?,
             ),
         )
         .filter(signal_message::Column::Deleted.eq(false))
@@ -73,7 +77,7 @@ pub async fn rer_analysis_download_kmz(
         &req.or_with_coords,
         &req.or_with_extended_form,
         &req.filter_tags_option,
-        &user.id()?,
+        &user.id().c(h!())?,
     )?;
     let items =
         filter_selected_aors(items, &req.selected_aors).context(h!())?;
@@ -85,7 +89,7 @@ pub async fn rer_analysis_download_kmz(
     //     "> download kmz items query: {}",
     //     items.build(DbBackend::Postgres).to_string()
     // );
-    let items = items.into_model::<Res>().all(&env.dbx).await?;
+    let items = items.into_model::<Res>().all(&env.dbx).await.c(h!())?;
 
     let tmp_dir = TempDir::new()?;
     // let outpath = tmp_dir.path().join("summary-table.kmz");
@@ -94,7 +98,9 @@ pub async fn rer_analysis_download_kmz(
     // let res = crate::kml::build_style_maps_per_app6d(&vec![sidc.clone()])?;
 
     let mut nodes = vec![];
-    let logins = crate::users::get_organism_logins(&env.dbx, user).await?;
+    let logins = crate::users::get_organism_logins(&env.dbx, user)
+        .await
+        .c(h!())?;
     for item in items.iter() {
         let Some(ref freq) = item.freq else { continue };
         let Some(ref lat) = item.lat else { continue };
@@ -103,7 +109,8 @@ pub async fn rer_analysis_download_kmz(
             .filter(sigint_comment::Column::SignalMessageId.eq(item.id))
             .filter(sigint_comment::Column::Login.is_in(logins.clone()))
             .one(&env.dbx)
-            .await?;
+            .await
+            .c(h!())?;
         let icon_href = format!(
             "https://f000.backblazeb2.com/file/wildducks-online-public/icons/{sidc}.png",
         );
@@ -179,6 +186,6 @@ pub async fn rer_analysis_download_kmz(
     };
     let outpath =
         crate::importer::package_up_kmz2(&env.config, &tmp_dir, &kml)?;
-    let file = actix_files::NamedFile::open_async(&outpath).await?;
+    let file = actix_files::NamedFile::open_async(&outpath).await.c(h!())?;
     Ok(file.into_response(&http_req))
 }

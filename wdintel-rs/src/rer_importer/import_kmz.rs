@@ -20,11 +20,13 @@ pub async fn rer_delta_kmz_import(
     env: actix_web::web::Data<Env>,
     mut payload: Multipart,
 ) -> Result<Json<i64>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
-    let (field, val) = multipart::extract(&mut payload).await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .c(h!())?;
+    let (field, val) = multipart::extract(&mut payload).await.c(h!())?;
     let tmp_dir = TempDir::new()?;
     println!("> tmp_dir {}", &tmp_dir.path().display());
-    let kmz_file = tmp_dir.path().join(field.name().context(h!())?);
+    let kmz_file = tmp_dir.path().join(field.name().c(h!())?);
     let original_path = kmz_file.clone();
     println!("> kmz_file: {}", &original_path.display());
     std::fs::write(&kmz_file, val)?;
@@ -58,7 +60,7 @@ pub async fn rer_delta_kmz_import(
     let bgtask = bgtask::ActiveModel {
         id: NotSet,
         progress: Set(0),
-        loglines: Set(serde_json::to_value(loglines).context(h!())?),
+        loglines: Set(serde_json::to_value(loglines).c(h!())?),
         running: Set(true),
         finished_with_error: Set(None),
     }
@@ -129,7 +131,8 @@ pub async fn rer_delta_kmz_import_go(
         &format!("> rer_delta_kmz_import_go starting; kmz_file: {file_name}",),
         dbx,
     )
-    .await?;
+    .await
+    .c(h!())?;
 
     let filename = original_path
         .file_name()
@@ -139,7 +142,8 @@ pub async fn rer_delta_kmz_import_go(
 
     let recs = parse_delta_kmz(&input, filename)?;
     bgtask_log(bgtask_id, &format!("> parsed {} records", recs.len()), dbx)
-        .await?;
+        .await
+        .c(h!())?;
 
     let group_name = config.signal_import_group_name.clone();
     let group = signal_group::Entity::find()
@@ -147,7 +151,8 @@ pub async fn rer_delta_kmz_import_go(
         .filter(signal_group::Column::Name.eq(group_name))
         .order_by_desc(signal_group::Column::CreatedAt)
         .one(dbx)
-        .await?;
+        .await
+        .c(h!())?;
     let Some(group) = group else {
         return Err(AppError::BL {
             msg: format!(
@@ -171,7 +176,8 @@ pub async fn rer_delta_kmz_import_go(
         .filter(signal_profile::Column::GivenName.eq(sender_name))
         .order_by_desc(signal_profile::Column::CreatedAt)
         .one(dbx)
-        .await?;
+        .await
+        .c(h!())?;
     let Some(signal_profile) = signal_profile else {
         return Err(AppError::BL {
             msg: format!(
@@ -182,7 +188,9 @@ pub async fn rer_delta_kmz_import_go(
     let source_uuid = signal_profile.uuid;
 
     for rec in recs {
-        bgtask_log(bgtask_id, &format!("> rec: {rec:?}"), dbx).await?;
+        bgtask_log(bgtask_id, &format!("> rec: {rec:?}"), dbx)
+            .await
+            .c(h!())?;
 
         let timestamp = Utc::now().naive_utc();
         let body: String = format!(
@@ -205,7 +213,7 @@ pub async fn rer_delta_kmz_import_go(
                 datasource_id,
             )
             .await
-            .context(h!())?;
+            .c(h!())?;
 
         let message = signal_message::ActiveModel {
             id: NotSet,
@@ -222,12 +230,12 @@ pub async fn rer_delta_kmz_import_go(
         }
         .insert(dbx)
         .await
-        .context(h!())?;
+        .c(h!())?;
         let db_message_id = message.id;
 
         id::update_message_with_uid(dbx, config, message)
             .await
-            .context(h!())?;
+            .c(h!())?;
 
         crate::rer_importer::bgworker::inbox_item_oneoff_nofail(
             settlements.clone(),
@@ -243,7 +251,8 @@ pub async fn rer_delta_kmz_import_go(
             dbx,
             db_message_id,
         )
-        .await?;
+        .await
+        .c(h!())?;
     }
 
     Ok(())
@@ -267,7 +276,7 @@ pub fn parse_delta_kmz(
     let fallback_datetime = extract_datetime(&filename, &FILENAME_RE);
 
     let placemarks = crate::kml::gather_all_placemarks(
-        &quick_xml::de::from_str::<Kml>(input).context(h!())?.nodes,
+        &quick_xml::de::from_str::<Kml>(input).c(h!())?.nodes,
     )?;
 
     let (parsed, skipped): (Vec<_>, Vec<_>) =

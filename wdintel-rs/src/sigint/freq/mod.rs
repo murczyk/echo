@@ -30,8 +30,10 @@ pub async fn freq_activity_daily(
     env: actix_web::web::Data<Env>,
     req: Json<FreqStatsReq>,
 ) -> Result<Json<FreqDailyActivityCount>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
-    let login = user.id()?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .c(h!())?;
+    let login = user.id().c(h!())?;
     let req = req.into_inner();
     let freq = req.freq;
 
@@ -133,7 +135,9 @@ pub async fn list_alt_unit_by_freqs(
     env: actix_web::web::Data<Env>,
     req: Json<ListAltUnitByFreqsReq>,
 ) -> Result<Json<HashMap<String, Vec<FreqAltUnitMessageCount>>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .c(h!())?;
     let dt_since = dt_from_millis(req.since_date_inclusive_ms)?;
     let dt_till = dt_from_millis(req.till_date_noninclusive_ms)?;
     let mut alt_units = signal_message::Entity::find()
@@ -157,7 +161,8 @@ pub async fn list_alt_unit_by_freqs(
                     &user,
                     &env.config,
                 )
-                .await?,
+                .await
+                .c(h!())?,
             ),
         )
         .filter(signal_message::Column::Deleted.eq(false))
@@ -182,7 +187,8 @@ pub async fn list_alt_unit_by_freqs(
     let res_alt_units = alt_units
         .into_model::<FreqAltUnitMessageCount>()
         .all(&env.dbx)
-        .await?;
+        .await
+        .c(h!())?;
 
     let mut res = HashMap::new();
     for row in res_alt_units {
@@ -203,7 +209,9 @@ pub async fn list_points_by_freq(
     env: actix_web::web::Data<Env>,
     req: Json<ListPointsByFreqReq>,
 ) -> Result<Json<ListPointsByFreqRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .c(h!())?;
     let dt_since = dt_from_millis(req.since_date_inclusive_ms)?;
     let dt_till = dt_from_millis(req.till_date_noninclusive_ms)?;
     let points = signal_message::Entity::find()
@@ -234,7 +242,8 @@ pub async fn list_points_by_freq(
                     &user,
                     &env.config,
                 )
-                .await?,
+                .await
+                .c(h!())?,
             ),
         )
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
@@ -242,7 +251,11 @@ pub async fn list_points_by_freq(
         .filter(sigint_inbox_item::Column::Freq.eq(req.freq.clone()));
 
     Ok(Json(ListPointsByFreqRsp {
-        points: points.into_model::<FreqPoint>().all(&env.dbx).await?,
+        points: points
+            .into_model::<FreqPoint>()
+            .all(&env.dbx)
+            .await
+            .c(h!())?,
     }))
 }
 
@@ -253,7 +266,9 @@ pub async fn list_groups_by_freqs_per_day(
     req: Json<ListGroupsByFreqsPerDayReq>,
 ) -> Result<Json<HashMap<String, HashMap<i64, HashMap<String, i64>>>>, AppError>
 {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .c(h!())?;
     let dt_till = dt_from_millis(req.till_date_noninclusive_ms)?;
 
     let callsigns = signal_message::Entity::find()
@@ -295,7 +310,7 @@ pub async fn list_groups_by_freqs_per_day(
                     &user,
                     &env.config,
                 )
-                    .await?,
+                    .await.c(h!())?,
             ),
         )
         .filter(signal_message::Column::Deleted.eq(false))
@@ -324,7 +339,8 @@ pub async fn list_groups_by_freqs_per_day(
     for row in callsigns
         .into_model::<FreqGroupsMessageCountByDay>()
         .all(&env.dbx)
-        .await?
+        .await
+        .c(h!())?
     {
         let freq = row.freq.clone();
         let day = row.day;
@@ -348,7 +364,9 @@ pub async fn list_callsigns_by_freqs(
     env: actix_web::web::Data<Env>,
     req: Json<ListCallsignsByFreqsReq>,
 ) -> Result<Json<HashMap<String, Vec<String>>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .c(h!())?;
     let dt_since = dt_from_millis(req.since_date_inclusive_ms)?;
     let dt_till = dt_from_millis(req.till_date_noninclusive_ms)?;
 
@@ -381,7 +399,8 @@ pub async fn list_callsigns_by_freqs(
                     &user,
                     &env.config,
                 )
-                .await?,
+                .await
+                .c(h!())?,
             ),
         )
         .filter(signal_message::Column::Deleted.eq(false))
@@ -396,7 +415,8 @@ pub async fn list_callsigns_by_freqs(
     let res_callsigns = callsigns
         .into_model::<FreqCallsignsMessage>()
         .all(&env.dbx)
-        .await?;
+        .await
+        .c(h!())?;
 
     let mut res = HashMap::new();
     for row in res_callsigns {
@@ -421,9 +441,14 @@ pub async fn list_freqs(
     env: actix_web::web::Data<Env>,
     req: Json<ListFreqsReq>,
 ) -> Result<Json<ListFreqsRsp>, AppError> {
-    crate::users::has_any_role(&env.dbx, &user.id()?, vec!["Rer", "Api"])
-        .await?;
-    let login = user.id()?;
+    crate::users::has_any_role(
+        &env.dbx,
+        &user.id().c(h!())?,
+        vec!["Rer", "Api"],
+    )
+    .await
+    .c(h!())?;
+    let login = user.id().c(h!())?;
     const LIMIT: usize = 30;
     /// Period designating how many days are considered that freq is inactive
     const PERIOD_DAYS: i64 = 14;
@@ -496,7 +521,8 @@ pub async fn list_freqs(
                 &req.filter_sender_profile_ids,
                 &req.filter_further_investigation,
             )
-            .await?;
+            .await
+            .c(h!())?;
 
             subquery = subquery.filter(Expr::cust(format!(
                 "\"sigint_inbox_item\".\"callsigns\" ?| {callsings_postgres_array}"
@@ -580,7 +606,8 @@ pub async fn list_freqs(
                 &req.filter_sender_profile_ids,
                 &req.filter_further_investigation,
             )
-            .await?;
+            .await
+            .c(h!())?;
 
             freqs_per = freqs_per.group_by(sigint_inbox_item::Column::Freq);
 
@@ -605,7 +632,7 @@ pub async fn list_freqs(
     };
 
     // let freqs_period_count: u64 =
-    //     freqs_period.clone().count(&env.dbx).await?;
+    //     freqs_period.clone().count(&env.dbx).await.c(h!())?;
     // println!("> freqs in period count: {}", freqs_period_count);
     // freqs_period = freqs_period.limit(LIMIT);
     trace!("> freqs sql: {freqs_period}");
@@ -616,7 +643,8 @@ pub async fn list_freqs(
             DatabaseBackend::Postgres,
             freqs_period.to_string(),
         ))
-        .await?
+        .await
+        .c(h!())?
         .iter()
         .flat_map(|row| {
             let freq_res = FreqRes::from_query_result(row, "").unwrap();
@@ -650,7 +678,8 @@ pub async fn list_freqs(
                 crate::messenger::group::get_identity_sigint_groups(
                     &env.dbx, &login,
                 )
-                .await?,
+                .await
+                .c(h!())?,
             ),
         )
         .filter(signal_message::Column::Deleted.eq(false))
@@ -658,7 +687,7 @@ pub async fn list_freqs(
         .filter(sigint_inbox_item::Column::Datetime.lt(before_till))
         .group_by(sea_query::expr::SimpleExpr::Custom("freq".to_string()))
         .order_by_asc(sigint_inbox_item::Column::Freq);
-    // let before_count: u64 = before_res.clone().count(&env.dbx).await?;
+    // let before_count: u64 = before_res.clone().count(&env.dbx).await.c(h!())?;
     // println!("> before count: {}", before_count);
     // before_res = before_res.limit(LIMIT);
     // println!(
@@ -668,7 +697,8 @@ pub async fn list_freqs(
     let before_res: BTreeSet<String> = before_res
         .into_model::<BeforeRes>()
         .all(&env.dbx)
-        .await?
+        .await
+        .c(h!())?
         .iter()
         .flat_map(|x| x.freq.clone())
         .collect();
@@ -700,7 +730,8 @@ pub async fn list_freqs(
             .filter(sigint_network_freq::Column::Deleted.eq(false))
             .order_by_asc(sigint_network::Column::CreatedAt)
             .all(&env.dbx)
-            .await?;
+            .await
+            .c(h!())?;
         let created_at = networks
             .first()
             .map(|x| x.created_at.and_utc().timestamp_millis());
@@ -747,9 +778,14 @@ pub async fn list_freqs_v2(
     env: actix_web::web::Data<Env>,
     req: Json<ListFreqsReq>,
 ) -> Result<Json<ListFreqsV2Rsp>, AppError> {
-    crate::users::has_any_role(&env.dbx, &user.id()?, vec!["Rer", "Api"])
-        .await?;
-    let login = user.id()?;
+    crate::users::has_any_role(
+        &env.dbx,
+        &user.id().c(h!())?,
+        vec!["Rer", "Api"],
+    )
+    .await
+    .c(h!())?;
+    let login = user.id().c(h!())?;
     const LIMIT: usize = 30;
     /// Period designating how many days are considered that freq is inactive
     const PERIOD_DAYS: i64 = 14;
@@ -824,7 +860,8 @@ pub async fn list_freqs_v2(
                 &req.filter_sender_profile_ids,
                 &req.filter_further_investigation,
             )
-            .await?;
+            .await
+            .c(h!())?;
 
             subquery = subquery.filter(Expr::cust(format!(
                 "\"sigint_inbox_item\".\"callsigns\" ?| {callsings_postgres_array}"
@@ -909,7 +946,8 @@ pub async fn list_freqs_v2(
                 &req.filter_sender_profile_ids,
                 &req.filter_further_investigation,
             )
-            .await?;
+            .await
+            .c(h!())?;
 
             freqs_per = freqs_per.group_by(sigint_inbox_item::Column::Freq);
 
@@ -934,7 +972,7 @@ pub async fn list_freqs_v2(
     };
 
     // let freqs_period_count: u64 =
-    //     freqs_period.clone().count(&env.dbx).await?;
+    //     freqs_period.clone().count(&env.dbx).await.c(h!())?;
     // println!("> freqs in period count: {}", freqs_period_count);
     // freqs_period = freqs_period.limit(LIMIT);
     trace!("> freqs sql: {freqs_period}");
@@ -945,7 +983,8 @@ pub async fn list_freqs_v2(
             DatabaseBackend::Postgres,
             freqs_period.to_string(),
         ))
-        .await?
+        .await
+        .c(h!())?
         .iter()
         .flat_map(|row| {
             let freq_res = FreqRes::from_query_result(row, "").unwrap();
@@ -984,7 +1023,8 @@ pub async fn list_freqs_v2(
                 crate::messenger::group::get_identity_sigint_groups(
                     &env.dbx, &login,
                 )
-                .await?,
+                .await
+                .c(h!())?,
             ),
         )
         .filter(signal_message::Column::Deleted.eq(false))
@@ -992,7 +1032,7 @@ pub async fn list_freqs_v2(
         .filter(sigint_inbox_item::Column::Datetime.lt(before_till))
         .group_by(sea_query::expr::SimpleExpr::Custom("freq".to_string()))
         .order_by_asc(sigint_inbox_item::Column::Freq);
-    // let before_count: u64 = before_res.clone().count(&env.dbx).await?;
+    // let before_count: u64 = before_res.clone().count(&env.dbx).await.c(h!())?;
     // println!("> before count: {}", before_count);
     // before_res = before_res.limit(LIMIT);
     // println!(
@@ -1002,7 +1042,8 @@ pub async fn list_freqs_v2(
     let before_res: BTreeSet<String> = before_res
         .into_model::<BeforeRes>()
         .all(&env.dbx)
-        .await?
+        .await
+        .c(h!())?
         .iter()
         .flat_map(|x| x.freq.clone())
         .collect();
@@ -1038,7 +1079,8 @@ pub async fn list_freqs_v2(
             .filter(sigint_network_freq::Column::Deleted.eq(false))
             .order_by_asc(sigint_network::Column::CreatedAt)
             .all(&env.dbx)
-            .await?;
+            .await
+            .c(h!())?;
         let created_at = networks
             .first()
             .map(|x| x.created_at.and_utc().timestamp_millis());
@@ -1105,7 +1147,8 @@ where
                 user,
                 &env.config,
             )
-            .await?,
+            .await
+            .c(h!())?,
         ),
     );
 
@@ -1182,8 +1225,10 @@ pub async fn latest_frequencies(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<Vec<String>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
-    let login = user.id()?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .c(h!())?;
+    let login = user.id().c(h!())?;
 
     #[derive(FromQueryResult)]
     struct FreqRes {
@@ -1207,7 +1252,8 @@ pub async fn latest_frequencies(
                 crate::messenger::group::get_identity_sigint_groups(
                     &env.dbx, &login,
                 )
-                .await?,
+                .await
+                .c(h!())?,
             ),
         )
         .filter(signal_message::Column::Deleted.eq(false))
@@ -1216,7 +1262,8 @@ pub async fn latest_frequencies(
         .order_by_asc(sigint_inbox_item::Column::Freq)
         .into_model::<FreqRes>()
         .all(&env.dbx)
-        .await?
+        .await
+        .c(h!())?
         .iter()
         .flat_map(|x| x.freq.clone())
         .collect();
@@ -1229,7 +1276,9 @@ pub async fn freq_unit_stats(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<FreqUnitStatsRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .c(h!())?;
 
     #[derive(FromQueryResult)]
     struct Row {
@@ -1277,7 +1326,7 @@ pub async fn freq_unit_stats(
         .group_by(sigint_unit::Column::Battalion)
         .group_by(sigint_unit::Column::Company);
     // println!("> sql: {}", units.build(DbBackend::Postgres).to_string());
-    let units = units.into_model::<Row>().all(&env.dbx).await?;
+    let units = units.into_model::<Row>().all(&env.dbx).await.c(h!())?;
     let mut res = vec![];
     for unit in units {
         res.push(FreqUnitStatRow {
@@ -1311,8 +1360,10 @@ pub async fn callsigns_for_filter(
     req: Json<CallsignsForFreqReq>,
 ) -> Result<Json<CallsignsForFreqRsp>, AppError> {
     println!("getting filters for callsigns-filter call: {:?}", req.freq);
-    let login = user.id()?;
-    crate::users::has_role(&env.dbx, &login, "Rer").await?;
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
+        .await
+        .c(h!())?;
 
     let req = req.into_inner();
     let instant = std::time::Instant::now();
@@ -1367,12 +1418,15 @@ pub async fn freq_exists(
     env: actix_web::web::Data<Env>,
     req: Json<FreqExistsReq>,
 ) -> Result<Json<()>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
-    let login = user.id()?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .c(h!())?;
+    let login = user.id().c(h!())?;
 
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
-            .await?;
+            .await
+            .c(h!())?;
     let dt_since = dt_from_millis(req.since_date_inclusive_ms)?;
 
     let freq_exists = signal_message::Entity::find()
@@ -1418,13 +1472,19 @@ pub async fn list_freqs_for_period(
     env: actix_web::web::Data<Env>,
     req: Json<ListFreqsForPeriodReq>,
 ) -> Result<Json<ListFreqsForPeriodRsp>, AppError> {
-    crate::users::has_any_role(&env.dbx, &user.id()?, vec!["Rer", "Api"])
-        .await?;
-    let login = user.id()?;
+    crate::users::has_any_role(
+        &env.dbx,
+        &user.id().c(h!())?,
+        vec!["Rer", "Api"],
+    )
+    .await
+    .c(h!())?;
+    let login = user.id().c(h!())?;
 
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
-            .await?;
+            .await
+            .c(h!())?;
     let dt_since = dt_from_millis(req.since_date_inclusive_ms)?;
 
     let mut q = signal_message::Entity::find()

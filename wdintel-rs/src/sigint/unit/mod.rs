@@ -58,8 +58,13 @@ pub async fn list_units(
     env: actix_web::web::Data<Env>,
     req: Json<ListUnitsReq>,
 ) -> Result<Json<ListUnitsRsp>, AppError> {
-    crate::users::has_any_role(&env.dbx, &user.id()?, vec!["Rer", "Api"])
-        .await?;
+    crate::users::has_any_role(
+        &env.dbx,
+        &user.id().c(h!())?,
+        vec!["Rer", "Api"],
+    )
+    .await
+    .c(h!())?;
     const LIMIT: u64 = 100000;
     let mut units = sigint_unit::Entity::find()
         .filter(sigint_unit::Column::Deleted.eq(false));
@@ -70,7 +75,8 @@ pub async fn list_units(
     match sort_by {
         ListUnitsSortBy::CreatedAtDesc => {
             if let Some(before_unit_id) = &req.before_unit_id {
-                let before_unit = find_unit(&env.dbx, *before_unit_id).await?;
+                let before_unit =
+                    find_unit(&env.dbx, *before_unit_id).await.c(h!())?;
                 units = units.filter(
                     Expr::tuple([
                         sigint_unit::Column::CreatedAt.into_column_ref().into(),
@@ -88,7 +94,8 @@ pub async fn list_units(
         }
         ListUnitsSortBy::CreatedAtAsc => {
             if let Some(after_unit_id) = &req.after_unit_id {
-                let after_unit = find_unit(&env.dbx, *after_unit_id).await?;
+                let after_unit =
+                    find_unit(&env.dbx, *after_unit_id).await.c(h!())?;
                 units = units.filter(
                     Expr::tuple([
                         sigint_unit::Column::CreatedAt.into_column_ref().into(),
@@ -106,7 +113,8 @@ pub async fn list_units(
         }
         ListUnitsSortBy::NaturalMilitarySortAsc => {
             if let Some(after_unit_id) = &req.after_unit_id {
-                let after_unit = find_unit(&env.dbx, *after_unit_id).await?;
+                let after_unit =
+                    find_unit(&env.dbx, *after_unit_id).await.c(h!())?;
                 units = units.filter(
                     Expr::tuple([
                         sigint_unit::Column::Army.into_column_ref().into(),
@@ -134,7 +142,7 @@ pub async fn list_units(
             units = units.order_by_asc(sigint_unit::Column::Id);
         }
     }
-    let units = units.limit(LIMIT).all(&env.dbx).await?;
+    let units = units.limit(LIMIT).all(&env.dbx).await.c(h!())?;
     let mut res = vec![];
     for unit in units {
         res.push(render_unit(&unit)?);
@@ -151,14 +159,19 @@ pub async fn list_units_by_id(
     env: actix_web::web::Data<Env>,
     req: Json<ListUnitsByIdReq>,
 ) -> Result<Json<ListUnitsByIdRsp>, AppError> {
-    crate::users::has_any_role(&env.dbx, &user.id()?, vec!["Rer", "Api"])
-        .await?;
+    crate::users::has_any_role(
+        &env.dbx,
+        &user.id().c(h!())?,
+        vec!["Rer", "Api"],
+    )
+    .await
+    .c(h!())?;
     let mut units = sigint_unit::Entity::find()
         .filter(sigint_unit::Column::Deleted.eq(false));
     if let Some(ids) = &req.ids {
         units = units.filter(sigint_unit::Column::Id.is_in(ids.clone()));
     }
-    let units = units.all(&env.dbx).await?;
+    let units = units.all(&env.dbx).await.c(h!())?;
 
     let mut res = vec![];
     for unit in units {
@@ -173,8 +186,12 @@ pub async fn create_unit(
     env: actix_web::web::Data<Env>,
     req: Json<CreateUnitReq>,
 ) -> Result<Json<Unit>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
-    crate::users::has_role(&env.dbx, &user.id()?, "UnitsEditor").await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .c(h!())?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "UnitsEditor")
+        .await
+        .c(h!())?;
 
     let unit = sigint_unit::ActiveModel {
         id: NotSet,
@@ -185,7 +202,7 @@ pub async fn create_unit(
         army: Set(req.army.clone()),
         active: Set(req.active),
         created_at: NotSet,
-        created_by: Set(user.id()?.to_string()),
+        created_by: Set(user.id().c(h!())?.to_string()),
         comment: Set(req.comment.clone()),
         name: Set(unit_name_req(&req)),
         deleted: Set(false),
@@ -199,12 +216,13 @@ pub async fn create_unit(
     let unit_json = sigint_unit::Entity::find_by_id(unit.id)
         .into_json()
         .one(&env.dbx)
-        .await?
+        .await
+        .c(h!())?
         .ok_or(AppError::NotFound)?;
     let _changelog = sigint_unit_changelog::ActiveModel {
         id: NotSet,
         sigint_unit_id: Set(unit.id),
-        login: Set(user.id()?.to_string()),
+        login: Set(user.id().c(h!())?.to_string()),
         action: Set("create".to_string()),
         created_at: NotSet,
         new_value: Set(Some(unit_json)),
@@ -230,8 +248,12 @@ pub async fn update_unit(
     env: actix_web::web::Data<Env>,
     req: Json<Unit>,
 ) -> Result<Json<Unit>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
-    crate::users::has_role(&env.dbx, &user.id()?, "UnitsEditor").await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .c(h!())?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "UnitsEditor")
+        .await
+        .c(h!())?;
     let unit = find_unit(&env.dbx, req.id).await.context(h!())?;
     let unit_json_old = sigint_unit::Entity::find_by_id(req.id)
         .into_json()
@@ -258,7 +280,7 @@ pub async fn update_unit(
     let _changelog = sigint_unit_changelog::ActiveModel {
         id: NotSet,
         sigint_unit_id: Set(req.id),
-        login: Set(user.id()?.to_string()),
+        login: Set(user.id().c(h!())?.to_string()),
         action: Set("update".to_string()),
         created_at: NotSet,
         new_value: Set(Some(unit_json_new)),
@@ -285,8 +307,12 @@ pub async fn delete_unit(
     env: actix_web::web::Data<Env>,
     req: Json<i64>,
 ) -> Result<Json<Unit>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
-    crate::users::has_role(&env.dbx, &user.id()?, "UnitsEditor").await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .c(h!())?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "UnitsEditor")
+        .await
+        .c(h!())?;
     let unit = find_unit(&env.dbx, req.into_inner()).await.context(h!())?;
     let unit_json_old = sigint_unit::Entity::find_by_id(unit.id)
         .into_json()
@@ -306,7 +332,7 @@ pub async fn delete_unit(
     let _changelog = sigint_unit_changelog::ActiveModel {
         id: NotSet,
         sigint_unit_id: Set(unit.id),
-        login: Set(user.id()?.to_string()),
+        login: Set(user.id().c(h!())?.to_string()),
         action: Set("delete".to_string()),
         created_at: NotSet,
         new_value: Set(Some(unit_json_new)),
@@ -329,9 +355,13 @@ pub async fn delete_unit_duplicate(
     env: actix_web::web::Data<Env>,
     req: Json<DeleteUnitDuplicateReq>,
 ) -> Result<Json<Unit>, AppError> {
-    let login = user.id()?.to_string();
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
-    crate::users::has_role(&env.dbx, &user.id()?, "UnitsEditor").await?;
+    let login = user.id().c(h!())?.to_string();
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .c(h!())?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "UnitsEditor")
+        .await
+        .c(h!())?;
     let req: DeleteUnitDuplicateReq = req.into_inner();
     let unit_to_delete = find_unit(&env.dbx, req.clone_to_delete_id)
         .await
@@ -521,7 +551,8 @@ async fn swap_units(
         let json_new = sigint_network_unit::Entity::find_by_id(id)
             .into_json()
             .one(dbx)
-            .await?
+            .await
+            .c(h!())?
             .ok_or(AppError::NotFound)?;
         sigint_network_unit_changelog::ActiveModel {
             id: NotSet,
@@ -586,7 +617,7 @@ async fn update_original_unit(
 pub async fn oneoff_reprocess_units_search_index(
     mode: Mode,
 ) -> Result<(), AppError> {
-    let dbx = crate::new_pg_pool_from_mode(mode).await?;
+    let dbx = crate::new_pg_pool_from_mode(mode).await.c(h!())?;
 
     let pool = dbx.get_postgres_connection_pool();
 
@@ -659,7 +690,9 @@ pub async fn units_search(
     env: actix_web::web::Data<Env>,
     req: Json<UnitSearchReq>,
 ) -> Result<Json<ListUnitsByIdRsp>, AppError> {
-    crate::users::has_any_role(&env.dbx, &user.id()?, vec!["Rer"]).await?;
+    crate::users::has_any_role(&env.dbx, &user.id().c(h!())?, vec!["Rer"])
+        .await
+        .c(h!())?;
 
     let search_phrase = req.search.trim();
     if search_phrase.is_empty() {

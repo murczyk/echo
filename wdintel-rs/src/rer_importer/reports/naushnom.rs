@@ -32,8 +32,9 @@ pub async fn report_docx_kind_naushnom(
     let file = std::fs::File::create(outpath)?;
     let width_unit = 100;
 
-    let network_map =
-        get_inbox_messages_report_network(user, env, &req.req).await?;
+    let network_map = get_inbox_messages_report_network(user, env, &req.req)
+        .await
+        .c(h!())?;
 
     let style_invisible = Style::new("Invisible", StyleType::Paragraph)
         .name("Invisible")
@@ -227,7 +228,7 @@ pub async fn get_inbox_messages_report_network(
     >,
     AppError,
 > {
-    let login = user.id()?;
+    let login = user.id().c(h!())?;
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
 
@@ -279,7 +280,8 @@ pub async fn get_inbox_messages_report_network(
                 crate::messenger::group::get_identity_sigint_groups(
                     &env.dbx, &login,
                 )
-                .await?,
+                .await
+                .c(h!())?,
             ),
         )
         .filter(sigint_comment::Column::Comment.eq("").not());

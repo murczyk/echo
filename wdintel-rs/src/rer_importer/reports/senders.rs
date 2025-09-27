@@ -3,7 +3,7 @@ use crate::error::AppError;
 use crate::h;
 use crate::rer_importer::inbox::query::build_inbox_query;
 use crate::rer_importer::types::InboxMessagesReq;
-use crate::types::Env;
+use crate::types::{Env, ShortContext};
 use crate::utils::dt_zoned_from_millis;
 use anyhow::Context;
 use chrono::{NaiveDate, Utc};
@@ -44,7 +44,7 @@ pub async fn report_xlsx_kind_senders(
     outpath: &PathBuf,
 ) -> Result<(), AppError> {
     info!("[report_xlsx_kind_senders] {}: started", Utc::now());
-    let login = user.id()?;
+    let login = user.id().c(h!())?;
     let mut req = req.to_owned();
     req.return_duplicates = Some(false);
     let Some(since_date_inclusive_ms) = req.since_date_inclusive_ms else {
@@ -53,8 +53,12 @@ pub async fn report_xlsx_kind_senders(
     let Some(till_date_inclusive_ms) = req.till_date_inclusive_ms else {
         return Err("Until date must be specified".into());
     };
-    let logins = crate::users::get_organism_logins(&env.dbx, user).await?;
-    let q = build_inbox_query(&login, &logins, env, &req).await?;
+    let logins = crate::users::get_organism_logins(&env.dbx, user)
+        .await
+        .c(h!())?;
+    let q = build_inbox_query(&login, &logins, env, &req)
+        .await
+        .c(h!())?;
 
     let q = format!(
         r#"SELECT count(*) as quantity, "post_name" as post, "sender" as sender, to_char(("datetime" AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Kyiv')::date, 'DD.MM.YYYY') as ts_dt from ({q}) q group by "post_name", "sender", ("datetime" AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Kyiv')::date"#
@@ -79,15 +83,16 @@ pub async fn report_xlsx_kind_senders(
         });
     }
 
-    let senders = map_senders(&aggregation_kind, &env, &messages).await?;
+    let senders = map_senders(&aggregation_kind, &env, &messages)
+        .await
+        .c(h!())?;
 
     let mut sender_stats: BTreeMap<String, SenderStats> = BTreeMap::new();
     let mut dates_with_data = BTreeMap::new();
     for msg in messages {
         let sender_name = extract_sender(&msg, &aggregation_kind)
-            .and_then(|s| senders.get(&s))
-            .cloned()
-            .unwrap_or("невідомий відправник".to_string());
+            .and_then(|s| senders.get(&s).cloned())
+            .unwrap_or_else(|| "невідомий відправник".to_string());
         let mut stats =
             sender_stats.get(&sender_name).cloned().unwrap_or_default();
         stats.overall += msg.quantity;
@@ -133,7 +138,8 @@ async fn map_senders(
         ReportAggregation::ByProfile => signal_profile::Entity::find()
             .filter(signal_profile::Column::Uuid.is_in(sender_ids))
             .all(&env.dbx)
-            .await?
+            .await
+            .c(h!())?
             .into_iter()
             .filter_map(|g| {
                 let name_vec = vec![g.given_name, g.family_name]

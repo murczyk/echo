@@ -375,7 +375,7 @@ async fn store_activity_in_redis(
 /// # Example
 /// ```
 /// let redis_client = redis::Client::open("redis://127.0.0.1:6379/")?;
-/// let redis_conn = ConnectionManager::new(redis_client).await?;
+/// let redis_conn = ConnectionManager::new(redis_client).await.c(h!())?;
 /// let activity_middleware = mk_activity_middleware(Some(redis_conn));
 ///
 /// // Or without Redis:

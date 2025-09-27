@@ -2,6 +2,7 @@ use crate::entities::sigint_peleng::Model;
 use crate::entities::{freq_location, sigint_inbox_item, sigint_peleng};
 use crate::location::utils::{format_locations_list, to_location_list};
 use crate::location::*;
+use crate::types::ShortContext;
 use milgeo_rs::coord_util::{LatLng, Locality};
 use milgeo_rs::MilGeo;
 
@@ -34,7 +35,7 @@ pub async fn run_process_coords_locations_worker(
         if offset > 0 {
             select = select.offset(offset);
         }
-        match select.one(dbx).await.context(h!())? {
+        match select.one(dbx).await.c(h!())? {
             None => {
                 return Ok(());
             }
@@ -46,7 +47,7 @@ pub async fn run_process_coords_locations_worker(
                     )
                     .one(dbx)
                     .await
-                    .context(h!())?
+                    .c(h!())?
                 else {
                     error!("[run_process_coords_locations_worker] failed to find inbox item {}", peleng.source_inbox_item_id);
                     offset += 1;
@@ -59,9 +60,10 @@ pub async fn run_process_coords_locations_worker(
                             .eq(peleng.source_inbox_item_id),
                     )
                     .all(dbx)
-                    .await?;
+                    .await
+                    .c(h!())?;
                 let peleng_locations =
-                    collect_peleng_locations(pelengs, mil_geo).await?;
+                    collect_peleng_locations(pelengs, mil_geo).await.c(h!())?;
                 let locations = peleng_locations
                     .clone()
                     .into_iter()
@@ -87,7 +89,7 @@ pub async fn run_process_coords_locations_worker(
                         &peleng_locations,
                     )
                     .await
-                    .context(h!())?;
+                    .c(h!())?;
                 }
                 for l in locations.iter() {
                     if !existing_locations.contains(l) {
@@ -98,7 +100,7 @@ pub async fn run_process_coords_locations_worker(
                 let location_v2 = Some(format_locations_list(new_locations));
                 let mut model = inbox_item.clone().into_active_model();
                 model.location_v2 = Set(location_v2);
-                model.update(dbx).await.context(h!())?;
+                model.update(dbx).await.c(h!())?;
                 for (peleng, localities) in peleng_locations.clone() {
                     let mut model = peleng.into_active_model();
                     if let Some(locality) = localities.into_iter().next() {
@@ -113,7 +115,7 @@ pub async fn run_process_coords_locations_worker(
                     } else {
                         model.settlement = Set(Some(String::from("")));
                     }
-                    model.update(dbx).await.context(h!())?;
+                    model.update(dbx).await.c(h!())?;
                 }
             }
         }
@@ -144,7 +146,7 @@ where
             .filter(freq_location::Column::Deleted.eq(false))
             .one(txn)
             .await
-            .context(h!())?;
+            .c(h!())?;
         match m_existing {
             None => {
                 freq_location::ActiveModel {
@@ -157,12 +159,12 @@ where
                 }
                 .insert(txn)
                 .await
-                .context(h!())?;
+                .c(h!())?;
             }
             Some(model) => {
                 let mut model = model.into_active_model();
                 model.datetime = Set(Some(ts));
-                model.update(txn).await.context(h!())?;
+                model.update(txn).await.c(h!())?;
             }
         }
     }
@@ -188,7 +190,7 @@ async fn collect_peleng_locations(
     let matches =
         milgeo_rs::coord_util::map_coords(coords.clone(), mil_geo.clone(), 3)
             .await
-            .context(h!())?;
+            .c(h!())?;
     let mut data = vec![];
     for (id, locality) in matches {
         if let Some(peleng) = pelengs_map.get(&id) {

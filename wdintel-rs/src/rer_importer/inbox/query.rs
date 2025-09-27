@@ -22,7 +22,8 @@ pub(crate) async fn build_inbox_query(
 ) -> Result<String, AppError> {
     let sigint_groups =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, login)
-            .await?;
+            .await
+            .c(h!())?;
     let dedup_key_alias = Alias::new("dedup_key");
     let mut q = SignalMessage::find()
         .join(
@@ -108,7 +109,7 @@ pub(crate) async fn build_inbox_query(
         );
     }
 
-    q = get_order_by(env, req, q.clone()).await?;
+    q = get_order_by(env, req, q.clone()).await.c(h!())?;
 
     let dd_cte = Alias::new("inbox_items_cte");
 
@@ -151,7 +152,9 @@ where
         && req.load_latest.is_none()
     {
         since_id_noninclusive =
-            crate::kv::get_kv(&env.dbx, "rer_importer_id_cursor").await?
+            crate::kv::get_kv(&env.dbx, "rer_importer_id_cursor")
+                .await
+                .c(h!())?
     };
 
     let req_sort_by = req.sort_by.unwrap_or(InboxMessagesSortBy::IMSDatetime);
@@ -161,7 +164,8 @@ where
                 SignalMessage::find_by_id(since_id_noninclusive)
                     .filter(signal_message::Column::Deleted.eq(false))
                     .one(&env.dbx)
-                    .await?
+                    .await
+                    .c(h!())?
             else {
                 q = q.filter(
                     signal_message::Column::Id.gt(since_id_noninclusive),
@@ -173,7 +177,8 @@ where
                     let Some(inbox) =
                         SigintInboxItem::find_by_id(since_id_noninclusive)
                             .one(&env.dbx)
-                            .await?
+                            .await
+                            .c(h!())?
                     else {
                         q = q.filter(
                             signal_message::Column::Id
@@ -233,7 +238,8 @@ where
                 SignalMessage::find_by_id(before_id_noninclusive)
                     .filter(signal_message::Column::Deleted.eq(false))
                     .one(&env.dbx)
-                    .await?
+                    .await
+                    .c(h!())?
             else {
                 q = q.filter(
                     signal_message::Column::Id.lt(before_id_noninclusive),
@@ -245,7 +251,8 @@ where
                     let Some(inbox) =
                         SigintInboxItem::find_by_id(before_id_noninclusive)
                             .one(&env.dbx)
-                            .await?
+                            .await
+                            .c(h!())?
                     else {
                         q = q.filter(
                             signal_message::Column::Id

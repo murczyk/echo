@@ -15,7 +15,7 @@ where
     let (_organism, parents) =
         load_organism_with_parents_chain(organism_id, txn)
             .await
-            .context(h!())?;
+            .c(h!())?;
     let organism_aors = area_of_responsibility::Entity::find()
         .join(
             JoinType::InnerJoin,
@@ -24,7 +24,7 @@ where
         .filter(organism_aor::Column::OrganismId.eq(organism_id))
         .all(txn)
         .await
-        .context(h!())?;
+        .c(h!())?;
     if organism_aors.is_empty() {
         return Ok(OrganismGroups {
             available_keys: vec![],
@@ -72,7 +72,7 @@ where
         .into_tuple::<String>()
         .all(txn)
         .await
-        .context(h!())?;
+        .c(h!())?;
     let mut organism_ids: Vec<i64> =
         parents.into_iter().map(|x| x.id).collect();
     organism_ids.push(organism_id);
@@ -80,7 +80,7 @@ where
         .filter(organism_group::Column::OrganismId.is_in(organism_ids.clone()))
         .all(txn)
         .await
-        .context(h!())?;
+        .c(h!())?;
     let mut selected_keys = vec![];
     for organism_id in organism_ids {
         selected_keys = organism_groups
@@ -110,7 +110,7 @@ pub(crate) async fn load_organism_with_children(
         .filter(organism::Column::DeletedPermanently.eq(false))
         .all(db)
         .await
-        .context(h!())?
+        .c(h!())?
         .into_iter()
         .map(|x| (x.id, x))
         .collect::<BTreeMap<_, _>>();
@@ -134,10 +134,10 @@ pub(crate) async fn load_organism_with_children(
         result
     }
     let children_ids = collect_children(&all_organisms, organism_id);
-    let parent = all_organisms.remove(&organism_id).context(h!())?;
+    let parent = all_organisms.remove(&organism_id).c(h!())?;
     let mut children = vec![];
     for child_id in children_ids {
-        children.push(all_organisms.remove(&child_id).context(h!())?);
+        children.push(all_organisms.remove(&child_id).c(h!())?);
     }
     Ok((parent, children))
 }
@@ -153,16 +153,16 @@ where
         .filter(organism::Column::DeletedPermanently.eq(false))
         .all(txn)
         .await
-        .context(h!())?
+        .c(h!())?
         .into_iter()
         .map(|x| (x.id, x))
         .collect();
     let parent_ids =
-        find_parent_chain(&all_organisms, organism_id, 10).context(h!())?;
-    let child = all_organisms.remove(&organism_id).context(h!())?;
+        find_parent_chain(&all_organisms, organism_id, 10).c(h!())?;
+    let child = all_organisms.remove(&organism_id).c(h!())?;
     let mut parents = vec![];
     for parent in parent_ids {
-        parents.push(all_organisms.remove(&parent).context(h!())?);
+        parents.push(all_organisms.remove(&parent).c(h!())?);
     }
     Ok((child, parents))
 }
@@ -177,12 +177,12 @@ fn find_parent_chain(
             anyhow::anyhow!("Maximum recursion depth reached").context(h!())
         );
     }
-    let child = organisms.get(&child_id).context(h!())?.clone();
+    let child = organisms.get(&child_id).c(h!())?.clone();
     let Some(parent_id) = child.parent_id else {
         return Ok(vec![]);
     };
     let mut parents_chain =
-        find_parent_chain(organisms, parent_id, fuel - 1).context(h!())?;
+        find_parent_chain(organisms, parent_id, fuel - 1).c(h!())?;
     parents_chain.push(parent_id);
     Ok(parents_chain)
 }
@@ -191,7 +191,7 @@ pub async fn create_organism(
     dbx: &DatabaseConnection,
     req: &Json<CreateOrganismReq>,
 ) -> Result<organism::Model, AppError> {
-    let txn = dbx.begin().await.context(h!())?;
+    let txn = dbx.begin().await.c(h!())?;
     let parent_id = match req.parent_id {
         None => None,
         Some(parent_id) => {
@@ -199,7 +199,7 @@ pub async fn create_organism(
                 .filter(organism::Column::DeletedPermanently.eq(false))
                 .count(&txn)
                 .await
-                .context(h!())?
+                .c(h!())?
                 == 1;
             if has_organism {
                 Some(parent_id)
@@ -212,20 +212,21 @@ pub async fn create_organism(
     let organism = organism::ActiveModel {
         id: NotSet,
         name: Set(req.name.clone()),
-        roles: Set(serde_json::to_value(req.roles.clone()).context(h!())?),
+        roles: Set(serde_json::to_value(req.roles.clone()).c(h!())?),
         created_at: NotSet,
         enabled: NotSet,
         parent_id: Set(parent_id),
         deleted_permanently: NotSet,
     }
     .insert(&txn)
-    .await?;
+    .await
+    .c(h!())?;
 
     upsert_organism_aors(&txn, req.aor_ids.clone(), organism.id)
         .await
-        .context(h!())?;
+        .c(h!())?;
 
-    txn.commit().await.context(h!())?;
+    txn.commit().await.c(h!())?;
     Ok(organism)
 }
 
@@ -240,7 +241,7 @@ pub async fn update_organism(
                 .filter(organism::Column::DeletedPermanently.eq(false))
                 .count(txn)
                 .await
-                .context(h!())?
+                .c(h!())?
                 == 1;
             if has_organism {
                 Some(parent_id)
@@ -255,7 +256,7 @@ pub async fn update_organism(
         .filter(organism::Column::Id.eq(req.id))
         .one(txn)
         .await
-        .context(h!())?
+        .c(h!())?
         .ok_or(AppError::NotFound)?;
 
     let mut organism: organism::ActiveModel = organism_obj.into();
@@ -265,15 +266,15 @@ pub async fn update_organism(
     }
     organism.parent_id = Set(parent_id);
     if let Some(roles) = req.roles.clone() {
-        organism.roles = Set(serde_json::to_value(roles).context(h!())?);
+        organism.roles = Set(serde_json::to_value(roles).c(h!())?);
     }
     organism.enabled = Set(req.enabled);
 
-    let organism = organism.update(txn).await.context(h!())?;
+    let organism = organism.update(txn).await.c(h!())?;
 
     upsert_organism_aors(txn, req.aor_ids.clone(), req.id)
         .await
-        .context(h!())?;
+        .c(h!())?;
     Ok(organism)
 }
 
@@ -288,7 +289,7 @@ async fn upsert_organism_aors(
                 .filter(organism_aor::Column::OrganismId.eq(organism_id))
                 .exec(txn)
                 .await
-                .context(h!())?;
+                .c(h!())?;
         }
         Some(aor_ids) => {
             organism_aor::Entity::delete_many()
@@ -296,7 +297,7 @@ async fn upsert_organism_aors(
                 .filter(organism_aor::Column::AorId.is_not_in(aor_ids.clone()))
                 .exec(txn)
                 .await
-                .context(h!())?;
+                .c(h!())?;
             let existing_ids = organism_aor::Entity::find()
                 .filter(organism_aor::Column::OrganismId.eq(organism_id))
                 .filter(organism_aor::Column::AorId.is_in(aor_ids.clone()))
@@ -305,7 +306,7 @@ async fn upsert_organism_aors(
                 .into_tuple::<i64>()
                 .all(txn)
                 .await
-                .context(h!())?
+                .c(h!())?
                 .into_iter()
                 .collect::<HashSet<_>>();
             for id in aor_ids {
@@ -320,7 +321,7 @@ async fn upsert_organism_aors(
                 }
                 .insert(txn)
                 .await
-                .context(h!())?;
+                .c(h!())?;
             }
         }
     }

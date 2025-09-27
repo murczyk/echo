@@ -1,6 +1,7 @@
 use self::types::*;
 use crate::entities::*;
 use crate::error::AppError;
+use crate::h;
 use crate::types::*;
 use actix_web::post;
 use actix_web::web::Json;
@@ -16,11 +17,14 @@ pub async fn list_datasources(
     env: actix_web::web::Data<Env>,
     user: actix_identity::Identity,
 ) -> Result<Json<Vec<(i64, Datasource)>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Basic").await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Basic")
+        .await
+        .c(h!())?;
     let datasources = datasource::Entity::find()
         // .filter(datasource::Column::Enabled.eq(true))
         .all(&env.dbx)
-        .await?;
+        .await
+        .c(h!())?;
     let mut res = vec![];
     for datasource in datasources {
         res.push((
@@ -42,14 +46,18 @@ pub async fn datasource_group_list(
     user: actix_identity::Identity,
     req: Json<i64>,
 ) -> Result<Json<Vec<String>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Basic").await?;
-    let is_admin = crate::users::has_role(&env.dbx, &user.id()?, "Admin")
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Basic")
         .await
-        .is_ok();
+        .c(h!())?;
+    let is_admin =
+        crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
+            .await
+            .is_ok();
     let datasource_id: i64 = req.into_inner();
     let datasource = datasource::Entity::find_by_id(datasource_id)
         .one(&env.dbx)
-        .await?
+        .await
+        .c(h!())?
         .ok_or(AppError::NotFound)?;
 
     if datasource.kind == "signal"
@@ -75,10 +83,10 @@ pub async fn datasource_group_list(
                 datasource_group::Column::GroupMasterKey.is_in(
                     crate::messenger::group::get_identity_sigint_groups(
                         &env.dbx,
-                        &user.id()?,
+                        &user.id().c(h!())?,
                     )
                     .await
-                    .context(h!())?,
+                    .c(h!())?,
                 ),
             );
         }
@@ -87,7 +95,7 @@ pub async fn datasource_group_list(
             .into_tuple::<Option<String>>()
             .all(&env.dbx)
             .await
-            .context(h!())?;
+            .c(h!())?;
         if res.iter().any(|x| x.is_none()) {
             warn!(
                 "Found null group_master_key list for datasource id={datasource_id}"
@@ -97,7 +105,8 @@ pub async fn datasource_group_list(
     } else if datasource.kind == "api" {
         let datasource = datasource::Entity::find_by_id(datasource_id)
             .one(&env.dbx)
-            .await?
+            .await
+            .c(h!())?
             .ok_or(AppError::NotFound)?;
         let group_master_key =
             datasource.group_master_key.ok_or(AppError::BL {
@@ -115,21 +124,19 @@ pub async fn datasource_group_list(
 pub async fn fix_datasource_default_aor(
     db: &DatabaseConnection,
 ) -> Result<(), AppError> {
-    let default_aor = crate::sigint::aor::load_default_aor(db)
-        .await
-        .context(h!())?;
+    let default_aor = crate::sigint::aor::load_default_aor(db).await.c(h!())?;
 
     let datasources = datasource::Entity::find()
         .filter(datasource::Column::DefaultAorId.is_null())
         .all(db)
         .await
-        .context(h!())?;
+        .c(h!())?;
 
     for datasource in datasources {
         let id = datasource.id;
         let mut datasource = datasource.into_active_model();
         datasource.default_aor_id = Set(Some(default_aor.id));
-        match datasource.update(db).await.context(h!()) {
+        match datasource.update(db).await.c(h!()) {
             Ok(_) => log::info!("set default_aor_id for datasource {id}"),
             Err(e) => log::error!(
                 "failed to set default_aor_id for datasource {id}: {e:?}"

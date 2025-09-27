@@ -26,7 +26,9 @@ pub async fn list_callsigns(
     env: actix_web::web::Data<Env>,
     req: Json<ListCallsignsReq>,
 ) -> Result<Json<ListCallsignsRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .c(h!())?;
     let limit: u64 = match &req.limit {
         Some(new_limit) => (*new_limit) as u64,
         None => 1000,
@@ -37,10 +39,12 @@ pub async fn list_callsigns(
         .filter(sigint_callsign::Column::Deleted.eq(false));
     // just one sort_by supported for now
     if let Some(after_id) = &req.after_id {
-        let after_callsign = find_callsign(&env.dbx, *after_id).await?;
+        let after_callsign =
+            find_callsign(&env.dbx, *after_id).await.c(h!())?;
         let after_unit =
             crate::sigint::unit::find_unit(&env.dbx, after_callsign.unit_id)
-                .await?;
+                .await
+                .c(h!())?;
         callsigns = callsigns.filter(
             Expr::tuple([
                 sigint_unit::Column::Army.into_column_ref().into(),
@@ -149,7 +153,7 @@ pub async fn list_callsigns(
     //     "> callsigns sql: {}",
     //     callsigns.build(DbBackend::Postgres).to_string()
     // );
-    let callsigns = callsigns.limit(limit).all(&env.dbx).await?;
+    let callsigns = callsigns.limit(limit).all(&env.dbx).await.c(h!())?;
     let mut res = vec![];
     for (callsign, unit) in callsigns {
         let mut c = render_callsign(&callsign, unit)?;
@@ -160,7 +164,8 @@ pub async fn list_callsigns(
             )
             .order_by_desc(sigint_callsign_changelog::Column::Id)
             .one(&env.dbx)
-            .await?
+            .await
+            .c(h!())?
         {
             c.created_at = changelog.created_at.and_utc().timestamp_millis();
         }
@@ -179,8 +184,10 @@ pub async fn get_callsigns_with_units_from_inbox(
     env: actix_web::web::Data<Env>,
     req: Json<GetCallsignsWithUnitsFromInboxReq>,
 ) -> Result<Json<GetCallsignsWithUnitsFromInboxRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
-    let login = user.id()?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .c(h!())?;
+    let login = user.id().c(h!())?;
 
     if req.callsigns.is_empty() {
         return Ok(Json(GetCallsignsWithUnitsFromInboxRsp {
@@ -255,7 +262,8 @@ pub async fn get_callsigns_with_units_from_inbox(
 
     let groups =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
-            .await?;
+            .await
+            .c(h!())?;
     let callsigns_array: Vec<String> =
         sanitizied_callsigns.iter().cloned().collect();
 
@@ -271,7 +279,8 @@ pub async fn get_callsigns_with_units_from_inbox(
             ],
         ))
         .all(&env.dbx)
-        .await?;
+        .await
+        .c(h!())?;
 
     // Group results by callsign
     let mut callsign_units_map: std::collections::HashMap<String, Vec<String>> =
@@ -304,13 +313,21 @@ pub async fn create_callsign(
     env: actix_web::web::Data<Env>,
     req: Json<CreateCallsignReq>,
 ) -> Result<Json<Callsign>, AppError> {
-    let user_id = user.id()?;
-    crate::users::has_role(&env.dbx, &user_id, "Rer").await?;
-    crate::users::has_role(&env.dbx, &user_id, "CallsignsEditor").await?;
+    let user_id = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &user_id, "Rer")
+        .await
+        .c(h!())?;
+    crate::users::has_role(&env.dbx, &user_id, "CallsignsEditor")
+        .await
+        .c(h!())?;
 
-    info!("create_callsign; login: {}; req: {:?}", user.id()?, req);
+    info!(
+        "create_callsign; login: {}; req: {:?}",
+        user.id().c(h!())?,
+        req
+    );
 
-    let txn = env.dbx.begin().await?;
+    let txn = env.dbx.begin().await.c(h!())?;
     let req = req.into_inner();
     let callsign = bl_callsign_create(&req, &user_id, &txn)
         .await
@@ -339,14 +356,18 @@ pub async fn update_callsign(
     env: actix_web::web::Data<Env>,
     req: Json<Callsign>,
 ) -> Result<Json<Callsign>, AppError> {
-    let user_id = user.id()?;
-    crate::users::has_role(&env.dbx, &user_id, "Rer").await?;
-    crate::users::has_role(&env.dbx, &user_id, "CallsignsEditor").await?;
+    let user_id = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &user_id, "Rer")
+        .await
+        .c(h!())?;
+    crate::users::has_role(&env.dbx, &user_id, "CallsignsEditor")
+        .await
+        .c(h!())?;
 
     info!("update_callsign; login: {user_id}; req: {req:?}");
     let req = req.into_inner();
 
-    let txn = env.dbx.begin().await?;
+    let txn = env.dbx.begin().await.c(h!())?;
     let callsign = bl_callsign_update(&req, &user_id, &txn)
         .await
         .context(h!())?;
@@ -359,7 +380,8 @@ pub async fn update_callsign(
         &callsign,
         sigint_unit::Entity::find_by_id(callsign.unit_id)
             .one(&env.dbx)
-            .await?,
+            .await
+            .c(h!())?,
     )?))
 }
 
@@ -369,29 +391,39 @@ pub async fn delete_callsign(
     env: actix_web::web::Data<Env>,
     req: Json<i64>,
 ) -> Result<Json<Callsign>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
-    crate::users::has_role(&env.dbx, &user.id()?, "CallsignsEditor").await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .c(h!())?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "CallsignsEditor")
+        .await
+        .c(h!())?;
 
-    info!("delete_callsign; login: {}; req: {:?}", user.id()?, req);
+    info!(
+        "delete_callsign; login: {}; req: {:?}",
+        user.id().c(h!())?,
+        req
+    );
 
-    let callsign = find_callsign(&env.dbx, *req).await?;
+    let callsign = find_callsign(&env.dbx, *req).await.c(h!())?;
     let callsign_json_old = sigint_callsign::Entity::find_by_id(callsign.id)
         .into_json()
         .one(&env.dbx)
-        .await?
+        .await
+        .c(h!())?
         .ok_or_else(|| AppError::NotFound)?;
     let mut callsign = callsign.into_active_model();
     callsign.deleted = Set(true);
-    let callsign = callsign.update(&env.dbx).await?;
+    let callsign = callsign.update(&env.dbx).await.c(h!())?;
     let callsign_json_new = sigint_callsign::Entity::find_by_id(callsign.id)
         .into_json()
         .one(&env.dbx)
-        .await?
+        .await
+        .c(h!())?
         .ok_or_else(|| AppError::NotFound)?;
     let _changelog = sigint_callsign_changelog::ActiveModel {
         id: NotSet,
         sigint_callsign_id: Set(callsign.id),
-        login: Set(user.id()?.to_string()),
+        login: Set(user.id().c(h!())?.to_string()),
         action: Set("delete".to_string()),
         created_at: NotSet,
         new_value: Set(Some(callsign_json_new)),
@@ -401,13 +433,15 @@ pub async fn delete_callsign(
         original_id: NotSet,
     }
     .insert(&env.dbx)
-    .await?;
+    .await
+    .c(h!())?;
 
     Ok(Json(render_callsign(
         &callsign,
         sigint_unit::Entity::find_by_id(callsign.unit_id)
             .one(&env.dbx)
-            .await?,
+            .await
+            .c(h!())?,
     )?))
 }
 
@@ -435,7 +469,9 @@ pub async fn callsign_unit_stats(
     env: actix_web::web::Data<Env>,
     _req: Json<()>,
 ) -> Result<Json<CallsignUnitStatsRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .c(h!())?;
     #[derive(FromQueryResult)]
     struct Row {
         unit_id: i64,
@@ -464,7 +500,8 @@ pub async fn callsign_unit_stats(
         .group_by(sigint_unit::Column::Company)
         .into_model::<Row>()
         .all(&env.dbx)
-        .await?;
+        .await
+        .c(h!())?;
     let mut res = vec![];
     for unit in units {
         res.push(CallsignUnitStatRow {

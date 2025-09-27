@@ -71,7 +71,7 @@ pub async fn find_known_callsigns(
     //     .collect::<Vec<&str>>()
     //     .join("\n");
     // println!("> debug: find_known_callsigns: {}", body);
-    // let tokens = crate::nlp::tokenize_words(rq, &body).await?;
+    // let tokens = crate::nlp::tokenize_words(rq, &body).await.c(h!())?;
     // let tokens: Vec<String> = tokens.iter().map(|x| x.to_lowercase()).collect();
     // println!("> debug: find_known_callsigns tokens: {:?}", tokens);
     // let callsign_lexemes: Vec<callsign_lexeme::Model> = CallsignLexeme::find()
@@ -80,7 +80,7 @@ pub async fn find_known_callsigns(
     //             .is_in(BTreeSet::from_iter(tokens.iter()).into_iter()),
     //     )
     //     .all(dbx)
-    //     .await?;
+    //     .await.c(h!())?;
     // let blacklist = get_blacklist();
 
     // let callsign_lexemes = callsign_lexemes
@@ -98,7 +98,7 @@ pub async fn find_known_callsigns(
     //             &lexeme.callsign,
     //             seen_since,
     //         )
-    //         .await?
+    //         .await.c(h!())?
     //         {
     //             // lexeme.lexeme must be somewhere in text
     //             for pos in crate::utils::string::cline_word_indices(
@@ -120,7 +120,9 @@ pub async fn find_known_callsigns(
 
     // re-highlight to capture more in body
     let callsigns: Vec<String> = res.iter().map(|x| x.etalon.clone()).collect();
-    let res = highlight_callsigns(rq, body_orig, &callsigns).await?;
+    let res = highlight_callsigns(rq, body_orig, &callsigns)
+        .await
+        .c(h!())?;
     let res = crate::utils::uniq_via_btreeset(&res);
     Ok(res)
 }
@@ -167,12 +169,14 @@ pub async fn highlight_callsigns(
     callsigns: &Vec<String>,
 ) -> Result<Vec<CNCallsign>, AppError> {
     let mut res = vec![];
-    let tokens = crate::nlp::tokenize_words(rq, body).await?;
+    let tokens = crate::nlp::tokenize_words(rq, body).await.c(h!())?;
     // println!("> tokens: {tokens:?}");
     let mut callsign_forms = BTreeMap::new();
     for callsign in callsigns.iter() {
         callsign_forms.insert(callsign.clone(), callsign.clone());
-        for callsign_form in crate::nlp::token_lexemes(rq, callsign).await? {
+        for callsign_form in
+            crate::nlp::token_lexemes(rq, callsign).await.c(h!())?
+        {
             callsign_forms.insert(callsign_form, callsign.clone());
         }
     }
@@ -905,10 +909,11 @@ pub async fn oneoff_reprocess_callsign_tokens(
     ps: &crate::OneoffReprocessCallsignTokensPs,
 ) -> Result<(), AppError> {
     let mut start_dt: NaiveDateTime =
-        NaiveDateTime::parse_from_str(&ps.start, "%Y-%m-%dT%H:%M:%S")?;
+        NaiveDateTime::parse_from_str(&ps.start, "%Y-%m-%dT%H:%M:%S")
+            .c(h!())?;
     let end_dt: NaiveDateTime =
-        NaiveDateTime::parse_from_str(&ps.end, "%Y-%m-%dT%H:%M:%S")?;
-    let dbx = crate::new_pg_pool_from_mode(mode).await?;
+        NaiveDateTime::parse_from_str(&ps.end, "%Y-%m-%dT%H:%M:%S").c(h!())?;
+    let dbx = crate::new_pg_pool_from_mode(mode).await.c(h!())?;
     let rq = reqwest::Client::new();
 
     while start_dt < end_dt {
@@ -918,7 +923,7 @@ pub async fn oneoff_reprocess_callsign_tokens(
         } else {
             start_shifted
         };
-        let txn = dbx.begin().await?;
+        let txn = dbx.begin().await.c(h!())?;
 
         let inbox_items: Vec<(
             sigint_inbox_item::Model,
@@ -932,7 +937,8 @@ pub async fn oneoff_reprocess_callsign_tokens(
             .filter(sigint_inbox_item::Column::Datetime.gte(start_dt))
             .filter(sigint_inbox_item::Column::Datetime.lt(end_dt_step))
             .all(&txn)
-            .await?;
+            .await
+            .c(h!())?;
 
         println!("> {}: processing {} items", start_dt, inbox_items.len());
 
@@ -945,21 +951,21 @@ pub async fn oneoff_reprocess_callsign_tokens(
             };
             let callsigns: Vec<String> = match inbox_item.callsigns.clone() {
                 None => vec![],
-                Some(jv) => serde_json::from_value(jv).context(h!())?,
+                Some(jv) => serde_json::from_value(jv).c(h!())?,
             };
             let Some(body) = message.body.clone() else {
                 continue;
             };
             let callsign_tokens =
-                highlight_callsigns(&rq, &body, &callsigns).await?;
+                highlight_callsigns(&rq, &body, &callsigns).await.c(h!())?;
             let mut inbox_item: sigint_inbox_item::ActiveModel =
                 inbox_item.clone().into();
             inbox_item.callsign_tokens =
-                Set(Some(serde_json::to_value(callsign_tokens).context(h!())?));
-            inbox_item.update(&txn).await?;
+                Set(Some(serde_json::to_value(callsign_tokens).c(h!())?));
+            inbox_item.update(&txn).await.c(h!())?;
         }
 
-        txn.commit().await?;
+        txn.commit().await.c(h!())?;
         start_dt += chrono::Duration::hours(1);
     }
 
@@ -971,10 +977,11 @@ pub async fn oneoff_reprocess_callsigns(
     ps: &crate::OneoffReprocessCallsignsPs,
 ) -> Result<(), AppError> {
     let mut start_dt: NaiveDateTime =
-        NaiveDateTime::parse_from_str(&ps.start, "%Y-%m-%dT%H:%M:%S")?;
+        NaiveDateTime::parse_from_str(&ps.start, "%Y-%m-%dT%H:%M:%S")
+            .c(h!())?;
     let end_dt: NaiveDateTime =
-        NaiveDateTime::parse_from_str(&ps.end, "%Y-%m-%dT%H:%M:%S")?;
-    let dbx = crate::new_pg_pool_from_mode(mode).await?;
+        NaiveDateTime::parse_from_str(&ps.end, "%Y-%m-%dT%H:%M:%S").c(h!())?;
+    let dbx = crate::new_pg_pool_from_mode(mode).await.c(h!())?;
     let rq = reqwest::Client::new();
 
     let m = MultiProgress::new();
@@ -985,7 +992,7 @@ pub async fn oneoff_reprocess_callsigns(
         } else {
             start_shifted
         };
-        let txn = dbx.begin().await?;
+        let txn = dbx.begin().await.c(h!())?;
 
         let inbox_items: Vec<(
             sigint_inbox_item::Model,
@@ -996,7 +1003,8 @@ pub async fn oneoff_reprocess_callsigns(
             .filter(sigint_inbox_item::Column::Datetime.gte(start_dt))
             .filter(sigint_inbox_item::Column::Datetime.lt(end_dt_step))
             .all(&txn)
-            .await?;
+            .await
+            .c(h!())?;
 
         let pb = m.add(ProgressBar::new(inbox_items.len() as u64));
         pb.set_style(crate::utils::get_pb_style()?);
@@ -1011,7 +1019,9 @@ pub async fn oneoff_reprocess_callsigns(
                 continue;
             };
             let callsign_tokens =
-                super::callsigns::find_known_callsigns(&rq, &body).await?;
+                super::callsigns::find_known_callsigns(&rq, &body)
+                    .await
+                    .c(h!())?;
             let callsigns: Vec<String> = crate::utils::uniq_via_btreeset(
                 &callsign_tokens
                     .iter()
@@ -1019,18 +1029,18 @@ pub async fn oneoff_reprocess_callsigns(
                     .collect::<Vec<String>>(),
             );
             let callsign_tokens =
-                highlight_callsigns(&rq, &body, &callsigns).await?;
+                highlight_callsigns(&rq, &body, &callsigns).await.c(h!())?;
             let mut inbox_item: sigint_inbox_item::ActiveModel =
                 inbox_item.clone().into();
             inbox_item.callsigns =
-                Set(Some(serde_json::to_value(callsigns).context(h!())?));
+                Set(Some(serde_json::to_value(callsigns).c(h!())?));
             inbox_item.callsign_tokens =
-                Set(Some(serde_json::to_value(callsign_tokens).context(h!())?));
-            inbox_item.update(&txn).await?;
+                Set(Some(serde_json::to_value(callsign_tokens).c(h!())?));
+            inbox_item.update(&txn).await.c(h!())?;
         }
         pb.finish_with_message("done");
 
-        txn.commit().await?;
+        txn.commit().await.c(h!())?;
         start_dt += chrono::Duration::hours(1);
     }
     m.clear()?;
@@ -1044,8 +1054,10 @@ pub async fn callsigns_graph(
     env: actix_web::web::Data<Env>,
     req: Json<CallsignsGraphReq>,
 ) -> Result<Json<NetJSONGraphAndMeta>, AppError> {
-    let login = user.id()?;
-    crate::users::has_role(&env.dbx, &login, "Rer").await?;
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
+        .await
+        .c(h!())?;
     let dt_since = dt_from_millis(req.since_date_inclusive_ms)?;
     let dt_till = dt_from_millis(req.till_date_noninclusive_ms)?;
     let req2 = AnalysisStatsReq {
@@ -1072,7 +1084,9 @@ pub async fn callsigns_graph(
     };
 
     let summary_table: SummaryTableFreq =
-        super::analysis::summary_table_freq_1(&user, &env, &req2).await?;
+        super::analysis::summary_table_freq_1(&user, &env, &req2)
+            .await
+            .c(h!())?;
     let freqs: Vec<String> = uniq_via_btreeset(
         &summary_table
             .rows
@@ -1117,7 +1131,8 @@ pub async fn callsigns_graph(
                 crate::messenger::group::get_identity_sigint_groups(
                     &env.dbx, &login,
                 )
-                .await?,
+                .await
+                .c(h!())?,
             ),
         )
         .filter(signal_message::Column::Deleted.eq(false))
@@ -1131,14 +1146,15 @@ pub async fn callsigns_graph(
     //     "> rows_res: {}",
     //     rows_res.build(DbBackend::Postgres).to_string()
     // );
-    let rows_res: Vec<Row> = rows_res.into_model::<Row>().all(&env.dbx).await?;
+    let rows_res: Vec<Row> =
+        rows_res.into_model::<Row>().all(&env.dbx).await.c(h!())?;
     // println!("> rows_res: {rows_res:?}");
 
     let mut per_callsign_count: BTreeMap<String, i64> = BTreeMap::new();
     for row in rows_res {
         let callsigns_jv = row.callsigns;
         let callsigns: Vec<String> =
-            serde_json::from_value(callsigns_jv).context(h!())?;
+            serde_json::from_value(callsigns_jv).c(h!())?;
         for callsign in callsigns {
             per_callsign_count
                 .entry(callsign)
@@ -1163,7 +1179,7 @@ pub async fn callsigns_graph(
     //     dt_since,
     //     dt_till,
     // )
-    // .await?;
+    // .await.c(h!())?;
 
     // callsigns.sort_by(|a, b| b.count.partial_cmp(&a.count).unwrap());
     // let mut callsigns: Vec<crate::rer_importer::AnalysisStatsCallsign> =
@@ -1200,7 +1216,8 @@ pub async fn callsigns_graph(
                 crate::messenger::group::get_identity_sigint_groups(
                     &env.dbx, &login,
                 )
-                .await?,
+                .await
+                .c(h!())?,
             ),
         )
         .join(
@@ -1229,7 +1246,7 @@ pub async fn callsigns_graph(
     //     "> callsigns_graph q: {}",
     //     q.build(DbBackend::Postgres).to_string()
     // );
-    let items: Vec<Res> = q.into_model::<Res>().all(&env.dbx).await?;
+    let items: Vec<Res> = q.into_model::<Res>().all(&env.dbx).await.c(h!())?;
 
     let mut freqs_per_callsign: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for item in items.iter() {
@@ -1240,7 +1257,7 @@ pub async fn callsigns_graph(
             continue;
         };
         let callsigns: Vec<String> =
-            serde_json::from_value(callsigns_jv).context(h!())?;
+            serde_json::from_value(callsigns_jv).c(h!())?;
         for callsign in callsigns.iter() {
             freqs_per_callsign
                 .entry(callsign.to_string().to_lowercase())
@@ -1290,7 +1307,7 @@ pub async fn callsigns_graph(
             });
         }
         let callsigns: Vec<String> = match item.callsigns {
-            Some(jv) => serde_json::from_value(jv).context(h!())?,
+            Some(jv) => serde_json::from_value(jv).c(h!())?,
             None => vec![],
         };
         for (i, callsign) in callsigns.iter().enumerate() {

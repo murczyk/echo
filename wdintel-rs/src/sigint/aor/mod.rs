@@ -19,7 +19,7 @@ pub async fn aor_list(
 ) -> Result<Json<Vec<AreaOfResponsibility>>, AppError> {
     crate::users::has_any_role(
         &env.dbx,
-        &user.id()?,
+        &user.id().c(h!())?,
         vec!["Admin", "UnitsEditor"],
     )
     .await
@@ -54,10 +54,10 @@ pub async fn create_aor(
     env: Data<Env>,
     req: Json<AreaOfResponsibilityInsert>,
 ) -> Result<Json<AreaOfResponsibility>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Admin")
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
         .await
         .c(h!())?;
-    let model = map_insert(&env, &req, NotSet).await?;
+    let model = map_insert(&env, &req, NotSet).await.c(h!())?;
     let aor = model.insert(&env.dbx).await.c(h!())?;
     Ok(Json(render_aor(aor)))
 }
@@ -68,11 +68,11 @@ pub async fn update_aor(
     env: Data<Env>,
     req: Json<UpdateAreaOfResponsibilityReq>,
 ) -> Result<Json<AreaOfResponsibility>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Admin")
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
         .await
         .c(h!())?;
 
-    let model = map_insert(&env, &req.insert, Set(req.id)).await?;
+    let model = map_insert(&env, &req.insert, Set(req.id)).await.c(h!())?;
     let aor = model.update(&env.dbx).await.c(h!())?;
     Ok(Json(render_aor(aor)))
 }
@@ -83,7 +83,7 @@ pub async fn delete_aor(
     env: Data<Env>,
     req: Json<DeleteAreaOfResponsibilityReq>,
 ) -> Result<Json<()>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Admin")
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
         .await
         .c(h!())?;
 

@@ -18,12 +18,18 @@ pub async fn zones_list(
     env: actix_web::web::Data<Env>,
     user: actix_identity::Identity,
 ) -> Result<Json<Vec<(i64, SigintZone)>>, AppError> {
-    crate::users::has_any_role(&env.dbx, &user.id()?, vec!["Rer", "Api"])
-        .await?;
+    crate::users::has_any_role(
+        &env.dbx,
+        &user.id().c(h!())?,
+        vec!["Rer", "Api"],
+    )
+    .await
+    .c(h!())?;
     let zones = sigint_zone::Entity::find()
         .filter(sigint_zone::Column::Deleted.eq(false))
         .all(&env.dbx)
-        .await?;
+        .await
+        .c(h!())?;
     let mut res = vec![];
     for zone in zones {
         res.push((
@@ -43,13 +49,19 @@ pub async fn zones_datasources_list(
     user: actix_identity::Identity,
     req: Json<i64>,
 ) -> Result<Json<Vec<i64>>, AppError> {
-    crate::users::has_any_role(&env.dbx, &user.id()?, vec!["Rer", "Api"])
-        .await?;
+    crate::users::has_any_role(
+        &env.dbx,
+        &user.id().c(h!())?,
+        vec!["Rer", "Api"],
+    )
+    .await
+    .c(h!())?;
     let zone_id: i64 = req.into_inner();
     let xs = sigint_zone_datasource::Entity::find()
         .filter(sigint_zone_datasource::Column::SigintZoneId.eq(zone_id))
         .all(&env.dbx)
-        .await?;
+        .await
+        .c(h!())?;
     let mut res = vec![];
     for x in xs {
         if !res.contains(&x.datasource_id) {
@@ -65,9 +77,11 @@ pub async fn zones_datasources_groups_list(
     user: actix_identity::Identity,
     req: Json<ZoneDatasourceGroupsReq>,
 ) -> Result<Json<ZoneDatasourceGroupListRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Admin").await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
+        .await
+        .c(h!())?;
     let req = req.into_inner();
-    let txn = env.dbx.begin().await?;
+    let txn = env.dbx.begin().await.c(h!())?;
 
     let res = bl_szd_groups_list(req.zone_id, req.datasource_id, &txn)
         .await
@@ -84,11 +98,13 @@ pub async fn zones_datasources_group_update(
     user: actix_identity::Identity,
     req: Json<ZoneDatasourceGroupUpdateReq>,
 ) -> Result<Json<ZoneDatasourceGroup>, AppError> {
-    let login = user.id()?;
-    crate::users::has_role(&env.dbx, &login, "Admin").await?;
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Admin")
+        .await
+        .c(h!())?;
     let req = req.into_inner();
 
-    let txn = env.dbx.begin().await?;
+    let txn = env.dbx.begin().await.c(h!())?;
     let szd = sigint_zone_datasource::Entity::find_by_id(req.id)
         .one(&txn)
         .await
@@ -123,8 +139,10 @@ pub async fn zones_datasources_group_add(
     user: actix_identity::Identity,
     req: Json<ZoneDatasourceGroupAddReq>,
 ) -> Result<Json<ZoneDatasourceGroupAddRsp>, AppError> {
-    let login = user.id()?;
-    crate::users::has_role(&env.dbx, &login, "Admin").await?;
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Admin")
+        .await
+        .c(h!())?;
     let req = req.into_inner();
 
     let txn = env.dbx.begin().await.c(h!())?;
@@ -219,10 +237,12 @@ pub async fn zones_datasources_group_delete(
     user: actix_identity::Identity,
     req: Json<i64>,
 ) -> Result<Json<()>, AppError> {
-    let login = user.id()?;
-    crate::users::has_role(&env.dbx, &login, "Admin").await?;
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Admin")
+        .await
+        .c(h!())?;
 
-    let txn = env.dbx.begin().await?;
+    let txn = env.dbx.begin().await.c(h!())?;
 
     if let Some(szd) = sigint_zone_datasource::Entity::find_by_id(req.0)
         .one(&txn)
@@ -230,14 +250,14 @@ pub async fn zones_datasources_group_delete(
         .c(h!())?
     {
         szd.clone().delete(&txn).await.c(h!())?;
-        txn.commit().await?;
+        txn.commit().await.c(h!())?;
         log_sigint_zone_datasource_event(
             &szd,
             "zone-datasource-group-delete",
             &login,
         );
     } else {
-        txn.commit().await?;
+        txn.commit().await.c(h!())?;
     }
 
     Ok(Json(()))
@@ -280,8 +300,10 @@ pub async fn get_datasources_zones<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
-    let zone_datasources =
-        sigint_zone_datasource::Entity::find().all(dbx).await?;
+    let zone_datasources = sigint_zone_datasource::Entity::find()
+        .all(dbx)
+        .await
+        .c(h!())?;
     let mut res: BTreeMap<i64, Vec<i64>> = BTreeMap::new();
     for zd in zone_datasources {
         res.entry(zd.datasource_id)
@@ -303,6 +325,7 @@ pub async fn get_user_zone_id(
         .filter(login::Column::DeletedPermanently.eq(false))
         .filter(login::Column::Login.eq(user_id))
         .one(dbx)
-        .await?;
+        .await
+        .c(h!())?;
     Ok(user.and_then(|x| x.sigint_zone_id))
 }

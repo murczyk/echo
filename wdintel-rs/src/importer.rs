@@ -48,7 +48,9 @@ async fn download_kmz(
     http_req: HttpRequest,
     req: Json<DownloadKmzReq>,
 ) -> Result<actix_web::HttpResponse, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Basic").await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Basic")
+        .await
+        .c(h!())?;
     let mut nodes = vec![];
     let mut style_ids = BTreeMap::new();
     for row in req.rows.iter() {
@@ -160,7 +162,7 @@ async fn download_kmz(
     .await
     .context(here!())?;
     let dst_file = dst_file_res.path;
-    let file = actix_files::NamedFile::open_async(dst_file).await?;
+    let file = actix_files::NamedFile::open_async(dst_file).await.c(h!())?;
     Ok(file.into_response(&http_req))
 }
 

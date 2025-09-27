@@ -417,7 +417,7 @@ pub async fn new_pg_pool_from_config(
             core::time::Duration::from_millis(1000),
         );
 
-    let db = sea_orm::Database::connect(opt).await?;
+    let db = sea_orm::Database::connect(opt).await.c(h!())?;
     Ok(db)
 }
 

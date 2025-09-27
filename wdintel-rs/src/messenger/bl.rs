@@ -32,10 +32,10 @@ where
 {
     let account = list_accounts(Some(id), txn)
         .await
-        .context(h!())?
+        .c(h!())?
         .into_iter()
         .find(|a| a.id == id)
-        .context(h!())?;
+        .c(h!())?;
     Ok(account)
 }
 
@@ -58,8 +58,8 @@ pub async fn edit_account(
     let mut account = datasource::Entity::find_by_id(id)
         .one(txn)
         .await
-        .context(h!())?
-        .context(h!())?
+        .c(h!())?
+        .c(h!())?
         .into_active_model();
     account.default_aor_id = Set(aor_id);
     account.display_name = Set(display_name);
@@ -68,13 +68,13 @@ pub async fn edit_account(
     account.updated_by = Set(Some(login.to_string()));
     account.api_login = Set(api_login);
     account.api_endpoint = Set(api_endpoint);
-    let result = account.update(txn).await.context(h!())?;
+    let result = account.update(txn).await.c(h!())?;
     let account = list_accounts(Some(result.id), txn)
         .await
-        .context(h!())?
+        .c(h!())?
         .into_iter()
         .next()
-        .context(h!())?;
+        .c(h!())?;
     Ok(account)
 }
 
@@ -83,25 +83,24 @@ pub async fn deactivate_account(
     txn: &DatabaseTransaction,
     login: &String,
 ) -> Result<(), AppError> {
-    let account = load_echo_account(id, txn).await.context(h!())?;
+    let account = load_echo_account(id, txn).await.c(h!())?;
     let datasource = datasource::Entity::find_by_id(account.id)
         .one(txn)
         .await
-        .context(h!())?
-        .context(h!())?;
+        .c(h!())?
+        .c(h!())?;
     if let Some(service_name) = account.system_service_name {
         if !datasource.deleted {
-            let source =
-                parse_message_source(&account.messenger).context(h!())?;
+            let source = parse_message_source(&account.messenger).c(h!())?;
             echo_im::unlink_account(&service_name, source, txn)
                 .await
-                .context(h!())?;
+                .c(h!())?;
         }
     }
     let mut datasource = datasource.into_active_model();
     datasource.deleted = Set(true);
     datasource.updated_by = Set(Some(login.to_string()));
-    datasource.update(txn).await.context(h!())?;
+    datasource.update(txn).await.c(h!())?;
     Ok(())
 }
 
@@ -122,7 +121,7 @@ pub async fn link_account(
         });
     }
     let source =
-        EchoMessageSource::try_from_value(&source.to_string()).context(h!())?;
+        EchoMessageSource::try_from_value(&source.to_string()).c(h!())?;
 
     let (src, src_name) = match &source {
         EchoMessageSource::Signal => {
@@ -133,7 +132,7 @@ pub async fn link_account(
         }
     };
     let unit_name = format!("{src_name}@{system_service_name}");
-    let accounts = list_accounts(None, txn).await.context(h!())?;
+    let accounts = list_accounts(None, txn).await.c(h!())?;
     let existing_account = accounts
         .into_iter()
         .filter(|a| {
@@ -152,7 +151,7 @@ pub async fn link_account(
         return Err(AppError::BL { msg });
     }
 
-    let port = find_port_available(8010, 9000).await.context(h!())?;
+    let port = find_port_available(8010, 9000).await.c(h!())?;
     let src_display_name = src.to_string().to_lowercase();
     let attachment_path = format!(
         "/etc/echo/{src_display_name}-cli-data/{system_service_name}/{src_display_name}-cli/attachments/"
@@ -189,11 +188,11 @@ pub async fn link_account(
         let datasource = datasource::Entity::find_by_id(id)
             .one(txn)
             .await
-            .context(h!())?
-            .context(h!())?;
+            .c(h!())?
+            .c(h!())?;
         let mut datasource = datasource.into_active_model();
         datasource.echo_client_lock_id = Set(Some(lock.id as i64));
-        datasource.update(txn).await.context(h!())?.id
+        datasource.update(txn).await.c(h!())?.id
     } else {
         datasource::ActiveModel {
             echo_client_lock_id: Set(Some(lock.id as i64)),
@@ -216,7 +215,7 @@ pub async fn link_account(
         }
         .insert(txn)
         .await
-        .context(h!())?
+        .c(h!())?
         .id
     };
 
@@ -230,7 +229,7 @@ pub async fn link_account(
             &SignalCliMode::Native,
         )
         .await
-        .context(h!())?,
+        .c(h!())?,
         MessageSource::Whatsapp => os_specific::start_new_whatsapp_client(
             system_service_name,
             WHATSAPP_CLIENT_CONFIG,
@@ -239,7 +238,7 @@ pub async fn link_account(
             CLIENT_DATA_DIR_NAME,
         )
         .await
-        .context(h!())?,
+        .c(h!())?,
     };
 
     load_echo_account(id, txn).await
@@ -252,7 +251,7 @@ pub async fn get_qr_code(
 ) -> Result<String, AppError> {
     let m_account = list_accounts(Some(account_id), db)
         .await
-        .context(h!())?
+        .c(h!())?
         .into_iter()
         .filter(|a| a.system_service_name.is_some())
         .find(|a| a.id.eq(&account_id));
@@ -261,30 +260,30 @@ pub async fn get_qr_code(
         Some(account) => account,
         None => {
             debug!("creating new account for datasource {account_id}");
-            let txn = db.begin().await.context(h!())?;
+            let txn = db.begin().await.c(h!())?;
             let result = link_existing_datasource(account_id, &txn, login)
                 .await
-                .context(h!())?;
-            txn.commit().await.context(h!())?;
+                .c(h!())?;
+            txn.commit().await.c(h!())?;
             result
         }
     };
 
-    let messenger = parse_message_source(&account.messenger).context(h!())?;
-    let system_service_name = account.system_service_name.context(h!())?;
+    let messenger = parse_message_source(&account.messenger).c(h!())?;
+    let system_service_name = account.system_service_name.c(h!())?;
 
-    let txn = db.begin().await.context(h!())?;
+    let txn = db.begin().await.c(h!())?;
     let code = echo_im::link_account(&system_service_name, messenger, &txn)
         .await
-        .context(h!())?;
+        .c(h!())?;
     let m_login = Some(login.to_string());
     datasource::Entity::update_many()
         .filter(datasource::Column::Id.eq(account.id))
         .col_expr(datasource::Column::UpdatedBy, Expr::value(m_login))
         .exec(&txn)
         .await
-        .context(h!())?;
-    txn.commit().await.context(h!())?;
+        .c(h!())?;
+    txn.commit().await.c(h!())?;
 
     Ok(code)
 }
@@ -297,14 +296,14 @@ async fn link_existing_datasource(
     let datasource = datasource::Entity::find_by_id(datasource_id)
         .one(txn)
         .await
-        .context(h!())?
-        .context(h!())?;
-    let phone_number = datasource.signal_phone.context(h!())?;
+        .c(h!())?
+        .c(h!())?;
+    let phone_number = datasource.signal_phone.c(h!())?;
     let process_name =
         transliterate_and_slugify(&datasource.display_name.to_lowercase());
     let aor_id = match datasource.default_aor_id {
         Some(id) => id,
-        None => load_default_aor(txn).await.context(h!())?.id,
+        None => load_default_aor(txn).await.c(h!())?.id,
     };
     link_account(
         Some(datasource_id),
@@ -318,7 +317,7 @@ async fn link_existing_datasource(
         login,
     )
     .await
-    .context(h!())
+    .c(h!())
 }
 
 pub async fn list_accounts<'a, 'async_trait, C>(
@@ -386,7 +385,7 @@ where
         .into_model::<LinkedAccountRow>()
         .all(txn)
         .await
-        .context(h!())?;
+        .c(h!())?;
 
     let mut datasources = vec![];
     for a in datasource_recs {
@@ -395,9 +394,9 @@ where
         }
         let (phone_number, is_imported, messenger) = if a.client_id.is_some() {
             (
-                a.echo_phone_number.context(h!())?,
+                a.echo_phone_number.c(h!())?,
                 false,
-                a.source.context(h!())?.into_value().to_string(),
+                a.source.c(h!())?.into_value().to_string(),
             )
         } else {
             let Some(phone) = a.datasource_phone_number else {
@@ -416,7 +415,7 @@ where
             Some(id) => area_of_responsibility::Entity::find_by_id(id)
                 .one(txn)
                 .await
-                .context(h!())?
+                .c(h!())?
                 .map(render_aor),
         };
 
@@ -442,7 +441,7 @@ where
         .filter(datasource::Column::Deleted.eq(false))
         .all(txn)
         .await
-        .context(h!())?;
+        .c(h!())?;
     if !operator_datasources.is_empty() {
         let aor_ids = operator_datasources
             .iter()
@@ -455,7 +454,7 @@ where
                 .filter(area_of_responsibility::Column::Id.is_in(aor_ids))
                 .all(txn)
                 .await
-                .context(h!())?
+                .c(h!())?
                 .into_iter()
                 .map(|aor| (aor.id, render_aor(aor)))
                 .collect::<HashMap<_, _>>()
@@ -529,7 +528,7 @@ pub async fn upsert_group_area_of_responsibility(
                 .filter(signal_group_aor::Column::MasterKey.eq(master_key))
                 .exec(txn)
                 .await
-                .context(h!())?;
+                .c(h!())?;
             vec![]
         }
         Some(aor_ids) => {
@@ -538,7 +537,7 @@ pub async fn upsert_group_area_of_responsibility(
                 .filter(signal_group_aor::Column::MasterKey.eq(master_key))
                 .exec(txn)
                 .await
-                .context(h!())?;
+                .c(h!())?;
 
             // Insert new associations
             for aor_id in &aor_ids {
@@ -550,7 +549,7 @@ pub async fn upsert_group_area_of_responsibility(
                 }
                 .insert(txn)
                 .await
-                .context(h!())?;
+                .c(h!())?;
             }
 
             // Return all AOR models
@@ -560,7 +559,7 @@ pub async fn upsert_group_area_of_responsibility(
                     area_of_responsibility::Entity::find_by_id(*aor_id)
                         .one(txn)
                         .await
-                        .context(h!())?
+                        .c(h!())?
                 {
                     models.push(model);
                 }
@@ -588,7 +587,7 @@ pub async fn bl_group_update(
         )
         .one(txn)
         .await
-        .context(h!())?;
+        .c(h!())?;
     let mut group_data = match m_group {
         Some(group) => group,
         None => group_admin_data::ActiveModel {
@@ -600,7 +599,7 @@ pub async fn bl_group_update(
         }
         .insert(txn)
         .await
-        .context(h!())?,
+        .c(h!())?,
     }
     .into_active_model();
 
@@ -611,21 +610,21 @@ pub async fn bl_group_update(
     let aors =
         upsert_group_area_of_responsibility(txn, &req.master_key, aor_ids)
             .await
-            .context(h!())?;
+            .c(h!())?;
 
     group_data.short_note = Set(req.short_note.clone());
     group_data.long_note = Set(req.long_note.clone());
-    let group_data = group_data.update(txn).await.context(h!())?;
+    let group_data = group_data.update(txn).await.c(h!())?;
 
     let group = signal_group::Entity::find_by_id(req.master_key.clone())
         .one(txn)
         .await
-        .context(h!())?
-        .context(h!())?;
+        .c(h!())?
+        .c(h!())?;
 
     let stats = collect_group_stats(vec![group.master_key.clone()], txn)
         .await
-        .context(h!())?
+        .c(h!())?
         .get(&group.master_key)
         .cloned()
         .unwrap_or_default();

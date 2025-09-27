@@ -48,7 +48,7 @@ pub fn byte_substr(
             })?
             .to_vec(),
     )
-    .context(h!())?)
+    .c(h!())?)
 }
 
 pub fn str_to_mstr(s: &str) -> Option<String> {

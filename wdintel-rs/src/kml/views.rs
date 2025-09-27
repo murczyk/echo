@@ -1,7 +1,7 @@
 use super::types::*;
 use crate::error::AppError;
 use crate::h;
-use anyhow::Context;
+use crate::types::ShortContext;
 
 pub fn render_kml(kml: &Kml) -> Result<String, AppError> {
     if let Some(folder) = super::node_as_folder(
@@ -13,7 +13,7 @@ pub fn render_kml(kml: &Kml) -> Result<String, AppError> {
 {folder}
 </kml>
 "###,
-            folder = quick_xml::se::to_string(&folder).context(h!())?,
+            folder = quick_xml::se::to_string(&folder).c(h!())?,
         ))
     } else {
         Err(AppError::BL {

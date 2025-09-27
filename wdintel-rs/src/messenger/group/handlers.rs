@@ -19,7 +19,7 @@ pub async fn orphan_signal_groups(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<Vec<OrphanSignalGroupEntry>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Admin")
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
         .await
         .context(h!())?;
 

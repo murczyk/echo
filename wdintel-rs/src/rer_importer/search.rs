@@ -9,14 +9,20 @@ pub async fn oneoff_reprocess_search_index(
     let start_dt = ps
         .start
         .as_deref()
-        .map(|dt| NaiveDateTime::parse_from_str(dt, "%Y-%m-%dT%H:%M:%S"))
-        .transpose()?;
+        .map(|dt| {
+            NaiveDateTime::parse_from_str(dt, "%Y-%m-%dT%H:%M:%S").c(h!())
+        })
+        .transpose()
+        .c(h!())?;
     let end_dt = ps
         .end
         .as_deref()
-        .map(|dt| NaiveDateTime::parse_from_str(dt, "%Y-%m-%dT%H:%M:%S"))
-        .transpose()?;
-    let dbx = crate::new_pg_pool_from_mode(mode).await?;
+        .map(|dt| {
+            NaiveDateTime::parse_from_str(dt, "%Y-%m-%dT%H:%M:%S").c(h!())
+        })
+        .transpose()
+        .c(h!())?;
+    let dbx = crate::new_pg_pool_from_mode(mode).await.c(h!())?;
 
     let pool = dbx.get_postgres_connection_pool();
 
@@ -52,7 +58,8 @@ pub async fn oneoff_reprocess_search_index(
                     .bind(end)
                     .bind(batch_size)
                     .execute(pool)
-                    .await?;
+                    .await
+                    .c(h!())?;
                 if deleted_rows.rows_affected() == 0 {
                     break;
                 }
@@ -63,7 +70,8 @@ pub async fn oneoff_reprocess_search_index(
                 .bind(start)
                 .bind(end)
                 .execute(pool)
-                .await?;
+                .await
+                .c(h!())?;
         }
         (Some(start), None) => {
             loop {
@@ -71,7 +79,8 @@ pub async fn oneoff_reprocess_search_index(
                     .bind(start)
                     .bind(batch_size)
                     .execute(pool)
-                    .await?;
+                    .await
+                    .c(h!())?;
                 if deleted_rows.rows_affected() == 0 {
                     break;
                 }
@@ -81,7 +90,8 @@ pub async fn oneoff_reprocess_search_index(
             sqlx::query(&full_insert_query)
                 .bind(start)
                 .execute(pool)
-                .await?;
+                .await
+                .c(h!())?;
         }
         (None, Some(end)) => {
             loop {
@@ -89,7 +99,8 @@ pub async fn oneoff_reprocess_search_index(
                     .bind(end)
                     .bind(batch_size)
                     .execute(pool)
-                    .await?;
+                    .await
+                    .c(h!())?;
                 if deleted_rows.rows_affected() == 0 {
                     break;
                 }
@@ -99,11 +110,18 @@ pub async fn oneoff_reprocess_search_index(
             sqlx::query(&full_insert_query)
                 .bind(end)
                 .execute(pool)
-                .await?;
+                .await
+                .c(h!())?;
         }
         (None, None) => {
-            sqlx::query(&full_delete_query).execute(pool).await?;
-            sqlx::query(&full_insert_query).execute(pool).await?;
+            sqlx::query(&full_delete_query)
+                .execute(pool)
+                .await
+                .c(h!())?;
+            sqlx::query(&full_insert_query)
+                .execute(pool)
+                .await
+                .c(h!())?;
         }
     }
 

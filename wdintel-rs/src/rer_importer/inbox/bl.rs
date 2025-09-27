@@ -58,7 +58,7 @@ pub async fn get_inbox_map_items(
     env: &Env,
     req: &InboxMessagesReq,
 ) -> Result<Vec<InboxMapItem>, AppError> {
-    let q = build_inbox_query(login, logins, env, req).await?;
+    let q = build_inbox_query(login, logins, env, req).await.c(h!())?;
     let q = format!(
         r#"SELECT id, "freq" as freq, "coords" as coords from ({q}) q"#
     );
@@ -113,14 +113,15 @@ pub async fn aggregate_to_inbox_messages(
         // let m_inbox: Option<sigint_inbox_item::Model> =
         //     SigintInboxItem::find_by_id(message.id)
         //         .one(&env.dbx)
-        //         .await?;
+        //         .await.c(h!())?;
         let attachments: Vec<signal_attachment::Model> =
             SignalAttachment::find()
                 .filter(
                     signal_attachment::Column::SignalMessageId.eq(message.id),
                 )
                 .all(&env.dbx)
-                .await?;
+                .await
+                .c(h!())?;
         let mut images = vec![];
         for attach in attachments {
             let x = attach.path.to_lowercase();
@@ -148,7 +149,8 @@ pub async fn aggregate_to_inbox_messages(
             .filter(signal_message::Column::Deleted.eq(false))
             .filter(signal_message::Column::DuplicateOf.eq(message.id))
             .all(&env.dbx)
-            .await?;
+            .await
+            .c(h!())?;
         let m_callsign_tokens: Option<Vec<CNCallsign>> =
             match message.callsign_tokens {
                 None => None,
@@ -198,7 +200,8 @@ pub async fn aggregate_to_inbox_messages(
             .filter(sigint_comment::Column::SignalMessageId.eq(message.id))
             .filter(sigint_comment::Column::Login.is_in(logins.clone()))
             .one(&env.dbx)
-            .await?;
+            .await
+            .c(h!())?;
         let location_v2 = match message.location_v2.clone() {
             None => None,
             Some(location) => Some(to_location_list(&location).join(", ")),
@@ -262,10 +265,12 @@ pub async fn fill_callsigns(
         let is_already_filled = CallsignLexeme::find()
             .filter(callsign_lexeme::Column::Lexeme.eq(callsign))
             .one(txn)
-            .await?
+            .await
+            .c(h!())?
             .is_some();
         if !is_already_filled {
-            let lexemes = crate::nlp::token_lexemes(rq, callsign).await?;
+            let lexemes =
+                crate::nlp::token_lexemes(rq, callsign).await.c(h!())?;
             for lexeme in lexemes {
                 callsign_lexeme::ActiveModel {
                     id: NotSet,
@@ -273,7 +278,8 @@ pub async fn fill_callsigns(
                     lexeme: Set(lexeme),
                 }
                 .insert(txn)
-                .await?;
+                .await
+                .c(h!())?;
             }
         }
     }
@@ -597,7 +603,7 @@ pub async fn submit_upsert_inbox_item(
     login: &str,
     logins: &Vec<String>,
 ) -> Result<i64, AppError> {
-    let m_existing = SigintInboxItem::find_by_id(id).one(txn).await?;
+    let m_existing = SigintInboxItem::find_by_id(id).one(txn).await.c(h!())?;
     if let Some(existing) = m_existing {
         // cleanup before logging
         let mut existing = existing.clone();
@@ -661,7 +667,8 @@ pub async fn submit_upsert_inbox_item(
             .filter(sigint_comment::Column::SignalMessageId.eq(id))
             .filter(sigint_comment::Column::Login.is_in(logins.clone()))
             .one(txn)
-            .await?;
+            .await
+            .c(h!())?;
         match m_comment {
             None => {
                 sigint_comment::ActiveModel {
@@ -672,7 +679,8 @@ pub async fn submit_upsert_inbox_item(
                     created_at: NotSet,
                 }
                 .insert(txn)
-                .await?;
+                .await
+                .c(h!())?;
             }
             Some(comment) => {
                 debug!(
@@ -687,7 +695,8 @@ pub async fn submit_upsert_inbox_item(
                     created_at: NotSet,
                 }
                 .update(txn)
-                .await?;
+                .await
+                .c(h!())?;
             }
         }
     }
@@ -771,15 +780,19 @@ pub async fn submit_upsert_inbox_item(
                 .to_owned(),
         )
         .exec(txn)
-        .await?;
+        .await
+        .c(h!())?;
     let inbox_id = insert_res.last_insert_id;
-    crate::location::peleng::delete_inbox_pelengs(inbox_id, txn).await?;
+    crate::location::peleng::delete_inbox_pelengs(inbox_id, txn)
+        .await
+        .c(h!())?;
     crate::location::peleng::insert_pelengs(
         coords_vec,
         inbox_id,
         Utc::now().naive_utc(),
         txn,
     )
-    .await?;
+    .await
+    .c(h!())?;
     Ok(inbox_id)
 }

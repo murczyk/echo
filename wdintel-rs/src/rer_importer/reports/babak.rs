@@ -20,7 +20,7 @@ pub async fn report_docx_kind_babak(
     req: &super::ReportPreviewReq,
     outpath: &Path,
 ) -> Result<(), AppError> {
-    let user_id = &user.id()?;
+    let user_id = &user.id().c(h!())?;
     let Some(since_date_inclusive_ms) = req.req.since_date_inclusive_ms else {
         return Err("Since date must be specified".into());
     };
@@ -36,7 +36,9 @@ pub async fn report_docx_kind_babak(
 
     let file = std::fs::File::create(outpath)?;
 
-    let units = get_inbox_messages_report_unit(user, env, &req.req).await?;
+    let units = get_inbox_messages_report_unit(user, env, &req.req)
+        .await
+        .c(h!())?;
 
     let new_callsing_req = AnalysisStatsReq {
         since_date_inclusive_ms: req.req.since_date_inclusive_ms.unwrap_or(0),
@@ -513,8 +515,10 @@ pub async fn get_inbox_messages_report_unit(
     env: &Env,
     req: &InboxMessagesReq,
 ) -> Result<Vec<StatsPerUnitReport>, AppError> {
-    let login = user.id()?;
-    let logins = crate::users::get_organism_logins(&env.dbx, user).await?;
+    let login = user.id().c(h!())?;
+    let logins = crate::users::get_organism_logins(&env.dbx, user)
+        .await
+        .c(h!())?;
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
     let mut q = signal_message::Entity::find()
@@ -602,7 +606,7 @@ pub async fn get_inbox_messages_report_unit(
             .add(sigint_unit::Column::Deleted.is_null())
         )
         .filter(datasource_group::Column::GroupMasterKey.is_in(
-            crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login).await?,
+            crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login).await.c(h!())?,
         ));
 
     if !req.or_with_extended_form.unwrap_or(false) {
@@ -859,7 +863,8 @@ pub async fn get_inbox_messages_report_unit(
             DatabaseBackend::Postgres,
             raw_query.to_string(),
         ))
-        .await?
+        .await
+        .c(h!())?
         .iter()
         .map(|row| StatsPerUnitReport::from_query_result(row, "").unwrap())
         .collect::<Vec<StatsPerUnitReport>>())

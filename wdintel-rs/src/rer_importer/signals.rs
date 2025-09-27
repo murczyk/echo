@@ -1,7 +1,7 @@
 use crate::entities::*;
 use crate::h;
+use crate::types::ShortContext;
 use crate::AppError;
-use anyhow::Context;
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 use log::*;
 use sea_orm::*;
@@ -31,10 +31,10 @@ where
         [body.into()],
     );
 
-    let result = txn.query_one(stmt).await.context(h!())?;
+    let result = txn.query_one(stmt).await.c(h!())?;
 
     if let Some(row) = result {
-        let ts_vector: String = row.try_get("", "ts_vector").context(h!())?;
+        let ts_vector: String = row.try_get("", "ts_vector").c(h!())?;
         Ok(ts_vector)
     } else {
         Err(AppError::BL {
@@ -51,7 +51,7 @@ pub async fn find_signal_tokens<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
-    let ts_vector = generate_ts_vector(txn, body).await.context(h!())?;
+    let ts_vector = generate_ts_vector(txn, body).await.c(h!())?;
 
     let q = sigint_signal::Entity::find()
         .select_only()
@@ -77,7 +77,7 @@ where
         q.build(DbBackend::Postgres)
     );
 
-    let signals = q.into_model::<SignalRes>().all(txn).await.context(h!())?;
+    let signals = q.into_model::<SignalRes>().all(txn).await.c(h!())?;
 
     trace!(">found signals: {}", signals.len());
 

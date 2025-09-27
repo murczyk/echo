@@ -1,8 +1,7 @@
 use crate::entities::{login, tag, tags_ordering};
 use crate::error::AppError;
 use crate::h;
-use crate::types::Mode;
-use anyhow::Context;
+use crate::types::{Mode, ShortContext};
 use chrono::Utc;
 use itertools::Itertools;
 use log::info;
@@ -17,26 +16,27 @@ pub async fn collect_tags_list(
     db: &DatabaseConnection,
 ) -> anyhow::Result<Vec<tag::Model>> {
     let (tag_ids_list, tags) =
-        collect_enabled_regular_tags(db).await.context(h!())?;
-    let ordering =
-        ensure_matching_ordering(user_id, db, tag_ids_list, &tags).await?;
-    let mut regular_tags = order_tags(tags, &ordering).context(h!())?;
+        collect_enabled_regular_tags(db).await.c(h!())?;
+    let ordering = ensure_matching_ordering(user_id, db, tag_ids_list, &tags)
+        .await
+        .c(h!())?;
+    let mut regular_tags = order_tags(tags, &ordering).c(h!())?;
     let mut extra_tags = tag::Entity::find()
         .filter(tag::Column::Enabled.eq(true))
         .filter(tag::Column::Extra.eq(true))
         .order_by_asc(tag::Column::Ord)
         .all(db)
         .await
-        .context(h!())?;
+        .c(h!())?;
     regular_tags.append(&mut extra_tags);
     Ok(regular_tags)
 }
 
 pub async fn oneoff_ensure_tags_ordering(mode: Mode) -> Result<(), AppError> {
     info!("> oneoff_ensure_tags_ordering start");
-    let db = crate::new_pg_pool_from_mode(mode).await.context(h!())?;
+    let db = crate::new_pg_pool_from_mode(mode).await.c(h!())?;
     let (tag_ids_string, tags) =
-        collect_enabled_regular_tags(&db).await.context(h!())?;
+        collect_enabled_regular_tags(&db).await.c(h!())?;
     let logins = login::Entity::find()
         .filter(login::Column::Deleted.eq(false))
         .filter(login::Column::DeletedPermanently.eq(false))
@@ -45,11 +45,12 @@ pub async fn oneoff_ensure_tags_ordering(mode: Mode) -> Result<(), AppError> {
         .into_tuple::<String>()
         .all(&db)
         .await
-        .context(h!())?;
+        .c(h!())?;
     for login in logins {
         info!("> ensure_matching_ordering for {login}");
         ensure_matching_ordering(&login, &db, tag_ids_string.clone(), &tags)
-            .await?;
+            .await
+            .c(h!())?;
     }
     info!("> oneoff_ensure_tags_ordering completed");
     Ok(())
@@ -67,7 +68,7 @@ async fn ensure_matching_ordering(
         .filter(tags_ordering::Column::DeprecatedAt.is_null())
         .all(db)
         .await
-        .context(h!())?;
+        .c(h!())?;
     for o in orderings.into_iter() {
         if tag_ids_string.eq(&o.tag_ids_list) {
             matching_ordering = Some(o);
@@ -75,14 +76,14 @@ async fn ensure_matching_ordering(
             // deactivate deprecated because now other tags are enabled
             let mut model = o.into_active_model();
             model.deprecated_at = Set(Some(Utc::now().naive_utc()));
-            model.update(db).await.context(h!())?;
+            model.update(db).await.c(h!())?;
         }
     }
     let ordering = match matching_ordering {
         Some(ordering) => ordering,
         None => mk_new_ordering(tag_ids_string, tags, user_id, db)
             .await
-            .context(h!())?,
+            .c(h!())?,
     };
     Ok(ordering)
 }
@@ -96,7 +97,7 @@ async fn collect_enabled_regular_tags(
         .order_by_asc(tag::Column::Ord)
         .all(db)
         .await
-        .context(h!())?;
+        .c(h!())?;
     let tag_ids_string = tags
         .iter()
         .map(|x| format!("{}", x.id))
@@ -123,9 +124,8 @@ async fn mk_new_ordering(
         .into_tuple::<String>()
         .all(db)
         .await
-        .context(h!())?;
-    let (ordering, seed) =
-        arrange_tags(tags, known_seeds.clone()).context(h!())?;
+        .c(h!())?;
+    let (ordering, seed) = arrange_tags(tags, known_seeds.clone()).c(h!())?;
 
     let ordering = serde_json::to_value(ordering)?;
 
@@ -140,7 +140,7 @@ async fn mk_new_ordering(
     }
     .insert(db)
     .await
-    .context(h!())
+    .c(h!())
 }
 
 /// split into groups of 8, because 8! order permutations is enough to have a unique user id, and also we're mot sure if >8 is visible.
@@ -168,8 +168,7 @@ fn arrange_tags(
         for tag in tags_sorted {
             tags.push(tag);
             if tags.len() == 8 {
-                let (tags_sorted_val, seed) =
-                    arrange_tags_vec(tags).context(h!())?;
+                let (tags_sorted_val, seed) = arrange_tags_vec(tags).c(h!())?;
                 seed_entries.push(seed);
                 for tag in tags_sorted_val {
                     result.push(tag);
@@ -178,15 +177,14 @@ fn arrange_tags(
             }
         }
         if !tags.is_empty() {
-            let (tags_sorted_val, seed) =
-                arrange_tags_vec(tags).context(h!())?;
+            let (tags_sorted_val, seed) = arrange_tags_vec(tags).c(h!())?;
             seed_entries.push(seed);
             for tag in tags_sorted_val {
                 result.push(tag);
             }
         }
         result_ordering = result.into_iter().map(|x| x.id).collect_vec();
-        result_seed = seed_entries.into_iter().next().context(h!())?;
+        result_seed = seed_entries.into_iter().next().c(h!())?;
         if !known_seeds.contains(&result_seed) {
             break;
         }
@@ -214,7 +212,7 @@ fn arrange_tags_vec(
     let mut idx = 0;
     while idx < tags.len() {
         let new_idx = ordering[idx];
-        let new_element = tags.get(idx).context(h!())?;
+        let new_element = tags.get(idx).c(h!())?;
         result[new_idx] = new_element.clone();
         idx += 1;
     }
@@ -226,10 +224,10 @@ fn order_tags(
     ordering: &tags_ordering::Model,
 ) -> anyhow::Result<Vec<tag::Model>> {
     let ids_ordering: OrderingData =
-        serde_json::from_value(ordering.ordering.clone()).context(h!())?;
+        serde_json::from_value(ordering.ordering.clone()).c(h!())?;
     let mut result = vec![];
     for id in ids_ordering {
-        let tag = tags.get(&id).context(h!())?;
+        let tag = tags.get(&id).c(h!())?;
         result.push(tag.clone());
     }
     Ok(result)

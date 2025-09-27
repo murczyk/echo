@@ -143,9 +143,11 @@ pub async fn oneoff_network_activity_stat(
 ) -> anyhow::Result<(), AppError> {
     debug!("oneoff_network_activity_stat");
     let start_dt: NaiveDateTime =
-        NaiveDateTime::parse_from_str(&ps.start, "%Y-%m-%dT%H:%M:%S")?;
+        NaiveDateTime::parse_from_str(&ps.start, "%Y-%m-%dT%H:%M:%S")
+            .context(h!())?;
     let end_dt: NaiveDateTime =
-        NaiveDateTime::parse_from_str(&ps.end, "%Y-%m-%dT%H:%M:%S")?;
+        NaiveDateTime::parse_from_str(&ps.end, "%Y-%m-%dT%H:%M:%S")
+            .context(h!())?;
 
     let dbx = crate::new_pg_pool_from_mode(mode).await.context(h!())?;
     let groups =

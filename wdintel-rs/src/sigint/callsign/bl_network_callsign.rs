@@ -312,7 +312,9 @@ pub async fn bl_update_network_callsign(
     } else
     // If no known callsign assigned, update the network callsign itself
     {
-        update_network_callsign_not_linked(req, user_id, txn).await?
+        update_network_callsign_not_linked(req, user_id, txn)
+            .await
+            .c(h!())?
     };
 
     Ok(network_callsign_id)

@@ -29,14 +29,17 @@ pub async fn report_docx_kind_mouse(
     req: &super::ReportPreviewReq,
     outpath: &Path,
 ) -> Result<(), AppError> {
-    let login = user.id()?;
-    let logins = crate::users::get_organism_logins(&env.dbx, user).await?;
+    let login = user.id().c(h!())?;
+    let logins = crate::users::get_organism_logins(&env.dbx, user)
+        .await
+        .c(h!())?;
     let width_unit = 1870;
     let messages: Vec<(i64, InboxMessage)> =
         crate::rer_importer::inbox::get_inbox_messages(
             &login, &logins, env, &req.req,
         )
-        .await?;
+        .await
+        .c(h!())?;
     let Some(since_date_inclusive_ms) = req.req.since_date_inclusive_ms else {
         return Err("Since date must be specified".into());
     };
@@ -77,8 +80,9 @@ pub async fn report_docx_kind_mouse(
         BTreeMap::new();
     let mut per_freq_messages: BTreeMap<String, Vec<(i64, InboxMessage)>> =
         BTreeMap::new();
-    let Some(zone_id) =
-        crate::sigint::zone::get_user_zone_id(&env.dbx, &login).await?
+    let Some(zone_id) = crate::sigint::zone::get_user_zone_id(&env.dbx, &login)
+        .await
+        .c(h!())?
     else {
         return Err("Zone not found 918273".into());
     };
@@ -86,7 +90,8 @@ pub async fn report_docx_kind_mouse(
         .filter(comp_freq::Column::ZoneId.eq(zone_id))
         .filter(comp_freq::Column::Freq.is_in(uniq_freqs_sorted.clone()))
         .all(&env.dbx)
-        .await?;
+        .await
+        .c(h!())?;
     let freq_first_seen: BTreeMap<String, NaiveDateTime> = comp_freqs
         .iter()
         .filter_map(|comp_freq| {
@@ -99,7 +104,8 @@ pub async fn report_docx_kind_mouse(
             comp_freq_callsign::Column::Freq.is_in(uniq_freqs_sorted.clone()),
         )
         .all(&env.dbx)
-        .await?;
+        .await
+        .c(h!())?;
     let freq_callsign_first_seen: BTreeMap<(String, String), NaiveDateTime> =
         comp_freqs_callsigns
             .iter()
@@ -185,7 +191,8 @@ pub async fn report_docx_kind_mouse(
         .filter(sigint_inbox_item::Column::Datetime.lte(date_to_dt.naive_utc()))
         .filter(datasource_group::Column::GroupMasterKey.is_in(&groups))
         .all(&env.dbx)
-        .await?;
+        .await
+        .c(h!())?;
     let important_ids: BTreeSet<i64> = importants
         .iter()
         .map(|important| important.signal_message_id)
@@ -212,7 +219,8 @@ pub async fn report_docx_kind_mouse(
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(datasource_group::Column::GroupMasterKey.is_in(&groups))
         .all(&env.dbx)
-        .await?;
+        .await
+        .c(h!())?;
     let bookmark_ids: BTreeSet<i64> = bookmarks
         .iter()
         .map(|bookmark| bookmark.signal_message_id)
@@ -853,7 +861,7 @@ pub async fn report_docx_kind_mouse(
             continue;
         };
         // parse date from format like 2023-12-22
-        let date = NaiveDate::parse_from_str(date, "%Y-%m-%d")?;
+        let date = NaiveDate::parse_from_str(date, "%Y-%m-%d").context(h!())?;
         let Some(time) = message.time.as_ref() else {
             continue;
         };
@@ -972,14 +980,15 @@ pub async fn report_docx_kind_mouse(
             };
             // let Some(msg) = signal_message::Entity::find_by_id(message_id)
             //     .one(&env.dbx)
-            //     .await?
+            //     .await.c(h!())?
             // else {
             //     continue;
             // };
             let Some(_inbox) =
                 sigint_inbox_item::Entity::find_by_id(message_id)
                     .one(&env.dbx)
-                    .await?
+                    .await
+                    .c(h!())?
             else {
                 continue;
             };
@@ -987,7 +996,8 @@ pub async fn report_docx_kind_mouse(
                 .filter(sigint_comment::Column::SignalMessageId.eq(message_id))
                 .filter(sigint_comment::Column::Login.is_in(logins.clone()))
                 .one(&env.dbx)
-                .await?;
+                .await
+                .c(h!())?;
             if let Some(extended_form) = m_comment.map(|x| x.comment) {
                 let paragraph =
                     Paragraph::new().add_run(Run::new().add_text(format!(
@@ -1061,13 +1071,16 @@ pub async fn report_xlsx_kind_pelengs(
     req: &super::ReportPreviewReq,
     _outpath: &PathBuf, // Marked as unused
 ) -> Result<(), AppError> {
-    let login = user.id()?;
-    let logins = crate::users::get_organism_logins(&env.dbx, user).await?;
+    let login = user.id().c(h!())?;
+    let logins = crate::users::get_organism_logins(&env.dbx, user)
+        .await
+        .c(h!())?;
     let messages: Vec<(i64, InboxMessage)> =
         crate::rer_importer::inbox::get_inbox_messages(
             &login, &logins, env, &req.req,
         )
-        .await?;
+        .await
+        .c(h!())?;
     let messages: Vec<(i64, InboxMessage)> = messages
         .iter()
         .filter(|(_, m)| m.coords.is_some())
@@ -1135,7 +1148,7 @@ pub async fn report_xlsx_kind_pelengs(
             continue;
         };
         // parse date from format like 2023-12-22
-        let date = NaiveDate::parse_from_str(date, "%Y-%m-%d")?;
+        let date = NaiveDate::parse_from_str(date, "%Y-%m-%d").context(h!())?;
         let Some(time) = message.time.as_ref() else {
             continue;
         };

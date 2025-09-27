@@ -1,6 +1,6 @@
+use crate::types::ShortContext;
 use actix_identity::Identity;
 use actix_web::web::Json;
-use anyhow::Context;
 use chrono::Duration;
 use echo_migration::{Expr, JoinType};
 use log::debug;
@@ -19,9 +19,8 @@ pub async fn fetch_groups(
     env: &actix_web::web::Data<Env>,
     master_keys: Vec<String>,
 ) -> Result<Vec<AnalysisStatsGroup>, AppError> {
-    let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
-    let dt_till =
-        dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
+    let dt_since = dt_from_millis(req.since_date_inclusive_ms).c(h!())?;
+    let dt_till = dt_from_millis(req.till_date_noninclusive_ms).c(h!())?;
 
     let instant = std::time::Instant::now();
     trace!("get identity master keys op took: {:?}", instant.elapsed());
@@ -39,7 +38,7 @@ pub async fn fetch_groups(
         .into_model::<GroupsRes>()
         .all(&env.dbx)
         .await
-        .context(h!())?;
+        .c(h!())?;
     let mut groups = vec![];
     for x in groups_res {
         let Some(master_key) = x.master_key else {
@@ -60,12 +59,11 @@ pub async fn count_groups(
     env: &actix_web::web::Data<Env>,
     master_keys: Vec<String>,
 ) -> Result<i64, AppError> {
-    let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
-    let dt_till =
-        dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
+    let dt_since = dt_from_millis(req.since_date_inclusive_ms).c(h!())?;
+    let dt_till = dt_from_millis(req.till_date_noninclusive_ms).c(h!())?;
     let groups_res =
         build_groups_query(&req, user, dt_since, dt_till, master_keys)?;
-    let count = groups_res.count(&env.dbx).await.context(h!())?;
+    let count = groups_res.count(&env.dbx).await.c(h!())?;
     Ok(count as i64)
 }
 
@@ -138,7 +136,7 @@ fn build_groups_query(
         &req.or_with_coords,
         &req.or_with_extended_form,
         &req.filter_tags_option,
-        user.id()?.as_str(),
+        user.id().c(h!())?.as_str(),
     )
     .context(h!())?;
     let groups_res =
@@ -619,7 +617,8 @@ pub async fn fetch_callsigns(
     let callsigns_res: Vec<CallsignsRes> = callsigns_res
         .into_model::<CallsignsRes>()
         .all(&env.dbx)
-        .await?;
+        .await
+        .c(h!())?;
     let mut callsigns = vec![];
     for x in callsigns_res {
         let Some(callsign) = x.callsign else { continue };
@@ -733,8 +732,11 @@ pub async fn fetch_tags(
     //     "> tags_res: {}",
     //     tags_res.build(DbBackend::Postgres).to_string()
     // );
-    let tags_res: Vec<TagsRes> =
-        tags_res.into_model::<TagsRes>().all(&env.dbx).await?;
+    let tags_res: Vec<TagsRes> = tags_res
+        .into_model::<TagsRes>()
+        .all(&env.dbx)
+        .await
+        .c(h!())?;
     let mut count_per_tag: BTreeMap<i64, i64> = BTreeMap::new();
     for x in tags_res {
         let Some(tag_ids) = x.tag_ids else { continue };
@@ -1266,8 +1268,10 @@ pub async fn fetch_networks(
         networks_query.to_string(PostgresQueryBuilder),
     );
 
-    let networks_res: Vec<NetworksRes> =
-        NetworksRes::find_by_statement(stmt).all(&env.dbx).await?;
+    let networks_res: Vec<NetworksRes> = NetworksRes::find_by_statement(stmt)
+        .all(&env.dbx)
+        .await
+        .c(h!())?;
 
     let mut networks = vec![];
     for x in networks_res {
@@ -1301,8 +1305,10 @@ pub async fn count_networks(
         networks_query.to_string(PostgresQueryBuilder),
     );
 
-    let networks_res: Vec<NetworksRes> =
-        NetworksRes::find_by_statement(stmt).all(&env.dbx).await?;
+    let networks_res: Vec<NetworksRes> = NetworksRes::find_by_statement(stmt)
+        .all(&env.dbx)
+        .await
+        .c(h!())?;
 
     let res = networks_res.len() as i64;
 
@@ -1423,7 +1429,7 @@ fn build_networks_query(
         &req.or_with_coords,
         &req.or_with_extended_form,
         &req.filter_tags_option,
-        user.id()?.as_str(),
+        user.id().c(h!())?.as_str(),
     )
     .context(h!())?;
 

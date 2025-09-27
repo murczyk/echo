@@ -70,7 +70,8 @@ async fn monitoring(
     let datasources = datasource::Entity::find()
         .filter(datasource::Column::Enabled.eq(true))
         .all(&env.dbx)
-        .await?;
+        .await
+        .c(h!())?;
     let mut datasources_res = vec![];
     let week_ago = chrono::Utc::now()
         .checked_sub_signed(chrono::Duration::days(7))
@@ -89,7 +90,8 @@ async fn monitoring(
                 .filter(signal_message::Column::Deleted.eq(false))
                 .order_by_desc(signal_message::Column::CreatedAt)
                 .one(&env.dbx)
-                .await?
+                .await
+                .c(h!())?
                 .map(|x| x.created_at.and_utc().timestamp_millis())
                 .unwrap_or(week_ago.timestamp_millis());
         datasources_res.push(MonitoringDatasource {

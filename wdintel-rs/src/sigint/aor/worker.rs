@@ -17,8 +17,8 @@ pub async fn aor_assignments_check_worker(dbx: &DatabaseConnection) {
 pub async fn aor_assignments_check_once(
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<()> {
-    check_signal_groups(dbx).await?;
-    check_networks(dbx).await?;
+    check_signal_groups(dbx).await.c(h!())?;
+    check_networks(dbx).await.c(h!())?;
     Ok(())
 }
 

@@ -28,7 +28,7 @@ pub fn main_test_kml(mode: Mode) -> Result<(), AppError> {
     // let kml_path = Path::new("/Users/kon/Downloads/myplaces2.kml");
 
     let input: String = std::fs::read_to_string(kml_path)?;
-    let kml: Kml = quick_xml::de::from_str(&input).context(h!())?;
+    let kml: Kml = quick_xml::de::from_str(&input).c(h!())?;
     println!("{}", crate::kml::views::render_kml(&kml)?);
     println!("{:?}", extract_style_maps(&kml.nodes));
     Ok(())
@@ -43,7 +43,7 @@ pub fn read_myplaces(mode: Mode) -> Result<Kml, AppError> {
     // let kml: Kml = quick_xml::de::from_reader(reader)
     //     .map_err(|e| eyre!("xml error: {:?}", e))?;
     let input: String = std::fs::read_to_string(kml_path)?;
-    let kml: Kml = quick_xml::de::from_str(&input).context(h!())?;
+    let kml: Kml = quick_xml::de::from_str(&input).c(h!())?;
     Ok(kml)
 }
 
@@ -52,7 +52,9 @@ async fn operatyvka(
     user: Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<Operatyvka>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Bpla").await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Bpla")
+        .await
+        .c(h!())?;
     let kml = read_myplaces(env.mode)?;
     let folders = extract_operatyvka_folders(&kml)?;
     let operatyvka = Operatyvka { folders };
@@ -215,7 +217,9 @@ async fn operatyvka_download(
     http_req: HttpRequest,
     req: actix_web::web::Query<OperatyvkaDownloadReq>,
 ) -> Result<actix_web::HttpResponse, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Bpla").await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Bpla")
+        .await
+        .c(h!())?;
     let kml = read_myplaces(env.mode)?;
     let folders = extract_operatyvka_folders(&kml)?;
     let style_maps = extract_style_maps(&kml.nodes)?;
@@ -318,9 +322,11 @@ async fn operatyvka_download(
                 style_ids,
                 crate::icons::get_icon_path(&env.config),
             )
-            .await?;
+            .await
+            .c(h!())?;
             let dst_file = dst_file_res.path;
-            let file = actix_files::NamedFile::open_async(dst_file).await?;
+            let file =
+                actix_files::NamedFile::open_async(dst_file).await.c(h!())?;
             // todo: insert headers for content-type and content-disposition?
             return Ok(file.into_response(&http_req));
         }
@@ -388,7 +394,7 @@ pub fn oneoff_print_description_icon_title(mode: Mode) -> Result<(), AppError> {
     let kml_path: PathBuf =
         PathBuf::from(config.storage_dir).join("myplaces.kml");
     let input: String = std::fs::read_to_string(kml_path)?;
-    let kml: Kml = quick_xml::de::from_str(&input).context(h!())?;
+    let kml: Kml = quick_xml::de::from_str(&input).c(h!())?;
     let placemarks = gather_all_placemarks(&kml.nodes)?;
     let style_map = extract_style_maps(&kml.nodes)?;
     // println!("> style_map: {:?}", style_map);
@@ -410,7 +416,7 @@ pub fn oneoff_print_description_icon_title(mode: Mode) -> Result<(), AppError> {
             Some(pos) => String::from_utf8(
                 icon.as_bytes().iter().skip(pos + 1).cloned().collect(),
             )
-            .context(h!())?,
+            .c(h!())?,
             None => icon.clone(),
         };
         ret_val.push(Row {
@@ -419,7 +425,7 @@ pub fn oneoff_print_description_icon_title(mode: Mode) -> Result<(), AppError> {
             descrption: placemark.description.clone().unwrap_or("".to_string()),
         });
     }
-    println!("{}", serde_json::to_string(&ret_val).context(h!())?);
+    println!("{}", serde_json::to_string(&ret_val).c(h!())?);
     Ok(())
 }
 
@@ -427,8 +433,8 @@ pub async fn oneoff_radio_by_freq() -> Result<(), AppError> {
     let kml_path = Path::new(
         "/Users/kon/Library/Application Support/Google Earth/myplaces.kml",
     );
-    let kml: Kml = quick_xml::de::from_str(&std::fs::read_to_string(kml_path)?)
-        .context(h!())?;
+    let kml: Kml =
+        quick_xml::de::from_str(&std::fs::read_to_string(kml_path)?).c(h!())?;
     let rer = get_rer_folders(&kml)?;
     let mut per_freq_per_date: BTreeMap<
         String,
@@ -562,7 +568,8 @@ pub async fn oneoff_radio_by_freq() -> Result<(), AppError> {
         style_maps_reversed,
         path.to_path_buf(),
     )
-    .await?;
+    .await
+    .c(h!())?;
     let dst_file = dst_file_res.path;
     println!("> done packaging {}", dst_file.display());
     std::fs::copy(dst_file, "/Users/kon/Downloads/rer.kmz")?;
@@ -612,7 +619,7 @@ pub async fn oneoff_fix_kml_main(
     mode: Mode,
     ps: &crate::OneoffFixKmzPs,
 ) -> Result<(), AppError> {
-    oneoff_fix_kml(mode, ps).await?;
+    oneoff_fix_kml(mode, ps).await.c(h!())?;
     Ok(())
 }
 
@@ -641,7 +648,7 @@ pub async fn oneoff_fix_kml(
     println!("> kml_path: {kml_path:?}");
     let mut kml: Kml =
         quick_xml::de::from_str(&std::fs::read_to_string(&kml_path)?)
-            .context(h!())?;
+            .c(h!())?;
     let base_path = Path::new(&kml_path)
         .parent()
         .ok_or("base path doesnt exist")?;
@@ -658,7 +665,8 @@ pub async fn oneoff_fix_kml(
             &mut replacement_map,
             &mut image_checksums,
         )
-        .await?;
+        .await
+        .c(h!())?;
     }
     let mut checksum_image: BTreeMap<String, String> = BTreeMap::new();
     for (k, v) in image_checksums.iter() {
@@ -744,7 +752,8 @@ pub async fn oneoff_fix_kml_go1(
                     replacement_map,
                     image_checksums,
                 )
-                .await?;
+                .await
+                .c(h!())?;
             }
         }
         Node::Document(x) => {
@@ -756,7 +765,8 @@ pub async fn oneoff_fix_kml_go1(
                     replacement_map,
                     image_checksums,
                 )
-                .await?;
+                .await
+                .c(h!())?;
             }
         }
         Node::Placemark(placemark) => {
@@ -781,7 +791,9 @@ pub async fn oneoff_fix_kml_go1(
                 replacement_map.insert(icon.to_string(), replacement_icon);
             } else {
                 let checksum =
-                    sha256::try_async_digest(icon_full_path.as_path()).await?;
+                    sha256::try_async_digest(icon_full_path.as_path())
+                        .await
+                        .c(h!())?;
                 image_checksums.insert(icon.to_string(), checksum);
             }
         }
@@ -965,7 +977,9 @@ pub async fn api_fix_kmz(
     env: actix_web::web::Data<Env>,
     mut payload: Multipart,
 ) -> Result<actix_web::HttpResponse, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Basic").await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Basic")
+        .await
+        .c(h!())?;
     let mut hide_titles: bool = false;
     let mut val = vec![];
     let mut filename: String = "".to_string();
@@ -974,7 +988,7 @@ pub async fn api_fix_kmz(
         let mut field = item.map_err(|e| -> AppError {
             format!("Multipart error: {e:?}").into()
         })?;
-        let field_name = field.name().context(h!())?;
+        let field_name = field.name().c(h!())?;
         if field_name == "hide_titles" {
             while let Some(chunk) = field.next().await {
                 let v = chunk
@@ -1018,10 +1032,11 @@ pub async fn api_fix_kmz(
             hide_titles,
         },
     )
-    .await?;
+    .await
+    .c(h!())?;
     println!("> output: {}", &output);
 
-    let file = actix_files::NamedFile::open_async(&output).await?;
+    let file = actix_files::NamedFile::open_async(&output).await.c(h!())?;
     Ok(file.into_response(&http_req))
 }
 
@@ -1148,7 +1163,8 @@ pub async fn oneoff_radio_per_day_per_abonent(
         &format!("> oneoff_radio_per_day_per_abonent, ps: {ps:?}"),
         m_dbx,
     )
-    .await?;
+    .await
+    .c(h!())?;
     let kmz_path = Path::new(&ps.input);
     let tmp_dir = TempDir::new()?;
     let tmp_dir_kmz = tmp_dir
@@ -1163,22 +1179,24 @@ pub async fn oneoff_radio_per_day_per_abonent(
         ),
         m_dbx,
     )
-    .await?;
+    .await
+    .c(h!())?;
     if !kmz_path.exists() {
         bgtask_log2(
             m_bgtask_id,
             &format!("> Error: kmz_path {} doesn't exist", kmz_path.display()),
             m_dbx,
         )
-        .await?;
+        .await
+        .c(h!())?;
         return Ok(());
     }
     std::fs::copy(kmz_path, &tmp_dir_kmz)?;
-    bgtask_log2(m_bgtask_id, "> unzip", m_dbx).await?;
+    bgtask_log2(m_bgtask_id, "> unzip", m_dbx).await.c(h!())?;
     crate::zip::unzip(&tmp_dir_kmz)?;
-    bgtask_log2(m_bgtask_id, "> rm", m_dbx).await?;
+    bgtask_log2(m_bgtask_id, "> rm", m_dbx).await.c(h!())?;
     std::fs::remove_file(&tmp_dir_kmz)?;
-    bgtask_log2(m_bgtask_id, "> backup", m_dbx).await?;
+    bgtask_log2(m_bgtask_id, "> backup", m_dbx).await.c(h!())?;
     crate::utils::backup_tmp_dir(tmp_dir.path())?;
     let mut kml_path = tmp_dir
         .path()
@@ -1192,23 +1210,26 @@ pub async fn oneoff_radio_per_day_per_abonent(
         &format!("> kml_path: {}", kml_path.display()),
         m_dbx,
     )
-    .await?;
+    .await
+    .c(h!())?;
     let kml: Kml =
         quick_xml::de::from_str(&std::fs::read_to_string(kml_path.clone())?)
-            .context(h!())?;
+            .c(h!())?;
     let nodes = gather_all_placemarks(&kml.nodes)?;
     bgtask_log2(
         m_bgtask_id,
         &format!("> kml_path: {}", kml_path.display()),
         m_dbx,
     )
-    .await?;
+    .await
+    .c(h!())?;
     bgtask_log2(
         m_bgtask_id,
         &format!("> found {} nodes", nodes.len()),
         m_dbx,
     )
-    .await?;
+    .await
+    .c(h!())?;
 
     let mut nodes_per_date_per_radio: BTreeMap<
         String,
@@ -1226,7 +1247,8 @@ pub async fn oneoff_radio_per_day_per_abonent(
             .clone();
         let Some(rinfo) = extract_radio_info(&nn)? else {
             bgtask_log2(m_bgtask_id, &format!("> skipping {nn}"), m_dbx)
-                .await?;
+                .await
+                .c(h!())?;
             continue;
         };
         let date = format!("{}-{}-{}", rinfo.year, rinfo.mon, rinfo.day);
@@ -1269,7 +1291,8 @@ pub async fn oneoff_radio_per_day_per_abonent(
         m_bgtask_id,
         m_dbx,
     )
-    .await?;
+    .await
+    .c(h!())?;
 
     let kmz_path_out = if let Some(bgtask_id) = m_bgtask_id {
         PathBuf::from(config.storage_dir.clone())
@@ -1293,7 +1316,8 @@ pub async fn oneoff_radio_per_day_per_abonent(
         m_bgtask_id,
         m_dbx,
     )
-    .await?;
+    .await
+    .c(h!())?;
     let kmz_path_out = if let Some(bgtask_id) = m_bgtask_id {
         PathBuf::from(config.storage_dir.clone())
             .join(format!("radios-{bgtask_id}-radio.kmz"))
@@ -1316,7 +1340,8 @@ pub async fn oneoff_radio_per_day_per_abonent(
         m_bgtask_id,
         m_dbx,
     )
-    .await?;
+    .await
+    .c(h!())?;
 
     Ok(())
 }
@@ -1422,14 +1447,16 @@ async fn render_nodes(
         style_maps_reversed,
         path.to_path_buf(),
     )
-    .await?;
+    .await
+    .c(h!())?;
     let dst_file = dst_file_res.path;
     bgtask_log2(
         m_bgtask_id,
         &format!("> done packaging {}", dst_file.display()),
         m_dbx,
     )
-    .await?;
+    .await
+    .c(h!())?;
     println!(
         "> copying {} to {}",
         dst_file.display(),
@@ -1445,7 +1472,8 @@ async fn render_nodes(
         &format!("> done. see {}", kmz_path_out.display()),
         m_dbx,
     )
-    .await?;
+    .await
+    .c(h!())?;
     for (date, per_radio_map) in node_map.iter() {
         let num_items: usize = per_radio_map.values().map(|v| v.len()).sum();
         bgtask_log2(
@@ -1453,7 +1481,8 @@ async fn render_nodes(
             &format!("> date: {date}, items: {num_items}"),
             m_dbx,
         )
-        .await?;
+        .await
+        .c(h!())?;
     }
     println!("> tmp_dir: {}", tmp_dir.clone().path().display());
     Ok(())
@@ -1513,17 +1542,18 @@ async fn render_nodes_csv(
                 .replace(".csv", &format!("-page-{page}.csv")[..]),
         );
         println!("> csv_path_out_paged: {}", csv_path_out_paged.display());
-        let mut wtr = csv::Writer::from_path(&csv_path_out_paged)?;
+        let mut wtr = csv::Writer::from_path(&csv_path_out_paged).c(h!())?;
         for row in page_rows.iter() {
-            wtr.serialize(row)?;
+            wtr.serialize(row).c(h!())?;
         }
-        wtr.flush()?;
+        wtr.flush().c(h!())?;
         bgtask_log2(
             m_bgtask_id,
             &format!("> wrote {}", csv_path_out_paged.display()),
             m_dbx,
         )
-        .await?;
+        .await
+        .c(h!())?;
     }
 
     for (date, per_radio_map) in node_map.iter() {
@@ -1533,7 +1563,8 @@ async fn render_nodes_csv(
             &format!("> date: {date}, items: {num_items}"),
             m_dbx,
         )
-        .await?;
+        .await
+        .c(h!())?;
     }
     Ok(())
 }

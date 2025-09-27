@@ -81,7 +81,7 @@ pub async fn report_docx_kind_digest(
         }
     };
     let show_date = check_should_show_date(report_since, report_till);
-    let login = user.id()?;
+    let login = user.id().c(h!())?;
     let logins = crate::users::get_organism_logins(&env.dbx, user)
         .await
         .context(h!())?;
@@ -289,7 +289,7 @@ async fn collect_report(
     env: &Env,
 ) -> anyhow::Result<Report> {
     let (comments, messages) =
-        load_messages_with_comments(messages, env).await?;
+        load_messages_with_comments(messages, env).await.c(h!())?;
     debug!("loaded {} messages with comments {}", messages.len(), h!());
 
     let freqs = messages

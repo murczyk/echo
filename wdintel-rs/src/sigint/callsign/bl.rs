@@ -62,7 +62,8 @@ pub async fn bl_callsign_update(
     let callsign_json_old = sigint_callsign::Entity::find_by_id(callsign.id)
         .into_json()
         .one(txn)
-        .await?
+        .await
+        .c(h!())?
         .ok_or_else(|| AppError::NotFound)?;
     let mut callsign = callsign.into_active_model();
     callsign.callsign = Set(req.callsign.clone().trim().to_lowercase());
@@ -159,7 +160,8 @@ where
 {
     let callsign = sigint_callsign::Entity::find_by_id(callsign_id)
         .one(txn)
-        .await?
+        .await
+        .c(h!())?
         .ok_or_else(|| AppError::NotFound)?;
     Ok(callsign)
 }

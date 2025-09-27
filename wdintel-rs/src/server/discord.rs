@@ -1,4 +1,6 @@
 use crate::error::AppError;
+use crate::h;
+use crate::types::ShortContext;
 use serde::Serialize;
 
 pub async fn discord_notify(content: &str) -> Result<(), AppError> {
@@ -14,6 +16,7 @@ pub async fn discord_notify(content: &str) -> Result<(), AppError> {
             content: content.to_string(),
         })
         .send()
-        .await?;
+        .await
+        .c(h!())?;
     Ok(())
 }

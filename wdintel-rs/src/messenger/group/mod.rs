@@ -460,7 +460,7 @@ pub async fn get_identity_sigint_groups_noimport(
     user: &actix_identity::Identity,
     _config: &crate::config::Config,
 ) -> Result<Vec<String>, AppError> {
-    let login = user.id()?;
+    let login = user.id().c(h!())?;
     let master_keys = get_identity_sigint_groups(dbx, &login)
         .await
         .context(h!())?;

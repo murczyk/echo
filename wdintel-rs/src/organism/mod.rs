@@ -17,7 +17,9 @@ pub async fn add_group_to_organism(
     env: actix_web::web::Data<Env>,
     req: Json<AddGroupToOrganismReq>,
 ) -> Result<Json<()>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Admin").await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
+        .await
+        .c(h!())?;
     debug!(
         "Adding group {} to organism {}",
         req.group_name, req.organism_id
@@ -27,22 +29,22 @@ pub async fn add_group_to_organism(
         .filter(organism::Column::DeletedPermanently.eq(false))
         .one(&env.dbx)
         .await
-        .context(h!())?
-        .context(h!())?;
+        .c(h!())?
+        .c(h!())?;
 
     let group = signal_group::Entity::find()
         .filter(signal_group::Column::Deleted.eq(false))
         .filter(signal_group::Column::MasterKey.eq(&req.group_name))
         .one(&env.dbx)
         .await
-        .context(h!())?
-        .context(h!())?;
+        .c(h!())?
+        .c(h!())?;
 
     // // checking if adding is allowed here
     // let organism_groups =
     //     crate::organism::load_organism_group_ids(&env.dbx, organism.id)
     //         .await
-    //         .context(h!())?;
+    //         .c(h!())?;
     // if organism.parent_id.is_some()
     //     && !organism_groups.available_keys.contains(&group.master_key)
     // {
@@ -51,7 +53,7 @@ pub async fn add_group_to_organism(
     //             "Not adding group {} to organism {} because it is not available due to its parent chain rights",
     //             req.group_name, req.organism_id
     //         )
-    //             .context(h!()))
+    //             .c(h!()))
     //     );
     // }
 
@@ -61,7 +63,7 @@ pub async fn add_group_to_organism(
     }
     .insert(&env.dbx)
     .await
-    .context(h!())?;
+    .c(h!())?;
 
     Ok(Json(()))
 }
@@ -72,12 +74,14 @@ pub async fn remove_group_from_organism(
     env: actix_web::web::Data<Env>,
     req: Json<RemoveGroupFromOrganismReq>,
 ) -> Result<Json<()>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Admin").await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
+        .await
+        .c(h!())?;
 
     let (organism, children) =
         load_organism_with_children(req.organism_id, &env.dbx)
             .await
-            .context(h!())?;
+            .c(h!())?;
     let mut organism_ids = children.iter().map(|x| x.id).collect::<Vec<_>>();
     organism_ids.push(organism.id);
 
@@ -88,7 +92,8 @@ pub async fn remove_group_from_organism(
                 .eq(req.group_name.clone()),
         )
         .exec(&env.dbx)
-        .await?;
+        .await
+        .c(h!())?;
 
     Ok(Json(()))
 }
@@ -99,16 +104,18 @@ pub async fn delete_organism(
     env: actix_web::web::Data<Env>,
     req: Json<i64>,
 ) -> Result<Json<()>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Admin").await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
+        .await
+        .c(h!())?;
 
     if let Some(model) = organism::Entity::find_by_id(req.0)
         .one(&env.dbx)
         .await
-        .context(h!())?
+        .c(h!())?
     {
         let mut rec = model.into_active_model();
         rec.deleted_permanently = Set(true);
-        rec.update(&env.dbx).await.context(h!())?;
+        rec.update(&env.dbx).await.c(h!())?;
     }
 
     Ok(Json(()))
@@ -120,11 +127,13 @@ pub async fn update_organism(
     env: actix_web::web::Data<Env>,
     req: Json<UpdateOrganismReq>,
 ) -> Result<Json<Organism>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Admin").await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
+        .await
+        .c(h!())?;
 
-    let txn = env.dbx.begin().await.context(h!())?;
-    let organism = bl::update_organism(&txn, &req).await.context(h!())?;
-    txn.commit().await.context(h!())?;
+    let txn = env.dbx.begin().await.c(h!())?;
+    let organism = bl::update_organism(&txn, &req).await.c(h!())?;
+    txn.commit().await.c(h!())?;
 
     Ok(Json(Organism {
         id: organism.id,
@@ -142,13 +151,16 @@ pub async fn group_list(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<Vec<SignalGroupFull>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Admin").await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
+        .await
+        .c(h!())?;
 
     Ok(Json(
         signal_group::Entity::find()
             .filter(signal_group::Column::Deleted.eq(false))
             .all(&env.dbx)
-            .await?
+            .await
+            .c(h!())?
             .into_iter()
             .map(|g| SignalGroupFull {
                 master_key: g.master_key,
@@ -164,12 +176,15 @@ pub async fn organism_group_list(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<Vec<OrganismGroup>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Admin").await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
+        .await
+        .c(h!())?;
 
     Ok(Json(
         organism_group::Entity::find()
             .all(&env.dbx)
-            .await?
+            .await
+            .c(h!())?
             .into_iter()
             .map(|g| OrganismGroup {
                 master_key: g.signal_group_master_key,
@@ -186,17 +201,19 @@ pub async fn organism_available_groups(
     env: actix_web::web::Data<Env>,
     req: Json<i64>,
 ) -> Result<Json<Vec<SignalGroupFull>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Admin").await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
+        .await
+        .c(h!())?;
     let groups = load_organism_group_ids(&env.dbx, req.into_inner())
         .await
-        .context(h!())?;
+        .c(h!())?;
 
     let groups_list = signal_group::Entity::find()
         .filter(signal_group::Column::Deleted.eq(false))
         .filter(signal_group::Column::MasterKey.is_in(groups.available_keys))
         .all(&env.dbx)
         .await
-        .context(h!())?;
+        .c(h!())?;
     Ok(Json(
         groups_list
             .into_iter()
@@ -216,21 +233,21 @@ pub async fn organism_compute_available_groups(
     env: actix_web::web::Data<Env>,
     req: Json<UpdateOrganismReq>,
 ) -> Result<Json<Vec<SignalGroupFull>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Admin").await?;
-
-    let txn = env.dbx.begin().await.context(h!())?; // DO NOT COMMIT IT!!!
-    let organism = bl::update_organism(&txn, &req).await.context(h!())?;
-
-    let groups = load_organism_group_ids(&txn, organism.id)
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
         .await
-        .context(h!())?;
+        .c(h!())?;
+
+    let txn = env.dbx.begin().await.c(h!())?; // DO NOT COMMIT IT!!!
+    let organism = bl::update_organism(&txn, &req).await.c(h!())?;
+
+    let groups = load_organism_group_ids(&txn, organism.id).await.c(h!())?;
 
     let groups_list = signal_group::Entity::find()
         .filter(signal_group::Column::Deleted.eq(false))
         .filter(signal_group::Column::MasterKey.is_in(groups.available_keys))
         .all(&txn)
         .await
-        .context(h!())?;
+        .c(h!())?;
     Ok(Json(
         groups_list
             .into_iter()
@@ -250,21 +267,21 @@ pub async fn organism_compute_available_groups_for_new(
     env: actix_web::web::Data<Env>,
     req: Json<CreateOrganismReq>,
 ) -> Result<Json<Vec<SignalGroupFull>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Admin").await?;
-
-    let txn = env.dbx.begin().await.context(h!())?; // DO NOT COMMIT IT!!!
-    let organism = bl::create_organism(&env.dbx, &req).await.context(h!())?;
-
-    let groups = load_organism_group_ids(&txn, organism.id)
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
         .await
-        .context(h!())?;
+        .c(h!())?;
+
+    let txn = env.dbx.begin().await.c(h!())?; // DO NOT COMMIT IT!!!
+    let organism = bl::create_organism(&env.dbx, &req).await.c(h!())?;
+
+    let groups = load_organism_group_ids(&txn, organism.id).await.c(h!())?;
 
     let groups_list = signal_group::Entity::find()
         .filter(signal_group::Column::Deleted.eq(false))
         .filter(signal_group::Column::MasterKey.is_in(groups.available_keys))
         .all(&txn)
         .await
-        .context(h!())?;
+        .c(h!())?;
     Ok(Json(
         groups_list
             .into_iter()
@@ -283,13 +300,15 @@ pub async fn organism_available_groups_batch(
     env: actix_web::web::Data<Env>,
     req: Json<Vec<i64>>,
 ) -> Result<Json<HashMap<i64, Vec<SignalGroupFull>>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Admin").await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
+        .await
+        .c(h!())?;
     let mut keys_map = HashMap::new();
     let mut keys_list = HashSet::new();
     for organism_id in req.into_inner() {
         let groups = load_organism_group_ids(&env.dbx, organism_id)
             .await
-            .context(h!())?;
+            .c(h!())?;
         keys_map.insert(organism_id, groups.available_keys.clone());
         for key in groups.available_keys {
             keys_list.insert(key);
@@ -302,7 +321,7 @@ pub async fn organism_available_groups_batch(
         .filter(signal_group::Column::MasterKey.is_in(keys_list))
         .all(&env.dbx)
         .await
-        .context(h!())?
+        .c(h!())?
         .into_iter()
         .map(|g| {
             (
@@ -334,9 +353,11 @@ pub async fn create_organism(
     env: actix_web::web::Data<Env>,
     req: Json<CreateOrganismReq>,
 ) -> Result<Json<Organism>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Admin").await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
+        .await
+        .c(h!())?;
 
-    let organism = bl::create_organism(&env.dbx, &req).await.context(h!())?;
+    let organism = bl::create_organism(&env.dbx, &req).await.c(h!())?;
 
     Ok(Json(Organism {
         id: organism.id,
@@ -355,7 +376,9 @@ pub async fn list_organisms(
     env: actix_web::web::Data<Env>,
     req: Json<ListOrganismsReq>,
 ) -> Result<Json<Vec<Organism>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Admin").await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
+        .await
+        .c(h!())?;
     let default_sorting = req.sort_by.is_none();
 
     let (sort_by, order) = match req.sort_by {
@@ -380,7 +403,7 @@ pub async fn list_organisms(
         .order_by(sort_by, order)
         .all(&env.dbx)
         .await
-        .context(h!())?;
+        .c(h!())?;
 
     let mut list = vec![];
     for (o, aors) in organisms {

@@ -814,8 +814,10 @@ pub async fn summary_table_freq(
     env: actix_web::web::Data<Env>,
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<SummaryTableFreq>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
-    Ok(Json(summary_table_freq_1(&user, &env, &req).await?))
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .c(h!())?;
+    Ok(Json(summary_table_freq_1(&user, &env, &req).await.c(h!())?))
 }
 
 pub async fn summary_table_freq_1(
@@ -842,7 +844,8 @@ pub async fn summary_table_freq_1(
 
     let master_keys =
         get_identity_sigint_groups_noimport(&env.dbx, user, &env.config)
-            .await?;
+            .await
+            .c(h!())?;
 
     let rows_res = signal_message::Entity::find()
         .join(
@@ -906,7 +909,7 @@ pub async fn summary_table_freq_1(
         &req.or_with_coords,
         &req.or_with_extended_form,
         &req.filter_tags_option,
-        &user.id()?,
+        &user.id().c(h!())?,
     )?;
     let rows_res =
         filter_selected_aors(rows_res, &req.selected_aors).context(h!())?;
@@ -917,7 +920,8 @@ pub async fn summary_table_freq_1(
     //     "> summary table rows_res sql: {}",
     //     rows_res.build(DbBackend::Postgres).to_string()
     // );
-    let rows_res: Vec<Row> = rows_res.into_model::<Row>().all(&env.dbx).await?;
+    let rows_res: Vec<Row> =
+        rows_res.into_model::<Row>().all(&env.dbx).await.c(h!())?;
 
     let mut callsigns_per_freq: BTreeMap<String, Vec<String>> = BTreeMap::new();
     let mut units_per_freq: BTreeMap<String, Vec<String>> = BTreeMap::new();
@@ -942,7 +946,8 @@ pub async fn summary_table_freq_1(
     ) {
         let m_nominatimres = nominatimres::Entity::find_by_id(nominatimres_id)
             .one(&env.dbx)
-            .await?;
+            .await
+            .c(h!())?;
         if let Some(nominatimres) = m_nominatimres {
             nominatimres_per_id.insert(nominatimres_id, nominatimres);
         }
@@ -1131,9 +1136,11 @@ async fn summary_table_xlsx(
     http_req: HttpRequest,
     req: Json<AnalysisStatsReq>,
 ) -> Result<HttpResponse, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .c(h!())?;
     let summary_table: SummaryTableFreq =
-        summary_table_freq_1(&user, &env, &req).await?;
+        summary_table_freq_1(&user, &env, &req).await.c(h!())?;
 
     let tmp_dir = TempDir::new()?;
     let outpath = tmp_dir.path().join("summary-table.xlsx");
@@ -1212,7 +1219,7 @@ async fn summary_table_xlsx(
 
     // Save the workbook to the specified path
     workbook.save(&outpath).context(h!())?;
-    let file = actix_files::NamedFile::open_async(&outpath).await?;
+    let file = actix_files::NamedFile::open_async(&outpath).await.c(h!())?;
     Ok(file.into_response(&http_req))
 }
 
@@ -1257,8 +1264,10 @@ async fn correlated_freqs(
     env: actix_web::web::Data<Env>,
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<CorrelatedFreqsRsp>, AppError> {
-    let login = user.id()?;
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .c(h!())?;
     let empty = CorrelatedFreqsRsp { freqs: vec![] };
     let Some(selected_freqs) = req.selected_freqs.clone() else {
         return Ok(Json(empty));
@@ -1294,7 +1303,8 @@ async fn correlated_freqs(
                 crate::messenger::group::get_identity_sigint_groups(
                     &env.dbx, &login,
                 )
-                .await?,
+                .await
+                .c(h!())?,
             ),
         )
         .select_only()
@@ -1306,7 +1316,7 @@ async fn correlated_freqs(
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
     let q = filter_selected_freqs(q, &req.selected_freqs)?;
-    let q = q.into_model::<Res>().all(&env.dbx).await?;
+    let q = q.into_model::<Res>().all(&env.dbx).await.c(h!())?;
     let mut selected_freq_callsigns: Vec<String> = vec![];
     for x in q.iter() {
         if let Some(ref callsign) = x.callsign {
@@ -1336,7 +1346,8 @@ async fn correlated_freqs(
                     crate::messenger::group::get_identity_sigint_groups(
                         &env.dbx, &login,
                     )
-                    .await?,
+                    .await
+                    .c(h!())?,
                 ),
             )
             .filter(signal_message::Column::Deleted.eq(false))
@@ -1348,7 +1359,7 @@ async fn correlated_freqs(
             ))
             .select_only()
             .column_as(sigint_inbox_item::Column::Freq, "freq");
-        let res = q.into_model::<Res2>().all(&env.dbx).await?;
+        let res = q.into_model::<Res2>().all(&env.dbx).await.c(h!())?;
         for r in res {
             let Some(freq): Option<String> = r.freq else {
                 continue;
@@ -1388,12 +1399,14 @@ pub async fn edit_freq_unit_name(
     env: actix_web::web::Data<Env>,
     req: Json<EditFreqUnitNameReq>,
 ) -> Result<Json<()>, AppError> {
-    let login = user.id()?;
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .c(h!())?;
     let reqan = req.analysis_stats_req.clone();
     let dt_since = dt_from_millis(reqan.since_date_inclusive_ms)?;
     let dt_till = dt_from_millis(reqan.till_date_noninclusive_ms)?;
-    let txn = env.dbx.begin().await?;
+    let txn = env.dbx.begin().await.c(h!())?;
 
     #[derive(FromQueryResult)]
     struct Row {
@@ -1420,7 +1433,8 @@ pub async fn edit_freq_unit_name(
                 crate::messenger::group::get_identity_sigint_groups(
                     &env.dbx, &login,
                 )
-                .await?,
+                .await
+                .c(h!())?,
             ),
         )
         .filter(signal_message::Column::Deleted.eq(false))
@@ -1447,7 +1461,7 @@ pub async fn edit_freq_unit_name(
         &None,
         &None,
         &req.filter_tags_option,
-        &user.id()?,
+        &user.id().c(h!())?,
     )?;
     let rows_res = filter_selected_networks(rows_res, &reqan.selected_networks)
         .context(h!())?;
@@ -1456,14 +1470,18 @@ pub async fn edit_freq_unit_name(
     //     "> freq edit query: {}",
     //     rows_res.build(DbBackend::Postgres).to_string()
     // );
-    let rows_res: Vec<Row> = rows_res.into_model::<Row>().all(&txn).await?;
+    let rows_res: Vec<Row> =
+        rows_res.into_model::<Row>().all(&txn).await.c(h!())?;
 
     for row in rows_res {
         for id in crate::rer_importer::inbox::find_all_duplicates(&txn, row.id)
-            .await?
+            .await
+            .c(h!())?
         {
-            let Some(row) =
-                sigint_inbox_item::Entity::find_by_id(id).one(&txn).await?
+            let Some(row) = sigint_inbox_item::Entity::find_by_id(id)
+                .one(&txn)
+                .await
+                .c(h!())?
             else {
                 continue;
             };
@@ -1471,11 +1489,11 @@ pub async fn edit_freq_unit_name(
             row.unit = Set(Some(req.unit_new.clone()));
             row.unit_v2 = Set(Some(req.unit_new.clone()));
             row.parsed_unit_v2 = Set(true);
-            row.update(&txn).await?;
+            row.update(&txn).await.c(h!())?;
         }
     }
 
-    txn.commit().await?;
+    txn.commit().await.c(h!())?;
     Ok(Json(()))
 }
 
@@ -1527,7 +1545,8 @@ where
         .filter(sigint_saved_filter::Column::Type.eq(filter_type))
         .order_by_asc(sigint_saved_filter::Column::Name)
         .all(dbx)
-        .await?;
+        .await
+        .c(h!())?;
     let mut res = vec![];
     for saved_filter in saved_filters {
         res.push(T::from_saved_filter(&saved_filter).context(h!())?);
@@ -1540,15 +1559,18 @@ pub async fn saved_filters_list(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<Vec<SavedFilter>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .c(h!())?;
 
     Ok(Json(
         select_saved_filter_list(
             sea_orm_active_enums::SigintSavedFilterTypeEnum::Analysis,
-            user.id()?,
+            user.id().c(h!())?,
             &env.dbx,
         )
-        .await?,
+        .await
+        .c(h!())?,
     ))
 }
 
@@ -1557,15 +1579,18 @@ pub async fn saved_filters_duty_list(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<Vec<SavedFilterDuty>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .c(h!())?;
 
     Ok(Json(
         select_saved_filter_list(
             sea_orm_active_enums::SigintSavedFilterTypeEnum::Duty,
-            user.id()?,
+            user.id().c(h!())?,
             &env.dbx,
         )
-        .await?,
+        .await
+        .c(h!())?,
     ))
 }
 
@@ -1587,17 +1612,20 @@ pub async fn saved_filter_upsert(
     env: actix_web::web::Data<Env>,
     req: Json<SavedFilterUpsertReq>,
 ) -> Result<Json<Vec<SavedFilter>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .c(h!())?;
 
     Ok(Json(
         saved_filter_upsert_1(
             sea_orm_active_enums::SigintSavedFilterTypeEnum::Analysis,
-            user.id()?,
+            user.id().c(h!())?,
             &env.dbx,
             req.name.clone(),
             serde_json::to_value(req.req.clone()).context(h!())?,
         )
-        .await?,
+        .await
+        .c(h!())?,
     ))
 }
 
@@ -1607,17 +1635,20 @@ pub async fn saved_filter_duty_upsert(
     env: actix_web::web::Data<Env>,
     req: Json<SavedFilterDutyUpsertReq>,
 ) -> Result<Json<Vec<SavedFilterDuty>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .c(h!())?;
 
     Ok(Json(
         saved_filter_upsert_1(
             sea_orm_active_enums::SigintSavedFilterTypeEnum::Duty,
-            user.id()?,
+            user.id().c(h!())?,
             &env.dbx,
             req.name.clone(),
             serde_json::to_value(req.req.clone()).context(h!())?,
         )
-        .await?,
+        .await
+        .c(h!())?,
     ))
 }
 
@@ -1636,7 +1667,8 @@ where
         .filter(sigint_saved_filter::Column::Login.eq(Some(user_id.clone())))
         .filter(sigint_saved_filter::Column::Type.eq(filter_type.clone()))
         .one(dbx)
-        .await?;
+        .await
+        .c(h!())?;
     match m_filter {
         None => {
             sigint_saved_filter::ActiveModel {
@@ -1648,14 +1680,15 @@ where
                 r#type: Set(Some(filter_type.clone())),
             }
             .insert(dbx)
-            .await?;
+            .await
+            .c(h!())?;
         }
         Some(saved_filter) => {
             let mut saved_filter: sigint_saved_filter::ActiveModel =
                 saved_filter.into();
             saved_filter.req =
                 Set(serde_json::to_value(req.clone()).context(h!())?);
-            saved_filter.update(dbx).await?;
+            saved_filter.update(dbx).await.c(h!())?;
         }
     }
 
@@ -1669,18 +1702,21 @@ pub async fn saved_filter_rename(
     req: Json<SavedFilterRenameReq>,
     path: actix_web::web::Path<String>,
 ) -> Result<Json<()>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .c(h!())?;
     let filter_type = filter_type_form_path(path.into_inner().as_str())?;
     let saved_filter = sigint_saved_filter::Entity::find_by_id(req.id)
-        .filter(sigint_saved_filter::Column::Login.eq(Some(user.id()?)))
+        .filter(sigint_saved_filter::Column::Login.eq(Some(user.id().c(h!())?)))
         .filter(sigint_saved_filter::Column::Type.eq(filter_type.clone()))
         .one(&env.dbx)
-        .await?
+        .await
+        .c(h!())?
         .ok_or(AppError::NotFound)?;
     let mut saved_filter: sigint_saved_filter::ActiveModel =
         saved_filter.into();
     saved_filter.name = Set(req.name.clone());
-    saved_filter.update(&env.dbx).await?;
+    saved_filter.update(&env.dbx).await.c(h!())?;
     Ok(Json(()))
 }
 
@@ -1691,17 +1727,22 @@ pub async fn saved_filter_delete(
     req: Json<i64>,
     path: actix_web::web::Path<String>,
 ) -> Result<Json<()>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .c(h!())?;
     let filter_type = filter_type_form_path(path.into_inner().as_str())?;
     let saved_filter =
         sigint_saved_filter::Entity::find_by_id(req.into_inner())
-            .filter(sigint_saved_filter::Column::Login.eq(Some(user.id()?)))
+            .filter(
+                sigint_saved_filter::Column::Login.eq(Some(user.id().c(h!())?)),
+            )
             .filter(sigint_saved_filter::Column::Type.eq(filter_type.clone()))
             .one(&env.dbx)
-            .await?
+            .await
+            .c(h!())?
             .ok_or(AppError::NotFound)?;
     let saved_filter: sigint_saved_filter::ActiveModel = saved_filter.into();
-    saved_filter.delete(&env.dbx).await?;
+    saved_filter.delete(&env.dbx).await.c(h!())?;
     Ok(Json(()))
 }
 
@@ -1711,7 +1752,7 @@ pub async fn new_callsigns(
     env: actix_web::web::Data<Env>,
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<NewCallsignsRes>, AppError> {
-    let user_id = &user.id()?;
+    let user_id = &user.id().c(h!())?;
     let res = bi_new_callsigns(user_id, &env, &req.into_inner())
         .await
         .context(h!())?;
@@ -1724,7 +1765,7 @@ pub async fn bi_new_callsigns(
     env: &Env,
     req: &AnalysisStatsReq,
 ) -> Result<NewCallsignsRes, AppError> {
-    has_role(&env.dbx, user_id, "Rer").await?;
+    has_role(&env.dbx, user_id, "Rer").await.c(h!())?;
 
     let dt_since = dt_from_millis(req.since_date_inclusive_ms)?;
     let dt_till = dt_from_millis(req.till_date_noninclusive_ms)?;
@@ -1753,8 +1794,11 @@ pub async fn bi_new_callsigns(
         .column_as(sigint_inbox_item::Column::Callsigns, "callsigns")
         .column_as(sigint_inbox_item::Column::Datetime, "timestamp")
         .filter(
-            datasource_group::Column::GroupMasterKey
-                .is_in(get_identity_sigint_groups(&env.dbx, user_id).await?),
+            datasource_group::Column::GroupMasterKey.is_in(
+                get_identity_sigint_groups(&env.dbx, user_id)
+                    .await
+                    .c(h!())?,
+            ),
         )
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
@@ -1789,10 +1833,14 @@ pub async fn bi_new_callsigns(
         filter_selected_aors(rows_res, &req.selected_aors).context(h!())?;
     let rows_res = filter_selected_networks(rows_res, &req.selected_networks)
         .context(h!())?;
-    let mut rows_res = rows_res.into_model::<Row>().stream(&env.dbx).await?;
+    let mut rows_res = rows_res
+        .into_model::<Row>()
+        .stream(&env.dbx)
+        .await
+        .c(h!())?;
 
     let mut callsigns_in_period = BTreeSet::new();
-    while let Some(item) = rows_res.try_next().await? {
+    while let Some(item) = rows_res.try_next().await.c(h!())? {
         let Some(callsigns) = item.callsigns else {
             continue;
         };
@@ -1823,8 +1871,11 @@ pub async fn bi_new_callsigns(
         .column_as(sigint_inbox_item::Column::Callsigns, "callsigns")
         .column_as(sigint_inbox_item::Column::Datetime, "timestamp")
         .filter(
-            datasource_group::Column::GroupMasterKey
-                .is_in(get_identity_sigint_groups(&env.dbx, user_id).await?),
+            datasource_group::Column::GroupMasterKey.is_in(
+                get_identity_sigint_groups(&env.dbx, user_id)
+                    .await
+                    .c(h!())?,
+            ),
         )
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
@@ -1857,11 +1908,15 @@ pub async fn bi_new_callsigns(
     )?;
     let rows_res = filter_selected_networks(rows_res, &req.selected_networks)
         .context(h!())?;
-    let mut rows_res = rows_res.into_model::<Row>().stream(&env.dbx).await?;
+    let mut rows_res = rows_res
+        .into_model::<Row>()
+        .stream(&env.dbx)
+        .await
+        .c(h!())?;
 
     let mut callsign_last_seen: BTreeMap<String, NaiveDateTime> =
         BTreeMap::new();
-    while let Some(item) = rows_res.try_next().await? {
+    while let Some(item) = rows_res.try_next().await.c(h!())? {
         let Some(callsigns) = item.callsigns else {
             continue;
         };
@@ -1926,14 +1981,17 @@ pub async fn batch_message_comments(
     env: actix_web::web::Data<Env>,
     req: Json<BatchMessageCommentsReq>,
 ) -> Result<Json<MessageComments>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .c(h!())?;
     let message_ids: Vec<i64> =
         req.messages.iter().map(|m| m.message_id).collect();
     let comments = sigint_comment::Entity::find()
         .filter(sigint_comment::Column::SignalMessageId.is_in(message_ids))
         .order_by_asc(sigint_comment::Column::CreatedAt)
         .all(&env.dbx)
-        .await?;
+        .await
+        .c(h!())?;
     let mut res: BTreeMap<i64, Vec<MessageComment>> = BTreeMap::new();
     for comment in comments {
         let message_id = comment.signal_message_id;
@@ -1965,17 +2023,21 @@ pub async fn message_comments(
     env: actix_web::web::Data<Env>,
     req: Json<MessageCommentsReq>,
 ) -> Result<Json<Vec<MessageComment>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .c(h!())?;
     let message = signal_message::Entity::find_by_id(req.message_id)
         .filter(signal_message::Column::Deleted.eq(false))
         .one(&env.dbx)
-        .await?
+        .await
+        .c(h!())?
         .ok_or(AppError::NotFound)?;
     let comments = sigint_comment::Entity::find()
         .filter(sigint_comment::Column::SignalMessageId.eq(req.message_id))
         .order_by_asc(sigint_comment::Column::CreatedAt)
         .all(&env.dbx)
-        .await?;
+        .await
+        .c(h!())?;
     let mut res = vec![];
     for comment in comments {
         res.push(MessageComment {
@@ -1995,8 +2057,10 @@ async fn group_stats(
     env: actix_web::web::Data<Env>,
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<GroupStatsRsp>, AppError> {
-    let login = user.id()?;
-    crate::users::has_role(&env.dbx, &login, "Rer").await?;
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
+        .await
+        .c(h!())?;
     let is_admin = crate::users::has_role(&env.dbx, &login, "Admin")
         .await
         .is_ok();
@@ -2037,8 +2101,10 @@ async fn sender_stats(
     env: actix_web::web::Data<Env>,
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<SenderStatsRsp>, AppError> {
-    let login = user.id()?;
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .c(h!())?;
     let master_keys: Vec<String> = get_identity_sigint_groups(&env.dbx, &login)
         .await
         .context(h!())?;
@@ -2060,8 +2126,10 @@ async fn post_stats(
     env: actix_web::web::Data<Env>,
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<PostStatsRsp>, AppError> {
-    let login = user.id()?;
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .c(h!())?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
@@ -2078,9 +2146,14 @@ async fn freq_stats(
     env: actix_web::web::Data<Env>,
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<FreqStatsRsp>, AppError> {
-    let login = user.id()?;
-    crate::users::has_any_role(&env.dbx, &user.id()?, vec!["Rer", "Api"])
-        .await?;
+    let login = user.id().c(h!())?;
+    crate::users::has_any_role(
+        &env.dbx,
+        &user.id().c(h!())?,
+        vec!["Rer", "Api"],
+    )
+    .await
+    .c(h!())?;
 
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
@@ -2098,11 +2171,14 @@ async fn callsign_stats(
     env: actix_web::web::Data<Env>,
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<CallsignStatsRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
-    let login = user.id()?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .c(h!())?;
+    let login = user.id().c(h!())?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
-            .await?;
+            .await
+            .c(h!())?;
     let callsigns = stats::fetch_callsigns(&req, &env, master_keys)
         .await
         .context(h!())?;
@@ -2115,11 +2191,14 @@ async fn tag_stats(
     env: actix_web::web::Data<Env>,
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<TagStatsRsp>, AppError> {
-    let login = user.id()?;
-    crate::users::has_role(&env.dbx, &login, "Rer").await?;
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
+        .await
+        .c(h!())?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
-            .await?;
+            .await
+            .c(h!())?;
     let tags = stats::fetch_tags(&req, &env, master_keys)
         .await
         .context(h!())?;
@@ -2132,8 +2211,10 @@ async fn unit_stats(
     env: actix_web::web::Data<Env>,
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<UnitStatsRsp>, AppError> {
-    let login = user.id()?;
-    crate::users::has_role(&env.dbx, &login, "Rer").await?;
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
+        .await
+        .c(h!())?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
@@ -2150,13 +2231,17 @@ async fn location_stats(
     env: actix_web::web::Data<Env>,
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<LocationStatsRsp>, AppError> {
-    let login = user.id()?;
-    crate::users::has_role(&env.dbx, &login, "Rer").await?;
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
+        .await
+        .c(h!())?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
             .context(h!())?;
-    let locations = fetch_locations(&user, &env, &req, master_keys).await?;
+    let locations = fetch_locations(&user, &env, &req, master_keys)
+        .await
+        .c(h!())?;
     Ok(Json(LocationStatsRsp { locations }))
 }
 
@@ -2181,8 +2266,10 @@ async fn aor_stats(
     env: actix_web::web::Data<Env>,
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<AreaOfResponsibilityStatsRsp>, AppError> {
-    let login = user.id()?;
-    crate::users::has_role(&env.dbx, &login, "Rer").await?;
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
+        .await
+        .c(h!())?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
@@ -2239,8 +2326,10 @@ async fn network_stats(
     env: actix_web::web::Data<Env>,
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<NetworkStatsRsp>, AppError> {
-    let login = user.id()?;
-    crate::users::has_role(&env.dbx, &login, "Rer").await?;
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
+        .await
+        .c(h!())?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
@@ -2314,8 +2403,10 @@ async fn count_stats(
     env: actix_web::web::Data<Env>,
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<CountStatsRsp>, AppError> {
-    let login = user.id()?;
-    crate::users::has_role(&env.dbx, &login, "Rer").await?;
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
+        .await
+        .c(h!())?;
 
     let master_keys = get_identity_sigint_groups(&env.dbx, &login)
         .await
@@ -2391,7 +2482,9 @@ async fn group_stats_count(
     env: actix_web::web::Data<Env>,
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<i64>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .c(h!())?;
     let master_keys_noimport =
         get_identity_sigint_groups_noimport(&env.dbx, &user, &env.config)
             .await
@@ -2409,8 +2502,10 @@ async fn sender_stats_count(
     env: actix_web::web::Data<Env>,
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<i64>, AppError> {
-    let login = user.id()?;
-    crate::users::has_role(&env.dbx, &login, "Rer").await?;
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
+        .await
+        .c(h!())?;
     let master_keys: Vec<String> = get_identity_sigint_groups(&env.dbx, &login)
         .await
         .context(h!())?;
@@ -2426,8 +2521,10 @@ async fn post_stats_count(
     env: actix_web::web::Data<Env>,
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<i64>, AppError> {
-    let login = user.id()?;
-    crate::users::has_role(&env.dbx, &login, "Rer").await?;
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
+        .await
+        .c(h!())?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
@@ -2444,8 +2541,10 @@ async fn freq_stats_count(
     env: actix_web::web::Data<Env>,
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<i64>, AppError> {
-    let login = user.id()?;
-    crate::users::has_any_role(&env.dbx, &login, vec!["Rer", "Api"]).await?;
+    let login = user.id().c(h!())?;
+    crate::users::has_any_role(&env.dbx, &login, vec!["Rer", "Api"])
+        .await
+        .c(h!())?;
 
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
@@ -2463,11 +2562,14 @@ async fn callsign_stats_count(
     env: actix_web::web::Data<Env>,
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<i64>, AppError> {
-    let login = user.id()?;
-    crate::users::has_role(&env.dbx, &login, "Rer").await?;
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
+        .await
+        .c(h!())?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
-            .await?;
+            .await
+            .c(h!())?;
     let callsigns_count = stats::count_callsigns(&req, &env, master_keys)
         .await
         .context(h!())?;
@@ -2480,11 +2582,14 @@ async fn tag_stats_count(
     env: actix_web::web::Data<Env>,
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<i64>, AppError> {
-    let login = user.id()?;
-    crate::users::has_role(&env.dbx, &login, "Rer").await?;
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
+        .await
+        .c(h!())?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
-            .await?;
+            .await
+            .c(h!())?;
     let tags_count = stats::count_tags(&req, &env, master_keys)
         .await
         .context(h!())?;
@@ -2497,8 +2602,10 @@ async fn unit_stats_count(
     env: actix_web::web::Data<Env>,
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<i64>, AppError> {
-    let login = user.id()?;
-    crate::users::has_role(&env.dbx, &login, "Rer").await?;
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
+        .await
+        .c(h!())?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
@@ -2515,8 +2622,10 @@ async fn location_stats_count(
     env: actix_web::web::Data<Env>,
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<i64>, AppError> {
-    let login = user.id()?;
-    crate::users::has_role(&env.dbx, &login, "Rer").await?;
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
+        .await
+        .c(h!())?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
@@ -2548,8 +2657,10 @@ async fn aor_stats_count(
     env: actix_web::web::Data<Env>,
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<i64>, AppError> {
-    let login = user.id()?;
-    crate::users::has_role(&env.dbx, &login, "Rer").await?;
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
+        .await
+        .c(h!())?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
@@ -2579,8 +2690,10 @@ async fn network_stats_count(
     env: actix_web::web::Data<Env>,
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<i64>, AppError> {
-    let login = user.id()?;
-    crate::users::has_role(&env.dbx, &login, "Rer").await?;
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
+        .await
+        .c(h!())?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
@@ -2599,8 +2712,10 @@ async fn stats_deprecated(
     env: actix_web::web::Data<Env>,
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<AnalysisStatsRsp>, AppError> {
-    let login = user.id()?;
-    crate::users::has_role(&env.dbx, &login, "Rer").await?;
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
+        .await
+        .c(h!())?;
 
     let instant = std::time::Instant::now();
 
@@ -2633,8 +2748,9 @@ async fn stats_deprecated(
     let units = stats::fetch_units(&req, &user, &env, master_keys.clone())
         .await
         .context(h!())?;
-    let locations =
-        fetch_locations(&user, &env, &req, master_keys.clone()).await?;
+    let locations = fetch_locations(&user, &env, &req, master_keys.clone())
+        .await
+        .c(h!())?;
     let count = stats::fetch_counts(&req, &user, &env, master_keys.clone())
         .await
         .context(h!())?;

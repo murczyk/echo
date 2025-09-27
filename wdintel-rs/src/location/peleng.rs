@@ -2,7 +2,7 @@ use crate::entities::sigint_peleng;
 use crate::error::AppError;
 use crate::h;
 use crate::rer_importer::types::InboxMapItem;
-use anyhow::Context;
+use crate::types::ShortContext;
 use chrono::NaiveDateTime;
 use milgeo_rs::coordinates::Coords;
 use sea_orm::*;
@@ -19,7 +19,7 @@ where
         .filter(sigint_peleng::Column::SourceInboxItemId.eq(inbox_item_id))
         .exec(txn)
         .await
-        .context(h!())?;
+        .c(h!())?;
     Ok(())
 }
 
@@ -34,14 +34,14 @@ where
         .filter(sigint_peleng::Column::SourceInboxItemId.eq(inbox_item_id))
         .all(txn)
         .await
-        .context(h!())?;
+        .c(h!())?;
     for p in pelengs {
         let mut p = p.into_active_model();
         p.country_code = Set(None);
         p.settlement = Set(None);
         p.distance_m = Set(None);
         p.locality_direction = Set(None);
-        p.update(txn).await.context(h!())?;
+        p.update(txn).await.c(h!())?;
     }
     Ok(())
 }
@@ -71,7 +71,7 @@ where
         }
         .insert(txn)
         .await
-        .context(h!())?;
+        .c(h!())?;
     }
     Ok(())
 }
@@ -85,7 +85,7 @@ pub async fn collect_inbox_pelengs(
         .filter(sigint_peleng::Column::Deleted.eq(false))
         .all(dbx)
         .await
-        .context(h!())
+        .c(h!())
 }
 
 pub async fn collect_inbox_item_pelengs(
@@ -101,14 +101,12 @@ pub async fn collect_inbox_item_pelengs(
         }
         item_ids.push(id);
         if item_ids.len() > 1000 {
-            let pelengs =
-                collect_inbox_pelengs(item_ids, dbx).await.context(h!())?;
+            let pelengs = collect_inbox_pelengs(item_ids, dbx).await.c(h!())?;
             sigint_pelengs.push(pelengs);
             item_ids = vec![];
         }
     }
-    sigint_pelengs
-        .push(collect_inbox_pelengs(item_ids, dbx).await.context(h!())?);
+    sigint_pelengs.push(collect_inbox_pelengs(item_ids, dbx).await.c(h!())?);
 
     let mut pelengs_map = BTreeMap::<i64, Vec<sigint_peleng::Model>>::new();
     for peleng in sigint_pelengs.into_iter().flat_map(|s| s.into_iter()) {

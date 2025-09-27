@@ -28,10 +28,10 @@ pub fn get_sess_key(session_id: Uuid) -> String {
 pub fn get_session_id(
     session: &actix_session::Session,
 ) -> anyhow::Result<Option<Uuid>> {
-    let m_session_id: Option<String> = session.get("id").context(h!())?;
+    let m_session_id: Option<String> = session.get("id").c(h!())?;
     match m_session_id {
         Some(session_id) => {
-            let session_id = Uuid::parse_str(&session_id).context(h!())?;
+            let session_id = Uuid::parse_str(&session_id).c(h!())?;
             Ok(Some(session_id))
         }
         None => Ok(None),
@@ -45,10 +45,12 @@ async fn long_poll(
     session: actix_session::Session,
     req: Json<LongPollReq>,
 ) -> Result<Json<LongPollRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Basic").await?;
-    let user_id = user.id().context(h!())?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Basic")
+        .await
+        .c(h!())?;
+    let user_id = user.id().c(h!())?;
     let account_id = user_id;
-    let Some(session_id) = get_session_id(&session).context(h!())? else {
+    let Some(session_id) = get_session_id(&session).c(h!())? else {
         tokio::time::sleep(tokio::time::Duration::from_millis(
             LONG_POLL_SLEEP_MS,
         ))
@@ -63,7 +65,7 @@ async fn long_poll(
     let session =
         crate::session::get_session_by_id(&mut env.redis.clone(), session_id)
             .await
-            .context(h!())?;
+            .c(h!())?;
     match session {
         None => {
             crate::session::add_session(
@@ -72,11 +74,11 @@ async fn long_poll(
                 &account_id,
             )
             .await
-            .context(h!())?;
+            .c(h!())?;
 
             create_redis_stream(&mut env.redis.clone(), session_id)
                 .await
-                .context(h!())?;
+                .c(h!())?;
         }
         Some(session) => {
             crate::session::update_heartbeat(
@@ -85,11 +87,11 @@ async fn long_poll(
                 &account_id,
             )
             .await
-            .context(h!())?;
+            .c(h!())?;
 
             update_redis_stream(&mut env.redis.clone(), session_id)
                 .await
-                .context(h!())?;
+                .c(h!())?;
         }
     };
 
@@ -104,7 +106,7 @@ async fn long_poll(
         .redisb
         .get_multiplexed_tokio_connection()
         .await
-        .context(h!())?;
+        .c(h!())?;
     // Start a window to accumulate events for a minimum time
     let start_time = std::time::Instant::now();
     let mut res = vec![];
@@ -120,7 +122,7 @@ async fn long_poll(
                     .block(REDIS_READ_STREAM_BLOCK_MS),
             )
             .await
-            .context(h!())?;
+            .c(h!())?;
 
         for StreamKey { key, ids } in srr.keys {
             if key == srr_key {
@@ -130,7 +132,7 @@ async fn long_poll(
                         if let redis::Value::BulkString(bytes) = v {
                             let mut event =
                                 serde_json::from_slice::<EventMsg>(&bytes[..])
-                                    .context(h!())?;
+                                    .c(h!())?;
                             event.id = id.clone();
                             res.push(event);
                         } else {
@@ -164,7 +166,7 @@ async fn long_poll(
                     .block(block_ms),
             )
             .await
-            .context(h!())?;
+            .c(h!())?;
 
         for StreamKey { key, ids } in srr.keys {
             if key == srr_key {
@@ -174,7 +176,7 @@ async fn long_poll(
                         if let redis::Value::BulkString(bytes) = v {
                             let mut event =
                                 serde_json::from_slice::<EventMsg>(&bytes[..])
-                                    .context(h!())?;
+                                    .c(h!())?;
                             event.id = id.clone();
                             res.push(event);
                         } else {
@@ -212,21 +214,15 @@ pub async fn fanout(
 ) -> Result<(), AppError> {
     // println!("> piped_fanout: event = {event:?}");
     let mut pipe = redis::pipe();
-    for session in crate::session::get_all_sessions(redis)
-        .await
-        .context(h!())?
-    {
+    for session in crate::session::get_all_sessions(redis).await.c(h!())? {
         let event = event.clone();
         let _res: () = pipe_xadd(
             &mut pipe,
             session.session_id,
-            serde_json::to_string(&event)
-                .context(h!())?
-                .as_bytes()
-                .to_vec(),
+            serde_json::to_string(&event).c(h!())?.as_bytes().to_vec(),
         );
     }
-    let _res: () = pipe.query_async(redis).await.context(h!())?;
+    let _res: () = pipe.query_async(redis).await.c(h!())?;
     Ok(())
 }
 
@@ -235,7 +231,7 @@ pub async fn fanout_mult(
     events: Vec<EventMsg>,
 ) -> Result<(), AppError> {
     for event in events {
-        fanout(redis, event).await.context(h!())?;
+        fanout(redis, event).await.c(h!())?;
     }
     Ok(())
 }
@@ -250,16 +246,13 @@ pub async fn create_redis_stream(
         event_type: EventType::ETGeneric,
         created_at: Utc::now().timestamp(),
     };
-    let val = serde_json::to_string(&val)
-        .context(h!())?
-        .as_bytes()
-        .to_vec();
+    let val = serde_json::to_string(&val).c(h!())?.as_bytes().to_vec();
     redis
         .del::<String, redis::Value>(crate::event_stream::session_stream_id(
             session_id,
         ))
         .await
-        .context(h!())?;
+        .c(h!())?;
     let xadd_reply = redis
         .xadd::<String, &str, &str, Vec<u8>, String>(
             crate::event_stream::session_stream_id(session_id),
@@ -267,21 +260,21 @@ pub async fn create_redis_stream(
             &[("v", val.clone())],
         )
         .await
-        .context(h!())?;
+        .c(h!())?;
     redis
         .expire::<String, redis::Value>(
             crate::event_stream::session_stream_id(session_id),
             crate::config::SESSION_STREAM_LIFETIME_SEC,
         )
         .await
-        .context(h!())?;
+        .c(h!())?;
     redis
         .xdel::<String, &str, redis::Value>(
             crate::event_stream::session_stream_id(session_id),
             &[&xadd_reply],
         )
         .await
-        .context(h!())?;
+        .c(h!())?;
     Ok(())
 }
 
@@ -296,6 +289,6 @@ async fn update_redis_stream(
             crate::config::SESSION_STREAM_LIFETIME_SEC,
         )
         .await
-        .context(h!())?;
+        .c(h!())?;
     Ok(())
 }

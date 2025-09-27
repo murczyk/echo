@@ -17,7 +17,8 @@ async fn format_f2(
     let callsign_lexemes = CallsignLexeme::find()
         .filter(callsign_lexeme::Column::Callsign.is_in(callsigns))
         .all(dbx)
-        .await?;
+        .await
+        .c(h!())?;
     let bounds: Vec<String> = body
         .to_string()
         .split_word_bounds()
@@ -44,7 +45,7 @@ async fn format_f2(
 
 pub async fn oneoff_gen_dataset_callsigns(mode: Mode) -> Result<(), AppError> {
     let config = crate::config::read_config(mode)?;
-    let dbx = crate::new_pg_pool_from_config(&config).await?;
+    let dbx = crate::new_pg_pool_from_config(&config).await.c(h!())?;
 
     let now = Utc::now();
     let outfile_p = PathBuf::from(config.storage_dir.clone()).join(format!(
@@ -74,11 +75,11 @@ pub async fn oneoff_gen_dataset_callsigns(mode: Mode) -> Result<(), AppError> {
         .filter(sigint_inbox_item::Column::Checked.eq(true))
         .filter(signal_message::Column::Deleted.eq(false))
         .order_by_asc(signal_message::Column::Id);
-    let msgs_count: u64 = q.clone().count(&dbx).await?;
-    let mut msgs = q.stream(&dbx).await?;
+    let msgs_count: u64 = q.clone().count(&dbx).await.c(h!())?;
+    let mut msgs = q.stream(&dbx).await.c(h!())?;
 
     let pb = ProgressBar::new(msgs_count);
-    while let Some(item) = msgs.try_next().await? {
+    while let Some(item) = msgs.try_next().await.c(h!())? {
         pb.inc(1);
         let (message, m_inbox): (
             signal_message::Model,
@@ -90,7 +91,7 @@ pub async fn oneoff_gen_dataset_callsigns(mode: Mode) -> Result<(), AppError> {
         };
         let callsigns: Vec<String> = match inbox.callsigns.clone() {
             None => vec![],
-            Some(v) => serde_json::from_value(v).context(h!())?,
+            Some(v) => serde_json::from_value(v).c(h!())?,
         };
         let callsigns_s = callsigns.join(", ");
         writeln!(
@@ -98,7 +99,11 @@ pub async fn oneoff_gen_dataset_callsigns(mode: Mode) -> Result<(), AppError> {
             "{body}\ncallsigns: {callsigns_s}\n================"
         )?;
 
-        writeln!(outfile_f2, "{}", format_f2(&dbx, &body, &callsigns,).await?)?;
+        writeln!(
+            outfile_f2,
+            "{}",
+            format_f2(&dbx, &body, &callsigns,).await.c(h!())?
+        )?;
     }
     pb.finish_with_message("done");
 

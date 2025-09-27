@@ -114,14 +114,15 @@ async fn get_inbox_messages_report(
         .group_by(sigint_important::Column::SignalMessageId)
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(datasource_group::Column::GroupMasterKey.is_in(
-            crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login).await?,
+            crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login).await.c(h!())?,
         ));
 
     if req.report_tags_only_this_unit == Some(true) {
         q = q.filter(sigint_comment::Column::Login.is_in(logins));
     }
     q = crate::rer_importer::inbox::query::get_order_by(env, req, q.clone())
-        .await?;
+        .await
+        .c(h!())?;
     if req.only_show_unprocessed == Some(true) {
         q = q.filter(sigint_inbox_item::Column::Reviewed.ne(Some(true)));
     }

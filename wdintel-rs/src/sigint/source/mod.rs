@@ -14,7 +14,9 @@ pub async fn list_sources(
     env: actix_web::web::Data<Env>,
     _req: Json<()>,
 ) -> Result<Json<ListSourcesRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .c(h!())?;
 
     let res = bl_list_sources(&env.dbx).await.context(h!())?;
 
@@ -35,7 +37,8 @@ pub async fn bl_list_sources(
     let sources = source::Entity::find()
         .filter(source::Column::Deleted.eq(false))
         .all(dbx)
-        .await?;
+        .await
+        .c(h!())?;
     let mut res = vec![];
     for source in sources {
         res.push(render_source(&source)?);

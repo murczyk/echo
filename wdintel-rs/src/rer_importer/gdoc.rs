@@ -13,10 +13,14 @@ async fn rer_callsign_info(
     env: actix_web::web::Data<Env>,
     req: Json<RerCallsignInfoReq>,
 ) -> Result<Json<Vec<CallsignInfo>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .c(h!())?;
 
     Ok(Json(
-        rer_callsign_info_single(&env.dbx, &req.callsign.clone()).await?,
+        rer_callsign_info_single(&env.dbx, &req.callsign.clone())
+            .await
+            .c(h!())?,
     ))
 }
 
@@ -32,13 +36,13 @@ async fn rer_callsign_info_single(
         .filter(sigint_callsign::Column::Deleted.eq(false))
         .all(dbx)
         .await
-        .context(h!())?;
+        .c(h!())?;
     let callsign_ids =
         callsigns_data.iter().map(|(x, _)| x.id).collect::<Vec<_>>();
     let reported_networks_per_callsign =
         collect_reported_networks_per_callsign(callsign_ids, dbx)
             .await
-            .context(h!())?;
+            .c(h!())?;
     let res: Vec<CallsignInfo> = callsigns_data
         .into_iter()
         .filter_map(|(callsign, is_unit)| {
@@ -77,7 +81,7 @@ async fn collect_reported_networks_per_callsign(
         )
         .all(dbx)
         .await
-        .context(h!())?;
+        .c(h!())?;
 
     let callsign_texts: Vec<String> = callsign_records
         .iter()
@@ -101,7 +105,7 @@ async fn collect_reported_networks_per_callsign(
         )
         .all(dbx)
         .await
-        .context(h!())?;
+        .c(h!())?;
 
     let mut reported_networks_per_callsign: BTreeMap<i64, Vec<i64>> =
         BTreeMap::new();
@@ -124,8 +128,10 @@ async fn rer_callsign_info_batch(
     env: actix_web::web::Data<Env>,
     req: Json<RerCallsignInfoBatchReq>,
 ) -> Result<Json<Vec<CallsignInfoRes>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
-    let res = load_callsigns(&env, req.callsigns.clone()).await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .c(h!())?;
+    let res = load_callsigns(&env, req.callsigns.clone()).await.c(h!())?;
     Ok(Json(res))
 }
 
@@ -160,7 +166,7 @@ pub async fn load_callsigns(
             .filter(sigint_callsign::Column::Deleted.eq(false))
             .all(dbx)
             .await
-            .context(h!())?
+            .c(h!())?
             .into_iter()
             .for_each(|c| callsigns.push(c));
     }
@@ -170,7 +176,7 @@ pub async fn load_callsigns(
     let reported_networks_per_callsign =
         collect_reported_networks_per_callsign(callsign_ids, dbx)
             .await
-            .context(h!())?;
+            .c(h!())?;
 
     for c in callsigns_txt.iter() {
         let mut res_single = CallsignInfoRes {

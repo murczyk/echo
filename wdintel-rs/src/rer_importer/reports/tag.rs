@@ -22,8 +22,10 @@ pub async fn report_docx_kind_tag(
 ) -> Result<(), AppError> {
     let txn = env.dbx.begin().await.context(h!())?;
 
-    let login = user.id()?;
-    let logins = crate::users::get_organism_logins(&txn, user).await?;
+    let login = user.id().c(h!())?;
+    let logins = crate::users::get_organism_logins(&txn, user)
+        .await
+        .c(h!())?;
     let mut messages = crate::rer_importer::inbox::get_inbox_messages(
         &login, &logins, env, &req.req,
     )

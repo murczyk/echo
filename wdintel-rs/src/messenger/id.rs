@@ -2,8 +2,7 @@ use crate::config::Config;
 use crate::entities::signal_message;
 use crate::error::AppError;
 use crate::h;
-use crate::types::Mode;
-use anyhow::Context;
+use crate::types::{Mode, ShortContext};
 use chrono::*;
 use echo_migration::Expr;
 use itertools::Itertools;
@@ -42,7 +41,7 @@ pub fn generate_message_id(
     config: &Config,
 ) -> anyhow::Result<String> {
     let timestamp = message.datetime;
-    let id_head = encode_datetime_to_base36(timestamp).context(h!())?;
+    let id_head = encode_datetime_to_base36(timestamp).c(h!())?;
     let (id_mid, id_tail) = id_head.split_at(4);
     let (id_head, id_tail) = id_tail.split_at(4);
 
@@ -62,8 +61,7 @@ pub fn generate_message_id(
         server_id,
     );
     // so id_tail_decimal is in range 1..1024, and we can encode it with 2 symbols, because 36 ^ 2 = 1296.
-    let id_extra =
-        encode_num_to_base36(id_tail_decimal as i64, 2).context(h!())?;
+    let id_extra = encode_num_to_base36(id_tail_decimal as i64, 2).c(h!())?;
     Ok(format!("{id_head}-{id_mid}-{id_extra}{id_tail}"))
 }
 
@@ -82,23 +80,21 @@ where
         },
         config,
     )
-    .context(h!())?;
+    .c(h!())?;
     let mut model = signal_message.into_active_model();
     model.message_uid = Set(Some(message_uid));
-    model.update(txn).await.context(h!())
+    model.update(txn).await.c(h!())
 }
 
 pub async fn oneoff_assign_message_ids(
     mode: Mode,
     dry_run: bool,
 ) -> Result<(), AppError> {
-    let config = crate::config::read_config(mode).context(h!())?;
-    let dbx = crate::new_pg_pool_from_config(&config)
-        .await
-        .context(h!())?;
+    let config = crate::config::read_config(mode).c(h!())?;
+    let dbx = crate::new_pg_pool_from_config(&config).await.c(h!())?;
     let cutoff = if dry_run {
         NaiveDateTime::new(
-            NaiveDate::from_ymd_opt(2014, 1, 1).context(h!())?,
+            NaiveDate::from_ymd_opt(2014, 1, 1).c(h!())?,
             NaiveTime::MIN,
         )
     } else {
@@ -126,14 +122,14 @@ pub async fn oneoff_assign_message_ids(
             .into_tuple::<(i64, NaiveDateTime, Option<String>)>()
             .all(&dbx)
             .await
-            .context(h!())?;
+            .c(h!())?;
         if records.is_empty() {
             break;
         }
         offset += records.len() as u64;
         for (id, datetime, m_uid) in records {
             let meta = MessageMeta { id, datetime };
-            let mid = generate_message_id(meta, &config).context(h!())?;
+            let mid = generate_message_id(meta, &config).c(h!())?;
             if let Some((id2, _dt2)) = id_set.remove(&mid) {
                 collisions.push((id, id2));
             }
@@ -167,7 +163,7 @@ pub async fn oneoff_assign_message_ids(
                 .filter(signal_message::Column::Id.is_in(message_ids))
                 .all(&dbx)
                 .await
-                .context(h!())?
+                .c(h!())?
                 .into_iter()
                 .map(|m| (m.id, m))
                 .for_each(|(id, m)| {
@@ -176,8 +172,8 @@ pub async fn oneoff_assign_message_ids(
         }
         let mut errors = vec![];
         for (x, y) in collisions {
-            let m1 = messages_map.get(&x).context(h!())?;
-            let m2 = messages_map.get(&y).context(h!())?;
+            let m1 = messages_map.get(&x).c(h!())?;
+            let m2 = messages_map.get(&y).c(h!())?;
             let err_msg = format!(
                 "collision #{actual_collisions_num} occurred: \n{m1:?}\n{m2:?}"
             );
@@ -214,7 +210,7 @@ pub async fn oneoff_assign_message_ids(
                 .col_expr(signal_message::Column::MessageUid, Expr::value(uid))
                 .exec(&dbx)
                 .await
-                .context(h!())?;
+                .c(h!())?;
             counter += 1;
             let current_percentage = counter * 100 / total;
             if current_percentage > percentage {
@@ -273,7 +269,7 @@ fn encode_num_to_base36(num: i64, len: usize) -> anyhow::Result<String> {
     result_chars.reverse();
 
     // Convert the vector of bytes to a String. This is safe because ALPHABET contains only valid UTF-8 ASCII characters.
-    String::from_utf8(result_chars).context(h!())
+    String::from_utf8(result_chars).c(h!())
 }
 
 #[cfg(test)]

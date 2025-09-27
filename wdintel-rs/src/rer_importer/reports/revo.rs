@@ -77,7 +77,7 @@ pub async fn report_docx_kind_revo(
     outpath: &Path,
 ) -> Result<(), AppError> {
     info!("report_docx_kind_revo started");
-    let login = user.id()?;
+    let login = user.id().c(h!())?;
     let logins = crate::users::get_organism_logins(&env.dbx, user)
         .await
         .context(h!())?;

@@ -84,15 +84,15 @@ pub fn extract_datetime(body: &str) -> Result<Option<NaiveDateTime>, AppError> {
             let Some(day) = capts_ymd.name("day") else {
                 break '_if;
             };
-            let day: u32 = day.as_str().parse().context(h!())?;
+            let day: u32 = day.as_str().parse().c(h!())?;
             let Some(mon) = capts_ymd.name("mon") else {
                 break '_if;
             };
-            let mon: u32 = mon.as_str().parse().context(h!())?;
+            let mon: u32 = mon.as_str().parse().c(h!())?;
             let Some(year) = capts_ymd.name("year") else {
                 break '_if;
             };
-            let year: i32 = year.as_str().parse().context(h!())?;
+            let year: i32 = year.as_str().parse().c(h!())?;
 
             let tz = crate::config::get_tz();
 
@@ -100,11 +100,11 @@ pub fn extract_datetime(body: &str) -> Result<Option<NaiveDateTime>, AppError> {
             let Some(hour) = capts_hm.name("hour") else {
                 break '_if;
             };
-            let hour: u32 = hour.as_str().parse().context(h!())?;
+            let hour: u32 = hour.as_str().parse().c(h!())?;
             let Some(minute) = capts_hm.name("minute") else {
                 break '_if;
             };
-            let minute: u32 = minute.as_str().parse().context(h!())?;
+            let minute: u32 = minute.as_str().parse().c(h!())?;
             let Some(res) = NaiveDate::from_ymd_opt(year, mon, day) else {
                 break '_if;
             };
@@ -136,24 +136,24 @@ fn parse_datetime(
     let lnow = Local::now().with_timezone(&tz);
 
     let year: i32 = if has_year {
-        capts["year"].parse().context(h!())?
+        capts["year"].parse().c(h!())?
     } else {
         lnow.year()
     };
     let mon: u32 = if has_month {
-        capts["mon"].parse().context(h!())?
+        capts["mon"].parse().c(h!())?
     } else {
         lnow.month()
     };
     let day: u32 = if has_day {
-        capts["day"].parse().context(h!())?
+        capts["day"].parse().c(h!())?
     } else {
         lnow.day()
     };
-    let hour: u32 = capts["hour"].parse().context(h!())?;
-    let minute: u32 = capts["minute"].parse().context(h!())?;
+    let hour: u32 = capts["hour"].parse().c(h!())?;
+    let minute: u32 = capts["minute"].parse().c(h!())?;
     let second: u32 = if has_second {
-        capts["second"].parse().context(h!())?
+        capts["second"].parse().c(h!())?
     } else {
         0
     };
@@ -211,7 +211,7 @@ pub fn parse_delta_csv_dt(s: &str) -> Result<NaiveDateTime, AppError> {
         .replace("november", "11")
         .replace("december", "12");
     println!("s = {s}");
-    Ok(NaiveDateTime::parse_from_str(&s, "%d %m %Y %H:%M")?)
+    Ok(NaiveDateTime::parse_from_str(&s, "%d %m %Y %H:%M").c(h!())?)
 }
 
 #[cfg(test)]

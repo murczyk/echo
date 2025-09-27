@@ -37,7 +37,7 @@ pub async fn parse_unit<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
-    let units_list = parse_units(text, dbx).await.context(h!())?;
+    let units_list = parse_units(text, dbx).await.c(h!())?;
     Ok(to_unit_txt(units_list))
 }
 
@@ -52,20 +52,20 @@ async fn parse_units<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
-    let units_info = parse_existing_units(text, dbx).await.context(h!())?;
+    let units_info = parse_existing_units(text, dbx).await.c(h!())?;
     if !units_info.is_empty() {
         return Ok(units_info);
     }
 
-    let mut regiments = collect_regiments(text, dbx).await.context(h!())?;
+    let mut regiments = collect_regiments(text, dbx).await.c(h!())?;
     if regiments.is_empty() {
         return Ok(parse_library_unit(text));
     }
 
-    let mut companies = collect_companies(text, dbx).await.context(h!())?;
-    let mut battalions = collect_battalions(text, dbx).await.context(h!())?;
-    let mut divisions = collect_divisions(text, dbx).await.context(h!())?;
-    let mut armies = collect_armies(text, dbx).await.context(h!())?;
+    let mut companies = collect_companies(text, dbx).await.c(h!())?;
+    let mut battalions = collect_battalions(text, dbx).await.c(h!())?;
+    let mut divisions = collect_divisions(text, dbx).await.c(h!())?;
+    let mut armies = collect_armies(text, dbx).await.c(h!())?;
 
     let mut size = [
         companies.len(),
@@ -146,7 +146,7 @@ where
     C: ConnectionTrait + 'async_trait,
 {
     let data = match COMPANIES_RE.get() {
-        None => load_unit_companies(dbx).await.context(h!())?,
+        None => load_unit_companies(dbx).await.c(h!())?,
         _some => vec![],
     };
     let companies_re =
@@ -168,7 +168,7 @@ where
     C: ConnectionTrait + 'async_trait,
 {
     let data = match BATTALIONS_RE.get() {
-        None => load_unit_battalions(dbx).await.context(h!())?,
+        None => load_unit_battalions(dbx).await.c(h!())?,
         _some => vec![],
     };
     let battalions_re =
@@ -190,7 +190,7 @@ where
     C: ConnectionTrait + 'async_trait,
 {
     let data = match ARMIES_RE.get() {
-        None => load_unit_armies(dbx).await.context(h!())?,
+        None => load_unit_armies(dbx).await.c(h!())?,
         _some => vec![],
     };
     let armies_re = ARMIES_RE.get_or_init(|| regex_from_data(data)).clone();
@@ -211,7 +211,7 @@ where
     C: ConnectionTrait + 'async_trait,
 {
     let data = match DIVISIONS_RE.get() {
-        None => load_unit_divisions(dbx).await.context(h!())?,
+        None => load_unit_divisions(dbx).await.c(h!())?,
         _some => vec![],
     };
     let divisions_re =
@@ -233,7 +233,7 @@ where
     C: ConnectionTrait + 'async_trait,
 {
     let data = match REGIMENTS_RE.get() {
-        None => load_unit_regiments(dbx).await.context(h!())?,
+        None => load_unit_regiments(dbx).await.c(h!())?,
         _some => vec![],
     };
     let regiments_re =
@@ -255,7 +255,7 @@ where
     C: ConnectionTrait + 'async_trait,
 {
     let unit_names = match NAMES_RE.get() {
-        None => load_unit_names(dbx).await.context(h!())?,
+        None => load_unit_names(dbx).await.c(h!())?,
         _some => vec![],
     };
     let names_re = NAMES_RE.get_or_init(|| regex_from_data(unit_names)).clone();
@@ -426,7 +426,7 @@ where
         .filter(sigint_unit::Column::Name.eq("").not())
         .all(dbx)
         .await
-        .context(h!())?
+        .c(h!())?
         .into_iter()
         .map(|x| x.name)
         .collect::<BTreeSet<_>>()

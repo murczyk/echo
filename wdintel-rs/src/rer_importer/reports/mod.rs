@@ -115,7 +115,7 @@ pub async fn report_docx(
 ) -> Result<HttpResponse, AppError> {
     info!("> Start RER report generation...");
 
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer")
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
         .await
         .c(h!())?;
     cleanup_old_reports_nofail(&env.dbx, &env.config).await;
@@ -181,7 +181,7 @@ pub async fn report_docx(
     } else if req.kind == "reo" {
         crate::users::has_any_role(
             &env.dbx,
-            &user.id()?,
+            &user.id().c(h!())?,
             vec!["UnitsEditor", "CallsignsEditor", "Admin"],
         )
         .await
@@ -192,7 +192,7 @@ pub async fn report_docx(
     } else if req.kind == "digest" {
         crate::users::has_any_role(
             &env.dbx,
-            &user.id()?,
+            &user.id().c(h!())?,
             vec!["UnitsEditor", "CallsignsEditor", "Admin"],
         )
         .await
@@ -222,9 +222,11 @@ pub async fn oneoff_fill_comp_freq(
 ) -> Result<(), AppError> {
     println!("> starting oneoff_fill_comp_freq");
     let start_dt: NaiveDateTime =
-        NaiveDateTime::parse_from_str(&ps.start, "%Y-%m-%dT%H:%M:%S")?;
+        NaiveDateTime::parse_from_str(&ps.start, "%Y-%m-%dT%H:%M:%S")
+            .context(h!())?;
     let end_dt: NaiveDateTime =
-        NaiveDateTime::parse_from_str(&ps.end, "%Y-%m-%dT%H:%M:%S")?;
+        NaiveDateTime::parse_from_str(&ps.end, "%Y-%m-%dT%H:%M:%S")
+            .context(h!())?;
     let dbx = crate::new_pg_pool_from_mode(mode).await.c(h!())?;
     fill_comp_freq(&dbx, start_dt, end_dt).await.c(h!())?;
     Ok(())

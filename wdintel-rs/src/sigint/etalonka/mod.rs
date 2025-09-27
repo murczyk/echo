@@ -54,14 +54,17 @@ pub async fn report_networks(
     info!("> Start Etalon Networks report generation...");
 
     let user_login = user.id().context(h!())?;
-    crate::users::has_role(&env.dbx, &user_login, "Rer").await?;
+    crate::users::has_role(&env.dbx, &user_login, "Rer")
+        .await
+        .c(h!())?;
     cleanup_old_reports_nofail(&env.dbx, &env.config).await;
     let groups = crate::messenger::group::get_identity_sigint_groups_noimport(
         &env.dbx,
         &user,
         &env.config,
     )
-    .await?;
+    .await
+    .c(h!())?;
 
     let networks_data: HashMap<String, Vec<NetworkEtalonkaResult>> =
         load_networks(&env.dbx, &req).await.context(h!())?;
@@ -104,14 +107,17 @@ pub async fn report_networks_batch_id(
     info!("> Start Etalon Networks by ids report generation...");
 
     let user_login = user.id().context(h!())?;
-    crate::users::has_role(&env.dbx, &user_login, "Rer").await?;
+    crate::users::has_role(&env.dbx, &user_login, "Rer")
+        .await
+        .c(h!())?;
     cleanup_old_reports_nofail(&env.dbx, &env.config).await;
     let groups = crate::messenger::group::get_identity_sigint_groups_noimport(
         &env.dbx,
         &user,
         &env.config,
     )
-    .await?;
+    .await
+    .c(h!())?;
 
     let networks_data: HashMap<String, Vec<NetworkEtalonkaResult>> =
         load_networks_by_id(&env.dbx, &req).await.context(h!())?;

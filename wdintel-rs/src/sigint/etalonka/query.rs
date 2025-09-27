@@ -1161,7 +1161,7 @@ pub async fn load_pelengs_map(
         return Ok(None);
     }
 
-    let res = get_map_image(map_points).await?;
+    let res = get_map_image(map_points).await.c(h!())?;
 
     Ok(Some(res))
 }

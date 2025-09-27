@@ -50,17 +50,17 @@ fn pdf_to_text_1(file: &Path) -> Result<String, AppError> {
 
 // | tmp_dir must be a tempdir with a file named "input.pdf". output file will be called "output.html"
 fn pdf_to_html(tmp_dir: &Path) -> Result<String, AppError> {
-    let orig_workdir = std::env::current_dir().context(h!())?;
+    let orig_workdir = std::env::current_dir().c(h!())?;
     let res = pdf_to_html_1(tmp_dir);
     if let Err(ref e) = res {
         println!("> error doing pdf_to_html: {e:?} {}", h!());
     }
-    std::env::set_current_dir(orig_workdir).context(h!())?;
+    std::env::set_current_dir(orig_workdir).c(h!())?;
     res
 }
 
 fn pdf_to_html_1(tmp_dir: &Path) -> Result<String, AppError> {
-    std::env::set_current_dir(tmp_dir).context(h!())?;
+    std::env::set_current_dir(tmp_dir).c(h!())?;
     println!("> pdf_to_html_1");
     let output_html = tmp_dir.join("output.html");
     println!("> tmp_dir: {}", tmp_dir.display());
@@ -70,7 +70,7 @@ fn pdf_to_html_1(tmp_dir: &Path) -> Result<String, AppError> {
         .arg("input.pdf")
         .arg("output.html")
         .output()
-        .context(h!())?;
+        .c(h!())?;
     let file_res = String::from_utf8_lossy(
         &std::fs::read(output_html.clone()).context(format!(
             "{} {}",
@@ -126,12 +126,7 @@ pub fn extract_items(inp: &str) -> Result<Vec<ReportItem>, AppError> {
     }
 
     for caps in RE.captures_iter(inp) {
-        let num = caps
-            .name("num")
-            .ok_or("no num")?
-            .as_str()
-            .parse()
-            .context(h!())?;
+        let num = caps.name("num").ok_or("no num")?.as_str().parse().c(h!())?;
         let title = trim_lines(caps.name("title").ok_or("no title")?.as_str());
         let description =
             trim_lines(caps.name("description").ok_or("no name")?.as_str());
@@ -140,18 +135,10 @@ pub fn extract_items(inp: &str) -> Result<Vec<ReportItem>, AppError> {
             .ok_or("no cat")?
             .as_str()
             .to_string();
-        let lat: f64 = caps
-            .name("lat")
-            .ok_or("no lat")?
-            .as_str()
-            .parse()
-            .context(h!())?;
-        let lng: f64 = caps
-            .name("lng")
-            .ok_or("no lng")?
-            .as_str()
-            .parse()
-            .context(h!())?;
+        let lat: f64 =
+            caps.name("lat").ok_or("no lat")?.as_str().parse().c(h!())?;
+        let lng: f64 =
+            caps.name("lng").ok_or("no lng")?.as_str().parse().c(h!())?;
         res.push(ReportItem {
             num,
             title,
@@ -208,9 +195,9 @@ fn is_whitey(
 ) -> Result<bool, AppError> {
     if let Ok(rec) = contour_to_rect(contour) {
         let area: u64 = rec.width as u64 * rec.height as u64;
-        let roi = opencv::core::Mat::roi(im, rec).context(h!())?;
+        let roi = opencv::core::Mat::roi(im, rec).c(h!())?;
         let mut num_whites: u64 = 0;
-        for (_point, val) in roi.iter().context(h!())? {
+        for (_point, val) in roi.iter().c(h!())? {
             // let point: opencv::core::Point = point;
             let val: u8 = val;
             if val == 255 {
@@ -229,17 +216,16 @@ fn is_whitey(
 pub fn cut_out_photo(in_path: &str, out_path: &str) -> Result<(), AppError> {
     let im =
         opencv::imgcodecs::imread(in_path, opencv::imgcodecs::IMREAD_COLOR)
-            .context(h!())?;
+            .c(h!())?;
     let mut im2 = opencv::core::Mat::default();
     opencv::imgproc::cvt_color_def(
         &im,
         &mut im2,
         opencv::imgproc::COLOR_BGR2GRAY,
     )
-    .context(h!())?;
+    .c(h!())?;
     let mut im3 = opencv::core::Mat::default();
-    opencv::imgproc::threshold(&im2, &mut im3, 150.0, 255.0, 0)
-        .context(h!())?;
+    opencv::imgproc::threshold(&im2, &mut im3, 150.0, 255.0, 0).c(h!())?;
     let mut contours: opencv::core::Vector<
         opencv::core::Vector<opencv::core::Point>,
     > = opencv::core::Vector::default();
@@ -250,13 +236,13 @@ pub fn cut_out_photo(in_path: &str, out_path: &str) -> Result<(), AppError> {
         opencv::imgproc::CHAIN_APPROX_SIMPLE,
         opencv::core::Point2i::default(),
     )
-    .context(h!())?;
+    .c(h!())?;
     let mut cont_and_area = vec![];
     for contour in contours.iter() {
         // println!("> contour: {:?}", contour);
-        if !is_whitey(&im3, &contour).context(h!())? {
+        if !is_whitey(&im3, &contour).c(h!())? {
             let area =
-                opencv::imgproc::contour_area(&contour, false).context(h!())?;
+                opencv::imgproc::contour_area(&contour, false).c(h!())?;
             // if area > 200000.0 && area < 1000000.0 {
             if area > 20000.0 {
                 cont_and_area.push((contour.clone(), area));
@@ -283,13 +269,13 @@ pub fn cut_out_photo(in_path: &str, out_path: &str) -> Result<(), AppError> {
             height: max_y - min_y,
         },
     )
-    .context(h!())?;
+    .c(h!())?;
     opencv::imgcodecs::imwrite(
         out_path,
         &im4,
         &opencv::core::Vector::default(),
     )
-    .context(h!())?;
+    .c(h!())?;
     Ok(())
 }
 
@@ -328,7 +314,9 @@ async fn parse_terminal_pdf(
     env: actix_web::web::Data<Env>,
     _http_req: HttpRequest,
 ) -> Result<actix_web::HttpResponse, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Basic").await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Basic")
+        .await
+        .c(h!())?;
     // Previously generated a presigned GET; now omitted.
     // Public assets can be accessed via their HTTPS URLs directly.
 
@@ -429,17 +417,19 @@ pub async fn upload_screenshot(
     env: actix_web::web::Data<Env>,
     mut payload: Multipart,
 ) -> Result<Json<UploadScreenshotRes>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Basic").await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Basic")
+        .await
+        .c(h!())?;
     let b2_store = &env.b2_store;
 
-    let (field, val) = multipart::extract(&mut payload).await?;
+    let (field, val) = multipart::extract(&mut payload).await.c(h!())?;
 
     let uuid = Uuid::new_v4().to_string();
     let content_type: String = field
         .content_type()
         .map(|x| x.to_string())
         .unwrap_or("image/jpeg".to_string());
-    let ext = (if field.name().context(h!())?.ends_with(".png")
+    let ext = (if field.name().c(h!())?.ends_with(".png")
         || content_type.to_string().contains("png")
     {
         "png"
@@ -455,7 +445,8 @@ pub async fn upload_screenshot(
         val,
         &content_type,
     )
-    .await?;
+    .await
+    .c(h!())?;
     Ok(Json(UploadScreenshotRes {
         image_url: format!(
             "https://s3.us-west-000.backblazeb2.com/wildducks-online-public/{}",
@@ -477,10 +468,12 @@ pub async fn upload_pdf(
     env: actix_web::web::Data<Env>,
     mut payload: Multipart,
 ) -> Result<Json<UploadPdfRes>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Basic").await?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Basic")
+        .await
+        .c(h!())?;
     let b2_store = &env.b2_store;
 
-    let (_, val) = multipart::extract(&mut payload).await?;
+    let (_, val) = multipart::extract(&mut payload).await.c(h!())?;
 
     let tmp_dir = Arc::new(TempDir::new()?);
     let tmp_dir2 = tmp_dir.clone();
@@ -489,13 +482,16 @@ pub async fn upload_pdf(
     std::fs::write(&input_pdf, val)?;
     println!("> beginning pdf_to_text");
     let txt: String =
-        tokio::task::spawn_blocking(move || pdf_to_text(&input_pdf)).await??;
+        tokio::task::spawn_blocking(move || pdf_to_text(&input_pdf))
+            .await
+            .c(h!())??;
     let items = extract_items(&txt)?;
     println!("> extracted items: {}", items.len());
     println!("> beginning pdf_to_html");
     let html: String =
         tokio::task::spawn_blocking(move || pdf_to_html(tmp_dir2.path()))
-            .await??;
+            .await
+            .c(h!())??;
     println!("> done doing pdf_to_html");
     println!("> getting images_per_num");
     let images_per_num = get_images_per_num(&html, &items)?;
@@ -540,7 +536,8 @@ pub async fn upload_pdf(
                         img_bytes,
                         "image/png",
                     )
-                    .await?;
+                    .await
+                    .c(h!())?;
                     let url = format!(
                             "https://s3.us-west-000.backblazeb2.com/wildducks-online-public/{}",
                             &filename
@@ -576,7 +573,7 @@ pub async fn upload_pdf(
 
     println!(
         "> returning result: \n{}",
-        serde_json::to_string(&rows).context(h!())?
+        serde_json::to_string(&rows).c(h!())?
     );
 
     Ok(Json(UploadPdfRes { rows }))
@@ -595,13 +592,16 @@ pub async fn oneoff_test_full_circle() -> Result<(), AppError> {
 
     println!("> beginning pdf_to_text");
     let txt: String =
-        tokio::task::spawn_blocking(move || pdf_to_text(&input_pdf)).await??;
+        tokio::task::spawn_blocking(move || pdf_to_text(&input_pdf))
+            .await
+            .c(h!())??;
     let items = extract_items(&txt)?;
     println!("> extracted items: {}", items.len());
     println!("> beginning pdf_to_html");
     let html: String =
         tokio::task::spawn_blocking(move || pdf_to_html(tmp_dir2.path()))
-            .await??;
+            .await
+            .c(h!())??;
     println!("> done doing pdf_to_html");
     println!("> getting images_per_num");
     let images_per_num = get_images_per_num(&html, &items)?;

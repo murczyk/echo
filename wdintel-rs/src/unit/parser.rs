@@ -17,7 +17,7 @@ pub fn extract_unit(
     // log::trace!("> extract_unit: inp={inp}");
     if let Some(value) =
         try_extract_standard_unit_and_location(settlements.clone(), inp)
-            .context(h!())?
+            .c(h!())?
     {
         return Ok(value);
     }
@@ -42,17 +42,15 @@ pub fn extract_unit(
         {
             (locality, locality_v2) =
                 extract_locality(settlements.clone(), line.clone(), Some(loc))
-                    .context(h!())?;
+                    .c(h!())?;
             continue;
         }
 
         let is_unit_and_loc_line =
-            is_unit_and_loc_line(&line, l, &ltrim.to_lowercase())
-                .context(h!())?;
+            is_unit_and_loc_line(&line, l, &ltrim.to_lowercase()).c(h!())?;
         if is_unit_and_loc_line {
             let (unit, locality) =
-                capture_unit_and_locality(line.clone(), locality)
-                    .context(h!())?;
+                capture_unit_and_locality(line.clone(), locality).c(h!())?;
 
             let locality = locality
                 .map(|x| x.trim_matches(['-', ' ']).trim().to_string())
@@ -60,7 +58,7 @@ pub fn extract_unit(
 
             let (mut locality, mut locality_v2) =
                 extract_locality(settlements.clone(), line, locality)
-                    .context(h!())?;
+                    .c(h!())?;
 
             if locality_v2.clone().unwrap_or(vec![]).is_empty() {
                 (locality, locality_v2) = try_lookup_next_line_loc_with_prefix(
@@ -70,7 +68,7 @@ pub fn extract_unit(
                     locality_v2,
                     &callsigns,
                 )
-                .context(h!())?
+                .c(h!())?
             }
 
             let bad_symbol = |c| c == '\"' || c == ' ' || c == ']';
@@ -133,13 +131,13 @@ fn extract_locality(
     let mut locality_v2 = None;
     if let Some(local) = locality.clone() {
         let data = crate::location::parse_location(settlements.clone(), local)
-            .context(h!())?;
+            .c(h!())?;
         locality_v2 = Some(data);
     }
     if locality_v2.clone().filter(|x| !x.is_empty()).is_none() {
         locality_v2 = Some(
             crate::location::parse_location(settlements.clone(), line.clone())
-                .context(h!())?,
+                .c(h!())?,
         );
         if locality_v2.clone().filter(|x| !x.is_empty()).is_some() {
             locality = Some(line.clone());

@@ -156,8 +156,9 @@ pub async fn receive_messages(
         .get(url)
         .header("content-type", "application/json")
         .send()
-        .await?;
-    let rsp_t = rsp.text().await?;
+        .await
+        .c(h!())?;
+    let rsp_t = rsp.text().await.c(h!())?;
     // let rsp_e = crate::utils::json::parse_partial(&rsp_t).and_then(|x| {
     //     serde_json::from_value::<Vec<Message>>(x).map_err(|e| e.into())
     // });
@@ -181,7 +182,7 @@ pub async fn receive_messages(
             }
 
             serde_json::from_value::<Vec<Message>>(x.value)
-                .context(h!())
+                .c(h!())
                 .map_err(|e| AppError::AnyhowError { source: e })
         }
         Err(e) => Err(e),
@@ -276,14 +277,15 @@ pub async fn receive_groups(
         .get(url)
         .header("content-type", "application/json")
         .send()
-        .await?;
-    let rsp_t = rsp.text().await?;
+        .await
+        .c(h!())?;
+    let rsp_t = rsp.text().await.c(h!())?;
     let rsp_e: Result<Vec<Group>, serde_json::Error> =
         serde_json::from_str(&rsp_t);
     if let Err(ref e) = rsp_e {
         println!("> error: {e:?}\nrsp_t: {rsp_t}");
     }
-    let groups = rsp_e.context(h!())?;
+    let groups = rsp_e.c(h!())?;
     Ok(groups)
 }
 
@@ -311,7 +313,8 @@ pub async fn trust_identity(
         .json(&req)
         .header("content-type", "application/json")
         .send()
-        .await?;
+        .await
+        .c(h!())?;
     if !rsp.status().is_success() {
         return Err(anyhow::anyhow!(
             "Bad status: {}, url: {}",
@@ -331,8 +334,8 @@ async fn fetch_attachment_text(
 ) -> Result<String, AppError> {
     let url =
         format!("{}/v1/attachments{}", crate::config::SIGNAL_CLIENT_ADDR, id);
-    let rsp = rq.get(url).send().await?;
-    rsp.text().await.map_err(|e| e.into())
+    let rsp = rq.get(url).send().await.c(h!())?;
+    Ok(rsp.text().await.c(h!())?)
 }
 
 #[cfg(test)]

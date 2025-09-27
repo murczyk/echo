@@ -8,7 +8,6 @@ use crate::messenger::bl::list_accounts;
 use crate::messenger::id;
 use crate::messenger::types::{EchoAccountF1, Message};
 use crate::types::*;
-use anyhow::Context;
 use chrono::*;
 use echo_im::types::{MessageF1, MessageSource};
 use echo_migration::Expr;
@@ -75,9 +74,7 @@ async fn receive_thread(
     rq: &Client,
     settlements: Arc<RwLock<SettlementsData>>,
 ) -> Result<(), AppError> {
-    let datasource = load_client_datasource(dbx, client_name)
-        .await
-        .context(h!())?;
+    let datasource = load_client_datasource(dbx, client_name).await.c(h!())?;
     let datasource_id = datasource.id;
     if datasource.echo_client_lock_id.is_none() {
         trace!("datasource {datasource_id} is not linked, skipping");
@@ -85,18 +82,18 @@ async fn receive_thread(
     }
     echo_im::worker::signal_worker_tick_once(client_name, dbx)
         .await
-        .context(h!())?;
+        .c(h!())?;
     echo_im::worker::whatsapp_worker_tick_once(client_name, dbx)
         .await
-        .context(h!())?;
-    let txn = dbx.begin().await.context(h!())?;
+        .c(h!())?;
+    let txn = dbx.begin().await.c(h!())?;
     sync_groups(&txn, client_name, client_groups_sync_ts_map)
         .await
-        .context(h!())?;
-    txn.commit().await.context(h!())?;
+        .c(h!())?;
+    txn.commit().await.c(h!())?;
     sync_inbox(Utc::now(), dbx, client_name, redis, config, rq, settlements)
         .await
-        .context(h!())?;
+        .c(h!())?;
     Ok(())
 }
 
@@ -105,9 +102,7 @@ async fn sync_groups(
     client_name: &str,
     client_groups_sync_ts_map: &mut BTreeMap<String, NaiveDateTime>,
 ) -> anyhow::Result<()> {
-    let datasource = load_client_datasource(txn, client_name)
-        .await
-        .context(h!())?;
+    let datasource = load_client_datasource(txn, client_name).await.c(h!())?;
     let now = Utc::now().naive_utc();
     if let Some(last_updated_ts) =
         client_groups_sync_ts_map.get(client_name).cloned()
@@ -118,11 +113,9 @@ async fn sync_groups(
         }
     }
     let unsorted_groups =
-        echo_im::list_groups(client_name, txn).await.context(h!())?;
-    let datasource_groups = datasource_group::Entity::find()
-        .all(txn)
-        .await
-        .context(h!())?;
+        echo_im::list_groups(client_name, txn).await.c(h!())?;
+    let datasource_groups =
+        datasource_group::Entity::find().all(txn).await.c(h!())?;
     let messenger_profiles = echo_client_lock::Entity::find()
         .join(
             JoinType::InnerJoin,
@@ -143,7 +136,7 @@ async fn sync_groups(
         .into_tuple::<(i64, EchoMessageSource)>()
         .all(txn)
         .await
-        .context(h!())?;
+        .c(h!())?;
 
     let mut groups = vec![];
     let mut deleted_groups = vec![];
@@ -247,7 +240,7 @@ async fn sync_groups(
                 };
                 crate::messenger::group::add_group(model, txn)
                     .await
-                    .context(h!())?;
+                    .c(h!())?;
                 if g.message_source.eq(&MessageSource::Whatsapp) {
                     whatsapp_group::ActiveModel {
                         name: Set(g.name.clone()),
@@ -258,7 +251,7 @@ async fn sync_groups(
                     }
                     .insert(txn)
                     .await
-                    .context(h!())?;
+                    .c(h!())?;
                 }
             }
             Some(group_model) => {
@@ -267,15 +260,15 @@ async fn sync_groups(
                     if let Some(ref model) = group_model.model_a {
                         let mut model = model.clone().into_active_model();
                         model.name = Set(name);
-                        model.update(txn).await.context(h!())?;
+                        model.update(txn).await.c(h!())?;
                     } else {
                         let mut model = group_model
                             .model_b
                             .clone()
-                            .context(h!())?
+                            .c(h!())?
                             .into_active_model();
                         model.name = Set(g.name.clone());
-                        model.update(txn).await.context(h!())?;
+                        model.update(txn).await.c(h!())?;
                     }
                 }
             }
@@ -301,7 +294,7 @@ async fn sync_groups(
             .col_expr(datasource_group::Column::Deleted, Expr::value(true))
             .exec(txn)
             .await
-            .context(h!())?;
+            .c(h!())?;
     }
     client_groups_sync_ts_map.insert(client_name.to_string(), now);
 
@@ -317,7 +310,7 @@ async fn sync_groups(
         if should_skip {
             continue;
         }
-        let datasource_id = datasource_ids.into_iter().next().context(h!())?;
+        let datasource_id = datasource_ids.into_iter().next().c(h!())?;
         let datasource_group = datasource_groups
             .iter()
             .filter(|d| d.group_master_key == g.id)
@@ -336,13 +329,13 @@ async fn sync_groups(
                 }
                 .insert(txn)
                 .await
-                .context(h!())?;
+                .c(h!())?;
             }
             Some(rec) => {
                 let mut rec = rec.into_active_model();
                 rec.last_sync_at = Set(Utc::now().naive_utc());
                 rec.name = Set(g.name);
-                rec.update(txn).await.context(h!())?;
+                rec.update(txn).await.c(h!())?;
             }
         }
     }
@@ -366,23 +359,21 @@ async fn sync_inbox(
     rq: &Client,
     settlements: Arc<RwLock<SettlementsData>>,
 ) -> anyhow::Result<()> {
-    let datasource = load_client_datasource(db, client_name)
-        .await
-        .context(h!())?;
+    let datasource = load_client_datasource(db, client_name).await.c(h!())?;
     let datasource_id = datasource.id;
     if datasource.echo_client_lock_id.is_none() {
         trace!("[{client_name}] datasource {datasource_id} is not linked, skipping");
         return Ok(());
     }
     let time = inbox_sync_at - TimeDelta::seconds(100); // double-check maybe we missed messages not labeled as seen
-    let txn = db.begin().await.context(h!())?;
+    let txn = db.begin().await.c(h!())?;
     let inbox_messages =
         echo_im::list_inbox_since(client_name, time.naive_utc(), &txn)
             .await
-            .context(h!())?;
-    txn.commit().await.context(h!())?;
+            .c(h!())?;
+    txn.commit().await.c(h!())?;
 
-    sync_senders(db, &inbox_messages).await.context(h!())?;
+    sync_senders(db, &inbox_messages).await.c(h!())?;
 
     let total_num = inbox_messages.len();
     for (i, m) in inbox_messages.into_iter().enumerate() {
@@ -393,7 +384,7 @@ async fn sync_inbox(
                 total_num,
                 m.id.clone().unwrap_or("".to_string())
             );
-            let txn = db.begin().await.context(h!())?;
+            let txn = db.begin().await.c(h!())?;
             debug!(
                 "[{client_name}] process_inbox_message_nofail client_name={}; message_id={}",
                 client_name,
@@ -434,8 +425,8 @@ async fn sync_inbox(
             }
             echo_im::mark_inbox_as_seen(client_name, vec![m.internal_id], &txn)
                 .await
-                .context(h!())?;
-            txn.commit().await.context(h!())?;
+                .c(h!())?;
+            txn.commit().await.c(h!())?;
         }
     }
     Ok(())
@@ -444,9 +435,9 @@ async fn sync_inbox(
 async fn list_clients(
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<Vec<EchoAccountF1>> {
-    let txn = dbx.begin().await.context(h!())?;
-    let live_clients = list_accounts(None, &txn).await.context(h!())?;
-    txn.commit().await.context(h!())?;
+    let txn = dbx.begin().await.c(h!())?;
+    let live_clients = list_accounts(None, &txn).await.c(h!())?;
+    txn.commit().await.c(h!())?;
     Ok(live_clients)
 }
 
@@ -466,7 +457,7 @@ pub async fn receive_once(
     let m_duplicate =
         crate::sigint::find_duplicate(txn, &body, Some(m.timestamp))
             .await
-            .context(h!())?;
+            .c(h!())?;
     let m_duplicate_id = m_duplicate.map(|(message, _)| message.id);
     let datasource_group_id =
         crate::messenger::group::ensure_datasource_group_id(
@@ -475,7 +466,7 @@ pub async fn receive_once(
             m.datasource_id,
         )
         .await
-        .context(h!())?;
+        .c(h!())?;
     let signal_message = signal_message::ActiveModel {
         id: NotSet,
         body: Set(Some(body.clone())),
@@ -491,14 +482,14 @@ pub async fn receive_once(
     }
     .insert(txn)
     .await
-    .context(h!())?;
+    .c(h!())?;
 
     let signal_message =
         id::update_message_with_uid(txn, config, signal_message)
             .await
-            .context(h!())?;
+            .c(h!())?;
 
-    let message_uid = signal_message.message_uid.clone().context(h!())?;
+    let message_uid = signal_message.message_uid.clone().c(h!())?;
 
     for path in attachment_paths {
         let _signal_attachment = signal_attachment::ActiveModel {
@@ -509,7 +500,7 @@ pub async fn receive_once(
         }
         .insert(txn)
         .await
-        .context(h!())?;
+        .c(h!())?;
     }
 
     if !skip_process_inbox_item {
@@ -530,7 +521,7 @@ pub async fn receive_once(
             signal_message.id,
         )
         .await
-        .context(h!())?;
+        .c(h!())?;
     }
     Ok(message_uid)
 }
@@ -554,8 +545,8 @@ where
         .filter(echo_client::Column::Name.eq(client_name))
         .one(txn)
         .await
-        .context(h!())?
-        .context(h!())
+        .c(h!())?
+        .c(h!())
 }
 
 async fn sync_senders(
@@ -575,7 +566,7 @@ async fn sync_senders(
         .into_tuple::<String>()
         .all(db)
         .await
-        .context(h!())?;
+        .c(h!())?;
     for s in existing_senders {
         senders.remove(&s);
     }
@@ -588,7 +579,7 @@ async fn sync_senders(
         }
         .insert(db)
         .await
-        .context(h!())?;
+        .c(h!())?;
     }
     Ok(())
 }

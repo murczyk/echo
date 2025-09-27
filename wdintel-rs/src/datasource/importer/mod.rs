@@ -54,7 +54,8 @@ pub async fn oneoff_import_datasource(
             .timeout(core::time::Duration::from_secs(
                 crate::config::RQ_TIMEOUT_SIGNAL_API,
             ))
-            .build()?;
+            .build()
+            .context(h!())?;
         let redis = crate::new_redis(&config).await.context(h!())?;
         import_data(data.datasource, db, settlements, config, redis, rq)
             .await
