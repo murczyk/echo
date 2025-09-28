@@ -18,6 +18,7 @@ use reqwest::Client;
 use sea_orm::*;
 use std::collections::BTreeMap;
 use std::sync::{Arc, RwLock};
+use tokio::time::{sleep, Duration};
 
 pub async fn receive_thread_nofail(mode: Mode) {
     let (config, settlements, rq, mut redis, dbx) =
@@ -36,15 +37,21 @@ pub async fn receive_thread_nofail(mode: Mode) {
             Ok(x) => x,
             Err(e) => {
                 error!("failed to load clients: {e:?}");
+                sleep(Duration::from_secs(1)).await;
                 continue;
             }
         };
+        if clients.is_empty() {
+            sleep(Duration::from_secs(1)).await;
+            continue;
+        }
         let client_names = clients
             .iter()
             .map(|c| c.display_name.clone())
             .collect_vec()
             .join(", ");
         trace!("[{}] updating clients: {client_names}", h!());
+        let mut processed_any = false;
         for cli in clients {
             let Some(client_name) = cli.system_service_name else {
                 trace!("client name is missing, skipping: {cli:?}");
@@ -63,6 +70,10 @@ pub async fn receive_thread_nofail(mode: Mode) {
             {
                 println!("> {client_name}::receive_thread_nofail error: {e:?}");
             }
+            processed_any = true;
+        }
+        if !processed_any {
+            sleep(Duration::from_millis(200)).await;
         }
     }
 }
