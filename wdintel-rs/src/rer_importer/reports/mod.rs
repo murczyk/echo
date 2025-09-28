@@ -416,6 +416,8 @@ async fn fill_comp_freq(
 /// Never-failing task that fills the comp_freq table every minute with fresh data.
 pub async fn fill_comp_freq_worker(dbx: &DatabaseConnection) {
     loop {
+        let _loop_guard =
+            crate::utils::worker_watch::loop_guard("fill_comp_freq_worker");
         match fill_comp_freq_worker_1(dbx).await {
             Ok(_) => {}
             Err(e) => {

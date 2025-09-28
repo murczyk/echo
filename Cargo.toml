@@ -17,7 +17,7 @@ description = "ЕХО - Root workspace"
 # Common dependencies that can be shared across workspace members
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.142"
-tokio = { version = "1.47.1" }
+tokio = { version = "1.47.1", features = ["tracing"] }
 anyhow = "1.0.99"
 chrono = "0.4.41"
 uuid = { version = "1.18.0", features = ["v4", "v7"] }

@@ -1188,6 +1188,8 @@ pub async fn inactive_users_worker(dbx: &DatabaseConnection) {
     debug!("Starting inactive_users_worker");
 
     loop {
+        let _loop_guard =
+            crate::utils::worker_watch::loop_guard("inactive_users_worker");
         if let Err(e) = inactive_users_worker_1(dbx).await {
             error!("error in inactive_users_worker_1: {e:?}");
         }

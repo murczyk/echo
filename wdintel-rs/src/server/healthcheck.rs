@@ -2,6 +2,7 @@ use crate::config::Config;
 use crate::entities::signal_restapi_error;
 use crate::h;
 use crate::types::*;
+use crate::utils::worker_watch;
 use chrono::*;
 use sea_orm::*;
 
@@ -10,6 +11,7 @@ const RESTART_TIME: u64 = 15 * 60;
 pub async fn healthcheck_worker(dbx: &DatabaseConnection, config: Config) {
     let mut last_notified_at = None;
     loop {
+        let _loop_guard = worker_watch::loop_guard("healthcheck_worker");
         debug!("starting healthcheck_worker");
         match run_healthcheck_worker(dbx, last_notified_at, &config).await {
             Ok(Some(new_last_notified_at)) => {

@@ -12,6 +12,8 @@ pub async fn process_location_v2_coords_worker(
 ) {
     debug!("starting process_location_v2_coords_worker");
     loop {
+        let _loop_guard =
+            crate::utils::worker_watch::loop_guard("location_v2_worker");
         if let Err(e) = run_process_coords_locations_worker(dbx, &mil_geo).await
         {
             error!("process_location_v2_coords_worker error: {e}");

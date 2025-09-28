@@ -1589,6 +1589,8 @@ pub async fn cleanup_networks_worker(dbx: &DatabaseConnection) {
     debug!("Starting cleanup_networks_worker");
 
     loop {
+        let _loop_guard =
+            crate::utils::worker_watch::loop_guard("cleanup_networks_worker");
         if let Err(e) = cleanup_networks_worker_1(dbx).await {
             error!("error in cleanup_networks_worker_1: {e:?}");
         }

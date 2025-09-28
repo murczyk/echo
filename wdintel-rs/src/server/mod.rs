@@ -1,5 +1,6 @@
 use crate::config::*;
 use crate::types::*;
+use crate::utils::worker_watch::spawn_named_worker;
 use crate::{mk_conn_string, new_redis, new_redisb};
 use actix_identity::IdentityMiddleware;
 use actix_session::{storage::RedisSessionStore, SessionMiddleware};
@@ -120,39 +121,39 @@ pub async fn main_server(
 
     if !ps.no_bgworker {
         if let Some(secret_config) = config.vault_config.clone() {
-            tokio::spawn(async move {
+            spawn_named_worker("secret_worker", async move {
                 crate::secret::secret_worker(secret_config).await
             });
         }
-        tokio::spawn(async move {
+        spawn_named_worker("healthcheck_worker", async move {
             healthcheck::healthcheck_worker(&dbx9, config1).await;
         });
         // Activity details worker
         if let Some(greptimedb) = env.greptime() {
             let redis = env.redis.clone();
-            tokio::spawn(async move {
+            spawn_named_worker("activity_details_worker", async move {
                 middleware::activity_details_worker(redis, greptimedb).await;
             });
         }
 
         if !config.disable_cleanup_networks_worker.unwrap_or(false) {
-            tokio::spawn(async move {
+            spawn_named_worker("cleanup_networks_worker", async move {
                 crate::sigint::network::cleanup_networks_worker(&dbx4).await;
             });
         }
         if config.fill_comp_freq_worker {
-            tokio::spawn(async move {
+            spawn_named_worker("fill_comp_freq_worker", async move {
                 crate::rer_importer::reports::fill_comp_freq_worker(&dbx6)
                     .await;
             });
         }
         if !config.disable_inactive_users_worker.unwrap_or(false) {
-            tokio::spawn(async move {
+            spawn_named_worker("inactive_users_worker", async move {
                 crate::users::inactive_users_worker(&dbx7).await;
             });
         }
         if !config.disable_unit_location_v2_worker.unwrap_or(false) {
-            tokio::spawn(async move {
+            spawn_named_worker("location_v2_worker", async move {
                 crate::location::worker::process_location_v2_coords_worker(
                     &dbx8, mil_geo2,
                 )
@@ -161,20 +162,20 @@ pub async fn main_server(
         }
 
         // AoR assignments consistency check worker (runs every 5 minutes)
-        tokio::spawn(async move {
+        spawn_named_worker("aor_assignments_worker", async move {
             crate::sigint::aor::worker::aor_assignments_check_worker(&dbx10)
                 .await;
         });
-        tokio::spawn(async move {
+        spawn_named_worker("messenger_receive_worker", async move {
             crate::messenger::worker::receive_thread_nofail(mode).await;
         });
-        tokio::spawn(async move {
+        spawn_named_worker("operator_inbox_worker", async move {
             crate::operator::worker::run_operator_inbox_worker_nofail(mode)
                 .await;
         });
     }
 
-    tokio::spawn(async move {
+    spawn_named_worker("signal_cli_verbose_logger", async move {
         info!("Starting enable_signal_cli_verbose_logging");
         if let Err(e) = echo_im::enable_signal_cli_verbose_logging(
             "echo",
@@ -189,7 +190,7 @@ pub async fn main_server(
 
     if config.feature_tmp_in_memory.unwrap_or(false) {
         info!("Starting cleanup_tmp_worker_nofail");
-        tokio::spawn(async move {
+        spawn_named_worker("cleanup_tmp_worker", async move {
             echo_install_utils::tmpdir::cleanup_tmp_worker_nofail().await;
         });
     }

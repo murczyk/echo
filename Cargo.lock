@@ -6207,6 +6207,7 @@ dependencies = [
  "slab",
  "socket2 0.6.0",
  "tokio-macros",
+ "tracing",
  "windows-sys 0.59.0",
 ]
 
@@ -6844,6 +6845,7 @@ dependencies = [
  "nipper",
  "notify",
  "oauth2",
+ "once_cell",
  "opencv",
  "opendal",
  "pest",

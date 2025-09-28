@@ -2,6 +2,7 @@ use crate::entities::*;
 use crate::error::AppError;
 use crate::h;
 use crate::types::{Mode, ShortContext};
+use crate::utils::worker_watch;
 use chrono::Utc;
 use echo_migration::JoinType;
 use sea_orm::*;
@@ -13,6 +14,7 @@ pub async fn run_operator_inbox_worker_nofail(mode: Mode) {
     let mut all_datasources = vec![];
     let mut datasource_list_next_sync_at = Utc::now().naive_utc();
     loop {
+        let _loop_guard = worker_watch::loop_guard("operator_inbox_worker");
         let now = Utc::now().naive_utc();
         if datasource_list_next_sync_at <= now {
             datasource_list_next_sync_at =

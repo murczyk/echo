@@ -1,4 +1,5 @@
 use crate::types::*;
+use crate::utils::worker_watch;
 use actix_web::{
     body::MessageBody,
     dev::{ServiceRequest, ServiceResponse},
@@ -408,6 +409,7 @@ pub async fn activity_details_worker(
     greptimedb: deadpool_postgres::Pool,
 ) {
     loop {
+        let _loop_guard = worker_watch::loop_guard("activity_details_worker");
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
 
         let collection_key = "echo-md-requests";

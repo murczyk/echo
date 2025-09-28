@@ -6,6 +6,8 @@ const CHECK_INTERVAL_SECS: u64 = 5 * 60; // 5 minutes
 
 pub async fn aor_assignments_check_worker(dbx: &DatabaseConnection) {
     loop {
+        let _loop_guard =
+            crate::utils::worker_watch::loop_guard("aor_assignments_worker");
         if let Err(e) = aor_assignments_check_once(dbx).await {
             error!("aor_assignments_check_worker error: {e:?}");
         }

@@ -11,6 +11,7 @@ use clap::Parser;
 use redis::aio::ConnectionManager;
 use redis::ConnectionLike;
 use rustls::crypto::ring;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 pub mod atak;
 pub mod aws;
@@ -58,6 +59,8 @@ macro_rules! h {
         concat!("at ", file!(), " line ", line!(), " column ", column!())
     };
 }
+
+static RUNTIME_THREAD_INDEX: AtomicUsize = AtomicUsize::new(0);
 
 pub async fn renew_tailscale_cert(
     mode: Mode,
@@ -510,21 +513,37 @@ pub async fn new_redisb(config: &Config) -> anyhow::Result<redis::Client> {
     Ok(redis_cli)
 }
 
-#[tokio::main]
-async fn main() -> Result<(), AppError> {
-    // Install the default rustls crypto provider (ring) for the process
+fn main() -> Result<(), AppError> {
     ring::default_provider()
         .install_default()
         .expect("failed to install default rustls ring provider");
-    let args = Arg::parse();
-    let mode = args.mode;
 
     env_logger::try_init_from_env(
         env_logger::Env::new().default_filter_or("info,wdintel_rs=debug"),
     )
-    .ok(); // Ignore the error if logger is already initialized
+    .ok();
 
-    match args.action {
+    let args = Arg::parse();
+
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .thread_name_fn(|| {
+            let id = RUNTIME_THREAD_INDEX.fetch_add(1, Ordering::Relaxed);
+            format!("echo-rt-{id}")
+        })
+        .build()
+        .expect("failed to build tokio runtime");
+
+    runtime.block_on(async_main(args))
+}
+
+async fn async_main(args: Arg) -> Result<(), AppError> {
+    let mode = args.mode;
+    let action = args.action;
+
+    crate::utils::worker_watch::spawn_metrics_logger();
+
+    match action {
         Cmd::Server(ps) => {
             let _: () = crate::server::main_server(mode, ps).await.unwrap();
             Ok(())

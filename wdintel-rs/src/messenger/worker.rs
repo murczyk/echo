@@ -8,6 +8,7 @@ use crate::messenger::bl::list_accounts;
 use crate::messenger::id;
 use crate::messenger::types::{EchoAccountF1, Message};
 use crate::types::*;
+use crate::utils::worker_watch;
 use chrono::*;
 use echo_im::types::{MessageF1, MessageSource};
 use echo_migration::Expr;
@@ -30,6 +31,7 @@ pub async fn receive_thread_nofail(mode: Mode) {
     let mut client_groups_sync_ts_map =
         BTreeMap::<String, NaiveDateTime>::new();
     loop {
+        let _loop_guard = worker_watch::loop_guard("messenger_receive_worker");
         let clients = match list_clients(&dbx).await {
             Ok(x) => x,
             Err(e) => {

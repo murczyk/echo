@@ -37,6 +37,8 @@ struct SecretData {
 
 pub async fn secret_worker(config: VaultConfig) {
     loop {
+        let _loop_guard =
+            crate::utils::worker_watch::loop_guard("secret_worker");
         info!("> starting secret_worker");
         match fetch_config(&config).await {
             Ok(_) => return,
