@@ -46,6 +46,17 @@ async fn get_inbox_messages_report(
         .column(signal_message::Column::Body)
         .column_as(sigint_inbox_item::Column::CallsignsAlg1, "callsigns")
         .column_as(
+            Expr::col((
+                signal_message::Entity,
+                signal_message::Column::DuplicateOf,
+            ))
+            .if_null(Expr::col((
+                signal_message::Entity,
+                signal_message::Column::Id,
+            ))),
+            "dedup_key",
+        )
+        .column_as(
             SimpleExpr::Custom(r#"
                 COALESCE(
                     array_to_string(
@@ -111,6 +122,7 @@ async fn get_inbox_messages_report(
         )
         .group_by(signal_message::Column::Id)
         .group_by(sigint_inbox_item::Column::Id)
+        .group_by(signal_message::Column::DuplicateOf)
         .group_by(sigint_important::Column::SignalMessageId)
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(datasource_group::Column::GroupMasterKey.is_in(
