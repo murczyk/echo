@@ -1664,12 +1664,13 @@ view _ shared user model =
                     ]
                 , case model.networksMergeStatus of
                     CalculatedSuggestions (_ :: xs) ->
-                        div [ class "w-full bg-[#F5F28A]/[40%] h-[70px] mb-[16px] border-1 border-[#F5F28A] rounded-lg flex justify-between items-center px-[16px] py-[8px] font-medium" ]
-                            [ text <| (String.fromInt (List.length xs + 1) ++ " неопрацьованих пропозицій по злиттю мереж")
-                            , Button.new { label = "Поєднати мережі", onClick = NetworksMergeStart }
-                                |> Button.withStyleSecondary
-                                |> Button.view
-                            ]
+                        -- div [ class "w-full bg-[#F5F28A]/[40%] h-[70px] mb-[16px] border-1 border-[#F5F28A] rounded-lg flex justify-between items-center px-[16px] py-[8px] font-medium" ]
+                        --     [ text <| (String.fromInt (List.length xs + 1) ++ " неопрацьованих пропозицій по злиттю мереж")
+                        --     , Button.new { label = "Поєднати мережі", onClick = NetworksMergeStart }
+                        --         |> Button.withStyleSecondary
+                        --         |> Button.view
+                        --     ]
+                        text ""
 
                     _ ->
                         text ""
