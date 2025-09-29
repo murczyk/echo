@@ -8,7 +8,7 @@ use actix_identity::Identity;
 use anyhow::bail;
 use chrono::prelude::*;
 use itertools::Itertools;
-use sea_orm::*;
+use sea_orm::{prelude::Expr, *};
 use sea_query::SimpleExpr;
 use std::collections::BTreeMap;
 
@@ -53,6 +53,17 @@ pub async fn get_inbox_messages_report(
         .column(sigint_inbox_item::Column::Callsigns)
         .column(sigint_inbox_item::Column::Checked)
         .column_as(sigint_inbox_item::Column::LocationV2, "location")
+        .column_as(
+            Expr::col((
+                signal_message::Entity,
+                signal_message::Column::DuplicateOf,
+            ))
+            .if_null(Expr::col((
+                signal_message::Entity,
+                signal_message::Column::Id,
+            ))),
+            "dedup_key",
+        )
         .column_as(
             SimpleExpr::Custom(r#"
                 COALESCE(
@@ -107,6 +118,7 @@ pub async fn get_inbox_messages_report(
         )
         .group_by(signal_message::Column::Id)
         .group_by(sigint_inbox_item::Column::Id)
+        .group_by(signal_message::Column::DuplicateOf)
         .filter(datasource_group::Column::GroupMasterKey.is_in(
             crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login).await.c(h!())?,
         ));
