@@ -47,6 +47,7 @@ navBar user shared activeName props =
             [ Menu (Internal Route.Path.Admin) "zones" "напрямки"
             , Menu (Internal Route.Path.Admin_Users) "users" "користувачі"
             , Menu (Internal Route.Path.Admin_Organisms) "organisms" "організми"
+            , Menu (Internal Route.Path.AreasOfResponsibility) "areasOfResponsibility" "смуги"
             , Menu (Internal Route.Path.Admin_Messanger) "messanger" "месенджери"
             ]
 
@@ -57,12 +58,6 @@ navBar user shared activeName props =
             , Menu (Internal Route.Path.RerSignals) "signals" "сигнали"
             , Menu (Internal Route.Path.RerNetworks) "networks" "мережі"
             ]
-                ++ (if hasRole "Admin" user then
-                        [ Menu (Internal Route.Path.AreasOfResponsibility) "areasOfResponsibility" "смуги" ]
-
-                    else
-                        []
-                   )
 
         importSubs =
             [ Menu (Internal Route.Path.RerDeltaImport) "rer-delta-import" "імпорт delta"
