@@ -1490,40 +1490,55 @@ update msg model =
                 Just dialog ->
                     case findOrphanGroup model dialog.groupKey of
                         Just orphanGroup ->
-                            case orphanGroup.datasourceId of
-                                Just datasourceId ->
-                                    let
-                                        requests =
-                                            List.map
-                                                (\zoneId ->
-                                                    let
-                                                        req : B.ZoneDatasourceGroupAddReq
-                                                        req =
-                                                            { zoneId = zoneId
-                                                            , datasourceId = datasourceId
-                                                            , masterKey = dialog.groupKey
-                                                            , isSecret = dialog.isSecret
-                                                            , userLogins = dialog.selectedUsers
-                                                            , shortNote = orphanGroup.groupAdminData |> Maybe.andThen .shortNote
-                                                            , longNote = orphanGroup.groupAdminData |> Maybe.andThen .longNote
-                                                            }
-                                                    in
-                                                    Api.zone_datasource_group_add AssignOrphanGroupDone req
-                                                )
-                                                dialog.zoneIds
-                                    in
-                                    ( { model
-                                        | orphanGroupAssignmentInProgress = Just dialog.groupKey
-                                        , orphanGroupAssignmentError = Nothing
-                                        , orphanGroupAssignmentDialog = Nothing
-                                      }
-                                    , E.sendCmd <| Cmd.batch requests
-                                    )
+                            -- Перевіряємо чи є смуги відповідальності
+                            let
+                                hasAreasOfResponsibility : Bool
+                                hasAreasOfResponsibility =
+                                    case orphanGroup.areasOfResponsibility of
+                                        Nothing ->
+                                            False
+                                        Just areas ->
+                                            not (List.isEmpty areas)
+                            in
+                            if hasAreasOfResponsibility then
+                                case orphanGroup.datasourceId of
+                                    Just datasourceId ->
+                                        let
+                                            requests =
+                                                List.map
+                                                    (\zoneId ->
+                                                        let
+                                                            req : B.ZoneDatasourceGroupAddReq
+                                                            req =
+                                                                { zoneId = zoneId
+                                                                , datasourceId = datasourceId
+                                                                , masterKey = dialog.groupKey
+                                                                , isSecret = dialog.isSecret
+                                                                , userLogins = dialog.selectedUsers
+                                                                , shortNote = orphanGroup.groupAdminData |> Maybe.andThen .shortNote
+                                                                , longNote = orphanGroup.groupAdminData |> Maybe.andThen .longNote
+                                                                }
+                                                        in
+                                                        Api.zone_datasource_group_add AssignOrphanGroupDone req
+                                                    )
+                                                    dialog.zoneIds
+                                        in
+                                        ( { model
+                                            | orphanGroupAssignmentInProgress = Just dialog.groupKey
+                                            , orphanGroupAssignmentError = Nothing
+                                            , orphanGroupAssignmentDialog = Nothing
+                                          }
+                                        , E.sendCmd <| Cmd.batch requests
+                                        )
 
-                                Nothing ->
-                                    ( { model | orphanGroupAssignmentError = Just "У групи немає прив'язаного датасорса" }
-                                    , E.none
-                                    )
+                                    Nothing ->
+                                        ( { model | orphanGroupAssignmentError = Just "У групи немає прив'язаного датасорса" }
+                                        , E.none
+                                        )
+                            else
+                                ( { model | orphanGroupAssignmentError = Just "Помилка: Для додавання групи до напрямку спочатку необхідно вибрати смугу відповідальності. Будь ласка, відкрийте редагування групи та призначте смугу." }
+                                , E.none
+                                )
 
                         Nothing ->
                             ( { model | orphanGroupAssignmentError = Just "Не вдалося знайти групу" }
@@ -2894,6 +2909,23 @@ renderGroupEditSidebar isDark model dialog =
 
 renderOrphanGroupAssignmentDialog : Bool -> Model -> OrphanGroupAssignmentDialog -> Html Msg
 renderOrphanGroupAssignmentDialog isDark model dialog =
+    let
+        orphanGroup : Maybe B.OrphanSignalGroupEntry
+        orphanGroup =
+            findOrphanGroup model dialog.groupKey
+
+        hasAreasOfResponsibility : Bool
+        hasAreasOfResponsibility =
+            case orphanGroup of
+                Nothing ->
+                    False
+                Just group ->
+                    case group.areasOfResponsibility of
+                        Nothing ->
+                            False
+                        Just areas ->
+                            not (List.isEmpty areas)
+    in
     ModalDialog.modalDialog True
         CloseOrphanGroupAssignmentDialog
         [ class "medium-modal overflow-visible" ]
@@ -2905,6 +2937,23 @@ renderOrphanGroupAssignmentDialog isDark model dialog =
             , div [ class "mb-4" ]
                 [ text ("Група: " ++ getGroupDisplayName model dialog.groupKey)
                 , br [] []
+                -- Смуги відповідальності
+                , div [ class "mb-3 p-3 rounded" ]
+                    [ div [ class "text-sm font-medium mb-2" ]
+                        [ text "🗺️ Смуга відповідальності:" ]
+                    , if hasAreasOfResponsibility then
+                        let
+                            areas = orphanGroup |> Maybe.andThen .areasOfResponsibility |> Maybe.withDefault []
+                        in
+                        div [ class "space-y-1" ]
+                            (areas |> List.map (\area ->
+                                div [ class "text-sm text-gray-600" ]
+                                    [ text ("• " ++ area.name) ]
+                            ))
+                      else
+                        div [ class "text-sm text-red-600 italic" ]
+                            [ text "Смуга не призначена" ]
+                    ]
                 , if List.length model.zones > 1 then
                     -- Multiple zones - show zone selection
                     div [ class "mt-2" ]
@@ -2966,12 +3015,20 @@ renderOrphanGroupAssignmentDialog isDark model dialog =
 
                 Nothing ->
                     text ""
-            , div [ class "flex justify-end gap-3" ]
+            , div [ class "flex justify-end items-center gap-3" ]
                 [ Button.view
                     (Button.new { label = "Скасувати", onClick = CloseOrphanGroupAssignmentDialog }
                         |> Button.withStyleSecondary
                     )
-                , if model.orphanGroupAssignmentInProgress == Just dialog.groupKey then
+                , if not hasAreasOfResponsibility then
+                    div [ class "flex flex-col items-center gap-3" ]
+                        [ div [ class "p-3 bg-yellow-50 border border-yellow-300 text-yellow-800 rounded text-sm" ]
+                            [ div [ class "font-medium" ] [ text "⚠️ Неможливо додати групу" ]
+                            , div [ class "mt-1" ] [ text "Спочатку призначте смугу відповідальності через редагування групи" ]
+                            ]
+                        ]
+
+                  else if model.orphanGroupAssignmentInProgress == Just dialog.groupKey then
                     div [ class "flex items-center gap-2" ]
                         [ Shared.Components.Spinner.loadingSpinner2Sm
                         , span [ class "text-sm text-gray-600" ] [ text "Додавання..." ]
