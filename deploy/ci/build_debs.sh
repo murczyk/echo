@@ -30,6 +30,14 @@ cargo deb -p echo-install --no-build || true
 # Build deb packages for non-workspace crates and copy them to root target/debian
 mkdir -p target/debian
 
+doc_version_epoch=""
+if [ -f "docs/echo-docs/Cargo.toml" ]; then
+  doc_version_epoch="$(git log -1 --format=%ct -- docs/echo-docs/Cargo.toml 2>/dev/null || true)"
+  if [ -z "$doc_version_epoch" ]; then
+    doc_version_epoch="$(date -u +%s)"
+  fi
+fi
+
 # echo-docs
 if [ -f "docs/echo-docs/Cargo.toml" ]; then
   # Ensure Zola site is built so that docs/public/* exists for packaging
@@ -42,7 +50,15 @@ if [ -f "docs/echo-docs/Cargo.toml" ]; then
     (cd docs && zola build)
   fi
 
-  (cd docs/echo-docs && cargo deb)
+  if [ -n "$doc_version_epoch" ]; then
+    find docs/public -exec touch -d "@$doc_version_epoch" {} +
+  fi
+
+  if [ -n "$doc_version_epoch" ]; then
+    (cd docs/echo-docs && SOURCE_DATE_EPOCH="$doc_version_epoch" cargo deb)
+  else
+    (cd docs/echo-docs && cargo deb)
+  fi
   cp -v docs/echo-docs/target/debian/*.deb target/debian/ || true
 fi
 

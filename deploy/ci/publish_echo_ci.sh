@@ -81,6 +81,25 @@ aptly repo show "$REPO" >/dev/null 2>&1 || \
   aptly repo create -distribution="$DIST" -component="$COMP" "$REPO"
 
 cd /home/echo/echo-debs
+deb_packages_identical() {
+  local deb_a="$1"
+  local deb_b="$2"
+  local data_a data_b ctrl_a ctrl_b status
+  data_a=$(mktemp -d)
+  data_b=$(mktemp -d)
+  ctrl_a=$(mktemp -d)
+  ctrl_b=$(mktemp -d)
+  status=1
+  if dpkg-deb -x "$deb_a" "$data_a" && dpkg-deb -x "$deb_b" "$data_b" \
+    && dpkg-deb -e "$deb_a" "$ctrl_a" && dpkg-deb -e "$deb_b" "$ctrl_b"; then
+    if diff -qr "$data_a" "$data_b" >/dev/null \
+      && diff -qr "$ctrl_a" "$ctrl_b" >/dev/null; then
+      status=0
+    fi
+  fi
+  rm -rf "$data_a" "$data_b" "$ctrl_a" "$ctrl_b"
+  return $status
+}
 declare -A EXPECTED_SHA=()
 declare -A EXPECTED_SIZE=()
 added_basenames=()
@@ -101,6 +120,9 @@ for f in "$REPO"/*.deb; do
         actual_size=$(stat -c%s "$publish_path")
         if [[ "$actual_sha" == "${EXPECTED_SHA["$bn"]}" && "$actual_size" == "${EXPECTED_SIZE["$bn"]}" ]]; then
           echo "::notice::$bn already exists in $REPO with identical contents; skipping add"
+          added_basenames+=("$bn")
+        elif deb_packages_identical "$f" "$publish_path"; then
+          echo "::notice::$bn already exists in $REPO; payload matches after extraction so skipping add"
           added_basenames+=("$bn")
         else
           echo "$add_output" >&2
