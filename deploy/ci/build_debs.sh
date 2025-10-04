@@ -49,6 +49,7 @@ cargo deb -p echo-install --no-build || true
 
 # Build deb packages for non-workspace crates and copy them to root target/debian
 mkdir -p target/debian
+find target/debian -maxdepth 1 -type f -name '*.deb' -delete || true
 
 doc_version_epoch=""
 if [ -f "docs/echo-docs/Cargo.toml" ]; then
@@ -72,6 +73,10 @@ if [ -f "docs/echo-docs/Cargo.toml" ]; then
 
   if [ -n "$doc_version_epoch" ]; then
     find docs/public -exec touch -d "@$doc_version_epoch" {} +
+  fi
+
+  if [ -d "docs/echo-docs/target/debian" ]; then
+    find docs/echo-docs/target/debian -maxdepth 1 -type f -name '*.deb' -delete || true
   fi
 
   if [ -n "$doc_version_epoch" ]; then
