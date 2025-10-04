@@ -89,9 +89,31 @@ for f in "$REPO"/*.deb; do
     bn=$(basename "$f")
     EXPECTED_SHA["$bn"]=$(sha256sum "$f" | awk '{print $1}')
     EXPECTED_SIZE["$bn"]=$(stat -c%s "$f")
-    added_basenames+=("$bn")
-    if ! aptly repo add "$REPO" "$f"; then
-      echo "::notice::$(basename "$f") already exists in $REPO; continuing"
+    if add_output=$(aptly repo add "$REPO" "$f" 2>&1); then
+      added_basenames+=("$bn")
+    else
+      publish_path=$(find "$HOME/.aptly/public/$REPO/pool" -name "$bn" -type f -print -quit || true)
+      if [[ -z "$publish_path" ]]; then
+        publish_path=$(find "$HOME/.aptly/pool" -name "$bn" -type f -print -quit || true)
+      fi
+      if [[ -n "$publish_path" ]]; then
+        actual_sha=$(sha256sum "$publish_path" | awk '{print $1}')
+        actual_size=$(stat -c%s "$publish_path")
+        if [[ "$actual_sha" == "${EXPECTED_SHA["$bn"]}" && "$actual_size" == "${EXPECTED_SIZE["$bn"]}" ]]; then
+          echo "::notice::$bn already exists in $REPO with identical contents; skipping add"
+          added_basenames+=("$bn")
+        else
+          echo "$add_output" >&2
+          echo "::error::$bn already exists in $REPO with different contents. Bump the package version or remove the existing package before retrying. Expected ${EXPECTED_SHA["$bn"]} (${EXPECTED_SIZE["$bn"]} bytes) got $actual_sha ($actual_size bytes)" >&2
+          rm -f -- "$f" || true
+          exit 1
+        fi
+      else
+        echo "$add_output" >&2
+        echo "::error::failed to add package $bn to repo $REPO and no existing published file was found" >&2
+        rm -f -- "$f" || true
+        exit 1
+      fi
     fi
     rm -f -- "$f" || true
   fi
