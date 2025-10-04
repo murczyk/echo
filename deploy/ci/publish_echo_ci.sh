@@ -81,8 +81,15 @@ aptly repo show "$REPO" >/dev/null 2>&1 || \
   aptly repo create -distribution="$DIST" -component="$COMP" "$REPO"
 
 cd /home/echo/echo-debs
+declare -A EXPECTED_SHA=()
+declare -A EXPECTED_SIZE=()
+added_basenames=()
 for f in "$REPO"/*.deb; do
   if [[ -f "$f" ]]; then
+    bn=$(basename "$f")
+    EXPECTED_SHA["$bn"]=$(sha256sum "$f" | awk '{print $1}')
+    EXPECTED_SIZE["$bn"]=$(stat -c%s "$f")
+    added_basenames+=("$bn")
     if ! aptly repo add "$REPO" "$f"; then
       echo "::notice::$(basename "$f") already exists in $REPO; continuing"
     fi
@@ -158,6 +165,28 @@ if ! aptly publish switch -force-overwrite "${SIGN_ARGS[@]}" "$DIST" "$REPO" "$S
   echo "Publish switch failed, attempting drop+publish..."
   aptly publish drop -force-drop "$DIST" "$REPO" || true
   aptly publish snapshot -force-overwrite "${SIGN_ARGS[@]}" -component="$COMP" -distribution="$DIST" "$SNAP_TO_PUBLISH" "$REPO"
+fi
+
+if ((${#added_basenames[@]} > 0)); then
+  for bn in "${added_basenames[@]}"; do
+    expected_sha=${EXPECTED_SHA["$bn"]}
+    expected_size=${EXPECTED_SIZE["$bn"]}
+    if [[ -z "$expected_sha" || -z "$expected_size" ]]; then
+      echo "::error::missing expected metadata for $bn" >&2
+      exit 1
+    fi
+    publish_path=$(find "$HOME/.aptly/public/$REPO/pool" -name "$bn" -type f -print -quit || true)
+    if [[ -z "$publish_path" ]]; then
+      echo "::error::published file $bn not found under public/$REPO/pool" >&2
+      exit 1
+    fi
+    actual_sha=$(sha256sum "$publish_path" | awk '{print $1}')
+    actual_size=$(stat -c%s "$publish_path")
+    if [[ "$actual_sha" != "$expected_sha" || "$actual_size" != "$expected_size" ]]; then
+      echo "::error::published file mismatch for $bn: expected $expected_sha ($expected_size bytes) got $actual_sha ($actual_size bytes)" >&2
+      exit 1
+    fi
+  done
 fi
 
 ls -lah "$HOME/.aptly/public/$REPO/dists/$DIST" || true
