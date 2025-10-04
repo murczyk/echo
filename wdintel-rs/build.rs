@@ -1,4 +1,4 @@
-use chrono::offset::Local;
+use chrono::{offset::Local, TimeZone, Utc};
 use std::env;
 use std::fs::File;
 use std::io::Write;
@@ -26,8 +26,28 @@ fn get_git_hash() -> Result<String, String> {
         return Err("git command failed".to_string());
     }
 
-    String::from_utf8(output.stdout)
-        .map(|s| s.trim().to_string())
-        .map(|s| format!("{s} ({})", Local::now().format("%d.%b %H:%M")))
-        .map_err(|e| format!("Failed to parse git hash: {e}"))
+    let short_hash = String::from_utf8(output.stdout)
+        .map_err(|e| format!("Failed to parse git hash: {e}"))?
+        .trim()
+        .to_string();
+
+    let ts = build_timestamp()
+        .map_err(|e| format!("Failed to compute build timestamp: {e}"))?;
+
+    Ok(format!("{short_hash} ({ts})"))
+}
+
+fn build_timestamp() -> Result<String, Box<dyn std::error::Error>> {
+    if let Ok(epoch) = env::var("SOURCE_DATE_EPOCH") {
+        if let Ok(epoch) = epoch.parse::<i64>() {
+            if let Some(dt_utc) = Utc.timestamp_opt(epoch, 0).single() {
+                return Ok(dt_utc
+                    .with_timezone(&Local)
+                    .format("%d.%b %H:%M")
+                    .to_string());
+            }
+        }
+    }
+
+    Ok(Local::now().format("%d.%b %H:%M").to_string())
 }

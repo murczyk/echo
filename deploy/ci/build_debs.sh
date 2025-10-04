@@ -19,12 +19,32 @@ if [ -d "wdintel-web" ]; then
 fi
 
 # Build release binaries first for faster cargo-deb (reuse artifacts)
-cargo build --release \
-  -p wdintel-rs \
-  -p echo-install
+wdintel_epoch=""
+if [ -d "wdintel-rs" ]; then
+  wdintel_epoch="$(git log -1 --format=%ct -- wdintel-rs 2>/dev/null || true)"
+  if [ -z "$wdintel_epoch" ]; then
+    wdintel_epoch="$(date -u +%s)"
+  fi
+fi
+
+if [ -n "$wdintel_epoch" ]; then
+  SOURCE_DATE_EPOCH="$wdintel_epoch" cargo build --release \
+    -p wdintel-rs \
+    -p echo-install
+else
+  cargo build --release \
+    -p wdintel-rs \
+    -p echo-install
+fi
 
 # Build deb packages for workspace members
-cargo deb -p wdintel-rs --no-build
+if [ -n "$wdintel_epoch" ]; then
+  touch -d "@$wdintel_epoch" wdintel-rs/version.txt 2>/dev/null || true
+  touch -d "@$wdintel_epoch" target/release/wdintel-rs 2>/dev/null || true
+  SOURCE_DATE_EPOCH="$wdintel_epoch" cargo deb -p wdintel-rs --no-build
+else
+  cargo deb -p wdintel-rs --no-build
+fi
 cargo deb -p echo-install --no-build || true
 
 # Build deb packages for non-workspace crates and copy them to root target/debian
