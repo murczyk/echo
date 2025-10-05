@@ -23,6 +23,8 @@ CREATE TABLE IF NOT EXISTS echo.activity_page_visit (
 
 ## 2025-04-10
 
+**ATTENTION!** Run this once logs are streaming in (via HTTP + Vector) and table is created
+
 ```sql
 ALTER TABLE logs SET ttl='1month';
 ```
