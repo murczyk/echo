@@ -923,27 +923,7 @@ _setup-vault:
       fi
       vault kv put $VAULT_ROOT/{{ server }}/config $(cat /tmp/bw-config-note.txt | tr '\n' ' ') && rm /tmp/bw-config-note.txt"
 
-# see echo-greptimedb-toml in bitwarden for /etc/greptimedb/config.toml config
-deploy-greptimedb:
-    #!/bin/bash
-    set -euxo pipefail
-
-    SERVER=echo-greptime
-
-    . deploy/utils.sh
-
-    # put config.toml from bitwarden into /etc/greptimedb/config.toml
-    bw_sync $SERVER echo-greptimedb-toml /etc/greptimedb/config.toml echo-greptimedb
-
-    # put echo-greptimedb-auth from bitwarden into /etc/greptimedb/auth.txt
-    bw_sync $SERVER echo-greptimedb-auth /etc/greptimedb/auth.txt echo-greptimedb
-
-    # for now, manually scp deploy/greptimedb/echo-greptimedb.service to server's systemd
-    scp deploy/greptimedb/echo-greptimedb.service $SERVER:/tmp/
-    ssh $SERVER 'sudo mv /tmp/echo-greptimedb.service /etc/systemd/system/echo-greptimedb.service'
-    ssh $SERVER 'sudo systemctl daemon-reload'
-    ssh $SERVER 'sudo systemctl enable echo-greptimedb'
-    ssh $SERVER 'sudo systemctl restart echo-greptimedb'
+# FOR GREPTIME SEE echo-sergeant/greptime/README
 
 setup-server:
     ssh {{ server }} 'sudo wdintel-rs --mode=live oneoff-install'
