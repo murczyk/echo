@@ -119,9 +119,13 @@ for f in "$REPO"/*.deb; do
         actual_sha=$(sha256sum "$publish_path" | awk '{print $1}')
         actual_size=$(stat -c%s "$publish_path")
         if [[ "$actual_sha" == "${EXPECTED_SHA["$bn"]}" && "$actual_size" == "${EXPECTED_SIZE["$bn"]}" ]]; then
+          EXPECTED_SHA["$bn"]="$actual_sha"
+          EXPECTED_SIZE["$bn"]="$actual_size"
           echo "::notice::$bn already exists in $REPO with identical contents; skipping add"
           added_basenames+=("$bn")
         elif deb_packages_identical "$f" "$publish_path"; then
+          EXPECTED_SHA["$bn"]="$actual_sha"
+          EXPECTED_SIZE["$bn"]="$actual_size"
           echo "::notice::$bn already exists in $REPO; payload matches after extraction so skipping add"
           added_basenames+=("$bn")
         else
