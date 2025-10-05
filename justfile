@@ -782,39 +782,39 @@ fmt:
     (cd wdintel-rs && cargo fmt)
     (cd wdintel-rs && cargo clippy --all-targets --all-features -- -D warnings)
 
-setup-kibana-local:
-    #!/bin/bash
-    sudo mkdir -p /etc/kibana
-    sudo cp deploy/kibana/env.example /etc/kibana/.env
-    sudo cp deploy/kibana/compose.yaml /etc/kibana/compose.yaml
-    (cd /etc/kibana && sudo docker compose up -d)
+# setup-kibana-local:
+#     #!/bin/bash
+#     sudo mkdir -p /etc/kibana
+#     sudo cp deploy/kibana/env.example /etc/kibana/.env
+#     sudo cp deploy/kibana/compose.yaml /etc/kibana/compose.yaml
+#     (cd /etc/kibana && sudo docker compose up -d)
 
-setup-kibana-hammer:
-    #!/bin/bash
-    ssh hammer 'sudo mkdir -p /etc/kibana'
-    scp deploy/kibana/env-hammer hammer:~ && ssh hammer 'sudo mv ~/env-hammer /etc/kibana/.env'
-    scp deploy/kibana/compose.yaml hammer:~ && ssh hammer 'sudo mv ~/compose.yaml /etc/kibana/compose.yaml'
-    ssh hammer 'cd /etc/kibana && sudo docker compose up -d'
+# setup-kibana-hammer:
+#     #!/bin/bash
+#     ssh hammer 'sudo mkdir -p /etc/kibana'
+#     scp deploy/kibana/env-hammer hammer:~ && ssh hammer 'sudo mv ~/env-hammer /etc/kibana/.env'
+#     scp deploy/kibana/compose.yaml hammer:~ && ssh hammer 'sudo mv ~/compose.yaml /etc/kibana/compose.yaml'
+#     ssh hammer 'cd /etc/kibana && sudo docker compose up -d'
 
-setup-vector-local:
-    #!/bin/bash
-    sudo rm -rf /etc/vector
-    sudo mkdir -p /etc/vector
-    sudo cp deploy/vector/vector-echo.yaml /etc/vector/vector.yaml
-    sudo cp deploy/vector/env.example /etc/default/vector
-    sudo sh -c 'echo "PGPASSWORD={{ pgpwd }}" >> /etc/default/vector'
-    sudo systemctl enable vector && sudo systemctl daemon-reload
-    sudo systemctl restart vector
+# setup-vector-local:
+#     #!/bin/bash
+#     sudo rm -rf /etc/vector
+#     sudo mkdir -p /etc/vector
+#     sudo cp deploy/vector/vector-echo.yaml /etc/vector/vector.yaml
+#     sudo cp deploy/vector/env.example /etc/default/vector
+#     sudo sh -c 'echo "PGPASSWORD={{ pgpwd }}" >> /etc/default/vector'
+#     sudo systemctl enable vector && sudo systemctl daemon-reload
+#     sudo systemctl restart vector
 
-setup-vector-local-hammer:
-    #!/bin/bash
-    sudo rm -rf /etc/vector
-    sudo mkdir -p /etc/vector
-    sudo cp deploy/vector/vector-echo.yaml /etc/vector/vector.yaml
-    sudo cp deploy/vector/env-hammer /etc/default/vector
-    sudo sh -c 'echo "PGPASSWORD={{ pgpwd }}" >> /etc/default/vector'
-    sudo systemctl enable vector && sudo systemctl daemon-reload
-    sudo systemctl restart vector
+# setup-vector-local-hammer:
+#     #!/bin/bash
+#     sudo rm -rf /etc/vector
+#     sudo mkdir -p /etc/vector
+#     sudo cp deploy/vector/vector-echo.yaml /etc/vector/vector.yaml
+#     sudo cp deploy/vector/env-hammer /etc/default/vector
+#     sudo sh -c 'echo "PGPASSWORD={{ pgpwd }}" >> /etc/default/vector'
+#     sudo systemctl enable vector && sudo systemctl daemon-reload
+#     sudo systemctl restart vector
 
 # install-vector:
 #     ssh {{ server }} 'bash -c "$(curl -L https://setup.vector.dev)" && sudo apt-get install vector'
