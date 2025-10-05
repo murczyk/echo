@@ -7,6 +7,9 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$REPO_ROOT"
 
+mkdir -p target/debian
+find target/debian -maxdepth 1 -type f -name '*.deb' -delete || true
+
 # Ensure cargo-deb is available
 if ! command -v cargo-deb >/dev/null 2>&1; then
   cargo install cargo-deb --locked
@@ -48,9 +51,6 @@ fi
 cargo deb -p echo-install --no-build || true
 
 # Build deb packages for non-workspace crates and copy them to root target/debian
-mkdir -p target/debian
-find target/debian -maxdepth 1 -type f -name '*.deb' -delete || true
-
 doc_version_epoch=""
 if [ -f "docs/echo-docs/Cargo.toml" ]; then
   doc_version_epoch="$(git log -1 --format=%ct -- docs/echo-docs/Cargo.toml 2>/dev/null || true)"
