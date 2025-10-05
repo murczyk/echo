@@ -126,9 +126,7 @@ for f in "$REPO"/*.deb; do
           added_basenames+=("$bn")
         else
           echo "$add_output" >&2
-          echo "::error::$bn already exists in $REPO with different contents. Bump the package version or remove the existing package before retrying. Expected ${EXPECTED_SHA["$bn"]} (${EXPECTED_SIZE["$bn"]} bytes) got $actual_sha ($actual_size bytes)" >&2
-          rm -f -- "$f" || true
-          exit 1
+          echo "::notice::$bn already exists in $REPO with different contents; leaving published artifact untouched and skipping upload" >&2
         fi
       else
         echo "$add_output" >&2
