@@ -446,19 +446,27 @@ copy-db-gpu:
     echo 'please use just copy-db-pivnich or just pgdb=wd_rat copy-db-pivnich'
     exit 1
 
-copy-db-pivnich:
+# copy-db via replica onto dev
+# param server: source replica (example: echo-pivnich-replica)
+# param dest: destination (example: echo-pivnich-dev)
+copy-db-dev:
     #!/bin/bash
     set -euxo pipefail
-    ssh -t echo-pivnich-replica "sudo -u postgres psql -c 'SELECT pg_wal_replay_pause();'"
-    ssh -t echo-pivnich-replica '(cd /var/tmp && PGPASSWORD="{{ pgpwd }}" pg_dump --user wd -Fc wd > wd-{{ dt1 }}.pgrestore && ls -lah wd-{{ dt1 }}.pgrestore)'
-    ssh -t echo-pivnich-replica "sudo -u postgres psql -c 'SELECT pg_wal_replay_resume();'"
-    ssh -t echo-pivnich-replica 'gzip -c /var/tmp/wd-{{ dt1 }}.pgrestore > /var/tmp/wd-{{ dt1 }}.pgrestore.gz'
-    ssh -t echo-pivnich-dev 'rsync echo-pivnich-replica:/var/tmp/wd-{{ dt1 }}.pgrestore.gz /var/tmp/'
-    ssh -t echo-pivnich-replica '(rm /var/tmp/wd-{{ dt1 }}.pgrestore && rm /var/tmp/wd-{{ dt1 }}.pgrestore.gz) | echo "ok"'
-    ssh -t echo-pivnich-dev '(cd /var/tmp && gunzip wd-{{ dt1 }}.pgrestore.gz)'
-    ssh -t echo-pivnich-dev "sudo -u postgres psql -c 'drop database {{ pgdb }} with (FORCE)' | echo 'ok'"
-    ssh -t echo-pivnich-dev "sudo -u postgres psql -c 'create database {{ pgdb }}'"
-    ssh -t echo-pivnich-dev "sudo -u postgres pg_restore -d {{ pgdb }} /var/tmp/wd-{{ dt1 }}.pgrestore && sudo rm /var/tmp/wd-{{ dt1 }}.pgrestore"
+    . deploy/utils.sh
+    ensure_nonempty "server" "{{ server }}"
+    ensure_nonempty "dest" "{{ dest }}"
+    SERVER="{{ server }}"
+    DEST="{{ dest }}"
+    ssh -t $SERVER "sudo -u postgres psql -c 'SELECT pg_wal_replay_pause();'"
+    ssh -t $SERVER '(cd /var/tmp && PGPASSWORD="{{ pgpwd }}" pg_dump --user wd -Fc wd > wd-{{ dt1 }}.pgrestore && ls -lah wd-{{ dt1 }}.pgrestore)'
+    ssh -t $SERVER "sudo -u postgres psql -c 'SELECT pg_wal_replay_resume();'"
+    ssh -t $SERVER 'gzip -c /var/tmp/wd-{{ dt1 }}.pgrestore > /var/tmp/wd-{{ dt1 }}.pgrestore.gz'
+    ssh -t $DEST "rsync $SERVER:/var/tmp/wd-{{ dt1 }}.pgrestore.gz /var/tmp/"
+    ssh -t $SERVER '(rm /var/tmp/wd-{{ dt1 }}.pgrestore && rm /var/tmp/wd-{{ dt1 }}.pgrestore.gz) | echo "ok"'
+    ssh -t $DEST '(cd /var/tmp && gunzip wd-{{ dt1 }}.pgrestore.gz)'
+    ssh -t $DEST "sudo -u postgres psql -c 'drop database {{ pgdb }} with (FORCE)' | echo 'ok'"
+    ssh -t $DEST "sudo -u postgres psql -c 'create database {{ pgdb }}'"
+    ssh -t $DEST "sudo -u postgres pg_restore -d {{ pgdb }} /var/tmp/wd-{{ dt1 }}.pgrestore && sudo rm /var/tmp/wd-{{ dt1 }}.pgrestore"
 
 copy-db-to-target:
     #!/bin/bash
