@@ -4,8 +4,10 @@ use crate::types::*;
 use actix_web::web::Json;
 use actix_web::{get, post, HttpResponse, Responder};
 use elm_rs::{Elm, ElmDecode, ElmEncode};
+use fs2::available_space;
 use sea_orm::*;
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 
 #[get("/api/ping")]
 async fn ping() -> impl Responder {
@@ -61,6 +63,7 @@ pub struct MonitoringDatasource {
 )]
 pub struct Monitoring {
     pub datasources: Vec<MonitoringDatasource>,
+    pub free_space_root_mb: i64,
 }
 
 #[post("/api/monitoring")]
@@ -101,5 +104,24 @@ async fn monitoring(
     }
     Ok(Json(Monitoring {
         datasources: datasources_res,
+        free_space_root_mb: root_free_space_mb(),
     }))
+}
+
+fn root_free_space_mb() -> i64 {
+    const BYTES_IN_MB: u64 = 1_048_576;
+    let root_path = Path::new("/");
+    match available_space(root_path) {
+        Ok(bytes) => {
+            let mb = bytes / BYTES_IN_MB;
+            (mb.min(i64::MAX as u64)) as i64
+        }
+        Err(err) => {
+            log::warn!(
+                "Failed to read free space for root partition {}: {err}",
+                root_path.display()
+            );
+            0
+        }
+    }
 }
