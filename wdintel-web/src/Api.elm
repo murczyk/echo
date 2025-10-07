@@ -1289,6 +1289,24 @@ organism_available_groups_batch toMsg organismIds =
         }
 
 
+organism_compute_available_groups : (Result ApiError (List SignalGroupFull) -> msg) -> UpdateOrganismReq -> Cmd msg
+organism_compute_available_groups toMsg req =
+    Http.post
+        { url = "/api/organism/compute-available-groups"
+        , body = Http.jsonBody (updateOrganismReqEncoder req)
+        , expect = leExpectJson toMsg (Decode.list signalGroupFullDecoder)
+        }
+
+
+organism_compute_available_groups_for_new : (Result ApiError (List SignalGroupFull) -> msg) -> CreateOrganismReq -> Cmd msg
+organism_compute_available_groups_for_new toMsg req =
+    Http.post
+        { url = "/api/organism/compute-available-groups-for-new"
+        , body = Http.jsonBody (createOrganismReqEncoder req)
+        , expect = leExpectJson toMsg (Decode.list signalGroupFullDecoder)
+        }
+
+
 create_login_delta : (Result ApiError Login -> msg) -> CreateLoginReq -> Cmd msg
 create_login_delta toMsg req =
     Http.post

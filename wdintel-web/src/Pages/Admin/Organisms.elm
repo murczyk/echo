@@ -94,6 +94,11 @@ getParentGroups parentId organismGroups =
     getOrganismGroups parentId organismGroups
 
 
+hasGroupRestrictions : Int -> List B.OrganismGroup -> Bool
+hasGroupRestrictions organismId organismGroups =
+    not (List.isEmpty (getOrganismGroups organismId organismGroups))
+
+
 getAvailableGroupsForOrganism : Maybe Int -> List B.OrganismGroup -> List B.SignalGroupFull -> List B.SignalGroupFull
 getAvailableGroupsForOrganism maybeParentId organismGroups allGroups =
     case maybeParentId of
@@ -139,6 +144,26 @@ getComputedGroups organismId model =
 isLoadingComputedGroups : Int -> Model -> Bool
 isLoadingComputedGroups organismId model =
     Set.member organismId model.loadingComputedGroups
+
+
+buildUpdateOrganismReq : Int -> OrganismEdit -> B.UpdateOrganismReq
+buildUpdateOrganismReq organismId editOrganism =
+    { id = organismId
+    , parentId = editOrganism.inpParentOrganism.selectedItem
+    , name = Just editOrganism.inpName
+    , roles = Just editOrganism.inpRole.selectedItems
+    , enabled = editOrganism.enabled
+    , aorIds = Just editOrganism.inpAors.selectedItems
+    }
+
+
+buildCreateOrganismReq : Model -> B.CreateOrganismReq
+buildCreateOrganismReq model =
+    { name = model.inpName
+    , parentId = model.inpParentOrganism.selectedItem
+    , roles = model.inpRole.selectedItems
+    , aorIds = Just model.inpAors.selectedItems
+    }
 
 
 loadComputedGroupsForAll : Model -> ( Model, Effect Msg )
@@ -205,6 +230,9 @@ type alias Model =
     , computedGroups : Dict Int (List B.SignalGroupFull)
     , loadingComputedGroups : Set Int
     , rowShowAllPopupStatus : Maybe ( Int, ShowAllPopupFor )
+    , createComputedAvailableGroups : Maybe (List B.SignalGroupFull)
+    , createLimitGroupsList : Bool
+    , createIsLoadingComputedGroups : Bool
     }
 
 
@@ -233,6 +261,9 @@ type alias OrganismEdit =
         }
     , fieldsErrors : List FieldError
     , groupsValidation : Maybe (List String)
+    , computedAvailableGroups : Maybe (List B.SignalGroupFull)
+    , limitGroupsList : Bool
+    , isLoadingComputedGroups : Bool
     }
 
 
@@ -287,6 +318,9 @@ init _ =
       , computedGroups = Dict.empty
       , loadingComputedGroups = Set.empty
       , rowShowAllPopupStatus = Nothing
+      , createComputedAvailableGroups = Nothing
+      , createLimitGroupsList = False
+      , createIsLoadingComputedGroups = False
       }
     , E.sendCmd <|
         Cmd.batch
@@ -313,6 +347,8 @@ type Msg
     | AddOrganism
     | AddOrganismDone (Result ApiError B.Organism)
     | ToggleEditEnabled
+    | ToggleLimitGroupsList
+    | ToggleLimitGroupsListCreate
     | EditOrganism Int
     | CloseEditSidebar
     | OpenCreateSidebar
@@ -324,6 +360,8 @@ type Msg
     | GotAorList (Result ApiError (List B.AreaOfResponsibility))
     | GotAvailableGroups Int (Result ApiError (List B.SignalGroupFull))
     | GotAvailableGroupsBatch (Result ApiError (Dict Int (List B.SignalGroupFull)))
+    | GotComputedAvailableGroups (Result ApiError (List B.SignalGroupFull))
+    | GotComputedAvailableGroupsCreate (Result ApiError (List B.SignalGroupFull))
     | RowShowAllPopupChanged (Maybe ( Int, ShowAllPopupFor ))
     | AddGroupToOrganismDone Int String Bool (Result ApiError ())
     | RemoveGroupFromOrganismDone Int String (Result ApiError ())
@@ -560,13 +598,38 @@ update msg model =
                         _ ->
                             model.groupsValidation
 
-                -- Keep existing validation state
+                -- Check if we need to reload computed groups (only on meaningful actions)
+                shouldReloadComputedGroups =
+                    case mAction of
+                        Just (Select.Select _) -> True
+                        Just (Select.Deselect _) -> True
+                        Just Select.Clear -> True
+                        _ -> False
+
+                modelWithUpdatedParent =
+                    { model | inpParentOrganism = inpParentOrganism2, groupsValidation = groupsValidation }
+
+                modelFinal =
+                    if shouldReloadComputedGroups then
+                        { modelWithUpdatedParent 
+                        | createIsLoadingComputedGroups = True
+                        , createComputedAvailableGroups = Nothing
+                        }
+                    else
+                        modelWithUpdatedParent
+
+                effects =
+                    if shouldReloadComputedGroups then
+                        let
+                            createReq = buildCreateOrganismReq modelFinal
+                        in
+                        [ E.sendCmd <| Cmd.map AddParentSelMsg iCmd
+                        , E.sendCmd <| Api.organism_compute_available_groups_for_new GotComputedAvailableGroupsCreate createReq
+                        ]
+                    else
+                        [ E.sendCmd <| Cmd.map AddParentSelMsg iCmd ]
             in
-            ( { model | inpParentOrganism = inpParentOrganism2, groupsValidation = groupsValidation }
-            , E.batch
-                [ E.sendCmd <| Cmd.map AddParentSelMsg iCmd
-                ]
-            )
+            ( modelFinal, E.batch effects )
 
         EditParentSelMsg selMsg ->
             case model.editOrganism of
@@ -615,14 +678,39 @@ update msg model =
                                 _ ->
                                     editOrganism.groupsValidation
 
-                        -- Keep existing validation state
+                        -- Check if we need to reload computed groups (only on meaningful actions)
+                        shouldReloadComputedGroups =
+                            case mAction of
+                                Just (Select.Select _) -> True
+                                Just (Select.Deselect _) -> True
+                                Just Select.Clear -> True
+                                _ -> False
+
                         editOrganism2 =
                             { editOrganism | inpParentOrganism = inpParentOrganism2, groupsValidation = groupsValidation }
+
+                        editOrganismFinal =
+                            if shouldReloadComputedGroups then
+                                { editOrganism2 
+                                | isLoadingComputedGroups = True
+                                , computedAvailableGroups = Nothing
+                                }
+                            else
+                                editOrganism2
+
+                        effects =
+                            if shouldReloadComputedGroups then
+                                let
+                                    updateReq = buildUpdateOrganismReq id editOrganismFinal
+                                in
+                                [ E.sendCmd <| Cmd.map EditParentSelMsg iCmd
+                                , E.sendCmd <| Api.organism_compute_available_groups GotComputedAvailableGroups updateReq
+                                ]
+                            else
+                                [ E.sendCmd <| Cmd.map EditParentSelMsg iCmd ]
                     in
-                    ( { model | editOrganism = Just ( id, editOrganism2 ) }
-                    , E.batch
-                        [ E.sendCmd <| Cmd.map EditParentSelMsg iCmd
-                        ]
+                    ( { model | editOrganism = Just ( id, editOrganismFinal ) }
+                    , E.batch effects
                     )
 
                 Nothing ->
@@ -681,46 +769,30 @@ update msg model =
                         , fieldsErrors = []
                         , groupsValidation = Nothing
                         , sidebarType = Nothing
+                        , createComputedAvailableGroups = Nothing
+                        , createLimitGroupsList = False
+                        , createIsLoadingComputedGroups = False
                     }
             in
             let
-                selectedParentId =
-                    model.inpParentOrganism.selectedItem
-
-                -- Filter groups based on parent constraints
+                {- NEW LOGIC: Groups to save based on createLimitGroupsList checkbox
+                
+                   Previous behavior: Always saved selected groups as restrictions with parent filtering
+                   
+                   New behavior:
+                   - createLimitGroupsList = False: No organism-group restrictions (empty list)
+                     → Organism gets ALL groups from bands automatically
+                   - createLimitGroupsList = True: Save selected groups as restrictions
+                     → Organism limited to only these specific groups
+                -}
                 groupsToAdd =
-                    case selectedParentId of
-                        Nothing ->
-                            model.inpGroups.selectedItems
-
-                        Just pId ->
-                            let
-                                parentOrganism =
-                                    model.organisms |> ListX.find (\o -> o.id == pId)
-
-                                parentGroups =
-                                    case parentOrganism of
-                                        Nothing ->
-                                            []
-
-                                        Just p ->
-                                            getOrganismGroups p.id model.organismGroups
-
-                                -- If parent has empty groups list, it means access to all groups
-                                -- Only filter if parent has specific groups defined
-                            in
-                            if List.isEmpty parentGroups then
-                                model.inpGroups.selectedItems
-
-                            else
-                                let
-                                    parentGroupsSet =
-                                        Set.fromList parentGroups
-
-                                    selectedGroupsSet =
-                                        Set.fromList model.inpGroups.selectedItems
-                                in
-                                Set.toList (Set.intersect selectedGroupsSet parentGroupsSet)
+                    if model.createLimitGroupsList then
+                        -- User wants to limit groups - use selected groups from selector
+                        model.inpGroups.selectedItems
+                    else
+                        -- User wants NO additional limitations - organism gets all groups from bands
+                        -- Save empty list (no organism-group restrictions)
+                        []
             in
             ( m2
             , E.sendCmd <|
@@ -793,6 +865,21 @@ update msg model =
                 Nothing ->
                     ( model, E.none )
 
+        ToggleLimitGroupsList ->
+            case model.editOrganism of
+                Just ( id, editOrganism ) ->
+                    let
+                        editOrganism2 =
+                            { editOrganism | limitGroupsList = not editOrganism.limitGroupsList }
+                    in
+                    ( { model | editOrganism = Just ( id, editOrganism2 ) }, E.none )
+
+                Nothing ->
+                    ( model, E.none )
+
+        ToggleLimitGroupsListCreate ->
+            ( { model | createLimitGroupsList = not model.createLimitGroupsList }, E.none )
+
         EditOrganism rowId ->
             let
                 organism =
@@ -831,11 +918,25 @@ update msg model =
                                         }
                                   , fieldsErrors = []
                                   , groupsValidation = Nothing
+                                  , computedAvailableGroups = Nothing
+                                  , limitGroupsList = hasGroupRestrictions o.id model.organismGroups
+                                  , isLoadingComputedGroups = True
                                   }
                                 )
                             )
             in
-            ( { model | editOrganism = organism, sidebarType = Just EditSidebar }, E.none )
+            case organism of
+                Just ( id, editOrg ) ->
+                    let
+                        updateReq =
+                            buildUpdateOrganismReq id editOrg
+                    in
+                    ( { model | editOrganism = organism, sidebarType = Just EditSidebar }
+                    , E.sendCmd <| Api.organism_compute_available_groups GotComputedAvailableGroups updateReq
+                    )
+
+                Nothing ->
+                    ( { model | editOrganism = organism, sidebarType = Just EditSidebar }, E.none )
 
         SetName value ->
             ( { model | inpName = value }, E.none )
@@ -902,6 +1003,46 @@ update msg model =
         GotAvailableGroupsBatch (Err e) ->
             ( { model | loadingComputedGroups = Set.empty }, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження computed груп для всіх організмів" e )
 
+        GotComputedAvailableGroups (Ok groups) ->
+            case model.editOrganism of
+                Just ( id, editOrganism ) ->
+                    let
+                        editOrganism2 =
+                            { editOrganism 
+                            | computedAvailableGroups = Just groups
+                            , isLoadingComputedGroups = False
+                            }
+                    in
+                    ( { model | editOrganism = Just ( id, editOrganism2 ) }, E.none )
+
+                Nothing ->
+                    ( model, E.none )
+
+        GotComputedAvailableGroups (Err e) ->
+            case model.editOrganism of
+                Just ( id, editOrganism ) ->
+                    let
+                        editOrganism2 =
+                            { editOrganism | isLoadingComputedGroups = False }
+                    in
+                    ( { model | editOrganism = Just ( id, editOrganism2 ) }
+                    , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження computed груп для редагування" e
+                    )
+
+                Nothing ->
+                    ( model, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження computed груп для редагування" e )
+
+        GotComputedAvailableGroupsCreate (Ok groups) ->
+            ( { model 
+              | createComputedAvailableGroups = Just groups
+              , createIsLoadingComputedGroups = False
+              }, E.none )
+
+        GotComputedAvailableGroupsCreate (Err e) ->
+            ( { model | createIsLoadingComputedGroups = False }
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження computed груп для створення" e
+            )
+
         RowShowAllPopupChanged popupStatus ->
             ( { model | rowShowAllPopupStatus = popupStatus }
             , E.none
@@ -917,10 +1058,39 @@ update msg model =
 
                 inpAors2 =
                     { inpAors | selectedItems = Utils.Select.multiUpdI mAction inpAors.selectedItems, selectState = iState }
+
+                -- Check if we need to reload computed groups (only on meaningful actions)
+                shouldReloadComputedGroups =
+                    case mAction of
+                        Just (Select.Select _) -> True
+                        Just (Select.Deselect _) -> True
+                        Just Select.Clear -> True
+                        _ -> False
+
+                modelWithUpdatedAors =
+                    { model | inpAors = inpAors2 }
+
+                modelFinal =
+                    if shouldReloadComputedGroups then
+                        { modelWithUpdatedAors 
+                        | createIsLoadingComputedGroups = True
+                        , createComputedAvailableGroups = Nothing
+                        }
+                    else
+                        modelWithUpdatedAors
+
+                effects =
+                    if shouldReloadComputedGroups then
+                        let
+                            createReq = buildCreateOrganismReq modelFinal
+                        in
+                        [ E.sendCmd <| Cmd.map AddAorSelMsg iCmd
+                        , E.sendCmd <| Api.organism_compute_available_groups_for_new GotComputedAvailableGroupsCreate createReq
+                        ]
+                    else
+                        [ E.sendCmd <| Cmd.map AddAorSelMsg iCmd ]
             in
-            ( { model | inpAors = inpAors2 }
-            , E.batch [ E.sendCmd <| Cmd.map AddAorSelMsg iCmd ]
-            )
+            ( modelFinal, E.batch effects )
 
         EditAorSelMsg selMsg ->
             case model.editOrganism of
@@ -937,9 +1107,37 @@ update msg model =
 
                         editOrganism2 =
                             { editOrganism | inpAors = inpAors2 }
+
+                        -- Check if we need to reload computed groups (only on meaningful actions)
+                        shouldReloadComputedGroups =
+                            case mAction of
+                                Just (Select.Select _) -> True
+                                Just (Select.Deselect _) -> True
+                                Just Select.Clear -> True
+                                _ -> False
+
+                        editOrganismFinal =
+                            if shouldReloadComputedGroups then
+                                { editOrganism2 
+                                | isLoadingComputedGroups = True
+                                , computedAvailableGroups = Nothing
+                                }
+                            else
+                                editOrganism2
+
+                        effects =
+                            if shouldReloadComputedGroups then
+                                let
+                                    updateReq = buildUpdateOrganismReq id editOrganismFinal
+                                in
+                                [ E.sendCmd <| Cmd.map EditAorSelMsg iCmd
+                                , E.sendCmd <| Api.organism_compute_available_groups GotComputedAvailableGroups updateReq
+                                ]
+                            else
+                                [ E.sendCmd <| Cmd.map EditAorSelMsg iCmd ]
                     in
-                    ( { model | editOrganism = Just ( id, editOrganism2 ) }
-                    , E.batch [ E.sendCmd <| Cmd.map EditAorSelMsg iCmd ]
+                    ( { model | editOrganism = Just ( id, editOrganismFinal ) }
+                    , E.batch effects
                     )
 
                 Nothing ->
@@ -958,46 +1156,27 @@ update msg model =
                                     getOrganismGroups id model.organismGroups
                                         |> Set.fromList
 
-                                selectedParentId =
-                                    editOrganism.inpParentOrganism.selectedItem
-
-                                -- Groups that should be available considering parent constraints
-                                availableGroups =
-                                    case selectedParentId of
-                                        Nothing ->
-                                            editOrganism.inpGroups.selectedItems
-
-                                        Just pId ->
-                                            let
-                                                parentOrganism =
-                                                    model.organisms |> ListX.find (\o -> o.id == pId)
-
-                                                parentGroups =
-                                                    case parentOrganism of
-                                                        Nothing ->
-                                                            []
-
-                                                        Just p ->
-                                                            getOrganismGroups p.id model.organismGroups
-
-                                                -- If parent has empty groups list, it means access to all groups
-                                                -- Only filter if parent has specific groups defined
-                                            in
-                                            if List.isEmpty parentGroups then
-                                                editOrganism.inpGroups.selectedItems
-
-                                            else
-                                                let
-                                                    parentGroupsSet =
-                                                        Set.fromList parentGroups
-
-                                                    selectedGroupsSet =
-                                                        Set.fromList editOrganism.inpGroups.selectedItems
-                                                in
-                                                Set.toList (Set.intersect selectedGroupsSet parentGroupsSet)
+                                {- NEW LOGIC: Groups to save based on limitGroupsList checkbox
+                                
+                                   Previous behavior: Always saved selected groups as restrictions
+                                   
+                                   New behavior:
+                                   - limitGroupsList = False: No organism-group restrictions (empty list)
+                                     → Organism gets ALL groups from bands automatically
+                                   - limitGroupsList = True: Save selected groups as restrictions
+                                     → Organism limited to only these specific groups
+                                -}
+                                groupsToSave =
+                                    if editOrganism.limitGroupsList then
+                                        -- User wants to limit groups - use selected groups from selector
+                                        editOrganism.inpGroups.selectedItems
+                                    else
+                                        -- User wants NO additional limitations - organism gets all groups from bands
+                                        -- Save empty list (no organism-group restrictions)
+                                        []
 
                                 editedSet =
-                                    Set.fromList availableGroups
+                                    Set.fromList groupsToSave
 
                                 added =
                                     Set.toList (Set.diff editedSet originalSet)
@@ -1048,10 +1227,27 @@ update msg model =
             ( { model | editOrganism = Nothing, sidebarType = Nothing }, E.none )
 
         OpenCreateSidebar ->
-            ( { model | sidebarType = Just CreateSidebar }, E.none )
+            let
+                modelWithSidebar =
+                    { model 
+                    | sidebarType = Just CreateSidebar
+                    , createIsLoadingComputedGroups = True
+                    , createComputedAvailableGroups = Nothing
+                    }
+
+                createReq = buildCreateOrganismReq modelWithSidebar
+            in
+            ( modelWithSidebar
+            , E.sendCmd <| Api.organism_compute_available_groups_for_new GotComputedAvailableGroupsCreate createReq
+            )
 
         CloseCreateSidebar ->
-            ( { model | sidebarType = Nothing }, E.none )
+            ( { model 
+              | sidebarType = Nothing
+              , createComputedAvailableGroups = Nothing
+              , createLimitGroupsList = False
+              , createIsLoadingComputedGroups = False
+              }, E.none )
 
         EditOrganismDone (Ok o) ->
             let
@@ -1246,38 +1442,39 @@ organismsTableConfig groups organismGroups allOrganisms timeZone editingOrganism
                 }
                 |> Table.withColumnWidth "14%"
             , Table.veryCustomColumn
-                { name = "Лише групи"
+                { name = "Смуги"
                 , viewData =
                     \o ->
-                        { attributes = [ class "col-wide" ]
+                        { attributes = []
                         , children =
                             [ div [ class "flex flex-wrap gap-1" ]
                                 (let
-                                    organismGroupIds =
-                                        getOrganismGroups o.id organismGroups
+                                    allAors =
+                                        o.aorIds
+                                            |> List.filterMap
+                                                (\aorId ->
+                                                    case RD.toMaybe aorList of
+                                                        Just aors ->
+                                                            ListX.find (\aor -> aor.id == aorId) aors
 
-                                    allGroups =
-                                        organismGroupIds
-                                            |> List.filterMap (\groupId -> ListX.find (\x -> x.masterKey == groupId) groups)
-                                            |> List.sortBy (\group -> String.toLower (groupName group))
+                                                        Nothing ->
+                                                            Nothing
+                                                )
 
-                                    visibleGroups =
-                                        List.take 10 allGroups
+                                    visibleAors =
+                                        List.take 10 allAors
                                  in
                                  List.map
-                                    (\group ->
-                                        span
-                                            [ class "badge badge--ochre-light"
-                                            , title (groupName group)
-                                            ]
-                                            [ text (groupName group) ]
+                                    (\aor ->
+                                        span [ class "badge badge--neutral", title aor.name ]
+                                            [ text aor.name ]
                                     )
-                                    visibleGroups
-                                    ++ (if List.length allGroups > 10 then
+                                    visibleAors
+                                    ++ (if List.length allAors > 10 then
                                             let
                                                 isOpen =
                                                     case model.rowShowAllPopupStatus of
-                                                        Just ( organismId, ShowAllGroups ) ->
+                                                        Just ( organismId, ShowAllAors ) ->
                                                             organismId == o.id
 
                                                         _ ->
@@ -1286,27 +1483,27 @@ organismsTableConfig groups organismGroups allOrganisms timeZone editingOrganism
                                             [ FloatingPopup.new
                                                 { anchorContent =
                                                     span [ class "inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 cursor-pointer rounded-md hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors" ]
-                                                        [ text ("Показати всі " ++ String.fromInt (List.length allGroups))
+                                                        [ text ("Показати всі " ++ String.fromInt (List.length allAors))
                                                         , i [ class "bi bi-chevron-down text-xs" ] []
                                                         ]
                                                 , popupContent =
                                                     div [ class "p-1 max-h-[300px] max-w-[400px] overflow-y-auto" ]
                                                         [ div [ class "mb-3 pb-2 border-b border-gray-200 dark:border-gray-700" ]
                                                             [ h4 [ class "text-sm font-semibold text-gray-900 dark:text-gray-100" ]
-                                                                [ text ("Групи (" ++ String.fromInt (List.length allGroups) ++ ")") ]
+                                                                [ text ("Смуги (" ++ String.fromInt (List.length allAors) ++ ")") ]
                                                             ]
                                                         , div [ class "space-y-2" ]
                                                             (List.map
-                                                                (\group ->
+                                                                (\aor ->
                                                                     div [ class "px-3 py-2 bg-gray-50 dark:bg-gray-800 rounded-md border border-gray-200 dark:border-gray-700" ]
-                                                                        [ text (groupName group) ]
+                                                                        [ text aor.name ]
                                                                 )
-                                                                allGroups
+                                                                allAors
                                                             )
                                                         ]
                                                 , isOpen = isOpen
                                                 , onClose = RowShowAllPopupChanged Nothing
-                                                , onOpen = RowShowAllPopupChanged <| Just ( o.id, ShowAllGroups )
+                                                , onOpen = RowShowAllPopupChanged <| Just ( o.id, ShowAllAors )
                                                 }
                                                 |> FloatingPopup.withPlacement FloatingPopup.Top
                                                 |> FloatingPopup.view
@@ -1321,13 +1518,18 @@ organismsTableConfig groups organismGroups allOrganisms timeZone editingOrganism
                 , sorter =
                     Table.increasingOrDecreasingBy
                         (\o ->
-                            getOrganismGroups o.id organismGroups
-                                |> List.filterMap (\groupId -> ListX.find (\x -> x.masterKey == groupId) groups)
-                                |> List.map groupName
-                                |> String.join ", "
+                            case RD.toMaybe aorList of
+                                Just aors ->
+                                    o.aorIds
+                                        |> List.filterMap (\aorId -> ListX.find (\aor -> aor.id == aorId) aors)
+                                        |> List.map .name
+                                        |> String.join ", "
+
+                                Nothing ->
+                                    ""
                         )
                 }
-                |> Table.withColumnWidth "19%"
+                |> Table.withColumnWidth "14%"
             , Table.veryCustomColumn
                 { name = "Групи"
                 , viewData =
@@ -1518,39 +1720,38 @@ organismsTableConfig groups organismGroups allOrganisms timeZone editingOrganism
                 }
                 |> Table.withColumnWidth "6%"
             , Table.veryCustomColumn
-                { name = "Смуги"
+                { name = "Обмежити групами"
                 , viewData =
                     \o ->
-                        { attributes = []
+                        { attributes = [ class "col-wide" ]
                         , children =
                             [ div [ class "flex flex-wrap gap-1" ]
                                 (let
-                                    allAors =
-                                        o.aorIds
-                                            |> List.filterMap
-                                                (\aorId ->
-                                                    case RD.toMaybe aorList of
-                                                        Just aors ->
-                                                            ListX.find (\aor -> aor.id == aorId) aors
+                                    organismGroupIds =
+                                        getOrganismGroups o.id organismGroups
 
-                                                        Nothing ->
-                                                            Nothing
-                                                )
+                                    allGroups =
+                                        organismGroupIds
+                                            |> List.filterMap (\groupId -> ListX.find (\x -> x.masterKey == groupId) groups)
+                                            |> List.sortBy (\group -> String.toLower (groupName group))
 
-                                    visibleAors =
-                                        List.take 10 allAors
+                                    visibleGroups =
+                                        List.take 10 allGroups
                                  in
                                  List.map
-                                    (\aor ->
-                                        span [ class "badge badge--neutral", title aor.name ]
-                                            [ text aor.name ]
+                                    (\group ->
+                                        span
+                                            [ class "badge badge--ochre-light"
+                                            , title (groupName group)
+                                            ]
+                                            [ text (groupName group) ]
                                     )
-                                    visibleAors
-                                    ++ (if List.length allAors > 10 then
+                                    visibleGroups
+                                    ++ (if List.length allGroups > 10 then
                                             let
                                                 isOpen =
                                                     case model.rowShowAllPopupStatus of
-                                                        Just ( organismId, ShowAllAors ) ->
+                                                        Just ( organismId, ShowAllGroups ) ->
                                                             organismId == o.id
 
                                                         _ ->
@@ -1559,27 +1760,27 @@ organismsTableConfig groups organismGroups allOrganisms timeZone editingOrganism
                                             [ FloatingPopup.new
                                                 { anchorContent =
                                                     span [ class "inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 cursor-pointer rounded-md hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors" ]
-                                                        [ text ("Показати всі " ++ String.fromInt (List.length allAors))
+                                                        [ text ("Показати всі " ++ String.fromInt (List.length allGroups))
                                                         , i [ class "bi bi-chevron-down text-xs" ] []
                                                         ]
                                                 , popupContent =
                                                     div [ class "p-1 max-h-[300px] max-w-[400px] overflow-y-auto" ]
                                                         [ div [ class "mb-3 pb-2 border-b border-gray-200 dark:border-gray-700" ]
                                                             [ h4 [ class "text-sm font-semibold text-gray-900 dark:text-gray-100" ]
-                                                                [ text ("Смуги (" ++ String.fromInt (List.length allAors) ++ ")") ]
+                                                                [ text ("Групи (" ++ String.fromInt (List.length allGroups) ++ ")") ]
                                                             ]
                                                         , div [ class "space-y-2" ]
                                                             (List.map
-                                                                (\aor ->
+                                                                (\group ->
                                                                     div [ class "px-3 py-2 bg-gray-50 dark:bg-gray-800 rounded-md border border-gray-200 dark:border-gray-700" ]
-                                                                        [ text aor.name ]
+                                                                        [ text (groupName group) ]
                                                                 )
-                                                                allAors
+                                                                allGroups
                                                             )
                                                         ]
                                                 , isOpen = isOpen
                                                 , onClose = RowShowAllPopupChanged Nothing
-                                                , onOpen = RowShowAllPopupChanged <| Just ( o.id, ShowAllAors )
+                                                , onOpen = RowShowAllPopupChanged <| Just ( o.id, ShowAllGroups )
                                                 }
                                                 |> FloatingPopup.withPlacement FloatingPopup.Top
                                                 |> FloatingPopup.view
@@ -1594,18 +1795,13 @@ organismsTableConfig groups organismGroups allOrganisms timeZone editingOrganism
                 , sorter =
                     Table.increasingOrDecreasingBy
                         (\o ->
-                            case RD.toMaybe aorList of
-                                Just aors ->
-                                    o.aorIds
-                                        |> List.filterMap (\aorId -> ListX.find (\aor -> aor.id == aorId) aors)
-                                        |> List.map .name
-                                        |> String.join ", "
-
-                                Nothing ->
-                                    ""
+                            getOrganismGroups o.id organismGroups
+                                |> List.filterMap (\groupId -> ListX.find (\x -> x.masterKey == groupId) groups)
+                                |> List.map groupName
+                                |> String.join ", "
                         )
                 }
-                |> Table.withColumnWidth "14%"
+                |> Table.withColumnWidth "19%"
             , Table.veryCustomColumn
                 { name = "Створено"
                 , viewData =
@@ -1694,30 +1890,6 @@ addOrganismSidebarContent isDark model =
                         ]
                     ]
                 , div [ class "space-y-2" ]
-                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Групи" ]
-                    , div [ class "w-full" ]
-                        [ Html.map AddGroupSelMsg <|
-                            Styled.toUnstyled <|
-                                Utils.Select.renderSelect
-                                    groupsSelectedItems
-                                    model.inpGroups.selectState
-                                    (availableGroups |> List.map (\x -> Select.basicMenuItem { item = x.masterKey, label = x.name }))
-                                    "групи"
-                                    (Utils.Select.defaultOptions isDark)
-                        ]
-                    , case model.groupsValidation of
-                        Just groups ->
-                            div [ class "mt-2 p-3 rounded-md bg-yellow-50 border border-yellow-200 dark:bg-yellow-900/20 dark:border-yellow-800" ]
-                                [ p [ class "text-sm text-yellow-800 dark:text-yellow-200" ]
-                                    [ text "⚠️ Попередження: при виборі цього батьківського організму буде втрачено доступ до груп: "
-                                    , strong [] [ text (String.join ", " groups) ]
-                                    ]
-                                ]
-
-                        Nothing ->
-                            text ""
-                    ]
-                , div [ class "space-y-2" ]
                     [ label [ class "text-sm font-medium text-foreground" ] [ text "Ролі" ]
                     , div [ class "w-full" ]
                         [ Html.map AddRoleSelMsg <|
@@ -1731,7 +1903,7 @@ addOrganismSidebarContent isDark model =
                         ]
                     ]
                 , div [ class "space-y-2" ]
-                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Смуги відповідальності" ]
+                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Смуги" ]
                     , div [ class "w-full" ]
                         [ Html.map AddAorSelMsg <|
                             Styled.toUnstyled <|
@@ -1761,6 +1933,81 @@ addOrganismSidebarContent isDark model =
                                     (Utils.Select.defaultOptions isDark)
                         ]
                     ]
+
+                -- Computed Available Groups (read-only display)
+                , div [ class "space-y-2" ]
+                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Доступні групи для організму" ]
+                    , div [ class "p-3 rounded-md bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700" ]
+                        [ if model.createIsLoadingComputedGroups then
+                            div [ class "flex items-center gap-2" ]
+                                [ Spinner.loadingSpinner2Sm
+                                , p [ class "text-sm text-muted-foreground italic" ] [ text "Завантаження доступних груп..." ]
+                                ]
+                          else
+                            case model.createComputedAvailableGroups of
+                                Just computedGroups ->
+                                    if List.isEmpty computedGroups then
+                                        p [ class "text-sm text-muted-foreground italic" ] [ text "Немає доступних груп" ]
+                                    else
+                                        div [ class "flex flex-wrap gap-1" ]
+                                            (computedGroups
+                                                |> List.map (\group ->
+                                                    span [ class "badge badge--ochre-light", title (if String.isEmpty group.name then 
+                                                            "Без назви (id=" ++ String.left 6 group.masterKey ++ "...)"
+                                                          else 
+                                                            group.name) ]
+                                                        [ text (if String.isEmpty group.name then 
+                                                            "Без назви (id=" ++ String.left 6 group.masterKey ++ "...)"
+                                                          else 
+                                                            group.name)
+                                                        ]
+                                                )
+                                            )
+
+                                Nothing ->
+                                    p [ class "text-sm text-muted-foreground italic" ] [ text "Оберіть смуги для отримання доступних груп" ]
+                        ]
+                    , p [ class "text-xs text-muted-foreground" ]
+                        [ text "Ці групи будуть доступні організму на основі вибраних смуг та батьківського організму" ]
+                    ]
+
+                -- Checkbox to limit groups list
+                , div [ class "space-y-2" ]
+                    [ Checkbox.new { isChecked = model.createLimitGroupsList, onToggle = \_ -> ToggleLimitGroupsListCreate }
+                        |> Checkbox.withContent [ text "Обмежити перелік груп" ]
+                        |> Checkbox.view
+                    , p [ class "text-xs text-muted-foreground ml-6" ]
+                        [ text "За замовчуванням організм має доступ до всіх груп від смуг. Увімкніть для додаткового обмеження." ]
+                    ]
+
+                -- Groups selector (only when checkbox is enabled)
+                , if model.createLimitGroupsList then
+                    div [ class "space-y-2" ]
+                        [ label [ class "text-sm font-medium text-foreground" ] [ text "Обмежити групами" ]
+                        , div [ class "w-full" ]
+                            [ Html.map AddGroupSelMsg <|
+                                Styled.toUnstyled <|
+                                    Utils.Select.renderSelect
+                                        groupsSelectedItems
+                                        model.inpGroups.selectState
+                                        (availableGroups |> List.map (\x -> Select.basicMenuItem { item = x.masterKey, label = x.name }))
+                                        "групи"
+                                        (Utils.Select.defaultOptions isDark)
+                            ]
+                        , case model.groupsValidation of
+                            Just groups ->
+                                div [ class "mt-2 p-3 rounded-md bg-yellow-50 border border-yellow-200 dark:bg-yellow-900/20 dark:border-yellow-800" ]
+                                    [ p [ class "text-sm text-yellow-800 dark:text-yellow-200" ]
+                                        [ text "⚠️ Попередження: при виборі цього батьківського організму буде втрачено доступ до груп: "
+                                        , strong [] [ text (String.join ", " groups) ]
+                                        ]
+                                    ]
+
+                            Nothing ->
+                                text ""
+                        ]
+                  else
+                    text ""
                 ]
             ]
         , div [ class "p-6 border-t border-border bg-muted/30" ]
@@ -1768,7 +2015,19 @@ addOrganismSidebarContent isDark model =
                 [ Button.new { label = "Скасувати", onClick = CloseCreateSidebar }
                     |> Button.withStyleSecondary
                     |> Button.view
-                , Button.new { label = "Створити", onClick = AddOrganism }
+                , Button.new
+                    { label =
+                        case model.groupsValidation of
+                            Just groups ->
+                                "Створити (втратити " ++ String.fromInt (List.length groups) ++ " груп)"
+
+                            Nothing ->
+                                if model.createLimitGroupsList then
+                                    "Створити з обмеженням груп"
+                                else
+                                    "Створити (доступ до всіх груп від смуг)"
+                    , onClick = AddOrganism
+                    }
                     |> Button.view
                 ]
             ]
@@ -1840,30 +2099,6 @@ editOrganismSidebarContent isDark model organismId editState =
                         ]
                     ]
                 , div [ class "space-y-2" ]
-                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Групи" ]
-                    , div [ class "w-full" ]
-                        [ Html.map EditGroupSelMsg <|
-                            Styled.toUnstyled <|
-                                Utils.Select.renderSelect
-                                    groupsSelectedItems
-                                    editState.inpGroups.selectState
-                                    (availableGroups |> List.map (\x -> Select.basicMenuItem { item = x.masterKey, label = x.name }))
-                                    "групи"
-                                    (Utils.Select.defaultOptions isDark)
-                        ]
-                    , case editState.groupsValidation of
-                        Just groups ->
-                            div [ class "mt-2 p-3 rounded-md bg-yellow-50 border border-yellow-200 dark:bg-yellow-900/20 dark:border-yellow-800" ]
-                                [ p [ class "text-sm text-yellow-800 dark:text-yellow-200" ]
-                                    [ text "⚠️ Попередження: при виборі цього батьківського організму буде втрачено доступ до груп: "
-                                    , strong [] [ text (String.join ", " groups) ]
-                                    ]
-                                ]
-
-                        Nothing ->
-                            text ""
-                    ]
-                , div [ class "space-y-2" ]
                     [ label [ class "text-sm font-medium text-foreground" ] [ text "Ролі" ]
                     , div [ class "w-full" ]
                         [ Html.map EditRoleSelMsg <|
@@ -1907,6 +2142,80 @@ editOrganismSidebarContent isDark model organismId editState =
                                     (Utils.Select.defaultOptions isDark)
                         ]
                     ]
+                -- Computed Available Groups (read-only display)
+                , div [ class "space-y-2" ]
+                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Доступні групи для організму" ]
+                    , div [ class "p-3 rounded-md bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700" ]
+                        [ if editState.isLoadingComputedGroups then
+                            div [ class "flex items-center gap-2" ]
+                                [ Spinner.loadingSpinner2Sm
+                                , p [ class "text-sm text-muted-foreground italic" ] [ text "Завантаження доступних груп..." ]
+                                ]
+                          else
+                            case editState.computedAvailableGroups of
+                                Just computedGroups ->
+                                    if List.isEmpty computedGroups then
+                                        p [ class "text-sm text-muted-foreground italic" ] [ text "Немає доступних груп" ]
+                                    else
+                                        div [ class "flex flex-wrap gap-1" ]
+                                            (computedGroups
+                                                |> List.map (\group ->
+                                                    span [ class "badge badge--ochre-light", title (if String.isEmpty group.name then 
+                                                            "Без назви (id=" ++ String.left 6 group.masterKey ++ "...)"
+                                                          else 
+                                                            group.name) ]
+                                                        [ text (if String.isEmpty group.name then 
+                                                            "Без назви (id=" ++ String.left 6 group.masterKey ++ "...)"
+                                                          else 
+                                                            group.name)
+                                                        ]
+                                                )
+                                            )
+
+                                Nothing ->
+                                    p [ class "text-sm text-muted-foreground italic" ] [ text "Оберіть смуги для отримання доступних груп" ]
+                        ]
+                    , p [ class "text-xs text-muted-foreground" ]
+                        [ text "Ці групи будуть доступні організму на основі вибраних смуг та батьківського організму" ]
+                    ]
+
+                -- Checkbox to limit groups list
+                , div [ class "space-y-2" ]
+                    [ Checkbox.new { isChecked = editState.limitGroupsList, onToggle = \_ -> ToggleLimitGroupsList }
+                        |> Checkbox.withContent [ text "Обмежити перелік груп" ]
+                        |> Checkbox.view
+                    , p [ class "text-xs text-muted-foreground ml-6" ]
+                        [ text "За замовчуванням організм має доступ до всіх груп від смуг. Увімкніть для додаткового обмеження." ]
+                    ]
+
+                -- Groups selector (only when checkbox is enabled)
+                , if editState.limitGroupsList then
+                    div [ class "space-y-2" ]
+                        [ label [ class "text-sm font-medium text-foreground" ] [ text "Обмежити групами" ]
+                        , div [ class "w-full" ]
+                            [ Html.map EditGroupSelMsg <|
+                                Styled.toUnstyled <|
+                                    Utils.Select.renderSelect
+                                        groupsSelectedItems
+                                        editState.inpGroups.selectState
+                                        (availableGroups |> List.map (\x -> Select.basicMenuItem { item = x.masterKey, label = x.name }))
+                                        "групи"
+                                        (Utils.Select.defaultOptions isDark)
+                            ]
+                        , case editState.groupsValidation of
+                            Just groups ->
+                                div [ class "mt-2 p-3 rounded-md bg-yellow-50 border border-yellow-200 dark:bg-yellow-900/20 dark:border-yellow-800" ]
+                                    [ p [ class "text-sm text-yellow-800 dark:text-yellow-200" ]
+                                        [ text "⚠️ Попередження: при виборі цього батьківського організму буде втрачено доступ до груп: "
+                                        , strong [] [ text (String.join ", " groups) ]
+                                        ]
+                                    ]
+
+                            Nothing ->
+                                text ""
+                        ]
+                  else
+                    text ""
                 , div [ class "grid grid-cols-2 gap-4" ]
                     [ div [ class "flex items-center" ]
                         [ Checkbox.new { isChecked = editState.enabled, onToggle = \_ -> ToggleEditEnabled }
@@ -1928,7 +2237,10 @@ editOrganismSidebarContent isDark model organismId editState =
                                 "Зберегти (втратити " ++ String.fromInt (List.length groups) ++ " груп)"
 
                             Nothing ->
-                                "Зберегти"
+                                if editState.limitGroupsList then
+                                    "Зберегти з обмеженням груп"
+                                else
+                                    "Зберегти (доступ до всіх груп від смуг)"
                     , onClick = EditOrganismSave
                     }
                     |> Button.view
