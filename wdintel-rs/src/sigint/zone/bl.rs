@@ -156,7 +156,6 @@ pub async fn bl_zones_datasources_group_update_or_add(
             .c(h!())?;
         }
     }
-    unlink_reserve_group_dupes(txn).await.c(h!())?;
     Ok(())
 }
 
