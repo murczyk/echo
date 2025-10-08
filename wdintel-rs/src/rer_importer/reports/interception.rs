@@ -127,7 +127,8 @@ async fn get_inbox_messages_report(
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(datasource_group::Column::GroupMasterKey.is_in(
             crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login).await.c(h!())?,
-        ));
+        ))
+        .distinct_on(["dedup_key"]);
 
     if req.report_tags_only_this_unit == Some(true) {
         q = q.filter(sigint_comment::Column::Login.is_in(logins));
