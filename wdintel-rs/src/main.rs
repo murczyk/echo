@@ -7,6 +7,7 @@
 
 use crate::config::*;
 use crate::types::*;
+use anyhow::Context;
 use clap::Parser;
 use redis::aio::ConnectionManager;
 use redis::ConnectionLike;
@@ -67,13 +68,20 @@ pub async fn renew_tailscale_cert(
     force: Option<bool>,
 ) -> Result<(), AppError> {
     let config = crate::config::read_config(mode)?;
-    echo_install_utils::tailscale::renew_cert(
-        &config.public_host,
-        "echo",
-        "echo",
-        force,
-    )
+    let domain = config.public_host.clone();
+    let force_flag = force.unwrap_or(false);
+
+    tokio::task::spawn_blocking(move || {
+        echo_install_utils::tailscale::RenewCert::new()
+            .domain(domain)
+            .app_name("echo")
+            .cert_name("echo")
+            .force(force_flag)
+            .run()
+            .context(h!())
+    })
     .await
+    .context(h!())?
     .context(h!())?;
     Ok(())
 }
