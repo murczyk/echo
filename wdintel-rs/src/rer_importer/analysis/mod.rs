@@ -847,7 +847,8 @@ pub async fn summary_table_freq_1(
             .await
             .c(h!())?;
 
-    let rows_res = signal_message::Entity::find()
+    let dedup_key_alias = Alias::new("dedup_key");
+    let dedup_subquery = signal_message::Entity::find()
         .join(
             JoinType::InnerJoin,
             signal_message::Relation::SigintInboxItem.def(),
@@ -868,41 +869,58 @@ pub async fn summary_table_freq_1(
             Expr::col(sigint_inbox_item::Column::NominatimresId),
             "nominatimres_id",
         )
-        .column_as(Expr::cust("array_agg(distinct callsigns)"), "callsigns")
+        .column_as(Expr::col(sigint_inbox_item::Column::Callsigns), "callsigns")
+        .column_as(Expr::col(sigint_inbox_item::Column::UnitV2), "unit_v2")
         .column_as(
-            Expr::cust("array_agg(distinct coalesce(unit_v2, ''))"),
-            "units",
+            Expr::col(sigint_inbox_item::Column::LocationV2),
+            "location_v2",
         )
         .column_as(
-            Expr::cust("array_agg(distinct coalesce(location_v2, ''))"),
-            "locations",
+            Expr::col((
+                signal_message::Entity,
+                signal_message::Column::DuplicateOf,
+            ))
+            .if_null(Expr::col((
+                signal_message::Entity,
+                signal_message::Column::Id,
+            ))),
+            "dedup_key",
         )
-        .column_as(Expr::col(signal_message::Entity).count(), "count")
+        .distinct_on([dedup_key_alias.clone()])
         .filter(datasource_group::Column::GroupMasterKey.is_in(master_keys))
         .filter(signal_message::Column::Deleted.eq(false))
         // .filter(signal_message::Column::DuplicateOf.is_null())
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
-        // .filter(sigint_inbox_item::Column::Checked.eq(Some(true)))
-        .group_by(Expr::cust("1, 2, 3, 4"));
-    let rows_res = filter_selected_freqs(rows_res, &req.selected_freqs)?;
-    let rows_res = filter_selected_posts(rows_res, &req.selected_posts)?;
-    let rows_res = filter_selected_groups(rows_res, &req.selected_groups)?;
-    let rows_res = filter_selected_senders(rows_res, &req.selected_senders)?;
-    let rows_res = filter_selected_units(
-        rows_res,
+        .order_by(Expr::cust("dedup_key"), Order::Asc)
+        // emulate NULLS FIRST: order nulls before non-nulls
+        .order_by(
+            Expr::cust("(signal_message.duplicate_of IS NULL)"),
+            Order::Desc,
+        )
+        .order_by(sigint_inbox_item::Column::Datetime, Order::Asc);
+    let dedup_subquery =
+        filter_selected_freqs(dedup_subquery, &req.selected_freqs)?;
+    let dedup_subquery =
+        filter_selected_posts(dedup_subquery, &req.selected_posts)?;
+    let dedup_subquery =
+        filter_selected_groups(dedup_subquery, &req.selected_groups)?;
+    let dedup_subquery =
+        filter_selected_senders(dedup_subquery, &req.selected_senders)?;
+    let dedup_subquery = filter_selected_units(
+        dedup_subquery,
         &req.selected_units,
         &req.units_exact_match_only,
     )?;
-    let rows_res = filter_selected_locations(
-        rows_res,
+    let dedup_subquery = filter_selected_locations(
+        dedup_subquery,
         &req.selected_locations,
         include_peleng_locations,
     )?;
-    let rows_res =
-        filter_selected_callsigns(rows_res, &req.selected_callsigns)?;
-    let rows_res = filter_selected_tags(
-        rows_res,
+    let dedup_subquery =
+        filter_selected_callsigns(dedup_subquery, &req.selected_callsigns)?;
+    let dedup_subquery = filter_selected_tags(
+        dedup_subquery,
         &req.selected_tags,
         &req.or_bookmarked,
         &req.or_important,
@@ -911,17 +929,56 @@ pub async fn summary_table_freq_1(
         &req.filter_tags_option,
         &user.id().c(h!())?,
     )?;
-    let rows_res =
-        filter_selected_aors(rows_res, &req.selected_aors).context(h!())?;
-    let rows_res = filter_selected_networks(rows_res, &req.selected_networks)
-        .context(h!())?;
-    let rows_res = filter_search(rows_res, &req.search)?;
+    let dedup_subquery =
+        filter_selected_aors(dedup_subquery, &req.selected_aors)
+            .context(h!())?;
+    let dedup_subquery =
+        filter_selected_networks(dedup_subquery, &req.selected_networks)
+            .context(h!())?;
+    let dedup_subquery = filter_search(dedup_subquery, &req.search)?;
     // println!(
-    //     "> summary table rows_res sql: {}",
-    //     rows_res.build(DbBackend::Postgres).to_string()
+    //     "> summary table dedup_subquery sql: {}",
+    //     dedup_subquery.build(DbBackend::Postgres).to_string()
     // );
-    let rows_res: Vec<Row> =
-        rows_res.into_model::<Row>().all(&env.dbx).await.c(h!())?;
+
+    let uniq_alias = Alias::new("uniq");
+
+    let main_query: SelectStatement = Query::select()
+        .column((uniq_alias.clone(), "freq"))
+        .column((uniq_alias.clone(), "lat"))
+        .column((uniq_alias.clone(), "lng"))
+        .column((uniq_alias.clone(), "nominatimres_id"))
+        .expr_as(
+            Expr::cust("array_agg(distinct uniq.callsigns)"),
+            "callsigns",
+        )
+        .expr_as(
+            Expr::cust("array_agg(distinct coalesce(uniq.unit_v2, ''))"),
+            "units",
+        )
+        .expr_as(
+            Expr::cust("array_agg(distinct coalesce(uniq.location_v2, ''))"),
+            "locations",
+        )
+        .expr_as(Expr::cust("count(1)"), "count")
+        .from_subquery(dedup_subquery.into_query(), uniq_alias.clone())
+        .add_group_by([Expr::cust("1, 2, 3, 4")])
+        .to_owned();
+
+    let sql = main_query.to_string(PostgresQueryBuilder);
+    // println!("> summary table main_query sql: {}", sql);
+
+    let main_query_res = env
+        .dbx
+        .query_all(Statement::from_string(DbBackend::Postgres, sql))
+        .await
+        .c(h!())?;
+
+    let rows_res: Vec<Row> = main_query_res
+        .into_iter()
+        .map(|qr| Row::from_query_result(&qr, ""))
+        .collect::<Result<Vec<_>, sea_orm::DbErr>>()
+        .c(h!())?;
 
     let mut callsigns_per_freq: BTreeMap<String, Vec<String>> = BTreeMap::new();
     let mut units_per_freq: BTreeMap<String, Vec<String>> = BTreeMap::new();
