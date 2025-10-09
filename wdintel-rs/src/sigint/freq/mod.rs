@@ -13,7 +13,7 @@ use sea_orm::{sea_query::PostgresQueryBuilder, *};
 use sea_orm::{
     ColumnTrait, Condition, EntityTrait, QueryFilter, QuerySelect, Statement,
 };
-use sea_query::{Alias, CommonTableExpression, Expr, Query, SimpleExpr};
+use sea_query::{Alias, CommonTableExpression, Expr, Order, Query, SimpleExpr};
 
 use std::collections::{BTreeSet, HashMap};
 
@@ -462,6 +462,7 @@ pub async fn list_freqs(
         location_v2: Option<String>,
     }
 
+    let dedup_key_alias = Alias::new("dedup_key");
     let freqs_period = match &req.filter_callsigns {
         Some(filter_callsigns) => {
             if let Err(ref e) = validate_callsigns(filter_callsigns) {
@@ -477,8 +478,7 @@ pub async fn list_freqs(
                     .collect::<Vec<_>>()
                     .join(",")
             );
-
-            let mut subquery = signal_message::Entity::find()
+            let mut dedup_subquery = signal_message::Entity::find()
                 .join(
                     JoinType::InnerJoin,
                     signal_message::Relation::DatasourceGroup.def(),
@@ -489,28 +489,27 @@ pub async fn list_freqs(
                     Alias::new("sigint_inbox_item"),
                 )
                 .select_only()
-                // .column_as(signal_message::Column::Id.count(), "message_count")
+                .columns([
+                    sigint_inbox_item::Column::Freq,
+                    sigint_inbox_item::Column::LocationV2,
+                    sigint_inbox_item::Column::Callsigns,
+                    sigint_inbox_item::Column::Datetime,
+                ])
                 .column_as(
-                    SimpleExpr::Custom("sigint_inbox_item.freq".to_string()),
-                    "freq",
+                    Expr::col((
+                        signal_message::Entity,
+                        signal_message::Column::DuplicateOf,
+                    ))
+                    .if_null(Expr::col((
+                        signal_message::Entity,
+                        signal_message::Column::Id,
+                    ))),
+                    "dedup_key",
                 )
-                .column_as(
-                    SimpleExpr::Custom(
-                        "string_agg(sigint_inbox_item.location_v2, '')"
-                            .to_string(),
-                    ),
-                    "location_v2",
-                )
-                .column_as(
-                    SimpleExpr::Custom(
-                        "jsonb_array_elements_text(sigint_inbox_item.callsigns)"
-                            .to_string(),
-                    ),
-                    "callsign",
-                );
+                .distinct_on([dedup_key_alias.clone()]);
 
-            subquery = filters_list_freq_search(
-                subquery,
+            dedup_subquery = filters_list_freq_search(
+                dedup_subquery,
                 &env,
                 &user,
                 dt_since,
@@ -524,18 +523,46 @@ pub async fn list_freqs(
             .await
             .c(h!())?;
 
-            subquery = subquery.filter(Expr::cust(format!(
+            dedup_subquery = dedup_subquery.filter(Expr::cust(format!(
                 "\"sigint_inbox_item\".\"callsigns\" ?| {callsings_postgres_array}"
             )));
 
-            subquery = subquery.group_by(sigint_inbox_item::Column::Freq);
-            subquery = subquery.group_by(Expr::cust("callsign".to_string()));
+            dedup_subquery = dedup_subquery
+                .order_by(Expr::cust("dedup_key"), Order::Asc)
+                // emulate NULLS FIRST: order nulls before non-nulls
+                .order_by(
+                    Expr::cust("(signal_message.duplicate_of IS NULL)"),
+                    Order::Desc,
+                )
+                .order_by(sigint_inbox_item::Column::Datetime, Order::Asc);
 
-            let cte_alias = Alias::new("unique_callsigns");
+            let dedup_cte_alias = Alias::new("deduped");
+            let dedup_cte = CommonTableExpression::new()
+                .query(dedup_subquery.into_query().to_owned())
+                .table_name(dedup_cte_alias.clone())
+                .to_owned();
 
-            let unique_callsigns_cte = CommonTableExpression::new()
-                .query(subquery.into_query().to_owned())
-                .table_name(cte_alias.clone())
+            let callsigns_subquery = Query::select()
+                .expr_as(Expr::col("freq"), "freq")
+                .expr_as(
+                    Expr::cust("string_agg(DISTINCT location_v2, '')"),
+                    "location_v2",
+                )
+                .expr_as(
+                    Expr::cust("jsonb_array_elements_text(callsigns)"),
+                    "callsign",
+                )
+                .from(dedup_cte_alias.clone())
+                .add_group_by([
+                    Expr::col("freq").into(),
+                    Expr::col("callsign").into(),
+                ])
+                .to_owned();
+
+            let callsigns_cte_alias = Alias::new("unique_callsigns");
+            let callsigns_cte = CommonTableExpression::new()
+                .query(callsigns_subquery.to_owned())
+                .table_name(callsigns_cte_alias.clone())
                 .to_owned();
 
             let main_query = Query::select()
@@ -545,7 +572,7 @@ pub async fn list_freqs(
                 )
                 .expr_as(
                     Expr::cust(
-                        "string_agg(unique_callsigns.location_v2, '')"
+                        "string_agg(DISTINCT unique_callsigns.location_v2, '')"
                             .to_string(),
                     ),
                     Alias::new("location_v2"),
@@ -563,14 +590,15 @@ pub async fn list_freqs(
                 .to_owned();
 
             let combined_query = Query::with()
-                .cte(unique_callsigns_cte)
+                .cte(dedup_cte)
+                .cte(callsigns_cte)
                 .clone()
                 .query(main_query);
 
             &combined_query.to_string(PostgresQueryBuilder)
         }
         None => {
-            let mut freqs_per = signal_message::Entity::find()
+            let mut dedup_freq_per = signal_message::Entity::find()
                 .join(
                     JoinType::InnerJoin,
                     signal_message::Relation::DatasourceGroup.def(),
@@ -581,21 +609,24 @@ pub async fn list_freqs(
                     Alias::new("sigint_inbox_item"),
                 )
                 .select_only()
-                .column_as(signal_message::Column::Id.count(), "message_count")
+                .column_as(sigint_inbox_item::Column::Freq, "freq")
+                .column_as(sigint_inbox_item::Column::LocationV2, "location_v2")
+                .column_as(sigint_inbox_item::Column::Datetime, "datetime")
                 .column_as(
-                    SimpleExpr::Custom("sigint_inbox_item.freq".to_string()),
-                    "freq",
+                    Expr::col((
+                        signal_message::Entity,
+                        signal_message::Column::DuplicateOf,
+                    ))
+                    .if_null(Expr::col((
+                        signal_message::Entity,
+                        signal_message::Column::Id,
+                    ))),
+                    "dedup_key",
                 )
-                .column_as(
-                    SimpleExpr::Custom(
-                        "string_agg(sigint_inbox_item.location_v2, '')"
-                            .to_string(),
-                    ),
-                    "location_v2",
-                );
+                .distinct_on([dedup_key_alias.clone()]);
 
-            freqs_per = filters_list_freq_search(
-                freqs_per,
+            dedup_freq_per = filters_list_freq_search(
+                dedup_freq_per,
                 &env,
                 &user,
                 dt_since,
@@ -609,25 +640,51 @@ pub async fn list_freqs(
             .await
             .c(h!())?;
 
-            freqs_per = freqs_per.group_by(sigint_inbox_item::Column::Freq);
+            dedup_freq_per = dedup_freq_per
+                .order_by(Expr::cust("dedup_key"), Order::Asc)
+                // emulate NULLS FIRST: order nulls before non-nulls
+                .order_by(
+                    Expr::cust("(signal_message.duplicate_of IS NULL)"),
+                    Order::Desc,
+                )
+                .order_by(sigint_inbox_item::Column::Datetime, Order::Asc);
 
-            freqs_per = if let Some(sort_by) = &req.sort_by {
-                sort_by.iter().fold(freqs_per, |freqs_per, sort_by| {
-                    match sort_by {
-                        ListFreqsSortBy::FreqAsc => freqs_per
-                            .order_by_asc(sigint_inbox_item::Column::Freq),
-                        ListFreqsSortBy::FreqDesc => freqs_per
-                            .order_by_desc(sigint_inbox_item::Column::Freq),
-                        ListFreqsSortBy::MessageCountAsc => freqs_per
-                            .order_by_asc(signal_message::Column::Id.count()),
-                        ListFreqsSortBy::MessageCountDesc => freqs_per
-                            .order_by_desc(signal_message::Column::Id.count()),
-                    }
-                })
+            let uniq_alias = Alias::new("uniq");
+            let mut main_query = Query::select()
+                .expr_as(Expr::cust("count(1)"), "message_count")
+                .column((uniq_alias.clone(), "freq"))
+                .expr_as(
+                    Expr::cust("string_agg(distinct uniq.location_v2, '')"),
+                    "location_v2",
+                )
+                .from_subquery(
+                    dedup_freq_per.to_owned().into_query(),
+                    uniq_alias.clone(),
+                )
+                .add_group_by([Expr::cust("freq")])
+                .to_owned();
+
+            if let Some(sort_by) = &req.sort_by {
+                for sort in sort_by {
+                    let (col, order) = match sort {
+                        ListFreqsSortBy::FreqAsc => ("freq", Order::Asc),
+                        ListFreqsSortBy::FreqDesc => ("freq", Order::Desc),
+                        ListFreqsSortBy::MessageCountAsc => {
+                            ("message_count", Order::Asc)
+                        }
+                        ListFreqsSortBy::MessageCountDesc => {
+                            ("message_count", Order::Desc)
+                        }
+                    };
+
+                    let expr = Expr::cust(col);
+                    main_query.order_by_expr(expr, order);
+                }
             } else {
-                freqs_per.order_by_asc(sigint_inbox_item::Column::Freq)
-            };
-            &freqs_per.build(DbBackend::Postgres).to_string()
+                let expr = Expr::cust("freq");
+                main_query.order_by_expr(expr, Order::Asc);
+            }
+            &main_query.to_string(PostgresQueryBuilder)
         }
     };
 
@@ -635,7 +692,7 @@ pub async fn list_freqs(
     //     freqs_period.clone().count(&env.dbx).await.c(h!())?;
     // println!("> freqs in period count: {}", freqs_period_count);
     // freqs_period = freqs_period.limit(LIMIT);
-    trace!("> freqs sql: {freqs_period}");
+    // debug!("> freqs sql: {freqs_period}");
 
     let freqs_period: Vec<(String, i64, Option<String>)> = env
         .dbx
