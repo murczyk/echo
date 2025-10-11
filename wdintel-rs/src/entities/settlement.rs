@@ -24,6 +24,8 @@ pub struct Model {
     pub lon: Option<f64>,
     #[sea_orm(column_type = "Double", nullable)]
     pub lat: Option<f64>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub tag: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
