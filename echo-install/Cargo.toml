@@ -12,5 +12,5 @@ tracing-subscriber = { version = "0.3.19", features = ["tracing-log", "env-filte
 
 [dependencies.echo-install-utils]
 git = "ssh://git@github.com/echoua/echo-install-utils.git"
-rev = "4fd9007719ec07f934835c9d248e2e992f26d88d"
+rev = "bb5c826c880050a371c8479aadf3e3a979880aca"
 # path = "../echo-install-utils/"
