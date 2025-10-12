@@ -631,7 +631,7 @@ build-geo-screenshot:
     ssh {{ builder }} '(cd workspace/map-bot && git fetch origin && git clean -df && git checkout {{ branch }} && git pull)'
     ssh {{ builder }} '(cd workspace/map-bot/geo-screenshot && $HOME/.cargo/bin/cargo deb)'
     # TODO: determine version from Cargo.toml
-    rsync --progress {{ builder }}:workspace/map-bot/geo-screenshot/target/debian/geo-screenshot_0.1.0-1_amd64.deb ~/Downloads/
+    rsync --progress {{ builder }}:workspace/map-bot/target/debian/geo-screenshot_0.1.0-1_amd64.deb ~/Downloads/
 
 deploy-geo-screenshot:
     #!/bin/bash
