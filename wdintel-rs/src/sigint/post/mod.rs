@@ -3,7 +3,10 @@ use crate::entities::*;
 use crate::types::*;
 use actix_web::post;
 use actix_web::web::Json;
-use sea_orm::*;
+use sea_orm::{
+    sea_query::{extension::postgres::PgExpr, Expr},
+    *,
+};
 
 pub mod types;
 
@@ -16,13 +19,13 @@ where
     C: ConnectionTrait + 'async_trait,
 {
     if let Some(post_name) = post_name {
-        let post_name = post_name.trim().to_uppercase();
+        let post_name = post_name.trim();
         if post_name.is_empty() {
             return Ok(None);
         }
 
         let post_id = sigint_post::Entity::find()
-            .filter(sigint_post::Column::Name.eq(post_name))
+            .filter(Expr::col(sigint_post::Column::Name).ilike(post_name))
             .one(txn)
             .await
             .context(h!())?
