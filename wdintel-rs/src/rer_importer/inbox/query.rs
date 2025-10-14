@@ -14,6 +14,8 @@ use sea_query::{
     SimpleExpr,
 };
 
+const DEDUP_INTERVAL_EXTENTION_MIN: i32 = 5;
+
 pub(crate) async fn build_inbox_query(
     login: &str,
     _logins: &Vec<String>,
@@ -24,7 +26,8 @@ pub(crate) async fn build_inbox_query(
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, login)
             .await
             .c(h!())?;
-    let dedup_key_alias = Alias::new("dedup_key");
+
+    // Step 1: Build base CTE query with filters and externed time range to get enough messages for deduplication
     let mut q = SignalMessage::find()
         .join(
             JoinType::LeftJoin,
@@ -61,8 +64,6 @@ pub(crate) async fn build_inbox_query(
     if req.checked_only == Some(true) {
         q = q.filter(sigint_inbox_item::Column::Checked.eq(Some(true)));
     }
-    q = q.distinct_on([dedup_key_alias]);
-
     let q = filter_selected_groups(q, &req.selected_groups)?;
     let q = filter_selected_senders(q, &req.selected_senders)?;
     let q = filter_denied_senders(q, &req.denied_senders)?;
@@ -70,7 +71,6 @@ pub(crate) async fn build_inbox_query(
     let q = filter_denied_freqs(q, &req.denied_freqs)?;
     let q = filter_selected_posts(q, &req.selected_posts)?;
     let q = filter_denied_posts(q, &req.denied_posts)?;
-
     let q = filter_selected_callsigns(q, &req.selected_callsigns)?;
     let q = filter_search(q, &req.search)?;
     let q = filter_selected_units(
@@ -108,42 +108,67 @@ pub(crate) async fn build_inbox_query(
                 .gte(Utc::now().naive_utc() - Duration::days(1)),
         );
     }
+    q = get_pagination_filters(env, req, q.clone()).await.c(h!())?;
 
-    q = get_order_by(env, req, q.clone()).await.c(h!())?;
-
-    let dd_cte = Alias::new("inbox_items_cte");
-
-    let deduped_cte = CommonTableExpression::new()
+    let inbox_cte_alias = Alias::new("inbox_items_cte");
+    let inbox_cte = CommonTableExpression::new()
         .query(q.clone().into_query())
-        .table_name(dd_cte.clone())
+        .table_name(inbox_cte_alias.clone())
+        .to_owned();
+
+    // Step 2: Build deduplication CTE using DISTINCT ON (dedup_key)
+    let dedup_key_alias = Alias::new("dedup_key");
+    let dedup_q = Query::select()
+        .column(ColumnRef::Asterisk)
+        .from(inbox_cte_alias.clone())
+        .distinct_on([dedup_key_alias.clone()])
+        .order_by(dedup_key_alias.clone(), Order::Asc)
+        // emulate NULLS FIRST: order nulls before non-nulls
+        .order_by_expr(
+            Expr::cust("(inbox_items_cte.duplicate_of IS NULL)"),
+            Order::Desc,
+        )
+        .order_by(signal_message::Column::Timestamp, Order::Asc)
+        .order_by(signal_message::Column::Id, Order::Asc)
+        .to_owned();
+
+    let dedup_cte_alias = Alias::new("dedup_cte");
+    let dedup_cte = CommonTableExpression::new()
+        .query(dedup_q.clone())
+        .table_name(dedup_cte_alias.clone())
         .to_owned();
 
     let mut main_query = SelectStatement::new();
-    main_query.column(ColumnRef::Asterisk).from(dd_cte.clone());
+    main_query
+        .column(ColumnRef::Asterisk)
+        .from(dedup_cte_alias.clone());
+    main_query = get_pagination_filter_real_lower_bound_stmt(env, req, main_query).await.context(h!())?;
     main_query = get_bl_ordering_stmt(req, main_query).await.context(h!())?;
-
     if req.nolimit != Some(true) {
         main_query.limit(20);
     }
-
+    // Step 3: Combine CTEs and main query, add filter by initial window values and business logic ordering
     let combined_query = Query::with()
-        .cte(deduped_cte)
+        .cte(inbox_cte)
+        .cte(dedup_cte)
         .clone()
         .query(main_query)
         .to_string(PostgresQueryBuilder);
 
-    trace!("> Deduplicated inbox items query: {combined_query}");
+    debug!("> Deduplicated inbox items query: {combined_query}");
 
     Ok(combined_query)
 }
 
-pub async fn get_order_by<Q>(
+/// Build pagination filters.  
+/// For deduplication reason we need to expand lower bound of the time window by DEDUP_INTERVAL_EXTENTION_MIN minutes
+pub async fn get_pagination_filters<Q>(
     env: &Env,
     req: &InboxMessagesReq,
     q: Q,
 ) -> Result<Q, AppError>
 where
-    Q: QueryFilter + QueryOrder,
+    Q: QueryFilter,
 {
     let mut q = q;
     let mut since_id_noninclusive: Option<i64> = req.since_id_noninclusive;
@@ -193,7 +218,12 @@ where
                         );
                         break '_if;
                     };
-                    let datetime = to_ts_expr(datetime);
+
+                    // Expand time window for deduplication
+                    let datetime_minus_t = to_ts_expr_minus_t_minutes(
+                        datetime,
+                        DEDUP_INTERVAL_EXTENTION_MIN,
+                    );
                     q = q.filter(
                         Expr::tuple([
                             sigint_inbox_item::Column::Datetime
@@ -203,7 +233,7 @@ where
                             // signal_message::Column::Id.into_column_ref().into(),
                         ])
                         .gt(SimpleExpr::Tuple(vec![
-                            datetime,
+                            datetime_minus_t,
                             since_id_noninclusive.into(),
                         ])),
                     );
@@ -216,7 +246,11 @@ where
                         );
                         break '_if;
                     };
-                    let timestamp = to_ts_expr(timestamp);
+                    // Expand time window for deduplication
+                    let timestamp_minus_t = to_ts_expr_minus_t_minutes(
+                        timestamp,
+                        DEDUP_INTERVAL_EXTENTION_MIN,
+                    );
                     q = q.filter(
                         Expr::tuple([
                             signal_message::Column::Timestamp
@@ -226,7 +260,7 @@ where
                             // signal_message::Column::Id.into_column_ref().into(),
                         ])
                         .gt(SimpleExpr::Tuple(vec![
-                            timestamp,
+                            timestamp_minus_t,
                             since_id_noninclusive.into(),
                         ])),
                     );
@@ -311,12 +345,15 @@ where
     if let Some(since_date_inclusive_ms) = req.since_date_inclusive_ms {
         if req.since_id_noninclusive.is_none() {
             let ts = dt_from_millis(since_date_inclusive_ms)?;
-            let ts = to_ts_expr(ts);
+            // Expand time window for deduplication
+            let ts_minus_t =
+                to_ts_expr_minus_t_minutes(ts, DEDUP_INTERVAL_EXTENTION_MIN);
             let exp = match req.sort_by {
                 Some(InboxMessagesSortBy::IMSTimestamp) => {
-                    Expr::col(signal_message::Column::Timestamp).gte(ts)
+                    Expr::col(signal_message::Column::Timestamp).gte(ts_minus_t)
                 }
-                _ => Expr::col(sigint_inbox_item::Column::Datetime).gte(ts),
+                _ => Expr::col(sigint_inbox_item::Column::Datetime)
+                    .gte(ts_minus_t),
             };
             q = q.filter(exp);
         }
@@ -330,18 +367,89 @@ where
         }
     }
 
-    // First, add order by for DISTINCT ON deduplication
-    q = q
-        .order_by(Expr::cust("dedup_key"), Order::Asc)
-        // emulate NULLS FIRST: order nulls before non-nulls
-        .order_by(
-            Expr::cust("(signal_message.duplicate_of IS NULL)"),
-            Order::Desc,
-        );
+    Ok(q)
+}
 
-    // Then, business logic ordering
-    q = get_bl_ordering_select(req, q).await.context(h!())?;
-
+/// Build real lower bound for main query. (without deduplication time window extension)
+pub async fn get_pagination_filter_real_lower_bound_stmt(
+    env: &Env,
+    req: &InboxMessagesReq,
+    q: SelectStatement,
+) -> Result<SelectStatement, AppError> {
+    let mut q = q;
+    if let Some(since_id_noninclusive) = req.since_id_noninclusive {
+        let req_sort_by =
+            req.sort_by.unwrap_or(InboxMessagesSortBy::IMSDatetime);
+        match req_sort_by {
+            InboxMessagesSortBy::IMSDatetime => {
+                if let Some(inbox) =
+                    SigintInboxItem::find_by_id(since_id_noninclusive)
+                        .one(&env.dbx)
+                        .await
+                        .c(h!())?
+                {
+                    if let Some(datetime) = inbox.datetime {
+                        let datetime_expr = to_ts_expr(datetime);
+                        q.and_where(
+                            Expr::tuple([
+                                sigint_inbox_item::Column::Datetime
+                                    .into_column_ref()
+                                    .into(),
+                                Expr::cust("id"),
+                            ])
+                            .gt(
+                                SimpleExpr::Tuple(vec![
+                                    datetime_expr,
+                                    since_id_noninclusive.into(),
+                                ]),
+                            ),
+                        );
+                    }
+                }
+            }
+            InboxMessagesSortBy::IMSTimestamp => {
+                if let Some(message) =
+                    SignalMessage::find_by_id(since_id_noninclusive)
+                        .filter(signal_message::Column::Deleted.eq(false))
+                        .one(&env.dbx)
+                        .await
+                        .c(h!())?
+                {
+                    if let Some(timestamp) = message.timestamp {
+                        let timestamp_expr = to_ts_expr(timestamp);
+                        q.and_where(
+                            Expr::tuple([
+                                signal_message::Column::Timestamp
+                                    .into_column_ref()
+                                    .into(),
+                                Expr::cust("id"),
+                            ])
+                            .gt(
+                                SimpleExpr::Tuple(vec![
+                                    timestamp_expr,
+                                    since_id_noninclusive.into(),
+                                ]),
+                            ),
+                        );
+                    }
+                }
+            }
+        }
+    }
+    if let Some(since_date_inclusive_ms) = req.since_date_inclusive_ms {
+        if req.since_id_noninclusive.is_none() {
+            let ts = dt_from_millis(since_date_inclusive_ms)?;
+            let exp = match req.sort_by {
+                Some(InboxMessagesSortBy::IMSTimestamp) => {
+                    Expr::col(signal_message::Column::Timestamp)
+                        .gte(to_ts_expr(ts))
+                }
+                _ => Expr::col(sigint_inbox_item::Column::Datetime)
+                    .gte(to_ts_expr(ts)),
+            };
+            q.and_where(exp);
+        }
+    }
     Ok(q)
 }
 
@@ -474,6 +582,15 @@ fn to_ts_expr(ts: NaiveDateTime) -> SimpleExpr {
     Expr::cust(txt)
 }
 
+fn to_ts_expr_minus_t_minutes(ts: NaiveDateTime, t_minutes: i32) -> SimpleExpr {
+    let ts_str = ts.format("%Y-%m-%d %H:%M:%S%.9f");
+    let txt = format!(
+        "'{ts_str}'::timestamp at time zone 'UTC' - INTERVAL '{} minutes'",
+        t_minutes
+    );
+    Expr::cust(&txt)
+}
+
 pub fn add_inbox_message_columns<E>(select: Select<E>) -> Select<E>
 where
     E: EntityTrait,
@@ -481,6 +598,7 @@ where
     select
         .select_only()
         .column_as(signal_message::Column::Id, "id")
+        .column_as(signal_message::Column::DuplicateOf, "duplicate_of")
         .column_as(signal_message::Column::Body, "body")
         .column_as(signal_message::Column::MessageUid, "message_uid")
         .column_as(signal_message::Column::Timestamp, "timestamp")

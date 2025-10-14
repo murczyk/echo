@@ -123,9 +123,13 @@ pub async fn get_inbox_messages_report(
             crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login).await.c(h!())?,
         ));
 
-    q = crate::rer_importer::inbox::query::get_order_by(env, req, q.clone())
+    q = crate::rer_importer::inbox::query::get_pagination_filters(env, req, q.clone())
         .await
         .c(h!())?;
+    q = crate::rer_importer::inbox::query::get_bl_ordering_select(req, q.clone())
+        .await
+        .c(h!())?;
+        
     if req.only_show_unprocessed == Some(true) {
         q = q.filter(sigint_inbox_item::Column::Reviewed.ne(Some(true)));
     }
