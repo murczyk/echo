@@ -1,33 +1,38 @@
+use self::types::*;
 use super::sea_orm_active_enums::*;
 use crate::config::*;
 use crate::entities::*;
 use crate::error::AppError;
 use crate::event_stream::fanout;
 use crate::event_stream::types::*;
+use crate::rer_importer::reports::{
+    cleanup_old_reports_nofail, save_report_log,
+};
+
+use crate::sigint;
 use crate::sigint::etalonka::query::*;
 use crate::sigint::etalonka::types::*;
 use crate::sigint::network::bl::*;
 use crate::sigint::network::merge::*;
 use crate::types::*;
 use crate::utils::*;
+use actix_web::web::Json;
+use actix_web::{post, HttpRequest, HttpResponse};
 use chrono::*;
+use log::*;
 use sea_orm::sea_query::*;
 use sea_orm::*;
-use std::collections::{BTreeSet, HashMap};
-
-use self::types::*;
-use crate::sigint;
-use actix_web::post;
-use actix_web::web::Json;
-use log::*;
 use sea_orm::{
     ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QuerySelect,
 };
 use sea_query::{Alias, Expr, Query};
 use sqlx::FromRow;
+use std::collections::{BTreeSet, HashMap};
+use std::str::FromStr;
 use time::{Duration as TimeDuration, PrimitiveDateTime};
 
 pub mod bl;
+pub mod goi;
 pub mod merge;
 pub mod oneoff;
 pub mod types;
@@ -2402,6 +2407,49 @@ pub async fn delete_network_description(
     }
 
     Ok(Json(network_detail[0].clone()))
+}
+
+/// Generate GOI report for network freqs active in the last month
+#[post("/api/sigint/network/report-networks-goi")]
+pub async fn report_networks_goi(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    http_req: HttpRequest,
+) -> Result<HttpResponse, AppError> {
+    info!("> Start GOI report generation...");
+
+    let user_login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &user_login, "Rer")
+        .await
+        .c(h!())?;
+    cleanup_old_reports_nofail(&env.dbx, &env.config).await;
+
+    let storage_dir =
+        std::path::PathBuf::from_str(&env.config.storage_dir).c(h!())?;
+    let outfolder = storage_dir.join("reports_log");
+    let _ = std::fs::create_dir_all(&outfolder);
+    let filename = format!(
+        "goi_report_{}.xlsx",
+        Utc::now().format("%Y-%m-%d-%H-%M-%S-%3f")
+    );
+    let outpath = outfolder.join(&filename);
+
+    self::goi::report_xlsx_networks_goi(user, &env, &outpath)
+        .await
+        .c(h!())?;
+
+    let file = actix_files::NamedFile::open(&outpath)?;
+    save_report_log(
+        &env.dbx,
+        format!("reports_log/{filename}"),
+        "",
+        &user_login,
+    )
+    .await
+    .c(h!())?;
+
+    info!("> GOI report generation done");
+    Ok(file.into_response(&http_req))
 }
 
 fn map_add_network_description(
