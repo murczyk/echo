@@ -403,6 +403,7 @@ pub async fn main_server(
             .service(crate::sigint::network::add_network_freq)
             .service(crate::sigint::network::network_unit_stats)
             .service(crate::sigint::network::update_network)
+            .service(crate::sigint::network::report_networks_goi)
             .service(crate::sigint::network::restore_network)
             .service(crate::sigint::network::network_callsigns)
             .service(crate::sigint::network::network_callsigns_list)

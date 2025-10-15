@@ -77,6 +77,7 @@ type alias Model =
     , unitStats : RemoteData ApiError (List B.FreqUnitStatRow)
     , reportModalOpened : Bool
     , reportDownloadInProgress : Bool
+    , goiReportDownloadInProgress : Bool
     , report : ReportConfig.ReportType
     , reportFromDate : Shared.Components.DateTime.Model
     , reportToDate : Shared.Components.DateTime.Model
@@ -137,6 +138,7 @@ init _ =
             , unitStats = Loading
             , reportModalOpened = False
             , reportDownloadInProgress = False
+            , goiReportDownloadInProgress = False
             , report = ReportConfig.AccordingToForm ReportConfig.defaultCommonSettings
             , reportFromDate = Shared.Components.DateTime.init ()
             , reportToDate = Shared.Components.DateTime.init ()
@@ -250,6 +252,8 @@ type Msg
     | ReportModalClosedByUser
     | ReportDownloadClickedByUser
     | ReportDownloadReturnedByApi (Result ApiError Bytes)
+    | GoiReportDownloadClickedByUser
+    | GoiReportDownloadReturnedByApi (Result ApiError Bytes)
     | ReportTypeChanged ReportConfig.ReportTypeOption
     | ReportActiveFreqsOnlyChanged Bool
     | ReportIncludeSigintSignsChanged Bool
@@ -626,6 +630,24 @@ update shared msg model =
                     { m | reportDownloadInProgress = isDownloading }
             in
             ReportUpdate.handleReportDownloadResponse result context updateDownloading model
+
+        GoiReportDownloadClickedByUser ->
+            ( { model | goiReportDownloadInProgress = True }
+            , E.getNetworkGoiReport GoiReportDownloadReturnedByApi
+            )
+
+        GoiReportDownloadReturnedByApi (Ok bytes) ->
+            let
+                filename = "goi_report.xlsx"
+            in
+            ( { model | goiReportDownloadInProgress = False }
+            , E.downloadFile filename "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" bytes
+            )
+
+        GoiReportDownloadReturnedByApi (Err e) ->
+            ( { model | goiReportDownloadInProgress = False }
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження звіту ГОІ" e
+            )
 
         ReportTypeChanged option ->
             let
@@ -1650,14 +1672,25 @@ view _ shared user model =
                         reportButton =
                             Button.new { label = "Звіт \"Еталонка\"", onClick = ReportModalOpenedByUser } |> Button.view
 
+                        goiButton =
+                            Button.new { label = "Звіт \"ГОІ\"", onClick = GoiReportDownloadClickedByUser }
+                                |> (if model.goiReportDownloadInProgress then
+                                        Button.withIcon [ Shared.Components.Spinner.loadingSpinner2Sm ]
+                                    else
+                                        identity
+                                   )
+                                |> Button.view
+
                         buttons =
                             if Core.Auth.hasRole "UnitsEditor" user then
                                 [ Button.new { label = "Створити", onClick = CreateNewNetworkClicked } |> Button.withStyleSecondary |> Button.view
                                 , reportButton
+                                , goiButton
                                 ]
 
                             else
                                 [ reportButton
+                                , goiButton
                                 ]
                       in
                       div [ class "flex gap-[16px]" ] buttons
