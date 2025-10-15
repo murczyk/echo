@@ -4437,6 +4437,7 @@ type alias CallsignsForFreqReq =
     , unit : Maybe String
     , sinceDateInclusiveMs : Int
     , tillDateNoninclusiveMs : Int
+    , callsign : Maybe String
     }
 
 
@@ -4447,6 +4448,7 @@ callsignsForFreqReqEncoder struct =
         , ( "unit", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.unit )
         , ( "since_date_inclusive_ms", Json.Encode.int struct.sinceDateInclusiveMs )
         , ( "till_date_noninclusive_ms", Json.Encode.int struct.tillDateNoninclusiveMs )
+        , ( "callsign", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.callsign )
         ]
 
 
@@ -8427,6 +8429,7 @@ callsignsForFreqReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "since_date_inclusive_ms" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "till_date_noninclusive_ms" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsign" (Json.Decode.nullable Json.Decode.string)))
 
 
 callsignsForFreqRspDecoder : Json.Decode.Decoder CallsignsForFreqRsp

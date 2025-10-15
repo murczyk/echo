@@ -109,6 +109,7 @@ type alias Model =
     , signals : RemoteData ApiError (List B.NetworkSignalsRes)
     , reportModalOpened : Bool
     , reportDownloadInProgress : Bool
+    , goiReportDownloadInProgress : Bool
     , report : ReportConfig.ReportType
     , reportFromDate : Shared.Components.DateTime.Model
     , reportToDate : Shared.Components.DateTime.Model

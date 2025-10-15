@@ -99,6 +99,8 @@ type
     | ReportModalClosedByUser
     | ReportDownloadClickedByUser
     | ReportDownloadReturnedByApi (Result ApiError Bytes)
+    | GoiReportDownloadClickedByUser
+    | GoiReportDownloadReturnedByApi (Result ApiError Bytes)
     | ReportTypeChanged ReportConfig.ReportTypeOption
     | ReportActiveFreqsOnlyChanged Bool
     | ReportIncludeSigintSignsChanged Bool

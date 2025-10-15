@@ -438,6 +438,7 @@ callsignsForFilterParams dtFromPosix dtToPosix model =
     in
     { freq = emptySToNothing filterState.freq
     , unit = emptySToNothing filterState.unit
+    , callsign = List.head filterState.callsigns
     , sinceDateInclusiveMs = Time.posixToMillis dtFromPosix
     , tillDateNoninclusiveMs = Time.posixToMillis dtToPosix
     }

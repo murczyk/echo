@@ -141,6 +141,7 @@ init route shared () =
       , signals = NotAsked
       , reportModalOpened = False
       , reportDownloadInProgress = False
+      , goiReportDownloadInProgress = False
       , report = ReportConfig.AccordingToForm ReportConfig.defaultCommonSettings
       , reportFromDate = Shared.Components.DateTime.init ()
       , reportToDate = Shared.Components.DateTime.init ()
@@ -740,6 +741,24 @@ update shared msg model =
             in
             ReportUpdate.handleReportDownloadResponse result context updateDownloading model
 
+        GoiReportDownloadClickedByUser ->
+            ( { model | goiReportDownloadInProgress = True }
+            , E.getNetworkGoiReport GoiReportDownloadReturnedByApi
+            )
+
+        GoiReportDownloadReturnedByApi (Ok bytes) ->
+            let
+                filename = "goi_report.xlsx"
+            in
+            ( { model | goiReportDownloadInProgress = False }
+            , E.downloadFile filename "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" bytes
+            )
+
+        GoiReportDownloadReturnedByApi (Err e) ->
+            ( { model | goiReportDownloadInProgress = False }
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження звіту ГОІ" e
+            )
+
         ReportTypeChanged option ->
             let
                 newReport =
@@ -896,6 +915,13 @@ contentBlock user shared network model =
             ]
         , div [ class "flex gap-[8px]" ]
             [ Button.new { label = "Звіт \"Еталонка\"", onClick = ReportModalOpenedByUser } |> Button.view
+            , Button.new { label = "Звіт \"ГОІ\"", onClick = GoiReportDownloadClickedByUser }
+                |> (if model.goiReportDownloadInProgress then
+                        Button.withIcon [ Shared.Components.Spinner.loadingSpinner2Sm ]
+                    else
+                        identity
+                   )
+                |> Button.view
             , if Core.Auth.hasRole "Admin" user || Core.Auth.hasRole "UnitsEditor" user then
                 Button.new { label = "Видалити", onClick = DeleteNetworkClickedByUser }
                     |> Button.withStyleDanger
