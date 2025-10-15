@@ -142,7 +142,10 @@ pub(crate) async fn build_inbox_query(
     main_query
         .column(ColumnRef::Asterisk)
         .from(dedup_cte_alias.clone());
-    main_query = get_pagination_filter_real_lower_bound_stmt(env, req, main_query).await.context(h!())?;
+    main_query =
+        get_pagination_filter_real_lower_bound_stmt(env, req, main_query)
+            .await
+            .context(h!())?;
     main_query = get_bl_ordering_stmt(req, main_query).await.context(h!())?;
     if req.nolimit != Some(true) {
         main_query.limit(20);
@@ -155,7 +158,7 @@ pub(crate) async fn build_inbox_query(
         .query(main_query)
         .to_string(PostgresQueryBuilder);
 
-    debug!("> Deduplicated inbox items query: {combined_query}");
+    // debug!("> Deduplicated inbox items query: {combined_query}");
 
     Ok(combined_query)
 }

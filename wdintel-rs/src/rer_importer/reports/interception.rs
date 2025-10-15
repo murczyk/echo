@@ -39,6 +39,7 @@ async fn get_inbox_messages_report(
         .context(h!())?;
     let mut q = SignalMessage::find()
         .inner_join(sigint_inbox_item::Entity)
+        .column(sigint_inbox_item::Column::Datetime)
         .column(sigint_inbox_item::Column::Date)
         .column(sigint_inbox_item::Column::Time)
         .column(sigint_inbox_item::Column::Freq)
@@ -127,19 +128,19 @@ async fn get_inbox_messages_report(
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(datasource_group::Column::GroupMasterKey.is_in(
             crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login).await.c(h!())?,
-        ))
-        .distinct_on(["dedup_key"]);
+        ));
 
     if req.report_tags_only_this_unit == Some(true) {
         q = q.filter(sigint_comment::Column::Login.is_in(logins));
     }
-    q = crate::rer_importer::inbox::query::get_pagination_filters(env, req, q.clone())
-        .await
-        .c(h!())?;
-    q = crate::rer_importer::inbox::query::get_bl_ordering_select(req, q.clone())
-        .await
-        .c(h!())?;
-    
+    q = crate::rer_importer::inbox::query::get_pagination_filters(
+        env,
+        req,
+        q.clone(),
+    )
+    .await
+    .c(h!())?;
+
     if req.only_show_unprocessed == Some(true) {
         q = q.filter(sigint_inbox_item::Column::Reviewed.ne(Some(true)));
     }
@@ -178,13 +179,60 @@ async fn get_inbox_messages_report(
     let q =
         filter_selected_networks(q, &req.selected_networks).context(h!())?;
 
-    // println!("SQL: {}", &q.build(DbBackend::Postgres).to_string());
+    let inbox_cte_alias = Alias::new("inbox_items_cte");
+    let inbox_cte = CommonTableExpression::new()
+        .query(q.clone().into_query())
+        .table_name(inbox_cte_alias.clone())
+        .to_owned();
 
-    let messages = q
-        .into_model::<InboxMessage>()
-        .all(&env.dbx)
+    // Step 2: Build deduplication CTE using DISTINCT ON (dedup_key)
+    let dedup_key_alias = Alias::new("dedup_key");
+    let mut dedup_q = Query::select()
+        .column(ColumnRef::Asterisk)
+        .from(inbox_cte_alias.clone())
+        .distinct_on([dedup_key_alias.clone()])
+        .order_by(dedup_key_alias.clone(), Order::Asc)
+        // emulate NULLS FIRST: order nulls before non-nulls
+        .order_by_expr(
+            Expr::cust("(inbox_items_cte.duplicate_of IS NULL)"),
+            Order::Desc,
+        )
+        .to_owned();
+
+    dedup_q = crate::rer_importer::inbox::query::get_pagination_filter_real_lower_bound_stmt(env, req, dedup_q)
         .await
         .context(h!())?;
+    dedup_q =
+        crate::rer_importer::inbox::query::get_bl_ordering_stmt(req, dedup_q)
+            .await
+            .context(h!())?;
+
+    // Step 3: Combine CTEs and main query, add filter by initial window values and business logic ordering
+    let combined_query = Query::with()
+        .cte(inbox_cte)
+        .clone()
+        .query(dedup_q)
+        .to_string(PostgresQueryBuilder);
+
+    // println!("Interception report SQL: {combined_query}");
+
+    // First execute the query to get QueryResult
+    let results = env
+        .dbx
+        .query_all(Statement::from_string(
+            DatabaseBackend::Postgres,
+            combined_query,
+        ))
+        .await
+        .context(h!())?;
+
+    // Then convert results to InboxMessage struct
+    let messages: Vec<InboxMessage> = results
+        .iter()
+        .map(|qr| InboxMessage::from_query_result(qr, ""))
+        .collect::<Result<Vec<_>, DbErr>>()
+        .context(h!())?;
+
     let mut keys = HashSet::new();
     let mut result = vec![];
     for m in messages {
