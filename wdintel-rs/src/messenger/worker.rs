@@ -78,7 +78,7 @@ pub async fn receive_thread_nofail(mode: Mode) {
             );
             let client_id = cli.id;
 
-            let Some(mut state) = workers_state.remove(&worker_name) else {
+            let Some(mut state) = workers_state.remove(&client_name) else {
                 info!("spawning worker {worker_name} {}", h!());
                 if let Err(e) =
                     spawn_new_worker(cli.clone(), mode, worker_name.clone())
