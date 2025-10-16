@@ -158,7 +158,7 @@ pub(crate) async fn build_inbox_query(
         .query(main_query)
         .to_string(PostgresQueryBuilder);
 
-    // debug!("> Deduplicated inbox items query: {combined_query}");
+    trace!("> Deduplicated inbox items query: {combined_query}");
 
     Ok(combined_query)
 }
