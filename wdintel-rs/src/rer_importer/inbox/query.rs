@@ -588,9 +588,7 @@ fn to_ts_expr(ts: NaiveDateTime) -> SimpleExpr {
 fn to_ts_expr_minus_t_minutes(ts: NaiveDateTime, t_minutes: i32) -> SimpleExpr {
     let ts_str = ts.format("%Y-%m-%d %H:%M:%S%.9f");
     let txt = format!(
-        "'{ts_str}'::timestamp at time zone 'UTC' - INTERVAL '{} minutes'",
-        t_minutes
-    );
+        "'{ts_str}'::timestamp at time zone 'UTC' - INTERVAL '{t_minutes} minutes'");
     Expr::cust(&txt)
 }
 
