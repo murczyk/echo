@@ -167,7 +167,7 @@ async fn sync_client_once(
     {
         println!("> {client_name}::receive_thread_nofail error: {e:?}");
     }
-    is_datasource_outdated(dbx, cli.id).await
+    !is_datasource_outdated(dbx, cli.id).await
 }
 
 async fn is_datasource_outdated(dbx: &DatabaseConnection, id: i64) -> bool {
