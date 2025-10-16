@@ -206,6 +206,7 @@ pub async fn link_operator(
         default_aor_id: Set(Some(aor_id)),
         updated_by: Set(Some(login.to_string())),
         deleted: NotSet,
+        last_sync_at: NotSet,
     }
     .insert(&txn)
     .await

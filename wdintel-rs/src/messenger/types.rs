@@ -14,7 +14,7 @@ pub struct Message {
     pub datasource_id: i64,
 }
 
-#[derive(Debug, Serialize, Deserialize, Elm, ElmEncode, ElmDecode)]
+#[derive(Debug, Serialize, Clone, Deserialize, Elm, ElmEncode, ElmDecode)]
 pub struct EchoAccountF1 {
     pub id: i64,
     pub area_of_responsibility: Option<AreaOfResponsibility>,
