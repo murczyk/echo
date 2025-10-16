@@ -44,6 +44,7 @@ pub async fn receive_thread_nofail(mode: Mode) {
     let mut poison_datasources = HashSet::new();
     let mut workers_state = HashMap::<String, Vec<NaiveDateTime>>::new();
     loop {
+        info!("messenger workers state: {workers_state:?}");
         let now = Utc::now().naive_utc();
         let _loop_guard = worker_watch::loop_guard("messenger_receive_worker");
         let clients = match list_clients(&dbx).await {
@@ -63,7 +64,7 @@ pub async fn receive_thread_nofail(mode: Mode) {
             .map(|c| c.display_name.clone())
             .collect_vec()
             .join(", ");
-        trace!("[{}] updating clients: {client_names}", h!());
+        info!("[{}] updating clients: {client_names}", h!());
         let mut updated_worker_state = HashMap::new();
         for cli in clients {
             let Some(client_name) = cli.system_service_name.clone() else {
@@ -78,6 +79,7 @@ pub async fn receive_thread_nofail(mode: Mode) {
             let client_id = cli.id;
 
             let Some(mut state) = workers_state.remove(&worker_name) else {
+                info!("spawning worker {worker_name} {}", h!());
                 if let Err(e) =
                     spawn_new_worker(cli.clone(), mode, worker_name.clone())
                         .await
@@ -91,6 +93,10 @@ pub async fn receive_thread_nofail(mode: Mode) {
             if !source_is_outdated {
                 updated_worker_state.insert(client_name, state);
                 continue;
+            }
+            if true {
+                info!("outdated source detected, omitting restarts for now: {cli:?}");
+                continue; // FIXME
             }
             let poison_ds_cutoff = now - TimeDelta::minutes(60);
             let is_poison_datasource =
@@ -113,6 +119,8 @@ async fn spawn_new_worker(
     mode: Mode,
     worker_name: String,
 ) -> anyhow::Result<()> {
+    info!("spawning new worker: {worker_name}");
+    sleep(Duration::from_secs(10)).await;
     tokio::spawn(async move {
         let context = match crate::utils::setup_worker(mode).await {
             Ok(c) => c,
@@ -172,14 +180,17 @@ async fn sync_client_once(
 
 async fn is_datasource_outdated(dbx: &DatabaseConnection, id: i64) -> bool {
     let cutoff_ts = Utc::now().naive_utc() - TimeDelta::minutes(5);
-    datasource::Entity::find_by_id(id)
+    let timestamp = datasource::Entity::find_by_id(id)
         .one(dbx)
         .await
         .ok()
         .flatten()
-        .and_then(|entity| entity.last_sync_at)
-        .filter(|last_sync_at| *last_sync_at > cutoff_ts)
-        .is_none()
+        .filter(|ds| ds.echo_client_lock_id.is_some()) // for Echo-IM datasources only
+        .and_then(|entity| entity.last_sync_at);
+    let Some(last_sync_at) = timestamp else {
+        return false;
+    };
+    last_sync_at > cutoff_ts
 }
 
 async fn receive_thread(
