@@ -44,7 +44,6 @@ pub async fn receive_thread_nofail(mode: Mode) {
     let mut poison_datasources = HashSet::new();
     let mut workers_state = HashMap::<String, Vec<NaiveDateTime>>::new();
     loop {
-        info!("messenger workers state: {workers_state:?}");
         let now = Utc::now().naive_utc();
         let _loop_guard = worker_watch::loop_guard("messenger_receive_worker");
         let clients = match list_clients(&dbx).await {
@@ -56,17 +55,12 @@ pub async fn receive_thread_nofail(mode: Mode) {
             }
         };
         if clients.is_empty() {
-            sleep(Duration::from_secs(1)).await;
+            sleep(Duration::from_secs(5)).await;
             continue;
         }
-        let client_names = clients
-            .iter()
-            .map(|c| c.display_name.clone())
-            .collect_vec()
-            .join(", ");
-        info!("[{}] updating clients: {client_names}", h!());
         let mut updated_worker_state = HashMap::new();
         for cli in clients {
+            sleep(Duration::from_secs(10)).await;
             let Some(client_name) = cli.system_service_name.clone() else {
                 trace!("client name is missing, skipping: {cli:?}");
                 continue;
@@ -93,10 +87,6 @@ pub async fn receive_thread_nofail(mode: Mode) {
             if !source_is_outdated {
                 updated_worker_state.insert(client_name, state);
                 continue;
-            }
-            if true {
-                info!("outdated source detected, omitting restarts for now: {cli:?}");
-                continue; // FIXME
             }
             let poison_ds_cutoff = now - TimeDelta::minutes(60);
             let is_poison_datasource =
