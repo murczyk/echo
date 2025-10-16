@@ -173,7 +173,7 @@ async fn sync_client_once(
     )
     .await
     {
-        println!("> {client_name}::receive_thread_nofail error: {e:?}");
+        error!("> {client_name}::receive_thread_nofail error: {e:?}");
     }
     !is_datasource_outdated(dbx, cli.id).await
 }
@@ -190,7 +190,7 @@ async fn is_datasource_outdated(dbx: &DatabaseConnection, id: i64) -> bool {
     let Some(last_sync_at) = timestamp else {
         return false;
     };
-    last_sync_at > cutoff_ts
+    last_sync_at < cutoff_ts
 }
 
 async fn receive_thread(
