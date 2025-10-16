@@ -453,6 +453,7 @@ copy-db-gpu:
 # SETUP
 # - gen keys on dev: `ssh-keygen -t ed25519 -a 100 -C backup@localhost`
 # - put pub in ~/.ssh/authorized_keys on replica
+
 # - edit ~/.ssh/config on dev, add $SERVER entry
 copy-db-dev:
     #!/bin/bash
@@ -799,14 +800,12 @@ fmt:
 #     sudo cp deploy/kibana/env.example /etc/kibana/.env
 #     sudo cp deploy/kibana/compose.yaml /etc/kibana/compose.yaml
 #     (cd /etc/kibana && sudo docker compose up -d)
-
 # setup-kibana-hammer:
 #     #!/bin/bash
 #     ssh hammer 'sudo mkdir -p /etc/kibana'
 #     scp deploy/kibana/env-hammer hammer:~ && ssh hammer 'sudo mv ~/env-hammer /etc/kibana/.env'
 #     scp deploy/kibana/compose.yaml hammer:~ && ssh hammer 'sudo mv ~/compose.yaml /etc/kibana/compose.yaml'
 #     ssh hammer 'cd /etc/kibana && sudo docker compose up -d'
-
 # setup-vector-local:
 #     #!/bin/bash
 #     sudo rm -rf /etc/vector
@@ -816,7 +815,6 @@ fmt:
 #     sudo sh -c 'echo "PGPASSWORD={{ pgpwd }}" >> /etc/default/vector'
 #     sudo systemctl enable vector && sudo systemctl daemon-reload
 #     sudo systemctl restart vector
-
 # setup-vector-local-hammer:
 #     #!/bin/bash
 #     sudo rm -rf /etc/vector
@@ -826,7 +824,6 @@ fmt:
 #     sudo sh -c 'echo "PGPASSWORD={{ pgpwd }}" >> /etc/default/vector'
 #     sudo systemctl enable vector && sudo systemctl daemon-reload
 #     sudo systemctl restart vector
-
 # install-vector:
 #     ssh {{ server }} 'bash -c "$(curl -L https://setup.vector.dev)" && sudo apt-get install vector'
 #     ssh {{ server }} "PGPASSWORD={{ pgpwd }} sudo -u postgres psql -c \"CREATE USER vector WITH PASSWORD '{{ pgpwd }}';\""
@@ -940,7 +937,7 @@ setup-server:
     ssh {{ server }} 'sudo wdintel-rs --mode=live oneoff-install'
 
 setup-server-interactive:
-    ssh {{ server }} 'sudo wdintel-rs --mode=live oneoff-install --interactive'
+    ssh {{ server }} 'sudo wdintel-rs --    mode=live oneoff-install --interactive'
 
 _build-whatsapp-bin-local:
     (cd echo-whatsapp/whatsmeow/echo-whatsapp && go mod tidy && go build)

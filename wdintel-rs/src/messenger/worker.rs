@@ -1,4 +1,4 @@
-use crate::config::Config;
+use crate::config::{read_config, Config};
 use crate::entities::sea_orm_active_enums::EchoMessageSource;
 use crate::entities::*;
 use crate::error::{AppError, ContextAndError};
@@ -21,17 +21,30 @@ use std::sync::{Arc, RwLock};
 use tokio::time::{sleep, Duration};
 
 pub async fn receive_thread_nofail(mode: Mode) {
-    let (config, settlements, rq, mut redis, dbx) =
-        crate::utils::setup_worker(mode).await.unwrap();
+    let config = match read_config(mode) {
+        Ok(config) => config,
+        Err(e) => {
+            error!("failed to load config: {e:?}");
+            return;
+        }
+    };
+    let dbx = match crate::new_pg_pool_from_config(&config).await {
+        Ok(db) => db,
+        Err(e) => {
+            error!("failed to connect to db: {e:?}");
+            return;
+        }
+    };
     info!("started receive_thread_nofail");
     if let Err(e) =
         echo_im::enable_verbose_logging_for_all_signal_clients(&dbx).await
     {
         error!("failed to enable verbose logging: {e:?}");
     };
-    let mut client_groups_sync_ts_map =
-        BTreeMap::<String, NaiveDateTime>::new();
+    let mut poison_datasources = HashSet::new();
+    let mut workers_state = HashMap::<String, Vec<NaiveDateTime>>::new();
     loop {
+        let now = Utc::now().naive_utc();
         let _loop_guard = worker_watch::loop_guard("messenger_receive_worker");
         let clients = match list_clients(&dbx).await {
             Ok(x) => x,
@@ -51,31 +64,122 @@ pub async fn receive_thread_nofail(mode: Mode) {
             .collect_vec()
             .join(", ");
         trace!("[{}] updating clients: {client_names}", h!());
-        let mut processed_any = false;
+        let mut updated_worker_state = HashMap::new();
         for cli in clients {
-            let Some(client_name) = cli.system_service_name else {
+            let Some(client_name) = cli.system_service_name.clone() else {
                 trace!("client name is missing, skipping: {cli:?}");
                 continue;
             };
-            if let Err(e) = receive_thread(
-                &client_name,
-                &mut client_groups_sync_ts_map,
-                &dbx,
-                &mut redis,
-                &config,
-                &rq,
-                settlements.clone(),
-            )
-            .await
-            {
-                println!("> {client_name}::receive_thread_nofail error: {e:?}");
+            let ts_now = now.format("%Y%m%d_%H:%M:%S").to_string();
+            let worker_name = format!(
+                "messenger_receive_worker_{}_{client_name}-{ts_now}",
+                cli.id
+            );
+            let client_id = cli.id;
+
+            let Some(mut state) = workers_state.remove(&worker_name) else {
+                if let Err(e) =
+                    spawn_new_worker(cli.clone(), mode, worker_name.clone())
+                        .await
+                {
+                    error!("failed to spawn worker for {client_name} (id {client_id}): {e:?}");
+                }
+                updated_worker_state.insert(client_name, vec![now]);
+                continue;
+            };
+            let source_is_outdated = is_datasource_outdated(&dbx, cli.id).await;
+            if !source_is_outdated {
+                updated_worker_state.insert(client_name, state);
+                continue;
             }
-            processed_any = true;
+            let poison_ds_cutoff = now - TimeDelta::minutes(60);
+            let is_poison_datasource =
+                state.iter().filter(|ts| poison_ds_cutoff.gt(ts)).count() > 3;
+            if is_poison_datasource {
+                error!("datasource {client_name} (id {client_id}) is poisonous, won't make any attempts to retry");
+                poison_datasources.insert(client_id);
+            } else {
+                warn!("datasource {client_name} (id {client_id}) is stale, restarting...");
+                state.push(now);
+                updated_worker_state.insert(client_name, state);
+            }
         }
-        if !processed_any {
-            sleep(Duration::from_millis(200)).await;
-        }
+        workers_state = updated_worker_state;
     }
+}
+
+async fn spawn_new_worker(
+    cli: EchoAccountF1,
+    mode: Mode,
+    worker_name: String,
+) -> anyhow::Result<()> {
+    tokio::spawn(async move {
+        let context = match crate::utils::setup_worker(mode).await {
+            Ok(c) => c,
+            Err(e) => {
+                error!("failed to spawn worker {worker_name}: {e:?}");
+                return;
+            }
+        };
+        let (config, settlements, rq, mut redis, dbx) = context;
+        loop {
+            let is_healthy = sync_client_once(
+                cli.clone(),
+                &config,
+                settlements.clone(),
+                &rq,
+                &mut redis,
+                &dbx,
+            )
+            .await;
+            if !is_healthy {
+                error!("worker thread {worker_name} is not healthy, killing...")
+            }
+        }
+    });
+    Ok(())
+}
+
+async fn sync_client_once(
+    cli: EchoAccountF1,
+    config: &Config,
+    settlements: Arc<RwLock<SettlementsData>>,
+    rq: &Client,
+    redis: &mut ConnectionManager,
+    dbx: &DatabaseConnection,
+) -> bool {
+    let Some(client_name) = cli.system_service_name else {
+        trace!("client name is missing, skipping: {cli:?}");
+        return false;
+    };
+    let mut client_groups_sync_ts_map =
+        BTreeMap::<String, NaiveDateTime>::new();
+    if let Err(e) = receive_thread(
+        &client_name,
+        &mut client_groups_sync_ts_map,
+        dbx,
+        redis,
+        config,
+        rq,
+        settlements.clone(),
+    )
+    .await
+    {
+        println!("> {client_name}::receive_thread_nofail error: {e:?}");
+    }
+    is_datasource_outdated(dbx, cli.id).await
+}
+
+async fn is_datasource_outdated(dbx: &DatabaseConnection, id: i64) -> bool {
+    let cutoff_ts = Utc::now().naive_utc() - TimeDelta::minutes(5);
+    datasource::Entity::find_by_id(id)
+        .one(dbx)
+        .await
+        .ok()
+        .flatten()
+        .and_then(|entity| entity.last_sync_at)
+        .filter(|last_sync_at| *last_sync_at > cutoff_ts)
+        .is_none()
 }
 
 async fn receive_thread(
@@ -107,6 +211,11 @@ async fn receive_thread(
     sync_inbox(Utc::now(), dbx, client_name, redis, config, rq, settlements)
         .await
         .c(h!())?;
+
+    let mut model = datasource.into_active_model();
+    model.last_sync_at = Set(Some(Utc::now().naive_utc()));
+    model.update(dbx).await.c(h!())?;
+
     Ok(())
 }
 
