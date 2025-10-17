@@ -304,10 +304,18 @@ where
     if let Some(datasource_group_id) = datasource_group_id {
         return Ok(datasource_group_id);
     };
-    let group_name = group_name.unwrap_or_default();
+
+    let master_key = ensure_signal_group(
+        db,
+        master_key.clone(),
+        group_name.clone(),
+        datasource_id,
+    )
+    .await
+    .c(h!())?;
     let new_group = datasource_group::ActiveModel {
         group_master_key: Set(master_key),
-        name: Set(group_name),
+        name: Set(group_name.unwrap_or_default()),
         datasource_id: Set(datasource_id),
         created_at: NotSet,
         id: NotSet,
@@ -318,6 +326,40 @@ where
     .await
     .context(h!())?;
     Ok(new_group.id)
+}
+
+async fn ensure_signal_group<'a, 'async_trait, C>(
+    db: &C,
+    master_key: String,
+    group_name: Option<String>,
+    datasource_id: i64,
+) -> anyhow::Result<String>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let signal_group = signal_group::Entity::find_by_id(master_key.clone())
+        .select_only()
+        .one(db)
+        .await
+        .c(h!())?;
+
+    let saved = match signal_group {
+        None => signal_group::ActiveModel {
+            master_key: Set(master_key),
+            name: Set(group_name),
+            datasource_id: Set(Some(datasource_id)),
+            created_at: NotSet,
+            ignore_operativny: NotSet,
+            is_secret: NotSet,
+            deleted: NotSet,
+        }
+        .insert(db)
+        .await
+        .c(h!())?,
+        Some(sg) => sg,
+    };
+
+    Ok(saved.master_key)
 }
 
 pub async fn collect_group_admin_data<'a, 'async_trait, C>(
