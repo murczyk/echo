@@ -328,7 +328,7 @@ where
     Ok(new_group.id)
 }
 
-async fn ensure_signal_group<'a, 'async_trait, C>(
+pub async fn ensure_signal_group<'a, 'async_trait, C>(
     db: &C,
     master_key: String,
     group_name: Option<String>,

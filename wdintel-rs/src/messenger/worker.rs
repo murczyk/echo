@@ -441,9 +441,17 @@ async fn sync_groups(
             .cloned();
         match datasource_group {
             None => {
+                let master_key = super::group::ensure_signal_group(
+                    txn,
+                    g.id.clone(),
+                    Some(g.name.clone()),
+                    datasource_id,
+                )
+                .await
+                .c(h!())?;
                 datasource_group::ActiveModel {
                     id: NotSet,
-                    group_master_key: Set(g.id),
+                    group_master_key: Set(master_key),
                     datasource_id: Set(datasource_id),
                     last_sync_at: NotSet,
                     created_at: NotSet,
