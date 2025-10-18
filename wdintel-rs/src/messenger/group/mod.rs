@@ -338,7 +338,6 @@ where
     C: ConnectionTrait + 'async_trait,
 {
     let signal_group = signal_group::Entity::find_by_id(master_key.clone())
-        .select_only()
         .one(db)
         .await
         .c(h!())?;
