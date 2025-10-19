@@ -170,6 +170,7 @@ type ReportTemplate
     | RTBabak
     | RTInterception
     | RTNaUshnom
+    | RTPostsDocx
     | RTSenders SendersType
     | RTReo
     | RTDigest

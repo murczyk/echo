@@ -2833,6 +2833,9 @@ update user shared route msg model =
                         RTInterception ->
                             "xlsx"
 
+                        RTPostsDocx ->
+                            "docx"
+
                         RTSenders _ ->
                             "xlsx"
 

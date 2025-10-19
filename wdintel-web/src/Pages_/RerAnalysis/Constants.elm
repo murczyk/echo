@@ -33,6 +33,9 @@ reportTemplateToString x =
         RTInterception ->
             "interception"
 
+        RTPostsDocx ->
+            "posts_docx"
+
         RTSenders y ->
             if y == Senders then
                 "senders"
