@@ -166,12 +166,8 @@ pub async fn report_docx_kind_posts(
             Paragraph::new()
                 .add_run(
                     Run::new()
-                        .add_text(&format!(
-                            "За період «{}» {} по «{}» {}",
-                            date_from_txt,
-                            time_from_txt,
-                            date_to_txt,
-                            time_to_txt
+                        .add_text(format!(
+                            "За період «{date_from_txt}» {time_from_txt} по «{date_to_txt}» {time_to_txt}"
                         ))
                         .size(28)
                         .fonts(
@@ -213,7 +209,7 @@ pub async fn report_docx_kind_posts(
             )
             .add_run(
                 Run::new()
-                    .add_text(&format!(
+                    .add_text(format!(
                         " Було дешифровано {} перехоплень (попередня доба — {}) робочих {} мереж",
                         stats.current_total,
                         stats.previous_total,
@@ -329,7 +325,7 @@ where
 }
 
 fn format_frequency(value: f64) -> String {
-    let mut formatted = format!("{:.3}", value);
+    let mut formatted = format!("{value:.3}");
     while formatted.contains('.') && formatted.ends_with('0') {
         formatted.pop();
     }
@@ -356,10 +352,7 @@ fn build_summary_paragraph(
     freq_range: Option<(f64, f64)>,
 ) -> String {
     let mut summary = format!(
-        "Протягом звітного періоду постами РЕР зафіксовано роботу {} УКХ радіомереж противника та здійснено {} перехоплень (попередня доба — {}).",
-        networks_count,
-        current_total,
-        previous_total
+        "Протягом звітного періоду постами РЕР зафіксовано роботу {networks_count} УКХ радіомереж противника та здійснено {current_total} перехоплень (попередня доба — {previous_total})."
     );
 
     if let Some((min_freq, max_freq)) = freq_range {
