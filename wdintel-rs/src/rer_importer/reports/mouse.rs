@@ -26,7 +26,7 @@ use std::path::{Path, PathBuf};
 pub async fn report_docx_kind_mouse(
     user: Identity,
     env: &Env,
-    req: &super::ReportPreviewReq,
+    req: &super::types::ReportPreviewReq,
     outpath: &Path,
 ) -> Result<(), AppError> {
     let login = user.id().c(h!())?;
@@ -1068,7 +1068,7 @@ pub async fn report_docx_kind_mouse(
 pub async fn report_xlsx_kind_pelengs(
     user: Identity,
     env: &Env,
-    req: &super::ReportPreviewReq,
+    req: &super::types::ReportPreviewReq,
     _outpath: &PathBuf, // Marked as unused
 ) -> Result<(), AppError> {
     let login = user.id().c(h!())?;

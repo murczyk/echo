@@ -17,7 +17,7 @@ use sea_orm::*;
 pub async fn report_docx_kind_tag(
     user: Identity,
     env: &Env,
-    req: &super::ReportPreviewReq,
+    req: &super::types::ReportPreviewReq,
     outpath: &PathBuf,
 ) -> Result<(), AppError> {
     let txn = env.dbx.begin().await.context(h!())?;

@@ -1,4 +1,5 @@
 use super::super::types::*;
+use super::types::*;
 use crate::entities::*;
 use crate::error::AppError;
 // Add this import if h!() uses anyhow::Context
@@ -73,7 +74,7 @@ pub struct CallsignSummary {
 pub async fn report_docx_kind_revo(
     user: Identity,
     env: &Env,
-    req: &super::ReportPreviewReq,
+    req: &super::types::ReportPreviewReq,
     outpath: &Path,
 ) -> Result<(), AppError> {
     info!("report_docx_kind_revo started");
@@ -87,9 +88,22 @@ pub async fn report_docx_kind_revo(
         )
         .await
         .context(h!())?;
-    let mut report = collect_report(messages.clone(), logins.clone(), env)
-        .await
-        .context(h!())?;
+
+    let range = match req.report_type {
+        Some(ReportType::Reo(ReoReportSettings {
+            adjacent_freqs_distance,
+        })) => get_range_for_adjacent_freqs_khz(adjacent_freqs_distance),
+        _ => NO_RANGE_VALUE,
+    };
+
+    let mut report = collect_report(
+        messages.clone(),
+        logins.clone(),
+        env,
+        range,
+    )
+    .await
+    .context(h!())?;
     info!("report_docx_kind_revo data collected");
     report
         .hostile_networks
@@ -258,6 +272,7 @@ async fn collect_report(
     messages: Vec<(i64, InboxMessage)>,
     _logins: Vec<String>,
     env: &Env,
+    range: f64,
 ) -> anyhow::Result<Report> {
     let groups = messages
         .iter()
@@ -269,7 +284,7 @@ async fn collect_report(
         .flat_map(|(_, m)| m.freq.clone())
         .unique()
         .collect::<Vec<_>>();
-
+    
     let all_networks = sigint_network::Entity::find()
         .join(
             JoinType::InnerJoin,
@@ -465,7 +480,7 @@ async fn collect_report(
                 if let Some(existing_id) = unmapped_freqs
                     .keys()
                     .copied()
-                    .find(|f: &i64| (*f - id).abs() < 250)
+                    .find(|f: &i64| ((*f - id).abs() as f64) < range)
                 {
                     networks_dictionary
                         .get(&existing_id)
@@ -675,4 +690,18 @@ async fn collect_report(
     );
 
     Ok(report)
+}
+
+fn get_range_for_adjacent_freqs_khz(
+    distance: Option<AdjacentFreqDistance>,
+) -> f64 {
+    let range = match distance {
+        Some(AdjacentFreqDistance::NoRange) => NO_RANGE_VALUE,
+        Some(AdjacentFreqDistance::ShortRange) => SHORT_RANGE_VALUE,
+        Some(AdjacentFreqDistance::MediumRange) => MEDIUM_RANGE_VALUE,
+        Some(AdjacentFreqDistance::LongRange) => LONG_RANGE_VALUE,
+        None => NO_RANGE_VALUE,
+    };
+
+    range * 1000.0
 }

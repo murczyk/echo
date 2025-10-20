@@ -17,7 +17,7 @@ use std::path::Path;
 pub async fn report_docx_kind_babak(
     user: Identity,
     env: &Env,
-    req: &super::ReportPreviewReq,
+    req: &super::types::ReportPreviewReq,
     outpath: &Path,
 ) -> Result<(), AppError> {
     let user_id = &user.id().c(h!())?;

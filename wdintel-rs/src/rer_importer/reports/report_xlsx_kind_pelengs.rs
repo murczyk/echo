@@ -302,7 +302,7 @@ fn xls_title() -> rust_xlsxwriter::Format {
 pub async fn report_xlsx_kind_pelengs1(
     user: actix_identity::Identity,
     env: &Env,
-    req: &super::ReportPreviewReq,
+    req: &super::types::ReportPreviewReq,
     outpath: &PathBuf,
 ) -> Result<(), AppError> {
     info!("[report_xlsx_kind_pelengs1] started");
