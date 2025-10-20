@@ -89,18 +89,18 @@ pub async fn report_docx_kind_revo(
         .await
         .context(h!())?;
 
-    let range = match req.report_type {
+    let range_khz = match req.report_type {
         Some(ReportType::Reo(ReoReportSettings {
             adjacent_freqs_distance,
-        })) => get_range_for_adjacent_freqs_khz(adjacent_freqs_distance),
-        _ => NO_RANGE_VALUE,
+        })) => adjacent_freqs_distance * 1000.0,
+        _ => 0.0,
     };
 
     let mut report = collect_report(
         messages.clone(),
         logins.clone(),
         env,
-        range,
+        range_khz,
     )
     .await
     .context(h!())?;
@@ -272,7 +272,7 @@ async fn collect_report(
     messages: Vec<(i64, InboxMessage)>,
     _logins: Vec<String>,
     env: &Env,
-    range: f64,
+    range_khz: f64,
 ) -> anyhow::Result<Report> {
     let groups = messages
         .iter()
@@ -480,7 +480,7 @@ async fn collect_report(
                 if let Some(existing_id) = unmapped_freqs
                     .keys()
                     .copied()
-                    .find(|f: &i64| ((*f - id).abs() as f64) < range)
+                    .find(|f: &i64| ((*f - id).abs() as f64) < range_khz)
                 {
                     networks_dictionary
                         .get(&existing_id)
@@ -690,18 +690,4 @@ async fn collect_report(
     );
 
     Ok(report)
-}
-
-fn get_range_for_adjacent_freqs_khz(
-    distance: Option<AdjacentFreqDistance>,
-) -> f64 {
-    let range = match distance {
-        Some(AdjacentFreqDistance::NoRange) => NO_RANGE_VALUE,
-        Some(AdjacentFreqDistance::ShortRange) => SHORT_RANGE_VALUE,
-        Some(AdjacentFreqDistance::MediumRange) => MEDIUM_RANGE_VALUE,
-        Some(AdjacentFreqDistance::LongRange) => LONG_RANGE_VALUE,
-        None => NO_RANGE_VALUE,
-    };
-
-    range * 1000.0
 }

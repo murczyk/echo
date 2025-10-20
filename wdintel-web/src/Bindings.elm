@@ -3230,38 +3230,15 @@ inboxMessageTagsRmReqEncoder struct =
         ]
 
 
-type AdjacentFreqDistance
-    = NoRange
-    | ShortRange
-    | MediumRange
-    | LongRange
-
-
-adjacentFreqDistanceEncoder : AdjacentFreqDistance -> Json.Encode.Value
-adjacentFreqDistanceEncoder enum =
-    case enum of
-        NoRange ->
-            Json.Encode.string "NoRange"
-
-        ShortRange ->
-            Json.Encode.string "ShortRange"
-
-        MediumRange ->
-            Json.Encode.string "MediumRange"
-
-        LongRange ->
-            Json.Encode.string "LongRange"
-
-
 type alias ReoReportSettings =
-    { adjacentFreqsDistance : Maybe AdjacentFreqDistance
+    { adjacentFreqsDistance : Float
     }
 
 
 reoReportSettingsEncoder : ReoReportSettings -> Json.Encode.Value
 reoReportSettingsEncoder struct =
     Json.Encode.object
-        [ ( "adjacent_freqs_distance", (Maybe.withDefault Json.Encode.null << Maybe.map adjacentFreqDistanceEncoder) struct.adjacentFreqsDistance )
+        [ ( "adjacent_freqs_distance", Json.Encode.float struct.adjacentFreqsDistance )
         ]
 
 
@@ -7770,56 +7747,10 @@ inboxMessageTagsRmReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tag_id" Json.Decode.int))
 
 
-adjacentFreqDistanceDecoder : Json.Decode.Decoder AdjacentFreqDistance
-adjacentFreqDistanceDecoder =
-    Json.Decode.oneOf
-        [ Json.Decode.string
-            |> Json.Decode.andThen
-                (\x ->
-                    case x of
-                        "NoRange" ->
-                            Json.Decode.succeed NoRange
-
-                        unexpected ->
-                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
-                )
-        , Json.Decode.string
-            |> Json.Decode.andThen
-                (\x ->
-                    case x of
-                        "ShortRange" ->
-                            Json.Decode.succeed ShortRange
-
-                        unexpected ->
-                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
-                )
-        , Json.Decode.string
-            |> Json.Decode.andThen
-                (\x ->
-                    case x of
-                        "MediumRange" ->
-                            Json.Decode.succeed MediumRange
-
-                        unexpected ->
-                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
-                )
-        , Json.Decode.string
-            |> Json.Decode.andThen
-                (\x ->
-                    case x of
-                        "LongRange" ->
-                            Json.Decode.succeed LongRange
-
-                        unexpected ->
-                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
-                )
-        ]
-
-
 reoReportSettingsDecoder : Json.Decode.Decoder ReoReportSettings
 reoReportSettingsDecoder =
     Json.Decode.succeed ReoReportSettings
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "adjacent_freqs_distance" (Json.Decode.nullable adjacentFreqDistanceDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "adjacent_freqs_distance" Json.Decode.float))
 
 
 reportAggregationDecoder : Json.Decode.Decoder ReportAggregation
