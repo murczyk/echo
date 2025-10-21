@@ -481,16 +481,16 @@ copy-db-to-target:
     if [[ "{{ target }}" == "" ]]; then
         echo "❌ `target` parameter not recognized. Value: {{ target }}"; exit 1;
     fi
-    ssh -t {{ server }} '(cd ~/Downloads && PGPASSWORD="{{ pgpwd }}" pg_dump --user wd -Fc wd > wd-{{ dt1 }}.pgrestore && ls -lah wd-{{ dt1 }}.pgrestore)'
-    ssh -t {{ server }} 'gzip -c ~/Downloads/wd-{{ dt1 }}.pgrestore > /tmp/wd-{{ dt1 }}.pgrestore.gz'
-    scp {{ server }}:/tmp/wd-{{ dt1 }}.pgrestore.gz ~/Downloads/
-    ssh -t {{ server }} '(rm ~/Downloads/wd-{{ dt1 }}.pgrestore && rm /tmp/wd-{{ dt1 }}.pgrestore.gz) | echo "ok"'
-    scp ~/Downloads/wd-{{ dt1 }}.pgrestore.gz {{ target }}:/var/tmp/
+    ssh -t {{ server }} '(cd /var/tmp && PGPASSWORD="{{ pgpwd }}" pg_dump --user wd -Fc wd > wd-{{ dt1 }}.pgrestore && ls -lah wd-{{ dt1 }}.pgrestore)'
+    ssh -t {{ server }} 'gzip -c /var/tmp/wd-{{ dt1 }}.pgrestore > /tmp/wd-{{ dt1 }}.pgrestore.gz'
+    scp {{ server }}:/tmp/wd-{{ dt1 }}.pgrestore.gz /var/tmp/
+    ssh -t {{ server }} '(rm /var/tmp/wd-{{ dt1 }}.pgrestore && rm /tmp/wd-{{ dt1 }}.pgrestore.gz) | echo "ok"'
+    scp /var/tmp/wd-{{ dt1 }}.pgrestore.gz {{ target }}:/var/tmp/
     ssh -t {{ target }} '(cd /var/tmp && gunzip wd-{{ dt1 }}.pgrestore.gz)'
     ssh -t {{ target }} "sudo -u postgres psql -c 'drop database {{ pgdb }} with (FORCE)'"
     ssh -t {{ target }} "sudo -u postgres psql -c 'create database {{ pgdb }}'"
     ssh -t {{ target }} "sudo -u postgres pg_restore -d {{ pgdb }} /var/tmp/wd-{{ dt1 }}.pgrestore && sudo rm /var/tmp/wd-{{ dt1 }}.pgrestore"
-    rm ~/Downloads/wd-{{ dt1 }}.pgrestore.gz | echo "ok"
+    rm /var/tmp/wd-{{ dt1 }}.pgrestore.gz | echo "ok"
 
 copy-db-local:
     #!/bin/bash

@@ -482,6 +482,11 @@ view user model shared route =
                     "Відправники"
                     "Аналіз відправників"
                 , templateCard
+                    (model.reportTemplate == RTPostsDocx)
+                    (ReportTemplateSelect RTPostsDocx)
+                    "Пости"
+                    "Docx-звіт з узагальненими метриками по постах"
+                , templateCard
                     (model.reportTemplate == RTMouse)
                     (ReportTemplateSelect RTMouse)
                     "Мишка"

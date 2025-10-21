@@ -19,6 +19,7 @@ mod digest;
 pub mod interception;
 pub mod mouse;
 mod naushnom;
+mod posts;
 mod report_xlsx_kind_pelengs;
 mod revo;
 mod senders;
@@ -186,6 +187,10 @@ pub async fn report_docx(
         .await
         .c(h!())?;
         self::digest::report_docx_kind_digest(user, &env, &req, &outpath)
+            .await
+            .c(h!())?;
+    } else if req.kind == "posts_docx" {
+        self::posts::report_docx_kind_posts(user, &env, &req, &outpath)
             .await
             .c(h!())?;
     } else {
