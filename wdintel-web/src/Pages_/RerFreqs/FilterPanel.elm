@@ -1,13 +1,12 @@
 module Pages_.RerFreqs.FilterPanel exposing (view)
 
-import Bindings as B
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
 import Html exposing (..)
 import Html.Attributes as Attr exposing (..)
 import Html.Events exposing (..)
 import Html.Styled as Styled
-import Pages_.RerFreqs.Model exposing (FilterName(..), Model, NetworkWorkflowStatus(..), TextLocation(..))
+import Pages_.RerFreqs.Model exposing (Model, NetworkWorkflowStatus(..), TextLocation(..))
 import Pages_.RerFreqs.Msg exposing (Msg(..))
 import Pages_.RerFreqs.Utils as Utils
 import Select
@@ -47,9 +46,9 @@ view shared model =
 
         tabFiltersCallsigns =
             let
-                -- Get available callsigns from callsignsForFilter
+                -- Get available callsigns from search results
                 availableCallsigns =
-                    case model.callsignsForFilter of
+                    case model.callsignSearchResults of
                         Success callsigns ->
                             List.map .callsign callsigns
                         
@@ -88,8 +87,8 @@ view shared model =
                             selectedItems
                             model.selCallsignState
                             menuItems
-                            "всі"
-                            { loading = RD.isLoading model.callsignsForFilter, disabled = False, isDark = isDarkMode shared.themeMode }
+                            "Почніть вводити позивний..."
+                            { loading = RD.isLoading model.callsignSearchResults, disabled = False, isDark = isDarkMode shared.themeMode }
                     )
                 ]
     in
@@ -156,7 +155,6 @@ view shared model =
                         )
                     ]
                     [ text "Підрозділи" ]
-                , span [ class "text-sm" ] [ text "позивні" ]
                 , tabFiltersCallsigns
                 ]
             ]

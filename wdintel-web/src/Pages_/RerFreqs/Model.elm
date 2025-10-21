@@ -1,4 +1,4 @@
-module Pages_.RerFreqs.Model exposing (FilterName(..), FilterState, FurtherInvestigationFilter(..), Model, NetworkSearchState, NetworkWorkflowStatus(..), NetworkWorkflowTab(..), ShowAllPopupFor(..), TextLocation(..))
+module Pages_.RerFreqs.Model exposing (FilterState, FurtherInvestigationFilter(..), Model, NetworkSearchState, NetworkWorkflowStatus(..), NetworkWorkflowTab(..), ShowAllPopupFor(..), TextLocation(..))
 
 import Api
 import Bindings as B
@@ -42,9 +42,9 @@ type alias Model =
     , callsignsInfo : Dict String (List B.CallsignInfo)
     , rowShowAllPopupStatus : Maybe ( String, ShowAllPopupFor )
     , selCallsignState : Select.State
-    , selCallsignMenu : List (Select.MenuItem String)
-    , callsignsForFilter : RemoteData ApiError (List B.FreqCallsign)
-    , focusedFilterItemsBeforeChange : Maybe (List String)
+    , callsignSearchQuery : String
+    , callsignSearchDebounce : Debounce String
+    , callsignSearchResults : RemoteData ApiError (List B.FreqCallsign)
 
     --TODO Remove when back returns proper list of data for table
     , callsigns : List String
@@ -108,10 +108,6 @@ type NetworkWorkflowStatus
 type TextLocation
     = NoCoords
     | LocationText
-
-
-type FilterName
-    = CallsignsFilter
 
 
 type ShowAllPopupFor

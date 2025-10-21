@@ -2,7 +2,6 @@ module Pages_.RerFreqs.Msg exposing (Msg(..))
 
 import Api
 import Bindings as B
-import Bytes exposing (Bytes)
 import Core.Types as Types exposing (ApiError, GroupsActivityPerDayRsp)
 import Debounce exposing (Debounce)
 import Dict exposing (Dict)
@@ -17,10 +16,8 @@ import Select
 import Shared.CallsignsPopup as CallsignsPopup exposing (PopupCallerOrigin(..))
 import Shared.Components.DateTime
 import Shared.Components.Table as Table
-import Shared.Components.Toast
 import Shared.Components.Watermark as Watermark exposing (Watermark)
 import Time exposing (Posix)
-import TimeZone
 import Utils.NetworksUtils as NetworksUtils
 import Utils.RemoteData as RD exposing (RemoteData(..))
 import Utils.Utils exposing (..)
@@ -51,7 +48,8 @@ type Msg
     | FreqsLoadMore
     | RowShowAllPopupChanged (Maybe ( String, ShowAllPopupFor ))
     | SelCallsignMsg (Select.Msg String)
-    | GotFilterCallsigns (Result ApiError B.CallsignsForFreqRsp)
+    | CallsignSearchDebounceMsg Debounce.Msg
+    | CallsignSearchResultsReturned (Result ApiError B.CallsignsForFreqRsp)
     | OpenAddNetworkSidebar String
     | CloseAddNetworkSidebar
     | FreqAddToExistingNetwork String Int
