@@ -22,7 +22,7 @@ import List.Extra as ListX
 import Page exposing (Page)
 import PagePorts.RerFreqsPorts as Ports
 import Pages_.RerFreqs.FilterPanel as FilterPanel
-import Pages_.RerFreqs.Model exposing (FilterName(..), NetworkWorkflowStatus(..), NetworkWorkflowTab(..), ShowAllPopupFor(..), TextLocation(..))
+import Pages_.RerFreqs.Model exposing (NetworkWorkflowStatus(..), NetworkWorkflowTab(..), ShowAllPopupFor(..), TextLocation(..))
 import Pages_.RerFreqs.Msg exposing (Msg(..))
 import Pages_.RerFreqs.NetworkWorkflow as NetworkWorkflow
 import Pages_.RerFreqs.UnitsFilterSidebar
@@ -100,9 +100,9 @@ init _ =
             , noMoreToLoad = True
             , rowShowAllPopupStatus = Nothing
             , selCallsignState = Select.initState (Select.selectIdentifier "selCallsignState")
-            , selCallsignMenu = []
-            , callsignsForFilter = NotAsked
-            , focusedFilterItemsBeforeChange = Nothing
+            , callsignSearchQuery = ""
+            , callsignSearchDebounce = Debounce.init
+            , callsignSearchResults = NotAsked
             , networkWorkflowStatus = NotStarted
             , networkAddLoading = False
             , addKindSelect =
@@ -213,6 +213,13 @@ filterStateDebounceConfig =
     }
 
 
+callsignSearchDebounceConfig : Debounce.Config Msg
+callsignSearchDebounceConfig =
+    { strategy = Debounce.later 300
+    , transform = CallsignSearchDebounceMsg
+    }
+
+
 initLoad : Model -> Effect Msg
 initLoad model =
     E.batch <|
@@ -294,142 +301,6 @@ selFreqUnitId freqS mNetworkId =
     "sel-freq-units-" ++ freqS ++ "-" ++ (mmap String.fromInt mNetworkId |> def "add")
 
 
-focusAndReloadDataIfNeeded :
-    Maybe (Select.Action String)
-    -> List String
-    -> RemoteData ApiError a
-    -> FilterName
-    -> Model
-    ->
-        ( { focusedFilterItemsBeforeChange : Maybe (List String)
-          , items : RemoteData ApiError a
-          }
-        , Effect Msg
-        )
-focusAndReloadDataIfNeeded mAction selectedItems items filter model =
-    case mAction of
-        Just Select.Focus ->
-            if model.focusedFilterItemsBeforeChange == Nothing then
-                case items of
-                    NeedsReload _ ->
-                        case ( model.from.datePosix, model.to.datePosix ) of
-                            ( Just dtFromPosix, Just dtToPosix ) ->
-                                let
-                                    callsignsPs =
-                                        callsignsForFilterParams dtFromPosix dtToPosix model
-                                in
-                                ( { focusedFilterItemsBeforeChange = Just selectedItems
-                                  , items = Loading
-                                  }
-                                , E.sendCmd <| filterNameToCmd filter callsignsPs
-                                )
-
-                            _ ->
-                                ( { focusedFilterItemsBeforeChange = Just selectedItems
-                                  , items = items
-                                  }
-                                , E.none
-                                )
-
-                    NotAsked ->
-                        case ( model.from.datePosix, model.to.datePosix ) of
-                            ( Just dtFromPosix, Just dtToPosix ) ->
-                                let
-                                    callsignsPs =
-                                        callsignsForFilterParams dtFromPosix dtToPosix model
-                                in
-                                ( { focusedFilterItemsBeforeChange = Just selectedItems
-                                  , items = Loading
-                                  }
-                                , E.sendCmd <| filterNameToCmd filter callsignsPs
-                                )
-
-                            _ ->
-                                ( { focusedFilterItemsBeforeChange = Just selectedItems
-                                  , items = items
-                                  }
-                                , E.none
-                                )
-
-                    _ ->
-                        ( { focusedFilterItemsBeforeChange = Just selectedItems
-                          , items = items
-                          }
-                        , E.none
-                        )
-
-            else
-                ( { focusedFilterItemsBeforeChange = model.focusedFilterItemsBeforeChange
-                  , items = items
-                  }
-                , E.none
-                )
-
-        Just (Select.Deselect _) ->
-            if model.focusedFilterItemsBeforeChange == Nothing then
-                case items of
-                    NeedsReload _ ->
-                        case ( model.from.datePosix, model.to.datePosix ) of
-                            ( Just dtFromPosix, Just dtToPosix ) ->
-                                let
-                                    callsignsPs =
-                                        callsignsForFilterParams dtFromPosix dtToPosix model
-                                in
-                                ( { focusedFilterItemsBeforeChange = Just selectedItems
-                                  , items = Loading
-                                  }
-                                , E.sendCmd <| filterNameToCmd filter callsignsPs
-                                )
-
-                            _ ->
-                                ( { focusedFilterItemsBeforeChange = Just selectedItems
-                                  , items = items
-                                  }
-                                , E.none
-                                )
-
-                    NotAsked ->
-                        case ( model.from.datePosix, model.to.datePosix ) of
-                            ( Just dtFromPosix, Just dtToPosix ) ->
-                                let
-                                    callsignsPs =
-                                        callsignsForFilterParams dtFromPosix dtToPosix model
-                                in
-                                ( { focusedFilterItemsBeforeChange = Just selectedItems
-                                  , items = Loading
-                                  }
-                                , E.sendCmd <| filterNameToCmd filter callsignsPs
-                                )
-
-                            _ ->
-                                ( { focusedFilterItemsBeforeChange = Just selectedItems
-                                  , items = items
-                                  }
-                                , E.none
-                                )
-
-                    _ ->
-                        ( { focusedFilterItemsBeforeChange = Just selectedItems
-                          , items = items
-                          }
-                        , E.none
-                        )
-
-            else
-                ( { focusedFilterItemsBeforeChange = model.focusedFilterItemsBeforeChange
-                  , items = items
-                  }
-                , E.none
-                )
-
-        _ ->
-            ( { focusedFilterItemsBeforeChange = model.focusedFilterItemsBeforeChange
-              , items = items
-              }
-            , E.none
-            )
-
-
 callsignsForFilterParams : Posix -> Posix -> Model -> B.CallsignsForFreqReq
 callsignsForFilterParams dtFromPosix dtToPosix model =
     let
@@ -438,7 +309,7 @@ callsignsForFilterParams dtFromPosix dtToPosix model =
     in
     { freq = emptySToNothing filterState.freq
     , unit = emptySToNothing filterState.unit
-    , callsign = List.head filterState.callsigns
+    , callsign = emptySToNothing model.callsignSearchQuery
     , sinceDateInclusiveMs = Time.posixToMillis dtFromPosix
     , tillDateNoninclusiveMs = Time.posixToMillis dtToPosix
     }
@@ -446,32 +317,12 @@ callsignsForFilterParams dtFromPosix dtToPosix model =
 
 reloadFreqsIfSelectedChanged : Maybe (Select.Action String) -> List String -> Model -> ( Model, Effect Msg, Bool )
 reloadFreqsIfSelectedChanged mAction selectedItems model =
-    let
-        upd =
-            case model.focusedFilterItemsBeforeChange of
-                Just items_ ->
-                    let
-                        ( m_, cmd_ ) =
-                            if items_ == selectedItems then
-                                ( model, E.none )
-
-                            else
-                                ( model
-                                , E.sendCmd <|
-                                    loadFreqs model False
-                                )
-                    in
-                    ( { m_ | focusedFilterItemsBeforeChange = Nothing }, cmd_, True )
-
-                Nothing ->
-                    ( model, E.none, False )
-    in
     case mAction of
         Just Select.Blur ->
-            upd
+            ( model, E.none, False )
 
         Just (Select.MenuToggle Select.MenuClose) ->
-            upd
+            ( model, E.none, False )
 
         Just Select.Clear ->
             let
@@ -481,17 +332,30 @@ reloadFreqsIfSelectedChanged mAction selectedItems model =
                         loadFreqs model False
                     )
             in
-            ( { m_ | focusedFilterItemsBeforeChange = Nothing }, cmd_, True )
+            ( m_, cmd_, True )
+
+        Just (Select.Select _) ->
+            let
+                ( m_, cmd_ ) =
+                    ( model
+                    , E.sendCmd <|
+                        loadFreqs model False
+                    )
+            in
+            ( m_, cmd_, True )
+
+        Just (Select.Deselect _) ->
+            let
+                ( m_, cmd_ ) =
+                    ( model
+                    , E.sendCmd <|
+                        loadFreqs model False
+                    )
+            in
+            ( m_, cmd_, True )
 
         _ ->
             ( model, E.none, False )
-
-
-filterNameToCmd : FilterName -> B.CallsignsForFreqReq -> Cmd Msg
-filterNameToCmd filterName =
-    case filterName of
-        CallsignsFilter ->
-            Api.rer_freqs_callsigns GotFilterCallsigns
 
 
 update : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
@@ -599,7 +463,7 @@ update shared msg model =
             in
             ( { m2
                 | locationTexts = Dict.empty
-                , callsignsForFilter = NeedsReload (RD.withDefault [] model.callsignsForFilter)
+                , callsignSearchResults = NotAsked
               }
             , E.batch [ eff2, initLoad m2 ]
             )
@@ -615,7 +479,7 @@ update shared msg model =
                         , toMsg = DateTimeToMsg
                         }
             in
-            ( { m2 | callsignsForFilter = NeedsReload (RD.withDefault [] model.callsignsForFilter) }
+            ( { m2 | callsignSearchResults = NotAsked }
             , E.batch [ eff2, initLoad m2 ]
             )
 
@@ -912,7 +776,7 @@ update shared msg model =
                     { model
                         | filterStateDebounce = debounce
                         , loading = True
-                        , callsignsForFilter = NeedsReload (RD.withDefault [] model.callsignsForFilter)
+                        , callsignSearchResults = NotAsked
                         , currentRequestTracker = Just tracker
                         , requestCounter = model.requestCounter + 1
                     }
@@ -1080,14 +944,39 @@ update shared msg model =
                         , filterState = updatedFilterState
                     }
 
-                ( x, eff3 ) =
-                    focusAndReloadDataIfNeeded mAction model.filterState.callsigns m2.callsignsForFilter CallsignsFilter m2
+                -- Handle input change for callsign search
+                ( m3, eff3 ) =
+                    case mAction of
+                        Just (Select.InputChange query) ->
+                            let
+                                ( debounce, cmd ) =
+                                    Debounce.push callsignSearchDebounceConfig query m2.callsignSearchDebounce
 
-                m3 =
-                    { m2
-                        | focusedFilterItemsBeforeChange = x.focusedFilterItemsBeforeChange
-                        , callsignsForFilter = x.items
-                    }
+                                m3_ =
+                                    { m2
+                                        | callsignSearchQuery = query
+                                        , callsignSearchDebounce = debounce
+                                        , callsignSearchResults =
+                                            if String.isEmpty query then
+                                                NotAsked
+
+                                            else
+                                                m2.callsignSearchResults
+                                    }
+                            in
+                            ( m3_, E.sendCmd cmd )
+
+                        Just (Select.Select _) ->
+                            -- Clear search after selection
+                            ( { m2
+                                | callsignSearchQuery = ""
+                                , callsignSearchResults = NotAsked
+                              }
+                            , E.none
+                            )
+
+                        _ ->
+                            ( m2, E.none )
 
                 ( m4, eff4, _ ) =
                     reloadFreqsIfSelectedChanged mAction m3.filterState.callsigns m3
@@ -1100,21 +989,54 @@ update shared msg model =
                 ]
             )
 
-        GotFilterCallsigns (Err e) ->
-            ( model
-            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження фільтру позивних" e
+        CallsignSearchDebounceMsg imsg ->
+            let
+                ( debounce, debounceCmd ) =
+                    Debounce.update
+                        callsignSearchDebounceConfig
+                        (Debounce.takeLast
+                            (\query ->
+                                if String.length query >= 2 then
+                                    case ( model.from.datePosix, model.to.datePosix ) of
+                                        ( Just dtFromPosix, Just dtToPosix ) ->
+                                            let
+                                                searchParams =
+                                                    callsignsForFilterParams dtFromPosix dtToPosix { model | callsignSearchQuery = query }
+                                            in
+                                            Api.rer_freqs_callsigns CallsignSearchResultsReturned searchParams
+
+                                        _ ->
+                                            Cmd.none
+
+                                else
+                                    Cmd.none
+                            )
+                        )
+                        imsg
+                        model.callsignSearchDebounce
+
+                model2 =
+                    { model
+                        | callsignSearchDebounce = debounce
+                        , callsignSearchResults =
+                            if String.length model.callsignSearchQuery >= 2 then
+                                Loading
+
+                            else
+                                model.callsignSearchResults
+                    }
+            in
+            ( model2
+            , E.sendCmd debounceCmd
             )
 
-        GotFilterCallsigns (Ok rsp) ->
-            ( { model
-                | callsignsForFilter = Success rsp.callsigns
-                , callsigns =
-                    List.map
-                        (\callsign ->
-                            callsign.callsign
-                        )
-                        rsp.callsigns
-              }
+        CallsignSearchResultsReturned (Err e) ->
+            ( { model | callsignSearchResults = Failure e }
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка пошуку позивних" e
+            )
+
+        CallsignSearchResultsReturned (Ok rsp) ->
+            ( { model | callsignSearchResults = Success rsp.callsigns }
             , E.none
             )
 

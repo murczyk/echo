@@ -12,7 +12,7 @@ import Html.Events exposing (..)
 import Html.Extra as HtmlX
 import Html.Styled as Styled
 import List.Extra as ListX
-import Pages_.RerFreqs.Model exposing (FilterName(..), Model, NetworkWorkflowStatus(..), TextLocation(..))
+import Pages_.RerFreqs.Model exposing (Model, NetworkWorkflowStatus(..), TextLocation(..))
 import Pages_.RerFreqs.Msg exposing (Msg(..))
 import Pages_.RerFreqs.Utils as Utils
 import Route exposing (Route)

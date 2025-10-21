@@ -1,13 +1,12 @@
 module Pages_.RerFreqs.FilterPanel exposing (view)
 
-import Bindings as B
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
 import Html exposing (..)
 import Html.Attributes as Attr exposing (..)
 import Html.Events exposing (..)
 import Html.Styled as Styled
-import Pages_.RerFreqs.Model exposing (FilterName(..), Model, NetworkWorkflowStatus(..), TextLocation(..))
+import Pages_.RerFreqs.Model exposing (Model, NetworkWorkflowStatus(..), TextLocation(..))
 import Pages_.RerFreqs.Msg exposing (Msg(..))
 import Pages_.RerFreqs.Utils as Utils
 import Select
@@ -47,7 +46,28 @@ view shared model =
 
         tabFiltersCallsigns =
             let
-                items =
+                -- Get available callsigns from search results
+                availableCallsigns =
+                    case model.callsignSearchResults of
+                        Success callsigns ->
+                            List.map .callsign callsigns
+                        
+                        _ ->
+                            []
+                
+                -- Create menu items from available callsigns
+                menuItems =
+                    List.map
+                        (\callsign ->
+                            Select.basicMenuItem
+                                { item = callsign
+                                , label = callsign
+                                }
+                        )
+                        availableCallsigns
+                
+                -- Selected items (currently filtered callsigns)
+                selectedItems =
                     List.map
                         (\callsign ->
                             Select.basicMenuItem
@@ -64,11 +84,11 @@ view shared model =
                 [ Html.map SelCallsignMsg
                     (Styled.toUnstyled <|
                         Utils.Select.renderSelectVirtual
-                            items
+                            selectedItems
                             model.selCallsignState
-                            model.selCallsignMenu
-                            "всі"
-                            { loading = RD.isLoading model.callsignsForFilter, disabled = False, isDark = isDarkMode shared.themeMode }
+                            menuItems
+                            "Почніть вводити позивний..."
+                            { loading = RD.isLoading model.callsignSearchResults, disabled = False, isDark = isDarkMode shared.themeMode }
                     )
                 ]
     in
@@ -135,7 +155,6 @@ view shared model =
                         )
                     ]
                     [ text "Підрозділи" ]
-                , span [ class "text-sm" ] [ text "позивні" ]
                 , tabFiltersCallsigns
                 ]
             ]
