@@ -3230,9 +3230,37 @@ inboxMessageTagsRmReqEncoder struct =
         ]
 
 
+type alias ReoReportSettings =
+    { adjacentFreqsDistance : Float
+    }
+
+
+reoReportSettingsEncoder : ReoReportSettings -> Json.Encode.Value
+reoReportSettingsEncoder struct =
+    Json.Encode.object
+        [ ( "adjacent_freqs_distance", Json.Encode.float struct.adjacentFreqsDistance )
+        ]
+
+
+type ReportAggregation
+    = ByProfile
+    | ByPost
+
+
+reportAggregationEncoder : ReportAggregation -> Json.Encode.Value
+reportAggregationEncoder enum =
+    case enum of
+        ByProfile ->
+            Json.Encode.string "ByProfile"
+
+        ByPost ->
+            Json.Encode.string "ByPost"
+
+
 type alias ReportPreviewReq =
     { kind : String
     , req : InboxMessagesReq
+    , reportType : Maybe ReportType
     }
 
 
@@ -3241,6 +3269,62 @@ reportPreviewReqEncoder struct =
     Json.Encode.object
         [ ( "kind", Json.Encode.string struct.kind )
         , ( "req", inboxMessagesReqEncoder struct.req )
+        , ( "report_type", (Maybe.withDefault Json.Encode.null << Maybe.map reportTypeEncoder) struct.reportType )
+        ]
+
+
+type ReportType
+    = Tags
+    | Interception
+    | Babak
+    | Mouse
+    | Pelengs
+    | Senders SenderReportSettings
+    | Naushnom
+    | Reo ReoReportSettings
+    | Digest
+
+
+reportTypeEncoder : ReportType -> Json.Encode.Value
+reportTypeEncoder enum =
+    case enum of
+        Tags ->
+            Json.Encode.string "Tags"
+
+        Interception ->
+            Json.Encode.string "Interception"
+
+        Babak ->
+            Json.Encode.string "Babak"
+
+        Mouse ->
+            Json.Encode.string "Mouse"
+
+        Pelengs ->
+            Json.Encode.string "Pelengs"
+
+        Senders inner ->
+            Json.Encode.object [ ( "Senders", senderReportSettingsEncoder inner ) ]
+
+        Naushnom ->
+            Json.Encode.string "Naushnom"
+
+        Reo inner ->
+            Json.Encode.object [ ( "Reo", reoReportSettingsEncoder inner ) ]
+
+        Digest ->
+            Json.Encode.string "Digest"
+
+
+type alias SenderReportSettings =
+    { aggregation : ReportAggregation
+    }
+
+
+senderReportSettingsEncoder : SenderReportSettings -> Json.Encode.Value
+senderReportSettingsEncoder struct =
+    Json.Encode.object
+        [ ( "aggregation", reportAggregationEncoder struct.aggregation )
         ]
 
 
@@ -7663,11 +7747,128 @@ inboxMessageTagsRmReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tag_id" Json.Decode.int))
 
 
+reoReportSettingsDecoder : Json.Decode.Decoder ReoReportSettings
+reoReportSettingsDecoder =
+    Json.Decode.succeed ReoReportSettings
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "adjacent_freqs_distance" Json.Decode.float))
+
+
+reportAggregationDecoder : Json.Decode.Decoder ReportAggregation
+reportAggregationDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "ByProfile" ->
+                            Json.Decode.succeed ByProfile
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "ByPost" ->
+                            Json.Decode.succeed ByPost
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
+
+
 reportPreviewReqDecoder : Json.Decode.Decoder ReportPreviewReq
 reportPreviewReqDecoder =
     Json.Decode.succeed ReportPreviewReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "kind" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "req" inboxMessagesReqDecoder))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "report_type" (Json.Decode.nullable reportTypeDecoder)))
+
+
+reportTypeDecoder : Json.Decode.Decoder ReportType
+reportTypeDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Tags" ->
+                            Json.Decode.succeed Tags
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Interception" ->
+                            Json.Decode.succeed Interception
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Babak" ->
+                            Json.Decode.succeed Babak
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Mouse" ->
+                            Json.Decode.succeed Mouse
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Pelengs" ->
+                            Json.Decode.succeed Pelengs
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.map Senders (Json.Decode.field "Senders" senderReportSettingsDecoder)
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Naushnom" ->
+                            Json.Decode.succeed Naushnom
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.map Reo (Json.Decode.field "Reo" reoReportSettingsDecoder)
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Digest" ->
+                            Json.Decode.succeed Digest
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
+
+
+senderReportSettingsDecoder : Json.Decode.Decoder SenderReportSettings
+senderReportSettingsDecoder =
+    Json.Decode.succeed SenderReportSettings
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aggregation" reportAggregationDecoder))
 
 
 listUnitsSortByDecoder : Json.Decode.Decoder ListUnitsSortBy

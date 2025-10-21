@@ -156,6 +156,11 @@ init route _ =
             , showReportConstructor = False
             , reportTemplate = RTTags
             , reportTagsOnlyThisUnit = False
+            , reportAdjacentFreqsRangeSelect =
+                { state = Select.initState (Select.selectIdentifier "selectReportAdjacentFreqsRange")
+                , items = Config.adjacentFreqsRangeOptions |> List.map (\x -> Select.basicMenuItem { item = x, label = String.fromFloat (x * 1000) ++ " кГц" })
+                , selected = 0
+                }            
 
             -- , reportIframeUrl = Nothing
             , reportDownloadInProgress = False
@@ -2801,8 +2806,9 @@ update user shared route msg model =
         ReportDownloadDocx ->
             ( { model | reportDownloadInProgress = True }
             , E.getDocxReportForDownload ReportDownloadDocxDone
-                { req = getInboxReq model
-                , kind = reportTemplateToString model.reportTemplate
+                { kind = reportTemplateToString model.reportTemplate
+                , reportType = reportTemplateToApiType model model.reportTemplate
+                , req = getInboxReq model
                 }
             )
 
@@ -3167,6 +3173,29 @@ update user shared route msg model =
                 ]
             )
 
+        SelectReportAdjacentFreqsRange imsg ->
+            let
+                ( mAction, imodel2, _ ) =
+                    Select.update imsg model.reportAdjacentFreqsRangeSelect.state
+
+                reportAdjacentFreqsRangeSelect =
+                    model.reportAdjacentFreqsRangeSelect
+
+                a2 =
+                    { reportAdjacentFreqsRangeSelect
+                        | state = imodel2
+                        , selected =
+                            case mAction of
+                                Just (Select.Select i) ->
+                                    i
+
+                                _ ->
+                                    reportAdjacentFreqsRangeSelect.selected
+                    }
+
+            in
+            ( { model | reportAdjacentFreqsRangeSelect = a2 }, E.none )
+
         GroupsActivityPeriodChanged period ->
             case ( model.from.datePosix, model.to.datePosix, List.head model.freqsSelected ) of
                 ( Just dtFromPosix, Just dtToPosix, Just freq ) ->
@@ -3232,6 +3261,39 @@ subscriptions : Model -> Sub Msg
 subscriptions _ =
     Sub.none
 
+reportTemplateToApiType : Model -> ReportTemplate -> Maybe B.ReportType
+reportTemplateToApiType model template =
+    case template of
+        RTTags ->
+            Just B.Tags
+
+        RTMouse ->
+            Just B.Mouse
+
+        RTPelengs ->
+            Just B.Pelengs
+
+        RTBabak ->
+            Just B.Babak
+
+        RTInterception ->
+            Just B.Interception
+
+        RTSenders y ->
+            if y == Senders then
+                Just (B.Senders { aggregation = B.ByProfile })
+
+            else
+                Just (B.Senders { aggregation = B.ByPost })
+
+        RTNaUshnom ->
+            Just B.Naushnom
+
+        RTReo ->
+            Just (B.Reo { adjacentFreqsDistance = model.reportAdjacentFreqsRangeSelect.selected })
+
+        RTDigest ->
+            Just B.Digest
 
 
 --VIEW

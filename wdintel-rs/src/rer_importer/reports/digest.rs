@@ -66,7 +66,7 @@ pub struct NetworkSummary {
 pub async fn report_docx_kind_digest(
     user: Identity,
     env: &Env,
-    req: &super::ReportPreviewReq,
+    req: &super::types::ReportPreviewReq,
     outpath: &Path,
 ) -> Result<(), AppError> {
     info!("report_docx_kind_digest started");
