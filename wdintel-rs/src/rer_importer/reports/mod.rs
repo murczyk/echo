@@ -2,21 +2,17 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::str::FromStr;
 
-use super::types::*;
 use crate::config::CLEANUP_REPORT_DAYS;
 use crate::entities::*;
 use crate::error::AppError;
-use crate::rer_importer::reports::senders::ReportAggregation;
 use crate::types::*;
 use actix_identity::Identity;
 use actix_web::web::Json;
 use actix_web::{post, HttpRequest, HttpResponse};
 use chrono::{Days, NaiveDateTime, Utc};
-use elm_rs::{Elm, ElmDecode, ElmEncode};
 use futures_util::TryStreamExt;
 use indicatif::ProgressBar;
 use sea_orm::*;
-use serde::{Deserialize, Serialize};
 
 pub mod babak;
 mod digest;
@@ -29,6 +25,7 @@ mod revo;
 mod senders;
 pub mod tag;
 mod util;
+pub mod types;
 
 pub(crate) async fn cleanup_old_reports_nofail(
     dbx: &DatabaseConnection,
@@ -97,22 +94,13 @@ pub(crate) async fn save_report_log(
     Ok(())
 }
 
-#[derive(
-    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
-)]
-pub struct ReportPreviewReq {
-    /// `tags`, `mouse`
-    pub kind: String,
-    pub req: InboxMessagesReq,
-}
-
 /// Generates report in docx format using docx-rs library looking similar to html produced by the report_generate_html function
 #[post("/api/rer/report-docx")]
 pub async fn report_docx(
     user: Identity,
     env: actix_web::web::Data<Env>,
     http_req: HttpRequest,
-    req: Json<ReportPreviewReq>,
+    req: Json<types::ReportPreviewReq>,
 ) -> Result<HttpResponse, AppError> {
     info!("> Start RER report generation...");
 
@@ -157,7 +145,7 @@ pub async fn report_docx(
         .c(h!())?;
     } else if req.kind == "senders" {
         self::senders::report_xlsx_kind_senders(
-            ReportAggregation::ByProfile,
+            types::ReportAggregation::ByProfile,
             user,
             &env,
             &req.req,
@@ -167,7 +155,7 @@ pub async fn report_docx(
         .c(h!())?;
     } else if req.kind == "posts" {
         self::senders::report_xlsx_kind_senders(
-            ReportAggregation::ByPost,
+            types::ReportAggregation::ByPost,
             user,
             &env,
             &req.req,

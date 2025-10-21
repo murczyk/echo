@@ -7,6 +7,7 @@ import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events as Events exposing (..)
 import Html.Extra as HtmlX exposing (viewIf, viewMaybe)
+import Html.Styled
 import Json.Decode as Decode
 import Json.Encode as Encode
 import List.Extra exposing (frequencies)
@@ -19,6 +20,7 @@ import Pages_.RerAnalysis.Msg exposing (..)
 import Pages_.RerAnalysis.SumTable
 import Route exposing (Route)
 import Route.Path
+import Select
 import Set
 import Shared
 import Shared.Components.Button as Button
@@ -31,6 +33,7 @@ import String exposing (fromInt)
 import Time
 import Utils.RemoteData as RD exposing (RemoteData(..))
 import Utils.Utils exposing (..)
+import Utils.Select
 import Utils.Views
 
 
@@ -456,12 +459,12 @@ view user model shared route =
                 [ templateCard
                     (model.reportTemplate == RTTags)
                     (ReportTemplateSelect RTTags)
-                    "з донесенням"
+                    "З донесенням"
                     "Простий перелік повідомлень разом з їх донесенням"
                 , templateCard
                     (model.reportTemplate == RTPelengs)
                     (ReportTemplateSelect RTPelengs)
-                    "пеленги"
+                    "Пеленги"
                     "Таблиця з пеленгами"
                 , templateCard
                     (model.reportTemplate == RTBabak)
@@ -546,6 +549,46 @@ view user model shared route =
                     "Дайджест"
                     "Для генерування потрібні права редактора чи адміна"
                 ]
+            -- Add adjacent-freqs range selector when RTReo is chosen
+            , HtmlX.viewIf (model.reportTemplate == RTReo) <|
+                let
+                    isDark = isDarkMode shared.themeMode
+
+                    selDescription = p
+                                [ class "text-sm leading-relaxed"
+                                , classList
+                                    [ ( "text-gray-600", not (isDarkMode shared.themeMode) )
+                                    , ( "text-gray-400", isDarkMode shared.themeMode )
+                                    ]
+                                ]
+                                [ text "Об'єднувати суміжні частоти в діапазоні, кГц" ]
+
+                    selItem =
+                        Just
+                            (Select.basicMenuItem
+                                { item = model.reportAdjacentFreqsRangeSelect.selected
+                                , label = String.fromFloat (model.reportAdjacentFreqsRangeSelect.selected * 1000) ++ " кГц"
+                                }
+                            )
+
+                    options =
+                        Utils.Select.defaultOptions isDark
+
+                    options2 =
+                        { options | clearable = False }
+                in
+                div [ class "p-3 bg-gray-100 text-gray-900 mb-4" ]
+                    [ selDescription
+                    , Html.map SelectReportAdjacentFreqsRange
+                        (Html.Styled.toUnstyled <|
+                            Utils.Select.renderSelectSingle
+                                selItem
+                                model.reportAdjacentFreqsRangeSelect.state
+                                model.reportAdjacentFreqsRangeSelect.items
+                                "не обрано"
+                                options2
+                        )
+                    ]                
             , HtmlX.viewIf (List.member model.reportTemplate [ RTTags, RTBabak, RTInterception ]) <|
                 div [ class "p-3 bg-gray-100 text-gray-900 mb-4" ]
                     [ div [ class "form-check" ]

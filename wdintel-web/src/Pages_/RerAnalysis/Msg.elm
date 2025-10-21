@@ -140,6 +140,7 @@ type Msg
     | GotFreqActivityDaily (Result ApiError B.FreqDailyActivityCount)
     | SetUnitFilterFromMap String
     | SelectFilterAdjacentFreqsRange (Select.Msg Float)
+    | SelectReportAdjacentFreqsRange (Select.Msg Float)
     | GroupsActivityPeriodChanged GroupsActivityPeriod
     | FilterTagsOptionChanged Bool
     | UnitsExactMatchOnlyChanged Bool

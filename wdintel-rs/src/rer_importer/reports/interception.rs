@@ -264,7 +264,7 @@ fn process_callsigns(callsigns: Vec<String>) -> (String, String) {
 pub async fn report_xlsx_kind_interception(
     user: Identity,
     env: &Env,
-    req: &super::ReportPreviewReq,
+    req: &super::types::ReportPreviewReq,
     outpath: &PathBuf,
 ) -> Result<(), AppError> {
     let mut workbook = Workbook::new(); // Use rust_xlsxwriter

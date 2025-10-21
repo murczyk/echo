@@ -10,6 +10,7 @@
 ## NEXT
 
 - [#1619](https://github.com/echoua/echo/issues/1619) ✅ Звіт Пости
+- [#1611](https://github.com/echoua/echo/issues/161) ✅ Звіт "РЕО". Додано можливість вибору діапазону суміжних частот.
 - [#1604](https://github.com/echoua/echo/issues/1604) ✅ Мережі. Додано формування звіту ГОІ.
 - [#1602](https://github.com/echoua/echo/issues/1602) ✅ Аналіз, Оперативний. Покращили парсинг постів перехоплень.
 - [#1533](https://github.com/echoua/echo/issues/1533) ✅ Адмінка: зробити флоу роботи з групами зрозумілішим

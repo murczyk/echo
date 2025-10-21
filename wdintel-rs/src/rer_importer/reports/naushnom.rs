@@ -26,7 +26,7 @@ fn split_into_lines(mut cell: TableCell, text: &str) -> TableCell {
 pub async fn report_docx_kind_naushnom(
     user: Identity,
     env: &Env,
-    req: &super::ReportPreviewReq,
+    req: &super::types::ReportPreviewReq,
     outpath: &PathBuf,
 ) -> Result<(), AppError> {
     let file = std::fs::File::create(outpath)?;

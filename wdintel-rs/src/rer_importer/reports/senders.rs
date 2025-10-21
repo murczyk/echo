@@ -5,6 +5,7 @@ use crate::rer_importer::inbox::query::build_inbox_query;
 use crate::rer_importer::types::InboxMessagesReq;
 use crate::types::{Env, ShortContext};
 use crate::utils::dt_zoned_from_millis;
+use super::types::ReportAggregation;
 use anyhow::Context;
 use chrono::{NaiveDate, Utc};
 use itertools::Itertools;
@@ -15,12 +16,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 const FMT_DATE: &str = "%d.%m.%Y";
-
-#[derive(Debug)]
-pub enum ReportAggregation {
-    ByProfile,
-    ByPost,
-}
 
 #[derive(Clone, Debug, Default)]
 struct SenderStats {
