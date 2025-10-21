@@ -3282,6 +3282,9 @@ reportTemplateToApiType model template =
         RTInterception ->
             Just B.Interception
 
+        RTPostsDocx ->
+            Nothing
+
         RTSenders y ->
             if y == Senders then
                 Just (B.Senders { aggregation = B.ByProfile })
