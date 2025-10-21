@@ -1,4 +1,4 @@
-use super::ReportPreviewReq;
+use crate::rer_importer::reports::types::ReportPreviewReq;
 use crate::error::AppError;
 use crate::h;
 use crate::rer_importer::inbox::get_inbox_messages;
