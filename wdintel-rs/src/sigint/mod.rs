@@ -162,11 +162,12 @@ where
         .arg("NX")
         .arg("EX") // Add the EX (Expire) option
         .arg(3600) // Specify the time-to-live in seconds (60 minutes)
-        .query_async(manager)
+        .query_async::<()>(manager)
         .await
         .c(h!())?;
 
-    let original_id: i64 = manager.get(key).await.c(h!())?.parse().c(h!())?;
+    let original_id: String = manager.get(key).await.c(h!())?;
+    let original_id: i64 = original_id.parse().c(h!())?;
 
     if original_id != db_message_id {
         info!("{db_message_id} is duplicate of {original_id}");
