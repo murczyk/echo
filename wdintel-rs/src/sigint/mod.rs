@@ -151,14 +151,19 @@ pub async fn find_duplicate_of<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
-    let original_id: i64 = redis::cmd("SET")
-        .arg(db_message_id)
-        .arg(body.to_string())
+    let key = format!("signal_message:{body}");
+    let new_value = format!("{db_message_id}");
+    let original_id: String = redis::cmd("SET")
+        .arg(key)
+        .arg(new_value)
         .arg("NX")
         .arg("GET")
+        .arg("EX") // Add the EX (Expire) option
+        .arg(3600) // Specify the time-to-live in seconds (60 minutes)
         .query_async(manager)
         .await
         .c(h!())?;
+    let original_id: i64 = original_id.parse().c(h!())?;
 
     if original_id != db_message_id {
         let result = signal_message::Entity::find()
