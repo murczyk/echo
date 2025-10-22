@@ -8,6 +8,7 @@
 - 🐞 - Виправлення багів
 
 ## NEXT
+- [#1626](https://github.com/echoua/echo/issues/1626) 🚨🐞 виправляємо логіку проставляння duplicate_of при обробці вхідних повідомлень. 
 - [#1487](https://github.com/echoua/echo/issues/1487) ✅ Частоти. Виправлений фільтр по позивних
 - [#1619](https://github.com/echoua/echo/issues/1619) ✅ Звіт Пости
 - [#1611](https://github.com/echoua/echo/issues/161) ✅ Звіт "РЕО". Додано можливість вибору діапазону суміжних частот.

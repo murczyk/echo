@@ -11,6 +11,7 @@ use chrono::prelude::*;
 use futures_util::TryStreamExt;
 use indicatif::ProgressBar;
 use lazy_static::lazy_static;
+use redis::aio::ConnectionManager;
 use regex::Regex;
 use sea_orm::*;
 use std::collections::BTreeSet;
@@ -140,14 +141,39 @@ pub async fn oneoff_reprocess_coords(
     Ok(())
 }
 
-pub async fn find_duplicate<'a, 'async_trait, C>(
+pub async fn find_duplicate_of<'a, 'async_trait, C>(
     txn: &'a C,
     body: &str,
     m_timestamp: Option<NaiveDateTime>,
+    db_message_id: i64,
+    manager: &mut ConnectionManager,
 ) -> Result<Option<(signal_message::Model, datasource_group::Model)>, AppError>
 where
     C: ConnectionTrait + 'async_trait,
 {
+    let original_id: i64 = redis::cmd("SET")
+        .arg(db_message_id)
+        .arg(body.to_string())
+        .arg("NX")
+        .arg("GET")
+        .query_async(manager)
+        .await
+        .c(h!())?;
+
+    if original_id != db_message_id {
+        let result = signal_message::Entity::find()
+            .find_with_related(datasource_group::Entity)
+            .filter(signal_message::Column::Id.eq(original_id))
+            .all(txn)
+            .await
+            .c(h!())?
+            .into_iter()
+            .next()
+            .and_then(|(m, groups)| groups.into_iter().next().map(|g| (m, g)))
+            .c(h!())?;
+        return Ok(Some(result));
+    }
+
     // find duplicate created N mins ago or later
     let created_recently = signal_message::Column::CreatedAt
         .gte(Utc::now() - chrono::Duration::minutes(30));

@@ -81,7 +81,7 @@ pub async fn sigint_worker(mode: Mode) -> Result<(), AppError> {
 async fn receive_thread_signal_restapi_nofail(
     settlements: Arc<RwLock<crate::location::SettlementsData>>,
     config: &crate::config::Config,
-    dbx: &sea_orm::DatabaseConnection,
+    dbx: &DatabaseConnection,
     redis: &mut redis::aio::ConnectionManager,
     datasource_id: i64,
 ) {
@@ -111,7 +111,7 @@ async fn receive_thread_signal_restapi_nofail(
 async fn receive_thread_signal_restapi(
     settlements: Arc<RwLock<crate::location::SettlementsData>>,
     config: &crate::config::Config,
-    dbx: &sea_orm::DatabaseConnection,
+    dbx: &DatabaseConnection,
     redis: &mut redis::aio::ConnectionManager,
     datasource_id: i64,
 ) -> Result<bool, AppError> {
@@ -141,9 +141,7 @@ async fn receive_thread_signal_restapi(
         }
         // println!("> receiving messages...");
         let mut messages =
-            crate::sigint::restapi::receive_messages(config, &rq, dbx)
-                .await
-                .c(h!())?;
+            restapi::receive_messages(config, &rq, dbx).await.c(h!())?;
         if !messages.is_empty() {
             println!("> received {} messages", messages.len());
         }
@@ -182,9 +180,7 @@ async fn receive_thread_signal_restapi(
             > std::time::Duration::from_secs(SYNC_SECS)
         {
             println!("> syncing accumulated group names and profiles");
-            let groups = crate::sigint::restapi::receive_groups(config, &rq)
-                .await
-                .c(h!())?;
+            let groups = restapi::receive_groups(config, &rq).await.c(h!())?;
             for group in groups {
                 sync_state.groups.insert(SyncStateGroup {
                     master_key: group.internal_id.clone(),
@@ -201,7 +197,7 @@ async fn receive_thread_signal_restapi(
 }
 
 pub async fn do_sync_state_nofail(
-    dbx: &sea_orm::DatabaseConnection,
+    dbx: &DatabaseConnection,
     datasource_id: i64,
     sync_state: &mut SyncState,
 ) {
@@ -211,7 +207,7 @@ pub async fn do_sync_state_nofail(
 }
 
 pub async fn do_sync_state(
-    dbx: &sea_orm::DatabaseConnection,
+    dbx: &DatabaseConnection,
     datasource_id: i64,
     sync_state: &mut SyncState,
 ) -> Result<(), AppError> {
@@ -345,11 +341,11 @@ pub async fn do_sync_state(
 pub async fn process_incoming_message_restapi(
     settlements: Arc<RwLock<crate::location::SettlementsData>>,
     config: &crate::config::Config,
-    dbx: &sea_orm::DatabaseConnection,
+    dbx: &DatabaseConnection,
     redis: &mut redis::aio::ConnectionManager,
     rq: &reqwest::Client,
     datasource_id: i64,
-    message: &crate::sigint::restapi::Message,
+    message: &restapi::Message,
     sync_state: &mut SyncState,
 ) -> Result<(), AppError> {
     info!("received: {}", display_message(message)?);
@@ -361,24 +357,16 @@ pub async fn process_incoming_message_restapi(
         if exc_message.starts_with("Untrusted identity: ") {
             if let Some(ref source_number) = message.envelope.source_number {
                 info!("Trusting identity phone number: {source_number}");
-                if let Err(e) = crate::sigint::restapi::trust_identity(
-                    config,
-                    rq,
-                    source_number,
-                )
-                .await
+                if let Err(e) =
+                    restapi::trust_identity(config, rq, source_number).await
                 {
                     warn!("Error trusting identity: {e:?}");
                 }
             }
             if let Some(ref source_uuid) = message.envelope.source_uuid {
                 info!("Trusting identity uuid: {source_uuid}");
-                if let Err(e) = crate::sigint::restapi::trust_identity(
-                    config,
-                    rq,
-                    source_uuid,
-                )
-                .await
+                if let Err(e) =
+                    restapi::trust_identity(config, rq, source_uuid).await
                 {
                     warn!("Error trusting identity uuid: {e:?}");
                 }
@@ -443,24 +431,21 @@ pub async fn process_incoming_message_restapi(
     .insert(dbx)
     .await
     .c(h!())?;
-    let m_duplicate = find_duplicate(dbx, &body, timestamp).await.c(h!())?;
-    let db_message_id = message.id;
-    let m_duplicate_id =
-        // skip if this is same-group duplicate
-        if let Some((duplicate, group)) = m_duplicate {
-            if group.group_master_key == group_info.group_id {
-                info!("> skipping same-group duplicate");
-                return Ok(());
-            }
-            Some(duplicate.id)
-        } else {
-            None
-        };
 
-    let mut model = message.into_active_model();
-    model.deleted = Set(false);
-    model.duplicate_of = Set(m_duplicate_id);
-    let message = model.update(dbx).await.c(h!())?;
+    let db_message_id = message.id;
+
+    let m_duplicate_of =
+        find_duplicate_of(dbx, &body, timestamp, db_message_id, redis)
+            .await
+            .c(h!())?;
+
+    let Some(message) =
+        unstage_message(dbx, &group_info.group_id, message, m_duplicate_of)
+            .await
+            .c(h!())?
+    else {
+        return Ok(());
+    };
 
     id::update_message_with_uid(dbx, config, message)
         .await
@@ -515,6 +500,34 @@ pub async fn process_incoming_message_restapi(
     });
 
     Ok(())
+}
+
+pub async fn unstage_message<'a, 'async_trait, C>(
+    dbx: &'a C,
+    master_key: &str,
+    message: signal_message::Model,
+    m_duplicate_of: Option<(signal_message::Model, datasource_group::Model)>,
+) -> anyhow::Result<Option<signal_message::Model>>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let m_original_id =
+        // skip if this is same-group duplicate
+        if let Some((original, group)) = m_duplicate_of {
+            if group.group_master_key.eq(master_key) {
+                info!("> skipping same-group duplicate");
+                return Ok(None);
+            }
+            Some(original.id)
+        } else {
+            None
+        };
+
+    let mut model = message.into_active_model();
+    model.deleted = Set(false);
+    model.duplicate_of = Set(m_original_id);
+    let message = model.update(dbx).await.c(h!())?;
+    Ok(Some(message))
 }
 
 /// Shared logic between signal and buran api integration
