@@ -166,6 +166,7 @@ where
     let original_id: i64 = original_id.parse().c(h!())?;
 
     if original_id != db_message_id {
+        info!("{db_message_id} is duplicate of {original_id}");
         let result = signal_message::Entity::find()
             .find_with_related(datasource_group::Entity)
             .filter(signal_message::Column::Id.eq(original_id))
@@ -178,6 +179,7 @@ where
             .c(h!())?;
         return Ok(Some(result));
     }
+    info!("{db_message_id} is not a duplicate, with body {body}");
 
     // find duplicate created N mins ago or later
     let created_recently = signal_message::Column::CreatedAt
