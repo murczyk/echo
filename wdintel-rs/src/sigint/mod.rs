@@ -151,7 +151,6 @@ where
     // find duplicate created N mins ago or later
     let created_recently = signal_message::Column::CreatedAt
         .gte(Utc::now() - chrono::Duration::minutes(30));
-
     let time_filter = if let Some(timestamp) = m_timestamp {
         signal_message::Column::Timestamp
             .eq(timestamp)

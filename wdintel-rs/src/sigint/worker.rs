@@ -410,18 +410,6 @@ pub async fn process_incoming_message_restapi(
     }
     // Normalize body
     let body = body.replace("\r\n", "\n");
-    let m_duplicate = find_duplicate(dbx, &body, timestamp).await.c(h!())?;
-    let m_duplicate_id =
-    // skip if this is same-group duplicate
-    if let Some((duplicate, group)) = m_duplicate {
-        if group.group_master_key == group_info.group_id {
-            info!("> skipping same-group duplicate");
-            return Ok(());
-        }
-        Some(duplicate.id)
-    } else {
-        None
-    };
     let Some(source_uuid) = message.envelope.source_uuid.clone() else {
         return Ok(());
     };
@@ -445,9 +433,9 @@ pub async fn process_incoming_message_restapi(
         created_at: NotSet,
         timestamp: Set(timestamp),
         sender: Set(Some(source_uuid.clone().to_string())),
-        duplicate_of: Set(m_duplicate_id),
+        duplicate_of: Set(None),
         format: Set(Some(2)),
-        deleted: NotSet,
+        deleted: Set(true), // message is in staged state before check for dupes
         external_id: NotSet,
         message_uid: NotSet,
         datasource_group_id: Set(Some(datasource_group_id)),
@@ -455,7 +443,23 @@ pub async fn process_incoming_message_restapi(
     .insert(dbx)
     .await
     .c(h!())?;
+    let m_duplicate = find_duplicate(dbx, &body, timestamp).await.c(h!())?;
     let db_message_id = message.id;
+    let m_duplicate_id =
+        // skip if this is same-group duplicate
+        if let Some((duplicate, group)) = m_duplicate {
+            if group.group_master_key == group_info.group_id {
+                info!("> skipping same-group duplicate");
+                return Ok(());
+            }
+            Some(duplicate.id)
+        } else {
+            None
+        };
+    let mut model = message.into_active_model();
+    model.deleted = Set(false);
+    model.duplicate_of = Set(m_duplicate_id);
+    model.update(dbx).await.c(h!())?;
 
     id::update_message_with_uid(dbx, config, message)
         .await
