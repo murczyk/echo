@@ -13,6 +13,7 @@ use futures_util::TryStreamExt;
 use indicatif::ProgressBar;
 use lazy_static::lazy_static;
 use redis::aio::ConnectionManager;
+use redis::AsyncCommands;
 use regex::Regex;
 use sea_orm::*;
 use std::collections::BTreeSet;
@@ -155,17 +156,17 @@ where
     let body_base64 = general_purpose::STANDARD.encode(body.as_bytes());
     let key = format!("signal_message:{body_base64}");
     let new_value = format!("{db_message_id}");
-    let original_id: String = redis::cmd("SET")
-        .arg(key)
+    redis::cmd("SET")
+        .arg(key.clone())
         .arg(new_value)
         .arg("NX")
-        .arg("GET")
         .arg("EX") // Add the EX (Expire) option
         .arg(3600) // Specify the time-to-live in seconds (60 minutes)
         .query_async(manager)
         .await
         .c(h!())?;
-    let original_id: i64 = original_id.parse().c(h!())?;
+
+    let original_id: i64 = manager.get(key).await.c(h!())?.parse().c(h!())?;
 
     if original_id != db_message_id {
         info!("{db_message_id} is duplicate of {original_id}");
