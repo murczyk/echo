@@ -585,11 +585,6 @@ pub async fn receive_once(
     // Normalize body
     info!("received message: {m:?}");
     let body = m.body.replace("\r\n", "\n");
-    let m_duplicate =
-        crate::sigint::find_duplicate(txn, &body, Some(m.timestamp))
-            .await
-            .c(h!())?;
-    let m_duplicate_id = m_duplicate.map(|(message, _)| message.id);
     let datasource_group_id =
         crate::messenger::group::ensure_datasource_group_id(
             txn,
@@ -605,14 +600,32 @@ pub async fn receive_once(
         created_at: NotSet,
         timestamp: Set(Some(m.timestamp)),
         sender: Set(m.sender),
-        duplicate_of: Set(m_duplicate_id),
+        duplicate_of: Set(None),
         format: NotSet,
-        deleted: NotSet,
+        deleted: Set(true), // unstaged message
         external_id: NotSet,
         message_uid: NotSet,
     }
     .insert(txn)
     .await
+    .c(h!())?;
+    let m_duplicate_of = crate::sigint::find_duplicate_of(
+        txn,
+        &body,
+        Some(m.timestamp),
+        signal_message.id,
+        redis,
+    )
+    .await
+    .c(h!())?;
+    let signal_message = crate::sigint::worker::unstage_message(
+        txn,
+        &m.group_id,
+        signal_message,
+        m_duplicate_of,
+    )
+    .await
+    .c(h!())?
     .c(h!())?;
 
     let signal_message =

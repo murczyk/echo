@@ -118,11 +118,6 @@ async fn receive_once(
         let body = wq.body.clone();
         // Normalize body
         let body = body.replace("\r\n", "\n");
-        let m_duplicate =
-            crate::sigint::find_duplicate(&txn, &body, Some(wq.timestamp))
-                .await
-                .c(h!())?;
-        let m_duplicate_id = m_duplicate.map(|(message, _)| message.id);
 
         let datasource_group_id =
             crate::messenger::group::ensure_datasource_group_id(
@@ -133,15 +128,15 @@ async fn receive_once(
             .await
             .c(h!())?;
 
-        let message = signal_message::ActiveModel {
+        let signal_message = signal_message::ActiveModel {
             id: NotSet,
             body: Set(Some(body.clone())),
             created_at: NotSet,
             timestamp: Set(Some(wq.timestamp)),
             sender: Set(Some(wq.from_jid.clone())),
-            duplicate_of: Set(m_duplicate_id),
+            duplicate_of: NotSet,
             format: NotSet,
-            deleted: NotSet,
+            deleted: Set(true),
             external_id: NotSet,
             message_uid: NotSet,
             datasource_group_id: Set(Some(datasource_group_id)),
@@ -150,9 +145,32 @@ async fn receive_once(
         .await
         .c(h!())?;
 
-        let signal_message = id::update_message_with_uid(&txn, config, message)
-            .await
-            .c(h!())?;
+        let m_duplicate_of = crate::sigint::find_duplicate_of(
+            &txn,
+            &body,
+            Some(wq.timestamp),
+            signal_message.id,
+            redis,
+        )
+        .await
+        .c(h!())?;
+
+        let Some(signal_message) = crate::sigint::worker::unstage_message(
+            &txn,
+            &wq.group_jid,
+            signal_message,
+            m_duplicate_of,
+        )
+        .await
+        .c(h!())?
+        else {
+            return Ok(());
+        };
+
+        let signal_message =
+            id::update_message_with_uid(&txn, config, signal_message)
+                .await
+                .c(h!())?;
 
         if let Some(whatsapp_id) = wq.whatsapp_id.as_ref() {
             // attachments if any
