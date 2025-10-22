@@ -5,6 +5,7 @@ use crate::types::*;
 use crate::utils::pop_vector;
 use crate::utils::string::*;
 use crate::OneoffReprocessCoordsPs;
+use base64::engine::general_purpose;
 use base64::Engine;
 use calamine::Reader;
 use chrono::prelude::*;
@@ -151,7 +152,8 @@ pub async fn find_duplicate_of<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
-    let key = format!("signal_message:{body}");
+    let body_base64 = general_purpose::STANDARD.encode(body.as_bytes());
+    let key = format!("signal_message:{body_base64}");
     let new_value = format!("{db_message_id}");
     let original_id: String = redis::cmd("SET")
         .arg(key)
