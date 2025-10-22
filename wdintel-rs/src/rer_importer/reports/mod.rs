@@ -24,8 +24,8 @@ mod report_xlsx_kind_pelengs;
 mod revo;
 mod senders;
 pub mod tag;
-mod util;
 pub mod types;
+mod util;
 
 pub(crate) async fn cleanup_old_reports_nofail(
     dbx: &DatabaseConnection,

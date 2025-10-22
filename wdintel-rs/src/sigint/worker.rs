@@ -456,10 +456,11 @@ pub async fn process_incoming_message_restapi(
         } else {
             None
         };
+
     let mut model = message.into_active_model();
     model.deleted = Set(false);
     model.duplicate_of = Set(m_duplicate_id);
-    model.update(dbx).await.c(h!())?;
+    let message = model.update(dbx).await.c(h!())?;
 
     id::update_message_with_uid(dbx, config, message)
         .await

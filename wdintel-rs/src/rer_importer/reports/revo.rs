@@ -96,14 +96,10 @@ pub async fn report_docx_kind_revo(
         _ => 0.0,
     };
 
-    let mut report = collect_report(
-        messages.clone(),
-        logins.clone(),
-        env,
-        range_khz,
-    )
-    .await
-    .context(h!())?;
+    let mut report =
+        collect_report(messages.clone(), logins.clone(), env, range_khz)
+            .await
+            .context(h!())?;
     info!("report_docx_kind_revo data collected");
     report
         .hostile_networks
@@ -284,7 +280,7 @@ async fn collect_report(
         .flat_map(|(_, m)| m.freq.clone())
         .unique()
         .collect::<Vec<_>>();
-    
+
     let all_networks = sigint_network::Entity::find()
         .join(
             JoinType::InnerJoin,

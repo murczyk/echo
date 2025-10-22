@@ -1,3 +1,4 @@
+use super::types::ReportAggregation;
 use crate::entities::*;
 use crate::error::AppError;
 use crate::h;
@@ -5,7 +6,6 @@ use crate::rer_importer::inbox::query::build_inbox_query;
 use crate::rer_importer::types::InboxMessagesReq;
 use crate::types::{Env, ShortContext};
 use crate::utils::dt_zoned_from_millis;
-use super::types::ReportAggregation;
 use anyhow::Context;
 use chrono::{NaiveDate, Utc};
 use itertools::Itertools;
