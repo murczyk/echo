@@ -11,7 +11,6 @@ pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i32,
     pub client_id: i32,
-    #[sea_orm(unique)]
     pub account_id: i32,
     pub created_at: DateTime,
 }
@@ -25,7 +24,7 @@ pub enum Relation {
         from = "Column::AccountId",
         to = "super::echo_account::Column::Id",
         on_update = "NoAction",
-        on_delete = "NoAction"
+        on_delete = "Cascade"
     )]
     EchoAccount,
     #[sea_orm(

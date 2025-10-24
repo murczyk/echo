@@ -22,7 +22,7 @@ pub enum Relation {
         from = "Column::MessageId",
         to = "super::echo_inbox_message::Column::Id",
         on_update = "NoAction",
-        on_delete = "NoAction"
+        on_delete = "Cascade"
     )]
     EchoInboxMessage,
 }

@@ -26,7 +26,7 @@ pub enum Relation {
         from = "Column::AccountId",
         to = "super::echo_account::Column::Id",
         on_update = "NoAction",
-        on_delete = "NoAction"
+        on_delete = "Cascade"
     )]
     EchoAccount,
     #[sea_orm(has_many = "super::echo_inbox_message::Entity")]

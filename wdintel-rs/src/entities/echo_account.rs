@@ -23,7 +23,7 @@ pub struct Model {
 pub enum Relation {
     #[sea_orm(has_many = "super::echo_attachment::Entity")]
     EchoAttachment,
-    #[sea_orm(has_one = "super::echo_client_lock::Entity")]
+    #[sea_orm(has_many = "super::echo_client_lock::Entity")]
     EchoClientLock,
     #[sea_orm(has_many = "super::echo_group::Entity")]
     EchoGroup,

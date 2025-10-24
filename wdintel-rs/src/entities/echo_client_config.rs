@@ -31,7 +31,7 @@ pub enum Relation {
         from = "Column::ClientId",
         to = "super::echo_client::Column::Id",
         on_update = "NoAction",
-        on_delete = "NoAction"
+        on_delete = "Cascade"
     )]
     EchoClient,
 }
