@@ -476,7 +476,7 @@ async fn collect_report(
                 if let Some(existing_id) = unmapped_freqs
                     .keys()
                     .copied()
-                    .find(|f: &i64| ((*f - id).abs() as f64) < range_khz)
+                    .find(|f: &i64| ((*f - id).abs() as f64) <= range_khz)
                 {
                     networks_dictionary
                         .get(&existing_id)
