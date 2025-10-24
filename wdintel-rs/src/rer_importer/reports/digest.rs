@@ -167,11 +167,28 @@ pub async fn report_docx_kind_digest(
             if network_row.notes.is_empty() {
                 continue;
             }
-            let header = match network_row.network_location {
-                None => network_row.network_name,
-                Some(network_location) => {
-                    format!("{} ({network_location})", network_row.network_name,)
-                }
+            let header = {
+                // Join unit list if present
+                println!("units raw: {:?}", &network_row.unit); 
+                let units = match &network_row.unit {
+                    Some(units) if !units.is_empty() => {
+                        format!(" {}", units.join(", "))
+                    }
+                    _ => String::new(),
+                };
+                
+                println!("units processed: {units}");
+
+                // Add location if present
+                let location = match &network_row.network_location {
+                    Some(loc) if !loc.is_empty() => format!(" ({loc})"),
+                    _ => String::new(),
+                };
+
+                println!("network: {}", network_row.network_name);
+
+                // Build final string
+                format!("{}{}{}", network_row.network_name, units, location)
             };
             rows_amrp.push(TableRow::new(vec![mk_merged_text_cell(
                 &header,
