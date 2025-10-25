@@ -506,9 +506,13 @@ copy-db-local:
     ssh -t {{ server }} '(rm ~/Downloads/wd-{{ dt1 }}.pgrestore && rm /tmp/wd-{{ dt1 }}.pgrestore.gz) | echo "ok"'
     mv ~/Downloads/wd-{{ dt1 }}.pgrestore.gz /var/tmp/
     (cd /var/tmp && gunzip wd-{{ dt1 }}.pgrestore.gz)
-    sudo -u postgres psql -c 'drop database {{ pgdb }} with (FORCE)'
+    just dt1={{ dt1 }} pgdb={{ pgdb }} restore-db-local
+    sudo rm /var/tmp/wd-{{ dt1 }}.pgrestore
+
+restore-db-local:
+    sudo -u postgres psql -c 'drop database {{ pgdb }} with (FORCE)' | echo 'ok'
     sudo -u postgres psql -c 'create database {{ pgdb }}'
-    sudo -u postgres pg_restore -d {{ pgdb }} /var/tmp/wd-{{ dt1 }}.pgrestore && sudo rm /var/tmp/wd-{{ dt1 }}.pgrestore
+    sudo -u postgres pg_restore -d {{ pgdb }} /var/tmp/wd-{{ dt1 }}.pgrestore
 
 setup-b2:
     ssh {{ server }} 'sudo pip3 install -U b2'
