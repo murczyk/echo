@@ -646,44 +646,11 @@ pub async fn oneoff_fix_kml(
         kml_path = tmp_dir.path().join("doc.kml");
     }
     println!("> kml_path: {kml_path:?}");
-    let mut kml: Kml =
-        quick_xml::de::from_str(&std::fs::read_to_string(&kml_path)?)
-            .c(h!())?;
     let base_path = Path::new(&kml_path)
         .parent()
         .ok_or("base path doesnt exist")?;
-    let style_maps = extract_style_maps(&kml.nodes.clone())?;
-    let style_maps_highlight =
-        extract_style_maps_hightlight(&kml.nodes.clone())?;
-    let mut replacement_map: BTreeMap<String, String> = BTreeMap::new();
-    let mut image_checksums: BTreeMap<String, String> = BTreeMap::new();
-    for node in kml.nodes.iter() {
-        oneoff_fix_kml_go1(
-            &style_maps,
-            base_path,
-            node,
-            &mut replacement_map,
-            &mut image_checksums,
-        )
-        .await
-        .c(h!())?;
-    }
-    let mut checksum_image: BTreeMap<String, String> = BTreeMap::new();
-    for (k, v) in image_checksums.iter() {
-        checksum_image.insert(v.clone(), k.clone());
-    }
-    for node in kml.nodes.iter_mut() {
-        oneoff_fix_kml_go2(
-            base_path,
-            node,
-            &replacement_map,
-            &image_checksums,
-            &checksum_image,
-            ps.hide_titles,
-            &style_maps,
-            &style_maps_highlight,
-        )?;
-    }
+    let kml =
+        read_and_fix_kml(ps.hide_titles, kml_path.as_path(), base_path).await?;
 
     let tmp_dir_res = TempDir::new()?;
     let res_p = tmp_dir_res.path();
@@ -732,6 +699,48 @@ pub async fn oneoff_fix_kml(
     )?;
 
     Ok(())
+}
+
+pub async fn read_and_fix_kml(
+    hide_titles: bool,
+    kml_path: &Path,
+    base_path: &Path,
+) -> Result<Kml, AppError> {
+    let mut kml: Kml =
+        quick_xml::de::from_str(&std::fs::read_to_string(kml_path)?).c(h!())?;
+    let style_maps = extract_style_maps(&kml.nodes.clone())?;
+    let style_maps_highlight =
+        extract_style_maps_hightlight(&kml.nodes.clone())?;
+    let mut replacement_map: BTreeMap<String, String> = BTreeMap::new();
+    let mut image_checksums: BTreeMap<String, String> = BTreeMap::new();
+    for node in kml.nodes.iter() {
+        oneoff_fix_kml_go1(
+            &style_maps,
+            base_path,
+            node,
+            &mut replacement_map,
+            &mut image_checksums,
+        )
+        .await
+        .c(h!())?;
+    }
+    let mut checksum_image: BTreeMap<String, String> = BTreeMap::new();
+    for (k, v) in image_checksums.iter() {
+        checksum_image.insert(v.clone(), k.clone());
+    }
+    for node in kml.nodes.iter_mut() {
+        oneoff_fix_kml_go2(
+            base_path,
+            node,
+            &replacement_map,
+            &image_checksums,
+            &checksum_image,
+            hide_titles,
+            &style_maps,
+            &style_maps_highlight,
+        )?;
+    }
+    Ok(kml)
 }
 
 #[async_recursion]

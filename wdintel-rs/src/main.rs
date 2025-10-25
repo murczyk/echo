@@ -41,6 +41,7 @@ pub mod nlp;
 pub mod oneoff;
 pub mod operator;
 pub mod organism;
+pub mod palitra;
 pub mod rer_importer;
 pub mod secret;
 pub mod server;

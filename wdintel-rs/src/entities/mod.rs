@@ -49,6 +49,8 @@ pub mod nominatimres;
 pub mod organism;
 pub mod organism_aor;
 pub mod organism_group;
+pub mod palitra;
+pub mod palitra_point;
 pub mod rer_gdoc_callsign;
 pub mod restream;
 pub mod restream_setup;

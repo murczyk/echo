@@ -972,9 +972,9 @@ init-new-db:
     fi
     scp ./deploy/wd-init.pgrestore {{ server }}:/var/tmp/
     ssh -t {{ server }} "sudo mv /var/tmp/wd-init.pgrestore /tmp/wd_init.pgrestore"
-    ssh -t {{ server }} "sudo -u postgres psql -c 'drop database wd with (FORCE)'"
-    ssh -t {{ server }} "sudo -u postgres psql -c 'create database wd'"
-    ssh -t {{ server }} "sudo -u postgres pg_restore -d wd /tmp/wd_init.pgrestore"
+    ssh -t {{ server }} "sudo -u postgres psql -c 'drop database {{pgdb}} with (FORCE)'"
+    ssh -t {{ server }} "sudo -u postgres psql -c 'create database {{pgdb}}'"
+    ssh -t {{ server }} "sudo -u postgres pg_restore -d {{pgdb}} /tmp/wd_init.pgrestore"
 
 oneoff-reprocess-units-search-index:
     ssh echo-volyn2 -t 'wdintel-rs --mode=live oneoff-reprocess-units-search-index' || echo 'skipping...'

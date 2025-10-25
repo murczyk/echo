@@ -47,6 +47,8 @@ pub use super::nominatimres::Entity as Nominatimres;
 pub use super::organism::Entity as Organism;
 pub use super::organism_aor::Entity as OrganismAor;
 pub use super::organism_group::Entity as OrganismGroup;
+pub use super::palitra::Entity as Palitra;
+pub use super::palitra_point::Entity as PalitraPoint;
 pub use super::rer_gdoc_callsign::Entity as RerGdocCallsign;
 pub use super::restream::Entity as Restream;
 pub use super::restream_setup::Entity as RestreamSetup;
