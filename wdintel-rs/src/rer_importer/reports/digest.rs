@@ -41,6 +41,7 @@ pub struct NetworkRow {
     pub network_location: Option<String>,
     pub notes: Vec<InterNote>,
     pub unit: Option<Vec<String>>,
+    pub unit_name: Option<String>,
 }
 
 pub struct InterNote {
@@ -61,6 +62,7 @@ pub struct NetworkSummary {
     pub aor_id: Option<i64>,
     pub master_key: Option<String>,
     pub unit: Option<Vec<String>>,
+    pub unit_name: Option<String>,
 }
 
 pub async fn report_docx_kind_digest(
@@ -169,15 +171,16 @@ pub async fn report_docx_kind_digest(
             }
             let header = {
                 // Join unit list if present
-                println!("units raw: {:?}", &network_row.unit); 
-                let units = match &network_row.unit {
+                debug!("units raw: {:?}", &network_row.unit);
+                let units_alt = match &network_row.unit {
                     Some(units) if !units.is_empty() => {
                         format!(" {}", units.join(", "))
                     }
                     _ => String::new(),
                 };
-                
-                println!("units processed: {units}");
+                let units = network_row.unit_name.unwrap_or(units_alt);
+
+                debug!("units processed: {units}");
 
                 // Add location if present
                 let location = match &network_row.network_location {
@@ -185,7 +188,7 @@ pub async fn report_docx_kind_digest(
                     _ => String::new(),
                 };
 
-                println!("network: {}", network_row.network_name);
+                debug!("network: {}", network_row.network_name);
 
                 // Build final string
                 format!("{}{}{}", network_row.network_name, units, location)
@@ -332,6 +335,7 @@ async fn collect_report(
         .context(h!())?
         .into_iter()
         .map(|unit| {
+            let unit_name = unit.name.clone();
             let mut unit_data = vec![
                 unit.army,
                 unit.division,
@@ -353,7 +357,7 @@ async fn collect_report(
                 result.push(unit);
             }
             result.reverse();
-            (unit.id, result)
+            (unit.id, (unit_name, result))
         })
         .collect::<HashMap<_, _>>();
 
@@ -426,6 +430,7 @@ async fn collect_report(
                         location: None,
                         aor_id: None,
                         unit: None,
+                        unit_name: None,
                     };
                     networks_dictionary
                         .insert(new_summary.id, new_summary.clone());
@@ -434,10 +439,13 @@ async fn collect_report(
             }
             Some(s) => s,
         };
-        summary.unit = match summary.unit_id {
-            None => None,
-            Some(id) => network_units.get(&id).cloned(),
-        };
+        let (unit_name, unit) = summary
+            .unit_id
+            .and_then(|id| network_units.get(&id).cloned())
+            .map(|(x, y)| (Some(x), Some(y)))
+            .unwrap_or((None, None));
+        summary.unit = unit;
+        summary.unit_name = unit_name;
         let mut list =
             network_comments_map.remove(&summary.id).unwrap_or(vec![]);
         for comment in comments.iter().filter(|(cid, _)| id == cid).cloned() {
@@ -471,6 +479,7 @@ async fn collect_report(
         for id in network_ids {
             let network = networks_dictionary.get(&id).context(h!())?;
             let unit = network.unit.clone();
+            let unit_name = network.unit_name.clone();
             let comments = network_comments_map.remove(&id).unwrap_or(vec![]);
             let mut network_name = network.name.clone();
             if network_name.trim().is_empty() {
@@ -517,6 +526,7 @@ async fn collect_report(
                 network_location,
                 notes,
                 unit,
+                unit_name,
             });
         }
         network_data.sort_by(|n1, n2| match (&n1.unit, &n2.unit) {
