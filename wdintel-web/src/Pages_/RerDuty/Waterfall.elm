@@ -2301,7 +2301,7 @@ waterfallDiv user isDarkMode duplicates datasources serverInfo masterUnits model
     in
     div
         [ style "position" "relative"
-        , class "waterfall bg-column min-w-[300px] grow-1"
+        , class "waterfall bg-column min-w-[700px] grow-1"
         , style "z-index" "50"
         ]
         [ div
