@@ -94,12 +94,8 @@ mainBody user model shared route =
                                 div [ class "flex justify-center items-center mb-4" ]
                                     [ Button.new { label = "завантажити ще", onClick = LoadMoreMessages }
                                         |> Button.withIcon
-                                            [ if model.loadingInboxMessages then
-                                                Shared.Components.Spinner.loadingSpinner2Sm
-
-                                              else
-                                                i [ class "bi bi-arrow-down-circle mr-2" ] []
-                                            ]
+                                            [ i [ class "bi bi-arrow-down-circle mr-2" ] [] ]
+                                        |> Button.withDisabled model.loadingInboxMessages
                                         |> Button.withSecondary
                                         |> Button.view
                                     ]
@@ -148,25 +144,18 @@ mainBody user model shared route =
             , style "position" "relative"
             ]
           <|
-            [ if isLoadingStats model then
-                div [ class "mr-2" ] [ Shared.Components.Spinner.loadingSpinnerSm ]
+            [ Toggle.new { onToggle = ToggleNewestFirst, label = "спочатку нові", id = "toggle-newest-first" } |> Toggle.view model.newestFirst
+            , div [ class "flex items-center mr-4 ml-[8px]" ] <|
+                (if model.loadingInboxMessages then
+                    [ div [ class "mr-2" ] [ Shared.Components.Spinner.loadingSpinnerSm ] ]
 
-              else
-                div [ style "width" "16px", class "mr-2" ] []
-            , if model.loadingInboxMessages then
-                div [ class "mr-2" ] [ Shared.Components.Spinner.loadingSpinnerSm ]
-
-              else
-                div [ style "width" "16px", class "mr-2" ] []
-            , Toggle.new { onToggle = ToggleNewestFirst, label = "спочатку нові", id = "toggle-newest-first" } |> Toggle.view model.newestFirst
-            , div
-                [ class "mr-4 ml-[8px]"
-                ]
-              <|
-                [ text <|
-                    "показано повідомлень: "
-                        ++ String.fromInt (List.length model.messages)
-                ]
+                 else
+                    []
+                )
+                    ++ [ text <|
+                            "показано повідомлень: "
+                                ++ String.fromInt (List.length model.messages)
+                       ]
             , viewIf (messagesShown < messagesCountOverall && not model.nolimitShown) <|
                 div [ class "mr-4" ]
                     [ span
