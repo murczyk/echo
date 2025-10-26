@@ -170,15 +170,34 @@ where
     let original_id: i64 = original_id.parse().c(h!())?;
 
     if original_id != db_message_id {
-        let original = signal_message::Entity::find()
-            .find_with_related(datasource_group::Entity)
-            .filter(signal_message::Column::Id.eq(original_id))
-            .all(txn)
-            .await
-            .c(h!())?
-            .into_iter()
-            .next()
-            .and_then(|(m, groups)| groups.into_iter().next().map(|g| (m, g)));
+        let mut retry_count = 3;
+        let mut original;
+        loop {
+            original = signal_message::Entity::find()
+                .find_with_related(datasource_group::Entity)
+                .filter(signal_message::Column::Id.eq(original_id))
+                .all(txn)
+                .await
+                .c(h!())?
+                .into_iter()
+                .next()
+                .and_then(|(m, groups)| {
+                    groups.into_iter().next().map(|g| (m, g))
+                });
+            if original.is_some() {
+                break;
+            }
+            if retry_count < 1 {
+                error!("unexpected error: {db_message_id} is duplicate of {original_id}, but {original_id} is missing in db");
+                break;
+            }
+            let sleep_time_ms = 100 + 1000 * (3 - retry_count); // 0.1s 1st time, 1.1s 2nd time, 2.1s 3rd time
+            tokio::time::sleep(tokio::time::Duration::from_millis(
+                sleep_time_ms,
+            ))
+            .await;
+            retry_count -= 1;
+        }
         if let Some(original) = original {
             info!("{db_message_id} is duplicate of {original_id}");
             return Ok(Some(original));
