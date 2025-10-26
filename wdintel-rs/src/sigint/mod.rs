@@ -170,8 +170,7 @@ where
     let original_id: i64 = original_id.parse().c(h!())?;
 
     if original_id != db_message_id {
-        info!("{db_message_id} is duplicate of {original_id}");
-        let result = signal_message::Entity::find()
+        let original = signal_message::Entity::find()
             .find_with_related(datasource_group::Entity)
             .filter(signal_message::Column::Id.eq(original_id))
             .all(txn)
@@ -179,9 +178,11 @@ where
             .c(h!())?
             .into_iter()
             .next()
-            .and_then(|(m, groups)| groups.into_iter().next().map(|g| (m, g)))
-            .c(h!())?;
-        return Ok(Some(result));
+            .and_then(|(m, groups)| groups.into_iter().next().map(|g| (m, g)));
+        if let Some(original) = original {
+            info!("{db_message_id} is duplicate of {original_id}");
+            return Ok(Some(original));
+        }
     }
     info!("{db_message_id} is not a duplicate, with body {body}");
 
