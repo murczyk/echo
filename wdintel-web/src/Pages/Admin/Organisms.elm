@@ -1265,6 +1265,7 @@ update msg model =
                                             , roles = o.roles
                                             , enabled = o.enabled
                                             , aorIds = o.aorIds
+                                            , loginsCount = o.loginsCount
                                         }
                                     )
                     }
@@ -1422,7 +1423,8 @@ organismsTableConfig groups organismGroups allOrganisms timeZone editingOrganism
         { toId = \o -> String.fromInt o.id
         , toMsg = SetTableState
         , columns =
-            [ Table.stringColumn "Назва" .name |> Table.withColumnWidth "14%"
+            [ Table.intColumn "ID" .id |> Table.withColumnWidth "6%"
+            , Table.stringColumn "Назва" .name |> Table.withColumnWidth "14%"
             , Table.customColumn
                 { name = "Батьківський"
                 , viewData =
@@ -1812,6 +1814,8 @@ organismsTableConfig groups organismGroups allOrganisms timeZone editingOrganism
                 , sorter = Table.increasingOrDecreasingBy (\o -> String.fromInt o.createdAt)
                 }
                 |> Table.withColumnWidth "10%"
+            , Table.intColumn "Користувачі" .loginsCount
+                |> Table.withColumnWidth "8%"
             , Table.veryCustomColumn
                 { name = ""
                 , viewData =

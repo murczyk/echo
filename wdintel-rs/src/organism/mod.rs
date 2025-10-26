@@ -5,7 +5,9 @@ use crate::organism::bl::*;
 use crate::types::*;
 use actix_web::post;
 use actix_web::web::Json;
+use sea_orm::sea_query::Expr;
 use sea_orm::*;
+use std::collections::{HashMap, HashSet};
 
 pub mod bl;
 pub mod oneoff;
@@ -134,6 +136,8 @@ pub async fn update_organism(
     let txn = env.dbx.begin().await.c(h!())?;
     let organism = bl::update_organism(&txn, &req).await.c(h!())?;
     txn.commit().await.c(h!())?;
+    let login_counts =
+        fetch_login_counts(&env.dbx, &[organism.id]).await.c(h!())?;
 
     Ok(Json(Organism {
         id: organism.id,
@@ -143,6 +147,10 @@ pub async fn update_organism(
         roles: serde_json::from_value(organism.roles).unwrap_or_default(),
         enabled: req.enabled,
         aor_ids: req.aor_ids.clone().unwrap_or_default(),
+        logins_count: login_counts
+            .get(&organism.id)
+            .copied()
+            .unwrap_or_default(),
     }))
 }
 
@@ -367,6 +375,7 @@ pub async fn create_organism(
         roles: serde_json::from_value(organism.roles).unwrap_or_default(),
         enabled: organism.enabled,
         aor_ids: req.aor_ids.clone().unwrap_or_default(),
+        logins_count: 0,
     }))
 }
 
@@ -405,6 +414,10 @@ pub async fn list_organisms(
         .await
         .c(h!())?;
 
+    let organism_ids: Vec<i64> = organisms.iter().map(|(o, _)| o.id).collect();
+    let login_counts =
+        fetch_login_counts(&env.dbx, &organism_ids).await.c(h!())?;
+
     let mut list = vec![];
     for (o, aors) in organisms {
         let aor_ids = aors.into_iter().map(|a| a.aor_id).collect::<Vec<_>>();
@@ -416,6 +429,7 @@ pub async fn list_organisms(
             enabled: o.enabled,
             created_at: o.created_at.and_utc().timestamp_millis(),
             roles: serde_json::from_value(o.roles).unwrap_or_default(),
+            logins_count: login_counts.get(&o.id).copied().unwrap_or_default(),
         };
         list.push(org);
     }
@@ -424,4 +438,37 @@ pub async fn list_organisms(
         list.sort_by_key(|e| e.parent_id.unwrap_or(-1)); // first goes root elements, then the others
     }
     Ok(Json(list))
+}
+
+async fn fetch_login_counts(
+    db: &DatabaseConnection,
+    organism_ids: &[i64],
+) -> Result<HashMap<i64, i64>, AppError> {
+    if organism_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let ids = organism_ids.to_vec();
+
+    let rows: Vec<(Option<i64>, i64)> = login::Entity::find()
+        .select_only()
+        .column(login::Column::OrganismId)
+        .column_as(Expr::col(login::Column::Login).count(), "count")
+        .filter(login::Column::Deleted.eq(false))
+        .filter(login::Column::DeletedPermanently.eq(false))
+        .filter(login::Column::OrganismId.is_in(ids))
+        .group_by(login::Column::OrganismId)
+        .into_tuple()
+        .all(db)
+        .await
+        .c(h!())?;
+
+    let mut counts = HashMap::new();
+    for (organism_id, count) in rows {
+        if let Some(id) = organism_id {
+            counts.insert(id, count);
+        }
+    }
+
+    Ok(counts)
 }
