@@ -43,6 +43,7 @@ type alias Filter r =
             , items : List (Select.MenuItem Float)
             , selected : Float
             }
+        , highlightSignalsEnabled : Bool
     }
 
 
@@ -67,6 +68,7 @@ type FilterMsg
     | SelectAllGroups
     | ToggleUnfoldSettings
     | SelectFilterFreqsRange (Select.Msg Float)
+    | ToggleHighlightSignals
 
 
 extractSendersIds : List String -> List String -> Dict String (Maybe B.SignalProfileEntry) -> List String -> List String

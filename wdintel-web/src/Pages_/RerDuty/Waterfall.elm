@@ -47,6 +47,7 @@ import Shared
 import Shared.Components.Badges exposing (badgeNotSelectedHtml, badgeSelectedCloseCounter, badgeSelectedHtml)
 import Shared.Components.RerMessage exposing (model0)
 import Shared.Components.Spinner
+import Shared.Components.Toggle as Toggle
 import Shared.Components.Toast
 import Shared.Components.Tooltip as Tooltip
 import Shared.Model exposing (isDarkMode)
@@ -190,6 +191,7 @@ type alias Model =
     , isMsgVisible : List Int
     , unreadIds : List Int
     , unfoldSettings : Bool
+    , highlightSignalsEnabled : Bool
     , datasources : List ( Int, B.Datasource )
     , tags : List ( Int, B.Tag )
     , edited : Dict Int Shared.Components.RerMessage.Edited
@@ -232,6 +234,7 @@ init id_ ms =
       , initTime = Nothing
       , dtFromPosix = Nothing
       , loadingInboxMessages = True
+      , highlightSignalsEnabled = False
       , groupsSelected = ms |> andThen .groupsSelected |> def []
       , sendersSelect =
             { state = Select.initState (Select.selectIdentifier "selectSenders")
@@ -413,7 +416,7 @@ getBasicInboxParams model =
     , newestFirst = Nothing
     , search = Nothing
     , highlightCallsigns = Just True
-    , highlightSignals = Just True
+    , highlightSignals = Just model.highlightSignalsEnabled
     , highlightKeywords = Just True
     , highlightSearchres = Just True
     , sortBy = Just B.ImsTimestamp
@@ -976,6 +979,11 @@ updateFilters msg model =
         ToggleUnfoldSettings ->
             ( { model | unfoldSettings = not model.unfoldSettings }
             , E.none
+            )
+
+        ToggleHighlightSignals ->
+            ( { model | highlightSignalsEnabled = not model.highlightSignalsEnabled }
+            , E.getCurrentTime LoadInitialStatsNow
             )
 
         SelectSendersMsg imsg ->
@@ -2820,6 +2828,21 @@ messageTab ps shared model =
                                                 ]
                                             ]
                                         ]
+                                additionalSettingsBlock =
+                                    let
+                                        highlightToggle =
+                                            Toggle.new
+                                                { onToggle = FiltersMsg ToggleHighlightSignals
+                                                , label = "підсвічувати сигнали"
+                                                , id = "highlight-signals-" ++ model.id
+                                                }
+                                    in
+                                    div
+                                        [ class "mt-3" ]
+                                        [ p [ class "fw-bold" ] [ text "додатково" ]
+                                        , div [ style "padding-left" "110px", class "mt-2 flex" ]
+                                            [ Toggle.view model.highlightSignalsEnabled highlightToggle ]
+                                        ]
                             in
                             [ div [ style "margin-bottom" "12px" ]
                                 [ p [ class "fw-bold" ] [ text "відправник" ]
@@ -3022,6 +3045,7 @@ messageTab ps shared model =
                                     ]
                                 ]
                             , savedFiltersBlock
+                            , additionalSettingsBlock
                             ]
 
                         else
