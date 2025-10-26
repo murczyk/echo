@@ -12,6 +12,7 @@ pub struct Organism {
     pub roles: Vec<String>,
     pub enabled: bool,
     pub aor_ids: Vec<i64>,
+    pub logins_count: i64,
 }
 
 #[derive(

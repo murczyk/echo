@@ -21,6 +21,7 @@ import Shared
 import Shared.Components.Button as Button
 import Shared.Components.Checkbox as Checkbox
 import Shared.Components.FloatingPopup as FloatingPopup
+import Shared.Components.ModalDialog as ModalDialog
 import Shared.Components.Sidebar as Sidebar
 import Shared.Components.Spinner as Spinner
 import Shared.Components.Table as Table
@@ -233,6 +234,7 @@ type alias Model =
     , createComputedAvailableGroups : Maybe (List B.SignalGroupFull)
     , createLimitGroupsList : Bool
     , createIsLoadingComputedGroups : Bool
+    , deleteModal : Maybe DeleteModalState
     }
 
 
@@ -265,6 +267,19 @@ type alias OrganismEdit =
     , limitGroupsList : Bool
     , isLoadingComputedGroups : Bool
     }
+
+
+type alias DeleteModalState =
+    { organism : B.Organism
+    , isSubmitting : Bool
+    , isLoadingLogins : Bool
+    , activeLogins : Maybe (List String)
+    }
+
+
+type DeleteAction
+    = DeleteSoft
+    | DeletePermanent
 
 
 roles : List String
@@ -321,6 +336,7 @@ init _ =
       , createComputedAvailableGroups = Nothing
       , createLimitGroupsList = False
       , createIsLoadingComputedGroups = False
+      , deleteModal = Nothing
       }
     , E.sendCmd <|
         Cmd.batch
@@ -368,6 +384,12 @@ type Msg
     | EditOrganismSave
     | EditOrganismCancel
     | EditOrganismDone (Result ApiError B.Organism)
+    | OpenDeleteModal Int
+    | CloseDeleteModal
+    | PerformDelete DeleteAction
+    | DeleteOrganismSoftDone (Result ApiError B.Organism)
+    | DeleteOrganismHardDone Int (Result ApiError ())
+    | GotActiveLogins Int (Result ApiError (List String))
 
 
 update : Msg -> Model -> ( Model, Effect Msg )
@@ -601,31 +623,41 @@ update msg model =
                 -- Check if we need to reload computed groups (only on meaningful actions)
                 shouldReloadComputedGroups =
                     case mAction of
-                        Just (Select.Select _) -> True
-                        Just (Select.Deselect _) -> True
-                        Just Select.Clear -> True
-                        _ -> False
+                        Just (Select.Select _) ->
+                            True
+
+                        Just (Select.Deselect _) ->
+                            True
+
+                        Just Select.Clear ->
+                            True
+
+                        _ ->
+                            False
 
                 modelWithUpdatedParent =
                     { model | inpParentOrganism = inpParentOrganism2, groupsValidation = groupsValidation }
 
                 modelFinal =
                     if shouldReloadComputedGroups then
-                        { modelWithUpdatedParent 
-                        | createIsLoadingComputedGroups = True
-                        , createComputedAvailableGroups = Nothing
+                        { modelWithUpdatedParent
+                            | createIsLoadingComputedGroups = True
+                            , createComputedAvailableGroups = Nothing
                         }
+
                     else
                         modelWithUpdatedParent
 
                 effects =
                     if shouldReloadComputedGroups then
                         let
-                            createReq = buildCreateOrganismReq modelFinal
+                            createReq =
+                                buildCreateOrganismReq modelFinal
                         in
                         [ E.sendCmd <| Cmd.map AddParentSelMsg iCmd
                         , E.sendCmd <| Api.organism_compute_available_groups_for_new GotComputedAvailableGroupsCreate createReq
                         ]
+
                     else
                         [ E.sendCmd <| Cmd.map AddParentSelMsg iCmd ]
             in
@@ -681,31 +713,41 @@ update msg model =
                         -- Check if we need to reload computed groups (only on meaningful actions)
                         shouldReloadComputedGroups =
                             case mAction of
-                                Just (Select.Select _) -> True
-                                Just (Select.Deselect _) -> True
-                                Just Select.Clear -> True
-                                _ -> False
+                                Just (Select.Select _) ->
+                                    True
+
+                                Just (Select.Deselect _) ->
+                                    True
+
+                                Just Select.Clear ->
+                                    True
+
+                                _ ->
+                                    False
 
                         editOrganism2 =
                             { editOrganism | inpParentOrganism = inpParentOrganism2, groupsValidation = groupsValidation }
 
                         editOrganismFinal =
                             if shouldReloadComputedGroups then
-                                { editOrganism2 
-                                | isLoadingComputedGroups = True
-                                , computedAvailableGroups = Nothing
+                                { editOrganism2
+                                    | isLoadingComputedGroups = True
+                                    , computedAvailableGroups = Nothing
                                 }
+
                             else
                                 editOrganism2
 
                         effects =
                             if shouldReloadComputedGroups then
                                 let
-                                    updateReq = buildUpdateOrganismReq id editOrganismFinal
+                                    updateReq =
+                                        buildUpdateOrganismReq id editOrganismFinal
                                 in
                                 [ E.sendCmd <| Cmd.map EditParentSelMsg iCmd
                                 , E.sendCmd <| Api.organism_compute_available_groups GotComputedAvailableGroups updateReq
                                 ]
+
                             else
                                 [ E.sendCmd <| Cmd.map EditParentSelMsg iCmd ]
                     in
@@ -776,9 +818,9 @@ update msg model =
             in
             let
                 {- NEW LOGIC: Groups to save based on createLimitGroupsList checkbox
-                
+
                    Previous behavior: Always saved selected groups as restrictions with parent filtering
-                   
+
                    New behavior:
                    - createLimitGroupsList = False: No organism-group restrictions (empty list)
                      → Organism gets ALL groups from bands automatically
@@ -789,6 +831,7 @@ update msg model =
                     if model.createLimitGroupsList then
                         -- User wants to limit groups - use selected groups from selector
                         model.inpGroups.selectedItems
+
                     else
                         -- User wants NO additional limitations - organism gets all groups from bands
                         -- Save empty list (no organism-group restrictions)
@@ -1008,9 +1051,9 @@ update msg model =
                 Just ( id, editOrganism ) ->
                     let
                         editOrganism2 =
-                            { editOrganism 
-                            | computedAvailableGroups = Just groups
-                            , isLoadingComputedGroups = False
+                            { editOrganism
+                                | computedAvailableGroups = Just groups
+                                , isLoadingComputedGroups = False
                             }
                     in
                     ( { model | editOrganism = Just ( id, editOrganism2 ) }, E.none )
@@ -1033,10 +1076,12 @@ update msg model =
                     ( model, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження computed груп для редагування" e )
 
         GotComputedAvailableGroupsCreate (Ok groups) ->
-            ( { model 
-              | createComputedAvailableGroups = Just groups
-              , createIsLoadingComputedGroups = False
-              }, E.none )
+            ( { model
+                | createComputedAvailableGroups = Just groups
+                , createIsLoadingComputedGroups = False
+              }
+            , E.none
+            )
 
         GotComputedAvailableGroupsCreate (Err e) ->
             ( { model | createIsLoadingComputedGroups = False }
@@ -1062,31 +1107,41 @@ update msg model =
                 -- Check if we need to reload computed groups (only on meaningful actions)
                 shouldReloadComputedGroups =
                     case mAction of
-                        Just (Select.Select _) -> True
-                        Just (Select.Deselect _) -> True
-                        Just Select.Clear -> True
-                        _ -> False
+                        Just (Select.Select _) ->
+                            True
+
+                        Just (Select.Deselect _) ->
+                            True
+
+                        Just Select.Clear ->
+                            True
+
+                        _ ->
+                            False
 
                 modelWithUpdatedAors =
                     { model | inpAors = inpAors2 }
 
                 modelFinal =
                     if shouldReloadComputedGroups then
-                        { modelWithUpdatedAors 
-                        | createIsLoadingComputedGroups = True
-                        , createComputedAvailableGroups = Nothing
+                        { modelWithUpdatedAors
+                            | createIsLoadingComputedGroups = True
+                            , createComputedAvailableGroups = Nothing
                         }
+
                     else
                         modelWithUpdatedAors
 
                 effects =
                     if shouldReloadComputedGroups then
                         let
-                            createReq = buildCreateOrganismReq modelFinal
+                            createReq =
+                                buildCreateOrganismReq modelFinal
                         in
                         [ E.sendCmd <| Cmd.map AddAorSelMsg iCmd
                         , E.sendCmd <| Api.organism_compute_available_groups_for_new GotComputedAvailableGroupsCreate createReq
                         ]
+
                     else
                         [ E.sendCmd <| Cmd.map AddAorSelMsg iCmd ]
             in
@@ -1111,28 +1166,38 @@ update msg model =
                         -- Check if we need to reload computed groups (only on meaningful actions)
                         shouldReloadComputedGroups =
                             case mAction of
-                                Just (Select.Select _) -> True
-                                Just (Select.Deselect _) -> True
-                                Just Select.Clear -> True
-                                _ -> False
+                                Just (Select.Select _) ->
+                                    True
+
+                                Just (Select.Deselect _) ->
+                                    True
+
+                                Just Select.Clear ->
+                                    True
+
+                                _ ->
+                                    False
 
                         editOrganismFinal =
                             if shouldReloadComputedGroups then
-                                { editOrganism2 
-                                | isLoadingComputedGroups = True
-                                , computedAvailableGroups = Nothing
+                                { editOrganism2
+                                    | isLoadingComputedGroups = True
+                                    , computedAvailableGroups = Nothing
                                 }
+
                             else
                                 editOrganism2
 
                         effects =
                             if shouldReloadComputedGroups then
                                 let
-                                    updateReq = buildUpdateOrganismReq id editOrganismFinal
+                                    updateReq =
+                                        buildUpdateOrganismReq id editOrganismFinal
                                 in
                                 [ E.sendCmd <| Cmd.map EditAorSelMsg iCmd
                                 , E.sendCmd <| Api.organism_compute_available_groups GotComputedAvailableGroups updateReq
                                 ]
+
                             else
                                 [ E.sendCmd <| Cmd.map EditAorSelMsg iCmd ]
                     in
@@ -1157,9 +1222,9 @@ update msg model =
                                         |> Set.fromList
 
                                 {- NEW LOGIC: Groups to save based on limitGroupsList checkbox
-                                
+
                                    Previous behavior: Always saved selected groups as restrictions
-                                   
+
                                    New behavior:
                                    - limitGroupsList = False: No organism-group restrictions (empty list)
                                      → Organism gets ALL groups from bands automatically
@@ -1170,6 +1235,7 @@ update msg model =
                                     if editOrganism.limitGroupsList then
                                         -- User wants to limit groups - use selected groups from selector
                                         editOrganism.inpGroups.selectedItems
+
                                     else
                                         -- User wants NO additional limitations - organism gets all groups from bands
                                         -- Save empty list (no organism-group restrictions)
@@ -1229,25 +1295,28 @@ update msg model =
         OpenCreateSidebar ->
             let
                 modelWithSidebar =
-                    { model 
-                    | sidebarType = Just CreateSidebar
-                    , createIsLoadingComputedGroups = True
-                    , createComputedAvailableGroups = Nothing
+                    { model
+                        | sidebarType = Just CreateSidebar
+                        , createIsLoadingComputedGroups = True
+                        , createComputedAvailableGroups = Nothing
                     }
 
-                createReq = buildCreateOrganismReq modelWithSidebar
+                createReq =
+                    buildCreateOrganismReq modelWithSidebar
             in
             ( modelWithSidebar
             , E.sendCmd <| Api.organism_compute_available_groups_for_new GotComputedAvailableGroupsCreate createReq
             )
 
         CloseCreateSidebar ->
-            ( { model 
-              | sidebarType = Nothing
-              , createComputedAvailableGroups = Nothing
-              , createLimitGroupsList = False
-              , createIsLoadingComputedGroups = False
-              }, E.none )
+            ( { model
+                | sidebarType = Nothing
+                , createComputedAvailableGroups = Nothing
+                , createLimitGroupsList = False
+                , createIsLoadingComputedGroups = False
+              }
+            , E.none
+            )
 
         EditOrganismDone (Ok o) ->
             let
@@ -1265,6 +1334,7 @@ update msg model =
                                             , roles = o.roles
                                             , enabled = o.enabled
                                             , aorIds = o.aorIds
+                                            , loginsCount = o.loginsCount
                                         }
                                     )
                     }
@@ -1273,6 +1343,222 @@ update msg model =
 
         EditOrganismDone (Err e) ->
             ( model, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення організму" e )
+
+        OpenDeleteModal organismId ->
+            case ListX.find (\o -> o.id == organismId) model.organisms of
+                Just organism ->
+                    let
+                        requiresLock =
+                            organism.loginsCount > 1
+
+                        modalState =
+                            { organism = organism
+                            , isSubmitting = False
+                            , isLoadingLogins = requiresLock
+                            , activeLogins = Nothing
+                            }
+
+                        effect =
+                            if requiresLock then
+                                E.sendCmd <| Api.organism_active_logins (GotActiveLogins organism.id) organism.id
+
+                            else
+                                E.none
+                    in
+                    ( { model | deleteModal = Just modalState }, effect )
+
+                Nothing ->
+                    ( model, E.none )
+
+        CloseDeleteModal ->
+            ( { model | deleteModal = Nothing }, E.none )
+
+        PerformDelete action ->
+            case model.deleteModal of
+                Nothing ->
+                    ( model, E.none )
+
+                Just modalState ->
+                    let
+                        hasMultipleActiveUsers =
+                            modalState.organism.loginsCount > 1
+                    in
+                    if hasMultipleActiveUsers then
+                        ( model, E.none )
+
+                    else
+                        case action of
+                            DeleteSoft ->
+                                let
+                                    req =
+                                        { id = modalState.organism.id
+                                        , parentId = modalState.organism.parentId
+                                        , name = Just modalState.organism.name
+                                        , roles = Just modalState.organism.roles
+                                        , enabled = False
+                                        , aorIds = Just modalState.organism.aorIds
+                                        }
+                                in
+                                ( { model | deleteModal = Just { modalState | isSubmitting = True } }
+                                , E.sendCmd <| Api.update_organism DeleteOrganismSoftDone req
+                                )
+
+                            DeletePermanent ->
+                                ( { model | deleteModal = Just { modalState | isSubmitting = True } }
+                                , E.sendCmd <| Api.delete_organism (DeleteOrganismHardDone modalState.organism.id) modalState.organism.id
+                                )
+
+        DeleteOrganismSoftDone (Ok updatedOrganism) ->
+            let
+                updatedOrganisms =
+                    model.organisms
+                        |> ListX.updateIf (\x -> x.id == updatedOrganism.id) (\_ -> updatedOrganism)
+
+                parentItems =
+                    parentMenuItems updatedOrganisms
+
+                currentParentOrganism =
+                    model.inpParentOrganism
+
+                inpParentOrganism2 =
+                    { currentParentOrganism | items = parentItems }
+
+                editOrganism2 =
+                    case model.editOrganism of
+                        Just ( editId, editState ) ->
+                            let
+                                editParentOrganism =
+                                    editState.inpParentOrganism
+                            in
+                            Just
+                                ( editId
+                                , { editState
+                                    | inpParentOrganism =
+                                        { editParentOrganism | items = parentItems }
+                                  }
+                                )
+
+                        Nothing ->
+                            Nothing
+
+                newModel =
+                    { model
+                        | organisms = updatedOrganisms
+                        , inpParentOrganism = inpParentOrganism2
+                        , editOrganism = editOrganism2
+                        , deleteModal = Nothing
+                    }
+            in
+            loadComputedGroups updatedOrganism.id newModel
+
+        DeleteOrganismSoftDone (Err e) ->
+            ( { model | deleteModal = Maybe.map (\state -> { state | isSubmitting = False }) model.deleteModal }
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка вимкнення організму" e
+            )
+
+        DeleteOrganismHardDone deletedId (Ok _) ->
+            let
+                updatedOrganisms =
+                    model.organisms |> List.filter (\o -> o.id /= deletedId)
+
+                parentItems =
+                    parentMenuItems updatedOrganisms
+
+                ( editOrganism2, sidebarType2 ) =
+                    case model.editOrganism of
+                        Just ( editId, editState ) ->
+                            if editId == deletedId then
+                                ( Nothing, Nothing )
+
+                            else
+                                let
+                                    editParentOrganism =
+                                        editState.inpParentOrganism
+                                in
+                                ( Just
+                                    ( editId
+                                    , { editState
+                                        | inpParentOrganism =
+                                            { editParentOrganism | items = parentItems }
+                                      }
+                                    )
+                                , model.sidebarType
+                                )
+
+                        Nothing ->
+                            ( Nothing, model.sidebarType )
+
+                currentParentOrganism =
+                    model.inpParentOrganism
+
+                inpParentOrganism2 =
+                    { currentParentOrganism | items = parentItems }
+
+                rowPopup2 =
+                    case model.rowShowAllPopupStatus of
+                        Just ( orgId, _ ) ->
+                            if orgId == deletedId then
+                                Nothing
+
+                            else
+                                model.rowShowAllPopupStatus
+
+                        Nothing ->
+                            Nothing
+            in
+            ( { model
+                | organisms = updatedOrganisms
+                , deleteModal = Nothing
+                , inpParentOrganism = inpParentOrganism2
+                , editOrganism = editOrganism2
+                , sidebarType = sidebarType2
+                , computedGroups = Dict.remove deletedId model.computedGroups
+                , loadingComputedGroups = Set.remove deletedId model.loadingComputedGroups
+                , organismGroups = model.organismGroups |> List.filter (\og -> og.organismId /= deletedId)
+                , rowShowAllPopupStatus = rowPopup2
+              }
+            , E.none
+            )
+
+        DeleteOrganismHardDone _ (Err e) ->
+            ( { model | deleteModal = Maybe.map (\state -> { state | isSubmitting = False }) model.deleteModal }
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка остаточного видалення організму" e
+            )
+
+        GotActiveLogins organismId result ->
+            case model.deleteModal of
+                Just modalState ->
+                    if modalState.organism.id /= organismId then
+                        ( model, E.none )
+
+                    else
+                        case result of
+                            Ok logins ->
+                                ( { model
+                                    | deleteModal =
+                                        Just
+                                            { modalState
+                                                | isLoadingLogins = False
+                                                , activeLogins = Just logins
+                                            }
+                                  }
+                                , E.none
+                                )
+
+                            Err e ->
+                                ( { model
+                                    | deleteModal =
+                                        Just
+                                            { modalState
+                                                | isLoadingLogins = False
+                                                , activeLogins = Nothing
+                                            }
+                                  }
+                                , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Не вдалося завантажити активних користувачів" e
+                                )
+
+                Nothing ->
+                    ( model, E.none )
 
 
 validator : Validate.Validator ( FormField, String ) { a | inpName : String }
@@ -1327,6 +1613,20 @@ validateGroupsForParent organismGroups allGroups selectedGroups parentId =
                                 )
             in
             unavailableGroupNames
+
+
+parentMenuItems : List B.Organism -> List (Select.MenuItem Int)
+parentMenuItems organisms =
+    organisms |> List.map (\x -> Select.basicMenuItem { item = x.id, label = x.name })
+
+
+organismDisplayName : B.Organism -> String
+organismDisplayName organism =
+    if String.isEmpty organism.name then
+        "ID " ++ String.fromInt organism.id
+
+    else
+        organism.name
 
 
 viewFormErrors : FormField -> List FieldError -> Html msg
@@ -1422,7 +1722,8 @@ organismsTableConfig groups organismGroups allOrganisms timeZone editingOrganism
         { toId = \o -> String.fromInt o.id
         , toMsg = SetTableState
         , columns =
-            [ Table.stringColumn "Назва" .name |> Table.withColumnWidth "14%"
+            [ Table.intColumn "ID" .id |> Table.withColumnWidth "6%"
+            , Table.stringColumn "Назва" .name |> Table.withColumnWidth "14%"
             , Table.customColumn
                 { name = "Батьківський"
                 , viewData =
@@ -1812,24 +2113,38 @@ organismsTableConfig groups organismGroups allOrganisms timeZone editingOrganism
                 , sorter = Table.increasingOrDecreasingBy (\o -> String.fromInt o.createdAt)
                 }
                 |> Table.withColumnWidth "10%"
+            , Table.intColumn "Користувачі" .loginsCount
+                |> Table.withColumnWidth "8%"
             , Table.veryCustomColumn
                 { name = ""
                 , viewData =
                     \o ->
                         { attributes = [ class "col-narrow" ]
                         , children =
-                            [ button
-                                [ class "table-action-btn"
-                                , type_ "button"
-                                , onClick <| EditOrganism o.id
-                                ]
-                                [ i [ class "bi bi-pencil-square" ] []
+                            [ div [ class "flex items-center gap-2" ]
+                                [ button
+                                    [ class "table-action-btn"
+                                    , type_ "button"
+                                    , onClick <| EditOrganism o.id
+                                    ]
+                                    [ i [ class "bi bi-pencil-square" ] []
+                                    ]
+                                , button
+                                    [ class "table-action-btn border border-red-200"
+                                    , style "color" "#dc2626"
+                                    , style "background-color" "#fef2f2"
+                                    , style "border-color" "#fecaca"
+                                    , type_ "button"
+                                    , onClick <| OpenDeleteModal o.id
+                                    , title "Видалити організм"
+                                    ]
+                                    [ i [ class "bi bi-trash" ] [] ]
                                 ]
                             ]
                         }
                 , sorter = Table.unsortable
                 }
-                |> Table.withColumnWidth "5%"
+                |> Table.withColumnWidth "10%"
             ]
         , customizations = customizations
         }
@@ -1943,25 +2258,37 @@ addOrganismSidebarContent isDark model =
                                 [ Spinner.loadingSpinner2Sm
                                 , p [ class "text-sm text-muted-foreground italic" ] [ text "Завантаження доступних груп..." ]
                                 ]
+
                           else
                             case model.createComputedAvailableGroups of
                                 Just computedGroups ->
                                     if List.isEmpty computedGroups then
                                         p [ class "text-sm text-muted-foreground italic" ] [ text "Немає доступних груп" ]
+
                                     else
                                         div [ class "flex flex-wrap gap-1" ]
                                             (computedGroups
-                                                |> List.map (\group ->
-                                                    span [ class "badge badge--ochre-light", title (if String.isEmpty group.name then 
-                                                            "Без назви (id=" ++ String.left 6 group.masterKey ++ "...)"
-                                                          else 
-                                                            group.name) ]
-                                                        [ text (if String.isEmpty group.name then 
-                                                            "Без назви (id=" ++ String.left 6 group.masterKey ++ "...)"
-                                                          else 
-                                                            group.name)
-                                                        ]
-                                                )
+                                                |> List.map
+                                                    (\group ->
+                                                        span
+                                                            [ class "badge badge--ochre-light"
+                                                            , title
+                                                                (if String.isEmpty group.name then
+                                                                    "Без назви (id=" ++ String.left 6 group.masterKey ++ "...)"
+
+                                                                 else
+                                                                    group.name
+                                                                )
+                                                            ]
+                                                            [ text
+                                                                (if String.isEmpty group.name then
+                                                                    "Без назви (id=" ++ String.left 6 group.masterKey ++ "...)"
+
+                                                                 else
+                                                                    group.name
+                                                                )
+                                                            ]
+                                                    )
                                             )
 
                                 Nothing ->
@@ -2006,6 +2333,7 @@ addOrganismSidebarContent isDark model =
                             Nothing ->
                                 text ""
                         ]
+
                   else
                     text ""
                 ]
@@ -2024,6 +2352,7 @@ addOrganismSidebarContent isDark model =
                             Nothing ->
                                 if model.createLimitGroupsList then
                                     "Створити з обмеженням груп"
+
                                 else
                                     "Створити (доступ до всіх груп від смуг)"
                     , onClick = AddOrganism
@@ -2142,6 +2471,7 @@ editOrganismSidebarContent isDark model organismId editState =
                                     (Utils.Select.defaultOptions isDark)
                         ]
                     ]
+
                 -- Computed Available Groups (read-only display)
                 , div [ class "space-y-2" ]
                     [ label [ class "text-sm font-medium text-foreground" ] [ text "Доступні групи для організму" ]
@@ -2151,25 +2481,37 @@ editOrganismSidebarContent isDark model organismId editState =
                                 [ Spinner.loadingSpinner2Sm
                                 , p [ class "text-sm text-muted-foreground italic" ] [ text "Завантаження доступних груп..." ]
                                 ]
+
                           else
                             case editState.computedAvailableGroups of
                                 Just computedGroups ->
                                     if List.isEmpty computedGroups then
                                         p [ class "text-sm text-muted-foreground italic" ] [ text "Немає доступних груп" ]
+
                                     else
                                         div [ class "flex flex-wrap gap-1" ]
                                             (computedGroups
-                                                |> List.map (\group ->
-                                                    span [ class "badge badge--ochre-light", title (if String.isEmpty group.name then 
-                                                            "Без назви (id=" ++ String.left 6 group.masterKey ++ "...)"
-                                                          else 
-                                                            group.name) ]
-                                                        [ text (if String.isEmpty group.name then 
-                                                            "Без назви (id=" ++ String.left 6 group.masterKey ++ "...)"
-                                                          else 
-                                                            group.name)
-                                                        ]
-                                                )
+                                                |> List.map
+                                                    (\group ->
+                                                        span
+                                                            [ class "badge badge--ochre-light"
+                                                            , title
+                                                                (if String.isEmpty group.name then
+                                                                    "Без назви (id=" ++ String.left 6 group.masterKey ++ "...)"
+
+                                                                 else
+                                                                    group.name
+                                                                )
+                                                            ]
+                                                            [ text
+                                                                (if String.isEmpty group.name then
+                                                                    "Без назви (id=" ++ String.left 6 group.masterKey ++ "...)"
+
+                                                                 else
+                                                                    group.name
+                                                                )
+                                                            ]
+                                                    )
                                             )
 
                                 Nothing ->
@@ -2214,6 +2556,7 @@ editOrganismSidebarContent isDark model organismId editState =
                             Nothing ->
                                 text ""
                         ]
+
                   else
                     text ""
                 , div [ class "grid grid-cols-2 gap-4" ]
@@ -2239,6 +2582,7 @@ editOrganismSidebarContent isDark model organismId editState =
                             Nothing ->
                                 if editState.limitGroupsList then
                                     "Зберегти з обмеженням груп"
+
                                 else
                                     "Зберегти (доступ до всіх груп від смуг)"
                     , onClick = EditOrganismSave
@@ -2297,6 +2641,7 @@ body dark shared user model =
             sidebarContent
         , div [] (mainBlock dark model shared)
         ]
+    , deleteModalView model.deleteModal
     ]
 
 
@@ -2326,3 +2671,89 @@ mainBlock isDark model shared =
             ]
         ]
     ]
+
+
+deleteModalView : Maybe DeleteModalState -> Html Msg
+deleteModalView maybeModal =
+    case maybeModal of
+        Nothing ->
+            text ""
+
+        Just modalState ->
+            let
+                orgName =
+                    organismDisplayName modalState.organism
+
+                hasMultipleActiveUsers =
+                    modalState.organism.loginsCount > 1
+
+                buttonDisabled =
+                    modalState.isSubmitting || hasMultipleActiveUsers
+            in
+            ModalDialog.modalDialog
+                True
+                CloseDeleteModal
+                [ class "bg-background border border-border rounded-lg p-6 max-w-md w-full mx-4" ]
+                [ h3 [ class "text-lg font-semibold mb-2" ] [ text "Видалити організм" ]
+                , p [ class "text-sm text-muted-foreground mb-4" ]
+                    [ text "Оберіть дію для "
+                    , strong [] [ text orgName ]
+                    ]
+                , div [ class "space-y-3 mb-6 text-sm" ]
+                    [ div []
+                        [ strong [ class "font-semibold" ] [ text "Видалити" ]
+                        , text " — організм стане неактивним (enabled = false)."
+                        ]
+                    , div []
+                        [ strong [ class "font-semibold" ] [ text "Видалити назавжди" ]
+                        , text " — організм вимикається та позначається як остаточно видалений."
+                        ]
+                    , if hasMultipleActiveUsers then
+                        div [ class "p-3 rounded-md bg-yellow-50 border border-yellow-200 text-yellow-900 text-sm" ]
+                            ([ strong [] [ text "Активні користувачі організму:" ] ]
+                                ++ [ renderActiveLogins modalState ]
+                            )
+
+                      else
+                        text ""
+                    ]
+                , div [ class "flex flex-col gap-2 sm:flex-row sm:justify-end" ]
+                    [ Button.new { label = "Скасувати", onClick = CloseDeleteModal }
+                        |> Button.withStyleSecondary
+                        |> Button.withDisabled modalState.isSubmitting
+                        |> Button.view
+                    , Button.new { label = "Видалити", onClick = PerformDelete DeleteSoft }
+                        |> Button.withStyleSecondary
+                        |> Button.withDisabled buttonDisabled
+                        |> Button.view
+                    , Button.new { label = "Видалити назавжди", onClick = PerformDelete DeletePermanent }
+                        |> Button.withStyleDanger
+                        |> Button.withDisabled buttonDisabled
+                        |> Button.view
+                    ]
+                ]
+
+
+renderActiveLogins : DeleteModalState -> Html Msg
+renderActiveLogins modalState =
+    if modalState.isLoadingLogins then
+        div [ class "mt-2 flex items-center gap-2" ]
+            [ Spinner.loadingSpinner2Sm
+            , text "Завантаження списку..."
+            ]
+
+    else
+        case modalState.activeLogins of
+            Just logins ->
+                if List.isEmpty logins then
+                    p [ class "mt-2" ] [ text "(немає активних користувачів)" ]
+
+                else
+                    ul [ class "mt-2 list-disc list-inside space-y-1" ]
+                        (List.map
+                            (\loginName -> li [] [ text loginName ])
+                            logins
+                        )
+
+            Nothing ->
+                p [ class "mt-2 text-red-600" ] [ text "Не вдалося завантажити активних користувачів" ]

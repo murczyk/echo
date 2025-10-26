@@ -1235,6 +1235,24 @@ update_organism toMsg req =
         }
 
 
+delete_organism : (Result ApiError () -> msg) -> Int -> Cmd msg
+delete_organism toMsg organismId =
+    Http.post
+        { url = "/api/organism/delete"
+        , body = Http.jsonBody (Encode.int organismId)
+        , expect = leExpectJson toMsg (Decode.succeed ())
+        }
+
+
+organism_active_logins : (Result ApiError (List String) -> msg) -> Int -> Cmd msg
+organism_active_logins toMsg organismId =
+    Http.post
+        { url = "/api/organism/active-logins"
+        , body = Http.jsonBody (Encode.int organismId)
+        , expect = leExpectJson toMsg (Decode.list Decode.string)
+        }
+
+
 create_organism : (Result ApiError Organism -> msg) -> CreateOrganismReq -> Cmd msg
 create_organism toMsg req =
     Http.post

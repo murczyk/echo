@@ -5,7 +5,9 @@ use crate::organism::bl::*;
 use crate::types::*;
 use actix_web::post;
 use actix_web::web::Json;
+use sea_orm::sea_query::Expr;
 use sea_orm::*;
+use std::collections::{HashMap, HashSet};
 
 pub mod bl;
 pub mod oneoff;
@@ -114,11 +116,36 @@ pub async fn delete_organism(
         .c(h!())?
     {
         let mut rec = model.into_active_model();
+        rec.enabled = Set(false);
         rec.deleted_permanently = Set(true);
         rec.update(&env.dbx).await.c(h!())?;
     }
 
     Ok(Json(()))
+}
+
+#[post("/api/organism/active-logins")]
+pub async fn organism_active_logins(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<i64>,
+) -> Result<Json<Vec<String>>, AppError> {
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
+        .await
+        .c(h!())?;
+
+    let logins = login::Entity::find()
+        .filter(login::Column::OrganismId.eq(req.0))
+        .filter(login::Column::Deleted.eq(false))
+        .filter(login::Column::DeletedPermanently.eq(false))
+        .all(&env.dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|l| l.login)
+        .collect();
+
+    Ok(Json(logins))
 }
 
 #[post("/api/organism/update")]
@@ -134,6 +161,8 @@ pub async fn update_organism(
     let txn = env.dbx.begin().await.c(h!())?;
     let organism = bl::update_organism(&txn, &req).await.c(h!())?;
     txn.commit().await.c(h!())?;
+    let login_counts =
+        fetch_login_counts(&env.dbx, &[organism.id]).await.c(h!())?;
 
     Ok(Json(Organism {
         id: organism.id,
@@ -143,6 +172,10 @@ pub async fn update_organism(
         roles: serde_json::from_value(organism.roles).unwrap_or_default(),
         enabled: req.enabled,
         aor_ids: req.aor_ids.clone().unwrap_or_default(),
+        logins_count: login_counts
+            .get(&organism.id)
+            .copied()
+            .unwrap_or_default(),
     }))
 }
 
@@ -271,8 +304,11 @@ pub async fn organism_compute_available_groups_for_new(
         .await
         .c(h!())?;
 
-    let txn = env.dbx.begin().await.c(h!())?; // DO NOT COMMIT IT!!!
-    let organism = bl::create_organism(&env.dbx, &req).await.c(h!())?;
+    // ===== DO NOT REMOVE =====
+    // We only emulate the organism to calculate group availability, so we must
+    // run everything inside a throwaway transaction and drop it WITHOUT commit.
+    let txn = env.dbx.begin().await.c(h!())?;
+    let organism = bl::create_organism_in_txn(&txn, &req).await.c(h!())?;
 
     let groups = load_organism_group_ids(&txn, organism.id).await.c(h!())?;
 
@@ -367,6 +403,7 @@ pub async fn create_organism(
         roles: serde_json::from_value(organism.roles).unwrap_or_default(),
         enabled: organism.enabled,
         aor_ids: req.aor_ids.clone().unwrap_or_default(),
+        logins_count: 0,
     }))
 }
 
@@ -405,6 +442,10 @@ pub async fn list_organisms(
         .await
         .c(h!())?;
 
+    let organism_ids: Vec<i64> = organisms.iter().map(|(o, _)| o.id).collect();
+    let login_counts =
+        fetch_login_counts(&env.dbx, &organism_ids).await.c(h!())?;
+
     let mut list = vec![];
     for (o, aors) in organisms {
         let aor_ids = aors.into_iter().map(|a| a.aor_id).collect::<Vec<_>>();
@@ -416,6 +457,7 @@ pub async fn list_organisms(
             enabled: o.enabled,
             created_at: o.created_at.and_utc().timestamp_millis(),
             roles: serde_json::from_value(o.roles).unwrap_or_default(),
+            logins_count: login_counts.get(&o.id).copied().unwrap_or_default(),
         };
         list.push(org);
     }
@@ -424,4 +466,37 @@ pub async fn list_organisms(
         list.sort_by_key(|e| e.parent_id.unwrap_or(-1)); // first goes root elements, then the others
     }
     Ok(Json(list))
+}
+
+async fn fetch_login_counts(
+    db: &DatabaseConnection,
+    organism_ids: &[i64],
+) -> Result<HashMap<i64, i64>, AppError> {
+    if organism_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let ids = organism_ids.to_vec();
+
+    let rows: Vec<(Option<i64>, i64)> = login::Entity::find()
+        .select_only()
+        .column(login::Column::OrganismId)
+        .column_as(Expr::col(login::Column::Login).count(), "count")
+        .filter(login::Column::Deleted.eq(false))
+        .filter(login::Column::DeletedPermanently.eq(false))
+        .filter(login::Column::OrganismId.is_in(ids))
+        .group_by(login::Column::OrganismId)
+        .into_tuple()
+        .all(db)
+        .await
+        .c(h!())?;
+
+    let mut counts = HashMap::new();
+    for (organism_id, count) in rows {
+        if let Some(id) = organism_id {
+            counts.insert(id, count);
+        }
+    }
+
+    Ok(counts)
 }

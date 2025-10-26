@@ -8,6 +8,8 @@
 - 🐞 - Виправлення багів
 
 ## NEXT
+
+- [#1634](https://github.com/echoua/echo/issues/1634) 🐞 Виправлено створення та видалення організмів
 - [#1626](https://github.com/echoua/echo/issues/1626) 🚨🐞 виправляємо логіку проставляння duplicate_of при обробці вхідних повідомлень. 
 - [#1487](https://github.com/echoua/echo/issues/1487) ✅ Частоти. Виправлений фільтр по позивних
 - [#1619](https://github.com/echoua/echo/issues/1619) ✅ Звіт Пости
