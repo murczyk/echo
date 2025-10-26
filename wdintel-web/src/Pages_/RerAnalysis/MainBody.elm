@@ -39,7 +39,16 @@ import Utils.Views
 
 isLoadingStats : Model -> Bool
 isLoadingStats model =
-    RD.isLoading model.counts || RD.isLoading model.freqs || RD.isLoading model.callsigns || RD.isLoading model.groups || RD.isLoading model.senders
+    let
+        countsLoading =
+            case model.counts of
+                NeedsReload _ ->
+                    True
+
+                _ ->
+                    RD.isLoading model.counts
+    in
+    countsLoading || RD.isLoading model.freqs || RD.isLoading model.callsigns || RD.isLoading model.groups || RD.isLoading model.senders
 
 
 mainBody : B.User -> Model -> Shared.Model -> Route () -> List (Html Msg)
@@ -318,18 +327,29 @@ view user model shared route =
                 Nothing ->
                     False
 
+        headerCountsPill data isReloading =
+            span
+                ([ class "mr-1 inline-block px-1.5 py-1 font-medium rounded-full border transition-colors duration-200"
+                 , style "font-size" ".5rem"
+                 , class "bg-[var(--color-bg-muted)] text-[var(--color-text)] border-[var(--color-border-muted)]"
+                 ]
+                    ++ (if isReloading then
+                            [ title "оновлюється…" ]
+
+                        else
+                            []
+                       )
+                )
+                [ text (fromInt data.countSelected ++ " з " ++ fromInt data.countOverall) ]
+
         headerControls =
             div [ class "flex items-center gap-2 ml-4" ]
                 [ case model.counts of
                     Success data ->
-                        span
-                            [ class "mr-1 inline-block px-1.5 py-1 font-medium rounded-full border transition-colors duration-200"
-                            , style "font-size" ".5rem"
-                            , classList
-                                [ ( "bg-[var(--color-bg-muted)] text-[var(--color-text)] border-[var(--color-border-muted)]", True )
-                                ]
-                            ]
-                            [ text (fromInt data.countSelected ++ " з " ++ fromInt data.countOverall) ]
+                        headerCountsPill data False
+
+                    NeedsReload data ->
+                        headerCountsPill data True
 
                     _ ->
                         div [ class "mr-3 inline-block", style "min-width" "60px" ] []

@@ -390,7 +390,15 @@ loadCoreStats model =
 
                 counts =
                     if loadingCounts then
-                        Loading
+                        case model.counts of
+                            Success data ->
+                                NeedsReload data
+
+                            NeedsReload data ->
+                                NeedsReload data
+
+                            _ ->
+                                Loading
 
                     else
                         model.counts
