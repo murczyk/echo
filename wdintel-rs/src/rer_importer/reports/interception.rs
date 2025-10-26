@@ -63,7 +63,7 @@ async fn get_inbox_messages_report(
                 COALESCE(
                     array_to_string(
                         NULLIF(
-                            array_agg(
+                            array_agg(DISTINCT 
                                 sigint_network_freq.kind || ' р/м ' || sigint_network.name || ' ' || sigint_unit.name || ' (' || UPPER(sigint_network.location) || ')'
                             ) 
                             FILTER 
@@ -78,7 +78,7 @@ async fn get_inbox_messages_report(
         )
         .column_as(
             SimpleExpr::Custom(r#"
-                STRING_AGG(sigint_comment.comment, E'\n')
+                STRING_AGG(DISTINCT sigint_comment.comment, E'\n')
             "#.to_string()),
             "comment",
         )
@@ -217,7 +217,7 @@ async fn get_inbox_messages_report(
         .query(dedup_q)
         .to_string(PostgresQueryBuilder);
 
-    // println!("Interception report SQL: {combined_query}");
+    println!("Interception report SQL: {combined_query}");
 
     // First execute the query to get QueryResult
     let results = read_db
