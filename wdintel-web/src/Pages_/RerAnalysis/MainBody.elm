@@ -323,7 +323,8 @@ view user model shared route =
                 [ case model.counts of
                     Success data ->
                         span
-                            [ class "mr-1 inline-block px-3 py-1.5 text-xs font-medium rounded-full border transition-colors duration-200"
+                            [ class "mr-1 inline-block px-1.5 py-1 font-medium rounded-full border transition-colors duration-200"
+                            , style "font-size" ".5rem"
                             , classList
                                 [ ( "bg-[var(--color-bg-muted)] text-[var(--color-text)] border-[var(--color-border-muted)]", True )
                                 ]
