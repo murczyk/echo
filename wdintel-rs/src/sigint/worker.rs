@@ -61,6 +61,10 @@ pub async fn sigint_worker(mode: Mode) -> Result<(), AppError> {
             let settlements2 = settlements.clone();
             let mut redis = redis.clone();
             jset.spawn_local(async move {
+                info!(
+                    "started legacy worker for non--echo-im datasource {}",
+                    datasource.display_name
+                );
                 crate::whatsapp::receive_thread_nofail(
                     settlements2,
                     &config5,
