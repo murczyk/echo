@@ -110,7 +110,7 @@ renderSelectedDate : Zone -> Maybe Posix -> String
 renderSelectedDate zone mPosix =
     case mPosix of
         Just posix ->
-            Utils.Time.renderDateTimeF7 zone posix
+            Utils.Time.renderDateTimeF9 zone posix
 
         _ ->
             ""

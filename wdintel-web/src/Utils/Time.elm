@@ -1,4 +1,4 @@
-module Utils.Time exposing (getZone, isMoreThanAWeekApart, mParseDatetimeStr, parseDateParts, parseDatetimeParts, parseTimeParts, partsAreSameDay, posixToInputValueDate, posixToInputValueTime, posixToString, renderDateF4, renderDateF5FromMillis, renderDateF6, renderDateTimeF1, renderDateTimeF2, renderDateTimeF3, renderDateTimeF6, renderDateTimeF7, renderDistanceF1, renderPartsAsInputValue, renderPartsF1, renderTimeF4, xDaysAgo, xDaysInMillis)
+module Utils.Time exposing (getZone, isMoreThanAWeekApart, mParseDatetimeStr, parseDateParts, parseDatetimeParts, parseTimeParts, partsAreSameDay, posixToInputValueDate, posixToInputValueTime, posixToString, renderDateF4, renderDateF5FromMillis, renderDateF6, renderDateTimeF1, renderDateTimeF2, renderDateTimeF3, renderDateTimeF6, renderDateTimeF7, renderDateTimeF9, renderDistanceF1, renderPartsAsInputValue, renderPartsF1, renderTimeF4, xDaysAgo, xDaysInMillis)
 
 import Date
 import Dict
@@ -112,6 +112,19 @@ renderDateTimeF7 z t =
         ++ twoSign (Date.monthToNumber (Time.toMonth z t))
         ++ "."
         ++ String.slice 2 4 (String.fromInt (Time.toYear z t))
+        ++ " "
+        ++ twoSign (Time.toHour z t)
+        ++ ":"
+        ++ twoSign (Time.toMinute z t)
+
+
+{-| Like "26.03 18:35"
+-}
+renderDateTimeF9 : Zone -> Posix -> String
+renderDateTimeF9 z t =
+    twoSign (Time.toDay z t)
+        ++ "."
+        ++ twoSign (Date.monthToNumber (Time.toMonth z t))
         ++ " "
         ++ twoSign (Time.toHour z t)
         ++ ":"
