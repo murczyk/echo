@@ -72,6 +72,7 @@ pub async fn report_docx_kind_digest(
     outpath: &Path,
 ) -> Result<(), AppError> {
     info!("report_docx_kind_digest started");
+    let read_db = env.replica();
     let report_since = DateTime::from_timestamp_millis(
         req.req.since_date_inclusive_ms.context(h!())?,
     )
@@ -84,18 +85,18 @@ pub async fn report_docx_kind_digest(
     };
     let show_date = check_should_show_date(report_since, report_till);
     let login = user.id().c(h!())?;
-    let logins = crate::users::get_organism_logins(&env.dbx, user)
+    let logins = crate::users::get_organism_logins(&read_db, user)
         .await
         .context(h!())?;
     let mut request = req.req.clone();
     request.or_with_extended_form = Some(true); // with comments only
     let messages: Vec<(i64, InboxMessage)> =
-        crate::rer_importer::inbox::get_inbox_messages(
-            &login, &logins, env, &request,
+        crate::rer_importer::inbox::get_inbox_messages_with_conn(
+            &read_db, &login, &logins, env, &request,
         )
         .await
         .context(h!())?;
-    let report = collect_report(messages, logins.clone(), env)
+    let report = collect_report(messages, logins.clone(), &read_db)
         .await
         .context(h!())?;
     info!("report_docx_kind_digest data collected");
@@ -306,10 +307,10 @@ fn check_should_show_date(since: DateTime<Utc>, till: DateTime<Utc>) -> bool {
 async fn collect_report(
     messages: Vec<(i64, InboxMessage)>,
     _logins: Vec<String>,
-    env: &Env,
+    dbx: &DatabaseConnection,
 ) -> anyhow::Result<Report> {
     let (comments, messages) =
-        load_messages_with_comments(messages, env).await.c(h!())?;
+        load_messages_with_comments(messages, dbx).await.c(h!())?;
     debug!("loaded {} messages with comments {}", messages.len(), h!());
 
     let freqs = messages
@@ -323,14 +324,13 @@ async fn collect_report(
         .unique()
         .collect::<Vec<_>>();
 
-    let networks =
-        collect_networks(&env, freqs, &groups).await.context(h!())?;
+    let networks = collect_networks(dbx, freqs, &groups).await.context(h!())?;
     let sigint_unit_ids =
         networks.values().map(|n| n.unit_id).collect::<Vec<_>>();
 
     let network_units = sigint_unit::Entity::find()
         .filter(sigint_unit::Column::Id.is_in(sigint_unit_ids))
-        .all(&env.dbx)
+        .all(dbx)
         .await
         .context(h!())?
         .into_iter()
@@ -363,14 +363,14 @@ async fn collect_report(
 
     let group_aors = signal_group_aor::Entity::find()
         .filter(signal_group_aor::Column::MasterKey.is_in(groups.clone()))
-        .all(&env.dbx)
+        .all(dbx)
         .await
         .context(h!())?
         .into_iter()
         .map(|g| (g.master_key.clone(), g.aor_id))
         .collect::<HashMap<_, _>>();
 
-    let aors = load_aors(env).await.context(h!())?;
+    let aors = load_aors(dbx).await.context(h!())?;
     let skip_aor_cell = aors.len() == 1;
 
     let mut networks_dictionary = {
@@ -456,7 +456,7 @@ async fn collect_report(
     }
 
     let mut aor_dictionary = HashMap::new();
-    let default_aor = crate::sigint::aor::load_default_aor(&env.dbx)
+    let default_aor = crate::sigint::aor::load_default_aor(dbx)
         .await
         .context(h!())?;
     for (id, n) in networks_dictionary.clone() {
@@ -573,7 +573,7 @@ fn compare_units(u1: &Vec<String>, u2: &Vec<String>) -> Ordering {
 }
 
 async fn collect_networks(
-    env: &&Env,
+    dbx: &DatabaseConnection,
     freqs: Vec<String>,
     groups: &Vec<String>,
 ) -> anyhow::Result<HashMap<(String, Option<String>), NetworkSummary>> {
@@ -605,7 +605,7 @@ async fn collect_networks(
         .column(sigint_network_aor::Column::AorId)
         .column_as(sigint_unit::Column::Name, "unit_name")
         .into_model::<NetworkSummary>()
-        .all(&env.dbx)
+        .all(dbx)
         .await
         .context(h!())?
         .into_iter()
@@ -660,7 +660,7 @@ async fn collect_networks(
         .column(signal_group_aor::Column::AorId)
         .column_as(sigint_unit::Column::Name, "unit_name")
         .into_model::<NetworkSummary>()
-        .all(&env.dbx)
+        .all(dbx)
         .await
         .context(h!())?
         .into_iter()
@@ -674,10 +674,10 @@ async fn collect_networks(
 }
 
 async fn load_aors(
-    env: &Env,
+    dbx: &DatabaseConnection,
 ) -> anyhow::Result<HashMap<i64, area_of_responsibility::Model>> {
     let areas = area_of_responsibility::Entity::find()
-        .all(&env.dbx)
+        .all(dbx)
         .await
         .context(h!())?
         .into_iter()
@@ -688,7 +688,7 @@ async fn load_aors(
 
 async fn load_messages_with_comments(
     messages: Vec<(i64, InboxMessage)>,
-    env: &Env,
+    dbx: &DatabaseConnection,
 ) -> anyhow::Result<(Vec<(i64, String)>, Vec<(i64, InboxMessage)>)> {
     let message_ids = messages
         .iter()
@@ -718,7 +718,7 @@ async fn load_messages_with_comments(
             .column(sigint_comment::Column::Comment)
             .column(sigint_inbox_item::Column::BodyNoheader)
             .into_tuple::<(i64, String, Option<Json>)>()
-            .all(&env.dbx)
+            .all(dbx)
             .await
             .context(h!())?;
         for (message_id, comment, body) in comments_data {

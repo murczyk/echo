@@ -39,6 +39,7 @@ pub async fn report_xlsx_kind_senders(
     outpath: &PathBuf,
 ) -> Result<(), AppError> {
     info!("[report_xlsx_kind_senders] {}: started", Utc::now());
+    let read_db = env.replica();
     let login = user.id().c(h!())?;
     let mut req = req.to_owned();
     req.return_duplicates = Some(false);
@@ -48,7 +49,7 @@ pub async fn report_xlsx_kind_senders(
     let Some(till_date_inclusive_ms) = req.till_date_inclusive_ms else {
         return Err("Until date must be specified".into());
     };
-    let logins = crate::users::get_organism_logins(&env.dbx, user)
+    let logins = crate::users::get_organism_logins(&read_db, user)
         .await
         .c(h!())?;
     let q = build_inbox_query(&login, &logins, env, &req)
@@ -58,8 +59,7 @@ pub async fn report_xlsx_kind_senders(
     let q = format!(
         r#"SELECT count(*) as quantity, "post_name" as post, "sender" as sender, to_char(("datetime" AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Kyiv')::date, 'DD.MM.YYYY') as ts_dt from ({q}) q group by "post_name", "sender", ("datetime" AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Kyiv')::date"#
     );
-    let query_res: Vec<QueryResult> = env
-        .dbx
+    let query_res: Vec<QueryResult> = read_db
         .query_all(Statement::from_string(DatabaseBackend::Postgres, q))
         .await
         .context(h!())?;
@@ -78,7 +78,7 @@ pub async fn report_xlsx_kind_senders(
         });
     }
 
-    let senders = map_senders(&aggregation_kind, &env, &messages)
+    let senders = map_senders(&aggregation_kind, &read_db, &messages)
         .await
         .c(h!())?;
 
@@ -119,7 +119,7 @@ pub async fn report_xlsx_kind_senders(
 
 async fn map_senders(
     aggregation_kind: &ReportAggregation,
-    env: &&Env,
+    dbx: &DatabaseConnection,
     messages: &Vec<MessageStatRecord>,
 ) -> Result<BTreeMap<String, String>, AppError> {
     let mut senders = BTreeSet::new();
@@ -132,7 +132,7 @@ async fn map_senders(
     let senders = match aggregation_kind {
         ReportAggregation::ByProfile => signal_profile::Entity::find()
             .filter(signal_profile::Column::Uuid.is_in(sender_ids))
-            .all(&env.dbx)
+            .all(dbx)
             .await
             .c(h!())?
             .into_iter()

@@ -34,6 +34,29 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
     // opendal Operator is cheaply cloneable; store directly on Env
     let mil_geo = MilGeo::new(&mk_conn_string(&config)[..]);
     let dbx = crate::new_pg_pool_from_config(&config).await.unwrap();
+    let mut replicas = vec![];
+    if let Some(replica_configs) = config.replicas.clone() {
+        for replica in replica_configs {
+            let host = replica
+                .pg_host
+                .clone()
+                .or_else(|| config.pg_host.clone())
+                .unwrap_or_else(|| DEFAULT_PG_HOST.to_string());
+            let port = replica
+                .pg_port
+                .or(config.pg_port)
+                .unwrap_or(DEFAULT_PG_PORT);
+            match crate::new_pg_pool_from_replica(&config, &replica).await {
+                Ok(pool) => {
+                    info!("replica pool ready {host}:{port}");
+                    replicas.push(pool);
+                }
+                Err(err) => {
+                    warn!("failed to connect replica {host}:{port}: {err:?}");
+                }
+            }
+        }
+    }
     let rq: reqwest::Client = reqwest::Client::builder()
         .timeout(core::time::Duration::from_secs(crate::config::RQ_TIMEOUT))
         .build()
@@ -85,6 +108,7 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
         settlements: settlements.clone(),
         callsigns_whitelist: callsigns_whitelist.clone(),
         version: version.clone(),
+        replicas,
     };
     Ok(Arc::new(env))
 }

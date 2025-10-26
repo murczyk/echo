@@ -78,13 +78,14 @@ pub async fn report_docx_kind_revo(
     outpath: &Path,
 ) -> Result<(), AppError> {
     info!("report_docx_kind_revo started");
+    let read_db = env.replica();
     let login = user.id().c(h!())?;
-    let logins = crate::users::get_organism_logins(&env.dbx, user)
+    let logins = crate::users::get_organism_logins(&read_db, user)
         .await
         .context(h!())?;
     let messages: Vec<(i64, InboxMessage)> =
-        crate::rer_importer::inbox::get_inbox_messages(
-            &login, &logins, env, &req.req,
+        crate::rer_importer::inbox::get_inbox_messages_with_conn(
+            &read_db, &login, &logins, env, &req.req,
         )
         .await
         .context(h!())?;
@@ -96,10 +97,15 @@ pub async fn report_docx_kind_revo(
         _ => 0.0,
     };
 
-    let mut report =
-        collect_report(messages.clone(), logins.clone(), env, range_khz)
-            .await
-            .context(h!())?;
+    let mut report = collect_report(
+        messages.clone(),
+        logins.clone(),
+        env,
+        &read_db,
+        range_khz,
+    )
+    .await
+    .context(h!())?;
     info!("report_docx_kind_revo data collected");
     report
         .hostile_networks
@@ -268,6 +274,7 @@ async fn collect_report(
     messages: Vec<(i64, InboxMessage)>,
     _logins: Vec<String>,
     env: &Env,
+    dbx: &DatabaseConnection,
     range_khz: f64,
 ) -> anyhow::Result<Report> {
     let groups = messages
@@ -304,7 +311,7 @@ async fn collect_report(
         .column(sigint_network_freq::Column::Freq)
         .column_as(sigint_unit::Column::Name, "unit_name")
         .into_model::<NetworkSummary>()
-        .all(&env.dbx)
+        .all(dbx)
         .await
         .context(h!())?
         .into_iter()
@@ -358,7 +365,7 @@ async fn collect_report(
         .column(signal_group_aor::Column::MasterKey)
         .column_as(sigint_unit::Column::Name, "unit_name")
         .into_model::<NetworkSummary>()
-        .all(&env.dbx)
+        .all(dbx)
         .await
         .context(h!())?
         .into_iter()
@@ -377,7 +384,7 @@ async fn collect_report(
     for ids in message_ids {
         sigint_comment::Entity::find()
             .filter(sigint_comment::Column::SignalMessageId.is_in(ids))
-            .all(&env.dbx)
+            .all(dbx)
             .await
             .context(h!())?
             .into_iter()
@@ -437,7 +444,7 @@ async fn collect_report(
         .column_as(sigint_callsign::Column::Callsign, "callsign")
         .column(sigint_unit::Column::Id)
         .into_model::<CallsignSummary>()
-        .all(&env.dbx)
+        .all(dbx)
         .await
         .context(h!())?
         .into_iter()

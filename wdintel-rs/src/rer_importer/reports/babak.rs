@@ -515,8 +515,9 @@ pub async fn get_inbox_messages_report_unit(
     env: &Env,
     req: &InboxMessagesReq,
 ) -> Result<Vec<StatsPerUnitReport>, AppError> {
+    let read_db = env.replica();
     let login = user.id().c(h!())?;
-    let logins = crate::users::get_organism_logins(&env.dbx, user)
+    let logins = crate::users::get_organism_logins(&read_db, user)
         .await
         .c(h!())?;
     let include_peleng_locations =
@@ -606,7 +607,9 @@ pub async fn get_inbox_messages_report_unit(
             .add(sigint_unit::Column::Deleted.is_null())
         )
         .filter(datasource_group::Column::GroupMasterKey.is_in(
-            crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login).await.c(h!())?,
+            crate::messenger::group::get_identity_sigint_groups(&read_db, &login)
+                .await
+                .c(h!())?,
         ));
 
     if !req.or_with_extended_form.unwrap_or(false) {
@@ -857,8 +860,7 @@ pub async fn get_inbox_messages_report_unit(
 
     print!("{raw_query}");
 
-    Ok(env
-        .dbx
+    Ok(read_db
         .query_all(Statement::from_string(
             DatabaseBackend::Postgres,
             raw_query.to_string(),

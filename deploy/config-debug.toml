@@ -4,6 +4,13 @@ pg_port = 5432
 pg_user = "wd"
 pg_password = "fee_-_-_-FnoeKFBeebu87bf"
 pg_dbname = "wd"
+# Example replica entries for read-only workloads
+# [[replicas]]
+# pg_host = "echo-db-replica"
+# pg_port = 5432
+# pg_user = "wd"
+# pg_password = "replica-password"
+# pg_dbname = "wd"
 b2_aws_access_key_id = ""
 b2_aws_secret_access_key = ""
 b2_s3 = "https://s3.us-west-000.backblazeb2.com"

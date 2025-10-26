@@ -61,9 +61,10 @@ pub async fn count_groups(
 ) -> Result<i64, AppError> {
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).c(h!())?;
     let dt_till = dt_from_millis(req.till_date_noninclusive_ms).c(h!())?;
+    let read_db = env.replica();
     let groups_res =
         build_groups_query(&req, user, dt_since, dt_till, master_keys)?;
-    let count = groups_res.count(&env.dbx).await.c(h!())?;
+    let count = groups_res.count(&read_db).await.c(h!())?;
     Ok(count as i64)
 }
 
@@ -199,12 +200,13 @@ pub async fn count_senders(
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
+    let read_db = env.replica();
 
     let instant = std::time::Instant::now();
     trace!("get identity master keys op took: {:?}", instant.elapsed());
     let groups_res =
         build_senders_query(&req, &user, dt_since, dt_till, master_keys)?;
-    let count = groups_res.count(&env.dbx).await.context(h!())?;
+    let count = groups_res.count(&read_db).await.context(h!())?;
     Ok(count as i64)
 }
 
@@ -332,12 +334,13 @@ pub async fn count_posts(
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
+    let read_db = env.replica();
 
     let instant = std::time::Instant::now();
     trace!("get identity master keys op took: {:?}", instant.elapsed());
     let groups_res =
         build_posts_query(&req, &user, master_keys, dt_since, dt_till)?;
-    let count = groups_res.count(&env.dbx).await.context(h!())?;
+    let count = groups_res.count(&read_db).await.context(h!())?;
     Ok(count as i64)
 }
 fn build_posts_query(
@@ -517,12 +520,13 @@ pub async fn count_freqs(
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
+    let read_db = env.replica();
 
     let instant = std::time::Instant::now();
     trace!("get identity master keys op took: {:?}", instant.elapsed());
     let groups_res =
         build_freqs_query(&req, &user, dt_since, dt_till, master_keys)?;
-    let count = groups_res.count(&env.dbx).await.context(h!())?;
+    let count = groups_res.count(&read_db).await.context(h!())?;
     Ok(count as i64)
 }
 
@@ -652,12 +656,13 @@ pub async fn count_callsigns(
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
+    let read_db = env.replica();
 
     let instant = std::time::Instant::now();
     trace!("get identity master keys op took: {:?}", instant.elapsed());
     let groups_res =
         build_callsigns_query(&req, dt_since, dt_till, master_keys)?;
-    let count = groups_res.count(&env.dbx).await.context(h!())?;
+    let count = groups_res.count(&read_db).await.context(h!())?;
     Ok(count as i64)
 }
 
@@ -784,11 +789,12 @@ pub async fn count_tags(
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
+    let read_db = env.replica();
 
     let instant = std::time::Instant::now();
     trace!("get identity master keys op took: {:?}", instant.elapsed());
     let groups_res = build_tags_query(&req, dt_since, dt_till, master_keys)?;
-    let count = groups_res.count(&env.dbx).await.context(h!())?;
+    let count = groups_res.count(&read_db).await.context(h!())?;
     Ok(count as i64)
 }
 
@@ -903,12 +909,13 @@ pub async fn count_units(
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
+    let read_db = env.replica();
 
     let instant = std::time::Instant::now();
     trace!("get identity master keys op took: {:?}", instant.elapsed());
     let groups_res =
         build_units_query(&req, &user, dt_since, dt_till, master_keys)?;
-    let count = groups_res.count(&env.dbx).await.context(h!())?;
+    let count = groups_res.count(&read_db).await.context(h!())?;
     Ok(count as i64)
 }
 
@@ -1041,12 +1048,13 @@ pub async fn count_locations(
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
+    let read_db = env.replica();
 
     let instant = std::time::Instant::now();
     trace!("get identity master keys op took: {:?}", instant.elapsed());
     let groups_res =
         build_locations_query(&req, &user, dt_since, dt_till, master_keys)?;
-    let count = groups_res.count(&env.dbx).await.context(h!())?;
+    let count = groups_res.count(&read_db).await.context(h!())?;
     Ok(count as i64)
 }
 
@@ -1177,10 +1185,11 @@ pub async fn count_aors(
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
+    let read_db = env.replica();
 
     let aors_res =
         build_aors_query(&req, &user, dt_since, dt_till, master_keys)?;
-    let count = aors_res.count(&env.dbx).await.context(h!())?;
+    let count = aors_res.count(&read_db).await.context(h!())?;
     Ok(count as i64)
 }
 
@@ -1323,6 +1332,7 @@ pub async fn count_networks(
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
+    let read_db = env.replica();
 
     let networks_query =
         build_networks_query(&req, user, dt_since, dt_till, master_keys)?;
@@ -1338,7 +1348,7 @@ pub async fn count_networks(
     );
 
     let networks_res: Vec<NetworksRes> = NetworksRes::find_by_statement(stmt)
-        .all(&env.dbx)
+        .all(&read_db)
         .await
         .c(h!())?;
 
@@ -1557,6 +1567,7 @@ pub async fn fetch_counts(
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
+    let read_db = env.replica();
 
     let instant = std::time::Instant::now();
 
@@ -1595,7 +1606,7 @@ pub async fn fetch_counts(
     // );
     let overall_count_res: OverallCountRes = overall_count_res
         .into_model::<OverallCountRes>()
-        .one(&env.dbx)
+        .one(&read_db)
         .await
         .context(h!())?
         .context(h!())?;
@@ -1688,7 +1699,7 @@ pub async fn fetch_counts(
     // );
     let selected_count_res: SelectedCountRes = selected_count_res
         .into_model::<SelectedCountRes>()
-        .one(&env.dbx)
+        .one(&read_db)
         .await
         .context(h!())?
         .unwrap_or(SelectedCountRes { count: 0 });

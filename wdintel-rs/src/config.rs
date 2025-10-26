@@ -113,12 +113,22 @@ pub struct Config {
     pub feature_strict_networks: Option<bool>,
     pub is_slave: Option<bool>,
     pub disable_inactive_users_worker: Option<bool>,
+    pub replicas: Option<Vec<ReplicaConfig>>,
     /// A unique identifier for the server.
     ///
     /// This is an arbitrary integer value in the range **1-16**.
     /// It must be unique across all running servers to avoid conflicts.
     /// Please double-check in Bitwarden that your value does not conflict with values in other live servers.
     pub server_id: Option<u32>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct ReplicaConfig {
+    pub pg_host: Option<String>,
+    pub pg_port: Option<u16>,
+    pub pg_user: Option<String>,
+    pub pg_password: Option<String>,
+    pub pg_dbname: Option<String>,
 }
 
 impl Config {
