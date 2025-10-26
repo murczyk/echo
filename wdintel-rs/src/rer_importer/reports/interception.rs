@@ -217,7 +217,7 @@ async fn get_inbox_messages_report(
         .query(dedup_q)
         .to_string(PostgresQueryBuilder);
 
-    println!("Interception report SQL: {combined_query}");
+    // println!("Interception report SQL: {combined_query}");
 
     // First execute the query to get QueryResult
     let results = read_db
