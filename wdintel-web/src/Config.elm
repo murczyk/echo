@@ -1,4 +1,11 @@
-module Config exposing (adjacentFreqsRangeOptions, featureEnableTornado, featureShowCallsignsMetadata, waterfallLoadEarlierThresholdMs, waterfallMessageLimit)
+module Config exposing
+    ( adjacentFreqsRangeOptions
+    , featureEnableTornado
+    , featureShowCallsignsMetadata
+    , thresholdStopCountingDays
+    , waterfallLoadEarlierThresholdMs
+    , waterfallMessageLimit
+    )
 
 {-| Show tornado on visible messages
 -}
@@ -32,4 +39,9 @@ adjacentFreqsRangeOptions =
 
 
 
--- Р/О
+-- | Threshold controlling if we show counters or not
+
+
+thresholdStopCountingDays : Int
+thresholdStopCountingDays =
+    32

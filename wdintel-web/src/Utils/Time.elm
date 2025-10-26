@@ -1,5 +1,33 @@
-module Utils.Time exposing (getZone, isMoreThanAWeekApart, mParseDatetimeStr, parseDateParts, parseDatetimeParts, parseTimeParts, partsAreSameDay, posixToInputValueDate, posixToInputValueTime, posixToString, renderDateF4, renderDateF5FromMillis, renderDateF6, renderDateTimeF1, renderDateTimeF2, renderDateTimeF3, renderDateTimeF6, renderDateTimeF7, renderDateTimeF9, renderDistanceF1, renderPartsAsInputValue, renderPartsF1, renderTimeF4, xDaysAgo, xDaysInMillis)
+module Utils.Time exposing
+    ( getZone
+    , isMoreThanThresholdApart
+    , mParseDatetimeStr
+    , parseDateParts
+    , parseDatetimeParts
+    , parseTimeParts
+    , partsAreSameDay
+    , posixToInputValueDate
+    , posixToInputValueTime
+    , posixToString
+    , renderDateF4
+    , renderDateF5FromMillis
+    , renderDateF6
+    , renderDateTimeF1
+    , renderDateTimeF2
+    , renderDateTimeF3
+    , renderDateTimeF6
+    , renderDateTimeF7
+    , renderDateTimeF9
+    , renderDistanceF1
+    , renderPartsAsInputValue
+    , renderPartsF1
+    , renderTimeF4
+    , thresholdStopCountingDaysInMillis
+    , xDaysAgo
+    , xDaysInMillis
+    )
 
+import Config
 import Date
 import Dict
 import Task
@@ -409,9 +437,14 @@ oneWeekInMillis =
     xDaysInMillis 7
 
 
-isMoreThanAWeekApart : Posix -> Posix -> Bool
-isMoreThanAWeekApart time1 time2 =
-    abs (Time.posixToMillis time1 - Time.posixToMillis time2) > oneWeekInMillis
+isMoreThanThresholdApart : Posix -> Posix -> Bool
+isMoreThanThresholdApart time1 time2 =
+    abs (Time.posixToMillis time1 - Time.posixToMillis time2) > thresholdStopCountingDaysInMillis
+
+
+thresholdStopCountingDaysInMillis : Int
+thresholdStopCountingDaysInMillis =
+    Config.thresholdStopCountingDays * 24 * 60 * 60 * 1000
 
 
 mParseDatetimeStr : Zone -> String -> Maybe Posix

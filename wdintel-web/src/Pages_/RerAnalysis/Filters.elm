@@ -251,7 +251,7 @@ view isDark user model =
                 getOverallOptionsCount fieldAccessor remoteData =
                     case ( model.from.datePosix, model.to.datePosix ) of
                         ( Just dtFromPosix, Just dtToPosix ) ->
-                            if not (Utils.Time.isMoreThanAWeekApart dtFromPosix dtToPosix) then
+                            if not (Utils.Time.isMoreThanThresholdApart dtFromPosix dtToPosix) then
                                 extractMRecordField fieldAccessor (List.length <| RD.withDefault [] remoteData) (RD.toMaybe model.counts)
                                     |> String.fromInt
 

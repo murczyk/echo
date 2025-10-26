@@ -336,7 +336,7 @@ loadSumTableOnly model =
                     Query.analysisStatsParams dtFromPosix dtToPosix model
 
                 loadingSumTable =
-                    not (Utils.Time.isMoreThanAWeekApart dtFromPosix dtToPosix)
+                    not (Utils.Time.isMoreThanThresholdApart dtFromPosix dtToPosix)
 
                 sumTable =
                     if loadingSumTable then
@@ -366,10 +366,10 @@ loadCoreStats model =
                     Query.analysisStatsParams dtFromPosix dtToPosix model
 
                 loadingCounts =
-                    not (Utils.Time.isMoreThanAWeekApart dtFromPosix dtToPosix)
+                    not (Utils.Time.isMoreThanThresholdApart dtFromPosix dtToPosix)
 
                 loadingSumTable =
-                    model.unfoldSumTable && not (Utils.Time.isMoreThanAWeekApart dtFromPosix dtToPosix)
+                    model.unfoldSumTable && not (Utils.Time.isMoreThanThresholdApart dtFromPosix dtToPosix)
 
                 cmdLoadSummaryTable isLoading =
                     if isLoading then
