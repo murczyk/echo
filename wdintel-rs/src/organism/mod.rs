@@ -116,11 +116,36 @@ pub async fn delete_organism(
         .c(h!())?
     {
         let mut rec = model.into_active_model();
+        rec.enabled = Set(false);
         rec.deleted_permanently = Set(true);
         rec.update(&env.dbx).await.c(h!())?;
     }
 
     Ok(Json(()))
+}
+
+#[post("/api/organism/active-logins")]
+pub async fn organism_active_logins(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<i64>,
+) -> Result<Json<Vec<String>>, AppError> {
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
+        .await
+        .c(h!())?;
+
+    let logins = login::Entity::find()
+        .filter(login::Column::OrganismId.eq(req.0))
+        .filter(login::Column::Deleted.eq(false))
+        .filter(login::Column::DeletedPermanently.eq(false))
+        .all(&env.dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|l| l.login)
+        .collect();
+
+    Ok(Json(logins))
 }
 
 #[post("/api/organism/update")]

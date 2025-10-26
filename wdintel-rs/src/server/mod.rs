@@ -356,6 +356,7 @@ pub async fn main_server(
             .service(crate::organism::organism_compute_available_groups)
             .service(crate::organism::organism_compute_available_groups_for_new)
             .service(crate::organism::organism_available_groups_batch)
+            .service(crate::organism::organism_active_logins)
             .service(crate::datasource::list_datasources)
             .service(crate::datasource::datasource_group_list)
             .service(crate::sigint::zone::zones_list)
