@@ -1129,3 +1129,17 @@ bump-version-push:
     set -euo pipefail
     just message="{{ message }}" bump-version-commit
     git push
+
+whatsapp-update-fresh-whatsmeow:
+    #!/bin/bash
+    set -euxo pipefail
+
+    TMPDIR=$(mktemp -d)
+    trap 'rm -rf "${TMPDIR}"' EXIT
+
+    git clone --depth=1 https://github.com/tulir/whatsmeow "${TMPDIR}/whatsmeow"
+
+    rsync -a --delete \
+        --exclude '.git' \
+        --exclude 'echo-whatsapp/' \
+        "${TMPDIR}/whatsmeow/" echo-whatsapp/whatsmeow/

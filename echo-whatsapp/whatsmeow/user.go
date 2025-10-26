@@ -19,6 +19,7 @@ import (
 	waBinary "go.mau.fi/whatsmeow/binary"
 	"go.mau.fi/whatsmeow/proto/waHistorySync"
 	"go.mau.fi/whatsmeow/proto/waVnameCert"
+	"go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 )
@@ -205,11 +206,13 @@ func (cli *Client) GetUserInfo(jids []types.JID) (map[types.JID]types.UserInfo, 
 		{Tag: "status"},
 		{Tag: "picture"},
 		{Tag: "devices", Attrs: waBinary.Attrs{"version": "2"}},
+		{Tag: "lid"},
 	})
 	if err != nil {
 		return nil, err
 	}
 	respData := make(map[types.JID]types.UserInfo, len(jids))
+	mappings := make([]store.LIDMapping, 0, len(jids))
 	for _, child := range list.GetChildren() {
 		jid, jidOK := child.Attrs["jid"].(types.JID)
 		if child.Tag != "user" || !jidOK {
@@ -224,11 +227,26 @@ func (cli *Client) GetUserInfo(jids []types.JID) (map[types.JID]types.UserInfo, 
 		info.Status = string(status)
 		info.PictureID, _ = child.GetChildByTag("picture").Attrs["id"].(string)
 		info.Devices = parseDeviceList(jid, child.GetChildByTag("devices"))
+
+		lidTag := child.GetChildByTag("lid")
+		info.LID = lidTag.AttrGetter().OptionalJIDOrEmpty("val")
+
+		if !info.LID.IsEmpty() {
+			mappings = append(mappings, store.LIDMapping{PN: jid, LID: info.LID})
+		}
+
 		if verifiedName != nil {
 			cli.updateBusinessName(context.TODO(), jid, nil, verifiedName.Details.GetVerifiedName())
 		}
 		respData[jid] = info
 	}
+
+	err = cli.Store.LIDs.PutManyLIDMappings(context.TODO(), mappings)
+	if err != nil {
+		// not worth returning on the error, instead just post a log
+		cli.Log.Errorf("Failed to place LID mappings from USync call")
+	}
+
 	return respData, nil
 }
 
@@ -484,6 +502,12 @@ type GetProfilePictureParams struct {
 	Preview     bool
 	ExistingID  string
 	IsCommunity bool
+	// This is a common group ID that you share with the target
+	CommonGID types.JID
+	// use this to query the profile photo of a group you don't have joined, but you have an invite code for
+	InviteCode string
+	// Persona ID when getting profile of Meta AI bots
+	PersonaID string
 }
 
 // GetProfilePictureInfo gets the URL where you can download a WhatsApp user's profile picture or group's photo.
@@ -508,6 +532,10 @@ func (cli *Client) GetProfilePictureInfo(jid types.JID, params *GetProfilePictur
 	if params.ExistingID != "" {
 		attrs["id"] = params.ExistingID
 	}
+	if params.InviteCode != "" {
+		attrs["invite"] = params.InviteCode
+	}
+
 	var expectWrapped bool
 	var content []waBinary.Node
 	namespace := "w:profile:picture"
@@ -527,9 +555,27 @@ func (cli *Client) GetProfilePictureInfo(jid types.JID, params *GetProfilePictur
 	} else {
 		to = types.ServerJID
 		target = jid
+
+		if !params.CommonGID.IsEmpty() {
+			attrs["common_gid"] = params.CommonGID
+		}
+
+		if params.PersonaID != "" {
+			attrs["persona_id"] = params.PersonaID
+		}
+
+		var pictureContent []waBinary.Node
+		if token, _ := cli.Store.PrivacyTokens.GetPrivacyToken(context.TODO(), jid); token != nil {
+			pictureContent = []waBinary.Node{{
+				Tag:     "tctoken",
+				Content: token.Token,
+			}}
+		}
+
 		content = []waBinary.Node{{
-			Tag:   "picture",
-			Attrs: attrs,
+			Tag:     "picture",
+			Attrs:   attrs,
+			Content: pictureContent,
 		}}
 	}
 	resp, err := cli.sendIQ(infoQuery{
@@ -677,11 +723,22 @@ func parseDeviceList(user types.JID, deviceNode waBinary.Node) []types.JID {
 	devices := make([]types.JID, 0, len(children))
 	for _, device := range children {
 		deviceID, ok := device.AttrGetter().GetInt64("id", true)
+		isHosted := device.AttrGetter().Bool("is_hosted")
 		if device.Tag != "device" || !ok {
 			continue
 		}
 		user.Device = uint16(deviceID)
-		devices = append(devices, user)
+		if isHosted {
+			hostedUser := user
+			if user.Server == types.HiddenUserServer {
+				hostedUser.Server = types.HostedLIDServer
+			} else {
+				hostedUser.Server = types.HostedServer
+			}
+			devices = append(devices, hostedUser)
+		} else {
+			devices = append(devices, user)
+		}
 	}
 	return devices
 }
@@ -778,6 +835,8 @@ func (cli *Client) usync(ctx context.Context, jids []types.JID, mode, context st
 				Content: jid.String(),
 			}}
 		case types.DefaultUserServer, types.HiddenUserServer:
+			// NOTE: You can pass in an LID with a JID (<lid jid=...> user node)
+			// Not sure if you can just put the LID in the jid tag here (works for <devices> queries mainly)
 			userList[i].Attrs = waBinary.Attrs{"jid": jid}
 			if jid.IsBot() {
 				var personaID string
