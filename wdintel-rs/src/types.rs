@@ -6,6 +6,7 @@ use clap::ValueEnum;
 pub use itertools::Itertools;
 pub use log::*;
 use milgeo_rs::MilGeo;
+use rand::prelude::IndexedRandom;
 pub use serde::{Deserialize, Serialize};
 #[cfg(test)]
 pub use serial_test::serial;
@@ -108,6 +109,7 @@ pub struct Env {
     pub settlements: Arc<RwLock<crate::location::SettlementsData>>,
     pub version: String,
     pub callsigns_whitelist: HashSet<String>,
+    pub replicas: Vec<sea_orm::DatabaseConnection>,
 }
 
 impl std::fmt::Display for Mode {
@@ -130,6 +132,17 @@ impl Env {
             }
         }
         None
+    }
+
+    /// Returns a random replica connection if available, otherwise falls back to the primary DB connection.
+    pub fn replica(&self) -> sea_orm::DatabaseConnection {
+        if self.replicas.is_empty() {
+            return self.dbx.clone();
+        }
+        self.replicas
+            .choose(&mut rand::rng())
+            .cloned()
+            .unwrap_or_else(|| self.dbx.clone())
     }
 }
 

@@ -34,7 +34,8 @@ async fn get_inbox_messages_report(
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
     let login = user.id().context(h!())?;
-    let logins = crate::users::get_organism_logins(&env.dbx, user)
+    let read_db = env.replica();
+    let logins = crate::users::get_organism_logins(&read_db, user)
         .await
         .context(h!())?;
     let mut q = SignalMessage::find()
@@ -127,7 +128,9 @@ async fn get_inbox_messages_report(
         .group_by(sigint_important::Column::SignalMessageId)
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(datasource_group::Column::GroupMasterKey.is_in(
-            crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login).await.c(h!())?,
+            crate::messenger::group::get_identity_sigint_groups(&read_db, &login)
+                .await
+                .c(h!())?,
         ));
 
     if req.report_tags_only_this_unit == Some(true) {
@@ -217,8 +220,7 @@ async fn get_inbox_messages_report(
     // println!("Interception report SQL: {combined_query}");
 
     // First execute the query to get QueryResult
-    let results = env
-        .dbx
+    let results = read_db
         .query_all(Statement::from_string(
             DatabaseBackend::Postgres,
             combined_query,
@@ -392,11 +394,12 @@ pub async fn report_xlsx_kind_interception(
     sheet1.set_column_width(10, 10.0).context(h!())?; // Set width
     sheet1.set_column_format(10, &format_gray).context(h!())?; // Set format
 
+    let read_db = env.replica();
     let all_tags = {
         let tags_vec = tag::Entity::find()
             .columns([tag::Column::Id, tag::Column::Title])
             .into_tuple::<(i64, String)>()
-            .all(&env.dbx)
+            .all(&read_db)
             .await
             .context(h!())?;
         let mut tags = HashMap::new();

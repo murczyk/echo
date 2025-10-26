@@ -498,16 +498,23 @@ pub async fn get_inbox_messages(
     env: &Env,
     req: &InboxMessagesReq,
 ) -> Result<Vec<(i64, InboxMessage)>, AppError> {
+    get_inbox_messages_with_conn(&env.dbx, login, logins, env, req).await
+}
+
+pub async fn get_inbox_messages_with_conn(
+    dbx: &DatabaseConnection,
+    login: &str,
+    logins: &Vec<String>,
+    env: &Env,
+    req: &InboxMessagesReq,
+) -> Result<Vec<(i64, InboxMessage)>, AppError> {
     let q = build_inbox_query(login, logins, env, req).await.c(h!())?;
 
-    // First execute the query to get QueryResult
-    let results = env
-        .dbx
+    let results = dbx
         .query_all(Statement::from_string(DatabaseBackend::Postgres, q))
         .await
         .context(h!())?;
 
-    // Then convert results to your model
     let messages: Vec<InboxMessageDesc> = results
         .iter()
         .map(|qr| InboxMessageDesc::from_query_result(qr, ""))

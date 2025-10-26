@@ -20,17 +20,19 @@ pub async fn report_docx_kind_tag(
     req: &super::types::ReportPreviewReq,
     outpath: &PathBuf,
 ) -> Result<(), AppError> {
-    let txn = env.dbx.begin().await.context(h!())?;
+    let read_db = env.replica();
+    let txn = read_db.begin().await.context(h!())?;
 
     let login = user.id().c(h!())?;
     let logins = crate::users::get_organism_logins(&txn, user)
         .await
         .c(h!())?;
-    let mut messages = crate::rer_importer::inbox::get_inbox_messages(
-        &login, &logins, env, &req.req,
-    )
-    .await
-    .context(h!())?;
+    let mut messages =
+        crate::rer_importer::inbox::get_inbox_messages_with_conn(
+            &read_db, &login, &logins, env, &req.req,
+        )
+        .await
+        .context(h!())?;
 
     // sort messages by (freq, datetime)
     messages.sort_by(|a, b| {

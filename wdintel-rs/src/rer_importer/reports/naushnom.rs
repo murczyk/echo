@@ -228,6 +228,7 @@ pub async fn get_inbox_messages_report_network(
     >,
     AppError,
 > {
+    let read_db = env.replica();
     let login = user.id().c(h!())?;
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
@@ -278,7 +279,7 @@ pub async fn get_inbox_messages_report_network(
         .filter(
             datasource_group::Column::GroupMasterKey.is_in(
                 crate::messenger::group::get_identity_sigint_groups(
-                    &env.dbx, &login,
+                    &read_db, &login,
                 )
                 .await
                 .c(h!())?,
@@ -349,7 +350,7 @@ pub async fn get_inbox_messages_report_network(
         kind: Option<String>,
         location: Option<String>,
     }
-    let rows = q.into_model::<Row>().all(&env.dbx).await.context(h!())?;
+    let rows = q.into_model::<Row>().all(&read_db).await.context(h!())?;
 
     let mut res_map = HashMap::new();
     for row in rows {

@@ -38,6 +38,7 @@ pub async fn get_inbox_messages_report(
     let login = user.id().c(h!())?;
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
+    let read_db = env.replica();
 
     let mut q = SignalMessage::find()
         .inner_join(sigint_inbox_item::Entity)
@@ -120,7 +121,7 @@ pub async fn get_inbox_messages_report(
         .group_by(sigint_inbox_item::Column::Id)
         .group_by(signal_message::Column::DuplicateOf)
         .filter(datasource_group::Column::GroupMasterKey.is_in(
-            crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login).await.c(h!())?,
+            crate::messenger::group::get_identity_sigint_groups(&read_db, &login).await.c(h!())?,
         ));
 
     q = crate::rer_importer::inbox::query::get_pagination_filters(
@@ -182,7 +183,7 @@ pub async fn get_inbox_messages_report(
     info!("[get_inbox_messages_report] {}", Utc::now());
 
     let messages: Vec<Message> =
-        q.into_model::<Message>().all(&env.dbx).await.c(h!())?;
+        q.into_model::<Message>().all(&read_db).await.c(h!())?;
 
     let messages = deduplicate(&messages).context(h!())?;
 
@@ -193,7 +194,7 @@ pub async fn get_inbox_messages_report(
         item_ids.push(item.id);
         items_map.insert(item.id, item);
         if item_ids.len() > 1000 {
-            let pelengs = collect_inbox_pelengs(item_ids, &env.dbx)
+            let pelengs = collect_inbox_pelengs(item_ids, &read_db)
                 .await
                 .context(h!())?;
             sigint_pelengs.push(pelengs);
@@ -201,7 +202,7 @@ pub async fn get_inbox_messages_report(
         }
     }
     sigint_pelengs.push(
-        collect_inbox_pelengs(item_ids, &env.dbx)
+        collect_inbox_pelengs(item_ids, &read_db)
             .await
             .context(h!())?,
     );
@@ -398,8 +399,9 @@ pub async fn report_xlsx_kind_pelengs1(
         .collect::<std::collections::BTreeSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
+    let profiles_db = env.replica();
     let sender_names: BTreeMap<String, Option<SignalProfileEntry>> =
-        crate::rer_importer::collect_profiles_data(&env.dbx, sender_uuids)
+        crate::rer_importer::collect_profiles_data(&profiles_db, sender_uuids)
             .await
             .context(h!())?;
 

@@ -417,6 +417,20 @@ pub async fn new_pg_pool_from_config(
     config: &Config,
 ) -> Result<sea_orm::DatabaseConnection, AppError> {
     let conn_string = mk_conn_string(config);
+    new_pg_pool_from_conn_string(conn_string).await
+}
+
+pub async fn new_pg_pool_from_replica(
+    config: &Config,
+    replica: &crate::config::ReplicaConfig,
+) -> Result<sea_orm::DatabaseConnection, AppError> {
+    let conn_string = mk_replica_conn_string(config, replica);
+    new_pg_pool_from_conn_string(conn_string).await
+}
+
+async fn new_pg_pool_from_conn_string(
+    conn_string: String,
+) -> Result<sea_orm::DatabaseConnection, AppError> {
     let mut opt = sea_orm::ConnectOptions::new(conn_string);
     opt.max_connections(30)
         .min_connections(0)
@@ -484,6 +498,46 @@ fn mk_conn_string(config: &Config) -> String {
         "postgresql://{pg_user}:{pg_password}@{pg_host}:{pg_port}/{pg_dbname}",
     );
     conn_string
+}
+
+fn mk_replica_conn_string(
+    config: &Config,
+    replica: &crate::config::ReplicaConfig,
+) -> String {
+    let pg_host = replica
+        .pg_host
+        .clone()
+        .or_else(|| config.pg_host.clone())
+        .unwrap_or_else(|| DEFAULT_PG_HOST.to_string());
+    let pg_port = replica
+        .pg_port
+        .or(config.pg_port)
+        .unwrap_or(DEFAULT_PG_PORT);
+    let pg_user = replica
+        .pg_user
+        .clone()
+        .or_else(|| config.pg_user.clone())
+        .unwrap_or_else(|| DEFAULT_PG_USER.to_string());
+    let pg_password = replica
+        .pg_password
+        .clone()
+        .or_else(|| config.pg_password.clone())
+        .unwrap_or_else(|| DEFAULT_PG_PASSWORD.to_string());
+    let mut pg_dbname = replica
+        .pg_dbname
+        .clone()
+        .or_else(|| config.pg_dbname.clone())
+        .unwrap_or_else(|| DEFAULT_PG_DBNAME.to_string());
+
+    if let Ok(test_db_name) = std::env::var("TEST_DB_NAME") {
+        if !test_db_name.is_empty() {
+            pg_dbname = test_db_name;
+        }
+    }
+
+    format!(
+        "postgresql://{pg_user}:{pg_password}@{pg_host}:{pg_port}/{pg_dbname}",
+    )
 }
 
 pub fn redis_conn_string(config: &Config) -> anyhow::Result<String> {

@@ -1,6 +1,6 @@
 use crate::error::AppError;
 use crate::h;
-use crate::rer_importer::inbox::get_inbox_messages;
+use crate::rer_importer::inbox::get_inbox_messages_with_conn;
 use crate::rer_importer::reports::types::ReportPreviewReq;
 use crate::rer_importer::types::InboxMessage;
 use crate::types::{Env, ShortContext};
@@ -39,8 +39,9 @@ pub async fn report_docx_kind_posts(
     req: &ReportPreviewReq,
     outpath: &Path,
 ) -> Result<(), AppError> {
+    let read_db = env.replica();
     let login = user.id().c(h!())?;
-    let logins = crate::users::get_organism_logins(&env.dbx, user)
+    let logins = crate::users::get_organism_logins(&read_db, user)
         .await
         .c(h!())?;
 
@@ -54,16 +55,26 @@ pub async fn report_docx_kind_posts(
     let mut current_req = req.req.clone();
     current_req.return_duplicates = Some(false);
 
-    let current_messages =
-        get_inbox_messages(&login, &logins, env, &current_req)
-            .await
-            .c(h!())?;
+    let current_messages = get_inbox_messages_with_conn(
+        &read_db,
+        &login,
+        &logins,
+        env,
+        &current_req,
+    )
+    .await
+    .c(h!())?;
 
     let previous_req = build_shifted_req(&current_req, -DAY_MS)?;
-    let previous_messages =
-        get_inbox_messages(&login, &logins, env, &previous_req)
-            .await
-            .c(h!())?;
+    let previous_messages = get_inbox_messages_with_conn(
+        &read_db,
+        &login,
+        &logins,
+        env,
+        &previous_req,
+    )
+    .await
+    .c(h!())?;
 
     let strict_networks = env.config.feature_strict_networks.unwrap_or(false);
 

@@ -29,14 +29,15 @@ pub async fn report_docx_kind_mouse(
     req: &super::types::ReportPreviewReq,
     outpath: &Path,
 ) -> Result<(), AppError> {
+    let read_db = env.replica();
     let login = user.id().c(h!())?;
-    let logins = crate::users::get_organism_logins(&env.dbx, user)
+    let logins = crate::users::get_organism_logins(&read_db, user)
         .await
         .c(h!())?;
     let width_unit = 1870;
     let messages: Vec<(i64, InboxMessage)> =
-        crate::rer_importer::inbox::get_inbox_messages(
-            &login, &logins, env, &req.req,
+        crate::rer_importer::inbox::get_inbox_messages_with_conn(
+            &read_db, &login, &logins, env, &req.req,
         )
         .await
         .c(h!())?;
@@ -80,7 +81,7 @@ pub async fn report_docx_kind_mouse(
         BTreeMap::new();
     let mut per_freq_messages: BTreeMap<String, Vec<(i64, InboxMessage)>> =
         BTreeMap::new();
-    let Some(zone_id) = crate::sigint::zone::get_user_zone_id(&env.dbx, &login)
+    let Some(zone_id) = crate::sigint::zone::get_user_zone_id(&read_db, &login)
         .await
         .c(h!())?
     else {
@@ -89,7 +90,7 @@ pub async fn report_docx_kind_mouse(
     let comp_freqs = comp_freq::Entity::find()
         .filter(comp_freq::Column::ZoneId.eq(zone_id))
         .filter(comp_freq::Column::Freq.is_in(uniq_freqs_sorted.clone()))
-        .all(&env.dbx)
+        .all(&read_db)
         .await
         .c(h!())?;
     let freq_first_seen: BTreeMap<String, NaiveDateTime> = comp_freqs
@@ -103,7 +104,7 @@ pub async fn report_docx_kind_mouse(
         .filter(
             comp_freq_callsign::Column::Freq.is_in(uniq_freqs_sorted.clone()),
         )
-        .all(&env.dbx)
+        .all(&read_db)
         .await
         .c(h!())?;
     let freq_callsign_first_seen: BTreeMap<(String, String), NaiveDateTime> =
@@ -166,7 +167,7 @@ pub async fn report_docx_kind_mouse(
     }
 
     let groups =
-        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
+        crate::messenger::group::get_identity_sigint_groups(&read_db, &login)
             .await
             .context(h!())?;
 
@@ -190,7 +191,7 @@ pub async fn report_docx_kind_mouse(
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(sigint_inbox_item::Column::Datetime.lte(date_to_dt.naive_utc()))
         .filter(datasource_group::Column::GroupMasterKey.is_in(&groups))
-        .all(&env.dbx)
+        .all(&read_db)
         .await
         .c(h!())?;
     let important_ids: BTreeSet<i64> = importants
@@ -218,7 +219,7 @@ pub async fn report_docx_kind_mouse(
         .filter(sigint_inbox_item::Column::Datetime.lte(date_to_dt.naive_utc()))
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(datasource_group::Column::GroupMasterKey.is_in(&groups))
-        .all(&env.dbx)
+        .all(&read_db)
         .await
         .c(h!())?;
     let bookmark_ids: BTreeSet<i64> = bookmarks
@@ -603,7 +604,7 @@ pub async fn report_docx_kind_mouse(
             )]));
         let datasource_map: BTreeMap<i64, datasource::Model> =
             datasource::Entity::find()
-                .all(&env.dbx)
+                .all(&read_db)
                 .await
                 .context(h!())?
                 .into_iter()
@@ -617,7 +618,7 @@ pub async fn report_docx_kind_mouse(
             signal_message::Entity::find()
                 .filter(signal_message::Column::Deleted.eq(false))
                 .filter(signal_message::Column::Id.is_in(message_ids.clone()))
-                .all(&env.dbx)
+                .all(&read_db)
                 .await
                 .context(h!())?
                 .into_iter()
@@ -628,7 +629,7 @@ pub async fn report_docx_kind_mouse(
                 .filter(
                     sigint_inbox_item::Column::Id.is_in(message_ids.clone()),
                 )
-                .all(&env.dbx)
+                .all(&read_db)
                 .await
                 .context(h!())?
                 .into_iter()
@@ -640,7 +641,7 @@ pub async fn report_docx_kind_mouse(
                     .is_in(message_ids.clone()),
             )
             .filter(sigint_comment::Column::Login.is_in(logins.clone()))
-            .all(&env.dbx)
+            .all(&read_db)
             .await
             .context(h!())?;
         let group_datasources_map = datasource_group::Entity::find()
@@ -648,7 +649,7 @@ pub async fn report_docx_kind_mouse(
             .column(datasource_group::Column::Id)
             .column(datasource_group::Column::DatasourceId)
             .into_tuple::<(i64, i64)>()
-            .all(&env.dbx)
+            .all(&read_db)
             .await
             .context(h!())?
             .into_iter()
@@ -979,14 +980,14 @@ pub async fn report_docx_kind_mouse(
                 continue;
             };
             // let Some(msg) = signal_message::Entity::find_by_id(message_id)
-            //     .one(&env.dbx)
+            //     .one(&read_db)
             //     .await.c(h!())?
             // else {
             //     continue;
             // };
             let Some(_inbox) =
                 sigint_inbox_item::Entity::find_by_id(message_id)
-                    .one(&env.dbx)
+                    .one(&read_db)
                     .await
                     .c(h!())?
             else {
@@ -995,7 +996,7 @@ pub async fn report_docx_kind_mouse(
             let m_comment = sigint_comment::Entity::find()
                 .filter(sigint_comment::Column::SignalMessageId.eq(message_id))
                 .filter(sigint_comment::Column::Login.is_in(logins.clone()))
-                .one(&env.dbx)
+                .one(&read_db)
                 .await
                 .c(h!())?;
             if let Some(extended_form) = m_comment.map(|x| x.comment) {
@@ -1071,13 +1072,14 @@ pub async fn report_xlsx_kind_pelengs(
     req: &super::types::ReportPreviewReq,
     _outpath: &PathBuf, // Marked as unused
 ) -> Result<(), AppError> {
+    let read_db = env.replica();
     let login = user.id().c(h!())?;
-    let logins = crate::users::get_organism_logins(&env.dbx, user)
+    let logins = crate::users::get_organism_logins(&read_db, user)
         .await
         .c(h!())?;
     let messages: Vec<(i64, InboxMessage)> =
-        crate::rer_importer::inbox::get_inbox_messages(
-            &login, &logins, env, &req.req,
+        crate::rer_importer::inbox::get_inbox_messages_with_conn(
+            &read_db, &login, &logins, env, &req.req,
         )
         .await
         .c(h!())?;
