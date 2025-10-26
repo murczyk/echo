@@ -164,6 +164,8 @@ async fn receive_once(
         .await
         .c(h!())?
         else {
+            wq.delete(&txn).await.c(h!())?;
+            txn.commit().await.c(h!())?;
             return Ok(());
         };
 
