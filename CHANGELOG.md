@@ -9,6 +9,7 @@
 
 ## NEXT
 
+- [#1637](https://github.com/echoua/echo/issues/1637) ✅ Оперативний: не підсвічувати сигнали за замовчуванням
 - [#1566](https://github.com/echoua/echo/issues/1566) Репліки: використання реплік для звітів
 - [#1634](https://github.com/echoua/echo/issues/1634) 🐞 Виправлено створення та видалення організмів
 - [#1626](https://github.com/echoua/echo/issues/1626) 🚨🐞 виправляємо логіку проставляння duplicate_of при обробці вхідних повідомлень. 
