@@ -192,12 +192,26 @@ pub async fn create_organism(
     req: &Json<CreateOrganismReq>,
 ) -> Result<organism::Model, AppError> {
     let txn = dbx.begin().await.c(h!())?;
+    let organism = create_organism_in_txn(&txn, req).await.c(h!())?;
+    txn.commit().await.c(h!())?;
+    Ok(organism)
+}
+
+pub async fn create_organism_in_txn(
+    txn: &DatabaseTransaction,
+    req: &Json<CreateOrganismReq>,
+) -> Result<organism::Model, AppError> {
+    // ===== IMPORTANT NOTE =====
+    // This helper intentionally performs the whole create flow inside the caller's
+    // transaction without committing it. Endpoints that only *simulate* creation
+    // (e.g. compute-available-groups-for-new) must call this helper instead of
+    // `create_organism` to avoid persisting preview data.
     let parent_id = match req.parent_id {
         None => None,
         Some(parent_id) => {
             let has_organism = organism::Entity::find_by_id(parent_id)
                 .filter(organism::Column::DeletedPermanently.eq(false))
-                .count(&txn)
+                .count(txn)
                 .await
                 .c(h!())?
                 == 1;
@@ -218,15 +232,14 @@ pub async fn create_organism(
         parent_id: Set(parent_id),
         deleted_permanently: NotSet,
     }
-    .insert(&txn)
+    .insert(txn)
     .await
     .c(h!())?;
 
-    upsert_organism_aors(&txn, req.aor_ids.clone(), organism.id)
+    upsert_organism_aors(txn, req.aor_ids.clone(), organism.id)
         .await
         .c(h!())?;
 
-    txn.commit().await.c(h!())?;
     Ok(organism)
 }
 

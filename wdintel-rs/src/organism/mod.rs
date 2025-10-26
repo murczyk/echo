@@ -279,8 +279,11 @@ pub async fn organism_compute_available_groups_for_new(
         .await
         .c(h!())?;
 
-    let txn = env.dbx.begin().await.c(h!())?; // DO NOT COMMIT IT!!!
-    let organism = bl::create_organism(&env.dbx, &req).await.c(h!())?;
+    // ===== DO NOT REMOVE =====
+    // We only emulate the organism to calculate group availability, so we must
+    // run everything inside a throwaway transaction and drop it WITHOUT commit.
+    let txn = env.dbx.begin().await.c(h!())?;
+    let organism = bl::create_organism_in_txn(&txn, &req).await.c(h!())?;
 
     let groups = load_organism_group_ids(&txn, organism.id).await.c(h!())?;
 
