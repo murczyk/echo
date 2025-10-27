@@ -155,22 +155,22 @@ async fn receive_once(
         .await
         .c(h!())?;
 
-        let Some(signal_message) = crate::sigint::worker::unstage_message(
+        let res = crate::sigint::worker::unstage_message(
             &txn,
             &wq.group_jid,
             signal_message,
             m_duplicate_of,
         )
         .await
-        .c(h!())?
-        else {
+        .c(h!())?;
+        if res.is_same_group_duplicate {
             wq.delete(&txn).await.c(h!())?;
             txn.commit().await.c(h!())?;
             return Ok(());
         };
 
         let signal_message =
-            id::update_message_with_uid(&txn, config, signal_message)
+            id::update_message_with_uid(&txn, config, res.message)
                 .await
                 .c(h!())?;
 

@@ -620,20 +620,22 @@ pub async fn receive_once(
     )
     .await
     .c(h!())?;
-    let signal_message = crate::sigint::worker::unstage_message(
+    let res = crate::sigint::worker::unstage_message(
         txn,
         &m.group_id,
         signal_message,
         m_duplicate_of,
     )
     .await
-    .c(h!())?
     .c(h!())?;
 
-    let signal_message =
-        id::update_message_with_uid(txn, config, signal_message)
-            .await
-            .c(h!())?;
+    if res.is_same_group_duplicate {
+        return Ok(res.message.message_uid.context(h!())?);
+    }
+
+    let signal_message = id::update_message_with_uid(txn, config, res.message)
+        .await
+        .c(h!())?;
 
     let message_uid = signal_message.message_uid.clone().c(h!())?;
 

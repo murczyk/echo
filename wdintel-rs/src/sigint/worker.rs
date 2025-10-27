@@ -1,5 +1,6 @@
 use super::*;
 use crate::messenger::id;
+use crate::messenger::types::UnstageResult;
 use crate::types::ShortContext;
 use log::*;
 
@@ -444,15 +445,15 @@ pub async fn process_incoming_message_restapi(
             .await
             .c(h!())?;
 
-    let Some(message) =
+    let res =
         unstage_message(&txn, &group_info.group_id, message, m_duplicate_of)
             .await
-            .c(h!())?
-    else {
+            .c(h!())?;
+    if res.is_same_group_duplicate {
         return Ok(());
     };
 
-    id::update_message_with_uid(&txn, config, message)
+    id::update_message_with_uid(&txn, config, res.message)
         .await
         .c(h!())?;
     txn.commit().await.c(h!())?;
@@ -512,7 +513,7 @@ pub async fn unstage_message<'a, 'async_trait, C>(
     master_key: &str,
     message: signal_message::Model,
     m_duplicate_of: Option<(signal_message::Model, datasource_group::Model)>,
-) -> anyhow::Result<Option<signal_message::Model>>
+) -> anyhow::Result<UnstageResult>
 where
     C: ConnectionTrait + 'async_trait,
 {
@@ -521,7 +522,7 @@ where
         if let Some((original, group)) = m_duplicate_of {
             if group.group_master_key.eq(master_key) {
                 info!("> skipping same-group duplicate");
-                return Ok(None);
+                return Ok(UnstageResult{ message: original, is_same_group_duplicate: true });
             }
             Some(original.id)
         } else {
@@ -532,7 +533,10 @@ where
     model.deleted = Set(false);
     model.duplicate_of = Set(m_original_id);
     let message = model.update(dbx).await.c(h!())?;
-    Ok(Some(message))
+    Ok(UnstageResult {
+        message,
+        is_same_group_duplicate: false,
+    })
 }
 
 /// Shared logic between signal and buran api integration

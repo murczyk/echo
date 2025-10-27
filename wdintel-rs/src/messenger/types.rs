@@ -1,3 +1,4 @@
+use crate::entities::signal_message;
 use crate::messenger::group::types::SignalGroupStats;
 use crate::sigint::aor::types::AreaOfResponsibility;
 use chrono::NaiveDateTime;
@@ -136,4 +137,9 @@ pub struct GroupUpdateReq {
     /// Deprecated - use area_of_responsibility_ids instead
     pub area_of_responsibility_id: Option<i64>,
     pub area_of_responsibility_ids: Option<Vec<i64>>,
+}
+
+pub struct UnstageResult {
+    pub message: signal_message::Model,
+    pub is_same_group_duplicate: bool,
 }
