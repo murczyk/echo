@@ -18,7 +18,7 @@ pub fn extract_post(inp: &str) -> Result<Option<String>, AppError> {
     '_if: {
         lazy_static! {
             static ref RE: Regex = Regex::new(
-                r#"Отримано з поста "(?P<post>[a-zA-Zа-яіїА-ЯІЇ0-9)(_/ \.]+)""#
+                r#"Отримано з поста "(?P<post>[a-zA-Zа-яіїА-ЯІЇ0-9)(_/ \.\-]+)""#
             )
             .unwrap();
         }
@@ -36,7 +36,7 @@ pub fn extract_post(inp: &str) -> Result<Option<String>, AppError> {
     '_if: {
         lazy_static! {
             static ref RE: Regex = Regex::new(
-                r#"Отримано з поста (?P<post>[a-zA-Zа-яіїА-ЯІЇ0-9)(_/ \.]+)"#
+                r#"Отримано з поста (?P<post>[a-zA-Zа-яіїА-ЯІЇ0-9)(_/ \.\-]+)"#
             )
             .unwrap();
         }
@@ -482,5 +482,20 @@ Kupol80
 - плюс, плюс, спасибо. Барс, Барс, Туар, Барс, Барс."#;
         let res = extract_post(body).unwrap();
         assert_eq!(res, None)
+    }
+
+    #[test]
+    fn extract_post_cfp_with_dash_and_cyrillic_suffix() {
+        let body = r#"27.10.2025_20:35 F=154.2500(МГц)
+Отримано з поста "ЦФП10-М6"
+р/м управління мінбатр 3 мсб 255 мсп 20 мсд 8 А (РАЙОН НОВООЛЕНІВКА, ТАРАСІВКА)
+БИЗОН
+МАЛЫШ
+НВ
+- (1) МАЛЫШ я БИЗОН на приеме
+- (2) БИЗОН я МАЛЫШ, что там по нашей ситуации, какие наши действия?
+- Ожидайте, едут к вам на помощь"#;
+        let res = extract_post(body).unwrap();
+        assert_eq!(res.unwrap(), "ЦФП10-М6".to_string())
     }
 }
