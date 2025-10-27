@@ -2,13 +2,14 @@ use crate::config::{read_config, Config};
 use crate::entities::sea_orm_active_enums::EchoMessageSource;
 use crate::entities::*;
 use crate::error::{AppError, ContextAndError};
-use crate::h;
 use crate::location::SettlementsData;
 use crate::messenger::bl::list_accounts;
 use crate::messenger::id;
 use crate::messenger::types::{EchoAccountF1, Message};
+use crate::messenger::worker_pool::*;
 use crate::types::*;
 use crate::utils::worker_watch;
+use crate::{h, new_pg_pool_from_mode};
 use chrono::*;
 use echo_im::types::{MessageF1, MessageSource};
 use echo_migration::Expr;
@@ -112,22 +113,29 @@ async fn spawn_new_worker(
     info!("spawning new worker: {worker_name}");
     sleep(Duration::from_secs(10)).await;
     tokio::spawn(async move {
-        let context = match crate::utils::setup_worker(mode).await {
+        let dbx = match new_pg_pool_from_mode(mode).await {
             Ok(c) => c,
             Err(e) => {
-                error!("failed to spawn worker {worker_name}: {e:?}");
+                error!("failed to connect to db for {worker_name}: {e:?}");
                 return;
             }
         };
-        let (config, settlements, rq, mut redis, dbx) = context;
+        let mut message_processor_pool = match mk_message_processor_pool(
+            mode, 4,
+        )
+        .await
+        {
+            Ok(c) => c,
+            Err(e) => {
+                error ! ("failed to spawn message_processor_pool for {worker_name}: {e:?}");
+                return;
+            }
+        };
         loop {
             let is_healthy = sync_client_once(
                 cli.clone(),
-                &config,
-                settlements.clone(),
-                &rq,
-                &mut redis,
                 &dbx,
+                &mut message_processor_pool,
             )
             .await;
             if !is_healthy {
@@ -140,11 +148,8 @@ async fn spawn_new_worker(
 
 async fn sync_client_once(
     cli: EchoAccountF1,
-    config: &Config,
-    settlements: Arc<RwLock<SettlementsData>>,
-    rq: &Client,
-    redis: &mut ConnectionManager,
     dbx: &DatabaseConnection,
+    processor_pool: &mut ProcessorPool,
 ) -> bool {
     let Some(client_name) = cli.system_service_name else {
         trace!("client name is missing, skipping: {cli:?}");
@@ -156,10 +161,7 @@ async fn sync_client_once(
         &client_name,
         &mut client_groups_sync_ts_map,
         dbx,
-        redis,
-        config,
-        rq,
-        settlements.clone(),
+        processor_pool,
     )
     .await
     {
@@ -187,10 +189,7 @@ async fn receive_thread(
     client_name: &str,
     client_groups_sync_ts_map: &mut BTreeMap<String, NaiveDateTime>,
     dbx: &DatabaseConnection,
-    redis: &mut ConnectionManager,
-    config: &Config,
-    rq: &Client,
-    settlements: Arc<RwLock<SettlementsData>>,
+    processor_pool: &mut ProcessorPool,
 ) -> Result<(), AppError> {
     let datasource = load_client_datasource(dbx, client_name).await.c(h!())?;
     let datasource_id = datasource.id;
@@ -209,7 +208,7 @@ async fn receive_thread(
         .await
         .c(h!())?;
     txn.commit().await.c(h!())?;
-    sync_inbox(Utc::now(), dbx, client_name, redis, config, rq, settlements)
+    sync_inbox(Utc::now(), dbx, client_name, processor_pool)
         .await
         .c(h!())?;
 
@@ -485,10 +484,7 @@ async fn sync_inbox(
     inbox_sync_at: DateTime<Utc>,
     db: &DatabaseConnection,
     client_name: &str,
-    redis: &mut ConnectionManager,
-    config: &Config,
-    rq: &Client,
-    settlements: Arc<RwLock<SettlementsData>>,
+    processor_pool: &mut ProcessorPool,
 ) -> anyhow::Result<()> {
     let datasource = load_client_datasource(db, client_name).await.c(h!())?;
     let datasource_id = datasource.id;
@@ -506,62 +502,11 @@ async fn sync_inbox(
 
     sync_senders(db, &inbox_messages).await.c(h!())?;
 
-    let total_num = inbox_messages.len();
-    for (i, m) in inbox_messages.into_iter().enumerate() {
-        {
-            debug!(
-                "[{client_name}] processing inbox message {} of {}; m.id={}",
-                i + 1,
-                total_num,
-                m.id.clone().unwrap_or("".to_string())
-            );
-            let txn = db.begin().await.c(h!())?;
-            debug!(
-                "[{client_name}] process_inbox_message_nofail client_name={}; message_id={}",
-                client_name,
-                m.id.clone().unwrap_or("".to_string())
-            );
-            // let current_time = Utc::now().naive_utc();
-            // if m.timestamp < current_time - TimeDelta::minutes(15) {
-            //     warn!(
-            //         "[{}] message is too old: created at {}, current time: {}; skipping: [{}] {}",
-            //         client_name, m.timestamp, current_time, m.internal_id, m.text
-            //     );
-            //     return;
-            // }
-            let Some(group_id) = m.group_id else {
-                warn!("[{client_name}] skipping message {:?} with no group, possibly a private message: {}", m.id, m.text);
-                continue;
-            };
-            let message = Message {
-                body: m.text,
-                group_id,
-                sender: m.sender.map(|s| s.uuid),
-                timestamp: m.timestamp,
-                datasource_id: datasource.id,
-            };
-            if let Err(e) = receive_once(
-                message,
-                m.attachments.into_iter().map(|a| a.path).collect_vec(),
-                redis,
-                settlements.clone(),
-                rq,
-                config,
-                &txn,
-                false,
-            )
-            .await
-            {
-                warn!(
-                    "[{client_name}] bot failed to process a message: {e:#?}"
-                );
-            }
-            echo_im::mark_inbox_as_seen(client_name, vec![m.internal_id], &txn)
-                .await
-                .c(h!())?;
-            txn.commit().await.c(h!())?;
-        }
-    }
+    let items = inbox_messages
+        .into_iter()
+        .map(|m| (m, datasource.id, client_name.to_string()))
+        .collect_vec();
+    process_queue(items, processor_pool).await.context(h!())?;
     Ok(())
 }
 

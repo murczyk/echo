@@ -18,6 +18,7 @@ pub mod id;
 pub mod tests;
 pub mod types;
 pub mod worker;
+pub mod worker_pool;
 
 #[post("/api/messenger/list")]
 pub async fn list_messengers(
