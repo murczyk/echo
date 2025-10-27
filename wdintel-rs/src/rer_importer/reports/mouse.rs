@@ -496,7 +496,8 @@ pub async fn report_docx_kind_mouse(
     let table = Table::new(rows).width(width_unit * 12, WidthType::Dxa);
 
     // Bulk load all data once to avoid N+1 queries
-    let all_message_ids: Vec<i64> = messages.iter().map(|(id, _)| *id).collect();
+    let all_message_ids: Vec<i64> =
+        messages.iter().map(|(id, _)| *id).collect();
 
     let datasource_map: BTreeMap<i64, datasource::Model> =
         datasource::Entity::find()
@@ -520,7 +521,9 @@ pub async fn report_docx_kind_mouse(
 
     let inbox_map: BTreeMap<i64, sigint_inbox_item::Model> =
         sigint_inbox_item::Entity::find()
-            .filter(sigint_inbox_item::Column::Id.is_in(all_message_ids.clone()))
+            .filter(
+                sigint_inbox_item::Column::Id.is_in(all_message_ids.clone()),
+            )
             .all(&read_db)
             .await
             .context(h!())?
@@ -528,28 +531,32 @@ pub async fn report_docx_kind_mouse(
             .map(|item| (item.id, item))
             .collect();
 
-    let all_comments: Vec<sigint_comment::Model> = sigint_comment::Entity::find()
-        .filter(sigint_comment::Column::SignalMessageId.is_in(all_message_ids))
-        .filter(sigint_comment::Column::Login.is_in(logins.clone()))
-        .all(&read_db)
-        .await
-        .context(h!())?;
+    let all_comments: Vec<sigint_comment::Model> =
+        sigint_comment::Entity::find()
+            .filter(
+                sigint_comment::Column::SignalMessageId.is_in(all_message_ids),
+            )
+            .filter(sigint_comment::Column::Login.is_in(logins.clone()))
+            .all(&read_db)
+            .await
+            .context(h!())?;
 
     let comments_map: BTreeMap<i64, sigint_comment::Model> = all_comments
         .into_iter()
         .map(|comment| (comment.signal_message_id, comment))
         .collect();
 
-    let group_datasources_map: HashMap<i64, i64> = datasource_group::Entity::find()
-        .select_only()
-        .column(datasource_group::Column::Id)
-        .column(datasource_group::Column::DatasourceId)
-        .into_tuple::<(i64, i64)>()
-        .all(&read_db)
-        .await
-        .context(h!())?
-        .into_iter()
-        .collect();
+    let group_datasources_map: HashMap<i64, i64> =
+        datasource_group::Entity::find()
+            .select_only()
+            .column(datasource_group::Column::Id)
+            .column(datasource_group::Column::DatasourceId)
+            .into_tuple::<(i64, i64)>()
+            .all(&read_db)
+            .await
+            .context(h!())?
+            .into_iter()
+            .collect();
 
     let mut rows2: Vec<TableRow> = vec![];
     rows2.push(TableRow::new(vec![

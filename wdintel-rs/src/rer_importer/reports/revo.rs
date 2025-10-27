@@ -78,7 +78,7 @@ pub async fn report_docx_kind_revo(
     outpath: &Path,
 ) -> Result<(), AppError> {
     info!("report_docx_kind_revo started");
-    let read_db = env.replica();
+    let read_db = env.dbx.clone();
     let login = user.id().c(h!())?;
     let logins = crate::users::get_organism_logins(&read_db, user)
         .await
@@ -97,15 +97,10 @@ pub async fn report_docx_kind_revo(
         _ => 0.0,
     };
 
-    let mut report = collect_report(
-        messages,
-        logins.clone(),
-        env,
-        &read_db,
-        range_khz,
-    )
-    .await
-    .context(h!())?;
+    let mut report =
+        collect_report(messages, logins.clone(), env, &read_db, range_khz)
+            .await
+            .context(h!())?;
     info!("report_docx_kind_revo data collected");
     report
         .hostile_networks
@@ -372,10 +367,7 @@ async fn collect_report(
         .map(|s| ((s.freq.clone(), s.master_key.clone()), s))
         .collect::<HashMap<_, _>>();
 
-    let message_ids: Vec<i64> = messages
-        .iter()
-        .map(|(id, _)| *id)
-        .collect();
+    let message_ids: Vec<i64> = messages.iter().map(|(id, _)| *id).collect();
 
     let mut comments = BTreeMap::new();
     // Load all comments in a single query if possible, otherwise chunk
@@ -393,7 +385,9 @@ async fn collect_report(
         // For very large datasets, chunk to avoid query size limits
         for ids in message_ids.chunks(20000) {
             sigint_comment::Entity::find()
-                .filter(sigint_comment::Column::SignalMessageId.is_in(ids.to_vec()))
+                .filter(
+                    sigint_comment::Column::SignalMessageId.is_in(ids.to_vec()),
+                )
                 .all(dbx)
                 .await
                 .context(h!())?
