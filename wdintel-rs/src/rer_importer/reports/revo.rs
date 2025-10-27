@@ -12,6 +12,7 @@ use chrono::prelude::*;
 use docx_rs::*;
 use sea_orm::*;
 use std::path::Path;
+use std::time::Instant;
 
 const WIDTH_UNIT: usize = 1870;
 const DTM_FORMAT: &str = "%Y.%m.%d %H:%M:%S";
@@ -77,18 +78,25 @@ pub async fn report_docx_kind_revo(
     req: &super::types::ReportPreviewReq,
     outpath: &Path,
 ) -> Result<(), AppError> {
+    let start_total = Instant::now();
     info!("report_docx_kind_revo started");
+
+    let start = Instant::now();
     let read_db = env.dbx.clone();
     let login = user.id().c(h!())?;
     let logins = crate::users::get_organism_logins(&read_db, user)
         .await
         .context(h!())?;
+    info!("get_organism_logins took: {:?}", start.elapsed());
+
+    let start = Instant::now();
     let messages: Vec<(i64, InboxMessage)> =
         crate::rer_importer::inbox::get_inbox_messages_with_conn(
             &read_db, &login, &logins, env, &req.req,
         )
         .await
         .context(h!())?;
+    info!("get_inbox_messages_with_conn took: {:?}, messages count: {}", start.elapsed(), messages.len());
 
     let range_khz = match req.report_type {
         Some(ReportType::Reo(ReoReportSettings {
@@ -97,17 +105,21 @@ pub async fn report_docx_kind_revo(
         _ => 0.0,
     };
 
+    let start = Instant::now();
     let mut report =
         collect_report(messages, logins.clone(), env, &read_db, range_khz)
             .await
             .context(h!())?;
-    info!("report_docx_kind_revo data collected");
+    info!("collect_report took: {:?}", start.elapsed());
+
+    let start = Instant::now();
     report
         .hostile_networks
         .sort_by_key(|x| -(x.activity.seances_qty as i64));
     report
         .undefined_networks
         .sort_by_key(|x| -(x.activity.seances_qty as i64));
+    info!("sorting networks took: {:?}", start.elapsed());
 
     let network_summary_total =
         report.summary.identified_qty + report.summary.unidentified_qty;
@@ -118,6 +130,7 @@ pub async fn report_docx_kind_revo(
                 report.summary.unidentified_qty
         );
 
+    let start = Instant::now();
     let config = DocxConfig {
         columns_count: 6,
         width_unit: WIDTH_UNIT,
@@ -175,11 +188,14 @@ pub async fn report_docx_kind_revo(
         )
         .add_paragraph(Paragraph::new())
         .add_table(table_amrp);
-    info!("report_docx_kind_revo done, saving to file...");
+    info!("building docx took: {:?}", start.elapsed());
+
+    let start = Instant::now();
     let file = std::fs::File::create(outpath)?;
     docx.build().pack(file).context(h!())?;
+    info!("writing docx to file took: {:?}", start.elapsed());
 
-    info!("report_docx_kind_revo completed");
+    info!("report_docx_kind_revo completed in total: {:?}", start_total.elapsed());
     Ok(())
 }
 
@@ -272,6 +288,9 @@ async fn collect_report(
     dbx: &DatabaseConnection,
     range_khz: f64,
 ) -> anyhow::Result<Report> {
+    let start_collect = Instant::now();
+    info!("collect_report: extracting groups and freqs");
+    let start = Instant::now();
     let groups = messages
         .iter()
         .flat_map(|(_, m)| m.group_master_key.clone())
@@ -282,7 +301,10 @@ async fn collect_report(
         .flat_map(|(_, m)| m.freq.clone())
         .unique()
         .collect::<Vec<_>>();
+    info!("collect_report: extracting groups/freqs took: {:?}, groups: {}, freqs: {}", start.elapsed(), groups.len(), freqs.len());
 
+    info!("collect_report: loading all_networks from DB");
+    let start = Instant::now();
     let all_networks = sigint_network::Entity::find()
         .join(
             JoinType::InnerJoin,
@@ -312,7 +334,10 @@ async fn collect_report(
         .into_iter()
         .map(|s| ((s.freq.clone(), None), s))
         .collect::<HashMap<_, _>>();
+    info!("collect_report: loading all_networks took: {:?}, count: {}", start.elapsed(), all_networks.len());
 
+    info!("collect_report: loading filtered networks from DB");
+    let start = Instant::now();
     let mut networks = sigint_network::Entity::find()
         .join(
             JoinType::LeftJoin,
@@ -366,9 +391,12 @@ async fn collect_report(
         .into_iter()
         .map(|s| ((s.freq.clone(), s.master_key.clone()), s))
         .collect::<HashMap<_, _>>();
+    info!("collect_report: loading filtered networks took: {:?}, count: {}", start.elapsed(), networks.len());
 
     let message_ids: Vec<i64> = messages.iter().map(|(id, _)| *id).collect();
 
+    info!("collect_report: loading comments from DB");
+    let start = Instant::now();
     let mut comments = BTreeMap::new();
     // Load all comments in a single query if possible, otherwise chunk
     if message_ids.len() <= 20000 {
@@ -397,10 +425,14 @@ async fn collect_report(
                 });
         }
     }
+    info!("collect_report: loading comments took: {:?}, count: {}", start.elapsed(), comments.len());
 
+    info!("collect_report: merging all_networks into networks");
+    let start = Instant::now();
     for (k, v) in all_networks {
         networks.insert(k, v);
     }
+    info!("collect_report: merging networks took: {:?}", start.elapsed());
 
     let mut networks_dictionary = {
         let mut result = HashMap::new();
@@ -426,6 +458,8 @@ async fn collect_report(
     }
     let callsigns = callsigns_set.into_iter().collect_vec();
 
+    info!("collect_report: loading unit_callsigns from DB");
+    let start = Instant::now();
     let unit_callsigns = sigint_unit::Entity::find()
         .join(
             JoinType::InnerJoin,
@@ -455,7 +489,10 @@ async fn collect_report(
         .into_iter()
         .map(|c| ((c.network_id, c.callsign.clone()), c))
         .collect::<HashMap<_, _>>();
+    info!("collect_report: loading unit_callsigns took: {:?}, count: {}", start.elapsed(), unit_callsigns.len());
 
+    info!("collect_report: processing messages");
+    let start = Instant::now();
     let mut network_comments_map = HashMap::new();
     let mut linked_callsigns_map = HashMap::new();
     let mut unlinked_callsigns_map = HashMap::new();
@@ -553,7 +590,10 @@ async fn collect_report(
             network_comments_map.insert(summary.id, list);
         }
     }
+    info!("collect_report: processing messages took: {:?}", start.elapsed());
 
+    info!("collect_report: building network rows");
+    let start = Instant::now();
     let mut identified_qty = 0;
     let mut unidentified_qty = 0;
     let mut all_hostile_networks = vec![];
@@ -667,6 +707,11 @@ async fn collect_report(
             all_undefined_networks.push(row);
         }
     }
+    info!("collect_report: building network rows took: {:?}, identified: {}, undefined: {}",
+          start.elapsed(), all_hostile_networks.len(), all_undefined_networks.len());
+
+    info!("collect_report: sorting and filtering undefined networks");
+    let start = Instant::now();
     all_undefined_networks.sort_by_key(|n| n.activity.seances_qty);
     all_undefined_networks.reverse();
     let total_undefined_seances_count: u64 = all_undefined_networks
@@ -683,6 +728,8 @@ async fn collect_report(
             break;
         }
     }
+    info!("collect_report: sorting/filtering undefined networks took: {:?}", start.elapsed());
+
     let report = Report {
         summary: ReportSummary {
             identified_qty,
@@ -697,5 +744,6 @@ async fn collect_report(
         skipped_callsigns.into_iter().sorted_unstable().join(", ")
     );
 
+    info!("collect_report completed in total: {:?}", start_collect.elapsed());
     Ok(report)
 }
