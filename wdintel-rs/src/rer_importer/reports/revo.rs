@@ -98,7 +98,7 @@ pub async fn report_docx_kind_revo(
     };
 
     let mut report = collect_report(
-        messages.clone(),
+        messages,
         logins.clone(),
         env,
         &read_db,
@@ -372,18 +372,16 @@ async fn collect_report(
         .map(|s| ((s.freq.clone(), s.master_key.clone()), s))
         .collect::<HashMap<_, _>>();
 
-    let message_ids = messages
+    let message_ids: Vec<i64> = messages
         .iter()
         .map(|(id, _)| *id)
-        .collect_vec()
-        .chunks(20000)
-        .map(|slice| slice.to_vec())
-        .collect_vec();
+        .collect();
 
     let mut comments = BTreeMap::new();
-    for ids in message_ids {
+    // Load all comments in a single query if possible, otherwise chunk
+    if message_ids.len() <= 20000 {
         sigint_comment::Entity::find()
-            .filter(sigint_comment::Column::SignalMessageId.is_in(ids))
+            .filter(sigint_comment::Column::SignalMessageId.is_in(message_ids))
             .all(dbx)
             .await
             .context(h!())?
@@ -391,6 +389,19 @@ async fn collect_report(
             .for_each(|c| {
                 comments.insert(c.signal_message_id, c.comment);
             });
+    } else {
+        // For very large datasets, chunk to avoid query size limits
+        for ids in message_ids.chunks(20000) {
+            sigint_comment::Entity::find()
+                .filter(sigint_comment::Column::SignalMessageId.is_in(ids.to_vec()))
+                .all(dbx)
+                .await
+                .context(h!())?
+                .into_iter()
+                .for_each(|c| {
+                    comments.insert(c.signal_message_id, c.comment);
+                });
+        }
     }
 
     for (k, v) in all_networks {
@@ -411,11 +422,11 @@ async fn collect_report(
     }
 
     let mut callsigns_set = HashSet::new();
-    for (_id, message) in messages.clone() {
-        for c in message.callsigns {
+    for (_id, message) in &messages {
+        for c in &message.callsigns {
             callsigns_set.insert(c.clone());
         }
-        for c in message.callsigns_alg2 {
+        for c in &message.callsigns_alg2 {
             callsigns_set.insert(c.clone());
         }
     }

@@ -495,6 +495,62 @@ pub async fn report_docx_kind_mouse(
     }
     let table = Table::new(rows).width(width_unit * 12, WidthType::Dxa);
 
+    // Bulk load all data once to avoid N+1 queries
+    let all_message_ids: Vec<i64> = messages.iter().map(|(id, _)| *id).collect();
+
+    let datasource_map: BTreeMap<i64, datasource::Model> =
+        datasource::Entity::find()
+            .all(&read_db)
+            .await
+            .context(h!())?
+            .into_iter()
+            .map(|datasource| (datasource.id, datasource))
+            .collect();
+
+    let message_map: BTreeMap<i64, signal_message::Model> =
+        signal_message::Entity::find()
+            .filter(signal_message::Column::Deleted.eq(false))
+            .filter(signal_message::Column::Id.is_in(all_message_ids.clone()))
+            .all(&read_db)
+            .await
+            .context(h!())?
+            .into_iter()
+            .map(|item| (item.id, item))
+            .collect();
+
+    let inbox_map: BTreeMap<i64, sigint_inbox_item::Model> =
+        sigint_inbox_item::Entity::find()
+            .filter(sigint_inbox_item::Column::Id.is_in(all_message_ids.clone()))
+            .all(&read_db)
+            .await
+            .context(h!())?
+            .into_iter()
+            .map(|item| (item.id, item))
+            .collect();
+
+    let all_comments: Vec<sigint_comment::Model> = sigint_comment::Entity::find()
+        .filter(sigint_comment::Column::SignalMessageId.is_in(all_message_ids))
+        .filter(sigint_comment::Column::Login.is_in(logins.clone()))
+        .all(&read_db)
+        .await
+        .context(h!())?;
+
+    let comments_map: BTreeMap<i64, sigint_comment::Model> = all_comments
+        .into_iter()
+        .map(|comment| (comment.signal_message_id, comment))
+        .collect();
+
+    let group_datasources_map: HashMap<i64, i64> = datasource_group::Entity::find()
+        .select_only()
+        .column(datasource_group::Column::Id)
+        .column(datasource_group::Column::DatasourceId)
+        .into_tuple::<(i64, i64)>()
+        .all(&read_db)
+        .await
+        .context(h!())?
+        .into_iter()
+        .collect();
+
     let mut rows2: Vec<TableRow> = vec![];
     rows2.push(TableRow::new(vec![
         TableCell::new()
@@ -606,58 +662,7 @@ pub async fn report_docx_kind_mouse(
                     )
                     .align(docx_rs::alignment_type::AlignmentType::Center),
             )]));
-        let datasource_map: BTreeMap<i64, datasource::Model> =
-            datasource::Entity::find()
-                .all(&read_db)
-                .await
-                .context(h!())?
-                .into_iter()
-                .map(|datasource| (datasource.id, datasource))
-                .collect();
-        let message_ids = freq_msgs
-            .iter()
-            .map(|(message_id, _)| *message_id)
-            .collect::<Vec<_>>();
-        let message_map: BTreeMap<i64, signal_message::Model> =
-            signal_message::Entity::find()
-                .filter(signal_message::Column::Deleted.eq(false))
-                .filter(signal_message::Column::Id.is_in(message_ids.clone()))
-                .all(&read_db)
-                .await
-                .context(h!())?
-                .into_iter()
-                .map(|item| (item.id, item))
-                .collect();
-        let inbox_map: BTreeMap<i64, sigint_inbox_item::Model> =
-            sigint_inbox_item::Entity::find()
-                .filter(
-                    sigint_inbox_item::Column::Id.is_in(message_ids.clone()),
-                )
-                .all(&read_db)
-                .await
-                .context(h!())?
-                .into_iter()
-                .map(|item| (item.id, item))
-                .collect();
-        let comments = sigint_comment::Entity::find()
-            .filter(
-                sigint_comment::Column::SignalMessageId
-                    .is_in(message_ids.clone()),
-            )
-            .filter(sigint_comment::Column::Login.is_in(logins.clone()))
-            .all(&read_db)
-            .await
-            .context(h!())?;
-        let group_datasources_map = datasource_group::Entity::find()
-            .select_only()
-            .column(datasource_group::Column::Id)
-            .column(datasource_group::Column::DatasourceId)
-            .into_tuple::<(i64, i64)>()
-            .all(&read_db)
-            .await
-            .context(h!())?
-            .into_iter()
-            .collect::<HashMap<_, _>>();
+        // Use pre-loaded maps instead of querying inside loop
         for (message_id, message) in freq_msgs {
             let Some(freq) = message.freq.as_ref() else {
                 continue;
@@ -695,10 +700,7 @@ pub async fn report_docx_kind_mouse(
             if bookmark_ids.contains(&message_id) {
                 need_highlight = true;
             }
-            let m_comment = comments
-                .iter()
-                .find(|x| x.signal_message_id.eq(&message_id))
-                .cloned();
+            let m_comment = comments_map.get(&message_id).cloned();
             let mut full_text =
                 message_full_text(&msg, &inbox, &datasource, &m_comment)?;
             if need_highlight {
@@ -983,26 +985,11 @@ pub async fn report_docx_kind_mouse(
             let Some(timestamp) = message.timestamp.as_ref() else {
                 continue;
             };
-            // let Some(msg) = signal_message::Entity::find_by_id(message_id)
-            //     .one(&read_db)
-            //     .await.c(h!())?
-            // else {
-            //     continue;
-            // };
-            let Some(_inbox) =
-                sigint_inbox_item::Entity::find_by_id(message_id)
-                    .one(&read_db)
-                    .await
-                    .c(h!())?
-            else {
+            // Use pre-loaded maps instead of querying
+            let Some(_inbox) = inbox_map.get(&message_id) else {
                 continue;
             };
-            let m_comment = sigint_comment::Entity::find()
-                .filter(sigint_comment::Column::SignalMessageId.eq(message_id))
-                .filter(sigint_comment::Column::Login.is_in(logins.clone()))
-                .one(&read_db)
-                .await
-                .c(h!())?;
+            let m_comment = comments_map.get(&message_id).cloned();
             if let Some(extended_form) = m_comment.map(|x| x.comment) {
                 let paragraph =
                     Paragraph::new().add_run(Run::new().add_text(format!(
