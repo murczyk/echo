@@ -48,8 +48,9 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
                 .unwrap_or(DEFAULT_PG_PORT);
             match crate::new_pg_pool_from_replica(&config, &replica).await {
                 Ok(pool) => {
-                    info!("replica pool ready {host}:{port}");
-                    replicas.push(pool);
+                    let label = format!("{host}:{port}");
+                    info!("replica pool ready {label}");
+                    replicas.push(ReplicaPool { conn: pool, label });
                 }
                 Err(err) => {
                     warn!("failed to connect replica {host}:{port}: {err:?}");

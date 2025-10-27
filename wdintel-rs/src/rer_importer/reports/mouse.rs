@@ -29,7 +29,11 @@ pub async fn report_docx_kind_mouse(
     req: &super::types::ReportPreviewReq,
     outpath: &Path,
 ) -> Result<(), AppError> {
-    let read_db = env.replica();
+    let (read_db, replica_label) = env.replica_with_label();
+    match replica_label {
+        Some(label) => info!("Mouse report using replica {label}"),
+        None => info!("Mouse report using primary database"),
+    }
     let login = user.id().c(h!())?;
     let logins = crate::users::get_organism_logins(&read_db, user)
         .await

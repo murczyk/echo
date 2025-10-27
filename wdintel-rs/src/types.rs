@@ -109,7 +109,13 @@ pub struct Env {
     pub settlements: Arc<RwLock<crate::location::SettlementsData>>,
     pub version: String,
     pub callsigns_whitelist: HashSet<String>,
-    pub replicas: Vec<sea_orm::DatabaseConnection>,
+    pub replicas: Vec<ReplicaPool>,
+}
+
+#[derive(Clone)]
+pub struct ReplicaPool {
+    pub conn: sea_orm::DatabaseConnection,
+    pub label: String,
 }
 
 impl std::fmt::Display for Mode {
@@ -135,14 +141,20 @@ impl Env {
     }
 
     /// Returns a random replica connection if available, otherwise falls back to the primary DB connection.
-    pub fn replica(&self) -> sea_orm::DatabaseConnection {
+    pub fn replica_with_label(
+        &self,
+    ) -> (sea_orm::DatabaseConnection, Option<String>) {
         if self.replicas.is_empty() {
-            return self.dbx.clone();
+            return (self.dbx.clone(), None);
         }
-        self.replicas
-            .choose(&mut rand::rng())
-            .cloned()
-            .unwrap_or_else(|| self.dbx.clone())
+        match self.replicas.choose(&mut rand::rng()).cloned() {
+            Some(pool) => (pool.conn.clone(), Some(pool.label.clone())),
+            None => (self.dbx.clone(), None),
+        }
+    }
+
+    pub fn replica(&self) -> sea_orm::DatabaseConnection {
+        self.replica_with_label().0
     }
 }
 
