@@ -44,4 +44,4 @@ adjacentFreqsRangeOptions =
 
 thresholdStopCountingDays : Int
 thresholdStopCountingDays =
-    32
+    15
