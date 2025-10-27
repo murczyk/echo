@@ -112,34 +112,49 @@ async fn spawn_new_worker(
 ) -> anyhow::Result<()> {
     info!("spawning new worker: {worker_name}");
     sleep(Duration::from_secs(10)).await;
-    tokio::spawn(async move {
-        let dbx = match new_pg_pool_from_mode(mode).await {
-            Ok(c) => c,
-            Err(e) => {
-                error!("failed to connect to db for {worker_name}: {e:?}");
-                return;
-            }
-        };
-        let mut message_processor_pool = match mk_message_processor_pool(
-            mode, 4,
-        )
-        .await
-        {
-            Ok(c) => c,
-            Err(e) => {
-                error ! ("failed to spawn message_processor_pool for {worker_name}: {e:?}");
-                return;
-            }
-        };
+    let handle = tokio::spawn(async move {
         loop {
-            let is_healthy = sync_client_once(
-                cli.clone(),
-                &dbx,
-                &mut message_processor_pool,
-            )
-            .await;
-            if !is_healthy {
-                error!("worker thread {worker_name} is not healthy, killing...")
+            let dbx;
+            'db: loop {
+                info!("{worker_name}: connecting to db...");
+                dbx = match new_pg_pool_from_mode(mode).await {
+                    Ok(c) => c,
+                    Err(e) => {
+                        error!(
+                            "failed to connect to db for {worker_name}: {e:?}"
+                        );
+                        continue 'db;
+                    }
+                };
+                break 'db;
+            }
+            let mut message_processor_pool;
+            'worker: loop {
+                info!("{worker_name}: starting worker pool...");
+                message_processor_pool = match mk_message_processor_pool(
+                    mode, 4,
+                )
+                .await
+                {
+                    Ok(c) => c,
+                    Err(e) => {
+                        error!("failed to spawn message_processor_pool for {worker_name}: {e:?}");
+                        continue 'worker;
+                    }
+                };
+                break 'worker;
+            }
+            'sync: loop {
+                let is_healthy = sync_client_once(
+                    cli.clone(),
+                    &dbx,
+                    &mut message_processor_pool,
+                )
+                .await;
+                if !is_healthy {
+                    error!("worker thread {worker_name} is not healthy, restarting...");
+                    break 'sync;
+                }
             }
         }
     });
