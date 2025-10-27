@@ -353,6 +353,7 @@ pub async fn process_incoming_message_restapi(
     sync_state: &mut SyncState,
 ) -> Result<(), AppError> {
     info!("received: {}", display_message(message)?);
+    let txn = dbx.begin().await.c(h!())?;
 
     if let Some(ref exception) = message.exception {
         let exc_message = exception.message.clone();
@@ -412,7 +413,7 @@ pub async fn process_incoming_message_restapi(
     let master_key = &group_info.group_id;
     let datasource_group_id =
         crate::messenger::group::ensure_datasource_group_id(
-            dbx,
+            &txn,
             master_key.to_string(),
             datasource_id,
         )
@@ -432,28 +433,29 @@ pub async fn process_incoming_message_restapi(
         message_uid: NotSet,
         datasource_group_id: Set(Some(datasource_group_id)),
     }
-    .insert(dbx)
+    .insert(&txn)
     .await
     .c(h!())?;
 
     let db_message_id = message.id;
 
     let m_duplicate_of =
-        find_duplicate_of(dbx, &body, timestamp, db_message_id, redis)
+        find_duplicate_of(&txn, &body, timestamp, db_message_id, redis)
             .await
             .c(h!())?;
 
     let Some(message) =
-        unstage_message(dbx, &group_info.group_id, message, m_duplicate_of)
+        unstage_message(&txn, &group_info.group_id, message, m_duplicate_of)
             .await
             .c(h!())?
     else {
         return Ok(());
     };
 
-    id::update_message_with_uid(dbx, config, message)
+    id::update_message_with_uid(&txn, config, message)
         .await
         .c(h!())?;
+    txn.commit().await.c(h!())?;
 
     if let Some(ref attachments) = data_message.attachments {
         for attachment in attachments.iter() {
@@ -502,7 +504,6 @@ pub async fn process_incoming_message_restapi(
         uuid: Uuid::parse_str(&source_uuid).c(h!())?,
         name: Some(source_name.clone()),
     });
-
     Ok(())
 }
 

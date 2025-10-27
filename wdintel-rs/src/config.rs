@@ -65,6 +65,7 @@ pub const CLIENT_DATA_DIR_NAME: &str = "client_data";
 pub const WHATSAPP_CLIENT_CONFIG: &str = "/etc/echo/config.toml";
 pub const GENERATE_MESSAGE_UID_TILL_MAX_DAYS: i64 = 20;
 pub const UNKNOWN_GROUP_MASTER_KEY: &str = "undefined_group";
+pub const REDIS_MGS_ID_TTL: i32 = 3600;
 
 /// Dynamic config that's different on different deployments
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]

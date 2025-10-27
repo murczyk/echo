@@ -552,7 +552,9 @@ async fn sync_inbox(
             )
             .await
             {
-                warn!("[{client_name}] bot failed to process a message: {e:#?}");
+                warn!(
+                    "[{client_name}] bot failed to process a message: {e:#?}"
+                );
             }
             echo_im::mark_inbox_as_seen(client_name, vec![m.internal_id], &txn)
                 .await

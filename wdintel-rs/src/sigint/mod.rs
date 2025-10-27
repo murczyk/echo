@@ -1,3 +1,4 @@
+use crate::config::REDIS_MGS_ID_TTL;
 use crate::entities::{prelude::*, *};
 use crate::error::AppError;
 use crate::messenger::id;
@@ -143,15 +144,13 @@ pub async fn oneoff_reprocess_coords(
     Ok(())
 }
 
-pub async fn find_duplicate_of<'a, 'async_trait, C>(
-    txn: &'a C,
+pub async fn find_duplicate_of(
+    txn: &DatabaseTransaction,
     body: &str,
     m_timestamp: Option<NaiveDateTime>,
     db_message_id: i64,
     manager: &mut ConnectionManager,
 ) -> Result<Option<(signal_message::Model, datasource_group::Model)>, AppError>
-where
-    C: ConnectionTrait + 'async_trait,
 {
     let body_base64 = general_purpose::STANDARD.encode(body.as_bytes());
     let key = format!("signal_message:{body_base64}");
@@ -160,8 +159,8 @@ where
         .arg(key.clone())
         .arg(new_value)
         .arg("NX")
-        .arg("EX") // Add the EX (Expire) option
-        .arg(3600) // Specify the time-to-live in seconds (60 minutes)
+        .arg("EX") // Add the Expire option
+        .arg(REDIS_MGS_ID_TTL)
         .query_async::<()>(manager)
         .await
         .c(h!())?;
