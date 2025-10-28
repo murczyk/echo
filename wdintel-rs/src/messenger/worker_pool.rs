@@ -11,6 +11,7 @@ use redis::aio::ConnectionManager;
 use reqwest::Client;
 use sea_orm::{DatabaseConnection, TransactionTrait};
 use std::cell::RefCell;
+use std::collections::VecDeque;
 use std::sync::{Arc, RwLock};
 use tokio::runtime::{Builder, Runtime};
 use tokio::task::JoinSet;
@@ -22,7 +23,7 @@ std::thread_local! {
 
 pub struct ProcessorPool {
     pub capacity: usize,
-    pub join_set: JoinSet<()>,
+    pub join_set: JoinSet<ItemProcessingResult>,
     pub runtime: Runtime,
 }
 
@@ -39,29 +40,64 @@ pub async fn process_queue(
     items: Vec<Item>,
     pool: &mut ProcessorPool,
 ) -> anyhow::Result<()> {
-    for item in items {
+    let handle = pool.runtime.handle().clone();
+    let mut item_queue = VecDeque::new();
+    for i in items {
+        item_queue.push_back((i, 0));
+    }
+    loop {
+        if item_queue.is_empty() {
+            while let Some(res) = pool.join_set.join_next().await {
+                let result = match res {
+                    Ok(res) => res,
+                    Err(e) => {
+                        error!("unexpected error occurred while processing inbox messages: {e:#?}");
+                        continue;
+                    }
+                };
+                if result.failed {
+                    item_queue
+                        .push_front((result.item, result.attempt_num + 1));
+                    break;
+                }
+            }
+            if item_queue.is_empty() {
+                break;
+            }
+        }
+        let (item, attempt_num) = item_queue.pop_front().c(h!())?;
+        if attempt_num > 3 {
+            error!(
+                "failed to process item, dropping after 3 attempts: {item:?}"
+            );
+            continue;
+        }
         if pool.join_set.len() >= pool.capacity {
             trace!(
                 "Concurrency limit reached. Waiting for a task to complete..."
             );
             if let Some(res) = pool.join_set.join_next().await {
-                res?;
+                let result = match res {
+                    Ok(res) => res,
+                    Err(e) => {
+                        error!("unexpected error occurred while processing inbox messages: {e:#?}");
+                        continue;
+                    }
+                };
+                if result.failed {
+                    item_queue
+                        .push_front((result.item, result.attempt_num + 1));
+                }
             } else {
                 break;
             }
         }
-        pool.join_set.spawn(async move {
-            process_item_nofail(item).await;
-        });
+        pool.join_set.spawn_blocking_on(
+            move || process_item_nofail(item, attempt_num),
+            &handle,
+        );
     }
 
-    trace!(
-        "All items assigned. Waiting for remaining {} tasks to complete...",
-        pool.join_set.len()
-    );
-    while let Some(res) = pool.join_set.join_next().await {
-        res?;
-    }
     trace!("All tasks completed.");
     Ok(())
 }
@@ -74,19 +110,16 @@ pub async fn mk_message_processor_pool(
     mode: Mode,
     capacity: usize,
 ) -> anyhow::Result<ProcessorPool> {
-    if mode != Mode::Live {
-        bail!("Using Mode::Live instead of {mode} {}", h!());
-    }
     let runtime = Builder::new_multi_thread()
-        .worker_threads(4)
+        .max_blocking_threads(capacity)
         .thread_name("worker-pool")
         .enable_all()
-        .on_thread_start(|| {
+        .on_thread_start(move || {
             let handle = tokio::runtime::Handle::current();
             let mut context: Option<WorkerContext>;
             let mut attempts = 0;
             loop {
-                context = match handle.block_on(mk_context(Mode::Live)) {
+                context = match handle.block_on(mk_context(mode)) {
                     Ok(c) => Some(c),
                     Err(e) => {
                         error!("failed to set up worker context! {e:?}");
@@ -137,18 +170,34 @@ async fn mk_context(mode: Mode) -> anyhow::Result<WorkerContext> {
 // -------- Task-specific code --------
 
 pub type Item = (MessageF1, i64, String);
+pub struct ItemProcessingResult {
+    pub item: Item,
+    pub attempt_num: usize,
+    pub failed: bool,
+}
 
-async fn process_item_nofail(item: (MessageF1, i64, String)) -> () {
+#[tokio::main]
+async fn process_item_nofail(
+    item: (MessageF1, i64, String),
+    attempt_num: usize,
+) -> ItemProcessingResult {
+    let mut failed = false;
     match get_context() {
         Some(context) => {
-            if let Err(e) = process_item_once(context, item).await {
+            if let Err(e) = process_item_once(context, item.clone()).await {
                 error!("Process item failed: {e:?}");
             }
         }
         None => {
             error!("failed to process item: context not initialized");
+            failed = true;
         }
     };
+    ItemProcessingResult {
+        item,
+        failed,
+        attempt_num,
+    }
 }
 
 async fn process_item_once(

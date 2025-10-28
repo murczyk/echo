@@ -3,12 +3,11 @@ use crate::entities::sea_orm_active_enums::EchoMessageSource;
 use crate::entities::*;
 use crate::error::{AppError, ContextAndError};
 use crate::location::SettlementsData;
-use crate::messenger::bl::list_accounts;
+use crate::messenger::bl::list_echo_accounts;
 use crate::messenger::id;
-use crate::messenger::types::{EchoAccountF1, Message};
+use crate::messenger::types::{EchoAccountF1, Message, WorkerStatus};
 use crate::messenger::worker_pool::*;
 use crate::types::*;
-use crate::utils::worker_watch;
 use crate::{h, new_pg_pool_from_mode};
 use chrono::*;
 use echo_im::types::{MessageF1, MessageSource};
@@ -19,146 +18,152 @@ use reqwest::Client;
 use sea_orm::*;
 use std::collections::BTreeMap;
 use std::sync::{Arc, RwLock};
+use tokio::task::JoinSet;
 use tokio::time::{sleep, Duration};
 
 pub async fn receive_thread_nofail(mode: Mode) {
-    let config = match read_config(mode) {
-        Ok(config) => config,
-        Err(e) => {
-            error!("failed to load config: {e:?}");
-            return;
-        }
-    };
-    let dbx = match crate::new_pg_pool_from_config(&config).await {
-        Ok(db) => db,
-        Err(e) => {
-            error!("failed to connect to db: {e:?}");
-            return;
-        }
-    };
+    let dbx;
+
+    loop {
+        let config = match read_config(mode) {
+            Ok(config) => config,
+            Err(e) => {
+                error!("failed to load config: {e:?}");
+                sleep(Duration::from_millis(crate::config::LONG_POLL_SLEEP_MS))
+                    .await;
+                continue;
+            }
+        };
+        dbx = match crate::new_pg_pool_from_config(&config).await {
+            Ok(db) => db,
+            Err(e) => {
+                error!("failed to connect to db: {e:?}");
+                sleep(Duration::from_millis(crate::config::LONG_POLL_SLEEP_MS))
+                    .await;
+                continue;
+            }
+        };
+        break;
+    }
+
     info!("started receive_thread_nofail");
     if let Err(e) =
         echo_im::enable_verbose_logging_for_all_signal_clients(&dbx).await
     {
         error!("failed to enable verbose logging: {e:?}");
     };
-    let mut poison_datasources = HashSet::new();
-    let mut workers_state = HashMap::<String, Vec<NaiveDateTime>>::new();
+
+    let mut workers: JoinSet<WorkerStatus> = JoinSet::new();
+    let mut running_ids = HashSet::new();
+
     loop {
         let now = Utc::now().naive_utc();
-        let _loop_guard = worker_watch::loop_guard("messenger_receive_worker");
+        while let Some(Ok(res)) = workers.try_join_next() {
+            if !res.failed {
+                info!(
+                    "✅ Worker for datasource {} was shut down: datasource disconnected.",
+                    res.datasource_id
+                );
+            } else {
+                error!(
+                    "⚠️ Worker for datasource {} failed!",
+                    res.datasource_id
+                );
+                running_ids.remove(&res.datasource_id);
+            }
+        }
         let clients = match list_clients(&dbx).await {
             Ok(x) => x,
             Err(e) => {
                 error!("failed to load clients: {e:?}");
-                sleep(Duration::from_secs(1)).await;
+                sleep(Duration::from_millis(crate::config::LONG_POLL_SLEEP_MS))
+                    .await;
                 continue;
             }
         };
-        if clients.is_empty() {
-            sleep(Duration::from_secs(5)).await;
-            continue;
-        }
-        let mut updated_worker_state = HashMap::new();
-        for cli in clients {
-            sleep(Duration::from_secs(10)).await;
-            let Some(client_name) = cli.system_service_name.clone() else {
-                trace!("client name is missing, skipping: {cli:?}");
-                continue;
-            };
-            let ts_now = now.format("%Y%m%d_%H:%M:%S").to_string();
-            let worker_name = format!(
-                "messenger_receive_worker_{}_{client_name}-{ts_now}",
-                cli.id
-            );
-            let client_id = cli.id;
+        for datasource in clients {
+            if !running_ids.contains(&datasource.id) {
+                info!(
+                    "🚀 Spawning new worker for client {}",
+                    datasource.display_name
+                );
+                running_ids.insert(datasource.id);
+                let Some(client_name) = datasource.system_service_name.clone()
+                else {
+                    trace!("client name is missing, skipping: {datasource:?}");
+                    continue;
+                };
+                let ts_now = now.format("%Y%m%d_%H:%M:%S").to_string();
+                let worker_name = format!(
+                    "messenger_receive_worker_{}_{client_name}-{ts_now}",
+                    datasource.id
+                );
+                let datasource_id = datasource.id;
 
-            let Some(mut state) = workers_state.remove(&client_name) else {
-                info!("spawning worker {worker_name} {}", h!());
-                if let Err(e) =
-                    spawn_new_worker(cli.clone(), mode, worker_name.clone())
-                        .await
-                {
-                    error!("failed to spawn worker for {client_name} (id {client_id}): {e:?}");
-                }
-                updated_worker_state.insert(client_name, vec![now]);
-                continue;
-            };
-            let source_is_outdated = is_datasource_outdated(&dbx, cli.id).await;
-            if !source_is_outdated {
-                updated_worker_state.insert(client_name, state);
-                continue;
-            }
-            let poison_ds_cutoff = now - TimeDelta::minutes(60);
-            let is_poison_datasource =
-                state.iter().filter(|ts| poison_ds_cutoff.gt(ts)).count() > 3;
-            if is_poison_datasource {
-                error!("datasource {client_name} (id {client_id}) is poisonous, won't make any attempts to retry");
-                poison_datasources.insert(client_id);
-            } else {
-                warn!("datasource {client_name} (id {client_id}) is stale, restarting...");
-                state.push(now);
-                updated_worker_state.insert(client_name, state);
+                workers.spawn_blocking(move || {
+                    spawn_new_worker(datasource_id, mode, worker_name)
+                });
             }
         }
-        workers_state = updated_worker_state;
+
+        sleep(Duration::from_millis(crate::config::LONG_POLL_SLEEP_MS)).await;
     }
 }
 
+#[tokio::main]
 async fn spawn_new_worker(
-    cli: EchoAccountF1,
+    datasource_id: i64,
+    mode: Mode,
+    worker_name: String,
+) -> WorkerStatus {
+    match run_new_worker(datasource_id, mode, worker_name.clone()).await {
+        Ok(_) => WorkerStatus {
+            datasource_id,
+            failed: false,
+        },
+        Err(e) => {
+            error!("failed to run worker {worker_name}, stopping. Root cause: {e:?}");
+            WorkerStatus {
+                datasource_id,
+                failed: true,
+            }
+        }
+    }
+}
+
+async fn run_new_worker(
+    datasource_id: i64,
     mode: Mode,
     worker_name: String,
 ) -> anyhow::Result<()> {
-    info!("spawning new worker: {worker_name}");
-    sleep(Duration::from_secs(10)).await;
-    let handle = tokio::spawn(async move {
-        loop {
-            let dbx;
-            'db: loop {
-                info!("{worker_name}: connecting to db...");
-                dbx = match new_pg_pool_from_mode(mode).await {
-                    Ok(c) => c,
-                    Err(e) => {
-                        error!(
-                            "failed to connect to db for {worker_name}: {e:?}"
-                        );
-                        continue 'db;
-                    }
-                };
-                break 'db;
-            }
-            let mut message_processor_pool;
-            'worker: loop {
-                info!("{worker_name}: starting worker pool...");
-                message_processor_pool = match mk_message_processor_pool(
-                    mode, 4,
-                )
-                .await
-                {
-                    Ok(c) => c,
-                    Err(e) => {
-                        error!("failed to spawn message_processor_pool for {worker_name}: {e:?}");
-                        continue 'worker;
-                    }
-                };
-                break 'worker;
-            }
-            'sync: loop {
-                let is_healthy = sync_client_once(
-                    cli.clone(),
-                    &dbx,
-                    &mut message_processor_pool,
-                )
+    trace!("spawning new worker: {worker_name}");
+    let dbx = new_pg_pool_from_mode(mode).await.c(h!())?;
+    let mut message_processor_pool =
+        mk_message_processor_pool(mode, 4).await.c(h!())?;
+    info!("spawned new worker with name {worker_name}, started processing");
+    loop {
+        let Some(cli) = list_echo_accounts(Some(datasource_id), &dbx)
+            .await
+            .c(h!())?
+            .into_iter()
+            .next()
+            .filter(|ds| ds.is_linked)
+        else {
+            info!(
+                "datasource {datasource_id} went offline, stopping worker..."
+            );
+            sleep(Duration::from_millis(crate::config::LONG_POLL_SLEEP_MS))
                 .await;
-                if !is_healthy {
-                    error!("worker thread {worker_name} is not healthy, restarting...");
-                    break 'sync;
-                }
-            }
+            return Ok(());
+        };
+        let is_healthy =
+            sync_client_once(cli, &dbx, &mut message_processor_pool).await;
+        if !is_healthy {
+            sleep(Duration::from_millis(crate::config::LONG_POLL_SLEEP_MS))
+                .await;
+            bail!("worker thread {worker_name} is not healthy, restarting...");
         }
-    });
-    Ok(())
+    }
 }
 
 async fn sync_client_once(
@@ -182,10 +187,10 @@ async fn sync_client_once(
     {
         error!("> {client_name}::receive_thread_nofail error: {e:?}");
     }
-    !is_datasource_outdated(dbx, cli.id).await
+    !is_datasource_offline(dbx, cli.id).await
 }
 
-async fn is_datasource_outdated(dbx: &DatabaseConnection, id: i64) -> bool {
+async fn is_datasource_offline(dbx: &DatabaseConnection, id: i64) -> bool {
     let cutoff_ts = Utc::now().naive_utc() - TimeDelta::minutes(5);
     let timestamp = datasource::Entity::find_by_id(id)
         .one(dbx)
@@ -529,7 +534,7 @@ async fn list_clients(
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<Vec<EchoAccountF1>> {
     let txn = dbx.begin().await.c(h!())?;
-    let live_clients = list_accounts(None, &txn).await.c(h!())?;
+    let live_clients = list_echo_accounts(None, &txn).await.c(h!())?;
     txn.commit().await.c(h!())?;
     Ok(live_clients)
 }

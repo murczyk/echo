@@ -14,7 +14,6 @@ use sea_orm::*;
 pub mod bl;
 pub mod group;
 pub mod id;
-mod pida;
 #[cfg(test)]
 pub mod tests;
 pub mod types;
@@ -30,7 +29,7 @@ pub async fn list_messengers(
         .await
         .cae(h!())?;
     let txn = env.dbx.begin().await.c(h!())?;
-    let accounts = bl::list_accounts(None, &txn).await.c(h!())?;
+    let accounts = bl::list_echo_accounts(None, &txn).await.c(h!())?;
     txn.commit().await.c(h!())?;
     Ok(Json(AccountsRsp { accounts }))
 }
