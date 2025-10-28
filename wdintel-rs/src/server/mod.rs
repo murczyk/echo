@@ -10,6 +10,8 @@ use actix_web::{App, HttpServer};
 use milgeo_rs::MilGeo;
 use opendal::services::S3;
 use opendal::Operator;
+use tokio::runtime::Handle;
+use tokio_util::sync::CancellationToken;
 
 pub mod discord;
 mod healthcheck;
@@ -117,6 +119,7 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
 pub async fn main_server(
     mode: Mode,
     ps: crate::ServerPs,
+    token: CancellationToken,
 ) -> Result<(), std::io::Error> {
     crate::migration::run_migration_1(mode).await.unwrap();
 
@@ -191,8 +194,9 @@ pub async fn main_server(
             crate::sigint::aor::worker::aor_assignments_check_worker(&dbx10)
                 .await;
         });
+        let token_1 = token.clone();
         spawn_named_worker("messenger_receive_worker", async move {
-            crate::messenger::worker::receive_thread_nofail(mode).await;
+            crate::messenger::worker::receive_thread_nofail(mode, token_1).await;
         });
         spawn_named_worker("operator_inbox_worker", async move {
             crate::operator::worker::run_operator_inbox_worker_nofail(mode)
@@ -483,6 +487,7 @@ pub async fn main_server(
             .service(actix_files::Files::new(crate::config::get_assets_url(), crate::config::get_assets_folder(&config)).show_files_listing())
     })
         .bind((bind_ip, bind_port))?
+        .shutdown_signal(token.cancelled_owned())
         .run()
         .await
 }

@@ -18,10 +18,12 @@ use reqwest::Client;
 use sea_orm::*;
 use std::collections::BTreeMap;
 use std::sync::{Arc, RwLock};
+use tokio::runtime::Handle;
 use tokio::task::JoinSet;
 use tokio::time::{sleep, Duration};
+use tokio_util::sync::CancellationToken;
 
-pub async fn receive_thread_nofail(mode: Mode) {
+pub async fn receive_thread_nofail(mode: Mode, cancel_token: CancellationToken) {
     let dbx;
 
     loop {
@@ -72,6 +74,10 @@ pub async fn receive_thread_nofail(mode: Mode) {
                 running_ids.remove(&res.datasource_id);
             }
         }
+        if cancel_token.is_cancelled() {
+            info!("[receive_thread_nofail] cancellation requested, stopping...");
+            return;
+        }
         let clients = match list_clients(&dbx).await {
             Ok(x) => x,
             Err(e) => {
@@ -99,9 +105,9 @@ pub async fn receive_thread_nofail(mode: Mode) {
                     datasource.id
                 );
                 let datasource_id = datasource.id;
-
+                let cancel_token = cancel_token.clone();
                 workers.spawn_blocking(move || {
-                    spawn_new_worker(datasource_id, mode, worker_name)
+                    spawn_new_worker(datasource_id, mode, worker_name, cancel_token)
                 });
             }
         }
@@ -115,8 +121,9 @@ async fn spawn_new_worker(
     datasource_id: i64,
     mode: Mode,
     worker_name: String,
+    cancel_token: CancellationToken,
 ) -> WorkerStatus {
-    match run_new_worker(datasource_id, mode, worker_name.clone()).await {
+    match run_new_worker(datasource_id, mode, worker_name.clone(), cancel_token).await {
         Ok(_) => WorkerStatus {
             datasource_id,
             failed: false,
@@ -135,6 +142,7 @@ async fn run_new_worker(
     datasource_id: i64,
     mode: Mode,
     worker_name: String,
+    cancel_token: CancellationToken,
 ) -> anyhow::Result<()> {
     trace!("spawning new worker: {worker_name}");
     let dbx = new_pg_pool_from_mode(mode).await.c(h!())?;
@@ -142,6 +150,10 @@ async fn run_new_worker(
         mk_message_processor_pool(mode, 4).await.c(h!())?;
     info!("spawned new worker with name {worker_name}, started processing");
     loop {
+        if cancel_token.is_cancelled() {
+            info!("cancellation requested for worker {worker_name}, shutting down...");
+            return Ok(());
+        }
         let Some(cli) = list_echo_accounts(Some(datasource_id), &dbx)
             .await
             .c(h!())?
