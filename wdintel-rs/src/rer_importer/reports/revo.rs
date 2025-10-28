@@ -72,6 +72,12 @@ pub struct CallsignSummary {
     pub callsign: String,
 }
 
+#[derive(Debug, Clone, FromQueryResult)]
+struct CommentSummary {
+    pub signal_message_id: i64,
+    pub comment: String,
+}
+
 pub async fn report_docx_kind_revo(
     user: Identity,
     env: &Env,
@@ -402,6 +408,10 @@ async fn collect_report(
     if message_ids.len() <= 20000 {
         sigint_comment::Entity::find()
             .filter(sigint_comment::Column::SignalMessageId.is_in(message_ids))
+            .select_only()
+            .column(sigint_comment::Column::SignalMessageId)
+            .column(sigint_comment::Column::Comment)
+            .into_model::<CommentSummary>()
             .all(dbx)
             .await
             .context(h!())?
@@ -416,6 +426,10 @@ async fn collect_report(
                 .filter(
                     sigint_comment::Column::SignalMessageId.is_in(ids.to_vec()),
                 )
+                .select_only()
+                .column(sigint_comment::Column::SignalMessageId)
+                .column(sigint_comment::Column::Comment)
+                .into_model::<CommentSummary>()
                 .all(dbx)
                 .await
                 .context(h!())?
