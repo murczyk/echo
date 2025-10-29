@@ -18,7 +18,7 @@ use reqwest::Client;
 use sea_orm::*;
 use std::collections::BTreeMap;
 use std::sync::{Arc, RwLock};
-use tokio::runtime::Handle;
+use tokio::runtime::*;
 use tokio::task::JoinSet;
 use tokio::time::{sleep, Duration};
 use tokio_util::sync::CancellationToken;
@@ -115,12 +115,14 @@ pub async fn receive_thread_nofail(
                 );
                 workers.spawn_blocking_on(
                     move || {
-                        spawn_new_worker(
+                        let result = spawn_new_worker(
                             datasource_id,
                             mode,
                             worker_name,
                             cancel_token,
-                        )
+                        );
+                        info!("{}", h!());
+                        result
                     },
                     &shutdown_handle,
                 );
@@ -131,27 +133,39 @@ pub async fn receive_thread_nofail(
     }
 }
 
-#[tokio::main]
-async fn spawn_new_worker(
+fn spawn_new_worker(
     datasource_id: i64,
     mode: Mode,
     worker_name: String,
     cancel_token: CancellationToken,
 ) -> WorkerStatus {
-    match run_new_worker(datasource_id, mode, worker_name.clone(), cancel_token)
-        .await
-    {
-        Ok(_) => WorkerStatus {
+    let Ok(worker_runtime) = Builder::new_multi_thread()
+        .worker_threads(1)
+        .enable_all()
+        .build()
+    else {
+        error!("failed to build worker runtime");
+        return WorkerStatus {
             datasource_id,
-            failed: false,
-        },
-        Err(e) => {
-            error!("failed to run worker {worker_name}, stopping. Root cause: {e:?}");
-            WorkerStatus {
-                datasource_id,
-                failed: true,
+            failed: true,
+        };
+    };
+    let worker_name_val = worker_name.clone();
+    let failed = worker_runtime.block_on(async move {
+        match run_new_worker(datasource_id, mode, worker_name_val.clone(), cancel_token)
+            .await
+        {
+            Ok(_) => false,
+            Err(e) => {
+                error!("failed to run worker {worker_name_val}, stopping. Root cause: {e:?}");
+               true
             }
         }
+    });
+    info!("worker {worker_name} was shutdown, failed={failed}");
+    WorkerStatus {
+        datasource_id,
+        failed,
     }
 }
 
