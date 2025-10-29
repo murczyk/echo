@@ -66,13 +66,19 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
         .timeout(core::time::Duration::from_secs(crate::config::RQ_TIMEOUT))
         .build()
         .unwrap();
-    let e_greptimedb = crate::new_greptimedb_from_config(&config).await;
-    let m_greptimedb = match e_greptimedb {
-        Ok(greptimedb) => Some(greptimedb),
-        Err(e) => {
-            warn!("failed to establish GreptimeDB connection: {e:?}");
-            None
+    let m_greptimedb = if config.greptime_host.is_some()
+        && config.greptime_host != Some("".to_string())
+    {
+        let e_greptimedb = crate::new_greptimedb_from_config(&config).await;
+        match e_greptimedb {
+            Ok(greptimedb) => Some(greptimedb),
+            Err(e) => {
+                warn!("failed to establish GreptimeDB connection: {e:?}");
+                None
+            }
         }
+    } else {
+        None
     };
     let settlement_paths = config.settlement_paths().unwrap();
     let settlements_data =
