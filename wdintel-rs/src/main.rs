@@ -599,12 +599,14 @@ fn main() -> Result<(), AppError> {
         .expect("failed to build tokio runtime");
 
     let cancel_token = CancellationToken::new();
-    let result = runtime.block_on(async_main(args, cancel_token.clone()));
-    cancel_token.cancel();
-    result
+    runtime.block_on(async_main(args, cancel_token.clone(), runtime.handle()))
 }
 
-async fn async_main(args: Arg, token: CancellationToken) -> Result<(), AppError> {
+async fn async_main(
+    args: Arg,
+    token: CancellationToken,
+    shutdown_handle: &Handle,
+) -> Result<(), AppError> {
     let mode = args.mode;
     let action = args.action;
 
@@ -612,8 +614,7 @@ async fn async_main(args: Arg, token: CancellationToken) -> Result<(), AppError>
 
     match action {
         Cmd::Server(ps) => {
-            let _: () = crate::server::main_server(mode, ps, token).await.unwrap();
-            Ok(())
+                crate::server::main_server(mode, ps, token, shutdown_handle.clone()).await
         }
         Cmd::OneoffEnsureTagsOrdering => {
             crate::tags::ordering::oneoff_ensure_tags_ordering(mode).await

@@ -23,7 +23,11 @@ use tokio::task::JoinSet;
 use tokio::time::{sleep, Duration};
 use tokio_util::sync::CancellationToken;
 
-pub async fn receive_thread_nofail(mode: Mode, cancel_token: CancellationToken) {
+pub async fn receive_thread_nofail(
+    mode: Mode,
+    cancel_token: CancellationToken,
+    shutdown_handle: Handle,
+) {
     let dbx;
 
     loop {
@@ -75,7 +79,9 @@ pub async fn receive_thread_nofail(mode: Mode, cancel_token: CancellationToken) 
             }
         }
         if cancel_token.is_cancelled() {
-            info!("[receive_thread_nofail] cancellation requested, stopping...");
+            info!(
+                "[receive_thread_nofail] cancellation requested, stopping..."
+            );
             return;
         }
         let clients = match list_clients(&dbx).await {
@@ -89,10 +95,6 @@ pub async fn receive_thread_nofail(mode: Mode, cancel_token: CancellationToken) 
         };
         for datasource in clients {
             if !running_ids.contains(&datasource.id) {
-                info!(
-                    "🚀 Spawning new worker for client {}",
-                    datasource.display_name
-                );
                 running_ids.insert(datasource.id);
                 let Some(client_name) = datasource.system_service_name.clone()
                 else {
@@ -106,9 +108,22 @@ pub async fn receive_thread_nofail(mode: Mode, cancel_token: CancellationToken) 
                 );
                 let datasource_id = datasource.id;
                 let cancel_token = cancel_token.clone();
-                workers.spawn_blocking(move || {
-                    spawn_new_worker(datasource_id, mode, worker_name, cancel_token)
-                });
+                let shutdown_handle = shutdown_handle.clone();
+                info!(
+                    "🚀 Spawning new worker for datasource {}, name={worker_name}",
+                    datasource.display_name
+                );
+                workers.spawn_blocking_on(
+                    move || {
+                        spawn_new_worker(
+                            datasource_id,
+                            mode,
+                            worker_name,
+                            cancel_token,
+                        )
+                    },
+                    &shutdown_handle,
+                );
             }
         }
 
@@ -123,7 +138,9 @@ async fn spawn_new_worker(
     worker_name: String,
     cancel_token: CancellationToken,
 ) -> WorkerStatus {
-    match run_new_worker(datasource_id, mode, worker_name.clone(), cancel_token).await {
+    match run_new_worker(datasource_id, mode, worker_name.clone(), cancel_token)
+        .await
+    {
         Ok(_) => WorkerStatus {
             datasource_id,
             failed: false,
@@ -147,11 +164,15 @@ async fn run_new_worker(
     trace!("spawning new worker: {worker_name}");
     let dbx = new_pg_pool_from_mode(mode).await.c(h!())?;
     let mut message_processor_pool =
-        mk_message_processor_pool(mode, 4).await.c(h!())?;
-    info!("spawned new worker with name {worker_name}, started processing");
+        mk_message_processor_pool(mode, 4, &worker_name)
+            .await
+            .c(h!())?;
+    info!("{worker_name}: started processing");
     loop {
+        sleep(Duration::from_millis(crate::config::LONG_POLL_SLEEP_MS * 2))
+            .await;
         if cancel_token.is_cancelled() {
-            info!("cancellation requested for worker {worker_name}, shutting down...");
+            info!("{worker_name}: cancellation requested, shutting down...");
             return Ok(());
         }
         let Some(cli) = list_echo_accounts(Some(datasource_id), &dbx)

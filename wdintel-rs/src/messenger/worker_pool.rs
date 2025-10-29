@@ -109,10 +109,11 @@ fn get_context() -> Option<WorkerContext> {
 pub async fn mk_message_processor_pool(
     mode: Mode,
     capacity: usize,
+    worker_name: &str,
 ) -> anyhow::Result<ProcessorPool> {
     let runtime = Builder::new_multi_thread()
-        .max_blocking_threads(capacity)
-        .thread_name("worker-pool")
+        // .max_blocking_threads(capacity)
+        .thread_name(format!("worker-pool-{worker_name}"))
         .enable_all()
         .on_thread_start(move || {
             let handle = tokio::runtime::Handle::current();
