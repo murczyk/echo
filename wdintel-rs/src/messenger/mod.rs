@@ -18,6 +18,7 @@ pub mod id;
 pub mod tests;
 pub mod types;
 pub mod worker;
+pub mod worker_pool;
 
 #[post("/api/messenger/list")]
 pub async fn list_messengers(
@@ -28,7 +29,7 @@ pub async fn list_messengers(
         .await
         .cae(h!())?;
     let txn = env.dbx.begin().await.c(h!())?;
-    let accounts = bl::list_accounts(None, &txn).await.c(h!())?;
+    let accounts = bl::list_echo_accounts(None, &txn).await.c(h!())?;
     txn.commit().await.c(h!())?;
     Ok(Json(AccountsRsp { accounts }))
 }

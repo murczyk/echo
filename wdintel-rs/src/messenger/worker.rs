@@ -2,13 +2,13 @@ use crate::config::{read_config, Config};
 use crate::entities::sea_orm_active_enums::EchoMessageSource;
 use crate::entities::*;
 use crate::error::{AppError, ContextAndError};
-use crate::h;
 use crate::location::SettlementsData;
-use crate::messenger::bl::list_accounts;
+use crate::messenger::bl::list_echo_accounts;
 use crate::messenger::id;
-use crate::messenger::types::{EchoAccountF1, Message};
+use crate::messenger::types::{EchoAccountF1, Message, WorkerStatus};
+use crate::messenger::worker_pool::*;
 use crate::types::*;
-use crate::utils::worker_watch;
+use crate::{h, new_pg_pool_from_mode};
 use chrono::*;
 use echo_im::types::{MessageF1, MessageSource};
 use echo_migration::Expr;
@@ -18,133 +18,228 @@ use reqwest::Client;
 use sea_orm::*;
 use std::collections::BTreeMap;
 use std::sync::{Arc, RwLock};
+use tokio::runtime::*;
+use tokio::task::JoinSet;
 use tokio::time::{sleep, Duration};
+use tokio_util::sync::CancellationToken;
 
-pub async fn receive_thread_nofail(mode: Mode) {
-    let config = match read_config(mode) {
-        Ok(config) => config,
-        Err(e) => {
-            error!("failed to load config: {e:?}");
-            return;
-        }
-    };
-    let dbx = match crate::new_pg_pool_from_config(&config).await {
-        Ok(db) => db,
-        Err(e) => {
-            error!("failed to connect to db: {e:?}");
-            return;
-        }
-    };
+pub async fn receive_thread_nofail(
+    mode: Mode,
+    cancel_token: CancellationToken,
+    shutdown_handle: Handle,
+) {
+    let dbx;
+
+    loop {
+        let config = match read_config(mode) {
+            Ok(config) => config,
+            Err(e) => {
+                error!("failed to load config: {e:?}");
+                sleep(Duration::from_millis(crate::config::LONG_POLL_SLEEP_MS))
+                    .await;
+                continue;
+            }
+        };
+        dbx = match crate::new_pg_pool_from_config(&config).await {
+            Ok(db) => db,
+            Err(e) => {
+                error!("failed to connect to db: {e:?}");
+                sleep(Duration::from_millis(crate::config::LONG_POLL_SLEEP_MS))
+                    .await;
+                continue;
+            }
+        };
+        break;
+    }
+
     info!("started receive_thread_nofail");
     if let Err(e) =
         echo_im::enable_verbose_logging_for_all_signal_clients(&dbx).await
     {
         error!("failed to enable verbose logging: {e:?}");
     };
-    let mut poison_datasources = HashSet::new();
-    let mut workers_state = HashMap::<String, Vec<NaiveDateTime>>::new();
+
+    let mut workers: JoinSet<WorkerStatus> = JoinSet::new();
+    let mut running_ids = HashSet::new();
+
     loop {
         let now = Utc::now().naive_utc();
-        let _loop_guard = worker_watch::loop_guard("messenger_receive_worker");
+        while let Some(Ok(res)) = workers.try_join_next() {
+            if !res.failed {
+                info!(
+                    "✅ Worker for datasource {} was shut down: datasource disconnected.",
+                    res.datasource_id
+                );
+            } else {
+                error!(
+                    "⚠️ Worker for datasource {} failed!",
+                    res.datasource_id
+                );
+                running_ids.remove(&res.datasource_id);
+            }
+        }
+        if cancel_token.is_cancelled() {
+            info!(
+                "[receive_thread_nofail] cancellation requested, stopping..."
+            );
+            return;
+        }
         let clients = match list_clients(&dbx).await {
             Ok(x) => x,
             Err(e) => {
                 error!("failed to load clients: {e:?}");
-                sleep(Duration::from_secs(1)).await;
+                sleep(Duration::from_millis(crate::config::LONG_POLL_SLEEP_MS))
+                    .await;
                 continue;
             }
         };
-        if clients.is_empty() {
-            sleep(Duration::from_secs(5)).await;
-            continue;
+        for datasource in clients {
+            if !running_ids.contains(&datasource.id) {
+                running_ids.insert(datasource.id);
+                let Some(client_name) = datasource.system_service_name.clone()
+                else {
+                    trace!("client name is missing, skipping: {datasource:?}");
+                    continue;
+                };
+                let ts_now = now.format("%Y%m%d_%H:%M:%S").to_string();
+                let worker_name = format!(
+                    "messenger_receive_worker_{}_{client_name}-{ts_now}",
+                    datasource.id
+                );
+                let datasource_id = datasource.id;
+                let cancel_token = cancel_token.clone();
+                let shutdown_handle = shutdown_handle.clone();
+                info!(
+                    "🚀 Spawning new worker for datasource {}, name={worker_name}",
+                    datasource.display_name
+                );
+                workers.spawn_blocking_on(
+                    move || {
+                        let result = spawn_new_worker(
+                            datasource_id,
+                            mode,
+                            worker_name,
+                            cancel_token,
+                        );
+                        result
+                    },
+                    &shutdown_handle,
+                );
+            }
         }
-        let mut updated_worker_state = HashMap::new();
-        for cli in clients {
-            sleep(Duration::from_secs(10)).await;
-            let Some(client_name) = cli.system_service_name.clone() else {
-                trace!("client name is missing, skipping: {cli:?}");
-                continue;
-            };
-            let ts_now = now.format("%Y%m%d_%H:%M:%S").to_string();
-            let worker_name = format!(
-                "messenger_receive_worker_{}_{client_name}-{ts_now}",
-                cli.id
-            );
-            let client_id = cli.id;
 
-            let Some(mut state) = workers_state.remove(&client_name) else {
-                info!("spawning worker {worker_name} {}", h!());
-                if let Err(e) =
-                    spawn_new_worker(cli.clone(), mode, worker_name.clone())
-                        .await
-                {
-                    error!("failed to spawn worker for {client_name} (id {client_id}): {e:?}");
-                }
-                updated_worker_state.insert(client_name, vec![now]);
-                continue;
-            };
-            let source_is_outdated = is_datasource_outdated(&dbx, cli.id).await;
-            if !source_is_outdated {
-                updated_worker_state.insert(client_name, state);
-                continue;
-            }
-            let poison_ds_cutoff = now - TimeDelta::minutes(60);
-            let is_poison_datasource =
-                state.iter().filter(|ts| poison_ds_cutoff.gt(ts)).count() > 3;
-            if is_poison_datasource {
-                error!("datasource {client_name} (id {client_id}) is poisonous, won't make any attempts to retry");
-                poison_datasources.insert(client_id);
-            } else {
-                warn!("datasource {client_name} (id {client_id}) is stale, restarting...");
-                state.push(now);
-                updated_worker_state.insert(client_name, state);
-            }
-        }
-        workers_state = updated_worker_state;
+        sleep(Duration::from_millis(crate::config::LONG_POLL_SLEEP_MS)).await;
     }
 }
 
-async fn spawn_new_worker(
-    cli: EchoAccountF1,
+fn spawn_new_worker(
+    datasource_id: i64,
     mode: Mode,
     worker_name: String,
-) -> anyhow::Result<()> {
-    info!("spawning new worker: {worker_name}");
-    sleep(Duration::from_secs(10)).await;
-    tokio::spawn(async move {
-        let context = match crate::utils::setup_worker(mode).await {
-            Ok(c) => c,
-            Err(e) => {
-                error!("failed to spawn worker {worker_name}: {e:?}");
-                return;
-            }
+    cancel_token: CancellationToken,
+) -> WorkerStatus {
+    // Spawn the worker in a separate OS thread to avoid runtime drop issues
+    // This prevents the "Cannot drop a runtime in a context where blocking is not allowed" panic
+    std::thread::spawn(move || {
+        let worker_name_val = worker_name.clone();
+        let Ok(worker_runtime) = Builder::new_multi_thread()
+            .worker_threads(1)
+            .enable_all()
+            .build()
+        else {
+            error!("failed to build worker runtime");
+            return WorkerStatus {
+                datasource_id,
+                failed: true,
+            };
         };
-        let (config, settlements, rq, mut redis, dbx) = context;
+
+        let failed = worker_runtime.block_on(async move {
+            match run_new_worker(datasource_id, mode, worker_name_val.clone(), cancel_token)
+                .await
+            {
+                Ok(_) => false,
+                Err(e) => {
+                    error!("failed to run worker {worker_name_val}, stopping. Root cause: {e:?}");
+                   true
+                }
+            }
+        });
+
+        // Explicitly shutdown the runtime before dropping to ensure clean shutdown
+        worker_runtime.shutdown_background();
+
+        info!("worker {worker_name} was shutdown, failed={failed}");
+        WorkerStatus {
+            datasource_id,
+            failed,
+        }
+    })
+    .join()
+    .unwrap_or_else(|_| {
+        error!("worker thread panicked for datasource {datasource_id}");
+        WorkerStatus {
+            datasource_id,
+            failed: true,
+        }
+    })
+}
+
+async fn run_new_worker(
+    datasource_id: i64,
+    mode: Mode,
+    worker_name: String,
+    cancel_token: CancellationToken,
+) -> anyhow::Result<()> {
+    trace!("spawning new worker: {worker_name}");
+    let dbx = new_pg_pool_from_mode(mode).await.c(h!())?;
+    let mut message_processor_pool =
+        mk_message_processor_pool(mode, 4, &worker_name)
+            .await
+            .c(h!())?;
+    info!("{worker_name}: started processing");
+    let result = async {
         loop {
-            let is_healthy = sync_client_once(
-                cli.clone(),
-                &config,
-                settlements.clone(),
-                &rq,
-                &mut redis,
-                &dbx,
-            )
-            .await;
+            sleep(Duration::from_millis(crate::config::LONG_POLL_SLEEP_MS * 2))
+                .await;
+            if cancel_token.is_cancelled() {
+                info!("{worker_name}: cancellation requested, shutting down...");
+                return Ok(());
+            }
+            let Some(cli) = list_echo_accounts(Some(datasource_id), &dbx)
+                .await
+                .c(h!())?
+                .into_iter()
+                .next()
+                .filter(|ds| ds.is_linked)
+            else {
+                info!(
+                    "datasource {datasource_id} went offline, stopping worker..."
+                );
+                sleep(Duration::from_millis(crate::config::LONG_POLL_SLEEP_MS))
+                    .await;
+                return Ok(());
+            };
+            let is_healthy =
+                sync_client_once(cli, &dbx, &mut message_processor_pool).await;
             if !is_healthy {
-                error!("worker thread {worker_name} is not healthy, killing...")
+                sleep(Duration::from_millis(crate::config::LONG_POLL_SLEEP_MS))
+                    .await;
+                bail!("worker thread {worker_name} is not healthy, restarting...");
             }
         }
-    });
-    Ok(())
+    }.await;
+
+    // Explicitly shutdown the processor pool runtime to prevent panic on drop
+    message_processor_pool.runtime.shutdown_background();
+
+    result
 }
 
 async fn sync_client_once(
     cli: EchoAccountF1,
-    config: &Config,
-    settlements: Arc<RwLock<SettlementsData>>,
-    rq: &Client,
-    redis: &mut ConnectionManager,
     dbx: &DatabaseConnection,
+    processor_pool: &mut ProcessorPool,
 ) -> bool {
     let Some(client_name) = cli.system_service_name else {
         trace!("client name is missing, skipping: {cli:?}");
@@ -156,19 +251,16 @@ async fn sync_client_once(
         &client_name,
         &mut client_groups_sync_ts_map,
         dbx,
-        redis,
-        config,
-        rq,
-        settlements.clone(),
+        processor_pool,
     )
     .await
     {
         error!("> {client_name}::receive_thread_nofail error: {e:?}");
     }
-    !is_datasource_outdated(dbx, cli.id).await
+    !is_datasource_offline(dbx, cli.id).await
 }
 
-async fn is_datasource_outdated(dbx: &DatabaseConnection, id: i64) -> bool {
+async fn is_datasource_offline(dbx: &DatabaseConnection, id: i64) -> bool {
     let cutoff_ts = Utc::now().naive_utc() - TimeDelta::minutes(5);
     let timestamp = datasource::Entity::find_by_id(id)
         .one(dbx)
@@ -187,10 +279,7 @@ async fn receive_thread(
     client_name: &str,
     client_groups_sync_ts_map: &mut BTreeMap<String, NaiveDateTime>,
     dbx: &DatabaseConnection,
-    redis: &mut ConnectionManager,
-    config: &Config,
-    rq: &Client,
-    settlements: Arc<RwLock<SettlementsData>>,
+    processor_pool: &mut ProcessorPool,
 ) -> Result<(), AppError> {
     let datasource = load_client_datasource(dbx, client_name).await.c(h!())?;
     let datasource_id = datasource.id;
@@ -209,7 +298,7 @@ async fn receive_thread(
         .await
         .c(h!())?;
     txn.commit().await.c(h!())?;
-    sync_inbox(Utc::now(), dbx, client_name, redis, config, rq, settlements)
+    sync_inbox(Utc::now(), dbx, client_name, processor_pool)
         .await
         .c(h!())?;
 
@@ -485,10 +574,7 @@ async fn sync_inbox(
     inbox_sync_at: DateTime<Utc>,
     db: &DatabaseConnection,
     client_name: &str,
-    redis: &mut ConnectionManager,
-    config: &Config,
-    rq: &Client,
-    settlements: Arc<RwLock<SettlementsData>>,
+    processor_pool: &mut ProcessorPool,
 ) -> anyhow::Result<()> {
     let datasource = load_client_datasource(db, client_name).await.c(h!())?;
     let datasource_id = datasource.id;
@@ -506,62 +592,11 @@ async fn sync_inbox(
 
     sync_senders(db, &inbox_messages).await.c(h!())?;
 
-    let total_num = inbox_messages.len();
-    for (i, m) in inbox_messages.into_iter().enumerate() {
-        {
-            debug!(
-                "[{client_name}] processing inbox message {} of {}; m.id={}",
-                i + 1,
-                total_num,
-                m.id.clone().unwrap_or("".to_string())
-            );
-            let txn = db.begin().await.c(h!())?;
-            debug!(
-                "[{client_name}] process_inbox_message_nofail client_name={}; message_id={}",
-                client_name,
-                m.id.clone().unwrap_or("".to_string())
-            );
-            // let current_time = Utc::now().naive_utc();
-            // if m.timestamp < current_time - TimeDelta::minutes(15) {
-            //     warn!(
-            //         "[{}] message is too old: created at {}, current time: {}; skipping: [{}] {}",
-            //         client_name, m.timestamp, current_time, m.internal_id, m.text
-            //     );
-            //     return;
-            // }
-            let Some(group_id) = m.group_id else {
-                warn!("[{client_name}] skipping message {:?} with no group, possibly a private message: {}", m.id, m.text);
-                continue;
-            };
-            let message = Message {
-                body: m.text,
-                group_id,
-                sender: m.sender.map(|s| s.uuid),
-                timestamp: m.timestamp,
-                datasource_id: datasource.id,
-            };
-            if let Err(e) = receive_once(
-                message,
-                m.attachments.into_iter().map(|a| a.path).collect_vec(),
-                redis,
-                settlements.clone(),
-                rq,
-                config,
-                &txn,
-                false,
-            )
-            .await
-            {
-                warn!(
-                    "[{client_name}] bot failed to process a message: {e:#?}"
-                );
-            }
-            echo_im::mark_inbox_as_seen(client_name, vec![m.internal_id], &txn)
-                .await
-                .c(h!())?;
-            txn.commit().await.c(h!())?;
-        }
-    }
+    let items = inbox_messages
+        .into_iter()
+        .map(|m| (m, datasource.id, client_name.to_string()))
+        .collect_vec();
+    process_queue(items, processor_pool).await.context(h!())?;
     Ok(())
 }
 
@@ -569,7 +604,7 @@ async fn list_clients(
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<Vec<EchoAccountF1>> {
     let txn = dbx.begin().await.c(h!())?;
-    let live_clients = list_accounts(None, &txn).await.c(h!())?;
+    let live_clients = list_echo_accounts(None, &txn).await.c(h!())?;
     txn.commit().await.c(h!())?;
     Ok(live_clients)
 }
