@@ -29,14 +29,23 @@ pub async fn upload_palitra_points(
         .await
         .c(h!())?
         .c(h!())?;
+    let palitra_access_organisms =
+        bl::collect_palitra_access_organisms(&env.dbx, palitra_id)
+            .await
+            .c(h!())?;
+    let palitra_access_logins =
+        bl::collect_palitra_access_logins(&env.dbx, palitra_id)
+            .await
+            .c(h!())?;
     check_palitra_permissions(
         &env,
         &login,
-        &palitra.owner_login,
-        &palitra.owner_organism_id,
+        &palitra_access_logins,
+        &palitra_access_organisms,
     )
     .await
     .c(h!())?;
+
     let (field, val) = multipart::extract(&mut payload).await.c(h!())?;
     let filename = field.name().c(h!())?.to_string();
     let points = kmz::load_coordinates_from_file(filename.clone(), val)
@@ -95,8 +104,8 @@ pub async fn create_palitra(
     check_palitra_permissions(
         &env,
         &login,
-        &req.owner_login,
-        &req.owner_organism_id,
+        &req.access_logins,
+        &req.access_organism_ids,
     )
     .await
     .c(h!())?;
@@ -118,8 +127,8 @@ pub async fn update_palitra(
     check_palitra_permissions(
         &env,
         &login,
-        &req.owner_login,
-        &req.owner_organism_id,
+        &req.access_logins,
+        &req.access_organism_ids,
     )
     .await
     .c(h!())?;
@@ -130,11 +139,20 @@ pub async fn update_palitra(
         .await
         .c(h!())?
         .c(h!())?;
+
+    let palitra_access_organisms =
+        bl::collect_palitra_access_organisms(&env.dbx, palitra_id)
+            .await
+            .c(h!())?;
+    let palitra_access_logins =
+        bl::collect_palitra_access_logins(&env.dbx, palitra_id)
+            .await
+            .c(h!())?;
     check_palitra_permissions(
         &env,
         &login,
-        &palitra.owner_login,
-        &palitra.owner_organism_id,
+        &palitra_access_logins,
+        &palitra_access_organisms,
     )
     .await
     .c(h!())?;
@@ -157,11 +175,19 @@ pub async fn delete_palitra(
         .await
         .c(h!())?
         .c(h!())?;
+    let palitra_access_organisms =
+        bl::collect_palitra_access_organisms(&env.dbx, palitra_id)
+            .await
+            .c(h!())?;
+    let palitra_access_logins =
+        bl::collect_palitra_access_logins(&env.dbx, palitra_id)
+            .await
+            .c(h!())?;
     check_palitra_permissions(
         &env,
         &login,
-        &palitra.owner_login,
-        &palitra.owner_organism_id,
+        &palitra_access_logins,
+        &palitra_access_organisms,
     )
     .await
     .c(h!())?;
@@ -173,16 +199,19 @@ pub async fn delete_palitra(
 async fn check_palitra_permissions(
     env: &Data<Env>,
     login: &str,
-    owner_login: &Option<String>,
-    owner_organism_id: &Option<i64>,
-) -> Result<(), AppError> {
-    let roles = if owner_login.is_some() {
+    owner_logins: &Vec<String>,
+    owner_organism_ids: &Vec<i64>,
+) -> anyhow::Result<()> {
+    let roles = if !owner_logins.is_empty() {
         info!("User {login} requested to create private palitra");
         vec!["Rer"]
-    } else if owner_organism_id.is_some() {
+    } else if !owner_organism_ids.is_empty() {
         info!(
             "User {login} requested to create private palitra for his organism"
         );
+        if !owner_logins.contains(&login.to_string()) {
+            bail!("Requested by '{login}', but this login is mising in provided list of permitted logins: {owner_logins:?}");
+        }
         vec!["Rer"]
     } else {
         info!("User {login} requested to create global palitra");

@@ -16,9 +16,9 @@ pub struct Coords {
 pub struct CreatePalitraReq {
     pub name: String,
     pub color_hex: String,
-    pub aor_id: i64,
-    pub owner_organism_id: Option<i64>,
-    pub owner_login: Option<String>,
+    pub access_aor_ids: Vec<i64>,
+    pub access_organism_ids: Vec<i64>,
+    pub access_logins: Vec<String>,
     pub source_file_name: Option<String>,
     pub last_uploaded_at_ts: Option<i64>,
 }
@@ -30,12 +30,12 @@ pub struct Palitra {
     pub id: i64,
     pub name: String,
     pub color_hex: String,
-    pub aor_id: i64,
-    pub owner_organism_id: Option<i64>,
-    pub owner_login: Option<String>,
     pub source_file_name: Option<String>,
     pub last_uploaded_at_ts: Option<i64>,
     pub geometry: Option<Geometry>,
+    pub access_aor_id: Vec<i64>,
+    pub access_organism_ids: Vec<i64>,
+    pub access_logins: Vec<String>,
 }
 
 #[derive(

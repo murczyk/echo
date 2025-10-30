@@ -134,8 +134,6 @@ pub enum EchoMessageSource {
     Whatsapp,
     #[sea_orm(string_value = "signal")]
     Signal,
-    #[sea_orm(string_value = "telegram")]
-    Telegram,
 }
 #[derive(
     Debug,

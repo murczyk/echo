@@ -14,12 +14,6 @@ pub struct Model {
     pub name: String,
     #[sea_orm(column_type = "Text")]
     pub hex: String,
-    #[sea_orm(column_type = "JsonBinary", nullable)]
-    pub geometry: Option<Json>,
-    pub area_of_responsibility_id: i64,
-    pub owner_organism_id: Option<i64>,
-    #[sea_orm(column_type = "Text", nullable)]
-    pub owner_login: Option<String>,
     #[sea_orm(column_type = "Text", nullable)]
     pub author: Option<String>,
     #[sea_orm(column_type = "Text", nullable)]
@@ -28,18 +22,14 @@ pub struct Model {
     pub deleted_at: Option<DateTime>,
     pub created_at: DateTime,
     pub last_uploaded_at: Option<DateTime>,
+    #[sea_orm(column_type = "custom(\"geometry\")", nullable)]
+    pub convex_hull: Option<String>,
+    #[sea_orm(column_type = "custom(\"geometry\")", nullable)]
+    pub center: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
-    #[sea_orm(
-        belongs_to = "super::area_of_responsibility::Entity",
-        from = "Column::AreaOfResponsibilityId",
-        to = "super::area_of_responsibility::Column::Id",
-        on_update = "NoAction",
-        on_delete = "NoAction"
-    )]
-    AreaOfResponsibility,
     #[sea_orm(
         belongs_to = "super::login::Entity",
         from = "Column::Author",
@@ -47,36 +37,38 @@ pub enum Relation {
         on_update = "NoAction",
         on_delete = "SetNull"
     )]
-    Login2,
-    #[sea_orm(
-        belongs_to = "super::login::Entity",
-        from = "Column::OwnerLogin",
-        to = "super::login::Column::Login",
-        on_update = "NoAction",
-        on_delete = "SetNull"
-    )]
-    Login1,
-    #[sea_orm(
-        belongs_to = "super::organism::Entity",
-        from = "Column::OwnerOrganismId",
-        to = "super::organism::Column::Id",
-        on_update = "NoAction",
-        on_delete = "SetNull"
-    )]
-    Organism,
+    Login,
+    #[sea_orm(has_many = "super::palitra_access_aor::Entity")]
+    PalitraAccessAor,
+    #[sea_orm(has_many = "super::palitra_access_login::Entity")]
+    PalitraAccessLogin,
+    #[sea_orm(has_many = "super::palitra_access_organism::Entity")]
+    PalitraAccessOrganism,
     #[sea_orm(has_many = "super::palitra_point::Entity")]
     PalitraPoint,
 }
 
-impl Related<super::area_of_responsibility::Entity> for Entity {
+impl Related<super::login::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::AreaOfResponsibility.def()
+        Relation::Login.def()
     }
 }
 
-impl Related<super::organism::Entity> for Entity {
+impl Related<super::palitra_access_aor::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::Organism.def()
+        Relation::PalitraAccessAor.def()
+    }
+}
+
+impl Related<super::palitra_access_login::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::PalitraAccessLogin.def()
+    }
+}
+
+impl Related<super::palitra_access_organism::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::PalitraAccessOrganism.def()
     }
 }
 

@@ -1,29 +1,87 @@
-use crate::entities::{login, palitra, palitra_point};
+use crate::entities::*;
 use crate::h;
 use crate::palitra::types::*;
 use crate::types::*;
 use anyhow::Context;
 use chrono::Utc;
-use itertools::Itertools;
+use itertools::{Either, Itertools};
 use sea_orm::prelude::*;
 use sea_orm::*;
+
+enum PalitraUpdateAction {
+    Insert,
+    Update,
+}
+
+pub async fn collect_palitra_access_logins<'a, 'async_trait, C>(
+    txn: &'a C,
+    palitra_id: i64,
+) -> anyhow::Result<Vec<String>>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    crate::entities::palitra_access_login::Entity::find()
+        .filter(palitra_access_login::Column::PalitraId.eq(palitra_id))
+        .select_only()
+        .column(palitra_access_login::Column::Login)
+        .into_tuple::<String>()
+        .all(txn)
+        .await
+        .c(h!())
+}
+
+pub async fn collect_palitra_access_organisms<'a, 'async_trait, C>(
+    txn: &'a C,
+    palitra_id: i64,
+) -> anyhow::Result<Vec<i64>>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    palitra_access_organism::Entity::find()
+        .filter(palitra_access_organism::Column::PalitraId.eq(palitra_id))
+        .select_only()
+        .column(palitra_access_organism::Column::OrganismId)
+        .into_tuple::<i64>()
+        .all(txn)
+        .await
+        .c(h!())
+}
+
+pub async fn collect_palitra_access_aors<'a, 'async_trait, C>(
+    txn: &'a C,
+    palitra_id: i64,
+) -> anyhow::Result<Vec<i64>>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    palitra_access_aor::Entity::find()
+        .filter(palitra_access_aor::Column::PalitraId.eq(palitra_id))
+        .select_only()
+        .column(palitra_access_aor::Column::AorId)
+        .into_tuple::<i64>()
+        .all(txn)
+        .await
+        .c(h!())
+}
 
 pub async fn update_palitra(
     palitra_id: i64,
     req: CreatePalitraReq,
     txn: &DatabaseTransaction,
 ) -> anyhow::Result<PalitraDetails> {
-    let mut palitra = palitra::Entity::find_by_id(palitra_id)
+    let palitra = palitra::Entity::find_by_id(palitra_id)
         .one(txn)
         .await
         .c(h!())?
         .c(h!())?
         .into_active_model();
 
-    palitra = update_palitra_from_req(req, palitra);
+    let palitra =
+        update_palitra_from_req(req, palitra, txn, PalitraUpdateAction::Update)
+            .await
+            .c(h!())?;
 
-    let palitra = palitra.update(txn).await.c(h!())?;
-    let result = render_palitra_details(txn, vec![palitra])
+    let result = render_palitra_details(txn, vec![palitra.id])
         .await
         .c(h!())?
         .into_iter()
@@ -36,8 +94,8 @@ pub async fn list_all_palitras_detailed(
     login: String,
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<Vec<PalitraDetails>> {
-    let palitra_models = collect_palitras(login, dbx).await.c(h!())?;
-    let result = render_palitra_details(dbx, palitra_models).await.c(h!())?;
+    let palitra_ids = collect_palitra_ids(login, dbx).await.c(h!())?;
+    let result = render_palitra_details(dbx, palitra_ids).await.c(h!())?;
     Ok(result)
 }
 
@@ -45,10 +103,10 @@ pub async fn list_all_palitras(
     login: String,
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<Vec<Palitra>> {
-    let palitra_models = collect_palitras(login, dbx).await.c(h!())?;
+    let palitra_ids = collect_palitra_ids(login, dbx).await.c(h!())?;
     let mut result = vec![];
-    for model in palitra_models {
-        let palitra = render_palitra(model)?;
+    for id in palitra_ids {
+        let palitra = render_palitra(Either::Right(id), dbx).await.c(h!())?;
         result.push(palitra);
     }
     Ok(result)
@@ -78,55 +136,31 @@ pub async fn create_palitra(
         author: Set(Some(author_login)),
         ..Default::default()
     };
-    let model = update_palitra_from_req(req, model);
-    let palitra = model.insert(dbx).await.c(h!())?;
-    render_palitra(palitra)
-}
-
-pub async fn recalculate_geometry<'a, 'async_trait, C>(
-    txn: &'a C,
-    palitra_id: i64,
-) -> anyhow::Result<()>
-where
-    C: ConnectionTrait + 'async_trait,
-{
-    let center = calculate_center(txn, palitra_id).await.c(h!())?;
-    let perimeter_linear_ring =
-        calculate_convex_hull(txn, palitra_id).await.c(h!())?;
-    let geometry: Geometry = Geometry {
-        center,
-        perimeter_linear_ring,
-    };
-    let mut model = palitra::Entity::find_by_id(palitra_id)
-        .one(txn)
-        .await
-        .c(h!())?
-        .c(h!())?
-        .into_active_model();
-    model.geometry = Set(Some(serde_json::to_value(&geometry).c(h!())?));
-    model.update(txn).await.c(h!())?;
-    Ok(())
+    let palitra =
+        update_palitra_from_req(req, model, dbx, PalitraUpdateAction::Insert)
+            .await
+            .c(h!())?;
+    render_palitra(Either::Left(palitra), dbx).await
 }
 
 async fn render_palitra_details<'a, 'async_trait, C>(
     txn: &'a C,
-    palitra_models: Vec<palitra::Model>,
+    palitra_ids: Vec<i64>,
 ) -> anyhow::Result<Vec<PalitraDetails>>
 where
     C: ConnectionTrait + 'async_trait,
 {
-    let ids = palitra_models.iter().map(|p| p.id).collect_vec();
     let points = palitra_point::Entity::find()
-        .filter(palitra_point::Column::PalitraId.is_in(ids))
+        .filter(palitra_point::Column::PalitraId.is_in(palitra_ids.clone()))
         .filter(palitra_point::Column::Deleted.eq(false))
         .all(txn)
         .await
         .c(h!())?;
     let mut result = vec![];
-    for model in palitra_models {
+    for id in palitra_ids {
         let points = points
             .iter()
-            .filter(|p| p.palitra_id.eq(&model.id))
+            .filter(|p| p.palitra_id.eq(&id))
             .map(|p| PalitraPoint {
                 label: p.label.clone(),
                 coords: Coords {
@@ -135,35 +169,76 @@ where
                 },
             })
             .collect_vec();
-        let palitra = render_palitra(model)?;
+        let palitra = render_palitra(Either::Right(id), txn).await.c(h!())?;
         result.push(PalitraDetails { palitra, points });
     }
     Ok(result)
 }
 
-async fn calculate_center<'a, 'async_trait, C>(
+async fn recalculate_center<'a, 'async_trait, C>(
     dbx: &'a C,
     palitra_id: i64,
-) -> anyhow::Result<Coords>
+) -> anyhow::Result<()>
 where
     C: ConnectionTrait + 'async_trait,
 {
-    let center_txt = palitra_point::Entity::find()
-        .select_only()
-        .column_as(Expr::cust("ST_AsText(ST_Centroid(ST_Collect(ST_SetSRID(ST_MakePoint(lon, lat), 4326))))"), "geometric_average_wkt")
-        .filter(palitra_point::Column::PalitraId.eq(palitra_id))
-        .filter(palitra_point::Column::Deleted.eq(false))
-        .group_by(palitra_point::Column::PalitraId)
-        .into_tuple::<String>()
-        .one(dbx)
-        .await
-        .c(h!())?
-        .c(h!())?;
-    Coords::from_csv(&center_txt)
+    let query = r"
+        UPDATE palitra
+        SET center = ST_Centroid(ST_Collect(ST_SetSRID(ST_MakePoint(longitude, latitude), 4326)))
+        FROM palitra_point
+        WHERE
+            id = $1
+            AND point.palitra_id = 1
+            AND point.deleted = FALSE;
+    ";
+    dbx.execute(Statement::from_sql_and_values(
+        DbBackend::Postgres,
+        query,
+        [palitra_id.into()],
+    ))
+    .await
+    .context(h!())?;
+    Ok(())
 }
 
 /// calculates outer perimeter for points in palitra
-async fn calculate_convex_hull<'a, 'async_trait, C>(
+async fn recalculate_convex_hull<'a, 'async_trait, C>(
+    dbx: &'a C,
+    palitra_id: i64,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let query = r"
+        UPDATE palitra
+        SET convex_hull = (
+            SELECT
+                ST_ExteriorRing(
+                    ST_ConvexHull(
+                        ST_Collect(ST_SetSRID(ST_MakePoint(lon, lat), 4326))
+                    )
+                )
+            FROM
+                palitra_point
+            WHERE
+                palitra_id = $1
+                AND deleted = FALSE
+            HAVING COUNT(id) > 2
+        )
+        WHERE
+            id = $1;
+    ";
+    dbx.execute(Statement::from_sql_and_values(
+        DbBackend::Postgres,
+        query,
+        [palitra_id.into()],
+    ))
+    .await
+    .context(h!())?;
+    Ok(())
+}
+
+async fn read_palitra_convex_hull<'a, 'async_trait, C>(
     dbx: &'a C,
     palitra_id: i64,
 ) -> anyhow::Result<Vec<Coords>>
@@ -178,32 +253,16 @@ where
     }
     let query = r"
         SELECT
-            -- dp.path is a 1-based index path array. We use [1] and subtract 1 for a 0-based sequence index.
             (dp.path[1] - 1) AS sequence_index,
             ST_X(dp.geom) AS lon,
             ST_Y(dp.geom) AS lat
         FROM
-            (
-                -- Subquery to calculate the outer perimeter polygon (Convex Hull)
-                SELECT
-                    -- 1. Get the exterior ring (a LineString) from the resulting polygon.
-                    ST_ExteriorRing(
-                        -- 2. Calculate the smallest convex polygon enclosing all collected points.
-                        ST_ConvexHull(
-                            -- 3. Collect all valid point geometries into a single geometry object.
-                            ST_Collect(ST_SetSRID(ST_MakePoint(lon, lat), 4326))
-                        )
-                    ) AS hull_ring_linestring
-                FROM
-                    point
-                WHERE
-                    palitra_id = $1
-                    AND deleted = FALSE
-                -- The entire set of filtered points forms the input for the aggregate functions (ST_Collect, ST_ConvexHull)
-            ) AS perimeter_data,
-            -- Function to decompose the LineString back into individual point geometries with an index
-            ST_DumpPoints(perimeter_data.hull_ring_linestring) AS dp
-        ORDER BY  sequence_index;
+            palitra,
+            ST_DumpPoints(palitra.convex_hull) AS dp
+        WHERE
+            palitra.id = $1
+        ORDER BY
+            sequence_index;
     ";
     let mut convex_hull: Vec<Geometry> =
         Geometry::find_by_statement(Statement::from_sql_and_values(
@@ -222,6 +281,43 @@ where
             lng: c.lon,
         })
         .collect())
+}
+
+async fn read_palitra_center<'a, 'async_trait, C>(
+    dbx: &'a C,
+    palitra_id: i64,
+) -> anyhow::Result<Coords>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    #[derive(Debug, FromQueryResult)]
+    pub struct Geometry {
+        lat: f64,
+        lon: f64,
+    }
+    let query = r"
+       SELECT
+            ST_Y(center) AS lat,
+            ST_X(center) AS lon
+        FROM
+            palitra
+        WHERE
+            palitra.id = $1;
+    ";
+    let center: Geometry =
+        Geometry::find_by_statement(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            query,
+            [palitra_id.into()],
+        ))
+        .one(dbx)
+        .await
+        .context(h!())?
+        .context(h!())?;
+    Ok(Coords {
+        lat: center.lat,
+        lng: center.lon,
+    })
 }
 
 pub async fn rewrite_palitra_points(
@@ -256,7 +352,8 @@ pub async fn rewrite_palitra_points(
         .exec(txn)
         .await
         .context(h!())?;
-    recalculate_geometry(txn, palitra_id).await.c(h!())?;
+    recalculate_center(txn, palitra_id).await.c(h!())?;
+    recalculate_convex_hull(txn, palitra_id).await.c(h!())?;
     Ok(())
 }
 
@@ -276,64 +373,205 @@ async fn delete_existing_palitra_points(
     Ok(())
 }
 
-fn render_palitra(model: palitra::Model) -> anyhow::Result<Palitra> {
+async fn render_palitra<'a, 'async_trait, C>(
+    model: Either<palitra::Model, i64>,
+    dbx: &'a C,
+) -> anyhow::Result<Palitra>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let model = match model {
+        Either::Left(model) => model,
+        Either::Right(id) => palitra::Entity::find_by_id(id)
+            .one(dbx)
+            .await
+            .c(h!())?
+            .c(h!())?,
+    };
+    let palitra_id = model.id;
     let last_uploaded_at_ts = model
         .last_uploaded_at
         .map(|ts| ts.and_utc().timestamp_millis());
-    let geometry = match model.geometry {
-        Some(geometry) => Some(serde_json::from_value(geometry).c(h!())?),
-        None => None,
+    let center = read_palitra_center(dbx, palitra_id).await.ok();
+    let convex_hull = read_palitra_convex_hull(dbx, palitra_id).await.ok();
+    let geometry = match (center, convex_hull) {
+        (Some(center), Some(perimeter_linear_ring)) => Some(Geometry {
+            center,
+            perimeter_linear_ring,
+        }),
+        _ => None,
     };
+    let access_aor_id =
+        collect_palitra_access_aors(dbx, palitra_id).await.c(h!())?;
+    let access_organism_ids = collect_palitra_access_organisms(dbx, palitra_id)
+        .await
+        .c(h!())?;
+    let access_logins = collect_palitra_access_logins(dbx, palitra_id)
+        .await
+        .c(h!())?;
     Ok(Palitra {
-        id: model.id,
+        id: palitra_id,
         name: model.name,
         color_hex: model.hex,
-        aor_id: model.area_of_responsibility_id,
-        owner_organism_id: model.owner_organism_id,
-        owner_login: model.owner_login,
         source_file_name: model.source_file_name,
         last_uploaded_at_ts,
         geometry,
+        access_aor_id,
+        access_organism_ids,
+        access_logins,
     })
 }
 
-async fn collect_palitras(
+async fn collect_palitra_ids(
     login: String,
     dbx: &DatabaseConnection,
-) -> anyhow::Result<Vec<palitra::Model>> {
-    let mut organism_filter = palitra::Column::OwnerOrganismId.is_null();
-    let organism_id = login::Entity::find_by_id(login.clone())
-        .one(dbx)
-        .await
-        .c(h!())?
-        .c(h!())?
-        .organism_id;
-    if let Some(organism_id) = organism_id {
-        organism_filter = organism_filter
-            .or(palitra::Column::OwnerOrganismId.eq(organism_id));
-    }
-    let login_filter = palitra::Column::OwnerLogin
-        .is_null()
-        .or(palitra::Column::OwnerLogin.eq(login));
-    let palitra_models = palitra::Entity::find()
-        .filter(organism_filter)
-        .filter(login_filter)
-        .filter(palitra::Column::Deleted.eq(false))
+) -> anyhow::Result<Vec<i64>> {
+    // only direct organism (no parents), only AOR with is_top_level = true
+    let organism_aors = organism_aor::Entity::find()
+        .join(JoinType::InnerJoin, organism_aor::Relation::Organism.def())
+        .join(JoinType::InnerJoin, organism::Relation::Login.def())
+        .filter(login::Column::Login.eq(login.clone()))
         .all(dbx)
         .await
         .c(h!())?;
-    Ok(palitra_models)
+    let login_organism_ids = organism_aors
+        .iter()
+        .map(|o| o.organism_id)
+        .collect::<Vec<_>>();
+    let login_aor_ids = organism_aors
+        .into_iter()
+        .map(|x| x.aor_id)
+        .collect::<Vec<_>>();
+    let login_filter = Condition::any()
+        .add(login::Column::Login.contains(login))
+        .add(login::Column::Login.count().eq(0));
+    let organism_filter = Condition::any()
+        .add(organism::Column::Id.is_in(login_organism_ids))
+        .add(organism::Column::Id.count().eq(0));
+    let aor_filter = area_of_responsibility::Column::Id.is_in(login_aor_ids);
+    let having_filter = Condition::all()
+        .add(login_filter)
+        .add(aor_filter)
+        .add(organism_filter);
+    palitra::Entity::find()
+        .join(
+            JoinType::LeftJoin,
+            palitra::Relation::PalitraAccessAor.def(),
+        )
+        .join(
+            JoinType::LeftJoin,
+            palitra::Relation::PalitraAccessLogin.def(),
+        )
+        .join(
+            JoinType::LeftJoin,
+            palitra::Relation::PalitraAccessOrganism.def(),
+        )
+        .join(
+            JoinType::LeftJoin,
+            palitra_access_aor::Relation::AreaOfResponsibility.def(),
+        )
+        .join(
+            JoinType::LeftJoin,
+            palitra_access_login::Relation::Login.def(),
+        )
+        .join(
+            JoinType::LeftJoin,
+            palitra_access_organism::Relation::Organism.def(),
+        )
+        .select_only()
+        .column(palitra::Column::Id)
+        .group_by(palitra::Column::Id)
+        .having(having_filter)
+        .into_tuple::<i64>()
+        .all(dbx)
+        .await
+        .c(h!())
 }
 
-fn update_palitra_from_req(
+async fn update_palitra_from_req<'a, 'async_trait, C>(
     req: CreatePalitraReq,
     palitra_val: palitra::ActiveModel,
-) -> palitra::ActiveModel {
+    txn: &'a C,
+    action: PalitraUpdateAction,
+) -> anyhow::Result<palitra::Model>
+where
+    C: ConnectionTrait + 'async_trait,
+{
     let mut palitra = palitra_val;
     palitra.name = Set(req.name);
     palitra.hex = Set(req.color_hex);
-    palitra.area_of_responsibility_id = Set(req.aor_id);
-    palitra.owner_organism_id = Set(req.owner_organism_id);
-    palitra.owner_login = Set(req.owner_login);
-    palitra
+    let palitra = match action {
+        PalitraUpdateAction::Update => palitra.update(txn).await.c(h!())?,
+        PalitraUpdateAction::Insert => palitra.insert(txn).await.c(h!())?,
+    };
+    palitra_access_login::Entity::delete_many()
+        .filter(palitra_access_login::Column::PalitraId.eq(palitra.id))
+        .exec(txn)
+        .await
+        .c(h!())?;
+    palitra_access_organism::Entity::delete_many()
+        .filter(palitra_access_organism::Column::PalitraId.eq(palitra.id))
+        .exec(txn)
+        .await
+        .c(h!())?;
+    palitra_access_aor::Entity::delete_many()
+        .filter(palitra_access_aor::Column::PalitraId.eq(palitra.id))
+        .exec(txn)
+        .await
+        .c(h!())?;
+
+    let logins = req
+        .access_logins
+        .into_iter()
+        .map(|login| palitra_access_login::ActiveModel {
+            id: NotSet,
+            palitra_id: Set(palitra.id),
+            login: Set(login),
+            created_at: NotSet,
+        })
+        .collect_vec();
+
+    let organisms = req
+        .access_organism_ids
+        .into_iter()
+        .map(|organism_id| palitra_access_organism::ActiveModel {
+            id: NotSet,
+            palitra_id: Set(palitra.id),
+            organism_id: Set(organism_id),
+            created_at: NotSet,
+        })
+        .collect_vec();
+
+    let aors = req
+        .access_aor_ids
+        .into_iter()
+        .map(|aor_id| palitra_access_aor::ActiveModel {
+            id: NotSet,
+            palitra_id: Set(palitra.id),
+            aor_id: Set(aor_id),
+            created_at: NotSet,
+        })
+        .collect_vec();
+
+    if !logins.is_empty() {
+        palitra_access_login::Entity::insert_many(logins)
+            .exec(txn)
+            .await
+            .c(h!())?;
+    }
+
+    if !organisms.is_empty() {
+        palitra_access_organism::Entity::insert_many(organisms)
+            .exec(txn)
+            .await
+            .c(h!())?;
+    }
+
+    if !aors.is_empty() {
+        palitra_access_aor::Entity::insert_many(aors)
+            .exec(txn)
+            .await
+            .c(h!())?;
+    }
+    Ok(palitra)
 }

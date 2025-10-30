@@ -55,8 +55,8 @@ pub enum Relation {
     Login,
     #[sea_orm(has_many = "super::organism_aor::Entity")]
     OrganismAor,
-    #[sea_orm(has_many = "super::palitra::Entity")]
-    Palitra,
+    #[sea_orm(has_many = "super::palitra_access_aor::Entity")]
+    PalitraAccessAor,
     #[sea_orm(has_many = "super::sigint_network_aor::Entity")]
     SigintNetworkAor,
     #[sea_orm(
@@ -91,9 +91,9 @@ impl Related<super::organism_aor::Entity> for Entity {
     }
 }
 
-impl Related<super::palitra::Entity> for Entity {
+impl Related<super::palitra_access_aor::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::Palitra.def()
+        Relation::PalitraAccessAor.def()
     }
 }
 
