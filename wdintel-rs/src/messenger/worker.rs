@@ -199,8 +199,6 @@ async fn run_new_worker(
     info!("{worker_name}: started processing");
     let result = async {
         loop {
-            sleep(Duration::from_millis(crate::config::LONG_POLL_SLEEP_MS * 2))
-                .await;
             if cancel_token.is_cancelled() {
                 info!("{worker_name}: cancellation requested, shutting down...");
                 return Ok(());
