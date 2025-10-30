@@ -115,13 +115,12 @@ pub async fn receive_thread_nofail(
                 );
                 workers.spawn_blocking_on(
                     move || {
-                        let result = spawn_new_worker(
+                        spawn_new_worker(
                             datasource_id,
                             mode,
                             worker_name,
                             cancel_token,
-                        );
-                        result
+                        )
                     },
                     &shutdown_handle,
                 );
