@@ -40,6 +40,25 @@ jobs:
           python -m pip install --upgrade pip
           pip install PyGithub
 
+      - name: Determine if PR is WIP
+        id: pr_meta
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          python - <<'PY'
+          import os
+
+          title = os.getenv("PR_TITLE", "")
+          normalized = title.lstrip().lower()
+          is_wip = normalized.startswith("wip") or normalized.startswith("[wip]")
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+              fh.write(f"is_wip={str(is_wip).lower()}\n")
+
+          print(f"PR title: {title!r}")
+          print(f"Is WIP: {is_wip}")
+          PY
+
       - name: Check PR checkboxes
         id: checkbox_check
         run: |
@@ -49,7 +68,7 @@ jobs:
             --pr-number ${{ github.event.pull_request.number }}
 
       - name: Discord notification - PR Checkbox Check (failures only)
-        if: failure()
+        if: failure() && steps.pr_meta.outputs.is_wip != 'true'
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL_CI }}
         run: |
