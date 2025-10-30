@@ -102,11 +102,7 @@ pub async fn report_docx_kind_revo(
         )
         .await
         .context(h!())?;
-    info!(
-        "get_inbox_messages_with_conn took: {:?}, messages count: {}",
-        start.elapsed(),
-        messages.len()
-    );
+    info!("get_inbox_messages_with_conn took: {:?}, messages count: {}", start.elapsed(), messages.len());
 
     let range_khz = match req.report_type {
         Some(ReportType::Reo(ReoReportSettings {
@@ -205,10 +201,7 @@ pub async fn report_docx_kind_revo(
     docx.build().pack(file).context(h!())?;
     info!("writing docx to file took: {:?}", start.elapsed());
 
-    info!(
-        "report_docx_kind_revo completed in total: {:?}",
-        start_total.elapsed()
-    );
+    info!("report_docx_kind_revo completed in total: {:?}", start_total.elapsed());
     Ok(())
 }
 
@@ -347,11 +340,7 @@ async fn collect_report(
         .into_iter()
         .map(|s| ((s.freq.clone(), None), s))
         .collect::<HashMap<_, _>>();
-    info!(
-        "collect_report: loading all_networks took: {:?}, count: {}",
-        start.elapsed(),
-        all_networks.len()
-    );
+    info!("collect_report: loading all_networks took: {:?}, count: {}", start.elapsed(), all_networks.len());
 
     info!("collect_report: loading filtered networks from DB");
     let start = Instant::now();
@@ -408,11 +397,7 @@ async fn collect_report(
         .into_iter()
         .map(|s| ((s.freq.clone(), s.master_key.clone()), s))
         .collect::<HashMap<_, _>>();
-    info!(
-        "collect_report: loading filtered networks took: {:?}, count: {}",
-        start.elapsed(),
-        networks.len()
-    );
+    info!("collect_report: loading filtered networks took: {:?}, count: {}", start.elapsed(), networks.len());
 
     let message_ids: Vec<i64> = messages.iter().map(|(id, _)| *id).collect();
 
@@ -454,21 +439,14 @@ async fn collect_report(
                 });
         }
     }
-    info!(
-        "collect_report: loading comments took: {:?}, count: {}",
-        start.elapsed(),
-        comments.len()
-    );
+    info!("collect_report: loading comments took: {:?}, count: {}", start.elapsed(), comments.len());
 
     info!("collect_report: merging all_networks into networks");
     let start = Instant::now();
     for (k, v) in all_networks {
         networks.insert(k, v);
     }
-    info!(
-        "collect_report: merging networks took: {:?}",
-        start.elapsed()
-    );
+    info!("collect_report: merging networks took: {:?}", start.elapsed());
 
     let mut networks_dictionary = {
         let mut result = HashMap::new();
@@ -525,11 +503,7 @@ async fn collect_report(
         .into_iter()
         .map(|c| ((c.network_id, c.callsign.clone()), c))
         .collect::<HashMap<_, _>>();
-    info!(
-        "collect_report: loading unit_callsigns took: {:?}, count: {}",
-        start.elapsed(),
-        unit_callsigns.len()
-    );
+    info!("collect_report: loading unit_callsigns took: {:?}, count: {}", start.elapsed(), unit_callsigns.len());
 
     info!("collect_report: processing messages");
     let start = Instant::now();
@@ -630,10 +604,7 @@ async fn collect_report(
             network_comments_map.insert(summary.id, list);
         }
     }
-    info!(
-        "collect_report: processing messages took: {:?}",
-        start.elapsed()
-    );
+    info!("collect_report: processing messages took: {:?}", start.elapsed());
 
     info!("collect_report: building network rows");
     let start = Instant::now();
@@ -771,10 +742,7 @@ async fn collect_report(
             break;
         }
     }
-    info!(
-        "collect_report: sorting/filtering undefined networks took: {:?}",
-        start.elapsed()
-    );
+    info!("collect_report: sorting/filtering undefined networks took: {:?}", start.elapsed());
 
     let report = Report {
         summary: ReportSummary {
@@ -790,9 +758,6 @@ async fn collect_report(
         skipped_callsigns.into_iter().sorted_unstable().join(", ")
     );
 
-    info!(
-        "collect_report completed in total: {:?}",
-        start_collect.elapsed()
-    );
+    info!("collect_report completed in total: {:?}", start_collect.elapsed());
     Ok(report)
 }

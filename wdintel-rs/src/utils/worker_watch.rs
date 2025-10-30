@@ -3,7 +3,6 @@ use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
-use tokio::task::JoinSet;
 
 pub struct LoopGuard {
     name: &'static str,
@@ -106,8 +105,7 @@ pub fn snapshot() -> Vec<WorkerSnapshot> {
 }
 
 pub fn spawn_metrics_logger() {
-    tokio::spawn(async {
-        info!("starting worker_metrics_logger");
+    spawn_named_worker("worker_metrics_logger", async {
         loop {
             tokio::time::sleep(Duration::from_secs(60)).await;
             log_snapshot();
@@ -138,14 +136,11 @@ fn log_snapshot() {
     }
 }
 
-pub fn spawn_named_worker<F>(
-    name: &'static str,
-    bg_set: &mut JoinSet<()>,
-    fut: F,
-) where
+pub fn spawn_named_worker<F>(name: &'static str, fut: F)
+where
     F: std::future::Future<Output = ()> + Send + 'static,
 {
-    bg_set.spawn(async move {
+    tokio::spawn(async move {
         info!(target: "worker", "starting {name}");
         fut.await;
         info!(target: "worker", "finished {name}");

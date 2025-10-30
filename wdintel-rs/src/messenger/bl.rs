@@ -30,7 +30,7 @@ pub async fn load_echo_account<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
-    let account = list_echo_accounts(Some(id), txn)
+    let account = list_accounts(Some(id), txn)
         .await
         .c(h!())?
         .into_iter()
@@ -69,7 +69,7 @@ pub async fn edit_account(
     account.api_login = Set(api_login);
     account.api_endpoint = Set(api_endpoint);
     let result = account.update(txn).await.c(h!())?;
-    let account = list_echo_accounts(Some(result.id), txn)
+    let account = list_accounts(Some(result.id), txn)
         .await
         .c(h!())?
         .into_iter()
@@ -132,7 +132,7 @@ pub async fn link_account(
         }
     };
     let unit_name = format!("{src_name}@{system_service_name}");
-    let accounts = list_echo_accounts(None, txn).await.c(h!())?;
+    let accounts = list_accounts(None, txn).await.c(h!())?;
     let existing_account = accounts
         .into_iter()
         .filter(|a| {
@@ -250,7 +250,7 @@ pub async fn get_qr_code(
     db: &DatabaseConnection,
     login: &String,
 ) -> Result<String, AppError> {
-    let m_account = list_echo_accounts(Some(account_id), db)
+    let m_account = list_accounts(Some(account_id), db)
         .await
         .c(h!())?
         .into_iter()
@@ -321,7 +321,7 @@ async fn link_existing_datasource(
     .c(h!())
 }
 
-pub async fn list_echo_accounts<'a, 'async_trait, C>(
+pub async fn list_accounts<'a, 'async_trait, C>(
     m_id: Option<i64>,
     txn: &'a C,
 ) -> Result<Vec<EchoAccountF1>, AppError>

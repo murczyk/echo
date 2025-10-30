@@ -13,8 +13,6 @@ use redis::aio::ConnectionManager;
 use redis::ConnectionLike;
 use rustls::crypto::ring;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use tokio::runtime::Handle;
-use tokio_util::sync::CancellationToken;
 
 pub mod atak;
 pub mod aws;
@@ -598,15 +596,10 @@ fn main() -> Result<(), AppError> {
         .build()
         .expect("failed to build tokio runtime");
 
-    let cancel_token = CancellationToken::new();
-    runtime.block_on(async_main(args, cancel_token.clone(), runtime.handle()))
+    runtime.block_on(async_main(args))
 }
 
-async fn async_main(
-    args: Arg,
-    token: CancellationToken,
-    shutdown_handle: &Handle,
-) -> Result<(), AppError> {
+async fn async_main(args: Arg) -> Result<(), AppError> {
     let mode = args.mode;
     let action = args.action;
 
@@ -614,7 +607,8 @@ async fn async_main(
 
     match action {
         Cmd::Server(ps) => {
-                crate::server::main_server(mode, ps, token, shutdown_handle.clone()).await
+            let _: () = crate::server::main_server(mode, ps).await.unwrap();
+            Ok(())
         }
         Cmd::OneoffEnsureTagsOrdering => {
             crate::tags::ordering::oneoff_ensure_tags_ordering(mode).await
