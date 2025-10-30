@@ -121,7 +121,6 @@ pub async fn receive_thread_nofail(
                             worker_name,
                             cancel_token,
                         );
-                        info!("{}", h!());
                         result
                     },
                     &shutdown_handle,
@@ -139,34 +138,51 @@ fn spawn_new_worker(
     worker_name: String,
     cancel_token: CancellationToken,
 ) -> WorkerStatus {
-    let Ok(worker_runtime) = Builder::new_multi_thread()
-        .worker_threads(1)
-        .enable_all()
-        .build()
-    else {
-        error!("failed to build worker runtime");
-        return WorkerStatus {
+    // Spawn the worker in a separate OS thread to avoid runtime drop issues
+    // This prevents the "Cannot drop a runtime in a context where blocking is not allowed" panic
+    std::thread::spawn(move || {
+        let worker_name_val = worker_name.clone();
+        let Ok(worker_runtime) = Builder::new_multi_thread()
+            .worker_threads(1)
+            .enable_all()
+            .build()
+        else {
+            error!("failed to build worker runtime");
+            return WorkerStatus {
+                datasource_id,
+                failed: true,
+            };
+        };
+
+        let failed = worker_runtime.block_on(async move {
+            match run_new_worker(datasource_id, mode, worker_name_val.clone(), cancel_token)
+                .await
+            {
+                Ok(_) => false,
+                Err(e) => {
+                    error!("failed to run worker {worker_name_val}, stopping. Root cause: {e:?}");
+                   true
+                }
+            }
+        });
+
+        // Explicitly shutdown the runtime before dropping to ensure clean shutdown
+        worker_runtime.shutdown_background();
+
+        info!("worker {worker_name} was shutdown, failed={failed}");
+        WorkerStatus {
+            datasource_id,
+            failed,
+        }
+    })
+    .join()
+    .unwrap_or_else(|_| {
+        error!("worker thread panicked for datasource {datasource_id}");
+        WorkerStatus {
             datasource_id,
             failed: true,
-        };
-    };
-    let worker_name_val = worker_name.clone();
-    let failed = worker_runtime.block_on(async move {
-        match run_new_worker(datasource_id, mode, worker_name_val.clone(), cancel_token)
-            .await
-        {
-            Ok(_) => false,
-            Err(e) => {
-                error!("failed to run worker {worker_name_val}, stopping. Root cause: {e:?}");
-               true
-            }
         }
-    });
-    info!("worker {worker_name} was shutdown, failed={failed}");
-    WorkerStatus {
-        datasource_id,
-        failed,
-    }
+    })
 }
 
 async fn run_new_worker(
@@ -182,35 +198,42 @@ async fn run_new_worker(
             .await
             .c(h!())?;
     info!("{worker_name}: started processing");
-    loop {
-        sleep(Duration::from_millis(crate::config::LONG_POLL_SLEEP_MS * 2))
-            .await;
-        if cancel_token.is_cancelled() {
-            info!("{worker_name}: cancellation requested, shutting down...");
-            return Ok(());
-        }
-        let Some(cli) = list_echo_accounts(Some(datasource_id), &dbx)
-            .await
-            .c(h!())?
-            .into_iter()
-            .next()
-            .filter(|ds| ds.is_linked)
-        else {
-            info!(
-                "datasource {datasource_id} went offline, stopping worker..."
-            );
-            sleep(Duration::from_millis(crate::config::LONG_POLL_SLEEP_MS))
+    let result = async {
+        loop {
+            sleep(Duration::from_millis(crate::config::LONG_POLL_SLEEP_MS * 2))
                 .await;
-            return Ok(());
-        };
-        let is_healthy =
-            sync_client_once(cli, &dbx, &mut message_processor_pool).await;
-        if !is_healthy {
-            sleep(Duration::from_millis(crate::config::LONG_POLL_SLEEP_MS))
-                .await;
-            bail!("worker thread {worker_name} is not healthy, restarting...");
+            if cancel_token.is_cancelled() {
+                info!("{worker_name}: cancellation requested, shutting down...");
+                return Ok(());
+            }
+            let Some(cli) = list_echo_accounts(Some(datasource_id), &dbx)
+                .await
+                .c(h!())?
+                .into_iter()
+                .next()
+                .filter(|ds| ds.is_linked)
+            else {
+                info!(
+                    "datasource {datasource_id} went offline, stopping worker..."
+                );
+                sleep(Duration::from_millis(crate::config::LONG_POLL_SLEEP_MS))
+                    .await;
+                return Ok(());
+            };
+            let is_healthy =
+                sync_client_once(cli, &dbx, &mut message_processor_pool).await;
+            if !is_healthy {
+                sleep(Duration::from_millis(crate::config::LONG_POLL_SLEEP_MS))
+                    .await;
+                bail!("worker thread {worker_name} is not healthy, restarting...");
+            }
         }
-    }
+    }.await;
+
+    // Explicitly shutdown the processor pool runtime to prevent panic on drop
+    message_processor_pool.runtime.shutdown_background();
+
+    result
 }
 
 async fn sync_client_once(
