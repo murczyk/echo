@@ -789,8 +789,8 @@ deploy-docs:
     fi
 
     just builder={{ builder }} builder-build-docs
-    rsync --progress ~/Downloads/echo-docs_0.1.0-1_amd64.deb {{ server }}:Downloads/
-    ssh -t {{ server }} 'cd Downloads && sudo dpkg -i echo-docs_0.1.0-1_amd64.deb'
+    rsync --progress ~/Downloads/echo-docs_0.1.0-1_amd64.deb {{ server }}:/var/tmp/
+    ssh -t {{ server }} 'cd /var/tmp/ && sudo dpkg -i echo-docs_0.1.0-1_amd64.deb && rm /var/tmp/echo-docs*.deb'
 
 fmt:
     just --fmt --unstable
