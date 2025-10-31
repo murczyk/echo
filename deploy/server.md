@@ -130,6 +130,9 @@ python3 -m spacy download ru_core_news_md
 	- [ ] TODO: Environment="WD_CALLSIGNS_SPM=/home/zptzr/storage/wiki.model"
 	- [ ] TODO: Environment="WD_CALLSIGNS=/home/zptzr/storage/callsigns20230512.pt"
 
+## Install apt
+- Встановлення (apt): [../docs/INSTALL_APT.md](./docs/INSTALL_APT.md)
+
 ## Edit `justfile`, expand `just deploy` command with your server
 
 - once do `bw login` with sergeantbtzr
