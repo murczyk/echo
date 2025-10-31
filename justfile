@@ -970,8 +970,8 @@ init-new-db:
     if [[ "{{ server }}" == "" ]]; then
         just _print-servers; exit 1;
     fi
-    scp ./deploy/wd-init.pgrestore {{ server }}:~/Downloads
-    ssh -t {{ server }} "sudo mv ~/Downloads/wd-init.pgrestore /tmp/wd_init.pgrestore"
+    scp ./deploy/wd-init.pgrestore {{ server }}:/var/tmp/
+    ssh -t {{ server }} "sudo mv /var/tmp/wd-init.pgrestore /tmp/wd_init.pgrestore"
     ssh -t {{ server }} "sudo -u postgres psql -c 'drop database wd with (FORCE)'"
     ssh -t {{ server }} "sudo -u postgres psql -c 'create database wd'"
     ssh -t {{ server }} "sudo -u postgres pg_restore -d wd /tmp/wd_init.pgrestore"
