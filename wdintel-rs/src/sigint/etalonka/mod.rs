@@ -54,7 +54,7 @@ pub async fn report_networks(
     req: Json<EtalonkaJimForksReq>,
 ) -> Result<HttpResponse, AppError> {
     let trace_id = Uuid::new_v4();
-    info!("[Etalon Networks report trace_id={trace_id}] Started report generation...");
+    info!("[trace_id={trace_id}] Etalon Networks report: Started report generation...");
 
     let user_login = user.id().context(h!())?;
     crate::users::has_role(&env.dbx, &user_login, "Rer")
@@ -71,7 +71,7 @@ pub async fn report_networks(
 
     let networks_data: HashMap<String, Vec<NetworkEtalonkaResult>> =
         load_networks(&env.dbx, &req).await.context(h!())?;
-    info!("[Etalon Networks report trace_id={trace_id}] collected network data, querying report data...");
+    info!("[trace_id={trace_id}] Etalon Networks report collected network data, querying report data...");
 
     let filename =
         format!("report_{}.docx", Utc::now().format("%Y-%m-%d-%H-%M-%S-%3f"));
@@ -82,10 +82,11 @@ pub async fn report_networks(
         groups,
         networks_data,
         &req.etalonka_type,
+        trace_id,
     )
     .await
     .context(h!())?;
-    info!("[Etalon Networks report trace_id={trace_id}] collected report data, building a report...");
+    info!("[trace_id={trace_id}] Etalon Networks report: collected report data, building a report...");
 
     let outpath = generate_networks_docx_report(
         &filename,
@@ -95,7 +96,7 @@ pub async fn report_networks(
     )
     .await
     .context(h!())?;
-    info!("[Etalon Networks report trace_id={trace_id}] saving report log...");
+    info!("[trace_id={trace_id}] Etalon Networks report: saving report log...");
 
     save_report_log(
         &env.dbx,
@@ -106,7 +107,7 @@ pub async fn report_networks(
     .await
     .context(h!())?;
 
-    info!("[Etalon Networks report trace_id={trace_id}] Done");
+    info!("[trace_id={trace_id}] Etalon Networks report: Done");
     Ok(actix_files::NamedFile::open(&outpath)?.into_response(&http_req))
 }
 
@@ -118,7 +119,8 @@ pub async fn report_networks_batch_id(
     http_req: HttpRequest,
     req: Json<EtalonkaNetworkBatchReq>,
 ) -> Result<HttpResponse, AppError> {
-    info!("> Start Etalon Networks by ids report generation...");
+    let trace_id = Uuid::new_v4();
+    info!("[trace_id={trace_id}] Etalon Networks by IDs report: Started report generation...");
 
     let user_login = user.id().context(h!())?;
     crate::users::has_role(&env.dbx, &user_login, "Rer")
@@ -136,6 +138,8 @@ pub async fn report_networks_batch_id(
     let networks_data: HashMap<String, Vec<NetworkEtalonkaResult>> =
         load_networks_by_id(&env.dbx, &req).await.context(h!())?;
 
+    info!("[trace_id={trace_id}] Etalon Networks by IDs report: collected network data, querying report data...");
+
     let filename =
         format!("report_{}.docx", Utc::now().format("%Y-%m-%d-%H-%M-%S-%3f"));
 
@@ -145,10 +149,12 @@ pub async fn report_networks_batch_id(
         groups,
         networks_data,
         &req.etalonka_type,
+        trace_id,
     )
     .await
     .context(h!())?;
 
+    info!("[trace_id={trace_id}] Etalon Networks by IDs report: collected report data, building a report...");
     let outpath = generate_networks_docx_report(
         &filename,
         &req.etalonka_type,
@@ -167,7 +173,7 @@ pub async fn report_networks_batch_id(
     .await
     .context(h!())?;
 
-    info!("> Etalon Networks by ids report generation done");
+    info!("[trace_id={trace_id}] Etalon Networks by IDs report: Done");
 
     Ok(actix_files::NamedFile::open(&outpath)?.into_response(&http_req))
 }
@@ -231,35 +237,17 @@ pub async fn collect_etalonka_data(
     groups: Vec<String>,
     networks_data: HashMap<String, Vec<NetworkEtalonkaResult>>,
     report_type: &EtalonkaReportType,
+    trace_id: Uuid,
 ) -> Result<EtalonkaData, AppError> {
-    let all_known_callsigns = match report_type {
-        EtalonkaReportType::AccordingToTheForm(_) => BTreeMap::new(),
-        EtalonkaReportType::ExtendedReport(_) => {
-            find_all_known_callsigns(dbx).await.context(h!())?
-        }
-    };
-    let (include_pelengs_map, is_extended) = match report_type {
-        EtalonkaReportType::AccordingToTheForm(_) => (false, false),
-        EtalonkaReportType::ExtendedReport(s) => (s.include_pelengs_map, true),
-    };
-    let sources = match report_type {
-        EtalonkaReportType::AccordingToTheForm(_) => HashMap::new(),
-        EtalonkaReportType::ExtendedReport(_) => {
-            crate::sigint::source::bl_list_sources(dbx)
-                .await
-                .context(h!())?
-                .into_iter()
-                .map(|s| (s.id, s.name))
-                .collect()
-        }
-    };
     let mut data = EtalonkaData {
         groups,
         networks_data,
         entries: HashMap::new(),
-        sources,
+        sources: HashMap::new(),
     };
     let (
+        is_extended_report,
+        include_pelengs_map,
         active_freqs_only,
         since_date_inclusive_ms,
         till_date_inclusive_ms,
@@ -267,6 +255,8 @@ pub async fn collect_etalonka_data(
         include_confirmation,
     ) = match report_type {
         EtalonkaReportType::AccordingToTheForm(s) => (
+            false,
+            false,
             s.active_freqs_only,
             None,
             None,
@@ -274,6 +264,8 @@ pub async fn collect_etalonka_data(
             s.include_confirmation,
         ),
         EtalonkaReportType::ExtendedReport(s) => (
+            true,
+            s.include_pelengs_map,
             s.active_freqs_only,
             Some(s.since_date_inclusive_ms),
             s.till_date_inclusive_ms,
@@ -281,9 +273,31 @@ pub async fn collect_etalonka_data(
             s.include_confirmation,
         ),
     };
+
+    let mut all_known_callsigns = BTreeMap::new();
+    if is_extended_report {
+        info!(
+            "[trace_id={trace_id}] collecting general data for extended report"
+        );
+        all_known_callsigns =
+            find_all_known_callsigns(dbx).await.context(h!())?;
+        data.sources = crate::sigint::source::bl_list_sources(dbx)
+            .await
+            .context(h!())?
+            .into_iter()
+            .map(|s| (s.id, s.name))
+            .collect();
+    }
+
+    let mut units_remaining = data.networks_data.len();
     for (unit_name, unit_networks) in data.networks_data.iter() {
+        units_remaining -= 1;
+        info!("[trace_id={trace_id}] collecting report data for unit '{unit_name}', {units_remaining} left");
+        let mut network_remaining = unit_networks.len();
         for network in unit_networks.iter() {
+            network_remaining -= 1;
             let network_id = network.id;
+            info!("[trace_id={trace_id}] collecting report data for network id={network_id}, {network_remaining} left");
             let key = EtalonkaEntryKey {
                 unit_name: unit_name.to_string(),
                 network_id,
@@ -320,7 +334,7 @@ pub async fn collect_etalonka_data(
                     format!("щонайменше {unique_count} ВЗ.");
             };
 
-            let callsigns_detailed = if is_extended {
+            let callsigns_detailed = if is_extended_report {
                 load_callsigns(
                     dbx,
                     &data.groups,
