@@ -51,7 +51,8 @@ pub async fn report_networks(
     http_req: HttpRequest,
     req: Json<EtalonkaJimForksReq>,
 ) -> Result<HttpResponse, AppError> {
-    info!("> Start Etalon Networks report generation...");
+    let trace_id = Uuid::new_v4();
+    info!("[Etalon Networks report trace_id={trace_id}] Started report generation...");
 
     let user_login = user.id().context(h!())?;
     crate::users::has_role(&env.dbx, &user_login, "Rer")
@@ -68,6 +69,7 @@ pub async fn report_networks(
 
     let networks_data: HashMap<String, Vec<NetworkEtalonkaResult>> =
         load_networks(&env.dbx, &req).await.context(h!())?;
+    info!("[Etalon Networks report trace_id={trace_id}] collected data, building a report...");
 
     let filename =
         format!("report_{}.docx", Utc::now().format("%Y-%m-%d-%H-%M-%S-%3f"));
@@ -82,6 +84,7 @@ pub async fn report_networks(
     )
     .await
     .context(h!())?;
+    info!("[Etalon Networks report trace_id={trace_id}] saving report log...");
 
     save_report_log(
         &env.dbx,
@@ -92,7 +95,7 @@ pub async fn report_networks(
     .await
     .context(h!())?;
 
-    info!("> Etalon Networks report generation done");
+    info!("[Etalon Networks report trace_id={trace_id}] Done");
     Ok(actix_files::NamedFile::open(&outpath)?.into_response(&http_req))
 }
 
