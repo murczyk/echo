@@ -12,12 +12,14 @@ use chrono::prelude::*;
 use docx_rs::*;
 use log::*;
 
+use crate::config::Config;
 use crate::rer_importer::reports::{
     cleanup_old_reports_nofail, save_report_log,
 };
 use crate::sigint::etalonka::query::*;
 use crate::sigint::etalonka::types::*;
 use crate::sigint::etalonka::util::*;
+use sea_orm::DatabaseConnection;
 use std::str::FromStr;
 
 const OLD_CALLSIGNS_COLOR: &str = "696969";
@@ -69,18 +71,27 @@ pub async fn report_networks(
 
     let networks_data: HashMap<String, Vec<NetworkEtalonkaResult>> =
         load_networks(&env.dbx, &req).await.context(h!())?;
-    info!("[Etalon Networks report trace_id={trace_id}] collected data, building a report...");
+    info!("[Etalon Networks report trace_id={trace_id}] collected network data, querying report data...");
 
     let filename =
         format!("report_{}.docx", Utc::now().format("%Y-%m-%d-%H-%M-%S-%3f"));
 
-    let outpath = generate_networks_docx_report(
-        &env,
-        &filename,
-        &req.etalonka_type,
+    let etalonka_data = collect_etalonka_data(
+        &env.dbx,
         &user_login,
         groups,
         networks_data,
+        &req.etalonka_type,
+    )
+    .await
+    .context(h!())?;
+    info!("[Etalon Networks report trace_id={trace_id}] collected report data, building a report...");
+
+    let outpath = generate_networks_docx_report(
+        &filename,
+        &req.etalonka_type,
+        etalonka_data,
+        &env.config,
     )
     .await
     .context(h!())?;
@@ -128,13 +139,21 @@ pub async fn report_networks_batch_id(
     let filename =
         format!("report_{}.docx", Utc::now().format("%Y-%m-%d-%H-%M-%S-%3f"));
 
-    let outpath = generate_networks_docx_report(
-        &env,
-        &filename,
-        &req.etalonka_type,
+    let etalonka_data = collect_etalonka_data(
+        &env.dbx,
         &user_login,
         groups,
         networks_data,
+        &req.etalonka_type,
+    )
+    .await
+    .context(h!())?;
+
+    let outpath = generate_networks_docx_report(
+        &filename,
+        &req.etalonka_type,
+        etalonka_data,
+        &env.config,
     )
     .await
     .context(h!())?;
@@ -155,15 +174,13 @@ pub async fn report_networks_batch_id(
 
 //  All the docx generation logic for etalonka report
 pub async fn generate_networks_docx_report(
-    env: &actix_web::web::Data<Env>,
     filename: &str,
     etalonka_type: &EtalonkaReportType,
-    user_id: &str,
-    groups: Vec<String>,
-    networks_data: HashMap<String, Vec<NetworkEtalonkaResult>>,
+    etalonka_data: EtalonkaData,
+    config: &Config,
 ) -> Result<PathBuf, AppError> {
     let storage_dir =
-        std::path::PathBuf::from_str(&env.config.storage_dir).context(h!())?;
+        std::path::PathBuf::from_str(&config.storage_dir).context(h!())?;
     let outfolder = storage_dir.join("reports_log");
     let _ = std::fs::create_dir_all(&outfolder);
 
@@ -172,20 +189,10 @@ pub async fn generate_networks_docx_report(
 
     let doc = match etalonka_type {
         EtalonkaReportType::AccordingToTheForm(settings) => {
-            etalonka_according_the_form(
-                env,
-                settings,
-                user_id,
-                groups,
-                networks_data,
-            )
-            .await
-            .c(h!())?
+            etalonka_due_form(etalonka_data, settings).await.c(h!())?
         }
         EtalonkaReportType::ExtendedReport(settings) => {
-            etalonka_extended(env, settings, user_id, groups, networks_data)
-                .await
-                .c(h!())?
+            etalonka_extended(etalonka_data, settings).await.c(h!())?
         }
     };
 
@@ -193,13 +200,196 @@ pub async fn generate_networks_docx_report(
     Ok(outpath)
 }
 
-///  Etalonka report according to the MO form
-pub async fn etalonka_according_the_form(
-    env: &actix_web::web::Data<Env>,
-    settings: &EtalonkaSettings,
+pub struct EtalonkaData {
+    groups: Vec<String>,
+    networks_data: HashMap<String, Vec<NetworkEtalonkaResult>>,
+    entries: HashMap<EtalonkaEntryKey, EtalonkaEntry>,
+    sources: HashMap<i64, String>,
+}
+
+#[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Clone, Hash, Default)]
+pub struct EtalonkaEntryKey {
+    pub unit_name: String,
+    pub network_id: i64,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct EtalonkaEntry {
+    pub network_unit_signals: Vec<NetworkSignalsRes>,
+    correspondents_number: String,
+    unique_modulation: String,
+    network_descriptions: Vec<NetworkDescription>,
+    net_callsigns: Vec<NetworkCallsign>,
+    freqs: Vec<NetworkFreqsRes>,
+    callsigns_detailed: Vec<CallsignRes>,
+    pelengs_map: Option<Vec<u8>>,
+}
+
+pub async fn collect_etalonka_data(
+    dbx: &DatabaseConnection,
     user_id: &str,
     groups: Vec<String>,
     networks_data: HashMap<String, Vec<NetworkEtalonkaResult>>,
+    report_type: &EtalonkaReportType,
+) -> Result<EtalonkaData, AppError> {
+    let all_known_callsigns = match report_type {
+        EtalonkaReportType::AccordingToTheForm(_) => BTreeMap::new(),
+        EtalonkaReportType::ExtendedReport(_) => {
+            find_all_known_callsigns(dbx).await.context(h!())?
+        }
+    };
+    let (include_pelengs_map, is_extended) = match report_type {
+        EtalonkaReportType::AccordingToTheForm(_) => (false, false),
+        EtalonkaReportType::ExtendedReport(s) => (s.include_pelengs_map, true),
+    };
+    let sources = match report_type {
+        EtalonkaReportType::AccordingToTheForm(_) => HashMap::new(),
+        EtalonkaReportType::ExtendedReport(_) => {
+            crate::sigint::source::bl_list_sources(dbx)
+                .await
+                .context(h!())?
+                .into_iter()
+                .map(|s| (s.id, s.name))
+                .collect()
+        }
+    };
+    let mut data = EtalonkaData {
+        groups,
+        networks_data,
+        entries: HashMap::new(),
+        sources,
+    };
+    let (
+        active_freqs_only,
+        since_date_inclusive_ms,
+        till_date_inclusive_ms,
+        include_sigint_signs,
+        include_confirmation,
+    ) = match report_type {
+        EtalonkaReportType::AccordingToTheForm(s) => (
+            s.active_freqs_only,
+            None,
+            None,
+            s.include_sigint_signs,
+            s.include_confirmation,
+        ),
+        EtalonkaReportType::ExtendedReport(s) => (
+            s.active_freqs_only,
+            Some(s.since_date_inclusive_ms),
+            s.till_date_inclusive_ms,
+            s.include_sigint_signs,
+            s.include_confirmation,
+        ),
+    };
+    for (unit_name, unit_networks) in data.networks_data.iter() {
+        for network in unit_networks.iter() {
+            let network_id = network.id;
+            let key = EtalonkaEntryKey {
+                unit_name: unit_name.to_string(),
+                network_id,
+            };
+            let mut entry = EtalonkaEntry::default();
+
+            let filter = NetworkFreqFilter {
+                since_date_inclusive_ms,
+                till_date_inclusive_ms,
+                active_freqs_only,
+            };
+
+            let list_network_callsigns_req = ListNetworkCallsignsReq {
+                network_id: network.id,
+                sort_by: None,
+            };
+            // list of callsigns manually assigned to the Network
+            let net_callsigns = bl_get_network_callsigns_list(
+                &list_network_callsigns_req,
+                user_id,
+                dbx,
+            )
+            .await
+            .context(h!())?;
+
+            if !net_callsigns.is_empty() {
+                let unique_count = net_callsigns
+                    .iter()
+                    .map(|item| &item.callsign)
+                    .collect::<HashSet<_>>()
+                    .len();
+                entry.net_callsigns = net_callsigns;
+                entry.correspondents_number =
+                    format!("щонайменше {unique_count} ВЗ.");
+            };
+
+            let callsigns_detailed = if is_extended {
+                load_callsigns(
+                    dbx,
+                    &data.groups,
+                    network.id,
+                    &all_known_callsigns,
+                    Some(&filter),
+                )
+                .await
+                .context(h!())?
+            } else {
+                vec![]
+            };
+
+            entry.callsigns_detailed = callsigns_detailed;
+
+            let freqs =
+                load_freqs(dbx, &data.groups, network.id, Some(&filter))
+                    .await
+                    .context(h!())?;
+
+            let modulations = freqs
+                .iter()
+                .filter_map(|f| f.modulation.clone())
+                .collect::<Vec<String>>();
+            let unique_modulation = uniq_via_btreeset(&modulations).join(", ");
+            entry.unique_modulation = unique_modulation;
+            if include_sigint_signs || include_confirmation {
+                let network_descriptions_map =
+                    crate::sigint::network::bl::get_networks_descriptions(
+                        dbx,
+                        &[network_id],
+                    )
+                    .await
+                    .context(h!())?;
+                let network_descriptions = network_descriptions_map
+                    .get(&network_id)
+                    .cloned()
+                    .unwrap_or_default();
+                entry.network_descriptions = network_descriptions;
+
+                // then add network unit signals for each unit in network
+                let network_unit_signals: Vec<NetworkSignalsRes> =
+                    if include_sigint_signs {
+                        load_signals_per_network(dbx, network_id)
+                            .await
+                            .context(h!())?
+                    } else {
+                        vec![]
+                    };
+                entry.network_unit_signals = network_unit_signals;
+            }
+            let pelengs_map = if include_pelengs_map {
+                load_pelengs_map(dbx, &data.groups, network_id, filter)
+                    .await
+                    .context(h!())?
+            } else {
+                None
+            };
+            entry.pelengs_map = pelengs_map;
+            data.entries.insert(key, entry);
+        }
+    }
+    Ok(data)
+}
+
+///  Etalonka report according to the MO form
+pub async fn etalonka_due_form(
+    etalonka_data: EtalonkaData,
+    settings: &EtalonkaSettings,
 ) -> Result<Docx, AppError> {
     // Unit	Twips Equivalent
     // 1 inch	1440 twips
@@ -211,7 +401,9 @@ pub async fn etalonka_according_the_form(
     doc = add_report_styles(doc);
     doc = add_report_header(doc);
 
-    for (i, (unit_name, unit_networks)) in networks_data.iter().enumerate() {
+    for (i, (unit_name, unit_networks)) in
+        etalonka_data.networks_data.iter().enumerate()
+    {
         // Add unit name as title
         doc = doc.add_paragraph(
             Paragraph::new()
@@ -219,60 +411,27 @@ pub async fn etalonka_according_the_form(
         );
 
         for (index, network) in unit_networks.iter().enumerate() {
-            let filter = NetworkFreqFilter {
-                since_date_inclusive_ms: None,
-                till_date_inclusive_ms: None,
-                active_freqs_only: settings.active_freqs_only,
-            };
-
-            let list_network_callsigns_req = ListNetworkCallsignsReq {
+            let etalonka_data_entry_key = EtalonkaEntryKey {
+                unit_name: unit_name.clone(),
                 network_id: network.id,
-                sort_by: None,
             };
-            // list of callsigns manually assigned to the Network
-            let net_callsigns = bl_get_network_callsigns_list(
-                &list_network_callsigns_req,
-                user_id,
-                &env.dbx,
-            )
-            .await
-            .context(h!())?;
-
-            let correspondents_number = if net_callsigns.is_empty() {
-                String::new()
-            } else {
-                let unique_count = net_callsigns
-                    .iter()
-                    .map(|item| &item.callsign)
-                    .collect::<HashSet<_>>()
-                    .len();
-                format!("щонайменше {unique_count} ВЗ.")
-            };
-
-            let freqs =
-                load_freqs(&env.dbx, &groups, network.id, Some(&filter))
-                    .await
-                    .context(h!())?;
-
-            let modulations = freqs
-                .iter()
-                .filter_map(|f| f.modulation.clone())
-                .collect::<Vec<String>>();
-            let unique_modulation = uniq_via_btreeset(&modulations).join(", ");
-
+            let etalonka_data_entry = etalonka_data
+                .entries
+                .get(&etalonka_data_entry_key)
+                .context(h!())?;
             // Add Section 1-4 with general information
             doc = add_network_report_section_1_4(
                 doc,
                 &network.network_full_name,
                 &network.location,
                 &network.purpose,
-                &correspondents_number,
+                &etalonka_data_entry.correspondents_number,
             );
 
             // Add Section 5 with network callsigns
             doc = add_network_callsigns_section(
                 doc,
-                &net_callsigns,
+                &etalonka_data_entry.net_callsigns,
                 None,
                 width_unit,
                 &EtalonkaReportType::AccordingToTheForm(settings.clone()),
@@ -281,7 +440,7 @@ pub async fn etalonka_according_the_form(
             // Add Section 6 with network freques
             doc = add_network_freqs_section(
                 doc,
-                &freqs,
+                &etalonka_data_entry.freqs,
                 width_unit,
                 &EtalonkaReportType::AccordingToTheForm(settings.clone()),
             );
@@ -289,7 +448,7 @@ pub async fn etalonka_according_the_form(
             // Add Section 7-10 with general information
             doc = add_network_report_section_7_10(
                 doc,
-                &unique_modulation,
+                &etalonka_data_entry.unique_modulation,
                 &network.operation_mode,
                 &network.operation_type,
                 &network.operation_period,
@@ -297,25 +456,12 @@ pub async fn etalonka_according_the_form(
 
             // Add Section 11-12. Розвідувальні ознаки підрозділу, Обгрунтування  прив'язки
             if settings.include_sigint_signs || settings.include_confirmation {
-                let network_descriptions_map =
-                    crate::sigint::network::bl::get_networks_descriptions(
-                        &env.dbx,
-                        &[network.id],
-                    )
-                    .await
-                    .context(h!())?;
-                let network_descriptions = network_descriptions_map
-                    .get(&network.id)
-                    .cloned()
-                    .unwrap_or_default();
-
                 if settings.include_sigint_signs {
                     doc = add_network_sigint_signs(
-                        env,
                         doc,
                         width_unit,
-                        network.id,
-                        &network_descriptions,
+                        &etalonka_data_entry.network_descriptions,
+                        &etalonka_data_entry.network_unit_signals,
                     )
                     .await
                     .c(h!())?;
@@ -325,7 +471,7 @@ pub async fn etalonka_according_the_form(
                     doc = add_network_confirmation(
                         doc,
                         width_unit,
-                        &network_descriptions,
+                        &etalonka_data_entry.network_descriptions,
                     );
                 }
             }
@@ -337,7 +483,7 @@ pub async fn etalonka_according_the_form(
         }
 
         // Add empty paragraph after each unit if this is NOT the last
-        if i < networks_data.len() - 1 {
+        if i < etalonka_data.networks_data.len() - 1 {
             doc = doc.add_paragraph(Paragraph::new());
         }
     }
@@ -347,22 +493,10 @@ pub async fn etalonka_according_the_form(
 
 ///  Extended talonka report
 pub async fn etalonka_extended(
-    env: &actix_web::web::Data<Env>,
+    etalonka_data: EtalonkaData,
     settings: &EtalonkaExtendedSettings,
-    user_id: &str,
-    groups: Vec<String>,
-    networks_data: HashMap<String, Vec<NetworkEtalonkaResult>>,
 ) -> Result<Docx, AppError> {
-    let sources: HashMap<i64, String> =
-        crate::sigint::source::bl_list_sources(&env.dbx)
-            .await
-            .context(h!())?
-            .into_iter()
-            .map(|s| (s.id, s.name))
-            .collect();
-
-    let all_known_callsigns =
-        find_all_known_callsigns(&env.dbx).await.context(h!())?;
+    let sources: HashMap<i64, String> = etalonka_data.sources;
 
     let width_unit = 300;
 
@@ -370,7 +504,9 @@ pub async fn etalonka_extended(
     doc = add_report_styles(doc);
     doc = add_report_header(doc);
 
-    for (i, (unit_name, unit_networks)) in networks_data.iter().enumerate() {
+    for (i, (unit_name, unit_networks)) in
+        etalonka_data.networks_data.iter().enumerate()
+    {
         // Add unit name as title
         doc = doc.add_paragraph(
             Paragraph::new()
@@ -378,35 +514,19 @@ pub async fn etalonka_extended(
         );
 
         for (index, network) in unit_networks.iter().enumerate() {
-            let filter = NetworkFreqFilter {
-                since_date_inclusive_ms: Some(settings.since_date_inclusive_ms),
-                till_date_inclusive_ms: settings.till_date_inclusive_ms,
-                active_freqs_only: settings.active_freqs_only,
-            };
-
-            let list_network_callsigns_req = ListNetworkCallsignsReq {
+            let etalonka_data_entry_key = EtalonkaEntryKey {
+                unit_name: unit_name.clone(),
                 network_id: network.id,
-                sort_by: None,
             };
+            let etalonka_data_entry = etalonka_data
+                .entries
+                .get(&etalonka_data_entry_key)
+                .context(h!())?;
             // list of callsigns manually assigned to the Network
-            let net_callsigns = bl_get_network_callsigns_list(
-                &list_network_callsigns_req,
-                user_id,
-                &env.dbx,
-            )
-            .await
-            .context(h!())?;
+            let net_callsigns = &etalonka_data_entry.net_callsigns;
 
             // list of all other callsigns active per network activity period
-            let callsigns = load_callsigns(
-                &env.dbx,
-                &groups,
-                network.id,
-                &all_known_callsigns,
-                Some(&filter),
-            )
-            .await
-            .context(h!())?;
+            let callsigns = &etalonka_data_entry.callsigns_detailed;
 
             let correspondents_number =
                 if net_callsigns.is_empty() && callsigns.is_empty() {
@@ -421,10 +541,7 @@ pub async fn etalonka_extended(
                     format!("щонайменше {unique_count} ВЗ.")
                 };
 
-            let freqs =
-                load_freqs(&env.dbx, &groups, network.id, Some(&filter))
-                    .await
-                    .context(h!())?;
+            let freqs = &etalonka_data_entry.freqs;
 
             let modulations = freqs
                 .iter()
@@ -444,7 +561,7 @@ pub async fn etalonka_extended(
             // Add Section 5 with network callsigns
             doc = add_network_callsigns_section(
                 doc,
-                &net_callsigns,
+                net_callsigns,
                 Some(&sources),
                 width_unit,
                 &EtalonkaReportType::ExtendedReport(settings.clone()),
@@ -453,13 +570,13 @@ pub async fn etalonka_extended(
             // Add Section 5b with known callsigns assigned to the Unit, which was present in radio communication
             // during selected period
             if settings.include_unit_callsigns {
-                doc = add_unit_callsigns_section(doc, &callsigns, width_unit);
+                doc = add_unit_callsigns_section(doc, callsigns, width_unit);
             }
 
             // Add Section 6 with network freques
             doc = add_network_freqs_section(
                 doc,
-                &freqs,
+                freqs,
                 width_unit,
                 &EtalonkaReportType::ExtendedReport(settings.clone()),
             );
@@ -475,25 +592,12 @@ pub async fn etalonka_extended(
 
             // Add Section 11-12. Розвідувальні ознаки підрозділу, Обгрунтування  прив'язки
             if settings.include_sigint_signs || settings.include_confirmation {
-                let network_descriptions_map =
-                    crate::sigint::network::bl::get_networks_descriptions(
-                        &env.dbx,
-                        &[network.id],
-                    )
-                    .await
-                    .context(h!())?;
-                let network_descriptions = network_descriptions_map
-                    .get(&network.id)
-                    .cloned()
-                    .unwrap_or_default();
-
                 if settings.include_sigint_signs {
                     doc = add_network_sigint_signs(
-                        env,
                         doc,
                         width_unit,
-                        network.id,
-                        &network_descriptions,
+                        &etalonka_data_entry.network_descriptions,
+                        &etalonka_data_entry.network_unit_signals,
                     )
                     .await
                     .c(h!())?;
@@ -503,7 +607,7 @@ pub async fn etalonka_extended(
                     doc = add_network_confirmation(
                         doc,
                         width_unit,
-                        &network_descriptions,
+                        &etalonka_data_entry.network_descriptions,
                     );
                 }
             }
@@ -511,17 +615,8 @@ pub async fn etalonka_extended(
             // Section 13. Карти пеленгів для мережі
             if settings.include_pelengs_map {
                 doc = add_network_pelengs_map(
-                    env,
+                    etalonka_data_entry.pelengs_map.clone(),
                     doc,
-                    &groups,
-                    network.id,
-                    NetworkFreqFilter {
-                        since_date_inclusive_ms: Some(
-                            settings.since_date_inclusive_ms,
-                        ),
-                        till_date_inclusive_ms: settings.till_date_inclusive_ms,
-                        active_freqs_only: settings.active_freqs_only,
-                    },
                 )
                 .await
                 .c(h!())?
@@ -534,7 +629,7 @@ pub async fn etalonka_extended(
         }
 
         // Add empty paragraph after each unit if this is NOT the last
-        if i < networks_data.len() - 1 {
+        if i < etalonka_data.networks_data.len() - 1 {
             doc = doc.add_paragraph(Paragraph::new());
         }
     }
@@ -596,12 +691,12 @@ fn add_report_styles(doc: Docx) -> Docx {
 /// Add header text to the report
 fn add_report_header(doc: Docx) -> Docx {
     doc.add_paragraph(
-            Paragraph::new()
-                .style(&gen_style_id_by_name(PARAGRAPH_1_STYLE_NAME))
-                .add_run(Run::new().add_text(
-                    "ДОНЕСЕННЯ").bold())
-                .align(docx_rs::alignment_type::AlignmentType::Center),
-        )
+        Paragraph::new()
+            .style(&gen_style_id_by_name(PARAGRAPH_1_STYLE_NAME))
+            .add_run(Run::new().add_text(
+                "ДОНЕСЕННЯ").bold())
+            .align(docx_rs::alignment_type::AlignmentType::Center),
+    )
         .add_paragraph(
             Paragraph::new()
                 .style(&gen_style_id_by_name(PARAGRAPH_1_STYLE_NAME))
@@ -690,11 +785,10 @@ fn add_network_confirmation(
 
 /// Add network sigint signs to the report
 async fn add_network_sigint_signs(
-    env: &actix_web::web::Data<Env>,
     doc: Docx,
     width_unit: usize,
-    network_id: i64,
     network_descriptions: &[NetworkDescription],
+    network_unit_signals: &[NetworkSignalsRes],
 ) -> Result<Docx, AppError> {
     let invisible_paragraph = Paragraph::new()
         .add_run(Run::new().size(1))
@@ -714,16 +808,11 @@ async fn add_network_sigint_signs(
         doc = doc.add_table(table);
     }
 
-    // then add network unit signals for each unit in network
-    let network_unit_signals = load_signals_per_network(&env.dbx, network_id)
-        .await
-        .context(h!())?;
-
     // add invisible paragraph between two tables to avoid ms word issue with corrupted rendering of the first table
     if !network_unit_signals.is_empty() {
         doc = doc.add_paragraph(invisible_paragraph.clone());
     }
-    for unit_signals in &network_unit_signals {
+    for unit_signals in network_unit_signals.iter() {
         // if network has multiple units, add unit name
         if network_unit_signals.len() > 1 && !unit_signals.signals.is_empty() {
             doc = doc.add_paragraph(
@@ -753,38 +842,31 @@ async fn add_network_sigint_signs(
 }
 
 async fn add_network_pelengs_map(
-    env: &actix_web::web::Data<Env>,
+    pelengs_map: Option<Vec<u8>>,
     mut doc: Docx,
-    groups: &Vec<String>,
-    network_id: i64,
-    filter: NetworkFreqFilter,
 ) -> Result<Docx, AppError> {
-    let pelengs_map = load_pelengs_map(&env.dbx, groups, network_id, filter)
-        .await
-        .context(h!())?;
-
     if let Some(img) = pelengs_map {
         let pic = Pic::new(&img).size(600 * 9525, 450 * 9525);
 
         doc = doc
-                .add_paragraph(
-                    Paragraph::new()
-                        .add_run(Run::new().add_break(BreakType::Page)),
-                )
-                .add_paragraph(
-                    Paragraph::new()
-                        .style(&gen_style_id_by_name(PARAGRAPH_2_STYLE_NAME))
-                        .add_run(Run::new().add_text(
+            .add_paragraph(
+                Paragraph::new()
+                    .add_run(Run::new().add_break(BreakType::Page)),
+            )
+            .add_paragraph(
+                Paragraph::new()
+                    .style(&gen_style_id_by_name(PARAGRAPH_2_STYLE_NAME))
+                    .add_run(Run::new().add_text(
                         "Карта пеленгів частот підрозділу за звітний період:",
                     ).bold()),
-                )
-                .add_paragraph(Paragraph::new())
-                .add_paragraph(
-                    Paragraph::new()
-                        .add_run(Run::new().add_image(pic))
-                        .align(docx_rs::alignment_type::AlignmentType::Center),
-                )
-                .add_paragraph(Paragraph::new());
+            )
+            .add_paragraph(Paragraph::new())
+            .add_paragraph(
+                Paragraph::new()
+                    .add_run(Run::new().add_image(pic))
+                    .align(docx_rs::alignment_type::AlignmentType::Center),
+            )
+            .add_paragraph(Paragraph::new());
     }
     Ok(doc)
 }
