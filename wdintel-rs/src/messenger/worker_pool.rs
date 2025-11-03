@@ -17,7 +17,7 @@ use tokio::task::JoinSet;
 pub struct ProcessorPool {
     pub capacity: usize,
     pub join_set: JoinSet<ItemProcessingResult>,
-    pub ctx: WorkerContext,
+    pub ctx: Arc<WorkerContext>,
 }
 
 #[derive(Clone)]
@@ -33,7 +33,7 @@ pub async fn process_queue(
     items: Vec<Item>,
     pool: &mut ProcessorPool,
 ) -> anyhow::Result<()> {
-    let ctx = Arc::new(pool.ctx.clone());
+    let ctx = pool.ctx.clone();
     let mut item_queue = VecDeque::new();
     for i in items {
         item_queue.push_back((i, 0));
@@ -100,7 +100,7 @@ pub async fn mk_message_processor_pool(
     mode: Mode,
     capacity: usize,
 ) -> anyhow::Result<ProcessorPool> {
-    let ctx = mk_context(mode).await.c(h!())?;
+    let ctx = Arc::new(mk_context(mode).await.c(h!())?);
     let join_set = JoinSet::new();
     Ok(ProcessorPool {
         join_set,

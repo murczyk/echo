@@ -1,4 +1,4 @@
-use crate::config::{read_config, Config};
+use crate::config::{read_config, Config, LONG_POLL_SLEEP_MS};
 use crate::entities::sea_orm_active_enums::EchoMessageSource;
 use crate::entities::*;
 use crate::error::{AppError, ContextAndError};
@@ -30,11 +30,9 @@ pub async fn receive_thread_nofail(
             receive_thread_inner(mode, &cancel_token, &shutdown_handle).await
         {
             error!("receive_thread_nofail encountered an error: {e:?}");
-            sleep(Duration::from_millis(crate::config::LONG_POLL_SLEEP_MS))
-                .await;
+            sleep(Duration::from_millis(LONG_POLL_SLEEP_MS)).await;
         }
-        // TODO: DISCUSS: why not LONG_POLL_SLEEP_MS or something?
-        sleep(Duration::from_millis(100)).await;
+        sleep(Duration::from_millis(LONG_POLL_SLEEP_MS)).await;
     }
 }
 
@@ -88,8 +86,8 @@ pub async fn receive_thread_inner_2(
             );
         } else {
             error!("⚠️ Worker for datasource {} failed!", res.datasource_id);
-            running_ids.remove(&res.datasource_id);
         }
+        running_ids.remove(&res.datasource_id);
     }
     if cancel_token.is_cancelled() {
         info!("[receive_thread_nofail] cancellation requested, stopping...");
