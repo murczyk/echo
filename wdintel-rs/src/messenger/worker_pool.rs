@@ -10,21 +10,14 @@ use echo_im::types::MessageF1;
 use redis::aio::ConnectionManager;
 use reqwest::Client;
 use sea_orm::{DatabaseConnection, TransactionTrait};
-use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::sync::{Arc, RwLock};
-use tokio::runtime::{Builder, Runtime};
 use tokio::task::JoinSet;
-use tokio::time::sleep;
-
-std::thread_local! {
-    pub static THREAD_CTX: RefCell<Option<WorkerContext>> = const { RefCell::new(None) };
-}
 
 pub struct ProcessorPool {
     pub capacity: usize,
     pub join_set: JoinSet<ItemProcessingResult>,
-    pub runtime: Runtime,
+    pub ctx: WorkerContext,
 }
 
 #[derive(Clone)]
@@ -40,7 +33,7 @@ pub async fn process_queue(
     items: Vec<Item>,
     pool: &mut ProcessorPool,
 ) -> anyhow::Result<()> {
-    let handle = pool.runtime.handle().clone();
+    let ctx = Arc::new(pool.ctx.clone());
     let mut item_queue = VecDeque::new();
     for i in items {
         item_queue.push_back((i, 0));
@@ -92,66 +85,27 @@ pub async fn process_queue(
                 break;
             }
         }
-        pool.join_set.spawn_blocking_on(
-            move || process_item_nofail(item, attempt_num),
-            &handle,
-        );
+        pool.join_set.spawn(process_item_nofail(
+            item,
+            attempt_num,
+            ctx.clone(),
+        ));
     }
 
     trace!("All tasks completed.");
     Ok(())
 }
 
-fn get_context() -> Option<WorkerContext> {
-    THREAD_CTX.with(|ctx_ref_cell| ctx_ref_cell.borrow().clone())
-}
-
 pub async fn mk_message_processor_pool(
     mode: Mode,
     capacity: usize,
-    worker_name: &str,
 ) -> anyhow::Result<ProcessorPool> {
-    let runtime = Builder::new_multi_thread()
-        // .max_blocking_threads(capacity)
-        .thread_name(format!("worker-pool-{worker_name}"))
-        .enable_all()
-        .on_thread_start(move || {
-            let handle = tokio::runtime::Handle::current();
-            let mut context: Option<WorkerContext>;
-            let mut attempts = 0;
-            loop {
-                context = match handle.block_on(mk_context(mode)) {
-                    Ok(c) => Some(c),
-                    Err(e) => {
-                        error!("failed to set up worker context! {e:?}");
-                        None
-                    }
-                };
-                if context.is_none() {
-                    attempts += 1;
-                    if attempts > 10 {
-                        error!("still unable to init a worker, sleeping 10 seconds and then retry again...");
-                        handle.block_on(sleep(core::time::Duration::from_secs(10)));
-                        break;
-                    } else {
-                        warn!("retrying to set up context {}", h!());
-                    }
-                } else {
-                    THREAD_CTX.with(|ctx| {
-                        let mut ctx_opt = ctx.borrow_mut();
-                        *ctx_opt = context;
-                    });
-                    break;
-                }
-            }
-        })
-        .build()
-        .c(h!())?;
+    let ctx = mk_context(mode).await.c(h!())?;
     let join_set = JoinSet::new();
     Ok(ProcessorPool {
         join_set,
-        runtime,
         capacity,
+        ctx,
     })
 }
 
@@ -177,32 +131,23 @@ pub struct ItemProcessingResult {
     pub failed: bool,
 }
 
-#[tokio::main]
 async fn process_item_nofail(
     item: (MessageF1, i64, String),
     attempt_num: usize,
+    ctx: Arc<WorkerContext>,
 ) -> ItemProcessingResult {
-    let mut failed = false;
-    match get_context() {
-        Some(context) => {
-            if let Err(e) = process_item_once(context, item.clone()).await {
-                error!("Process item failed: {e:?}");
-            }
-        }
-        None => {
-            error!("failed to process item: context not initialized");
-            failed = true;
-        }
+    if let Err(e) = process_item_once(ctx, item.clone()).await {
+        error!("Process item failed: {e:?}");
     };
     ItemProcessingResult {
         item,
-        failed,
+        failed: false,
         attempt_num,
     }
 }
 
 async fn process_item_once(
-    context: WorkerContext,
+    context: Arc<WorkerContext>,
     item: Item,
 ) -> anyhow::Result<()> {
     let (m, datasource_id, client_name) = item;
@@ -226,12 +171,12 @@ async fn process_item_once(
         timestamp: m.timestamp,
         datasource_id,
     };
-    let mut redis = context.redis;
+    let mut redis = context.redis.clone();
     if let Err(e) = receive_once(
         message,
         m.attachments.into_iter().map(|a| a.path).collect_vec(),
         &mut redis,
-        context.settlements,
+        context.settlements.clone(),
         &context.rq,
         &context.config,
         &txn,

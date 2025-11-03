@@ -139,8 +139,8 @@ pub async fn bl_spawn_worker_if_not_running(
             "🚀 Spawning new worker for datasource {}, name={worker_name}",
             datasource.display_name
         );
-        workers.spawn_blocking_on(
-            move || {
+        workers.spawn_on(
+            {
                 spawn_new_worker(
                     datasource_id,
                     mode,
@@ -154,57 +154,34 @@ pub async fn bl_spawn_worker_if_not_running(
     Ok(())
 }
 
-fn spawn_new_worker(
+async fn spawn_new_worker(
     datasource_id: i64,
     mode: Mode,
     worker_name: String,
     cancel_token: CancellationToken,
 ) -> WorkerStatus {
-    // Spawn the worker in a separate OS thread to avoid runtime drop issues
-    // This prevents the "Cannot drop a runtime in a context where blocking is not allowed" panic
-    std::thread::spawn(move || {
-        let worker_name_val = worker_name.clone();
-        let Ok(worker_runtime) = Builder::new_multi_thread()
-            .worker_threads(1) // TODO: why this?
-            .enable_all()
-            .build()
-        else {
-            error!("failed to build worker runtime");
-            return WorkerStatus {
-                datasource_id,
-                failed: true,
-            };
-        };
+    let worker_name_val = worker_name.clone();
 
-        let failed = worker_runtime.block_on(async move {
-            match run_new_worker(datasource_id, mode, worker_name_val.clone(), cancel_token)
-                .await
-            {
-                Ok(_) => false,
-                Err(e) => {
-                    error!("failed to run worker {worker_name_val}, stopping. Root cause: {e:?}");
-                   true
-                }
-            }
-        });
-
-        // Explicitly shutdown the runtime before dropping to ensure clean shutdown
-        worker_runtime.shutdown_background();
-
-        info!("worker {worker_name} was shutdown, failed={failed}");
-        WorkerStatus {
-            datasource_id,
-            failed,
+    let failed = match run_new_worker(
+        datasource_id,
+        mode,
+        worker_name_val.clone(),
+        cancel_token,
+    )
+    .await
+    {
+        Ok(_) => false,
+        Err(e) => {
+            error!("failed to run worker {worker_name_val}, stopping. Root cause: {e:?}");
+            true
         }
-    })
-    .join()
-    .unwrap_or_else(|_| {
-        error!("worker thread panicked for datasource {datasource_id}");
-        WorkerStatus {
-            datasource_id,
-            failed: true,
-        }
-    })
+    };
+
+    info!("worker {worker_name} was shutdown, failed={failed}");
+    WorkerStatus {
+        datasource_id,
+        failed,
+    }
 }
 
 async fn run_new_worker(
@@ -216,9 +193,7 @@ async fn run_new_worker(
     trace!("spawning new worker: {worker_name}");
     let dbx = new_pg_pool_from_mode(mode).await.c(h!())?;
     let mut message_processor_pool =
-        mk_message_processor_pool(mode, 4, &worker_name)
-            .await
-            .c(h!())?;
+        mk_message_processor_pool(mode, 4).await.c(h!())?;
     info!("{worker_name}: started processing");
     let result = async {
         loop {
@@ -249,10 +224,6 @@ async fn run_new_worker(
             }
         }
     }.await;
-
-    // Explicitly shutdown the processor pool runtime to prevent panic on drop
-    message_processor_pool.runtime.shutdown_background();
-
     result
 }
 
