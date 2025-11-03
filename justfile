@@ -47,7 +47,7 @@ build-front:
     (cd wdintel-web && npm run build)
 
 dev-back:
-    (cd wdintel-rs && {{ rust_log }}cargo watch -- cargo run -- --mode=debug server {{ dev_back_args }})
+    (cd wdintel-rs && RUST_BACKTRACE=0 {{ rust_log }}cargo watch -- cargo run -- --mode=debug server {{ dev_back_args }})
 
 dev-back-noproj:
     # Run backend without `proj` feature for local development

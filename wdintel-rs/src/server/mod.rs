@@ -10,6 +10,10 @@ use actix_web::{App, HttpServer};
 use milgeo_rs::MilGeo;
 use opendal::services::S3;
 use opendal::Operator;
+use tokio::runtime::Handle;
+use tokio::signal::unix::{signal, SignalKind};
+use tokio::task::JoinSet;
+use tokio_util::sync::CancellationToken;
 
 pub mod discord;
 mod healthcheck;
@@ -62,13 +66,19 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
         .timeout(core::time::Duration::from_secs(crate::config::RQ_TIMEOUT))
         .build()
         .unwrap();
-    let e_greptimedb = crate::new_greptimedb_from_config(&config).await;
-    let m_greptimedb = match e_greptimedb {
-        Ok(greptimedb) => Some(greptimedb),
-        Err(e) => {
-            warn!("failed to establish GreptimeDB connection: {e:?}");
-            None
+    let m_greptimedb = if config.greptime_host.is_some()
+        && config.greptime_host != Some("".to_string())
+    {
+        let e_greptimedb = crate::new_greptimedb_from_config(&config).await;
+        match e_greptimedb {
+            Ok(greptimedb) => Some(greptimedb),
+            Err(e) => {
+                warn!("failed to establish GreptimeDB connection: {e:?}");
+                None
+            }
         }
+    } else {
+        None
     };
     let settlement_paths = config.settlement_paths().unwrap();
     let settlements_data =
@@ -117,7 +127,12 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
 pub async fn main_server(
     mode: Mode,
     ps: crate::ServerPs,
-) -> Result<(), std::io::Error> {
+    cancel_token: CancellationToken,
+    shutdown_handle: Handle,
+) -> Result<(), AppError> {
+    let mut background_tasks: JoinSet<()> = JoinSet::new();
+    let bg_set = &mut background_tasks;
+
     crate::migration::run_migration_1(mode).await.unwrap();
 
     let env = new_env(mode).await.unwrap();
@@ -144,41 +159,43 @@ pub async fn main_server(
             .await
             .unwrap();
 
+    // Create JoinSet for background tasks
+
     if !ps.no_bgworker {
         if let Some(secret_config) = config.vault_config.clone() {
-            spawn_named_worker("secret_worker", async move {
+            spawn_named_worker("secret_worker", bg_set, async move {
                 crate::secret::secret_worker(secret_config).await
             });
         }
-        spawn_named_worker("healthcheck_worker", async move {
+        spawn_named_worker("healthcheck_worker", bg_set, async move {
             healthcheck::healthcheck_worker(&dbx9, config1).await;
         });
         // Activity details worker
         if let Some(greptimedb) = env.greptime() {
             let redis = env.redis.clone();
-            spawn_named_worker("activity_details_worker", async move {
+            spawn_named_worker("activity_details_worker", bg_set, async move {
                 middleware::activity_details_worker(redis, greptimedb).await;
             });
         }
 
         if !config.disable_cleanup_networks_worker.unwrap_or(false) {
-            spawn_named_worker("cleanup_networks_worker", async move {
+            spawn_named_worker("cleanup_networks_worker", bg_set, async move {
                 crate::sigint::network::cleanup_networks_worker(&dbx4).await;
             });
         }
         if config.fill_comp_freq_worker {
-            spawn_named_worker("fill_comp_freq_worker", async move {
+            spawn_named_worker("fill_comp_freq_worker", bg_set, async move {
                 crate::rer_importer::reports::fill_comp_freq_worker(&dbx6)
                     .await;
             });
         }
         if !config.disable_inactive_users_worker.unwrap_or(false) {
-            spawn_named_worker("inactive_users_worker", async move {
+            spawn_named_worker("inactive_users_worker", bg_set, async move {
                 crate::users::inactive_users_worker(&dbx7).await;
             });
         }
         if !config.disable_unit_location_v2_worker.unwrap_or(false) {
-            spawn_named_worker("location_v2_worker", async move {
+            spawn_named_worker("location_v2_worker", bg_set, async move {
                 crate::location::worker::process_location_v2_coords_worker(
                     &dbx8, mil_geo2,
                 )
@@ -187,20 +204,27 @@ pub async fn main_server(
         }
 
         // AoR assignments consistency check worker (runs every 5 minutes)
-        spawn_named_worker("aor_assignments_worker", async move {
+        spawn_named_worker("aor_assignments_worker", bg_set, async move {
             crate::sigint::aor::worker::aor_assignments_check_worker(&dbx10)
                 .await;
         });
-        spawn_named_worker("messenger_receive_worker", async move {
-            crate::messenger::worker::receive_thread_nofail(mode).await;
+        let token_1 = cancel_token.clone();
+        let shutdown_handle_1 = shutdown_handle.clone();
+        spawn_named_worker("messenger_receive_worker", bg_set, async move {
+            crate::messenger::worker::receive_thread_nofail(
+                mode,
+                token_1,
+                shutdown_handle_1,
+            )
+            .await;
         });
-        spawn_named_worker("operator_inbox_worker", async move {
+        spawn_named_worker("operator_inbox_worker", bg_set, async move {
             crate::operator::worker::run_operator_inbox_worker_nofail(mode)
                 .await;
         });
     }
 
-    spawn_named_worker("signal_cli_verbose_logger", async move {
+    spawn_named_worker("signal_cli_verbose_logger", bg_set, async move {
         info!("Starting enable_signal_cli_verbose_logging");
         if let Err(e) = echo_im::enable_signal_cli_verbose_logging(
             "echo",
@@ -215,7 +239,7 @@ pub async fn main_server(
 
     if config.feature_tmp_in_memory.unwrap_or(false) {
         info!("Starting cleanup_tmp_worker_nofail");
-        spawn_named_worker("cleanup_tmp_worker", async move {
+        spawn_named_worker("cleanup_tmp_worker", bg_set, async move {
             echo_install_utils::tmpdir::cleanup_tmp_worker_nofail().await;
         });
     }
@@ -225,7 +249,7 @@ pub async fn main_server(
     info!("Starting server on {bind_ip}:{bind_port}");
 
     let env_for_server = env.clone();
-    HttpServer::new(move || {
+    let server = HttpServer::new(move || {
         let env = env_for_server.clone();
         let cookie_secret = env.config.cookie_session_secret.clone();
         let redis_for_middleware = env.redis.clone();
@@ -483,6 +507,45 @@ pub async fn main_server(
             .service(actix_files::Files::new(crate::config::get_assets_url(), crate::config::get_assets_folder(&config)).show_files_listing())
     })
         .bind((bind_ip, bind_port))?
-        .run()
-        .await
+        .run();
+
+    let task_completion_future = async move {
+        while background_tasks.join_next().await.is_some() {
+            // do nothing
+        }
+        info!("[Background] All tasks in JoinSet completed on their own.");
+    };
+
+    let server_handle = server.handle();
+    let mut sigint = signal(SignalKind::interrupt())
+        .expect("Failed to register SIGINT handler");
+    let mut sigterm = signal(SignalKind::terminate())
+        .expect("Failed to register SIGTERM handler");
+
+    shutdown_handle.spawn(async move {
+        tokio::select! {
+            _ = sigint.recv() => {
+                println!("\n[SIGINT / CTRL+C] detected. Signaling shutdown.");
+                cancel_token.cancel();
+            },
+            _ = sigterm.recv() => {
+                println!("\n[SIGTERM / KILL] detected. Signaling shutdown.");
+                cancel_token.cancel();
+            },
+            _ = tokio::signal::ctrl_c() => {
+                info!("\n[CTRL+C] detected. Starting graceful shutdown...");
+                cancel_token.cancel();
+                server_handle.stop(true).await;
+            },
+            _ = task_completion_future => {
+                info!("[Main] All background tasks finished. Stopping actix server.");
+                server_handle.stop(true).await;
+            }
+            _ = server => {
+                info!("[Main] Actix server finished normally. Signaling task cancellation.");
+                cancel_token.cancel();
+            }
+        }
+    }).await.c(h!())?;
+    Ok(())
 }
