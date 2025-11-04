@@ -1,14 +1,13 @@
-use crate::config::{
-    read_config, Config, IDLE_SLEEP_MS, LONG_POLL_MIN_RESPONSE_TIME_MS,
-    LONG_POLL_SLEEP_MS,
-};
+use crate::config::{read_config, Config, IDLE_SLEEP_MS, LONG_POLL_SLEEP_MS};
 use crate::entities::sea_orm_active_enums::EchoMessageSource;
 use crate::entities::*;
 use crate::error::{AppError, ContextAndError};
 use crate::location::SettlementsData;
 use crate::messenger::bl::list_echo_accounts;
 use crate::messenger::id;
-use crate::messenger::types::{EchoAccountF1, Message, WorkerStatus};
+use crate::messenger::types::{
+    EchoAccountF1, Message, SyncResult, WorkerStatus,
+};
 use crate::messenger::worker_pool::*;
 use crate::new_pg_pool_from_mode;
 use crate::types::*;
@@ -216,12 +215,15 @@ async fn run_new_worker(
                     .await;
                 return Ok(());
             };
-            let is_healthy =
+            let sync_result =
                 sync_client_once(cli, &dbx, &mut message_processor_pool).await;
-            if !is_healthy {
+            if !sync_result.is_healthy {
                 sleep(Duration::from_millis(LONG_POLL_SLEEP_MS))
                     .await;
                 bail!("worker thread {worker_name} is not healthy, restarting...");
+            }
+            if sync_result.num_synced_inbox_messages < 1 {
+                sleep(Duration::from_millis(IDLE_SLEEP_MS)).await;
             }
         }
     }.await;
@@ -232,31 +234,32 @@ async fn sync_client_once(
     cli: EchoAccountF1,
     dbx: &DatabaseConnection,
     processor_pool: &mut ProcessorPool,
-) -> bool {
+) -> SyncResult {
     let Some(client_name) = cli.system_service_name else {
         trace!("client name is missing, skipping: {cli:?}");
-        return false;
+        return SyncResult {
+            is_healthy: false,
+            num_synced_inbox_messages: 0,
+        };
     };
     let mut client_groups_sync_ts_map =
         BTreeMap::<String, NaiveDateTime>::new();
-    match receive_thread(
+    let num_synced_inbox_messages = receive_thread(
         &client_name,
         &mut client_groups_sync_ts_map,
         dbx,
         processor_pool,
     )
     .await
-    {
-        Err(e) => error!("> {client_name}::receive_thread_nofail error: {e:?}"),
-        Ok(num) => {
-            if num > 0 {
-                debug!("[{client_name}] received {num} new messages");
-            } else {
-                sleep(Duration::from_millis(IDLE_SLEEP_MS)).await;
-            }
-        }
+    .unwrap_or_else(|e| {
+        error!("> {client_name}::receive_thread_nofail error: {e:?}");
+        0
+    });
+    let is_healthy = !is_datasource_offline(dbx, cli.id).await;
+    SyncResult {
+        is_healthy,
+        num_synced_inbox_messages,
     }
-    !is_datasource_offline(dbx, cli.id).await
 }
 
 async fn is_datasource_offline(dbx: &DatabaseConnection, id: i64) -> bool {

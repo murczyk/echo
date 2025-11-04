@@ -148,3 +148,8 @@ pub struct WorkerStatus {
     pub datasource_id: i64,
     pub failed: bool,
 }
+
+pub struct SyncResult {
+    pub is_healthy: bool,
+    pub num_synced_inbox_messages: usize,
+}
