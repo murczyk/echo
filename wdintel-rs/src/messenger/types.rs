@@ -143,3 +143,13 @@ pub struct UnstageResult {
     pub message: signal_message::Model,
     pub is_same_group_duplicate: bool,
 }
+
+pub struct WorkerStatus {
+    pub datasource_id: i64,
+    pub failed: bool,
+}
+
+pub struct SyncResult {
+    pub is_healthy: bool,
+    pub num_synced_inbox_messages: usize,
+}
