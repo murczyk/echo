@@ -43,8 +43,8 @@ pub async fn inbox_item_oneoff_nofail<'a, 'async_trait, C>(
         .await
         {
             Err(e) => {
-                println!(
-                    "> error while running inbox_item_oneoff_nofail: {e:?}"
+                error!(
+                    "> error while running inbox_item_oneoff_nofail: {e:#?}"
                 );
             }
             Ok(new_recs) => {
