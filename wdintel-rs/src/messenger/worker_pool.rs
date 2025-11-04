@@ -162,6 +162,10 @@ async fn process_item_once(
     // }
     let Some(group_id) = m.group_id else {
         warn!("[{client_name}] skipping message {:?} with no group, possibly a private message: {}", m.id, m.text);
+
+        echo_im::mark_inbox_as_seen(&client_name, vec![m.internal_id], &txn)
+            .await
+            .c(h!())?;
         return Ok(());
     };
     let message = Message {
