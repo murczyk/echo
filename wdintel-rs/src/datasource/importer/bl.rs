@@ -1,17 +1,11 @@
 use crate::config::Config;
 use crate::entities::*;
-use crate::h;
 use crate::location::SettlementsData;
 use crate::sigint::worker::incoming_message_after_insert;
-use anyhow::Context;
-use chrono::NaiveDateTime;
-use itertools::Itertools;
-use log::{debug, error, info};
+use crate::types::*;
 use redis::aio::ConnectionManager;
 use reqwest::Client;
 use sea_orm::*;
-use std::collections::{BTreeMap, HashMap, HashSet};
-use std::sync::{Arc, RwLock};
 
 pub async fn upsert_datasource(
     db: &DatabaseConnection,
