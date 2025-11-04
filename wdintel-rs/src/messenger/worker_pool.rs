@@ -160,31 +160,31 @@ async fn process_item_once(
     //     );
     //     return;
     // }
-    let Some(group_id) = m.group_id else {
+    if let Some(group_id) = m.group_id {
+        let message = Message {
+            body: m.text,
+            group_id,
+            sender: m.sender.map(|s| s.uuid),
+            timestamp: m.timestamp,
+            datasource_id,
+        };
+        let mut redis = context.redis.clone();
+        if let Err(e) = receive_once(
+            message,
+            m.attachments.into_iter().map(|a| a.path).collect_vec(),
+            &mut redis,
+            context.settlements.clone(),
+            &context.rq,
+            &context.config,
+            &txn,
+            false,
+        )
+        .await
+        {
+            warn!("[{client_name}] bot failed to process a message: {e:?}");
+        }
+    } else {
         warn!("[{client_name}] skipping message {:?} with no group, possibly a private message: {}", m.id, m.text);
-        return Ok(());
-    };
-    let message = Message {
-        body: m.text,
-        group_id,
-        sender: m.sender.map(|s| s.uuid),
-        timestamp: m.timestamp,
-        datasource_id,
-    };
-    let mut redis = context.redis.clone();
-    if let Err(e) = receive_once(
-        message,
-        m.attachments.into_iter().map(|a| a.path).collect_vec(),
-        &mut redis,
-        context.settlements.clone(),
-        &context.rq,
-        &context.config,
-        &txn,
-        false,
-    )
-    .await
-    {
-        warn!("[{client_name}] bot failed to process a message: {e:?}");
     }
     echo_im::mark_inbox_as_seen(&client_name, vec![m.internal_id], &txn)
         .await
