@@ -141,9 +141,8 @@ pub async fn oneoff_rer_csv_import_1(
             created_at: NotSet,
             timestamp: Set(Some(timestamp)),
             sender: Set(Some(source_uuid.to_string())),
-            duplicate_of: NotSet,
             format: Set(Some(2)),
-            deleted: NotSet,
+            deleted: Set(false),
             external_id: NotSet,
             message_uid: NotSet,
             datasource_group_id: Set(Some(datasource_group_id)),
@@ -152,6 +151,19 @@ pub async fn oneoff_rer_csv_import_1(
         .await
         .c(h!())?;
         let db_message_id = message.id;
+
+        signal_message_group::ActiveModel {
+            id: NotSet,
+            signal_message_id: Set(message.id),
+            group_master_key: Set(Some(group_id.to_string())),
+            sender: Set(message.sender.clone()),
+            message_uid: Set(message.message_uid.clone()),
+            datasource_group_id: Set(message.datasource_group_id),
+            created_at: Set(message.created_at),
+        }
+        .insert(&dbx)
+        .await
+        .c(h!())?;
 
         id::update_message_with_uid(&dbx, &config, message)
             .await
@@ -425,9 +437,8 @@ pub async fn rer_delta_csv_import_go(
             created_at: NotSet,
             timestamp: Set(Some(timestamp)),
             sender: Set(Some(source_uuid.to_string())),
-            duplicate_of: NotSet,
             format: Set(Some(2)),
-            deleted: NotSet,
+            deleted: Set(false),
             external_id: NotSet,
             message_uid: NotSet,
             datasource_group_id: Set(Some(datasource_group_id)),
@@ -437,6 +448,19 @@ pub async fn rer_delta_csv_import_go(
         .c(h!())?;
 
         let db_message_id = message.id;
+
+        signal_message_group::ActiveModel {
+            id: NotSet,
+            signal_message_id: Set(message.id),
+            group_master_key: Set(Some(group_id.to_string())),
+            sender: Set(message.sender.clone()),
+            message_uid: Set(message.message_uid.clone()),
+            datasource_group_id: Set(message.datasource_group_id),
+            created_at: Set(message.created_at),
+        }
+        .insert(dbx)
+        .await
+        .c(h!())?;
 
         id::update_message_with_uid(dbx, config, message)
             .await

@@ -16,6 +16,7 @@ use lazy_static::lazy_static;
 use redis::aio::ConnectionManager;
 use redis::AsyncCommands;
 use regex::Regex;
+use sea_orm::sea_query::Expr;
 use sea_orm::*;
 use std::collections::BTreeSet;
 use uuid::Uuid;
@@ -36,6 +37,26 @@ pub mod worker;
 pub mod zone;
 
 pub const SYNC_SECS: u64 = 60;
+
+pub async fn update_message_group_uid<'a, 'async_trait, C>(
+    txn: &'a C,
+    message_id: i64,
+    message_uid: &str,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    signal_message_group::Entity::update_many()
+        .col_expr(
+            signal_message_group::Column::MessageUid,
+            Expr::value(message_uid.to_string()),
+        )
+        .filter(signal_message_group::Column::SignalMessageId.eq(message_id))
+        .exec(txn)
+        .await
+        .c(h!())?;
+    Ok(())
+}
 
 /// State to be synced periodically with our db
 #[derive(Eq, Ord, PartialEq, PartialOrd, Debug, Clone)]
@@ -479,9 +500,8 @@ async fn xlsx_import_process_one(
         datasource_group_id: Set(Some(datasource_group_id)),
         timestamp: Set(Some(timestamp)),
         sender: Set(Some(sender_uuid.to_string())),
-        duplicate_of: NotSet,
         format: Set(Some(2)),
-        deleted: NotSet,
+        deleted: Set(false),
         external_id: NotSet,
         message_uid: NotSet,
     }
@@ -489,6 +509,19 @@ async fn xlsx_import_process_one(
     .await
     .c(h!())?;
     let db_message_id = message.id;
+
+    signal_message_group::ActiveModel {
+        id: NotSet,
+        signal_message_id: Set(message.id),
+        group_master_key: Set(Some(group_id.clone())),
+        sender: Set(message.sender.clone()),
+        message_uid: Set(message.message_uid.clone()),
+        datasource_group_id: Set(message.datasource_group_id),
+        created_at: Set(message.created_at),
+    }
+    .insert(dbx)
+    .await
+    .c(h!())?;
 
     id::update_message_with_uid(dbx, config, message)
         .await

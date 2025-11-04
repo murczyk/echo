@@ -411,6 +411,8 @@ copy-db:
         just server={{ server }} _copy-db; \
     elif [[ "{{ server }}" == "echo-pivnich" ]]; then \
         just server={{ server }} _copy-db; \
+    elif [[ "{{ server }}" == "echo-pivnich-dev" ]]; then \
+        just server={{ server }} _copy-db; \
     elif [[ "{{ server }}" == "echo-skhid" ]]; then \
         just server={{ server }} _copy-db; \
     elif [[ "{{ server }}" == "echo-kupiansk" ]]; then \
@@ -431,9 +433,9 @@ _copy-db:
     #!/bin/bash
     set -euxo pipefail
 
-    ssh -t {{ server }} '(cd ~/Downloads && PGPASSWORD="{{ pgpwd }}" pg_dump --user wd -Fc wd > wd-{{ dt1 }}.pgrestore && ls -lah wd-{{ dt1 }}.pgrestore)'
-    scp {{ server }}:~/Downloads/wd-{{ dt1 }}.pgrestore ~/Downloads/
-    ssh -t {{ server }} 'rm ~/Downloads/wd-{{ dt1 }}.pgrestore'
+    ssh -t {{ server }} '(cd /var/tmp && PGPASSWORD="{{ pgpwd }}" pg_dump --user wd -Fc wd > wd-{{ dt1 }}.pgrestore && ls -lah wd-{{ dt1 }}.pgrestore)'
+    scp {{ server }}:/var/tmp/wd-{{ dt1 }}.pgrestore ~/Downloads/
+    ssh -t {{ server }} 'rm /var/tmp/wd-{{ dt1 }}.pgrestore'
     set +x
     echo "Run: sudo -u postgres dropdb --force wd"
     echo "Run: sudo -u postgres psql postgres -c \"CREATE DATABASE wd\""

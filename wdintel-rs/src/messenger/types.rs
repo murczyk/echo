@@ -141,7 +141,7 @@ pub struct GroupUpdateReq {
 
 pub struct UnstageResult {
     pub message: signal_message::Model,
-    pub is_same_group_duplicate: bool,
+    pub is_duplicate: bool,
 }
 
 pub struct WorkerStatus {

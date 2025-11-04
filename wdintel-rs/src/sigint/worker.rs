@@ -427,7 +427,6 @@ pub async fn process_incoming_message_restapi(
         created_at: NotSet,
         timestamp: Set(timestamp),
         sender: Set(Some(source_uuid.clone().to_string())),
-        duplicate_of: Set(None),
         format: Set(Some(2)),
         deleted: Set(true), // message is in staged state before check for dupes
         external_id: NotSet,
@@ -438,10 +437,9 @@ pub async fn process_incoming_message_restapi(
     .await
     .c(h!())?;
 
-    let db_message_id = message.id;
-
+    let staged_message_id = message.id;
     let m_duplicate_of =
-        find_duplicate_of(&txn, &body, timestamp, db_message_id, redis)
+        find_duplicate_of(&txn, &body, timestamp, staged_message_id, redis)
             .await
             .c(h!())?;
 
@@ -449,14 +447,17 @@ pub async fn process_incoming_message_restapi(
         unstage_message(&txn, &group_info.group_id, message, m_duplicate_of)
             .await
             .c(h!())?;
-    if res.is_same_group_duplicate {
+    if res.is_duplicate {
+        txn.commit().await.c(h!())?;
         return Ok(());
-    };
+    }
 
-    id::update_message_with_uid(&txn, config, res.message)
+    let message = id::update_message_with_uid(&txn, config, res.message)
         .await
         .c(h!())?;
     txn.commit().await.c(h!())?;
+
+    let db_message_id = message.id;
 
     if let Some(ref attachments) = data_message.attachments {
         for attachment in attachments.iter() {
@@ -517,25 +518,48 @@ pub async fn unstage_message<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
-    let m_original_id =
-        // skip if this is same-group duplicate
-        if let Some((original, group)) = m_duplicate_of {
-            if group.group_master_key.eq(master_key) {
-                info!("> skipping same-group duplicate");
-                return Ok(UnstageResult{ message: original, is_same_group_duplicate: true });
-            }
-            Some(original.id)
-        } else {
-            None
-        };
+    if let Some((original, _group)) = m_duplicate_of {
+        signal_message_group::ActiveModel {
+            id: NotSet,
+            signal_message_id: Set(original.id),
+            group_master_key: Set(Some(master_key.to_string())),
+            sender: Set(message.sender.clone()),
+            message_uid: Set(original.message_uid.clone()),
+            datasource_group_id: Set(message.datasource_group_id),
+            created_at: Set(message.created_at),
+        }
+        .insert(dbx)
+        .await
+        .c(h!())?;
+        signal_message::Entity::delete_many()
+            .filter(signal_message::Column::Id.eq(message.id))
+            .exec(dbx)
+            .await
+            .c(h!())?;
+        return Ok(UnstageResult {
+            message: original,
+            is_duplicate: true,
+        });
+    }
 
     let mut model = message.into_active_model();
     model.deleted = Set(false);
-    model.duplicate_of = Set(m_original_id);
     let message = model.update(dbx).await.c(h!())?;
+    signal_message_group::ActiveModel {
+        id: NotSet,
+        signal_message_id: Set(message.id),
+        group_master_key: Set(Some(master_key.to_string())),
+        sender: Set(message.sender.clone()),
+        message_uid: Set(message.message_uid.clone()),
+        datasource_group_id: Set(message.datasource_group_id),
+        created_at: Set(message.created_at),
+    }
+    .insert(dbx)
+    .await
+    .c(h!())?;
     Ok(UnstageResult {
         message,
-        is_same_group_duplicate: false,
+        is_duplicate: false,
     })
 }
 

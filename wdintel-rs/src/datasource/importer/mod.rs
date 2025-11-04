@@ -9,6 +9,7 @@ use chrono::Utc;
 use redis::aio::ConnectionManager;
 use reqwest::Client;
 use sea_orm::*;
+use std::collections::BTreeMap;
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -163,7 +164,7 @@ async fn collect_datasource_data(
         }
     }
 
-    let messages = messages_q
+    let message_pairs = messages_q
         .all(&db)
         .await
         .context(h!())?
@@ -173,8 +174,33 @@ async fn collect_datasource_data(
                 .into_iter()
                 .map(move |message| (item.clone(), message))
         })
+        .collect::<Vec<_>>();
+
+    let message_ids = message_pairs
+        .iter()
+        .map(|(_, message)| message.id)
+        .collect::<Vec<_>>();
+
+    let mut group_map: BTreeMap<i64, Vec<signal_message_group::Model>> =
+        signal_message_group::Entity::find()
+            .filter(
+                signal_message_group::Column::SignalMessageId
+                    .is_in(message_ids.clone()),
+            )
+            .all(&db)
+            .await
+            .context(h!())?
+            .into_iter()
+            .fold(BTreeMap::new(), |mut acc, group| {
+                acc.entry(group.signal_message_id).or_default().push(group);
+                acc
+            });
+
+    let messages = message_pairs
+        .into_iter()
         .map(|(inbox_item, message)| Message {
             inbox_item,
+            message_groups: group_map.remove(&message.id).unwrap_or_default(),
             message,
         })
         .collect::<Vec<_>>();

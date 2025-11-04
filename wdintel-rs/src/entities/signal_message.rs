@@ -16,7 +16,6 @@ pub struct Model {
     pub timestamp: Option<DateTime>,
     #[sea_orm(column_type = "Text", nullable)]
     pub sender: Option<String>,
-    pub duplicate_of: Option<i64>,
     pub format: Option<i64>,
     pub deleted: bool,
     pub external_id: Option<i64>,
@@ -43,6 +42,8 @@ pub enum Relation {
     SigintImportant,
     #[sea_orm(has_one = "super::sigint_inbox_item::Entity")]
     SigintInboxItem,
+    #[sea_orm(has_many = "super::signal_message_group::Entity")]
+    SignalMessageGroup,
 }
 
 impl Related<super::datasource_group::Entity> for Entity {
@@ -72,6 +73,12 @@ impl Related<super::sigint_important::Entity> for Entity {
 impl Related<super::sigint_inbox_item::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SigintInboxItem.def()
+    }
+}
+
+impl Related<super::signal_message_group::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SignalMessageGroup.def()
     }
 }
 

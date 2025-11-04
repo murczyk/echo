@@ -676,7 +676,6 @@ pub async fn receive_once(
         created_at: NotSet,
         timestamp: Set(Some(m.timestamp)),
         sender: Set(m.sender),
-        duplicate_of: Set(None),
         format: NotSet,
         deleted: Set(true), // unstaged message
         external_id: NotSet,
@@ -703,7 +702,7 @@ pub async fn receive_once(
     .await
     .c(h!())?;
 
-    if res.is_same_group_duplicate {
+    if res.is_duplicate {
         return Ok(res.message.message_uid.context(h!())?);
     }
 

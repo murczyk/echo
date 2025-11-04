@@ -527,8 +527,7 @@ pub async fn get_inbox_messages_report_unit(
         // creare a unique id for each message, using either duplicate_of or sigint_inbox_item.id to filter out duplicates
         .expr_as(
             Expr::cust(
-                r#"coalesce(signal_message.duplicate_of,
-                            sigint_inbox_item.id)"#,
+                r#"signal_message.id"#,
             ),
             "id",
         ).clone()

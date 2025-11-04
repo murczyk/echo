@@ -41,9 +41,17 @@ where
 {
     if let Some(selected_groups) = selected_groups.as_ref() {
         if !selected_groups.is_empty() {
-            return Ok(q.filter(
-                datasource_group::Column::GroupMasterKey.is_in(selected_groups),
-            ));
+            let subquery = Query::select()
+                .column(signal_message_group::Column::SignalMessageId)
+                .from(signal_message_group::Entity)
+                .and_where(
+                    signal_message_group::Column::GroupMasterKey
+                        .is_in(selected_groups.clone()),
+                )
+                .to_owned();
+            return Ok(
+                q.filter(signal_message::Column::Id.in_subquery(subquery))
+            );
         }
     }
     Ok(q)
@@ -876,14 +884,7 @@ pub async fn summary_table_freq_1(
             "location_v2",
         )
         .column_as(
-            Expr::col((
-                signal_message::Entity,
-                signal_message::Column::DuplicateOf,
-            ))
-            .if_null(Expr::col((
-                signal_message::Entity,
-                signal_message::Column::Id,
-            ))),
+            Expr::col((signal_message::Entity, signal_message::Column::Id)),
             "dedup_key",
         )
         .distinct_on([dedup_key_alias.clone()])
@@ -894,10 +895,6 @@ pub async fn summary_table_freq_1(
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
         .order_by(Expr::cust("dedup_key"), Order::Asc)
         // emulate NULLS FIRST: order nulls before non-nulls
-        .order_by(
-            Expr::cust("(signal_message.duplicate_of IS NULL)"),
-            Order::Desc,
-        )
         .order_by(sigint_inbox_item::Column::Datetime, Order::Asc);
     let dedup_subquery =
         filter_selected_freqs(dedup_subquery, &req.selected_freqs)?;

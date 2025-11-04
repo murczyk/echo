@@ -917,7 +917,6 @@ type alias InboxMessage =
     , timestamp : Maybe Int
     , groupMasterKey : Maybe String
     , sender : Maybe String
-    , duplicateIds : Maybe (List Int)
     , extendedForm : Maybe String
     , post : Maybe String
     , postId : Maybe Int
@@ -951,7 +950,6 @@ inboxMessageEncoder struct =
         , ( "timestamp", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.timestamp )
         , ( "group_master_key", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.groupMasterKey )
         , ( "sender", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.sender )
-        , ( "duplicate_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.int)) struct.duplicateIds )
         , ( "extended_form", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.extendedForm )
         , ( "post", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.post )
         , ( "post_id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.postId )
@@ -2340,7 +2338,6 @@ freqDetailedPointEncoder struct =
 
 type alias InboxMapItem =
     { id : Int
-    , duplicateOf : Maybe Int
     , freq : Maybe String
     , coords : Maybe String
     }
@@ -2350,7 +2347,6 @@ inboxMapItemEncoder : InboxMapItem -> Json.Encode.Value
 inboxMapItemEncoder struct =
     Json.Encode.object
         [ ( "id", Json.Encode.int struct.id )
-        , ( "duplicate_of", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.duplicateOf )
         , ( "freq", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.freq )
         , ( "coords", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.coords )
         ]
@@ -6493,7 +6489,6 @@ inboxMessageDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "timestamp" (Json.Decode.nullable Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_master_key" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sender" (Json.Decode.nullable Json.Decode.string)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "duplicate_ids" (Json.Decode.nullable (Json.Decode.list Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "extended_form" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "post" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "post_id" (Json.Decode.nullable Json.Decode.int)))
@@ -7223,7 +7218,6 @@ inboxMapItemDecoder : Json.Decode.Decoder InboxMapItem
 inboxMapItemDecoder =
     Json.Decode.succeed InboxMapItem
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.int))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "duplicate_of" (Json.Decode.nullable Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freq" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "coords" (Json.Decode.nullable Json.Decode.string)))
 

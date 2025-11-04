@@ -50,12 +50,8 @@ async fn get_inbox_messages_report(
         .column_as(
             Expr::col((
                 signal_message::Entity,
-                signal_message::Column::DuplicateOf,
-            ))
-            .if_null(Expr::col((
-                signal_message::Entity,
                 signal_message::Column::Id,
-            ))),
+            )),
             "dedup_key",
         )
         .column_as(
@@ -124,7 +120,7 @@ async fn get_inbox_messages_report(
         )
         .group_by(signal_message::Column::Id)
         .group_by(sigint_inbox_item::Column::Id)
-        .group_by(signal_message::Column::DuplicateOf)
+        .group_by(signal_message::Column::Id)
         .group_by(sigint_important::Column::SignalMessageId)
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(datasource_group::Column::GroupMasterKey.is_in(
@@ -196,10 +192,6 @@ async fn get_inbox_messages_report(
         .distinct_on([dedup_key_alias.clone()])
         .order_by(dedup_key_alias.clone(), Order::Asc)
         // emulate NULLS FIRST: order nulls before non-nulls
-        .order_by_expr(
-            Expr::cust("(inbox_items_cte.duplicate_of IS NULL)"),
-            Order::Desc,
-        )
         .to_owned();
 
     dedup_q = crate::rer_importer::inbox::query::get_pagination_filter_real_lower_bound_stmt(env, req, dedup_q)

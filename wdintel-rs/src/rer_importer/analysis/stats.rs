@@ -7,7 +7,9 @@ use log::debug;
 use sea_orm::FromQueryResult;
 use sea_orm::*;
 
-use crate::entities::{sigint_inbox_item, signal_message};
+use crate::entities::{
+    sigint_inbox_item, signal_message, signal_message_group,
+};
 use crate::error::AppError;
 use crate::h;
 use crate::rer_importer::analysis::*;
@@ -77,6 +79,7 @@ fn build_groups_query(
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
+    let accessible_groups = master_keys.clone();
     let groups_res = sigint_inbox_item::Entity::find()
         .join(
             JoinType::InnerJoin,
@@ -90,23 +93,37 @@ fn build_groups_query(
             JoinType::InnerJoin,
             signal_message::Relation::DatasourceGroup.def(),
         )
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::SignalMessageGroup.def(),
+        )
         .select_only()
         .column_as(
-            Expr::col(datasource_group::Column::GroupMasterKey),
+            Expr::col((
+                signal_message_group::Entity,
+                signal_message_group::Column::GroupMasterKey,
+            )),
             "master_key",
         )
         .column_as(
-            Expr::cust(r#"COUNT(DISTINCT COALESCE("signal_message"."duplicate_of", "signal_message"."id"))"#),
+            Expr::cust(
+                r#"COUNT(DISTINCT "signal_message_group"."signal_message_id")"#,
+            ),
             "count",
         )
         .filter(
-            datasource_group::Column::GroupMasterKey.is_in(master_keys.clone()),
+            Expr::col((
+                signal_message_group::Entity,
+                signal_message_group::Column::GroupMasterKey,
+            ))
+            .is_in(accessible_groups.clone()),
         )
-        // .filter(signal_message::Column::DuplicateOf.is_null())
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
-        // .filter(sigint_inbox_item::Column::Checked.eq(Some(true)))
-        .group_by(Expr::col(datasource_group::Column::GroupMasterKey));
+        .group_by(Expr::col((
+            signal_message_group::Entity,
+            signal_message_group::Column::GroupMasterKey,
+        )));
     let groups_res = filter_selected_senders(groups_res, &req.selected_senders)
         .context(h!())?;
     let groups_res =
@@ -236,7 +253,7 @@ fn build_senders_query(
         .column_as(Expr::col(signal_message::Column::Sender), "uuid")
         // .column_as(SimpleExpr::Custom("(SELECT signal_profile.given_name FROM signal_profile WHERE signal_profile.uuid = signal_message.sender)".to_string()), "uuid")
         .column_as(
-            Expr::cust(r#"COUNT(DISTINCT COALESCE("signal_message"."duplicate_of", "signal_message"."id"))"#),
+            Expr::cust(r#"COUNT(DISTINCT "signal_message"."id")"#),
             "count",
         )
         .filter(
@@ -372,7 +389,7 @@ fn build_posts_query(
             "post",
         )
         .column_as(
-            Expr::cust(r#"COUNT(DISTINCT COALESCE("signal_message"."duplicate_of", "signal_message"."id"))"#),
+            Expr::cust(r#"COUNT(DISTINCT "signal_message"."id")"#),
             "count",
         )
         .filter(
@@ -558,7 +575,7 @@ fn build_freqs_query(
             "freq",
         )
         .column_as(
-            Expr::cust(r#"COUNT(DISTINCT COALESCE("signal_message"."duplicate_of", "signal_message"."id"))"#),
+            Expr::cust(r#"COUNT(DISTINCT "signal_message"."id")"#),
             "count",
         )
         .filter(
@@ -693,7 +710,7 @@ fn build_callsigns_query(
             "callsign",
         )
         .column_as(
-            Expr::cust(r#"COUNT(DISTINCT COALESCE("signal_message"."duplicate_of", "signal_message"."id"))"#),
+            Expr::cust(r#"COUNT(DISTINCT "signal_message"."id")"#),
             "count",
         )
         .filter(datasource_group::Column::Id.is_null().or(
@@ -825,7 +842,7 @@ fn build_tags_query(
             "tag_ids",
         )
         .column_as(
-            Expr::cust(r#"COUNT(DISTINCT COALESCE("signal_message"."duplicate_of", "signal_message"."id"))"#),
+            Expr::cust(r#"COUNT(DISTINCT "signal_message"."id")"#),
             "count",
         )
         .filter(
@@ -947,7 +964,7 @@ fn build_units_query(
             "unit",
         )
         .column_as(
-            Expr::cust(r#"COUNT(DISTINCT COALESCE("signal_message"."duplicate_of", "signal_message"."id"))"#),
+            Expr::cust(r#"COUNT(DISTINCT "signal_message"."id")"#),
             "count",
         )
         .filter(
@@ -1084,7 +1101,7 @@ fn build_locations_query(
             "location",
         )
         .column_as(
-            Expr::cust(r#"COUNT(DISTINCT COALESCE("signal_message"."duplicate_of", "signal_message"."id"))"#),
+            Expr::cust(r#"COUNT(DISTINCT "signal_message"."id")"#),
             "count",
         )
         .filter(
@@ -1236,7 +1253,7 @@ fn build_aors_query(
             "aor_id",
         )
         .column_as(
-            Expr::cust(r#"COUNT(DISTINCT COALESCE("signal_message"."duplicate_of", "signal_message"."id"))"#),
+            Expr::cust(r#"COUNT(DISTINCT "signal_message"."id")"#),
             "count",
         )
         .filter(datasource_group::Column::GroupMasterKey.is_in(master_keys))
@@ -1375,10 +1392,7 @@ fn build_networks_query(
     // 1) messages_cte
     let messages_q = sigint_inbox_item::Entity::find()
         .select_only()
-        .column_as(
-            Expr::cust(r#"DISTINCT COALESCE("signal_message"."duplicate_of", "signal_message"."id")"#),
-            "dedup_key",
-        )
+        .column_as(Expr::cust(r#"DISTINCT "signal_message"."id""#), "dedup_key")
         .column(sigint_inbox_item::Column::Freq)
         .column(sigint_inbox_item::Column::Datetime)
         .column_as(datasource_group::Column::GroupMasterKey, "group_master_key")
@@ -1590,7 +1604,7 @@ pub async fn fetch_counts(
         )
         .select_only()
         .column_as(
-            Expr::cust(r#"COUNT(DISTINCT COALESCE("signal_message"."duplicate_of", "signal_message"."id"))"#),
+            Expr::cust(r#"COUNT(DISTINCT "signal_message"."id")"#),
             "count",
         )
         .filter(datasource_group::Column::Id.is_null().or(
@@ -1636,7 +1650,7 @@ pub async fn fetch_counts(
         )
         .select_only()
         .column_as(
-            Expr::cust(r#"COUNT(DISTINCT COALESCE("signal_message"."duplicate_of", "signal_message"."id"))"#),
+            Expr::cust(r#"COUNT(DISTINCT "signal_message"."id")"#),
             "count",
         )
         .filter(
