@@ -1,4 +1,7 @@
-use crate::config::{read_config, Config, LONG_POLL_SLEEP_MS};
+use crate::config::{
+    read_config, Config, IDLE_SLEEP_MS, LONG_POLL_MIN_RESPONSE_TIME_MS,
+    LONG_POLL_SLEEP_MS,
+};
 use crate::entities::sea_orm_active_enums::EchoMessageSource;
 use crate::entities::*;
 use crate::error::{AppError, ContextAndError};
@@ -65,7 +68,7 @@ pub async fn receive_thread_inner(
         )
         .await
         .c(h!())?;
-        sleep(Duration::from_millis(crate::config::LONG_POLL_SLEEP_MS)).await;
+        sleep(Duration::from_millis(LONG_POLL_SLEEP_MS)).await;
     }
 }
 
@@ -188,7 +191,7 @@ async fn run_new_worker(
     worker_name: String,
     cancel_token: CancellationToken,
 ) -> anyhow::Result<()> {
-    trace!("spawning new worker: {worker_name}");
+    info!("spawning new worker: {worker_name}");
     let dbx = new_pg_pool_from_mode(mode).await.c(h!())?;
     let mut message_processor_pool =
         mk_message_processor_pool(mode, 4).await.c(h!())?;
@@ -209,14 +212,14 @@ async fn run_new_worker(
                 info!(
                     "datasource {datasource_id} went offline, stopping worker..."
                 );
-                sleep(Duration::from_millis(crate::config::LONG_POLL_SLEEP_MS))
+                sleep(Duration::from_millis(LONG_POLL_SLEEP_MS))
                     .await;
                 return Ok(());
             };
             let is_healthy =
                 sync_client_once(cli, &dbx, &mut message_processor_pool).await;
             if !is_healthy {
-                sleep(Duration::from_millis(crate::config::LONG_POLL_SLEEP_MS))
+                sleep(Duration::from_millis(LONG_POLL_SLEEP_MS))
                     .await;
                 bail!("worker thread {worker_name} is not healthy, restarting...");
             }
@@ -236,7 +239,7 @@ async fn sync_client_once(
     };
     let mut client_groups_sync_ts_map =
         BTreeMap::<String, NaiveDateTime>::new();
-    if let Err(e) = receive_thread(
+    match receive_thread(
         &client_name,
         &mut client_groups_sync_ts_map,
         dbx,
@@ -244,7 +247,14 @@ async fn sync_client_once(
     )
     .await
     {
-        error!("> {client_name}::receive_thread_nofail error: {e:?}");
+        Err(e) => error!("> {client_name}::receive_thread_nofail error: {e:?}"),
+        Ok(num) => {
+            if num > 0 {
+                debug!("[{client_name}] received {num} new messages");
+            } else {
+                sleep(Duration::from_millis(IDLE_SLEEP_MS)).await;
+            }
+        }
     }
     !is_datasource_offline(dbx, cli.id).await
 }
@@ -269,12 +279,12 @@ async fn receive_thread(
     client_groups_sync_ts_map: &mut BTreeMap<String, NaiveDateTime>,
     dbx: &DatabaseConnection,
     processor_pool: &mut ProcessorPool,
-) -> Result<(), AppError> {
+) -> Result<usize, AppError> {
     let datasource = load_client_datasource(dbx, client_name).await.c(h!())?;
     let datasource_id = datasource.id;
     if datasource.echo_client_lock_id.is_none() {
         trace!("datasource {datasource_id} is not linked, skipping");
-        return Ok(());
+        return Ok(0);
     }
     echo_im::worker::signal_worker_tick_once(client_name, dbx)
         .await
@@ -287,7 +297,7 @@ async fn receive_thread(
         .await
         .c(h!())?;
     txn.commit().await.c(h!())?;
-    sync_inbox(Utc::now(), dbx, client_name, processor_pool)
+    let items_synced = sync_inbox(Utc::now(), dbx, client_name, processor_pool)
         .await
         .c(h!())?;
 
@@ -295,7 +305,7 @@ async fn receive_thread(
     model.last_sync_at = Set(Some(Utc::now().naive_utc()));
     model.update(dbx).await.c(h!())?;
 
-    Ok(())
+    Ok(items_synced)
 }
 
 async fn sync_groups(
@@ -564,12 +574,12 @@ async fn sync_inbox(
     db: &DatabaseConnection,
     client_name: &str,
     processor_pool: &mut ProcessorPool,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<usize> {
     let datasource = load_client_datasource(db, client_name).await.c(h!())?;
     let datasource_id = datasource.id;
     if datasource.echo_client_lock_id.is_none() {
         trace!("[{client_name}] datasource {datasource_id} is not linked, skipping");
-        return Ok(());
+        return Ok(0);
     }
     let time = inbox_sync_at - TimeDelta::seconds(100); // double-check maybe we missed messages not labeled as seen
     let txn = db.begin().await.c(h!())?;
@@ -585,8 +595,9 @@ async fn sync_inbox(
         .into_iter()
         .map(|m| (m, datasource.id, client_name.to_string()))
         .collect_vec();
+    let inbox_num = items.len();
     process_queue(items, processor_pool).await.context(h!())?;
-    Ok(())
+    Ok(inbox_num)
 }
 
 async fn list_clients(

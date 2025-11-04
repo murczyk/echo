@@ -49,6 +49,7 @@ pub const IMPORT_DIRECTION_FINDING_UUID: &str =
     "22b171e7-1c8a-469c-af68-79d7a06b99f4";
 pub const REDIS_HOST: &str = "localhost";
 pub const REDIS_PORT: u16 = 6379;
+pub const IDLE_SLEEP_MS: u64 = 100;
 pub const LONG_POLL_SLEEP_MS: u64 = 5000;
 /// Minimum time to keep a long-poll request open to accumulate events
 pub const LONG_POLL_MIN_RESPONSE_TIME_MS: u64 = 500;
