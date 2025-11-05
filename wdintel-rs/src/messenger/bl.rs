@@ -10,18 +10,12 @@ use crate::messenger::types::{EchoAccountF1, GroupUpdateReq};
 use crate::sigint::aor::{load_default_aor, render_aor};
 use crate::types::AppError;
 use crate::types::*;
-use echo_im::entities::sea_orm_active_enums::{
-    EchoMessageSource, SignalCliMode,
-};
+use echo_im::entities::sea_orm_active_enums::*;
 use echo_im::os_specific;
 use echo_im::types::MessageSource;
 use sea_orm::prelude::DateTime;
 use sea_orm::prelude::*;
-use sea_orm::{
-    ConnectionTrait, DatabaseTransaction, FromQueryResult, IntoActiveModel,
-    JoinType, NotSet, QuerySelect, Set, TransactionTrait,
-};
-use std::net::TcpListener;
+use sea_orm::*;
 
 pub async fn load_echo_account<'a, 'async_trait, C>(
     id: i64,
@@ -151,7 +145,9 @@ pub async fn link_account(
         return Err(AppError::BL { msg });
     }
 
-    let port = find_port_available(8010, 9000).await.c(h!())?;
+    let port = echo_im::find_port_available(8010, 9000, txn)
+        .await
+        .c(h!())?;
     let src_display_name = src.to_string().to_lowercase();
     let attachment_path = format!(
         "/etc/echo/{src_display_name}-cli-data/{system_service_name}/{src_display_name}-cli/attachments/"
@@ -481,20 +477,6 @@ where
         }
     }
     Ok(datasources)
-}
-
-pub async fn find_port_available(
-    start: i32,
-    end: i32,
-) -> Result<i32, AppError> {
-    let Some(port) = (start..end)
-        .find(|p| TcpListener::bind(format!("127.0.0.1:{p}")).is_ok())
-    else {
-        return Err(AppError::BL {
-            msg: "can't find free port".to_string(),
-        });
-    };
-    Ok(port)
 }
 
 fn is_valid_service_name(s: &str) -> bool {

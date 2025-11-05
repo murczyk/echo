@@ -363,6 +363,17 @@ async fn sync_groups(
     }
     let group_master_keys =
         groups.iter().map(|x| x.id.clone()).collect::<Vec<_>>();
+    // FIXME temporary workaround, remove group_internal_keys_map after all servers migrated to ECHO-IM and stable. also drop internal id from echo-im contract
+    let group_internal_keys_map = groups
+        .iter()
+        .filter_map(|x| x.internal_id.clone().map(|id| (id, x.id.clone())))
+        .collect::<HashMap<_, _>>();
+    let mut groups_to_remap = HashMap::new();
+    let mut all_master_keys = group_master_keys.clone();
+    for key in group_internal_keys_map.keys() {
+        all_master_keys.push(key.clone())
+    }
+
     let mut existing_groups: BTreeMap<(String, i64), GroupData> =
         BTreeMap::new();
 
@@ -377,25 +388,31 @@ async fn sync_groups(
     }
 
     let mut groups_raw = vec![];
-    signal_group::Entity::find()
+    let group_models = signal_group::Entity::find()
         .filter(signal_group::Column::Deleted.eq(false))
-        .filter(
-            signal_group::Column::MasterKey.is_in(group_master_keys.clone()),
-        )
+        .filter(signal_group::Column::MasterKey.is_in(all_master_keys))
         .all(txn)
         .await
-        .cae(h!())?
-        .into_iter()
-        .for_each(|g| {
-            groups_raw.push(GroupData {
-                model_a: Some(g.clone()),
-                model_b: None,
-                id: g.master_key,
-                name: g.name,
-                created_at: g.created_at,
-                datasource_id: datasource.id,
-            })
-        });
+        .cae(h!())?;
+    for g in group_models {
+        let master_key = if let Some(actual_key) =
+            group_internal_keys_map.get(&g.master_key)
+        {
+            groups_to_remap
+                .insert(g.master_key.to_string(), actual_key.to_string());
+            actual_key.clone()
+        } else {
+            g.master_key.clone()
+        };
+        groups_raw.push(GroupData {
+            model_a: Some(g.clone()),
+            model_b: None,
+            id: master_key,
+            name: g.name,
+            created_at: g.created_at,
+            datasource_id: datasource.id,
+        })
+    }
     whatsapp_group::Entity::find()
         .filter(whatsapp_group::Column::Deleted.eq(false))
         .filter(whatsapp_group::Column::Jid.is_in(group_master_keys))
@@ -560,6 +577,35 @@ async fn sync_groups(
                 rec.update(txn).await.c(h!())?;
             }
         }
+    }
+    for (internal_id, master_key) in groups_to_remap {
+        remap_datasource_groups(&internal_id, &master_key, txn)
+            .await
+            .context(h!())?;
+    }
+    Ok(())
+}
+
+/// FIXME temporary workaround, remove group_internal_keys_map after all servers migrated to ECHO-IM and stable. also drop internal id from echo-im contract
+async fn remap_datasource_groups(
+    internal_id: &str,
+    master_key: &str,
+    txn: &DatabaseTransaction,
+) -> anyhow::Result<()> {
+    if let Err(e) = datasource_group::Entity::update_many()
+        .filter(
+            datasource_group::Column::GroupMasterKey
+                .eq(internal_id.to_string()),
+        )
+        .col_expr(
+            datasource_group::Column::GroupMasterKey,
+            Expr::value(master_key.to_string()),
+        )
+        .exec(txn)
+        .await
+        .c(h!())
+    {
+        error!("Failed to update datasource_group {internal_id}: {e:#?}");
     }
     Ok(())
 }
