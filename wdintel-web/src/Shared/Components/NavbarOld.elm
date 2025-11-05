@@ -1,7 +1,6 @@
 module Shared.Components.NavbarOld exposing (navBar)
 
 import Auth
-import Shared.Components.ThemeSwitcher exposing (themeSwitcher)
 import Core.Auth exposing (hasRole, serverModeIs)
 import Dict
 import Html exposing (..)
@@ -10,6 +9,7 @@ import Html.Events exposing (onClick)
 import Route
 import Route.Path
 import Shared
+import Shared.Components.ThemeSwitcher exposing (themeSwitcher)
 import Shared.Model exposing (isDarkMode)
 import Utils.Utils exposing (..)
 
@@ -259,11 +259,12 @@ menuItemWithSubs isDarkMode activeName activeNameExp nameText subs =
                             ]
                 ]
     in
-    li [ class "relative group" ]
+    li [ class "relative group navbar-dropdown" ]
         [ a
             [ class "inline-flex items-center py-2 px-2 cursor-pointer text-white hover:bg-black/10 rounded transition-all duration-200"
             , classList [ ( "font-medium", activeName == activeNameExp ) ]
             , href "#"
+            , tabindex 0
             ]
             [ span [] [ text nameText ]
             , i
