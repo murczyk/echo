@@ -592,20 +592,38 @@ async fn remap_datasource_groups(
     master_key: &str,
     txn: &DatabaseTransaction,
 ) -> anyhow::Result<()> {
-    if let Err(e) = datasource_group::Entity::update_many()
-        .filter(
-            datasource_group::Column::GroupMasterKey
-                .eq(internal_id.to_string()),
-        )
-        .col_expr(
-            datasource_group::Column::GroupMasterKey,
-            Expr::value(master_key.to_string()),
-        )
-        .exec(txn)
+    let groups_to_update = datasource_group::Entity::find()
+        .filter(datasource_group::Column::GroupMasterKey.eq(internal_id))
+        .all(txn)
         .await
-        .c(h!())
-    {
-        error!("Failed to update datasource_group {internal_id}: {e:#?}");
+        .context(h!())?;
+    let target_groups = datasource_group::Entity::find()
+        .filter(datasource_group::Column::GroupMasterKey.eq(master_key))
+        .all(txn)
+        .await
+        .context(h!())?;
+    for g in groups_to_update {
+        let m_existing_group = target_groups
+            .iter()
+            .filter(|x| x.datasource_id.eq(&g.datasource_id))
+            .next()
+            .cloned();
+        if let Some(existing_group) = m_existing_group {
+            signal_message::Entity::update_many()
+                .filter(signal_message::Column::DatasourceGroupId.eq(g.id))
+                .col_expr(
+                    signal_message::Column::DatasourceGroupId,
+                    Expr::value(existing_group.id),
+                )
+                .exec(txn)
+                .await
+                .c(h!())?;
+            existing_group.delete(txn).await.c(h!())?;
+            continue;
+        }
+        let mut group = g.into_active_model();
+        group.group_master_key = Set(master_key.to_string());
+        group.update(txn).await.c(h!())?;
     }
     Ok(())
 }
