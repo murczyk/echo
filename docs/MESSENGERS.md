@@ -47,6 +47,18 @@ root@echo-pivnich:/etc/echo/signal-cli-data/pivnich-signal/signal-cli# rm -rf ./
         - відкриваємо http://localhost:8012/v1/qrcodelink?device_name=pivnich-signal-5nov25
     - майбутнє: веб інтерфейс
 
+### Troubleshoot відставання Донецьк 5NOV25
+
+Остання група де в сигнал шось прилітало:
+```sql
+select name from echo_group where id in (select group_id from echo_inbox_message where account_id = 1 order by created_at desc limit 1);
+```
+
+Перевірити групу Ether 7:
+```sql
+select max(created_at) from signal_message where datasource_group_id in (select id from datasource_group where group_master_key in (select master_key from signal_group where name ilike 'Ether 7')) and created_at > '2025-11-03';
+```
+
 ### Troubleshoot 5NOV25
 
 - знаходимо echo_client_lock.id=15, client_id=10
