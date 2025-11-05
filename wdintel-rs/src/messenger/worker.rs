@@ -605,8 +605,7 @@ async fn remap_datasource_groups(
     for g in groups_to_update {
         let m_existing_group = target_groups
             .iter()
-            .filter(|x| x.datasource_id.eq(&g.datasource_id))
-            .next()
+            .find(|x| x.datasource_id.eq(&g.datasource_id))
             .cloned();
         if let Some(existing_group) = m_existing_group {
             signal_message::Entity::update_many()
