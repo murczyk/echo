@@ -44,7 +44,9 @@ pub async fn load_coordinates_from_kmz(
 
         anyhow::Ok(())
     })
-    .await??;
+    .await
+    .c(h!())?
+    .c(h!())?;
 
     let mut result = vec![];
 

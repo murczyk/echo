@@ -132,14 +132,18 @@ pub async fn create_palitra(
     req: CreatePalitraReq,
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<Palitra> {
-    let model = palitra::ActiveModel {
+    let palitra_am = palitra::ActiveModel {
         author: Set(Some(author_login)),
         ..Default::default()
     };
-    let palitra =
-        update_palitra_from_req(req, model, dbx, PalitraUpdateAction::Insert)
-            .await
-            .c(h!())?;
+    let palitra = update_palitra_from_req(
+        req,
+        palitra_am,
+        dbx,
+        PalitraUpdateAction::Insert,
+    )
+    .await
+    .c(h!())?;
     render_palitra(Either::Left(palitra), dbx).await
 }
 
@@ -184,7 +188,7 @@ where
 {
     let query = r"
         UPDATE palitra
-        SET center = ST_Centroid(ST_Collect(ST_SetSRID(ST_MakePoint(longitude, latitude), 4326)))
+        SET center = ST_Centroid(ST_Collect(ST_SetSRID(ST_MakePoint(lon, lat), 4326)))
         FROM palitra_point
         WHERE
             id = $1
@@ -374,13 +378,13 @@ async fn delete_existing_palitra_points(
 }
 
 async fn render_palitra<'a, 'async_trait, C>(
-    model: Either<palitra::Model, i64>,
+    e_palitra_model: Either<palitra::Model, i64>,
     dbx: &'a C,
 ) -> anyhow::Result<Palitra>
 where
     C: ConnectionTrait + 'async_trait,
 {
-    let model = match model {
+    let palitra_model = match e_palitra_model {
         Either::Left(model) => model,
         Either::Right(id) => palitra::Entity::find_by_id(id)
             .one(dbx)
@@ -388,12 +392,24 @@ where
             .c(h!())?
             .c(h!())?,
     };
-    let palitra_id = model.id;
-    let last_uploaded_at_ts = model
+    let palitra_id = palitra_model.id;
+    let last_uploaded_at_ts = palitra_model
         .last_uploaded_at
         .map(|ts| ts.and_utc().timestamp_millis());
-    let center = read_palitra_center(dbx, palitra_id).await.ok();
-    let convex_hull = read_palitra_convex_hull(dbx, palitra_id).await.ok();
+    let center = match read_palitra_center(dbx, palitra_id).await {
+        Ok(c) => Some(c),
+        Err(e) => {
+            error!("failed to calculate palitra center: {e:#?}");
+            None
+        }
+    };
+    let convex_hull = match read_palitra_convex_hull(dbx, palitra_id).await {
+        Ok(c) => Some(c),
+        Err(e) => {
+            error!("failed to calculate convex hull center: {e:#?}");
+            None
+        }
+    };
     let geometry = match (center, convex_hull) {
         (Some(center), Some(perimeter_linear_ring)) => Some(Geometry {
             center,
@@ -401,7 +417,7 @@ where
         }),
         _ => None,
     };
-    let access_aor_id =
+    let access_aor_ids =
         collect_palitra_access_aors(dbx, palitra_id).await.c(h!())?;
     let access_organism_ids = collect_palitra_access_organisms(dbx, palitra_id)
         .await
@@ -411,12 +427,12 @@ where
         .c(h!())?;
     Ok(Palitra {
         id: palitra_id,
-        name: model.name,
-        color_hex: model.hex,
-        source_file_name: model.source_file_name,
+        name: palitra_model.name,
+        color_hex: palitra_model.hex,
+        source_file_name: palitra_model.source_file_name,
         last_uploaded_at_ts,
         geometry,
-        access_aor_id,
+        access_aor_id: access_aor_ids,
         access_organism_ids,
         access_logins,
     })
@@ -497,6 +513,7 @@ async fn update_palitra_from_req<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
+    info!("updating palitra:\n old value {palitra_val:?}\n changes requested: {req:?}");
     let mut palitra = palitra_val;
     palitra.name = Set(req.name);
     palitra.hex = Set(req.color_hex);
