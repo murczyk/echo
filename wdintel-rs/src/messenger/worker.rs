@@ -592,6 +592,7 @@ async fn remap_datasource_groups(
     master_key: &str,
     txn: &DatabaseTransaction,
 ) -> anyhow::Result<()> {
+    let cutoff = Utc::now().naive_utc() - chrono::Duration::days(30);
     let groups_to_update = datasource_group::Entity::find()
         .filter(datasource_group::Column::GroupMasterKey.eq(internal_id))
         .all(txn)
@@ -610,6 +611,7 @@ async fn remap_datasource_groups(
         if let Some(existing_group) = m_existing_group {
             signal_message::Entity::update_many()
                 .filter(signal_message::Column::DatasourceGroupId.eq(g.id))
+                .filter(signal_message::Column::CreatedAt.gt(cutoff.clone()))
                 .col_expr(
                     signal_message::Column::DatasourceGroupId,
                     Expr::value(existing_group.id),
