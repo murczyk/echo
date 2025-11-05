@@ -578,10 +578,28 @@ async fn sync_groups(
             }
         }
     }
-    for (internal_id, master_key) in groups_to_remap {
-        remap_datasource_groups(&internal_id, &master_key, txn)
+    if !groups_to_remap.is_empty() {
+        let cutoff = Utc::now().naive_utc() - chrono::Duration::days(30);
+        let live_group_ids = signal_message::Entity::find()
+            .filter(signal_message::Column::CreatedAt.gt(cutoff))
+            .select_only()
+            .column(signal_message::Column::DatasourceGroupId)
+            .distinct()
+            .into_tuple::<i64>()
+            .all(txn)
             .await
             .context(h!())?;
+        for (internal_id, master_key) in groups_to_remap {
+            remap_datasource_groups(
+                &internal_id,
+                &master_key,
+                txn,
+                live_group_ids.clone(),
+                cutoff,
+            )
+            .await
+            .context(h!())?;
+        }
     }
     Ok(())
 }
@@ -591,10 +609,12 @@ async fn remap_datasource_groups(
     internal_id: &str,
     master_key: &str,
     txn: &DatabaseTransaction,
+    live_group_ids: Vec<i64>,
+    cutoff: NaiveDateTime,
 ) -> anyhow::Result<()> {
-    let cutoff = Utc::now().naive_utc() - chrono::Duration::days(30);
     let groups_to_update = datasource_group::Entity::find()
         .filter(datasource_group::Column::GroupMasterKey.eq(internal_id))
+        .filter(datasource_group::Column::Id.is_in(live_group_ids))
         .all(txn)
         .await
         .context(h!())?;
@@ -619,7 +639,9 @@ async fn remap_datasource_groups(
                 .exec(txn)
                 .await
                 .c(h!())?;
-            g.delete(txn).await.c(h!())?;
+            let mut group = g.into_active_model();
+            group.deleted = Set(true);
+            group.update(txn).await.c(h!())?;
             continue;
         }
         let mut group = g.into_active_model();
