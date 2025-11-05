@@ -151,6 +151,9 @@ mod m20250911_194424_deleted_datasource_group;
 mod m20250912_073903_drop_group_auto_link;
 mod m20251011_090052_add_settlement_tag;
 mod m20251016_085427_add_datasource_last_sync_at_ts;
+mod m20251023_130959_create_palitra_tables;
+mod m20251024_092630_add_palitra_point_label;
+mod m20251030_093422_add_geometry_columns;
 
 pub struct Migrator;
 
@@ -309,6 +312,9 @@ impl MigratorTrait for Migrator {
             Box::new(m20250912_073903_drop_group_auto_link::Migration),
             Box::new(m20251011_090052_add_settlement_tag::Migration),
             Box::new(m20251016_085427_add_datasource_last_sync_at_ts::Migration),
+            Box::new(m20251023_130959_create_palitra_tables::Migration),
+            Box::new(m20251024_092630_add_palitra_point_label::Migration),
+            Box::new(m20251030_093422_add_geometry_columns::Migration),
         ]
     }
 }

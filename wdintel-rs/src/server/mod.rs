@@ -504,6 +504,12 @@ pub async fn main_server(
             .service(crate::messenger::link_operator)
             .service(crate::messenger::group_update)
             .service(crate::operator::message_submit)
+            .service(crate::palitra::list_all_palitras)
+            .service(crate::palitra::list_all_palitras_detailed)
+            .service(crate::palitra::create_palitra)
+            .service(crate::palitra::update_palitra)
+            .service(crate::palitra::delete_palitra)
+            .service(crate::palitra::upload_palitra_points)
             .service(actix_files::Files::new(crate::config::get_assets_url(), crate::config::get_assets_folder(&config)).show_files_listing())
     })
         .bind((bind_ip, bind_port))?

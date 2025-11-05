@@ -47,6 +47,10 @@ pub enum Relation {
         on_delete = "NoAction"
     )]
     Organism,
+    #[sea_orm(has_many = "super::palitra::Entity")]
+    Palitra,
+    #[sea_orm(has_many = "super::palitra_access_login::Entity")]
+    PalitraAccessLogin,
     #[sea_orm(has_many = "super::secret_group_user::Entity")]
     SecretGroupUser,
     #[sea_orm(has_many = "super::sigint_callsign_changelog::Entity")]
@@ -96,6 +100,18 @@ impl Related<super::log_users_report_generation::Entity> for Entity {
 impl Related<super::organism::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Organism.def()
+    }
+}
+
+impl Related<super::palitra::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Palitra.def()
+    }
+}
+
+impl Related<super::palitra_access_login::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::PalitraAccessLogin.def()
     }
 }
 

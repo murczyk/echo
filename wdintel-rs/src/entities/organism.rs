@@ -36,6 +36,8 @@ pub enum Relation {
     OrganismAor,
     #[sea_orm(has_many = "super::organism_group::Entity")]
     OrganismGroup,
+    #[sea_orm(has_many = "super::palitra_access_organism::Entity")]
+    PalitraAccessOrganism,
 }
 
 impl Related<super::login::Entity> for Entity {
@@ -53,6 +55,12 @@ impl Related<super::organism_aor::Entity> for Entity {
 impl Related<super::organism_group::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::OrganismGroup.def()
+    }
+}
+
+impl Related<super::palitra_access_organism::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::PalitraAccessOrganism.def()
     }
 }
 
