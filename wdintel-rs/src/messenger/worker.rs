@@ -193,7 +193,7 @@ async fn run_new_worker(
     info!("spawning new worker: {worker_name}");
     let dbx = new_pg_pool_from_mode(mode).await.c(h!())?;
     let mut message_processor_pool =
-        mk_message_processor_pool(mode, 4).await.c(h!())?;
+        mk_message_processor_pool(mode).await.c(h!())?;
     info!("{worker_name}: started processing");
     let result = async {
         loop {

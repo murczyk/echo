@@ -1,4 +1,4 @@
-use crate::config::Config;
+use crate::config::{Config, MESSENGER_WORKER_POOL_DEFAULT_CAPACITY};
 use crate::h;
 use crate::location::SettlementsData;
 use crate::messenger::types::Message;
@@ -98,9 +98,12 @@ pub async fn process_queue(
 
 pub async fn mk_message_processor_pool(
     mode: Mode,
-    capacity: usize,
 ) -> anyhow::Result<ProcessorPool> {
     let ctx = Arc::new(mk_context(mode).await.c(h!())?);
+    let capacity = ctx
+        .config
+        .messenger_worker_pool_capacity
+        .unwrap_or(MESSENGER_WORKER_POOL_DEFAULT_CAPACITY);
     let join_set = JoinSet::new();
     Ok(ProcessorPool {
         join_set,

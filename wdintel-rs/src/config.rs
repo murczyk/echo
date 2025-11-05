@@ -67,6 +67,8 @@ pub const WHATSAPP_CLIENT_CONFIG: &str = "/etc/echo/config.toml";
 pub const GENERATE_MESSAGE_UID_TILL_MAX_DAYS: i64 = 20;
 pub const UNKNOWN_GROUP_MASTER_KEY: &str = "undefined_group";
 pub const REDIS_MGS_ID_TTL: i32 = 3600;
+// for xlsx import
+pub const MESSENGER_WORKER_POOL_DEFAULT_CAPACITY: usize = 1;
 
 /// Dynamic config that's different on different deployments
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
@@ -122,6 +124,7 @@ pub struct Config {
     /// It must be unique across all running servers to avoid conflicts.
     /// Please double-check in Bitwarden that your value does not conflict with values in other live servers.
     pub server_id: Option<u32>,
+    pub messenger_worker_pool_capacity: Option<usize>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]

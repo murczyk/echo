@@ -730,8 +730,7 @@ fn extract_sender_receiver_pair(
         let capts = regex.captures(line)?;
         let callsign_match = capts.name("callsign")?;
         let callsign_raw = callsign_match.as_str();
-        let callsign: String =
-            callsign_raw.to_lowercase().trim().to_string();
+        let callsign: String = callsign_raw.to_lowercase().trim().to_string();
         let normalized_callsign: String =
             callsign.chars().filter(|c| c.is_alphanumeric()).collect();
         if normalized_callsign == "нв" {
@@ -2578,8 +2577,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_extract_callsigns_sender_receiver_pair_ignores_nv_with_backslash()
-    {
+    async fn test_extract_callsigns_sender_receiver_pair_ignores_nv_with_backslash(
+    ) {
         let body = r#"⚡⚡⚡10УКХ р/м упр. підрозділом 270 мсп
 НОВОФЕДОРІВКА
 
@@ -2590,10 +2589,7 @@ mod tests {
 
 1. Наша коробка, приедет, привезет карандаши, встретит, разметишь их и баню надо будет затопить как выйдет я тебе скажу ..."#;
         let res = extract_callsigns(body).unwrap();
-        assert!(
-            res.is_empty(),
-            "expected no callsigns, got: {res:?}"
-        );
+        assert!(res.is_empty(), "expected no callsigns, got: {res:?}");
     }
 
     #[tokio::test]
