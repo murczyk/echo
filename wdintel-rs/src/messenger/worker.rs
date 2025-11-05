@@ -611,7 +611,7 @@ async fn remap_datasource_groups(
         if let Some(existing_group) = m_existing_group {
             signal_message::Entity::update_many()
                 .filter(signal_message::Column::DatasourceGroupId.eq(g.id))
-                .filter(signal_message::Column::CreatedAt.gt(cutoff.clone()))
+                .filter(signal_message::Column::CreatedAt.gt(cutoff))
                 .col_expr(
                     signal_message::Column::DatasourceGroupId,
                     Expr::value(existing_group.id),
