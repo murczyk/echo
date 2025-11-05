@@ -188,7 +188,7 @@ where
 {
     let query = r"
         UPDATE palitra
-        SET center = ST_Centroid(ST_Collect(ST_SetSRID(ST_MakePoint(lon, lat), 4326)))
+        SET center = ST_Centroid(ST_Collect(ST_SetSRID(ST_MakePoint(lng, lat), 4326)))
         FROM palitra_point
         WHERE
             id = $1
@@ -219,7 +219,7 @@ where
             SELECT
                 ST_ExteriorRing(
                     ST_ConvexHull(
-                        ST_Collect(ST_SetSRID(ST_MakePoint(lon, lat), 4326))
+                        ST_Collect(ST_SetSRID(ST_MakePoint(lng, lat), 4326))
                     )
                 )
             FROM
