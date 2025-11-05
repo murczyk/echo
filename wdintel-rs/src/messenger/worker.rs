@@ -617,7 +617,7 @@ async fn remap_datasource_groups(
                 .exec(txn)
                 .await
                 .c(h!())?;
-            existing_group.delete(txn).await.c(h!())?;
+            g.delete(txn).await.c(h!())?;
             continue;
         }
         let mut group = g.into_active_model();
