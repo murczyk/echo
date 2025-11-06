@@ -16,8 +16,13 @@
 
 ```sql
 select
-    cl.id as client_lock_id, cl.client_id, cc.process_name, cc.signal_api_attachment_path,
-    cc.signal_port, ea.phone_number
+    cl.id as client_lock_id,
+	cl.client_id,
+	cc.process_name,
+	cc.signal_api_attachment_path,
+    cc.signal_port,
+	ea.phone_number,
+	ea.is_linked
 from
     echo_client_lock cl
 left join echo_client_config cc on
