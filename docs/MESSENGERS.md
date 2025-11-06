@@ -16,7 +16,7 @@
 
 ```sql
 select
-    cl.id, cl.client_id, cc.process_name, cc.signal_api_attachment_path,
+    cl.id as client_lock_id, cl.client_id, cc.process_name, cc.signal_api_attachment_path,
     cc.signal_port, ea.phone_number
 from
     echo_client_lock cl
@@ -32,7 +32,8 @@ where
         - глянути чи прив'язаний акаунт
     - `journalctl -u echo-signal-bot@pivnich-signal -f`
         - глянути чи показує банер з ендпойнтами -- значить вбивається
-  
+- перевірити `echo_account.is_linked=true`
+
 ## Прив'язка
 
 - чистимо в середині папок data та attachments
