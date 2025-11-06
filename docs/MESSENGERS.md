@@ -1,9 +1,10 @@
 ## Перелік месенджерів
-- [gdocs: ЕХО](https://docs.google.com/spreadsheets/d/17mDPD0OM6HjXteMElScK0sT6jiOyS6C2Ic3i62NBRds/edit?gid=0#gid=0)  
+
+- [gdocs: ЕХО](https://docs.google.com/spreadsheets/d/17mDPD0OM6HjXteMElScK0sT6jiOyS6C2Ic3i62NBRds/edit?gid=0#gid=0)
   
 ## Діагностування 
 
- З таблиць ECHO-IM отримуємо інформацію про параметри підключення джерела
+З таблиць ECHO-IM отримуємо інформацію про параметри підключення джерела
 
 - таблички echo im
     - datasource
@@ -15,15 +16,13 @@
 
 ```sql
 select
-    cl.id,
-    cl.client_id,
-    cc.process_name,
-    cc.signal_api_attachment_path,
-    cc.signal_port
+    cl.id, cl.client_id, cc.process_name, cc.signal_api_attachment_path,
+    cc.signal_port, ea.phone_number
 from
     echo_client_lock cl
-inner join echo_client_config cc on
+left join echo_client_config cc on
     cl.client_id = cc.client_id
+left join echo_account ea on cl.account_id=ea.id
 where
     cl.id = 7 -- client_lock_id з таблиці datasource
 ```
