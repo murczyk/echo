@@ -6,25 +6,31 @@ use crate::entities::*;
 use crate::error::ContextAndError;
 use crate::messenger::group::collect_group_stats;
 use crate::messenger::group::types::SignalGroupStats;
-use crate::messenger::types::{EchoAccountF1, GroupUpdateReq};
+use crate::messenger::types::{
+    AccountSyncResult, EchoAccountF1, GroupUpdateReq,
+};
 use crate::sigint::aor::{load_default_aor, render_aor};
 use crate::types::AppError;
 use crate::types::*;
 use echo_im::entities::sea_orm_active_enums::*;
 use echo_im::os_specific;
 use echo_im::types::MessageSource;
+use echo_im::worker::signal_worker_tick_once;
 use sea_orm::prelude::DateTime;
 use sea_orm::prelude::*;
 use sea_orm::*;
 
-pub async fn is_account_linked(id: i64, txn: &DatabaseTransaction) -> bool {
+pub async fn is_account_linked(
+    id: i64,
+    txn: &DatabaseTransaction,
+) -> AccountSyncResult {
     let Ok(datasource) = bl::load_echo_account(id, txn).await else {
         info!("account {id} not found");
-        return false;
+        return AccountSyncResult::default();
     };
     let Some(client_name) = datasource.system_service_name else {
         info!("client name is missing for account {id}, account details: {datasource:?}");
-        return false;
+        return AccountSyncResult::default();
     };
     let source = if datasource.messenger.eq("signal") {
         MessageSource::Signal
@@ -35,14 +41,18 @@ pub async fn is_account_linked(id: i64, txn: &DatabaseTransaction) -> bool {
             "unexpected messenger: {}, expected one of 'signal', 'whatsapp'",
             datasource.messenger
         );
-        return false;
+        return AccountSyncResult::default();
     };
-    echo_im::is_client_logged_in(&client_name, source, txn)
+    let is_linked = echo_im::is_client_logged_in(&client_name, source, txn)
         .await
         .unwrap_or_else(|e| {
             error!("failed to check is_client_logged_in: {e:#?}");
             false
-        })
+        });
+    AccountSyncResult {
+        is_linked,
+        client_name: Some(client_name),
+    }
 }
 
 pub async fn load_echo_account<'a, 'async_trait, C>(

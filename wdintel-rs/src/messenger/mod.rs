@@ -7,6 +7,7 @@ use crate::sigint::aor::{load_default_aor, render_aor};
 use crate::types::{AppError, Env, ShortContext};
 use actix_web::post;
 use actix_web::web::Json;
+use echo_im::worker::signal_worker_tick_once;
 use lazy_static::lazy_static;
 use regex::Regex;
 use sea_orm::*;
@@ -62,8 +63,14 @@ pub async fn is_linked(
     let txn = env.dbx.begin().await.cae(h!())?;
     let is_account_linked = bl::is_account_linked(req.account_id, &txn).await;
     txn.commit().await.c(h!())?;
+    if is_account_linked.is_linked {
+        let client_name = is_account_linked.client_name.c(h!())?;
+        signal_worker_tick_once(&client_name, &env.dbx)
+            .await
+            .c(h!())?;
+    }
     Ok(Json(IsAccountLinkedRsp {
-        is_linked: is_account_linked,
+        is_linked: is_account_linked.is_linked,
     }))
 }
 
