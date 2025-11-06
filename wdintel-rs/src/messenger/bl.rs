@@ -1,4 +1,4 @@
-use super::{group_admin_data, signal_group};
+use super::{bl, group_admin_data, signal_group};
 use crate::config::*;
 use crate::entities::area_of_responsibility::Model;
 use crate::entities::sea_orm_active_enums::AccountStatus;
@@ -16,6 +16,34 @@ use echo_im::types::MessageSource;
 use sea_orm::prelude::DateTime;
 use sea_orm::prelude::*;
 use sea_orm::*;
+
+pub async fn is_account_linked(id: i64, txn: &DatabaseTransaction) -> bool {
+    let Ok(datasource) = bl::load_echo_account(id, txn).await else {
+        info!("account {id} not found");
+        return false;
+    };
+    let Some(client_name) = datasource.system_service_name else {
+        info!("client name is missing for account {id}, account details: {datasource:?}");
+        return false;
+    };
+    let source = if datasource.messenger.eq("signal") {
+        MessageSource::Signal
+    } else if datasource.messenger.eq("whatsapp") {
+        MessageSource::Whatsapp
+    } else {
+        error!(
+            "unexpected messenger: {}, expected one of 'signal', 'whatsapp'",
+            datasource.messenger
+        );
+        return false;
+    };
+    echo_im::is_client_logged_in(&client_name, source, txn)
+        .await
+        .unwrap_or_else(|e| {
+            error!("failed to check is_client_logged_in: {e:#?}");
+            false
+        })
+}
 
 pub async fn load_echo_account<'a, 'async_trait, C>(
     id: i64,

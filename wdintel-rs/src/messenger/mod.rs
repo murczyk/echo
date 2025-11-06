@@ -60,12 +60,11 @@ pub async fn is_linked(
         .await
         .cae(h!())?;
     let txn = env.dbx.begin().await.cae(h!())?;
-    let is_linked = bl::load_echo_account(req.account_id, &txn)
-        .await
-        .map(|a| a.is_linked)
-        .unwrap_or(false);
+    let is_account_linked = bl::is_account_linked(req.account_id, &txn).await;
     txn.commit().await.c(h!())?;
-    Ok(Json(IsAccountLinkedRsp { is_linked }))
+    Ok(Json(IsAccountLinkedRsp {
+        is_linked: is_account_linked,
+    }))
 }
 
 #[post("/api/messenger/edit")]
