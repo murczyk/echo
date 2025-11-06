@@ -9,12 +9,14 @@ use crate::messenger::group::types::SignalGroupStats;
 use crate::messenger::types::{
     AccountSyncResult, EchoAccountF1, GroupUpdateReq,
 };
+use crate::new_pg_pool_from_config;
 use crate::sigint::aor::{load_default_aor, render_aor};
 use crate::types::AppError;
 use crate::types::*;
 use echo_im::entities::sea_orm_active_enums::*;
 use echo_im::os_specific;
 use echo_im::types::MessageSource;
+use echo_im::worker::signal_worker_tick_once;
 use sea_orm::prelude::DateTime;
 use sea_orm::prelude::*;
 use sea_orm::*;
@@ -716,4 +718,17 @@ pub fn transliterate_and_slugify(input: &str) -> String {
 
     // Clean up spaces and replace with dashes
     result.trim().replace(' ', "-")
+}
+
+pub async fn sync_signal_once(client_name: String, config: Config) {
+    let db = match new_pg_pool_from_config(&config).await.c(h!()) {
+        Ok(db) => db,
+        Err(e) => {
+            error!("failed to connect to db for initial signal sync, client '{client_name}': {e:#?}");
+            return;
+        }
+    };
+    if let Err(e) = signal_worker_tick_once(&client_name, &db).await {
+        error!("failed to perform initial signal sync, client '{client_name}': {e:#?}");
+    }
 }
