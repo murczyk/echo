@@ -659,7 +659,6 @@ pub async fn ensure_import_group_exists(
                 kind: Set("signal".to_string()),
                 display_name: Set("signal_phone".to_string()),
                 signal_phone: Set(Some("+3800000000".to_string())),
-                signal_docker_port: Set(Some("8083".to_string())),
                 enabled: Set(Some(true)),
                 ..Default::default()
             }

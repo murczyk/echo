@@ -205,9 +205,6 @@ pub mod tests {
         if out.signal_phone == NotSet {
             out.signal_phone = Set(None);
         }
-        if out.signal_docker_port == NotSet {
-            out.signal_docker_port = Set(None);
-        }
         if out.api_endpoint == NotSet {
             out.api_endpoint = Set(None);
         }

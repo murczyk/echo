@@ -13,6 +13,7 @@ pub struct Model {
     pub client_id: i32,
     pub account_id: i32,
     pub created_at: DateTime,
+    pub remove_requested: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

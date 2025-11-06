@@ -196,7 +196,6 @@ pub async fn link_operator(
         created_at: NotSet,
         display_name: Set(req.display_name.to_string()),
         signal_phone: Set(None),
-        signal_docker_port: NotSet,
         api_endpoint: Set(Some(req.api_endpoint.clone())),
         api_login: Set(Some(req.api_login.clone())),
         enabled: Set(Some(true)),
