@@ -15,7 +15,6 @@ use crate::types::*;
 use echo_im::entities::sea_orm_active_enums::*;
 use echo_im::os_specific;
 use echo_im::types::MessageSource;
-use echo_im::worker::signal_worker_tick_once;
 use sea_orm::prelude::DateTime;
 use sea_orm::prelude::*;
 use sea_orm::*;
