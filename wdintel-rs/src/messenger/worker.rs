@@ -363,16 +363,6 @@ async fn sync_groups(
     }
     let group_master_keys =
         groups.iter().map(|x| x.id.clone()).collect::<Vec<_>>();
-    // FIXME temporary workaround, remove group_internal_keys_map after all servers migrated to ECHO-IM and stable. also drop internal id from echo-im contract
-    let group_internal_keys_map = groups
-        .iter()
-        .filter_map(|x| x.internal_id.clone().map(|id| (id, x.id.clone())))
-        .collect::<HashMap<_, _>>();
-    let mut groups_to_remap = HashMap::new();
-    let mut all_master_keys = group_master_keys.clone();
-    for key in group_internal_keys_map.keys() {
-        all_master_keys.push(key.clone())
-    }
 
     let mut existing_groups: BTreeMap<(String, i64), GroupData> =
         BTreeMap::new();
@@ -390,24 +380,17 @@ async fn sync_groups(
     let mut groups_raw = vec![];
     let group_models = signal_group::Entity::find()
         .filter(signal_group::Column::Deleted.eq(false))
-        .filter(signal_group::Column::MasterKey.is_in(all_master_keys))
+        .filter(
+            signal_group::Column::MasterKey.is_in(group_master_keys.clone()),
+        )
         .all(txn)
         .await
         .cae(h!())?;
     for g in group_models {
-        let master_key = if let Some(actual_key) =
-            group_internal_keys_map.get(&g.master_key)
-        {
-            groups_to_remap
-                .insert(g.master_key.to_string(), actual_key.to_string());
-            actual_key.clone()
-        } else {
-            g.master_key.clone()
-        };
         groups_raw.push(GroupData {
             model_a: Some(g.clone()),
             model_b: None,
-            id: master_key,
+            id: g.master_key.clone(),
             name: g.name,
             created_at: g.created_at,
             datasource_id: datasource.id,
@@ -577,76 +560,6 @@ async fn sync_groups(
                 rec.update(txn).await.c(h!())?;
             }
         }
-    }
-    if !groups_to_remap.is_empty() {
-        let cutoff = Utc::now().naive_utc() - chrono::Duration::days(30);
-        let live_group_ids = signal_message::Entity::find()
-            .filter(signal_message::Column::CreatedAt.gt(cutoff))
-            .select_only()
-            .column(signal_message::Column::DatasourceGroupId)
-            .distinct()
-            .into_tuple::<i64>()
-            .all(txn)
-            .await
-            .context(h!())?;
-        for (internal_id, master_key) in groups_to_remap {
-            remap_datasource_groups(
-                &internal_id,
-                &master_key,
-                txn,
-                live_group_ids.clone(),
-                cutoff,
-            )
-            .await
-            .context(h!())?;
-        }
-    }
-    Ok(())
-}
-
-/// FIXME temporary workaround, remove group_internal_keys_map after all servers migrated to ECHO-IM and stable. also drop internal id from echo-im contract
-async fn remap_datasource_groups(
-    internal_id: &str,
-    master_key: &str,
-    txn: &DatabaseTransaction,
-    live_group_ids: Vec<i64>,
-    cutoff: NaiveDateTime,
-) -> anyhow::Result<()> {
-    let groups_to_update = datasource_group::Entity::find()
-        .filter(datasource_group::Column::GroupMasterKey.eq(internal_id))
-        .filter(datasource_group::Column::Id.is_in(live_group_ids))
-        .all(txn)
-        .await
-        .context(h!())?;
-    let target_groups = datasource_group::Entity::find()
-        .filter(datasource_group::Column::GroupMasterKey.eq(master_key))
-        .all(txn)
-        .await
-        .context(h!())?;
-    for g in groups_to_update {
-        let m_existing_group = target_groups
-            .iter()
-            .find(|x| x.datasource_id.eq(&g.datasource_id))
-            .cloned();
-        if let Some(existing_group) = m_existing_group {
-            signal_message::Entity::update_many()
-                .filter(signal_message::Column::DatasourceGroupId.eq(g.id))
-                .filter(signal_message::Column::CreatedAt.gt(cutoff))
-                .col_expr(
-                    signal_message::Column::DatasourceGroupId,
-                    Expr::value(existing_group.id),
-                )
-                .exec(txn)
-                .await
-                .c(h!())?;
-            let mut group = g.into_active_model();
-            group.deleted = Set(true);
-            group.update(txn).await.c(h!())?;
-            continue;
-        }
-        let mut group = g.into_active_model();
-        group.group_master_key = Set(master_key.to_string());
-        group.update(txn).await.c(h!())?;
     }
     Ok(())
 }
