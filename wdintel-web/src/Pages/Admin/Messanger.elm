@@ -2056,10 +2056,10 @@ messengerAccountsTableConfig isLoading aorList =
                                         button
                                             [ class "table-action-btn"
                                             , type_ "button"
-                                            , title "Призупинити"
+                                            , title "Відв'язати"
                                             , onClick <| ToggleAccountStatus account.id
                                             ]
-                                            [ i [ class "bi bi-pause-circle" ] [] ]
+                                            [ i [ class "bi bi-x-circle" ] [] ]
 
                                       else
                                         button

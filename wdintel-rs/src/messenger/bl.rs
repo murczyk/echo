@@ -80,16 +80,12 @@ pub async fn edit_account(
     description: Option<String>,
     api_login: Option<String>,
     api_endpoint: Option<String>,
-    txn: &DatabaseTransaction,
+    dbx: &DatabaseConnection,
     login: &String,
-) -> Result<EchoAccountF1, AppError> {
-    let new_status = if set_active {
-        AccountStatus::Active
-    } else {
-        AccountStatus::Paused
-    };
+) -> anyhow::Result<()> {
+    let txn = dbx.begin().await.cae(h!())?;
     let mut account = datasource::Entity::find_by_id(id)
-        .one(txn)
+        .one(&txn)
         .await
         .c(h!())?
         .c(h!())?
@@ -97,24 +93,24 @@ pub async fn edit_account(
     account.default_aor_id = Set(aor_id);
     account.display_name = Set(display_name);
     account.description = Set(description);
-    account.status = Set(new_status);
+    if set_active {
+        account.status = Set(AccountStatus::Active);
+    } else {
+        account.status = Set(AccountStatus::Paused);
+    }
     account.updated_by = Set(Some(login.to_string()));
     account.api_login = Set(api_login);
     account.api_endpoint = Set(api_endpoint);
-    let result = account.update(txn).await.c(h!())?;
-    let account = list_echo_accounts(Some(result.id), txn)
-        .await
-        .c(h!())?
-        .into_iter()
-        .next()
-        .c(h!())?;
-    Ok(account)
+    account.update(&txn).await.c(h!())?;
+    txn.commit().await.c(h!())?;
+    Ok(())
 }
 
 pub async fn deactivate_account(
     id: i64,
     txn: &DatabaseTransaction,
-    login: &String,
+    login: Option<String>,
+    mark_deleted: bool,
 ) -> Result<(), AppError> {
     let account = load_echo_account(id, txn).await.c(h!())?;
     let datasource = datasource::Entity::find_by_id(account.id)
@@ -131,8 +127,12 @@ pub async fn deactivate_account(
         }
     }
     let mut datasource = datasource.into_active_model();
-    datasource.deleted = Set(true);
-    datasource.updated_by = Set(Some(login.to_string()));
+    if mark_deleted {
+        datasource.deleted = Set(true);
+    }
+    if let Some(login) = login {
+        datasource.updated_by = Set(Some(login));
+    }
     datasource.update(txn).await.c(h!())?;
     Ok(())
 }

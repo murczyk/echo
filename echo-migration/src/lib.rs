@@ -155,6 +155,7 @@ mod m20251023_130959_create_palitra_tables;
 mod m20251024_092630_add_palitra_point_label;
 mod m20251030_093422_add_geometry_columns;
 mod m20251106_125324_drop_datasource_legacy_columns;
+mod m20251107_102225_datasource_default_status;
 
 pub struct Migrator;
 
@@ -317,6 +318,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20251024_092630_add_palitra_point_label::Migration),
             Box::new(m20251030_093422_add_geometry_columns::Migration),
             Box::new(m20251106_125324_drop_datasource_legacy_columns::Migration),
+            Box::new(m20251107_102225_datasource_default_status::Migration),
         ]
     }
 }

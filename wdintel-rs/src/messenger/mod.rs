@@ -81,7 +81,6 @@ pub async fn edit(
     crate::users::has_any_role(&env.dbx, &login, vec!["Admin"])
         .await
         .cae(h!())?;
-    let txn = env.dbx.begin().await.cae(h!())?;
     let id = req.account_id;
     bl::edit_account(
         id,
@@ -91,12 +90,11 @@ pub async fn edit(
         req.description.clone(),
         req.api_login.clone(),
         req.api_endpoint.clone(),
-        &txn,
+        &env.dbx,
         &login,
     )
     .await
     .c(h!())?;
-    txn.commit().await.c(h!())?;
     let result = bl::load_echo_account(id, &env.dbx).await.c(h!())?;
     Ok(Json(result))
 }
@@ -142,7 +140,7 @@ pub async fn unlink(
         .await
         .cae(h!())?;
     let txn = env.dbx.begin().await.cae(h!())?;
-    bl::deactivate_account(req.account_id, &txn, &login)
+    bl::deactivate_account(req.account_id, &txn, Some(login.clone()), true)
         .await
         .c(h!())?;
     txn.commit().await.c(h!())?;
