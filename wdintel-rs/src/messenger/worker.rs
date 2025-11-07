@@ -1,4 +1,4 @@
-use crate::config::{read_config, Config, IDLE_SLEEP_MS, LONG_POLL_SLEEP_MS};
+use crate::config::*;
 use crate::entities::sea_orm_active_enums::EchoMessageSource;
 use crate::entities::*;
 use crate::error::{AppError, ContextAndError};
@@ -17,10 +17,13 @@ use echo_migration::Expr;
 use redis::aio::ConnectionManager;
 use reqwest::Client;
 use sea_orm::*;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::runtime::*;
 use tokio::task::JoinSet;
 use tokio::time::{sleep, Duration};
 use tokio_util::sync::CancellationToken;
+
+static SIGNAL_LOGIN_DELAY_DONE: AtomicBool = AtomicBool::new(false);
 
 pub async fn receive_thread_nofail(
     mode: Mode,
@@ -288,6 +291,7 @@ async fn receive_thread(
         trace!("datasource {datasource_id} is not linked, skipping");
         return Ok(0);
     }
+    ensure_initial_signal_login_delay().await;
     echo_im::worker::signal_worker_tick_once(client_name, dbx)
         .await
         .c(h!())?;
@@ -308,6 +312,24 @@ async fn receive_thread(
     model.update(dbx).await.c(h!())?;
 
     Ok(items_synced)
+}
+
+async fn ensure_initial_signal_login_delay() {
+    let Ok(_) = SIGNAL_LOGIN_DELAY_DONE.compare_exchange(
+        false,
+        true,
+        Ordering::SeqCst,
+        Ordering::SeqCst,
+    ) else {
+        return;
+    };
+
+    info!(
+        "Initial Signal login delay started ({} ms)",
+        SIGNAL_LOGIN_INITIAL_SLEEP_MS
+    );
+    sleep(Duration::from_millis(SIGNAL_LOGIN_INITIAL_SLEEP_MS)).await;
+    info!("Initial Signal login delay finished");
 }
 
 async fn sync_groups(
