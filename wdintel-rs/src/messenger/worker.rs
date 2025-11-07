@@ -266,14 +266,15 @@ async fn sync_client_once(
 
 async fn is_datasource_offline(dbx: &DatabaseConnection, id: i64) -> bool {
     let cutoff_ts = Utc::now().naive_utc() - TimeDelta::minutes(5);
-    let timestamp = datasource::Entity::find_by_id(id)
+    let m_datasource = datasource::Entity::find_by_id(id)
         .one(dbx)
         .await
         .ok()
-        .flatten()
-        .filter(|ds| ds.echo_client_lock_id.is_some()) // for Echo-IM datasources only
-        .and_then(|entity| entity.last_sync_at);
-    let Some(last_sync_at) = timestamp else {
+        .flatten();
+    let Some(datasource) = m_datasource else {
+        return true;
+    };
+    let Some(last_sync_at) = datasource.last_sync_at else {
         return false;
     };
     last_sync_at < cutoff_ts
@@ -325,8 +326,7 @@ async fn ensure_initial_signal_login_delay() {
     };
 
     info!(
-        "Initial Signal login delay started ({} ms)",
-        SIGNAL_LOGIN_INITIAL_SLEEP_MS
+        "Initial Signal login delay started ({SIGNAL_LOGIN_INITIAL_SLEEP_MS} ms)",
     );
     sleep(Duration::from_millis(SIGNAL_LOGIN_INITIAL_SLEEP_MS)).await;
     info!("Initial Signal login delay finished");

@@ -10,7 +10,7 @@ impl MigrationTrait for Migration {
         db.execute_unprepared(
             "ALTER TABLE datasource ALTER COLUMN status SET DEFAULT 'active';",
         )
-            .await?;
+        .await?;
         Ok(())
     }
 
@@ -19,7 +19,7 @@ impl MigrationTrait for Migration {
         db.execute_unprepared(
             "ALTER TABLE datasource ALTER COLUMN status SET DEFAULT 'ready';",
         )
-            .await?;
+        .await?;
         Ok(())
     }
 }
