@@ -62,8 +62,12 @@ pub async fn is_linked(
     let txn = env.dbx.begin().await.cae(h!())?;
     let is_account_linked = bl::is_account_linked(req.account_id, &txn).await;
     txn.commit().await.c(h!())?;
+    if is_account_linked.is_linked {
+        let client_name = is_account_linked.client_name.c(h!())?;
+        tokio::spawn(bl::sync_signal_once(client_name, env.config.clone()));
+    }
     Ok(Json(IsAccountLinkedRsp {
-        is_linked: is_account_linked,
+        is_linked: is_account_linked.is_linked,
     }))
 }
 

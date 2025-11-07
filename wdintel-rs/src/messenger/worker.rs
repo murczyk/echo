@@ -206,7 +206,6 @@ async fn run_new_worker(
                 .c(h!())?
                 .into_iter()
                 .next()
-                .filter(|ds| ds.is_linked)
             else {
                 info!(
                     "datasource {datasource_id} went offline, stopping worker..."

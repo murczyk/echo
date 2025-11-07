@@ -153,3 +153,9 @@ pub struct SyncResult {
     pub is_healthy: bool,
     pub num_synced_inbox_messages: usize,
 }
+
+#[derive(Default)]
+pub struct AccountSyncResult {
+    pub is_linked: bool,
+    pub client_name: Option<String>,
+}
