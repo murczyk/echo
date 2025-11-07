@@ -86,6 +86,7 @@ pub async fn edit_account(
     let new_status = if set_active {
         AccountStatus::Active
     } else {
+        deactivate_account(id, txn, login).await.c(h!())?;
         AccountStatus::Paused
     };
     let mut account = datasource::Entity::find_by_id(id)

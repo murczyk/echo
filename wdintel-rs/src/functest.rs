@@ -221,7 +221,7 @@ pub mod tests {
             out.description = Set(None);
         }
         if out.status == NotSet {
-            out.status = Set(sea_orm_active_enums::AccountStatus::Ready);
+            out.status = Set(sea_orm_active_enums::AccountStatus::Active);
         }
         if out.echo_client_lock_id == NotSet {
             out.echo_client_lock_id = Set(None);
