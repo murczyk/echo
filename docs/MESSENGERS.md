@@ -50,6 +50,7 @@ root@echo-pivnich:/etc/echo/signal-cli-data/pivnich-signal/signal-cli# rm -rf ./
     - зараз:
         - `ssh -nNT -L 8012:localhost:8012 echo-pivnich`
         - відкриваємо http://localhost:8012/v1/qrcodelink?device_name=pivnich-signal-5nov25
+        - перевірити `echo_account.is_linked=true`
     - майбутнє: веб інтерфейс
 
 ### Troubleshoot відставання Донецьк 5NOV25
