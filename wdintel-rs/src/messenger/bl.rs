@@ -80,17 +80,22 @@ pub async fn edit_account(
     description: Option<String>,
     api_login: Option<String>,
     api_endpoint: Option<String>,
-    txn: &DatabaseTransaction,
+    dbx: &DatabaseConnection,
     login: &String,
-) -> Result<EchoAccountF1, AppError> {
+) -> anyhow::Result<()> {
+    if !set_active {
+        let txn = dbx.begin().await.cae(h!())?;
+        deactivate_account(id, &txn, login).await.c(h!())?;
+        txn.commit().await.c(h!())?;
+    }
+    let txn = dbx.begin().await.cae(h!())?;
     let new_status = if set_active {
         AccountStatus::Active
     } else {
-        deactivate_account(id, txn, login).await.c(h!())?;
         AccountStatus::Paused
     };
     let mut account = datasource::Entity::find_by_id(id)
-        .one(txn)
+        .one(&txn)
         .await
         .c(h!())?
         .c(h!())?
@@ -102,14 +107,9 @@ pub async fn edit_account(
     account.updated_by = Set(Some(login.to_string()));
     account.api_login = Set(api_login);
     account.api_endpoint = Set(api_endpoint);
-    let result = account.update(txn).await.c(h!())?;
-    let account = list_echo_accounts(Some(result.id), txn)
-        .await
-        .c(h!())?
-        .into_iter()
-        .next()
-        .c(h!())?;
-    Ok(account)
+    account.update(&txn).await.c(h!())?;
+    txn.commit().await.c(h!())?;
+    Ok(())
 }
 
 pub async fn deactivate_account(
