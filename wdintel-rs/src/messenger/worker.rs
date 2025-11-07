@@ -1,9 +1,9 @@
 use crate::config::*;
-use crate::entities::sea_orm_active_enums::EchoMessageSource;
+use crate::entities::sea_orm_active_enums::{AccountStatus, EchoMessageSource};
 use crate::entities::*;
 use crate::error::{AppError, ContextAndError};
 use crate::location::SettlementsData;
-use crate::messenger::bl::list_echo_accounts;
+use crate::messenger::bl::{deactivate_account, list_echo_accounts};
 use crate::messenger::id;
 use crate::messenger::types::{
     EchoAccountF1, Message, SyncResult, WorkerStatus,
@@ -286,11 +286,26 @@ async fn receive_thread(
     dbx: &DatabaseConnection,
     processor_pool: &mut ProcessorPool,
 ) -> Result<usize, AppError> {
-    let datasource = load_client_datasource(dbx, client_name).await.c(h!())?;
+    let mut datasource = load_client_datasource(dbx, client_name).await.c(h!())?;
     let datasource_id = datasource.id;
     if datasource.echo_client_lock_id.is_none() {
         trace!("datasource {datasource_id} is not linked, skipping");
         return Ok(0);
+    }
+    if datasource.status.eq(&AccountStatus::Paused) {
+        let txn = dbx.begin().await.cae(h!())?;
+        deactivate_account(
+            datasource.id,
+            &txn,
+            datasource.updated_by.clone(),
+            false,
+        )
+        .await
+        .c(h!())?;
+        let mut datasource_am = datasource.into_active_model();
+        datasource_am.status = Set(AccountStatus::Active);
+        datasource = datasource_am.update(&txn).await.c(h!())?;
+        txn.commit().await.c(h!())?;
     }
     ensure_initial_signal_login_delay().await;
     echo_im::worker::signal_worker_tick_once(client_name, dbx)

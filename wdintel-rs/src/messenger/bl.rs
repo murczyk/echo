@@ -83,11 +83,6 @@ pub async fn edit_account(
     dbx: &DatabaseConnection,
     login: &String,
 ) -> anyhow::Result<()> {
-    if !set_active {
-        let txn = dbx.begin().await.cae(h!())?;
-        deactivate_account(id, &txn, login, false).await.c(h!())?;
-        txn.commit().await.c(h!())?;
-    }
     let txn = dbx.begin().await.cae(h!())?;
     let mut account = datasource::Entity::find_by_id(id)
         .one(&txn)
@@ -98,6 +93,11 @@ pub async fn edit_account(
     account.default_aor_id = Set(aor_id);
     account.display_name = Set(display_name);
     account.description = Set(description);
+    if set_active {
+        account.status = Set(AccountStatus::Active);
+    } else {
+        account.status = Set(AccountStatus::Paused);
+    }
     account.updated_by = Set(Some(login.to_string()));
     account.api_login = Set(api_login);
     account.api_endpoint = Set(api_endpoint);
@@ -109,7 +109,7 @@ pub async fn edit_account(
 pub async fn deactivate_account(
     id: i64,
     txn: &DatabaseTransaction,
-    login: &String,
+    login: Option<String>,
     mark_deleted: bool,
 ) -> Result<(), AppError> {
     let account = load_echo_account(id, txn).await.c(h!())?;
@@ -130,7 +130,9 @@ pub async fn deactivate_account(
     if mark_deleted {
         datasource.deleted = Set(true);
     }
-    datasource.updated_by = Set(Some(login.to_string()));
+    if let Some(login) = login {
+        datasource.updated_by = Set(Some(login));
+    }
     datasource.update(txn).await.c(h!())?;
     Ok(())
 }
