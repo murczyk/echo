@@ -89,11 +89,6 @@ pub async fn edit_account(
         txn.commit().await.c(h!())?;
     }
     let txn = dbx.begin().await.cae(h!())?;
-    let new_status = if set_active {
-        AccountStatus::Active
-    } else {
-        AccountStatus::Paused
-    };
     let mut account = datasource::Entity::find_by_id(id)
         .one(&txn)
         .await
@@ -103,7 +98,6 @@ pub async fn edit_account(
     account.default_aor_id = Set(aor_id);
     account.display_name = Set(display_name);
     account.description = Set(description);
-    account.status = Set(new_status);
     account.updated_by = Set(Some(login.to_string()));
     account.api_login = Set(api_login);
     account.api_endpoint = Set(api_endpoint);
