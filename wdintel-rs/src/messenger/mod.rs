@@ -140,7 +140,7 @@ pub async fn unlink(
         .await
         .cae(h!())?;
     let txn = env.dbx.begin().await.cae(h!())?;
-    bl::deactivate_account(req.account_id, &txn, &login)
+    bl::deactivate_account(req.account_id, &txn, &login, true)
         .await
         .c(h!())?;
     txn.commit().await.c(h!())?;

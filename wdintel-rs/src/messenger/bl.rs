@@ -85,7 +85,7 @@ pub async fn edit_account(
 ) -> anyhow::Result<()> {
     if !set_active {
         let txn = dbx.begin().await.cae(h!())?;
-        deactivate_account(id, &txn, login).await.c(h!())?;
+        deactivate_account(id, &txn, login, false).await.c(h!())?;
         txn.commit().await.c(h!())?;
     }
     let txn = dbx.begin().await.cae(h!())?;
@@ -116,6 +116,7 @@ pub async fn deactivate_account(
     id: i64,
     txn: &DatabaseTransaction,
     login: &String,
+    mark_deleted: bool,
 ) -> Result<(), AppError> {
     let account = load_echo_account(id, txn).await.c(h!())?;
     let datasource = datasource::Entity::find_by_id(account.id)
@@ -132,7 +133,9 @@ pub async fn deactivate_account(
         }
     }
     let mut datasource = datasource.into_active_model();
-    datasource.deleted = Set(true);
+    if mark_deleted {
+        datasource.deleted = Set(true);
+    }
     datasource.updated_by = Set(Some(login.to_string()));
     datasource.update(txn).await.c(h!())?;
     Ok(())
