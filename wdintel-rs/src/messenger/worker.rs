@@ -286,7 +286,8 @@ async fn receive_thread(
     dbx: &DatabaseConnection,
     processor_pool: &mut ProcessorPool,
 ) -> Result<usize, AppError> {
-    let mut datasource = load_client_datasource(dbx, client_name).await.c(h!())?;
+    let mut datasource =
+        load_client_datasource(dbx, client_name).await.c(h!())?;
     let datasource_id = datasource.id;
     if datasource.echo_client_lock_id.is_none() {
         trace!("datasource {datasource_id} is not linked, skipping");
