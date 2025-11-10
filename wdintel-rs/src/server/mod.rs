@@ -21,9 +21,9 @@ pub mod middleware;
 pub mod monitoring;
 
 pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
-    let config = crate::config::read_config(mode).unwrap();
-    let redis = new_redis(&config).await.unwrap();
-    let redisb = new_redisb(&config).await.unwrap();
+    let config = crate::config::read_config(mode).c(h!())?;
+    let redis = new_redis(&config).await.c(h!())?;
+    let redisb = new_redisb(&config).await.c(h!())?;
     let b = S3::default()
         .region(&config.b2_s3_region)
         .access_key_id(&config.b2_aws_access_key_id)
@@ -37,7 +37,7 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
         .finish();
     // opendal Operator is cheaply cloneable; store directly on Env
     let mil_geo = MilGeo::new(&mk_conn_string(&config)[..]);
-    let dbx = crate::new_pg_pool_from_config(&config).await.unwrap();
+    let dbx = crate::new_pg_pool_from_config(&config).await.c(h!())?;
     let mut replicas = vec![];
     if let Some(replica_configs) = config.replicas.clone() {
         for replica in replica_configs {
@@ -65,7 +65,7 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
     let rq: reqwest::Client = reqwest::Client::builder()
         .timeout(core::time::Duration::from_secs(crate::config::RQ_TIMEOUT))
         .build()
-        .unwrap();
+        .c(h!())?;
     let m_greptimedb = if config.greptime_host.is_some()
         && config.greptime_host != Some("".to_string())
     {
@@ -80,7 +80,7 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
     } else {
         None
     };
-    let settlement_paths = config.settlement_paths().unwrap();
+    let settlement_paths = config.settlement_paths().c(h!())?;
     let settlements_data =
         crate::location::load_from_file(settlement_paths, mode)
             .unwrap_or_default();
@@ -88,11 +88,11 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
     let callsigns_whitelist =
         crate::sigint::callsign::load_whitelist_from_file(mode)
             .await
-            .unwrap();
+            .c(h!())?;
 
     let version_file = match mode {
         Mode::Debug | Mode::Test => {
-            std::env::current_dir().unwrap().to_path_buf()
+            std::env::current_dir().c(h!())?.to_path_buf()
         }
         Mode::Live => PathBuf::from("usr/share/echo"),
     }
@@ -133,9 +133,9 @@ pub async fn main_server(
     let mut background_tasks: JoinSet<()> = JoinSet::new();
     let bg_set = &mut background_tasks;
 
-    crate::migration::run_migration_1(mode).await.unwrap();
+    crate::migration::run_migration_1(mode).await.c(h!())?;
 
-    let env = new_env(mode).await.unwrap();
+    let env = new_env(mode).await.c(h!())?;
 
     let config = env.config.clone();
     let config1 = config.clone();
@@ -155,9 +155,9 @@ pub async fn main_server(
     };
 
     let redis_session_store =
-        RedisSessionStore::new(crate::redis_conn_string(&config).unwrap())
+        RedisSessionStore::new(crate::redis_conn_string(&config).c(h!())?)
             .await
-            .unwrap();
+            .c(h!())?;
 
     // Create JoinSet for background tasks
 
