@@ -834,7 +834,7 @@ viewDeletedStatus timeZone login =
             Just B.Admin ->
                 div [ class "flex flex-col items-center" ]
                     [ i [ class "bi bi-person-x-fill text-red-500 text-xl" ] []
-                    , span [ class "text-red-500 text-xs" ] [ text "Адмін" ]
+                    , span [ class "text-red-500 text-xs" ] [ text "Видалено адміном" ]
                     ]
 
             Just B.Inactive ->
