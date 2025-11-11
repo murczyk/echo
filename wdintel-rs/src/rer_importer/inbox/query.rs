@@ -143,7 +143,13 @@ where
                 .c(h!())?
     };
 
-    // this is a simple filter that double-checks we don't accidentally show wrong data after we apply complex (more fragile) filter later in this method
+    // these are simple filters that double-check we don't accidentally show wrong data after we apply complex (more fragile) filter later in this method
+    if let Some(id) = req.since_id_noninclusive {
+        q = q.filter(signal_message::Column::Id.gt(id));
+    }
+    if let Some(id) = req.before_id_noninclusive {
+        q = q.filter(signal_message::Column::Id.lt(id));
+    }
     let req_sort_by = req.sort_by.unwrap_or(InboxMessagesSortBy::IMSDatetime);
     match req_sort_by {
         InboxMessagesSortBy::IMSDatetime => {
@@ -168,6 +174,7 @@ where
         }
     };
 
+    // here are more complex and nuanced filters
     '_if: {
         if let Some(since_id_noninclusive) = since_id_noninclusive {
             let Some(message) =
