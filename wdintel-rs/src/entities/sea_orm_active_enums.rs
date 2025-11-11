@@ -113,6 +113,8 @@ pub enum EchoMessageDeliveryStatus {
     Received,
     #[sea_orm(string_value = "error")]
     Error,
+    #[sea_orm(string_value = "expired")]
+    Expired,
 }
 #[derive(
     Debug,

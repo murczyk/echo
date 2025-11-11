@@ -16,6 +16,8 @@ pub struct Model {
     #[sea_orm(column_type = "Text")]
     pub display_name: String,
     #[sea_orm(column_type = "Text", nullable)]
+    pub signal_phone: Option<String>,
+    #[sea_orm(column_type = "Text", nullable)]
     pub api_endpoint: Option<String>,
     pub enabled: Option<bool>,
     #[sea_orm(column_type = "Text", nullable)]
@@ -34,8 +36,6 @@ pub struct Model {
     pub updated_by: Option<String>,
     pub deleted: bool,
     pub last_sync_at: Option<DateTime>,
-    #[sea_orm(column_type = "Text", nullable)]
-    pub signal_phone: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

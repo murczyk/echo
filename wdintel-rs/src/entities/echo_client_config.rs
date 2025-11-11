@@ -22,6 +22,7 @@ pub struct Model {
     pub whatsapp_app_name: String,
     pub is_configured: bool,
     pub signal_mode: SignalCliMode,
+    pub outbox_message_ttl_minutes: i64,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

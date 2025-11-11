@@ -16,6 +16,7 @@ pub struct Model {
     pub timestamp: Option<DateTime>,
     #[sea_orm(column_type = "Text", nullable)]
     pub sender: Option<String>,
+    pub duplicate_of: Option<i64>,
     pub format: Option<i64>,
     pub deleted: bool,
     pub external_id: Option<i64>,

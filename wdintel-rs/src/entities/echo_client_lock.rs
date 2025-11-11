@@ -11,7 +11,6 @@ pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i32,
     pub client_id: i32,
-    #[sea_orm(unique)]
     pub account_id: i32,
     pub created_at: DateTime,
     pub remove_requested: bool,
