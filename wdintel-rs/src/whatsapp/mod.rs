@@ -134,7 +134,6 @@ async fn receive_once(
             created_at: NotSet,
             timestamp: Set(Some(wq.timestamp)),
             sender: Set(Some(wq.from_jid.clone())),
-            duplicate_of: NotSet,
             format: NotSet,
             deleted: Set(true),
             external_id: NotSet,
@@ -163,7 +162,7 @@ async fn receive_once(
         )
         .await
         .c(h!())?;
-        if res.is_same_group_duplicate {
+        if res.is_duplicate {
             wq.delete(&txn).await.c(h!())?;
             txn.commit().await.c(h!())?;
             return Ok(());

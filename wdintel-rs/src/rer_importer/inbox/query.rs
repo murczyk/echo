@@ -9,10 +9,7 @@ use chrono::{Duration, NaiveDateTime, Utc};
 use log::*;
 use sea_orm::{sea_query::PostgresQueryBuilder, *};
 use sea_query::types::IntoColumnRef;
-use sea_query::{
-    Alias, ColumnRef, CommonTableExpression, Expr, Query, SelectStatement,
-    SimpleExpr,
-};
+use sea_query::{Expr, Query, SelectStatement, SimpleExpr};
 
 const DEDUP_INTERVAL_EXTENTION_MIN: i32 = 5;
 
@@ -27,7 +24,6 @@ pub(crate) async fn build_inbox_query(
             .await
             .c(h!())?;
 
-    // Step 1: Build base CTE query with filters and externed time range to get enough messages for deduplication
     let mut q = SignalMessage::find()
         .join(
             JoinType::LeftJoin,
@@ -46,9 +42,18 @@ pub(crate) async fn build_inbox_query(
             sigint_inbox_item::Relation::SigintPost.def(),
         );
 
+    let access_subquery = Query::select()
+        .column(signal_message_group::Column::SignalMessageId)
+        .from(signal_message_group::Entity)
+        .and_where(
+            signal_message_group::Column::GroupMasterKey
+                .is_in(sigint_groups.clone()),
+        )
+        .to_owned();
+
     q = add_inbox_message_columns(q)
         .filter(signal_message::Column::Deleted.eq(false))
-        .filter(datasource_group::Column::GroupMasterKey.is_in(sigint_groups));
+        .filter(signal_message::Column::Id.in_subquery(access_subquery));
 
     if req.ignore_imported_coords.unwrap_or(false) {
         q = q.filter(signal_group::Column::IgnoreOperativny.eq(Some(false)));
@@ -108,59 +113,15 @@ pub(crate) async fn build_inbox_query(
                 .gte(Utc::now().naive_utc() - Duration::days(1)),
         );
     }
-    q = get_pagination_filters(env, req, q.clone()).await.c(h!())?;
-
-    let inbox_cte_alias = Alias::new("inbox_items_cte");
-    let inbox_cte = CommonTableExpression::new()
-        .query(q.clone().into_query())
-        .table_name(inbox_cte_alias.clone())
-        .to_owned();
-
-    // Step 2: Build deduplication CTE using DISTINCT ON (dedup_key)
-    let dedup_key_alias = Alias::new("dedup_key");
-    let dedup_q = Query::select()
-        .column(ColumnRef::Asterisk)
-        .from(inbox_cte_alias.clone())
-        .distinct_on([dedup_key_alias.clone()])
-        .order_by(dedup_key_alias.clone(), Order::Asc)
-        // emulate NULLS FIRST: order nulls before non-nulls
-        .order_by_expr(
-            Expr::cust("(inbox_items_cte.duplicate_of IS NULL)"),
-            Order::Desc,
-        )
-        .order_by(signal_message::Column::Timestamp, Order::Asc)
-        .order_by(signal_message::Column::Id, Order::Asc)
-        .to_owned();
-
-    let dedup_cte_alias = Alias::new("dedup_cte");
-    let dedup_cte = CommonTableExpression::new()
-        .query(dedup_q.clone())
-        .table_name(dedup_cte_alias.clone())
-        .to_owned();
-
-    let mut main_query = SelectStatement::new();
-    main_query
-        .column(ColumnRef::Asterisk)
-        .from(dedup_cte_alias.clone());
-    main_query =
-        get_pagination_filter_real_lower_bound_stmt(env, req, main_query)
-            .await
-            .context(h!())?;
-    main_query = get_bl_ordering_stmt(req, main_query).await.context(h!())?;
+    q = get_pagination_filters(env, req, q).await.c(h!())?;
+    let q = get_bl_ordering_select(req, q).await.c(h!())?;
+    let mut query = q.into_query();
     if req.nolimit != Some(true) {
-        main_query.limit(20);
+        query.limit(20);
     }
-    // Step 3: Combine CTEs and main query, add filter by initial window values and business logic ordering
-    let combined_query = Query::with()
-        .cte(inbox_cte)
-        .cte(dedup_cte)
-        .clone()
-        .query(main_query)
-        .to_string(PostgresQueryBuilder);
-
-    trace!("> Deduplicated inbox items query: {combined_query}");
-
-    Ok(combined_query)
+    let sql = query.to_string(PostgresQueryBuilder);
+    trace!("> Inbox items query: {sql}");
+    Ok(sql)
 }
 
 /// Build pagination filters.  
@@ -185,7 +146,31 @@ where
                 .c(h!())?
     };
 
+    // this is a simple filter that double-checks we don't accidentally show wrong data after we apply complex (more fragile) filter later in this method
     let req_sort_by = req.sort_by.unwrap_or(InboxMessagesSortBy::IMSDatetime);
+    match req_sort_by {
+        InboxMessagesSortBy::IMSDatetime => {
+            if let Some(since_date_inclusive_ms) = req.since_date_inclusive_ms {
+                let datetime = dt_from_millis(since_date_inclusive_ms)?;
+                q = q.filter(sigint_inbox_item::Column::Datetime.gte(datetime));
+            }
+            if let Some(till_date_inclusive_ms) = req.till_date_inclusive_ms {
+                let datetime = dt_from_millis(till_date_inclusive_ms)?;
+                q = q.filter(sigint_inbox_item::Column::Datetime.lte(datetime));
+            }
+        }
+        InboxMessagesSortBy::IMSTimestamp => {
+            if let Some(since_date_inclusive_ms) = req.since_date_inclusive_ms {
+                let datetime = dt_from_millis(since_date_inclusive_ms)?;
+                q = q.filter(signal_message::Column::Timestamp.gte(datetime));
+            }
+            if let Some(till_date_inclusive_ms) = req.till_date_inclusive_ms {
+                let datetime = dt_from_millis(till_date_inclusive_ms)?;
+                q = q.filter(signal_message::Column::Timestamp.lte(datetime));
+            }
+        }
+    };
+
     '_if: {
         if let Some(since_id_noninclusive) = since_id_noninclusive {
             let Some(message) =
@@ -599,13 +584,10 @@ where
     select
         .select_only()
         .column_as(signal_message::Column::Id, "id")
-        .column_as(signal_message::Column::DuplicateOf, "duplicate_of")
         .column_as(signal_message::Column::Body, "body")
         .column_as(signal_message::Column::MessageUid, "message_uid")
         .column_as(signal_message::Column::Timestamp, "timestamp")
-        .column_as(datasource_group::Column::GroupMasterKey, "group_master_key")
         .column_as(signal_message::Column::Sender, "sender")
-        .column_as(datasource_group::Column::DatasourceId, "datasource_id")
         .column_as(sigint_inbox_item::Column::Freq, "freq")
         .column_as(sigint_inbox_item::Column::Coords, "coords")
         .column_as(sigint_inbox_item::Column::Callsigns, "callsigns")
@@ -622,15 +604,4 @@ where
         .column_as(sigint_inbox_item::Column::Datetime, "datetime")
         .column_as(sigint_post::Column::Name, "post_name")
         .column_as(sigint_inbox_item::Column::Tags, "tags")
-        .column_as(
-            Expr::col((
-                signal_message::Entity,
-                signal_message::Column::DuplicateOf,
-            ))
-            .if_null(Expr::col((
-                signal_message::Entity,
-                signal_message::Column::Id,
-            ))),
-            "dedup_key",
-        )
 }

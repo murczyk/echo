@@ -95,6 +95,7 @@ pub mod signal_attachment;
 pub mod signal_group;
 pub mod signal_group_aor;
 pub mod signal_message;
+pub mod signal_message_group;
 pub mod signal_profile;
 pub mod signal_restapi_error;
 pub mod source;

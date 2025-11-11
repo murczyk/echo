@@ -186,7 +186,9 @@ pub async fn load_freqs(
         Expr::col((SigintNetwork::Table, SigintNetwork::Deleted)).eq(false),
     )
     .and_where(Expr::col((nf.clone(), SigintNetworkFreq::Deleted)).eq(false))
-    .and_where(Expr::col((SigintNetwork::Table, SigintUnit::Id)).eq(network_id))
+    .and_where(
+        Expr::col((SigintNetwork::Table, SigintNetwork::Id)).eq(network_id),
+    )
     .and_where_option(filter.as_ref().filter(|f| f.active_freqs_only).map(
         |_| Expr::col((nf.clone(), SigintNetworkFreq::ActiveTo)).is_null(),
     ));
@@ -298,7 +300,7 @@ pub async fn load_freqs(
                 .eq(false),
         )
         .and_where(
-            Expr::col((SigintNetwork::Table, SigintUnit::Id)).eq(network_id),
+            Expr::col((SigintNetwork::Table, SigintNetwork::Id)).eq(network_id),
         )
         .and_where_option(filter.as_ref().filter(|f| f.active_freqs_only).map(
             |_| {

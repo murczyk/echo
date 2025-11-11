@@ -1,6 +1,5 @@
 use crate::entities::{prelude::*, *};
 use crate::rer_importer::types::*;
-use std::collections::BTreeSet;
 
 use crate::error::AppError;
 use crate::rer_importer::inbox::bl::*;
@@ -535,36 +534,17 @@ pub async fn find_all_duplicates<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
-    let mut res: BTreeSet<i64> = BTreeSet::new();
-    res.insert(id);
-    let m_signal_message = SignalMessage::find_by_id(id)
+    let exists = SignalMessage::find_by_id(id)
         .filter(signal_message::Column::Deleted.eq(false))
         .one(txn)
         .await
-        .c(h!())?;
-    if let Some(signal_message) = m_signal_message {
-        let our_dups = SignalMessage::find()
-            .filter(signal_message::Column::Deleted.eq(false))
-            .filter(signal_message::Column::DuplicateOf.eq(id))
-            .all(txn)
-            .await
-            .c(h!())?;
-        for dup in our_dups.iter() {
-            res.insert(dup.id);
-        }
-        if let Some(duplicate_of) = signal_message.duplicate_of {
-            let sibling_dups = SignalMessage::find()
-                .filter(signal_message::Column::Deleted.eq(false))
-                .filter(signal_message::Column::DuplicateOf.eq(duplicate_of))
-                .all(txn)
-                .await
-                .c(h!())?;
-            for dup in sibling_dups.iter() {
-                res.insert(dup.id);
-            }
-        }
+        .c(h!())?
+        .is_some();
+    if exists {
+        Ok(vec![id])
+    } else {
+        Ok(vec![])
     }
-    Ok(res.iter().cloned().collect())
 }
 
 #[post("/api/rer-importer/get-freq-pelengs-summary")]

@@ -3,7 +3,7 @@ use crate::rer_importer::types::*;
 use milgeo_rs::coordinates::{
     parse_latlng_f64, rer_extract_coords, Coords, Wgs84,
 };
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use crate::error::AppError;
 use crate::location::utils;
@@ -32,9 +32,7 @@ pub struct InboxMessageDesc {
     pub message_uid: Option<String>,
     pub body: Option<String>,
     pub timestamp: Option<NaiveDateTime>,
-    pub group_master_key: Option<String>,
     pub sender: Option<String>,
-    pub datasource_id: Option<i64>,
     pub freq: Option<String>,
     pub coords: Option<String>,
     pub callsigns: Option<serde_json::Value>,
@@ -71,26 +69,9 @@ pub async fn get_inbox_map_items(
     let mut result = vec![];
     for query_res in query_res {
         let id: i64 = query_res.try_get("", "id")?;
-        let duplicate_of: Option<i64> = None; // FIXME actually retrieve duplicate_of from db
         let freq: Option<String> = query_res.try_get("", "freq")?;
         let coords: Option<String> = query_res.try_get("", "coords")?;
-        result.push(InboxMapItem {
-            id,
-            freq,
-            coords,
-            duplicate_of,
-        });
-    }
-    if req.return_duplicates != Some(true) {
-        let mut deduplicated = BTreeMap::new();
-        for m in result {
-            let source_id = match m.duplicate_of {
-                None => m.id,
-                Some(sid) => sid,
-            };
-            deduplicated.insert(source_id, m);
-        }
-        result = deduplicated.into_values().collect_vec();
+        result.push(InboxMapItem { id, freq, coords });
     }
     Ok(result)
 }
@@ -104,9 +85,33 @@ pub async fn aggregate_to_inbox_messages(
     let mut res: Vec<(i64, InboxMessage)> = vec![];
     let dbx_raw = env.dbx.get_postgres_connection_pool();
 
-    let messages_networks = load_messages_networks(&messages, &env.dbx)
+    let message_ids: Vec<i64> = messages.iter().map(|m| m.id).collect();
+    let group_rows = signal_message_group::Entity::find()
+        .filter(
+            signal_message_group::Column::SignalMessageId
+                .is_in(message_ids.clone()),
+        )
+        .find_with_related(datasource_group::Entity)
+        .all(&env.dbx)
         .await
         .context(h!())?;
+
+    let mut groups_map: HashMap<
+        i64,
+        Vec<(signal_message_group::Model, Option<datasource_group::Model>)>,
+    > = HashMap::new();
+    for (entry, related) in group_rows {
+        let related_group = related.into_iter().next();
+        groups_map
+            .entry(entry.signal_message_id)
+            .or_default()
+            .push((entry, related_group));
+    }
+
+    let messages_networks =
+        load_messages_networks(&messages, &groups_map, &env.dbx)
+            .await
+            .context(h!())?;
 
     for message in messages {
         // for message in messages {
@@ -145,12 +150,9 @@ pub async fn aggregate_to_inbox_messages(
             Some(v) => serde_json::from_value(v.clone()).context(h!())?,
             None => vec![],
         };
-        let dups = SignalMessage::find()
-            .filter(signal_message::Column::Deleted.eq(false))
-            .filter(signal_message::Column::DuplicateOf.eq(message.id))
-            .all(&env.dbx)
-            .await
-            .c(h!())?;
+        let group_entry = groups_map.get(&message.id).and_then(|entries| {
+            entries.iter().min_by_key(|(entry, _)| entry.id).cloned()
+        });
         let m_callsign_tokens: Option<Vec<CNCallsign>> =
             match message.callsign_tokens {
                 None => None,
@@ -224,9 +226,10 @@ pub async fn aggregate_to_inbox_messages(
                 timestamp: message
                     .timestamp
                     .map(|x| x.and_utc().timestamp_millis()),
-                group_master_key: message.group_master_key.clone(),
+                group_master_key: group_entry
+                    .as_ref()
+                    .and_then(|(entry, _)| entry.group_master_key.clone()),
                 sender: message.sender.clone(),
-                duplicate_ids: Some(dups.iter().map(|dup| dup.id).collect()),
                 extended_form: m_comment.as_ref().map(|x| x.comment.clone()),
                 unit: message.unit_v2.clone(),
                 no_headers_body: Some(no_headers_body),
@@ -236,7 +239,10 @@ pub async fn aggregate_to_inbox_messages(
                 text_marked: Some(text_marked),
                 post: message.post_name.clone(),
                 post_id: message.post_id,
-                datasource_id: message.datasource_id,
+                datasource_id: group_entry
+                    .as_ref()
+                    .and_then(|(_, datasource_group)| datasource_group.as_ref())
+                    .map(|dg| dg.datasource_id),
                 location: location_v2,
                 tags: Some(from_m_val_vec(message.tags.clone())?),
                 callsigns_alg2: from_m_val_vec(message.callsigns_alg2.clone())?,
@@ -288,6 +294,10 @@ pub async fn fill_callsigns(
 
 pub async fn load_messages_networks(
     messages: &Vec<InboxMessageDesc>,
+    groups_map: &HashMap<
+        i64,
+        Vec<(signal_message_group::Model, Option<datasource_group::Model>)>,
+    >,
     dbx: &DatabaseConnection,
 ) -> Result<HashMap<i64, Vec<i64>>, AppError> {
     #[derive(Debug, FromQueryResult)]
@@ -300,11 +310,15 @@ pub async fn load_messages_networks(
     let mut group_master_keys = HashSet::new();
     let mut freqs = HashSet::new();
     for msg in messages {
-        if let (Some(group_master_key), Some(freq)) =
-            (&msg.group_master_key, &msg.freq)
-        {
-            group_master_keys.insert(group_master_key.clone());
+        if let Some(freq) = &msg.freq {
             freqs.insert(freq.clone());
+        }
+        if let Some(entries) = groups_map.get(&msg.id) {
+            for (entry, _) in entries {
+                if let Some(group_master_key) = entry.group_master_key.clone() {
+                    group_master_keys.insert(group_master_key);
+                }
+            }
         }
     }
 
@@ -394,6 +408,7 @@ pub async fn load_messages_networks(
     // Step 6: Match messages to networks
     let res = match_network_ids_for_messages(
         messages,
+        groups_map,
         &group_bounds_map,
         &network_bounds_map,
         &freq_networks_map,
@@ -405,6 +420,10 @@ pub async fn load_messages_networks(
 
 fn match_network_ids_for_messages(
     messages: &Vec<InboxMessageDesc>,
+    groups_map: &HashMap<
+        i64,
+        Vec<(signal_message_group::Model, Option<datasource_group::Model>)>,
+    >,
     group_bounds_map: &HashMap<String, Vec<(f64, f64)>>,
     network_bounds_map: &HashMap<i64, Vec<(f64, f64)>>,
     freq_networks_map: &HashMap<String, HashSet<i64>>,
@@ -412,12 +431,19 @@ fn match_network_ids_for_messages(
     let mut result = HashMap::new();
 
     for msg in messages {
-        let Some(group_master_key) = &msg.group_master_key else {
+        let Some(entries) = groups_map.get(&msg.id) else {
+            continue;
+        };
+        let Some(group_master_key) = entries
+            .iter()
+            .min_by_key(|(entry, _)| entry.id)
+            .and_then(|(entry, _)| entry.group_master_key.clone())
+        else {
             continue;
         };
         let Some(freq) = &msg.freq else { continue };
 
-        let Some(group_bounds) = group_bounds_map.get(group_master_key) else {
+        let Some(group_bounds) = group_bounds_map.get(&group_master_key) else {
             continue;
         };
 

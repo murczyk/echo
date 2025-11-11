@@ -1,16 +1,11 @@
 use crate::config::Config;
 use crate::entities::*;
-use crate::h;
 use crate::location::SettlementsData;
 use crate::sigint::worker::incoming_message_after_insert;
-use anyhow::Context;
-use itertools::Itertools;
-use log::{debug, error, info};
+use crate::types::*;
 use redis::aio::ConnectionManager;
 use reqwest::Client;
 use sea_orm::*;
-use std::collections::{BTreeMap, HashMap};
-use std::sync::{Arc, RwLock};
 
 pub async fn upsert_datasource(
     db: &DatabaseConnection,
@@ -218,6 +213,127 @@ pub async fn upsert_whatsapp_groups(
     Ok(())
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct MessageGroupKey {
+    group_master_key: Option<String>,
+    sender: Option<String>,
+    message_uid: Option<String>,
+    datasource_group_id: Option<i64>,
+    created_at: NaiveDateTime,
+}
+
+impl MessageGroupKey {
+    fn from_model(model: &signal_message_group::Model) -> Self {
+        Self {
+            group_master_key: model.group_master_key.clone(),
+            sender: model.sender.clone(),
+            message_uid: model.message_uid.clone(),
+            datasource_group_id: model.datasource_group_id,
+            created_at: model.created_at,
+        }
+    }
+}
+
+async fn insert_missing_message_groups<'a, 'async_trait, C>(
+    txn: &'a C,
+    source_message_id: i64,
+    target_message_id: i64,
+    message_groups: &[signal_message_group::Model],
+    source_datasource_id: i64,
+    target_datasource_id: i64,
+    datasource_groups: &HashMap<i64, (String, i64)>,
+    existing_group_keys: &mut HashSet<MessageGroupKey>,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    for group_entry in message_groups.iter() {
+        let master_key = group_entry.group_master_key.clone().or_else(|| {
+            group_entry.datasource_group_id.and_then(|gid| {
+                datasource_groups.get(&gid).map(|(key, _)| key.clone())
+            })
+        });
+
+        let target_group_id = match group_entry.datasource_group_id {
+            Some(group_id) => {
+                if let Some((key, datasource_id)) =
+                    datasource_groups.get(&group_id)
+                {
+                    if !source_datasource_id.eq(datasource_id) {
+                        error!("bad message occurred (id={source_message_id}): expected datasource {source_datasource_id}, actual datasource {datasource_id}. skipping...");
+                        continue;
+                    }
+                    Some(
+                        crate::messenger::group::ensure_datasource_group_id(
+                            txn,
+                            key.clone(),
+                            target_datasource_id,
+                        )
+                        .await
+                        .context(h!())?,
+                    )
+                } else if let Some(ref key) = master_key {
+                    Some(
+                        crate::messenger::group::ensure_datasource_group_id(
+                            txn,
+                            key.clone(),
+                            target_datasource_id,
+                        )
+                        .await
+                        .context(h!())?,
+                    )
+                } else {
+                    None
+                }
+            }
+            None => {
+                if let Some(ref key) = master_key {
+                    Some(
+                        crate::messenger::group::ensure_datasource_group_id(
+                            txn,
+                            key.clone(),
+                            target_datasource_id,
+                        )
+                        .await
+                        .context(h!())?,
+                    )
+                } else {
+                    None
+                }
+            }
+        };
+
+        let new_key = MessageGroupKey {
+            group_master_key: master_key.clone(),
+            sender: group_entry.sender.clone(),
+            message_uid: group_entry.message_uid.clone(),
+            datasource_group_id: target_group_id,
+            created_at: group_entry.created_at,
+        };
+
+        if existing_group_keys.contains(&new_key) {
+            continue;
+        }
+
+        signal_message_group::ActiveModel {
+            id: NotSet,
+            signal_message_id: Set(target_message_id),
+            group_master_key: Set(master_key.clone()),
+            sender: Set(group_entry.sender.clone()),
+            message_uid: Set(group_entry.message_uid.clone()),
+            datasource_group_id: Set(target_group_id),
+            created_at: Set(group_entry.created_at),
+        }
+        .insert(txn)
+        .await
+        .context(h!())?;
+
+        existing_group_keys.insert(new_key);
+    }
+
+    Ok(())
+}
+
 pub async fn upsert_messages(
     db: &DatabaseConnection,
     messages: Vec<super::types::Message>,
@@ -240,7 +356,6 @@ pub async fn upsert_messages(
     messages.sort_by_key(|m| m.message.created_at);
     let message_chunks = messages.chunks(10000);
     let mut redis = redis;
-    let mut message_ids_map = BTreeMap::new();
     let mut new_messages_counter = 0;
     for messages in message_chunks.into_iter() {
         let message_ids = messages.iter().map(|x| x.message.id).collect_vec();
@@ -259,6 +374,28 @@ pub async fn upsert_messages(
             .into_iter()
             .flat_map(|m| m.external_id.map(|id| (id, m)))
             .collect::<BTreeMap<_, _>>();
+        let existing_message_ids =
+            existing_messages.values().map(|m| m.id).collect_vec();
+        let mut existing_message_groups: HashMap<
+            i64,
+            HashSet<MessageGroupKey>,
+        > = HashMap::new();
+        if !existing_message_ids.is_empty() {
+            let groups = signal_message_group::Entity::find()
+                .filter(
+                    signal_message_group::Column::SignalMessageId
+                        .is_in(existing_message_ids.clone()),
+                )
+                .all(db)
+                .await
+                .context(h!())?;
+            for group in groups {
+                existing_message_groups
+                    .entry(group.signal_message_id)
+                    .or_default()
+                    .insert(MessageGroupKey::from_model(&group));
+            }
+        }
         for entry in messages {
             let current_progress = processed as f64 * 100.0 / total_messages;
             if current_progress - progress > 0.1 {
@@ -267,8 +404,29 @@ pub async fn upsert_messages(
             }
             processed += 1;
             let source_message_id = entry.message.id;
-            if existing_messages.contains_key(&source_message_id) {
+            if let Some(existing_message) =
+                existing_messages.get(&source_message_id)
+            {
                 debug!("message {source_message_id} already exists");
+                let existing_message_id = existing_message.id;
+                let txn = db.begin().await.context(h!())?;
+                {
+                    let group_keys = existing_message_groups
+                        .entry(existing_message_id)
+                        .or_default();
+                    insert_missing_message_groups(
+                        &txn,
+                        source_message_id,
+                        existing_message_id,
+                        &entry.message_groups,
+                        source_datasource_id,
+                        target_datasource_id,
+                        &datasource_groups,
+                        group_keys,
+                    )
+                    .await?;
+                }
+                txn.commit().await.context(h!())?;
                 continue;
             }
             let new_message = entry.message.clone();
@@ -277,11 +435,6 @@ pub async fn upsert_messages(
                     (Some(d), Some(t)) => Some((d.clone(), t.clone())),
                     _ => None,
                 };
-            let duplicate_of = match new_message.duplicate_of {
-                None => None,
-                Some(id) => message_ids_map.get(&id).cloned(),
-            };
-
             let txn = db.begin().await.context(h!())?;
 
             let datasource_group_id = if let Some(group_id) =
@@ -309,11 +462,23 @@ pub async fn upsert_messages(
             let mut rec = new_message.into_active_model();
             rec.id = NotSet;
             rec.datasource_group_id = Set(datasource_group_id);
-            rec.duplicate_of = Set(duplicate_of);
             rec.external_id = Set(Some(source_message_id));
-            let new_id = rec.insert(db).await.context(h!())?.id;
-            message_ids_map.insert(source_message_id, new_id);
+            let inserted = rec.insert(&txn).await.context(h!())?;
+            let new_id = inserted.id;
             new_messages_counter += 1;
+
+            let mut inserted_group_keys = HashSet::new();
+            insert_missing_message_groups(
+                &txn,
+                source_message_id,
+                new_id,
+                &entry.message_groups,
+                source_datasource_id,
+                target_datasource_id,
+                &datasource_groups,
+                &mut inserted_group_keys,
+            )
+            .await?;
 
             crate::rer_importer::bgworker::inbox_item_oneoff_nofail(
                 settlements.clone(),

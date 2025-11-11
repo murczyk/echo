@@ -293,7 +293,6 @@ pub async fn get_inbox_messages_report_network(
     if req.checked_only == Some(true) {
         q = q.filter(sigint_inbox_item::Column::Checked.eq(Some(true)));
     }
-    let q = q.filter(signal_message::Column::DuplicateOf.is_null());
     let q = filter_selected_groups(q, &req.selected_groups)?;
     let q = filter_selected_senders(q, &req.selected_senders)?;
     let q = filter_denied_senders(q, &req.denied_senders)?;

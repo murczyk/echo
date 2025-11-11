@@ -24,7 +24,6 @@ pub struct InboxMessage {
     pub timestamp: Option<i64>,
     pub group_master_key: Option<String>,
     pub sender: Option<String>,
-    pub duplicate_ids: Option<Vec<i64>>,
     pub extended_form: Option<String>,
     pub post: Option<String>,
     pub post_id: Option<i64>,
@@ -53,7 +52,6 @@ pub struct InboxMessage {
 )]
 pub struct InboxMapItem {
     pub id: i64,
-    pub duplicate_of: Option<i64>,
     pub freq: Option<String>,
     pub coords: Option<String>,
 }

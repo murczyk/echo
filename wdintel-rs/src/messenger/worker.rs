@@ -286,7 +286,8 @@ async fn receive_thread(
     dbx: &DatabaseConnection,
     processor_pool: &mut ProcessorPool,
 ) -> Result<usize, AppError> {
-    let mut datasource = load_client_datasource(dbx, client_name).await.c(h!())?;
+    let mut datasource =
+        load_client_datasource(dbx, client_name).await.c(h!())?;
     let datasource_id = datasource.id;
     if datasource.echo_client_lock_id.is_none() {
         trace!("datasource {datasource_id} is not linked, skipping");
@@ -676,7 +677,6 @@ pub async fn receive_once(
         created_at: NotSet,
         timestamp: Set(Some(m.timestamp)),
         sender: Set(m.sender),
-        duplicate_of: Set(None),
         format: NotSet,
         deleted: Set(true), // unstaged message
         external_id: NotSet,
@@ -703,7 +703,7 @@ pub async fn receive_once(
     .await
     .c(h!())?;
 
-    if res.is_same_group_duplicate {
+    if res.is_duplicate {
         return Ok(res.message.message_uid.context(h!())?);
     }
 

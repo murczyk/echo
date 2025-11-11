@@ -151,6 +151,7 @@ mod m20250911_194424_deleted_datasource_group;
 mod m20250912_073903_drop_group_auto_link;
 mod m20251011_090052_add_settlement_tag;
 mod m20251016_085427_add_datasource_last_sync_at_ts;
+mod m20251020_120000_signal_message_group;
 mod m20251023_130959_create_palitra_tables;
 mod m20251024_092630_add_palitra_point_label;
 mod m20251030_093422_add_geometry_columns;
@@ -319,6 +320,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20251030_093422_add_geometry_columns::Migration),
             Box::new(m20251106_125324_drop_datasource_legacy_columns::Migration),
             Box::new(m20251107_102225_datasource_default_status::Migration),
+            Box::new(m20251020_120000_signal_message_group::Migration),
         ]
     }
 }

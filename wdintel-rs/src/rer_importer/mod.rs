@@ -307,7 +307,7 @@ pub async fn unread_counters(
 SELECT count(*) as cnt
 FROM signal_message sm
 INNER JOIN sigint_inbox_item sii ON sm.id=sii.id
-WHERE sm.id > $1 AND sm.duplicate_of is null
+WHERE sm.id > $1
   AND not sii.reviewed
 "#,
         )
@@ -321,7 +321,7 @@ WHERE sm.id > $1 AND sm.duplicate_of is null
             r#"
 SELECT count(*) as cnt
 FROM signal_message sm
-WHERE sm.id > $1 AND sm.duplicate_of is null
+WHERE sm.id > $1
 "#,
         )
         .bind(req.last_id)

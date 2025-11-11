@@ -498,12 +498,8 @@ pub async fn list_freqs(
                 .column_as(
                     Expr::col((
                         signal_message::Entity,
-                        signal_message::Column::DuplicateOf,
-                    ))
-                    .if_null(Expr::col((
-                        signal_message::Entity,
                         signal_message::Column::Id,
-                    ))),
+                    )),
                     "dedup_key",
                 )
                 .distinct_on([dedup_key_alias.clone()]);
@@ -530,10 +526,6 @@ pub async fn list_freqs(
             dedup_subquery = dedup_subquery
                 .order_by(Expr::cust("dedup_key"), Order::Asc)
                 // emulate NULLS FIRST: order nulls before non-nulls
-                .order_by(
-                    Expr::cust("(signal_message.duplicate_of IS NULL)"),
-                    Order::Desc,
-                )
                 .order_by(sigint_inbox_item::Column::Datetime, Order::Asc);
 
             let dedup_cte_alias = Alias::new("deduped");
@@ -615,12 +607,8 @@ pub async fn list_freqs(
                 .column_as(
                     Expr::col((
                         signal_message::Entity,
-                        signal_message::Column::DuplicateOf,
-                    ))
-                    .if_null(Expr::col((
-                        signal_message::Entity,
                         signal_message::Column::Id,
-                    ))),
+                    )),
                     "dedup_key",
                 )
                 .distinct_on([dedup_key_alias.clone()]);
@@ -643,10 +631,6 @@ pub async fn list_freqs(
             dedup_freq_per = dedup_freq_per
                 .order_by(Expr::cust("dedup_key"), Order::Asc)
                 // emulate NULLS FIRST: order nulls before non-nulls
-                .order_by(
-                    Expr::cust("(signal_message.duplicate_of IS NULL)"),
-                    Order::Desc,
-                )
                 .order_by(sigint_inbox_item::Column::Datetime, Order::Asc);
 
             let uniq_alias = Alias::new("uniq");

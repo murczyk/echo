@@ -57,7 +57,7 @@ pub async fn get_inbox_messages_report(
         .column_as(
             Expr::col((
                 signal_message::Entity,
-                signal_message::Column::DuplicateOf,
+                signal_message::Column::Id,
             ))
             .if_null(Expr::col((
                 signal_message::Entity,
@@ -119,7 +119,7 @@ pub async fn get_inbox_messages_report(
         )
         .group_by(signal_message::Column::Id)
         .group_by(sigint_inbox_item::Column::Id)
-        .group_by(signal_message::Column::DuplicateOf)
+        .group_by(signal_message::Column::Id)
         .filter(datasource_group::Column::GroupMasterKey.is_in(
             crate::messenger::group::get_identity_sigint_groups(&read_db, &login).await.c(h!())?,
         ));
@@ -257,7 +257,6 @@ pub async fn get_inbox_messages_report(
                         .map(|x| x.and_utc().timestamp_millis()),
                     group_master_key: None,
                     sender: Some(m.sender.clone()),
-                    duplicate_ids: None,
                     extended_form: None,
                     unit: m.unit.clone(),
                     callsign_tokens: None,

@@ -1,6 +1,6 @@
 use crate::entities::{
     datasource, datasource_group, sigint_inbox_item, signal_group,
-    signal_message, signal_profile, whatsapp_group,
+    signal_message, signal_message_group, signal_profile, whatsapp_group,
 };
 use crate::types::{Deserialize, Serialize};
 use chrono::NaiveDateTime;
@@ -29,4 +29,5 @@ pub struct DatasourceDetails {
 pub struct Message {
     pub message: signal_message::Model,
     pub inbox_item: sigint_inbox_item::Model,
+    pub message_groups: Vec<signal_message_group::Model>,
 }

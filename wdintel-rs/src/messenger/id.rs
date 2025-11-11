@@ -81,9 +81,17 @@ where
         config,
     )
     .c(h!())?;
-    let mut model = signal_message.into_active_model();
-    model.message_uid = Set(Some(message_uid));
-    model.update(txn).await.c(h!())
+    let mut signal_message_act = signal_message.into_active_model();
+    signal_message_act.message_uid = Set(Some(message_uid.clone()));
+    let signal_message = signal_message_act.update(txn).await.c(h!())?;
+    crate::sigint::update_message_group_uid(
+        txn,
+        signal_message.id,
+        &message_uid,
+    )
+    .await
+    .c(h!())?;
+    Ok(signal_message)
 }
 
 pub async fn oneoff_assign_message_ids(
