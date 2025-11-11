@@ -27,6 +27,49 @@ pub async fn oneoff_unlink_reserve_group_dupes(
     Ok(())
 }
 
+pub async fn oneoff_calculate_signal_message_groups(
+    mode: Mode,
+) -> Result<(), AppError> {
+    let sql_1 = "INSERT INTO signal_message_group (
+                    signal_message_id,
+                    group_master_key,
+                    sender,
+                    message_uid,
+                    datasource_group_id,
+                    created_at
+                )
+                SELECT
+                    COALESCE(sm.duplicate_of, sm.id) AS signal_message_id,
+                    dg.group_master_key,
+                    sm.sender,
+                    sm.message_uid,
+                    sm.datasource_group_id,
+                    sm.created_at
+                FROM signal_message sm
+                LEFT JOIN datasource_group dg ON dg.id = sm.datasource_group_id
+                where sm.created_at <= '2025-09-09';";
+    let sql_2 = "UPDATE signal_message
+                SET deleted = true
+                WHERE duplicate_of IS NOT NULL
+                    AND deleted = false
+                and created_at <= '2025-09-09';";
+
+    let config = config::read_config(mode).context(h!())?;
+    let dbx = crate::new_pg_pool_from_config(&config)
+        .await
+        .context(h!())?;
+
+    dbx.execute(Statement::from_string(DbBackend::Postgres, sql_1))
+        .await
+        .c(h!())?;
+
+    dbx.execute(Statement::from_string(DbBackend::Postgres, sql_2))
+        .await
+        .c(h!())?;
+
+    Ok(())
+}
+
 pub async fn oneoff_fix_echoim_groups(
     mode: Mode,
     interactive: bool,

@@ -40,16 +40,16 @@ impl MigrationTrait for Migration {
                     sm.datasource_group_id,
                     sm.created_at
                 FROM signal_message sm
-                LEFT JOIN datasource_group dg ON dg.id = sm.datasource_group_id;
+                LEFT JOIN datasource_group dg ON dg.id = sm.datasource_group_id
+                where sm.created_at > '2025-09-09';
 
                 UPDATE signal_message
                 SET deleted = true
                 WHERE duplicate_of IS NOT NULL
-                    AND deleted = false;
+                    AND deleted = false
+                and created_at > '2025-09-09';
 
                 DROP INDEX IF EXISTS signal_message_duplicate_of_idx;
-                ALTER TABLE signal_message
-                    DROP COLUMN IF EXISTS duplicate_of;
             "#,
         )
         .await?;
