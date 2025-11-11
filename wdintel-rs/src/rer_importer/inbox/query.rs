@@ -146,7 +146,31 @@ where
                 .c(h!())?
     };
 
+    // this is a simple filter that double-checks we don't accidentally show wrong data after we apply complex (more fragile) filter later in this method
     let req_sort_by = req.sort_by.unwrap_or(InboxMessagesSortBy::IMSDatetime);
+    match req_sort_by {
+        InboxMessagesSortBy::IMSDatetime => {
+            if let Some(since_date_inclusive_ms) = req.since_date_inclusive_ms {
+                let datetime = dt_from_millis(since_date_inclusive_ms)?;
+                q = q.filter(sigint_inbox_item::Column::Datetime.gte(datetime));
+            }
+            if let Some(till_date_inclusive_ms) = req.till_date_inclusive_ms {
+                let datetime = dt_from_millis(till_date_inclusive_ms)?;
+                q = q.filter(sigint_inbox_item::Column::Datetime.lte(datetime));
+            }
+        }
+        InboxMessagesSortBy::IMSTimestamp => {
+            if let Some(since_date_inclusive_ms) = req.since_date_inclusive_ms {
+                let datetime = dt_from_millis(since_date_inclusive_ms)?;
+                q = q.filter(signal_message::Column::Timestamp.gte(datetime));
+            }
+            if let Some(till_date_inclusive_ms) = req.till_date_inclusive_ms {
+                let datetime = dt_from_millis(till_date_inclusive_ms)?;
+                q = q.filter(signal_message::Column::Timestamp.lte(datetime));
+            }
+        }
+    };
+
     '_if: {
         if let Some(since_id_noninclusive) = since_id_noninclusive {
             let Some(message) =
