@@ -11,8 +11,6 @@ use sea_orm::{sea_query::PostgresQueryBuilder, *};
 use sea_query::types::IntoColumnRef;
 use sea_query::{Expr, Query, SelectStatement, SimpleExpr};
 
-const DEDUP_INTERVAL_EXTENTION_MIN: i32 = 5;
-
 pub(crate) async fn build_inbox_query(
     login: &str,
     _logins: &Vec<String>,
@@ -125,7 +123,6 @@ pub(crate) async fn build_inbox_query(
 }
 
 /// Build pagination filters.  
-/// For deduplication reason we need to expand lower bound of the time window by DEDUP_INTERVAL_EXTENTION_MIN minutes
 pub async fn get_pagination_filters<Q>(
     env: &Env,
     req: &InboxMessagesReq,
@@ -207,11 +204,7 @@ where
                         break '_if;
                     };
 
-                    // Expand time window for deduplication
-                    let datetime_minus_t = to_ts_expr_minus_t_minutes(
-                        datetime,
-                        DEDUP_INTERVAL_EXTENTION_MIN,
-                    );
+                    let ts = to_ts_expr(datetime);
                     q = q.filter(
                         Expr::tuple([
                             sigint_inbox_item::Column::Datetime
@@ -221,7 +214,7 @@ where
                             // signal_message::Column::Id.into_column_ref().into(),
                         ])
                         .gt(SimpleExpr::Tuple(vec![
-                            datetime_minus_t,
+                            ts,
                             since_id_noninclusive.into(),
                         ])),
                     );
@@ -234,11 +227,7 @@ where
                         );
                         break '_if;
                     };
-                    // Expand time window for deduplication
-                    let timestamp_minus_t = to_ts_expr_minus_t_minutes(
-                        timestamp,
-                        DEDUP_INTERVAL_EXTENTION_MIN,
-                    );
+                    let ts = to_ts_expr(timestamp);
                     q = q.filter(
                         Expr::tuple([
                             signal_message::Column::Timestamp
@@ -248,7 +237,7 @@ where
                             // signal_message::Column::Id.into_column_ref().into(),
                         ])
                         .gt(SimpleExpr::Tuple(vec![
-                            timestamp_minus_t,
+                            ts,
                             since_id_noninclusive.into(),
                         ])),
                     );
@@ -332,16 +321,12 @@ where
     }
     if let Some(since_date_inclusive_ms) = req.since_date_inclusive_ms {
         if req.since_id_noninclusive.is_none() {
-            let ts = dt_from_millis(since_date_inclusive_ms)?;
-            // Expand time window for deduplication
-            let ts_minus_t =
-                to_ts_expr_minus_t_minutes(ts, DEDUP_INTERVAL_EXTENTION_MIN);
+            let ts = to_ts_expr(dt_from_millis(since_date_inclusive_ms)?);
             let exp = match req.sort_by {
                 Some(InboxMessagesSortBy::IMSTimestamp) => {
-                    Expr::col(signal_message::Column::Timestamp).gte(ts_minus_t)
+                    Expr::col(signal_message::Column::Timestamp).gte(ts)
                 }
-                _ => Expr::col(sigint_inbox_item::Column::Datetime)
-                    .gte(ts_minus_t),
+                _ => Expr::col(sigint_inbox_item::Column::Datetime).gte(ts),
             };
             q = q.filter(exp);
         }
@@ -568,13 +553,6 @@ fn to_ts_expr(ts: NaiveDateTime) -> SimpleExpr {
     let ts = ts.format("%Y-%m-%d %H:%M:%S%.9f");
     let txt = format!("'{ts}'::timestamp at time zone 'UTC'");
     Expr::cust(txt)
-}
-
-fn to_ts_expr_minus_t_minutes(ts: NaiveDateTime, t_minutes: i32) -> SimpleExpr {
-    let ts_str = ts.format("%Y-%m-%d %H:%M:%S%.9f");
-    let txt = format!(
-        "'{ts_str}'::timestamp at time zone 'UTC' - INTERVAL '{t_minutes} minutes'");
-    Expr::cust(&txt)
 }
 
 pub fn add_inbox_message_columns<E>(select: Select<E>) -> Select<E>
