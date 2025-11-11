@@ -504,6 +504,7 @@ async fn xlsx_import_process_one(
         deleted: Set(false),
         external_id: NotSet,
         message_uid: NotSet,
+        duplicate_of: NotSet,
     }
     .insert(dbx)
     .await

@@ -681,6 +681,7 @@ pub async fn receive_once(
         deleted: Set(true), // unstaged message
         external_id: NotSet,
         message_uid: NotSet,
+        duplicate_of: NotSet,
     }
     .insert(txn)
     .await
