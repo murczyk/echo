@@ -1,18 +1,20 @@
 use crate::entities::{
     datasource_group, echo_group, organism_group, sigint_zone_datasource,
-    signal_group, signal_message,
+    signal_group, signal_message, signal_message_group,
 };
 use crate::error::AppError;
 use crate::types::{Mode, ShortContext};
 use crate::{config, h};
 use anyhow::Context;
-use chrono::{Duration, Utc};
+use chrono::*;
 use dialoguer::theme::ColorfulTheme;
 use dialoguer::Confirm;
 use echo_migration::Expr;
+use indicatif::ProgressBar;
 use log::*;
 use sea_orm::*;
 use std::collections::*;
+use tokio::time::sleep;
 
 pub async fn oneoff_unlink_reserve_group_dupes(
     mode: Mode,
@@ -30,43 +32,88 @@ pub async fn oneoff_unlink_reserve_group_dupes(
 pub async fn oneoff_calculate_signal_message_groups(
     mode: Mode,
 ) -> Result<(), AppError> {
-    let sql_1 = "INSERT INTO signal_message_group (
-                    signal_message_id,
-                    group_master_key,
-                    sender,
-                    message_uid,
-                    datasource_group_id,
-                    created_at
-                )
-                SELECT
-                    COALESCE(sm.duplicate_of, sm.id) AS signal_message_id,
-                    dg.group_master_key,
-                    sm.sender,
-                    sm.message_uid,
-                    sm.datasource_group_id,
-                    sm.created_at
-                FROM signal_message sm
-                LEFT JOIN datasource_group dg ON dg.id = sm.datasource_group_id
-                where sm.created_at <= '2025-09-09';";
-    let sql_2 = "UPDATE signal_message
-                SET deleted = true
-                WHERE duplicate_of IS NOT NULL
-                    AND deleted = false
-                and created_at <= '2025-09-09';";
-
     let config = config::read_config(mode).context(h!())?;
     let dbx = crate::new_pg_pool_from_config(&config)
         .await
         .context(h!())?;
 
-    dbx.execute(Statement::from_string(DbBackend::Postgres, sql_1))
+    let total_records_to_process = signal_message::Entity::find()
+        .join(
+            JoinType::LeftJoin,
+            signal_message::Relation::SignalMessageGroup.def(),
+        )
+        .filter(signal_message::Column::Deleted.eq(false))
+        .filter(signal_message_group::Column::Id.is_null())
+        .count(&dbx)
         .await
-        .c(h!())?;
+        .context(h!())?;
 
-    dbx.execute(Statement::from_string(DbBackend::Postgres, sql_2))
+    if total_records_to_process < 1 {
+        info!("Nothing to do");
+        return Ok(());
+    }
+
+    let datasource_group_keys = datasource_group::Entity::find()
+        .select_only()
+        .column(datasource_group::Column::Id)
+        .column(datasource_group::Column::GroupMasterKey)
+        .into_tuple::<(i64, String)>()
+        .all(&dbx)
         .await
-        .c(h!())?;
+        .context(h!())?
+        .into_iter()
+        .collect::<HashMap<_, _>>();
 
+    let pb = ProgressBar::new(total_records_to_process);
+    let mut offset = 0;
+
+    let mut message_ids = HashSet::new();
+
+    loop {
+        sleep(std::time::Duration::from_secs(1)).await;
+        let new_messages = signal_message::Entity::find()
+            .join(
+                JoinType::LeftJoin,
+                signal_message::Relation::SignalMessageGroup.def(),
+            )
+            .filter(signal_message_group::Column::Id.is_null())
+            .filter(signal_message::Column::Deleted.eq(false))
+            .limit(1000)
+            .offset(offset)
+            .all(&dbx)
+            .await
+            .context(h!())?;
+        if new_messages.is_empty() {
+            break;
+        }
+        offset += new_messages.len() as u64;
+        for message in new_messages {
+            let id = message.duplicate_of.unwrap_or(message.id);
+            message_ids.insert(id);
+            let group_master_key = message
+                .datasource_group_id
+                .and_then(|id| datasource_group_keys.get(&id).cloned());
+            let new_model = signal_message_group::ActiveModel {
+                id: NotSet,
+                signal_message_id: Set(id),
+                group_master_key: Set(group_master_key),
+                sender: Set(message.sender.clone()),
+                message_uid: Set(message.message_uid.clone()),
+                datasource_group_id: Set(message.datasource_group_id),
+                created_at: Set(message.created_at),
+            };
+            let insert_result = new_model.insert(&dbx).await;
+            if let Err(e) = insert_result {
+                warn!("Failed to insert new message: {e:#?}");
+            }
+            if message.duplicate_of.is_some() {
+                let mut rec = message.into_active_model();
+                rec.deleted = Set(true);
+                rec.update(&dbx).await.context(h!())?;
+            }
+            pb.inc(1);
+        }
+    }
     Ok(())
 }
 
@@ -352,9 +399,9 @@ async fn fix_retro_signal_group_mappings(
             if interactive {
                 let confirmed = Confirm::with_theme(&ColorfulTheme::default())
                     .with_prompt(format!(
-                    "Do you want to remap messages from group {} to group {}?",
-                    source_group.id, target_group_id
-                ))
+                        "Do you want to remap messages from group {} to group {}?",
+                        source_group.id, target_group_id
+                    ))
                     .default(false)
                     .interact()
                     .context(h!())?;
