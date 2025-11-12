@@ -1,6 +1,6 @@
 [package]
 name = "echo-docs"
-version = "0.1.1-rc.202511121616"
+version = "0.1.1-rc.202511121617"
 edition = "2021"
 authors = ["rickyrepel@gmail.com"]
 license = "AllRightsReserved"
@@ -17,4 +17,3 @@ depends = ""
 assets = [
     [ "../public/*", "usr/share/echo-docs/", "755", ],
 ]
-
