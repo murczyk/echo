@@ -10,12 +10,12 @@ use crate::messenger::worker_pool::*;
 use crate::new_pg_pool_from_mode;
 use crate::types::*;
 use chrono::*;
+use echo_im::types::{MessageF1, MessageSource, SenderF1};
 use echo_migration::Expr;
 use redis::aio::ConnectionManager;
 use reqwest::Client;
 use sea_orm::*;
 use std::sync::atomic::{AtomicBool, Ordering};
-use echo_im::types::{MessageF1, MessageSource, SenderF1};
 use tokio::runtime::*;
 use tokio::task::JoinSet;
 use tokio::time::{sleep, Duration};
@@ -700,7 +700,7 @@ async fn sync_inbox(
             .await
             .c(h!())?;
     }
-    echo_im::mark_inbox_as_seen(&client_name, ids, &txn)
+    echo_im::mark_inbox_as_seen(client_name, ids, &txn)
         .await
         .c(h!())?;
     txn.commit().await.c(h!())?;

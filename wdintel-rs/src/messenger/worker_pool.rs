@@ -54,8 +54,7 @@ pub async fn process_queue(
             })
             .collect();
         let src_entry = entry.clone();
-        let datasource =
-            datasources.get(&entry.datasource_id).clone().c(h!())?;
+        let datasource = datasources.get(&entry.datasource_id).c(h!())?;
         let sender = entry.sender_id.map(|id| SenderF1 {
             uuid: id,
             name: entry.sender_name,
