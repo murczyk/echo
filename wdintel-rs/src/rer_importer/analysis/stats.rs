@@ -1607,6 +1607,7 @@ pub async fn fetch_counts(
             Expr::cust(r#"COUNT(DISTINCT "signal_message"."id")"#),
             "count",
         )
+        .filter(signal_message::Column::Deleted.eq(false))
         .filter(datasource_group::Column::Id.is_null().or(
             datasource_group::Column::GroupMasterKey.is_in(master_keys.clone()),
         ))
@@ -1653,6 +1654,7 @@ pub async fn fetch_counts(
             Expr::cust(r#"COUNT(DISTINCT "signal_message"."id")"#),
             "count",
         )
+        .filter(signal_message::Column::Deleted.eq(false))
         .filter(
             datasource_group::Column::GroupMasterKey.is_in(master_keys.clone()),
         )
