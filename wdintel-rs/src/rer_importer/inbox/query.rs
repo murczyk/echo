@@ -40,7 +40,7 @@ pub(crate) async fn build_inbox_query(
             sigint_inbox_item::Relation::SigintPost.def(),
         );
 
-    let mut access_subquery = Query::select()
+    let access_subquery = Query::select()
         .column(signal_message_group::Column::SignalMessageId)
         .from(signal_message_group::Entity)
         .and_where(
@@ -48,15 +48,6 @@ pub(crate) async fn build_inbox_query(
                 .is_in(sigint_groups.clone()),
         )
         .to_owned();
-
-    if let Some(selected_groups) = req.selected_groups.as_ref() {
-        if !selected_groups.is_empty() {
-            access_subquery.and_where(
-                signal_message_group::Column::GroupMasterKey
-                    .is_in(selected_groups.clone()),
-            );
-        }
-    }
 
     q = add_inbox_message_columns(q)
         .filter(signal_message::Column::Deleted.eq(false))

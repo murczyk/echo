@@ -86,11 +86,20 @@ pub async fn aggregate_to_inbox_messages(
     let dbx_raw = env.dbx.get_postgres_connection_pool();
 
     let message_ids: Vec<i64> = messages.iter().map(|m| m.id).collect();
-    let group_rows = signal_message_group::Entity::find()
-        .filter(
-            signal_message_group::Column::SignalMessageId
-                .is_in(message_ids.clone()),
-        )
+    let mut group_query = signal_message_group::Entity::find().filter(
+        signal_message_group::Column::SignalMessageId
+            .is_in(message_ids.clone()),
+    );
+    if let Some(selected_groups) = req.selected_groups.as_ref() {
+        if !selected_groups.is_empty() {
+            group_query = group_query.filter(
+                signal_message_group::Column::GroupMasterKey
+                    .is_in(selected_groups.clone()),
+            );
+        }
+    }
+
+    let group_rows = group_query
         .find_with_related(datasource_group::Entity)
         .all(&env.dbx)
         .await
