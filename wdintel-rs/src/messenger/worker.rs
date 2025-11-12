@@ -1,18 +1,16 @@
 use crate::config::*;
-use crate::entities::sea_orm_active_enums::{AccountStatus, EchoMessageSource};
+use crate::entities::sea_orm_active_enums::*;
 use crate::entities::*;
 use crate::error::{AppError, ContextAndError};
 use crate::location::SettlementsData;
 use crate::messenger::bl::{deactivate_account, list_echo_accounts};
 use crate::messenger::id;
-use crate::messenger::types::{
-    EchoAccountF1, Message, SyncResult, WorkerStatus,
-};
+use crate::messenger::types::*;
 use crate::messenger::worker_pool::*;
 use crate::new_pg_pool_from_mode;
 use crate::types::*;
 use chrono::*;
-use echo_im::types::{MessageF1, MessageSource, SenderF1};
+use echo_im::types::*;
 use echo_migration::Expr;
 use redis::aio::ConnectionManager;
 use reqwest::Client;
@@ -25,14 +23,9 @@ use tokio_util::sync::CancellationToken;
 
 static SIGNAL_LOGIN_DELAY_DONE: AtomicBool = AtomicBool::new(false);
 
-pub async fn process_queue_nofail(
-    mode: Mode,
-    cancel_token: CancellationToken,
-) {
+pub async fn process_queue_nofail(mode: Mode, cancel_token: CancellationToken) {
     loop {
-        if let Err(e) =
-            process_queue_inner(mode, &cancel_token).await
-        {
+        if let Err(e) = process_queue_inner(mode, &cancel_token).await {
             error!("process_queue_inner encountered an error: {e:?}");
             sleep(Duration::from_millis(LONG_POLL_SLEEP_MS)).await;
         }
@@ -76,15 +69,23 @@ pub async fn process_queue_inner(
             sleep(Duration::from_millis(LONG_POLL_SLEEP_MS)).await;
             continue;
         }
-        let attachments = signal_message_queue_attachment::Entity::find()
-            .filter()
-        process_queue(
-            &mut worker_pool,
-            next_items,
-            datasources,
-        )
-        .await
-        .context(h!())?;
+        let signal_message_queue_ids =
+            next_items.iter().map(|a| a.id).collect_vec();
+        let attachments = if signal_message_queue_ids.is_empty() {
+            vec![]
+        } else {
+            signal_message_queue_attachment::Entity::find()
+                .filter(
+                    signal_message_queue_attachment::Column::MessageId
+                        .is_in(signal_message_queue_ids),
+                )
+                .all(&dbx)
+                .await
+                .c(h!())?
+        };
+        process_queue(&mut worker_pool, next_items, attachments, datasources)
+            .await
+            .context(h!())?;
         sleep(Duration::from_millis(IDLE_SLEEP_MS)).await;
     }
 }
@@ -719,11 +720,9 @@ async fn write_to_signal_message_queue(
         internal_id: Set(item.internal_id as i64),
         external_id: Set(item.id),
         body: Set(item.text.clone()),
-        sender_name: Set(item.sender.and_then(|x| x.name.clone())),
-        sender_id: Set(item.sender.map(|x| x.uuid.clone())),
-        sender_phone_number: Set(item
-            .sender
-            .and_then(|x| x.phone_number.clone())),
+        sender_name: Set(item.sender.clone().and_then(|x| x.name)),
+        sender_id: Set(item.sender.clone().map(|x| x.uuid)),
+        sender_phone_number: Set(item.sender.and_then(|x| x.phone_number)),
         group_id: Set(item.group_id.clone()),
         timestamp: Set(item.timestamp),
         created_at: NotSet,

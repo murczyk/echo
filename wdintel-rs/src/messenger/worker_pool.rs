@@ -34,24 +34,23 @@ pub struct WorkerContext {
 
 pub async fn process_queue(
     pool: &mut ProcessorPool,
-    queue: Vec<(
-        signal_message_queue::Model,
-        Vec<signal_message_queue_attachment::Model>,
-    )>,
+    queue: Vec<signal_message_queue::Model>,
+    attachments: Vec<signal_message_queue_attachment::Model>,
     datasources: Vec<EchoAccountF1>,
 ) -> anyhow::Result<()> {
     let ctx = pool.ctx.clone();
-    let mut datasources = datasources
+    let datasources = datasources
         .into_iter()
         .map(|d| (d.id, d))
         .collect::<HashMap<_, _>>();
     let mut item_queue = VecDeque::new();
-    for (entry, attachments) in queue {
+    for entry in queue {
         let attachments = attachments
-            .into_iter()
+            .iter()
+            .filter(|x| x.message_id.eq(&entry.id))
             .map(|a| MessageAttachmentF1 {
-                path: a.path,
-                name: a.name,
+                path: a.path.clone(),
+                name: a.name.clone(),
             })
             .collect();
         let src_entry = entry.clone();
@@ -88,7 +87,7 @@ pub async fn process_queue(
         let item = Item {
             message,
             datasource_id: datasource.id,
-            client_name: datasource.system_service_name.c(h!())?,
+            client_name: datasource.system_service_name.clone().c(h!())?,
             model: src_entry,
         };
         item_queue.push_back((item, 0));
