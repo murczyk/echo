@@ -548,10 +548,7 @@ pub async fn load_inbox_signal_groups(
         callsigns,
         txn,
         is_admin,
-        CollectGroupsOpts {
-            skip_group_stats,
-            ..Default::default()
-        },
+        CollectGroupsOpts { skip_group_stats },
     )
     .await
     .context(h!())?;
