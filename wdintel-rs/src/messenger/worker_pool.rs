@@ -31,9 +31,9 @@ pub struct WorkerContext {
 }
 
 pub async fn process_queue(
-    items: Vec<Item>,
     pool: &mut ProcessorPool,
 ) -> anyhow::Result<()> {
+    let items = collect_next_items;
     let ctx = pool.ctx.clone();
     let mut item_queue = VecDeque::new();
     for i in items {

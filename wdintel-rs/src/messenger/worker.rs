@@ -12,7 +12,7 @@ use crate::messenger::worker_pool::*;
 use crate::new_pg_pool_from_mode;
 use crate::types::*;
 use chrono::*;
-use echo_im::types::{MessageF1, MessageSource};
+use echo_im::types::{MessageF1, MessageSource, SenderF1};
 use echo_migration::Expr;
 use redis::aio::ConnectionManager;
 use reqwest::Client;
@@ -24,6 +24,44 @@ use tokio::time::{sleep, Duration};
 use tokio_util::sync::CancellationToken;
 
 static SIGNAL_LOGIN_DELAY_DONE: AtomicBool = AtomicBool::new(false);
+
+pub async fn process_queue_nofail(
+    mode: Mode,
+    cancel_token: CancellationToken,
+    shutdown_handle: Handle,
+) {
+    loop {
+        if let Err(e) =
+            process_queue_inner(mode, &cancel_token, &shutdown_handle).await
+        {
+            error!("process_queue_inner encountered an error: {e:?}");
+            sleep(Duration::from_millis(LONG_POLL_SLEEP_MS)).await;
+        }
+        sleep(Duration::from_millis(IDLE_SLEEP_MS)).await;
+    }
+}
+
+pub async fn process_queue_inner(
+    mode: Mode,
+    cancel_token: &CancellationToken,
+    shutdown_handle: &Handle,
+) -> Result<(), AppError> {
+    let config = read_config(mode).c(h!())?;
+    let dbx = crate::new_pg_pool_from_config(&config).await.c(h!())?;
+
+    info!("started process_queue_inner");
+
+    let mut workers: JoinSet<WorkerStatus> = JoinSet::new();
+    let mut running_ids: HashSet<i64> = HashSet::new();
+
+    let mut message_processor_pool =
+        mk_message_processor_pool(mode).await.c(h!())?;
+
+    loop {
+        process_queue(&mut message_processor_pool).await.context(h!())?;
+        sleep(Duration::from_millis(IDLE_SLEEP_MS)).await;
+    }
+}
 
 pub async fn receive_thread_nofail(
     mode: Mode,
@@ -195,8 +233,6 @@ async fn run_new_worker(
 ) -> anyhow::Result<()> {
     info!("spawning new worker: {worker_name}");
     let dbx = new_pg_pool_from_mode(mode).await.c(h!())?;
-    let mut message_processor_pool =
-        mk_message_processor_pool(mode).await.c(h!())?;
     info!("{worker_name}: started processing");
     let result = async {
         loop {
@@ -218,7 +254,7 @@ async fn run_new_worker(
                 return Ok(());
             };
             let sync_result =
-                sync_client_once(cli, &dbx, &mut message_processor_pool).await;
+                sync_client_once(cli, &dbx).await;
             if !sync_result.is_healthy {
                 sleep(Duration::from_millis(LONG_POLL_SLEEP_MS))
                     .await;
@@ -235,7 +271,6 @@ async fn run_new_worker(
 async fn sync_client_once(
     cli: EchoAccountF1,
     dbx: &DatabaseConnection,
-    processor_pool: &mut ProcessorPool,
 ) -> SyncResult {
     let Some(client_name) = cli.system_service_name else {
         trace!("client name is missing, skipping: {cli:?}");
@@ -250,7 +285,6 @@ async fn sync_client_once(
         &client_name,
         &mut client_groups_sync_ts_map,
         dbx,
-        processor_pool,
     )
     .await
     .unwrap_or_else(|e| {
@@ -284,7 +318,6 @@ async fn receive_thread(
     client_name: &str,
     client_groups_sync_ts_map: &mut BTreeMap<String, NaiveDateTime>,
     dbx: &DatabaseConnection,
-    processor_pool: &mut ProcessorPool,
 ) -> Result<usize, AppError> {
     let mut datasource =
         load_client_datasource(dbx, client_name).await.c(h!())?;
@@ -320,7 +353,7 @@ async fn receive_thread(
         .await
         .c(h!())?;
     txn.commit().await.c(h!())?;
-    let items_synced = sync_inbox(Utc::now(), dbx, client_name, processor_pool)
+    let items_synced = sync_inbox(Utc::now(), dbx, client_name)
         .await
         .c(h!())?;
 
@@ -613,7 +646,6 @@ async fn sync_inbox(
     inbox_sync_at: DateTime<Utc>,
     db: &DatabaseConnection,
     client_name: &str,
-    processor_pool: &mut ProcessorPool,
 ) -> anyhow::Result<usize> {
     let datasource = load_client_datasource(db, client_name).await.c(h!())?;
     let datasource_id = datasource.id;
@@ -627,16 +659,23 @@ async fn sync_inbox(
         echo_im::list_inbox_since(client_name, time.naive_utc(), &txn)
             .await
             .c(h!())?;
-    txn.commit().await.c(h!())?;
-
-    sync_senders(db, &inbox_messages).await.c(h!())?;
+    let senders = inbox_messages
+        .iter()
+        .flat_map(|m| m.sender.clone())
+        .map(|s| (s.uuid.clone(), s.clone()))
+        .collect::<BTreeMap<_, _>>();
 
     let items = inbox_messages
         .into_iter()
         .map(|m| (m, datasource.id, client_name.to_string()))
         .collect_vec();
     let inbox_num = items.len();
-    process_queue(items, processor_pool).await.context(h!())?;
+    for item in items {
+        write_to_signal_message_queue(&item, &txn, datasource_id, inbox_sync_at).await.c(h!())?;
+    }
+    txn.commit().await.c(h!())?;
+
+    sync_senders(db, senders).await.c(h!())?;
     Ok(inbox_num)
 }
 
@@ -774,13 +813,9 @@ where
 
 async fn sync_senders(
     db: &DatabaseConnection,
-    inbox_messages: &[MessageF1],
+    senders: BTreeMap<String, SenderF1>
 ) -> anyhow::Result<()> {
-    let mut senders = inbox_messages
-        .iter()
-        .flat_map(|m| m.sender.clone())
-        .map(|s| (s.uuid.clone(), s))
-        .collect::<BTreeMap<_, _>>();
+    let mut senders = senders;
     let sender_ids = senders.keys().cloned().collect::<Vec<_>>();
     let existing_senders = signal_profile::Entity::find()
         .filter(signal_profile::Column::Uuid.is_in(sender_ids))
