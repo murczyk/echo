@@ -1035,6 +1035,7 @@ type alias InboxMessagesReq =
     , includePelengLocations : Maybe Bool
     , unitsExactMatchOnly : Maybe Bool
     , calculateFreqPelengsSummary : Maybe Bool
+    , skipGroupStats : Maybe Bool
     , filterTagsOption : Maybe TagFilterOption
     , pageId : Maybe String
     }
@@ -1081,6 +1082,7 @@ inboxMessagesReqEncoder struct =
         , ( "include_peleng_locations", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.includePelengLocations )
         , ( "units_exact_match_only", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.unitsExactMatchOnly )
         , ( "calculate_freq_pelengs_summary", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.calculateFreqPelengsSummary )
+        , ( "skip_group_stats", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.skipGroupStats )
         , ( "filter_tags_option", (Maybe.withDefault Json.Encode.null << Maybe.map tagFilterOptionEncoder) struct.filterTagsOption )
         , ( "page_id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.pageId )
         ]
@@ -6597,6 +6599,7 @@ inboxMessagesReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_peleng_locations" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "units_exact_match_only" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "calculate_freq_pelengs_summary" (Json.Decode.nullable Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "skip_group_stats" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_tags_option" (Json.Decode.nullable tagFilterOptionDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "page_id" (Json.Decode.nullable Json.Decode.string)))
 

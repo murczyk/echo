@@ -8,8 +8,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use crate::error::AppError;
 use crate::location::utils;
 use crate::location::utils::to_location_list;
-use crate::messenger::group::collect_groups;
 use crate::messenger::group::types::SignalGroupEntry;
+use crate::messenger::group::{collect_groups, CollectGroupsOpts};
 use crate::rer_importer::collect_profiles_data;
 use crate::rer_importer::highlight::*;
 use crate::rer_importer::inbox::query::build_inbox_query;
@@ -536,6 +536,7 @@ pub async fn load_inbox_signal_groups(
     inbox_items: &Vec<(i64, InboxMessage)>,
     txn: &DatabaseConnection,
     is_admin: bool,
+    skip_group_stats: bool,
 ) -> Result<Vec<SignalGroupEntry>, AppError> {
     let callsigns = inbox_items
         .iter()
@@ -543,9 +544,17 @@ pub async fn load_inbox_signal_groups(
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect_vec();
-    let data = collect_groups(callsigns, txn, is_admin)
-        .await
-        .context(h!())?;
+    let data = collect_groups(
+        callsigns,
+        txn,
+        is_admin,
+        CollectGroupsOpts {
+            skip_group_stats,
+            ..Default::default()
+        },
+    )
+    .await
+    .context(h!())?;
     Ok(data)
 }
 

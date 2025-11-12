@@ -13,10 +13,16 @@ pub mod oneoff;
 pub mod tests;
 pub mod types;
 
+#[derive(Clone, Copy, Default)]
+pub struct CollectGroupsOpts {
+    pub skip_group_stats: bool,
+}
+
 pub async fn collect_groups(
     keys: Vec<String>,
     txn: &DatabaseConnection,
     is_admin: bool,
+    opts: CollectGroupsOpts,
 ) -> Result<Vec<types::SignalGroupEntry>, AppError> {
     let signal_groups = signal_group::Entity::find()
         .filter(signal_group::Column::Deleted.eq(false))
@@ -24,8 +30,11 @@ pub async fn collect_groups(
         .all(txn)
         .await
         .context(h!())?;
-    let group_stats =
-        collect_group_stats(keys.clone(), txn).await.context(h!())?;
+    let group_stats = if opts.skip_group_stats {
+        BTreeMap::new()
+    } else {
+        collect_group_stats(keys.clone(), txn).await.context(h!())?
+    };
 
     let group_aors = if is_admin {
         collect_group_aors(keys.clone(), txn).await.context(h!())?

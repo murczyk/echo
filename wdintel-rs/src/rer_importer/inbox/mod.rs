@@ -143,6 +143,7 @@ async fn inbox_messages(
     let user_id = user.id().c(h!())?;
     let page_id = req.page_id.clone();
     let req = req.into_inner();
+    let skip_group_stats = req.skip_group_stats.unwrap_or(false);
 
     let payload = serde_json::to_value(&req).context(h!())?;
     record_page_visit(&user_id, &page_id, &env, Some(payload))
@@ -168,10 +169,14 @@ async fn inbox_messages(
     let signal_profiles = load_inbox_signal_profiles(&inbox_items, &env.dbx)
         .await
         .c(h!())?;
-    let signal_groups =
-        load_inbox_signal_groups(&inbox_items, &env.dbx, is_admin)
-            .await
-            .c(h!())?;
+    let signal_groups = load_inbox_signal_groups(
+        &inbox_items,
+        &env.dbx,
+        is_admin,
+        skip_group_stats,
+    )
+    .await
+    .c(h!())?;
 
     let freq_pelengs_summary = match req.calculate_freq_pelengs_summary {
         Some(true) => load_inbox_freq_pelengs_summary(&inbox_items, &env.dbx)

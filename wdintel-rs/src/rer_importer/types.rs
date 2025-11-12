@@ -201,6 +201,7 @@ pub struct InboxMessagesReq {
     /// інакше або по підрозділам, які було вказано в шапці повідомлення або по еталонній прив'язці
     pub units_exact_match_only: Option<bool>,
     pub calculate_freq_pelengs_summary: Option<bool>,
+    pub skip_group_stats: Option<bool>,
     pub filter_tags_option: Option<TagFilterOption>,
     pub page_id: Option<String>,
 }

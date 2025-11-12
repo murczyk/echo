@@ -423,6 +423,7 @@ getBasicInboxParams model =
     , reportTagsOnlyThisUnit = Nothing
     , ignoreImportedCoords = Just True
     , calculateFreqPelengsSummary = Nothing
+    , skipGroupStats = Just True
     , filterTagsOption = Nothing
     , pageId = Just "rer-duty"
     , unitsExactMatchOnly = Nothing

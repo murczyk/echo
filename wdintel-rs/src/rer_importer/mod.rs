@@ -377,10 +377,14 @@ pub async fn signal_group_info_batch(
             .is_ok();
     let keys: Vec<String> =
         req.groups.iter().map(|b| b.master_key.clone()).collect();
-    let data =
-        crate::messenger::group::collect_groups(keys, &env.dbx, is_admin)
-            .await
-            .c(h!())?;
+    let data = crate::messenger::group::collect_groups(
+        keys,
+        &env.dbx,
+        is_admin,
+        crate::messenger::group::CollectGroupsOpts::default(),
+    )
+    .await
+    .c(h!())?;
     Ok(Json(SignalGroupsRsp { data }))
 }
 
