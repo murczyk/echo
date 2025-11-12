@@ -432,7 +432,6 @@ pub async fn process_incoming_message_restapi(
         external_id: NotSet,
         message_uid: NotSet,
         datasource_group_id: Set(Some(datasource_group_id)),
-        duplicate_of: NotSet,
     }
     .insert(&txn)
     .await

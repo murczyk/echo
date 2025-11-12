@@ -41,7 +41,7 @@ async fn message_submit(
         timestamp,
         datasource_id,
     };
-    let message_uid = crate::messenger::worker::receive_once(
+    let message_uid = crate::messenger::worker::process_signal_message_queue_item(
         message,
         vec![],
         &mut env.redis.clone(),

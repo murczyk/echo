@@ -28,11 +28,10 @@ static SIGNAL_LOGIN_DELAY_DONE: AtomicBool = AtomicBool::new(false);
 pub async fn process_queue_nofail(
     mode: Mode,
     cancel_token: CancellationToken,
-    shutdown_handle: Handle,
 ) {
     loop {
         if let Err(e) =
-            process_queue_inner(mode, &cancel_token, &shutdown_handle).await
+            process_queue_inner(mode, &cancel_token).await
         {
             error!("process_queue_inner encountered an error: {e:?}");
             sleep(Duration::from_millis(LONG_POLL_SLEEP_MS)).await;
@@ -44,21 +43,48 @@ pub async fn process_queue_nofail(
 pub async fn process_queue_inner(
     mode: Mode,
     cancel_token: &CancellationToken,
-    shutdown_handle: &Handle,
 ) -> Result<(), AppError> {
     let config = read_config(mode).c(h!())?;
     let dbx = crate::new_pg_pool_from_config(&config).await.c(h!())?;
 
     info!("started process_queue_inner");
 
-    let mut workers: JoinSet<WorkerStatus> = JoinSet::new();
-    let mut running_ids: HashSet<i64> = HashSet::new();
-
-    let mut message_processor_pool =
-        mk_message_processor_pool(mode).await.c(h!())?;
+    let mut worker_pool = mk_message_processor_pool(mode).await.c(h!())?;
 
     loop {
-        process_queue(&mut message_processor_pool).await.context(h!())?;
+        if cancel_token.is_cancelled() {
+            info!("cancel token received, stopping process_queue_inner...");
+            return Ok(());
+        }
+        let datasources = list_echo_accounts(None, &dbx).await.c(h!())?;
+        let datasource_ids = datasources
+            .iter()
+            .filter(|a| a.is_linked)
+            .map(|a| a.id)
+            .collect_vec();
+        let next_items = signal_message_queue::Entity::find()
+            .filter(
+                signal_message_queue::Column::DatasourceId
+                    .is_in(datasource_ids),
+            )
+            .order_by_asc(signal_message_queue::Column::CreatedAt)
+            .limit(100)
+            .all(&dbx)
+            .await
+            .c(h!())?;
+        if next_items.is_empty() {
+            sleep(Duration::from_millis(LONG_POLL_SLEEP_MS)).await;
+            continue;
+        }
+        let attachments = signal_message_queue_attachment::Entity::find()
+            .filter()
+        process_queue(
+            &mut worker_pool,
+            next_items,
+            datasources,
+        )
+        .await
+        .context(h!())?;
         sleep(Duration::from_millis(IDLE_SLEEP_MS)).await;
     }
 }
@@ -281,16 +307,13 @@ async fn sync_client_once(
     };
     let mut client_groups_sync_ts_map =
         BTreeMap::<String, NaiveDateTime>::new();
-    let num_synced_inbox_messages = receive_thread(
-        &client_name,
-        &mut client_groups_sync_ts_map,
-        dbx,
-    )
-    .await
-    .unwrap_or_else(|e| {
-        error!("> {client_name}::receive_thread_nofail error: {e:?}");
-        0
-    });
+    let num_synced_inbox_messages =
+        receive_thread(&client_name, &mut client_groups_sync_ts_map, dbx)
+            .await
+            .unwrap_or_else(|e| {
+                error!("> {client_name}::receive_thread_nofail error: {e:?}");
+                0
+            });
     let is_healthy = !is_datasource_offline(dbx, cli.id).await;
     SyncResult {
         is_healthy,
@@ -353,9 +376,8 @@ async fn receive_thread(
         .await
         .c(h!())?;
     txn.commit().await.c(h!())?;
-    let items_synced = sync_inbox(Utc::now(), dbx, client_name)
-        .await
-        .c(h!())?;
+    let items_synced =
+        sync_inbox(Utc::now(), dbx, client_name).await.c(h!())?;
 
     let mut model = datasource.into_active_model();
     model.last_sync_at = Set(Some(Utc::now().naive_utc()));
@@ -667,16 +689,61 @@ async fn sync_inbox(
 
     let items = inbox_messages
         .into_iter()
-        .map(|m| (m, datasource.id, client_name.to_string()))
+        .map(|m| (m, datasource.id))
         .collect_vec();
     let inbox_num = items.len();
-    for item in items {
-        write_to_signal_message_queue(&item, &txn, datasource_id, inbox_sync_at).await.c(h!())?;
+    let mut ids = vec![];
+    for (item, datasource_id) in items {
+        ids.push(item.internal_id);
+        write_to_signal_message_queue(item, datasource_id, &txn)
+            .await
+            .c(h!())?;
     }
+    echo_im::mark_inbox_as_seen(&client_name, ids, &txn)
+        .await
+        .c(h!())?;
     txn.commit().await.c(h!())?;
 
     sync_senders(db, senders).await.c(h!())?;
     Ok(inbox_num)
+}
+
+async fn write_to_signal_message_queue(
+    item: MessageF1,
+    datasource_id: i64,
+    txn: &DatabaseTransaction,
+) -> anyhow::Result<()> {
+    let signal_message_queue_item = signal_message_queue::ActiveModel {
+        id: NotSet,
+        datasource_id: Set(datasource_id),
+        internal_id: Set(item.internal_id as i64),
+        external_id: Set(item.id),
+        body: Set(item.text.clone()),
+        sender_name: Set(item.sender.and_then(|x| x.name.clone())),
+        sender_id: Set(item.sender.map(|x| x.uuid.clone())),
+        sender_phone_number: Set(item
+            .sender
+            .and_then(|x| x.phone_number.clone())),
+        group_id: Set(item.group_id.clone()),
+        timestamp: Set(item.timestamp),
+        created_at: NotSet,
+    }
+    .insert(txn)
+    .await
+    .c(h!())?;
+    for attachment in item.attachments {
+        signal_message_queue_attachment::ActiveModel {
+            id: NotSet,
+            message_id: Set(signal_message_queue_item.id),
+            path: Set(attachment.path.clone()),
+            name: Set(attachment.name.clone()),
+            created_at: NotSet,
+        }
+        .insert(txn)
+        .await
+        .c(h!())?;
+    }
+    Ok(())
 }
 
 async fn list_clients(
@@ -688,7 +755,7 @@ async fn list_clients(
     Ok(live_clients)
 }
 
-pub async fn receive_once(
+pub async fn process_signal_message_queue_item(
     m: Message,
     attachment_paths: Vec<String>,
     redis: &mut ConnectionManager,
@@ -720,7 +787,6 @@ pub async fn receive_once(
         deleted: Set(true), // unstaged message
         external_id: NotSet,
         message_uid: NotSet,
-        duplicate_of: NotSet,
     }
     .insert(txn)
     .await
@@ -813,7 +879,7 @@ where
 
 async fn sync_senders(
     db: &DatabaseConnection,
-    senders: BTreeMap<String, SenderF1>
+    senders: BTreeMap<String, SenderF1>,
 ) -> anyhow::Result<()> {
     let mut senders = senders;
     let sender_ids = senders.keys().cloned().collect::<Vec<_>>();

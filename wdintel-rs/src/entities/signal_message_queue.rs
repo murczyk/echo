@@ -10,27 +10,42 @@ use serde::{Deserialize, Serialize};
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
+    pub datasource_id: i64,
     pub internal_id: i64,
     #[sea_orm(column_type = "Text", nullable)]
     pub external_id: Option<String>,
     #[sea_orm(column_type = "Text")]
     pub body: String,
     #[sea_orm(column_type = "Text", nullable)]
-    pub sender: Option<String>,
+    pub sender_id: Option<String>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub sender_name: Option<String>,
     #[sea_orm(column_type = "Text", nullable)]
     pub sender_phone_number: Option<String>,
     #[sea_orm(column_type = "Text", nullable)]
     pub group_id: Option<String>,
-    #[sea_orm(column_type = "Text", nullable)]
-    pub message_source: Option<String>,
     pub timestamp: DateTime,
     pub created_at: DateTime,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
+    #[sea_orm(
+        belongs_to = "super::datasource::Entity",
+        from = "Column::DatasourceId",
+        to = "super::datasource::Column::Id",
+        on_update = "NoAction",
+        on_delete = "NoAction"
+    )]
+    Datasource,
     #[sea_orm(has_many = "super::signal_message_queue_attachment::Entity")]
     SignalMessageQueueAttachment,
+}
+
+impl Related<super::datasource::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Datasource.def()
+    }
 }
 
 impl Related<super::signal_message_queue_attachment::Entity> for Entity {

@@ -373,7 +373,7 @@ where
         pub status: AccountStatus,
         pub created_at: DateTime,
         pub client_id: Option<i32>,
-        pub system_service_name: Option<String>,
+        pub echo_client_name: Option<String>,
         pub source: Option<sea_orm_active_enums::EchoMessageSource>,
         pub echo_phone_number: Option<String>,
         pub api_login: Option<String>,
@@ -412,7 +412,7 @@ where
         .column(datasource::Column::Status)
         .column(datasource::Column::CreatedAt)
         .column(echo_client_lock::Column::ClientId)
-        .column_as(echo_client::Column::Name, "system_service_name")
+        .column_as(echo_client::Column::Name, "echo_client_name")
         .column(echo_account::Column::Source)
         .column_as(echo_account::Column::PhoneNumber, "echo_phone_number")
         .column(echo_account::Column::IsLinked)
@@ -461,7 +461,7 @@ where
             created_at: a.created_at.and_utc().timestamp_millis(),
             client_id: a.client_id,
             display_name: a.display_name,
-            system_service_name: a.system_service_name,
+            system_service_name: a.echo_client_name,
             messenger,
             phone_number,
             api_login: a.api_login,

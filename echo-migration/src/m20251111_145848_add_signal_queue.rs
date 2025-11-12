@@ -12,13 +12,14 @@ impl MigrationTrait for Migration {
                 r#"
                 create table signal_message_queue  (
                     id bigserial primary key,
+                    datasource_id int8 REFERENCES datasource (id) not null,
                     internal_id int8 not null,
                     external_id text,
                     body text not null,
-                    sender text,
+                    sender_id text,
+                    sender_name text,
                     sender_phone_number text,
                     group_id text,
-                    message_source text,
                     timestamp timestamp without time zone not null,
                     created_at timestamp without time zone default (now() at time zone 'utc') not null
                 );
