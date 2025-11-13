@@ -716,10 +716,7 @@ pub async fn submit_upsert_inbox_item(
             .c(h!())?;
         match m_comment {
             None => {
-                debug!(
-                    "> creating comment for message {} by {}: {}",
-                    id, login, extended_form
-                );
+                debug!("> creating comment for message {id} by {login}: {extended_form}");
                 sigint_comment::ActiveModel {
                     id: NotSet,
                     signal_message_id: Set(id),
