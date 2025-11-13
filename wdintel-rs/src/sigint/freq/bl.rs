@@ -1,5 +1,6 @@
 use crate::entities::*;
 use crate::error::AppError;
+use crate::rer_importer::analysis::message_in_groups_exists;
 use crate::types::*;
 use crate::utils::*;
 use sea_orm::{
@@ -35,15 +36,7 @@ pub async fn bl_callsigns_for_filter(
         Expr::col((sigint_inbox_item::Entity, sigint_inbox_item::Column::Id))
             .equals((signal_message::Entity, signal_message::Column::Id)),
     )
-    .inner_join(
-        datasource_group::Entity,
-        Expr::col((
-            signal_message::Entity,
-            signal_message::Column::DatasourceGroupId,
-        ))
-        .equals((datasource_group::Entity, datasource_group::Column::Id)),
-    )
-    .and_where(datasource_group::Column::GroupMasterKey.is_in(master_keys))
+    .and_where(message_in_groups_exists(master_keys))
     .and_where(signal_message::Column::Deleted.eq(false))
     .and_where(sigint_inbox_item::Column::Callsigns.is_not_null())
     .and_where(sigint_inbox_item::Column::Datetime.gte(dt_since))
