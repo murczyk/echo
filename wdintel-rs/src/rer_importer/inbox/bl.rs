@@ -716,6 +716,10 @@ pub async fn submit_upsert_inbox_item(
             .c(h!())?;
         match m_comment {
             None => {
+                debug!(
+                    "> creating comment for message {} by {}: {}",
+                    id, login, extended_form
+                );
                 sigint_comment::ActiveModel {
                     id: NotSet,
                     signal_message_id: Set(id),
@@ -729,8 +733,11 @@ pub async fn submit_upsert_inbox_item(
             }
             Some(comment) => {
                 debug!(
-                    "> updating comment for message {}: old: {}, new: {}",
-                    comment.signal_message_id, comment.comment, extended_form
+                    "> updating comment for message {} by {}: old: {}, new: {}",
+                    comment.signal_message_id,
+                    login,
+                    comment.comment,
+                    extended_form
                 );
                 sigint_comment::ActiveModel {
                     id: Set(comment.id),
