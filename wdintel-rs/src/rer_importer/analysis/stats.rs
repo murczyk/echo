@@ -1577,6 +1577,22 @@ pub async fn fetch_counts(
     env: &actix_web::web::Data<Env>,
     master_keys: Vec<String>,
 ) -> Result<(i64, i64), AppError> {
+    let login_value = user.id().c(h!())?;
+    fetch_counts_for_login(
+        req,
+        login_value.as_str(),
+        env.get_ref(),
+        master_keys,
+    )
+    .await
+}
+
+pub async fn fetch_counts_for_login(
+    req: &Json<AnalysisStatsReq>,
+    login_str: &str,
+    env: &Env,
+    master_keys: Vec<String>,
+) -> Result<(i64, i64), AppError> {
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
@@ -1698,7 +1714,7 @@ pub async fn fetch_counts(
         &req.or_with_coords,
         &req.or_with_extended_form,
         &req.filter_tags_option,
-        &user.id().context(h!())?,
+        login_str,
     )
     .context(h!())?;
     let selected_count_res =

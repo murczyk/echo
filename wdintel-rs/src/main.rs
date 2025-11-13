@@ -89,6 +89,44 @@ pub async fn renew_tailscale_cert(
     Ok(())
 }
 
+pub async fn oneoff_compare_rer_counts(
+    mode: Mode,
+    ps: CompareRerCountsPs,
+) -> Result<(), AppError> {
+    let env = crate::server::new_env(mode).await.c(h!())?;
+    let payload_raw = tokio::fs::read_to_string(&ps.request_path)
+        .await
+        .context(h!())?;
+    let req_body: crate::rer_importer::types::AnalysisStatsReq =
+        serde_json::from_str(&payload_raw).context(h!())?;
+
+    for login in ps.logins.iter() {
+        crate::users::has_role(&env.dbx, login, "Rer")
+            .await
+            .c(h!())?;
+        let master_keys = crate::messenger::group::get_identity_sigint_groups(
+            &env.dbx, login,
+        )
+        .await
+        .context(h!())?;
+        let req_json = actix_web::web::Json(req_body.clone());
+        let (count_overall, count_selected) =
+            crate::rer_importer::analysis::stats::fetch_counts_for_login(
+                &req_json,
+                login,
+                env.as_ref(),
+                master_keys,
+            )
+            .await
+            .context(h!())?;
+        println!(
+            "login={login} count_overall={count_overall} count_selected={count_selected}"
+        );
+    }
+
+    Ok(())
+}
+
 #[derive(clap::Parser, Debug)]
 pub struct ServerPs {
     #[arg(long, action)]
@@ -337,6 +375,16 @@ pub struct OneoffGetNetworksActivityStatsPs {
     pub end: String,
 }
 
+#[derive(clap::Parser, Debug, Clone)]
+pub struct CompareRerCountsPs {
+    /// Logins to evaluate (defaults to ziggy accounts)
+    #[arg(long = "login", value_delimiter = ',', num_args = 1.., default_values = ["ziggy", "ziggy-3ovmbr"])]
+    pub logins: Vec<String>,
+    /// Path to a JSON file containing AnalysisStatsReq payload
+    #[arg(long)]
+    pub request_path: String,
+}
+
 #[derive(clap::Args, Debug, Clone)]
 pub struct OneoffFixEchoimGroups {
     #[arg(long, default_value = "false")]
@@ -395,6 +443,7 @@ enum Cmd {
     OneoffPrintOrganismGroups(OneoffPrintOrganismGroupsPs),
     OneoffAssignMessageIds(OneoffAssignMessageIdsPs),
     OneoffGetNetworksActivityStats(OneoffGetNetworksActivityStatsPs),
+    OneoffCompareRerCounts(CompareRerCountsPs),
     OneoffPopulateSignalMessageGroupIds,
     OneoffFixEchoimGroups(OneoffFixEchoimGroups),
     OneoffUnlinkReserveGroupDupes,
@@ -785,6 +834,9 @@ async fn async_main(
                 mode, &ps,
             )
             .await
+        }
+        Cmd::OneoffCompareRerCounts(ps) => {
+            oneoff_compare_rer_counts(mode, ps).await
         }
         Cmd::OneoffPopulateSignalMessageGroupIds => {
             crate::messenger::group::oneoff::oneoff_populate_signal_message_group_ids(
