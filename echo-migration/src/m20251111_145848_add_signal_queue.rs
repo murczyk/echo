@@ -31,8 +31,6 @@ impl MigrationTrait for Migration {
                     name TEXT NULL,
                     created_at timestamp without time zone default (now() at time zone 'utc') not null
                 );
-
-                ALTER TABLE signal_message DROP COLUMN IF EXISTS duplicate_of;
                "#,
             )
             .await?;
@@ -44,7 +42,6 @@ impl MigrationTrait for Migration {
         let _ = db
             .execute_unprepared(
                 "
-                ALTER TABLE signal_message ADD COLUMN duplicate_of int8 references signal_message;
                 drop table signal_message_queue_attachment;
                 drop table signal_message_queue;
                 ",

@@ -70,7 +70,7 @@ pub const GENERATE_MESSAGE_UID_TILL_MAX_DAYS: i64 = 20;
 pub const UNKNOWN_GROUP_MASTER_KEY: &str = "undefined_group";
 pub const REDIS_MGS_ID_TTL: i32 = 3600;
 // for xlsx import
-pub const MESSENGER_WORKER_POOL_DEFAULT_CAPACITY: usize = 5;
+pub const MESSENGER_WORKER_POOL_DEFAULT_CAPACITY: usize = 10;
 
 /// Dynamic config that's different on different deployments
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
