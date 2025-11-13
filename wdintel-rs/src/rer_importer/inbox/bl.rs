@@ -162,6 +162,10 @@ pub async fn aggregate_to_inbox_messages(
         let group_entry = groups_map.get(&message.id).and_then(|entries| {
             entries.iter().min_by_key(|(entry, _)| entry.id).cloned()
         });
+        let sender = group_entry
+            .as_ref()
+            .and_then(|(entry, _)| entry.sender.clone())
+            .or_else(|| message.sender.clone());
         let m_callsign_tokens: Option<Vec<CNCallsign>> =
             match message.callsign_tokens {
                 None => None,
@@ -238,7 +242,7 @@ pub async fn aggregate_to_inbox_messages(
                 group_master_key: group_entry
                     .as_ref()
                     .and_then(|(entry, _)| entry.group_master_key.clone()),
-                sender: message.sender.clone(),
+                sender,
                 extended_form: m_comment.as_ref().map(|x| x.comment.clone()),
                 unit: message.unit_v2.clone(),
                 no_headers_body: Some(no_headers_body),
