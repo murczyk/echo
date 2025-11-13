@@ -39,6 +39,14 @@ pub enum Relation {
         on_delete = "Cascade"
     )]
     SignalMessage,
+    #[sea_orm(
+        belongs_to = "super::signal_group::Entity",
+        from = "Column::GroupMasterKey",
+        to = "super::signal_group::Column::MasterKey",
+        on_update = "NoAction",
+        on_delete = "NoAction"
+    )]
+    SignalGroup,
 }
 
 impl Related<super::datasource_group::Entity> for Entity {
@@ -50,6 +58,12 @@ impl Related<super::datasource_group::Entity> for Entity {
 impl Related<super::signal_message::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SignalMessage.def()
+    }
+}
+
+impl Related<super::signal_group::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SignalGroup.def()
     }
 }
 

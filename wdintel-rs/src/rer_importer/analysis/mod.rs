@@ -42,20 +42,32 @@ where
 {
     if let Some(selected_groups) = selected_groups.as_ref() {
         if !selected_groups.is_empty() {
-            let subquery = Query::select()
-                .column(signal_message_group::Column::SignalMessageId)
-                .from(signal_message_group::Entity)
-                .and_where(
-                    signal_message_group::Column::GroupMasterKey
-                        .is_in(selected_groups.clone()),
-                )
-                .to_owned();
-            return Ok(
-                q.filter(signal_message::Column::Id.in_subquery(subquery))
-            );
+            let exists_expr = message_in_groups_exists(selected_groups.clone());
+            return Ok(q.filter(exists_expr));
         }
     }
     Ok(q)
+}
+
+pub fn message_in_groups_exists(keys: Vec<String>) -> SimpleExpr {
+    if keys.is_empty() {
+        return Expr::cust("FALSE");
+    }
+
+    let subquery = signal_message_group::Entity::find()
+        .select_only()
+        .expr(Expr::value(1))
+        .filter(
+            Expr::col((
+                signal_message_group::Entity,
+                signal_message_group::Column::SignalMessageId,
+            ))
+            .equals((signal_message::Entity, signal_message::Column::Id)),
+        )
+        .filter(signal_message_group::Column::GroupMasterKey.is_in(keys))
+        .into_query();
+
+    Expr::exists(subquery)
 }
 
 pub fn filter_selected_senders<Q>(
@@ -476,23 +488,12 @@ where
         RightBound,
     }
 
-    #[derive(Iden)]
-    pub enum SignalGroupAor {
-        Table,
-        MasterKey,
-        AorId,
-    }
-
-    #[derive(Iden)]
-    pub enum DatasourceGroup {
-        Table,
-        GroupMasterKey,
-    }
-
     if let Some(aor_ids) = selected_aors {
         if !aor_ids.is_empty() {
             let aor_linked = Alias::new("aor_linked");
             let aor_frontend = Alias::new("aor_frontend");
+            let smg_alias = Alias::new("smg_aor");
+            let ga_alias = Alias::new("ga_aor");
 
             let inner_exists = Query::select()
                 .expr(Expr::val(1))
@@ -546,23 +547,41 @@ where
 
             let outer_exists = Query::select()
                 .expr(Expr::val(1))
-                .from(SignalGroupAor::Table)
+                .from_as(signal_message_group::Entity, smg_alias.clone())
+                .join_as(
+                    JoinType::InnerJoin,
+                    signal_group_aor::Entity,
+                    ga_alias.clone(),
+                    Condition::all().add(
+                        Expr::col((
+                            ga_alias.clone(),
+                            signal_group_aor::Column::MasterKey,
+                        ))
+                        .equals((
+                            smg_alias.clone(),
+                            signal_message_group::Column::GroupMasterKey,
+                        )),
+                    ),
+                )
                 .join_as(
                     JoinType::InnerJoin,
                     AreaOfResponsibility::Table,
                     aor_linked.clone(),
-                    Expr::col((SignalGroupAor::Table, SignalGroupAor::AorId))
-                        .equals((aor_linked.clone(), AreaOfResponsibility::Id)),
+                    Expr::col((
+                        ga_alias.clone(),
+                        signal_group_aor::Column::AorId,
+                    ))
+                    .equals((aor_linked.clone(), AreaOfResponsibility::Id)),
                 )
                 .and_where(
                     Expr::col((
-                        SignalGroupAor::Table,
-                        SignalGroupAor::MasterKey,
+                        smg_alias.clone(),
+                        signal_message_group::Column::SignalMessageId,
                     ))
-                    .eq(Expr::col((
-                        DatasourceGroup::Table,
-                        DatasourceGroup::GroupMasterKey,
-                    ))),
+                    .equals((
+                        signal_message::Entity,
+                        signal_message::Column::Id,
+                    )),
                 )
                 .and_where(Expr::exists(inner_exists))
                 .to_owned();
@@ -601,6 +620,7 @@ fn network_filter_expr(
     selected_networks: &Option<Vec<i64>>,
 ) -> Option<SimpleExpr> {
     if let Some(ids) = selected_networks.as_ref().filter(|v| !v.is_empty()) {
+        let smg = Alias::new("smg_network_filter");
         let ga = Alias::new("ga"); // signal_group_aor
         let gaor = Alias::new("gaor"); // area_of_responsibility for the group
         let nf = Alias::new("nf"); // sigint_network_freq
@@ -668,7 +688,22 @@ fn network_filter_expr(
 
         let sub = Query::select()
             .expr(Expr::value(1))
-            .from_as(signal_group_aor::Entity, ga.clone())
+            .from_as(signal_message_group::Entity, smg.clone())
+            .join_as(
+                JoinType::InnerJoin,
+                signal_group_aor::Entity,
+                ga.clone(),
+                Condition::all().add(
+                    Expr::col((
+                        ga.clone(),
+                        signal_group_aor::Column::MasterKey,
+                    ))
+                    .equals((
+                        smg.clone(),
+                        signal_message_group::Column::GroupMasterKey,
+                    )),
+                ),
+            )
             .join_as(
                 JoinType::InnerJoin,
                 area_of_responsibility::Entity,
@@ -730,11 +765,11 @@ fn network_filter_expr(
             )
             // correlate group to outer message
             .and_where(
-                Expr::col((ga.clone(), signal_group_aor::Column::MasterKey))
-                    .equals((
-                        datasource_group::Entity,
-                        datasource_group::Column::GroupMasterKey,
-                    )),
+                Expr::col((
+                    smg.clone(),
+                    signal_message_group::Column::SignalMessageId,
+                ))
+                .equals((signal_message::Entity, signal_message::Column::Id)),
             )
             .and_where(
                 Expr::col((n.clone(), sigint_network::Column::Id))
