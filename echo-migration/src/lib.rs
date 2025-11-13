@@ -163,6 +163,7 @@ mod m20251106_125324_drop_datasource_legacy_columns;
 mod m20251107_102225_datasource_default_status;
 mod m20251111_145848_add_signal_queue;
 mod m20251115_105217_add_echo_indexes;
+mod m20251113_093602_add_group_stats_tables;
 
 pub struct Migrator;
 
@@ -333,6 +334,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20251111_145848_add_signal_queue::Migration),
             Box::new(m20250214_130500_signal_queue_indexes::Migration),
             Box::new(m20251115_105217_add_echo_indexes::Migration),
+            Box::new(m20251113_093602_add_group_stats_tables::Migration),
         ]
     }
 }
