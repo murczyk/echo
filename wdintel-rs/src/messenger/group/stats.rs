@@ -221,6 +221,7 @@ async fn recalculate_day_stats(
             let mut old_entry = None;
             let old_stats = old_stats
                 .iter()
+                .filter(|s| s.stats_dt.eq(&current_date))
                 .filter(|s| s.group_master_key.eq(&group_master_key))
                 .cloned()
                 .collect_vec();
