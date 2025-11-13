@@ -1,5 +1,6 @@
 use crate::entities::{prelude::*, *};
 use crate::rer_importer::types::*;
+use crate::sigint::sender::preferred_sender_expr;
 
 use crate::error::AppError;
 use crate::rer_importer::analysis::*;
@@ -572,7 +573,7 @@ where
         .column_as(signal_message::Column::Body, "body")
         .column_as(signal_message::Column::MessageUid, "message_uid")
         .column_as(signal_message::Column::Timestamp, "timestamp")
-        .column_as(signal_message::Column::Sender, "sender")
+        .column_as(preferred_sender_expr(None), "sender")
         .column_as(sigint_inbox_item::Column::Freq, "freq")
         .column_as(sigint_inbox_item::Column::Coords, "coords")
         .column_as(sigint_inbox_item::Column::Callsigns, "callsigns")

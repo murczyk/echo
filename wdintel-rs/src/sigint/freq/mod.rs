@@ -1,6 +1,7 @@
 use crate::entities::*;
 use crate::error::AppError;
 use crate::location::utils::to_location_list;
+use crate::sigint::sender::message_ids_for_senders;
 use crate::types::*;
 use crate::utils::*;
 use actix_web::post;
@@ -180,8 +181,9 @@ pub async fn list_alt_unit_by_freqs(
     }
 
     if let Some(senders) = &req.filter_sender_profile_ids {
-        alt_units = alt_units
-            .filter(signal_message::Column::Sender.is_in(senders.clone()))
+        let subquery = message_ids_for_senders(senders);
+        alt_units =
+            alt_units.filter(signal_message::Column::Id.in_subquery(subquery))
     }
 
     let res_alt_units = alt_units
@@ -1205,10 +1207,8 @@ where
     };
 
     if let Some(filter_sender_profile_ids) = filter_sender_profile_ids {
-        q = q.filter(
-            signal_message::Column::Sender
-                .is_in(filter_sender_profile_ids.clone()),
-        );
+        let subquery = message_ids_for_senders(filter_sender_profile_ids);
+        q = q.filter(signal_message::Column::Id.in_subquery(subquery));
     };
 
     if let Some(filter_freq) = filter_freq {

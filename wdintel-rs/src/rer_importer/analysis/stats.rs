@@ -1,3 +1,4 @@
+use crate::sigint::sender::preferred_sender_expr;
 use crate::types::ShortContext;
 use actix_identity::Identity;
 use actix_web::web::Json;
@@ -250,7 +251,7 @@ fn build_senders_query(
             signal_message::Relation::DatasourceGroup.def(),
         )
         .select_only()
-        .column_as(Expr::col(signal_message::Column::Sender), "uuid")
+        .column_as(preferred_sender_expr(None), "uuid")
         // .column_as(SimpleExpr::Custom("(SELECT signal_profile.given_name FROM signal_profile WHERE signal_profile.uuid = signal_message.sender)".to_string()), "uuid")
         .column_as(
             Expr::cust(r#"COUNT(DISTINCT "signal_message"."id")"#),
@@ -263,7 +264,7 @@ fn build_senders_query(
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
         // .filter(sigint_inbox_item::Column::Checked.eq(Some(true)))
-        .group_by(Expr::col(signal_message::Column::Sender));
+        .group_by(preferred_sender_expr(None));
     // .group_by(SimpleExpr::Custom("(SELECT signal_profile.given_name FROM signal_profile WHERE signal_profile.uuid = signal_message.sender)".to_string()));
     let senders_res = filter_selected_groups(senders_res, &req.selected_groups)
         .context(h!())?;

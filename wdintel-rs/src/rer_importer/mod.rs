@@ -5,6 +5,7 @@ use crate::entities::*;
 use crate::error::AppError;
 use crate::location::peleng::reset_inbox_pelengs;
 use crate::location::utils;
+use crate::sigint::sender::preferred_sender_expr;
 use crate::types::*;
 use actix_web::web::Json;
 use actix_web::{get, post, HttpRequest, HttpResponse};
@@ -633,20 +634,21 @@ pub async fn latest_senders(
         crate::messenger::group::get_identity_sigint_groups(&txn, &login)
             .await
             .c(h!())?;
+    let sender_expr = preferred_sender_expr(None);
     let sender_uuids: Vec<String> = signal_message::Entity::find()
         .join(
             JoinType::InnerJoin,
             signal_message::Relation::DatasourceGroup.def(),
         )
         .select_only()
-        .column_as(signal_message::Column::Sender, "sender")
+        .column_as(sender_expr.clone(), "sender")
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(datasource_group::Column::GroupMasterKey.is_in(master_keys))
         .filter(
             signal_message::Column::CreatedAt
                 .gt(now - chrono::Duration::days(2)),
         )
-        .group_by(signal_message::Column::Sender)
+        .group_by(sender_expr)
         .into_model::<Res>()
         .all(&txn)
         .await

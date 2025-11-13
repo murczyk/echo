@@ -29,6 +29,7 @@ pub(crate) mod import;
 pub mod network;
 pub mod post;
 pub mod restapi;
+pub mod sender;
 pub mod signal;
 pub mod source;
 pub mod types;

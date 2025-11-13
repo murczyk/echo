@@ -9,6 +9,7 @@ use crate::messenger::group::types::SignalGroupEntry;
 use crate::messenger::group::types::*;
 use crate::messenger::group::*;
 use crate::sigint::aor::bl::collect_group_aors;
+use crate::sigint::sender::message_ids_for_senders;
 use crate::types::*;
 use crate::users::*;
 use crate::utils::string::*;
@@ -66,23 +67,10 @@ where
 {
     if let Some(selected_senders) = selected_senders.as_ref() {
         if !selected_senders.is_empty() {
-            // q.filter(
-            // signal_message::Column::Sender.in_subquery(
-            //     Query::select()
-            //         .column(signal_profile::Column::Uuid)
-            //         .from(signal_profile::Entity)
-            //         .and_where(
-            //             signal_profile::Column::GivenName
-            //                 .is_in(selected_senders)
-            //                 .or(signal_profile::Column::Uuid
-            //                     .is_in(selected_senders)),
-            //         )
-            //         .to_owned(),
-            // ),
-            // )
-            return Ok(q.filter(
-                signal_message::Column::Sender.is_in(selected_senders),
-            ));
+            let subquery = message_ids_for_senders(selected_senders);
+            return Ok(
+                q.filter(signal_message::Column::Id.in_subquery(subquery))
+            );
         }
     }
     Ok(q)
@@ -97,9 +85,10 @@ where
 {
     if let Some(denied_senders) = denied_senders.as_ref() {
         if !denied_senders.is_empty() {
-            return Ok(q.filter(
-                signal_message::Column::Sender.is_not_in(denied_senders),
-            ));
+            let subquery = message_ids_for_senders(denied_senders);
+            return Ok(
+                q.filter(signal_message::Column::Id.not_in_subquery(subquery))
+            );
         }
     }
     Ok(q)

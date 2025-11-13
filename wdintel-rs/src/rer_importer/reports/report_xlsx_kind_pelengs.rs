@@ -3,13 +3,13 @@ use crate::entities::{prelude::*, *};
 use crate::error::AppError;
 use crate::location::peleng::collect_inbox_pelengs;
 use crate::rer_importer::analysis::*;
+use crate::sigint::sender::preferred_sender_sql_snippet;
 use crate::types::*;
 use actix_identity::Identity;
 use anyhow::bail;
 use chrono::prelude::*;
 use itertools::Itertools;
-use sea_orm::{prelude::Expr, *};
-use sea_query::SimpleExpr;
+use sea_orm::{prelude::Expr, sea_query::SimpleExpr, *};
 use std::collections::BTreeMap;
 
 use geoconvert::{LatLon, Mgrs};
@@ -47,7 +47,10 @@ pub async fn get_inbox_messages_report(
         .column(signal_message::Column::Id)
         .column(signal_message::Column::Body)
         .column(signal_message::Column::Timestamp)
-        .column(signal_message::Column::Sender)
+        .expr(Expr::cust(format!(
+            "{} AS sender",
+            preferred_sender_sql_snippet(None)
+        )))
         .column(sigint_inbox_item::Column::Date)
         .column(sigint_inbox_item::Column::Time)
         .column(sigint_inbox_item::Column::Freq)
