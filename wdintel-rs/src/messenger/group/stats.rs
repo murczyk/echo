@@ -1,14 +1,10 @@
 use crate::config::get_tz;
 use crate::entities::*;
 use crate::error::AppError;
+use crate::h;
 use crate::types::{Mode, ShortContext};
-use crate::{config, h};
 use anyhow::Context;
 use chrono::*;
-use dialoguer::theme::ColorfulTheme;
-use dialoguer::Confirm;
-use echo_migration::Expr;
-use indicatif::ProgressBar;
 use itertools::Itertools;
 use log::*;
 use sea_orm::*;
@@ -41,7 +37,6 @@ pub async fn worker_calculate_group_stats(mode: Mode) {
 
 #[derive(FromQueryResult)]
 struct StatsRow {
-    pub id: i64,
     pub created_at: NaiveDateTime,
     pub datetime: Option<NaiveDateTime>,
     pub group_master_key: String,
@@ -258,7 +253,7 @@ async fn recalculate_day_stats(
                 .c(h!())?;
             }
         }
-        current_date = current_date + Duration::days(1);
+        current_date += Duration::days(1);
     }
 
     for e in old_stats {

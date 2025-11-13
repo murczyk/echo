@@ -36,7 +36,7 @@ impl MigrationTrait for Migration {
             drop table stats_group_5min;
             ",
         )
-            .await?;
+        .await?;
         Ok(())
     }
 }

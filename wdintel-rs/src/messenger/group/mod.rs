@@ -9,10 +9,10 @@ use sea_orm::*;
 
 pub mod handlers;
 pub mod oneoff;
+pub(crate) mod stats;
 #[cfg(test)]
 pub mod tests;
 pub mod types;
-pub(crate) mod stats;
 
 #[derive(Clone, Copy, Default)]
 pub struct CollectGroupsOpts {

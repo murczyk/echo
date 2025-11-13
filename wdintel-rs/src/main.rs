@@ -456,7 +456,7 @@ enum Cmd {
     OneoffFixEchoimGroups(OneoffFixEchoimGroupsPs),
     OneoffUnlinkReserveGroupDupes,
     OneoffCalculateSignalMessageGroups,
-    OneoffCalculateGroupStats(OneoffCalculateGroupStatsPs)
+    OneoffCalculateGroupStats(OneoffCalculateGroupStatsPs),
 }
 
 #[derive(clap::Parser, Debug)]
