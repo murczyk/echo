@@ -11,7 +11,7 @@ impl MigrationTrait for Migration {
             " create table stats_group_day (
                 id bigserial primary key,
                 quantity integer not null default 0,
-                group_master_key text references signal_group(master_key),
+                group_master_key text not null references signal_group(master_key) on delete cascade,
                 stats_dt DATE not null,
                 created_at timestamp without time zone default (now() at time zone 'utc') not null
             );
@@ -19,7 +19,7 @@ impl MigrationTrait for Migration {
              create table stats_group_5min (
                 id bigserial primary key,
                 quantity integer not null default 0,
-                group_master_key text references signal_group(master_key),
+                group_master_key text not null references signal_group(master_key) on delete cascade,
                 stats_start_ts timestamp without time zone not null,
                 created_at timestamp without time zone default (now() at time zone 'utc') not null
             );",

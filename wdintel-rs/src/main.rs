@@ -386,9 +386,17 @@ pub struct CompareRerCountsPs {
 }
 
 #[derive(clap::Args, Debug, Clone)]
-pub struct OneoffFixEchoimGroups {
+pub struct OneoffFixEchoimGroupsPs {
     #[arg(long, default_value = "false")]
     pub noninteractive: bool,
+}
+
+#[derive(clap::Args, Debug, Clone)]
+pub struct OneoffCalculateGroupStatsPs {
+    #[arg(long, value_enum)]
+    pub since_epoch_ms: Option<i64>,
+    #[arg(long, value_enum)]
+    pub till_epoch_ms: Option<i64>,
 }
 
 #[derive(clap::Subcommand, Debug)]
@@ -445,9 +453,10 @@ enum Cmd {
     OneoffGetNetworksActivityStats(OneoffGetNetworksActivityStatsPs),
     OneoffCompareRerCounts(CompareRerCountsPs),
     OneoffPopulateSignalMessageGroupIds,
-    OneoffFixEchoimGroups(OneoffFixEchoimGroups),
+    OneoffFixEchoimGroups(OneoffFixEchoimGroupsPs),
     OneoffUnlinkReserveGroupDupes,
     OneoffCalculateSignalMessageGroups,
+    OneoffCalculateGroupStats(OneoffCalculateGroupStatsPs)
 }
 
 #[derive(clap::Parser, Debug)]
@@ -860,6 +869,14 @@ async fn async_main(
         Cmd::OneoffCalculateSignalMessageGroups => {
             crate::messenger::group::oneoff::oneoff_calculate_signal_message_groups(
                 mode,
+            )
+                .await
+        }
+        Cmd::OneoffCalculateGroupStats(ps) => {
+            crate::messenger::group::oneoff::oneoff_calculate_group_stats(
+                mode,
+                ps.since_epoch_ms,
+                ps.till_epoch_ms,
             )
                 .await
         }

@@ -1,3 +1,4 @@
+use crate::config::get_tz;
 use crate::entities::*;
 use crate::error::AppError;
 use crate::types::{Mode, ShortContext};
@@ -15,6 +16,36 @@ use tokio::time::sleep;
 
 pub const ONEOFF_CALCULATE_SIGNAL_MESSAGE_GROUPS_SLEEP_SEC: u64 = 10;
 pub const ONEOFF_CALCULATE_SIGNAL_MESSAGR_GROUPS_BATCH_SIZE: u64 = 10000;
+
+pub async fn oneoff_calculate_group_stats(
+    mode: Mode,
+    since_epoch_ms: Option<i64>,
+    till_epoch_ms: Option<i64>,
+) -> Result<(), AppError> {
+    let till_ts = match till_epoch_ms {
+        Some(ts) => DateTime::from_timestamp_millis(ts).c(h!())?.naive_utc(),
+        None => Utc::now().naive_utc(),
+    };
+    let since_ts = match since_epoch_ms {
+        Some(ts) => DateTime::from_timestamp_millis(ts).c(h!())?.naive_utc(),
+        None => NaiveDateTime::new(
+            (till_ts - Duration::days(1)).date(),
+            NaiveTime::MIN,
+        )
+        .and_local_timezone(get_tz())
+        .earliest()
+        .c(h!())?
+        .naive_utc(),
+    };
+    let config = config::read_config(mode).context(h!())?;
+    let dbx = crate::new_pg_pool_from_config(&config)
+        .await
+        .context(h!())?;
+    super::stats::recalculate_group_stats(&dbx, since_ts, till_ts)
+        .await
+        .context(h!())?;
+    Ok(())
+}
 
 pub async fn oneoff_calculate_signal_message_groups(
     mode: Mode,

@@ -12,6 +12,7 @@ pub mod oneoff;
 #[cfg(test)]
 pub mod tests;
 pub mod types;
+pub(crate) mod stats;
 
 #[derive(Clone, Copy, Default)]
 pub struct CollectGroupsOpts {
