@@ -311,16 +311,6 @@ async fn run_new_worker(
                     .await;
                 return Ok(());
             };
-            if let Some(backlog) =
-                queue_backlog_exceeds_threshold(&dbx, datasource_id).await?
-            {
-                debug!(
-                    "{worker_name}: backlog {backlog} >= {SIGNAL_QUEUE_BACKPRESSURE_THRESHOLD} for datasource {datasource_id}, waiting before syncing"
-                );
-                sleep(Duration::from_millis(MESSENGER_WORKER_LONG_SLEEP_MS))
-                    .await;
-                continue;
-            }
             let sync_result =
                 sync_client_once(cli, &dbx).await;
             if !sync_result.is_healthy {
@@ -334,22 +324,6 @@ async fn run_new_worker(
         }
     }.await;
     result
-}
-
-async fn queue_backlog_exceeds_threshold(
-    dbx: &DatabaseConnection,
-    datasource_id: i64,
-) -> anyhow::Result<Option<u64>> {
-    let pending = signal_message_queue::Entity::find()
-        .filter(signal_message_queue::Column::DatasourceId.eq(datasource_id))
-        .count(dbx)
-        .await
-        .c(h!())?;
-    if pending >= SIGNAL_QUEUE_BACKPRESSURE_THRESHOLD {
-        Ok(Some(pending))
-    } else {
-        Ok(None)
-    }
 }
 
 async fn sync_client_once(

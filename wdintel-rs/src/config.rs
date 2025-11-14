@@ -56,7 +56,6 @@ pub const MESSENGER_WORKER_IDLE_SLEEP_MS: u64 = 100;
 pub const MESSENGER_WORKER_BATCH_SIZE: u64 = 100;
 pub const MESSENGER_CLEANUP_OK_SLEEP_SEC: u64 = 3600;
 pub const MESSENGER_CLEANUP_ERR_SLEEP_SEC: u64 = 15;
-pub const SIGNAL_QUEUE_BACKPRESSURE_THRESHOLD: u64 = 500;
 pub const LONG_POLL_SLEEP_MS: u64 = 5000;
 /// Minimum time to keep a long-poll request open to accumulate events
 pub const LONG_POLL_MIN_RESPONSE_TIME_MS: u64 = 500;
