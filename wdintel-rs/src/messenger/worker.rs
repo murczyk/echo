@@ -295,8 +295,7 @@ async fn run_new_worker(
                 queue_backlog_exceeds_threshold(&dbx, datasource_id).await?
             {
                 debug!(
-                    "{worker_name}: backlog {backlog} >= {} for datasource {datasource_id}, waiting before syncing",
-                    SIGNAL_QUEUE_BACKPRESSURE_THRESHOLD
+                    "{worker_name}: backlog {backlog} >= {SIGNAL_QUEUE_BACKPRESSURE_THRESHOLD} for datasource {datasource_id}, waiting before syncing"
                 );
                 sleep(Duration::from_millis(MESSENGER_WORKER_LONG_SLEEP_MS))
                     .await;
