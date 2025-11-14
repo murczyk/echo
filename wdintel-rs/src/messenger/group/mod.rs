@@ -4,7 +4,7 @@ use crate::organism::types::OrganismGroups;
 use crate::sigint::aor::bl::collect_group_aors;
 use crate::types::*;
 use chrono::Utc;
-use echo_migration::{Alias, Expr, JoinType};
+use echo_migration::{Expr, JoinType};
 use sea_orm::*;
 
 pub mod handlers;
@@ -406,24 +406,23 @@ where
     C: ConnectionTrait + 'async_trait,
 {
     let cutoff = Utc::now().naive_utc() - chrono::Duration::days(num_days);
-    let signal_message_counts = signal_message::Entity::find()
+    let signal_message_counts = signal_message_group::Entity::find()
         .join(
             JoinType::InnerJoin,
-            signal_message::Relation::DatasourceGroup.def(),
+            signal_message_group::Relation::SignalMessage.def(),
         )
         .join(
             JoinType::InnerJoin,
             signal_message::Relation::SigintInboxItem.def(),
         )
-        .join_as(
-            JoinType::LeftJoin,
-            datasource_group::Relation::SignalGroup.def(),
-            Alias::new("signal_group"),
+        .join(
+            JoinType::InnerJoin,
+            signal_message_group::Relation::SignalGroup.def(),
         )
         .select_only()
-        .column(datasource_group::Column::GroupMasterKey)
+        .column(signal_group::Column::MasterKey)
         .column_as(Expr::cust("count(*)"), "count")
-        .group_by(Expr::cust("group_master_key"))
+        .group_by(signal_group::Column::MasterKey)
         .filter(signal_group::Column::Deleted.eq(false))
         .filter(signal_group::Column::MasterKey.is_in(keys))
         .filter(signal_message::Column::Timestamp.gte(cutoff))
