@@ -8,9 +8,13 @@ impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         let db = manager.get_connection();
         db.execute_unprepared(
-            "create index concurrently if not exists \
-             echo_inbox_message_account_internal_id_idx \
-             on echo_inbox_message (account_id, internal_id);",
+            r#"
+            create index if not exists signal_message_queue_datasource_created_idx
+                on signal_message_queue (datasource_id, created_at);
+
+            create index if not exists signal_message_queue_attachment_message_idx
+                on signal_message_queue_attachment (message_id);
+            "#,
         )
         .await?;
         Ok(())
@@ -19,8 +23,10 @@ impl MigrationTrait for Migration {
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         let db = manager.get_connection();
         db.execute_unprepared(
-            "drop index concurrently if exists \
-             echo_inbox_message_account_internal_id_idx;",
+            r#"
+            drop index if exists signal_message_queue_attachment_message_idx;
+            drop index if exists signal_message_queue_datasource_created_idx;
+            "#,
         )
         .await?;
         Ok(())

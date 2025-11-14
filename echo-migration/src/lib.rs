@@ -68,10 +68,6 @@ mod m20241227_080017_sigint_network_add_fields;
 mod m20250101_003216_fix_start_of_year_data;
 mod m20250115_170706_remove_obsolete_elalonka_tables;
 mod m20250210_185135_change_search_index;
-mod m20250214_120000_echo_inbox_message_seen_index;
-mod m20250214_130500_signal_queue_indexes;
-mod m20250214_131000_echo_inbox_message_internal_id_index;
-mod m20250214_132500_echo_inbox_message_created_at_index;
 mod m20250305_132553_new_networks_structure;
 mod m20250318_225255_drop_inbox_item_freq;
 mod m20250328_120859_assign_tags_ordering;
@@ -162,6 +158,10 @@ mod m20251030_093422_add_geometry_columns;
 mod m20251106_125324_drop_datasource_legacy_columns;
 mod m20251107_102225_datasource_default_status;
 mod m20251111_145848_add_signal_queue;
+mod m20251114_080000_echo_inbox_message_seen_index;
+mod m20251114_081000_signal_queue_indexes;
+mod m20251114_081500_echo_inbox_message_internal_id_index;
+mod m20251114_082000_echo_inbox_message_created_at_index;
 
 pub struct Migrator;
 
@@ -237,10 +237,10 @@ impl MigratorTrait for Migrator {
             Box::new(m20250101_003216_fix_start_of_year_data::Migration),
             Box::new(m20250115_170706_remove_obsolete_elalonka_tables::Migration),
             Box::new(m20250210_185135_change_search_index::Migration),
-            Box::new(m20250214_120000_echo_inbox_message_seen_index::Migration),
-            Box::new(m20250214_130500_signal_queue_indexes::Migration),
-            Box::new(m20250214_131000_echo_inbox_message_internal_id_index::Migration),
-            Box::new(m20250214_132500_echo_inbox_message_created_at_index::Migration),
+            Box::new(m20251114_080000_echo_inbox_message_seen_index::Migration),
+            Box::new(m20251114_081000_signal_queue_indexes::Migration),
+            Box::new(m20251114_081500_echo_inbox_message_internal_id_index::Migration),
+            Box::new(m20251114_082000_echo_inbox_message_created_at_index::Migration),
             Box::new(m20250305_132553_new_networks_structure::Migration),
             Box::new(m20250318_225255_drop_inbox_item_freq::Migration),
             Box::new(m20250328_120859_assign_tags_ordering::Migration),
