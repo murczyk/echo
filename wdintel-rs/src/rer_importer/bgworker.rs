@@ -197,7 +197,7 @@ where
         Some((d, t)) => (Some(d), Some(t)),
     };
     let datetime = datetime_from_body.or(message.timestamp);
-    let datetime_to_store = datetime.clone();
+    let datetime_to_store = datetime;
 
     let result = sigint_inbox_item::ActiveModel {
         id: Set(message.id),
