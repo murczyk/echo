@@ -107,8 +107,13 @@ where
         };
     }
     let date_v = m_dt
+        .as_ref()
         .map(|dt| format!("{}-{:02}-{:02}", dt.year(), dt.month(), dt.day()));
-    let time_v = m_dt.map(|dt| format!("{:02}:{:02}", dt.hour(), dt.minute()));
+    let time_v = m_dt
+        .as_ref()
+        .map(|dt| format!("{:02}:{:02}", dt.hour(), dt.minute()));
+    let datetime_from_body =
+        m_dt.as_ref().map(|dt| dt.with_timezone(&Utc).naive_utc());
     let freq = super::frequency::extract_freq(&body)?
         .map(|v| crate::rer_importer::frequency::etalon(&v));
     let coords_vec = milgeo_rs::coordinates::rer_extract_coords(&body).await;
@@ -191,6 +196,8 @@ where
         None => (date_v, time_v),
         Some((d, t)) => (Some(d), Some(t)),
     };
+    let datetime = datetime_from_body.or(message.timestamp);
+    let datetime_to_store = datetime.clone();
 
     let result = sigint_inbox_item::ActiveModel {
         id: Set(message.id),
@@ -221,7 +228,10 @@ where
         callsigns_alg2: Set(Some(
             serde_json::to_value(callsigns_alg2).c(h!())?,
         )),
-        datetime: NotSet,
+        datetime: match datetime_to_store {
+            Some(dt) => Set(Some(dt)),
+            None => NotSet,
+        },
         signal_tokens: Set(Some(serde_json::to_value(signal_tokens).c(h!())?)),
         post_id: Set(post_id),
         unit_v2: Set(unit_v2),
@@ -231,7 +241,8 @@ where
     .await
     .c(h!())?;
 
-    let ts = result.datetime.unwrap_or(message.created_at);
+    let ts = datetime
+        .unwrap_or_else(|| result.datetime.unwrap_or(message.created_at));
     crate::location::peleng::insert_pelengs(coords_vec, result.id, ts, txn)
         .await
         .c(h!())?;
