@@ -83,9 +83,15 @@ pub async fn process_queue_inner(
                 .await
                 .c(h!())?
         };
-        process_queue(&mut worker_pool, next_items, attachments, datasources)
+        process_queue(&mut worker_pool, next_items.clone(), attachments.clone(), datasources)
             .await
             .context(h!())?;
+        for a in attachments {
+            a.delete(&dbx).await.c(h!())?;
+        }
+        for i in next_items {
+            i.delete(&dbx).await.c(h!())?;
+        }
         sleep(Duration::from_millis(IDLE_SLEEP_MS)).await;
     }
 }
