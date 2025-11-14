@@ -12,7 +12,7 @@ use echo_im::types::{MessageAttachmentF1, MessageF1, MessageSource, SenderF1};
 use itertools::Itertools;
 use redis::aio::ConnectionManager;
 use reqwest::Client;
-use sea_orm::{DatabaseConnection, ModelTrait, TransactionTrait};
+use sea_orm::{DatabaseConnection, TransactionTrait};
 use std::collections::VecDeque;
 use std::sync::{Arc, RwLock};
 use tokio::task::JoinSet;

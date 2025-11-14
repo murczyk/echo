@@ -27,9 +27,9 @@ pub async fn process_queue_nofail(mode: Mode, cancel_token: CancellationToken) {
     loop {
         if let Err(e) = process_queue_inner(mode, &cancel_token).await {
             error!("process_queue_inner encountered an error: {e:?}");
-            sleep(Duration::from_millis(LONG_POLL_SLEEP_MS)).await;
+            sleep(Duration::from_millis(MESSENGER_WORKER_LONG_SLEEP_MS)).await;
         }
-        sleep(Duration::from_millis(IDLE_SLEEP_MS)).await;
+        sleep(Duration::from_millis(MESSENGER_WORKER_IDLE_SLEEP_MS)).await;
     }
 }
 
@@ -61,12 +61,12 @@ pub async fn process_queue_inner(
                     .is_in(datasource_ids),
             )
             .order_by_asc(signal_message_queue::Column::CreatedAt)
-            .limit(100)
+            .limit(MESSENGER_WORKER_BATCH_SIZE)
             .all(&dbx)
             .await
             .c(h!())?;
         if next_items.is_empty() {
-            sleep(Duration::from_millis(LONG_POLL_SLEEP_MS)).await;
+            sleep(Duration::from_millis(MESSENGER_WORKER_LONG_SLEEP_MS)).await;
             continue;
         }
         let signal_message_queue_ids =
@@ -83,16 +83,21 @@ pub async fn process_queue_inner(
                 .await
                 .c(h!())?
         };
-        process_queue(&mut worker_pool, next_items.clone(), attachments.clone(), datasources)
-            .await
-            .context(h!())?;
+        process_queue(
+            &mut worker_pool,
+            next_items.clone(),
+            attachments.clone(),
+            datasources,
+        )
+        .await
+        .context(h!())?;
         for a in attachments {
             a.delete(&dbx).await.c(h!())?;
         }
         for i in next_items {
             i.delete(&dbx).await.c(h!())?;
         }
-        sleep(Duration::from_millis(IDLE_SLEEP_MS)).await;
+        sleep(Duration::from_millis(MESSENGER_WORKER_IDLE_SLEEP_MS)).await;
     }
 }
 
@@ -106,9 +111,9 @@ pub async fn receive_thread_nofail(
             receive_thread_inner(mode, &cancel_token, &shutdown_handle).await
         {
             error!("receive_thread_nofail encountered an error: {e:?}");
-            sleep(Duration::from_millis(LONG_POLL_SLEEP_MS)).await;
+            sleep(Duration::from_millis(MESSENGER_WORKER_LONG_SLEEP_MS)).await;
         }
-        sleep(Duration::from_millis(LONG_POLL_SLEEP_MS)).await;
+        sleep(Duration::from_millis(MESSENGER_WORKER_LONG_SLEEP_MS)).await;
     }
 }
 
@@ -141,7 +146,7 @@ pub async fn receive_thread_inner(
         )
         .await
         .c(h!())?;
-        sleep(Duration::from_millis(LONG_POLL_SLEEP_MS)).await;
+        sleep(Duration::from_millis(MESSENGER_WORKER_LONG_SLEEP_MS)).await;
     }
 }
 
@@ -282,19 +287,19 @@ async fn run_new_worker(
                 info!(
                     "datasource {datasource_id} went offline, stopping worker..."
                 );
-                sleep(Duration::from_millis(LONG_POLL_SLEEP_MS))
+                sleep(Duration::from_millis(MESSENGER_WORKER_LONG_SLEEP_MS))
                     .await;
                 return Ok(());
             };
             let sync_result =
                 sync_client_once(cli, &dbx).await;
             if !sync_result.is_healthy {
-                sleep(Duration::from_millis(LONG_POLL_SLEEP_MS))
+                sleep(Duration::from_millis(MESSENGER_WORKER_LONG_SLEEP_MS))
                     .await;
                 bail!("worker thread {worker_name} is not healthy, restarting...");
             }
             if sync_result.num_synced_inbox_messages < 1 {
-                sleep(Duration::from_millis(IDLE_SLEEP_MS)).await;
+                sleep(Duration::from_millis(MESSENGER_WORKER_IDLE_SLEEP_MS)).await;
             }
         }
     }.await;
