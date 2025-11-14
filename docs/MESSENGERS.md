@@ -53,6 +53,14 @@ root@echo-pivnich:/etc/echo/signal-cli-data/pivnich-signal/signal-cli# rm -rf ./
         - перевірити `echo_account.is_linked=true`
     - майбутнє: веб інтерфейс
 
+### Troubleshoot відставання СХІД 14NOV25
+
+```sql
+select max(sm.timestamp), g.id, g.name from signal_message sm inner join datasource_group g on sm.datasource_group_id = g.id where sm.created_at > '2025-11-12 10:00' and sm.datasource_group_id in (select id from datasource_group where datasource_id = 4) group by g.id, g.name;
+```
+- `echo_whatsapp_queue -> echo_inbox_message -> signal_message`
+
+
 ### Troubleshoot відставання Донецьк 5NOV25
 
 Остання група де в сигнал шось прилітало:
