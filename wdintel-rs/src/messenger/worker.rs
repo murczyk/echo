@@ -23,6 +23,26 @@ use tokio_util::sync::CancellationToken;
 
 static SIGNAL_LOGIN_DELAY_DONE: AtomicBool = AtomicBool::new(false);
 
+pub async fn run_cleanup_worker(mode: Mode) {
+    loop {
+        let db = match crate::new_pg_pool_from_mode(mode).await {
+            Ok(db) => db,
+            Err(e) => {
+                error!("Messenger Cleanup worker failed, cannot establish db connection: {e:#?}");
+                sleep(Duration::from_secs(MESSENGER_CLEANUP_ERR_SLEEP_SEC))
+                    .await;
+                continue;
+            }
+        };
+        if let Err(e) = echo_im::worker::run_cleanup_worker(&db).await {
+            error!("Messenger Cleanup worker failed: {e:#?}");
+            sleep(Duration::from_secs(15)).await;
+        }
+
+        sleep(Duration::from_secs(MESSENGER_CLEANUP_OK_SLEEP_SEC)).await;
+    }
+}
+
 pub async fn process_queue_nofail(mode: Mode, cancel_token: CancellationToken) {
     loop {
         if let Err(e) = process_queue_inner(mode, &cancel_token).await {

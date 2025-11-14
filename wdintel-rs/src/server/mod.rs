@@ -226,6 +226,9 @@ pub async fn main_server(
             crate::operator::worker::run_operator_inbox_worker_nofail(mode)
                 .await;
         });
+        spawn_named_worker("echo_im_cleanup", bg_set, async move {
+            crate::messenger::worker::run_cleanup_worker(mode).await;
+        });
     }
 
     spawn_named_worker("signal_cli_verbose_logger", bg_set, async move {
