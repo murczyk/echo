@@ -218,6 +218,10 @@ pub async fn main_server(
             )
             .await;
         });
+        let token_2 = cancel_token.clone();
+        spawn_named_worker("process_queue_nofail", bg_set, async move {
+            crate::messenger::worker::process_queue_nofail(mode, token_2).await;
+        });
         spawn_named_worker("operator_inbox_worker", bg_set, async move {
             crate::operator::worker::run_operator_inbox_worker_nofail(mode)
                 .await;

@@ -431,8 +431,8 @@ pub async fn process_incoming_message_restapi(
         deleted: Set(true), // message is in staged state before check for dupes
         external_id: NotSet,
         message_uid: NotSet,
-        datasource_group_id: Set(Some(datasource_group_id)),
         duplicate_of: NotSet,
+        datasource_group_id: Set(Some(datasource_group_id)),
     }
     .insert(&txn)
     .await

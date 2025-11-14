@@ -1,7 +1,4 @@
-use crate::entities::{
-    datasource_group, echo_group, organism_group, sigint_zone_datasource,
-    signal_group, signal_message, signal_message_group,
-};
+use crate::entities::*;
 use crate::error::AppError;
 use crate::types::{Mode, ShortContext};
 use crate::{config, h};
@@ -15,19 +12,6 @@ use log::*;
 use sea_orm::*;
 use std::collections::*;
 use tokio::time::sleep;
-
-pub async fn oneoff_unlink_reserve_group_dupes(
-    mode: Mode,
-) -> Result<(), AppError> {
-    let config = config::read_config(mode).context(h!())?;
-    let dbx = crate::new_pg_pool_from_config(&config)
-        .await
-        .context(h!())?;
-    crate::sigint::zone::bl::unlink_reserve_group_dupes(&dbx)
-        .await
-        .context(h!())?;
-    Ok(())
-}
 
 pub async fn oneoff_calculate_signal_message_groups(
     mode: Mode,
@@ -114,6 +98,19 @@ pub async fn oneoff_calculate_signal_message_groups(
             pb.inc(1);
         }
     }
+    Ok(())
+}
+
+pub async fn oneoff_unlink_reserve_group_dupes(
+    mode: Mode,
+) -> Result<(), AppError> {
+    let config = config::read_config(mode).context(h!())?;
+    let dbx = crate::new_pg_pool_from_config(&config)
+        .await
+        .context(h!())?;
+    crate::sigint::zone::bl::unlink_reserve_group_dupes(&dbx)
+        .await
+        .context(h!())?;
     Ok(())
 }
 

@@ -1,12 +1,14 @@
-use crate::config::{Config, MESSENGER_WORKER_POOL_DEFAULT_CAPACITY};
+use crate::config::*;
+use crate::entities::signal_message_queue;
+use crate::entities::*;
 use crate::h;
 use crate::location::SettlementsData;
-use crate::messenger::types::Message;
-use crate::messenger::worker::receive_once;
+use crate::messenger::types::{EchoAccountF1, Message};
+use crate::messenger::worker::process_signal_message_queue_item;
 use crate::types::*;
 use crate::utils::setup_worker;
 use anyhow::Context;
-use echo_im::types::MessageF1;
+use echo_im::types::{MessageAttachmentF1, MessageF1, MessageSource, SenderF1};
 use itertools::Itertools;
 use redis::aio::ConnectionManager;
 use reqwest::Client;
@@ -31,15 +33,66 @@ pub struct WorkerContext {
 }
 
 pub async fn process_queue(
-    items: Vec<Item>,
     pool: &mut ProcessorPool,
+    queue: Vec<signal_message_queue::Model>,
+    attachments: Vec<signal_message_queue_attachment::Model>,
+    datasources: Vec<EchoAccountF1>,
 ) -> anyhow::Result<()> {
     let ctx = pool.ctx.clone();
+    let datasources = datasources
+        .into_iter()
+        .map(|d| (d.id, d))
+        .collect::<HashMap<_, _>>();
     let mut item_queue = VecDeque::new();
-    for i in items {
-        item_queue.push_back((i, 0));
+    for entry in queue {
+        let attachments = attachments
+            .iter()
+            .filter(|x| x.message_id.eq(&entry.id))
+            .map(|a| MessageAttachmentF1 {
+                path: a.path.clone(),
+                name: a.name.clone(),
+            })
+            .collect();
+        let src_entry = entry.clone();
+        let datasource = datasources.get(&entry.datasource_id).c(h!())?;
+        let sender = entry.sender_id.map(|id| SenderF1 {
+            uuid: id,
+            name: entry.sender_name,
+            phone_number: entry.sender_phone_number,
+        });
+        let message_source = match datasource.messenger.to_lowercase().as_str()
+        {
+            "signal" => MessageSource::Signal,
+            "whatsapp" => MessageSource::Whatsapp,
+            _x => {
+                error!("unexpected messenger occurred, skipping: {_x}");
+                continue;
+            }
+        };
+        let sender_phone_number =
+            sender.clone().and_then(|sender| sender.phone_number);
+        let message = MessageF1 {
+            id: entry.external_id,
+            text: entry.body,
+            timestamp: entry.timestamp,
+            internal_id: entry.internal_id as i32,
+            group_id: entry.group_id,
+            sender_phone_number,
+            sender,
+            attachments,
+            message_source,
+            reply_to: None,
+        };
+        let item = Item {
+            message,
+            datasource_id: datasource.id,
+            client_name: datasource.system_service_name.clone().c(h!())?,
+            model: src_entry,
+        };
+        item_queue.push_back((item, 0));
     }
     loop {
+        // if queue is empty -  wait for remaining tasks, probably some should be retried
         if item_queue.is_empty() {
             while let Some(res) = pool.join_set.join_next().await {
                 let result = match res {
@@ -56,6 +109,7 @@ pub async fn process_queue(
                 }
             }
             if item_queue.is_empty() {
+                // queue is empty and no retries left; that means the queue was processed
                 break;
             }
         }
@@ -92,7 +146,6 @@ pub async fn process_queue(
             ctx.clone(),
         ));
     }
-
     trace!("All tasks completed.");
     Ok(())
 }
@@ -128,7 +181,14 @@ async fn mk_context(mode: Mode) -> anyhow::Result<WorkerContext> {
 
 // -------- Task-specific code --------
 
-pub type Item = (MessageF1, i64, String);
+#[derive(Clone, Debug)]
+pub struct Item {
+    pub message: MessageF1,
+    pub datasource_id: i64,
+    pub client_name: String,
+    pub model: signal_message_queue::Model,
+}
+
 pub struct ItemProcessingResult {
     pub item: Item,
     pub attempt_num: usize,
@@ -136,7 +196,7 @@ pub struct ItemProcessingResult {
 }
 
 async fn process_item_nofail(
-    item: (MessageF1, i64, String),
+    item: Item,
     attempt_num: usize,
     ctx: Arc<WorkerContext>,
 ) -> ItemProcessingResult {
@@ -154,7 +214,9 @@ async fn process_item_once(
     context: Arc<WorkerContext>,
     item: Item,
 ) -> anyhow::Result<()> {
-    let (m, datasource_id, client_name) = item;
+    let m = item.message;
+    let datasource_id = item.datasource_id;
+    let client_name = item.client_name;
     let txn = context.dbx.begin().await.c(h!())?;
     // let current_time = Utc::now().naive_utc();
     // if m.timestamp < current_time - TimeDelta::minutes(15) {
@@ -173,7 +235,7 @@ async fn process_item_once(
             datasource_id,
         };
         let mut redis = context.redis.clone();
-        if let Err(e) = receive_once(
+        if let Err(e) = process_signal_message_queue_item(
             message,
             m.attachments.into_iter().map(|a| a.path).collect_vec(),
             &mut redis,
@@ -190,9 +252,6 @@ async fn process_item_once(
     } else {
         warn!("[{client_name}] skipping message {:?} with no group, possibly a private message: {}", m.id, m.text);
     }
-    echo_im::mark_inbox_as_seen(&client_name, vec![m.internal_id], &txn)
-        .await
-        .c(h!())?;
     txn.commit().await.c(h!())?;
     Ok(())
 }

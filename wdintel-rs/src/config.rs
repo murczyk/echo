@@ -51,7 +51,9 @@ pub const IMPORT_DIRECTION_FINDING_UUID: &str =
     "22b171e7-1c8a-469c-af68-79d7a06b99f4";
 pub const REDIS_HOST: &str = "localhost";
 pub const REDIS_PORT: u16 = 6379;
-pub const IDLE_SLEEP_MS: u64 = 100;
+pub const MESSENGER_WORKER_LONG_SLEEP_MS: u64 = 5000;
+pub const MESSENGER_WORKER_IDLE_SLEEP_MS: u64 = 100;
+pub const MESSENGER_WORKER_BATCH_SIZE: u64 = 100;
 pub const LONG_POLL_SLEEP_MS: u64 = 5000;
 /// Minimum time to keep a long-poll request open to accumulate events
 pub const LONG_POLL_MIN_RESPONSE_TIME_MS: u64 = 500;
@@ -70,7 +72,7 @@ pub const GENERATE_MESSAGE_UID_TILL_MAX_DAYS: i64 = 20;
 pub const UNKNOWN_GROUP_MASTER_KEY: &str = "undefined_group";
 pub const REDIS_MGS_ID_TTL: i32 = 3600;
 // for xlsx import
-pub const MESSENGER_WORKER_POOL_DEFAULT_CAPACITY: usize = 1;
+pub const MESSENGER_WORKER_POOL_DEFAULT_CAPACITY: usize = 10;
 
 /// Dynamic config that's different on different deployments
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]

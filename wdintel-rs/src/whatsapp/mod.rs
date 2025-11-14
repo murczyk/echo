@@ -138,8 +138,8 @@ async fn receive_once(
             deleted: Set(true),
             external_id: NotSet,
             message_uid: NotSet,
-            datasource_group_id: Set(Some(datasource_group_id)),
             duplicate_of: NotSet,
+            datasource_group_id: Set(Some(datasource_group_id)),
         }
         .insert(&txn)
         .await

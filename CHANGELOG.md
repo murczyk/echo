@@ -9,6 +9,7 @@
 
 ## NEXT
 
+- [PR#1664](https://github.com/echoua/echo/pull/1664) 🚨 Паралелізм черги обробки вхідних повідомлень
 - [#1650](https://github.com/echoua/echo/issues/1650) 🚨 Пришвидшення логіки дедублікатів
 - [#1623](https://github.com/echoua/echo/issues/1623) ✅ додали базовий функціонал Палітри
 - [#1640](https://github.com/echoua/echo/issues/1640) ✅ Звіт "Перехоплення". Усунуто дублювання коментарів та назв підрозділів противника.

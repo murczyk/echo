@@ -41,18 +41,19 @@ async fn message_submit(
         timestamp,
         datasource_id,
     };
-    let message_uid = crate::messenger::worker::receive_once(
-        message,
-        vec![],
-        &mut env.redis.clone(),
-        env.settlements.clone(),
-        &env.rq,
-        &env.config,
-        &txn,
-        true,
-    )
-    .await
-    .c(h!())?;
+    let message_uid =
+        crate::messenger::worker::process_signal_message_queue_item(
+            message,
+            vec![],
+            &mut env.redis.clone(),
+            env.settlements.clone(),
+            &env.rq,
+            &env.config,
+            &txn,
+            true,
+        )
+        .await
+        .c(h!())?;
     txn.commit().await.c(h!())?;
     Ok(Json(types::SubmitMessageRsp { message_uid }))
 }
