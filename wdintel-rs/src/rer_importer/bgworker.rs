@@ -106,12 +106,6 @@ where
             m_dt = Some(dt2.with_timezone(&Kyiv));
         };
     }
-    let date_v = m_dt
-        .as_ref()
-        .map(|dt| format!("{}-{:02}-{:02}", dt.year(), dt.month(), dt.day()));
-    let time_v = m_dt
-        .as_ref()
-        .map(|dt| format!("{:02}:{:02}", dt.hour(), dt.minute()));
     let datetime_from_body =
         m_dt.as_ref().map(|dt| dt.with_timezone(&Utc).naive_utc());
     let freq = super::frequency::extract_freq(&body)?
@@ -192,12 +186,34 @@ where
         .await
         .c(h!())?;
 
-    let (date_v, time_v) = match m_created_at {
-        None => (date_v, time_v),
-        Some((d, t)) => (Some(d), Some(t)),
-    };
     let datetime = datetime_from_body.or(message.timestamp);
     let datetime_to_store = datetime;
+
+    let (default_date_v, default_time_v) = match datetime_to_store {
+        Some(dt) => {
+            let dt_utc = DateTime::<Utc>::from_naive_utc_and_offset(dt, Utc);
+            let dt_kyiv = dt_utc.with_timezone(&Kyiv);
+            (
+                Some(format!(
+                    "{}-{:02}-{:02}",
+                    dt_kyiv.year(),
+                    dt_kyiv.month(),
+                    dt_kyiv.day()
+                )),
+                Some(format!(
+                    "{:02}:{:02}",
+                    dt_kyiv.hour(),
+                    dt_kyiv.minute()
+                )),
+            )
+        }
+        None => (None, None),
+    };
+
+    let (date_v, time_v) = match m_created_at {
+        None => (default_date_v, default_time_v),
+        Some((d, t)) => (Some(d), Some(t)),
+    };
 
     let result = sigint_inbox_item::ActiveModel {
         id: Set(message.id),
@@ -228,10 +244,7 @@ where
         callsigns_alg2: Set(Some(
             serde_json::to_value(callsigns_alg2).c(h!())?,
         )),
-        datetime: match datetime_to_store {
-            Some(dt) => Set(Some(dt)),
-            None => NotSet,
-        },
+        datetime: NotSet,
         signal_tokens: Set(Some(serde_json::to_value(signal_tokens).c(h!())?)),
         post_id: Set(post_id),
         unit_v2: Set(unit_v2),
