@@ -62,8 +62,10 @@ impl MigrationTrait for Migration {
             "drop index if exists echo_inbox_message_duplicate_of_idx;",
         )
         .await?;
-        db.execute_unprepared("drop index if exists echo_attachment_message_id_idx;")
-            .await?;
+        db.execute_unprepared(
+            "drop index if exists echo_attachment_message_id_idx;",
+        )
+        .await?;
         Ok(())
     }
 }

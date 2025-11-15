@@ -200,11 +200,7 @@ where
                     dt_kyiv.month(),
                     dt_kyiv.day()
                 )),
-                Some(format!(
-                    "{:02}:{:02}",
-                    dt_kyiv.hour(),
-                    dt_kyiv.minute()
-                )),
+                Some(format!("{:02}:{:02}", dt_kyiv.hour(), dt_kyiv.minute())),
             )
         }
         None => (None, None),

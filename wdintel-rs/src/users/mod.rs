@@ -766,20 +766,21 @@ pub async fn user_sigint_groups(
         return Ok(Json(all_groups));
     };
     let ts = crate::utils::dt_from_millis(*since_ts).c(h!())?;
-    let res = signal_message::Entity::find()
+    let recent_keys = signal_message_group::Entity::find()
         .join(
             JoinType::InnerJoin,
-            signal_message::Relation::DatasourceGroup.def(),
+            signal_message_group::Relation::SignalMessage.def(),
         )
         .select_only()
-        .column(datasource_group::Column::GroupMasterKey)
+        .column(signal_message_group::Column::GroupMasterKey)
         .filter(signal_message::Column::Timestamp.gt(ts))
-        .filter(datasource_group::Column::GroupMasterKey.is_in(all_groups))
-        .group_by(datasource_group::Column::GroupMasterKey)
-        .into_tuple::<String>()
+        .filter(signal_message_group::Column::GroupMasterKey.is_in(all_groups))
+        .group_by(signal_message_group::Column::GroupMasterKey)
+        .into_tuple::<Option<String>>()
         .all(&env.dbx)
         .await
         .c(h!())?;
+    let res = recent_keys.into_iter().flatten().collect::<Vec<String>>();
     Ok(Json(res))
 }
 
@@ -798,20 +799,21 @@ pub async fn user_sigint_groups_detailed(
         get_identity_sigint_groups(&env.dbx, &login).await.c(h!())?;
     if let Some(since_ts) = &req.since_date_inclusive_ms {
         let ts = crate::utils::dt_from_millis(*since_ts).c(h!())?;
-        keys = signal_message::Entity::find()
+        let recent_keys = signal_message_group::Entity::find()
             .join(
                 JoinType::InnerJoin,
-                signal_message::Relation::DatasourceGroup.def(),
+                signal_message_group::Relation::SignalMessage.def(),
             )
             .select_only()
-            .column(datasource_group::Column::GroupMasterKey)
+            .column(signal_message_group::Column::GroupMasterKey)
             .filter(signal_message::Column::Timestamp.gt(ts))
-            .filter(datasource_group::Column::GroupMasterKey.is_in(keys))
-            .group_by(datasource_group::Column::GroupMasterKey)
-            .into_tuple::<String>()
+            .filter(signal_message_group::Column::GroupMasterKey.is_in(keys))
+            .group_by(signal_message_group::Column::GroupMasterKey)
+            .into_tuple::<Option<String>>()
             .all(&env.dbx)
             .await
             .c(h!())?;
+        keys = recent_keys.into_iter().flatten().collect();
     }
     let groups = crate::messenger::group::collect_groups_f2(keys, &env.dbx)
         .await
