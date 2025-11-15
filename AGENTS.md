@@ -48,3 +48,7 @@
 - run `just gen-seaorm` after you've made some schema changes in the database to regenerate sea-orm models
 - run `just gen-front` to generate Elm front-end bindings from back-end definitions (types listed in elm.rs)
 
+## CONSTANTS
+
+- Keep constants in central config.rs, prefixed by their overall module or logical group. Avoid hard-coding inlined constants when possible
+- Don't reuse constants too much, better keep separate, same-prefix different constants
