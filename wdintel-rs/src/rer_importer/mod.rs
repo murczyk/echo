@@ -627,7 +627,7 @@ pub async fn latest_senders(
     let now = Utc::now();
     #[derive(FromQueryResult)]
     struct Res {
-        sender: String,
+        sender: Option<String>,
     }
     let txn = env.dbx.begin().await.c(h!())?;
     let master_keys =
@@ -654,7 +654,7 @@ pub async fn latest_senders(
         .await
         .c(h!())?
         .iter()
-        .map(|x| x.sender.clone())
+        .filter_map(|x| x.sender.clone())
         .collect();
     let data = collect_profiles_data(&txn, sender_uuids).await.c(h!())?;
     txn.commit().await.c(h!())?;
