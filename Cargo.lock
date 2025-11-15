@@ -1958,12 +1958,12 @@ checksum = "92773504d58c093f6de2459af4af33faa518c13451eb8f2b5698ed3d36e7c813"
 
 [[package]]
 name = "echo-docs"
-version = "0.1.1-rc.202511150750"
+version = "0.1.1-rc.202511150817"
 
 [[package]]
 name = "echo-im"
 version = "0.1.1-rc.202511110754"
-source = "git+ssh://git@github.com/echoua/echo-im.git?rev=da10b5403d41ebd572afd20eede60a2e122a58fc#da10b5403d41ebd572afd20eede60a2e122a58fc"
+source = "git+ssh://git@github.com/echoua/echo-im.git?rev=d0d9ca4b66b909afb8d4f2347e295ee0e446da3c#d0d9ca4b66b909afb8d4f2347e295ee0e446da3c"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -1988,7 +1988,7 @@ dependencies = [
 [[package]]
 name = "echo-im-migration"
 version = "0.1.0"
-source = "git+ssh://git@github.com/echoua/echo-im.git?rev=da10b5403d41ebd572afd20eede60a2e122a58fc#da10b5403d41ebd572afd20eede60a2e122a58fc"
+source = "git+ssh://git@github.com/echoua/echo-im.git?rev=d0d9ca4b66b909afb8d4f2347e295ee0e446da3c#d0d9ca4b66b909afb8d4f2347e295ee0e446da3c"
 dependencies = [
  "async-std",
  "clap",
@@ -1999,16 +1999,16 @@ dependencies = [
 [[package]]
 name = "echo-im-signal"
 version = "0.1.1-rc.202511110754"
-source = "git+ssh://git@github.com/echoua/echo-im.git?rev=da10b5403d41ebd572afd20eede60a2e122a58fc#da10b5403d41ebd572afd20eede60a2e122a58fc"
+source = "git+ssh://git@github.com/echoua/echo-im.git?rev=d0d9ca4b66b909afb8d4f2347e295ee0e446da3c#d0d9ca4b66b909afb8d4f2347e295ee0e446da3c"
 
 [[package]]
 name = "echo-im-whatsapp"
 version = "0.1.1-rc.202511110754"
-source = "git+ssh://git@github.com/echoua/echo-im.git?rev=da10b5403d41ebd572afd20eede60a2e122a58fc#da10b5403d41ebd572afd20eede60a2e122a58fc"
+source = "git+ssh://git@github.com/echoua/echo-im.git?rev=d0d9ca4b66b909afb8d4f2347e295ee0e446da3c#d0d9ca4b66b909afb8d4f2347e295ee0e446da3c"
 
 [[package]]
 name = "echo-install"
-version = "0.1.1-rc.202511150750"
+version = "0.1.1-rc.202511150817"
 dependencies = [
  "anyhow",
  "echo-install-utils",
@@ -6879,7 +6879,7 @@ dependencies = [
 
 [[package]]
 name = "wdintel-rs"
-version = "0.1.1-rc.202511150750"
+version = "0.1.1-rc.202511150817"
 dependencies = [
  "actix-files",
  "actix-identity",
