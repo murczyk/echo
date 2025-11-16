@@ -57,7 +57,10 @@ pub async fn oneoff_calculate_signal_message_groups(
     let mut message_ids = HashSet::new();
 
     loop {
-        sleep(std::time::Duration::from_secs(ONEOFF_CALCULATE_SIGNAL_MESSAGE_GROUPS_SLEEP_SEC)).await;
+        sleep(std::time::Duration::from_secs(
+            ONEOFF_CALCULATE_SIGNAL_MESSAGE_GROUPS_SLEEP_SEC,
+        ))
+        .await;
         let new_messages = signal_message::Entity::find()
             .join(
                 JoinType::LeftJoin,

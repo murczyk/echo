@@ -7,6 +7,8 @@ use echo_migration::{Expr, JoinType};
 use log::debug;
 use sea_orm::FromQueryResult;
 use sea_orm::*;
+use std::error::Error as StdError;
+use tokio::time::{sleep, Duration as TokioDuration};
 
 use crate::entities::{
     sigint_inbox_item, signal_message, signal_message_group,
@@ -1553,6 +1555,44 @@ pub async fn fetch_counts_for_login(
     env: &Env,
     master_keys: Vec<String>,
 ) -> Result<(i64, i64), AppError> {
+    const MAX_RETRIES: usize = 3;
+    const BASE_DELAY_MS: u64 = 200;
+
+    let mut attempt = 0;
+    loop {
+        match fetch_counts_for_login_once(
+            req,
+            login_str,
+            env,
+            master_keys.clone(),
+        )
+        .await
+        {
+            Ok(res) => return Ok(res),
+            Err(err) => {
+                let should_retry = attempt + 1 < MAX_RETRIES
+                    && is_replica_conflict_error(&err);
+                if !should_retry {
+                    return Err(err);
+                }
+                attempt += 1;
+                warn!(
+                    "fetch_counts_for_login retry {attempt}/{MAX_RETRIES} \
+                     for login {login_str} after replica conflict"
+                );
+                let delay = BASE_DELAY_MS * attempt as u64;
+                sleep(TokioDuration::from_millis(delay)).await;
+            }
+        }
+    }
+}
+
+async fn fetch_counts_for_login_once(
+    req: &Json<AnalysisStatsReq>,
+    login_str: &str,
+    env: &Env,
+    master_keys: Vec<String>,
+) -> Result<(i64, i64), AppError> {
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
@@ -1693,4 +1733,19 @@ pub async fn fetch_counts_for_login(
         debug!("count selected op took: {:?}", instant.elapsed());
     }
     Ok((count_overall, count_selected))
+}
+
+fn is_replica_conflict_error(err: &AppError) -> bool {
+    let mut source: Option<&(dyn StdError + 'static)> = Some(err);
+    while let Some(err) = source {
+        if let Some(sqlx_err) = err.downcast_ref::<sqlx::Error>() {
+            if let sqlx::Error::Database(db_error) = sqlx_err {
+                if matches!(db_error.code(), Some(code) if code == "40001") {
+                    return true;
+                }
+            }
+        }
+        source = err.source();
+    }
+    false
 }
