@@ -13,6 +13,9 @@ use sea_orm::*;
 use std::collections::*;
 use tokio::time::sleep;
 
+pub const ONEOFF_CALCULATE_SIGNAL_MESSAGE_GROUPS_SLEEP_SEC: u64 = 10;
+pub const ONEOFF_CALCULATE_SIGNAL_MESSAGR_GROUPS_BATCH_SIZE: u64 = 10000;
+
 pub async fn oneoff_calculate_signal_message_groups(
     mode: Mode,
 ) -> Result<(), AppError> {
@@ -54,7 +57,7 @@ pub async fn oneoff_calculate_signal_message_groups(
     let mut message_ids = HashSet::new();
 
     loop {
-        sleep(std::time::Duration::from_secs(1)).await;
+        sleep(std::time::Duration::from_secs(ONEOFF_CALCULATE_SIGNAL_MESSAGE_GROUPS_SLEEP_SEC)).await;
         let new_messages = signal_message::Entity::find()
             .join(
                 JoinType::LeftJoin,
@@ -62,7 +65,7 @@ pub async fn oneoff_calculate_signal_message_groups(
             )
             .filter(signal_message_group::Column::Id.is_null())
             .filter(signal_message::Column::Deleted.eq(false))
-            .limit(1000)
+            .limit(ONEOFF_CALCULATE_SIGNAL_MESSAGR_GROUPS_BATCH_SIZE)
             .offset(offset)
             .all(&dbx)
             .await
