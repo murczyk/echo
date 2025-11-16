@@ -1738,11 +1738,11 @@ async fn fetch_counts_for_login_once(
 fn is_replica_conflict_error(err: &AppError) -> bool {
     let mut source: Option<&(dyn StdError + 'static)> = Some(err);
     while let Some(err) = source {
-        if let Some(sqlx_err) = err.downcast_ref::<sqlx::Error>() {
-            if let sqlx::Error::Database(db_error) = sqlx_err {
-                if matches!(db_error.code(), Some(code) if code == "40001") {
-                    return true;
-                }
+        if let Some(sqlx::Error::Database(db_error)) =
+            err.downcast_ref::<sqlx::Error>()
+        {
+            if matches!(db_error.code(), Some(code) if code == "40001") {
+                return true;
             }
         }
         source = err.source();
