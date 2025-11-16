@@ -4,11 +4,10 @@ use actix_identity::Identity;
 use actix_web::web::Json;
 use chrono::Duration;
 use echo_migration::{Expr, JoinType};
-use log::debug;
+use log::{debug, warn};
 use sea_orm::FromQueryResult;
 use sea_orm::*;
 use std::error::Error as StdError;
-use tokio::time::{sleep, Duration as TokioDuration};
 
 use crate::entities::{
     sigint_inbox_item, signal_message, signal_message_group,
@@ -1555,50 +1554,45 @@ pub async fn fetch_counts_for_login(
     env: &Env,
     master_keys: Vec<String>,
 ) -> Result<(i64, i64), AppError> {
-    const MAX_RETRIES: usize = 3;
-    const BASE_DELAY_MS: u64 = 200;
-
-    let mut attempt = 0;
-    loop {
-        match fetch_counts_for_login_once(
-            req,
-            login_str,
-            env,
-            master_keys.clone(),
-        )
-        .await
+    let (replica_conn, replica_label) = env.replica_with_label();
+    match fetch_counts_for_login_with_conn(
+        req,
+        login_str,
+        master_keys.clone(),
+        replica_conn,
+    )
+    .await
+    {
+        Ok(res) => Ok(res),
+        Err(err)
+            if replica_label.is_some() && is_replica_conflict_error(&err) =>
         {
-            Ok(res) => return Ok(res),
-            Err(err) => {
-                let should_retry = attempt + 1 < MAX_RETRIES
-                    && is_replica_conflict_error(&err);
-                if !should_retry {
-                    return Err(err);
-                }
-                attempt += 1;
-                warn!(
-                    "fetch_counts_for_login retry {attempt}/{MAX_RETRIES} \
-                     for login {login_str} after replica conflict"
-                );
-                let delay = BASE_DELAY_MS * attempt as u64;
-                sleep(TokioDuration::from_millis(delay)).await;
-            }
+            warn!(
+                "Replica {replica_label:?} hit recovery conflict for login {login_str}, retrying on primary"
+            );
+            fetch_counts_for_login_with_conn(
+                req,
+                login_str,
+                master_keys,
+                env.dbx.clone(),
+            )
+            .await
         }
+        Err(err) => Err(err),
     }
 }
 
-async fn fetch_counts_for_login_once(
+async fn fetch_counts_for_login_with_conn(
     req: &Json<AnalysisStatsReq>,
     login_str: &str,
-    env: &Env,
     master_keys: Vec<String>,
+    db_conn: DatabaseConnection,
 ) -> Result<(i64, i64), AppError> {
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
-    let read_db = env.replica();
 
     let instant = std::time::Instant::now();
 
@@ -1632,7 +1626,7 @@ async fn fetch_counts_for_login_once(
     // );
     let overall_count_res: OverallCountRes = overall_count_res
         .into_model::<OverallCountRes>()
-        .one(&read_db)
+        .one(&db_conn)
         .await
         .context(h!())?
         .context(h!())?;
@@ -1723,7 +1717,7 @@ async fn fetch_counts_for_login_once(
     // );
     let selected_count_res: SelectedCountRes = selected_count_res
         .into_model::<SelectedCountRes>()
-        .one(&read_db)
+        .one(&db_conn)
         .await
         .context(h!())?
         .unwrap_or(SelectedCountRes { count: 0 });
