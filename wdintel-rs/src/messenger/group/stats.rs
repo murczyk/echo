@@ -15,7 +15,10 @@ pub async fn worker_calculate_group_stats(mode: Mode) {
     info!("worker_calculate_group_stats started");
     let mut last_calculated = Utc::now().naive_utc() - Duration::days(1);
     loop {
-        sleep(std::time::Duration::from_secs(10)).await;
+        sleep(std::time::Duration::from_secs(
+            WORKER_CALCULATE_GROUP_STATS_SLEEP_SEC,
+        ))
+        .await;
         let now = Utc::now().naive_utc();
         if last_calculated
             + Duration::minutes(WORKER_CALCULATE_GROUP_STATS_EVERY_MINUTES_NUM)
@@ -24,7 +27,8 @@ pub async fn worker_calculate_group_stats(mode: Mode) {
             continue;
         }
         let till_ts = now;
-        let since_ts = now - Duration::hours(1);
+        let since_ts =
+            now - Duration::minutes(WORKER_CALCULATE_GROUP_STATS_SINCE_MINS);
         let dbx = match crate::new_pg_pool_from_mode(mode).await {
             Ok(db) => db,
             Err(e) => {
@@ -145,8 +149,8 @@ async fn update_stats_5min(
     till_ts: NaiveDateTime,
 ) -> Result<(), AppError> {
     let old_stats_5min = stats_group_5min::Entity::find()
-        .filter(stats_group_5min::Column::StartTs.gte(since_ts))
-        .filter(stats_group_5min::Column::StartTs.lt(till_ts))
+        .filter(stats_group_5min::Column::Dt.gte(since_ts))
+        .filter(stats_group_5min::Column::Dt.lt(till_ts))
         .all(dbx)
         .await
         .context(h!())?;
@@ -172,7 +176,7 @@ async fn update_stats_5min(
             });
         let old_stats = old_stats_5min
             .iter()
-            .filter(|s| s.start_ts.eq(&since_ts))
+            .filter(|s| s.dt.eq(&since_ts))
             .cloned()
             .collect_vec();
         for (group_master_key, count) in group_stats {
@@ -203,7 +207,7 @@ async fn update_stats_5min(
                     id: NotSet,
                     quantity: Set(count),
                     group_master_key: Set(group_master_key),
-                    start_ts: Set(since_ts),
+                    dt: Set(since_ts),
                     created_at: NotSet,
                 }
                 .insert(dbx)
@@ -230,8 +234,8 @@ async fn update_freq_stats_5min(
     till_ts: NaiveDateTime,
 ) -> Result<(), AppError> {
     let old_stats_5min = stats_group_freq_5min::Entity::find()
-        .filter(stats_group_freq_5min::Column::StartTs.gte(since_ts))
-        .filter(stats_group_freq_5min::Column::StartTs.lt(till_ts))
+        .filter(stats_group_freq_5min::Column::Dt.gte(since_ts))
+        .filter(stats_group_freq_5min::Column::Dt.lt(till_ts))
         .all(dbx)
         .await
         .context(h!())?;
@@ -257,7 +261,7 @@ async fn update_freq_stats_5min(
             });
         let old_stats = old_stats_5min
             .iter()
-            .filter(|s| s.start_ts.eq(&since_ts))
+            .filter(|s| s.dt.eq(&since_ts))
             .cloned()
             .collect_vec();
         for ((group_master_key, frequency), count) in group_stats {
@@ -290,7 +294,7 @@ async fn update_freq_stats_5min(
                     quantity: Set(count),
                     group_master_key: Set(group_master_key),
                     frequency: Set(frequency),
-                    start_ts: Set(since_ts),
+                    dt: Set(since_ts),
                     created_at: NotSet,
                 }
                 .insert(dbx)
@@ -327,21 +331,21 @@ async fn recalculate_day_stats(
     .naive_utc();
 
     let stats_5min = stats_group_5min::Entity::find()
-        .filter(stats_group_5min::Column::StartTs.gte(since_start_of_day_ts))
-        .filter(stats_group_5min::Column::StartTs.lt(till_ts))
+        .filter(stats_group_5min::Column::Dt.gte(since_start_of_day_ts))
+        .filter(stats_group_5min::Column::Dt.lt(till_ts))
         .all(dbx)
         .await
         .context(h!())?;
 
     let mut stats = vec![];
     for rec in stats_5min {
-        let date = rec.start_ts.and_utc().with_timezone(&get_tz()).date_naive();
+        let date = rec.dt.and_utc().with_timezone(&get_tz()).date_naive();
         stats.push((date, rec.group_master_key, rec.quantity));
     }
 
     let old_stats = stats_group_day::Entity::find()
-        .filter(stats_group_day::Column::StatsDt.gte(since_date))
-        .filter(stats_group_day::Column::StatsDt.lte(till_date))
+        .filter(stats_group_day::Column::Dt.gte(since_date))
+        .filter(stats_group_day::Column::Dt.lte(till_date))
         .all(dbx)
         .await
         .context(h!())?;
@@ -366,7 +370,7 @@ async fn recalculate_day_stats(
             let mut old_entry = None;
             let old_stats = old_stats
                 .iter()
-                .filter(|s| s.stats_dt.eq(&current_date))
+                .filter(|s| s.dt.eq(&current_date))
                 .filter(|s| s.group_master_key.eq(&group_master_key))
                 .cloned()
                 .collect_vec();
@@ -391,7 +395,7 @@ async fn recalculate_day_stats(
                     id: NotSet,
                     quantity: Set(count),
                     group_master_key: Set(group_master_key),
-                    stats_dt: Set(current_date),
+                    dt: Set(current_date),
                     created_at: NotSet,
                 }
                 .insert(dbx)
@@ -428,23 +432,21 @@ async fn recalculate_day_freq_stats(
     .naive_utc();
 
     let stats_5min = stats_group_freq_5min::Entity::find()
-        .filter(
-            stats_group_freq_5min::Column::StartTs.gte(since_start_of_day_ts),
-        )
-        .filter(stats_group_freq_5min::Column::StartTs.lt(till_ts))
+        .filter(stats_group_freq_5min::Column::Dt.gte(since_start_of_day_ts))
+        .filter(stats_group_freq_5min::Column::Dt.lt(till_ts))
         .all(dbx)
         .await
         .context(h!())?;
 
     let mut stats = vec![];
     for rec in stats_5min {
-        let date = rec.start_ts.and_utc().with_timezone(&get_tz()).date_naive();
+        let date = rec.dt.and_utc().with_timezone(&get_tz()).date_naive();
         stats.push((date, rec.group_master_key, rec.frequency, rec.quantity));
     }
 
     let old_stats = stats_group_freq_day::Entity::find()
-        .filter(stats_group_freq_day::Column::StatsDt.gte(since_date))
-        .filter(stats_group_freq_day::Column::StatsDt.lte(till_date))
+        .filter(stats_group_freq_day::Column::Dt.gte(since_date))
+        .filter(stats_group_freq_day::Column::Dt.lte(till_date))
         .all(dbx)
         .await
         .context(h!())?;
@@ -469,7 +471,7 @@ async fn recalculate_day_freq_stats(
             let mut old_entry = None;
             let old_stats = old_stats
                 .iter()
-                .filter(|s| s.stats_dt.eq(&current_date))
+                .filter(|s| s.dt.eq(&current_date))
                 .filter(|s| s.group_master_key.eq(&group_master_key))
                 .filter(|s| s.frequency.eq(&frequency))
                 .cloned()
@@ -496,7 +498,7 @@ async fn recalculate_day_freq_stats(
                     quantity: Set(count),
                     group_master_key: Set(group_master_key),
                     frequency: Set(frequency),
-                    stats_dt: Set(current_date),
+                    dt: Set(current_date),
                     created_at: NotSet,
                 }
                 .insert(dbx)

@@ -15,7 +15,7 @@ pub struct Model {
     pub frequency: String,
     #[sea_orm(column_type = "Text")]
     pub group_master_key: String,
-    pub start_ts: DateTime,
+    pub dt: DateTime,
     pub created_at: DateTime,
 }
 
