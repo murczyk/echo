@@ -47,6 +47,7 @@ pub mod secret;
 pub mod server;
 pub mod session;
 pub mod sigint;
+mod stats;
 pub mod tags;
 pub mod terminal;
 pub mod tests;
@@ -70,7 +71,7 @@ pub async fn renew_tailscale_cert(
     mode: Mode,
     force: Option<bool>,
 ) -> Result<(), AppError> {
-    let config = crate::config::read_config(mode)?;
+    let config = read_config(mode)?;
     let domain = config.public_host.clone();
     let force_flag = force.unwrap_or(false);
 
@@ -93,25 +94,22 @@ pub async fn oneoff_compare_rer_counts(
     mode: Mode,
     ps: CompareRerCountsPs,
 ) -> Result<(), AppError> {
-    let env = crate::server::new_env(mode).await.c(h!())?;
+    let env = server::new_env(mode).await.c(h!())?;
     let payload_raw = tokio::fs::read_to_string(&ps.request_path)
         .await
         .context(h!())?;
-    let req_body: crate::rer_importer::types::AnalysisStatsReq =
+    let req_body: rer_importer::types::AnalysisStatsReq =
         serde_json::from_str(&payload_raw).context(h!())?;
 
     for login in ps.logins.iter() {
-        crate::users::has_role(&env.dbx, login, "Rer")
-            .await
-            .c(h!())?;
-        let master_keys = crate::messenger::group::get_identity_sigint_groups(
-            &env.dbx, login,
-        )
-        .await
-        .context(h!())?;
+        users::has_role(&env.dbx, login, "Rer").await.c(h!())?;
+        let master_keys =
+            messenger::group::get_identity_sigint_groups(&env.dbx, login)
+                .await
+                .context(h!())?;
         let req_json = actix_web::web::Json(req_body.clone());
         let (count_overall, count_selected) =
-            crate::rer_importer::analysis::stats::fetch_counts_for_login(
+            rer_importer::analysis::stats::fetch_counts_for_login(
                 &req_json,
                 login,
                 env.as_ref(),
@@ -386,9 +384,17 @@ pub struct CompareRerCountsPs {
 }
 
 #[derive(clap::Args, Debug, Clone)]
-pub struct OneoffFixEchoimGroups {
+pub struct OneoffFixEchoimGroupsPs {
     #[arg(long, default_value = "false")]
     pub noninteractive: bool,
+}
+
+#[derive(clap::Args, Debug, Clone)]
+pub struct OneoffCalculateGroupStatsPs {
+    #[arg(long, value_enum)]
+    pub since_epoch_ms: Option<i64>,
+    #[arg(long, value_enum)]
+    pub till_epoch_ms: Option<i64>,
 }
 
 #[derive(clap::Subcommand, Debug)]
@@ -445,9 +451,10 @@ enum Cmd {
     OneoffGetNetworksActivityStats(OneoffGetNetworksActivityStatsPs),
     OneoffCompareRerCounts(CompareRerCountsPs),
     OneoffPopulateSignalMessageGroupIds,
-    OneoffFixEchoimGroups(OneoffFixEchoimGroups),
+    OneoffFixEchoimGroups(OneoffFixEchoimGroupsPs),
     OneoffUnlinkReserveGroupDupes,
     OneoffCalculateSignalMessageGroups,
+    OneoffCalculateGroupStats(OneoffCalculateGroupStatsPs),
 }
 
 #[derive(clap::Parser, Debug)]
@@ -462,7 +469,7 @@ struct Arg {
 pub async fn new_pg_pool_from_mode(
     mode: Mode,
 ) -> Result<sea_orm::DatabaseConnection, AppError> {
-    let config = config::read_config(mode).context(h!())?;
+    let config = read_config(mode).context(h!())?;
     new_pg_pool_from_config(&config).await
 }
 
@@ -475,7 +482,7 @@ pub async fn new_pg_pool_from_config(
 
 pub async fn new_pg_pool_from_replica(
     config: &Config,
-    replica: &crate::config::ReplicaConfig,
+    replica: &ReplicaConfig,
 ) -> Result<sea_orm::DatabaseConnection, AppError> {
     let conn_string = mk_replica_conn_string(config, replica);
     new_pg_pool_from_conn_string(conn_string).await
@@ -489,9 +496,9 @@ async fn new_pg_pool_from_conn_string(
         .min_connections(0)
         .idle_timeout(core::time::Duration::from_secs(30))
         .sqlx_logging(true)
-        .sqlx_logging_level(log::LevelFilter::Debug)
+        .sqlx_logging_level(LevelFilter::Debug)
         .sqlx_slow_statements_logging_settings(
-            log::LevelFilter::Warn,
+            LevelFilter::Warn,
             core::time::Duration::from_millis(1000),
         );
 
@@ -553,10 +560,7 @@ fn mk_conn_string(config: &Config) -> String {
     conn_string
 }
 
-fn mk_replica_conn_string(
-    config: &Config,
-    replica: &crate::config::ReplicaConfig,
-) -> String {
+fn mk_replica_conn_string(config: &Config, replica: &ReplicaConfig) -> String {
     let pg_host = replica
         .pg_host
         .clone()
@@ -661,134 +665,109 @@ async fn async_main(
     let mode = args.mode;
     let action = args.action;
 
-    crate::utils::worker_watch::spawn_metrics_logger();
+    utils::worker_watch::spawn_metrics_logger();
 
     match action {
         Cmd::Server(ps) => {
-                crate::server::main_server(mode, ps, token, shutdown_handle.clone()).await
+            server::main_server(mode, ps, token, shutdown_handle.clone()).await
         }
         Cmd::OneoffEnsureTagsOrdering => {
-            crate::tags::ordering::oneoff_ensure_tags_ordering(mode).await
+            tags::ordering::oneoff_ensure_tags_ordering(mode).await
         }
-        Cmd::OneoffTestKml => crate::kml::main_test_kml(mode),
-        Cmd::OneoffTestXmlLib => crate::atak::main_test_xml_lib(mode),
-        Cmd::GenElm => crate::elm::main_gen_elm(),
+        Cmd::OneoffTestKml => kml::main_test_kml(mode),
+        Cmd::OneoffTestXmlLib => atak::main_test_xml_lib(mode),
+        Cmd::GenElm => elm::main_gen_elm(),
         Cmd::OneoffPrintDescriptionIconTitle => {
-            crate::kml::oneoff_print_description_icon_title(mode)
+            kml::oneoff_print_description_icon_title(mode)
         }
         Cmd::OneoffTerminalPdfExtract => {
-            crate::terminal::oneoff_terminal_pdf_extract()
+            terminal::oneoff_terminal_pdf_extract()
         }
-        Cmd::OneoffTestOpencv => crate::terminal::oneoff_test_opencv(),
-        Cmd::OneoffParseHtml => crate::terminal::oneoff_parse_html(),
+        Cmd::OneoffTestOpencv => terminal::oneoff_test_opencv(),
+        Cmd::OneoffParseHtml => terminal::oneoff_parse_html(),
         Cmd::OneoffTestFullCirclePdf => {
-            crate::terminal::oneoff_test_full_circle().await
+            terminal::oneoff_test_full_circle().await
         }
-        Cmd::OneoffKmzToGeojson(ps) => crate::delta::oneoff_kmz_to_geojson(&ps),
-        Cmd::OneoffRadioByFreq => crate::kml::oneoff_radio_by_freq().await,
+        Cmd::OneoffKmzToGeojson(ps) => delta::oneoff_kmz_to_geojson(&ps),
+        Cmd::OneoffRadioByFreq => kml::oneoff_radio_by_freq().await,
         Cmd::OneoffRadioPerDayPerAbonent(ps) => {
-            crate::kml::oneoff_radio_per_day_per_abonent_main(
-                mode, &ps, None, None,
-            )
-            .await
+            kml::oneoff_radio_per_day_per_abonent_main(mode, &ps, None, None)
+                .await
         }
-        Cmd::OneoffFixKmz(ps) => {
-            crate::kml::oneoff_fix_kml_main(mode, &ps).await
-        }
-        Cmd::SigintWorker => crate::sigint::worker::sigint_worker(mode).await,
-        Cmd::Migration => crate::migration::run_migration(mode).await,
+        Cmd::OneoffFixKmz(ps) => kml::oneoff_fix_kml_main(mode, &ps).await,
+        Cmd::SigintWorker => sigint::worker::sigint_worker(mode).await,
+        Cmd::Migration => migration::run_migration(mode).await,
         Cmd::RenewTailscaleCert(ps) => {
             renew_tailscale_cert(mode, ps.force).await
         }
-        Cmd::Backup => crate::backup::backup(mode).await,
+        Cmd::Backup => backup::backup(mode).await,
         Cmd::OneoffSigintImportMouse(ps) => {
-            crate::sigint::oneoff_sigint_import_mouse(mode, &ps).await
+            sigint::oneoff_sigint_import_mouse(mode, &ps).await
         }
         Cmd::OneoffReprocessCoords(ps) => {
-            crate::sigint::oneoff_reprocess_coords(mode, &ps).await
+            sigint::oneoff_reprocess_coords(mode, &ps).await
         }
         Cmd::OneoffReprocessUnitNames => {
-            crate::rer_importer::oneoff_reprocess_unit_names(mode).await
+            rer_importer::oneoff_reprocess_unit_names(mode).await
         }
         Cmd::OneoffReprocessSearchIndex(ps) => {
-            crate::rer_importer::search::oneoff_reprocess_search_index(
-                mode, &ps,
-            )
-            .await
+            rer_importer::search::oneoff_reprocess_search_index(mode, &ps).await
         }
         Cmd::OneoffDeltaCsvToKmz(ps) => {
-            let _ = crate::delta::csv::csv_to_kmz(mode, &ps).unwrap();
+            let _ = delta::csv::csv_to_kmz(mode, &ps).unwrap();
             Ok(())
         }
         Cmd::OneoffReprocessCallsignTokens(ps) => {
-            crate::rer_importer::callsigns::oneoff_reprocess_callsign_tokens(
-                mode, &ps,
-            )
-            .await
-        }
-        Cmd::OneoffReprocessCallsigns(ps) => {
-            crate::rer_importer::callsigns::oneoff_reprocess_callsigns(
-                mode, &ps,
-            )
-            .await
-        }
-        Cmd::OneoffGenDatasetCallsigns => {
-            crate::ml::oneoff_gen_dataset_callsigns(mode).await
-        }
-        Cmd::OneoffNominalizeFreq => {
-            crate::rer_importer::oneoff_nominalize_freq(mode).await
-        }
-        Cmd::OneoffRoundFreq => {
-            crate::rer_importer::oneoff_round_freq(mode).await
-        }
-        Cmd::OneoffRegisterUser(ps) => {
-            crate::users::oneoff_register_user(mode, &ps).await
-        }
-        Cmd::OneoffRegisterDeltaUser(ps) => {
-            crate::users::oneoff_register_delta_user(mode, &ps).await
-        }
-        Cmd::OneoffRerCsvImport(ps) => {
-            crate::rer_importer::import_csv::oneoff_rer_csv_import(mode, &ps)
+            rer_importer::callsigns::oneoff_reprocess_callsign_tokens(mode, &ps)
                 .await
         }
+        Cmd::OneoffReprocessCallsigns(ps) => {
+            rer_importer::callsigns::oneoff_reprocess_callsigns(mode, &ps).await
+        }
+        Cmd::OneoffGenDatasetCallsigns => {
+            ml::oneoff_gen_dataset_callsigns(mode).await
+        }
+        Cmd::OneoffNominalizeFreq => {
+            rer_importer::oneoff_nominalize_freq(mode).await
+        }
+        Cmd::OneoffRoundFreq => rer_importer::oneoff_round_freq(mode).await,
+        Cmd::OneoffRegisterUser(ps) => {
+            users::oneoff_register_user(mode, &ps).await
+        }
+        Cmd::OneoffRegisterDeltaUser(ps) => {
+            users::oneoff_register_delta_user(mode, &ps).await
+        }
+        Cmd::OneoffRerCsvImport(ps) => {
+            rer_importer::import_csv::oneoff_rer_csv_import(mode, &ps).await
+        }
         Cmd::OneoffFillCompFreq(ps) => {
-            crate::rer_importer::reports::oneoff_fill_comp_freq(mode, &ps).await
+            rer_importer::reports::oneoff_fill_comp_freq(mode, &ps).await
         }
         Cmd::OneoffBatchUskToWgs(ps) => {
             oneoff::oneoff_batch_usk_to_wgs(mode, &ps).unwrap();
             Ok(())
         }
-        Cmd::ExportUnit(ps) => {
-            crate::rer_importer::unit::export_unit(mode, &ps).await
-        }
-        Cmd::ImportUnit(ps) => {
-            crate::rer_importer::unit::import_unit(mode, &ps).await
-        }
+        Cmd::ExportUnit(ps) => rer_importer::unit::export_unit(mode, &ps).await,
+        Cmd::ImportUnit(ps) => rer_importer::unit::import_unit(mode, &ps).await,
         Cmd::OneoffMergeAllNetworks => {
-            crate::sigint::network::oneoff::oneoff_merge_all_possible_networks(
-                mode,
-            )
-            .await
-        }
-        Cmd::OneoffMergeTwoNetworks(ps) => {
-            crate::sigint::network::oneoff::oneoff_merge_two_networks(mode, &ps)
+            sigint::network::oneoff::oneoff_merge_all_possible_networks(mode)
                 .await
         }
-        Cmd::OneoffInstall(ps) => crate::install::mount_tmp(&ps)
+        Cmd::OneoffMergeTwoNetworks(ps) => {
+            sigint::network::oneoff::oneoff_merge_two_networks(mode, &ps).await
+        }
+        Cmd::OneoffInstall(ps) => install::mount_tmp(&ps)
             .await
             .map_err(|e| AppError::AnyhowError { source: e }),
         Cmd::OneoffReprocessUnitsSearchIndex => {
-            crate::sigint::unit::oneoff_reprocess_units_search_index(mode).await
+            sigint::unit::oneoff_reprocess_units_search_index(mode).await
         }
         Cmd::OneoffExportEtalonData(ps) => {
-            crate::sigint::import::oneoff_export_etalon_data(
-                mode,
-                ps.destination_path,
-            )
-            .await
+            sigint::import::oneoff_export_etalon_data(mode, ps.destination_path)
+                .await
         }
         Cmd::OneoffImportEtalonData(ps) => {
-            crate::sigint::import::oneoff_import_etalon_data(
+            sigint::import::oneoff_import_etalon_data(
                 mode,
                 ps.path,
                 ps.origin,
@@ -797,19 +776,16 @@ async fn async_main(
             .await
         }
         Cmd::OneoffBackupVaultSecretsToBitwarden => {
-            crate::secret::oneoff_backup_vault_secrets_to_bitwarden(mode).await
+            secret::oneoff_backup_vault_secrets_to_bitwarden(mode).await
         }
         Cmd::OneoffRestoreVaultSecretsFromBitwarden => {
-            crate::secret::oneoff_restore_vault_secrets_from_bitwarden(mode)
-                .await
+            secret::oneoff_restore_vault_secrets_from_bitwarden(mode).await
         }
         Cmd::OneoffImportDataSource(ps) => {
-            crate::datasource::importer::oneoff_import_datasource(mode, ps)
-                .await
+            datasource::importer::oneoff_import_datasource(mode, ps).await
         }
         Cmd::OneoffExportDataSource(ps) => {
-            crate::datasource::importer::oneoff_export_datasource(mode, ps)
-                .await
+            datasource::importer::oneoff_export_datasource(mode, ps).await
         }
         Cmd::OneoffFixAreasOfResponsibility(ps) => {
             oneoff::oneoff_fix_areas_of_responsibility(
@@ -819,49 +795,52 @@ async fn async_main(
             .await
         }
         Cmd::OneoffPrintOrganismGroups(ps) => {
-            crate::organism::oneoff::oneoff_print_organism_groups(mode, &ps)
-                .await
+            organism::oneoff::oneoff_print_organism_groups(mode, &ps).await
         }
         Cmd::OneoffAssignMessageIds(ps) => {
-            crate::messenger::id::oneoff_assign_message_ids(
+            messenger::id::oneoff_assign_message_ids(
                 mode,
                 ps.dry_run.unwrap_or(true),
             )
             .await
         }
         Cmd::OneoffGetNetworksActivityStats(ps) => {
-            crate::sigint::network::oneoff::oneoff_network_activity_stat(
-                mode, &ps,
-            )
-            .await
+            sigint::network::oneoff::oneoff_network_activity_stat(mode, &ps)
+                .await
         }
         Cmd::OneoffCompareRerCounts(ps) => {
             oneoff_compare_rer_counts(mode, ps).await
         }
         Cmd::OneoffPopulateSignalMessageGroupIds => {
-            crate::messenger::group::oneoff::oneoff_populate_signal_message_group_ids(
+            messenger::group::oneoff::oneoff_populate_signal_message_group_ids(
                 mode,
             )
             .await
         }
         Cmd::OneoffFixEchoimGroups(ps) => {
-            crate::messenger::group::oneoff::oneoff_fix_echoim_groups(
+            messenger::group::oneoff::oneoff_fix_echoim_groups(
                 mode,
                 !ps.noninteractive,
             )
-                .await
+            .await
         }
         Cmd::OneoffUnlinkReserveGroupDupes => {
-            crate::messenger::group::oneoff::oneoff_unlink_reserve_group_dupes(
-                mode,
-            )
+            messenger::group::oneoff::oneoff_unlink_reserve_group_dupes(mode)
                 .await
         }
         Cmd::OneoffCalculateSignalMessageGroups => {
-            crate::messenger::group::oneoff::oneoff_calculate_signal_message_groups(
+            messenger::group::oneoff::oneoff_calculate_signal_message_groups(
                 mode,
             )
-                .await
+            .await
+        }
+        Cmd::OneoffCalculateGroupStats(ps) => {
+            stats::oneoff_calculate_group_stats(
+                mode,
+                ps.since_epoch_ms,
+                ps.till_epoch_ms,
+            )
+            .await
         }
     }
 }
