@@ -1,7 +1,7 @@
-use crate::config::get_tz;
+use crate::types::*;
+use crate::config::*;
 use crate::entities::*;
 use crate::error::AppError;
-use crate::types::{Mode, ShortContext};
 use crate::{config, h};
 use anyhow::Context;
 use chrono::*;
@@ -13,9 +13,6 @@ use log::*;
 use sea_orm::*;
 use std::collections::*;
 use tokio::time::sleep;
-
-pub const ONEOFF_CALCULATE_SIGNAL_MESSAGE_GROUPS_SLEEP_SEC: u64 = 10;
-pub const ONEOFF_CALCULATE_SIGNAL_MESSAGR_GROUPS_BATCH_SIZE: u64 = 10000;
 
 pub async fn oneoff_calculate_group_stats(
     mode: Mode,

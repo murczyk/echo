@@ -13,7 +13,7 @@ pub struct Model {
     pub quantity: i32,
     #[sea_orm(column_type = "Text")]
     pub group_master_key: String,
-    pub stats_start_ts: DateTime,
+    pub start_ts: DateTime,
     pub created_at: DateTime,
 }
 

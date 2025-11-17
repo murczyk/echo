@@ -104,6 +104,8 @@ pub mod source;
 pub mod spatial_ref_sys;
 pub mod stats_group_5min;
 pub mod stats_group_day;
+pub mod stats_group_freq_5min;
+pub mod stats_group_freq_day;
 pub mod tag;
 pub mod tags_ordering;
 pub mod url_visit_notification;

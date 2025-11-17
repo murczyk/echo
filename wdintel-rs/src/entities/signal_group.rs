@@ -45,6 +45,10 @@ pub enum Relation {
     StatsGroup5min,
     #[sea_orm(has_many = "super::stats_group_day::Entity")]
     StatsGroupDay,
+    #[sea_orm(has_many = "super::stats_group_freq_5min::Entity")]
+    StatsGroupFreq5min,
+    #[sea_orm(has_many = "super::stats_group_freq_day::Entity")]
+    StatsGroupFreqDay,
 }
 
 impl Related<super::datasource::Entity> for Entity {
@@ -98,6 +102,18 @@ impl Related<super::stats_group_5min::Entity> for Entity {
 impl Related<super::stats_group_day::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::StatsGroupDay.def()
+    }
+}
+
+impl Related<super::stats_group_freq_5min::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::StatsGroupFreq5min.def()
+    }
+}
+
+impl Related<super::stats_group_freq_day::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::StatsGroupFreqDay.def()
     }
 }
 
