@@ -175,8 +175,19 @@ async fn recalculate_day_stats(
     since_ts: NaiveDateTime,
     till_ts: NaiveDateTime,
 ) -> Result<(), AppError> {
+    let since_date = since_ts.and_utc().with_timezone(&get_tz()).date_naive();
+    let till_date = till_ts.and_utc().with_timezone(&get_tz()).date_naive();
+    let since_sod_ts = NaiveDateTime::new(
+        since_date,
+        NaiveTime::from_hms_opt(0, 0, 0).c(h!())?,
+    )
+    .and_local_timezone(get_tz())
+    .earliest()
+    .c(h!())?
+    .naive_utc();
+
     let stats_5min = stats_group_5min::Entity::find()
-        .filter(stats_group_5min::Column::StatsStartTs.gte(since_ts))
+        .filter(stats_group_5min::Column::StatsStartTs.gte(since_sod_ts))
         .filter(stats_group_5min::Column::StatsStartTs.lte(till_ts))
         .all(dbx)
         .await
@@ -192,8 +203,6 @@ async fn recalculate_day_stats(
         stats.push((date, rec.group_master_key, rec.quantity));
     }
 
-    let since_date = since_ts.and_utc().with_timezone(&get_tz()).date_naive();
-    let till_date = till_ts.and_utc().with_timezone(&get_tz()).date_naive();
     let old_stats = stats_group_day::Entity::find()
         .filter(stats_group_day::Column::StatsDt.gte(since_date))
         .filter(stats_group_day::Column::StatsDt.lte(till_date))

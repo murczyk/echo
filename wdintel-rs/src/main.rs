@@ -393,9 +393,7 @@ pub struct OneoffFixEchoimGroupsPs {
 
 #[derive(clap::Args, Debug, Clone)]
 pub struct OneoffCalculateGroupStatsPs {
-    #[arg(long, value_enum)]
     pub since_epoch_ms: Option<i64>,
-    #[arg(long, value_enum)]
     pub till_epoch_ms: Option<i64>,
 }
 
