@@ -177,7 +177,7 @@ async fn recalculate_day_stats(
 ) -> Result<(), AppError> {
     let since_date = since_ts.and_utc().with_timezone(&get_tz()).date_naive();
     let till_date = till_ts.and_utc().with_timezone(&get_tz()).date_naive();
-    let since_sod_ts = NaiveDateTime::new(
+    let since_start_of_day_ts = NaiveDateTime::new(
         since_date,
         NaiveTime::from_hms_opt(0, 0, 0).c(h!())?,
     )
@@ -187,7 +187,7 @@ async fn recalculate_day_stats(
     .naive_utc();
 
     let stats_5min = stats_group_5min::Entity::find()
-        .filter(stats_group_5min::Column::StatsStartTs.gte(since_sod_ts))
+        .filter(stats_group_5min::Column::StatsStartTs.gte(since_start_of_day_ts))
         .filter(stats_group_5min::Column::StatsStartTs.lte(till_ts))
         .all(dbx)
         .await
