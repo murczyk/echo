@@ -1,4 +1,4 @@
-use crate::config::get_tz;
+use crate::config::{get_tz, WORKER_CALCULATE_GROUP_STATS_EVERY_MINUTES_NUM};
 use crate::entities::*;
 use crate::error::AppError;
 use crate::h;
@@ -12,11 +12,15 @@ use std::collections::*;
 use tokio::time::sleep;
 
 pub async fn worker_calculate_group_stats(mode: Mode) {
+    info!("worker_calculate_group_stats started");
     let mut last_calculated = Utc::now().naive_utc() - Duration::days(1);
     loop {
         sleep(std::time::Duration::from_secs(10)).await;
         let now = Utc::now().naive_utc();
-        if last_calculated + Duration::minutes(2) > now {
+        if last_calculated
+            + Duration::minutes(WORKER_CALCULATE_GROUP_STATS_EVERY_MINUTES_NUM)
+            > now
+        {
             continue;
         }
         let till_ts = now;
@@ -187,7 +191,9 @@ async fn recalculate_day_stats(
     .naive_utc();
 
     let stats_5min = stats_group_5min::Entity::find()
-        .filter(stats_group_5min::Column::StatsStartTs.gte(since_start_of_day_ts))
+        .filter(
+            stats_group_5min::Column::StatsStartTs.gte(since_start_of_day_ts),
+        )
         .filter(stats_group_5min::Column::StatsStartTs.lte(till_ts))
         .all(dbx)
         .await
