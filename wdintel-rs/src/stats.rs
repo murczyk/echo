@@ -1,12 +1,14 @@
+use actix_web::web::{Data, Json};
 use crate::config::*;
 use crate::entities::{signal_message, stats_group_5min};
 use crate::error::AppError;
-use crate::types::{Mode, ShortContext};
+use crate::types::{Env, Mode, ShortContext};
 use crate::{config, h};
 use anyhow::Context;
 use chrono::{DateTime, Duration, NaiveDateTime, NaiveTime, Utc};
 use log::info;
 use sea_orm::*;
+use crate::rer_importer::types::AnalysisStatsReq;
 
 pub async fn oneoff_calculate_stats(
     mode: Mode,
@@ -79,4 +81,25 @@ pub async fn oneoff_calculate_historic_stats(
     }
     info!("oneoff_calculate_historic_stats: done");
     Ok(())
+}
+
+pub async fn should_read_stats_from_db(req: &Json<AnalysisStatsReq>, env: &Data<Env>) -> anyhow::Result<bool> {
+    if !env.config.use_group_stats_for_counters.unwrap_or(false) {
+        return Ok(false);
+    }
+    if !req.selected_groups.map(|x| x.is_empty()).unwrap_or(false) {
+        return Ok(false);
+    }
+    // fixme filter others as well
+    // pub selected_senders: Option<Vec<String>>,
+    // pub selected_freqs: Option<Vec<String>>,
+    // pub selected_posts: Option<Vec<String>>,
+    // pub selected_callsigns: Option<Vec<String>>,
+    // pub selected_units: Option<Vec<String>>,
+    // pub selected_locations: Option<Vec<String>>,
+    // pub selected_aors: Option<Vec<i64>>,
+    // pub search: Option<String>,
+    // pub selected_tags: Option<Vec<i64>>,
+    // pub selected_networks: Option<Vec<i64>>,
+    return Ok(true);
 }

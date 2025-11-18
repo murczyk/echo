@@ -906,7 +906,7 @@ async fn recalculate_day_stats_aor_id(
             .iter()
             .filter_map(|(date, key_1, key_2, count)| {
                 if current_date.eq(date) {
-                    Some(((key_1.clone(), key_2.clone()), count))
+                    Some(((key_1.clone(), *key_2), count))
                 } else {
                     None
                 }
@@ -1095,7 +1095,7 @@ async fn recalculate_day_stats_post_id(
             .iter()
             .filter_map(|(date, key_1, key_2, count)| {
                 if current_date.eq(date) {
-                    Some(((key_1.clone(), key_2.clone()), count))
+                    Some(((key_1.clone(), *key_2), count))
                 } else {
                     None
                 }

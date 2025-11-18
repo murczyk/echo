@@ -141,6 +141,7 @@ pub struct Config {
     /// Please double-check in Bitwarden that your value does not conflict with values in other live servers.
     pub server_id: Option<u32>,
     pub messenger_worker_pool_capacity: Option<usize>,
+    pub use_group_stats_for_counters: Option<bool>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]

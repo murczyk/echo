@@ -26,6 +26,15 @@ pub async fn fetch_groups(
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).c(h!())?;
     let dt_till = dt_from_millis(req.till_date_noninclusive_ms).c(h!())?;
 
+    if crate::stats::should_read_stats_from_db(req, env)
+        .await
+        .c(h!())?
+    {
+        return crate::stats::read_group_stats_from_db(req, env, master_keys)
+            .await
+            .c(h!())?;
+    }
+
     let instant = std::time::Instant::now();
     trace!("get identity master keys op took: {:?}", instant.elapsed());
     #[derive(FromQueryResult)]
