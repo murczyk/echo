@@ -499,7 +499,6 @@ Kupol80
         assert_eq!(res.unwrap(), "ЦФП10-М6".to_string())
     }
 
-
     #[test]
     fn extract_post_with_asterisk() {
         let body = r#"Отримано з поста "**33"
@@ -516,5 +515,5 @@ Kupol80
 -46579, доброе утро экипажам ...одиночных площадок, следую к вам, прошел ... Александровка вошел вашу зону, подход ..."#;
         let res = extract_post(body).unwrap();
         assert_eq!(res.unwrap(), "**33".to_string())
-    }    
+    }
 }
