@@ -41,6 +41,8 @@ pub enum Relation {
     SigintZoneDatasource,
     #[sea_orm(has_many = "super::signal_group_aor::Entity")]
     SignalGroupAor,
+    #[sea_orm(has_many = "super::signal_message_group::Entity")]
+    SignalMessageGroup,
     #[sea_orm(has_many = "super::stats_group_5min::Entity")]
     StatsGroup5min,
     #[sea_orm(has_many = "super::stats_group_day::Entity")]
@@ -90,6 +92,12 @@ impl Related<super::sigint_zone_datasource::Entity> for Entity {
 impl Related<super::signal_group_aor::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SignalGroupAor.def()
+    }
+}
+
+impl Related<super::signal_message_group::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SignalMessageGroup.def()
     }
 }
 
