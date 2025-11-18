@@ -390,7 +390,7 @@ pub struct OneoffFixEchoimGroupsPs {
 }
 
 #[derive(clap::Args, Debug, Clone)]
-pub struct OneoffCalculateGroupStatsPs {
+pub struct OneoffCalculateStatsPs {
     #[arg(long, value_enum)]
     pub since_epoch_ms: Option<i64>,
     #[arg(long, value_enum)]
@@ -454,7 +454,8 @@ enum Cmd {
     OneoffFixEchoimGroups(OneoffFixEchoimGroupsPs),
     OneoffUnlinkReserveGroupDupes,
     OneoffCalculateSignalMessageGroups,
-    OneoffCalculateGroupStats(OneoffCalculateGroupStatsPs),
+    OneoffCalculateStats(OneoffCalculateStatsPs),
+    OneoffCalculateHistoricStats,
 }
 
 #[derive(clap::Parser, Debug)]
@@ -834,13 +835,16 @@ async fn async_main(
             )
             .await
         }
-        Cmd::OneoffCalculateGroupStats(ps) => {
-            stats::oneoff_calculate_group_stats(
+        Cmd::OneoffCalculateStats(ps) => {
+            stats::oneoff_calculate_stats(
                 mode,
                 ps.since_epoch_ms,
                 ps.till_epoch_ms,
             )
             .await
+        }
+        Cmd::OneoffCalculateHistoricStats => {
+            stats::oneoff_calculate_historic_stats(mode).await
         }
     }
 }

@@ -63,7 +63,8 @@ pub const ONEOFF_CALCULATE_SIGNAL_MESSAGR_GROUPS_BATCH_SIZE: u64 = 10000;
 pub const WORKER_CALCULATE_GROUP_STATS_EVERY_MINUTES_NUM: i64 = 2;
 pub const WORKER_CALCULATE_GROUP_STATS_SINCE_MINS: i64 = 60;
 pub const WORKER_CALCULATE_GROUP_STATS_SLEEP_SEC: u64 = 10;
-pub const GROUP_STATS_FREQ_TTL_DAYS: i64 = 14;
+pub const GROUP_STATS_5MIN_TTL_DAYS: i64 = 14;
+pub const GROUP_STATS_DAY_TTL_DAYS: i64 = 365;
 /// Minimum time to keep a long-poll request open to accumulate events
 pub const LONG_POLL_MIN_RESPONSE_TIME_MS: u64 = 500;
 pub const REDIS_MAXLEN: usize = 1000;
@@ -82,6 +83,8 @@ pub const UNKNOWN_GROUP_MASTER_KEY: &str = "undefined_group";
 pub const REDIS_MGS_ID_TTL: i32 = 3600;
 // for xlsx import
 pub const MESSENGER_WORKER_POOL_DEFAULT_CAPACITY: usize = 10;
+/// Jun 1st 2024
+pub const STATS_MIN_DATETIME_DAYS: i64 = 366;
 
 /// Dynamic config that's different on different deployments
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]

@@ -10,19 +10,19 @@ impl MigrationTrait for Migration {
         db.execute_unprepared(
             " create table stats_group_freq_day (
                 id bigserial primary key,
-                quantity integer not null default 0,
-                frequency text not null,
                 group_master_key text not null references signal_group(master_key) on delete cascade,
                 stats_dt DATE not null,
+                frequency text not null,
+                quantity integer not null default 0,
                 created_at timestamp without time zone default (now() at time zone 'utc') not null
             );
 
              create table stats_group_freq_5min (
                 id bigserial primary key,
-                quantity integer not null default 0,
-                frequency text not null,
                 group_master_key text not null references signal_group(master_key) on delete cascade,
                 start_ts timestamp without time zone not null,
+                frequency text not null,
+                quantity integer not null default 0,
                 created_at timestamp without time zone default (now() at time zone 'utc') not null
             );
 
