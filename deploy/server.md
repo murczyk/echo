@@ -108,6 +108,7 @@ local   all             all                                     md5
 - run `PGPASSWORD="fee_-_-_-FnoeKFBeebu87bf" pg_restore -U wd -d wd ~/Downloads/wd-2024-06-21-13-00-59.pgrestore`
 - update datasource=1 set `display_name`, `signal_phone`
 - update sigint_zone=1 set `name`
+- зробіть тюнінг за необхідності, див. [POSTGRESQL.md](../docs/POSTGRESQL.md)
 
 </details>
 
