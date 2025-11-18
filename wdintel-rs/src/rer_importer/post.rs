@@ -18,7 +18,7 @@ pub fn extract_post(inp: &str) -> Result<Option<String>, AppError> {
     '_if: {
         lazy_static! {
             static ref RE: Regex = Regex::new(
-                r#"Отримано з поста "(?P<post>[a-zA-Zа-яіїА-ЯІЇ0-9)(_/ \.\-]+)""#
+                r#"Отримано з поста "(?P<post>[a-zA-Zа-яіїА-ЯІЇ0-9)(_/ \.\-\*]+)""#
             )
             .unwrap();
         }
@@ -497,5 +497,23 @@ Kupol80
 - Ожидайте, едут к вам на помощь"#;
         let res = extract_post(body).unwrap();
         assert_eq!(res.unwrap(), "ЦФП10-М6".to_string())
+    }
+
+    #[test]
+    fn extract_post_with_asterisk() {
+        let body = r#"Отримано з поста "**33"
+--------------------------------------
+18.11.2025, 07:39:45
+124.325
+
+⚫ УКХ р/м управління повітряним рухом в зоні відповідальності ае “Центральний” (Ростов-на-Дону) ПКС зс рф
+
+46579
+ФИНАЛ
+-Финал 46579
+-Привет
+-46579, доброе утро экипажам ...одиночных площадок, следую к вам, прошел ... Александровка вошел вашу зону, подход ..."#;
+        let res = extract_post(body).unwrap();
+        assert_eq!(res.unwrap(), "**33".to_string())
     }
 }
