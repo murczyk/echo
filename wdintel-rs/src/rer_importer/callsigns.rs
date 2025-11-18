@@ -806,11 +806,11 @@ fn extract_avia_callsigns(input: &str) -> Result<Vec<CNCallsign>, AppError> {
     let lines: Vec<String> =
         input.trim().lines().map(|x| x.to_string()).collect();
 
-    if !is_avia_format(&lines)? {
+    let skip_lines = avia_format_lines(&lines).unwrap_or(0);    
+    if skip_lines == 0 {
         return Ok(vec![]);
     }
-
-    let skip_lines = 5;
+    
     let mut msg_pos: usize = lines
         .iter()
         .take(skip_lines)
@@ -852,7 +852,7 @@ fn extract_avia_callsigns(input: &str) -> Result<Vec<CNCallsign>, AppError> {
     Ok(res)
 }
 
-fn is_avia_format(lines: &Vec<String>) -> Result<bool, AppError> {
+fn avia_format_lines(lines: &Vec<String>) -> Result<usize, AppError> {
     //     Отримано з поста 35
     // --------------------------------------
     // 24.08.2025, 10:05:15
@@ -860,7 +860,7 @@ fn is_avia_format(lines: &Vec<String>) -> Result<bool, AppError> {
     // 🟠 УКХ р/м НВ підрозділу 128.900 МГц
     lazy_static! {
         static ref RE_POST: Regex = Regex::new(
-            r#"^\s*Отримано з поста\s+[\p{Cyrillic}0-9A-Z-_/"]+\s*$"#
+            r#"^\s*Отримано з поста\s+[-0-9A-Z\p{Cyrillic}_/"\*]+(\s|-)*$"#
         )
         .unwrap();
         static ref RE_SEPARATOR: Regex =
@@ -871,39 +871,85 @@ fn is_avia_format(lines: &Vec<String>) -> Result<bool, AppError> {
         static ref RE_FREQ: Regex =
             Regex::new(r"^\s*\d{3}.\d{3,4}\s*$").unwrap();
         static ref RE_NETWORK: Regex =
-            Regex::new(r"^(🟠|🔴|🔷|🟡)|(\s*УКХ р/м).*$").unwrap();
+            Regex::new(r"^(🟠|🔴|🔷|🟡|⚫)|(\s*УКХ р/м).*$").unwrap();
+        static ref RE_EMPTY: Regex =
+            Regex::new(r"^\s*$").unwrap();            
     }
 
-    if lines.len() < 8 {
-        return Ok(false);
+    // Determine the minimum required lines
+    // Minimum 5 lines (Post, Date, Freq, Network + one line after) if no separator
+    // Minimum 6 lines (Post, Separator, Date, Freq, Network + one line after) if separator is present
+    if lines.len() < 5 {
+        return Err(AppError::BL{
+            msg: "Not enough lines for avia format".to_string(),
+    });
     }
+
+    // 0. Check POST line
     let line0 = &lines[0];
     if !RE_POST.is_match(line0) {
-        println!("RE_POST");
-        return Ok(false);
-    }
-    let line1 = &lines[1];
-    if !RE_SEPARATOR.is_match(line1) {
-        println!("RE_SEPARATOR");
-        return Ok(false);
-    }
-    let line2 = &lines[2];
-    if !RE_DATE.is_match(line2) {
-        println!("RE_DATE");
-        return Ok(false);
-    }
-    let line3 = &lines[3];
-    if !RE_FREQ.is_match(line3) {
-        println!("RE_FREQ {line3}");
-        return Ok(false);
-    }
-    let line4 = &lines[4];
-    if !RE_NETWORK.is_match(line4) {
-        println!("RE_NETWORK {line4}");
-        return Ok(false);
+        println!("RE_POST failed on line 0");
+        return Err(AppError::BL{
+            msg: "First line does not match RE_POST".to_string(),
+    });
     }
 
-    Ok(true)
+    let mut line_index = 1;
+
+    // 1. Optional separator
+    if RE_SEPARATOR.is_match(&lines[line_index]) {
+        line_index += 1;
+        if lines.len() < 6 {
+            return Err(AppError::BL {
+                msg: "Not enough lines for avia format".to_string(),
+            });
+        }
+    }
+
+    // 2. DATE line
+    if !RE_DATE.is_match(&lines[line_index]) {
+        println!("RE_DATE failed on line {}", line_index);
+        return Err(AppError::BL {
+            msg: "Line does not match RE_DATE".to_string(),
+        });
+    }
+    line_index += 1;
+
+    // 3. FREQ line
+    if !RE_FREQ.is_match(&lines[line_index]) {
+        println!("RE_FREQ failed on line {}: {}", line_index, lines[line_index]);
+        return Err(AppError::BL {
+            msg: "Line does not match RE_FREQ".to_string(),
+        });
+    }
+    line_index += 1;
+
+    // 4. NETWORK line OR optional empty line
+    let mut check_index = line_index;
+
+    if RE_EMPTY.is_match(&lines[check_index]) {
+        // Skip empty line
+        check_index += 1;
+
+        if check_index >= lines.len() {
+            return Err(AppError::BL {
+                msg: "Empty line present but missing RE_NETWORK".to_string(),
+            });
+        }
+    }
+
+    // Now check RE_NETWORK at check_index
+    if !RE_NETWORK.is_match(&lines[check_index]) {
+        println!(
+            "RE_NETWORK failed on line {}: {}",
+            check_index, lines[check_index]
+        );
+        return Err(AppError::BL {
+            msg: "Line does not match RE_NETWORK".to_string(),
+        });
+    }    
+
+    Ok(check_index+1)
 }
 
 pub async fn oneoff_reprocess_callsign_tokens(
@@ -2852,8 +2898,13 @@ async fn test_extract_callsigns_avia_format_no_sep_line() {
 
 — С Ворсовко отработал не возражает проход"#;
     let res = extract_avia_callsigns(body).unwrap();
-    let expected: Vec<String> = vec![];
-    let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
+    let expected: Vec<String> =
+        vec!["46131".to_string(), "САКСОФОН".to_string()];
+    let ress: Vec<String> = res
+        .into_iter()
+        .take(2)
+        .map(|x: CNCallsign| x.text)
+        .collect();
     assert_eq!(ress, expected);
 }
 
@@ -2952,6 +3003,45 @@ async fn test_extract_callsigns_avia_format_catch_four_digits() {
 — Двор, 3346, работу закончил, разрешите по обратному ..."#;
     let res = extract_avia_callsigns(body).unwrap();
     let expected: Vec<String> = vec!["ДВОР".to_string(), "3346".to_string()];
+    let ress: Vec<String> = res.into_iter().take(2).map(|x| x.text).collect();
+    assert_eq!(ress, expected);
+}
+
+#[tokio::test]
+async fn test_extract_callsigns_avia_format_catch_five_digits_no_separator() {
+    let body = r#"Отримано з поста "31/1" --------------------------------------
+16.11.2025, 12:10:11
+128.3500
+🟠УКХ р/м бойового управління авіації ПНА 336 ртп (Орел) 32 д ППО (Ржев) ПКС зс рф (ПОВІТРЯНИЙ ПРОСТІР РФ)128.350 МГц
+
+44127
+БАРСУК
+
+— Барсук 44127, 500 ... занял 6 500."#;
+    let res = extract_avia_callsigns(body).unwrap();
+    // let res = extract_callsigns(body).unwrap();
+    let expected: Vec<String> = vec!["44127".to_string(), "БАРСУК".to_string()];
+    let ress: Vec<String> = res.into_iter().take(2).map(|x| x.text).collect();
+    assert_eq!(ress, expected);
+}
+
+#[tokio::test]
+async fn test_extract_callsigns_avia_format_catch_five_digits_asterisk_in_post() {
+    let body = r#"Отримано з поста "**33"
+--------------------------------------
+18.11.2025, 07:39:45
+124.325
+
+⚫ УКХ р/м управління повітряним рухом в зоні відповідальності ае “Центральний” (Ростов-на-Дону) ПКС зс рф
+
+46579
+ФИНАЛ
+-Финал 46579
+-Привет
+-46579, доброе утро экипажам ...одиночных площадок, следую к вам, прошел ... Александровка вошел вашу зону, подход ..."#;
+    let res = extract_avia_callsigns(body).unwrap();
+    // let res = extract_callsigns(body).unwrap();
+    let expected: Vec<String> = vec!["46579".to_string(), "ФИНАЛ".to_string()];
     let ress: Vec<String> = res.into_iter().take(2).map(|x| x.text).collect();
     assert_eq!(ress, expected);
 }
