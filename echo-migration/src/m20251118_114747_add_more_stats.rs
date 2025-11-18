@@ -9,6 +9,9 @@ impl MigrationTrait for Migration {
         let db = manager.get_connection();
         db.execute_unprepared(
             "
+            delete from stats_group_5min;
+            delete from stats_group_day;
+
             create table stats_group_aor_id_day (
                 id bigserial primary key,
                 group_master_key text not null references signal_group(master_key) on delete cascade,
