@@ -1,8 +1,9 @@
 use self::types::*;
+use crate::entities::sea_orm_active_enums::AccountStatus;
 use crate::entities::*;
 use crate::error::AppError;
-use crate::h;
 use crate::types::*;
+use crate::{config, h};
 use actix_web::post;
 use actix_web::web::Json;
 use chrono::prelude::*;
@@ -143,5 +144,36 @@ pub async fn fix_datasource_default_aor(
             ),
         }
     }
+    Ok(())
+}
+
+/// One-off: Disable all IM datasources by setting their status to "paused",
+pub async fn oneoff_disable_im(mode: Mode) -> Result<(), AppError> {
+    info!("oneoff_disable_im started");
+    let config = config::read_config(mode).context(h!())?;
+    let dbx = crate::new_pg_pool_from_config(&config)
+        .await
+        .context(h!())?;
+
+    datasource::Entity::update_many()
+        .set(datasource::ActiveModel {
+            status: Set(AccountStatus::Paused),
+            echo_client_lock_id: Set(None),
+            ..Default::default()
+        })
+        .col_expr(
+            datasource::Column::Description,
+            Expr::cust(
+                "coalesce(description,'') \
+                 || ' | disabled by oneoff-disable-im' \
+                 || ' | lock id = ' \
+                 || coalesce(echo_client_lock_id::text,'')",
+            ),
+        )
+        .filter(datasource::Column::Status.eq(AccountStatus::Active))
+        .exec(&dbx)
+        .await
+        .context(h!())?;
+
     Ok(())
 }
