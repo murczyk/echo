@@ -175,5 +175,12 @@ pub async fn oneoff_disable_im(mode: Mode) -> Result<(), AppError> {
         .await
         .context(h!())?;
 
+    echo_client_lock::Entity::delete_many()
+        .exec(&dbx)
+        .await
+        .context(h!())?;
+
+    info!("oneoff_disable_im completed");
+
     Ok(())
 }
