@@ -202,7 +202,7 @@ pub async fn recalculate_group_stats(
         .clone()
         .into_iter()
         .flat_map(|x| {
-            let tags: Vec<String> = x
+            let tags: Vec<i64> = x
                 .tags
                 .and_then(|c| serde_json::from_value(c).ok())
                 .unwrap_or_default();
@@ -493,14 +493,8 @@ async fn recalculate_day_stats_group(
 ) -> Result<(), AppError> {
     let since_date = since_ts.and_utc().with_timezone(&get_tz()).date_naive();
     let till_date = till_ts.and_utc().with_timezone(&get_tz()).date_naive();
-    let since_start_of_day_ts = NaiveDateTime::new(
-        since_date,
-        NaiveTime::from_hms_opt(0, 0, 0).c(h!())?,
-    )
-    .and_local_timezone(get_tz())
-    .earliest()
-    .c(h!())?
-    .naive_utc();
+    let since_start_of_day_ts =
+        crate::stats::start_of_day(since_date, get_tz()).c(h!())?;
 
     let stats_5min = stats_group_5min::Entity::find()
         .filter(stats_group_5min::Column::Dt.gte(since_start_of_day_ts))
@@ -681,14 +675,8 @@ async fn recalculate_day_stats_freq(
 ) -> Result<(), AppError> {
     let since_date = since_ts.and_utc().with_timezone(&get_tz()).date_naive();
     let till_date = till_ts.and_utc().with_timezone(&get_tz()).date_naive();
-    let since_start_of_day_ts = NaiveDateTime::new(
-        since_date,
-        NaiveTime::from_hms_opt(0, 0, 0).c(h!())?,
-    )
-    .and_local_timezone(get_tz())
-    .earliest()
-    .c(h!())?
-    .naive_utc();
+    let since_start_of_day_ts =
+        crate::stats::start_of_day(since_date, get_tz()).c(h!())?;
 
     let stats_5min = stats_group_freq_5min::Entity::find()
         .filter(stats_group_freq_5min::Column::Dt.gte(since_start_of_day_ts))
@@ -870,14 +858,8 @@ async fn recalculate_day_stats_aor_id(
 ) -> Result<(), AppError> {
     let since_date = since_ts.and_utc().with_timezone(&get_tz()).date_naive();
     let till_date = till_ts.and_utc().with_timezone(&get_tz()).date_naive();
-    let since_start_of_day_ts = NaiveDateTime::new(
-        since_date,
-        NaiveTime::from_hms_opt(0, 0, 0).c(h!())?,
-    )
-    .and_local_timezone(get_tz())
-    .earliest()
-    .c(h!())?
-    .naive_utc();
+    let since_start_of_day_ts =
+        crate::stats::start_of_day(since_date, get_tz()).c(h!())?;
 
     let stats_5min = stats_group_aor_id_5min::Entity::find()
         .filter(stats_group_aor_id_5min::Column::Dt.gte(since_start_of_day_ts))
@@ -1059,14 +1041,8 @@ async fn recalculate_day_stats_post_id(
 ) -> Result<(), AppError> {
     let since_date = since_ts.and_utc().with_timezone(&get_tz()).date_naive();
     let till_date = till_ts.and_utc().with_timezone(&get_tz()).date_naive();
-    let since_start_of_day_ts = NaiveDateTime::new(
-        since_date,
-        NaiveTime::from_hms_opt(0, 0, 0).c(h!())?,
-    )
-    .and_local_timezone(get_tz())
-    .earliest()
-    .c(h!())?
-    .naive_utc();
+    let since_start_of_day_ts =
+        crate::stats::start_of_day(since_date, get_tz()).c(h!())?;
 
     let stats_5min = stats_group_post_id_5min::Entity::find()
         .filter(stats_group_post_id_5min::Column::Dt.gte(since_start_of_day_ts))
@@ -1248,14 +1224,8 @@ async fn recalculate_day_stats_location(
 ) -> Result<(), AppError> {
     let since_date = since_ts.and_utc().with_timezone(&get_tz()).date_naive();
     let till_date = till_ts.and_utc().with_timezone(&get_tz()).date_naive();
-    let since_start_of_day_ts = NaiveDateTime::new(
-        since_date,
-        NaiveTime::from_hms_opt(0, 0, 0).c(h!())?,
-    )
-    .and_local_timezone(get_tz())
-    .earliest()
-    .c(h!())?
-    .naive_utc();
+    let since_start_of_day_ts =
+        crate::stats::start_of_day(since_date, get_tz()).c(h!())?;
 
     let stats_5min = stats_group_location_5min::Entity::find()
         .filter(
@@ -1439,14 +1409,8 @@ async fn recalculate_day_stats_sender(
 ) -> Result<(), AppError> {
     let since_date = since_ts.and_utc().with_timezone(&get_tz()).date_naive();
     let till_date = till_ts.and_utc().with_timezone(&get_tz()).date_naive();
-    let since_start_of_day_ts = NaiveDateTime::new(
-        since_date,
-        NaiveTime::from_hms_opt(0, 0, 0).c(h!())?,
-    )
-    .and_local_timezone(get_tz())
-    .earliest()
-    .c(h!())?
-    .naive_utc();
+    let since_start_of_day_ts =
+        crate::stats::start_of_day(since_date, get_tz()).c(h!())?;
 
     let stats_5min = stats_group_sender_5min::Entity::find()
         .filter(stats_group_sender_5min::Column::Dt.gte(since_start_of_day_ts))
@@ -1536,7 +1500,7 @@ async fn recalculate_day_stats_sender(
 
 async fn update_5min_stats_tag(
     dbx: &DatabaseConnection,
-    stats: Vec<((String, String), NaiveDateTime)>,
+    stats: Vec<((String, i64), NaiveDateTime)>,
     since_ts: NaiveDateTime,
     till_ts: NaiveDateTime,
 ) -> Result<(), AppError> {
@@ -1553,7 +1517,7 @@ async fn update_5min_stats_tag(
     while current_ts <= till_ts {
         let since_ts = current_ts;
         let till_ts = current_ts + Duration::minutes(5);
-        let group_stats: HashMap<(String, String), i32> = stats
+        let group_stats: HashMap<(String, i64), i32> = stats
             .iter()
             .filter_map(|(key, ts)| {
                 if !since_ts.gt(ts) && till_ts.gt(ts) {
@@ -1571,16 +1535,16 @@ async fn update_5min_stats_tag(
             .filter(|s| s.dt.eq(&since_ts))
             .cloned()
             .collect_vec();
-        for ((group_master_key, tag), count) in group_stats {
+        for ((group_master_key, tag_id), count) in group_stats {
             let mut old_entry = None;
             let old_stats = old_stats
                 .iter()
                 .filter(|s| s.group_master_key.eq(&group_master_key))
-                .filter(|s| s.tag.eq(&tag))
+                .filter(|s| s.tag_id.eq(&tag_id))
                 .cloned()
                 .collect_vec();
             if old_stats.len() > 1 {
-                error!("unexpected multiple stats for group {group_master_key} and tag {tag} at {since_ts}: {old_stats:?}");
+                error!("unexpected multiple stats for group {group_master_key} and tag {tag_id} at {since_ts}: {old_stats:?}");
                 for s in old_stats {
                     old_stat_ids.push(s.id);
                     s.delete(dbx).await.c(h!())?;
@@ -1600,7 +1564,7 @@ async fn update_5min_stats_tag(
                     id: NotSet,
                     quantity: Set(count),
                     group_master_key: Set(group_master_key),
-                    tag: Set(tag),
+                    tag_id: Set(tag_id),
                     dt: Set(since_ts),
                     created_at: NotSet,
                 }
@@ -1628,14 +1592,8 @@ async fn recalculate_day_stats_tag(
 ) -> Result<(), AppError> {
     let since_date = since_ts.and_utc().with_timezone(&get_tz()).date_naive();
     let till_date = till_ts.and_utc().with_timezone(&get_tz()).date_naive();
-    let since_start_of_day_ts = NaiveDateTime::new(
-        since_date,
-        NaiveTime::from_hms_opt(0, 0, 0).c(h!())?,
-    )
-    .and_local_timezone(get_tz())
-    .earliest()
-    .c(h!())?
-    .naive_utc();
+    let since_start_of_day_ts =
+        crate::stats::start_of_day(since_date, get_tz()).c(h!())?;
 
     let stats_5min = stats_group_tag_5min::Entity::find()
         .filter(stats_group_tag_5min::Column::Dt.gte(since_start_of_day_ts))
@@ -1647,7 +1605,7 @@ async fn recalculate_day_stats_tag(
     let mut stats = vec![];
     for rec in stats_5min {
         let date = rec.dt.and_utc().with_timezone(&get_tz()).date_naive();
-        stats.push((date, rec.group_master_key, rec.tag, rec.quantity));
+        stats.push((date, rec.group_master_key, rec.tag_id, rec.quantity));
     }
 
     let old_stats = stats_group_tag_day::Entity::find()
@@ -1660,7 +1618,7 @@ async fn recalculate_day_stats_tag(
 
     let mut current_date = since_date;
     while current_date <= till_date {
-        let group_stats: HashMap<(String, String), i32> = stats
+        let group_stats: HashMap<(String, i64), i32> = stats
             .iter()
             .filter_map(|(date, key_1, key_2, count)| {
                 if current_date.eq(date) {
@@ -1679,7 +1637,7 @@ async fn recalculate_day_stats_tag(
                 .iter()
                 .filter(|s| s.dt.eq(&current_date))
                 .filter(|s| s.group_master_key.eq(&group_master_key))
-                .filter(|s| s.tag.eq(&tag))
+                .filter(|s| s.tag_id.eq(&tag))
                 .cloned()
                 .collect_vec();
             if old_stats.len() > 1 {
@@ -1703,7 +1661,7 @@ async fn recalculate_day_stats_tag(
                     id: NotSet,
                     quantity: Set(count),
                     group_master_key: Set(group_master_key),
-                    tag: Set(tag),
+                    tag_id: Set(tag),
                     dt: Set(current_date),
                     created_at: NotSet,
                 }
@@ -1817,14 +1775,8 @@ async fn recalculate_day_stats_callsign(
 ) -> Result<(), AppError> {
     let since_date = since_ts.and_utc().with_timezone(&get_tz()).date_naive();
     let till_date = till_ts.and_utc().with_timezone(&get_tz()).date_naive();
-    let since_start_of_day_ts = NaiveDateTime::new(
-        since_date,
-        NaiveTime::from_hms_opt(0, 0, 0).c(h!())?,
-    )
-    .and_local_timezone(get_tz())
-    .earliest()
-    .c(h!())?
-    .naive_utc();
+    let since_start_of_day_ts =
+        crate::stats::start_of_day(since_date, get_tz()).c(h!())?;
 
     let stats_5min = stats_group_callsign_5min::Entity::find()
         .filter(
@@ -2008,14 +1960,8 @@ async fn recalculate_day_stats_unit(
 ) -> Result<(), AppError> {
     let since_date = since_ts.and_utc().with_timezone(&get_tz()).date_naive();
     let till_date = till_ts.and_utc().with_timezone(&get_tz()).date_naive();
-    let since_start_of_day_ts = NaiveDateTime::new(
-        since_date,
-        NaiveTime::from_hms_opt(0, 0, 0).c(h!())?,
-    )
-    .and_local_timezone(get_tz())
-    .earliest()
-    .c(h!())?
-    .naive_utc();
+    let since_start_of_day_ts =
+        crate::stats::start_of_day(since_date, get_tz()).c(h!())?;
 
     let stats_5min = stats_group_unit_5min::Entity::find()
         .filter(stats_group_unit_5min::Column::Dt.gte(since_start_of_day_ts))

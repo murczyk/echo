@@ -85,6 +85,7 @@ pub const REDIS_MGS_ID_TTL: i32 = 3600;
 pub const MESSENGER_WORKER_POOL_DEFAULT_CAPACITY: usize = 10;
 /// Jun 1st 2024
 pub const STATS_MIN_DATETIME_DAYS: i64 = 366;
+pub const STATS_READ_FROM_TABLE_MINIMUM_MIN: i64 = 15;
 
 /// Dynamic config that's different on different deployments
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]

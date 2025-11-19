@@ -13,8 +13,7 @@ pub struct Model {
     #[sea_orm(column_type = "Text")]
     pub group_master_key: String,
     pub dt: DateTime,
-    #[sea_orm(column_type = "Text")]
-    pub tag: String,
+    pub tag_id: i64,
     pub quantity: i32,
     pub created_at: DateTime,
 }
@@ -29,11 +28,25 @@ pub enum Relation {
         on_delete = "Cascade"
     )]
     SignalGroup,
+    #[sea_orm(
+        belongs_to = "super::tag::Entity",
+        from = "Column::TagId",
+        to = "super::tag::Column::Id",
+        on_update = "NoAction",
+        on_delete = "Cascade"
+    )]
+    Tag,
 }
 
 impl Related<super::signal_group::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SignalGroup.def()
+    }
+}
+
+impl Related<super::tag::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Tag.def()
     }
 }
 

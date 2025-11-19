@@ -26,13 +26,19 @@ pub async fn fetch_groups(
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).c(h!())?;
     let dt_till = dt_from_millis(req.till_date_noninclusive_ms).c(h!())?;
 
-    if crate::stats::should_read_stats_from_db(req, env)
+    if crate::stats::should_read_stats_from_db(req, env, dt_since, dt_till)
         .await
         .c(h!())?
     {
-        return crate::stats::read_group_stats_from_db(req, env, master_keys)
-            .await
-            .c(h!())?;
+        let result = crate::stats::read_group_stats_from_table(
+            env,
+            master_keys,
+            dt_since,
+            dt_till,
+        )
+        .await
+        .c(h!())?;
+        return Ok(result);
     }
 
     let instant = std::time::Instant::now();
@@ -182,6 +188,21 @@ pub async fn fetch_senders(
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
 
+    if crate::stats::should_read_stats_from_db(req, env, dt_since, dt_till)
+        .await
+        .c(h!())?
+    {
+        let result = crate::stats::read_sender_stats_from_table(
+            env,
+            master_keys,
+            dt_since,
+            dt_till,
+        )
+        .await
+        .c(h!())?;
+        return Ok(result);
+    }
+
     #[derive(FromQueryResult)]
     struct SendersRes {
         uuid: Option<String>,
@@ -317,6 +338,21 @@ pub async fn fetch_posts(
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
 
+    if crate::stats::should_read_stats_from_db(req, env, dt_since, dt_till)
+        .await
+        .c(h!())?
+    {
+        let result = crate::stats::read_post_stats_from_table(
+            env,
+            master_keys,
+            dt_since,
+            dt_till,
+        )
+        .await
+        .c(h!())?;
+        return Ok(result);
+    }
+
     let instant = std::time::Instant::now();
 
     #[derive(FromQueryResult)]
@@ -446,6 +482,21 @@ pub async fn fetch_freqs(
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
 
+    if crate::stats::should_read_stats_from_db(req, env, dt_since, dt_till)
+        .await
+        .c(h!())?
+    {
+        let result = crate::stats::read_frequency_stats_from_table(
+            env,
+            master_keys,
+            dt_since,
+            dt_till,
+        )
+        .await
+        .c(h!())?;
+        return Ok(result);
+    }
+
     let _instant = std::time::Instant::now();
 
     #[derive(FromQueryResult)]
@@ -480,7 +531,7 @@ pub async fn fetch_freqs(
     Ok(freqs)
 }
 
-async fn get_new_freqs(
+pub(crate) async fn get_new_freqs(
     db: &DatabaseConnection,
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
@@ -623,6 +674,21 @@ pub async fn fetch_callsigns(
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
 
+    if crate::stats::should_read_stats_from_db(req, env, dt_since, dt_till)
+        .await
+        .c(h!())?
+    {
+        let result = crate::stats::read_callsign_stats_from_table(
+            env,
+            master_keys,
+            dt_since,
+            dt_till,
+        )
+        .await
+        .c(h!())?;
+        return Ok(result);
+    }
+
     let instant = std::time::Instant::now();
 
     #[derive(FromQueryResult)]
@@ -739,6 +805,21 @@ pub async fn fetch_tags(
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
+
+    if crate::stats::should_read_stats_from_db(req, env, dt_since, dt_till)
+        .await
+        .c(h!())?
+    {
+        let result = crate::stats::read_tag_stats_from_table(
+            env,
+            master_keys,
+            dt_since,
+            dt_till,
+        )
+        .await
+        .c(h!())?;
+        return Ok(result);
+    }
 
     let instant = std::time::Instant::now();
 
@@ -861,6 +942,22 @@ pub async fn fetch_units(
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
+
+    if crate::stats::should_read_stats_from_db(req, env, dt_since, dt_till)
+        .await
+        .c(h!())?
+    {
+        let result = crate::stats::read_unit_stats_from_table(
+            env,
+            master_keys,
+            dt_since,
+            dt_till,
+        )
+        .await
+        .c(h!())?;
+        return Ok(result);
+    }
+
     let instant = std::time::Instant::now();
 
     #[derive(FromQueryResult)]
@@ -991,6 +1088,21 @@ pub async fn fetch_locations(
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
+
+    if crate::stats::should_read_stats_from_db(req, env, dt_since, dt_till)
+        .await
+        .c(h!())?
+    {
+        let result = crate::stats::read_location_stats_from_table(
+            env,
+            master_keys,
+            dt_since,
+            dt_till,
+        )
+        .await
+        .c(h!())?;
+        return Ok(result);
+    }
 
     let instant = std::time::Instant::now();
 
@@ -1129,6 +1241,22 @@ pub async fn fetch_aors(
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
+
+    if crate::stats::should_read_stats_from_db(req, env, dt_since, dt_till)
+        .await
+        .c(h!())?
+    {
+        let result = crate::stats::read_aor_stats_from_table(
+            env,
+            master_keys,
+            dt_since,
+            dt_till,
+        )
+        .await
+        .c(h!())?;
+        return Ok(result);
+    }
+
     let instant = std::time::Instant::now();
 
     #[derive(FromQueryResult)]

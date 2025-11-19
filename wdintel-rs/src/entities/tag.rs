@@ -21,6 +21,23 @@ pub struct Model {
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+pub enum Relation {
+    #[sea_orm(has_many = "super::stats_group_tag_5min::Entity")]
+    StatsGroupTag5min,
+    #[sea_orm(has_many = "super::stats_group_tag_day::Entity")]
+    StatsGroupTagDay,
+}
+
+impl Related<super::stats_group_tag_5min::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::StatsGroupTag5min.def()
+    }
+}
+
+impl Related<super::stats_group_tag_day::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::StatsGroupTagDay.def()
+    }
+}
 
 impl ActiveModelBehavior for ActiveModel {}
