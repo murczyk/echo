@@ -94,12 +94,7 @@ pub async fn should_read_stats_from_db(
     {
         return Ok(false);
     }
-    if !env
-        .config
-        .use_group_stats_for_counters
-        .clone()
-        .unwrap_or(false)
-    {
+    if !env.config.use_group_stats_for_counters.unwrap_or(false) {
         return Ok(false);
     }
     if !is_filter_empty(&req.selected_groups) {
