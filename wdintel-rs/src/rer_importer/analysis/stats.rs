@@ -15,6 +15,7 @@ use crate::entities::{
 use crate::error::AppError;
 use crate::h;
 use crate::rer_importer::analysis::*;
+use crate::stats::should_read_stats_from_db;
 use crate::types::Env;
 
 pub async fn fetch_groups(
@@ -26,10 +27,7 @@ pub async fn fetch_groups(
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).c(h!())?;
     let dt_till = dt_from_millis(req.till_date_noninclusive_ms).c(h!())?;
 
-    if crate::stats::should_read_stats_from_db(req, env, dt_since, dt_till)
-        .await
-        .c(h!())?
-    {
+    if should_read_stats_from_db(req, env, dt_since, dt_till).c(h!())? {
         let result = crate::stats::read_group_stats_from_table(
             env,
             master_keys,
@@ -188,10 +186,7 @@ pub async fn fetch_senders(
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
 
-    if crate::stats::should_read_stats_from_db(req, env, dt_since, dt_till)
-        .await
-        .c(h!())?
-    {
+    if should_read_stats_from_db(req, env, dt_since, dt_till).c(h!())? {
         let result = crate::stats::read_sender_stats_from_table(
             env,
             master_keys,
@@ -338,10 +333,7 @@ pub async fn fetch_posts(
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
 
-    if crate::stats::should_read_stats_from_db(req, env, dt_since, dt_till)
-        .await
-        .c(h!())?
-    {
+    if should_read_stats_from_db(req, env, dt_since, dt_till).c(h!())? {
         let result = crate::stats::read_post_stats_from_table(
             env,
             master_keys,
@@ -482,10 +474,7 @@ pub async fn fetch_freqs(
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
 
-    if crate::stats::should_read_stats_from_db(req, env, dt_since, dt_till)
-        .await
-        .c(h!())?
-    {
+    if should_read_stats_from_db(req, env, dt_since, dt_till).c(h!())? {
         let result = crate::stats::read_frequency_stats_from_table(
             env,
             master_keys,
@@ -674,10 +663,7 @@ pub async fn fetch_callsigns(
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
 
-    if crate::stats::should_read_stats_from_db(req, env, dt_since, dt_till)
-        .await
-        .c(h!())?
-    {
+    if should_read_stats_from_db(req, env, dt_since, dt_till).c(h!())? {
         let result = crate::stats::read_callsign_stats_from_table(
             env,
             master_keys,
@@ -806,10 +792,7 @@ pub async fn fetch_tags(
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
 
-    if crate::stats::should_read_stats_from_db(req, env, dt_since, dt_till)
-        .await
-        .c(h!())?
-    {
+    if should_read_stats_from_db(req, env, dt_since, dt_till).c(h!())? {
         let result = crate::stats::read_tag_stats_from_table(
             env,
             master_keys,
@@ -943,10 +926,7 @@ pub async fn fetch_units(
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
 
-    if crate::stats::should_read_stats_from_db(req, env, dt_since, dt_till)
-        .await
-        .c(h!())?
-    {
+    if should_read_stats_from_db(req, env, dt_since, dt_till).c(h!())? {
         let result = crate::stats::read_unit_stats_from_table(
             env,
             master_keys,
@@ -1089,10 +1069,7 @@ pub async fn fetch_locations(
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
 
-    if crate::stats::should_read_stats_from_db(req, env, dt_since, dt_till)
-        .await
-        .c(h!())?
-    {
+    if should_read_stats_from_db(req, env, dt_since, dt_till).c(h!())? {
         let result = crate::stats::read_location_stats_from_table(
             env,
             master_keys,
@@ -1242,10 +1219,7 @@ pub async fn fetch_aors(
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
 
-    if crate::stats::should_read_stats_from_db(req, env, dt_since, dt_till)
-        .await
-        .c(h!())?
-    {
+    if should_read_stats_from_db(req, env, dt_since, dt_till).c(h!())? {
         let result = crate::stats::read_aor_stats_from_table(
             env,
             master_keys,

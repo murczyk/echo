@@ -343,6 +343,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20251115_105217_add_echo_indexes::Migration),
             Box::new(m20251117_100845_update_stats::Migration),
             Box::new(m20251117_104540_add_freq_group_stats::Migration),
+            Box::new(m20250214_130500_signal_queue_indexes::Migration),
             Box::new(m20251117_141654_rename_stats::Migration),
             Box::new(m20251118_183849_add_signal_message_group_fk::Migration),
             Box::new(m20251118_114747_add_more_stats::Migration),
