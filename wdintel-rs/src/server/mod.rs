@@ -7,6 +7,7 @@ use actix_session::{storage::RedisSessionStore, SessionMiddleware};
 use actix_web::cookie::Key;
 use actix_web::{App, HttpServer};
 
+use crate::types::Mode::Live;
 use milgeo_rs::MilGeo;
 use opendal::services::S3;
 use opendal::Operator;
@@ -247,7 +248,9 @@ pub async fn main_server(
         )
         .await
         {
-            error!("failed to configure signal cli: {e:?}");
+            if mode == Live {
+                error!("failed to configure signal cli: {e:?}");
+            }
         }
         info!("Done starting enable_signal_cli_verbose_logging");
     });
