@@ -84,7 +84,7 @@ pub async fn oneoff_calculate_historic_stats(
     Ok(())
 }
 
-pub fn should_read_stats_from_db(
+pub fn should_read_stats_aggregated(
     req: &actix_web::web::Json<AnalysisStatsReq>,
     env: &actix_web::web::Data<Env>,
     dt_since: NaiveDateTime,
@@ -94,7 +94,11 @@ pub fn should_read_stats_from_db(
     {
         return Ok(false);
     }
-    if !env.config.use_group_stats_for_counters.unwrap_or(false) {
+    if !env
+        .config
+        .feature_group_stats_aggregated
+        .unwrap_or(FEATURE_GROUP_STATS_AGGREGATED_DEFAULT)
+    {
         return Ok(false);
     }
     if !is_filter_empty(&req.selected_groups) {
@@ -133,7 +137,7 @@ pub fn should_read_stats_from_db(
     }
 }
 
-pub async fn read_group_stats_from_table(
+pub async fn read_group_stats_aggregated(
     env: &actix_web::web::Data<Env>,
     master_keys: Vec<String>,
     dt_since: NaiveDateTime,
@@ -192,7 +196,7 @@ pub async fn read_group_stats_from_table(
     Ok(result)
 }
 
-pub async fn read_sender_stats_from_table(
+pub async fn read_sender_stats_aggregated(
     env: &actix_web::web::Data<Env>,
     master_keys: Vec<String>,
     dt_since: NaiveDateTime,
@@ -252,7 +256,7 @@ pub async fn read_sender_stats_from_table(
     Ok(result)
 }
 
-pub async fn read_post_stats_from_table(
+pub async fn read_post_stats_aggregated(
     env: &actix_web::web::Data<Env>,
     master_keys: Vec<String>,
     dt_since: NaiveDateTime,
@@ -321,7 +325,7 @@ pub async fn read_post_stats_from_table(
     Ok(result)
 }
 
-pub async fn read_aor_stats_from_table(
+pub async fn read_aor_stats_aggregated(
     env: &actix_web::web::Data<Env>,
     master_keys: Vec<String>,
     dt_since: NaiveDateTime,
@@ -380,7 +384,7 @@ pub async fn read_aor_stats_from_table(
     Ok(result)
 }
 
-pub async fn read_frequency_stats_from_table(
+pub async fn read_frequency_stats_aggregated(
     env: &actix_web::web::Data<Env>,
     master_keys: Vec<String>,
     dt_since: NaiveDateTime,
@@ -450,7 +454,7 @@ pub async fn read_frequency_stats_from_table(
     Ok(result)
 }
 
-pub async fn read_callsign_stats_from_table(
+pub async fn read_callsign_stats_aggregated(
     env: &actix_web::web::Data<Env>,
     master_keys: Vec<String>,
     dt_since: NaiveDateTime,
@@ -510,7 +514,7 @@ pub async fn read_callsign_stats_from_table(
     Ok(result)
 }
 
-pub async fn read_tag_stats_from_table(
+pub async fn read_tag_stats_aggregated(
     env: &actix_web::web::Data<Env>,
     master_keys: Vec<String>,
     dt_since: NaiveDateTime,
@@ -569,7 +573,7 @@ pub async fn read_tag_stats_from_table(
     Ok(result)
 }
 
-pub async fn read_unit_stats_from_table(
+pub async fn read_unit_stats_aggregated(
     env: &actix_web::web::Data<Env>,
     master_keys: Vec<String>,
     dt_since: NaiveDateTime,
@@ -628,7 +632,7 @@ pub async fn read_unit_stats_from_table(
     Ok(result)
 }
 
-pub async fn read_location_stats_from_table(
+pub async fn read_location_stats_aggregated(
     env: &actix_web::web::Data<Env>,
     master_keys: Vec<String>,
     dt_since: NaiveDateTime,

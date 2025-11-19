@@ -87,6 +87,7 @@ pub const MESSENGER_WORKER_POOL_DEFAULT_CAPACITY: usize = 10;
 pub const STATS_MIN_DATETIME_DAYS: i64 = 366;
 pub const STATS_READ_FROM_TABLE_MINIMUM_MIN: i64 = 15;
 pub const STATS_5MIN_MAX_NUM_DAYS: i64 = 2;
+pub const FEATURE_GROUP_STATS_AGGREGATED_DEFAULT: bool = false;
 
 /// Dynamic config that's different on different deployments
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
@@ -143,7 +144,7 @@ pub struct Config {
     /// Please double-check in Bitwarden that your value does not conflict with values in other live servers.
     pub server_id: Option<u32>,
     pub messenger_worker_pool_capacity: Option<usize>,
-    pub use_group_stats_for_counters: Option<bool>,
+    pub feature_group_stats_aggregated: Option<bool>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]

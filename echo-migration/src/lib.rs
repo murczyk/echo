@@ -167,8 +167,8 @@ mod m20251115_105217_add_echo_indexes;
 mod m20251117_100845_update_stats;
 mod m20251117_104540_add_freq_group_stats;
 mod m20251117_141654_rename_stats;
-mod m20251118_183849_add_signal_message_group_fk;
 mod m20251118_114747_add_more_stats;
+mod m20251118_183849_add_signal_message_group_fk;
 mod m20251119_121701_fix_tag_stats;
 
 pub struct Migrator;

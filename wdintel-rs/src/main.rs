@@ -455,6 +455,7 @@ enum Cmd {
     OneoffUnlinkReserveGroupDupes,
     OneoffCalculateSignalMessageGroups,
     OneoffCalculateStats(OneoffCalculateStatsPs),
+    /// Calculates all group stats for last year (no recalculation).
     OneoffCalculateHistoricStats,
 }
 
