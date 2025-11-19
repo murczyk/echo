@@ -338,7 +338,6 @@ impl MigratorTrait for Migrator {
             Box::new(m20251106_125324_drop_datasource_legacy_columns::Migration),
             Box::new(m20251107_102225_datasource_default_status::Migration),
             Box::new(m20251111_145848_add_signal_queue::Migration),
-            Box::new(m20250214_130500_signal_queue_indexes::Migration),
             Box::new(m20251113_093602_add_group_stats_tables::Migration),
             Box::new(m20251115_105217_add_echo_indexes::Migration),
             Box::new(m20251117_100845_update_stats::Migration),
