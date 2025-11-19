@@ -228,6 +228,10 @@ pub async fn bl_szd_groups_list(
 
     let rows = sigint_zone_datasource::Entity::find()
         .join(
+            JoinType::InnerJoin,
+            sigint_zone_datasource::Relation::Datasource.def(),
+        )
+        .join(
             JoinType::LeftJoin,
             sigint_zone_datasource::Relation::SignalGroup.def(),
         )
@@ -248,6 +252,7 @@ pub async fn bl_szd_groups_list(
         .column_as(secret_group_user::Column::Login, "login")
         .column(group_admin_data::Column::ShortNote)
         .column(group_admin_data::Column::LongNote)
+        .filter(datasource::Column::Deleted.eq(false))
         .filter(sigint_zone_datasource::Column::SigintZoneId.eq(zone_id))
         .filter(sigint_zone_datasource::Column::DatasourceId.eq(datasource_id))
         .into_model::<Res>()
