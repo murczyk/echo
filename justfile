@@ -420,6 +420,7 @@ copy-db:
     else \
         just _print-servers; exit 1; \
     fi
+    echo "You can disable messengers by running: cargo run -- --mode=debug oneoff-disable-im"
 
 # _jvln-copy-db:
 #     ssh -t jvln '(cd /fast/kon/Downloads && PGPASSWORD="{{ pgpwd }}" pg_dump --user wd -Fc wd > wd-{{ dt1 }}.pgrestore && ls -lah wd-{{ dt1 }}.pgrestore)'
@@ -473,6 +474,7 @@ copy-db-dev:
     ssh -t $TARGET "sudo -u postgres psql -c 'drop database {{ pgdb }} with (FORCE)' | echo 'ok'"
     ssh -t $TARGET "sudo -u postgres psql -c 'create database {{ pgdb }}'"
     ssh -t $TARGET "sudo -u postgres pg_restore -d {{ pgdb }} /var/tmp/wd-{{ dt1 }}.pgrestore && sudo rm /var/tmp/wd-{{ dt1 }}.pgrestore"
+    echo "You can disable messengers by running: cargo run -- --mode=debug oneoff-disable-im"
 
 copy-db-to-target:
     #!/bin/bash
