@@ -44,8 +44,8 @@ impl MigrationTrait for Migration {
         let db = manager.get_connection();
         db.execute_unprepared(
             "
-            drop index stats_group_5min_group_master_key_dt_tag_idx;
-            drop index stats_group_day_group_master_key_dt_tag_idx;
+            drop index stats_group_5min_group_master_key_dt_tag_id_idx;
+            drop index stats_group_day_group_master_key_dt_tag_id_idx;
             drop table stats_group_tag_day;
             drop table stats_group_tag_5min;
 

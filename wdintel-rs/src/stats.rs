@@ -61,10 +61,20 @@ pub async fn oneoff_calculate_historic_stats(
         .map(|x| x.dt)
         .unwrap_or(Utc::now().naive_utc())
         + Duration::days(1);
+
+    // calculate for part of the day today in order to proceed with rest of the days from start to finish
+    let date_till_dt = get_local_date(till_ts);
+    let dt_till_sod = start_of_day(date_till_dt).c(h!())?;
+    recalculate_group_stats(&dbx, dt_till_sod, till_ts)
+        .await
+        .context(h!())?;
+    till_ts = dt_till_sod;
+
+    //calculate for all the remaining days
     while till_ts > min_since_ts {
         let since_ts = till_ts - Duration::days(1);
         let duration = (since_ts - min_since_ts).num_days();
-        info!("oneoff_calculate_historic_stats: from {min_since_ts} to {till_ts}, remaining {duration} days");
+        info!("oneoff_calculate_historic_stats: from {since_ts} to {till_ts}, remaining {duration} days");
         recalculate_group_stats(&dbx, since_ts, till_ts)
             .await
             .context(h!())?;
@@ -2690,14 +2700,11 @@ fn collect_time_intervals_for_stats(
     if dt_till - dt_since < Duration::days(STATS_5MIN_MAX_NUM_DAYS) {
         intervals_5min.push((dt_since, dt_till));
     } else {
-        let date_after_since_dt =
-            dt_since.and_utc().with_timezone(&get_tz()).date_naive()
-                + Duration::days(1);
+        let date_after_since_dt = get_local_date(dt_since) + Duration::days(1);
         let dt_since_eod = start_of_day(date_after_since_dt).c(h!())?;
         intervals_5min.push((dt_since, dt_since_eod));
 
-        let date_till_dt =
-            dt_till.and_utc().with_timezone(&get_tz()).date_naive();
+        let date_till_dt = get_local_date(dt_till);
         let dt_till_sod = start_of_day(date_till_dt).c(h!())?;
         intervals_5min.push((dt_till_sod, dt_till));
 
