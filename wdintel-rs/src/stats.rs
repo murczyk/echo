@@ -2741,7 +2741,7 @@ mod tests {
         let utc_date = NaiveDate::from_ymd_opt(2025, 6, 6).unwrap();
         let ts = NaiveDateTime::new(
             utc_date,
-            NaiveTime::from_hms_opt(01, 55, 0).unwrap(),
+            NaiveTime::from_hms_opt(1, 55, 0).unwrap(),
         );
         let actual_date = get_local_date(ts);
         assert_eq!(actual_date, utc_date);
@@ -2802,7 +2802,7 @@ mod tests {
     #[test]
     fn test_collect_time_intervals_for_stats_long_duration_else_branch() {
         let dt_since = ndt(2025, 10, 10, 10, 30);
-        let dt_till = ndt(2025, 10, 15, 05, 15);
+        let dt_till = ndt(2025, 10, 15, 5, 15);
         assert!(dt_till - dt_since >= Duration::days(STATS_5MIN_MAX_NUM_DAYS));
         let (intervals, days) =
             collect_time_intervals_for_stats(dt_since, dt_till).unwrap();
