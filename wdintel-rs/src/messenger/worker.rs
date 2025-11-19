@@ -8,10 +8,12 @@ use crate::messenger::id;
 use crate::messenger::types::*;
 use crate::messenger::worker_pool::*;
 use crate::new_pg_pool_from_mode;
+use crate::stats::recalculate_group_stats;
 use crate::types::*;
 use chrono::*;
 use echo_im::types::{MessageF1, MessageSource, SenderF1};
 use echo_migration::Expr;
+use log::*;
 use redis::aio::ConnectionManager;
 use reqwest::Client;
 use sea_orm::*;
@@ -23,9 +25,50 @@ use tokio_util::sync::CancellationToken;
 
 static SIGNAL_LOGIN_DELAY_DONE: AtomicBool = AtomicBool::new(false);
 
+pub async fn worker_calculate_group_stats(mode: Mode) {
+    info!("worker_calculate_group_stats started");
+    let mut last_calculated =
+        Utc::now().naive_utc() - chrono::Duration::days(1);
+    loop {
+        match worker_calculate_group_stats_inner(mode, last_calculated).await {
+            Ok(ts) => {
+                last_calculated = ts;
+            }
+            Err(e) => {
+                error!("worker_calculate_group_stats_inner encountered an error: {e:#?}");
+            }
+        }
+        sleep(Duration::from_secs(WORKER_CALCULATE_GROUP_STATS_SLEEP_SEC))
+            .await;
+    }
+}
+
+async fn worker_calculate_group_stats_inner(
+    mode: Mode,
+    last_calculated: NaiveDateTime,
+) -> anyhow::Result<NaiveDateTime> {
+    let now = Utc::now().naive_utc();
+    if last_calculated
+        + chrono::Duration::minutes(
+            WORKER_CALCULATE_GROUP_STATS_EVERY_MINUTES_NUM,
+        )
+        > now
+    {
+        return Ok(last_calculated);
+    }
+    let till_ts = now;
+    let since_ts = now
+        - chrono::Duration::minutes(WORKER_CALCULATE_GROUP_STATS_SINCE_MINS);
+    let dbx = new_pg_pool_from_mode(mode).await.c(h!())?;
+    recalculate_group_stats(&dbx, since_ts, till_ts)
+        .await
+        .c(h!())?;
+    Ok(now)
+}
+
 pub async fn run_cleanup_worker(mode: Mode) {
     loop {
-        let db = match crate::new_pg_pool_from_mode(mode).await {
+        let db = match new_pg_pool_from_mode(mode).await {
             Ok(db) => db,
             Err(e) => {
                 error!("Messenger Cleanup worker failed, cannot establish db connection: {e:#?}");

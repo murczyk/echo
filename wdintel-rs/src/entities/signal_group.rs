@@ -45,12 +45,40 @@ pub enum Relation {
     SignalMessageGroup,
     #[sea_orm(has_many = "super::stats_group_5min::Entity")]
     StatsGroup5min,
+    #[sea_orm(has_many = "super::stats_group_aor_id_5min::Entity")]
+    StatsGroupAorId5min,
+    #[sea_orm(has_many = "super::stats_group_aor_id_day::Entity")]
+    StatsGroupAorIdDay,
+    #[sea_orm(has_many = "super::stats_group_callsign_5min::Entity")]
+    StatsGroupCallsign5min,
+    #[sea_orm(has_many = "super::stats_group_callsign_day::Entity")]
+    StatsGroupCallsignDay,
     #[sea_orm(has_many = "super::stats_group_day::Entity")]
     StatsGroupDay,
     #[sea_orm(has_many = "super::stats_group_freq_5min::Entity")]
     StatsGroupFreq5min,
     #[sea_orm(has_many = "super::stats_group_freq_day::Entity")]
     StatsGroupFreqDay,
+    #[sea_orm(has_many = "super::stats_group_location_5min::Entity")]
+    StatsGroupLocation5min,
+    #[sea_orm(has_many = "super::stats_group_location_day::Entity")]
+    StatsGroupLocationDay,
+    #[sea_orm(has_many = "super::stats_group_post_id_5min::Entity")]
+    StatsGroupPostId5min,
+    #[sea_orm(has_many = "super::stats_group_post_id_day::Entity")]
+    StatsGroupPostIdDay,
+    #[sea_orm(has_many = "super::stats_group_sender_5min::Entity")]
+    StatsGroupSender5min,
+    #[sea_orm(has_many = "super::stats_group_sender_day::Entity")]
+    StatsGroupSenderDay,
+    #[sea_orm(has_many = "super::stats_group_tag_5min::Entity")]
+    StatsGroupTag5min,
+    #[sea_orm(has_many = "super::stats_group_tag_day::Entity")]
+    StatsGroupTagDay,
+    #[sea_orm(has_many = "super::stats_group_unit_5min::Entity")]
+    StatsGroupUnit5min,
+    #[sea_orm(has_many = "super::stats_group_unit_day::Entity")]
+    StatsGroupUnitDay,
 }
 
 impl Related<super::datasource::Entity> for Entity {
@@ -107,6 +135,30 @@ impl Related<super::stats_group_5min::Entity> for Entity {
     }
 }
 
+impl Related<super::stats_group_aor_id_5min::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::StatsGroupAorId5min.def()
+    }
+}
+
+impl Related<super::stats_group_aor_id_day::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::StatsGroupAorIdDay.def()
+    }
+}
+
+impl Related<super::stats_group_callsign_5min::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::StatsGroupCallsign5min.def()
+    }
+}
+
+impl Related<super::stats_group_callsign_day::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::StatsGroupCallsignDay.def()
+    }
+}
+
 impl Related<super::stats_group_day::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::StatsGroupDay.def()
@@ -122,6 +174,66 @@ impl Related<super::stats_group_freq_5min::Entity> for Entity {
 impl Related<super::stats_group_freq_day::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::StatsGroupFreqDay.def()
+    }
+}
+
+impl Related<super::stats_group_location_5min::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::StatsGroupLocation5min.def()
+    }
+}
+
+impl Related<super::stats_group_location_day::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::StatsGroupLocationDay.def()
+    }
+}
+
+impl Related<super::stats_group_post_id_5min::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::StatsGroupPostId5min.def()
+    }
+}
+
+impl Related<super::stats_group_post_id_day::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::StatsGroupPostIdDay.def()
+    }
+}
+
+impl Related<super::stats_group_sender_5min::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::StatsGroupSender5min.def()
+    }
+}
+
+impl Related<super::stats_group_sender_day::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::StatsGroupSenderDay.def()
+    }
+}
+
+impl Related<super::stats_group_tag_5min::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::StatsGroupTag5min.def()
+    }
+}
+
+impl Related<super::stats_group_tag_day::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::StatsGroupTagDay.def()
+    }
+}
+
+impl Related<super::stats_group_unit_5min::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::StatsGroupUnit5min.def()
+    }
+}
+
+impl Related<super::stats_group_unit_day::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::StatsGroupUnitDay.def()
     }
 }
 

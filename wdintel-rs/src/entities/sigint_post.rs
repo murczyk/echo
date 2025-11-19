@@ -36,6 +36,10 @@ pub enum Relation {
         on_delete = "SetNull"
     )]
     SigintOrigin,
+    #[sea_orm(has_many = "super::stats_group_post_id_5min::Entity")]
+    StatsGroupPostId5min,
+    #[sea_orm(has_many = "super::stats_group_post_id_day::Entity")]
+    StatsGroupPostIdDay,
 }
 
 impl Related<super::sigint_inbox_item::Entity> for Entity {
@@ -53,6 +57,18 @@ impl Related<super::sigint_network_post::Entity> for Entity {
 impl Related<super::sigint_origin::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SigintOrigin.def()
+    }
+}
+
+impl Related<super::stats_group_post_id_5min::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::StatsGroupPostId5min.def()
+    }
+}
+
+impl Related<super::stats_group_post_id_day::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::StatsGroupPostIdDay.def()
     }
 }
 
