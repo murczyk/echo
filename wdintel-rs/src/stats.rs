@@ -29,7 +29,7 @@ pub async fn oneoff_calculate_stats(
     let dbx = crate::new_pg_pool_from_config(&config)
         .await
         .context(h!())?;
-    recalculate_group_stats(&dbx, since_ts, till_ts)
+    recalculate_group_stats(&dbx, since_ts, till_ts, true)
         .await
         .context(h!())?;
     Ok(())
@@ -65,7 +65,7 @@ pub async fn oneoff_calculate_historic_stats(
     // calculate for part of the day today in order to proceed with rest of the days from start to finish
     let date_till_dt = get_local_date(till_ts);
     let dt_till_sod = start_of_day(date_till_dt).c(h!())?;
-    recalculate_group_stats(&dbx, dt_till_sod, till_ts)
+    recalculate_group_stats(&dbx, dt_till_sod, till_ts, true)
         .await
         .context(h!())?;
     till_ts = dt_till_sod;
@@ -75,7 +75,7 @@ pub async fn oneoff_calculate_historic_stats(
         let since_ts = till_ts - Duration::days(1);
         let duration = (since_ts - min_since_ts).num_days();
         info!("oneoff_calculate_historic_stats: from {since_ts} to {till_ts}, remaining {duration} days");
-        recalculate_group_stats(&dbx, since_ts, till_ts)
+        recalculate_group_stats(&dbx, since_ts, till_ts, true)
             .await
             .context(h!())?;
         till_ts = since_ts;
@@ -755,6 +755,7 @@ pub async fn recalculate_group_stats(
     dbx: &DatabaseConnection,
     since_ts: NaiveDateTime,
     till_ts: NaiveDateTime,
+    recalculate_day_stats: bool,
 ) -> Result<(), AppError> {
     let since_filter_1 = sigint_inbox_item::Column::Datetime
         .is_null()
@@ -922,166 +923,186 @@ pub async fn recalculate_group_stats(
         .await
         .c(h!())?;
 
-    recalculate_day_stats_group(dbx, since_ts, till_ts)
-        .await
-        .c(h!())?;
+    if recalculate_day_stats {
+        recalculate_day_stats_group(dbx, since_ts, till_ts)
+            .await
+            .c(h!())?;
+    }
 
     update_5min_stats_freq(dbx, freq_stats, since_ts, till_ts)
         .await
         .c(h!())?;
 
-    recalculate_day_stats_freq(dbx, since_ts, till_ts)
-        .await
-        .c(h!())?;
+    if recalculate_day_stats {
+        recalculate_day_stats_freq(dbx, since_ts, till_ts)
+            .await
+            .c(h!())?;
+    }
 
     update_5min_stats_aor_id(dbx, aor_stats, since_ts, till_ts)
         .await
         .c(h!())?;
 
-    recalculate_day_stats_aor_id(dbx, since_ts, till_ts)
-        .await
-        .c(h!())?;
+    if recalculate_day_stats {
+        recalculate_day_stats_aor_id(dbx, since_ts, till_ts)
+            .await
+            .c(h!())?;
+    }
 
     update_5min_stats_post_id(dbx, post_stats, since_ts, till_ts)
         .await
         .c(h!())?;
 
-    recalculate_day_stats_post_id(dbx, since_ts, till_ts)
-        .await
-        .c(h!())?;
+    if recalculate_day_stats {
+        recalculate_day_stats_post_id(dbx, since_ts, till_ts)
+            .await
+            .c(h!())?;
+    }
 
     update_5min_stats_sender(dbx, sender_stats, since_ts, till_ts)
         .await
         .c(h!())?;
 
-    recalculate_day_stats_sender(dbx, since_ts, till_ts)
-        .await
-        .c(h!())?;
+    if recalculate_day_stats {
+        recalculate_day_stats_sender(dbx, since_ts, till_ts)
+            .await
+            .c(h!())?;
+    }
 
     update_5min_stats_callsign(dbx, callsign_stats, since_ts, till_ts)
         .await
         .c(h!())?;
 
-    recalculate_day_stats_callsign(dbx, since_ts, till_ts)
-        .await
-        .c(h!())?;
+    if recalculate_day_stats {
+        recalculate_day_stats_callsign(dbx, since_ts, till_ts)
+            .await
+            .c(h!())?;
+    }
 
     update_5min_stats_unit(dbx, unit_stats, since_ts, till_ts)
         .await
         .c(h!())?;
 
-    recalculate_day_stats_unit(dbx, since_ts, till_ts)
-        .await
-        .c(h!())?;
+    if recalculate_day_stats {
+        recalculate_day_stats_unit(dbx, since_ts, till_ts)
+            .await
+            .c(h!())?;
+    }
 
     update_5min_stats_location(dbx, location_stats, since_ts, till_ts)
         .await
         .c(h!())?;
 
-    recalculate_day_stats_location(dbx, since_ts, till_ts)
-        .await
-        .c(h!())?;
+    if recalculate_day_stats {
+        recalculate_day_stats_location(dbx, since_ts, till_ts)
+            .await
+            .c(h!())?;
+    }
 
     update_5min_stats_tag(dbx, tag_stats, since_ts, till_ts)
         .await
         .c(h!())?;
 
-    recalculate_day_stats_tag(dbx, since_ts, till_ts)
-        .await
-        .c(h!())?;
+    if recalculate_day_stats {
+        recalculate_day_stats_tag(dbx, since_ts, till_ts)
+            .await
+            .c(h!())?;
+    }
 
-    let cutoff_5min = Utc::now() - Duration::days(GROUP_STATS_DAY_TTL_DAYS);
-    stats_group_freq_day::Entity::delete_many()
-        .filter(stats_group_freq_day::Column::CreatedAt.lt(cutoff_5min))
-        .exec(dbx)
-        .await
-        .context(h!())?;
-    stats_group_aor_id_day::Entity::delete_many()
-        .filter(stats_group_aor_id_day::Column::CreatedAt.lt(cutoff_5min))
-        .exec(dbx)
-        .await
-        .context(h!())?;
-    stats_group_sender_day::Entity::delete_many()
-        .filter(stats_group_sender_day::Column::CreatedAt.lt(cutoff_5min))
-        .exec(dbx)
-        .await
-        .context(h!())?;
-    stats_group_callsign_day::Entity::delete_many()
-        .filter(stats_group_callsign_day::Column::CreatedAt.lt(cutoff_5min))
-        .exec(dbx)
-        .await
-        .context(h!())?;
-    stats_group_unit_day::Entity::delete_many()
-        .filter(stats_group_unit_day::Column::CreatedAt.lt(cutoff_5min))
-        .exec(dbx)
-        .await
-        .context(h!())?;
-    stats_group_location_day::Entity::delete_many()
-        .filter(stats_group_location_day::Column::CreatedAt.lt(cutoff_5min))
-        .exec(dbx)
-        .await
-        .context(h!())?;
-    stats_group_post_id_day::Entity::delete_many()
-        .filter(stats_group_post_id_day::Column::CreatedAt.lt(cutoff_5min))
-        .exec(dbx)
-        .await
-        .context(h!())?;
-    stats_group_tag_day::Entity::delete_many()
-        .filter(stats_group_tag_day::Column::CreatedAt.lt(cutoff_5min))
-        .exec(dbx)
-        .await
-        .context(h!())?;
-    let cutoff_day = Utc::now() - Duration::days(GROUP_STATS_5MIN_TTL_DAYS);
-    stats_group_5min::Entity::delete_many()
-        .filter(stats_group_5min::Column::CreatedAt.lt(cutoff_day))
-        .exec(dbx)
-        .await
-        .context(h!())?;
-    stats_group_day::Entity::delete_many()
-        .filter(stats_group_day::Column::CreatedAt.lt(cutoff_day))
-        .exec(dbx)
-        .await
-        .context(h!())?;
-    stats_group_freq_5min::Entity::delete_many()
-        .filter(stats_group_freq_5min::Column::CreatedAt.lt(cutoff_day))
-        .exec(dbx)
-        .await
-        .context(h!())?;
-    stats_group_aor_id_5min::Entity::delete_many()
-        .filter(stats_group_aor_id_5min::Column::CreatedAt.lt(cutoff_day))
-        .exec(dbx)
-        .await
-        .context(h!())?;
-    stats_group_sender_5min::Entity::delete_many()
-        .filter(stats_group_sender_5min::Column::CreatedAt.lt(cutoff_day))
-        .exec(dbx)
-        .await
-        .context(h!())?;
-    stats_group_callsign_5min::Entity::delete_many()
-        .filter(stats_group_callsign_5min::Column::CreatedAt.lt(cutoff_day))
-        .exec(dbx)
-        .await
-        .context(h!())?;
-    stats_group_unit_5min::Entity::delete_many()
-        .filter(stats_group_unit_5min::Column::CreatedAt.lt(cutoff_day))
-        .exec(dbx)
-        .await
-        .context(h!())?;
-    stats_group_location_5min::Entity::delete_many()
-        .filter(stats_group_location_5min::Column::CreatedAt.lt(cutoff_day))
-        .exec(dbx)
-        .await
-        .context(h!())?;
-    stats_group_post_id_5min::Entity::delete_many()
-        .filter(stats_group_post_id_5min::Column::CreatedAt.lt(cutoff_day))
-        .exec(dbx)
-        .await
-        .context(h!())?;
-    stats_group_tag_5min::Entity::delete_many()
-        .filter(stats_group_tag_5min::Column::CreatedAt.lt(cutoff_day))
-        .exec(dbx)
-        .await
-        .context(h!())?;
+    if recalculate_day_stats {
+        let cutoff_5min = Utc::now() - Duration::days(GROUP_STATS_DAY_TTL_DAYS);
+        stats_group_freq_day::Entity::delete_many()
+            .filter(stats_group_freq_day::Column::CreatedAt.lt(cutoff_5min))
+            .exec(dbx)
+            .await
+            .context(h!())?;
+        stats_group_aor_id_day::Entity::delete_many()
+            .filter(stats_group_aor_id_day::Column::CreatedAt.lt(cutoff_5min))
+            .exec(dbx)
+            .await
+            .context(h!())?;
+        stats_group_sender_day::Entity::delete_many()
+            .filter(stats_group_sender_day::Column::CreatedAt.lt(cutoff_5min))
+            .exec(dbx)
+            .await
+            .context(h!())?;
+        stats_group_callsign_day::Entity::delete_many()
+            .filter(stats_group_callsign_day::Column::CreatedAt.lt(cutoff_5min))
+            .exec(dbx)
+            .await
+            .context(h!())?;
+        stats_group_unit_day::Entity::delete_many()
+            .filter(stats_group_unit_day::Column::CreatedAt.lt(cutoff_5min))
+            .exec(dbx)
+            .await
+            .context(h!())?;
+        stats_group_location_day::Entity::delete_many()
+            .filter(stats_group_location_day::Column::CreatedAt.lt(cutoff_5min))
+            .exec(dbx)
+            .await
+            .context(h!())?;
+        stats_group_post_id_day::Entity::delete_many()
+            .filter(stats_group_post_id_day::Column::CreatedAt.lt(cutoff_5min))
+            .exec(dbx)
+            .await
+            .context(h!())?;
+        stats_group_tag_day::Entity::delete_many()
+            .filter(stats_group_tag_day::Column::CreatedAt.lt(cutoff_5min))
+            .exec(dbx)
+            .await
+            .context(h!())?;
+        let cutoff_day = Utc::now() - Duration::days(GROUP_STATS_5MIN_TTL_DAYS);
+        stats_group_5min::Entity::delete_many()
+            .filter(stats_group_5min::Column::CreatedAt.lt(cutoff_day))
+            .exec(dbx)
+            .await
+            .context(h!())?;
+        stats_group_day::Entity::delete_many()
+            .filter(stats_group_day::Column::CreatedAt.lt(cutoff_day))
+            .exec(dbx)
+            .await
+            .context(h!())?;
+        stats_group_freq_5min::Entity::delete_many()
+            .filter(stats_group_freq_5min::Column::CreatedAt.lt(cutoff_day))
+            .exec(dbx)
+            .await
+            .context(h!())?;
+        stats_group_aor_id_5min::Entity::delete_many()
+            .filter(stats_group_aor_id_5min::Column::CreatedAt.lt(cutoff_day))
+            .exec(dbx)
+            .await
+            .context(h!())?;
+        stats_group_sender_5min::Entity::delete_many()
+            .filter(stats_group_sender_5min::Column::CreatedAt.lt(cutoff_day))
+            .exec(dbx)
+            .await
+            .context(h!())?;
+        stats_group_callsign_5min::Entity::delete_many()
+            .filter(stats_group_callsign_5min::Column::CreatedAt.lt(cutoff_day))
+            .exec(dbx)
+            .await
+            .context(h!())?;
+        stats_group_unit_5min::Entity::delete_many()
+            .filter(stats_group_unit_5min::Column::CreatedAt.lt(cutoff_day))
+            .exec(dbx)
+            .await
+            .context(h!())?;
+        stats_group_location_5min::Entity::delete_many()
+            .filter(stats_group_location_5min::Column::CreatedAt.lt(cutoff_day))
+            .exec(dbx)
+            .await
+            .context(h!())?;
+        stats_group_post_id_5min::Entity::delete_many()
+            .filter(stats_group_post_id_5min::Column::CreatedAt.lt(cutoff_day))
+            .exec(dbx)
+            .await
+            .context(h!())?;
+        stats_group_tag_5min::Entity::delete_many()
+            .filter(stats_group_tag_5min::Column::CreatedAt.lt(cutoff_day))
+            .exec(dbx)
+            .await
+            .context(h!())?;
+    }
     Ok(())
 }
 

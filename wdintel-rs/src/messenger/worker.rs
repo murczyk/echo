@@ -47,23 +47,40 @@ async fn worker_calculate_group_stats_inner(
     mode: Mode,
     last_calculated: NaiveDateTime,
 ) -> anyhow::Result<NaiveDateTime> {
+    let mut last_calculated = last_calculated;
     let now = Utc::now().naive_utc();
-    if last_calculated
+    let dbx = new_pg_pool_from_mode(mode).await.c(h!())?;
+
+    let log_suffix = if last_calculated
         + chrono::Duration::minutes(
             WORKER_CALCULATE_GROUP_STATS_EVERY_MINUTES_NUM,
         )
         > now
     {
-        return Ok(last_calculated);
-    }
-    let till_ts = now;
-    let since_ts = now
-        - chrono::Duration::minutes(WORKER_CALCULATE_GROUP_STATS_SINCE_MINS);
-    let dbx = new_pg_pool_from_mode(mode).await.c(h!())?;
-    recalculate_group_stats(&dbx, since_ts, till_ts)
+        recalculate_group_stats(
+            &dbx,
+            now - chrono::Duration::minutes(10),
+            now,
+            false,
+        )
         .await
         .c(h!())?;
-    Ok(now)
+        "short loop"
+    } else {
+        let till_ts = now;
+        let since_ts = now
+            - chrono::Duration::minutes(
+                WORKER_CALCULATE_GROUP_STATS_SINCE_MINS,
+            );
+        recalculate_group_stats(&dbx, since_ts, till_ts, true)
+            .await
+            .c(h!())?;
+        last_calculated = now;
+        "full loop"
+    };
+    let duration = (Utc::now().naive_utc() - now).num_seconds();
+    info!("worker_calculate_group_stats took {duration}s ({log_suffix})");
+    Ok(last_calculated)
 }
 
 pub async fn run_cleanup_worker(mode: Mode) {
