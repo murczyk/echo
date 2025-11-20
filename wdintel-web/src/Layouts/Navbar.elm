@@ -41,12 +41,14 @@ layout props shared route =
 
 type alias Model =
     { isNavbarVisible : Bool
+    , openDropdown : Maybe String
     }
 
 
 init : () -> ( Model, Effect Msg )
 init _ =
     ( { isNavbarVisible = True
+      , openDropdown = Nothing
       }
     , E.batch
         [ E.sendCmd <| Task.perform (\_ -> Slept) (Process.sleep keepAliveInterval)
@@ -69,6 +71,7 @@ type Msg
     | Slept
     | KeepAliveDone (Result ApiError ())
     | ToggleNavbarVisibility
+    | SetOpenDropdown (Maybe String)
     | ToastMsg Toast.Msg
 
 
@@ -100,7 +103,15 @@ update route msg model =
             ( model, E.none )
 
         ToggleNavbarVisibility ->
-            ( { model | isNavbarVisible = not model.isNavbarVisible }, E.triggerResize )
+            ( { model
+                | isNavbarVisible = not model.isNavbarVisible
+                , openDropdown = Nothing
+              }
+            , E.triggerResize
+            )
+
+        SetOpenDropdown selection ->
+            ( { model | openDropdown = selection }, E.none )
 
         ToastMsg toastMsg ->
             ( model, E.sendToastMsg toastMsg )
@@ -118,12 +129,21 @@ subscriptions model =
 view : Auth.User -> String -> Shared.Model -> Route () -> { toContentMsg : Msg -> contentMsg, content : View contentMsg, model : Model } -> View contentMsg
 view user activeName shared route { toContentMsg, model, content } =
     let
-        navbarComponent =
+        navbarProps =
+            { onToggleTheme = ToggleDarkTheme
+            , onThemeChange = SetThemeMode
+            , onNavbarVisibilityChange = ToggleNavbarVisibility
+            , isRerDuty = route.url.path == "/rer-duty"
+            , openDropdown = model.openDropdown
+            , onDropdownToggle = SetOpenDropdown
+            }
+
+        navbarHtml =
             if shared.featureNavbarFrontOnly then
-                Shared.Components.Navbar.navBar
+                Shared.Components.Navbar.navBar user shared activeName navbarProps
 
             else
-                Shared.Components.NavbarOld.navBar
+                Shared.Components.NavbarOld.navBar user shared activeName navbarProps
     in
     { title = content.title
     , body =
@@ -138,7 +158,7 @@ view user activeName shared route { toContentMsg, model, content } =
                         "-translate-y-full"
                     )
                 ]
-                [ navbarComponent user shared activeName { onToggleTheme = ToggleDarkTheme, onThemeChange = SetThemeMode, onNavbarVisibilityChange = ToggleNavbarVisibility, isRerDuty = route.url.path == "/rer-duty" } ]
+                [ navbarHtml ]
             , if route.url.path == "/rer-duty" && not model.isNavbarVisible then
                 div
                     [ class "fixed top-4 right-4 z-500 transition-opacity duration-300 ease-in-out opacity-100" ]

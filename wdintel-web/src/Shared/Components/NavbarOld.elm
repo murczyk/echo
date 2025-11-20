@@ -35,6 +35,8 @@ type alias Props msg =
     , onThemeChange : Shared.Model.ThemeMode -> msg
     , onNavbarVisibilityChange : msg
     , isRerDuty : Bool
+    , openDropdown : Maybe String
+    , onDropdownToggle : Maybe String -> msg
     }
 
 
@@ -42,10 +44,10 @@ navBar : Auth.User -> Shared.Model -> String -> Props msg -> Html msg
 navBar user shared activeName props =
     let
         menu =
-            menuItem activeName
+            menuItem props activeName
 
         menuWithSubs =
-            menuItemWithSubs (isDarkMode shared.themeMode) activeName
+            menuItemWithSubs props (isDarkMode shared.themeMode) activeName
 
         adminSubs =
             [ Menu (Internal Route.Path.Admin) "zones" "напрямки"
@@ -197,12 +199,13 @@ navBar user shared activeName props =
 -- Main navbar links: always white text
 
 
-menuItem activeName hrefLink activeNameExp nameText =
+menuItem props activeName hrefLink activeNameExp nameText =
     li []
         [ a
             [ class "block py-2 text-white hover:bg-black/10 px-2 rounded transition-all duration-200"
             , Route.Path.href hrefLink
             , classList [ ( "font-medium", activeName == activeNameExp ) ]
+            , onClick (props.onDropdownToggle Nothing)
             ]
             [ text nameText ]
         ]
@@ -212,9 +215,19 @@ menuItem activeName hrefLink activeNameExp nameText =
 -- Dropdowns: black text in light mode, white in dark mode
 
 
-menuItemWithSubs : Bool -> String -> String -> String -> List Menu -> Html msg
-menuItemWithSubs isDarkMode activeName activeNameExp nameText subs =
+menuItemWithSubs : Props msg -> Bool -> String -> String -> String -> List Menu -> Html msg
+menuItemWithSubs props isDarkMode activeName activeNameExp nameText subs =
     let
+        isOpen =
+            props.openDropdown == Just activeNameExp
+
+        toggleMsg =
+            if isOpen then
+                props.onDropdownToggle Nothing
+
+            else
+                props.onDropdownToggle (Just activeNameExp)
+
         dropdownTextClass =
             if isDarkMode then
                 "text-white"
@@ -238,6 +251,7 @@ menuItemWithSubs isDarkMode activeName activeNameExp nameText subs =
                             [ class ("flex items-center justify-between px-4 py-2 " ++ dropdownTextClass ++ " hover:bg-black/10 rounded transition-all duration-200")
                             , classList [ ( "font-medium", sub.activeName == activeName ) ]
                             , Route.Path.href path
+                            , onClick (props.onDropdownToggle Nothing)
                             ]
                             [ span [] [ text sub.label ]
                             , if sub.activeName == activeName then
@@ -251,8 +265,9 @@ menuItemWithSubs isDarkMode activeName activeNameExp nameText subs =
                         a
                             [ class ("flex items-center justify-between px-4 py-2 " ++ dropdownTextClass ++ " hover:bg-black/10 rounded transition-all duration-200")
                             , classList [ ( "font-medium", sub.activeName == activeName ) ]
-                            , href sub.label
+                            , href link
                             , target "_blank"
+                            , onClick (props.onDropdownToggle Nothing)
                             ]
                             [ span [] [ text sub.label ]
                             , i [ class "bi bi-box-arrow-up-right text-[var(--color-icons)] ml-2 group-hover:text-[var(--color-text)]" ] []
@@ -260,19 +275,35 @@ menuItemWithSubs isDarkMode activeName activeNameExp nameText subs =
                 ]
     in
     li [ class "relative group" ]
-        [ a
+        [ button
             [ class "inline-flex items-center py-2 px-2 cursor-pointer text-white hover:bg-black/10 rounded transition-all duration-200"
             , classList [ ( "font-medium", activeName == activeNameExp ) ]
-            , href "#"
+            , onClick toggleMsg
+            , attribute "aria-haspopup" "true"
+            , attribute "aria-expanded"
+                (if isOpen then
+                    "true"
+
+                 else
+                    "false"
+                )
+            , type_ "button"
             ]
             [ span [] [ text nameText ]
             , i
-                [ class "bi bi-chevron-down ml-1 text-xs transition-transform group-hover:rotate-180" ]
+                [ class "bi bi-chevron-down ml-1 text-xs transition-transform group-hover:rotate-180"
+                , classList [ ( "rotate-180", isOpen ) ]
+                ]
                 []
             ]
         , div [ class "absolute left-0 pt-2 z-500" ]
             [ ul
-                [ class ("w-56 " ++ dropdownBgClass ++ " rounded-lg shadow-lg border border-black/15 hidden group-hover:block transition-all duration-200") ]
+                [ class ("w-56 " ++ dropdownBgClass ++ " rounded-lg shadow-lg border border-black/15 transition-all duration-200")
+                , classList
+                    [ ( "hidden", not isOpen )
+                    , ( "block", isOpen )
+                    ]
+                ]
                 (List.map dropdownItem subs)
             ]
         ]
