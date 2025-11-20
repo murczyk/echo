@@ -224,6 +224,29 @@ const BARS_ADDITIONAL_COLORS = [
 	"#795548", // Brown (new)
 	"#607D8B", // Blue Grey (new)
 ]
+const BARS_EXTRA_COLORS = [
+	"#8BC34A", // Light Green
+	"#CDDC39", // Lime
+	"#00BCD4", // Cyan
+	"#9C27B0", // Purple
+	"#E91E63", // Pink
+	"#A0522D", // Sienna
+	"#7B1FA2", // Dark Purple
+	"#00695C", // Dark Teal
+	"#C0CA33", // Yellow Green
+	"#F06292", // Light Pink
+	"#5D4037", // Dark Brown
+	"#26A69A", // Jade
+	"#EF6C00", // Deep Orange Dark
+	"#64B5F6", // Light Blue
+	"#1976D2", // Strong Blue
+	"#C2185B", // Raspberry
+	"#FFA726", // Light Orange
+	"#43A047", // Deep Green
+	"#546E7A", // Slate
+	"#1E88E5", // Vivid Blue
+]
+const BARS_COLOR_PALETTE = [...BARS_COLORSCHEME, ...BARS_ADDITIONAL_COLORS, ...BARS_EXTRA_COLORS]
 
 
 @customElement('bar-chart-2')
@@ -232,6 +255,8 @@ export class BarChart2 extends LitElement {
 	data: Data | Data2;
 	transformedData: TransformedData = [];
 	colorMap = {}
+	nextColorIndex = 0;
+	lastAssignedColor: string | null = null;
 
 	@property()
 	isAnalysis = false;
@@ -284,17 +309,32 @@ export class BarChart2 extends LitElement {
 
 	getColorForGroup(group: string) {
 		if (!this.colorMap[group]) {
-			const availableColors = BARS_COLORSCHEME.filter(color => !Object.values(this.colorMap).includes(color));
-			const additionalColorsAvailable = BARS_ADDITIONAL_COLORS.filter(color => !Object.values(this.colorMap).includes(color));
-			if (availableColors.length > 0) {
-				this.colorMap[group] = availableColors[0]
-			} else if (additionalColorsAvailable.length > 0) {
-				this.colorMap[group] = additionalColorsAvailable[0]
-			} else {
-				this.colorMap[group] = "#000000";
-			}
+			this.colorMap[group] = this.pickNextColor();
 		}
 		return this.colorMap[group];
+	}
+
+	pickNextColor() {
+		if (BARS_COLOR_PALETTE.length === 0) {
+			return "#000000";
+		}
+
+		let candidate = BARS_COLOR_PALETTE[this.nextColorIndex % BARS_COLOR_PALETTE.length];
+		// Avoid assigning the same color twice in a row when we loop through the palette
+		if (candidate === this.lastAssignedColor) {
+			for (let offset = 1; offset < BARS_COLOR_PALETTE.length; offset++) {
+				const nextCandidate = BARS_COLOR_PALETTE[(this.nextColorIndex + offset) % BARS_COLOR_PALETTE.length];
+				if (nextCandidate !== this.lastAssignedColor) {
+					candidate = nextCandidate;
+					this.nextColorIndex = (this.nextColorIndex + offset) % BARS_COLOR_PALETTE.length;
+					break;
+				}
+			}
+		}
+
+		this.lastAssignedColor = candidate;
+		this.nextColorIndex = (this.nextColorIndex + 1) % BARS_COLOR_PALETTE.length;
+		return candidate;
 	}
 
 	render() {
@@ -446,6 +486,5 @@ function createBandScale(domain: string[], rangeValue: [number, number], tickFor
 function _gapBetweenTicks(totalTicks: number) {
 	return Math.max(1, Math.ceil(totalTicks / 8));
 }
-
 
 
