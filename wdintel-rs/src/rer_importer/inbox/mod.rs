@@ -229,17 +229,27 @@ async fn inbox_group_stats(
             let group_name = group_names.get(&key).cloned();
             stats.insert(key, InboxGroupStats { group_name, count });
         }
-        let timestamp = ts
-            .and_utc()
-            .with_timezone(&get_tz())
-            .clone()
-            .format("%H:%M")
-            .to_string();
+        let timestamp = print_ts(ts);
         result.push(InboxGroupStatsByMinute { timestamp, stats });
+        for i in 1..5 {
+            // legacy, FIXME remove it and update frontend code correspondingly
+            result.push(InboxGroupStatsByMinute {
+                timestamp: print_ts(ts + Duration::minutes(i)),
+                stats: BTreeMap::new(),
+            });
+        }
     }
     Ok(Json(InboxByGroupDigestRsp {
         stats_per_minute: result,
     }))
+}
+
+fn print_ts(ts: NaiveDateTime) -> String {
+    ts.and_utc()
+        .with_timezone(&get_tz())
+        .clone()
+        .format("%H:%M")
+        .to_string()
 }
 
 #[post("/api/rer-importer/get-inbox-count")]
