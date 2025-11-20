@@ -743,7 +743,9 @@ struct StatsRow {
     pub unit_v2: Option<String>,
 }
 
-fn round_to_5min(ts: NaiveDateTime) -> anyhow::Result<NaiveDateTime> {
+pub(crate) fn round_to_5min(
+    ts: NaiveDateTime,
+) -> anyhow::Result<NaiveDateTime> {
     let hour = ts.time().hour();
     let minute_raw = ts.time().minute();
     let minute = minute_raw - minute_raw % 5;
