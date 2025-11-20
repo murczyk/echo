@@ -191,17 +191,8 @@ where
 
     let (default_date_v, default_time_v) = match datetime_to_store {
         Some(dt) => {
-            let dt_utc = DateTime::<Utc>::from_naive_utc_and_offset(dt, Utc);
-            let dt_kyiv = dt_utc.with_timezone(&Kyiv);
-            (
-                Some(format!(
-                    "{}-{:02}-{:02}",
-                    dt_kyiv.year(),
-                    dt_kyiv.month(),
-                    dt_kyiv.day()
-                )),
-                Some(format!("{:02}:{:02}", dt_kyiv.hour(), dt_kyiv.minute())),
-            )
+            let (date, time) = format_date_time_fields(dt);
+            (Some(date), Some(time))
         }
         None => (None, None),
     };
@@ -295,6 +286,14 @@ where
     Ok(vec![])
 }
 
+fn format_date_time_fields(dt_utc: NaiveDateTime) -> (String, String) {
+    let dt_kyiv = DateTime::<Utc>::from_naive_utc_and_offset(dt_utc, Utc)
+        .with_timezone(&Kyiv);
+    let date = dt_kyiv.format("%Y-%m-%d").to_string();
+    let time = dt_kyiv.format("%H:%M:%S").to_string();
+    (date, time)
+}
+
 async fn try_set_commintify_sender<C>(
     body: &str,
     signal_message: signal_message::Model,
@@ -384,4 +383,20 @@ where
     }
     let m_unit = cached_m_unit.filter(|u| !u.is_empty());
     Ok(m_unit)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn format_date_time_fields_keeps_seconds() {
+        let dt_utc = NaiveDate::from_ymd_opt(2025, 11, 20)
+            .unwrap()
+            .and_hms_opt(10, 29, 18)
+            .unwrap();
+        let (date, time) = format_date_time_fields(dt_utc);
+        assert_eq!(date, "2025-11-20");
+        assert_eq!(time, "12:29:18");
+    }
 }

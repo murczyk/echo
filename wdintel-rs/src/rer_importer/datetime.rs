@@ -439,6 +439,27 @@ mod tests {
     }
 
     #[test]
+    fn extract_datetime_commintify_header_2025() {
+        let input = r#"Отримано з поста "."
+--------------------------------------
+20.11.2025, 12:29:18
+157.8750
+УКХ р/м НВ підрозділу 157.875 МГц
+НВ
+НВ
+
+— Первый раунд 4, Шапка 1."#;
+        let res = extract_datetime(input).unwrap();
+        let expected = Some(
+            NaiveDate::from_ymd_opt(2025, 11, 20)
+                .unwrap()
+                .and_hms_opt(12, 29, 18)
+                .unwrap(),
+        );
+        assert_eq!(res, expected);
+    }
+
+    #[test]
     fn extract_datetime_23feb24_1() {
         let input = r#"Дата: 2024-02-21;  
 Частота: 408.500;  
