@@ -1,6 +1,7 @@
 use crate::entities::{prelude::*, *};
 use crate::rer_importer::types::*;
 
+use crate::config::*;
 use crate::error::AppError;
 use crate::rer_importer::inbox::bl::*;
 use crate::rer_importer::inbox::query::*;
@@ -9,8 +10,7 @@ use crate::types::*;
 use actix_identity::Identity;
 use actix_web::web::Json;
 use actix_web::{get, post};
-use chrono::{DateTime, Duration, NaiveDateTime, Utc};
-use chrono_tz::Europe::Kyiv;
+use chrono::*;
 use itertools::Itertools;
 use log::*;
 use sea_orm::*;
@@ -209,83 +209,32 @@ async fn inbox_group_stats(
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
             .c(h!())?;
-    let one_hour_ago = Utc::now() - Duration::hours(1);
-    let signal_message_timestamps = signal_message::Entity::find()
-        .join(
-            JoinType::InnerJoin,
-            signal_message::Relation::DatasourceGroup.def(),
-        )
-        .filter(signal_message::Column::Deleted.eq(false))
-        .filter(
-            datasource_group::Column::GroupMasterKey
-                .is_in(sigint_groups.clone()),
-        )
-        .filter(
-            signal_message::Column::Timestamp
-                .gte(one_hour_ago.clone().naive_utc()),
-        )
-        .order_by_asc(signal_message::Column::Timestamp)
-        .select_only()
-        .column(datasource_group::Column::GroupMasterKey)
-        .column(signal_message::Column::Timestamp)
-        .into_model::<MessageTimestampPerGroupStat>()
+    let group_names = signal_group::Entity::find()
+        .filter(signal_group::Column::MasterKey.is_in(sigint_groups.clone()))
         .all(&env.dbx)
         .await
-        .context(h!())?;
-    let signal_groups = signal_group::Entity::find()
-        .filter(signal_group::Column::Deleted.eq(false))
-        .filter(signal_group::Column::MasterKey.is_in(sigint_groups))
-        .select_only()
-        .column(signal_group::Column::MasterKey)
-        .column(signal_group::Column::Name)
-        .into_tuple()
-        .all(&env.dbx)
-        .await
-        .context(h!())?
+        .c(h!())?
         .into_iter()
-        .collect::<BTreeMap<String, String>>();
-    let mut current_ts = one_hour_ago;
+        .filter_map(|x| x.name.map(|name| (x.master_key, name)))
+        .collect::<HashMap<_, _>>();
+    let stats = crate::stats::get_last_hour_stats(&env.dbx, sigint_groups)
+        .await
+        .c(h!())?;
     let mut result = vec![];
-    let mut current_rec = BTreeMap::new();
-
-    fn print_utc_timestamp(ts: &DateTime<Utc>) -> String {
-        ts.with_timezone(&Kyiv).clone().format("%H:%M").to_string()
-    }
-
-    for rec in signal_message_timestamps {
-        // recordings are sorted by date, so each next is older
-        while rec.timestamp > current_ts.naive_utc() {
-            // fill in all previous minutes before this rec
-            current_ts += Duration::minutes(1);
-            result.push(InboxGroupStatsByMinute {
-                timestamp: print_utc_timestamp(&current_ts),
-                stats: current_rec,
-            });
-            current_rec = BTreeMap::new();
+    for (ts, group_stats) in stats {
+        let mut stats = BTreeMap::new();
+        for (key, count) in group_stats {
+            let group_name = group_names.get(&key).cloned();
+            stats.insert(key, InboxGroupStats { group_name, count });
         }
-
-        let counter = current_rec // add current rec
-            .get(&rec.group_master_key)
-            .map(|x| x.count)
-            .unwrap_or(0);
-        current_rec.insert(
-            rec.group_master_key.clone(),
-            InboxGroupStats {
-                group_name: signal_groups.get(&rec.group_master_key).cloned(),
-                count: counter + 1,
-            },
-        );
+        let timestamp = ts
+            .and_utc()
+            .with_timezone(&get_tz())
+            .clone()
+            .format("%H:%M")
+            .to_string();
+        result.push(InboxGroupStatsByMinute { timestamp, stats });
     }
-    while result.len() < 60 {
-        // fill in all future recs
-        current_ts += Duration::minutes(1);
-        result.push(InboxGroupStatsByMinute {
-            timestamp: print_utc_timestamp(&current_ts),
-            stats: current_rec,
-        });
-        current_rec = BTreeMap::new();
-    }
-
     Ok(Json(InboxByGroupDigestRsp {
         stats_per_minute: result,
     }))
