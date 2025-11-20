@@ -22,6 +22,7 @@ import Shared.Components.Watermark as Watermark
 import Shared.Icons as Icons
 import Shared.MarkedText
 import Time
+import Time.Extra as TimeExtra
 import Utils.Api.ErrorHandling
 import Utils.Time
 import Utils.Utils exposing (..)
@@ -773,6 +774,36 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
 
         timeColumn =
             let
+                formattedDateTime =
+                    case ( message.date, message.time ) of
+                        ( Just dateStr, Just timeStr ) ->
+                            Utils.Time.parseDatetimeParts (dateStr ++ "T" ++ timeStr)
+                                |> Result.toMaybe
+                                |> Maybe.map (TimeExtra.partsToPosix vps.zone)
+                                |> Maybe.map (Utils.Time.renderDateTimeF1 vps.zone)
+                                |> Maybe.withDefault (String.trim (dateStr ++ " " ++ timeStr))
+
+                        ( Just dateStr, Nothing ) ->
+                            dateStr
+
+                        ( Nothing, Just timeStr ) ->
+                            timeStr
+
+                        _ ->
+                            message.timestamp
+                                |> Maybe.map (Utils.Time.renderDateTimeF1 vps.zone << Time.millisToPosix)
+                                |> Maybe.withDefault ""
+
+                dateTimeBlock =
+                    HtmlX.viewIf (formattedDateTime /= "") <|
+                        div
+                            [ class "flex items-center gap-2"
+                            , title "Час коли попало в групу"
+                            ]
+                            [ i [ class "bi bi-calendar-event text-icons" ] []
+                            , span [ class "font-medium" ] [ text formattedDateTime ]
+                            ]
+
                 actionsBlock =
                     div [ class "flex justify-center gap-4" ]
                         [ let
@@ -846,22 +877,9 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                             ]
                         ]
             in
-            [ div [ class "flex flex-col gap-2" ]
-                [ div [ class "flex flex-col gap-1" ]
-                    [ actionsBlock
-                    , div
-                        [ class "flex items-center justify-center"
-                        ]
-                        [ span []
-                            [ text <|
-                                Maybe.withDefault ""
-                                    (Maybe.map
-                                        (Utils.Time.renderDateTimeF1 vps.zone << Time.millisToPosix)
-                                        message.timestamp
-                                    )
-                            ]
-                        ]
-                    ]
+            [ div [ class "flex flex-col gap-1" ]
+                [ actionsBlock
+                , dateTimeBlock
                 , metadataBlock
                 ]
             ]
@@ -879,9 +897,21 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                         , div [ class "flex items-center gap-1" ]
                             actions
                         ]
+
+                messageTimestamp =
+                    message.timestamp
+                        |> Maybe.map (Utils.Time.renderDateTimeF1 vps.zone << Time.millisToPosix)
             in
             div [ class "flex flex-col gap-1" ]
-                [ let
+                [ div [ title "Час перехоплення" ]
+                    [ itemBlock
+                        { iconTitle = String.fromInt msgId
+                        , iconName = "bi-clock-history"
+                        , label = messageTimestamp
+                        }
+                        []
+                    ]
+                , let
                     mGroup =
                         message.groupMasterKey
                             |> Maybe.andThen (\groupMasterKey -> Dict.get groupMasterKey vps.groupInfos)
