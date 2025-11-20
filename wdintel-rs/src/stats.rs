@@ -10,6 +10,7 @@ use itertools::Itertools;
 use log::info;
 use log::*;
 use sea_orm::*;
+use sea_query::OnConflict;
 use std::collections::HashMap;
 
 pub async fn oneoff_calculate_stats(
@@ -1893,15 +1894,28 @@ async fn update_5min_stats_location(
                     model.update(dbx).await.c(h!())?;
                 }
             } else {
-                stats_group_location_5min::ActiveModel {
-                    id: NotSet,
-                    quantity: Set(count),
-                    group_master_key: Set(group_master_key),
-                    location: Set(location),
-                    dt: Set(since_ts),
-                    created_at: NotSet,
-                }
-                .insert(dbx)
+                stats_group_location_5min::Entity::insert(
+                    stats_group_location_5min::ActiveModel {
+                        id: NotSet,
+                        quantity: Set(count),
+                        group_master_key: Set(group_master_key),
+                        location: Set(location),
+                        dt: Set(since_ts),
+                        created_at: NotSet,
+                    },
+                )
+                .on_conflict(
+                    OnConflict::columns([
+                        stats_group_location_5min::Column::GroupMasterKey,
+                        stats_group_location_5min::Column::Dt,
+                        stats_group_location_5min::Column::Location,
+                    ])
+                    .update_columns([
+                        stats_group_location_5min::Column::Quantity,
+                    ])
+                    .to_owned(),
+                )
+                .exec(dbx)
                 .await
                 .c(h!())?;
             }
@@ -1991,15 +2005,28 @@ async fn recalculate_day_stats_location(
                     model.update(dbx).await.c(h!())?;
                 }
             } else {
-                stats_group_location_day::ActiveModel {
-                    id: NotSet,
-                    quantity: Set(count),
-                    group_master_key: Set(group_master_key),
-                    location: Set(location),
-                    dt: Set(current_date),
-                    created_at: NotSet,
-                }
-                .insert(dbx)
+                stats_group_location_day::Entity::insert(
+                    stats_group_location_day::ActiveModel {
+                        id: NotSet,
+                        quantity: Set(count),
+                        group_master_key: Set(group_master_key),
+                        location: Set(location),
+                        dt: Set(current_date),
+                        created_at: NotSet,
+                    },
+                )
+                .on_conflict(
+                    OnConflict::columns([
+                        stats_group_location_day::Column::GroupMasterKey,
+                        stats_group_location_day::Column::Dt,
+                        stats_group_location_day::Column::Location,
+                    ])
+                    .update_columns([
+                        stats_group_location_day::Column::Quantity,
+                    ])
+                    .to_owned(),
+                )
+                .exec(dbx)
                 .await
                 .c(h!())?;
             }
