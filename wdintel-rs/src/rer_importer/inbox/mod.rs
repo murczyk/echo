@@ -217,13 +217,15 @@ async fn inbox_group_stats(
         .into_iter()
         .filter_map(|x| x.name.map(|name| (x.master_key, name)))
         .collect::<HashMap<_, _>>();
-    let stats = crate::stats::get_last_hour_stats(&env.dbx, sigint_groups)
-        .await
-        .c(h!())?;
+    let stats =
+        crate::stats::get_last_hour_stats(&env.dbx, sigint_groups.clone())
+            .await
+            .c(h!())?;
     let mut result = vec![];
     for (ts, group_stats) in stats {
         let mut stats = BTreeMap::new();
-        for (key, count) in group_stats {
+        for key in sigint_groups.clone() {
+            let count = group_stats.get(&key).unwrap_or(&0).to_owned();
             let group_name = group_names.get(&key).cloned();
             stats.insert(key, InboxGroupStats { group_name, count });
         }
