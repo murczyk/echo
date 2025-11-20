@@ -47,9 +47,19 @@ pub fn extract_datetime(body: &str) -> Result<Option<NaiveDateTime>, AppError> {
                 r"Час: (?P<hour>\d{2})\s*:(?P<minute>\d{2})\s*:(?P<second>\d{2})",
                 |capts| { parse_datetime(capts, false, false, false, true) },
             ),
+            // Work with formats like DD.MM.YYYY HH:MI:SS
+            (
+                r"(?P<day>\d{2})\.(?P<mon>\d{2})\.(?P<year>\d{4}) (?P<hour>\d{2})\s*:(?P<minute>\d{2})\s*:(?P<second>\d{2})",
+                |capts| { parse_datetime(capts, true, true, true, true) },
+            ),
             (
                 r"\s+(?P<hour>\d\d?)\s*:(?P<minute>\d{2})\s+",
                 |capts| { parse_datetime(capts, false, false, false, false) },
+            ),
+            // Work with formats like 20-11 16:53:04
+            (
+                r"(?P<day>\d{2})-(?P<mon>\d{2}) (?P<hour>\d{2})\s*:(?P<minute>\d{2})\s*:(?P<second>\d{2})",
+                |capts| { parse_datetime(capts, false, true, true, true) },
             ),
         ];
     }
@@ -454,6 +464,53 @@ mod tests {
             NaiveDate::from_ymd_opt(2025, 11, 20)
                 .unwrap()
                 .and_hms_opt(12, 29, 18)
+                .unwrap(),
+        );
+        assert_eq!(res, expected);
+    }
+
+    #[test]
+    fn extract_datetime_dash_date_keeps_seconds() {
+        let input = r#"20-11 16:53:04
+446.000
+УКХ ймовірно, 344 мсп 69 мсд 6 А (МИКОЛАЇВКА-ЛИМАН ДРУГИЙ)
+НВ
+НВ
+
+– Да, давай синьки.
+
+Коментар: T2"#;
+        let res = extract_datetime(input).unwrap();
+        let year = Local::now().year();
+        let expected = Some(
+            NaiveDate::from_ymd_opt(year, 11, 20)
+                .unwrap()
+                .and_hms_opt(16, 53, 4)
+                .unwrap(),
+        );
+        assert_eq!(res, expected);
+    }
+
+    #[test]
+    fn extract_datetime_full_date_space_time() {
+        let input = r#"УКХ р/м управління підрозділу противника
+ДОРОЗВІДКА
+144.581 МГц
+
+20.11.2025 16:56:01
+
+Отримувач(і): ШУТ,
+РЯБА
+Відправник: НВ
+
+1. Птицы лишние разогнали, если не слышите, блять, прям чухайте по-быстрому к саму дому, Комиком мы работаем.
+1. ШУТ, РЯБА , как раз пока по тому дому, где пидары сидят, ебашит слоник, птицы ми разогнали лишние, если никого не слышите, гасите домой, гасите домой.
+1. Давай, все у вас видим, давайте, пацаны, быстрее, быстрее, там далеко наша птица, висит другая, давайте быстрее."#;
+        let res = extract_datetime(input).unwrap();
+        let expected = Some(
+            NaiveDate::from_ymd_opt(2025, 11, 20)
+                .unwrap()
+                .and_hms_opt(16, 56, 1)
                 .unwrap(),
         );
         assert_eq!(res, expected);
