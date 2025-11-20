@@ -132,8 +132,8 @@ pub fn should_read_stats_aggregated(
         return Ok(false);
     }
     match req.search.clone() {
-        None => Ok(false),
-        Some(q) => Ok(!q.is_empty()),
+        None => Ok(true),
+        Some(q) => Ok(q.is_empty()),
     }
 }
 
