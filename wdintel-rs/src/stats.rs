@@ -1,10 +1,10 @@
 use crate::config::*;
 use crate::entities::*;
 use crate::error::AppError;
-use crate::h;
 use crate::rer_importer::types::*;
 use crate::sigint::freq::types::FreqGroupsMessageCountByDay;
 use crate::types::{Env, Mode, ShortContext};
+use crate::{h, OneoffCalculateHistoricStatsPs};
 use anyhow::Context;
 use chrono::*;
 use itertools::Itertools;
@@ -38,8 +38,11 @@ pub async fn oneoff_calculate_stats(
 
 pub async fn oneoff_calculate_historic_stats(
     mode: Mode,
-    recalculate_5min_stats: bool,
+    params: OneoffCalculateHistoricStatsPs,
 ) -> Result<(), AppError> {
+    let force = params.force;
+    let recalculate_day_stats = !params.skip_day;
+    let recalculate_5min_stats = !params.skip_5min;
     let config = read_config(mode).context(h!())?;
     let dbx = crate::new_pg_pool_from_config(&config)
         .await
@@ -55,14 +58,16 @@ pub async fn oneoff_calculate_historic_stats(
         .map(|x| x.created_at)
         .filter(|ts| min_since_ts.lt(ts))
         .unwrap_or(min_since_ts);
-    let mut till_ts = stats_group_5min::Entity::find()
-        .order_by_asc(stats_group_5min::Column::Dt)
-        .one(&dbx)
-        .await
-        .c(h!())?
-        .map(|x| x.dt)
-        .unwrap_or(Utc::now().naive_utc())
-        + Duration::days(1);
+    let mut till_ts = Utc::now().naive_utc();
+    if !force {
+        till_ts = stats_group_5min::Entity::find()
+            .order_by_asc(stats_group_5min::Column::Dt)
+            .one(&dbx)
+            .await
+            .c(h!())?
+            .map(|x| x.dt)
+            .unwrap_or(Utc::now().naive_utc())
+    };
 
     // calculate for part of the day today in order to proceed with rest of the days from start to finish
     let date_till_dt = get_local_date(till_ts);
@@ -83,9 +88,15 @@ pub async fn oneoff_calculate_historic_stats(
         let since_ts = till_ts - Duration::days(1);
         let duration = (since_ts - min_since_ts).num_days();
         info!("oneoff_calculate_historic_stats: from {since_ts} to {till_ts}, remaining {duration} days");
-        recalculate_group_stats(&dbx, since_ts, till_ts, true, true)
-            .await
-            .context(h!())?;
+        recalculate_group_stats(
+            &dbx,
+            since_ts,
+            till_ts,
+            recalculate_day_stats,
+            recalculate_5min_stats,
+        )
+        .await
+        .context(h!())?;
         till_ts = since_ts;
     }
     info!("oneoff_calculate_historic_stats: done");

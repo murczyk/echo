@@ -397,6 +397,16 @@ pub struct OneoffCalculateStatsPs {
     pub till_epoch_ms: Option<i64>,
 }
 
+#[derive(clap::Args, Debug, Clone)]
+pub struct OneoffCalculateHistoricStatsPs {
+    #[arg(long, default_value = "false")]
+    pub force: bool,
+    #[arg(long, default_value = "false")]
+    pub skip_5min: bool,
+    #[arg(long, default_value = "false")]
+    pub skip_day: bool,
+}
+
 #[derive(clap::Subcommand, Debug)]
 #[command(author, version, about, long_about = None)]
 enum Cmd {
@@ -456,8 +466,7 @@ enum Cmd {
     OneoffCalculateSignalMessageGroups,
     OneoffCalculateStats(OneoffCalculateStatsPs),
     /// Calculates all group stats for last year (no recalculation).
-    OneoffCalculateHistoricStats,
-    OneoffCalculateHistoricDayStats,
+    OneoffCalculateHistoricStats(OneoffCalculateHistoricStatsPs),
     OneoffDisableIm,
 }
 
@@ -846,11 +855,8 @@ async fn async_main(
             )
             .await
         }
-        Cmd::OneoffCalculateHistoricStats => {
-            stats::oneoff_calculate_historic_stats(mode, true).await
-        }
-        Cmd::OneoffCalculateHistoricDayStats => {
-            stats::oneoff_calculate_historic_stats(mode, false).await
+        Cmd::OneoffCalculateHistoricStats(ps) => {
+            stats::oneoff_calculate_historic_stats(mode, ps).await
         }
         Cmd::OneoffDisableIm => datasource::oneoff_disable_im(mode).await,
     }
