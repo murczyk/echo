@@ -273,3 +273,11 @@ pub struct ListFreqsForPeriodReq {
 pub struct ListFreqsForPeriodRsp {
     pub freqs: Vec<String>,
 }
+
+#[derive(FromQueryResult)]
+pub struct FreqGroupsMessageCountByDay {
+    pub freq: String,
+    pub count: i64,
+    pub group: String,
+    pub day: i64,
+}

@@ -6,7 +6,7 @@ use crate::sigint::sender::message_ids_for_senders;
 use crate::types::*;
 use crate::utils::*;
 use actix_web::post;
-use actix_web::web::Json;
+use actix_web::web::{Data, Json};
 use chrono::prelude::*;
 use lazy_static::lazy_static;
 use log::*;
@@ -263,7 +263,70 @@ pub async fn list_groups_by_freqs_per_day(
         .await
         .c(h!())?;
     let dt_till = dt_from_millis(req.till_date_noninclusive_ms)?;
+    let dt_cutoff = dt_till - chrono::Duration::days(10);
+    let mut dt_since =
+        dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
+    if dt_cutoff < dt_since {
+        dt_since = dt_cutoff;
+    }
 
+    let freqs = req.freqs.clone();
+    let master_keys =
+        crate::messenger::group::get_identity_sigint_groups_noimport(
+            &env.dbx,
+            &user,
+            &env.config,
+        )
+        .await
+        .c(h!())?;
+
+    let rows = if crate::stats::can_read_stats_aggregated(
+        &env.config,
+        dt_since,
+        dt_till,
+    ) {
+        crate::stats::read_frequency_stats_day(
+            &env,
+            master_keys,
+            dt_since,
+            dt_till,
+        )
+        .await
+        .c(h!())?
+        .into_iter()
+        .filter(|x| freqs.contains(&x.freq))
+        .collect()
+    } else {
+        collect_freq_counts(&env, dt_till, dt_since, freqs, master_keys)
+            .await
+            .c(h!())?
+    };
+
+    let mut res = HashMap::new();
+    for row in rows {
+        let freq = row.freq.clone();
+        let day = row.day;
+        let group = row.group.clone();
+        let count = row.count;
+        if !res.contains_key(&freq) {
+            res.insert(freq.clone(), HashMap::new());
+        }
+        let freq_map = res.get_mut(&freq).unwrap();
+        freq_map.entry(day).or_insert_with(HashMap::new);
+        let day_map = freq_map.get_mut(&day).unwrap();
+        day_map.insert(group.clone(), count);
+    }
+
+    Ok(Json(res))
+}
+
+async fn collect_freq_counts(
+    env: &Data<Env>,
+    dt_till: NaiveDateTime,
+    dt_since: NaiveDateTime,
+    freqs: Vec<String>,
+    master_keys: Vec<String>,
+) -> Result<Vec<FreqGroupsMessageCountByDay>, AppError> {
     let callsigns = signal_message::Entity::find()
         .join(
             JoinType::InnerJoin,
@@ -297,18 +360,12 @@ pub async fn list_groups_by_freqs_per_day(
         ))
         .filter(signal_group::Column::Deleted.eq(false))
         .filter(message_in_groups_exists(
-            crate::messenger::group::get_identity_sigint_groups_noimport(
-                &env.dbx,
-                &user,
-                &env.config,
-            )
-                .await.c(h!())?,
+            master_keys,
         ))
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(sigint_inbox_item::Column::Datetime.lte(dt_till))
-        .filter(sigint_inbox_item::Column::Datetime.gte(dt_from_millis(req.since_date_inclusive_ms).context(h!())?))
-        .filter(Expr::cust_with_values("sigint_inbox_item.datetime >= $1 - INTERVAL '10 days'", vec![dt_till]))
-        .filter(sigint_inbox_item::Column::Freq.is_in(req.freqs.clone()));
+        .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
+        .filter(sigint_inbox_item::Column::Freq.is_in(freqs));
 
     let callsigns = callsigns
         .clone()
@@ -318,35 +375,13 @@ pub async fn list_groups_by_freqs_per_day(
     //     "> sql: {}",
     //     callsigns.clone().build(DbBackend::Postgres).to_string()
     // );
-    #[derive(FromQueryResult)]
-    pub struct FreqGroupsMessageCountByDay {
-        pub freq: String,
-        pub count: i64,
-        pub group: String,
-        pub day: i64,
-    }
 
-    let mut res = HashMap::new();
-    for row in callsigns
+    let rows = callsigns
         .into_model::<FreqGroupsMessageCountByDay>()
         .all(&env.dbx)
         .await
-        .c(h!())?
-    {
-        let freq = row.freq.clone();
-        let day = row.day;
-        let group = row.group.clone();
-        let count = row.count;
-        if !res.contains_key(&freq) {
-            res.insert(freq.clone(), HashMap::new());
-        }
-        let freq_map = res.get_mut(&freq).unwrap();
-        freq_map.entry(day).or_insert_with(HashMap::new);
-        let day_map = freq_map.get_mut(&day).unwrap();
-        day_map.insert(group.clone(), count);
-    }
-
-    Ok(Json(res))
+        .c(h!())?;
+    Ok(rows)
 }
 
 #[post("/api/sigint/freq/callsigns")]

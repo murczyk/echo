@@ -3,6 +3,7 @@ use crate::entities::*;
 use crate::error::AppError;
 use crate::h;
 use crate::rer_importer::types::*;
+use crate::sigint::freq::types::FreqGroupsMessageCountByDay;
 use crate::types::{Env, Mode, ShortContext};
 use anyhow::Context;
 use chrono::*;
@@ -486,6 +487,89 @@ pub async fn read_frequency_stats_aggregated(
             count,
         });
     }
+    Ok(result)
+}
+
+pub async fn read_frequency_stats_day(
+    env: &actix_web::web::Data<Env>,
+    master_keys: Vec<String>,
+    dt_since: NaiveDateTime,
+    dt_till: NaiveDateTime,
+) -> anyhow::Result<Vec<FreqGroupsMessageCountByDay>> {
+    let (intervals_5min, days) =
+        collect_time_intervals_for_stats(dt_since, dt_till).c(h!())?;
+
+    let mut interval_5mins_filter = Condition::any();
+    for (since, till) in intervals_5min {
+        let filter = stats_group_freq_5min::Column::Dt
+            .gte(since)
+            .and(stats_group_freq_5min::Column::Dt.lt(till));
+        interval_5mins_filter = interval_5mins_filter.add(filter);
+    }
+
+    let stats = stats_group_freq_5min::Entity::find()
+        .filter(interval_5mins_filter)
+        .filter(
+            stats_group_freq_5min::Column::GroupMasterKey
+                .is_in(master_keys.clone()),
+        )
+        .all(&env.dbx)
+        .await
+        .c(h!())?;
+
+    #[derive(Hash, Eq, PartialEq)]
+    pub struct Key {
+        pub freq: String,
+        pub group: String,
+        pub day: i64,
+    }
+
+    let mut result = HashMap::new();
+    for s in stats {
+        let key = Key {
+            freq: s.frequency,
+            group: s.group_master_key,
+            day: start_of_day(get_local_date(s.dt))
+                .c(h!())?
+                .and_utc()
+                .timestamp_millis(),
+        };
+        *result.entry(key).or_insert(0) += s.quantity;
+    }
+
+    if !days.is_empty() {
+        let mut interval_day_filter = Condition::any();
+        for d in days {
+            let filter = stats_group_freq_day::Column::Dt.eq(d);
+            interval_day_filter = interval_day_filter.add(filter);
+        }
+        let day_stats = stats_group_freq_day::Entity::find()
+            .filter(interval_day_filter)
+            .filter(
+                stats_group_freq_day::Column::GroupMasterKey
+                    .is_in(master_keys.clone()),
+            )
+            .all(&env.dbx)
+            .await
+            .c(h!())?;
+        for s in day_stats {
+            let key = Key {
+                freq: s.frequency,
+                group: s.group_master_key,
+                day: start_of_day(s.dt).c(h!())?.and_utc().timestamp_millis(),
+            };
+            *result.entry(key).or_insert(0) += s.quantity;
+        }
+    };
+    let result = result
+        .into_iter()
+        .map(|(key, count)| FreqGroupsMessageCountByDay {
+            freq: key.freq,
+            count: count as i64,
+            group: key.group,
+            day: key.day,
+        })
+        .collect();
     Ok(result)
 }
 
