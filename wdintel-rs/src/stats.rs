@@ -2970,7 +2970,7 @@ mod tests {
         let dt_since = ndt(2015, 10, 10, 10, 30); // TODO fix year to 2025
         let dt_till = ndt(2025, 10, 15, 5, 15);
         assert!(dt_till - dt_since >= Duration::days(STATS_5MIN_MAX_NUM_DAYS));
-        let (intervals, days) =
+        let (intervals, _days) =
             collect_time_intervals_for_stats(dt_since, dt_till).unwrap();
         let tz = get_tz();
         let date_after_since_dt =
@@ -3002,7 +3002,7 @@ mod tests {
         //     NaiveDate::from_ymd_opt(2025, 10, 14).unwrap(),
         //     NaiveDate::from_ymd_opt(2025, 10, 15).unwrap(),
         // ];
-        // assert_eq!(days, expected_days, "Days vector should contain all dates from the day after dt_since to the day of dt_till.");
+        // assert_eq!(_days, expected_days, "Days vector should contain all dates from the day after dt_since to the day of dt_till.");
     }
 
     fn ndt(
