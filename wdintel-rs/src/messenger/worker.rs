@@ -59,7 +59,7 @@ async fn worker_calculate_group_stats_inner(
     {
         let since = crate::stats::round_to_5min(now).c(h!())?;
         let till_ts = since + chrono::Duration::minutes(5);
-        recalculate_group_stats(&dbx, since, till_ts, false)
+        recalculate_group_stats(&dbx, since, till_ts, false, true)
             .await
             .c(h!())?;
         "short loop"
@@ -69,7 +69,7 @@ async fn worker_calculate_group_stats_inner(
             - chrono::Duration::minutes(
                 WORKER_CALCULATE_GROUP_STATS_SINCE_MINS,
             );
-        recalculate_group_stats(&dbx, since_ts, till_ts, true)
+        recalculate_group_stats(&dbx, since_ts, till_ts, true, true)
             .await
             .c(h!())?;
         last_calculated = now;

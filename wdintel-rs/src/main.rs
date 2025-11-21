@@ -457,6 +457,7 @@ enum Cmd {
     OneoffCalculateStats(OneoffCalculateStatsPs),
     /// Calculates all group stats for last year (no recalculation).
     OneoffCalculateHistoricStats,
+    OneoffCalculateHistoricDayStats,
     OneoffDisableIm,
 }
 
@@ -846,7 +847,10 @@ async fn async_main(
             .await
         }
         Cmd::OneoffCalculateHistoricStats => {
-            stats::oneoff_calculate_historic_stats(mode).await
+            stats::oneoff_calculate_historic_stats(mode, true).await
+        }
+        Cmd::OneoffCalculateHistoricDayStats => {
+            stats::oneoff_calculate_historic_stats(mode, false).await
         }
         Cmd::OneoffDisableIm => datasource::oneoff_disable_im(mode).await,
     }

@@ -30,7 +30,7 @@ pub async fn oneoff_calculate_stats(
     let dbx = crate::new_pg_pool_from_config(&config)
         .await
         .context(h!())?;
-    recalculate_group_stats(&dbx, since_ts, till_ts, true)
+    recalculate_group_stats(&dbx, since_ts, till_ts, true, true)
         .await
         .context(h!())?;
     Ok(())
@@ -38,6 +38,7 @@ pub async fn oneoff_calculate_stats(
 
 pub async fn oneoff_calculate_historic_stats(
     mode: Mode,
+    recalculate_5min_stats: bool,
 ) -> Result<(), AppError> {
     let config = read_config(mode).context(h!())?;
     let dbx = crate::new_pg_pool_from_config(&config)
@@ -66,9 +67,15 @@ pub async fn oneoff_calculate_historic_stats(
     // calculate for part of the day today in order to proceed with rest of the days from start to finish
     let date_till_dt = get_local_date(till_ts);
     let dt_till_sod = start_of_day(date_till_dt).c(h!())?;
-    recalculate_group_stats(&dbx, dt_till_sod, till_ts, true)
-        .await
-        .context(h!())?;
+    recalculate_group_stats(
+        &dbx,
+        dt_till_sod,
+        till_ts,
+        true,
+        recalculate_5min_stats,
+    )
+    .await
+    .context(h!())?;
     till_ts = dt_till_sod;
 
     //calculate for all the remaining days
@@ -76,7 +83,7 @@ pub async fn oneoff_calculate_historic_stats(
         let since_ts = till_ts - Duration::days(1);
         let duration = (since_ts - min_since_ts).num_days();
         info!("oneoff_calculate_historic_stats: from {since_ts} to {till_ts}, remaining {duration} days");
-        recalculate_group_stats(&dbx, since_ts, till_ts, true)
+        recalculate_group_stats(&dbx, since_ts, till_ts, true, true)
             .await
             .context(h!())?;
         till_ts = since_ts;
@@ -848,258 +855,236 @@ pub async fn recalculate_group_stats(
     since_ts: NaiveDateTime,
     till_ts: NaiveDateTime,
     recalculate_day_stats: bool,
+    recalculate_5min_stats: bool,
 ) -> Result<(), AppError> {
-    let since_filter_1 = sigint_inbox_item::Column::Datetime
-        .is_null()
-        .and(signal_message::Column::CreatedAt.gte(since_ts));
-    let since_filter_2 = sigint_inbox_item::Column::Datetime
-        .is_not_null()
-        .and(sigint_inbox_item::Column::Datetime.gte(since_ts));
-
-    let till_filter_1 = sigint_inbox_item::Column::Datetime
-        .is_null()
-        .and(signal_message::Column::CreatedAt.lt(till_ts));
-    let till_filter_2 = sigint_inbox_item::Column::Datetime
-        .is_not_null()
-        .and(sigint_inbox_item::Column::Datetime.lt(till_ts));
-
-    let generic_stats = signal_message::Entity::find()
-        .join(
-            JoinType::InnerJoin,
-            signal_message::Relation::SigintInboxItem.def(),
-        )
-        .join(
-            JoinType::InnerJoin,
-            signal_message::Relation::DatasourceGroup.def(),
-        )
-        .join(
-            JoinType::InnerJoin,
-            datasource_group::Relation::SignalGroup.def(),
-        )
-        .join(
-            JoinType::InnerJoin,
-            signal_group::Relation::SignalGroupAor.def(),
-        )
-        .select_only()
-        .column(signal_message::Column::Id)
-        .column(signal_message::Column::CreatedAt)
-        .column(sigint_inbox_item::Column::Datetime)
-        .column(datasource_group::Column::GroupMasterKey)
-        .column(sigint_inbox_item::Column::Freq)
-        .column(sigint_inbox_item::Column::Callsigns)
-        .column(sigint_inbox_item::Column::LocationV2)
-        .column(sigint_inbox_item::Column::UnitV2)
-        .column(sigint_inbox_item::Column::PostId)
-        .column(sigint_inbox_item::Column::Tags)
-        .column(signal_message::Column::Sender)
-        .column(signal_group_aor::Column::AorId)
-        .filter(since_filter_1.or(since_filter_2))
-        .filter(till_filter_1.or(till_filter_2))
-        .into_model::<StatsRow>()
-        .all(dbx)
-        .await
-        .c(h!())?;
-
-    let group_stats = generic_stats
-        .clone()
-        .into_iter()
-        .map(|x| (x.group_master_key, x.datetime.unwrap_or(x.created_at)))
-        .collect_vec();
-    let freq_stats = generic_stats
-        .clone()
-        .into_iter()
-        .map(|x| {
-            (
-                (x.group_master_key, x.freq.unwrap_or("".to_string())),
-                x.datetime.unwrap_or(x.created_at),
-            )
-        })
-        .collect_vec();
-    let sender_stats = generic_stats
-        .clone()
-        .into_iter()
-        .map(|x| {
-            (
-                (x.group_master_key, x.sender.unwrap_or("".to_string())),
-                x.datetime.unwrap_or(x.created_at),
-            )
-        })
-        .collect_vec();
-    let unit_stats = generic_stats
-        .clone()
-        .into_iter()
-        .map(|x| {
-            (
-                (x.group_master_key, x.unit_v2.unwrap_or("".to_string())),
-                x.datetime.unwrap_or(x.created_at),
-            )
-        })
-        .collect_vec();
-    let aor_stats = generic_stats
-        .clone()
-        .into_iter()
-        .filter_map(|x| {
-            x.aor_id.map(|aor_id| {
-                (
-                    (x.group_master_key, aor_id),
-                    x.datetime.unwrap_or(x.created_at),
-                )
-            })
-        })
-        .collect_vec();
-    let post_stats = generic_stats
-        .clone()
-        .into_iter()
-        .filter_map(|x| {
-            x.post_id.map(|post_id| {
-                (
-                    (x.group_master_key, post_id),
-                    x.datetime.unwrap_or(x.created_at),
-                )
-            })
-        })
-        .collect_vec();
-    let callsign_stats = generic_stats
-        .clone()
-        .into_iter()
-        .flat_map(|x| {
-            let callsign: Vec<String> = x
-                .callsigns
-                .and_then(move |c| serde_json::from_value(c).ok())
-                .unwrap_or_default();
-            callsign.into_iter().map(move |c| {
-                (
-                    (x.group_master_key.clone(), c),
-                    x.datetime.unwrap_or(x.created_at),
-                )
-            })
-        })
-        .collect_vec();
-    let tag_stats = generic_stats
-        .clone()
-        .into_iter()
-        .flat_map(|x| {
-            let tags: Vec<i64> = x
-                .tags
-                .and_then(|c| serde_json::from_value(c).ok())
-                .unwrap_or_default();
-            tags.into_iter().map(move |t| {
-                (
-                    (x.group_master_key.clone(), t),
-                    x.datetime.unwrap_or(x.created_at),
-                )
-            })
-        })
-        .collect_vec();
-    let location_stats = generic_stats
-        .clone()
-        .into_iter()
-        .flat_map(|x| {
-            let locations = x
-                .location_v2
-                .map(|x| {
-                    x.split("|")
-                        .map(|x| x.trim().to_string())
-                        .collect::<HashSet<_>>()
-                })
-                .unwrap_or_default();
-            locations.into_iter().map(move |l| {
-                (
-                    (x.group_master_key.clone(), l),
-                    x.datetime.unwrap_or(x.created_at),
-                )
-            })
-        })
-        .collect_vec();
-
     let since_ts = round_to_5min(since_ts).c(h!())?;
     let till_ts = round_to_5min(till_ts).c(h!())?;
+    if recalculate_5min_stats {
+        let since_filter_1 = sigint_inbox_item::Column::Datetime
+            .is_null()
+            .and(signal_message::Column::CreatedAt.gte(since_ts));
+        let since_filter_2 = sigint_inbox_item::Column::Datetime
+            .is_not_null()
+            .and(sigint_inbox_item::Column::Datetime.gte(since_ts));
 
-    update_5min_stats_group(dbx, group_stats, since_ts, till_ts)
-        .await
-        .c(h!())?;
+        let till_filter_1 = sigint_inbox_item::Column::Datetime
+            .is_null()
+            .and(signal_message::Column::CreatedAt.lt(till_ts));
+        let till_filter_2 = sigint_inbox_item::Column::Datetime
+            .is_not_null()
+            .and(sigint_inbox_item::Column::Datetime.lt(till_ts));
 
-    if recalculate_day_stats {
-        recalculate_day_stats_group(dbx, since_ts, till_ts)
+        let generic_stats = signal_message::Entity::find()
+            .join(
+                JoinType::InnerJoin,
+                signal_message::Relation::SigintInboxItem.def(),
+            )
+            .join(
+                JoinType::InnerJoin,
+                signal_message::Relation::DatasourceGroup.def(),
+            )
+            .join(
+                JoinType::InnerJoin,
+                datasource_group::Relation::SignalGroup.def(),
+            )
+            .join(
+                JoinType::InnerJoin,
+                signal_group::Relation::SignalGroupAor.def(),
+            )
+            .select_only()
+            .column(signal_message::Column::Id)
+            .column(signal_message::Column::CreatedAt)
+            .column(sigint_inbox_item::Column::Datetime)
+            .column(datasource_group::Column::GroupMasterKey)
+            .column(sigint_inbox_item::Column::Freq)
+            .column(sigint_inbox_item::Column::Callsigns)
+            .column(sigint_inbox_item::Column::LocationV2)
+            .column(sigint_inbox_item::Column::UnitV2)
+            .column(sigint_inbox_item::Column::PostId)
+            .column(sigint_inbox_item::Column::Tags)
+            .column(signal_message::Column::Sender)
+            .column(signal_group_aor::Column::AorId)
+            .filter(since_filter_1.or(since_filter_2))
+            .filter(till_filter_1.or(till_filter_2))
+            .into_model::<StatsRow>()
+            .all(dbx)
+            .await
+            .c(h!())?;
+
+        let group_stats = generic_stats
+            .clone()
+            .into_iter()
+            .map(|x| (x.group_master_key, x.datetime.unwrap_or(x.created_at)))
+            .collect_vec();
+        let freq_stats = generic_stats
+            .clone()
+            .into_iter()
+            .map(|x| {
+                (
+                    (x.group_master_key, x.freq.unwrap_or("".to_string())),
+                    x.datetime.unwrap_or(x.created_at),
+                )
+            })
+            .collect_vec();
+        let sender_stats = generic_stats
+            .clone()
+            .into_iter()
+            .map(|x| {
+                (
+                    (x.group_master_key, x.sender.unwrap_or("".to_string())),
+                    x.datetime.unwrap_or(x.created_at),
+                )
+            })
+            .collect_vec();
+        let unit_stats = generic_stats
+            .clone()
+            .into_iter()
+            .map(|x| {
+                (
+                    (x.group_master_key, x.unit_v2.unwrap_or("".to_string())),
+                    x.datetime.unwrap_or(x.created_at),
+                )
+            })
+            .collect_vec();
+        let aor_stats = generic_stats
+            .clone()
+            .into_iter()
+            .filter_map(|x| {
+                x.aor_id.map(|aor_id| {
+                    (
+                        (x.group_master_key, aor_id),
+                        x.datetime.unwrap_or(x.created_at),
+                    )
+                })
+            })
+            .collect_vec();
+        let post_stats = generic_stats
+            .clone()
+            .into_iter()
+            .filter_map(|x| {
+                x.post_id.map(|post_id| {
+                    (
+                        (x.group_master_key, post_id),
+                        x.datetime.unwrap_or(x.created_at),
+                    )
+                })
+            })
+            .collect_vec();
+        let callsign_stats = generic_stats
+            .clone()
+            .into_iter()
+            .flat_map(|x| {
+                let callsign: Vec<String> = x
+                    .callsigns
+                    .and_then(move |c| serde_json::from_value(c).ok())
+                    .unwrap_or_default();
+                callsign.into_iter().map(move |c| {
+                    (
+                        (x.group_master_key.clone(), c),
+                        x.datetime.unwrap_or(x.created_at),
+                    )
+                })
+            })
+            .collect_vec();
+        let tag_stats = generic_stats
+            .clone()
+            .into_iter()
+            .flat_map(|x| {
+                let tags: Vec<i64> = x
+                    .tags
+                    .and_then(|c| serde_json::from_value(c).ok())
+                    .unwrap_or_default();
+                tags.into_iter().map(move |t| {
+                    (
+                        (x.group_master_key.clone(), t),
+                        x.datetime.unwrap_or(x.created_at),
+                    )
+                })
+            })
+            .collect_vec();
+        let location_stats = generic_stats
+            .clone()
+            .into_iter()
+            .flat_map(|x| {
+                let locations = x
+                    .location_v2
+                    .map(|x| {
+                        x.split("|")
+                            .map(|x| x.trim().to_string())
+                            .collect::<HashSet<_>>()
+                    })
+                    .unwrap_or_default();
+                locations.into_iter().map(move |l| {
+                    (
+                        (x.group_master_key.clone(), l),
+                        x.datetime.unwrap_or(x.created_at),
+                    )
+                })
+            })
+            .collect_vec();
+
+        update_5min_stats_group(dbx, group_stats, since_ts, till_ts)
+            .await
+            .c(h!())?;
+
+        update_5min_stats_freq(dbx, freq_stats, since_ts, till_ts)
+            .await
+            .c(h!())?;
+
+        update_5min_stats_aor_id(dbx, aor_stats, since_ts, till_ts)
+            .await
+            .c(h!())?;
+
+        update_5min_stats_post_id(dbx, post_stats, since_ts, till_ts)
+            .await
+            .c(h!())?;
+
+        update_5min_stats_sender(dbx, sender_stats, since_ts, till_ts)
+            .await
+            .c(h!())?;
+
+        update_5min_stats_callsign(dbx, callsign_stats, since_ts, till_ts)
+            .await
+            .c(h!())?;
+
+        update_5min_stats_unit(dbx, unit_stats, since_ts, till_ts)
+            .await
+            .c(h!())?;
+
+        update_5min_stats_location(dbx, location_stats, since_ts, till_ts)
+            .await
+            .c(h!())?;
+
+        update_5min_stats_tag(dbx, tag_stats, since_ts, till_ts)
             .await
             .c(h!())?;
     }
-
-    update_5min_stats_freq(dbx, freq_stats, since_ts, till_ts)
-        .await
-        .c(h!())?;
 
     if recalculate_day_stats {
         recalculate_day_stats_freq(dbx, since_ts, till_ts)
             .await
             .c(h!())?;
-    }
-
-    update_5min_stats_aor_id(dbx, aor_stats, since_ts, till_ts)
-        .await
-        .c(h!())?;
-
-    if recalculate_day_stats {
+        recalculate_day_stats_group(dbx, since_ts, till_ts)
+            .await
+            .c(h!())?;
         recalculate_day_stats_aor_id(dbx, since_ts, till_ts)
             .await
             .c(h!())?;
-    }
-
-    update_5min_stats_post_id(dbx, post_stats, since_ts, till_ts)
-        .await
-        .c(h!())?;
-
-    if recalculate_day_stats {
         recalculate_day_stats_post_id(dbx, since_ts, till_ts)
             .await
             .c(h!())?;
-    }
-
-    update_5min_stats_sender(dbx, sender_stats, since_ts, till_ts)
-        .await
-        .c(h!())?;
-
-    if recalculate_day_stats {
         recalculate_day_stats_sender(dbx, since_ts, till_ts)
             .await
             .c(h!())?;
-    }
-
-    update_5min_stats_callsign(dbx, callsign_stats, since_ts, till_ts)
-        .await
-        .c(h!())?;
-
-    if recalculate_day_stats {
         recalculate_day_stats_callsign(dbx, since_ts, till_ts)
             .await
             .c(h!())?;
-    }
-
-    update_5min_stats_unit(dbx, unit_stats, since_ts, till_ts)
-        .await
-        .c(h!())?;
-
-    if recalculate_day_stats {
         recalculate_day_stats_unit(dbx, since_ts, till_ts)
             .await
             .c(h!())?;
-    }
-
-    update_5min_stats_location(dbx, location_stats, since_ts, till_ts)
-        .await
-        .c(h!())?;
-
-    if recalculate_day_stats {
         recalculate_day_stats_location(dbx, since_ts, till_ts)
             .await
             .c(h!())?;
-    }
-
-    update_5min_stats_tag(dbx, tag_stats, since_ts, till_ts)
-        .await
-        .c(h!())?;
-
-    if recalculate_day_stats {
         recalculate_day_stats_tag(dbx, since_ts, till_ts)
             .await
             .c(h!())?;
