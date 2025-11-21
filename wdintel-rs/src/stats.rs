@@ -84,21 +84,27 @@ pub async fn oneoff_calculate_historic_stats(
     Ok(())
 }
 
+pub fn can_read_stats_aggregated(
+    config: &Config,
+    dt_since: NaiveDateTime,
+    dt_till: NaiveDateTime,
+) -> bool {
+    if dt_till - dt_since < Duration::minutes(STATS_READ_FROM_TABLE_MINIMUM_MIN)
+    {
+        return false;
+    }
+    config
+        .feature_group_stats_aggregated
+        .unwrap_or(FEATURE_GROUP_STATS_AGGREGATED_DEFAULT)
+}
+
 pub fn should_read_stats_aggregated(
     req: &actix_web::web::Json<AnalysisStatsReq>,
     env: &actix_web::web::Data<Env>,
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
 ) -> anyhow::Result<bool> {
-    if dt_till - dt_since < Duration::minutes(STATS_READ_FROM_TABLE_MINIMUM_MIN)
-    {
-        return Ok(false);
-    }
-    if !env
-        .config
-        .feature_group_stats_aggregated
-        .unwrap_or(FEATURE_GROUP_STATS_AGGREGATED_DEFAULT)
-    {
+    if !can_read_stats_aggregated(&env.config, dt_since, dt_till) {
         return Ok(false);
     }
     if !is_filter_empty(&req.selected_groups) {
@@ -167,7 +173,7 @@ pub async fn get_last_hour_stats(
 }
 
 pub async fn read_group_stats_aggregated(
-    env: &actix_web::web::Data<Env>,
+    dbx: &DatabaseConnection,
     master_keys: Vec<String>,
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
@@ -188,7 +194,7 @@ pub async fn read_group_stats_aggregated(
         .filter(
             stats_group_5min::Column::GroupMasterKey.is_in(master_keys.clone()),
         )
-        .all(&env.dbx)
+        .all(dbx)
         .await
         .c(h!())?
         .into_iter()
@@ -209,7 +215,7 @@ pub async fn read_group_stats_aggregated(
                 stats_group_day::Column::GroupMasterKey
                     .is_in(master_keys.clone()),
             )
-            .all(&env.dbx)
+            .all(dbx)
             .await
             .c(h!())?
             .into_iter()
@@ -1015,108 +1021,109 @@ pub async fn recalculate_group_stats(
             .c(h!())?;
     }
 
-    if recalculate_day_stats {
-        let cutoff_short =
-            Utc::now() - Duration::days(GROUP_STATS_5MIN_TTL_DAYS);
-        stats_group_freq_5min::Entity::delete_many()
-            .filter(stats_group_freq_5min::Column::CreatedAt.lt(cutoff_short))
-            .exec(dbx)
-            .await
-            .context(h!())?;
-        stats_group_aor_id_5min::Entity::delete_many()
-            .filter(stats_group_aor_id_5min::Column::CreatedAt.lt(cutoff_short))
-            .exec(dbx)
-            .await
-            .context(h!())?;
-        stats_group_sender_5min::Entity::delete_many()
-            .filter(stats_group_sender_5min::Column::CreatedAt.lt(cutoff_short))
-            .exec(dbx)
-            .await
-            .context(h!())?;
-        stats_group_callsign_5min::Entity::delete_many()
-            .filter(
-                stats_group_callsign_5min::Column::CreatedAt.lt(cutoff_short),
-            )
-            .exec(dbx)
-            .await
-            .context(h!())?;
-        stats_group_unit_5min::Entity::delete_many()
-            .filter(stats_group_unit_5min::Column::CreatedAt.lt(cutoff_short))
-            .exec(dbx)
-            .await
-            .context(h!())?;
-        stats_group_location_5min::Entity::delete_many()
-            .filter(
-                stats_group_location_5min::Column::CreatedAt.lt(cutoff_short),
-            )
-            .exec(dbx)
-            .await
-            .context(h!())?;
-        stats_group_post_id_5min::Entity::delete_many()
-            .filter(
-                stats_group_post_id_5min::Column::CreatedAt.lt(cutoff_short),
-            )
-            .exec(dbx)
-            .await
-            .context(h!())?;
-        stats_group_tag_5min::Entity::delete_many()
-            .filter(stats_group_tag_5min::Column::CreatedAt.lt(cutoff_short))
-            .exec(dbx)
-            .await
-            .context(h!())?;
-
-        let cutoff_long = Utc::now() - Duration::days(GROUP_STATS_DAY_TTL_DAYS);
-        stats_group_5min::Entity::delete_many()
-            .filter(stats_group_5min::Column::CreatedAt.lt(cutoff_long))
-            .exec(dbx)
-            .await
-            .context(h!())?;
-        stats_group_day::Entity::delete_many()
-            .filter(stats_group_day::Column::CreatedAt.lt(cutoff_long))
-            .exec(dbx)
-            .await
-            .context(h!())?;
-        stats_group_freq_day::Entity::delete_many()
-            .filter(stats_group_freq_day::Column::CreatedAt.lt(cutoff_long))
-            .exec(dbx)
-            .await
-            .context(h!())?;
-        stats_group_aor_id_day::Entity::delete_many()
-            .filter(stats_group_aor_id_day::Column::CreatedAt.lt(cutoff_long))
-            .exec(dbx)
-            .await
-            .context(h!())?;
-        stats_group_sender_day::Entity::delete_many()
-            .filter(stats_group_sender_day::Column::CreatedAt.lt(cutoff_long))
-            .exec(dbx)
-            .await
-            .context(h!())?;
-        stats_group_callsign_day::Entity::delete_many()
-            .filter(stats_group_callsign_day::Column::CreatedAt.lt(cutoff_long))
-            .exec(dbx)
-            .await
-            .context(h!())?;
-        stats_group_unit_day::Entity::delete_many()
-            .filter(stats_group_unit_day::Column::CreatedAt.lt(cutoff_long))
-            .exec(dbx)
-            .await
-            .context(h!())?;
-        stats_group_location_day::Entity::delete_many()
-            .filter(stats_group_location_day::Column::CreatedAt.lt(cutoff_long))
-            .exec(dbx)
-            .await
-            .context(h!())?;
-        stats_group_post_id_day::Entity::delete_many()
-            .filter(stats_group_post_id_day::Column::CreatedAt.lt(cutoff_long))
-            .exec(dbx)
-            .await
-            .context(h!())?;
-        stats_group_tag_day::Entity::delete_many()
-            .filter(stats_group_tag_day::Column::CreatedAt.lt(cutoff_long))
-            .exec(dbx)
-            .await
-            .context(h!())?;
-    }
+    // FIXME uncomment
+    // if recalculate_day_stats {
+    //     let cutoff_short =
+    //         Utc::now() - Duration::days(GROUP_STATS_5MIN_TTL_DAYS);
+    //     stats_group_freq_5min::Entity::delete_many()
+    //         .filter(stats_group_freq_5min::Column::CreatedAt.lt(cutoff_short))
+    //         .exec(dbx)
+    //         .await
+    //         .context(h!())?;
+    //     stats_group_aor_id_5min::Entity::delete_many()
+    //         .filter(stats_group_aor_id_5min::Column::CreatedAt.lt(cutoff_short))
+    //         .exec(dbx)
+    //         .await
+    //         .context(h!())?;
+    //     stats_group_sender_5min::Entity::delete_many()
+    //         .filter(stats_group_sender_5min::Column::CreatedAt.lt(cutoff_short))
+    //         .exec(dbx)
+    //         .await
+    //         .context(h!())?;
+    //     stats_group_callsign_5min::Entity::delete_many()
+    //         .filter(
+    //             stats_group_callsign_5min::Column::CreatedAt.lt(cutoff_short),
+    //         )
+    //         .exec(dbx)
+    //         .await
+    //         .context(h!())?;
+    //     stats_group_unit_5min::Entity::delete_many()
+    //         .filter(stats_group_unit_5min::Column::CreatedAt.lt(cutoff_short))
+    //         .exec(dbx)
+    //         .await
+    //         .context(h!())?;
+    //     stats_group_location_5min::Entity::delete_many()
+    //         .filter(
+    //             stats_group_location_5min::Column::CreatedAt.lt(cutoff_short),
+    //         )
+    //         .exec(dbx)
+    //         .await
+    //         .context(h!())?;
+    //     stats_group_post_id_5min::Entity::delete_many()
+    //         .filter(
+    //             stats_group_post_id_5min::Column::CreatedAt.lt(cutoff_short),
+    //         )
+    //         .exec(dbx)
+    //         .await
+    //         .context(h!())?;
+    //     stats_group_tag_5min::Entity::delete_many()
+    //         .filter(stats_group_tag_5min::Column::CreatedAt.lt(cutoff_short))
+    //         .exec(dbx)
+    //         .await
+    //         .context(h!())?;
+    //
+    //     let cutoff_long = Utc::now() - Duration::days(GROUP_STATS_DAY_TTL_DAYS);
+    //     stats_group_5min::Entity::delete_many()
+    //         .filter(stats_group_5min::Column::CreatedAt.lt(cutoff_long))
+    //         .exec(dbx)
+    //         .await
+    //         .context(h!())?;
+    //     stats_group_day::Entity::delete_many()
+    //         .filter(stats_group_day::Column::CreatedAt.lt(cutoff_long))
+    //         .exec(dbx)
+    //         .await
+    //         .context(h!())?;
+    //     stats_group_freq_day::Entity::delete_many()
+    //         .filter(stats_group_freq_day::Column::CreatedAt.lt(cutoff_long))
+    //         .exec(dbx)
+    //         .await
+    //         .context(h!())?;
+    //     stats_group_aor_id_day::Entity::delete_many()
+    //         .filter(stats_group_aor_id_day::Column::CreatedAt.lt(cutoff_long))
+    //         .exec(dbx)
+    //         .await
+    //         .context(h!())?;
+    //     stats_group_sender_day::Entity::delete_many()
+    //         .filter(stats_group_sender_day::Column::CreatedAt.lt(cutoff_long))
+    //         .exec(dbx)
+    //         .await
+    //         .context(h!())?;
+    //     stats_group_callsign_day::Entity::delete_many()
+    //         .filter(stats_group_callsign_day::Column::CreatedAt.lt(cutoff_long))
+    //         .exec(dbx)
+    //         .await
+    //         .context(h!())?;
+    //     stats_group_unit_day::Entity::delete_many()
+    //         .filter(stats_group_unit_day::Column::CreatedAt.lt(cutoff_long))
+    //         .exec(dbx)
+    //         .await
+    //         .context(h!())?;
+    //     stats_group_location_day::Entity::delete_many()
+    //         .filter(stats_group_location_day::Column::CreatedAt.lt(cutoff_long))
+    //         .exec(dbx)
+    //         .await
+    //         .context(h!())?;
+    //     stats_group_post_id_day::Entity::delete_many()
+    //         .filter(stats_group_post_id_day::Column::CreatedAt.lt(cutoff_long))
+    //         .exec(dbx)
+    //         .await
+    //         .context(h!())?;
+    //     stats_group_tag_day::Entity::delete_many()
+    //         .filter(stats_group_tag_day::Column::CreatedAt.lt(cutoff_long))
+    //         .exec(dbx)
+    //         .await
+    //         .context(h!())?;
+    // }
     Ok(())
 }
 

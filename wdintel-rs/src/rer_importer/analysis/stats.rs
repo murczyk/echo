@@ -15,7 +15,7 @@ use crate::entities::{
 use crate::error::AppError;
 use crate::h;
 use crate::rer_importer::analysis::*;
-use crate::stats::should_read_stats_aggregated;
+use crate::stats::*;
 use crate::types::Env;
 
 pub async fn fetch_groups(
@@ -28,8 +28,8 @@ pub async fn fetch_groups(
     let dt_till = dt_from_millis(req.till_date_noninclusive_ms).c(h!())?;
 
     if should_read_stats_aggregated(req, env, dt_since, dt_till).c(h!())? {
-        let result = crate::stats::read_group_stats_aggregated(
-            env,
+        let result = read_group_stats_aggregated(
+            &env.dbx,
             master_keys,
             dt_since,
             dt_till,
@@ -187,14 +187,10 @@ pub async fn fetch_senders(
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
 
     if should_read_stats_aggregated(req, env, dt_since, dt_till).c(h!())? {
-        let result = crate::stats::read_sender_stats_aggregated(
-            env,
-            master_keys,
-            dt_since,
-            dt_till,
-        )
-        .await
-        .c(h!())?;
+        let result =
+            read_sender_stats_aggregated(env, master_keys, dt_since, dt_till)
+                .await
+                .c(h!())?;
         return Ok(result);
     }
 
@@ -334,14 +330,10 @@ pub async fn fetch_posts(
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
 
     if should_read_stats_aggregated(req, env, dt_since, dt_till).c(h!())? {
-        let result = crate::stats::read_post_stats_aggregated(
-            env,
-            master_keys,
-            dt_since,
-            dt_till,
-        )
-        .await
-        .c(h!())?;
+        let result =
+            read_post_stats_aggregated(env, master_keys, dt_since, dt_till)
+                .await
+                .c(h!())?;
         return Ok(result);
     }
 
@@ -475,7 +467,7 @@ pub async fn fetch_freqs(
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
 
     if should_read_stats_aggregated(req, env, dt_since, dt_till).c(h!())? {
-        let result = crate::stats::read_frequency_stats_aggregated(
+        let result = read_frequency_stats_aggregated(
             env,
             master_keys,
             dt_since,
@@ -664,14 +656,10 @@ pub async fn fetch_callsigns(
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
 
     if should_read_stats_aggregated(req, env, dt_since, dt_till).c(h!())? {
-        let result = crate::stats::read_callsign_stats_aggregated(
-            env,
-            master_keys,
-            dt_since,
-            dt_till,
-        )
-        .await
-        .c(h!())?;
+        let result =
+            read_callsign_stats_aggregated(env, master_keys, dt_since, dt_till)
+                .await
+                .c(h!())?;
         return Ok(result);
     }
 
@@ -755,7 +743,7 @@ fn build_callsigns_query(
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
         // .filter(sigint_inbox_item::Column::Checked.eq(Some(true)))
-        .group_by(sea_query::expr::SimpleExpr::Custom("callsign".to_string()));
+        .group_by(SimpleExpr::Custom("callsign".to_string()));
     let callsigns_res =
         filter_selected_groups(callsigns_res, &req.selected_groups)?;
     let callsigns_res =
@@ -793,14 +781,10 @@ pub async fn fetch_tags(
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
 
     if should_read_stats_aggregated(req, env, dt_since, dt_till).c(h!())? {
-        let result = crate::stats::read_tag_stats_aggregated(
-            env,
-            master_keys,
-            dt_since,
-            dt_till,
-        )
-        .await
-        .c(h!())?;
+        let result =
+            read_tag_stats_aggregated(env, master_keys, dt_since, dt_till)
+                .await
+                .c(h!())?;
         return Ok(result);
     }
 
@@ -893,7 +877,7 @@ fn build_tags_query(
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
         // .filter(sigint_inbox_item::Column::Checked.eq(Some(true)))
-        .group_by(sea_query::expr::SimpleExpr::Custom("tag_ids".to_string()));
+        .group_by(SimpleExpr::Custom("tag_ids".to_string()));
     let tags_res = filter_selected_groups(tags_res, &req.selected_groups)?;
     let tags_res = filter_selected_senders(tags_res, &req.selected_senders)?;
     let tags_res = filter_selected_freqs(tags_res, &req.selected_freqs)?;
@@ -927,14 +911,10 @@ pub async fn fetch_units(
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
 
     if should_read_stats_aggregated(req, env, dt_since, dt_till).c(h!())? {
-        let result = crate::stats::read_unit_stats_aggregated(
-            env,
-            master_keys,
-            dt_since,
-            dt_till,
-        )
-        .await
-        .c(h!())?;
+        let result =
+            read_unit_stats_aggregated(env, master_keys, dt_since, dt_till)
+                .await
+                .c(h!())?;
         return Ok(result);
     }
 
@@ -958,7 +938,7 @@ pub async fn fetch_units(
         .context(h!())?;
     let mut units = vec![];
     for x in units_res {
-        let unit = crate::config::m_unit_to_unidenfitied(x.unit);
+        let unit = m_unit_to_unidenfitied(x.unit);
         units.push(AnalysisStatsUnit {
             count: x.count,
             unit,
@@ -1070,14 +1050,10 @@ pub async fn fetch_locations(
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
 
     if should_read_stats_aggregated(req, env, dt_since, dt_till).c(h!())? {
-        let result = crate::stats::read_location_stats_aggregated(
-            env,
-            master_keys,
-            dt_since,
-            dt_till,
-        )
-        .await
-        .c(h!())?;
+        let result =
+            read_location_stats_aggregated(env, master_keys, dt_since, dt_till)
+                .await
+                .c(h!())?;
         return Ok(result);
     }
 
@@ -1104,7 +1080,7 @@ pub async fn fetch_locations(
         .collect_vec();
     let mut locations = vec![];
     for (location, count) in locations_res {
-        let location = crate::config::m_location_to_unidenfitied(location);
+        let location = m_location_to_unidenfitied(location);
         to_location_list(&location)
             .into_iter()
             .for_each(|location| {
@@ -1220,14 +1196,10 @@ pub async fn fetch_aors(
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
 
     if should_read_stats_aggregated(req, env, dt_since, dt_till).c(h!())? {
-        let result = crate::stats::read_aor_stats_aggregated(
-            env,
-            master_keys,
-            dt_since,
-            dt_till,
-        )
-        .await
-        .c(h!())?;
+        let result =
+            read_aor_stats_aggregated(env, master_keys, dt_since, dt_till)
+                .await
+                .c(h!())?;
         return Ok(result);
     }
 
@@ -1671,6 +1643,7 @@ pub async fn fetch_counts_for_login(
         login_str,
         master_keys.clone(),
         replica_conn,
+        &env.config,
     )
     .await
     {
@@ -1686,6 +1659,7 @@ pub async fn fetch_counts_for_login(
                 login_str,
                 master_keys,
                 env.dbx.clone(),
+                &env.config,
             )
             .await
         }
@@ -1698,6 +1672,7 @@ async fn fetch_counts_for_login_with_conn(
     login_str: &str,
     master_keys: Vec<String>,
     db_conn: DatabaseConnection,
+    config: &Config,
 ) -> Result<(i64, i64), AppError> {
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
@@ -1706,42 +1681,15 @@ async fn fetch_counts_for_login_with_conn(
         req.include_peleng_locations.unwrap_or(false);
 
     let instant = std::time::Instant::now();
-
-    #[derive(FromQueryResult)]
-    struct OverallCountRes {
-        count: i64,
-    }
-    let overall_count_res = sigint_inbox_item::Entity::find()
-        .join(
-            JoinType::InnerJoin,
-            sigint_inbox_item::Relation::SignalMessage.def(),
-        )
-        .join(
-            JoinType::LeftJoin,
-            sigint_inbox_item::Relation::SigintPost.def(),
-        )
-        .select_only()
-        .column_as(
-            Expr::cust(r#"COUNT(DISTINCT "signal_message"."id")"#),
-            "count",
-        )
-        .filter(signal_message::Column::Deleted.eq(false))
-        .filter(message_in_groups_exists(master_keys.clone()))
-        // .filter(signal_message::Column::DuplicateOf.is_null())
-        .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
-        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
-    // .filter(sigint_inbox_item::Column::Checked.eq(Some(true)));
-    // println!(
-    //     "> overall count res sql: {}",
-    //     overall_count_res.build(DbBackend::Postgres).to_string()
-    // );
-    let overall_count_res: OverallCountRes = overall_count_res
-        .into_model::<OverallCountRes>()
-        .one(&db_conn)
-        .await
-        .context(h!())?
-        .context(h!())?;
-    let count_overall: i64 = overall_count_res.count;
+    let count_overall: i64 = fetch_count_overall(
+        &db_conn,
+        dt_since,
+        dt_till,
+        master_keys.clone(),
+        config,
+    )
+    .await
+    .context(h!())?;
 
     if instant.elapsed().as_secs() > 1 {
         debug!("count overall op took: {:?}", instant.elapsed());
@@ -1838,6 +1786,58 @@ async fn fetch_counts_for_login_with_conn(
         debug!("count selected op took: {:?}", instant.elapsed());
     }
     Ok((count_overall, count_selected))
+}
+
+async fn fetch_count_overall(
+    db: &DatabaseConnection,
+    dt_since: NaiveDateTime,
+    dt_till: NaiveDateTime,
+    master_keys: Vec<String>,
+    config: &Config,
+) -> anyhow::Result<i64> {
+    if can_read_stats_aggregated(config, dt_since, dt_till) {
+        let stats =
+            read_group_stats_aggregated(db, master_keys, dt_since, dt_till)
+                .await
+                .c(h!())?;
+        let result: i64 = stats.into_iter().map(|x| x.count).sum();
+        return Ok(result);
+    }
+    #[derive(FromQueryResult)]
+    struct OverallCountRes {
+        count: i64,
+    }
+    let overall_count_res = sigint_inbox_item::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            sigint_inbox_item::Relation::SignalMessage.def(),
+        )
+        .join(
+            JoinType::LeftJoin,
+            sigint_inbox_item::Relation::SigintPost.def(),
+        )
+        .select_only()
+        .column_as(
+            Expr::cust(r#"COUNT(DISTINCT "signal_message"."id")"#),
+            "count",
+        )
+        .filter(signal_message::Column::Deleted.eq(false))
+        .filter(message_in_groups_exists(master_keys.clone()))
+        // .filter(signal_message::Column::DuplicateOf.is_null())
+        .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
+        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
+    // .filter(sigint_inbox_item::Column::Checked.eq(Some(true)));
+    // println!(
+    //     "> overall count res sql: {}",
+    //     overall_count_res.build(DbBackend::Postgres).to_string()
+    // );
+    let overall_count_res: OverallCountRes = overall_count_res
+        .into_model::<OverallCountRes>()
+        .one(db)
+        .await
+        .context(h!())?
+        .context(h!())?;
+    Ok(overall_count_res.count)
 }
 
 fn is_replica_conflict_error(err: &AppError) -> bool {
