@@ -1016,95 +1016,103 @@ pub async fn recalculate_group_stats(
     }
 
     if recalculate_day_stats {
-        let cutoff_5min = Utc::now() - Duration::days(GROUP_STATS_DAY_TTL_DAYS);
-        stats_group_freq_day::Entity::delete_many()
-            .filter(stats_group_freq_day::Column::CreatedAt.lt(cutoff_5min))
-            .exec(dbx)
-            .await
-            .context(h!())?;
-        stats_group_aor_id_day::Entity::delete_many()
-            .filter(stats_group_aor_id_day::Column::CreatedAt.lt(cutoff_5min))
-            .exec(dbx)
-            .await
-            .context(h!())?;
-        stats_group_sender_day::Entity::delete_many()
-            .filter(stats_group_sender_day::Column::CreatedAt.lt(cutoff_5min))
-            .exec(dbx)
-            .await
-            .context(h!())?;
-        stats_group_callsign_day::Entity::delete_many()
-            .filter(stats_group_callsign_day::Column::CreatedAt.lt(cutoff_5min))
-            .exec(dbx)
-            .await
-            .context(h!())?;
-        stats_group_unit_day::Entity::delete_many()
-            .filter(stats_group_unit_day::Column::CreatedAt.lt(cutoff_5min))
-            .exec(dbx)
-            .await
-            .context(h!())?;
-        stats_group_location_day::Entity::delete_many()
-            .filter(stats_group_location_day::Column::CreatedAt.lt(cutoff_5min))
-            .exec(dbx)
-            .await
-            .context(h!())?;
-        stats_group_post_id_day::Entity::delete_many()
-            .filter(stats_group_post_id_day::Column::CreatedAt.lt(cutoff_5min))
-            .exec(dbx)
-            .await
-            .context(h!())?;
-        stats_group_tag_day::Entity::delete_many()
-            .filter(stats_group_tag_day::Column::CreatedAt.lt(cutoff_5min))
-            .exec(dbx)
-            .await
-            .context(h!())?;
-        let cutoff_day = Utc::now() - Duration::days(GROUP_STATS_5MIN_TTL_DAYS);
-        stats_group_5min::Entity::delete_many()
-            .filter(stats_group_5min::Column::CreatedAt.lt(cutoff_day))
-            .exec(dbx)
-            .await
-            .context(h!())?;
-        stats_group_day::Entity::delete_many()
-            .filter(stats_group_day::Column::CreatedAt.lt(cutoff_day))
-            .exec(dbx)
-            .await
-            .context(h!())?;
+        let cutoff_short =
+            Utc::now() - Duration::days(GROUP_STATS_5MIN_TTL_DAYS);
         stats_group_freq_5min::Entity::delete_many()
-            .filter(stats_group_freq_5min::Column::CreatedAt.lt(cutoff_day))
+            .filter(stats_group_freq_5min::Column::CreatedAt.lt(cutoff_short))
             .exec(dbx)
             .await
             .context(h!())?;
         stats_group_aor_id_5min::Entity::delete_many()
-            .filter(stats_group_aor_id_5min::Column::CreatedAt.lt(cutoff_day))
+            .filter(stats_group_aor_id_5min::Column::CreatedAt.lt(cutoff_short))
             .exec(dbx)
             .await
             .context(h!())?;
         stats_group_sender_5min::Entity::delete_many()
-            .filter(stats_group_sender_5min::Column::CreatedAt.lt(cutoff_day))
+            .filter(stats_group_sender_5min::Column::CreatedAt.lt(cutoff_short))
             .exec(dbx)
             .await
             .context(h!())?;
         stats_group_callsign_5min::Entity::delete_many()
-            .filter(stats_group_callsign_5min::Column::CreatedAt.lt(cutoff_day))
+            .filter(
+                stats_group_callsign_5min::Column::CreatedAt.lt(cutoff_short),
+            )
             .exec(dbx)
             .await
             .context(h!())?;
         stats_group_unit_5min::Entity::delete_many()
-            .filter(stats_group_unit_5min::Column::CreatedAt.lt(cutoff_day))
+            .filter(stats_group_unit_5min::Column::CreatedAt.lt(cutoff_short))
             .exec(dbx)
             .await
             .context(h!())?;
         stats_group_location_5min::Entity::delete_many()
-            .filter(stats_group_location_5min::Column::CreatedAt.lt(cutoff_day))
+            .filter(
+                stats_group_location_5min::Column::CreatedAt.lt(cutoff_short),
+            )
             .exec(dbx)
             .await
             .context(h!())?;
         stats_group_post_id_5min::Entity::delete_many()
-            .filter(stats_group_post_id_5min::Column::CreatedAt.lt(cutoff_day))
+            .filter(
+                stats_group_post_id_5min::Column::CreatedAt.lt(cutoff_short),
+            )
             .exec(dbx)
             .await
             .context(h!())?;
         stats_group_tag_5min::Entity::delete_many()
-            .filter(stats_group_tag_5min::Column::CreatedAt.lt(cutoff_day))
+            .filter(stats_group_tag_5min::Column::CreatedAt.lt(cutoff_short))
+            .exec(dbx)
+            .await
+            .context(h!())?;
+
+        let cutoff_long = Utc::now() - Duration::days(GROUP_STATS_DAY_TTL_DAYS);
+        stats_group_5min::Entity::delete_many()
+            .filter(stats_group_5min::Column::CreatedAt.lt(cutoff_long))
+            .exec(dbx)
+            .await
+            .context(h!())?;
+        stats_group_day::Entity::delete_many()
+            .filter(stats_group_day::Column::CreatedAt.lt(cutoff_long))
+            .exec(dbx)
+            .await
+            .context(h!())?;
+        stats_group_freq_day::Entity::delete_many()
+            .filter(stats_group_freq_day::Column::CreatedAt.lt(cutoff_long))
+            .exec(dbx)
+            .await
+            .context(h!())?;
+        stats_group_aor_id_day::Entity::delete_many()
+            .filter(stats_group_aor_id_day::Column::CreatedAt.lt(cutoff_long))
+            .exec(dbx)
+            .await
+            .context(h!())?;
+        stats_group_sender_day::Entity::delete_many()
+            .filter(stats_group_sender_day::Column::CreatedAt.lt(cutoff_long))
+            .exec(dbx)
+            .await
+            .context(h!())?;
+        stats_group_callsign_day::Entity::delete_many()
+            .filter(stats_group_callsign_day::Column::CreatedAt.lt(cutoff_long))
+            .exec(dbx)
+            .await
+            .context(h!())?;
+        stats_group_unit_day::Entity::delete_many()
+            .filter(stats_group_unit_day::Column::CreatedAt.lt(cutoff_long))
+            .exec(dbx)
+            .await
+            .context(h!())?;
+        stats_group_location_day::Entity::delete_many()
+            .filter(stats_group_location_day::Column::CreatedAt.lt(cutoff_long))
+            .exec(dbx)
+            .await
+            .context(h!())?;
+        stats_group_post_id_day::Entity::delete_many()
+            .filter(stats_group_post_id_day::Column::CreatedAt.lt(cutoff_long))
+            .exec(dbx)
+            .await
+            .context(h!())?;
+        stats_group_tag_day::Entity::delete_many()
+            .filter(stats_group_tag_day::Column::CreatedAt.lt(cutoff_long))
             .exec(dbx)
             .await
             .context(h!())?;
