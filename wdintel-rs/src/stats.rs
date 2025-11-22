@@ -8,7 +8,6 @@ use crate::{h, OneoffCalculateHistoricStatsPs};
 use anyhow::Context;
 use chrono::*;
 use itertools::Itertools;
-use log::info;
 use log::*;
 use sea_orm::*;
 use std::collections::{HashMap, HashSet};
@@ -1156,110 +1155,6 @@ pub async fn recalculate_group_stats(
             .c(h!())?;
         txn.commit().await.c(h!())?;
     }
-
-    // FIXME uncomment
-    // if recalculate_day_stats {
-    //     let cutoff_short =
-    //         Utc::now() - Duration::days(GROUP_STATS_5MIN_TTL_DAYS);
-    //     stats_group_freq_5min::Entity::delete_many()
-    //         .filter(stats_group_freq_5min::Column::CreatedAt.lt(cutoff_short))
-    //         .exec(dbx)
-    //         .await
-    //         .context(h!())?;
-    //     stats_group_aor_id_5min::Entity::delete_many()
-    //         .filter(stats_group_aor_id_5min::Column::CreatedAt.lt(cutoff_short))
-    //         .exec(dbx)
-    //         .await
-    //         .context(h!())?;
-    //     stats_group_sender_5min::Entity::delete_many()
-    //         .filter(stats_group_sender_5min::Column::CreatedAt.lt(cutoff_short))
-    //         .exec(dbx)
-    //         .await
-    //         .context(h!())?;
-    //     stats_group_callsign_5min::Entity::delete_many()
-    //         .filter(
-    //             stats_group_callsign_5min::Column::CreatedAt.lt(cutoff_short),
-    //         )
-    //         .exec(dbx)
-    //         .await
-    //         .context(h!())?;
-    //     stats_group_unit_5min::Entity::delete_many()
-    //         .filter(stats_group_unit_5min::Column::CreatedAt.lt(cutoff_short))
-    //         .exec(dbx)
-    //         .await
-    //         .context(h!())?;
-    //     stats_group_location_5min::Entity::delete_many()
-    //         .filter(
-    //             stats_group_location_5min::Column::CreatedAt.lt(cutoff_short),
-    //         )
-    //         .exec(dbx)
-    //         .await
-    //         .context(h!())?;
-    //     stats_group_post_id_5min::Entity::delete_many()
-    //         .filter(
-    //             stats_group_post_id_5min::Column::CreatedAt.lt(cutoff_short),
-    //         )
-    //         .exec(dbx)
-    //         .await
-    //         .context(h!())?;
-    //     stats_group_tag_5min::Entity::delete_many()
-    //         .filter(stats_group_tag_5min::Column::CreatedAt.lt(cutoff_short))
-    //         .exec(dbx)
-    //         .await
-    //         .context(h!())?;
-    //
-    //     let cutoff_long = Utc::now() - Duration::days(GROUP_STATS_DAY_TTL_DAYS);
-    //     stats_group_5min::Entity::delete_many()
-    //         .filter(stats_group_5min::Column::CreatedAt.lt(cutoff_long))
-    //         .exec(dbx)
-    //         .await
-    //         .context(h!())?;
-    //     stats_group_day::Entity::delete_many()
-    //         .filter(stats_group_day::Column::CreatedAt.lt(cutoff_long))
-    //         .exec(dbx)
-    //         .await
-    //         .context(h!())?;
-    //     stats_group_freq_day::Entity::delete_many()
-    //         .filter(stats_group_freq_day::Column::CreatedAt.lt(cutoff_long))
-    //         .exec(dbx)
-    //         .await
-    //         .context(h!())?;
-    //     stats_group_aor_id_day::Entity::delete_many()
-    //         .filter(stats_group_aor_id_day::Column::CreatedAt.lt(cutoff_long))
-    //         .exec(dbx)
-    //         .await
-    //         .context(h!())?;
-    //     stats_group_sender_day::Entity::delete_many()
-    //         .filter(stats_group_sender_day::Column::CreatedAt.lt(cutoff_long))
-    //         .exec(dbx)
-    //         .await
-    //         .context(h!())?;
-    //     stats_group_callsign_day::Entity::delete_many()
-    //         .filter(stats_group_callsign_day::Column::CreatedAt.lt(cutoff_long))
-    //         .exec(dbx)
-    //         .await
-    //         .context(h!())?;
-    //     stats_group_unit_day::Entity::delete_many()
-    //         .filter(stats_group_unit_day::Column::CreatedAt.lt(cutoff_long))
-    //         .exec(dbx)
-    //         .await
-    //         .context(h!())?;
-    //     stats_group_location_day::Entity::delete_many()
-    //         .filter(stats_group_location_day::Column::CreatedAt.lt(cutoff_long))
-    //         .exec(dbx)
-    //         .await
-    //         .context(h!())?;
-    //     stats_group_post_id_day::Entity::delete_many()
-    //         .filter(stats_group_post_id_day::Column::CreatedAt.lt(cutoff_long))
-    //         .exec(dbx)
-    //         .await
-    //         .context(h!())?;
-    //     stats_group_tag_day::Entity::delete_many()
-    //         .filter(stats_group_tag_day::Column::CreatedAt.lt(cutoff_long))
-    //         .exec(dbx)
-    //         .await
-    //         .context(h!())?;
-    // }
     Ok(())
 }
 
@@ -1269,15 +1164,12 @@ async fn update_5min_stats_group(
     since_ts: NaiveDateTime,
     till_ts: NaiveDateTime,
 ) -> Result<(), AppError> {
-    let old_stats_5min = stats_group_5min::Entity::find()
+    stats_group_5min::Entity::delete_many()
         .filter(stats_group_5min::Column::Dt.gte(since_ts))
         .filter(stats_group_5min::Column::Dt.lt(till_ts))
-        .all(dbx)
+        .exec(dbx)
         .await
         .context(h!())?;
-
-    let mut old_stat_ids = vec![];
-
     let mut current_ts = since_ts;
     while current_ts <= till_ts {
         let since_ts = current_ts;
@@ -1296,56 +1188,20 @@ async fn update_5min_stats_group(
                 ids.insert(*id);
                 acc
             });
-        let old_stats = old_stats_5min
-            .iter()
-            .filter(|s| s.dt.eq(&since_ts))
-            .cloned()
-            .collect_vec();
         for (group_master_key, ids) in group_stats {
             let count = ids.len() as i32;
-            let mut old_entry = None;
-            let old_stats = old_stats
-                .iter()
-                .filter(|s| s.group_master_key.eq(&group_master_key))
-                .cloned()
-                .collect_vec();
-            if old_stats.len() > 1 {
-                error!("unexpected multiple stats for group {group_master_key} at {since_ts}: {old_stats:?}");
-                for s in old_stats {
-                    old_stat_ids.push(s.id);
-                    s.delete(dbx).await.c(h!())?;
-                }
-            } else {
-                old_entry = old_stats.first().cloned();
+            stats_group_5min::ActiveModel {
+                id: NotSet,
+                quantity: Set(count),
+                group_master_key: Set(group_master_key),
+                dt: Set(since_ts),
+                created_at: NotSet,
             }
-            if let Some(entry) = old_entry {
-                old_stat_ids.push(entry.id);
-                if entry.quantity != count {
-                    let mut model = entry.into_active_model();
-                    model.quantity = Set(count);
-                    model.update(dbx).await.c(h!())?;
-                }
-            } else {
-                stats_group_5min::ActiveModel {
-                    id: NotSet,
-                    quantity: Set(count),
-                    group_master_key: Set(group_master_key),
-                    dt: Set(since_ts),
-                    created_at: NotSet,
-                }
-                .insert(dbx)
-                .await
-                .c(h!())?;
-            }
+            .insert(dbx)
+            .await
+            .c(h!())?;
         }
         current_ts = till_ts;
-    }
-
-    for e in old_stats_5min {
-        if !old_stat_ids.contains(&e.id) {
-            // deleting non-existent stats that are erroneous or for a deleted group
-            e.delete(dbx).await.c(h!())?;
-        }
     }
     Ok(())
 }
@@ -1417,14 +1273,12 @@ async fn update_5min_stats_freq(
     since_ts: NaiveDateTime,
     till_ts: NaiveDateTime,
 ) -> Result<(), AppError> {
-    let old_stats_5min = stats_group_freq_5min::Entity::find()
+    stats_group_freq_5min::Entity::delete_many()
         .filter(stats_group_freq_5min::Column::Dt.gte(since_ts))
         .filter(stats_group_freq_5min::Column::Dt.lt(till_ts))
-        .all(dbx)
+        .exec(dbx)
         .await
         .context(h!())?;
-
-    let mut old_stat_ids = vec![];
 
     let mut current_ts = since_ts;
     while current_ts <= till_ts {
@@ -1444,58 +1298,21 @@ async fn update_5min_stats_freq(
                 ids.insert(*id);
                 acc
             });
-        let old_stats = old_stats_5min
-            .iter()
-            .filter(|s| s.dt.eq(&since_ts))
-            .cloned()
-            .collect_vec();
         for ((group_master_key, frequency), ids) in group_stats {
             let count = ids.len() as i32;
-            let mut old_entry = None;
-            let old_stats = old_stats
-                .iter()
-                .filter(|s| s.group_master_key.eq(&group_master_key))
-                .filter(|s| s.frequency.eq(&frequency))
-                .cloned()
-                .collect_vec();
-            if old_stats.len() > 1 {
-                error!("unexpected multiple stats for group {group_master_key} and frequency {frequency} at {since_ts}: {old_stats:?}");
-                for s in old_stats {
-                    old_stat_ids.push(s.id);
-                    s.delete(dbx).await.c(h!())?;
-                }
-            } else {
-                old_entry = old_stats.first().cloned();
+            stats_group_freq_5min::ActiveModel {
+                id: NotSet,
+                quantity: Set(count),
+                group_master_key: Set(group_master_key),
+                frequency: Set(frequency),
+                dt: Set(since_ts),
+                created_at: NotSet,
             }
-            if let Some(entry) = old_entry {
-                old_stat_ids.push(entry.id);
-                if entry.quantity != count {
-                    let mut model = entry.into_active_model();
-                    model.quantity = Set(count);
-                    model.update(dbx).await.c(h!())?;
-                }
-            } else {
-                stats_group_freq_5min::ActiveModel {
-                    id: NotSet,
-                    quantity: Set(count),
-                    group_master_key: Set(group_master_key),
-                    frequency: Set(frequency),
-                    dt: Set(since_ts),
-                    created_at: NotSet,
-                }
-                .insert(dbx)
-                .await
-                .c(h!())?;
-            }
+            .insert(dbx)
+            .await
+            .c(h!())?;
         }
         current_ts = till_ts;
-    }
-
-    for e in old_stats_5min {
-        if !old_stat_ids.contains(&e.id) {
-            // deleting non-existent stats that are erroneous or for a deleted group
-            e.delete(dbx).await.c(h!())?;
-        }
     }
     Ok(())
 }
@@ -1567,14 +1384,12 @@ async fn update_5min_stats_aor_id(
     since_ts: NaiveDateTime,
     till_ts: NaiveDateTime,
 ) -> Result<(), AppError> {
-    let old_stats_5min = stats_group_aor_id_5min::Entity::find()
+    stats_group_aor_id_5min::Entity::delete_many()
         .filter(stats_group_aor_id_5min::Column::Dt.gte(since_ts))
         .filter(stats_group_aor_id_5min::Column::Dt.lt(till_ts))
-        .all(dbx)
+        .exec(dbx)
         .await
         .context(h!())?;
-
-    let mut old_stat_ids = vec![];
 
     let mut current_ts = since_ts;
     while current_ts <= till_ts {
@@ -1594,58 +1409,21 @@ async fn update_5min_stats_aor_id(
                 ids.insert(*id);
                 acc
             });
-        let old_stats = old_stats_5min
-            .iter()
-            .filter(|s| s.dt.eq(&since_ts))
-            .cloned()
-            .collect_vec();
         for ((group_master_key, aor_id), ids) in group_stats {
             let count = ids.len() as i32;
-            let mut old_entry = None;
-            let old_stats = old_stats
-                .iter()
-                .filter(|s| s.group_master_key.eq(&group_master_key))
-                .filter(|s| s.aor_id.eq(&aor_id))
-                .cloned()
-                .collect_vec();
-            if old_stats.len() > 1 {
-                error!("unexpected multiple stats for group {group_master_key} and aor_id {aor_id} at {since_ts}: {old_stats:?}");
-                for s in old_stats {
-                    old_stat_ids.push(s.id);
-                    s.delete(dbx).await.c(h!())?;
-                }
-            } else {
-                old_entry = old_stats.first().cloned();
+            stats_group_aor_id_5min::ActiveModel {
+                id: NotSet,
+                quantity: Set(count),
+                group_master_key: Set(group_master_key),
+                aor_id: Set(aor_id),
+                dt: Set(since_ts),
+                created_at: NotSet,
             }
-            if let Some(entry) = old_entry {
-                old_stat_ids.push(entry.id);
-                if entry.quantity != count {
-                    let mut model = entry.into_active_model();
-                    model.quantity = Set(count);
-                    model.update(dbx).await.c(h!())?;
-                }
-            } else {
-                stats_group_aor_id_5min::ActiveModel {
-                    id: NotSet,
-                    quantity: Set(count),
-                    group_master_key: Set(group_master_key),
-                    aor_id: Set(aor_id),
-                    dt: Set(since_ts),
-                    created_at: NotSet,
-                }
-                .insert(dbx)
-                .await
-                .c(h!())?;
-            }
+            .insert(dbx)
+            .await
+            .c(h!())?;
         }
         current_ts = till_ts;
-    }
-
-    for e in old_stats_5min {
-        if !old_stat_ids.contains(&e.id) {
-            // deleting non-existent stats that are erroneous or for a deleted group
-            e.delete(dbx).await.c(h!())?;
-        }
     }
     Ok(())
 }
@@ -1717,14 +1495,12 @@ async fn update_5min_stats_post_id(
     since_ts: NaiveDateTime,
     till_ts: NaiveDateTime,
 ) -> Result<(), AppError> {
-    let old_stats_5min = stats_group_post_id_5min::Entity::find()
+    stats_group_post_id_5min::Entity::delete_many()
         .filter(stats_group_post_id_5min::Column::Dt.gte(since_ts))
         .filter(stats_group_post_id_5min::Column::Dt.lt(till_ts))
-        .all(dbx)
+        .exec(dbx)
         .await
         .context(h!())?;
-
-    let mut old_stat_ids = vec![];
 
     let mut current_ts = since_ts;
     while current_ts <= till_ts {
@@ -1744,58 +1520,21 @@ async fn update_5min_stats_post_id(
                 ids.insert(*id);
                 acc
             });
-        let old_stats = old_stats_5min
-            .iter()
-            .filter(|s| s.dt.eq(&since_ts))
-            .cloned()
-            .collect_vec();
         for ((group_master_key, post_id), ids) in group_stats {
             let count = ids.len() as i32;
-            let mut old_entry = None;
-            let old_stats = old_stats
-                .iter()
-                .filter(|s| s.group_master_key.eq(&group_master_key))
-                .filter(|s| s.post_id.eq(&post_id))
-                .cloned()
-                .collect_vec();
-            if old_stats.len() > 1 {
-                error!("unexpected multiple stats for group {group_master_key} and post_id {post_id} at {since_ts}: {old_stats:?}");
-                for s in old_stats {
-                    old_stat_ids.push(s.id);
-                    s.delete(dbx).await.c(h!())?;
-                }
-            } else {
-                old_entry = old_stats.first().cloned();
+            stats_group_post_id_5min::ActiveModel {
+                id: NotSet,
+                quantity: Set(count),
+                group_master_key: Set(group_master_key),
+                post_id: Set(post_id),
+                dt: Set(since_ts),
+                created_at: NotSet,
             }
-            if let Some(entry) = old_entry {
-                old_stat_ids.push(entry.id);
-                if entry.quantity != count {
-                    let mut model = entry.into_active_model();
-                    model.quantity = Set(count);
-                    model.update(dbx).await.c(h!())?;
-                }
-            } else {
-                stats_group_post_id_5min::ActiveModel {
-                    id: NotSet,
-                    quantity: Set(count),
-                    group_master_key: Set(group_master_key),
-                    post_id: Set(post_id),
-                    dt: Set(since_ts),
-                    created_at: NotSet,
-                }
-                .insert(dbx)
-                .await
-                .c(h!())?;
-            }
+            .insert(dbx)
+            .await
+            .c(h!())?;
         }
         current_ts = till_ts;
-    }
-
-    for e in old_stats_5min {
-        if !old_stat_ids.contains(&e.id) {
-            // deleting non-existent stats that are erroneous or for a deleted group
-            e.delete(dbx).await.c(h!())?;
-        }
     }
     Ok(())
 }
@@ -1867,14 +1606,12 @@ async fn update_5min_stats_location(
     since_ts: NaiveDateTime,
     till_ts: NaiveDateTime,
 ) -> Result<(), AppError> {
-    let old_stats_5min = stats_group_location_5min::Entity::find()
-        .filter(stats_group_location_5min::Column::Dt.gte(since_ts))
-        .filter(stats_group_location_5min::Column::Dt.lt(till_ts))
-        .all(dbx)
+    stats_group_post_id_5min::Entity::delete_many()
+        .filter(stats_group_post_id_5min::Column::Dt.gte(since_ts))
+        .filter(stats_group_post_id_5min::Column::Dt.lt(till_ts))
+        .exec(dbx)
         .await
         .context(h!())?;
-
-    let mut old_stat_ids = vec![];
 
     let mut current_ts = since_ts;
     while current_ts <= till_ts {
@@ -1894,58 +1631,21 @@ async fn update_5min_stats_location(
                 ids.insert(*id);
                 acc
             });
-        let old_stats = old_stats_5min
-            .iter()
-            .filter(|s| s.dt.eq(&since_ts))
-            .cloned()
-            .collect_vec();
         for ((group_master_key, location), ids) in group_stats {
             let count = ids.len() as i32;
-            let mut old_entry = None;
-            let old_stats = old_stats
-                .iter()
-                .filter(|s| s.group_master_key.eq(&group_master_key))
-                .filter(|s| s.location.eq(&location))
-                .cloned()
-                .collect_vec();
-            if old_stats.len() > 1 {
-                error!("unexpected multiple stats for group {group_master_key} and location {location} at {since_ts}: {old_stats:?}");
-                for s in old_stats {
-                    old_stat_ids.push(s.id);
-                    s.delete(dbx).await.c(h!())?;
-                }
-            } else {
-                old_entry = old_stats.first().cloned();
+            stats_group_location_5min::ActiveModel {
+                id: NotSet,
+                quantity: Set(count),
+                group_master_key: Set(group_master_key),
+                location: Set(location),
+                dt: Set(since_ts),
+                created_at: NotSet,
             }
-            if let Some(entry) = old_entry {
-                old_stat_ids.push(entry.id);
-                if entry.quantity != count {
-                    let mut model = entry.into_active_model();
-                    model.quantity = Set(count);
-                    model.update(dbx).await.c(h!())?;
-                }
-            } else {
-                stats_group_location_5min::ActiveModel {
-                    id: NotSet,
-                    quantity: Set(count),
-                    group_master_key: Set(group_master_key),
-                    location: Set(location),
-                    dt: Set(since_ts),
-                    created_at: NotSet,
-                }
-                .insert(dbx)
-                .await
-                .c(h!())?;
-            }
+            .insert(dbx)
+            .await
+            .c(h!())?;
         }
         current_ts = till_ts;
-    }
-
-    for e in old_stats_5min {
-        if !old_stat_ids.contains(&e.id) {
-            // deleting non-existent stats that are erroneous or for a deleted group
-            e.delete(dbx).await.c(h!())?;
-        }
     }
     Ok(())
 }
@@ -2019,14 +1719,12 @@ async fn update_5min_stats_sender(
     since_ts: NaiveDateTime,
     till_ts: NaiveDateTime,
 ) -> Result<(), AppError> {
-    let old_stats_5min = stats_group_sender_5min::Entity::find()
+    stats_group_sender_5min::Entity::delete_many()
         .filter(stats_group_sender_5min::Column::Dt.gte(since_ts))
         .filter(stats_group_sender_5min::Column::Dt.lt(till_ts))
-        .all(dbx)
+        .exec(dbx)
         .await
         .context(h!())?;
-
-    let mut old_stat_ids = vec![];
 
     let mut current_ts = since_ts;
     while current_ts <= till_ts {
@@ -2046,58 +1744,21 @@ async fn update_5min_stats_sender(
                 ids.insert(*id);
                 acc
             });
-        let old_stats = old_stats_5min
-            .iter()
-            .filter(|s| s.dt.eq(&since_ts))
-            .cloned()
-            .collect_vec();
         for ((group_master_key, sender), ids) in group_stats {
             let count = ids.len() as i32;
-            let mut old_entry = None;
-            let old_stats = old_stats
-                .iter()
-                .filter(|s| s.group_master_key.eq(&group_master_key))
-                .filter(|s| s.sender.eq(&sender))
-                .cloned()
-                .collect_vec();
-            if old_stats.len() > 1 {
-                error!("unexpected multiple stats for group {group_master_key} and sender {sender} at {since_ts}: {old_stats:?}");
-                for s in old_stats {
-                    old_stat_ids.push(s.id);
-                    s.delete(dbx).await.c(h!())?;
-                }
-            } else {
-                old_entry = old_stats.first().cloned();
+            stats_group_sender_5min::ActiveModel {
+                id: NotSet,
+                quantity: Set(count),
+                group_master_key: Set(group_master_key),
+                sender: Set(sender),
+                dt: Set(since_ts),
+                created_at: NotSet,
             }
-            if let Some(entry) = old_entry {
-                old_stat_ids.push(entry.id);
-                if entry.quantity != count {
-                    let mut model = entry.into_active_model();
-                    model.quantity = Set(count);
-                    model.update(dbx).await.c(h!())?;
-                }
-            } else {
-                stats_group_sender_5min::ActiveModel {
-                    id: NotSet,
-                    quantity: Set(count),
-                    group_master_key: Set(group_master_key),
-                    sender: Set(sender),
-                    dt: Set(since_ts),
-                    created_at: NotSet,
-                }
-                .insert(dbx)
-                .await
-                .c(h!())?;
-            }
+            .insert(dbx)
+            .await
+            .c(h!())?;
         }
         current_ts = till_ts;
-    }
-
-    for e in old_stats_5min {
-        if !old_stat_ids.contains(&e.id) {
-            // deleting non-existent stats that are erroneous or for a deleted group
-            e.delete(dbx).await.c(h!())?;
-        }
     }
     Ok(())
 }
@@ -2169,14 +1830,12 @@ async fn update_5min_stats_tag(
     since_ts: NaiveDateTime,
     till_ts: NaiveDateTime,
 ) -> Result<(), AppError> {
-    let old_stats_5min = stats_group_tag_5min::Entity::find()
+    stats_group_tag_5min::Entity::delete_many()
         .filter(stats_group_tag_5min::Column::Dt.gte(since_ts))
         .filter(stats_group_tag_5min::Column::Dt.lt(till_ts))
-        .all(dbx)
+        .exec(dbx)
         .await
         .context(h!())?;
-
-    let mut old_stat_ids = vec![];
 
     let mut current_ts = since_ts;
     while current_ts <= till_ts {
@@ -2196,58 +1855,21 @@ async fn update_5min_stats_tag(
                 ids.insert(*id);
                 acc
             });
-        let old_stats = old_stats_5min
-            .iter()
-            .filter(|s| s.dt.eq(&since_ts))
-            .cloned()
-            .collect_vec();
         for ((group_master_key, tag_id), ids) in group_stats {
             let count = ids.len() as i32;
-            let mut old_entry = None;
-            let old_stats = old_stats
-                .iter()
-                .filter(|s| s.group_master_key.eq(&group_master_key))
-                .filter(|s| s.tag_id.eq(&tag_id))
-                .cloned()
-                .collect_vec();
-            if old_stats.len() > 1 {
-                error!("unexpected multiple stats for group {group_master_key} and tag {tag_id} at {since_ts}: {old_stats:?}");
-                for s in old_stats {
-                    old_stat_ids.push(s.id);
-                    s.delete(dbx).await.c(h!())?;
-                }
-            } else {
-                old_entry = old_stats.first().cloned();
+            stats_group_tag_5min::ActiveModel {
+                id: NotSet,
+                quantity: Set(count),
+                group_master_key: Set(group_master_key),
+                tag_id: Set(tag_id),
+                dt: Set(since_ts),
+                created_at: NotSet,
             }
-            if let Some(entry) = old_entry {
-                old_stat_ids.push(entry.id);
-                if entry.quantity != count {
-                    let mut model = entry.into_active_model();
-                    model.quantity = Set(count);
-                    model.update(dbx).await.c(h!())?;
-                }
-            } else {
-                stats_group_tag_5min::ActiveModel {
-                    id: NotSet,
-                    quantity: Set(count),
-                    group_master_key: Set(group_master_key),
-                    tag_id: Set(tag_id),
-                    dt: Set(since_ts),
-                    created_at: NotSet,
-                }
-                .insert(dbx)
-                .await
-                .c(h!())?;
-            }
+            .insert(dbx)
+            .await
+            .c(h!())?;
         }
         current_ts = till_ts;
-    }
-
-    for e in old_stats_5min {
-        if !old_stat_ids.contains(&e.id) {
-            // deleting non-existent stats that are erroneous or for a deleted group
-            e.delete(dbx).await.c(h!())?;
-        }
     }
     Ok(())
 }
@@ -2319,14 +1941,12 @@ async fn update_5min_stats_callsign(
     since_ts: NaiveDateTime,
     till_ts: NaiveDateTime,
 ) -> Result<(), AppError> {
-    let old_stats_5min = stats_group_callsign_5min::Entity::find()
+    stats_group_callsign_5min::Entity::delete_many()
         .filter(stats_group_callsign_5min::Column::Dt.gte(since_ts))
         .filter(stats_group_callsign_5min::Column::Dt.lt(till_ts))
-        .all(dbx)
+        .exec(dbx)
         .await
         .context(h!())?;
-
-    let mut old_stat_ids = vec![];
 
     let mut current_ts = since_ts;
     while current_ts <= till_ts {
@@ -2346,58 +1966,21 @@ async fn update_5min_stats_callsign(
                 ids.insert(*id);
                 acc
             });
-        let old_stats = old_stats_5min
-            .iter()
-            .filter(|s| s.dt.eq(&since_ts))
-            .cloned()
-            .collect_vec();
         for ((group_master_key, callsign), ids) in group_stats {
             let count = ids.len() as i32;
-            let mut old_entry = None;
-            let old_stats = old_stats
-                .iter()
-                .filter(|s| s.group_master_key.eq(&group_master_key))
-                .filter(|s| s.callsign.eq(&callsign))
-                .cloned()
-                .collect_vec();
-            if old_stats.len() > 1 {
-                error!("unexpected multiple stats for group {group_master_key} and callsign {callsign} at {since_ts}: {old_stats:?}");
-                for s in old_stats {
-                    old_stat_ids.push(s.id);
-                    s.delete(dbx).await.c(h!())?;
-                }
-            } else {
-                old_entry = old_stats.first().cloned();
+            stats_group_callsign_5min::ActiveModel {
+                id: NotSet,
+                quantity: Set(count),
+                group_master_key: Set(group_master_key),
+                callsign: Set(callsign),
+                dt: Set(since_ts),
+                created_at: NotSet,
             }
-            if let Some(entry) = old_entry {
-                old_stat_ids.push(entry.id);
-                if entry.quantity != count {
-                    let mut model = entry.into_active_model();
-                    model.quantity = Set(count);
-                    model.update(dbx).await.c(h!())?;
-                }
-            } else {
-                stats_group_callsign_5min::ActiveModel {
-                    id: NotSet,
-                    quantity: Set(count),
-                    group_master_key: Set(group_master_key),
-                    callsign: Set(callsign),
-                    dt: Set(since_ts),
-                    created_at: NotSet,
-                }
-                .insert(dbx)
-                .await
-                .c(h!())?;
-            }
+            .insert(dbx)
+            .await
+            .c(h!())?;
         }
         current_ts = till_ts;
-    }
-
-    for e in old_stats_5min {
-        if !old_stat_ids.contains(&e.id) {
-            // deleting non-existent stats that are erroneous or for a deleted group
-            e.delete(dbx).await.c(h!())?;
-        }
     }
     Ok(())
 }
@@ -2470,14 +2053,12 @@ async fn update_5min_stats_unit(
     since_ts: NaiveDateTime,
     till_ts: NaiveDateTime,
 ) -> Result<(), AppError> {
-    let old_stats_5min = stats_group_unit_5min::Entity::find()
+    stats_group_unit_5min::Entity::delete_many()
         .filter(stats_group_unit_5min::Column::Dt.gte(since_ts))
         .filter(stats_group_unit_5min::Column::Dt.lt(till_ts))
-        .all(dbx)
+        .exec(dbx)
         .await
         .context(h!())?;
-
-    let mut old_stat_ids = vec![];
 
     let mut current_ts = since_ts;
     while current_ts <= till_ts {
@@ -2497,58 +2078,21 @@ async fn update_5min_stats_unit(
                 ids.insert(*id);
                 acc
             });
-        let old_stats = old_stats_5min
-            .iter()
-            .filter(|s| s.dt.eq(&since_ts))
-            .cloned()
-            .collect_vec();
         for ((group_master_key, unit), ids) in group_stats {
             let count = ids.len() as i32;
-            let mut old_entry = None;
-            let old_stats = old_stats
-                .iter()
-                .filter(|s| s.group_master_key.eq(&group_master_key))
-                .filter(|s| s.unit.eq(&unit))
-                .cloned()
-                .collect_vec();
-            if old_stats.len() > 1 {
-                error!("unexpected multiple stats for group {group_master_key} and unit {unit} at {since_ts}: {old_stats:?}");
-                for s in old_stats {
-                    old_stat_ids.push(s.id);
-                    s.delete(dbx).await.c(h!())?;
-                }
-            } else {
-                old_entry = old_stats.first().cloned();
+            stats_group_unit_5min::ActiveModel {
+                id: NotSet,
+                quantity: Set(count),
+                group_master_key: Set(group_master_key),
+                unit: Set(unit),
+                dt: Set(since_ts),
+                created_at: NotSet,
             }
-            if let Some(entry) = old_entry {
-                old_stat_ids.push(entry.id);
-                if entry.quantity != count {
-                    let mut model = entry.into_active_model();
-                    model.quantity = Set(count);
-                    model.update(dbx).await.c(h!())?;
-                }
-            } else {
-                stats_group_unit_5min::ActiveModel {
-                    id: NotSet,
-                    quantity: Set(count),
-                    group_master_key: Set(group_master_key),
-                    unit: Set(unit),
-                    dt: Set(since_ts),
-                    created_at: NotSet,
-                }
-                .insert(dbx)
-                .await
-                .c(h!())?;
-            }
+            .insert(dbx)
+            .await
+            .c(h!())?;
         }
         current_ts = till_ts;
-    }
-
-    for e in old_stats_5min {
-        if !old_stat_ids.contains(&e.id) {
-            // deleting non-existent stats that are erroneous or for a deleted group
-            e.delete(dbx).await.c(h!())?;
-        }
     }
     Ok(())
 }
