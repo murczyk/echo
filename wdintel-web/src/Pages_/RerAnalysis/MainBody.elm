@@ -89,63 +89,62 @@ mainBody user model shared route =
                 ]
 
         messagesBlock =
-            case model.counts |> RD.toMaybe |> mmap (\r -> r.countOverall) of
-                Just 0 ->
-                    div
-                        [ class "text-center"
-                        ]
-                        [ text "немає жодного повідомлення для аналізу" ]
+            if (not model.loadingInboxMessages) && List.isEmpty model.messages then
+                div
+                    [ class "text-center"
+                    ]
+                    [ text "немає жодного повідомлення для аналізу" ]
 
-                _ ->
-                    let
-                        loadMoreBtn =
-                            viewIf (not model.noMoreToLoad && not (List.isEmpty model.messages)) <|
-                                div [ class "flex justify-center items-center mb-4" ]
-                                    [ Button.new { label = "завантажити ще", onClick = LoadMoreMessages }
-                                        |> Button.withIcon
-                                            [ i [ class "bi bi-arrow-down-circle mr-2" ] [] ]
-                                        |> Button.withDisabled model.loadingInboxMessages
-                                        |> Button.withSecondary
-                                        |> Button.view
-                                    ]
+            else
+                let
+                    loadMoreBtn =
+                        viewIf (not model.noMoreToLoad && not (List.isEmpty model.messages)) <|
+                            div [ class "flex justify-center items-center mb-4" ]
+                                [ Button.new { label = "завантажити ще", onClick = LoadMoreMessages }
+                                    |> Button.withIcon
+                                        [ i [ class "bi bi-arrow-down-circle mr-2" ] [] ]
+                                    |> Button.withDisabled model.loadingInboxMessages
+                                    |> Button.withSecondary
+                                    |> Button.view
+                                ]
 
-                        vps =
-                            { profiles = model.profiles
-                            , groupInfos = model.groupInfos
-                            , zone = shared.timeZone
-                            , messages = model.messages
-                            , tags = model.tags
-                            , bookmarks = model.bookmarks
-                            , importants = model.importants
-                            , callsignsInfo = model.callsignsInfo
-                            , messageComments = model.messageComments
-                            , user = user
-                            , users = model.users
-                            , serverInfo = shared.serverInfo
-                            , networks = RD.withDefault Dict.empty shared.networks
-                            , masterUnits = masterUnitsDict
-                            , currentRoute = Just route
-                            }
+                    vps =
+                        { profiles = model.profiles
+                        , groupInfos = model.groupInfos
+                        , zone = shared.timeZone
+                        , messages = model.messages
+                        , tags = model.tags
+                        , bookmarks = model.bookmarks
+                        , importants = model.importants
+                        , callsignsInfo = model.callsignsInfo
+                        , messageComments = model.messageComments
+                        , user = user
+                        , users = model.users
+                        , serverInfo = shared.serverInfo
+                        , networks = RD.withDefault Dict.empty shared.networks
+                        , masterUnits = masterUnitsDict
+                        , currentRoute = Just route
+                        }
 
-                        renderPs =
-                            { hideCheckboxes = False
-                            , hideIndividualSave = False
-                            }
-                    in
-                    div [ class "" ]
-                        [ div []
-                            (List.map (Html.map RowsMsg)
-                                (List.map
-                                    (Shared.Components.RerMessage.renderRow
-                                        vps
-                                        renderPs
-                                        model.rowsModel
-                                    )
-                                    (enumerate model.messages)
+                    renderPs =
+                        { hideCheckboxes = False
+                        , hideIndividualSave = False
+                        }
+                in
+                div [ class "" ]
+                    [ div []
+                        (List.map (Html.map RowsMsg)
+                            (List.map
+                                (Shared.Components.RerMessage.renderRow
+                                    vps
+                                    renderPs
+                                    model.rowsModel
                                 )
+                                (enumerate model.messages)
                             )
-                        , loadMoreBtn
-                        ]
+                        )
+                    , loadMoreBtn
+                    ]
     in
     [ div [] <|
         [ div
