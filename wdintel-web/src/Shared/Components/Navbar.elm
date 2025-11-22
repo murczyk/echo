@@ -31,6 +31,8 @@ type alias Props msg =
     , onThemeChange : ThemeMode -> msg
     , onNavbarVisibilityChange : msg
     , isRerDuty : Bool
+    , openDropdown : Maybe String
+    , onDropdownToggle : Maybe String -> msg
     }
 
 
@@ -38,10 +40,10 @@ navBar : Auth.User -> Shared.Model -> String -> Props msg -> Html msg
 navBar user shared activeName props =
     let
         menu =
-            menuItem activeName
+            menuItem props activeName
 
         menuWithSubs =
-            menuItemWithSubs activeName
+            menuItemWithSubs props activeName
 
         adminSubs =
             [ Menu (Internal Route.Path.Admin) "zones" "напрямки"
@@ -179,20 +181,31 @@ navBar user shared activeName props =
         ]
 
 
-menuItem activeName hrefLink activeNameExp nameText =
+menuItem props activeName hrefLink activeNameExp nameText =
     li []
         [ a
             [ class "block py-2 hover:text-[var(--color-text)] hover:bg-[var(--color-column)] px-2 rounded transition-all duration-200"
             , Route.Path.href hrefLink
             , classList [ ( "text-[var(--color-text)] font-medium", activeName == activeNameExp ) ]
+            , onClick (props.onDropdownToggle Nothing)
             ]
             [ text nameText ]
         ]
 
 
-menuItemWithSubs : String -> String -> String -> List Menu -> Html msg
-menuItemWithSubs activeName activeNameExp nameText subs =
+menuItemWithSubs : Props msg -> String -> String -> String -> List Menu -> Html msg
+menuItemWithSubs props activeName activeNameExp nameText subs =
     let
+        isOpen =
+            props.openDropdown == Just activeNameExp
+
+        toggleMsg =
+            if isOpen then
+                props.onDropdownToggle Nothing
+
+            else
+                props.onDropdownToggle (Just activeNameExp)
+
         dropdownItem : Menu -> Html msg
         dropdownItem sub =
             li []
@@ -202,6 +215,7 @@ menuItemWithSubs activeName activeNameExp nameText subs =
                             [ class "flex items-center justify-between px-4 py-2 hover:bg-[var(--color-column)] hover:text-[var(--color-text)] rounded transition-all duration-200"
                             , classList [ ( "text-[var(--color-text)] font-medium", sub.activeName == activeName ) ]
                             , Route.Path.href path
+                            , onClick (props.onDropdownToggle Nothing)
                             ]
                             [ span [] [ text sub.label ]
                             , if sub.activeName == activeName then
@@ -217,6 +231,7 @@ menuItemWithSubs activeName activeNameExp nameText subs =
                             , classList [ ( "text-[var(--color-text)] font-medium", sub.activeName == activeName ) ]
                             , href link
                             , target "_blank"
+                            , onClick (props.onDropdownToggle Nothing)
                             ]
                             [ span [] [ text sub.label ]
                             , i [ class "bi bi-box-arrow-up-right text-[var(--color-icons)] ml-2 group-hover:text-[var(--color-text)]" ] []
@@ -224,10 +239,19 @@ menuItemWithSubs activeName activeNameExp nameText subs =
                 ]
     in
     li [ class "relative group" ]
-        [ a
+        [ button
             [ class "inline-flex items-center py-2 px-2 cursor-pointer hover:text-[var(--color-text)] hover:bg-[var(--color-column)] rounded transition-all duration-200"
             , classList [ ( "text-[var(--color-text)] font-medium", activeName == activeNameExp ) ]
-            , href "#"
+            , onClick toggleMsg
+            , attribute "aria-haspopup" "true"
+            , attribute "aria-expanded"
+                (if isOpen then
+                    "true"
+
+                 else
+                    "false"
+                )
+            , type_ "button"
             ]
             [ span [] [ text nameText ]
             , i
@@ -236,7 +260,11 @@ menuItemWithSubs activeName activeNameExp nameText subs =
             ]
         , div [ class "absolute left-0 pt-2 z-500" ]
             [ ul
-                [ class "w-56 bg-[var(--color-card)] rounded-lg shadow-lg border border-[var(--color-border)] hidden group-hover:block transition-all duration-200"
+                [ class "w-56 bg-[var(--color-card)] rounded-lg shadow-lg border border-[var(--color-border)] group-hover:block transition-all duration-200"
+                , classList
+                    [ ( "hidden", not isOpen )
+                    , ( "block", isOpen )
+                    ]
                 ]
                 (List.map dropdownItem subs)
             ]
