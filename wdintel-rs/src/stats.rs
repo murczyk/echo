@@ -838,6 +838,7 @@ fn is_filter_empty<T>(values: &Option<Vec<T>>) -> bool {
 
 #[derive(FromQueryResult, Clone)]
 struct StatsRow {
+    pub id: i64,
     pub created_at: NaiveDateTime,
     pub datetime: Option<NaiveDateTime>,
     pub group_master_key: String,
@@ -917,6 +918,7 @@ pub async fn recalculate_group_stats(
             .column(signal_group_aor::Column::AorId)
             .filter(since_filter_1.or(since_filter_2))
             .filter(till_filter_1.or(till_filter_2))
+            .filter(signal_message::Column::Deleted.eq(false))
             .into_model::<StatsRow>()
             .all(dbx)
             .await
@@ -925,13 +927,16 @@ pub async fn recalculate_group_stats(
         let group_stats = generic_stats
             .clone()
             .into_iter()
-            .map(|x| (x.group_master_key, x.datetime.unwrap_or(x.created_at)))
+            .map(|x| {
+                (x.id, x.group_master_key, x.datetime.unwrap_or(x.created_at))
+            })
             .collect_vec();
         let freq_stats = generic_stats
             .clone()
             .into_iter()
             .map(|x| {
                 (
+                    x.id,
                     (x.group_master_key, x.freq.unwrap_or("".to_string())),
                     x.datetime.unwrap_or(x.created_at),
                 )
@@ -942,6 +947,7 @@ pub async fn recalculate_group_stats(
             .into_iter()
             .map(|x| {
                 (
+                    x.id,
                     (x.group_master_key, x.sender.unwrap_or("".to_string())),
                     x.datetime.unwrap_or(x.created_at),
                 )
@@ -952,6 +958,7 @@ pub async fn recalculate_group_stats(
             .into_iter()
             .map(|x| {
                 (
+                    x.id,
                     (x.group_master_key, x.unit_v2.unwrap_or("".to_string())),
                     x.datetime.unwrap_or(x.created_at),
                 )
@@ -963,6 +970,7 @@ pub async fn recalculate_group_stats(
             .filter_map(|x| {
                 x.aor_id.map(|aor_id| {
                     (
+                        x.id,
                         (x.group_master_key, aor_id),
                         x.datetime.unwrap_or(x.created_at),
                     )
@@ -975,6 +983,7 @@ pub async fn recalculate_group_stats(
             .filter_map(|x| {
                 x.post_id.map(|post_id| {
                     (
+                        x.id,
                         (x.group_master_key, post_id),
                         x.datetime.unwrap_or(x.created_at),
                     )
@@ -991,6 +1000,7 @@ pub async fn recalculate_group_stats(
                     .unwrap_or_default();
                 callsign.into_iter().map(move |c| {
                     (
+                        x.id,
                         (x.group_master_key.clone(), c),
                         x.datetime.unwrap_or(x.created_at),
                     )
@@ -1007,6 +1017,7 @@ pub async fn recalculate_group_stats(
                     .unwrap_or_default();
                 tags.into_iter().map(move |t| {
                     (
+                        x.id,
                         (x.group_master_key.clone(), t),
                         x.datetime.unwrap_or(x.created_at),
                     )
@@ -1027,6 +1038,7 @@ pub async fn recalculate_group_stats(
                     .unwrap_or_default();
                 locations.into_iter().map(move |l| {
                     (
+                        x.id,
                         (x.group_master_key.clone(), l),
                         x.datetime.unwrap_or(x.created_at),
                     )
@@ -1253,7 +1265,7 @@ pub async fn recalculate_group_stats(
 
 async fn update_5min_stats_group(
     dbx: &DatabaseTransaction,
-    stats: Vec<(String, NaiveDateTime)>,
+    stats: Vec<(i64, String, NaiveDateTime)>,
     since_ts: NaiveDateTime,
     till_ts: NaiveDateTime,
 ) -> Result<(), AppError> {
@@ -1270,17 +1282,18 @@ async fn update_5min_stats_group(
     while current_ts <= till_ts {
         let since_ts = current_ts;
         let till_ts = current_ts + Duration::minutes(5);
-        let group_stats: HashMap<String, i32> = stats
+        let group_stats: HashMap<String, HashSet<i64>> = stats
             .iter()
-            .filter_map(|(key, ts)| {
+            .filter_map(|(id, key, ts)| {
                 if !since_ts.gt(ts) && till_ts.gt(ts) {
-                    Some(key.clone())
+                    Some((id, key.clone()))
                 } else {
                     None
                 }
             })
-            .fold(HashMap::new(), |mut acc, s| {
-                *acc.entry(s).or_insert(0) += 1;
+            .fold(HashMap::new(), |mut acc, (id, key)| {
+                let ids = acc.entry(key).or_default();
+                ids.insert(*id);
                 acc
             });
         let old_stats = old_stats_5min
@@ -1288,7 +1301,8 @@ async fn update_5min_stats_group(
             .filter(|s| s.dt.eq(&since_ts))
             .cloned()
             .collect_vec();
-        for (group_master_key, count) in group_stats {
+        for (group_master_key, ids) in group_stats {
+            let count = ids.len() as i32;
             let mut old_entry = None;
             let old_stats = old_stats
                 .iter()
@@ -1399,7 +1413,7 @@ async fn recalculate_day_stats_group(
 
 async fn update_5min_stats_freq(
     dbx: &DatabaseTransaction,
-    stats: Vec<((String, String), NaiveDateTime)>,
+    stats: Vec<(i64, (String, String), NaiveDateTime)>,
     since_ts: NaiveDateTime,
     till_ts: NaiveDateTime,
 ) -> Result<(), AppError> {
@@ -1416,17 +1430,18 @@ async fn update_5min_stats_freq(
     while current_ts <= till_ts {
         let since_ts = current_ts;
         let till_ts = current_ts + Duration::minutes(5);
-        let group_stats: HashMap<(String, String), i32> = stats
+        let group_stats: HashMap<(String, String), HashSet<i64>> = stats
             .iter()
-            .filter_map(|(key, ts)| {
+            .filter_map(|(id, key, ts)| {
                 if !since_ts.gt(ts) && till_ts.gt(ts) {
-                    Some(key.clone())
+                    Some((id, key.clone()))
                 } else {
                     None
                 }
             })
-            .fold(HashMap::new(), |mut acc, s| {
-                *acc.entry(s).or_insert(0) += 1;
+            .fold(HashMap::new(), |mut acc, (id, key)| {
+                let ids = acc.entry(key).or_default();
+                ids.insert(*id);
                 acc
             });
         let old_stats = old_stats_5min
@@ -1434,7 +1449,8 @@ async fn update_5min_stats_freq(
             .filter(|s| s.dt.eq(&since_ts))
             .cloned()
             .collect_vec();
-        for ((group_master_key, frequency), count) in group_stats {
+        for ((group_master_key, frequency), ids) in group_stats {
+            let count = ids.len() as i32;
             let mut old_entry = None;
             let old_stats = old_stats
                 .iter()
@@ -1547,7 +1563,7 @@ async fn recalculate_day_stats_freq(
 
 async fn update_5min_stats_aor_id(
     dbx: &DatabaseTransaction,
-    stats: Vec<((String, i64), NaiveDateTime)>,
+    stats: Vec<(i64, (String, i64), NaiveDateTime)>,
     since_ts: NaiveDateTime,
     till_ts: NaiveDateTime,
 ) -> Result<(), AppError> {
@@ -1564,17 +1580,18 @@ async fn update_5min_stats_aor_id(
     while current_ts <= till_ts {
         let since_ts = current_ts;
         let till_ts = current_ts + Duration::minutes(5);
-        let group_stats: HashMap<(String, i64), i32> = stats
+        let group_stats: HashMap<(String, i64), HashSet<i64>> = stats
             .iter()
-            .filter_map(|(key, ts)| {
+            .filter_map(|(id, key, ts)| {
                 if !since_ts.gt(ts) && till_ts.gt(ts) {
-                    Some(key.clone())
+                    Some((id, key.clone()))
                 } else {
                     None
                 }
             })
-            .fold(HashMap::new(), |mut acc, s| {
-                *acc.entry(s).or_insert(0) += 1;
+            .fold(HashMap::new(), |mut acc, (id, key)| {
+                let ids = acc.entry(key).or_default();
+                ids.insert(*id);
                 acc
             });
         let old_stats = old_stats_5min
@@ -1582,7 +1599,8 @@ async fn update_5min_stats_aor_id(
             .filter(|s| s.dt.eq(&since_ts))
             .cloned()
             .collect_vec();
-        for ((group_master_key, aor_id), count) in group_stats {
+        for ((group_master_key, aor_id), ids) in group_stats {
+            let count = ids.len() as i32;
             let mut old_entry = None;
             let old_stats = old_stats
                 .iter()
@@ -1695,7 +1713,7 @@ async fn recalculate_day_stats_aor_id(
 
 async fn update_5min_stats_post_id(
     dbx: &DatabaseTransaction,
-    stats: Vec<((String, i64), NaiveDateTime)>,
+    stats: Vec<(i64, (String, i64), NaiveDateTime)>,
     since_ts: NaiveDateTime,
     till_ts: NaiveDateTime,
 ) -> Result<(), AppError> {
@@ -1712,17 +1730,18 @@ async fn update_5min_stats_post_id(
     while current_ts <= till_ts {
         let since_ts = current_ts;
         let till_ts = current_ts + Duration::minutes(5);
-        let group_stats: HashMap<(String, i64), i32> = stats
+        let group_stats: HashMap<(String, i64), HashSet<i64>> = stats
             .iter()
-            .filter_map(|(key, ts)| {
+            .filter_map(|(id, key, ts)| {
                 if !since_ts.gt(ts) && till_ts.gt(ts) {
-                    Some(key.clone())
+                    Some((id, key.clone()))
                 } else {
                     None
                 }
             })
-            .fold(HashMap::new(), |mut acc, s| {
-                *acc.entry(s).or_insert(0) += 1;
+            .fold(HashMap::new(), |mut acc, (id, key)| {
+                let ids = acc.entry(key).or_default();
+                ids.insert(*id);
                 acc
             });
         let old_stats = old_stats_5min
@@ -1730,7 +1749,8 @@ async fn update_5min_stats_post_id(
             .filter(|s| s.dt.eq(&since_ts))
             .cloned()
             .collect_vec();
-        for ((group_master_key, post_id), count) in group_stats {
+        for ((group_master_key, post_id), ids) in group_stats {
+            let count = ids.len() as i32;
             let mut old_entry = None;
             let old_stats = old_stats
                 .iter()
@@ -1843,7 +1863,7 @@ async fn recalculate_day_stats_post_id(
 
 async fn update_5min_stats_location(
     dbx: &DatabaseTransaction,
-    stats: Vec<((String, String), NaiveDateTime)>,
+    stats: Vec<(i64, (String, String), NaiveDateTime)>,
     since_ts: NaiveDateTime,
     till_ts: NaiveDateTime,
 ) -> Result<(), AppError> {
@@ -1860,17 +1880,18 @@ async fn update_5min_stats_location(
     while current_ts <= till_ts {
         let since_ts = current_ts;
         let till_ts = current_ts + Duration::minutes(5);
-        let group_stats: HashMap<(String, String), i32> = stats
+        let group_stats: HashMap<(String, String), HashSet<i64>> = stats
             .iter()
-            .filter_map(|(key, ts)| {
+            .filter_map(|(id, key, ts)| {
                 if !since_ts.gt(ts) && till_ts.gt(ts) {
-                    Some(key.clone())
+                    Some((id, key.clone()))
                 } else {
                     None
                 }
             })
-            .fold(HashMap::new(), |mut acc, s| {
-                *acc.entry(s).or_insert(0) += 1;
+            .fold(HashMap::new(), |mut acc, (id, key)| {
+                let ids = acc.entry(key).or_default();
+                ids.insert(*id);
                 acc
             });
         let old_stats = old_stats_5min
@@ -1878,7 +1899,8 @@ async fn update_5min_stats_location(
             .filter(|s| s.dt.eq(&since_ts))
             .cloned()
             .collect_vec();
-        for ((group_master_key, location), count) in group_stats {
+        for ((group_master_key, location), ids) in group_stats {
+            let count = ids.len() as i32;
             let mut old_entry = None;
             let old_stats = old_stats
                 .iter()
@@ -1993,7 +2015,7 @@ async fn recalculate_day_stats_location(
 
 async fn update_5min_stats_sender(
     dbx: &DatabaseTransaction,
-    stats: Vec<((String, String), NaiveDateTime)>,
+    stats: Vec<(i64, (String, String), NaiveDateTime)>,
     since_ts: NaiveDateTime,
     till_ts: NaiveDateTime,
 ) -> Result<(), AppError> {
@@ -2010,17 +2032,18 @@ async fn update_5min_stats_sender(
     while current_ts <= till_ts {
         let since_ts = current_ts;
         let till_ts = current_ts + Duration::minutes(5);
-        let group_stats: HashMap<(String, String), i32> = stats
+        let group_stats: HashMap<(String, String), HashSet<i64>> = stats
             .iter()
-            .filter_map(|(key, ts)| {
+            .filter_map(|(id, key, ts)| {
                 if !since_ts.gt(ts) && till_ts.gt(ts) {
-                    Some(key.clone())
+                    Some((id, key.clone()))
                 } else {
                     None
                 }
             })
-            .fold(HashMap::new(), |mut acc, s| {
-                *acc.entry(s).or_insert(0) += 1;
+            .fold(HashMap::new(), |mut acc, (id, key)| {
+                let ids = acc.entry(key).or_default();
+                ids.insert(*id);
                 acc
             });
         let old_stats = old_stats_5min
@@ -2028,7 +2051,8 @@ async fn update_5min_stats_sender(
             .filter(|s| s.dt.eq(&since_ts))
             .cloned()
             .collect_vec();
-        for ((group_master_key, sender), count) in group_stats {
+        for ((group_master_key, sender), ids) in group_stats {
+            let count = ids.len() as i32;
             let mut old_entry = None;
             let old_stats = old_stats
                 .iter()
@@ -2141,7 +2165,7 @@ async fn recalculate_day_stats_sender(
 
 async fn update_5min_stats_tag(
     dbx: &DatabaseTransaction,
-    stats: Vec<((String, i64), NaiveDateTime)>,
+    stats: Vec<(i64, (String, i64), NaiveDateTime)>,
     since_ts: NaiveDateTime,
     till_ts: NaiveDateTime,
 ) -> Result<(), AppError> {
@@ -2158,17 +2182,18 @@ async fn update_5min_stats_tag(
     while current_ts <= till_ts {
         let since_ts = current_ts;
         let till_ts = current_ts + Duration::minutes(5);
-        let group_stats: HashMap<(String, i64), i32> = stats
+        let group_stats: HashMap<(String, i64), HashSet<i64>> = stats
             .iter()
-            .filter_map(|(key, ts)| {
+            .filter_map(|(id, key, ts)| {
                 if !since_ts.gt(ts) && till_ts.gt(ts) {
-                    Some(key.clone())
+                    Some((id, key.clone()))
                 } else {
                     None
                 }
             })
-            .fold(HashMap::new(), |mut acc, s| {
-                *acc.entry(s).or_insert(0) += 1;
+            .fold(HashMap::new(), |mut acc, (id, key)| {
+                let ids = acc.entry(key).or_default();
+                ids.insert(*id);
                 acc
             });
         let old_stats = old_stats_5min
@@ -2176,7 +2201,8 @@ async fn update_5min_stats_tag(
             .filter(|s| s.dt.eq(&since_ts))
             .cloned()
             .collect_vec();
-        for ((group_master_key, tag_id), count) in group_stats {
+        for ((group_master_key, tag_id), ids) in group_stats {
+            let count = ids.len() as i32;
             let mut old_entry = None;
             let old_stats = old_stats
                 .iter()
@@ -2289,7 +2315,7 @@ async fn recalculate_day_stats_tag(
 
 async fn update_5min_stats_callsign(
     dbx: &DatabaseTransaction,
-    stats: Vec<((String, String), NaiveDateTime)>,
+    stats: Vec<(i64, (String, String), NaiveDateTime)>,
     since_ts: NaiveDateTime,
     till_ts: NaiveDateTime,
 ) -> Result<(), AppError> {
@@ -2306,17 +2332,18 @@ async fn update_5min_stats_callsign(
     while current_ts <= till_ts {
         let since_ts = current_ts;
         let till_ts = current_ts + Duration::minutes(5);
-        let group_stats: HashMap<(String, String), i32> = stats
+        let group_stats: HashMap<(String, String), HashSet<i64>> = stats
             .iter()
-            .filter_map(|(key, ts)| {
+            .filter_map(|(id, key, ts)| {
                 if !since_ts.gt(ts) && till_ts.gt(ts) {
-                    Some(key.clone())
+                    Some((id, key.clone()))
                 } else {
                     None
                 }
             })
-            .fold(HashMap::new(), |mut acc, s| {
-                *acc.entry(s).or_insert(0) += 1;
+            .fold(HashMap::new(), |mut acc, (id, key)| {
+                let ids = acc.entry(key).or_default();
+                ids.insert(*id);
                 acc
             });
         let old_stats = old_stats_5min
@@ -2324,7 +2351,8 @@ async fn update_5min_stats_callsign(
             .filter(|s| s.dt.eq(&since_ts))
             .cloned()
             .collect_vec();
-        for ((group_master_key, callsign), count) in group_stats {
+        for ((group_master_key, callsign), ids) in group_stats {
+            let count = ids.len() as i32;
             let mut old_entry = None;
             let old_stats = old_stats
                 .iter()
@@ -2438,7 +2466,7 @@ async fn recalculate_day_stats_callsign(
 
 async fn update_5min_stats_unit(
     dbx: &DatabaseTransaction,
-    stats: Vec<((String, String), NaiveDateTime)>,
+    stats: Vec<(i64, (String, String), NaiveDateTime)>,
     since_ts: NaiveDateTime,
     till_ts: NaiveDateTime,
 ) -> Result<(), AppError> {
@@ -2455,17 +2483,18 @@ async fn update_5min_stats_unit(
     while current_ts <= till_ts {
         let since_ts = current_ts;
         let till_ts = current_ts + Duration::minutes(5);
-        let group_stats: HashMap<(String, String), i32> = stats
+        let group_stats: HashMap<(String, String), HashSet<i64>> = stats
             .iter()
-            .filter_map(|(key, ts)| {
+            .filter_map(|(id, key, ts)| {
                 if !since_ts.gt(ts) && till_ts.gt(ts) {
-                    Some(key.clone())
+                    Some((id, key.clone()))
                 } else {
                     None
                 }
             })
-            .fold(HashMap::new(), |mut acc, s| {
-                *acc.entry(s).or_insert(0) += 1;
+            .fold(HashMap::new(), |mut acc, (id, key)| {
+                let ids = acc.entry(key).or_default();
+                ids.insert(*id);
                 acc
             });
         let old_stats = old_stats_5min
@@ -2473,7 +2502,8 @@ async fn update_5min_stats_unit(
             .filter(|s| s.dt.eq(&since_ts))
             .cloned()
             .collect_vec();
-        for ((group_master_key, unit), count) in group_stats {
+        for ((group_master_key, unit), ids) in group_stats {
+            let count = ids.len() as i32;
             let mut old_entry = None;
             let old_stats = old_stats
                 .iter()
