@@ -34,7 +34,7 @@ pub async fn oneoff_count_group_batches(mode: Mode) -> Result<(), AppError> {
             .filter(signal_message::Column::CreatedAt.gte(cutoff))
             .filter(signal_message::Column::CreatedAt.lte(max_created_at))
             .find_with_related(signal_message_group::Entity)
-            .order_by_desc(signal_message::Column::CreatedAt)
+            .order_by_desc(signal_message::Column::Timestamp)
             .limit(ONEOFF_COUNT_BATCHES_SIZE)
             .offset(offset)
             .all(&dbx)
