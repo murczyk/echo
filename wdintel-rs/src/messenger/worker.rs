@@ -635,7 +635,9 @@ async fn sync_groups(
                 crate::messenger::group::add_group(model, txn)
                     .await
                     .c(h!())?;
-                if g.message_source.eq(&echo_im::types::MessageSource::Whatsapp) {
+                if g.message_source
+                    .eq(&echo_im::types::MessageSource::Whatsapp)
+                {
                     whatsapp_group::ActiveModel {
                         name: Set(g.name.clone()),
                         created_at: NotSet,
@@ -744,11 +746,19 @@ async fn sync_groups(
     Ok(())
 }
 
-fn sources_eq(s1: &echo_im::types::MessageSource, s2: &EchoMessageSource) -> bool {
+fn sources_eq(
+    s1: &echo_im::types::MessageSource,
+    s2: &EchoMessageSource,
+) -> bool {
     matches!(
         (s1, s2),
-        (echo_im::types::MessageSource::Signal, EchoMessageSource::Signal)
-            | (echo_im::types::MessageSource::Whatsapp, EchoMessageSource::Whatsapp)
+        (
+            echo_im::types::MessageSource::Signal,
+            EchoMessageSource::Signal
+        ) | (
+            echo_im::types::MessageSource::Whatsapp,
+            EchoMessageSource::Whatsapp
+        )
     )
 }
 

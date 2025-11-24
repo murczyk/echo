@@ -217,10 +217,12 @@ async fn inbox_group_stats(
         .into_iter()
         .filter_map(|x| x.name.map(|name| (x.master_key, name)))
         .collect::<HashMap<_, _>>();
-    let batches =
-        crate::stats::collect_signal_group_batches(master_keys.clone(), &env.dbx)
-            .await
-            .c(h!())?;
+    let batches = crate::stats::collect_signal_group_batches(
+        master_keys.clone(),
+        &env.dbx,
+    )
+    .await
+    .c(h!())?;
     let batch_ids = batches.iter().map(|b| *b.id).collect::<Vec<i64>>();
     let stats = crate::stats::get_last_hour_stats(&env.dbx, batch_ids)
         .await
@@ -230,7 +232,11 @@ async fn inbox_group_stats(
         let mut stats = BTreeMap::new();
         for key in master_keys.clone() {
             let mut count = 0;
-            for batch_id in crate::stats::collect_signal_group_batch_ids_by_master_key(&key, &batches) {
+            for batch_id in
+                crate::stats::collect_signal_group_batch_ids_by_master_key(
+                    &key, &batches,
+                )
+            {
                 count += group_stats.get(&batch_id).unwrap_or(&0).to_owned();
             }
             let group_name = group_names.get(&key).cloned();

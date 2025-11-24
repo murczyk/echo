@@ -279,17 +279,43 @@ pub async fn read_group_stats_aggregated(
         interval_5mins_filter = interval_5mins_filter.add(filter);
     }
 
+    let batches = collect_signal_group_batches(master_keys.clone(), dbx)
+        .await
+        .c(h!())?;
+    let batch_ids = batches.iter().map(|b| *b.id).collect::<Vec<i64>>();
+    let batches_map = batches
+        .into_iter()
+        .map(|b| {
+            let mut keys = vec![];
+            for key in b.group_master_keys.split("|") {
+                if key.is_empty() {
+                    continue;
+                }
+                keys.push(key.trim().to_string())
+            }
+            (b.id, keys)
+        })
+        .collect::<HashMap<i64, Vec<_>>>();
+
     let mut stats: HashMap<String, i64> = stats_group_5min::Entity::find()
         .filter(interval_5mins_filter)
         .filter(
-            stats_group_5min::Column::GroupMasterKey.is_in(master_keys.clone()),
+            stats_group_5min::Column::SignalGroupBatchId
+                .is_in(batch_ids.clone()),
         )
         .all(dbx)
         .await
         .c(h!())?
         .into_iter()
-        .fold(HashMap::new(), |mut acc, s| {
-            *acc.entry(s.group_master_key).or_insert(0) += s.quantity as i64;
+        .flat_map(|m| {
+            collect_group_keys_for_batch(
+                *m.signal_group_batch_id,
+                &batches_map,
+                m,
+            )
+        })
+        .fold(HashMap::new(), |mut acc, (s, key)| {
+            *acc.entry(key).or_insert(0) += s.quantity as i64;
             acc
         });
 
@@ -302,16 +328,23 @@ pub async fn read_group_stats_aggregated(
         stats_group_day::Entity::find()
             .filter(interval_day_filter)
             .filter(
-                stats_group_day::Column::GroupMasterKey
-                    .is_in(master_keys.clone()),
+                stats_group_day::Column::SignalGroupBatchId
+                    .is_in(batch_ids.clone()),
             )
             .all(dbx)
             .await
             .c(h!())?
             .into_iter()
-            .for_each(|s| {
-                *stats.entry(s.group_master_key).or_insert(0) +=
-                    s.quantity as i64;
+            .flat_map(|m| {
+                collect_group_keys_for_batch(
+                    *m.signal_group_batch_id,
+                    &batches_map,
+                    m,
+                )
+            })
+            .fold(HashMap::new(), |mut acc, (s, key)| {
+                *acc.entry(key).or_insert(0) += s.quantity as i64;
+                acc
             });
     };
     let mut result = vec![];
@@ -338,12 +371,17 @@ pub async fn read_sender_stats_aggregated(
         interval_5mins_filter = interval_5mins_filter.add(filter);
     }
 
+    let batches = collect_signal_group_batches(master_keys.clone(), &env.dbx)
+        .await
+        .c(h!())?;
+    let batch_ids = batches.iter().map(|b| *b.id).collect::<Vec<i64>>();
+
     let mut stats: HashMap<String, i64> =
         stats_group_sender_5min::Entity::find()
             .filter(interval_5mins_filter)
             .filter(
-                stats_group_sender_5min::Column::GroupMasterKey
-                    .is_in(master_keys.clone()),
+                stats_group_sender_5min::Column::SignalGroupBatchId
+                    .is_in(batch_ids.clone()),
             )
             .all(&env.dbx)
             .await
@@ -363,8 +401,8 @@ pub async fn read_sender_stats_aggregated(
         stats_group_sender_day::Entity::find()
             .filter(interval_day_filter)
             .filter(
-                stats_group_sender_day::Column::GroupMasterKey
-                    .is_in(master_keys.clone()),
+                stats_group_sender_day::Column::SignalGroupBatchId
+                    .is_in(batch_ids.clone()),
             )
             .all(&env.dbx)
             .await
@@ -398,11 +436,16 @@ pub async fn read_post_stats_aggregated(
         interval_5mins_filter = interval_5mins_filter.add(filter);
     }
 
+    let batches = collect_signal_group_batches(master_keys.clone(), &env.dbx)
+        .await
+        .c(h!())?;
+    let batch_ids = batches.iter().map(|b| *b.id).collect::<Vec<i64>>();
+
     let mut stats: HashMap<i64, i64> = stats_group_post_id_5min::Entity::find()
         .filter(interval_5mins_filter)
         .filter(
-            stats_group_post_id_5min::Column::GroupMasterKey
-                .is_in(master_keys.clone()),
+            stats_group_post_id_5min::Column::SignalGroupBatchId
+                .is_in(batch_ids.clone()),
         )
         .all(&env.dbx)
         .await
@@ -422,8 +465,8 @@ pub async fn read_post_stats_aggregated(
         stats_group_post_id_day::Entity::find()
             .filter(interval_day_filter)
             .filter(
-                stats_group_post_id_day::Column::GroupMasterKey
-                    .is_in(master_keys.clone()),
+                stats_group_post_id_day::Column::SignalGroupBatchId
+                    .is_in(batch_ids.clone()),
             )
             .all(&env.dbx)
             .await
@@ -467,11 +510,16 @@ pub async fn read_aor_stats_aggregated(
         interval_5mins_filter = interval_5mins_filter.add(filter);
     }
 
+    let batches = collect_signal_group_batches(master_keys.clone(), &env.dbx)
+        .await
+        .c(h!())?;
+    let batch_ids = batches.iter().map(|b| *b.id).collect::<Vec<i64>>();
+
     let mut stats: HashMap<i64, i64> = stats_group_aor_id_5min::Entity::find()
         .filter(interval_5mins_filter)
         .filter(
-            stats_group_aor_id_5min::Column::GroupMasterKey
-                .is_in(master_keys.clone()),
+            stats_group_aor_id_5min::Column::SignalGroupBatchId
+                .is_in(batch_ids.clone()),
         )
         .all(&env.dbx)
         .await
@@ -491,8 +539,8 @@ pub async fn read_aor_stats_aggregated(
         stats_group_aor_id_day::Entity::find()
             .filter(interval_day_filter)
             .filter(
-                stats_group_aor_id_day::Column::GroupMasterKey
-                    .is_in(master_keys.clone()),
+                stats_group_aor_id_day::Column::SignalGroupBatchId
+                    .is_in(batch_ids.clone()),
             )
             .all(&env.dbx)
             .await
@@ -526,11 +574,16 @@ pub async fn read_frequency_stats_aggregated(
         interval_5mins_filter = interval_5mins_filter.add(filter);
     }
 
+    let batches = collect_signal_group_batches(master_keys.clone(), &env.dbx)
+        .await
+        .c(h!())?;
+    let batch_ids = batches.iter().map(|b| *b.id).collect::<Vec<i64>>();
+
     let mut stats: HashMap<String, i64> = stats_group_freq_5min::Entity::find()
         .filter(interval_5mins_filter)
         .filter(
-            stats_group_freq_5min::Column::GroupMasterKey
-                .is_in(master_keys.clone()),
+            stats_group_freq_5min::Column::SignalGroupBatchId
+                .is_in(batch_ids.clone()),
         )
         .all(&env.dbx)
         .await
@@ -550,8 +603,8 @@ pub async fn read_frequency_stats_aggregated(
         stats_group_freq_day::Entity::find()
             .filter(interval_day_filter)
             .filter(
-                stats_group_freq_day::Column::GroupMasterKey
-                    .is_in(master_keys.clone()),
+                stats_group_freq_day::Column::SignalGroupBatchId
+                    .is_in(batch_ids.clone()),
             )
             .all(&env.dbx)
             .await
@@ -596,11 +649,16 @@ pub async fn read_frequency_stats_day(
         interval_5mins_filter = interval_5mins_filter.add(filter);
     }
 
+    let batches = collect_signal_group_batches(master_keys.clone(), &env.dbx)
+        .await
+        .c(h!())?;
+    let batch_ids = batches.iter().map(|b| *b.id).collect::<Vec<i64>>();
+
     let stats = stats_group_freq_5min::Entity::find()
         .filter(interval_5mins_filter)
         .filter(
-            stats_group_freq_5min::Column::GroupMasterKey
-                .is_in(master_keys.clone()),
+            stats_group_freq_5min::Column::SignalGroupBatchId
+                .is_in(batch_ids.clone()),
         )
         .all(&env.dbx)
         .await
@@ -609,7 +667,7 @@ pub async fn read_frequency_stats_day(
     #[derive(Hash, Eq, PartialEq)]
     pub struct Key {
         pub freq: String,
-        pub group: String,
+        pub signal_group_batch_id: i64,
         pub day: i64,
     }
 
@@ -617,7 +675,7 @@ pub async fn read_frequency_stats_day(
     for s in stats {
         let key = Key {
             freq: s.frequency,
-            group: s.group_master_key,
+            signal_group_batch_id: s.signal_group_batch_id,
             day: start_of_day(get_local_date(s.dt))
                 .c(h!())?
                 .and_utc()
@@ -635,8 +693,8 @@ pub async fn read_frequency_stats_day(
         let day_stats = stats_group_freq_day::Entity::find()
             .filter(interval_day_filter)
             .filter(
-                stats_group_freq_day::Column::GroupMasterKey
-                    .is_in(master_keys.clone()),
+                stats_group_freq_day::Column::SignalGroupBatchId
+                    .is_in(batch_ids.clone()),
             )
             .all(&env.dbx)
             .await
@@ -644,7 +702,7 @@ pub async fn read_frequency_stats_day(
         for s in day_stats {
             let key = Key {
                 freq: s.frequency,
-                group: s.group_master_key,
+                signal_group_batch_id: s.signal_group_batch_id,
                 day: start_of_day(s.dt).c(h!())?.and_utc().timestamp_millis(),
             };
             *result.entry(key).or_insert(0) += s.quantity;
@@ -679,12 +737,17 @@ pub async fn read_callsign_stats_aggregated(
         interval_5mins_filter = interval_5mins_filter.add(filter);
     }
 
+    let batches = collect_signal_group_batches(master_keys.clone(), &env.dbx)
+        .await
+        .c(h!())?;
+    let batch_ids = batches.iter().map(|b| *b.id).collect::<Vec<i64>>();
+
     let mut stats: HashMap<String, i64> =
         stats_group_callsign_5min::Entity::find()
             .filter(interval_5mins_filter)
             .filter(
-                stats_group_callsign_5min::Column::GroupMasterKey
-                    .is_in(master_keys.clone()),
+                stats_group_callsign_5min::Column::SignalGroupBatchId
+                    .is_in(batch_ids.clone()),
             )
             .all(&env.dbx)
             .await
@@ -704,8 +767,8 @@ pub async fn read_callsign_stats_aggregated(
         stats_group_callsign_day::Entity::find()
             .filter(interval_day_filter)
             .filter(
-                stats_group_callsign_day::Column::GroupMasterKey
-                    .is_in(master_keys.clone()),
+                stats_group_callsign_day::Column::SignalGroupBatchId
+                    .is_in(batch_ids.clone()),
             )
             .all(&env.dbx)
             .await
@@ -739,11 +802,16 @@ pub async fn read_tag_stats_aggregated(
         interval_5mins_filter = interval_5mins_filter.add(filter);
     }
 
+    let batches = collect_signal_group_batches(master_keys.clone(), &env.dbx)
+        .await
+        .c(h!())?;
+    let batch_ids = batches.iter().map(|b| *b.id).collect::<Vec<i64>>();
+
     let mut stats: HashMap<i64, i64> = stats_group_tag_5min::Entity::find()
         .filter(interval_5mins_filter)
         .filter(
-            stats_group_tag_5min::Column::GroupMasterKey
-                .is_in(master_keys.clone()),
+            stats_group_tag_5min::Column::SignalGroupBatchId
+                .is_in(batch_ids.clone()),
         )
         .all(&env.dbx)
         .await
@@ -763,8 +831,8 @@ pub async fn read_tag_stats_aggregated(
         stats_group_tag_day::Entity::find()
             .filter(interval_day_filter)
             .filter(
-                stats_group_tag_day::Column::GroupMasterKey
-                    .is_in(master_keys.clone()),
+                stats_group_tag_day::Column::SignalGroupBatchId
+                    .is_in(batch_ids.clone()),
             )
             .all(&env.dbx)
             .await
@@ -798,11 +866,16 @@ pub async fn read_unit_stats_aggregated(
         interval_5mins_filter = interval_5mins_filter.add(filter);
     }
 
+    let batches = collect_signal_group_batches(master_keys.clone(), &env.dbx)
+        .await
+        .c(h!())?;
+    let batch_ids = batches.iter().map(|b| *b.id).collect::<Vec<i64>>();
+
     let mut stats: HashMap<String, i64> = stats_group_unit_5min::Entity::find()
         .filter(interval_5mins_filter)
         .filter(
-            stats_group_unit_5min::Column::GroupMasterKey
-                .is_in(master_keys.clone()),
+            stats_group_unit_5min::Column::SignalGroupBatchId
+                .is_in(batch_ids.clone()),
         )
         .all(&env.dbx)
         .await
@@ -822,8 +895,8 @@ pub async fn read_unit_stats_aggregated(
         stats_group_unit_day::Entity::find()
             .filter(interval_day_filter)
             .filter(
-                stats_group_unit_day::Column::GroupMasterKey
-                    .is_in(master_keys.clone()),
+                stats_group_unit_day::Column::SignalGroupBatchId
+                    .is_in(batch_ids.clone()),
             )
             .all(&env.dbx)
             .await
@@ -857,12 +930,17 @@ pub async fn read_location_stats_aggregated(
         interval_5mins_filter = interval_5mins_filter.add(filter);
     }
 
+    let batches = collect_signal_group_batches(master_keys.clone(), &env.dbx)
+        .await
+        .c(h!())?;
+    let batch_ids = batches.iter().map(|b| *b.id).collect::<Vec<i64>>();
+
     let mut stats: HashMap<String, i64> =
         stats_group_location_5min::Entity::find()
             .filter(interval_5mins_filter)
             .filter(
-                stats_group_location_5min::Column::GroupMasterKey
-                    .is_in(master_keys.clone()),
+                stats_group_location_5min::Column::SignalGroupBatchId
+                    .is_in(batch_ids.clone()),
             )
             .all(&env.dbx)
             .await
@@ -882,8 +960,8 @@ pub async fn read_location_stats_aggregated(
         stats_group_location_day::Entity::find()
             .filter(interval_day_filter)
             .filter(
-                stats_group_location_day::Column::GroupMasterKey
-                    .is_in(master_keys.clone()),
+                stats_group_location_day::Column::SignalGroupBatchId
+                    .is_in(batch_ids.clone()),
             )
             .all(&env.dbx)
             .await
@@ -923,6 +1001,24 @@ struct StatsRow {
     pub unit_v2: Option<String>,
 }
 
+#[derive(Clone)]
+struct BatchStatsRow {
+    pub id: i64,
+    pub created_at: NaiveDateTime,
+    pub datetime: Option<NaiveDateTime>,
+    pub batch_id: i64,
+    pub group_master_keys: Vec<String>,
+    pub batch_group_master_keys: String,
+    pub freq: Option<String>,
+    pub aor_id: Option<i64>,
+    pub post_id: Option<i64>,
+    pub sender: Option<String>,
+    pub callsigns: Option<sea_orm::prelude::Json>,
+    pub tags: Option<sea_orm::prelude::Json>,
+    pub location_v2: Option<String>,
+    pub unit_v2: Option<String>,
+}
+
 pub(crate) fn round_to_5min(
     ts: NaiveDateTime,
 ) -> anyhow::Result<NaiveDateTime> {
@@ -942,6 +1038,13 @@ pub async fn recalculate_group_stats(
 ) -> Result<(), AppError> {
     let since_ts = round_to_5min(since_ts).c(h!())?;
     let till_ts = round_to_5min(till_ts).c(h!())?;
+
+    let batches = signal_group_batch::Entity::find().all(dbx).await.c(h!())?;
+    let mut batches_map = batches
+        .into_iter()
+        .map(|b| (b.group_master_keys, b.id))
+        .collect::<HashMap<i64, Vec<_>>>();
+
     if recalculate_5min_stats {
         let since_filter_1 = sigint_inbox_item::Column::Datetime
             .is_null()
@@ -993,7 +1096,9 @@ pub async fn recalculate_group_stats(
             .into_model::<StatsRow>()
             .all(dbx)
             .await
-            .c(h!())?;
+            .c(h!())?
+            .into_iter()
+            .map(|s| BatchStatsRow{}) // fixme aggregate
 
         let group_stats = generic_stats
             .clone()
@@ -2269,6 +2374,43 @@ fn get_local_date(since_ts: NaiveDateTime) -> NaiveDate {
     since_ts.and_utc().with_timezone(&get_tz()).date_naive()
 }
 
+pub fn collect_signal_group_batch_ids_by_master_key(
+    master_key: &str,
+    batches: &Vec<signal_group_batch::Model>,
+) -> Vec<i64> {
+    let key = &to_batch_key(master_key);
+    batches
+        .iter()
+        .filter(|b| b.group_master_keys.contains(key))
+        .map(|x| x.id)
+        .collect_vec()
+}
+
+fn to_batch_key(key: &str) -> String {
+    format!("|{key}|")
+}
+
+fn all_to_batch_key(keys: Vec<String>) -> String {
+    if keys.is_empty() {
+        return String::default();
+    }
+    let text = keys.into_iter().sorted().join("|");
+    to_batch_key(&text)
+}
+
+fn collect_group_keys_for_batch<T: Clone>(
+    batch_id: i64,
+    batches: &HashMap<i64, Vec<String>>,
+    m: T,
+) -> Vec<(T, String)> {
+    let keys = batches.get(&batch_id).cloned().unwrap_or_default();
+    let mut result = vec![];
+    for key in keys {
+        result.push((m.clone(), key));
+    }
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2398,13 +2540,4 @@ mod tests {
             .and_hms_opt(hour, minute, 0)
             .unwrap()
     }
-}
-
-pub fn collect_signal_group_batch_ids_by_master_key(master_key: &str, batches: &Vec<signal_group_batch::Model>) -> Vec<i64> {
-    let key = &to_batch_key(master_key);
-    batches.iter().filter(|b | b.group_master_keys.contains(key)).map(|x| *x.id).collect_vec()
-}
-
-fn to_batch_key(key: &str) -> String {
-    format!("|{key}|")
 }
