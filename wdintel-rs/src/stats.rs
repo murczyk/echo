@@ -18,6 +18,13 @@ pub async fn oneoff_count_group_batches(mode: Mode) -> Result<(), AppError> {
     let mut offset = 0;
     let mut batches = HashSet::new();
     let cutoff = Utc::now().naive_utc() - Duration::days(365);
+    let max_created_at = signal_message::Entity::find()
+        .order_by_desc(signal_message::Column::CreatedAt)
+        .one(&dbx)
+        .await
+        .c(h!())?
+        .c(h!())?
+        .created_at;
     loop {
         sleep(std::time::Duration::from_millis(
             ONEOFF_COUNT_BATCHES_SLEEP_MS,
@@ -25,8 +32,9 @@ pub async fn oneoff_count_group_batches(mode: Mode) -> Result<(), AppError> {
         .await;
         let messages = signal_message::Entity::find()
             .filter(signal_message::Column::CreatedAt.gte(cutoff))
+            .filter(signal_message::Column::CreatedAt.lte(max_created_at))
             .find_with_related(signal_message_group::Entity)
-            .order_by_desc(signal_message::Column::Id)
+            .order_by_desc(signal_message::Column::CreatedAt)
             .limit(ONEOFF_COUNT_BATCHES_SIZE)
             .offset(offset)
             .all(&dbx)
