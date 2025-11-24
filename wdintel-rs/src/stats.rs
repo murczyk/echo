@@ -26,7 +26,7 @@ pub async fn oneoff_count_group_batches(mode: Mode) -> Result<(), AppError> {
         let messages = signal_message::Entity::find()
             .filter(signal_message::Column::CreatedAt.gte(cutoff))
             .find_with_related(signal_message_group::Entity)
-            .order_by_asc(signal_message::Column::Id)
+            .order_by_desc(signal_message::Column::Id)
             .limit(ONEOFF_COUNT_BATCHES_SIZE)
             .offset(offset)
             .all(&dbx)
@@ -36,10 +36,12 @@ pub async fn oneoff_count_group_batches(mode: Mode) -> Result<(), AppError> {
             break;
         }
         offset += ONEOFF_COUNT_BATCHES_SIZE;
-        for (_, recs) in messages {
+        let mut ts = None;
+        for (m, recs) in messages {
             if recs.is_empty() {
                 continue;
             }
+            ts = m.timestamp;
             let batch_key = recs
                 .into_iter()
                 .filter_map(|x| x.group_master_key)
@@ -47,6 +49,7 @@ pub async fn oneoff_count_group_batches(mode: Mode) -> Result<(), AppError> {
                 .join(",");
             batches.insert(batch_key);
         }
+        info!("[{ts:?}]batches found so far: {}", batches.len());
     }
     info!("\n\n\n> batches found: {}", batches.len());
     for batch_key in batches {
