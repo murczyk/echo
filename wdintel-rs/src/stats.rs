@@ -17,12 +17,14 @@ pub async fn oneoff_count_group_batches(mode: Mode) -> Result<(), AppError> {
     let dbx = crate::new_pg_pool_from_mode(mode).await.context(h!())?;
     let mut offset = 0;
     let mut batches = HashSet::new();
+    let cutoff = Utc::now().naive_utc() - Duration::days(365);
     loop {
         sleep(std::time::Duration::from_millis(
             ONEOFF_COUNT_BATCHES_SLEEP_MS,
         ))
         .await;
         let messages = signal_message::Entity::find()
+            .filter(signal_message::Column::CreatedAt.gte(cutoff))
             .find_with_related(signal_message_group::Entity)
             .order_by_asc(signal_message::Column::Id)
             .limit(ONEOFF_COUNT_BATCHES_SIZE)
