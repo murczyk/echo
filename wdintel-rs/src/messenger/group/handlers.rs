@@ -5,7 +5,10 @@ use crate::sigint::aor::bl::collect_group_aors;
 use crate::types::*;
 use actix_web::post;
 use actix_web::web::Json;
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QuerySelect};
+use echo_migration::JoinType;
+use sea_orm::{
+    ColumnTrait, EntityTrait, QueryFilter, QuerySelect, RelationTrait,
+};
 use std::collections::HashSet;
 
 /// Отримує список груп, які не прив'язані до жодного напрямку
@@ -40,6 +43,11 @@ pub async fn orphan_signal_groups(
     let orphan_pairs: Vec<(signal_group::Model, i64)> =
         datasource_group::Entity::find()
             .find_also_related(signal_group::Entity)
+            .join(
+                JoinType::InnerJoin,
+                datasource_group::Relation::Datasource.def(),
+            )
+            .filter(datasource::Column::Deleted.eq(false))
             .all(&env.dbx)
             .await
             .context(h!())?
