@@ -459,12 +459,17 @@ pub async fn process_incoming_message_restapi(
     txn.commit().await.c(h!())?;
 
     let db_message_id = message.id;
+    let s3 = crate::storage::build_s3_operator(
+        &crate::storage::S3Config::from(config),
+    )
+    .c(h!())?;
 
     if let Some(ref attachments) = data_message.attachments {
         for attachment in attachments.iter() {
             save_attachment_restapi(
                 config,
                 dbx,
+                &s3,
                 attachment,
                 Some(db_message_id),
             )
@@ -477,6 +482,7 @@ pub async fn process_incoming_message_restapi(
             save_attachment_restapi(
                 config,
                 dbx,
+                &s3,
                 attachment,
                 Some(db_message_id),
             )

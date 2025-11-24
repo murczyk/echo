@@ -7,10 +7,11 @@ use crate::location::peleng::reset_inbox_pelengs;
 use crate::location::utils;
 use crate::sigint::sender::preferred_sender_expr;
 use crate::types::*;
-use actix_web::web::Json;
-use actix_web::{get, post, HttpRequest, HttpResponse};
+use actix_web::http::header;
+use actix_web::web::{Bytes, Json};
+use actix_web::{get, post, HttpResponse};
 use chrono::prelude::*;
-use futures_util::TryStreamExt;
+use futures_util::{stream, TryStreamExt};
 use indicatif::ProgressBar;
 use itertools::Itertools;
 use rand::prelude::IndexedRandom;
@@ -18,7 +19,6 @@ use sea_orm::sea_query::{Expr, Func};
 use sea_orm::*;
 use sqlx::Row;
 use std::collections::BTreeMap;
-use std::path::Path;
 use time::{Duration as TimeDuration, OffsetDateTime, PrimitiveDateTime};
 
 pub mod analysis;
@@ -44,27 +44,76 @@ pub mod signals;
 pub mod types;
 pub mod unit;
 
-#[get("/api/rer-importer/attachment/{attachment_id}")]
-async fn attachment(
+#[get("/api/messenger/media/{media_id}")]
+async fn messenger_media(
     user: actix_identity::Identity,
-    http_req: HttpRequest,
     env: actix_web::web::Data<Env>,
-    path: actix_web::web::Path<(i64,)>,
+    path: actix_web::web::Path<(Uuid,)>,
 ) -> Result<HttpResponse, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
         .await
         .c(h!())?;
-    let attachment_id = path.0;
-    let attachment: signal_attachment::Model =
-        signal_attachment::Entity::find_by_id(attachment_id)
-            .one(&env.dbx)
-            .await
-            .c(h!())?
-            .ok_or(AppError::NotFound)?;
-    let file = actix_files::NamedFile::open_async(&Path::new(&attachment.path))
+    let media_id = path.0;
+    let media = signal_message_media::Entity::find_by_id(media_id)
+        .one(&env.dbx)
         .await
-        .map_err(|_e| AppError::NotFound)?;
-    Ok(file.into_response(&http_req))
+        .c(h!())?
+        .ok_or(AppError::NotFound)?;
+    ensure_media_access(&env.dbx, &login, media.signal_message_id).await?;
+    let data = crate::messenger::media::fetch_media_bytes(env.as_ref(), &media)
+        .await?;
+    let bytes = Bytes::from(data);
+    let size = media.size_bytes.max(0) as u64;
+    let stream_body =
+        stream::once(async move { Ok::<Bytes, std::io::Error>(bytes) });
+    let mut resp = HttpResponse::Ok();
+    resp.insert_header((header::CONTENT_TYPE, media.content_type.clone()));
+    resp.insert_header((header::CONTENT_LENGTH, size.to_string()));
+    if let Some(file_name) = media.file_name.clone() {
+        let cd = header::ContentDisposition {
+            disposition: header::DispositionType::Attachment,
+            parameters: vec![header::DispositionParam::FilenameExt(
+                header::ExtendedValue {
+                    charset: header::Charset::Ext("UTF-8".into()),
+                    language_tag: None,
+                    value: file_name.into_bytes(),
+                },
+            )],
+        };
+        resp.insert_header(cd);
+    }
+    Ok(resp.streaming(stream_body))
+}
+
+async fn ensure_media_access(
+    dbx: &DatabaseConnection,
+    login: &str,
+    signal_message_id: i64,
+) -> Result<(), AppError> {
+    let allowed_groups =
+        crate::messenger::group::get_identity_sigint_groups(dbx, login)
+            .await
+            .c(h!())?;
+    let is_allowed = signal_message_group::Entity::find()
+        .filter(
+            signal_message_group::Column::SignalMessageId.eq(signal_message_id),
+        )
+        .filter(
+            signal_message_group::Column::GroupMasterKey.is_in(allowed_groups),
+        )
+        .select_only()
+        .column(signal_message_group::Column::Id)
+        .into_tuple::<i64>()
+        .one(dbx)
+        .await
+        .c(h!())?
+        .is_some();
+    if is_allowed {
+        Ok(())
+    } else {
+        Err(AppError::Forbidden("media access denied".into()))
+    }
 }
 
 #[post("/api/rer-importer/callsigns")]

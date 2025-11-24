@@ -170,6 +170,7 @@ mod m20251117_141654_rename_stats;
 mod m20251118_114747_add_more_stats;
 mod m20251118_183849_add_signal_message_group_fk;
 mod m20251119_121701_fix_tag_stats;
+mod m20251124_084954_signal_message_media;
 mod m20251124_145441_add_group_batch;
 
 pub struct Migrator;
@@ -349,6 +350,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20251118_183849_add_signal_message_group_fk::Migration),
             Box::new(m20251119_121701_fix_tag_stats::Migration),
             Box::new(m20251124_145441_add_group_batch::Migration),
+            Box::new(m20251124_084954_signal_message_media::Migration),
         ]
     }
 }

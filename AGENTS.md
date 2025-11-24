@@ -42,6 +42,7 @@
   version='m20250615_135039_battle_unit_is_flight_journal_enabled';`
 - NEVER edit old and existing migrations (unless not committed yet)
 - run `just gen-seaorm` after you've made some schema changes in the database to regenerate sea-orm models
+- migration names contain the datetime of when the migration was created, use current datetime when creating one if you create it manually (for example, `m20250615_135039_battle_unit_is_flight_journal_enabled` means it's created in 15 JUN 2025, at 13:50:39 local time)
 
 ## Code gen
 
@@ -52,3 +53,10 @@
 
 - Keep constants in central config.rs, prefixed by their overall module or logical group. Avoid hard-coding inlined constants when possible
 - Don't reuse constants too much, better keep separate, same-prefix different constants
+
+## FAIL FAST
+
+- Don't overly-obsess yourself with failing via AppError::BL with clear error messages. Most of the time, fail fast via `.c(h!())?`, let the developer see the line where the error happened
+- add context with data value when needed but only in rare cases
+- when writing function that must not fail (like infinite loop workers), move out inner loop body in regular AppError-Result function, and call it from the no-fail one, use `.c(h!())?` in AppError one for errors, don't fill the code with too many `match ... Err ...` blocks
+

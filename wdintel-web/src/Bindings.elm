@@ -905,6 +905,7 @@ areaOfResponsibilityStatsRspEncoder struct =
 type alias InboxMessage =
     { messageUid : Maybe String
     , text : String
+    , media : List MessageMediaInfo
     , images : List String
     , imageRecognized : List String
     , date : Maybe String
@@ -938,6 +939,7 @@ inboxMessageEncoder struct =
     Json.Encode.object
         [ ( "message_uid", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.messageUid )
         , ( "text", Json.Encode.string struct.text )
+        , ( "media", Json.Encode.list messageMediaInfoEncoder struct.media )
         , ( "images", Json.Encode.list Json.Encode.string struct.images )
         , ( "image_recognized", Json.Encode.list Json.Encode.string struct.imageRecognized )
         , ( "date", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.date )
@@ -6606,6 +6608,7 @@ inboxMessageDecoder =
     Json.Decode.succeed InboxMessage
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message_uid" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "text" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "media" (Json.Decode.list messageMediaInfoDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "images" (Json.Decode.list Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "image_recognized" (Json.Decode.list Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "date" (Json.Decode.nullable Json.Decode.string)))

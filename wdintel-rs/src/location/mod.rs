@@ -77,7 +77,7 @@ async fn find_locations(
     Ok(Json(locations))
 }
 
-#[get("/api/rer-importer/attachment/")]
+#[get("/api/location/regions")]
 async fn fetch_regions(
     user: actix_identity::Identity,
     _http_req: HttpRequest,

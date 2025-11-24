@@ -126,7 +126,7 @@ pub mod tests {
             .exec(&env.dbx)
             .await
             .context(h!())?;
-        signal_attachment::Entity::delete_many()
+        signal_message_media::Entity::delete_many()
             .exec(&env.dbx)
             .await
             .context(h!())?;

@@ -9,8 +9,6 @@ use actix_web::{App, HttpServer};
 
 use crate::types::Mode::Live;
 use milgeo_rs::MilGeo;
-use opendal::services::S3;
-use opendal::Operator;
 use tokio::runtime::Handle;
 use tokio::signal::unix::{signal, SignalKind};
 use tokio::task::JoinSet;
@@ -25,18 +23,8 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
     let config = crate::config::read_config(mode).c(h!())?;
     let redis = new_redis(&config).await.c(h!())?;
     let redisb = new_redisb(&config).await.c(h!())?;
-    let b = S3::default()
-        .region(&config.b2_s3_region)
-        .access_key_id(&config.b2_aws_access_key_id)
-        .secret_access_key(&config.b2_aws_secret_access_key)
-        .endpoint(&config.b2_s3)
-        .bucket("wildducks-online-public");
-    let b2_store = Operator::new(b)
-        .map_err(|e| AppError::BL {
-            msg: format!("s3 store build error: {e}"),
-        })?
-        .finish();
-    // opendal Operator is cheaply cloneable; store directly on Env
+    let s3_config = crate::storage::S3Config::from(&config);
+    let s3 = crate::storage::build_s3_operator(&s3_config).c(h!())?;
     let mil_geo = MilGeo::new(&mk_conn_string(&config)[..]);
     let dbx = crate::new_pg_pool_from_config(&config).await.c(h!())?;
     let mut replicas = vec![];
@@ -111,7 +99,7 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
         mode,
         redis: redis.clone(),
         redisb: redisb.clone(),
-        b2_store,
+        s3,
         mil_geo: mil_geo.clone(),
         dbx: dbx.clone(),
         rq,
@@ -326,7 +314,7 @@ pub async fn main_server(
             .service(crate::delta::get_kml)
             .service(crate::delta::login::fetch_redirect_url)
             .service(crate::delta::login::handle_redirect)
-            .service(crate::rer_importer::attachment)
+            .service(crate::rer_importer::messenger_media)
             .service(crate::rer_importer::rer_importer_callsigns)
             .service(crate::rer_importer::callsigns_alchemy)
             .service(crate::rer_importer::unread_counters)

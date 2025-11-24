@@ -1,5 +1,6 @@
 use crate::error::AppError;
 use crate::importer::RowInfo;
+use crate::storage;
 use crate::types::*;
 use crate::utils::{multipart, trim_lines};
 use actix_multipart::Multipart;
@@ -404,6 +405,19 @@ pub fn oneoff_parse_html() -> Result<(), AppError> {
     Ok(())
 }
 
+fn s3_upload_ctx(
+    env: &Env,
+) -> Result<(storage::S3Config, opendal::Operator), AppError> {
+    let config = storage::S3Config::from(&env.config);
+    if !config.is_configured() {
+        return Err(AppError::BL {
+            msg: "s3 storage is not configured".to_string(),
+        });
+    }
+    let op = env.s3.clone();
+    Ok((config, op))
+}
+
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
@@ -420,7 +434,7 @@ pub async fn upload_screenshot(
     crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Basic")
         .await
         .c(h!())?;
-    let b2_store = &env.b2_store;
+    let (s3_config, s3_operator) = s3_upload_ctx(env.as_ref())?;
 
     let (field, val) = multipart::extract(&mut payload).await.c(h!())?;
 
@@ -438,20 +452,18 @@ pub async fn upload_screenshot(
     })
     .to_string();
     let filename = format!("report2kmz/{uuid}.{ext}");
+    let remote_key = s3_config.prefixed_key(&filename);
     crate::aws::s3_put_object(
-        b2_store,
-        "wildducks-online-public",
-        &filename,
+        &s3_operator,
+        &s3_config.bucket,
+        &remote_key,
         val,
         &content_type,
     )
     .await
     .c(h!())?;
     Ok(Json(UploadScreenshotRes {
-        image_url: format!(
-            "https://s3.us-west-000.backblazeb2.com/wildducks-online-public/{}",
-            &filename
-        ),
+        image_url: storage::object_url(&s3_config, &remote_key),
     }))
 }
 
@@ -471,7 +483,7 @@ pub async fn upload_pdf(
     crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Basic")
         .await
         .c(h!())?;
-    let b2_store = &env.b2_store;
+    let (s3_config, s3_operator) = s3_upload_ctx(env.as_ref())?;
 
     let (_, val) = multipart::extract(&mut payload).await.c(h!())?;
 
@@ -527,25 +539,27 @@ pub async fn upload_pdf(
             let mut upload_futures = vec![];
             if Path::new(image).exists() {
                 let img_bytes = std::fs::read(image)?;
-                let upload = async || {
-                    println!("> uploading {image}");
+                let image_path = image.clone();
+                let s3_config = s3_config.clone();
+                let s3_operator = s3_operator.clone();
+                let remote_key = s3_config.prefixed_key(&filename);
+                let upload = async move {
+                    println!("> uploading {image_path}");
                     crate::aws::s3_put_object(
-                        b2_store,
-                        "wildducks-online-public",
-                        &filename,
+                        &s3_operator,
+                        &s3_config.bucket,
+                        &remote_key,
                         img_bytes,
                         "image/png",
                     )
                     .await
                     .c(h!())?;
-                    let url = format!(
-                            "https://s3.us-west-000.backblazeb2.com/wildducks-online-public/{}",
-                            &filename
-                        );
-                    let res: Result<String, AppError> = Ok(url);
-                    res
+                    Ok::<String, AppError>(storage::object_url(
+                        &s3_config,
+                        &remote_key,
+                    ))
                 };
-                upload_futures.push(upload());
+                upload_futures.push(upload);
             }
             for res in futures::future::join_all(upload_futures).await {
                 urls.push(res?);

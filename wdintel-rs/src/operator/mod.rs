@@ -9,6 +9,7 @@ use crate::types::ShortContext;
 use actix_web::post;
 use actix_web::web::{Data, Json};
 use chrono::Utc;
+use echo_im::types::MessageAttachmentF1;
 use sea_orm::*;
 
 mod types;
@@ -44,11 +45,12 @@ async fn message_submit(
     let message_uid =
         crate::messenger::worker::process_signal_message_queue_item(
             message,
-            vec![],
+            Vec::<MessageAttachmentF1>::new(),
             &mut env.redis.clone(),
             env.settlements.clone(),
             &env.rq,
             &env.config,
+            &env.s3,
             &txn,
             true,
         )

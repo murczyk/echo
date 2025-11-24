@@ -1,5 +1,7 @@
 use crate::entities::*;
 use crate::messenger::id;
+use crate::messenger::media::{self, MediaUploadInput};
+use crate::storage;
 use crate::types::*;
 use chrono::prelude::*;
 use sea_orm::*;
@@ -95,6 +97,8 @@ async fn receive_once(
     redis: &mut redis::aio::ConnectionManager,
     datasource: &datasource::Model,
 ) -> Result<(), AppError> {
+    let s3 =
+        storage::build_s3_operator(&storage::S3Config::from(config)).c(h!())?;
     let now = Utc::now();
     // created at least 3 seconds ago. needed to ensure images are downloaded. will rework properly eventually
     let whatsapp_queue = whatsapp_queue::Entity::find()
@@ -184,16 +188,26 @@ async fn receive_once(
                 .all(&txn)
                 .await
                 .c(h!())?;
-            for a in attachments {
-                let _signal_attachment = signal_attachment::ActiveModel {
-                    id: NotSet,
-                    signal_message_id: Set(signal_message.id),
-                    path: Set(a.path.clone()),
-                    created_at: NotSet,
-                }
-                .insert(&txn)
+            if !attachments.is_empty() {
+                let uploads: Vec<MediaUploadInput> = attachments
+                    .iter()
+                    .map(|a| MediaUploadInput {
+                        path: a.path.clone(),
+                        name: None,
+                        content_type: None,
+                    })
+                    .collect();
+                media::store_media_attachments(
+                    &uploads,
+                    signal_message.id,
+                    config,
+                    &s3,
+                    &txn,
+                )
                 .await
                 .c(h!())?;
+            }
+            for a in attachments {
                 a.delete(&txn).await.c(h!())?;
             }
         }

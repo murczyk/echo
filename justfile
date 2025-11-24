@@ -112,6 +112,8 @@ gen-seaorm:
     (cd wdintel-rs && sea-orm-cli generate entity --with-serde both -u postgres://wd:fee_-_-_-FnoeKFBeebu87bf@localhost:5432/wd -o src/entities)
     python3 deploy/patch_seaorm.py
 
+gen-front: gen-elm
+
 gen-elm:
     (cd wdintel-rs && cargo run -- --mode=debug gen-elm)
     elm-format --yes wdintel-web/src/Bindings.elm

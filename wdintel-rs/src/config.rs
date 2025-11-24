@@ -23,7 +23,6 @@ pub const RQ_TIMEOUT_LAUNCH_SUBPROCESS: u64 = 60;
 pub const SIGNAL_LOGIN_INITIAL_SLEEP_MS: u64 = 2_000;
 pub const COORDS_PER_FREQ_LIMIT: usize = 100;
 pub const COORDS_PER_FREQ_PER_LOC_LIMIT: usize = 10;
-pub const B2_AWS_PROFILE_NAME: &str = "my-creds";
 pub const URL_NEED_VISIT_NOTIFICATION_MINS: i64 = 5;
 pub const IDENTITY_DURATION_HOURS: u64 = 12;
 pub const IDENTITY_SALT: &str = "IUBwdub783736#";
@@ -72,6 +71,8 @@ pub const REDIS_SESSIONS_KEY: &str = "echo-sessions";
 pub const SESSION_STREAM_LIFETIME_SEC: i64 = 180;
 pub const INACTIVE_USERS_DEACTIVATE_DURATION_SEC: u64 = 3600;
 pub const INACTIVE_USERS_DEACTIVATE_AFTER_DAYS: i64 = 30;
+/// Default root prefix for encrypted messenger media stored on S3
+pub const S3_MEDIA_ROOT_PREFIX: &str = "message-media";
 pub const SIGNAL_CLIENT_DIR: &str = "/etc/echo/signal-cli-data";
 pub const WHATSAPP_CLIENT_DIR: &str = "/etc/echo/whatsapp-cli-data";
 pub const SIGNAL_UNIT_NAME: &str = "echo-signal-bot";
@@ -102,12 +103,20 @@ pub struct Config {
     pub pg_user: Option<String>,
     pub pg_password: Option<String>,
     pub pg_dbname: Option<String>,
-    /// Used for importer image-upload logic etc. Leave empty if not needed.
-    pub b2_aws_access_key_id: String,
-    pub b2_aws_secret_access_key: String,
-    // pub b2_aws_profile_name: String,
-    pub b2_s3: String,
-    pub b2_s3_region: String,
+    /// S3-compatible access key (used for uploads, leave empty to disable)
+    pub s3_access_key_id: String,
+    /// S3-compatible secret key (used for uploads, leave empty to disable)
+    pub s3_secret_access_key: String,
+    /// S3 endpoint, e.g. https://s3.us-west-000.backblazeb2.com
+    pub s3_endpoint: String,
+    /// S3 region, e.g. us-west-000
+    pub s3_region: String,
+    /// Bucket where we store uploaded data
+    pub s3_bucket: String,
+    /// Optional prefix for stored objects (without leading slash)
+    pub s3_prefix: String,
+    /// Base64-encoded key used for StrongBox encryption of uploaded blobs
+    pub strongbox_key: String,
     pub cookie_session_secret: String,
     pub storage_dir: String,
     pub signal_api_phone: String,
