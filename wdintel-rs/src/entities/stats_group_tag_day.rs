@@ -10,24 +10,23 @@ use serde::{Deserialize, Serialize};
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
-    #[sea_orm(column_type = "Text")]
-    pub group_master_key: String,
     pub dt: Date,
     pub tag_id: i64,
     pub quantity: i32,
     pub created_at: DateTime,
+    pub signal_group_batch_id: i64,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
     #[sea_orm(
-        belongs_to = "super::signal_group::Entity",
-        from = "Column::GroupMasterKey",
-        to = "super::signal_group::Column::MasterKey",
+        belongs_to = "super::signal_group_batch::Entity",
+        from = "Column::SignalGroupBatchId",
+        to = "super::signal_group_batch::Column::Id",
         on_update = "NoAction",
         on_delete = "Cascade"
     )]
-    SignalGroup,
+    SignalGroupBatch,
     #[sea_orm(
         belongs_to = "super::tag::Entity",
         from = "Column::TagId",
@@ -38,9 +37,9 @@ pub enum Relation {
     Tag,
 }
 
-impl Related<super::signal_group::Entity> for Entity {
+impl Related<super::signal_group_batch::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::SignalGroup.def()
+        Relation::SignalGroupBatch.def()
     }
 }
 

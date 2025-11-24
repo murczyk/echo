@@ -217,11 +217,11 @@ pub fn should_read_stats_aggregated(
 
 pub async fn get_last_hour_stats(
     dbx: &DatabaseConnection,
-    master_keys: Vec<String>,
-) -> anyhow::Result<Vec<(NaiveDateTime, HashMap<String, i32>)>> {
+    batch_ids: Vec<i64>,
+) -> anyhow::Result<Vec<(NaiveDateTime, HashMap<i64, i32>)>> {
     let now = round_to_5min(Utc::now().naive_utc()).c(h!())?;
     let stats = stats_group_5min::Entity::find()
-        .filter(stats_group_5min::Column::GroupMasterKey.is_in(master_keys))
+        .filter(stats_group_5min::Column::SignalGroupBatchId.is_in(batch_ids))
         .filter(stats_group_5min::Column::Dt.lte(now))
         .filter(stats_group_5min::Column::Dt.gt(now - Duration::hours(1)))
         .all(dbx)
@@ -236,12 +236,30 @@ pub async fn get_last_hour_stats(
             .into_iter()
             .filter(|x| x.dt.eq(&ts))
             .fold(HashMap::new(), |mut acc, m| {
-                *acc.entry(m.group_master_key).or_insert(0) += m.quantity;
+                *acc.entry(m.signal_group_batch_id).or_insert(0) += m.quantity;
                 acc
             });
         result.push((ts, group_stats));
     }
     Ok(result)
+}
+
+pub(crate) async fn collect_signal_group_batches(
+    master_keys: Vec<String>,
+    dbx: &DatabaseConnection,
+) -> anyhow::Result<Vec<signal_group_batch::Model>> {
+    let mut filter = Condition::any();
+    for key in master_keys {
+        filter = filter.add(
+            signal_group_batch::Column::GroupMasterKeys
+                .contains(to_batch_key(&key)),
+        );
+    }
+    signal_group_batch::Entity::find()
+        .filter(filter)
+        .all(dbx)
+        .await
+        .c(h!())
 }
 
 pub async fn read_group_stats_aggregated(
@@ -2380,4 +2398,13 @@ mod tests {
             .and_hms_opt(hour, minute, 0)
             .unwrap()
     }
+}
+
+pub fn collect_signal_group_batch_ids_by_master_key(master_key: &str, batches: &Vec<signal_group_batch::Model>) -> Vec<i64> {
+    let key = &to_batch_key(master_key);
+    batches.iter().filter(|b | b.group_master_keys.contains(key)).map(|x| *x.id).collect_vec()
+}
+
+fn to_batch_key(key: &str) -> String {
+    format!("|{key}|")
 }
