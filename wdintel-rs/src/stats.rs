@@ -11,6 +11,47 @@ use itertools::Itertools;
 use log::*;
 use sea_orm::*;
 use std::collections::{HashMap, HashSet};
+use tokio::time::sleep;
+
+pub async fn oneoff_count_group_batches(mode: Mode) -> Result<(), AppError> {
+    let dbx = crate::new_pg_pool_from_mode(mode).await.context(h!())?;
+    let mut offset = 0;
+    let mut batches = HashSet::new();
+    loop {
+        sleep(std::time::Duration::from_millis(
+            ONEOFF_COUNT_BATCHES_SLEEP_MS,
+        ))
+        .await;
+        let messages = signal_message::Entity::find()
+            .find_with_related(signal_message_group::Entity)
+            .order_by_asc(signal_message::Column::Id)
+            .limit(ONEOFF_COUNT_BATCHES_SIZE)
+            .offset(offset)
+            .all(&dbx)
+            .await
+            .c(h!())?;
+        if messages.is_empty() {
+            break;
+        }
+        offset += ONEOFF_COUNT_BATCHES_SIZE;
+        for (_, recs) in messages {
+            if recs.is_empty() {
+                continue;
+            }
+            let batch_key = recs
+                .into_iter()
+                .filter_map(|x| x.group_master_key)
+                .sorted()
+                .join(",");
+            batches.insert(batch_key);
+        }
+    }
+    info!("\n\n\n> batches found: {}", batches.len());
+    for batch_key in batches {
+        info!(" - {batch_key}");
+    }
+    Ok(())
+}
 
 pub async fn oneoff_calculate_stats(
     mode: Mode,

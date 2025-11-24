@@ -468,6 +468,7 @@ enum Cmd {
     /// Calculates all group stats for last year (no recalculation).
     OneoffCalculateHistoricStats(OneoffCalculateHistoricStatsPs),
     OneoffDisableIm,
+    OneoffCountGroupBatches,
 }
 
 #[derive(clap::Parser, Debug)]
@@ -859,5 +860,8 @@ async fn async_main(
             stats::oneoff_calculate_historic_stats(mode, ps).await
         }
         Cmd::OneoffDisableIm => datasource::oneoff_disable_im(mode).await,
+        Cmd::OneoffCountGroupBatches => {
+            stats::oneoff_count_group_batches(mode).await
+        }
     }
 }
