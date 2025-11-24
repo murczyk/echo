@@ -158,6 +158,8 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::organism::types::SignalGroupFull,
             crate::organism::types::OrganismGroup,
             crate::datasource::types::Datasource,
+            crate::rer_importer::types::MessageMediaInfo,
+            crate::rer_importer::types::MessageMediaInfo,
             crate::sigint::types::SigintZone,
             crate::sigint::types::ZoneDatasourceGroup,
             crate::sigint::types::ZoneDatasourceGroupsReq,
