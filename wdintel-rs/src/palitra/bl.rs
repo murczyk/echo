@@ -428,6 +428,7 @@ where
         id: palitra_id,
         name: palitra_model.name,
         color_hex: palitra_model.hex,
+        author: palitra_model.author,
         source_file_name: palitra_model.source_file_name,
         last_uploaded_at_ts,
         geometry,

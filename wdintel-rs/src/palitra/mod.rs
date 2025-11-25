@@ -37,6 +37,24 @@ pub async fn upload_palitra_points(
         .await
         .c(h!())?
         .c(h!())?;
+    let privileged = crate::users::has_any_role(
+        &env.dbx,
+        &login,
+        vec!["UnitsEditor", "CallsignsEditor", "Admin"],
+    )
+    .await
+    .is_ok();
+    if !privileged {
+        match &palitra.author {
+            Some(author) if author == &login => {}
+            _ => {
+                return Err(AppError::Forbidden(
+                    "Only author or UnitsEditor/CallsignsEditor/Admin may delete palitra"
+                        .into(),
+                ));
+            }
+        }
+    }
     let existing_access =
         read_palitra_access(&env.dbx, palitra_id).await.c(h!())?;
     ensure_palitra_permissions(&env, &login, &existing_access, &scope)
@@ -248,6 +266,24 @@ pub async fn update_palitra(
         .await
         .c(h!())?
         .c(h!())?;
+    let privileged = crate::users::has_any_role(
+        &env.dbx,
+        &login,
+        vec!["UnitsEditor", "CallsignsEditor", "Admin"],
+    )
+    .await
+    .is_ok();
+    if !privileged {
+        match &palitra.author {
+            Some(author) if author == &login => {}
+            _ => {
+                return Err(AppError::Forbidden(
+                    "Only author or UnitsEditor/CallsignsEditor/Admin may update palitra"
+                        .into(),
+                ));
+            }
+        }
+    }
 
     let existing_access =
         read_palitra_access(&env.dbx, palitra_id).await.c(h!())?;
