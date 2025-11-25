@@ -191,9 +191,8 @@ where
         SET center = ST_Centroid(ST_Collect(ST_SetSRID(ST_MakePoint(lng, lat), 4326)))
         FROM palitra_point
         WHERE
-            id = $1
-            AND point.palitra_id = 1
-            AND point.deleted = FALSE;
+            palitra_point.palitra_id = $1
+            AND palitra_point.deleted = FALSE;
     ";
     dbx.execute(Statement::from_sql_and_values(
         DbBackend::Postgres,

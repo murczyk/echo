@@ -15,7 +15,13 @@ use zip::ZipArchive;
 pub async fn load_coordinates_from_file(
     file_name: String,
     data: Vec<u8>,
+    storage_dir: &Path,
 ) -> anyhow::Result<Vec<PalitraPoint>> {
+    let persistent_path = storage_dir.join(file_name.clone());
+    fs::write(persistent_path.as_path(), data.clone())
+        .await
+        .c(h!())?;
+
     let tmp_dir = tempdir()?;
     let path = tmp_dir.path().join(&file_name);
     fs::write(path.as_path(), data).await.c(h!())?;

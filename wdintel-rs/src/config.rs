@@ -90,6 +90,7 @@ pub const STATS_5MIN_MAX_NUM_DAYS: i64 = 2000; // FIXME change to 2
 pub const FEATURE_GROUP_STATS_AGGREGATED_DEFAULT: bool = false;
 pub const ONEOFF_COUNT_BATCHES_SLEEP_MS: u64 = 200;
 pub const ONEOFF_COUNT_BATCHES_SIZE: u64 = 10000;
+pub const PALITRA_STORAGE_DIR_NAME: &str = "palitra_assets";
 
 /// Dynamic config that's different on different deployments
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]

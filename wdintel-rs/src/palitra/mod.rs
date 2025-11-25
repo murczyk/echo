@@ -1,3 +1,4 @@
+use crate::config::PALITRA_STORAGE_DIR_NAME;
 use crate::entities::*;
 use crate::error::AppError;
 use crate::h;
@@ -8,6 +9,7 @@ use actix_multipart::Multipart;
 use actix_web::post;
 use actix_web::web::{Data, Json};
 use anyhow::{bail, Context};
+use chrono::Utc;
 use itertools::Itertools;
 use sea_orm::*;
 
@@ -43,10 +45,15 @@ pub async fn upload_palitra_points(
 
     let (field, val) = multipart::extract(&mut payload).await.c(h!())?;
     let filename = field.name().c(h!())?.to_string();
-    let points = kmz::load_coordinates_from_file(filename.clone(), val)
-        .await
-        .c(h!())?;
-    let txn = (env.dbx).begin().await.c(h!())?;
+    let storage_dir = ensure_storage_dir(&env).await.c(h!())?;
+    let points = kmz::load_coordinates_from_file(
+        filename.clone(),
+        val,
+        storage_dir.as_path(),
+    )
+    .await
+    .c(h!())?;
+    let txn = env.dbx.begin().await.c(h!())?;
 
     let palitra_id = palitra.id;
     let mut model = palitra.into_active_model();
@@ -58,6 +65,16 @@ pub async fn upload_palitra_points(
         .c(h!())?;
     txn.commit().await.c(h!())?;
     Ok(Json(()))
+}
+
+async fn ensure_storage_dir(env: &Data<Env>) -> anyhow::Result<PathBuf> {
+    let storage_dir = PathBuf::from(env.config.storage_dir.clone())
+        .join(PALITRA_STORAGE_DIR_NAME)
+        .join(format!("{}", Utc::now().naive_utc().date()));
+    tokio::fs::create_dir_all(storage_dir.as_path())
+        .await
+        .c(h!())?;
+    Ok(storage_dir)
 }
 
 async fn ensure_palitra_permissions(
