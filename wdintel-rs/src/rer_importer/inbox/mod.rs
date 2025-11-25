@@ -223,7 +223,7 @@ async fn inbox_group_stats(
     )
     .await
     .c(h!())?;
-    let batch_ids = batches.iter().map(|b| *b.id).collect::<Vec<i64>>();
+    let batch_ids = batches.iter().map(|b| b.id).collect::<Vec<i64>>();
     let stats = crate::stats::get_last_hour_stats(&env.dbx, batch_ids)
         .await
         .c(h!())?;
