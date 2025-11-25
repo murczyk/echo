@@ -2573,6 +2573,34 @@ palitraPointEncoder struct =
         ]
 
 
+type alias Geometry =
+    { center : Coords
+    , perimeterLinearRing : List Coords
+    }
+
+
+geometryEncoder : Geometry -> Json.Encode.Value
+geometryEncoder struct =
+    Json.Encode.object
+        [ ( "center", coordsEncoder struct.center )
+        , ( "perimeter_linear_ring", Json.Encode.list coordsEncoder struct.perimeterLinearRing )
+        ]
+
+
+type alias Coords =
+    { lat : Float
+    , lng : Float
+    }
+
+
+coordsEncoder : Coords -> Json.Encode.Value
+coordsEncoder struct =
+    Json.Encode.object
+        [ ( "lat", Json.Encode.float struct.lat )
+        , ( "lng", Json.Encode.float struct.lng )
+        ]
+
+
 type alias NoHeadersBody =
     { body : String
     , start : Int
@@ -7457,23 +7485,11 @@ palitraPointDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "label" (Json.Decode.nullable Json.Decode.string)))
 
 
-type alias Geometry =
-    { center : Coords
-    , perimeterLinearRing : List Coords
-    }
-
-
 geometryDecoder : Json.Decode.Decoder Geometry
 geometryDecoder =
     Json.Decode.succeed Geometry
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "center" coordsDecoder))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "perimeter_linear_ring" (Json.Decode.list coordsDecoder)))
-
-
-type alias Coords =
-    { lat : Float
-    , lng : Float
-    }
 
 
 coordsDecoder : Json.Decode.Decoder Coords

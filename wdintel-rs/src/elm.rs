@@ -118,6 +118,8 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::palitra::types::Palitra,
             crate::palitra::types::PalitraDetails,
             crate::palitra::types::PalitraPoint,
+            crate::palitra::types::Geometry,
+            crate::palitra::types::Coords,
 
             crate::rer_importer::body_noheader::NoHeadersBody,
             crate::rer_importer::bookmark::BookmarkAddReq,
