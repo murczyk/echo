@@ -101,8 +101,7 @@ async fn ensure_palitra_permissions(
             if !is_rer {
                 bail!("Only Rer may manage organism-scoped palitra");
             }
-            let permitted: Vec<_> =
-                scope.organism_ids.iter().copied().collect();
+            let permitted: Vec<_> = scope.organism_ids.to_vec();
             let all_known =
                 organism_ids.iter().all(|id| permitted.contains(id));
             if !all_known {
