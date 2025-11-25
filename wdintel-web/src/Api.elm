@@ -1539,6 +1539,24 @@ create_aor toMsg req =
         }
 
 
+palitra_list : (Result ApiError (List Palitra) -> msg) -> Cmd msg
+palitra_list toMsg =
+    Http.post
+        { url = "/api/palitra/list"
+        , body = Http.emptyBody
+        , expect = leExpectJson toMsg (Decode.list palitraDecoder)
+        }
+
+
+palitra_delete : (Result ApiError () -> msg) -> Int -> Cmd msg
+palitra_delete toMsg palitraId =
+    Http.post
+        { url = "/api/palitra/delete/" ++ String.fromInt palitraId
+        , body = Http.emptyBody
+        , expect = leExpectJson toMsg (Decode.succeed ())
+        }
+
+
 update_aor : (Result ApiError AreaOfResponsibility -> msg) -> UpdateAreaOfResponsibilityReq -> Cmd msg
 update_aor toMsg req =
     Http.post
