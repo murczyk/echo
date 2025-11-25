@@ -2521,6 +2521,7 @@ type alias Palitra =
     { id : Int
     , name : String
     , colorHex : String
+    , author : Maybe String
     , sourceFileName : Maybe String
     , lastUploadedAtTs : Maybe Int
     , geometry : Maybe Geometry
@@ -2536,6 +2537,7 @@ palitraEncoder struct =
         [ ( "id", Json.Encode.int struct.id )
         , ( "name", Json.Encode.string struct.name )
         , ( "color_hex", Json.Encode.string struct.colorHex )
+        , ( "author", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.author )
         , ( "source_file_name", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.sourceFileName )
         , ( "last_uploaded_at_ts", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.lastUploadedAtTs )
         , ( "geometry", (Maybe.withDefault Json.Encode.null << Maybe.map geometryEncoder) struct.geometry )
@@ -7463,6 +7465,7 @@ palitraDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "color_hex" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "author" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source_file_name" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_uploaded_at_ts" (Json.Decode.nullable Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "geometry" (Json.Decode.nullable geometryDecoder)))
