@@ -60,7 +60,7 @@ pub enum Relation {
         from = "Column::DuplicateOf",
         to = "Column::Id",
         on_update = "NoAction",
-        on_delete = "NoAction"
+        on_delete = "SetNull"
     )]
     SelfRef2,
     #[sea_orm(

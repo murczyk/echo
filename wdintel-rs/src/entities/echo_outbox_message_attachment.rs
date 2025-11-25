@@ -25,7 +25,7 @@ pub enum Relation {
         from = "Column::MessageId",
         to = "super::echo_outbox_message::Column::Id",
         on_update = "NoAction",
-        on_delete = "NoAction"
+        on_delete = "Cascade"
     )]
     EchoOutboxMessage,
     #[sea_orm(

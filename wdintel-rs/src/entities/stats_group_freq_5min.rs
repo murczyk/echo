@@ -10,10 +10,10 @@ use serde::{Deserialize, Serialize};
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
-    pub dt: DateTime,
+    pub quantity: i32,
     #[sea_orm(column_type = "Text")]
     pub frequency: String,
-    pub quantity: i32,
+    pub dt: DateTime,
     pub created_at: DateTime,
     pub signal_group_batch_id: i64,
 }

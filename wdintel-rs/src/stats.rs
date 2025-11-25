@@ -706,11 +706,10 @@ pub async fn read_frequency_stats_day(
             .c(h!())?
             .into_iter()
             .filter_map(|m| {
-                let m_key = batch_key_to_group_keys(m.group_master_keys)
+                batch_key_to_group_keys(m.group_master_keys)
                     .into_iter()
-                    .filter(|g| master_keys.contains(g))
-                    .next();
-                m_key.map(|key| (m.id, key))
+                    .find(|g| master_keys.contains(g))
+                    .map(|key| (m.id, key))
             })
             .collect::<HashMap<_, _>>();
 
@@ -1000,24 +999,6 @@ struct StatsRow {
     pub created_at: NaiveDateTime,
     pub datetime: Option<NaiveDateTime>,
     pub group_master_key: String,
-    pub freq: Option<String>,
-    pub aor_id: Option<i64>,
-    pub post_id: Option<i64>,
-    pub sender: Option<String>,
-    pub callsigns: Option<sea_orm::prelude::Json>,
-    pub tags: Option<sea_orm::prelude::Json>,
-    pub location_v2: Option<String>,
-    pub unit_v2: Option<String>,
-}
-
-#[derive(Clone)]
-struct BatchStatsRow {
-    pub id: i64,
-    pub created_at: NaiveDateTime,
-    pub datetime: Option<NaiveDateTime>,
-    pub batch_id: i64,
-    pub group_master_keys: Vec<String>,
-    pub batch_group_master_keys: String,
     pub freq: Option<String>,
     pub aor_id: Option<i64>,
     pub post_id: Option<i64>,
@@ -1489,7 +1470,7 @@ async fn recalculate_day_stats_group(
             .iter()
             .filter_map(|(date, key, count)| {
                 if current_date.eq(date) {
-                    Some((key.clone(), count))
+                    Some((*key, count))
                 } else {
                     None
                 }
@@ -1616,7 +1597,7 @@ async fn recalculate_day_stats_freq(
             .iter()
             .filter_map(|(date, key_1, key_2, count)| {
                 if current_date.eq(date) {
-                    Some(((key_1.clone(), key_2.clone()), count))
+                    Some(((*key_1, key_2.clone()), count))
                 } else {
                     None
                 }
@@ -1665,7 +1646,7 @@ async fn update_5min_stats_aor_id(
             .iter()
             .filter_map(|(id, key, ts)| {
                 if !since_ts.gt(ts) && till_ts.gt(ts) {
-                    Some((id, key.clone()))
+                    Some((id, *key))
                 } else {
                     None
                 }
@@ -1683,7 +1664,7 @@ async fn update_5min_stats_aor_id(
                 .c(h!())?;
             let batch_id = *batches_map.get(&batch_key).c(h!())?;
             let key = (batch_id, freq);
-            let count = *batch_stats.entry(key.clone()).or_default();
+            let count = *batch_stats.entry(key).or_default();
             batch_stats.insert(key, count + 1);
         }
         for ((signal_group_batch_id, aor_id), count) in batch_stats {
@@ -1738,7 +1719,7 @@ async fn recalculate_day_stats_aor_id(
             .iter()
             .filter_map(|(date, key_1, key_2, count)| {
                 if current_date.eq(date) {
-                    Some(((key_1.clone(), *key_2), count))
+                    Some(((*key_1, *key_2), count))
                 } else {
                     None
                 }
@@ -1787,7 +1768,7 @@ async fn update_5min_stats_post_id(
             .iter()
             .filter_map(|(id, key, ts)| {
                 if !since_ts.gt(ts) && till_ts.gt(ts) {
-                    Some((id, key.clone()))
+                    Some((id, *key))
                 } else {
                     None
                 }
@@ -1805,7 +1786,7 @@ async fn update_5min_stats_post_id(
                 .c(h!())?;
             let batch_id = *batches_map.get(&batch_key).c(h!())?;
             let key = (batch_id, freq);
-            let count = *batch_stats.entry(key.clone()).or_default();
+            let count = *batch_stats.entry(key).or_default();
             batch_stats.insert(key, count + 1);
         }
         for ((signal_group_batch_id, post_id), count) in batch_stats {
@@ -1865,7 +1846,7 @@ async fn recalculate_day_stats_post_id(
             .iter()
             .filter_map(|(date, key_1, key_2, count)| {
                 if current_date.eq(date) {
-                    Some(((key_1.clone(), *key_2), count))
+                    Some(((*key_1, *key_2), count))
                 } else {
                     None
                 }
@@ -1914,13 +1895,13 @@ async fn update_5min_stats_location(
             .iter()
             .filter_map(|(id, key, ts)| {
                 if !since_ts.gt(ts) && till_ts.gt(ts) {
-                    Some((id, key.clone()))
+                    Some((id, key))
                 } else {
                     None
                 }
             })
             .fold(HashMap::new(), |mut acc, (id, key)| {
-                let ids = acc.entry(key).or_default();
+                let ids = acc.entry(key.clone()).or_default();
                 ids.insert(id.clone());
                 acc
             });
@@ -1934,7 +1915,7 @@ async fn update_5min_stats_location(
             let batch_id = *batches_map.get(&batch_key).c(h!())?;
             let key = (batch_id, freq);
             let count = *batch_stats.entry(key.clone()).or_default();
-            batch_stats.insert(key, count + 1);
+            batch_stats.insert(key.clone(), count + 1);
         }
         for ((signal_group_batch_id, location), count) in batch_stats {
             stats_group_location_5min::ActiveModel {
@@ -1995,7 +1976,7 @@ async fn recalculate_day_stats_location(
             .iter()
             .filter_map(|(date, key_1, key_2, count)| {
                 if current_date.eq(date) {
-                    Some(((key_1.clone(), key_2.clone()), count))
+                    Some(((*key_1, key_2.clone()), count))
                 } else {
                     None
                 }
@@ -2118,7 +2099,7 @@ async fn recalculate_day_stats_sender(
             .iter()
             .filter_map(|(date, key_1, key_2, count)| {
                 if current_date.eq(date) {
-                    Some(((key_1.clone(), key_2.clone()), count))
+                    Some(((*key_1, key_2.clone()), count))
                 } else {
                     None
                 }
@@ -2167,13 +2148,13 @@ async fn update_5min_stats_tag(
             .iter()
             .filter_map(|(id, key, ts)| {
                 if !since_ts.gt(ts) && till_ts.gt(ts) {
-                    Some((id, key.clone()))
+                    Some((id, key))
                 } else {
                     None
                 }
             })
             .fold(HashMap::new(), |mut acc, (id, key)| {
-                let ids = acc.entry(key).or_default();
+                let ids = acc.entry(*key).or_default();
                 ids.insert(id.clone());
                 acc
             });
@@ -2186,7 +2167,7 @@ async fn update_5min_stats_tag(
                 .c(h!())?;
             let batch_id = *batches_map.get(&batch_key).c(h!())?;
             let key = (batch_id, freq);
-            let count = *batch_stats.entry(key.clone()).or_default();
+            let count = *batch_stats.entry(key).or_default();
             batch_stats.insert(key, count + 1);
         }
         for ((signal_group_batch_id, tag_id), count) in batch_stats {
@@ -2241,7 +2222,7 @@ async fn recalculate_day_stats_tag(
             .iter()
             .filter_map(|(date, key_1, key_2, count)| {
                 if current_date.eq(date) {
-                    Some(((key_1.clone(), *key_2), count))
+                    Some(((*key_1, *key_2), count))
                 } else {
                     None
                 }
@@ -2369,7 +2350,7 @@ async fn recalculate_day_stats_callsign(
             .iter()
             .filter_map(|(date, key_1, key_2, count)| {
                 if current_date.eq(date) {
-                    Some(((key_1.clone(), key_2.clone()), count))
+                    Some(((*key_1, key_2.clone()), count))
                 } else {
                     None
                 }
@@ -2492,7 +2473,7 @@ async fn recalculate_day_stats_unit(
             .iter()
             .filter_map(|(date, key_1, key_2, count)| {
                 if current_date.eq(date) {
-                    Some(((key_1.clone(), key_2.clone()), count))
+                    Some(((*key_1, key_2.clone()), count))
                 } else {
                     None
                 }
