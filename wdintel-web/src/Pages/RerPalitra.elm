@@ -1,6 +1,9 @@
 module Pages.RerPalitra exposing (Model, Msg, page)
 
+import Api
 import Auth
+import Bindings as B
+import Core.Types exposing (ApiError)
 import Effect as E exposing (Effect)
 import Html exposing (Html, div, text)
 import Layouts
@@ -8,20 +11,25 @@ import Page exposing (Page)
 import Platform.Sub as Sub
 import Route exposing (Route)
 import Shared
+import Utils.RemoteData as RD exposing (RemoteData(..))
 import View exposing (View)
 
 
 type alias Model =
-    {}
+    { palitras : RemoteData ApiError (List B.Palitra)
+    }
 
 
 type Msg
     = NoOp
+    | PalitraListResp (Result ApiError (List B.Palitra))
 
 
 init : () -> ( Model, Effect Msg )
 init _ =
-    ( {}, E.none )
+    ( { palitras = Loading }
+    , E.sendCmd <| Api.palitra_list PalitraListResp
+    )
 
 
 update : Msg -> Model -> ( Model, Effect Msg )
@@ -30,11 +38,33 @@ update msg model =
         NoOp ->
             ( model, E.none )
 
+        PalitraListResp (Ok list) ->
+            ( { model | palitras = Success list }, E.none )
+
+        PalitraListResp (Err err) ->
+            ( { model | palitras = Failure err }, E.none )
+
 
 view : Auth.User -> Shared.Model -> Model -> View Msg
-view _ _ _ =
+view _ _ model =
     { title = "палітри"
-    , body = [ div [] [ text "Палітри (сторінка у розробці)" ] ]
+    , body =
+        [ case model.palitras of
+            Loading ->
+                div [] [ text "Завантаження..." ]
+
+            Failure _ ->
+                div [] [ text "Не вдалося завантажити палітри" ]
+
+            Success pal ->
+                div [] [ text <| "Доступні палітри: " ++ String.fromInt (List.length pal) ]
+
+            NeedsReload _ ->
+                text ""
+
+            NotAsked ->
+                text ""
+        ]
     }
 
 
