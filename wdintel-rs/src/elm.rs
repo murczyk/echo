@@ -113,6 +113,12 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::rer_importer::types::InboxGroupStatsByMinute,
             crate::rer_importer::types::InboxGroupStats,
 
+            crate::palitra::types::PalitraAccess,
+            crate::palitra::types::CreatePalitraReq,
+            crate::palitra::types::Palitra,
+            crate::palitra::types::PalitraDetails,
+            crate::palitra::types::PalitraPoint,
+
             crate::rer_importer::body_noheader::NoHeadersBody,
             crate::rer_importer::bookmark::BookmarkAddReq,
             crate::rer_importer::bookmark::BookmarkRmReq,
@@ -424,6 +430,15 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::rer_importer::types::MessageIdsRsp,
             crate::rer_importer::types::InboxGroupStatsByMinute,
             crate::rer_importer::types::InboxGroupStats,
+
+            crate::palitra::types::PalitraAccess,
+            crate::palitra::types::CreatePalitraReq,
+            crate::palitra::types::Palitra,
+            crate::palitra::types::PalitraDetails,
+            crate::palitra::types::PalitraPoint,
+            crate::palitra::types::Geometry,
+            crate::palitra::types::Coords,
+
             crate::rer_importer::body_noheader::NoHeadersBody,
             crate::rer_importer::bookmark::BookmarkAddReq,
             crate::rer_importer::bookmark::BookmarkRmReq,

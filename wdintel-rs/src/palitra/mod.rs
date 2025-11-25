@@ -14,7 +14,7 @@ use sea_orm::*;
 
 mod bl;
 mod kmz;
-mod types;
+pub mod types;
 
 #[derive(Clone)]
 struct UserScope {
