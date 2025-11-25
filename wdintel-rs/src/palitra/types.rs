@@ -16,11 +16,19 @@ pub struct Coords {
 pub struct CreatePalitraReq {
     pub name: String,
     pub color_hex: String,
-    pub access_aor_ids: Vec<i64>,
-    pub access_organism_ids: Vec<i64>,
-    pub access_logins: Vec<String>,
+    pub access: PalitraAccess,
     pub source_file_name: Option<String>,
     pub last_uploaded_at_ts: Option<i64>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub enum PalitraAccess {
+    Global,
+    ByLogins { logins: Vec<String> },
+    ByOrganisms { organism_ids: Vec<i64> },
+    ByAor { aor_ids: Vec<i64> },
 }
 
 #[derive(

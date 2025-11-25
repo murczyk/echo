@@ -536,59 +536,59 @@ where
         .exec(txn)
         .await
         .c(h!())?;
-
-    let logins = req
-        .access_logins
-        .into_iter()
-        .map(|login| palitra_access_login::ActiveModel {
-            id: NotSet,
-            palitra_id: Set(palitra.id),
-            login: Set(login),
-            created_at: NotSet,
-        })
-        .collect_vec();
-
-    let organisms = req
-        .access_organism_ids
-        .into_iter()
-        .map(|organism_id| palitra_access_organism::ActiveModel {
-            id: NotSet,
-            palitra_id: Set(palitra.id),
-            organism_id: Set(organism_id),
-            created_at: NotSet,
-        })
-        .collect_vec();
-
-    let aors = req
-        .access_aor_ids
-        .into_iter()
-        .map(|aor_id| palitra_access_aor::ActiveModel {
-            id: NotSet,
-            palitra_id: Set(palitra.id),
-            aor_id: Set(aor_id),
-            created_at: NotSet,
-        })
-        .collect_vec();
-
-    if !logins.is_empty() {
-        palitra_access_login::Entity::insert_many(logins)
-            .exec(txn)
-            .await
-            .c(h!())?;
-    }
-
-    if !organisms.is_empty() {
-        palitra_access_organism::Entity::insert_many(organisms)
-            .exec(txn)
-            .await
-            .c(h!())?;
-    }
-
-    if !aors.is_empty() {
-        palitra_access_aor::Entity::insert_many(aors)
-            .exec(txn)
-            .await
-            .c(h!())?;
+    match req.access {
+        PalitraAccess::Global => {}
+        PalitraAccess::ByLogins { logins } => {
+            if !logins.is_empty() {
+                let logins = logins
+                    .into_iter()
+                    .map(|login| palitra_access_login::ActiveModel {
+                        id: NotSet,
+                        palitra_id: Set(palitra.id),
+                        login: Set(login),
+                        created_at: NotSet,
+                    })
+                    .collect_vec();
+                palitra_access_login::Entity::insert_many(logins)
+                    .exec(txn)
+                    .await
+                    .c(h!())?;
+            }
+        }
+        PalitraAccess::ByOrganisms { organism_ids } => {
+            if !organism_ids.is_empty() {
+                let organisms = organism_ids
+                    .into_iter()
+                    .map(|organism_id| palitra_access_organism::ActiveModel {
+                        id: NotSet,
+                        palitra_id: Set(palitra.id),
+                        organism_id: Set(organism_id),
+                        created_at: NotSet,
+                    })
+                    .collect_vec();
+                palitra_access_organism::Entity::insert_many(organisms)
+                    .exec(txn)
+                    .await
+                    .c(h!())?;
+            }
+        }
+        PalitraAccess::ByAor { aor_ids } => {
+            if !aor_ids.is_empty() {
+                let aors = aor_ids
+                    .into_iter()
+                    .map(|aor_id| palitra_access_aor::ActiveModel {
+                        id: NotSet,
+                        palitra_id: Set(palitra.id),
+                        aor_id: Set(aor_id),
+                        created_at: NotSet,
+                    })
+                    .collect_vec();
+                palitra_access_aor::Entity::insert_many(aors)
+                    .exec(txn)
+                    .await
+                    .c(h!())?;
+            }
+        }
     }
     Ok(palitra)
 }

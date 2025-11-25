@@ -2474,6 +2474,133 @@ inboxGroupStatsEncoder struct =
         ]
 
 
+type PalitraAccess
+    = Global
+    | ByLogins { logins : List String }
+    | ByOrganisms { organismIds : List Int }
+    | ByAor { aorIds : List Int }
+
+
+palitraAccessEncoder : PalitraAccess -> Json.Encode.Value
+palitraAccessEncoder enum =
+    case enum of
+        Global ->
+            Json.Encode.string "Global"
+
+        ByLogins { logins } ->
+            Json.Encode.object [ ( "ByLogins", Json.Encode.object [ ( "logins", Json.Encode.list Json.Encode.string logins ) ] ) ]
+
+        ByOrganisms { organismIds } ->
+            Json.Encode.object [ ( "ByOrganisms", Json.Encode.object [ ( "organism_ids", Json.Encode.list Json.Encode.int organismIds ) ] ) ]
+
+        ByAor { aorIds } ->
+            Json.Encode.object [ ( "ByAor", Json.Encode.object [ ( "aor_ids", Json.Encode.list Json.Encode.int aorIds ) ] ) ]
+
+
+type alias CreatePalitraReq =
+    { name : String
+    , colorHex : String
+    , access : PalitraAccess
+    , sourceFileName : Maybe String
+    , lastUploadedAtTs : Maybe Int
+    }
+
+
+createPalitraReqEncoder : CreatePalitraReq -> Json.Encode.Value
+createPalitraReqEncoder struct =
+    Json.Encode.object
+        [ ( "name", Json.Encode.string struct.name )
+        , ( "color_hex", Json.Encode.string struct.colorHex )
+        , ( "access", palitraAccessEncoder struct.access )
+        , ( "source_file_name", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.sourceFileName )
+        , ( "last_uploaded_at_ts", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.lastUploadedAtTs )
+        ]
+
+
+type alias Palitra =
+    { id : Int
+    , name : String
+    , colorHex : String
+    , sourceFileName : Maybe String
+    , lastUploadedAtTs : Maybe Int
+    , geometry : Maybe Geometry
+    , accessAorId : List Int
+    , accessOrganismIds : List Int
+    , accessLogins : List String
+    }
+
+
+palitraEncoder : Palitra -> Json.Encode.Value
+palitraEncoder struct =
+    Json.Encode.object
+        [ ( "id", Json.Encode.int struct.id )
+        , ( "name", Json.Encode.string struct.name )
+        , ( "color_hex", Json.Encode.string struct.colorHex )
+        , ( "source_file_name", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.sourceFileName )
+        , ( "last_uploaded_at_ts", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.lastUploadedAtTs )
+        , ( "geometry", (Maybe.withDefault Json.Encode.null << Maybe.map geometryEncoder) struct.geometry )
+        , ( "access_aor_id", Json.Encode.list Json.Encode.int struct.accessAorId )
+        , ( "access_organism_ids", Json.Encode.list Json.Encode.int struct.accessOrganismIds )
+        , ( "access_logins", Json.Encode.list Json.Encode.string struct.accessLogins )
+        ]
+
+
+type alias PalitraDetails =
+    { palitra : Palitra
+    , points : List PalitraPoint
+    }
+
+
+palitraDetailsEncoder : PalitraDetails -> Json.Encode.Value
+palitraDetailsEncoder struct =
+    Json.Encode.object
+        [ ( "palitra", palitraEncoder struct.palitra )
+        , ( "points", Json.Encode.list palitraPointEncoder struct.points )
+        ]
+
+
+type alias PalitraPoint =
+    { coords : Coords
+    , label : Maybe String
+    }
+
+
+palitraPointEncoder : PalitraPoint -> Json.Encode.Value
+palitraPointEncoder struct =
+    Json.Encode.object
+        [ ( "coords", coordsEncoder struct.coords )
+        , ( "label", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.label )
+        ]
+
+
+type alias Geometry =
+    { center : Coords
+    , perimeterLinearRing : List Coords
+    }
+
+
+geometryEncoder : Geometry -> Json.Encode.Value
+geometryEncoder struct =
+    Json.Encode.object
+        [ ( "center", coordsEncoder struct.center )
+        , ( "perimeter_linear_ring", Json.Encode.list coordsEncoder struct.perimeterLinearRing )
+        ]
+
+
+type alias Coords =
+    { lat : Float
+    , lng : Float
+    }
+
+
+coordsEncoder : Coords -> Json.Encode.Value
+coordsEncoder struct =
+    Json.Encode.object
+        [ ( "lat", Json.Encode.float struct.lat )
+        , ( "lng", Json.Encode.float struct.lng )
+        ]
+
+
 type alias NoHeadersBody =
     { body : String
     , start : Int
@@ -7289,6 +7416,87 @@ inboxGroupStatsDecoder =
     Json.Decode.succeed InboxGroupStats
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_name" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "count" Json.Decode.int))
+
+
+palitraAccessDecoder : Json.Decode.Decoder PalitraAccess
+palitraAccessDecoder =
+    let
+        elmRsConstructByLogins logins =
+            ByLogins { logins = logins }
+
+        elmRsConstructByOrganisms organismIds =
+            ByOrganisms { organismIds = organismIds }
+
+        elmRsConstructByAor aorIds =
+            ByAor { aorIds = aorIds }
+    in
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Global" ->
+                            Json.Decode.succeed Global
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.field "ByLogins" (Json.Decode.succeed elmRsConstructByLogins |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "logins" (Json.Decode.list Json.Decode.string))))
+        , Json.Decode.field "ByOrganisms" (Json.Decode.succeed elmRsConstructByOrganisms |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "organism_ids" (Json.Decode.list Json.Decode.int))))
+        , Json.Decode.field "ByAor" (Json.Decode.succeed elmRsConstructByAor |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aor_ids" (Json.Decode.list Json.Decode.int))))
+        ]
+
+
+createPalitraReqDecoder : Json.Decode.Decoder CreatePalitraReq
+createPalitraReqDecoder =
+    Json.Decode.succeed CreatePalitraReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "color_hex" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "access" palitraAccessDecoder))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source_file_name" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_uploaded_at_ts" (Json.Decode.nullable Json.Decode.int)))
+
+
+palitraDecoder : Json.Decode.Decoder Palitra
+palitraDecoder =
+    Json.Decode.succeed Palitra
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "color_hex" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source_file_name" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_uploaded_at_ts" (Json.Decode.nullable Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "geometry" (Json.Decode.nullable geometryDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "access_aor_id" (Json.Decode.list Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "access_organism_ids" (Json.Decode.list Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "access_logins" (Json.Decode.list Json.Decode.string)))
+
+
+palitraDetailsDecoder : Json.Decode.Decoder PalitraDetails
+palitraDetailsDecoder =
+    Json.Decode.succeed PalitraDetails
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "palitra" palitraDecoder))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "points" (Json.Decode.list palitraPointDecoder)))
+
+
+palitraPointDecoder : Json.Decode.Decoder PalitraPoint
+palitraPointDecoder =
+    Json.Decode.succeed PalitraPoint
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "coords" coordsDecoder))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "label" (Json.Decode.nullable Json.Decode.string)))
+
+
+geometryDecoder : Json.Decode.Decoder Geometry
+geometryDecoder =
+    Json.Decode.succeed Geometry
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "center" coordsDecoder))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "perimeter_linear_ring" (Json.Decode.list coordsDecoder)))
+
+
+coordsDecoder : Json.Decode.Decoder Coords
+coordsDecoder =
+    Json.Decode.succeed Coords
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "lat" Json.Decode.float))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "lng" Json.Decode.float))
 
 
 noHeadersBodyDecoder : Json.Decode.Decoder NoHeadersBody
