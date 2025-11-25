@@ -15,12 +15,11 @@ import Platform.Sub as Sub
 import Route exposing (Route)
 import Shared
 import Shared.Components.Button as Button
+import Shared.Components.Sidebar as Sidebar
 import Shared.Components.Spinner
 import Shared.Components.Table as Table
-import Shared.Components.Table.Column as TableColumn
-import Shared.Components.Table.Config as TableConfig
 import Shared.Components.Table.Sorter as Sorter
-import Utils.RemoteData as RD exposing (RemoteData(..))
+import Utils.RemoteData exposing (RemoteData(..))
 import View exposing (View)
 import String
 
@@ -31,6 +30,7 @@ type alias Model =
     , deleting : Maybe Int
     , form : Form
     , submitInFlight : Bool
+    , showCreateSidebar : Bool
     }
 
 
@@ -56,6 +56,8 @@ type Msg
     | DeleteResponse Int (Result ApiError ())
     | UpdateForm (Form -> Form)
     | ChangeAccess AccessForm
+    | ShowCreateSidebar
+    | CloseCreateSidebar
     | SubmitCreate
     | CreateResponse (Result ApiError B.Palitra)
 
@@ -67,6 +69,7 @@ init _ =
       , deleting = Nothing
       , form = emptyForm
       , submitInFlight = False
+      , showCreateSidebar = False
       }
     , E.sendCmd <| Api.palitra_list PalitraListResp
     )
@@ -130,6 +133,12 @@ update msg model =
             in
             ( { model | form = form1 }, E.none )
 
+        ShowCreateSidebar ->
+            ( { model | showCreateSidebar = True }, E.none )
+
+        CloseCreateSidebar ->
+            ( { model | showCreateSidebar = False, form = emptyForm }, E.none )
+
         SubmitCreate ->
             let
                 req =
@@ -153,6 +162,7 @@ update msg model =
                 | palitras = newList
                 , form = emptyForm
                 , submitInFlight = False
+                , showCreateSidebar = False
               }
             , E.none
             )
@@ -165,24 +175,36 @@ view : Auth.User -> Shared.Model -> Model -> View Msg
 view user _ model =
     { title = "палітри"
     , body =
-        [ case model.palitras of
-            Loading ->
-                div [ class "p-4" ] [ Shared.Components.Spinner.loadingSpinner2Sm ]
+        [ div
+            [ classList [ ( "overflow-hidden", model.showCreateSidebar ) ]
+            , class "w-5/6 mx-auto"
+            ]
+            [ Sidebar.view model.showCreateSidebar CloseCreateSidebar (createPalitraSidebarContent model)
+            , case model.palitras of
+                Loading ->
+                    div [ class "p-4" ] [ Shared.Components.Spinner.loadingSpinner2Sm ]
 
-            Failure _ ->
-                div [ class "p-4 text-red-600" ] [ text "Не вдалося завантажити палітри" ]
+                Failure _ ->
+                    div [ class "p-4 text-red-600" ] [ text "Не вдалося завантажити палітри" ]
 
-            Success pal ->
-                div []
-                    [ renderForm model
-                    , div [ class "mt-6 table-responsive-modern" ] [ renderTable user model pal ]
-                    ]
+                Success pal ->
+                    div []
+                        [ div []
+                            [ h1 [ class "py-4 text-2xl font-bold text-foreground" ] [ text "Палітри" ]
+                            , div [ class "mb-4 flex justify-end" ]
+                                [ Button.new { label = "Додати палітру", onClick = ShowCreateSidebar }
+                                    |> Button.view
+                                ]
+                            , div [ class "table-responsive-modern" ] [ renderTable user model pal ]
+                            ]
+                        ]
 
-            NeedsReload _ ->
-                text ""
+                NeedsReload _ ->
+                    text ""
 
-            NotAsked ->
-                text ""
+                NotAsked ->
+                    text ""
+            ]
         ]
     }
 
@@ -307,8 +329,8 @@ renderAccess p =
         "глобальна"
 
 
-renderForm : Model -> Html Msg
-renderForm model =
+createPalitraSidebarContent : Model -> List (Html Msg)
+createPalitraSidebarContent model =
     let
         ( _, accessFields ) =
             case model.form.access of
@@ -317,84 +339,124 @@ renderForm model =
 
                 LoginsAccess logins ->
                     ( "За логінами"
-                    , [ div [ class "flex flex-col gap-1" ]
-                            [ span [ class "text-sm text-foreground" ] [ text "Логіни (через кому)" ]
-                            , inputText logins (\v -> UpdateForm (\f -> { f | access = LoginsAccess v }))
+                    , [ div [ class "space-y-2" ]
+                            [ label [ class "text-sm font-medium text-foreground" ] [ text "Логіни (через кому)" ]
+                            , input
+                                [ class "w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
+                                , type_ "text"
+                                , placeholder "Логіни через кому"
+                                , value logins
+                                , onInput (\v -> UpdateForm (\f -> { f | access = LoginsAccess v }))
+                                ]
+                                []
                             ]
                       ]
                     )
 
                 OrganismsAccess ids ->
                     ( "За підрозділами"
-                    , [ div [ class "flex flex-col gap-1" ]
-                            [ span [ class "text-sm text-foreground" ] [ text "Organism IDs (через кому)" ]
-                            , inputText ids (\v -> UpdateForm (\f -> { f | access = OrganismsAccess v }))
+                    , [ div [ class "space-y-2" ]
+                            [ label [ class "text-sm font-medium text-foreground" ] [ text "Organism IDs (через кому)" ]
+                            , input
+                                [ class "w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
+                                , type_ "text"
+                                , placeholder "ID підрозділів через кому"
+                                , value ids
+                                , onInput (\v -> UpdateForm (\f -> { f | access = OrganismsAccess v }))
+                                ]
+                                []
                             ]
                       ]
                     )
 
                 AorAccess ids ->
                     ( "За смугами"
-                    , [ div [ class "flex flex-col gap-1" ]
-                            [ span [ class "text-sm text-foreground" ] [ text "AOR IDs (через кому)" ]
-                            , inputText ids (\v -> UpdateForm (\f -> { f | access = AorAccess v }))
+                    , [ div [ class "space-y-2" ]
+                            [ label [ class "text-sm font-medium text-foreground" ] [ text "AOR IDs (через кому)" ]
+                            , input
+                                [ class "w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
+                                , type_ "text"
+                                , placeholder "ID смуг через кому"
+                                , value ids
+                                , onInput (\v -> UpdateForm (\f -> { f | access = AorAccess v }))
+                                ]
+                                []
                             ]
                       ]
                     )
     in
-    div [ class "space-y-4 p-4 rounded border border-border bg-card" ]
-        [ div [ class "text-lg font-semibold" ] [ text "Створити палітру" ]
-        , div [ class "flex flex-col gap-2" ]
-            [ span [ class "text-sm text-foreground" ] [ text "Назва" ]
-            , inputText model.form.name (\v -> UpdateForm (\f -> { f | name = v }))
+    [ div [ class "flex flex-col h-full" ]
+        [ div [ class "p-6 border-b border-border" ]
+            [ h2 [ class "text-lg font-semibold mb-1" ] [ text "Створити палітру" ]
             ]
-        , div [ class "flex flex-col gap-2" ]
-            [ span [ class "text-sm text-foreground" ] [ text "Колір" ]
-            , input
-                [ type_ "color"
-                , class "w-16 h-10"
-                , value model.form.colorHex
-                , onInput (\v -> UpdateForm (\f -> { f | colorHex = v }))
+        , div [ class "flex-1 overflow-y-auto p-6" ]
+            [ div [ class "space-y-6" ]
+                [ div [ class "space-y-2" ]
+                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Назва *" ]
+                    , input
+                        [ class "w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
+                        , type_ "text"
+                        , placeholder "Назва палітри"
+                        , value model.form.name
+                        , onInput (\v -> UpdateForm (\f -> { f | name = v }))
+                        ]
+                        []
+                    ]
+                , div [ class "space-y-2" ]
+                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Колір" ]
+                    , input
+                        [ type_ "color"
+                        , class "w-16 h-10 border border-border rounded-md"
+                        , value model.form.colorHex
+                        , onInput (\v -> UpdateForm (\f -> { f | colorHex = v }))
+                        ]
+                        []
+                    ]
+                , div [ class "space-y-2" ]
+                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Назва файлу (опціонально)" ]
+                    , input
+                        [ class "w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
+                        , type_ "text"
+                        , placeholder "Назва файлу"
+                        , value model.form.fileName
+                        , onInput (\v -> UpdateForm (\f -> { f | fileName = v }))
+                        ]
+                        []
+                    ]
+                , div [ class "space-y-2" ]
+                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Доступ" ]
+                    , div [ class "flex flex-wrap gap-2" ]
+                        [ accessButton "Глобально" GlobalAccess model.form.access
+                        , accessButton "Логіни" (LoginsAccess "") model.form.access
+                        , accessButton "Підрозділи" (OrganismsAccess "") model.form.access
+                        , accessButton "Смуги" (AorAccess "") model.form.access
+                        ]
+                    , div [] accessFields
+                    ]
                 ]
-                []
             ]
-        , div [ class "flex flex-col gap-2" ]
-            [ span [ class "text-sm text-foreground" ] [ text "Назва файлу (опціонально)" ]
-            , inputText model.form.fileName (\v -> UpdateForm (\f -> { f | fileName = v }))
-            ]
-        , div [ class "flex flex-col gap-2" ]
-            [ span [ class "text-sm text-foreground" ] [ text "Доступ" ]
-            , div [ class "flex flex-wrap gap-2" ]
-                [ accessButton "Глобально" GlobalAccess model.form.access
-                , accessButton "Логіни" (LoginsAccess "") model.form.access
-                , accessButton "Підрозділи" (OrganismsAccess "") model.form.access
-                , accessButton "Смуги" (AorAccess "") model.form.access
+        , div [ class "p-6 border-t border-border bg-muted/30" ]
+            [ div [ class "flex justify-end gap-3" ]
+                [ Button.new { label = "Скасувати", onClick = CloseCreateSidebar }
+                    |> Button.withStyleSecondary
+                    |> Button.view
+                , Button.new
+                    { label = "Створити"
+                    , onClick =
+                        if model.submitInFlight then
+                            NoOp
+
+                        else
+                            SubmitCreate
+                    }
+                    |> Button.withDisabled model.submitInFlight
+                    |> Button.view
                 ]
-            , div [] accessFields
             ]
-        , Button.view
-            (Button.new
-                { label = "Створити"
-                , onClick =
-                    if model.submitInFlight then
-                        NoOp
-
-                    else
-                        SubmitCreate
-                }
-                |> Button.withDisabled model.submitInFlight
-            )
         ]
+    ]
 
 
-inputText : String -> (String -> Msg) -> Html Msg
-inputText val toMsg =
-    input
-        [ class "w-full px-3 py-2 border border-border rounded bg-background text-foreground"
-        , value val
-        , onInput toMsg
-        ]
-        []
 
 
 accessButton : String -> AccessForm -> AccessForm -> Html Msg
@@ -418,6 +480,12 @@ accessButton label target current =
             { label = label
             , onClick = ChangeAccess target
             }
+            |> (if isActive then
+                    identity
+
+                else
+                    Button.withStyleSecondary
+               )
         )
 
 
