@@ -1557,6 +1557,24 @@ palitra_delete toMsg palitraId =
         }
 
 
+palitra_create : (Result ApiError Palitra -> msg) -> CreatePalitraReq -> Cmd msg
+palitra_create toMsg req =
+    Http.post
+        { url = "/api/palitra/create"
+        , body = Http.jsonBody (createPalitraReqEncoder req)
+        , expect = leExpectJson toMsg palitraDecoder
+        }
+
+
+palitra_update : (Result ApiError PalitraDetails -> msg) -> Int -> CreatePalitraReq -> Cmd msg
+palitra_update toMsg palitraId req =
+    Http.post
+        { url = "/api/palitra/update/" ++ String.fromInt palitraId
+        , body = Http.jsonBody (createPalitraReqEncoder req)
+        , expect = leExpectJson toMsg palitraDetailsDecoder
+        }
+
+
 update_aor : (Result ApiError AreaOfResponsibility -> msg) -> UpdateAreaOfResponsibilityReq -> Cmd msg
 update_aor toMsg req =
     Http.post

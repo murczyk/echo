@@ -6,8 +6,9 @@ import Bindings as B
 import Core.Auth
 import Core.Types exposing (ApiError)
 import Effect as E exposing (Effect)
-import Html exposing (Html, div, span, text)
-import Html.Attributes exposing (class, style)
+import Html exposing (..)
+import Html.Attributes exposing (..)
+import Html.Events  exposing (onInput)
 import Layouts
 import Page exposing (Page)
 import Platform.Sub as Sub
@@ -21,13 +22,30 @@ import Shared.Components.Table.Config as TableConfig
 import Shared.Components.Table.Sorter as Sorter
 import Utils.RemoteData as RD exposing (RemoteData(..))
 import View exposing (View)
+import String
 
 
 type alias Model =
     { palitras : RemoteData ApiError (List B.Palitra)
     , tableState : Table.State
     , deleting : Maybe Int
+    , form : Form
+    , submitInFlight : Bool
     }
+
+
+type alias Form =
+    { name : String
+    , colorHex : String
+    , access : AccessForm
+    , fileName : String
+    }
+
+type AccessForm
+    = GlobalAccess
+    | LoginsAccess String
+    | OrganismsAccess String
+    | AorAccess String
 
 
 type Msg
@@ -36,6 +54,10 @@ type Msg
     | TableStateChanged Table.State
     | DeleteRequested Int
     | DeleteResponse Int (Result ApiError ())
+    | UpdateForm (Form -> Form)
+    | ChangeAccess AccessForm
+    | SubmitCreate
+    | CreateResponse (Result ApiError B.Palitra)
 
 
 init : () -> ( Model, Effect Msg )
@@ -43,9 +65,20 @@ init _ =
     ( { palitras = Loading
       , tableState = Table.initialSort "Назва"
       , deleting = Nothing
+      , form = emptyForm
+      , submitInFlight = False
       }
     , E.sendCmd <| Api.palitra_list PalitraListResp
     )
+
+
+emptyForm : Form
+emptyForm =
+    { name = ""
+    , colorHex = "#00bcd4"
+    , access = GlobalAccess
+    , fileName = ""
+    }
 
 
 update : Msg -> Model -> ( Model, Effect Msg )
@@ -84,28 +117,72 @@ update msg model =
         DeleteResponse _ (Err _) ->
             ( { model | deleting = Nothing }, E.none )
 
+        UpdateForm fn ->
+            ( { model | form = fn model.form }, E.none )
+
+        ChangeAccess access ->
+            let
+                form =
+                    model.form
+
+                form1 =
+                    { form | access = access }
+            in
+            ( { model | form = form1 }, E.none )
+
+        SubmitCreate ->
+            let
+                req =
+                    buildCreateReq model.form
+            in
+            ( { model | submitInFlight = True }
+            , E.sendCmd <| Api.palitra_create CreateResponse req
+            )
+
+        CreateResponse (Ok p) ->
+            let
+                newList =
+                    case model.palitras of
+                        Success list ->
+                            Success (p :: list)
+
+                        _ ->
+                            Success [ p ]
+            in
+            ( { model
+                | palitras = newList
+                , form = emptyForm
+                , submitInFlight = False
+              }
+            , E.none
+            )
+
+        CreateResponse (Err _) ->
+            ( { model | submitInFlight = False }, E.none )
+
 
 view : Auth.User -> Shared.Model -> Model -> View Msg
 view user _ model =
     { title = "палітри"
     , body =
-        [ div [ class "" ]
-            [ case model.palitras of
-                Loading ->
-                    div [ class "p-4" ] [ Shared.Components.Spinner.loadingSpinner2Sm ]
+        [ case model.palitras of
+            Loading ->
+                div [ class "p-4" ] [ Shared.Components.Spinner.loadingSpinner2Sm ]
 
-                Failure _ ->
-                    div [ class "p-4 text-red-600" ] [ text "Не вдалося завантажити палітри" ]
+            Failure _ ->
+                div [ class "p-4 text-red-600" ] [ text "Не вдалося завантажити палітри" ]
 
-                Success pal ->
-                    div [] [ renderTable user model pal ]
+            Success pal ->
+                div []
+                    [ renderForm model
+                    , div [ class "mt-6 table-responsive-modern" ] [ renderTable user model pal ]
+                    ]
 
-                NeedsReload _ ->
-                    text ""
+            NeedsReload _ ->
+                text ""
 
-                NotAsked ->
-                    text ""
-            ]
+            NotAsked ->
+                text ""
         ]
     }
 
@@ -228,3 +305,169 @@ renderAccess p =
 
     else
         "глобальна"
+
+
+renderForm : Model -> Html Msg
+renderForm model =
+    let
+        ( _, accessFields ) =
+            case model.form.access of
+                GlobalAccess ->
+                    ( "Глобально", [] )
+
+                LoginsAccess logins ->
+                    ( "За логінами"
+                    , [ div [ class "flex flex-col gap-1" ]
+                            [ span [ class "text-sm text-foreground" ] [ text "Логіни (через кому)" ]
+                            , inputText logins (\v -> UpdateForm (\f -> { f | access = LoginsAccess v }))
+                            ]
+                      ]
+                    )
+
+                OrganismsAccess ids ->
+                    ( "За підрозділами"
+                    , [ div [ class "flex flex-col gap-1" ]
+                            [ span [ class "text-sm text-foreground" ] [ text "Organism IDs (через кому)" ]
+                            , inputText ids (\v -> UpdateForm (\f -> { f | access = OrganismsAccess v }))
+                            ]
+                      ]
+                    )
+
+                AorAccess ids ->
+                    ( "За смугами"
+                    , [ div [ class "flex flex-col gap-1" ]
+                            [ span [ class "text-sm text-foreground" ] [ text "AOR IDs (через кому)" ]
+                            , inputText ids (\v -> UpdateForm (\f -> { f | access = AorAccess v }))
+                            ]
+                      ]
+                    )
+    in
+    div [ class "space-y-4 p-4 rounded border border-border bg-card" ]
+        [ div [ class "text-lg font-semibold" ] [ text "Створити палітру" ]
+        , div [ class "flex flex-col gap-2" ]
+            [ span [ class "text-sm text-foreground" ] [ text "Назва" ]
+            , inputText model.form.name (\v -> UpdateForm (\f -> { f | name = v }))
+            ]
+        , div [ class "flex flex-col gap-2" ]
+            [ span [ class "text-sm text-foreground" ] [ text "Колір" ]
+            , input
+                [ type_ "color"
+                , class "w-16 h-10"
+                , value model.form.colorHex
+                , onInput (\v -> UpdateForm (\f -> { f | colorHex = v }))
+                ]
+                []
+            ]
+        , div [ class "flex flex-col gap-2" ]
+            [ span [ class "text-sm text-foreground" ] [ text "Назва файлу (опціонально)" ]
+            , inputText model.form.fileName (\v -> UpdateForm (\f -> { f | fileName = v }))
+            ]
+        , div [ class "flex flex-col gap-2" ]
+            [ span [ class "text-sm text-foreground" ] [ text "Доступ" ]
+            , div [ class "flex flex-wrap gap-2" ]
+                [ accessButton "Глобально" GlobalAccess model.form.access
+                , accessButton "Логіни" (LoginsAccess "") model.form.access
+                , accessButton "Підрозділи" (OrganismsAccess "") model.form.access
+                , accessButton "Смуги" (AorAccess "") model.form.access
+                ]
+            , div [] accessFields
+            ]
+        , Button.view
+            (Button.new
+                { label = "Створити"
+                , onClick =
+                    if model.submitInFlight then
+                        NoOp
+
+                    else
+                        SubmitCreate
+                }
+                |> Button.withDisabled model.submitInFlight
+            )
+        ]
+
+
+inputText : String -> (String -> Msg) -> Html Msg
+inputText val toMsg =
+    input
+        [ class "w-full px-3 py-2 border border-border rounded bg-background text-foreground"
+        , value val
+        , onInput toMsg
+        ]
+        []
+
+
+accessButton : String -> AccessForm -> AccessForm -> Html Msg
+accessButton label target current =
+    let
+        isActive =
+            case ( target, current ) of
+                ( GlobalAccess, GlobalAccess ) ->
+                    True
+                ( LoginsAccess _, LoginsAccess _ ) ->
+                    True
+                ( OrganismsAccess _, OrganismsAccess _ ) ->
+                    True
+                ( AorAccess _, AorAccess _ ) ->
+                    True
+                _ ->
+                    False
+    in
+    Button.view
+        (Button.new
+            { label = label
+            , onClick = ChangeAccess target
+            }
+        )
+
+
+buildCreateReq : Form -> B.CreatePalitraReq
+buildCreateReq form =
+    { name = form.name
+    , colorHex = form.colorHex
+    , access = accessToBinding form.access
+    , sourceFileName =
+        if String.isEmpty form.fileName then
+            Nothing
+
+        else
+            Just form.fileName
+    , lastUploadedAtTs = Nothing
+    }
+
+
+accessToBinding : AccessForm -> B.PalitraAccess
+accessToBinding accessForm =
+    case accessForm of
+        GlobalAccess ->
+            B.Global
+
+        LoginsAccess logins ->
+            let
+                items =
+                    logins
+                        |> String.split ","
+                        |> List.map String.trim
+                        |> List.filter (\s -> s /= "")
+            in
+            B.ByLogins { logins = items }
+
+        OrganismsAccess ids ->
+            let
+                items =
+                    ids
+                        |> String.split ","
+                        |> List.filter (\s -> s /= "")
+                        |> List.filterMap String.toInt
+            in
+            B.ByOrganisms { organismIds = items }
+
+        AorAccess ids ->
+            let
+                items =
+                    ids
+                        |> String.split ","
+                        |> List.filter (\s -> s /= "")
+                        |> List.filterMap String.toInt
+            in
+            B.ByAor { aorIds = items }
