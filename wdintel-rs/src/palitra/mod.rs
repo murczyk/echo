@@ -7,13 +7,20 @@ use crate::utils::multipart;
 use actix_multipart::Multipart;
 use actix_web::post;
 use actix_web::web::{Data, Json};
-use anyhow::Context;
+use anyhow::{bail, Context};
+use itertools::Itertools;
 use log::info;
 use sea_orm::*;
 
 mod bl;
 mod kmz;
 mod types;
+
+#[derive(Clone)]
+struct UserScope {
+    organism_ids: Vec<i64>,
+    aor_ids: Vec<i64>,
+}
 
 #[post("/api/palitra/upload-points/{palitra_id}")]
 pub async fn upload_palitra_points(
@@ -23,28 +30,18 @@ pub async fn upload_palitra_points(
     mut payload: Multipart,
 ) -> Result<Json<()>, AppError> {
     let login = user.id().c(h!())?;
+    let scope = load_user_scope(&env.dbx, &login).await.c(h!())?;
     let palitra_id = path.into_inner();
     let palitra = palitra::Entity::find_by_id(palitra_id)
         .one(&env.dbx)
         .await
         .c(h!())?
         .c(h!())?;
-    let palitra_access_organisms =
-        bl::collect_palitra_access_organisms(&env.dbx, palitra_id)
-            .await
-            .c(h!())?;
-    let palitra_access_logins =
-        bl::collect_palitra_access_logins(&env.dbx, palitra_id)
-            .await
-            .c(h!())?;
-    check_palitra_permissions(
-        &env,
-        &login,
-        &palitra_access_logins,
-        &palitra_access_organisms,
-    )
-    .await
-    .c(h!())?;
+    let existing_access =
+        read_palitra_access(&env.dbx, palitra_id).await.c(h!())?;
+    ensure_palitra_permissions(&env, &login, &existing_access, &scope)
+        .await
+        .c(h!())?;
 
     let (field, val) = multipart::extract(&mut payload).await.c(h!())?;
     let filename = field.name().c(h!())?.to_string();
@@ -63,6 +60,116 @@ pub async fn upload_palitra_points(
         .c(h!())?;
     txn.commit().await.c(h!())?;
     Ok(Json(()))
+}
+
+async fn ensure_palitra_permissions(
+    env: &Data<Env>,
+    login: &str,
+    access: &PalitraAccess,
+    scope: &UserScope,
+) -> anyhow::Result<()> {
+    let units_editor_plus = crate::users::has_any_role(
+        &env.dbx,
+        login,
+        vec!["UnitsEditor", "CallsignsEditor", "Admin"],
+    )
+    .await
+    .is_ok();
+
+    let is_rer = crate::users::has_role(&env.dbx, login, "Rer").await.is_ok();
+
+    match access {
+        PalitraAccess::Global => {
+            if !units_editor_plus {
+                bail!("Only UnitsEditor/CallsignsEditor/Admin may manage global palitra");
+            }
+        }
+        PalitraAccess::ByLogins { logins } => {
+            if units_editor_plus {
+                return Ok(());
+            }
+            if !is_rer {
+                bail!("Only Rer may manage login-scoped palitra");
+            }
+            let all_self = logins.iter().all(|l| l == login);
+            if !all_self {
+                bail!("Rer may only manage palitra scoped to own login");
+            }
+        }
+        PalitraAccess::ByOrganisms { organism_ids } => {
+            if units_editor_plus {
+                return Ok(());
+            }
+            if !is_rer {
+                bail!("Only Rer may manage organism-scoped palitra");
+            }
+            let permitted: Vec<_> =
+                scope.organism_ids.iter().copied().collect();
+            let all_known =
+                organism_ids.iter().all(|id| permitted.contains(id));
+            if !all_known {
+                bail!("Rer may only manage palitra scoped to own organism");
+            }
+        }
+        PalitraAccess::ByAor { .. } => {
+            if !units_editor_plus {
+                bail!("Only UnitsEditor/CallsignsEditor/Admin may manage AOR-scoped palitra");
+            }
+        }
+    };
+    Ok(())
+}
+
+async fn load_user_scope(
+    dbx: &DatabaseConnection,
+    login: &str,
+) -> anyhow::Result<UserScope> {
+    let organism_aors = organism_aor::Entity::find()
+        .join(JoinType::InnerJoin, organism_aor::Relation::Organism.def())
+        .join(JoinType::InnerJoin, organism::Relation::Login.def())
+        .filter(login::Column::Login.eq(login.to_string()))
+        .all(dbx)
+        .await
+        .c(h!())?;
+    let organism_ids =
+        organism_aors.iter().map(|o| o.organism_id).collect_vec();
+    let aor_ids = organism_aors.into_iter().map(|x| x.aor_id).collect_vec();
+    Ok(UserScope {
+        organism_ids,
+        aor_ids,
+    })
+}
+
+async fn read_palitra_access(
+    dbx: &DatabaseConnection,
+    palitra_id: i64,
+) -> anyhow::Result<PalitraAccess> {
+    let logins = bl::collect_palitra_access_logins(dbx, palitra_id)
+        .await
+        .c(h!())?;
+    let organism_ids = bl::collect_palitra_access_organisms(dbx, palitra_id)
+        .await
+        .c(h!())?;
+    let aor_ids = bl::collect_palitra_access_aors(dbx, palitra_id)
+        .await
+        .c(h!())?;
+    Ok(pick_access(logins, organism_ids, aor_ids))
+}
+
+fn pick_access(
+    logins: Vec<String>,
+    organism_ids: Vec<i64>,
+    aor_ids: Vec<i64>,
+) -> PalitraAccess {
+    if !logins.is_empty() {
+        PalitraAccess::ByLogins { logins }
+    } else if !organism_ids.is_empty() {
+        PalitraAccess::ByOrganisms { organism_ids }
+    } else if !aor_ids.is_empty() {
+        PalitraAccess::ByAor { aor_ids }
+    } else {
+        PalitraAccess::Global
+    }
 }
 
 #[post("/api/palitra/list")]
@@ -101,14 +208,10 @@ pub async fn create_palitra(
 ) -> Result<Json<Palitra>, AppError> {
     let login = user.id().c(h!())?;
     let req = req.into_inner();
-    check_palitra_permissions(
-        &env,
-        &login,
-        &req.access_logins,
-        &req.access_organism_ids,
-    )
-    .await
-    .c(h!())?;
+    let scope = load_user_scope(&env.dbx, &login).await.c(h!())?;
+    ensure_palitra_permissions(&env, &login, &req.access, &scope)
+        .await
+        .c(h!())?;
     let palitra = bl::create_palitra(login, req, &env.dbx)
         .await
         .context(h!())?;
@@ -124,14 +227,10 @@ pub async fn update_palitra(
 ) -> Result<Json<PalitraDetails>, AppError> {
     let login = user.id().c(h!())?;
     let req = req.into_inner();
-    check_palitra_permissions(
-        &env,
-        &login,
-        &req.access_logins,
-        &req.access_organism_ids,
-    )
-    .await
-    .c(h!())?;
+    let scope = load_user_scope(&env.dbx, &login).await.c(h!())?;
+    ensure_palitra_permissions(&env, &login, &req.access, &scope)
+        .await
+        .c(h!())?;
     let palitra_id = path.into_inner();
     let txn = (env.dbx).begin().await.c(h!())?;
     let palitra = palitra::Entity::find_by_id(palitra_id)
@@ -140,22 +239,11 @@ pub async fn update_palitra(
         .c(h!())?
         .c(h!())?;
 
-    let palitra_access_organisms =
-        bl::collect_palitra_access_organisms(&env.dbx, palitra_id)
-            .await
-            .c(h!())?;
-    let palitra_access_logins =
-        bl::collect_palitra_access_logins(&env.dbx, palitra_id)
-            .await
-            .c(h!())?;
-    check_palitra_permissions(
-        &env,
-        &login,
-        &palitra_access_logins,
-        &palitra_access_organisms,
-    )
-    .await
-    .c(h!())?;
+    let existing_access =
+        read_palitra_access(&env.dbx, palitra_id).await.c(h!())?;
+    ensure_palitra_permissions(&env, &login, &existing_access, &scope)
+        .await
+        .c(h!())?;
     let result = bl::update_palitra(palitra.id, req, &txn).await.c(h!())?;
     txn.commit().await.c(h!())?;
     Ok(Json(result))
@@ -168,6 +256,7 @@ pub async fn delete_palitra(
     path: actix_web::web::Path<i64>,
 ) -> Result<Json<()>, AppError> {
     let login = user.id().c(h!())?;
+    let scope = load_user_scope(&env.dbx, &login).await.c(h!())?;
     let palitra_id = path.into_inner();
     let txn = (env.dbx).begin().await.c(h!())?;
     let palitra = palitra::Entity::find_by_id(palitra_id)
@@ -175,50 +264,12 @@ pub async fn delete_palitra(
         .await
         .c(h!())?
         .c(h!())?;
-    let palitra_access_organisms =
-        bl::collect_palitra_access_organisms(&env.dbx, palitra_id)
-            .await
-            .c(h!())?;
-    let palitra_access_logins =
-        bl::collect_palitra_access_logins(&env.dbx, palitra_id)
-            .await
-            .c(h!())?;
-    check_palitra_permissions(
-        &env,
-        &login,
-        &palitra_access_logins,
-        &palitra_access_organisms,
-    )
-    .await
-    .c(h!())?;
+    let existing_access =
+        read_palitra_access(&env.dbx, palitra_id).await.c(h!())?;
+    ensure_palitra_permissions(&env, &login, &existing_access, &scope)
+        .await
+        .c(h!())?;
     bl::delete_palitra(palitra.id, &txn).await.c(h!())?;
     txn.commit().await.c(h!())?;
     Ok(Json(()))
-}
-
-async fn check_palitra_permissions(
-    env: &Data<Env>,
-    login: &str,
-    owner_logins: &Vec<String>,
-    owner_organism_ids: &Vec<i64>,
-) -> anyhow::Result<()> {
-    let roles = if !owner_logins.is_empty() {
-        info!("User {login} requested to create private palitra");
-        vec!["Rer"]
-    } else if !owner_organism_ids.is_empty() {
-        info!(
-            "User {login} requested to create private palitra for his organism"
-        );
-        if !owner_logins.contains(&login.to_string()) {
-            bail!("Requested by '{login}', but this login is mising in provided list of permitted logins: {owner_logins:?}");
-        }
-        vec!["Rer"]
-    } else {
-        info!("User {login} requested to create global palitra");
-        vec!["UnitsEditor", "CallsignsEditor", "Admin"]
-    };
-    crate::users::has_any_role(&env.dbx, login, roles)
-        .await
-        .context(h!())?;
-    Ok(())
 }
