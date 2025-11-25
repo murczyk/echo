@@ -1,6 +1,7 @@
 use crate::config::*;
 use crate::entities::*;
 use crate::error::AppError;
+use crate::messenger::group::oneoff::oneoff_calculate_signal_message_groups;
 use crate::rer_importer::types::*;
 use crate::sigint::freq::types::FreqGroupsMessageCountByDay;
 use crate::types::{Env, Mode, ShortContext};
@@ -2604,6 +2605,31 @@ fn batch_key_to_group_keys(batch_key: String) -> Vec<String> {
         keys.push(key.trim().to_string())
     }
     keys
+}
+
+// TODO delete
+pub async fn fix_data_worker(mode: Mode) {
+    loop {
+        tokio::time::sleep(tokio::time::Duration::from_secs(15)).await;
+        let Ok(_) = oneoff_calculate_historic_stats(
+            mode,
+            OneoffCalculateHistoricStatsPs {
+                force: false,
+                skip_5min: false,
+                skip_day: false,
+            },
+        )
+        .await
+        else {
+            continue;
+        };
+        break;
+    }
+
+    loop {
+        tokio::time::sleep(tokio::time::Duration::from_secs(300)).await;
+        let _ = oneoff_calculate_signal_message_groups(mode).await;
+    }
 }
 
 #[cfg(test)]
