@@ -94,6 +94,7 @@ pub mod sigint_zone_datasource;
 pub mod signal_attachment;
 pub mod signal_group;
 pub mod signal_group_aor;
+pub mod signal_group_batch;
 pub mod signal_message;
 pub mod signal_message_group;
 pub mod signal_message_queue;

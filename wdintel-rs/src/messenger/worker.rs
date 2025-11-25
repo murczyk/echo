@@ -11,7 +11,6 @@ use crate::new_pg_pool_from_mode;
 use crate::stats::recalculate_group_stats;
 use crate::types::*;
 use chrono::*;
-use echo_im::types::{MessageF1, MessageSource, SenderF1};
 use echo_migration::Expr;
 use log::*;
 use redis::aio::ConnectionManager;
@@ -636,7 +635,9 @@ async fn sync_groups(
                 crate::messenger::group::add_group(model, txn)
                     .await
                     .c(h!())?;
-                if g.message_source.eq(&MessageSource::Whatsapp) {
+                if g.message_source
+                    .eq(&echo_im::types::MessageSource::Whatsapp)
+                {
                     whatsapp_group::ActiveModel {
                         name: Set(g.name.clone()),
                         created_at: NotSet,
@@ -745,11 +746,19 @@ async fn sync_groups(
     Ok(())
 }
 
-fn sources_eq(s1: &MessageSource, s2: &EchoMessageSource) -> bool {
+fn sources_eq(
+    s1: &echo_im::types::MessageSource,
+    s2: &EchoMessageSource,
+) -> bool {
     matches!(
         (s1, s2),
-        (MessageSource::Signal, EchoMessageSource::Signal)
-            | (MessageSource::Whatsapp, EchoMessageSource::Whatsapp)
+        (
+            echo_im::types::MessageSource::Signal,
+            EchoMessageSource::Signal
+        ) | (
+            echo_im::types::MessageSource::Whatsapp,
+            EchoMessageSource::Whatsapp
+        )
     )
 }
 
@@ -798,7 +807,7 @@ async fn sync_inbox(
 }
 
 async fn write_to_signal_message_queue(
-    item: MessageF1,
+    item: echo_im::types::MessageF1,
     datasource_id: i64,
     txn: &DatabaseTransaction,
 ) -> anyhow::Result<()> {
@@ -967,7 +976,7 @@ where
 
 async fn sync_senders(
     db: &DatabaseConnection,
-    senders: BTreeMap<String, SenderF1>,
+    senders: BTreeMap<String, echo_im::types::SenderF1>,
 ) -> anyhow::Result<()> {
     let mut senders = senders;
     let sender_ids = senders.keys().cloned().collect::<Vec<_>>();

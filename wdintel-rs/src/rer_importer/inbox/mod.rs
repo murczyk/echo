@@ -205,27 +205,40 @@ async fn inbox_group_stats(
         .await
         .c(h!())?;
     let login = user.id().c(h!())?;
-    let sigint_groups =
+    let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
             .c(h!())?;
     let group_names = signal_group::Entity::find()
-        .filter(signal_group::Column::MasterKey.is_in(sigint_groups.clone()))
+        .filter(signal_group::Column::MasterKey.is_in(master_keys.clone()))
         .all(&env.dbx)
         .await
         .c(h!())?
         .into_iter()
         .filter_map(|x| x.name.map(|name| (x.master_key, name)))
         .collect::<HashMap<_, _>>();
-    let stats =
-        crate::stats::get_last_hour_stats(&env.dbx, sigint_groups.clone())
-            .await
-            .c(h!())?;
+    let batches = crate::stats::collect_signal_group_batches(
+        master_keys.clone(),
+        &env.dbx,
+    )
+    .await
+    .c(h!())?;
+    let batch_ids = batches.iter().map(|b| b.id).collect::<Vec<i64>>();
+    let stats = crate::stats::get_last_hour_stats(&env.dbx, batch_ids)
+        .await
+        .c(h!())?;
     let mut result = vec![];
     for (ts, group_stats) in stats {
         let mut stats = BTreeMap::new();
-        for key in sigint_groups.clone() {
-            let count = group_stats.get(&key).unwrap_or(&0).to_owned();
+        for key in master_keys.clone() {
+            let mut count = 0;
+            for batch_id in
+                crate::stats::collect_signal_group_batch_ids_by_master_key(
+                    &key, &batches,
+                )
+            {
+                count += group_stats.get(&batch_id).unwrap_or(&0).to_owned();
+            }
             let group_name = group_names.get(&key).cloned();
             stats.insert(key, InboxGroupStats { group_name, count });
         }

@@ -217,11 +217,11 @@ pub fn should_read_stats_aggregated(
 
 pub async fn get_last_hour_stats(
     dbx: &DatabaseConnection,
-    master_keys: Vec<String>,
-) -> anyhow::Result<Vec<(NaiveDateTime, HashMap<String, i32>)>> {
+    batch_ids: Vec<i64>,
+) -> anyhow::Result<Vec<(NaiveDateTime, HashMap<i64, i32>)>> {
     let now = round_to_5min(Utc::now().naive_utc()).c(h!())?;
     let stats = stats_group_5min::Entity::find()
-        .filter(stats_group_5min::Column::GroupMasterKey.is_in(master_keys))
+        .filter(stats_group_5min::Column::SignalGroupBatchId.is_in(batch_ids))
         .filter(stats_group_5min::Column::Dt.lte(now))
         .filter(stats_group_5min::Column::Dt.gt(now - Duration::hours(1)))
         .all(dbx)
@@ -236,12 +236,30 @@ pub async fn get_last_hour_stats(
             .into_iter()
             .filter(|x| x.dt.eq(&ts))
             .fold(HashMap::new(), |mut acc, m| {
-                *acc.entry(m.group_master_key).or_insert(0) += m.quantity;
+                *acc.entry(m.signal_group_batch_id).or_insert(0) += m.quantity;
                 acc
             });
         result.push((ts, group_stats));
     }
     Ok(result)
+}
+
+pub(crate) async fn collect_signal_group_batches(
+    master_keys: Vec<String>,
+    dbx: &DatabaseConnection,
+) -> anyhow::Result<Vec<signal_group_batch::Model>> {
+    let mut filter = Condition::any();
+    for key in master_keys {
+        filter = filter.add(
+            signal_group_batch::Column::GroupMasterKeys
+                .contains(to_batch_key(&key)),
+        );
+    }
+    signal_group_batch::Entity::find()
+        .filter(filter)
+        .all(dbx)
+        .await
+        .c(h!())
 }
 
 pub async fn read_group_stats_aggregated(
@@ -261,17 +279,34 @@ pub async fn read_group_stats_aggregated(
         interval_5mins_filter = interval_5mins_filter.add(filter);
     }
 
-    let mut stats: HashMap<String, i64> = stats_group_5min::Entity::find()
+    let batches = collect_signal_group_batches(master_keys.clone(), dbx)
+        .await
+        .c(h!())?;
+    let batch_ids = batches.iter().map(|b| b.id).collect::<Vec<i64>>();
+    let batches_map = batches
+        .into_iter()
+        .map(|b| (b.id, batch_key_to_group_keys(b.group_master_keys)))
+        .collect::<HashMap<i64, Vec<_>>>();
+
+    let stats: HashMap<String, i64> = stats_group_5min::Entity::find()
         .filter(interval_5mins_filter)
         .filter(
-            stats_group_5min::Column::GroupMasterKey.is_in(master_keys.clone()),
+            stats_group_5min::Column::SignalGroupBatchId
+                .is_in(batch_ids.clone()),
         )
         .all(dbx)
         .await
         .c(h!())?
         .into_iter()
-        .fold(HashMap::new(), |mut acc, s| {
-            *acc.entry(s.group_master_key).or_insert(0) += s.quantity as i64;
+        .flat_map(|m| {
+            collect_group_keys_for_batch(
+                m.signal_group_batch_id,
+                &batches_map,
+                m,
+            )
+        })
+        .fold(HashMap::new(), |mut acc, (s, key)| {
+            *acc.entry(key).or_insert(0) += s.quantity as i64;
             acc
         });
 
@@ -284,16 +319,23 @@ pub async fn read_group_stats_aggregated(
         stats_group_day::Entity::find()
             .filter(interval_day_filter)
             .filter(
-                stats_group_day::Column::GroupMasterKey
-                    .is_in(master_keys.clone()),
+                stats_group_day::Column::SignalGroupBatchId
+                    .is_in(batch_ids.clone()),
             )
             .all(dbx)
             .await
             .c(h!())?
             .into_iter()
-            .for_each(|s| {
-                *stats.entry(s.group_master_key).or_insert(0) +=
-                    s.quantity as i64;
+            .flat_map(|m| {
+                collect_group_keys_for_batch(
+                    m.signal_group_batch_id,
+                    &batches_map,
+                    m,
+                )
+            })
+            .fold(HashMap::new(), |mut acc, (s, key)| {
+                *acc.entry(key).or_insert(0) += s.quantity as i64;
+                acc
             });
     };
     let mut result = vec![];
@@ -320,12 +362,17 @@ pub async fn read_sender_stats_aggregated(
         interval_5mins_filter = interval_5mins_filter.add(filter);
     }
 
+    let batches = collect_signal_group_batches(master_keys.clone(), &env.dbx)
+        .await
+        .c(h!())?;
+    let batch_ids = batches.iter().map(|b| b.id).collect::<Vec<i64>>();
+
     let mut stats: HashMap<String, i64> =
         stats_group_sender_5min::Entity::find()
             .filter(interval_5mins_filter)
             .filter(
-                stats_group_sender_5min::Column::GroupMasterKey
-                    .is_in(master_keys.clone()),
+                stats_group_sender_5min::Column::SignalGroupBatchId
+                    .is_in(batch_ids.clone()),
             )
             .all(&env.dbx)
             .await
@@ -345,8 +392,8 @@ pub async fn read_sender_stats_aggregated(
         stats_group_sender_day::Entity::find()
             .filter(interval_day_filter)
             .filter(
-                stats_group_sender_day::Column::GroupMasterKey
-                    .is_in(master_keys.clone()),
+                stats_group_sender_day::Column::SignalGroupBatchId
+                    .is_in(batch_ids.clone()),
             )
             .all(&env.dbx)
             .await
@@ -380,11 +427,16 @@ pub async fn read_post_stats_aggregated(
         interval_5mins_filter = interval_5mins_filter.add(filter);
     }
 
+    let batches = collect_signal_group_batches(master_keys.clone(), &env.dbx)
+        .await
+        .c(h!())?;
+    let batch_ids = batches.iter().map(|b| b.id).collect::<Vec<i64>>();
+
     let mut stats: HashMap<i64, i64> = stats_group_post_id_5min::Entity::find()
         .filter(interval_5mins_filter)
         .filter(
-            stats_group_post_id_5min::Column::GroupMasterKey
-                .is_in(master_keys.clone()),
+            stats_group_post_id_5min::Column::SignalGroupBatchId
+                .is_in(batch_ids.clone()),
         )
         .all(&env.dbx)
         .await
@@ -404,8 +456,8 @@ pub async fn read_post_stats_aggregated(
         stats_group_post_id_day::Entity::find()
             .filter(interval_day_filter)
             .filter(
-                stats_group_post_id_day::Column::GroupMasterKey
-                    .is_in(master_keys.clone()),
+                stats_group_post_id_day::Column::SignalGroupBatchId
+                    .is_in(batch_ids.clone()),
             )
             .all(&env.dbx)
             .await
@@ -449,11 +501,16 @@ pub async fn read_aor_stats_aggregated(
         interval_5mins_filter = interval_5mins_filter.add(filter);
     }
 
+    let batches = collect_signal_group_batches(master_keys.clone(), &env.dbx)
+        .await
+        .c(h!())?;
+    let batch_ids = batches.iter().map(|b| b.id).collect::<Vec<i64>>();
+
     let mut stats: HashMap<i64, i64> = stats_group_aor_id_5min::Entity::find()
         .filter(interval_5mins_filter)
         .filter(
-            stats_group_aor_id_5min::Column::GroupMasterKey
-                .is_in(master_keys.clone()),
+            stats_group_aor_id_5min::Column::SignalGroupBatchId
+                .is_in(batch_ids.clone()),
         )
         .all(&env.dbx)
         .await
@@ -473,8 +530,8 @@ pub async fn read_aor_stats_aggregated(
         stats_group_aor_id_day::Entity::find()
             .filter(interval_day_filter)
             .filter(
-                stats_group_aor_id_day::Column::GroupMasterKey
-                    .is_in(master_keys.clone()),
+                stats_group_aor_id_day::Column::SignalGroupBatchId
+                    .is_in(batch_ids.clone()),
             )
             .all(&env.dbx)
             .await
@@ -508,11 +565,16 @@ pub async fn read_frequency_stats_aggregated(
         interval_5mins_filter = interval_5mins_filter.add(filter);
     }
 
+    let batches = collect_signal_group_batches(master_keys.clone(), &env.dbx)
+        .await
+        .c(h!())?;
+    let batch_ids = batches.iter().map(|b| b.id).collect::<Vec<i64>>();
+
     let mut stats: HashMap<String, i64> = stats_group_freq_5min::Entity::find()
         .filter(interval_5mins_filter)
         .filter(
-            stats_group_freq_5min::Column::GroupMasterKey
-                .is_in(master_keys.clone()),
+            stats_group_freq_5min::Column::SignalGroupBatchId
+                .is_in(batch_ids.clone()),
         )
         .all(&env.dbx)
         .await
@@ -532,8 +594,8 @@ pub async fn read_frequency_stats_aggregated(
         stats_group_freq_day::Entity::find()
             .filter(interval_day_filter)
             .filter(
-                stats_group_freq_day::Column::GroupMasterKey
-                    .is_in(master_keys.clone()),
+                stats_group_freq_day::Column::SignalGroupBatchId
+                    .is_in(batch_ids.clone()),
             )
             .all(&env.dbx)
             .await
@@ -578,11 +640,16 @@ pub async fn read_frequency_stats_day(
         interval_5mins_filter = interval_5mins_filter.add(filter);
     }
 
+    let batches = collect_signal_group_batches(master_keys.clone(), &env.dbx)
+        .await
+        .c(h!())?;
+    let batch_ids = batches.iter().map(|b| b.id).collect::<Vec<i64>>();
+
     let stats = stats_group_freq_5min::Entity::find()
         .filter(interval_5mins_filter)
         .filter(
-            stats_group_freq_5min::Column::GroupMasterKey
-                .is_in(master_keys.clone()),
+            stats_group_freq_5min::Column::SignalGroupBatchId
+                .is_in(batch_ids.clone()),
         )
         .all(&env.dbx)
         .await
@@ -591,7 +658,7 @@ pub async fn read_frequency_stats_day(
     #[derive(Hash, Eq, PartialEq)]
     pub struct Key {
         pub freq: String,
-        pub group: String,
+        pub signal_group_batch_id: i64,
         pub day: i64,
     }
 
@@ -599,7 +666,7 @@ pub async fn read_frequency_stats_day(
     for s in stats {
         let key = Key {
             freq: s.frequency,
-            group: s.group_master_key,
+            signal_group_batch_id: s.signal_group_batch_id,
             day: start_of_day(get_local_date(s.dt))
                 .c(h!())?
                 .and_utc()
@@ -617,8 +684,8 @@ pub async fn read_frequency_stats_day(
         let day_stats = stats_group_freq_day::Entity::find()
             .filter(interval_day_filter)
             .filter(
-                stats_group_freq_day::Column::GroupMasterKey
-                    .is_in(master_keys.clone()),
+                stats_group_freq_day::Column::SignalGroupBatchId
+                    .is_in(batch_ids.clone()),
             )
             .all(&env.dbx)
             .await
@@ -626,19 +693,36 @@ pub async fn read_frequency_stats_day(
         for s in day_stats {
             let key = Key {
                 freq: s.frequency,
-                group: s.group_master_key,
+                signal_group_batch_id: s.signal_group_batch_id,
                 day: start_of_day(s.dt).c(h!())?.and_utc().timestamp_millis(),
             };
             *result.entry(key).or_insert(0) += s.quantity;
         }
     };
+
+    let batch_groups =
+        collect_signal_group_batches(master_keys.clone(), &env.dbx)
+            .await
+            .c(h!())?
+            .into_iter()
+            .filter_map(|m| {
+                batch_key_to_group_keys(m.group_master_keys)
+                    .into_iter()
+                    .find(|g| master_keys.contains(g))
+                    .map(|key| (m.id, key))
+            })
+            .collect::<HashMap<_, _>>();
+
     let result = result
         .into_iter()
-        .map(|(key, count)| FreqGroupsMessageCountByDay {
-            freq: key.freq,
-            count: count as i64,
-            group: key.group,
-            day: key.day,
+        .filter_map(|(key, count)| {
+            let m_group = batch_groups.get(&key.signal_group_batch_id).cloned();
+            m_group.map(|g| FreqGroupsMessageCountByDay {
+                freq: key.freq,
+                count: count as i64,
+                group: g,
+                day: key.day,
+            })
         })
         .collect();
     Ok(result)
@@ -661,12 +745,17 @@ pub async fn read_callsign_stats_aggregated(
         interval_5mins_filter = interval_5mins_filter.add(filter);
     }
 
+    let batches = collect_signal_group_batches(master_keys.clone(), &env.dbx)
+        .await
+        .c(h!())?;
+    let batch_ids = batches.iter().map(|b| b.id).collect::<Vec<i64>>();
+
     let mut stats: HashMap<String, i64> =
         stats_group_callsign_5min::Entity::find()
             .filter(interval_5mins_filter)
             .filter(
-                stats_group_callsign_5min::Column::GroupMasterKey
-                    .is_in(master_keys.clone()),
+                stats_group_callsign_5min::Column::SignalGroupBatchId
+                    .is_in(batch_ids.clone()),
             )
             .all(&env.dbx)
             .await
@@ -686,8 +775,8 @@ pub async fn read_callsign_stats_aggregated(
         stats_group_callsign_day::Entity::find()
             .filter(interval_day_filter)
             .filter(
-                stats_group_callsign_day::Column::GroupMasterKey
-                    .is_in(master_keys.clone()),
+                stats_group_callsign_day::Column::SignalGroupBatchId
+                    .is_in(batch_ids.clone()),
             )
             .all(&env.dbx)
             .await
@@ -721,11 +810,16 @@ pub async fn read_tag_stats_aggregated(
         interval_5mins_filter = interval_5mins_filter.add(filter);
     }
 
+    let batches = collect_signal_group_batches(master_keys.clone(), &env.dbx)
+        .await
+        .c(h!())?;
+    let batch_ids = batches.iter().map(|b| b.id).collect::<Vec<i64>>();
+
     let mut stats: HashMap<i64, i64> = stats_group_tag_5min::Entity::find()
         .filter(interval_5mins_filter)
         .filter(
-            stats_group_tag_5min::Column::GroupMasterKey
-                .is_in(master_keys.clone()),
+            stats_group_tag_5min::Column::SignalGroupBatchId
+                .is_in(batch_ids.clone()),
         )
         .all(&env.dbx)
         .await
@@ -745,8 +839,8 @@ pub async fn read_tag_stats_aggregated(
         stats_group_tag_day::Entity::find()
             .filter(interval_day_filter)
             .filter(
-                stats_group_tag_day::Column::GroupMasterKey
-                    .is_in(master_keys.clone()),
+                stats_group_tag_day::Column::SignalGroupBatchId
+                    .is_in(batch_ids.clone()),
             )
             .all(&env.dbx)
             .await
@@ -780,11 +874,16 @@ pub async fn read_unit_stats_aggregated(
         interval_5mins_filter = interval_5mins_filter.add(filter);
     }
 
+    let batches = collect_signal_group_batches(master_keys.clone(), &env.dbx)
+        .await
+        .c(h!())?;
+    let batch_ids = batches.iter().map(|b| b.id).collect::<Vec<i64>>();
+
     let mut stats: HashMap<String, i64> = stats_group_unit_5min::Entity::find()
         .filter(interval_5mins_filter)
         .filter(
-            stats_group_unit_5min::Column::GroupMasterKey
-                .is_in(master_keys.clone()),
+            stats_group_unit_5min::Column::SignalGroupBatchId
+                .is_in(batch_ids.clone()),
         )
         .all(&env.dbx)
         .await
@@ -804,8 +903,8 @@ pub async fn read_unit_stats_aggregated(
         stats_group_unit_day::Entity::find()
             .filter(interval_day_filter)
             .filter(
-                stats_group_unit_day::Column::GroupMasterKey
-                    .is_in(master_keys.clone()),
+                stats_group_unit_day::Column::SignalGroupBatchId
+                    .is_in(batch_ids.clone()),
             )
             .all(&env.dbx)
             .await
@@ -839,12 +938,17 @@ pub async fn read_location_stats_aggregated(
         interval_5mins_filter = interval_5mins_filter.add(filter);
     }
 
+    let batches = collect_signal_group_batches(master_keys.clone(), &env.dbx)
+        .await
+        .c(h!())?;
+    let batch_ids = batches.iter().map(|b| b.id).collect::<Vec<i64>>();
+
     let mut stats: HashMap<String, i64> =
         stats_group_location_5min::Entity::find()
             .filter(interval_5mins_filter)
             .filter(
-                stats_group_location_5min::Column::GroupMasterKey
-                    .is_in(master_keys.clone()),
+                stats_group_location_5min::Column::SignalGroupBatchId
+                    .is_in(batch_ids.clone()),
             )
             .all(&env.dbx)
             .await
@@ -864,8 +968,8 @@ pub async fn read_location_stats_aggregated(
         stats_group_location_day::Entity::find()
             .filter(interval_day_filter)
             .filter(
-                stats_group_location_day::Column::GroupMasterKey
-                    .is_in(master_keys.clone()),
+                stats_group_location_day::Column::SignalGroupBatchId
+                    .is_in(batch_ids.clone()),
             )
             .all(&env.dbx)
             .await
@@ -924,6 +1028,13 @@ pub async fn recalculate_group_stats(
 ) -> Result<(), AppError> {
     let since_ts = round_to_5min(since_ts).c(h!())?;
     let till_ts = round_to_5min(till_ts).c(h!())?;
+
+    let batches = signal_group_batch::Entity::find().all(dbx).await.c(h!())?;
+    let mut batches_map = batches
+        .into_iter()
+        .map(|b| (b.group_master_keys, b.id))
+        .collect::<HashMap<String, i64>>();
+
     if recalculate_5min_stats {
         let since_filter_1 = sigint_inbox_item::Column::Datetime
             .is_null()
@@ -989,8 +1100,8 @@ pub async fn recalculate_group_stats(
             .into_iter()
             .map(|x| {
                 (
-                    x.id,
-                    (x.group_master_key, x.freq.unwrap_or("".to_string())),
+                    x.group_master_key,
+                    (x.id, x.freq.unwrap_or("".to_string())),
                     x.datetime.unwrap_or(x.created_at),
                 )
             })
@@ -1000,8 +1111,8 @@ pub async fn recalculate_group_stats(
             .into_iter()
             .map(|x| {
                 (
-                    x.id,
-                    (x.group_master_key, x.sender.unwrap_or("".to_string())),
+                    x.group_master_key,
+                    (x.id, x.sender.unwrap_or("".to_string())),
                     x.datetime.unwrap_or(x.created_at),
                 )
             })
@@ -1011,8 +1122,8 @@ pub async fn recalculate_group_stats(
             .into_iter()
             .map(|x| {
                 (
-                    x.id,
-                    (x.group_master_key, x.unit_v2.unwrap_or("".to_string())),
+                    x.group_master_key,
+                    (x.id, x.unit_v2.unwrap_or("".to_string())),
                     x.datetime.unwrap_or(x.created_at),
                 )
             })
@@ -1023,8 +1134,8 @@ pub async fn recalculate_group_stats(
             .filter_map(|x| {
                 x.aor_id.map(|aor_id| {
                     (
-                        x.id,
-                        (x.group_master_key, aor_id),
+                        x.group_master_key,
+                        (x.id, aor_id),
                         x.datetime.unwrap_or(x.created_at),
                     )
                 })
@@ -1036,8 +1147,8 @@ pub async fn recalculate_group_stats(
             .filter_map(|x| {
                 x.post_id.map(|post_id| {
                     (
-                        x.id,
-                        (x.group_master_key, post_id),
+                        x.group_master_key,
+                        (x.id, post_id),
                         x.datetime.unwrap_or(x.created_at),
                     )
                 })
@@ -1053,8 +1164,8 @@ pub async fn recalculate_group_stats(
                     .unwrap_or_default();
                 callsign.into_iter().map(move |c| {
                     (
-                        x.id,
-                        (x.group_master_key.clone(), c),
+                        x.group_master_key.clone(),
+                        (x.id, c),
                         x.datetime.unwrap_or(x.created_at),
                     )
                 })
@@ -1070,8 +1181,8 @@ pub async fn recalculate_group_stats(
                     .unwrap_or_default();
                 tags.into_iter().map(move |t| {
                     (
-                        x.id,
-                        (x.group_master_key.clone(), t),
+                        x.group_master_key.clone(),
+                        (x.id, t),
                         x.datetime.unwrap_or(x.created_at),
                     )
                 })
@@ -1091,8 +1202,8 @@ pub async fn recalculate_group_stats(
                     .unwrap_or_default();
                 locations.into_iter().map(move |l| {
                     (
-                        x.id,
-                        (x.group_master_key.clone(), l),
+                        x.group_master_key.clone(),
+                        (x.id, l),
                         x.datetime.unwrap_or(x.created_at),
                     )
                 })
@@ -1100,57 +1211,111 @@ pub async fn recalculate_group_stats(
             .collect_vec();
 
         let txn = dbx.begin().await.c(h!())?;
-        update_5min_stats_group(&txn, group_stats, since_ts, till_ts)
-            .await
-            .c(h!())?;
+        update_5min_stats_group(
+            &txn,
+            group_stats,
+            since_ts,
+            till_ts,
+            &mut batches_map,
+        )
+        .await
+        .c(h!())?;
         txn.commit().await.c(h!())?;
 
         let txn = dbx.begin().await.c(h!())?;
-        update_5min_stats_freq(&txn, freq_stats, since_ts, till_ts)
-            .await
-            .c(h!())?;
+        update_5min_stats_freq(
+            &txn,
+            freq_stats,
+            since_ts,
+            till_ts,
+            &mut batches_map,
+        )
+        .await
+        .c(h!())?;
         txn.commit().await.c(h!())?;
 
         let txn = dbx.begin().await.c(h!())?;
-        update_5min_stats_aor_id(&txn, aor_stats, since_ts, till_ts)
-            .await
-            .c(h!())?;
+        update_5min_stats_aor_id(
+            &txn,
+            aor_stats,
+            since_ts,
+            till_ts,
+            &mut batches_map,
+        )
+        .await
+        .c(h!())?;
         txn.commit().await.c(h!())?;
 
         let txn = dbx.begin().await.c(h!())?;
-        update_5min_stats_post_id(&txn, post_stats, since_ts, till_ts)
-            .await
-            .c(h!())?;
+        update_5min_stats_post_id(
+            &txn,
+            post_stats,
+            since_ts,
+            till_ts,
+            &mut batches_map,
+        )
+        .await
+        .c(h!())?;
         txn.commit().await.c(h!())?;
 
         let txn = dbx.begin().await.c(h!())?;
-        update_5min_stats_sender(&txn, sender_stats, since_ts, till_ts)
-            .await
-            .c(h!())?;
+        update_5min_stats_sender(
+            &txn,
+            sender_stats,
+            since_ts,
+            till_ts,
+            &mut batches_map,
+        )
+        .await
+        .c(h!())?;
         txn.commit().await.c(h!())?;
 
         let txn = dbx.begin().await.c(h!())?;
-        update_5min_stats_callsign(&txn, callsign_stats, since_ts, till_ts)
-            .await
-            .c(h!())?;
+        update_5min_stats_callsign(
+            &txn,
+            callsign_stats,
+            since_ts,
+            till_ts,
+            &mut batches_map,
+        )
+        .await
+        .c(h!())?;
         txn.commit().await.c(h!())?;
 
         let txn = dbx.begin().await.c(h!())?;
-        update_5min_stats_unit(&txn, unit_stats, since_ts, till_ts)
-            .await
-            .c(h!())?;
+        update_5min_stats_unit(
+            &txn,
+            unit_stats,
+            since_ts,
+            till_ts,
+            &mut batches_map,
+        )
+        .await
+        .c(h!())?;
         txn.commit().await.c(h!())?;
 
         let txn = dbx.begin().await.c(h!())?;
-        update_5min_stats_location(&txn, location_stats, since_ts, till_ts)
-            .await
-            .c(h!())?;
+        update_5min_stats_location(
+            &txn,
+            location_stats,
+            since_ts,
+            till_ts,
+            &mut batches_map,
+        )
+        .await
+        .c(h!())?;
         txn.commit().await.c(h!())?;
 
         let txn = dbx.begin().await.c(h!())?;
-        update_5min_stats_tag(&txn, tag_stats, since_ts, till_ts)
-            .await
-            .c(h!())?;
+        update_5min_stats_tag(
+            &txn,
+            tag_stats,
+            since_ts,
+            till_ts,
+            &mut batches_map,
+        )
+        .await
+        .c(h!())?;
         txn.commit().await.c(h!())?;
     }
 
@@ -1217,6 +1382,7 @@ async fn update_5min_stats_group(
     stats: Vec<(i64, String, NaiveDateTime)>,
     since_ts: NaiveDateTime,
     till_ts: NaiveDateTime,
+    batches_map: &mut HashMap<String, i64>,
 ) -> Result<(), AppError> {
     stats_group_5min::Entity::delete_many()
         .filter(stats_group_5min::Column::Dt.gte(since_ts))
@@ -1228,7 +1394,7 @@ async fn update_5min_stats_group(
     while current_ts <= till_ts {
         let since_ts = current_ts;
         let till_ts = current_ts + Duration::minutes(5);
-        let group_stats: HashMap<String, HashSet<i64>> = stats
+        let group_stats: HashMap<i64, HashSet<String>> = stats
             .iter()
             .filter_map(|(id, key, ts)| {
                 if !since_ts.gt(ts) && till_ts.gt(ts) {
@@ -1238,16 +1404,25 @@ async fn update_5min_stats_group(
                 }
             })
             .fold(HashMap::new(), |mut acc, (id, key)| {
-                let ids = acc.entry(key).or_default();
-                ids.insert(*id);
+                let keys = acc.entry(*id).or_default();
+                keys.insert(key);
                 acc
             });
-        for (group_master_key, ids) in group_stats {
-            let count = ids.len() as i32;
+        let mut batch_stats: HashMap<i64, i32> = HashMap::new();
+        for (_, keys) in group_stats {
+            let batch_key = all_to_batch_key(keys);
+            ensure_batch_key(dbx, batches_map, &batch_key)
+                .await
+                .c(h!())?;
+            let batch_id = *batches_map.get(&batch_key).c(h!())?;
+            let count = *batch_stats.entry(batch_id).or_default();
+            batch_stats.insert(batch_id, count + 1);
+        }
+        for (signal_group_batch_id, count) in batch_stats {
             stats_group_5min::ActiveModel {
                 id: NotSet,
                 quantity: Set(count),
-                group_master_key: Set(group_master_key),
+                signal_group_batch_id: Set(signal_group_batch_id),
                 dt: Set(since_ts),
                 created_at: NotSet,
             }
@@ -1279,7 +1454,7 @@ async fn recalculate_day_stats_group(
     let mut stats = vec![];
     for rec in stats_5min {
         let date = get_local_date(rec.dt);
-        stats.push((date, rec.group_master_key, rec.quantity));
+        stats.push((date, rec.signal_group_batch_id, rec.quantity));
     }
 
     stats_group_day::Entity::delete_many()
@@ -1291,11 +1466,11 @@ async fn recalculate_day_stats_group(
 
     let mut current_date = since_date;
     while current_date <= till_date {
-        let group_stats: HashMap<String, i32> = stats
+        let group_stats: HashMap<i64, i32> = stats
             .iter()
             .filter_map(|(date, key, count)| {
                 if current_date.eq(date) {
-                    Some((key.clone(), count))
+                    Some((*key, count))
                 } else {
                     None
                 }
@@ -1304,11 +1479,11 @@ async fn recalculate_day_stats_group(
                 *acc.entry(key).or_insert(0) += count;
                 acc
             });
-        for (group_master_key, count) in group_stats {
+        for (signal_group_batch_id, count) in group_stats {
             stats_group_day::ActiveModel {
                 id: NotSet,
                 quantity: Set(count),
-                group_master_key: Set(group_master_key),
+                signal_group_batch_id: Set(signal_group_batch_id),
                 dt: Set(current_date),
                 created_at: NotSet,
             }
@@ -1323,9 +1498,10 @@ async fn recalculate_day_stats_group(
 
 async fn update_5min_stats_freq(
     dbx: &DatabaseTransaction,
-    stats: Vec<(i64, (String, String), NaiveDateTime)>,
+    stats: Vec<(String, (i64, String), NaiveDateTime)>,
     since_ts: NaiveDateTime,
     till_ts: NaiveDateTime,
+    batches_map: &mut HashMap<String, i64>,
 ) -> Result<(), AppError> {
     stats_group_freq_5min::Entity::delete_many()
         .filter(stats_group_freq_5min::Column::Dt.gte(since_ts))
@@ -1338,7 +1514,7 @@ async fn update_5min_stats_freq(
     while current_ts <= till_ts {
         let since_ts = current_ts;
         let till_ts = current_ts + Duration::minutes(5);
-        let group_stats: HashMap<(String, String), HashSet<i64>> = stats
+        let group_stats: HashMap<(i64, String), HashSet<String>> = stats
             .iter()
             .filter_map(|(id, key, ts)| {
                 if !since_ts.gt(ts) && till_ts.gt(ts) {
@@ -1349,15 +1525,26 @@ async fn update_5min_stats_freq(
             })
             .fold(HashMap::new(), |mut acc, (id, key)| {
                 let ids = acc.entry(key).or_default();
-                ids.insert(*id);
+                ids.insert(id.clone());
                 acc
             });
-        for ((group_master_key, frequency), ids) in group_stats {
-            let count = ids.len() as i32;
+
+        let mut batch_stats: HashMap<(i64, String), i32> = HashMap::new();
+        for ((_, freq), keys) in group_stats {
+            let batch_key = all_to_batch_key(keys);
+            ensure_batch_key(dbx, batches_map, &batch_key)
+                .await
+                .c(h!())?;
+            let batch_id = *batches_map.get(&batch_key).c(h!())?;
+            let key = (batch_id, freq);
+            let count = *batch_stats.entry(key.clone()).or_default();
+            batch_stats.insert(key, count + 1);
+        }
+        for ((signal_group_batch_id, frequency), count) in batch_stats {
             stats_group_freq_5min::ActiveModel {
                 id: NotSet,
                 quantity: Set(count),
-                group_master_key: Set(group_master_key),
+                signal_group_batch_id: Set(signal_group_batch_id),
                 frequency: Set(frequency),
                 dt: Set(since_ts),
                 created_at: NotSet,
@@ -1390,7 +1577,12 @@ async fn recalculate_day_stats_freq(
     let mut stats = vec![];
     for rec in stats_5min {
         let date = get_local_date(rec.dt);
-        stats.push((date, rec.group_master_key, rec.frequency, rec.quantity));
+        stats.push((
+            date,
+            rec.signal_group_batch_id,
+            rec.frequency,
+            rec.quantity,
+        ));
     }
 
     stats_group_freq_day::Entity::delete_many()
@@ -1401,11 +1593,11 @@ async fn recalculate_day_stats_freq(
         .context(h!())?;
     let mut current_date = since_date;
     while current_date <= till_date {
-        let group_stats: HashMap<(String, String), i32> = stats
+        let group_stats: HashMap<(i64, String), i32> = stats
             .iter()
             .filter_map(|(date, key_1, key_2, count)| {
                 if current_date.eq(date) {
-                    Some(((key_1.clone(), key_2.clone()), count))
+                    Some(((*key_1, key_2.clone()), count))
                 } else {
                     None
                 }
@@ -1414,11 +1606,11 @@ async fn recalculate_day_stats_freq(
                 *acc.entry(key).or_insert(0) += count;
                 acc
             });
-        for ((group_master_key, frequency), count) in group_stats {
+        for ((signal_group_batch_id, frequency), count) in group_stats {
             stats_group_freq_day::ActiveModel {
                 id: NotSet,
                 quantity: Set(count),
-                group_master_key: Set(group_master_key),
+                signal_group_batch_id: Set(signal_group_batch_id),
                 frequency: Set(frequency),
                 dt: Set(current_date),
                 created_at: NotSet,
@@ -1434,9 +1626,10 @@ async fn recalculate_day_stats_freq(
 
 async fn update_5min_stats_aor_id(
     dbx: &DatabaseTransaction,
-    stats: Vec<(i64, (String, i64), NaiveDateTime)>,
+    stats: Vec<(String, (i64, i64), NaiveDateTime)>,
     since_ts: NaiveDateTime,
     till_ts: NaiveDateTime,
+    batches_map: &mut HashMap<String, i64>,
 ) -> Result<(), AppError> {
     stats_group_aor_id_5min::Entity::delete_many()
         .filter(stats_group_aor_id_5min::Column::Dt.gte(since_ts))
@@ -1449,26 +1642,36 @@ async fn update_5min_stats_aor_id(
     while current_ts <= till_ts {
         let since_ts = current_ts;
         let till_ts = current_ts + Duration::minutes(5);
-        let group_stats: HashMap<(String, i64), HashSet<i64>> = stats
+        let group_stats: HashMap<(i64, i64), HashSet<String>> = stats
             .iter()
             .filter_map(|(id, key, ts)| {
                 if !since_ts.gt(ts) && till_ts.gt(ts) {
-                    Some((id, key.clone()))
+                    Some((id, *key))
                 } else {
                     None
                 }
             })
             .fold(HashMap::new(), |mut acc, (id, key)| {
                 let ids = acc.entry(key).or_default();
-                ids.insert(*id);
+                ids.insert(id.clone());
                 acc
             });
-        for ((group_master_key, aor_id), ids) in group_stats {
-            let count = ids.len() as i32;
+        let mut batch_stats: HashMap<(i64, i64), i32> = HashMap::new();
+        for ((_, freq), keys) in group_stats {
+            let batch_key = all_to_batch_key(keys);
+            ensure_batch_key(dbx, batches_map, &batch_key)
+                .await
+                .c(h!())?;
+            let batch_id = *batches_map.get(&batch_key).c(h!())?;
+            let key = (batch_id, freq);
+            let count = *batch_stats.entry(key).or_default();
+            batch_stats.insert(key, count + 1);
+        }
+        for ((signal_group_batch_id, aor_id), count) in batch_stats {
             stats_group_aor_id_5min::ActiveModel {
                 id: NotSet,
                 quantity: Set(count),
-                group_master_key: Set(group_master_key),
+                signal_group_batch_id: Set(signal_group_batch_id),
                 aor_id: Set(aor_id),
                 dt: Set(since_ts),
                 created_at: NotSet,
@@ -1501,7 +1704,7 @@ async fn recalculate_day_stats_aor_id(
     let mut stats = vec![];
     for rec in stats_5min {
         let date = get_local_date(rec.dt);
-        stats.push((date, rec.group_master_key, rec.aor_id, rec.quantity));
+        stats.push((date, rec.signal_group_batch_id, rec.aor_id, rec.quantity));
     }
 
     stats_group_aor_id_day::Entity::delete_many()
@@ -1512,11 +1715,11 @@ async fn recalculate_day_stats_aor_id(
         .context(h!())?;
     let mut current_date = since_date;
     while current_date <= till_date {
-        let group_stats: HashMap<(String, i64), i32> = stats
+        let group_stats: HashMap<(i64, i64), i32> = stats
             .iter()
             .filter_map(|(date, key_1, key_2, count)| {
                 if current_date.eq(date) {
-                    Some(((key_1.clone(), *key_2), count))
+                    Some(((*key_1, *key_2), count))
                 } else {
                     None
                 }
@@ -1525,11 +1728,11 @@ async fn recalculate_day_stats_aor_id(
                 *acc.entry(key).or_insert(0) += count;
                 acc
             });
-        for ((group_master_key, aor_id), count) in group_stats {
+        for ((signal_group_batch_id, aor_id), count) in group_stats {
             stats_group_aor_id_day::ActiveModel {
                 id: NotSet,
                 quantity: Set(count),
-                group_master_key: Set(group_master_key),
+                signal_group_batch_id: Set(signal_group_batch_id),
                 aor_id: Set(aor_id),
                 dt: Set(current_date),
                 created_at: NotSet,
@@ -1545,9 +1748,10 @@ async fn recalculate_day_stats_aor_id(
 
 async fn update_5min_stats_post_id(
     dbx: &DatabaseTransaction,
-    stats: Vec<(i64, (String, i64), NaiveDateTime)>,
+    stats: Vec<(String, (i64, i64), NaiveDateTime)>,
     since_ts: NaiveDateTime,
     till_ts: NaiveDateTime,
+    batches_map: &mut HashMap<String, i64>,
 ) -> Result<(), AppError> {
     stats_group_post_id_5min::Entity::delete_many()
         .filter(stats_group_post_id_5min::Column::Dt.gte(since_ts))
@@ -1560,26 +1764,36 @@ async fn update_5min_stats_post_id(
     while current_ts <= till_ts {
         let since_ts = current_ts;
         let till_ts = current_ts + Duration::minutes(5);
-        let group_stats: HashMap<(String, i64), HashSet<i64>> = stats
+        let group_stats: HashMap<(i64, i64), HashSet<String>> = stats
             .iter()
             .filter_map(|(id, key, ts)| {
                 if !since_ts.gt(ts) && till_ts.gt(ts) {
-                    Some((id, key.clone()))
+                    Some((id, *key))
                 } else {
                     None
                 }
             })
             .fold(HashMap::new(), |mut acc, (id, key)| {
                 let ids = acc.entry(key).or_default();
-                ids.insert(*id);
+                ids.insert(id.clone());
                 acc
             });
-        for ((group_master_key, post_id), ids) in group_stats {
-            let count = ids.len() as i32;
+        let mut batch_stats: HashMap<(i64, i64), i32> = HashMap::new();
+        for ((_, freq), keys) in group_stats {
+            let batch_key = all_to_batch_key(keys);
+            ensure_batch_key(dbx, batches_map, &batch_key)
+                .await
+                .c(h!())?;
+            let batch_id = *batches_map.get(&batch_key).c(h!())?;
+            let key = (batch_id, freq);
+            let count = *batch_stats.entry(key).or_default();
+            batch_stats.insert(key, count + 1);
+        }
+        for ((signal_group_batch_id, post_id), count) in batch_stats {
             stats_group_post_id_5min::ActiveModel {
                 id: NotSet,
                 quantity: Set(count),
-                group_master_key: Set(group_master_key),
+                signal_group_batch_id: Set(signal_group_batch_id),
                 post_id: Set(post_id),
                 dt: Set(since_ts),
                 created_at: NotSet,
@@ -1612,7 +1826,12 @@ async fn recalculate_day_stats_post_id(
     let mut stats = vec![];
     for rec in stats_5min {
         let date = get_local_date(rec.dt);
-        stats.push((date, rec.group_master_key, rec.post_id, rec.quantity));
+        stats.push((
+            date,
+            rec.signal_group_batch_id,
+            rec.post_id,
+            rec.quantity,
+        ));
     }
 
     stats_group_post_id_day::Entity::delete_many()
@@ -1623,11 +1842,11 @@ async fn recalculate_day_stats_post_id(
         .context(h!())?;
     let mut current_date = since_date;
     while current_date <= till_date {
-        let group_stats: HashMap<(String, i64), i32> = stats
+        let group_stats: HashMap<(i64, i64), i32> = stats
             .iter()
             .filter_map(|(date, key_1, key_2, count)| {
                 if current_date.eq(date) {
-                    Some(((key_1.clone(), *key_2), count))
+                    Some(((*key_1, *key_2), count))
                 } else {
                     None
                 }
@@ -1636,11 +1855,11 @@ async fn recalculate_day_stats_post_id(
                 *acc.entry(key).or_insert(0) += count;
                 acc
             });
-        for ((group_master_key, post_id), count) in group_stats {
+        for ((signal_group_batch_id, post_id), count) in group_stats {
             stats_group_post_id_day::ActiveModel {
                 id: NotSet,
                 quantity: Set(count),
-                group_master_key: Set(group_master_key),
+                signal_group_batch_id: Set(signal_group_batch_id),
                 post_id: Set(post_id),
                 dt: Set(current_date),
                 created_at: NotSet,
@@ -1656,9 +1875,10 @@ async fn recalculate_day_stats_post_id(
 
 async fn update_5min_stats_location(
     dbx: &DatabaseTransaction,
-    stats: Vec<(i64, (String, String), NaiveDateTime)>,
+    stats: Vec<(String, (i64, String), NaiveDateTime)>,
     since_ts: NaiveDateTime,
     till_ts: NaiveDateTime,
+    batches_map: &mut HashMap<String, i64>,
 ) -> Result<(), AppError> {
     stats_group_post_id_5min::Entity::delete_many()
         .filter(stats_group_post_id_5min::Column::Dt.gte(since_ts))
@@ -1671,26 +1891,37 @@ async fn update_5min_stats_location(
     while current_ts <= till_ts {
         let since_ts = current_ts;
         let till_ts = current_ts + Duration::minutes(5);
-        let group_stats: HashMap<(String, String), HashSet<i64>> = stats
+        let group_stats: HashMap<(i64, String), HashSet<String>> = stats
             .iter()
             .filter_map(|(id, key, ts)| {
                 if !since_ts.gt(ts) && till_ts.gt(ts) {
-                    Some((id, key.clone()))
+                    Some((id, key))
                 } else {
                     None
                 }
             })
             .fold(HashMap::new(), |mut acc, (id, key)| {
-                let ids = acc.entry(key).or_default();
-                ids.insert(*id);
+                let ids = acc.entry(key.clone()).or_default();
+                ids.insert(id.clone());
                 acc
             });
-        for ((group_master_key, location), ids) in group_stats {
-            let count = ids.len() as i32;
+
+        let mut batch_stats: HashMap<(i64, String), i32> = HashMap::new();
+        for ((_, freq), keys) in group_stats {
+            let batch_key = all_to_batch_key(keys);
+            ensure_batch_key(dbx, batches_map, &batch_key)
+                .await
+                .c(h!())?;
+            let batch_id = *batches_map.get(&batch_key).c(h!())?;
+            let key = (batch_id, freq);
+            let count = *batch_stats.entry(key.clone()).or_default();
+            batch_stats.insert(key.clone(), count + 1);
+        }
+        for ((signal_group_batch_id, location), count) in batch_stats {
             stats_group_location_5min::ActiveModel {
                 id: NotSet,
                 quantity: Set(count),
-                group_master_key: Set(group_master_key),
+                signal_group_batch_id: Set(signal_group_batch_id),
                 location: Set(location),
                 dt: Set(since_ts),
                 created_at: NotSet,
@@ -1725,7 +1956,12 @@ async fn recalculate_day_stats_location(
     let mut stats = vec![];
     for rec in stats_5min {
         let date = get_local_date(rec.dt);
-        stats.push((date, rec.group_master_key, rec.location, rec.quantity));
+        stats.push((
+            date,
+            rec.signal_group_batch_id,
+            rec.location,
+            rec.quantity,
+        ));
     }
 
     stats_group_location_day::Entity::delete_many()
@@ -1736,11 +1972,11 @@ async fn recalculate_day_stats_location(
         .context(h!())?;
     let mut current_date = since_date;
     while current_date <= till_date {
-        let group_stats: HashMap<(String, String), i32> = stats
+        let group_stats: HashMap<(i64, String), i32> = stats
             .iter()
             .filter_map(|(date, key_1, key_2, count)| {
                 if current_date.eq(date) {
-                    Some(((key_1.clone(), key_2.clone()), count))
+                    Some(((*key_1, key_2.clone()), count))
                 } else {
                     None
                 }
@@ -1749,11 +1985,11 @@ async fn recalculate_day_stats_location(
                 *acc.entry(key).or_insert(0) += count;
                 acc
             });
-        for ((group_master_key, location), count) in group_stats {
+        for ((signal_group_batch_id, location), count) in group_stats {
             stats_group_location_day::ActiveModel {
                 id: NotSet,
                 quantity: Set(count),
-                group_master_key: Set(group_master_key),
+                signal_group_batch_id: Set(signal_group_batch_id),
                 location: Set(location),
                 dt: Set(current_date),
                 created_at: NotSet,
@@ -1769,9 +2005,10 @@ async fn recalculate_day_stats_location(
 
 async fn update_5min_stats_sender(
     dbx: &DatabaseTransaction,
-    stats: Vec<(i64, (String, String), NaiveDateTime)>,
+    stats: Vec<(String, (i64, String), NaiveDateTime)>,
     since_ts: NaiveDateTime,
     till_ts: NaiveDateTime,
+    batches_map: &mut HashMap<String, i64>,
 ) -> Result<(), AppError> {
     stats_group_sender_5min::Entity::delete_many()
         .filter(stats_group_sender_5min::Column::Dt.gte(since_ts))
@@ -1784,7 +2021,7 @@ async fn update_5min_stats_sender(
     while current_ts <= till_ts {
         let since_ts = current_ts;
         let till_ts = current_ts + Duration::minutes(5);
-        let group_stats: HashMap<(String, String), HashSet<i64>> = stats
+        let group_stats: HashMap<(i64, String), HashSet<String>> = stats
             .iter()
             .filter_map(|(id, key, ts)| {
                 if !since_ts.gt(ts) && till_ts.gt(ts) {
@@ -1795,15 +2032,26 @@ async fn update_5min_stats_sender(
             })
             .fold(HashMap::new(), |mut acc, (id, key)| {
                 let ids = acc.entry(key).or_default();
-                ids.insert(*id);
+                ids.insert(id.clone());
                 acc
             });
-        for ((group_master_key, sender), ids) in group_stats {
-            let count = ids.len() as i32;
+
+        let mut batch_stats: HashMap<(i64, String), i32> = HashMap::new();
+        for ((_, freq), keys) in group_stats {
+            let batch_key = all_to_batch_key(keys);
+            ensure_batch_key(dbx, batches_map, &batch_key)
+                .await
+                .c(h!())?;
+            let batch_id = *batches_map.get(&batch_key).c(h!())?;
+            let key = (batch_id, freq);
+            let count = *batch_stats.entry(key.clone()).or_default();
+            batch_stats.insert(key, count + 1);
+        }
+        for ((signal_group_batch_id, sender), count) in batch_stats {
             stats_group_sender_5min::ActiveModel {
                 id: NotSet,
                 quantity: Set(count),
-                group_master_key: Set(group_master_key),
+                signal_group_batch_id: Set(signal_group_batch_id),
                 sender: Set(sender),
                 dt: Set(since_ts),
                 created_at: NotSet,
@@ -1836,7 +2084,7 @@ async fn recalculate_day_stats_sender(
     let mut stats = vec![];
     for rec in stats_5min {
         let date = get_local_date(rec.dt);
-        stats.push((date, rec.group_master_key, rec.sender, rec.quantity));
+        stats.push((date, rec.signal_group_batch_id, rec.sender, rec.quantity));
     }
 
     stats_group_sender_day::Entity::delete_many()
@@ -1847,11 +2095,11 @@ async fn recalculate_day_stats_sender(
         .context(h!())?;
     let mut current_date = since_date;
     while current_date <= till_date {
-        let group_stats: HashMap<(String, String), i32> = stats
+        let group_stats: HashMap<(i64, String), i32> = stats
             .iter()
             .filter_map(|(date, key_1, key_2, count)| {
                 if current_date.eq(date) {
-                    Some(((key_1.clone(), key_2.clone()), count))
+                    Some(((*key_1, key_2.clone()), count))
                 } else {
                     None
                 }
@@ -1860,11 +2108,11 @@ async fn recalculate_day_stats_sender(
                 *acc.entry(key).or_insert(0) += count;
                 acc
             });
-        for ((group_master_key, sender), count) in group_stats {
+        for ((signal_group_batch_id, sender), count) in group_stats {
             stats_group_sender_day::ActiveModel {
                 id: NotSet,
                 quantity: Set(count),
-                group_master_key: Set(group_master_key),
+                signal_group_batch_id: Set(signal_group_batch_id),
                 sender: Set(sender),
                 dt: Set(current_date),
                 created_at: NotSet,
@@ -1880,9 +2128,10 @@ async fn recalculate_day_stats_sender(
 
 async fn update_5min_stats_tag(
     dbx: &DatabaseTransaction,
-    stats: Vec<(i64, (String, i64), NaiveDateTime)>,
+    stats: Vec<(String, (i64, i64), NaiveDateTime)>,
     since_ts: NaiveDateTime,
     till_ts: NaiveDateTime,
+    batches_map: &mut HashMap<String, i64>,
 ) -> Result<(), AppError> {
     stats_group_tag_5min::Entity::delete_many()
         .filter(stats_group_tag_5min::Column::Dt.gte(since_ts))
@@ -1895,26 +2144,37 @@ async fn update_5min_stats_tag(
     while current_ts <= till_ts {
         let since_ts = current_ts;
         let till_ts = current_ts + Duration::minutes(5);
-        let group_stats: HashMap<(String, i64), HashSet<i64>> = stats
+        let group_stats: HashMap<(i64, i64), HashSet<String>> = stats
             .iter()
             .filter_map(|(id, key, ts)| {
                 if !since_ts.gt(ts) && till_ts.gt(ts) {
-                    Some((id, key.clone()))
+                    Some((id, key))
                 } else {
                     None
                 }
             })
             .fold(HashMap::new(), |mut acc, (id, key)| {
-                let ids = acc.entry(key).or_default();
-                ids.insert(*id);
+                let ids = acc.entry(*key).or_default();
+                ids.insert(id.clone());
                 acc
             });
-        for ((group_master_key, tag_id), ids) in group_stats {
-            let count = ids.len() as i32;
+
+        let mut batch_stats: HashMap<(i64, i64), i32> = HashMap::new();
+        for ((_, freq), keys) in group_stats {
+            let batch_key = all_to_batch_key(keys);
+            ensure_batch_key(dbx, batches_map, &batch_key)
+                .await
+                .c(h!())?;
+            let batch_id = *batches_map.get(&batch_key).c(h!())?;
+            let key = (batch_id, freq);
+            let count = *batch_stats.entry(key).or_default();
+            batch_stats.insert(key, count + 1);
+        }
+        for ((signal_group_batch_id, tag_id), count) in batch_stats {
             stats_group_tag_5min::ActiveModel {
                 id: NotSet,
                 quantity: Set(count),
-                group_master_key: Set(group_master_key),
+                signal_group_batch_id: Set(signal_group_batch_id),
                 tag_id: Set(tag_id),
                 dt: Set(since_ts),
                 created_at: NotSet,
@@ -1947,7 +2207,7 @@ async fn recalculate_day_stats_tag(
     let mut stats = vec![];
     for rec in stats_5min {
         let date = get_local_date(rec.dt);
-        stats.push((date, rec.group_master_key, rec.tag_id, rec.quantity));
+        stats.push((date, rec.signal_group_batch_id, rec.tag_id, rec.quantity));
     }
 
     stats_group_tag_day::Entity::delete_many()
@@ -1958,11 +2218,11 @@ async fn recalculate_day_stats_tag(
         .context(h!())?;
     let mut current_date = since_date;
     while current_date <= till_date {
-        let group_stats: HashMap<(String, i64), i32> = stats
+        let group_stats: HashMap<(i64, i64), i32> = stats
             .iter()
             .filter_map(|(date, key_1, key_2, count)| {
                 if current_date.eq(date) {
-                    Some(((key_1.clone(), *key_2), count))
+                    Some(((*key_1, *key_2), count))
                 } else {
                     None
                 }
@@ -1971,11 +2231,11 @@ async fn recalculate_day_stats_tag(
                 *acc.entry(key).or_insert(0) += count;
                 acc
             });
-        for ((group_master_key, tag), count) in group_stats {
+        for ((signal_group_batch_id, tag), count) in group_stats {
             stats_group_tag_day::ActiveModel {
                 id: NotSet,
                 quantity: Set(count),
-                group_master_key: Set(group_master_key),
+                signal_group_batch_id: Set(signal_group_batch_id),
                 tag_id: Set(tag),
                 dt: Set(current_date),
                 created_at: NotSet,
@@ -1991,9 +2251,10 @@ async fn recalculate_day_stats_tag(
 
 async fn update_5min_stats_callsign(
     dbx: &DatabaseTransaction,
-    stats: Vec<(i64, (String, String), NaiveDateTime)>,
+    stats: Vec<(String, (i64, String), NaiveDateTime)>,
     since_ts: NaiveDateTime,
     till_ts: NaiveDateTime,
+    batches_map: &mut HashMap<String, i64>,
 ) -> Result<(), AppError> {
     stats_group_callsign_5min::Entity::delete_many()
         .filter(stats_group_callsign_5min::Column::Dt.gte(since_ts))
@@ -2006,7 +2267,7 @@ async fn update_5min_stats_callsign(
     while current_ts <= till_ts {
         let since_ts = current_ts;
         let till_ts = current_ts + Duration::minutes(5);
-        let group_stats: HashMap<(String, String), HashSet<i64>> = stats
+        let group_stats: HashMap<(i64, String), HashSet<String>> = stats
             .iter()
             .filter_map(|(id, key, ts)| {
                 if !since_ts.gt(ts) && till_ts.gt(ts) {
@@ -2017,15 +2278,25 @@ async fn update_5min_stats_callsign(
             })
             .fold(HashMap::new(), |mut acc, (id, key)| {
                 let ids = acc.entry(key).or_default();
-                ids.insert(*id);
+                ids.insert(id.clone());
                 acc
             });
-        for ((group_master_key, callsign), ids) in group_stats {
-            let count = ids.len() as i32;
+        let mut batch_stats: HashMap<(i64, String), i32> = HashMap::new();
+        for ((_, freq), keys) in group_stats {
+            let batch_key = all_to_batch_key(keys);
+            ensure_batch_key(dbx, batches_map, &batch_key)
+                .await
+                .c(h!())?;
+            let batch_id = *batches_map.get(&batch_key).c(h!())?;
+            let key = (batch_id, freq);
+            let count = *batch_stats.entry(key.clone()).or_default();
+            batch_stats.insert(key, count + 1);
+        }
+        for ((signal_group_batch_id, callsign), count) in batch_stats {
             stats_group_callsign_5min::ActiveModel {
                 id: NotSet,
                 quantity: Set(count),
-                group_master_key: Set(group_master_key),
+                signal_group_batch_id: Set(signal_group_batch_id),
                 callsign: Set(callsign),
                 dt: Set(since_ts),
                 created_at: NotSet,
@@ -2060,7 +2331,12 @@ async fn recalculate_day_stats_callsign(
     let mut stats = vec![];
     for rec in stats_5min {
         let date = get_local_date(rec.dt);
-        stats.push((date, rec.group_master_key, rec.callsign, rec.quantity));
+        stats.push((
+            date,
+            rec.signal_group_batch_id,
+            rec.callsign,
+            rec.quantity,
+        ));
     }
     stats_group_callsign_day::Entity::delete_many()
         .filter(stats_group_callsign_day::Column::Dt.gte(since_date))
@@ -2070,11 +2346,11 @@ async fn recalculate_day_stats_callsign(
         .context(h!())?;
     let mut current_date = since_date;
     while current_date <= till_date {
-        let group_stats: HashMap<(String, String), i32> = stats
+        let group_stats: HashMap<(i64, String), i32> = stats
             .iter()
             .filter_map(|(date, key_1, key_2, count)| {
                 if current_date.eq(date) {
-                    Some(((key_1.clone(), key_2.clone()), count))
+                    Some(((*key_1, key_2.clone()), count))
                 } else {
                     None
                 }
@@ -2083,11 +2359,11 @@ async fn recalculate_day_stats_callsign(
                 *acc.entry(key).or_insert(0) += count;
                 acc
             });
-        for ((group_master_key, callsign), count) in group_stats {
+        for ((signal_group_batch_id, callsign), count) in group_stats {
             stats_group_callsign_day::ActiveModel {
                 id: NotSet,
                 quantity: Set(count),
-                group_master_key: Set(group_master_key),
+                signal_group_batch_id: Set(signal_group_batch_id),
                 callsign: Set(callsign),
                 dt: Set(current_date),
                 created_at: NotSet,
@@ -2103,9 +2379,10 @@ async fn recalculate_day_stats_callsign(
 
 async fn update_5min_stats_unit(
     dbx: &DatabaseTransaction,
-    stats: Vec<(i64, (String, String), NaiveDateTime)>,
+    stats: Vec<(String, (i64, String), NaiveDateTime)>,
     since_ts: NaiveDateTime,
     till_ts: NaiveDateTime,
+    batches_map: &mut HashMap<String, i64>,
 ) -> Result<(), AppError> {
     stats_group_unit_5min::Entity::delete_many()
         .filter(stats_group_unit_5min::Column::Dt.gte(since_ts))
@@ -2118,7 +2395,7 @@ async fn update_5min_stats_unit(
     while current_ts <= till_ts {
         let since_ts = current_ts;
         let till_ts = current_ts + Duration::minutes(5);
-        let group_stats: HashMap<(String, String), HashSet<i64>> = stats
+        let group_stats: HashMap<(i64, String), HashSet<String>> = stats
             .iter()
             .filter_map(|(id, key, ts)| {
                 if !since_ts.gt(ts) && till_ts.gt(ts) {
@@ -2129,15 +2406,26 @@ async fn update_5min_stats_unit(
             })
             .fold(HashMap::new(), |mut acc, (id, key)| {
                 let ids = acc.entry(key).or_default();
-                ids.insert(*id);
+                ids.insert(id.clone());
                 acc
             });
-        for ((group_master_key, unit), ids) in group_stats {
-            let count = ids.len() as i32;
+
+        let mut batch_stats: HashMap<(i64, String), i32> = HashMap::new();
+        for ((_, freq), keys) in group_stats {
+            let batch_key = all_to_batch_key(keys);
+            ensure_batch_key(dbx, batches_map, &batch_key)
+                .await
+                .c(h!())?;
+            let batch_id = *batches_map.get(&batch_key).c(h!())?;
+            let key = (batch_id, freq);
+            let count = *batch_stats.entry(key.clone()).or_default();
+            batch_stats.insert(key, count + 1);
+        }
+        for ((signal_group_batch_id, unit), count) in batch_stats {
             stats_group_unit_5min::ActiveModel {
                 id: NotSet,
                 quantity: Set(count),
-                group_master_key: Set(group_master_key),
+                signal_group_batch_id: Set(signal_group_batch_id),
                 unit: Set(unit),
                 dt: Set(since_ts),
                 created_at: NotSet,
@@ -2170,7 +2458,7 @@ async fn recalculate_day_stats_unit(
     let mut stats = vec![];
     for rec in stats_5min {
         let date = get_local_date(rec.dt);
-        stats.push((date, rec.group_master_key, rec.unit, rec.quantity));
+        stats.push((date, rec.signal_group_batch_id, rec.unit, rec.quantity));
     }
 
     stats_group_unit_day::Entity::delete_many()
@@ -2181,11 +2469,11 @@ async fn recalculate_day_stats_unit(
         .context(h!())?;
     let mut current_date = since_date;
     while current_date <= till_date {
-        let group_stats: HashMap<(String, String), i32> = stats
+        let group_stats: HashMap<(i64, String), i32> = stats
             .iter()
             .filter_map(|(date, key_1, key_2, count)| {
                 if current_date.eq(date) {
-                    Some(((key_1.clone(), key_2.clone()), count))
+                    Some(((*key_1, key_2.clone()), count))
                 } else {
                     None
                 }
@@ -2194,11 +2482,11 @@ async fn recalculate_day_stats_unit(
                 *acc.entry(key).or_insert(0) += count;
                 acc
             });
-        for ((group_master_key, unit), count) in group_stats {
+        for ((signal_group_batch_id, unit), count) in group_stats {
             stats_group_unit_day::ActiveModel {
                 id: NotSet,
                 quantity: Set(count),
-                group_master_key: Set(group_master_key),
+                signal_group_batch_id: Set(signal_group_batch_id),
                 unit: Set(unit),
                 dt: Set(current_date),
                 created_at: NotSet,
@@ -2249,6 +2537,73 @@ pub fn start_of_day(since_date: NaiveDate) -> Result<NaiveDateTime, AppError> {
 
 fn get_local_date(since_ts: NaiveDateTime) -> NaiveDate {
     since_ts.and_utc().with_timezone(&get_tz()).date_naive()
+}
+
+pub fn collect_signal_group_batch_ids_by_master_key(
+    master_key: &str,
+    batches: &Vec<signal_group_batch::Model>,
+) -> Vec<i64> {
+    let key = &to_batch_key(master_key);
+    batches
+        .iter()
+        .filter(|b| b.group_master_keys.contains(key))
+        .map(|x| x.id)
+        .collect_vec()
+}
+
+fn to_batch_key(key: &str) -> String {
+    format!("|{key}|")
+}
+
+fn all_to_batch_key(keys: HashSet<String>) -> String {
+    if keys.is_empty() {
+        return String::default();
+    }
+    let text = keys.into_iter().sorted().join("|");
+    to_batch_key(&text)
+}
+
+fn collect_group_keys_for_batch<T: Clone>(
+    batch_id: i64,
+    batches: &HashMap<i64, Vec<String>>,
+    m: T,
+) -> Vec<(T, String)> {
+    let keys = batches.get(&batch_id).cloned().unwrap_or_default();
+    let mut result = vec![];
+    for key in keys {
+        result.push((m.clone(), key));
+    }
+    result
+}
+
+async fn ensure_batch_key(
+    dbx: &DatabaseTransaction,
+    batches_map: &mut HashMap<String, i64>,
+    batch_key: &String,
+) -> anyhow::Result<()> {
+    if !batches_map.contains_key(batch_key) {
+        let model = signal_group_batch::ActiveModel {
+            id: NotSet,
+            group_master_keys: Set(batch_key.clone()),
+            created_at: NotSet,
+        }
+        .insert(dbx)
+        .await
+        .c(h!())?;
+        batches_map.insert(batch_key.clone(), model.id);
+    }
+    Ok(())
+}
+
+fn batch_key_to_group_keys(batch_key: String) -> Vec<String> {
+    let mut keys = vec![];
+    for key in batch_key.split("|") {
+        if key.is_empty() {
+            continue;
+        }
+        keys.push(key.trim().to_string())
+    }
+    keys
 }
 
 #[cfg(test)]
