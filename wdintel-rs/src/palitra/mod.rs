@@ -9,7 +9,6 @@ use actix_web::post;
 use actix_web::web::{Data, Json};
 use anyhow::{bail, Context};
 use itertools::Itertools;
-use log::info;
 use sea_orm::*;
 
 mod bl;
@@ -19,7 +18,6 @@ pub mod types;
 #[derive(Clone)]
 struct UserScope {
     organism_ids: Vec<i64>,
-    aor_ids: Vec<i64>,
 }
 
 #[post("/api/palitra/upload-points/{palitra_id}")]
@@ -133,11 +131,7 @@ async fn load_user_scope(
         .c(h!())?;
     let organism_ids =
         organism_aors.iter().map(|o| o.organism_id).collect_vec();
-    let aor_ids = organism_aors.into_iter().map(|x| x.aor_id).collect_vec();
-    Ok(UserScope {
-        organism_ids,
-        aor_ids,
-    })
+    Ok(UserScope { organism_ids })
 }
 
 async fn read_palitra_access(
