@@ -148,6 +148,38 @@ pub async fn organism_active_logins(
     Ok(Json(logins))
 }
 
+#[post("/api/organism/my-organism")]
+pub async fn my_organism(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+) -> Result<Json<Option<MyOrganism>>, AppError> {
+    let login = user.id().c(h!())?;
+    
+    let login_obj = login::Entity::find()
+        .filter(login::Column::Login.eq(login.to_string()))
+        .filter(login::Column::DeletedPermanently.eq(false))
+        .one(&env.dbx)
+        .await
+        .c(h!())?
+        .c(h!())?;
+    
+    match login_obj.organism_id {
+        Some(organism_id) => {
+            let organism = organism::Entity::find_by_id(organism_id)
+                .filter(organism::Column::DeletedPermanently.eq(false))
+                .one(&env.dbx)
+                .await
+                .c(h!())?;
+            
+            Ok(Json(organism.map(|o| MyOrganism {
+                id: o.id,
+                name: o.name,
+            })))
+        }
+        None => Ok(Json(None)),
+    }
+}
+
 #[post("/api/organism/update")]
 pub async fn update_organism(
     user: actix_identity::Identity,

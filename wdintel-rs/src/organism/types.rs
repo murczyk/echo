@@ -94,3 +94,11 @@ pub struct OrganismGroups {
     pub available_keys: Vec<String>,
     pub selected_keys: Vec<String>,
 }
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct MyOrganism {
+    pub id: i64,
+    pub name: String,
+}

@@ -1253,6 +1253,15 @@ organism_active_logins toMsg organismId =
         }
 
 
+my_organism : (Result ApiError (Maybe Bindings.MyOrganism) -> msg) -> Cmd msg
+my_organism toMsg =
+    Http.post
+        { url = "/api/organism/my-organism"
+        , body = Http.jsonBody Encode.null
+        , expect = leExpectJson toMsg (Decode.nullable Bindings.myOrganismDecoder)
+        }
+
+
 create_organism : (Result ApiError Organism -> msg) -> CreateOrganismReq -> Cmd msg
 create_organism toMsg req =
     Http.post

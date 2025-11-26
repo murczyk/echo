@@ -34,6 +34,7 @@ type alias Model =
     , form : Form
     , submitInFlight : Bool
     , showCreateSidebar : Bool
+    , myOrganism : RemoteData ApiError (Maybe B.MyOrganism)
     }
 
 
@@ -79,6 +80,7 @@ type Msg
     | CloseCreateSidebar
     | SubmitCreate
     | CreateResponse (Result ApiError B.Palitra)
+    | MyOrganismResp (Result ApiError (Maybe B.MyOrganism))
 
 
 init : () -> ( Model, Effect Msg )
@@ -89,6 +91,7 @@ init _ =
       , form = emptyForm
       , submitInFlight = False
       , showCreateSidebar = False
+      , myOrganism = NotAsked
       }
     , E.sendCmd <| Api.palitra_list PalitraListResp
     )
@@ -153,9 +156,19 @@ update msg model =
             ( { model | form = form1 }, E.none )
 
         ShowCreateSidebar ->
-            -- Потрібно передати user, але він не доступний в update
-            -- Тому використаємо поточний form.access або залишимо як є
-            ( { model | showCreateSidebar = True }, E.none )
+            -- Завантажуємо організм користувача, якщо ще не завантажено
+            if model.myOrganism == NotAsked then
+                ( { model | showCreateSidebar = True, myOrganism = Loading }
+                , E.sendCmd <| Api.my_organism MyOrganismResp
+                )
+            else
+                ( { model | showCreateSidebar = True }, E.none )
+
+        MyOrganismResp (Ok organism) ->
+            ( { model | myOrganism = Success organism }, E.none )
+
+        MyOrganismResp (Err err) ->
+            ( { model | myOrganism = Failure err }, E.none )
 
         CloseCreateSidebar ->
             ( { model | showCreateSidebar = False, form = emptyForm }, E.none )
@@ -517,22 +530,38 @@ createPalitraSidebarContent user model =
                         organismRestricted =
                             isAccessRestricted user (OrganismsAccess "")
 
-                        userOrganismId =
-                            user.organismId |> Maybe.map String.fromInt
+                        isEditor =
+                            Core.Auth.hasRole "UnitsEditor" user || Core.Auth.hasRole "CallsignsEditor" user
+
+                        restrictionHint =
+                            if isEditor then
+                                "Редактор може надати доступ лише власному підрозділу"
+                            else
+                                "Роль Rer може надати доступ лише власному підрозділу"
 
                         organismField =
                             if organismRestricted then
-                                case userOrganismId of
-                                    Just orgId ->
+                                case model.myOrganism of
+                                    Success (Just organism) ->
                                         div [ class "flex flex-col gap-2" ]
                                             [ div [ class "text-xs text-muted-foreground uppercase" ] [ text "Ваш підрозділ" ]
-                                            , Badge.view ("ID " ++ orgId)
-                                            , div [ class "text-xs text-muted-foreground" ] [ text "Роль Rer може надати доступ лише власному підрозділу" ]
+                                            , Badge.view organism.name
+                                            , div [ class "text-xs text-muted-foreground" ] [ text restrictionHint ]
                                             ]
 
-                                    Nothing ->
+                                    Success Nothing ->
                                         div [ class "text-xs text-red-500" ]
                                             [ text "Вашому логіну не призначено підрозділ. Зверніться до адміністратора." ]
+
+                                    Loading ->
+                                        div [ class "flex flex-col gap-2" ]
+                                            [ div [ class "text-xs text-muted-foreground uppercase" ] [ text "Ваш підрозділ" ]
+                                            , Shared.Components.Spinner.loadingSpinner2Sm
+                                            ]
+
+                                    _ ->
+                                        div [ class "text-xs text-muted-foreground" ]
+                                            [ text "Завантаження..." ]
 
                             else
                                 input

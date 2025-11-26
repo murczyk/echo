@@ -3052,6 +3052,20 @@ organismEncoder struct =
         ]
 
 
+type alias MyOrganism =
+    { id : Int
+    , name : String
+    }
+
+
+myOrganismEncoder : MyOrganism -> Json.Encode.Value
+myOrganismEncoder struct =
+    Json.Encode.object
+        [ ( "id", Json.Encode.int struct.id )
+        , ( "name", Json.Encode.string struct.name )
+        ]
+
+
 type ListOrganismsSortBy
     = OrganismCreatedAtDesc
     | OrganismCreatedAtAsc
@@ -7768,6 +7782,13 @@ organismDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enabled" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aor_ids" (Json.Decode.list Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "logins_count" Json.Decode.int))
+
+
+myOrganismDecoder : Json.Decode.Decoder MyOrganism
+myOrganismDecoder =
+    Json.Decode.succeed MyOrganism
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" Json.Decode.string))
 
 
 listOrganismsSortByDecoder : Json.Decode.Decoder ListOrganismsSortBy
