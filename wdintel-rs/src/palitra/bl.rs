@@ -537,7 +537,6 @@ where
         .await
         .c(h!())?;
     match req.access {
-        PalitraAccess::Global => {}
         PalitraAccess::ByLogins { logins } => {
             if !logins.is_empty() {
                 let logins = logins

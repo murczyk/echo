@@ -25,7 +25,6 @@ pub struct CreatePalitraReq {
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub enum PalitraAccess {
-    Global,
     ByLogins { logins: Vec<String> },
     ByOrganisms { organism_ids: Vec<i64> },
     ByAor { aor_ids: Vec<i64> },

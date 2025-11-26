@@ -20,6 +20,7 @@ pub mod types;
 #[derive(Clone)]
 struct UserScope {
     organism_ids: Vec<i64>,
+    aor_ids: Vec<i64>,
 }
 
 #[post("/api/palitra/upload-points/{palitra_id}")]
@@ -101,6 +102,15 @@ async fn ensure_palitra_permissions(
     access: &PalitraAccess,
     scope: &UserScope,
 ) -> anyhow::Result<()> {
+    let is_empty = match access {
+        PalitraAccess::ByLogins { logins } => logins.is_empty(),
+        PalitraAccess::ByOrganisms { organism_ids } => organism_ids.is_empty(),
+        PalitraAccess::ByAor { aor_ids } => aor_ids.is_empty(),
+    };
+    if is_empty {
+        bail!("Palitra access list may not be empty");
+    }
+
     let is_admin = crate::users::has_role(&env.dbx, login, "Admin")
         .await
         .is_ok();
@@ -111,16 +121,10 @@ async fn ensure_palitra_permissions(
     )
     .await
     .is_ok();
-    let units_editor_plus = is_admin || is_editor;
 
     let is_rer = crate::users::has_role(&env.dbx, login, "Rer").await.is_ok();
 
     match access {
-        PalitraAccess::Global => {
-            if !units_editor_plus {
-                bail!("Only UnitsEditor/CallsignsEditor/Admin may manage global palitra");
-            }
-        }
         PalitraAccess::ByLogins { logins } => {
             if is_admin {
                 return Ok(());
@@ -151,7 +155,9 @@ async fn ensure_palitra_permissions(
                 let all_known =
                     organism_ids.iter().all(|id| permitted.contains(id));
                 if !all_known {
-                    bail!("Editor may only manage palitra scoped to own organism");
+                    bail!(
+                        "Editor may only manage palitra scoped to own organism"
+                    );
                 }
                 return Ok(());
             }
@@ -165,9 +171,17 @@ async fn ensure_palitra_permissions(
                 bail!("Rer may only manage palitra scoped to own organism");
             }
         }
-        PalitraAccess::ByAor { .. } => {
-            if !units_editor_plus {
-                bail!("Only UnitsEditor/CallsignsEditor/Admin may manage AOR-scoped palitra");
+        PalitraAccess::ByAor { aor_ids } => {
+            if is_admin {
+                return Ok(());
+            }
+            if !is_editor {
+                bail!("Only Editor/Admin may manage AOR-scoped palitra");
+            }
+            let permitted: Vec<_> = scope.aor_ids.to_vec();
+            let all_known = aor_ids.iter().all(|id| permitted.contains(id));
+            if !all_known {
+                bail!("Editor may only manage palitra scoped to own AOR");
             }
         }
     };
@@ -187,7 +201,11 @@ async fn load_user_scope(
         .c(h!())?;
     let organism_ids =
         organism_aors.iter().map(|o| o.organism_id).collect_vec();
-    Ok(UserScope { organism_ids })
+    let aor_ids = organism_aors.iter().map(|o| o.aor_id).collect_vec();
+    Ok(UserScope {
+        organism_ids,
+        aor_ids,
+    })
 }
 
 async fn read_palitra_access(
@@ -203,23 +221,24 @@ async fn read_palitra_access(
     let aor_ids = bl::collect_palitra_access_aors(dbx, palitra_id)
         .await
         .c(h!())?;
-    Ok(pick_access(logins, organism_ids, aor_ids))
+    pick_access(logins, organism_ids, aor_ids)
 }
 
 fn pick_access(
     logins: Vec<String>,
     organism_ids: Vec<i64>,
     aor_ids: Vec<i64>,
-) -> PalitraAccess {
+) -> anyhow::Result<PalitraAccess> {
     if !logins.is_empty() {
-        PalitraAccess::ByLogins { logins }
-    } else if !organism_ids.is_empty() {
-        PalitraAccess::ByOrganisms { organism_ids }
-    } else if !aor_ids.is_empty() {
-        PalitraAccess::ByAor { aor_ids }
-    } else {
-        PalitraAccess::Global
+        return Ok(PalitraAccess::ByLogins { logins });
     }
+    if !organism_ids.is_empty() {
+        return Ok(PalitraAccess::ByOrganisms { organism_ids });
+    }
+    if !aor_ids.is_empty() {
+        return Ok(PalitraAccess::ByAor { aor_ids });
+    }
+    bail!("Palitra must have explicit access scope");
 }
 
 #[post("/api/palitra/list")]

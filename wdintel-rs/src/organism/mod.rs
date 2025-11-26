@@ -154,7 +154,7 @@ pub async fn my_organism(
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<Option<MyOrganism>>, AppError> {
     let login = user.id().c(h!())?;
-    
+
     let login_obj = login::Entity::find()
         .filter(login::Column::Login.eq(login.to_string()))
         .filter(login::Column::DeletedPermanently.eq(false))
@@ -162,7 +162,7 @@ pub async fn my_organism(
         .await
         .c(h!())?
         .c(h!())?;
-    
+
     match login_obj.organism_id {
         Some(organism_id) => {
             let organism = organism::Entity::find_by_id(organism_id)
@@ -170,7 +170,7 @@ pub async fn my_organism(
                 .one(&env.dbx)
                 .await
                 .c(h!())?;
-            
+
             Ok(Json(organism.map(|o| MyOrganism {
                 id: o.id,
                 name: o.name,
