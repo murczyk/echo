@@ -20,6 +20,7 @@ import Shared.Components.Sidebar as Sidebar
 import Shared.Components.Spinner
 import Shared.Components.Table as Table
 import Shared.Components.Table.Sorter as Sorter
+import Shared.Components.SegmentedControl as SegmentedControl
 import Utils.RemoteData exposing (RemoteData(..))
 import View exposing (View)
 import String
@@ -47,6 +48,22 @@ type AccessForm
     | LoginsAccess String
     | OrganismsAccess String
     | AorAccess String
+
+
+normalizeAccessForm : AccessForm -> AccessForm
+normalizeAccessForm access =
+    case access of
+        GlobalAccess ->
+            GlobalAccess
+
+        LoginsAccess _ ->
+            LoginsAccess ""
+
+        OrganismsAccess _ ->
+            OrganismsAccess ""
+
+        AorAccess _ ->
+            AorAccess ""
 
 
 type Msg
@@ -135,6 +152,8 @@ update msg model =
             ( { model | form = form1 }, E.none )
 
         ShowCreateSidebar ->
+            -- Потрібно передати user, але він не доступний в update
+            -- Тому використаємо поточний form.access або залишимо як є
             ( { model | showCreateSidebar = True }, E.none )
 
         CloseCreateSidebar ->
@@ -142,12 +161,20 @@ update msg model =
 
         SubmitCreate ->
             let
-                req =
-                    buildCreateReq model.form
+                validationError =
+                    validateForm model.form
             in
-            ( { model | submitInFlight = True }
-            , E.sendCmd <| Api.palitra_create CreateResponse req
-            )
+            if validationError == Nothing then
+                let
+                    req =
+                        buildCreateReq model.form
+                in
+                ( { model | submitInFlight = True }
+                , E.sendCmd <| Api.palitra_create CreateResponse req
+                )
+
+            else
+                ( model, E.none )
 
         CreateResponse (Ok p) ->
             let
@@ -180,7 +207,7 @@ view user _ model =
             [ classList [ ( "overflow-hidden", model.showCreateSidebar ) ]
             , class "w-5/6 mx-auto"
             ]
-            [ Sidebar.view model.showCreateSidebar CloseCreateSidebar (createPalitraSidebarContent model)
+            [ Sidebar.view model.showCreateSidebar CloseCreateSidebar (createPalitraSidebarContent user model)
             , case model.palitras of
                 Loading ->
                     div [ class "p-4" ] [ Shared.Components.Spinner.loadingSpinner2Sm ]
@@ -330,33 +357,133 @@ renderAccess p =
         "глобальна"
 
 
-createPalitraSidebarContent : Model -> List (Html Msg)
-createPalitraSidebarContent model =
+-- Визначає, чи користувач має привілейовані ролі (UnitsEditor/CallsignsEditor/Admin)
+hasPrivilegedRole : Auth.User -> Bool
+hasPrivilegedRole user =
+    Core.Auth.hasRole "Admin" user
+        || Core.Auth.hasRole "UnitsEditor" user
+        || Core.Auth.hasRole "CallsignsEditor" user
+
+
+-- Визначає, чи користувач є Rer
+isRer : Auth.User -> Bool
+isRer user =
+    Core.Auth.hasRole "Rer" user
+
+
+-- Визначає доступні типи доступу для користувача
+getAvailableAccessTypes : Auth.User -> List AccessForm
+getAvailableAccessTypes user =
     let
-        ( _, accessFields ) =
+        privileged =
+            hasPrivilegedRole user
+    in
+    List.filterMap identity
+        [ if privileged then
+            Just GlobalAccess
+
+          else
+            Nothing
+        , Just (LoginsAccess "")
+        , Just (OrganismsAccess "")
+        , if privileged then
+            Just (AorAccess "")
+
+          else
+            Nothing
+        ]
+
+
+-- Визначає, чи опція доступу обмежена для користувача
+isAccessRestricted : Auth.User -> AccessForm -> Bool
+isAccessRestricted user access =
+    let
+        privileged =
+            hasPrivilegedRole user
+
+        rer =
+            isRer user
+    in
+    case access of
+        GlobalAccess ->
+            False
+
+        LoginsAccess _ ->
+            not privileged && rer
+
+        OrganismsAccess _ ->
+            not privileged && rer
+
+        AorAccess _ ->
+            False
+
+
+-- Отримує підказку для типу доступу
+getAccessHint : Auth.User -> AccessForm -> Maybe String
+getAccessHint user access =
+    if isAccessRestricted user access then
+        case access of
+            LoginsAccess _ ->
+                Just "Тільки ваш логін"
+
+            OrganismsAccess _ ->
+                Just "Тільки ваші підрозділи"
+
+            _ ->
+                Nothing
+
+    else
+        Nothing
+
+
+-- Валідація форми перед відправкою
+validateForm : Form -> Maybe String
+validateForm form =
+    if String.isEmpty form.name then
+        Just "Назва палітри обов'язкова"
+
+    else
+        Nothing
+
+
+createPalitraSidebarContent : Auth.User -> Model -> List (Html Msg)
+createPalitraSidebarContent user model =
+    let
+        availableAccessTypes =
+            getAvailableAccessTypes user
+
+        ( accessFields, accessHint ) =
             case model.form.access of
                 GlobalAccess ->
-                    ( "Глобально", [] )
+                    ( [], getAccessHint user GlobalAccess )
 
                 LoginsAccess logins ->
-                    ( "За логінами"
-                    , [ div [ class "space-y-2" ]
+                    let
+                        -- Автозаповнюємо логін для Rer, якщо поле порожнє
+                        currentLogins =
+                            if isAccessRestricted user (LoginsAccess "") && String.isEmpty logins then
+                                user.name
+
+                            else
+                                logins
+                    in
+                    ( [ div [ class "space-y-2" ]
                             [ label [ class "text-sm font-medium text-foreground" ] [ text "Логіни (через кому)" ]
                             , input
                                 [ class "w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
                                 , type_ "text"
                                 , placeholder "Логіни через кому"
-                                , value logins
+                                , value currentLogins
                                 , onInput (\v -> UpdateForm (\f -> { f | access = LoginsAccess v }))
                                 ]
                                 []
                             ]
                       ]
+                    , getAccessHint user (LoginsAccess "")
                     )
 
                 OrganismsAccess ids ->
-                    ( "За підрозділами"
-                    , [ div [ class "space-y-2" ]
+                    ( [ div [ class "space-y-2" ]
                             [ label [ class "text-sm font-medium text-foreground" ] [ text "Organism IDs (через кому)" ]
                             , input
                                 [ class "w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
@@ -368,11 +495,11 @@ createPalitraSidebarContent model =
                                 []
                             ]
                       ]
+                    , getAccessHint user (OrganismsAccess "")
                     )
 
                 AorAccess ids ->
-                    ( "За смугами"
-                    , [ div [ class "space-y-2" ]
+                    ( [ div [ class "space-y-2" ]
                             [ label [ class "text-sm font-medium text-foreground" ] [ text "AOR IDs (через кому)" ]
                             , input
                                 [ class "w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
@@ -384,7 +511,30 @@ createPalitraSidebarContent model =
                                 []
                             ]
                       ]
+                    , getAccessHint user (AorAccess "")
                     )
+
+        accessOptions =
+            List.filterMap
+                (\accessType ->
+                    let
+                        normalized =
+                            normalizeAccessForm accessType
+                    in
+                    case normalized of
+                        GlobalAccess ->
+                            Just { value = normalized, label = "Глобально" }
+
+                        LoginsAccess _ ->
+                            Just { value = normalized, label = "Логіни" }
+
+                        OrganismsAccess _ ->
+                            Just { value = normalized, label = "Підрозділи" }
+
+                        AorAccess _ ->
+                            Just { value = normalized, label = "Смуги" }
+                )
+                availableAccessTypes
     in
     [ div [ class "flex flex-col h-full" ]
         [ div [ class "p-6 border-b border-border" ]
@@ -427,11 +577,18 @@ createPalitraSidebarContent model =
                 , div [ class "space-y-2" ]
                     [ label [ class "text-sm font-medium text-foreground" ] [ text "Доступ" ]
                     , div [ class "flex flex-wrap gap-2" ]
-                        [ accessButton "Глобально" GlobalAccess model.form.access
-                        , accessButton "Логіни" (LoginsAccess "") model.form.access
-                        , accessButton "Підрозділи" (OrganismsAccess "") model.form.access
-                        , accessButton "Смуги" (AorAccess "") model.form.access
+                        [ SegmentedControl.new
+                            (normalizeAccessForm model.form.access)
+                            ChangeAccess
+                            accessOptions
+                            |> SegmentedControl.view
                         ]
+                    , case accessHint of
+                        Just hint ->
+                            div [ class "text-xs text-muted-foreground mt-1" ] [ text hint ]
+
+                        Nothing ->
+                            text ""
                     , div [] accessFields
                     ]
                 ]
@@ -458,36 +615,6 @@ createPalitraSidebarContent model =
     ]
 
 
-
-
-accessButton : String -> AccessForm -> AccessForm -> Html Msg
-accessButton label target current =
-    let
-        isActive =
-            case ( target, current ) of
-                ( GlobalAccess, GlobalAccess ) ->
-                    True
-                ( LoginsAccess _, LoginsAccess _ ) ->
-                    True
-                ( OrganismsAccess _, OrganismsAccess _ ) ->
-                    True
-                ( AorAccess _, AorAccess _ ) ->
-                    True
-                _ ->
-                    False
-    in
-    Button.view
-        (Button.new
-            { label = label
-            , onClick = ChangeAccess target
-            }
-            |> (if isActive then
-                    identity
-
-                else
-                    Button.withStyleSecondary
-               )
-        )
 
 
 buildCreateReq : Form -> B.CreatePalitraReq
