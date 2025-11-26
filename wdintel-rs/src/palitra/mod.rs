@@ -101,13 +101,17 @@ async fn ensure_palitra_permissions(
     access: &PalitraAccess,
     scope: &UserScope,
 ) -> anyhow::Result<()> {
-    let units_editor_plus = crate::users::has_any_role(
+    let is_admin = crate::users::has_role(&env.dbx, login, "Admin")
+        .await
+        .is_ok();
+    let is_editor = crate::users::has_any_role(
         &env.dbx,
         login,
-        vec!["UnitsEditor", "CallsignsEditor", "Admin"],
+        vec!["UnitsEditor", "CallsignsEditor"],
     )
     .await
     .is_ok();
+    let units_editor_plus = is_admin || is_editor;
 
     let is_rer = crate::users::has_role(&env.dbx, login, "Rer").await.is_ok();
 
@@ -118,7 +122,15 @@ async fn ensure_palitra_permissions(
             }
         }
         PalitraAccess::ByLogins { logins } => {
-            if units_editor_plus {
+            if is_admin {
+                return Ok(());
+            }
+            if is_editor {
+                // Editor can only manage palitra scoped to own login
+                let all_self = logins.iter().all(|l| l == login);
+                if !all_self {
+                    bail!("Editor may only manage palitra scoped to own login");
+                }
                 return Ok(());
             }
             if !is_rer {
@@ -130,7 +142,17 @@ async fn ensure_palitra_permissions(
             }
         }
         PalitraAccess::ByOrganisms { organism_ids } => {
-            if units_editor_plus {
+            if is_admin {
+                return Ok(());
+            }
+            if is_editor {
+                // Editor can only manage palitra scoped to own organisms
+                let permitted: Vec<_> = scope.organism_ids.to_vec();
+                let all_known =
+                    organism_ids.iter().all(|id| permitted.contains(id));
+                if !all_known {
+                    bail!("Editor may only manage palitra scoped to own organism");
+                }
                 return Ok(());
             }
             if !is_rer {
