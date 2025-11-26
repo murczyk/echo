@@ -361,6 +361,7 @@ pub async fn collect_etalonka_data(
                 .collect::<Vec<String>>();
             let unique_modulation = uniq_via_btreeset(&modulations).join(", ");
             entry.unique_modulation = unique_modulation;
+            entry.freqs = freqs;
             if include_sigint_signs || include_confirmation {
                 let network_descriptions_map =
                     crate::sigint::network::bl::get_networks_descriptions(
