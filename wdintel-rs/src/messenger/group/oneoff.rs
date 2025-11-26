@@ -17,6 +17,7 @@ use tokio::time::sleep;
 pub async fn oneoff_calculate_signal_message_groups(
     mode: Mode,
 ) -> Result<(), AppError> {
+    info!("oneoff_calculate_signal_message_groups started");
     let config = config::read_config(mode).context(h!())?;
     let dbx = crate::new_pg_pool_from_config(&config)
         .await
@@ -55,6 +56,7 @@ pub async fn oneoff_calculate_signal_message_groups(
     let mut message_ids = HashSet::new();
 
     loop {
+        info!("oneoff_calculate_signal_message_groups work in progress: {}/{total_records_to_process}", message_ids.len());
         sleep(std::time::Duration::from_secs(
             ONEOFF_CALCULATE_SIGNAL_MESSAGE_GROUPS_SLEEP_SEC,
         ))
