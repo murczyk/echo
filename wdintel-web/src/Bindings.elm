@@ -2475,8 +2475,7 @@ inboxGroupStatsEncoder struct =
 
 
 type PalitraAccess
-    = Global
-    | ByLogins { logins : List String }
+    = ByLogins { logins : List String }
     | ByOrganisms { organismIds : List Int }
     | ByAor { aorIds : List Int }
 
@@ -2484,9 +2483,6 @@ type PalitraAccess
 palitraAccessEncoder : PalitraAccess -> Json.Encode.Value
 palitraAccessEncoder enum =
     case enum of
-        Global ->
-            Json.Encode.string "Global"
-
         ByLogins { logins } ->
             Json.Encode.object [ ( "ByLogins", Json.Encode.object [ ( "logins", Json.Encode.list Json.Encode.string logins ) ] ) ]
 
@@ -7447,17 +7443,7 @@ palitraAccessDecoder =
             ByAor { aorIds = aorIds }
     in
     Json.Decode.oneOf
-        [ Json.Decode.string
-            |> Json.Decode.andThen
-                (\x ->
-                    case x of
-                        "Global" ->
-                            Json.Decode.succeed Global
-
-                        unexpected ->
-                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
-                )
-        , Json.Decode.field "ByLogins" (Json.Decode.succeed elmRsConstructByLogins |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "logins" (Json.Decode.list Json.Decode.string))))
+        [ Json.Decode.field "ByLogins" (Json.Decode.succeed elmRsConstructByLogins |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "logins" (Json.Decode.list Json.Decode.string))))
         , Json.Decode.field "ByOrganisms" (Json.Decode.succeed elmRsConstructByOrganisms |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "organism_ids" (Json.Decode.list Json.Decode.int))))
         , Json.Decode.field "ByAor" (Json.Decode.succeed elmRsConstructByAor |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aor_ids" (Json.Decode.list Json.Decode.int))))
         ]

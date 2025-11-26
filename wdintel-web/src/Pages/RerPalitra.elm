@@ -46,8 +46,7 @@ type alias Form =
     }
 
 type AccessForm
-    = GlobalAccess
-    | LoginsAccess String
+    = LoginsAccess String
     | OrganismsAccess String
     | AorAccess String
 
@@ -55,9 +54,6 @@ type AccessForm
 normalizeAccessForm : AccessForm -> AccessForm
 normalizeAccessForm access =
     case access of
-        GlobalAccess ->
-            GlobalAccess
-
         LoginsAccess _ ->
             LoginsAccess ""
 
@@ -101,7 +97,7 @@ emptyForm : Form
 emptyForm =
     { name = ""
     , colorHex = "#00bcd4"
-    , access = GlobalAccess
+    , access = LoginsAccess ""
     , fileName = ""
     }
 
@@ -368,7 +364,7 @@ renderAccess p =
         "за смугами"
 
     else
-        "глобальна"
+        "без доступу"
 
 
 -- Визначає, чи користувач має привілейовані ролі (UnitsEditor/CallsignsEditor/Admin)
@@ -393,12 +389,7 @@ getAvailableAccessTypes user =
             hasPrivilegedRole user
     in
     List.filterMap identity
-        [ if privileged then
-            Just GlobalAccess
-
-          else
-            Nothing
-        , Just (LoginsAccess "")
+        [ Just (LoginsAccess "")
         , Just (OrganismsAccess "")
         , if privileged then
             Just (AorAccess "")
@@ -419,9 +410,6 @@ isAccessRestricted user access =
             isRer user
     in
     case access of
-        GlobalAccess ->
-            False
-
         LoginsAccess _ ->
             not privileged && rer
 
@@ -429,7 +417,7 @@ isAccessRestricted user access =
             not privileged && rer
 
         AorAccess _ ->
-            False
+            not privileged
 
 
 -- Отримує підказку для типу доступу
@@ -468,9 +456,6 @@ createPalitraSidebarContent user model =
 
         ( accessFields, accessHint ) =
             case model.form.access of
-                GlobalAccess ->
-                    ( [], getAccessHint user GlobalAccess )
-
                 LoginsAccess logins ->
                     let
                         loginRestricted =
@@ -605,9 +590,6 @@ createPalitraSidebarContent user model =
                             normalizeAccessForm accessType
                     in
                     case normalized of
-                        GlobalAccess ->
-                            Just { value = normalized, label = "Глобально" }
-
                         LoginsAccess _ ->
                             Just { value = normalized, label = "Логіни" }
 
@@ -752,9 +734,6 @@ buildCreateReq form =
 accessToBinding : AccessForm -> B.PalitraAccess
 accessToBinding accessForm =
     case accessForm of
-        GlobalAccess ->
-            B.Global
-
         LoginsAccess logins ->
             let
                 items =
