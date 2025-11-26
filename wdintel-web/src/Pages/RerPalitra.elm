@@ -8,7 +8,8 @@ import Core.Types exposing (ApiError)
 import Effect as E exposing (Effect)
 import Html exposing (..)
 import Html.Attributes exposing (..)
-import Html.Events  exposing (onInput)
+import Html.Events  exposing (onInput, on, targetValue)
+import Json.Decode as Decode
 import Layouts
 import Page exposing (Page)
 import Platform.Sub as Sub
@@ -408,7 +409,7 @@ createPalitraSidebarContent model =
                         [ type_ "color"
                         , class "w-16 h-10 border border-border rounded-md"
                         , value model.form.colorHex
-                        , onInput (\v -> UpdateForm (\f -> { f | colorHex = v }))
+                        , on "change" (Decode.map (\v -> UpdateForm (\f -> { f | colorHex = v })) targetValue)
                         ]
                         []
                     ]
