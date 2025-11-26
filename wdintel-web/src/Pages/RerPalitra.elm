@@ -15,6 +15,7 @@ import Page exposing (Page)
 import Platform.Sub as Sub
 import Route exposing (Route)
 import Shared
+import Shared.Components.Badge as Badge
 import Shared.Components.Button as Button
 import Shared.Components.Sidebar as Sidebar
 import Shared.Components.Spinner
@@ -512,16 +513,40 @@ createPalitraSidebarContent user model =
                     )
 
                 OrganismsAccess ids ->
+                    let
+                        organismRestricted =
+                            isAccessRestricted user (OrganismsAccess "")
+
+                        userOrganismId =
+                            user.organismId |> Maybe.map String.fromInt
+
+                        organismField =
+                            if organismRestricted then
+                                case userOrganismId of
+                                    Just orgId ->
+                                        div [ class "flex flex-col gap-2" ]
+                                            [ div [ class "text-xs text-muted-foreground uppercase" ] [ text "Ваш підрозділ" ]
+                                            , Badge.view ("ID " ++ orgId)
+                                            , div [ class "text-xs text-muted-foreground" ] [ text "Роль Rer може надати доступ лише власному підрозділу" ]
+                                            ]
+
+                                    Nothing ->
+                                        div [ class "text-xs text-red-500" ]
+                                            [ text "Вашому логіну не призначено підрозділ. Зверніться до адміністратора." ]
+
+                            else
+                                input
+                                    [ class "w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
+                                    , type_ "text"
+                                    , placeholder "ID підрозділів через кому"
+                                    , value ids
+                                    , onInput (\v -> UpdateForm (\f -> { f | access = OrganismsAccess v }))
+                                    ]
+                                    []
+                    in
                     ( [ div [ class "space-y-2" ]
-                            [ label [ class "text-sm font-medium text-foreground" ] [ text "Organism IDs (через кому)" ]
-                            , input
-                                [ class "w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
-                                , type_ "text"
-                                , placeholder "ID підрозділів через кому"
-                                , value ids
-                                , onInput (\v -> UpdateForm (\f -> { f | access = OrganismsAccess v }))
-                                ]
-                                []
+                            [ label [ class "text-sm font-medium text-foreground" ] [ text "Підрозділи" ]
+                            , organismField
                             ]
                       ]
                     , getAccessHint user (OrganismsAccess "")
@@ -573,6 +598,25 @@ createPalitraSidebarContent user model =
                     in
                     if restrictedLogin then
                         ChangeAccess (LoginsAccess user.name)
+
+                    else
+                        ChangeAccess accessForm
+
+                OrganismsAccess _ ->
+                    let
+                        restrictedOrganism =
+                            isAccessRestricted user (OrganismsAccess "")
+
+                        userOrganismValue =
+                            user.organismId |> Maybe.map String.fromInt
+                    in
+                    if restrictedOrganism then
+                        case userOrganismValue of
+                            Just value ->
+                                ChangeAccess (OrganismsAccess value)
+
+                            Nothing ->
+                                ChangeAccess accessForm
 
                     else
                         ChangeAccess accessForm
