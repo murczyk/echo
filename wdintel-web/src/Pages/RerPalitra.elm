@@ -459,24 +459,53 @@ createPalitraSidebarContent user model =
 
                 LoginsAccess logins ->
                     let
-                        -- Автозаповнюємо логін для Rer, якщо поле порожнє
+                        loginRestricted =
+                            isAccessRestricted user (LoginsAccess "")
+
                         currentLogins =
-                            if isAccessRestricted user (LoginsAccess "") && String.isEmpty logins then
+                            if loginRestricted && String.isEmpty logins then
                                 user.name
 
                             else
                                 logins
+
+                        loginField =
+                            if loginRestricted then
+                                div
+                                    [ class "w-full px-3 py-2 border border-dashed border-border rounded-md bg-muted/40 text-foreground flex items-center justify-between" ]
+                                    [ span [] [ text user.name ]
+                                    , span [ class "text-xs text-muted-foreground" ] [ text "Автоматично" ]
+                                    ]
+
+                            else
+                                input
+                                    [ class "w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
+                                    , type_ "text"
+                                    , placeholder "Логіни через кому"
+                                    , value currentLogins
+                                    , onInput (\v -> UpdateForm (\f -> { f | access = LoginsAccess v }))
+                                    ]
+                                    []
+
+                        loginNote =
+                            if loginRestricted then
+                                div [ class "text-xs text-muted-foreground" ] [ text "Роль Rer може надати доступ лише власному логіну" ]
+
+                            else
+                                text ""
                     in
                     ( [ div [ class "space-y-2" ]
-                            [ label [ class "text-sm font-medium text-foreground" ] [ text "Логіни (через кому)" ]
-                            , input
-                                [ class "w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
-                                , type_ "text"
-                                , placeholder "Логіни через кому"
-                                , value currentLogins
-                                , onInput (\v -> UpdateForm (\f -> { f | access = LoginsAccess v }))
+                            [ label [ class "text-sm font-medium text-foreground" ]
+                                [ text
+                                    (if loginRestricted then
+                                        "Ваш логін"
+
+                                     else
+                                        "Логіни (через кому)"
+                                    )
                                 ]
-                                []
+                            , loginField
+                            , loginNote
                             ]
                       ]
                     , getAccessHint user (LoginsAccess "")
@@ -535,6 +564,21 @@ createPalitraSidebarContent user model =
                             Just { value = normalized, label = "Смуги" }
                 )
                 availableAccessTypes
+        accessSegmentOnChange accessForm =
+            case accessForm of
+                LoginsAccess _ ->
+                    let
+                        restrictedLogin =
+                            isAccessRestricted user (LoginsAccess "")
+                    in
+                    if restrictedLogin then
+                        ChangeAccess (LoginsAccess user.name)
+
+                    else
+                        ChangeAccess accessForm
+
+                _ ->
+                    ChangeAccess accessForm
     in
     [ div [ class "flex flex-col h-full" ]
         [ div [ class "p-6 border-b border-border" ]
@@ -579,7 +623,7 @@ createPalitraSidebarContent user model =
                     , div [ class "flex flex-wrap gap-2" ]
                         [ SegmentedControl.new
                             (normalizeAccessForm model.form.access)
-                            ChangeAccess
+                            accessSegmentOnChange
                             accessOptions
                             |> SegmentedControl.view
                         ]
