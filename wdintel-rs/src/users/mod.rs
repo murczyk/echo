@@ -17,6 +17,13 @@ use std::collections::BTreeMap;
 
 pub mod types;
 
+fn log_login_form_error(login: &str, errors: &BTreeMap<String, String>) {
+    error!(
+        target: "form_error_details",
+        "Login attempt for \"{login}\" failed: {errors:?}"
+    );
+}
+
 pub async fn has_role(
     dbx: &sea_orm::DatabaseConnection,
     user_id: &str,
@@ -581,10 +588,12 @@ pub async fn user_test_api_login(
         Ok(obj) => obj,
         Err(e) => match e {
             AppError::Form(_) => {
-                return Err(AppError::Form(BTreeMap::from_iter([(
+                let errors = BTreeMap::from_iter([(
                     "login".to_string(),
                     "Не вдалося залогінитись".to_string(),
-                )])));
+                )]);
+                log_login_form_error(&user_id, &errors);
+                return Err(AppError::Form(errors));
             }
             _ => {
                 return Err(e);
@@ -595,20 +604,24 @@ pub async fn user_test_api_login(
         return Err(err);
     }
     let login_obj = login_obj.login_model.c(h!())?;
-    let password = login_obj.password.clone().ok_or(AppError::Form(
-        BTreeMap::from_iter([(
+    let password = login_obj.password.clone().ok_or_else(|| {
+        let errors = BTreeMap::from_iter([(
             "login".to_string(),
             "Не вдалося залогінитись".to_string(),
-        )]),
-    ))?;
+        )]);
+        log_login_form_error(&user_id, &errors);
+        AppError::Form(errors)
+    })?;
     let is_valid =
         argon2::verify_encoded(&password, req.password.as_bytes()).c(h!())?;
     if !is_valid {
         println!("> warning: invalid password attempt: {}", req.user);
-        return Err(AppError::Form(BTreeMap::from_iter([(
+        let errors = BTreeMap::from_iter([(
             "password".to_string(),
             "Не вдалося залогінитись".to_string(),
-        )])));
+        )]);
+        log_login_form_error(&user_id, &errors);
+        return Err(AppError::Form(errors));
     };
 
     Identity::login(&http_req.extensions(), user_id.clone()).c(h!())?;
@@ -627,15 +640,18 @@ pub async fn user_login(
         Ok(obj) => obj,
         Err(e) => {
             match e {
-                AppError::Form(form_errors) => {
-                    return Err(AppError::Form(BTreeMap::from_iter([(
+                AppError::Form(errors) => {
+                    let login_error =
+                        errors.get("login").map(String::as_str).unwrap_or("");
+                    let errors = BTreeMap::from_iter([(
                         "login".to_string(),
                         format!(
                             "Невірний логін \"{}\". {}",
-                            req.user,
-                            form_errors.get("login").unwrap_or(&"".to_string())
+                            req.user, login_error
                         ),
-                    )])));
+                    )]);
+                    log_login_form_error(&user_id, &errors);
+                    return Err(AppError::Form(errors));
                 }
                 _ => {
                     return Err(e);
@@ -651,23 +667,30 @@ pub async fn user_login(
         return Err(err);
     }
     let login_obj = login_obj.login_model.c(h!())?;
-    let password = login_obj.password.clone().ok_or(AppError::Form(
-        BTreeMap::from_iter([(
-            "login".to_string(),
-            format!(
-            "Даний спосіб авторизації не підтримується для користувача \"{}\"",
-            req.user
-        ),
-        )]),
-    ))?;
+    let password = login_obj
+        .password
+        .clone()
+        .ok_or_else(|| {
+            let errors = BTreeMap::from_iter([(
+                "login".to_string(),
+                format!(
+                "Даний спосіб авторизації не підтримується для користувача \"{}\"",
+                req.user
+            ),
+            )]);
+            log_login_form_error(&user_id, &errors);
+            AppError::Form(errors)
+        })?;
     let is_valid =
         argon2::verify_encoded(&password, req.password.as_bytes()).c(h!())?;
     if !is_valid {
         println!("> warning: invalid password attempt: {}", req.user);
-        return Err(AppError::Form(BTreeMap::from_iter([(
+        let errors = BTreeMap::from_iter([(
             "password".to_string(),
             "Невірний пароль".to_string(),
-        )])));
+        )]);
+        log_login_form_error(&user_id, &errors);
+        return Err(AppError::Form(errors));
     };
 
     Identity::login(&http_req.extensions(), user_id.clone()).c(h!())?;
@@ -1026,10 +1049,10 @@ pub async fn validate_login(
             _ => (format!("Користувача було видалено: {login}"), None),
         };
         warn!("{msg}");
-        let err = AppError::Form(BTreeMap::from_iter([(
-            "login".to_string(),
-            msg.to_string(),
-        )]));
+        let errors =
+            BTreeMap::from_iter([("login".to_string(), msg.to_string())]);
+        log_login_form_error(login, &errors);
+        let err = AppError::Form(errors);
         return Ok(UserValidationResult {
             login_model: None,
             is_valid: true,
