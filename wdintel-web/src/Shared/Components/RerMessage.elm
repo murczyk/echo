@@ -13,6 +13,7 @@ import Html.Attributes exposing (..)
 import Html.Events exposing (..)
 import Html.Extra as HtmlX
 import List.Extra as ListX
+import Maybe exposing (withDefault)
 import Maybe.Extra as MaybeX exposing (isJust)
 import Pages_.RerAnalysis.Utils
 import Route exposing (Route)
@@ -772,6 +773,25 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                     ]
                 ]
 
+        renderAttachment : MessageMediaInfo -> Html msg
+        renderAttachment attachment =
+         -- Get the file name, using "<???>" if it's Nothing
+         let
+             displayFileName =
+                 withDefault "<файл без назви>" attachment.fileName
+         in
+         a
+             [ class "btn btn-outline-secondary btn-sm"
+             , href attachment.href
+             , download displayFileName
+             , target "_blank"
+             ]
+             [
+               i [ class "bi bi-download me-2" ] []
+             ,
+               text displayFileName
+             ]
+
         timeColumn =
             let
                 formattedDateTime =
@@ -1025,6 +1045,11 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                 [ div [] [ networkBlock ]
                 , div [ class "mt-1" ] <|
                     List.map renderImage message.images
+                , div [ class "mt-1" ] <|
+                      ( message.media
+                        |> List.filter (\attachment -> not (String.startsWith "image/" attachment.contentType))
+                        |> List.map renderAttachment
+                        )
                 , div
                     [ style "margin" "0 auto"
                     , style "font-size" "1rem"

@@ -1,4 +1,5 @@
 use crate::config::S3_MEDIA_ROOT_PREFIX;
+use crate::entities::signal_message_media;
 use crate::error::AppError;
 use crate::h;
 use crate::types::ShortContext;
@@ -182,4 +183,8 @@ pub fn generate_strongbox_key_b64() -> String {
     let mut buf = [0u8; 32];
     rand::rng().fill(&mut buf);
     base64::engine::general_purpose::STANDARD.encode(buf)
+}
+
+pub fn mk_media_url(m: &signal_message_media::Model) -> String {
+    format!("/api/messenger/media/{}", m.id)
 }

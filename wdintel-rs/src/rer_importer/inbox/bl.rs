@@ -14,6 +14,7 @@ use crate::rer_importer::collect_profiles_data;
 use crate::rer_importer::highlight::*;
 use crate::rer_importer::inbox::query::build_inbox_query;
 use crate::rer_importer::signals::*;
+use crate::storage::mk_media_url;
 use crate::types::*;
 use crate::utils::string::*;
 use crate::utils::*;
@@ -156,12 +157,13 @@ pub async fn aggregate_to_inbox_messages(
                 content_type: m.content_type.clone(),
                 file_name: m.file_name.clone(),
                 size_bytes: m.size_bytes,
+                href: mk_media_url(m),
             })
             .collect_vec();
         let images = media
             .iter()
             .filter(|m| m.content_type.to_lowercase().starts_with("image/"))
-            .map(|m| format!("/api/messenger/media/{}", m.id))
+            .map(mk_media_url)
             .collect_vec();
         let body = message.body.unwrap_or("".to_string());
         let no_headers_body =

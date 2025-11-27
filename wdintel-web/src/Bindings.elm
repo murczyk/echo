@@ -3208,6 +3208,7 @@ type alias MessageMediaInfo =
     , contentType : String
     , fileName : Maybe String
     , sizeBytes : Int
+    , href : String
     }
 
 
@@ -3218,8 +3219,8 @@ messageMediaInfoEncoder struct =
         , ( "content_type", Json.Encode.string struct.contentType )
         , ( "file_name", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.fileName )
         , ( "size_bytes", Json.Encode.int struct.sizeBytes )
+        , ( "href", Json.Encode.string struct.href )
         ]
-
 
 type alias SigintZone =
     { name : String
@@ -6620,7 +6621,6 @@ areaOfResponsibilityStatsRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aors" (Json.Decode.list analysisStatsAorDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aor_names" (Json.Decode.list areaOfResponsibilityEntryDecoder)))
 
-
 messageMediaInfoDecoder : Json.Decode.Decoder MessageMediaInfo
 messageMediaInfoDecoder =
     Json.Decode.succeed MessageMediaInfo
@@ -6628,7 +6628,7 @@ messageMediaInfoDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "content_type" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "file_name" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "size_bytes" Json.Decode.int))
-
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "href" Json.Decode.string))
 
 inboxMessageDecoder : Json.Decode.Decoder InboxMessage
 inboxMessageDecoder =

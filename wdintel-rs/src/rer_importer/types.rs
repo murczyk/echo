@@ -56,6 +56,7 @@ pub struct MessageMediaInfo {
     pub content_type: String,
     pub file_name: Option<String>,
     pub size_bytes: i64,
+    pub href: String,
 }
 
 #[derive(
