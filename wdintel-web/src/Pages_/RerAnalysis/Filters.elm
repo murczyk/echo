@@ -261,22 +261,16 @@ view isDark user model =
                         _ ->
                             ""
             in
-            (if List.member "Admin" user.roles then
-                [ filterMenuBlockCountOutOf
-                    { unfold = model.unfoldAorsFilter
-                    , toggleMsg = ToggleUnfoldAorsFilter
-                    , label = "смуги"
-                    , mCountLabel = List.length model.aorsSelected |> zeroToNothing |> mmap String.fromInt
-                    , overallLabel = getOverallOptionsCount (\r -> r.aorsCount) model.aors
-                    , withGreenCircle = False
-                    }
-                    tabFiltersAors
-                ]
-
-             else
-                []
-            )
-                ++ [ filterMenuBlockCountOutOf
+            filterMenuBlockCountOutOf
+                { unfold = model.unfoldAorsFilter
+                , toggleMsg = ToggleUnfoldAorsFilter
+                , label = "смуги"
+                , mCountLabel = List.length model.aorsSelected |> zeroToNothing |> mmap String.fromInt
+                , overallLabel = getOverallOptionsCount (\r -> r.aorsCount) model.aors
+                , withGreenCircle = False
+                }
+                tabFiltersAors
+                :: [ filterMenuBlockCountOutOf
                         { unfold = model.unfoldGroupsFilter
                         , toggleMsg = ToggleUnfoldGroupsFilter
                         , label = "група"

@@ -8,6 +8,8 @@
 - 🐞 - Виправлення багів
 
 ## NEXT
+
+- Відображаємо фільтр "Смуги" для всіх користувачів
 - [#1692](https://github.com/echoua/echo/issues/1692) ✅ Звіт Еталонка. Виправлено проблему з відображенням частот.
 - [#1669](https://github.com/echoua/echo/issues/1668) Міграція stats на group batch замість group
 - [#1669](https://github.com/echoua/echo/issues/1669) Загальне: навігація працює на ipad
