@@ -781,7 +781,7 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                  withDefault "<файл без назви>" attachment.fileName
          in
          a
-             [ class "btn btn-outline-secondary btn-sm"
+             [ class "btn btn-outline-secondary btn-sm m-5"
              , href attachment.href
              , download displayFileName
              , target "_blank"
@@ -1043,7 +1043,7 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
             in
             [ div []
                 [ div [] [ networkBlock ]
-                , div [ class "mt-1" ] <|
+                , div [ class "m-1" ] <|
                     List.map renderImage message.images
                 , div [ class "mt-1" ] <|
                       ( message.media
