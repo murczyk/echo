@@ -1,7 +1,6 @@
 module Shared.Components.NavbarOld exposing (navBar)
 
 import Auth
-import Config
 import Core.Auth exposing (hasRole, serverModeIs)
 import Dict
 import Html exposing (..)
@@ -66,14 +65,6 @@ navBar user shared activeName props =
             , Menu (Internal Route.Path.RerNetworks) "networks" "мережі"
             , Menu (Internal Route.Path.RerPalitra) "palitra" "палітра"
             ]
-                |> List.filter
-                    (\item ->
-                        if item.activeName == "palitra" then
-                            Config.featureEnablePalitra
-
-                        else
-                            True
-                    )
 
         importSubs =
             [ Menu (Internal Route.Path.RerDeltaImport) "rer-delta-import" "імпорт delta"
