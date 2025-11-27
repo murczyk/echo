@@ -351,6 +351,19 @@ pub async fn delete_palitra(
         .await
         .c(h!())?
         .c(h!())?;
+    let is_admin = crate::users::has_role(&env.dbx, &login, "Admin")
+        .await
+        .is_ok();
+    if !is_admin {
+        match &palitra.author {
+            Some(author) if author == &login => {}
+            _ => {
+                return Err(AppError::Forbidden(
+                    "Only author or Admin may delete palitra".into(),
+                ));
+            }
+        }
+    }
     let existing_access =
         read_palitra_access(&env.dbx, palitra_id).await.c(h!())?;
     ensure_palitra_permissions(&env, &login, &existing_access, &scope)

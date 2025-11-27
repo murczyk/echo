@@ -576,8 +576,6 @@ renderTable user model palitras =
     let
         canDelete palitra =
             Core.Auth.hasRole "Admin" user
-                || Core.Auth.hasRole "UnitsEditor" user
-                || Core.Auth.hasRole "CallsignsEditor" user
                 || (Maybe.withDefault "" palitra.author == user.name)
 
         defaultCustomizations =
