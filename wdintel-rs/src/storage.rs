@@ -1,3 +1,4 @@
+use crate::config::S3_MEDIA_ROOT_PREFIX;
 use crate::error::AppError;
 use crate::h;
 use crate::types::ShortContext;
@@ -26,7 +27,7 @@ impl From<&crate::config::S3Config> for S3Config {
             endpoint: config.s3_endpoint.clone(),
             access_key_id: config.s3_access_key_id.clone(),
             secret_access_key: config.s3_secret_access_key.clone(),
-            prefix: config.s3_prefix.clone(),
+            prefix: S3_MEDIA_ROOT_PREFIX.to_string(),
         }
     }
 }

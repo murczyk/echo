@@ -26,7 +26,14 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
     let s3_config = mk_s3_config(&config).c(h!())?;
     let s3 = if let Some(s3_config) = &s3_config {
         let s3 = storage::build_s3_operator(s3_config).c(h!())?;
-        Some(s3)
+        if mode == Live
+            && config.s3_config.clone().c(h!())?.strongbox_key.is_empty()
+        {
+            error!("strongbox_key is missing! please run oneoff-generate-strongbox-key, then copy strongbox_key from output and put to config.toml");
+            None
+        } else {
+            Some(s3)
+        }
     } else {
         error!("missing S3 config!");
         None

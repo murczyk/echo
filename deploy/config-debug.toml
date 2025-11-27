@@ -30,7 +30,7 @@ executable_path = "/Users/kon/workspace/wildducks-intel/wdintel-rs/target/debug/
 fill_comp_freq_worker = false
 import_callsign_gdoc_worker = false
 #settlements_sources="kurska_oblast_rf, luhanska_oblast"
-settlements_sources=""
+settlements_sources = ""
 server_id = 37
 
 # Example replica entries for read-only workloads
@@ -57,3 +57,11 @@ delta_api_url = ""
 user_agent = ""
 scope = ""
 claims_json = "{\"id_token\": {\"user_name\": {\"essential\": true}}}"
+
+[s3_config]
+s3_access_key_id = "003f325aff5dd5c0000000019"
+s3_secret_access_key = "K003OCS55uPFZijyzRMMppr8xohTgGg"
+s3_endpoint = "https://s3.eu-central-003.backblazeb2.com"
+s3_region = "eu-central-003"
+s3_bucket = "echouastaging"
+strongbox_key = ""

@@ -160,8 +160,6 @@ pub struct S3Config {
     pub s3_region: String,
     /// Bucket where we store uploaded data
     pub s3_bucket: String,
-    /// Optional prefix for stored objects (without leading slash)
-    pub s3_prefix: String,
     /// Base64-encoded key used for StrongBox encryption of uploaded blobs
     pub strongbox_key: String,
 }
