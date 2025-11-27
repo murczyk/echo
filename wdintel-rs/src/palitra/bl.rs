@@ -464,7 +464,9 @@ async fn collect_palitra_ids(
     let organism_filter = Condition::any()
         .add(organism::Column::Id.is_in(login_organism_ids))
         .add(organism::Column::Id.is_null());
-    let aor_filter = area_of_responsibility::Column::Id.is_in(login_aor_ids);
+    let aor_filter = Condition::any()
+        .add(area_of_responsibility::Column::Id.is_in(login_aor_ids))
+        .add(area_of_responsibility::Column::Id.is_null());
     let filter = Condition::all()
         .add(login_filter)
         .add(aor_filter)
@@ -497,6 +499,7 @@ async fn collect_palitra_ids(
         .select_only()
         .column(palitra::Column::Id)
         .group_by(palitra::Column::Id)
+        .filter(palitra::Column::Deleted.eq(false))
         .filter(filter)
         .into_tuple::<i64>()
         .all(dbx)
