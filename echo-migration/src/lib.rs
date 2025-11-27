@@ -172,6 +172,7 @@ mod m20251118_183849_add_signal_message_group_fk;
 mod m20251119_121701_fix_tag_stats;
 mod m20251124_084954_signal_message_media;
 mod m20251124_145441_add_group_batch;
+mod m20251127_112149_delete_signal_attachments;
 
 pub struct Migrator;
 
@@ -248,6 +249,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20250115_170706_remove_obsolete_elalonka_tables::Migration),
             Box::new(m20250210_185135_change_search_index::Migration),
             Box::new(m20250214_120000_echo_inbox_message_seen_index::Migration),
+            Box::new(m20250214_130500_signal_queue_indexes::Migration),
             Box::new(m20250214_131000_echo_inbox_message_internal_id_index::Migration),
             Box::new(m20250214_132500_echo_inbox_message_created_at_index::Migration),
             Box::new(m20250305_132553_new_networks_structure::Migration),
@@ -340,7 +342,6 @@ impl MigratorTrait for Migrator {
             Box::new(m20251106_125324_drop_datasource_legacy_columns::Migration),
             Box::new(m20251107_102225_datasource_default_status::Migration),
             Box::new(m20251111_145848_add_signal_queue::Migration),
-            Box::new(m20250214_130500_signal_queue_indexes::Migration),
             Box::new(m20251113_093602_add_group_stats_tables::Migration),
             Box::new(m20251115_105217_add_echo_indexes::Migration),
             Box::new(m20251117_100845_update_stats::Migration),
@@ -349,8 +350,9 @@ impl MigratorTrait for Migrator {
             Box::new(m20251118_114747_add_more_stats::Migration),
             Box::new(m20251118_183849_add_signal_message_group_fk::Migration),
             Box::new(m20251119_121701_fix_tag_stats::Migration),
-            Box::new(m20251124_145441_add_group_batch::Migration),
             Box::new(m20251124_084954_signal_message_media::Migration),
+            Box::new(m20251124_145441_add_group_batch::Migration),
+            Box::new(m20251127_112149_delete_signal_attachments::Migration),
         ]
     }
 }
