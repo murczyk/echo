@@ -148,11 +148,17 @@ pub async fn organism_active_logins(
     Ok(Json(logins))
 }
 
-#[post("/api/organism/my-organism")]
-pub async fn my_organism(
+#[derive(Serialize, Deserialize)]
+pub struct MyScope {
+    pub organism: Option<MyOrganism>,
+    pub aor_ids: Vec<i64>,
+}
+
+#[post("/api/organism/my-scope")]
+pub async fn my_scope(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
-) -> Result<Json<Option<MyOrganism>>, AppError> {
+) -> Result<Json<MyScope>, AppError> {
     let login = user.id().c(h!())?;
 
     let login_obj = login::Entity::find()
@@ -163,21 +169,32 @@ pub async fn my_organism(
         .c(h!())?
         .c(h!())?;
 
-    match login_obj.organism_id {
-        Some(organism_id) => {
-            let organism = organism::Entity::find_by_id(organism_id)
-                .filter(organism::Column::DeletedPermanently.eq(false))
-                .one(&env.dbx)
-                .await
-                .c(h!())?;
-
-            Ok(Json(organism.map(|o| MyOrganism {
+    let organism_id = login_obj.organism_id;
+    let organism = match organism_id {
+        Some(id) => organism::Entity::find_by_id(id)
+            .filter(organism::Column::DeletedPermanently.eq(false))
+            .one(&env.dbx)
+            .await
+            .c(h!())?
+            .map(|o| MyOrganism {
                 id: o.id,
                 name: o.name,
-            })))
-        }
-        None => Ok(Json(None)),
-    }
+            }),
+        None => None,
+    };
+    let aor_ids = match organism_id {
+        Some(id) => organism_aor::Entity::find()
+            .filter(organism_aor::Column::OrganismId.eq(id))
+            .all(&env.dbx)
+            .await
+            .c(h!())?
+            .into_iter()
+            .map(|o| o.aor_id)
+            .collect(),
+        None => Vec::new(),
+    };
+
+    Ok(Json(MyScope { organism, aor_ids }))
 }
 
 #[post("/api/organism/update")]
