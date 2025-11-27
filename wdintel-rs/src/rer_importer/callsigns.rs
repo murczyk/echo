@@ -860,11 +860,11 @@ fn avia_format_lines(lines: &Vec<String>) -> Result<usize, AppError> {
     // 🟠 УКХ р/м НВ підрозділу 128.900 МГц
     lazy_static! {
         static ref RE_POST: Regex = Regex::new(
-            r#"^\s*Отримано з поста\s+[-0-9A-Z\p{Cyrillic}_/"\*]+(\s|-)*$"#
+            r#"^\s*Отримано з поста\s+[-0-9A-Z\p{Cyrillic}_/ \.\-\*"']+(\s|-)*$"#
         )
         .unwrap();
         static ref RE_SEPARATOR: Regex =
-            Regex::new(r"^--------------------------------------$").unwrap();
+            Regex::new(r"^-{5,}$").unwrap();
         static ref RE_DATE: Regex =
             Regex::new(r"^\s*\d{2}.\d{2}.\d{4},\s+\d{2}:\d{2}:\d{2}\s*$")
                 .unwrap();
@@ -3039,6 +3039,28 @@ async fn test_extract_callsigns_avia_format_catch_five_digits_asterisk_in_post()
     let res = extract_avia_callsigns(body).unwrap();
     // let res = extract_callsigns(body).unwrap();
     let expected: Vec<String> = vec!["46579".to_string(), "ФИНАЛ".to_string()];
+    let ress: Vec<String> = res.into_iter().take(2).map(|x| x.text).collect();
+    assert_eq!(ress, expected);
+}
+
+#[tokio::test]
+async fn test_extract_callsigns_avia_format_catch_five_digits_single_quote_in_post(
+) {
+    let body = r#"Отримано з поста " '31/1' Курсант"
+-------------------------------
+25.11.2025, 10:14:47
+128.5000
+🟠р/м Єдиної системи управління повітряним рухом ПКС зс рф
+
+САКСОФОН
+47578
+
+— Саксофон контроль 47578 с Балтимором ... на ЭШ 190 не возражает
+— ... 190 занял ... Инбал"#;
+    let res = extract_avia_callsigns(body).unwrap();
+    // let res = extract_callsigns(body).unwrap();
+    let expected: Vec<String> =
+        vec!["САКСОФОН".to_string(), "47578".to_string()];
     let ress: Vec<String> = res.into_iter().take(2).map(|x| x.text).collect();
     assert_eq!(ress, expected);
 }

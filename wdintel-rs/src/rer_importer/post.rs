@@ -18,7 +18,7 @@ pub fn extract_post(inp: &str) -> Result<Option<String>, AppError> {
     '_if: {
         lazy_static! {
             static ref RE: Regex = Regex::new(
-                r#"Отримано з поста "(?P<post>[a-zA-Zа-яіїА-ЯІЇ0-9)(_/ \.\-\*]+)""#
+                r#"Отримано з поста "(?P<post>[a-zA-Zа-яіїА-ЯІЇ0-9)(_/ \.\-\*']+)""#
             )
             .unwrap();
         }
@@ -28,7 +28,7 @@ pub fn extract_post(inp: &str) -> Result<Option<String>, AppError> {
         let Some(post) = m_cap_s(&capts, "post") else {
             break '_if;
         };
-        transit_post = Some(post.to_string());
+        transit_post = Some(post.trim().to_string());
     }
 
     // Extract transit_post_name for unquoted form: Отримано з поста <name>
@@ -46,7 +46,7 @@ pub fn extract_post(inp: &str) -> Result<Option<String>, AppError> {
         let Some(post) = m_cap_s(&capts, "post") else {
             break '_if;
         };
-        transit_post = Some(post.to_string());
+        transit_post = Some(post.trim().to_string());
     }
 
     // like: П54 or ЦФП157
@@ -62,7 +62,7 @@ pub fn extract_post(inp: &str) -> Result<Option<String>, AppError> {
         let Some(post) = m_cap_s(&capts, "post") else {
             break '_if;
         };
-        return Ok(Some(post.to_string()));
+        return Ok(Some(post.trim().to_string()));
     }
 
     // like: "ЦФП14"
@@ -78,7 +78,7 @@ pub fn extract_post(inp: &str) -> Result<Option<String>, AppError> {
         let Some(post) = m_cap_s(&capts, "post") else {
             break '_if;
         };
-        return Ok(Some(post.to_string()));
+        return Ok(Some(post.trim().to_string()));
     }
 
     // like: (ЦФП90)
@@ -94,7 +94,7 @@ pub fn extract_post(inp: &str) -> Result<Option<String>, AppError> {
         let Some(post) = m_cap_s(&capts, "post") else {
             break '_if;
         };
-        return Ok(Some(post.to_string()));
+        return Ok(Some(post.trim().to_string()));
     }
 
     // like: ЦФП 80
@@ -109,7 +109,7 @@ pub fn extract_post(inp: &str) -> Result<Option<String>, AppError> {
         let Some(post) = m_cap_s(&capts, "post") else {
             break '_if;
         };
-        return Ok(Some(post.to_string()));
+        return Ok(Some(post.trim().to_string()));
     }
 
     // like: П34 just one in the string
@@ -124,7 +124,7 @@ pub fn extract_post(inp: &str) -> Result<Option<String>, AppError> {
         let Some(post) = m_cap_s(&capts, "post") else {
             break '_if;
         };
-        return Ok(Some(post.to_string()));
+        return Ok(Some(post.trim().to_string()));
     }
 
     Ok(transit_post)
@@ -515,5 +515,22 @@ Kupol80
 -46579, доброе утро экипажам ...одиночных площадок, следую к вам, прошел ... Александровка вошел вашу зону, подход ..."#;
         let res = extract_post(body).unwrap();
         assert_eq!(res.unwrap(), "**33".to_string())
+    }
+
+    #[test]
+    fn extract_post_complex() {
+        let body = r#"Отримано з поста " '31/1' Курсант"
+-------------------------------
+25.11.2025, 10:14:47
+128.5000
+🟠р/м Єдиної системи управління повітряним рухом ПКС зс рф
+
+САКСОФОН
+47578
+
+— Саксофон контроль 47578 с Балтимором ... на ЭШ 190 не возражает
+— ... 190 занял ... Инбал"#;
+        let res = extract_post(body).unwrap();
+        assert_eq!(res.unwrap(), "'31/1' Курсант".to_string())
     }
 }
