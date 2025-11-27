@@ -264,7 +264,7 @@ pub async fn find_duplicate_of(
 pub async fn save_attachment_restapi(
     config: &crate::config::Config,
     dbx: &DatabaseConnection,
-    s3: &opendal::Operator,
+    s3: &Option<opendal::Operator>,
     attachment: &restapi::Attachment,
     m_db_message_id: Option<i64>,
 ) -> Result<(), AppError> {

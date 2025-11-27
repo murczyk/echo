@@ -23,8 +23,8 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
     let config = crate::config::read_config(mode).c(h!())?;
     let redis = new_redis(&config).await.c(h!())?;
     let redisb = new_redisb(&config).await.c(h!())?;
-    let s3_config = crate::storage::S3Config::from(&config);
-    let s3 = crate::storage::build_s3_operator(&s3_config).c(h!())?;
+    let s3 = mk_s3(&config).c(h!())?;
+    let s3_config = mk_s3_config(&config).c(h!())?;
     let mil_geo = MilGeo::new(&mk_conn_string(&config)[..]);
     let dbx = crate::new_pg_pool_from_config(&config).await.c(h!())?;
     let mut replicas = vec![];
@@ -100,6 +100,7 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
         redis: redis.clone(),
         redisb: redisb.clone(),
         s3,
+        s3_config,
         mil_geo: mil_geo.clone(),
         dbx: dbx.clone(),
         rq,

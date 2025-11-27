@@ -1,5 +1,7 @@
+use crate::storage;
 use crate::types::*;
 use anyhow::Result;
+use opendal::Operator;
 
 pub const DEFAULT_PG_HOST: &str = "localhost";
 pub const DEFAULT_PG_PORT: u16 = 5432;
@@ -103,20 +105,6 @@ pub struct Config {
     pub pg_user: Option<String>,
     pub pg_password: Option<String>,
     pub pg_dbname: Option<String>,
-    /// S3-compatible access key (used for uploads, leave empty to disable)
-    pub s3_access_key_id: String,
-    /// S3-compatible secret key (used for uploads, leave empty to disable)
-    pub s3_secret_access_key: String,
-    /// S3 endpoint, e.g. https://s3.us-west-000.backblazeb2.com
-    pub s3_endpoint: String,
-    /// S3 region, e.g. us-west-000
-    pub s3_region: String,
-    /// Bucket where we store uploaded data
-    pub s3_bucket: String,
-    /// Optional prefix for stored objects (without leading slash)
-    pub s3_prefix: String,
-    /// Base64-encoded key used for StrongBox encryption of uploaded blobs
-    pub strongbox_key: String,
     pub cookie_session_secret: String,
     pub storage_dir: String,
     pub signal_api_phone: String,
@@ -157,6 +145,25 @@ pub struct Config {
     pub server_id: Option<u32>,
     pub messenger_worker_pool_capacity: Option<usize>,
     pub feature_group_stats_aggregated: Option<bool>,
+    pub s3_config: Option<S3Config>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct S3Config {
+    /// S3-compatible access key (used for uploads, leave empty to disable)
+    pub s3_access_key_id: String,
+    /// S3-compatible secret key (used for uploads, leave empty to disable)
+    pub s3_secret_access_key: String,
+    /// S3 endpoint, e.g. https://s3.us-west-000.backblazeb2.com
+    pub s3_endpoint: String,
+    /// S3 region, e.g. us-west-000
+    pub s3_region: String,
+    /// Bucket where we store uploaded data
+    pub s3_bucket: String,
+    /// Optional prefix for stored objects (without leading slash)
+    pub s3_prefix: String,
+    /// Base64-encoded key used for StrongBox encryption of uploaded blobs
+    pub strongbox_key: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
@@ -223,6 +230,28 @@ pub struct VaultConfig {
     pub server: String,
     pub login: String,
     pub password: String,
+}
+
+pub fn mk_s3(
+    config: &Config,
+) -> std::result::Result<Option<Operator>, AppError> {
+    let mut s3 = None;
+    if let Some(config) = &config.s3_config {
+        let s3_config = storage::S3Config::from(config);
+        s3 = Some(storage::build_s3_operator(&s3_config).c(h!())?);
+    };
+    Ok(s3)
+}
+
+pub fn mk_s3_config(
+    config: &Config,
+) -> std::result::Result<Option<storage::S3Config>, AppError> {
+    let mut s3_config = None;
+    if let Some(config) = &config.s3_config {
+        s3_config =
+            Some(storage::S3Config::from(config)).filter(|c| c.is_configured());
+    };
+    Ok(s3_config)
 }
 
 pub fn read_config(mode: Mode) -> Result<Config, AppError> {

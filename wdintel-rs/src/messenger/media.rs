@@ -6,6 +6,7 @@ use crate::h;
 use crate::storage;
 use crate::types::ShortContext;
 use echo_im::types::MessageAttachmentF1;
+use log::warn;
 use opendal::Operator;
 use sea_orm::{ActiveModelTrait, ConnectionTrait, NotSet, Set};
 use std::path::Path;
@@ -68,12 +69,16 @@ pub async fn store_media_attachments(
     attachments: &[MediaUploadInput],
     signal_message_id: i64,
     config: &Config,
-    s3: &Operator,
+    s3: &Option<Operator>,
     txn: &impl ConnectionTrait,
 ) -> Result<Vec<signal_message_media::Model>, AppError> {
     if attachments.is_empty() {
         return Ok(vec![]);
     }
+    let Some(config) = config.s3_config.as_ref() else {
+        warn!("S3 is not configured, cannot store attachment!");
+        return Ok(vec![]);
+    };
     let s3_config = storage::S3Config::from(config);
     let strongbox_key = &config.strongbox_key;
     let mut stored = Vec::with_capacity(attachments.len());
@@ -132,15 +137,16 @@ pub async fn fetch_media_bytes(
     env: &crate::types::Env,
     media: &signal_message_media::Model,
 ) -> Result<Vec<u8>, AppError> {
-    let s3_config = storage::S3Config::from(&env.config);
-    let object_key = storage::nested_object_key(
-        crate::config::S3_MEDIA_ROOT_PREFIX,
-        &media.id,
-    );
+    let Some(config) = env.config.s3_config.as_ref() else {
+        warn!("S3 is not configured, cannot store attachment!");
+        return Ok(vec![]);
+    };
+    let object_key =
+        storage::nested_object_key(S3_MEDIA_ROOT_PREFIX, &media.id);
     storage::download_and_decrypt_from_s3_with_operator(
         &env.s3,
-        &s3_config,
-        &env.config.strongbox_key,
+        &env.s3_config,
+        &config.strongbox_key,
         &object_key,
     )
     .await

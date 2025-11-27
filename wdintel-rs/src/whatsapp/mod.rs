@@ -1,7 +1,7 @@
+use crate::config::mk_s3;
 use crate::entities::*;
 use crate::messenger::id;
 use crate::messenger::media::{self, MediaUploadInput};
-use crate::storage;
 use crate::types::*;
 use chrono::prelude::*;
 use sea_orm::*;
@@ -97,8 +97,7 @@ async fn receive_once(
     redis: &mut redis::aio::ConnectionManager,
     datasource: &datasource::Model,
 ) -> Result<(), AppError> {
-    let s3 =
-        storage::build_s3_operator(&storage::S3Config::from(config)).c(h!())?;
+    let s3 = mk_s3(config).c(h!())?;
     let now = Utc::now();
     // created at least 3 seconds ago. needed to ensure images are downloaded. will rework properly eventually
     let whatsapp_queue = whatsapp_queue::Entity::find()

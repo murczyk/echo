@@ -860,7 +860,7 @@ pub async fn process_signal_message_queue_item(
     settlements: Arc<RwLock<SettlementsData>>,
     rq: &Client,
     config: &Config,
-    s3: &opendal::Operator,
+    s3: &Option<opendal::Operator>,
     txn: &DatabaseTransaction,
     skip_process_inbox_item: bool,
 ) -> Result<String, AppError> {

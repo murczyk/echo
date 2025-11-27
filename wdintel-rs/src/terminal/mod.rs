@@ -408,13 +408,12 @@ pub fn oneoff_parse_html() -> Result<(), AppError> {
 fn s3_upload_ctx(
     env: &Env,
 ) -> Result<(storage::S3Config, opendal::Operator), AppError> {
-    let config = storage::S3Config::from(&env.config);
-    if !config.is_configured() {
+    let (Some(config), Some(op)) = (env.s3_config.clone(), env.s3.clone())
+    else {
         return Err(AppError::BL {
             msg: "s3 storage is not configured".to_string(),
         });
-    }
-    let op = env.s3.clone();
+    };
     Ok((config, op))
 }
 

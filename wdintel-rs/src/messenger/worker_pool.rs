@@ -4,7 +4,6 @@ use crate::entities::*;
 use crate::location::SettlementsData;
 use crate::messenger::types::{EchoAccountF1, Message};
 use crate::messenger::worker::process_signal_message_queue_item;
-use crate::storage;
 use crate::types::*;
 use crate::utils::setup_worker;
 use echo_im::types::{MessageAttachmentF1, MessageF1, MessageSource, SenderF1};
@@ -25,7 +24,7 @@ pub struct WorkerContext {
     pub rq: Client,
     pub redis: ConnectionManager,
     pub dbx: DatabaseConnection,
-    pub s3: opendal::Operator,
+    pub s3: Option<opendal::Operator>,
 }
 
 pub async fn process_queue(
@@ -165,8 +164,7 @@ pub async fn mk_message_processor_pool(
 async fn mk_context(mode: Mode) -> anyhow::Result<WorkerContext> {
     let context = setup_worker(mode).await.context(h!())?;
     let (config, settlements, rq, redis, dbx) = context;
-    let s3_config = storage::S3Config::from(&config);
-    let s3 = storage::build_s3_operator(&s3_config).c(h!())?;
+    let s3 = mk_s3(&config).c(h!())?;
     let result = WorkerContext {
         config,
         settlements,

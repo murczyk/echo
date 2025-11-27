@@ -99,7 +99,8 @@ pub enum Mode {
 pub struct Env {
     pub mode: Mode,
     pub config: crate::config::Config,
-    pub s3: opendal::Operator,
+    pub s3: Option<opendal::Operator>,
+    pub s3_config: Option<crate::storage::S3Config>,
     pub dbx: sea_orm::DatabaseConnection,
     /// GreptimeDB connection via Postgresql driver
     pub greptimedb: Arc<RwLock<Option<deadpool_postgres::Pool>>>,

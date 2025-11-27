@@ -1,6 +1,7 @@
 use crate::error::AppError;
 use crate::h;
 use crate::types::ShortContext;
+use log::{info, warn};
 use opendal::Operator;
 use rand::Rng;
 use std::time::Duration;
@@ -17,8 +18,8 @@ pub struct S3Config {
     pub prefix: String,
 }
 
-impl From<&crate::config::Config> for S3Config {
-    fn from(config: &crate::config::Config) -> Self {
+impl From<&crate::config::S3Config> for S3Config {
+    fn from(config: &crate::config::S3Config) -> Self {
         Self {
             bucket: config.s3_bucket.clone(),
             region: config.s3_region.clone(),
@@ -108,12 +109,16 @@ fn aad(bucket: &str, key: &str) -> String {
 /// Upload encrypted data to S3
 /// Returns (bucket, remote_key) on success
 pub async fn upload_encrypted_to_s3_with_operator(
-    op: &Operator,
+    op: &Option<Operator>,
     config: &S3Config,
     strongbox_key_b64: &str,
     rel_path: &str,
     data: &[u8],
-) -> Result<(String, String), AppError> {
+) -> Result<(), AppError> {
+    let Some(op) = op else {
+        warn!("S3 not configured, failed to write!");
+        return Ok(());
+    };
     let remote_key = config.prefixed_key(rel_path);
     let key = key_from_b64(strongbox_key_b64)?;
     let sb = StaticStrongBox::new(key.clone(), vec![key]);
@@ -123,16 +128,21 @@ pub async fn upload_encrypted_to_s3_with_operator(
             msg: format!("failed to encrypt payload for {remote_key}: {err}"),
         })?;
     op.write(&remote_key, ciphertext).await.c(h!())?;
-    Ok((config.bucket.clone(), remote_key))
+    info!("stored to {}: {}", config.bucket.clone(), remote_key);
+    Ok(())
 }
 
 /// Download data from S3 and decrypt it with StrongBox
 pub async fn download_and_decrypt_from_s3_with_operator(
-    op: &Operator,
-    config: &S3Config,
+    op: &Option<Operator>,
+    config: &Option<S3Config>,
     strongbox_key_b64: &str,
     rel_path: &str,
 ) -> Result<Vec<u8>, AppError> {
+    let (Some(op), Some(config)) = (op, config) else {
+        warn!("S3 not configured, failed to write!");
+        return Ok(vec![]);
+    };
     let remote_key = config.prefixed_key(rel_path);
     let key = key_from_b64(strongbox_key_b64)?;
     let sb = StaticStrongBox::new(key.clone(), vec![key]);
