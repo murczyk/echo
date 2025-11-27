@@ -170,10 +170,10 @@ pub fn object_url(config: &S3Config, key: &str) -> String {
 }
 
 /// Build object key path using a 5-char prefix folder and the UUID-like filename.
-pub fn nested_object_key(root_prefix: &str, id: &uuid::Uuid) -> String {
+/// Returns a path relative to the configured S3 prefix.
+pub fn nested_object_key(id: &uuid::Uuid) -> String {
     let prefix = id.to_string().chars().take(5).collect::<String>();
-    let root = root_prefix.trim_matches('/');
-    format!("{root}/{prefix}/{id}")
+    format!("{prefix}/{id}")
 }
 
 /// Generate a random 32-byte key encoded as base64 for StrongBox usage.

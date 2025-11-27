@@ -1,5 +1,4 @@
 use crate::config::Config;
-use crate::config::S3_MEDIA_ROOT_PREFIX;
 use crate::entities::signal_message_media;
 use crate::error::AppError;
 use crate::h;
@@ -97,8 +96,7 @@ pub async fn store_media_attachments(
             attachment.name.as_deref(),
             Path::new(&attachment.path),
         );
-        let object_key =
-            storage::nested_object_key(S3_MEDIA_ROOT_PREFIX, &media_id);
+        let object_key = storage::nested_object_key(&media_id);
 
         storage::upload_encrypted_to_s3_with_operator(
             s3,
@@ -141,8 +139,7 @@ pub async fn fetch_media_bytes(
         warn!("S3 is not configured, cannot store attachment!");
         return Ok(vec![]);
     };
-    let object_key =
-        storage::nested_object_key(S3_MEDIA_ROOT_PREFIX, &media.id);
+    let object_key = storage::nested_object_key(&media.id);
     storage::download_and_decrypt_from_s3_with_operator(
         &env.s3,
         &env.s3_config,
