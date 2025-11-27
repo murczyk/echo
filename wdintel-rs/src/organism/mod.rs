@@ -5,6 +5,7 @@ use crate::organism::bl::*;
 use crate::types::*;
 use actix_web::post;
 use actix_web::web::Json;
+use anyhow::bail;
 use sea_orm::sea_query::Expr;
 use sea_orm::*;
 use std::collections::{HashMap, HashSet};
@@ -164,29 +165,29 @@ pub async fn my_scope(
         .c(h!())?;
 
     let organism_id = login_obj.organism_id;
-    let organism = match organism_id {
-        Some(id) => organism::Entity::find_by_id(id)
-            .filter(organism::Column::DeletedPermanently.eq(false))
-            .one(&env.dbx)
-            .await
-            .c(h!())?
-            .map(|o| MyOrganism {
-                id: o.id,
-                name: o.name,
-            }),
-        None => None,
+    let id = match organism_id {
+        Some(id) => id,
+        None => bail!("User without organism_id is not supported"),
     };
-    let aor_ids = match organism_id {
-        Some(id) => organism_aor::Entity::find()
-            .filter(organism_aor::Column::OrganismId.eq(id))
-            .all(&env.dbx)
-            .await
-            .c(h!())?
-            .into_iter()
-            .map(|o| o.aor_id)
-            .collect(),
-        None => Vec::new(),
-    };
+
+    let organism = organism::Entity::find_by_id(id)
+        .filter(organism::Column::DeletedPermanently.eq(false))
+        .one(&env.dbx)
+        .await
+        .c(h!())?
+        .map(|o| MyOrganism {
+            id: o.id,
+            name: o.name,
+        });
+
+    let aor_ids = organism_aor::Entity::find()
+        .filter(organism_aor::Column::OrganismId.eq(id))
+        .all(&env.dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|o| o.aor_id)
+        .collect();
 
     Ok(Json(MyScope { organism, aor_ids }))
 }
