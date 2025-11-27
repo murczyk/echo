@@ -6,13 +6,18 @@ use serde::{Deserialize, Serialize};
 #[derive(
     Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize,
 )]
-#[sea_orm(table_name = "signal_attachment")]
+#[sea_orm(table_name = "signal_message_media")]
 pub struct Model {
-    #[sea_orm(primary_key)]
-    pub id: i64,
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
     pub signal_message_id: i64,
     #[sea_orm(column_type = "Text")]
-    pub path: String,
+    pub content_type: String,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub file_ext: Option<String>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub file_name: Option<String>,
+    pub size_bytes: i64,
     pub created_at: DateTime,
 }
 
@@ -23,17 +28,15 @@ pub enum Relation {
         from = "Column::SignalMessageId",
         to = "super::signal_message::Column::Id",
         on_update = "NoAction",
-        on_delete = "NoAction"
+        on_delete = "Cascade"
     )]
-    SignalMessage2,
-    #[sea_orm(
-        belongs_to = "super::signal_message::Entity",
-        from = "Column::SignalMessageId",
-        to = "super::signal_message::Column::Id",
-        on_update = "NoAction",
-        on_delete = "NoAction"
-    )]
-    SignalMessage1,
+    SignalMessage,
+}
+
+impl Related<super::signal_message::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SignalMessage.def()
+    }
 }
 
 impl ActiveModelBehavior for ActiveModel {}

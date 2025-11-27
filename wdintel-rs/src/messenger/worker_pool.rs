@@ -1,21 +1,15 @@
 use crate::config::*;
 use crate::entities::signal_message_queue;
 use crate::entities::*;
-use crate::h;
 use crate::location::SettlementsData;
 use crate::messenger::types::{EchoAccountF1, Message};
 use crate::messenger::worker::process_signal_message_queue_item;
 use crate::types::*;
 use crate::utils::setup_worker;
-use anyhow::Context;
 use echo_im::types::{MessageAttachmentF1, MessageF1, MessageSource, SenderF1};
-use itertools::Itertools;
 use redis::aio::ConnectionManager;
 use reqwest::Client;
 use sea_orm::{DatabaseConnection, TransactionTrait};
-use std::collections::VecDeque;
-use std::sync::{Arc, RwLock};
-use tokio::task::JoinSet;
 
 pub struct ProcessorPool {
     pub capacity: usize,
@@ -30,6 +24,7 @@ pub struct WorkerContext {
     pub rq: Client,
     pub redis: ConnectionManager,
     pub dbx: DatabaseConnection,
+    pub s3: Option<opendal::Operator>,
 }
 
 pub async fn process_queue(
@@ -169,12 +164,14 @@ pub async fn mk_message_processor_pool(
 async fn mk_context(mode: Mode) -> anyhow::Result<WorkerContext> {
     let context = setup_worker(mode).await.context(h!())?;
     let (config, settlements, rq, redis, dbx) = context;
+    let s3 = mk_s3(&config).c(h!())?;
     let result = WorkerContext {
         config,
         settlements,
         rq,
         redis,
         dbx,
+        s3,
     };
     Ok(result)
 }
@@ -237,11 +234,12 @@ async fn process_item_once(
         let mut redis = context.redis.clone();
         if let Err(e) = process_signal_message_queue_item(
             message,
-            m.attachments.into_iter().map(|a| a.path).collect_vec(),
+            m.attachments,
             &mut redis,
             context.settlements.clone(),
             &context.rq,
             &context.config,
+            &context.s3,
             &txn,
             false,
         )

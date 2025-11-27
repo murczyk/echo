@@ -11,7 +11,8 @@
 
 - Відображаємо фільтр "Смуги" для всіх користувачів
 - [#1692](https://github.com/echoua/echo/issues/1692) ✅ Звіт Еталонка. Виправлено проблему з відображенням частот.
-- [#1669](https://github.com/echoua/echo/issues/1668) Міграція stats на group batch замість group
+- [#1688](https://github.com/echoua/echo/issues/1688) Міграція stats на group batch замість group
+- [#1686](https://github.com/echoua/echo/issues/1686) ✅ Медіа файли на хмарному сховищі (Backblaze) - відтепер зберігаємо картинки та інші медіа файли довше
 - [#1669](https://github.com/echoua/echo/issues/1669) Загальне: навігація працює на ipad
 - [#1668](https://github.com/echoua/echo/issues/1668) ✅🚨 Рахуємо більше статів у фоні (обережно, збільшить навантаження!), використовуємо їх для оптимізації дропдаунів у аналізі (вмикається новим фіче флагом).
 - [#1671](https://github.com/echoua/echo/issues/1671) ✅ Парсинг, Покращили розпізнавання позивних та постів з перехоплень

@@ -1,4 +1,5 @@
 use super::*;
+use crate::config::mk_s3;
 use crate::messenger::id;
 use crate::messenger::types::UnstageResult;
 use crate::types::ShortContext;
@@ -459,12 +460,14 @@ pub async fn process_incoming_message_restapi(
     txn.commit().await.c(h!())?;
 
     let db_message_id = message.id;
+    let s3 = mk_s3(config).c(h!())?;
 
     if let Some(ref attachments) = data_message.attachments {
         for attachment in attachments.iter() {
             save_attachment_restapi(
                 config,
                 dbx,
+                &s3,
                 attachment,
                 Some(db_message_id),
             )
@@ -477,6 +480,7 @@ pub async fn process_incoming_message_restapi(
             save_attachment_restapi(
                 config,
                 dbx,
+                &s3,
                 attachment,
                 Some(db_message_id),
             )

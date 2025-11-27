@@ -53,6 +53,8 @@ pub enum Relation {
     SelfRef,
     #[sea_orm(has_many = "super::signal_message_group::Entity")]
     SignalMessageGroup,
+    #[sea_orm(has_many = "super::signal_message_media::Entity")]
+    SignalMessageMedia,
 }
 
 impl Related<super::datasource_group::Entity> for Entity {
@@ -88,6 +90,12 @@ impl Related<super::sigint_inbox_item::Entity> for Entity {
 impl Related<super::signal_message_group::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SignalMessageGroup.def()
+    }
+}
+
+impl Related<super::signal_message_media::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SignalMessageMedia.def()
     }
 }
 

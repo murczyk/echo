@@ -10,11 +10,13 @@ use rand::prelude::IndexedRandom;
 pub use serde::{Deserialize, Serialize};
 #[cfg(test)]
 pub use serial_test::serial;
+pub use std::collections::VecDeque;
 pub use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 pub use std::hash::Hash;
 pub use std::path::{Path, PathBuf};
 pub use std::sync::Arc;
 pub use std::sync::RwLock;
+pub use tokio::task::JoinSet;
 pub use uuid::Uuid;
 
 /// Shorthand trait for anyhow-like `Context` allowing `.c(h!())` usage
@@ -97,7 +99,8 @@ pub enum Mode {
 pub struct Env {
     pub mode: Mode,
     pub config: crate::config::Config,
-    pub b2_store: opendal::Operator,
+    pub s3: Option<opendal::Operator>,
+    pub s3_config: Option<crate::storage::S3Config>,
     pub dbx: sea_orm::DatabaseConnection,
     /// GreptimeDB connection via Postgresql driver
     pub greptimedb: Arc<RwLock<Option<deadpool_postgres::Pool>>>,

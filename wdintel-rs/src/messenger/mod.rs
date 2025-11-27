@@ -14,6 +14,7 @@ use sea_orm::*;
 pub mod bl;
 pub mod group;
 pub mod id;
+pub mod media;
 #[cfg(test)]
 pub mod tests;
 pub mod types;

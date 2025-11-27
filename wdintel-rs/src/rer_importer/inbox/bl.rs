@@ -14,6 +14,7 @@ use crate::rer_importer::collect_profiles_data;
 use crate::rer_importer::highlight::*;
 use crate::rer_importer::inbox::query::build_inbox_query;
 use crate::rer_importer::signals::*;
+use crate::storage::mk_media_url;
 use crate::types::*;
 use crate::utils::string::*;
 use crate::utils::*;
@@ -121,6 +122,23 @@ pub async fn aggregate_to_inbox_messages(
         load_messages_networks(&messages, &groups_map, &env.dbx)
             .await
             .context(h!())?;
+    let message_ids: Vec<i64> = messages.iter().map(|m| m.id).collect_vec();
+    let media_entries = signal_message_media::Entity::find()
+        .filter(
+            signal_message_media::Column::SignalMessageId
+                .is_in(message_ids.clone()),
+        )
+        .all(&env.dbx)
+        .await
+        .c(h!())?;
+    let mut media_by_message: HashMap<i64, Vec<signal_message_media::Model>> =
+        HashMap::new();
+    for media in media_entries {
+        media_by_message
+            .entry(media.signal_message_id)
+            .or_default()
+            .push(media);
+    }
 
     for message in messages {
         // for message in messages {
@@ -128,28 +146,25 @@ pub async fn aggregate_to_inbox_messages(
         //     SigintInboxItem::find_by_id(message.id)
         //         .one(&env.dbx)
         //         .await.c(h!())?;
-        let attachments: Vec<signal_attachment::Model> =
-            SignalAttachment::find()
-                .filter(
-                    signal_attachment::Column::SignalMessageId.eq(message.id),
-                )
-                .all(&env.dbx)
-                .await
-                .c(h!())?;
-        let mut images = vec![];
-        for attach in attachments {
-            let x = attach.path.to_lowercase();
-            if x.ends_with(".png")
-                || x.ends_with(".jpg")
-                || x.ends_with(".jpeg")
-                || x.ends_with(".jpe")
-            {
-                images.push(format!(
-                    "/api/rer-importer/attachment/{}",
-                    attach.id
-                ));
-            }
-        }
+        let media = media_by_message
+            .get(&message.id)
+            .cloned()
+            .unwrap_or_default();
+        let media_infos = media
+            .iter()
+            .map(|m| MessageMediaInfo {
+                id: m.id.to_string(),
+                content_type: m.content_type.clone(),
+                file_name: m.file_name.clone(),
+                size_bytes: m.size_bytes,
+                href: mk_media_url(m),
+            })
+            .collect_vec();
+        let images = media
+            .iter()
+            .filter(|m| m.content_type.to_lowercase().starts_with("image/"))
+            .map(mk_media_url)
+            .collect_vec();
         let body = message.body.unwrap_or("".to_string());
         let no_headers_body =
             crate::rer_importer::body_noheader::extract_text(&body)?;
@@ -228,6 +243,7 @@ pub async fn aggregate_to_inbox_messages(
             InboxMessage {
                 message_uid: message.message_uid,
                 text: body.clone(),
+                media: media_infos,
                 images,
                 image_recognized: vec![],
                 date: message.date.clone(),

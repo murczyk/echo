@@ -5,12 +5,14 @@ use crate::error::{AppError, ContextAndError};
 use crate::location::SettlementsData;
 use crate::messenger::bl::{deactivate_account, list_echo_accounts};
 use crate::messenger::id;
+use crate::messenger::media::{self, MediaUploadInput};
 use crate::messenger::types::*;
 use crate::messenger::worker_pool::*;
 use crate::new_pg_pool_from_mode;
 use crate::stats::recalculate_group_stats;
 use crate::types::*;
 use chrono::*;
+use echo_im::types::MessageAttachmentF1;
 use echo_migration::Expr;
 use log::*;
 use redis::aio::ConnectionManager;
@@ -853,11 +855,12 @@ async fn list_clients(
 
 pub async fn process_signal_message_queue_item(
     m: Message,
-    attachment_paths: Vec<String>,
+    attachments: Vec<MessageAttachmentF1>,
     redis: &mut ConnectionManager,
     settlements: Arc<RwLock<SettlementsData>>,
     rq: &Client,
     config: &Config,
+    s3: &Option<opendal::Operator>,
     txn: &DatabaseTransaction,
     skip_process_inbox_item: bool,
 ) -> Result<String, AppError> {
@@ -916,14 +919,16 @@ pub async fn process_signal_message_queue_item(
 
     let message_uid = signal_message.message_uid.clone().c(h!())?;
 
-    for path in attachment_paths {
-        let _signal_attachment = signal_attachment::ActiveModel {
-            id: NotSet,
-            signal_message_id: Set(signal_message.id),
-            path: Set(path),
-            created_at: NotSet,
-        }
-        .insert(txn)
+    if !attachments.is_empty() {
+        let upload_inputs: Vec<MediaUploadInput> =
+            attachments.clone().into_iter().map(Into::into).collect();
+        media::store_media_attachments(
+            &upload_inputs,
+            signal_message.id,
+            config,
+            s3,
+            txn,
+        )
         .await
         .c(h!())?;
     }

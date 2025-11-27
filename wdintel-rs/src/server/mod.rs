@@ -1,7 +1,7 @@
 use crate::config::*;
 use crate::types::*;
 use crate::utils::worker_watch::spawn_named_worker;
-use crate::{mk_conn_string, new_redis, new_redisb};
+use crate::{mk_conn_string, new_redis, new_redisb, storage};
 use actix_identity::IdentityMiddleware;
 use actix_session::{storage::RedisSessionStore, SessionMiddleware};
 use actix_web::cookie::Key;
@@ -9,8 +9,6 @@ use actix_web::{App, HttpServer};
 
 use crate::types::Mode::Live;
 use milgeo_rs::MilGeo;
-use opendal::services::S3;
-use opendal::Operator;
 use tokio::runtime::Handle;
 use tokio::signal::unix::{signal, SignalKind};
 use tokio::task::JoinSet;
@@ -22,21 +20,24 @@ pub mod middleware;
 pub mod monitoring;
 
 pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
-    let config = crate::config::read_config(mode).c(h!())?;
+    let config = read_config(mode).c(h!())?;
     let redis = new_redis(&config).await.c(h!())?;
     let redisb = new_redisb(&config).await.c(h!())?;
-    let b = S3::default()
-        .region(&config.b2_s3_region)
-        .access_key_id(&config.b2_aws_access_key_id)
-        .secret_access_key(&config.b2_aws_secret_access_key)
-        .endpoint(&config.b2_s3)
-        .bucket("wildducks-online-public");
-    let b2_store = Operator::new(b)
-        .map_err(|e| AppError::BL {
-            msg: format!("s3 store build error: {e}"),
-        })?
-        .finish();
-    // opendal Operator is cheaply cloneable; store directly on Env
+    let s3_config = mk_s3_config(&config).c(h!())?;
+    let s3 = if let Some(s3_config) = &s3_config {
+        let s3 = storage::build_s3_operator(s3_config).c(h!())?;
+        if mode == Live
+            && config.s3_config.clone().c(h!())?.strongbox_key.is_empty()
+        {
+            error!("strongbox_key is missing! please run oneoff-generate-strongbox-key, then copy strongbox_key from output and put to config.toml");
+            None
+        } else {
+            Some(s3)
+        }
+    } else {
+        error!("missing S3 config!");
+        None
+    };
     let mil_geo = MilGeo::new(&mk_conn_string(&config)[..]);
     let dbx = crate::new_pg_pool_from_config(&config).await.c(h!())?;
     let mut replicas = vec![];
@@ -64,7 +65,7 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
         }
     }
     let rq: reqwest::Client = reqwest::Client::builder()
-        .timeout(core::time::Duration::from_secs(crate::config::RQ_TIMEOUT))
+        .timeout(core::time::Duration::from_secs(RQ_TIMEOUT))
         .build()
         .c(h!())?;
     let m_greptimedb = if config.greptime_host.is_some()
@@ -95,7 +96,7 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
         Mode::Debug | Mode::Test => {
             std::env::current_dir().c(h!())?.to_path_buf()
         }
-        Mode::Live => PathBuf::from("usr/share/echo"),
+        Live => PathBuf::from("usr/share/echo"),
     }
     .join("version.txt");
     info!("version file: {}", version_file.display());
@@ -111,7 +112,8 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
         mode,
         redis: redis.clone(),
         redisb: redisb.clone(),
-        b2_store,
+        s3,
+        s3_config,
         mil_geo: mil_geo.clone(),
         dbx: dbx.clone(),
         rq,
@@ -283,7 +285,7 @@ pub async fn main_server(
             .wrap(
                 IdentityMiddleware::builder()
                     .visit_deadline(Some(std::time::Duration::from_secs(
-                        crate::config::IDENTITY_DURATION_HOURS * 60 * 60,
+                        IDENTITY_DURATION_HOURS * 60 * 60,
                     ))).build(),
             )
             .wrap(SessionMiddleware::new(
@@ -326,7 +328,7 @@ pub async fn main_server(
             .service(crate::delta::get_kml)
             .service(crate::delta::login::fetch_redirect_url)
             .service(crate::delta::login::handle_redirect)
-            .service(crate::rer_importer::attachment)
+            .service(crate::rer_importer::messenger_media)
             .service(crate::rer_importer::rer_importer_callsigns)
             .service(crate::rer_importer::callsigns_alchemy)
             .service(crate::rer_importer::unread_counters)
@@ -532,7 +534,7 @@ pub async fn main_server(
             .service(crate::palitra::update_palitra)
             .service(crate::palitra::delete_palitra)
             .service(crate::palitra::upload_palitra_points)
-            .service(actix_files::Files::new(crate::config::get_assets_url(), crate::config::get_assets_folder(&config)).show_files_listing())
+            .service(actix_files::Files::new(get_assets_url(), get_assets_folder(&config)).show_files_listing())
     })
         .bind((bind_ip, bind_port))?
         .run();

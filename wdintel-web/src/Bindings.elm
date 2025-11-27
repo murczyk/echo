@@ -905,6 +905,7 @@ areaOfResponsibilityStatsRspEncoder struct =
 type alias InboxMessage =
     { messageUid : Maybe String
     , text : String
+    , media : List MessageMediaInfo
     , images : List String
     , imageRecognized : List String
     , date : Maybe String
@@ -938,6 +939,7 @@ inboxMessageEncoder struct =
     Json.Encode.object
         [ ( "message_uid", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.messageUid )
         , ( "text", Json.Encode.string struct.text )
+        , ( "media", Json.Encode.list messageMediaInfoEncoder struct.media )
         , ( "images", Json.Encode.list Json.Encode.string struct.images )
         , ( "image_recognized", Json.Encode.list Json.Encode.string struct.imageRecognized )
         , ( "date", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.date )
@@ -3226,6 +3228,25 @@ datasourceEncoder struct =
         , ( "enabled", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.enabled )
         ]
 
+
+type alias MessageMediaInfo =
+    { id : String
+    , contentType : String
+    , fileName : Maybe String
+    , sizeBytes : Int
+    , href : String
+    }
+
+
+messageMediaInfoEncoder : MessageMediaInfo -> Json.Encode.Value
+messageMediaInfoEncoder struct =
+    Json.Encode.object
+        [ ( "id", Json.Encode.string struct.id )
+        , ( "content_type", Json.Encode.string struct.contentType )
+        , ( "file_name", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.fileName )
+        , ( "size_bytes", Json.Encode.int struct.sizeBytes )
+        , ( "href", Json.Encode.string struct.href )
+        ]
 
 type alias SigintZone =
     { name : String
@@ -6626,12 +6647,21 @@ areaOfResponsibilityStatsRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aors" (Json.Decode.list analysisStatsAorDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aor_names" (Json.Decode.list areaOfResponsibilityEntryDecoder)))
 
+messageMediaInfoDecoder : Json.Decode.Decoder MessageMediaInfo
+messageMediaInfoDecoder =
+    Json.Decode.succeed MessageMediaInfo
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "content_type" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "file_name" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "size_bytes" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "href" Json.Decode.string))
 
 inboxMessageDecoder : Json.Decode.Decoder InboxMessage
 inboxMessageDecoder =
     Json.Decode.succeed InboxMessage
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message_uid" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "text" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "media" (Json.Decode.list messageMediaInfoDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "images" (Json.Decode.list Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "image_recognized" (Json.Decode.list Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "date" (Json.Decode.nullable Json.Decode.string)))

@@ -1,5 +1,7 @@
+use crate::storage;
 use crate::types::*;
 use anyhow::Result;
+use opendal::Operator;
 
 pub const DEFAULT_PG_HOST: &str = "localhost";
 pub const DEFAULT_PG_PORT: u16 = 5432;
@@ -23,7 +25,6 @@ pub const RQ_TIMEOUT_LAUNCH_SUBPROCESS: u64 = 60;
 pub const SIGNAL_LOGIN_INITIAL_SLEEP_MS: u64 = 2_000;
 pub const COORDS_PER_FREQ_LIMIT: usize = 100;
 pub const COORDS_PER_FREQ_PER_LOC_LIMIT: usize = 10;
-pub const B2_AWS_PROFILE_NAME: &str = "my-creds";
 pub const URL_NEED_VISIT_NOTIFICATION_MINS: i64 = 5;
 pub const IDENTITY_DURATION_HOURS: u64 = 12;
 pub const IDENTITY_SALT: &str = "IUBwdub783736#";
@@ -72,6 +73,8 @@ pub const REDIS_SESSIONS_KEY: &str = "echo-sessions";
 pub const SESSION_STREAM_LIFETIME_SEC: i64 = 180;
 pub const INACTIVE_USERS_DEACTIVATE_DURATION_SEC: u64 = 3600;
 pub const INACTIVE_USERS_DEACTIVATE_AFTER_DAYS: i64 = 30;
+/// Default root prefix for encrypted messenger media stored on S3
+pub const S3_MEDIA_ROOT_PREFIX: &str = "message-media";
 pub const SIGNAL_CLIENT_DIR: &str = "/etc/echo/signal-cli-data";
 pub const WHATSAPP_CLIENT_DIR: &str = "/etc/echo/whatsapp-cli-data";
 pub const SIGNAL_UNIT_NAME: &str = "echo-signal-bot";
@@ -102,12 +105,6 @@ pub struct Config {
     pub pg_user: Option<String>,
     pub pg_password: Option<String>,
     pub pg_dbname: Option<String>,
-    /// Used for importer image-upload logic etc. Leave empty if not needed.
-    pub b2_aws_access_key_id: String,
-    pub b2_aws_secret_access_key: String,
-    // pub b2_aws_profile_name: String,
-    pub b2_s3: String,
-    pub b2_s3_region: String,
     pub cookie_session_secret: String,
     pub storage_dir: String,
     pub signal_api_phone: String,
@@ -148,6 +145,23 @@ pub struct Config {
     pub server_id: Option<u32>,
     pub messenger_worker_pool_capacity: Option<usize>,
     pub feature_group_stats_aggregated: Option<bool>,
+    pub s3_config: Option<S3Config>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct S3Config {
+    /// S3-compatible access key (used for uploads, leave empty to disable)
+    pub s3_access_key_id: String,
+    /// S3-compatible secret key (used for uploads, leave empty to disable)
+    pub s3_secret_access_key: String,
+    /// S3 endpoint, e.g. https://s3.us-west-000.backblazeb2.com
+    pub s3_endpoint: String,
+    /// S3 region, e.g. us-west-000
+    pub s3_region: String,
+    /// Bucket where we store uploaded data
+    pub s3_bucket: String,
+    /// Base64-encoded key used for StrongBox encryption of uploaded blobs
+    pub strongbox_key: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
@@ -214,6 +228,27 @@ pub struct VaultConfig {
     pub server: String,
     pub login: String,
     pub password: String,
+}
+
+pub fn mk_s3(config: &Config) -> Result<Option<Operator>> {
+    if let Some(config) = &config.s3_config {
+        let s3_config = storage::S3Config::from(config);
+        let s3 = storage::build_s3_operator(&s3_config).c(h!())?;
+        Ok(Some(s3))
+    } else {
+        Ok(None)
+    }
+}
+
+pub fn mk_s3_config(config: &Config) -> Result<Option<storage::S3Config>> {
+    if let Some(config) = &config.s3_config {
+        let cfg = storage::S3Config::from(config);
+        if !cfg.is_configured() {
+            bail!("S3 config is not configured: {cfg:?}");
+        }
+        return Ok(Some(cfg));
+    };
+    Ok(None)
 }
 
 pub fn read_config(mode: Mode) -> Result<Config, AppError> {

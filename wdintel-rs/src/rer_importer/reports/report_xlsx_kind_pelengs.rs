@@ -245,6 +245,7 @@ pub async fn get_inbox_messages_report(
                     location,
                     coords,
                     text: m.body.clone(),
+                    media: vec![],
                     images: vec![],
                     image_recognized: vec![],
                     date: m.date.clone(),

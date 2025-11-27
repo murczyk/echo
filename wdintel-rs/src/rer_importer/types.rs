@@ -12,6 +12,7 @@ use std::collections::BTreeMap;
 pub struct InboxMessage {
     pub message_uid: Option<String>,
     pub text: String,
+    pub media: Vec<MessageMediaInfo>,
     pub images: Vec<String>,
     pub image_recognized: Vec<String>,
     pub date: Option<String>,
@@ -45,6 +46,17 @@ pub struct InboxMessage {
     pub location: Option<String>,
     pub tags: Option<Vec<i64>>,
     pub network_ids: Option<Vec<i64>>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct MessageMediaInfo {
+    pub id: String,
+    pub content_type: String,
+    pub file_name: Option<String>,
+    pub size_bytes: i64,
+    pub href: String,
 }
 
 #[derive(

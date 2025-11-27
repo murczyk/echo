@@ -2,6 +2,7 @@ use crate::config::REDIS_MGS_ID_TTL;
 use crate::entities::{prelude::*, *};
 use crate::error::AppError;
 use crate::messenger::id;
+use crate::messenger::media::{self, MediaUploadInput};
 use crate::types::*;
 use crate::utils::pop_vector;
 use crate::utils::string::*;
@@ -263,6 +264,7 @@ pub async fn find_duplicate_of(
 pub async fn save_attachment_restapi(
     config: &crate::config::Config,
     dbx: &DatabaseConnection,
+    s3: &Option<opendal::Operator>,
     attachment: &restapi::Attachment,
     m_db_message_id: Option<i64>,
 ) -> Result<(), AppError> {
@@ -270,13 +272,19 @@ pub async fn save_attachment_restapi(
         if let Some(ref attachment_id) = attachment.id {
             let file_path = crate::config::signal_api_attachment_path(config)?
                 .join(attachment_id);
-            SignalAttachment::insert(signal_attachment::ActiveModel {
-                id: NotSet,
-                signal_message_id: Set(db_message_id),
-                path: Set(file_path.display().to_string()),
-                created_at: NotSet,
-            })
-            .exec(dbx)
+            let path_str = file_path.display().to_string();
+            let uploads = [MediaUploadInput {
+                path: path_str,
+                name: attachment.filename.clone(),
+                content_type: Some(attachment.content_type.clone()),
+            }];
+            media::store_media_attachments(
+                &uploads,
+                db_message_id,
+                config,
+                s3,
+                dbx,
+            )
             .await
             .c(h!())?;
         }

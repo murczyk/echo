@@ -48,6 +48,7 @@ pub mod server;
 pub mod session;
 pub mod sigint;
 mod stats;
+pub mod storage;
 pub mod tags;
 pub mod terminal;
 pub mod tests;
@@ -469,6 +470,7 @@ enum Cmd {
     OneoffCalculateHistoricStats(OneoffCalculateHistoricStatsPs),
     OneoffDisableIm,
     OneoffCountGroupBatches,
+    OneoffGenerateStrongboxKey,
 }
 
 #[derive(clap::Parser, Debug)]
@@ -862,6 +864,11 @@ async fn async_main(
         Cmd::OneoffDisableIm => datasource::oneoff_disable_im(mode).await,
         Cmd::OneoffCountGroupBatches => {
             stats::oneoff_count_group_batches(mode).await
+        }
+        Cmd::OneoffGenerateStrongboxKey => {
+            let key = storage::generate_strongbox_key_b64();
+            println!("{key}");
+            Ok(())
         }
     }
 }
