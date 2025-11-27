@@ -232,26 +232,25 @@ pub struct VaultConfig {
     pub password: String,
 }
 
-pub fn mk_s3(
-    config: &Config,
-) -> std::result::Result<Option<Operator>, AppError> {
-    let mut s3 = None;
+pub fn mk_s3(config: &Config) -> Result<Option<Operator>> {
     if let Some(config) = &config.s3_config {
         let s3_config = storage::S3Config::from(config);
-        s3 = Some(storage::build_s3_operator(&s3_config).c(h!())?);
-    };
-    Ok(s3)
+        let s3 = storage::build_s3_operator(&s3_config).c(h!())?;
+        Ok(Some(s3))
+    } else {
+        Ok(None)
+    }
 }
 
-pub fn mk_s3_config(
-    config: &Config,
-) -> std::result::Result<Option<storage::S3Config>, AppError> {
-    let mut s3_config = None;
+pub fn mk_s3_config(config: &Config) -> Result<Option<storage::S3Config>> {
     if let Some(config) = &config.s3_config {
-        s3_config =
-            Some(storage::S3Config::from(config)).filter(|c| c.is_configured());
+        let cfg = storage::S3Config::from(config);
+        if !cfg.is_configured() {
+            bail!("S3 config is not configured: {cfg:?}");
+        }
+        return Ok(Some(cfg));
     };
-    Ok(s3_config)
+    Ok(None)
 }
 
 pub fn read_config(mode: Mode) -> Result<Config, AppError> {

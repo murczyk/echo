@@ -1,7 +1,7 @@
 use crate::config::*;
 use crate::types::*;
 use crate::utils::worker_watch::spawn_named_worker;
-use crate::{mk_conn_string, new_redis, new_redisb};
+use crate::{mk_conn_string, new_redis, new_redisb, storage};
 use actix_identity::IdentityMiddleware;
 use actix_session::{storage::RedisSessionStore, SessionMiddleware};
 use actix_web::cookie::Key;
@@ -20,11 +20,17 @@ pub mod middleware;
 pub mod monitoring;
 
 pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
-    let config = crate::config::read_config(mode).c(h!())?;
+    let config = read_config(mode).c(h!())?;
     let redis = new_redis(&config).await.c(h!())?;
     let redisb = new_redisb(&config).await.c(h!())?;
-    let s3 = mk_s3(&config).c(h!())?;
     let s3_config = mk_s3_config(&config).c(h!())?;
+    let s3 = if let Some(s3_config) = &s3_config {
+        let s3 = storage::build_s3_operator(s3_config).c(h!())?;
+        Some(s3)
+    } else {
+        error!("missing S3 config!");
+        None
+    };
     let mil_geo = MilGeo::new(&mk_conn_string(&config)[..]);
     let dbx = crate::new_pg_pool_from_config(&config).await.c(h!())?;
     let mut replicas = vec![];
@@ -52,7 +58,7 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
         }
     }
     let rq: reqwest::Client = reqwest::Client::builder()
-        .timeout(core::time::Duration::from_secs(crate::config::RQ_TIMEOUT))
+        .timeout(core::time::Duration::from_secs(RQ_TIMEOUT))
         .build()
         .c(h!())?;
     let m_greptimedb = if config.greptime_host.is_some()
@@ -83,7 +89,7 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
         Mode::Debug | Mode::Test => {
             std::env::current_dir().c(h!())?.to_path_buf()
         }
-        Mode::Live => PathBuf::from("usr/share/echo"),
+        Live => PathBuf::from("usr/share/echo"),
     }
     .join("version.txt");
     info!("version file: {}", version_file.display());
@@ -272,7 +278,7 @@ pub async fn main_server(
             .wrap(
                 IdentityMiddleware::builder()
                     .visit_deadline(Some(std::time::Duration::from_secs(
-                        crate::config::IDENTITY_DURATION_HOURS * 60 * 60,
+                        IDENTITY_DURATION_HOURS * 60 * 60,
                     ))).build(),
             )
             .wrap(SessionMiddleware::new(
@@ -520,7 +526,7 @@ pub async fn main_server(
             .service(crate::palitra::update_palitra)
             .service(crate::palitra::delete_palitra)
             .service(crate::palitra::upload_palitra_points)
-            .service(actix_files::Files::new(crate::config::get_assets_url(), crate::config::get_assets_folder(&config)).show_files_listing())
+            .service(actix_files::Files::new(get_assets_url(), get_assets_folder(&config)).show_files_listing())
     })
         .bind((bind_ip, bind_port))?
         .run();
