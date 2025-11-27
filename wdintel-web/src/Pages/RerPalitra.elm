@@ -110,15 +110,33 @@ type Msg
     | AorListResp (Result ApiError (List B.AreaOfResponsibility))
 
 
-init : () -> ( Model, Effect Msg )
-init _ =
+isAdmin : Auth.User -> Bool
+isAdmin user =
+    Core.Auth.hasRole "Admin" user
+
+
+init : Auth.User -> () -> ( Model, Effect Msg )
+init user _ =
+    let
+        admin =
+            isAdmin user
+
+        adminCmds =
+            if admin then
+                [ Api.list_organisms OrganismsResp { sortBy = Nothing }
+                , Api.aor_list AorListResp { sortBy = Nothing }
+                ]
+
+            else
+                []
+    in
     ( { palitras = Loading
       , tableState = Table.initialSort "Назва"
       , deleting = Nothing
       , form = emptyForm
       , submitInFlight = False
       , showCreateSidebar = False
-      , myScope = NotAsked
+      , myScope = Loading
       , loginsSelect =
             { state = Select.initState (Select.selectIdentifier "sel-logins")
             , items = []
@@ -135,10 +153,16 @@ init _ =
             , selected = []
             }
       , logins = NotAsked
-      , organisms = NotAsked
-      , aorList = NotAsked
+      , organisms = if admin then Loading else NotAsked
+      , aorList = if admin then Loading else NotAsked
       }
-    , E.sendCmd <| Api.palitra_list PalitraListResp
+    , E.sendCmd <|
+        Cmd.batch
+            ([ Api.palitra_list PalitraListResp
+             , Api.my_scope MyScopeResp
+             ]
+                ++ adminCmds
+            )
     )
 
 
@@ -524,7 +548,7 @@ view user shared model =
 page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
 page user shared _ =
     Page.new
-        { init = init
+        { init = init user
         , update = update user
         , view = view user shared
         , subscriptions = \_ -> Sub.none
@@ -583,7 +607,15 @@ renderTable user model palitras =
                         }
                     , Table.stringColumn "Файл" (\p -> Maybe.withDefault "—" p.sourceFileName)
                     , Table.stringColumn "Автор" (\p -> Maybe.withDefault "—" p.author)
-                    , Table.stringColumn "Доступ" renderAccess
+                    , Table.veryCustomColumn
+                        { name = "Доступ"
+                        , viewData =
+                            \p ->
+                                { attributes = []
+                                , children = [ renderAccessCompact user model.myScope model.organisms model.aorList p ]
+                                }
+                        , sorter = Sorter.unsortable
+                        }
                     , Table.veryCustomColumn
                         { name = "Дія"
                         , viewData =
@@ -626,28 +658,135 @@ renderTable user model palitras =
     Table.view tableConfig model.tableState palitras
 
 
-renderAccess : B.Palitra -> String
-renderAccess p =
-    if not (List.isEmpty p.accessLogins) then
-        "за логінами"
+renderAccessCompact : Auth.User -> RemoteData ApiError B.MyScope -> RemoteData ApiError (List B.Organism) -> RemoteData ApiError (List B.AreaOfResponsibility) -> B.Palitra -> Html Msg
+renderAccessCompact user myScopeData organismsData aorData p =
+    let
+        admin =
+            isAdmin user
+
+        isAuthor =
+            Maybe.withDefault "" p.author == user.name
+
+        canSeeAccess =
+            admin || isAuthor
+
+        maxShow =
+            2
+
+        renderList : List String -> Html Msg
+        renderList items =
+            let
+                shown =
+                    List.take maxShow items
+
+                remaining =
+                    List.length items - maxShow
+            in
+            div [ class "flex flex-col gap-1" ]
+                [ div [ class "text-xs" ]
+                    [ text (String.join ", " shown)
+                    , if remaining > 0 then
+                        span [ class "text-muted-foreground" ] [ text (" (+" ++ String.fromInt remaining ++ " ще)") ]
+
+                      else
+                        text ""
+                    ]
+                ]
+    in
+    if not canSeeAccess then
+        div [ class "text-xs text-muted-foreground" ] [ text "—" ]
+
+    else if not (List.isEmpty p.accessLogins) then
+        div []
+            [ div [ class "text-xs text-muted-foreground uppercase" ] [ text "Логіни" ]
+            , renderList p.accessLogins
+            ]
 
     else if not (List.isEmpty p.accessOrganismIds) then
-        "за підрозділами"
+        if admin then
+            case organismsData of
+                Success organisms ->
+                    let
+                        names =
+                            p.accessOrganismIds
+                                |> List.filterMap
+                                    (\id ->
+                                        ListX.find (\org -> org.id == id) organisms
+                                            |> Maybe.map .name
+                                    )
+                    in
+                    div []
+                        [ div [ class "text-xs text-muted-foreground uppercase" ] [ text "Підрозділи" ]
+                        , renderList names
+                        ]
+
+                Loading ->
+                    div [ class "text-xs text-muted-foreground" ] [ text "завантаження..." ]
+
+                _ ->
+                    div []
+                        [ div [ class "text-xs text-muted-foreground uppercase" ] [ text "Підрозділи" ]
+                        , div [ class "text-xs" ] [ text (String.fromInt (List.length p.accessOrganismIds) ++ " шт") ]
+                        ]
+
+        else
+            -- Не-Admin автор - показуємо з myScope
+            case myScopeData of
+                Success myScope ->
+                    case myScope.organism of
+                        Just organism ->
+                            div []
+                                [ div [ class "text-xs text-muted-foreground uppercase" ] [ text "Підрозділи" ]
+                                , renderList [ organism.name ]
+                                ]
+
+                        Nothing ->
+                            div [ class "text-xs text-muted-foreground" ] [ text "—" ]
+
+                _ ->
+                    div [ class "text-xs text-muted-foreground" ] [ text "завантаження..." ]
 
     else if not (List.isEmpty p.accessAorId) then
-        "за смугами"
+        if admin then
+            case aorData of
+                Success aors ->
+                    let
+                        names =
+                            p.accessAorId
+                                |> List.filterMap
+                                    (\id ->
+                                        ListX.find (\aor -> aor.id == id) aors
+                                            |> Maybe.map .name
+                                    )
+                    in
+                    div []
+                        [ div [ class "text-xs text-muted-foreground uppercase" ] [ text "Смуги" ]
+                        , renderList names
+                        ]
+
+                Loading ->
+                    div [ class "text-xs text-muted-foreground" ] [ text "завантаження..." ]
+
+                _ ->
+                    div []
+                        [ div [ class "text-xs text-muted-foreground uppercase" ] [ text "Смуги" ]
+                        , div [ class "text-xs" ] [ text (String.fromInt (List.length p.accessAorId) ++ " шт") ]
+                        ]
+
+        else
+            -- Не-Admin автор - показуємо тільки кількість (без назв для безпеки)
+            case myScopeData of
+                Success myScope ->
+                    div []
+                        [ div [ class "text-xs text-muted-foreground uppercase" ] [ text "Смуги" ]
+                        , div [ class "text-xs" ] [ text (String.fromInt (List.length myScope.aorIds) ++ " шт") ]
+                        ]
+
+                _ ->
+                    div [ class "text-xs text-muted-foreground" ] [ text "завантаження..." ]
 
     else
-        "без доступу"
-
-
-
--- Визначає, чи користувач є Admin (може вводити вручну)
-
-
-isAdmin : Auth.User -> Bool
-isAdmin user =
-    Core.Auth.hasRole "Admin" user
+        div [ class "text-xs text-muted-foreground" ] [ text "без доступу" ]
 
 
 
