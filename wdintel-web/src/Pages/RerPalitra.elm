@@ -304,16 +304,23 @@ update user msg model =
                         ]
                     else
                         []
+                
+                -- Завантажуємо AOR список для не-адмінів (для відображення назв)
+                nonAdminAorCmd =
+                    if not (isAdmin user) && model.aorList == NotAsked then
+                        Api.aor_list AorListResp { sortBy = Nothing }
+                    else
+                        Cmd.none
 
                 allCmds =
-                    scopeCmd :: adminDataCmds |> List.filter (\cmd -> cmd /= Cmd.none)
+                    (scopeCmd :: adminDataCmds) ++ [ nonAdminAorCmd ] |> List.filter (\cmd -> cmd /= Cmd.none)
             in
             ( { model 
                 | showCreateSidebar = True
                 , myScope = if model.myScope == NotAsked then Loading else model.myScope
                 , logins = if isAdmin user && model.logins == NotAsked then Loading else model.logins
                 , organisms = if isAdmin user && model.organisms == NotAsked then Loading else model.organisms
-                , aorList = if isAdmin user && model.aorList == NotAsked then Loading else model.aorList
+                , aorList = if model.aorList == NotAsked then Loading else model.aorList
               }
             , if List.isEmpty allCmds then
                 E.none
@@ -774,13 +781,41 @@ renderAccessCompact user myScopeData organismsData aorData p =
                         ]
 
         else
-            -- Не-Admin автор - показуємо тільки кількість (без назв для безпеки)
+            -- Не-Admin автор - показуємо назви смуг з p.accessAorId, але тільки ті, що є в myScope.aorIds
             case myScopeData of
                 Success myScope ->
-                    div []
-                        [ div [ class "text-xs text-muted-foreground uppercase" ] [ text "Смуги" ]
-                        , div [ class "text-xs" ] [ text (String.fromInt (List.length myScope.aorIds) ++ " шт") ]
-                        ]
+                    case aorData of
+                        Success aors ->
+                            let
+                                -- Фільтруємо тільки ті AOR, які є в myScope.aorIds для безпеки
+                                allowedAorIds =
+                                    myScope.aorIds
+
+                                names =
+                                    p.accessAorId
+                                        |> List.filter (\id -> List.member id allowedAorIds)
+                                        |> List.filterMap
+                                            (\id ->
+                                                ListX.find (\aor -> aor.id == id) aors
+                                                    |> Maybe.map .name
+                                            )
+                            in
+                            div []
+                                [ div [ class "text-xs text-muted-foreground uppercase" ] [ text "Смуги" ]
+                                , renderList names
+                                ]
+
+                        Loading ->
+                            div []
+                                [ div [ class "text-xs text-muted-foreground uppercase" ] [ text "Смуги" ]
+                                , div [ class "text-xs text-muted-foreground" ] [ text "завантаження..." ]
+                                ]
+
+                        _ ->
+                            div []
+                                [ div [ class "text-xs text-muted-foreground uppercase" ] [ text "Смуги" ]
+                                , div [ class "text-xs" ] [ text (String.fromInt (List.length p.accessAorId) ++ " шт") ]
+                                ]
 
                 _ ->
                     div [ class "text-xs text-muted-foreground" ] [ text "завантаження..." ]
