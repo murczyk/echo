@@ -57,5 +57,8 @@ syn = "2.0.106"
 #   ] }
 sqlx = { git = "https://github.com/alkeryn/sqlx.git", rev = "4b21f0954c1d402583e8da455182867f803952da" }
 
+[profile.dev]
+debug = 0
+
 [profile.release]
 debug-assertions = false
