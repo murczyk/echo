@@ -428,6 +428,7 @@ where
         id: palitra_id,
         name: palitra_model.name,
         color_hex: palitra_model.hex,
+        author: palitra_model.author,
         source_file_name: palitra_model.source_file_name,
         last_uploaded_at_ts,
         geometry,
@@ -459,12 +460,14 @@ async fn collect_palitra_ids(
         .collect::<Vec<_>>();
     let login_filter = Condition::any()
         .add(login::Column::Login.contains(login))
-        .add(login::Column::Login.count().eq(0));
+        .add(login::Column::Login.is_null());
     let organism_filter = Condition::any()
         .add(organism::Column::Id.is_in(login_organism_ids))
-        .add(organism::Column::Id.count().eq(0));
-    let aor_filter = area_of_responsibility::Column::Id.is_in(login_aor_ids);
-    let having_filter = Condition::all()
+        .add(organism::Column::Id.is_null());
+    let aor_filter = Condition::any()
+        .add(area_of_responsibility::Column::Id.is_in(login_aor_ids))
+        .add(area_of_responsibility::Column::Id.is_null());
+    let filter = Condition::all()
         .add(login_filter)
         .add(aor_filter)
         .add(organism_filter);
@@ -496,7 +499,8 @@ async fn collect_palitra_ids(
         .select_only()
         .column(palitra::Column::Id)
         .group_by(palitra::Column::Id)
-        .having(having_filter)
+        .filter(palitra::Column::Deleted.eq(false))
+        .filter(filter)
         .into_tuple::<i64>()
         .all(dbx)
         .await
@@ -536,7 +540,6 @@ where
         .await
         .c(h!())?;
     match req.access {
-        PalitraAccess::Global => {}
         PalitraAccess::ByLogins { logins } => {
             if !logins.is_empty() {
                 let logins = logins

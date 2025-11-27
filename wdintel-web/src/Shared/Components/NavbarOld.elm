@@ -1,7 +1,6 @@
 module Shared.Components.NavbarOld exposing (navBar)
 
 import Auth
-import Shared.Components.ThemeSwitcher exposing (themeSwitcher)
 import Core.Auth exposing (hasRole, serverModeIs)
 import Dict
 import Html exposing (..)
@@ -10,6 +9,7 @@ import Html.Events exposing (onClick)
 import Route
 import Route.Path
 import Shared
+import Shared.Components.ThemeSwitcher exposing (themeSwitcher)
 import Shared.Model exposing (isDarkMode)
 import Utils.Utils exposing (..)
 
@@ -63,6 +63,7 @@ navBar user shared activeName props =
             , Menu (Internal Route.Path.RerUnits) "rer-units" "підрозділи"
             , Menu (Internal Route.Path.RerSignals) "signals" "сигнали"
             , Menu (Internal Route.Path.RerNetworks) "networks" "мережі"
+            , Menu (Internal Route.Path.RerPalitra) "palitra" "палітра"
             ]
 
         importSubs =

@@ -1253,6 +1253,15 @@ organism_active_logins toMsg organismId =
         }
 
 
+my_scope : (Result ApiError Bindings.MyScope -> msg) -> Cmd msg
+my_scope toMsg =
+    Http.post
+        { url = "/api/organism/my-scope"
+        , body = Http.jsonBody Encode.null
+        , expect = leExpectJson toMsg Bindings.myScopeDecoder
+        }
+
+
 create_organism : (Result ApiError Organism -> msg) -> CreateOrganismReq -> Cmd msg
 create_organism toMsg req =
     Http.post
@@ -1536,6 +1545,42 @@ create_aor toMsg req =
         { url = "/api/sigint/aor/create"
         , body = Http.jsonBody (areaOfResponsibilityInsertEncoder req)
         , expect = leExpectJson toMsg areaOfResponsibilityDecoder
+        }
+
+
+palitra_list : (Result ApiError (List Palitra) -> msg) -> Cmd msg
+palitra_list toMsg =
+    Http.post
+        { url = "/api/palitra/list"
+        , body = Http.emptyBody
+        , expect = leExpectJson toMsg (Decode.list palitraDecoder)
+        }
+
+
+palitra_delete : (Result ApiError () -> msg) -> Int -> Cmd msg
+palitra_delete toMsg palitraId =
+    Http.post
+        { url = "/api/palitra/delete/" ++ String.fromInt palitraId
+        , body = Http.emptyBody
+        , expect = leExpectJson toMsg (Decode.succeed ())
+        }
+
+
+palitra_create : (Result ApiError Palitra -> msg) -> CreatePalitraReq -> Cmd msg
+palitra_create toMsg req =
+    Http.post
+        { url = "/api/palitra/create"
+        , body = Http.jsonBody (createPalitraReqEncoder req)
+        , expect = leExpectJson toMsg palitraDecoder
+        }
+
+
+palitra_update : (Result ApiError PalitraDetails -> msg) -> Int -> CreatePalitraReq -> Cmd msg
+palitra_update toMsg palitraId req =
+    Http.post
+        { url = "/api/palitra/update/" ++ String.fromInt palitraId
+        , body = Http.jsonBody (createPalitraReqEncoder req)
+        , expect = leExpectJson toMsg palitraDetailsDecoder
         }
 
 
