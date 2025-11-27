@@ -6,6 +6,8 @@ import Bindings as B
 import Core.Auth
 import Core.Types exposing (ApiError)
 import Effect as E exposing (Effect)
+import File exposing (File)
+import File.Select
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (on, onInput, targetValue)
@@ -37,6 +39,7 @@ type alias Model =
     { palitras : RemoteData ApiError (List B.Palitra)
     , tableState : Table.State
     , deleting : Maybe Int
+    , uploadingPoints : Maybe Int
     , form : Form
     , submitInFlight : Bool
     , showCreateSidebar : Bool
@@ -95,6 +98,9 @@ type Msg
     | TableStateChanged Table.State
     | DeleteRequested Int
     | DeleteResponse Int (Result ApiError ())
+    | UploadPointsClicked Int
+    | FileSelectedForUpload Int File
+    | UploadPointsResponse Int (Result ApiError ())
     | UpdateForm (Form -> Form)
     | ChangeAccess AccessForm
     | ShowCreateSidebar
@@ -133,6 +139,7 @@ init user _ =
     ( { palitras = Loading
       , tableState = Table.initialSort "Назва"
       , deleting = Nothing
+      , uploadingPoints = Nothing
       , form = emptyForm
       , submitInFlight = False
       , showCreateSidebar = False
@@ -213,6 +220,35 @@ update user msg model =
         DeleteResponse _ (Err err) ->
             ( { model | deleting = Nothing }
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Не вдалося видалити палітру" err
+            )
+
+        UploadPointsClicked palitraId ->
+            ( model
+            , E.sendCmd <| 
+                File.Select.file 
+                    [ "application/vnd.google-earth.kmz"
+                    , "application/vnd.google-earth.kml+xml"
+                    , ".kmz"
+                    , ".kml"
+                    ] 
+                    (FileSelectedForUpload palitraId)
+            )
+
+        FileSelectedForUpload palitraId file ->
+            ( { model | uploadingPoints = Just palitraId }
+            , E.sendCmd <| Api.palitra_upload_points (UploadPointsResponse palitraId) palitraId file
+            )
+
+        UploadPointsResponse palitraId (Ok _) ->
+            ( { model | uploadingPoints = Nothing }
+            , E.batch
+                [ E.sendCmd <| Api.palitra_list PalitraListResp
+                ]
+            )
+
+        UploadPointsResponse _ (Err err) ->
+            ( { model | uploadingPoints = Nothing }
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Не вдалося завантажити точки" err
             )
 
         UpdateForm fn ->
@@ -628,28 +664,48 @@ renderTable user model palitras =
                                 let
                                     isDeleting =
                                         model.deleting == Just p.id
+                                    
+                                    isUploading =
+                                        model.uploadingPoints == Just p.id
+                                    
+                                    canModify =
+                                        canDelete p
                                 in
-                                { attributes = [ class "col-narrow flex gap-2 items-center" ]
+                                { attributes = [ class "col-narrow" ]
                                 , children =
-                                    if canDelete p then
-                                        [ Button.view
-                                            (Button.new
-                                                { label = "Видалити"
-                                                , onClick =
-                                                    if isDeleting then
-                                                        NoOp
+                                    if canModify then
+                                        [ div [ class "flex gap-2 items-center" ]
+                                            [ Button.view
+                                                (Button.new
+                                                    { label = "Точки"
+                                                    , onClick =
+                                                        if isUploading then
+                                                            NoOp
 
-                                                    else
-                                                        DeleteRequested p.id
-                                                }
-                                                |> Button.withStyleDanger
-                                                |> Button.withDisabled isDeleting
-                                            )
-                                        , if isDeleting then
-                                            Shared.Components.Spinner.loadingSpinner2Sm
+                                                        else
+                                                            UploadPointsClicked p.id
+                                                    }
+                                                    |> Button.withDisabled isUploading
+                                                )
+                                            , Button.view
+                                                (Button.new
+                                                    { label = "Видалити"
+                                                    , onClick =
+                                                        if isDeleting then
+                                                            NoOp
 
-                                          else
-                                            text ""
+                                                        else
+                                                            DeleteRequested p.id
+                                                    }
+                                                    |> Button.withStyleDanger
+                                                    |> Button.withDisabled isDeleting
+                                                )
+                                            , if isDeleting || isUploading then
+                                                Shared.Components.Spinner.loadingSpinner2Sm
+
+                                              else
+                                                text ""
+                                            ]
                                         ]
 
                                     else

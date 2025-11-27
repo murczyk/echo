@@ -1584,6 +1584,19 @@ palitra_update toMsg palitraId req =
         }
 
 
+palitra_upload_points : (Result ApiError () -> msg) -> Int -> File -> Cmd msg
+palitra_upload_points toMsg palitraId file =
+    Http.request
+        { method = "POST"
+        , headers = []
+        , url = "/api/palitra/upload-points/" ++ String.fromInt palitraId
+        , body = Http.multipartBody [ Http.filePart (File.name file) file ]
+        , expect = leExpectJson toMsg (Decode.succeed ())
+        , timeout = Nothing
+        , tracker = Nothing
+        }
+
+
 update_aor : (Result ApiError AreaOfResponsibility -> msg) -> UpdateAreaOfResponsibilityReq -> Cmd msg
 update_aor toMsg req =
     Http.post
