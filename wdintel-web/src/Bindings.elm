@@ -2477,8 +2477,7 @@ inboxGroupStatsEncoder struct =
 
 
 type PalitraAccess
-    = Global
-    | ByLogins { logins : List String }
+    = ByLogins { logins : List String }
     | ByOrganisms { organismIds : List Int }
     | ByAor { aorIds : List Int }
 
@@ -2486,9 +2485,6 @@ type PalitraAccess
 palitraAccessEncoder : PalitraAccess -> Json.Encode.Value
 palitraAccessEncoder enum =
     case enum of
-        Global ->
-            Json.Encode.string "Global"
-
         ByLogins { logins } ->
             Json.Encode.object [ ( "ByLogins", Json.Encode.object [ ( "logins", Json.Encode.list Json.Encode.string logins ) ] ) ]
 
@@ -2523,6 +2519,7 @@ type alias Palitra =
     { id : Int
     , name : String
     , colorHex : String
+    , author : Maybe String
     , sourceFileName : Maybe String
     , lastUploadedAtTs : Maybe Int
     , geometry : Maybe Geometry
@@ -2538,6 +2535,7 @@ palitraEncoder struct =
         [ ( "id", Json.Encode.int struct.id )
         , ( "name", Json.Encode.string struct.name )
         , ( "color_hex", Json.Encode.string struct.colorHex )
+        , ( "author", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.author )
         , ( "source_file_name", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.sourceFileName )
         , ( "last_uploaded_at_ts", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.lastUploadedAtTs )
         , ( "geometry", (Maybe.withDefault Json.Encode.null << Maybe.map geometryEncoder) struct.geometry )
@@ -3049,6 +3047,34 @@ organismEncoder struct =
         , ( "enabled", Json.Encode.bool struct.enabled )
         , ( "aor_ids", Json.Encode.list Json.Encode.int struct.aorIds )
         , ( "logins_count", Json.Encode.int struct.loginsCount )
+        ]
+
+
+type alias MyOrganism =
+    { id : Int
+    , name : String
+    }
+
+
+myOrganismEncoder : MyOrganism -> Json.Encode.Value
+myOrganismEncoder struct =
+    Json.Encode.object
+        [ ( "id", Json.Encode.int struct.id )
+        , ( "name", Json.Encode.string struct.name )
+        ]
+
+
+type alias MyScope =
+    { organism : Maybe MyOrganism
+    , aorIds : List Int
+    }
+
+
+myScopeEncoder : MyScope -> Json.Encode.Value
+myScopeEncoder struct =
+    Json.Encode.object
+        [ ( "organism", (Maybe.withDefault Json.Encode.null << Maybe.map myOrganismEncoder) struct.organism )
+        , ( "aor_ids", Json.Encode.list Json.Encode.int struct.aorIds )
         ]
 
 
@@ -7461,17 +7487,7 @@ palitraAccessDecoder =
             ByAor { aorIds = aorIds }
     in
     Json.Decode.oneOf
-        [ Json.Decode.string
-            |> Json.Decode.andThen
-                (\x ->
-                    case x of
-                        "Global" ->
-                            Json.Decode.succeed Global
-
-                        unexpected ->
-                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
-                )
-        , Json.Decode.field "ByLogins" (Json.Decode.succeed elmRsConstructByLogins |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "logins" (Json.Decode.list Json.Decode.string))))
+        [ Json.Decode.field "ByLogins" (Json.Decode.succeed elmRsConstructByLogins |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "logins" (Json.Decode.list Json.Decode.string))))
         , Json.Decode.field "ByOrganisms" (Json.Decode.succeed elmRsConstructByOrganisms |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "organism_ids" (Json.Decode.list Json.Decode.int))))
         , Json.Decode.field "ByAor" (Json.Decode.succeed elmRsConstructByAor |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aor_ids" (Json.Decode.list Json.Decode.int))))
         ]
@@ -7493,6 +7509,7 @@ palitraDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "color_hex" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "author" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source_file_name" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_uploaded_at_ts" (Json.Decode.nullable Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "geometry" (Json.Decode.nullable geometryDecoder)))
@@ -7795,6 +7812,20 @@ organismDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enabled" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aor_ids" (Json.Decode.list Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "logins_count" Json.Decode.int))
+
+
+myOrganismDecoder : Json.Decode.Decoder MyOrganism
+myOrganismDecoder =
+    Json.Decode.succeed MyOrganism
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" Json.Decode.string))
+
+
+myScopeDecoder : Json.Decode.Decoder MyScope
+myScopeDecoder =
+    Json.Decode.succeed MyScope
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "organism" (Json.Decode.nullable myOrganismDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aor_ids" (Json.Decode.list Json.Decode.int)))
 
 
 listOrganismsSortByDecoder : Json.Decode.Decoder ListOrganismsSortBy

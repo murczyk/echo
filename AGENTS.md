@@ -60,3 +60,28 @@
 - add context with data value when needed but only in rare cases
 - when writing function that must not fail (like infinite loop workers), move out inner loop body in regular AppError-Result function, and call it from the no-fail one, use `.c(h!())?` in AppError one for errors, don't fill the code with too many `match ... Err ...` blocks
 
+## FRONTEND (Elm)
+
+### Type Generation
+
+- **NEVER** manually write backend types, encoders, or decoders on the frontend
+- All backend types are defined in `wdintel-rs/src/elm.rs`
+- Run `just gen-front` to generate Elm bindings from backend definitions
+- Generated types, encoders, and decoders appear in `wdintel-web/src/Bindings.elm`
+- When you need a new type on frontend - add it to `elm.rs` first, then regenerate
+
+### HTTP Error Handling
+
+- **ALWAYS** handle API errors and show them to users via toasts
+- Use `Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails` for Shared toasts (no need to add toasts to model):
+  ```elm
+  SomeApiResponse (Err err) ->
+      ( model
+      , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка опису" err
+      )
+  ```
+- This automatically:
+  - Handles 401 errors (triggers logout)
+  - Shows user-friendly Ukrainian error messages
+  - Displays error details in toast notifications
+- **NEVER** silently ignore API errors - users must see what went wrong

@@ -13,6 +13,7 @@ pub async fn oneoff_print_organism_groups(
     let config = crate::config::read_config(mode).c(h!())?;
     let db = crate::new_pg_pool_from_config(&config).await.c(h!())?;
     let organism_name = ps.organism_name.clone();
+    info!("Determining organism name for organism: {organism_name:#?}");
     let organism = organism::Entity::find()
         .filter(organism::Column::DeletedPermanently.eq(false))
         .filter(organism::Column::Name.eq(organism_name))

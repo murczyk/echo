@@ -66,6 +66,13 @@ where
             JoinType::InnerJoin,
             signal_group::Relation::SigintZoneDatasource.def(),
         )
+        .join(
+            JoinType::InnerJoin,
+            sigint_zone_datasource::Relation::Datasource.def(),
+        )
+        .filter(datasource::Column::Deleted.eq(false))
+        // This enabled filter is by design not done, because when datasource is disabled due to Signal/WhatsApp glitch, we still want to show its messages
+        // .filter(datasource::Column::Enabled.eq(true))
         .select_only()
         .column(signal_group::Column::MasterKey)
         .distinct()

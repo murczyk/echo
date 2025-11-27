@@ -148,6 +148,51 @@ pub async fn organism_active_logins(
     Ok(Json(logins))
 }
 
+#[post("/api/organism/my-scope")]
+pub async fn my_scope(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+) -> Result<Json<MyScope>, AppError> {
+    let login = user.id().c(h!())?;
+
+    let login_obj = login::Entity::find()
+        .filter(login::Column::Login.eq(login.to_string()))
+        .filter(login::Column::DeletedPermanently.eq(false))
+        .one(&env.dbx)
+        .await
+        .c(h!())?
+        .c(h!())?;
+
+    let organism_id = login_obj.organism_id;
+    let id = match organism_id {
+        Some(id) => id,
+        None => return Err(AppError::BL {
+            msg: "User without organism_id is not supported".to_string(),
+        }),
+    };
+
+    let organism = organism::Entity::find_by_id(id)
+        .filter(organism::Column::DeletedPermanently.eq(false))
+        .one(&env.dbx)
+        .await
+        .c(h!())?
+        .map(|o| MyOrganism {
+            id: o.id,
+            name: o.name,
+        });
+
+    let aor_ids = organism_aor::Entity::find()
+        .filter(organism_aor::Column::OrganismId.eq(id))
+        .all(&env.dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|o| o.aor_id)
+        .collect();
+
+    Ok(Json(MyScope { organism, aor_ids }))
+}
+
 #[post("/api/organism/update")]
 pub async fn update_organism(
     user: actix_identity::Identity,

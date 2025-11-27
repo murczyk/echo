@@ -7,7 +7,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.1.1-rc.202511261542"
+version = "0.1.1-rc.202511271142"
 edition = "2021"
 authors = ["rickyrepel@gmail.com"]
 license = "AllRightsReserved"
@@ -56,6 +56,9 @@ syn = "2.0.106"
 #       "json",
 #   ] }
 sqlx = { git = "https://github.com/alkeryn/sqlx.git", rev = "4b21f0954c1d402583e8da455182867f803952da" }
+
+[profile.dev]
+debug = 0
 
 [profile.release]
 debug-assertions = false
