@@ -34,7 +34,7 @@ type alias Model =
     , form : Form
     , submitInFlight : Bool
     , showCreateSidebar : Bool
-    , myOrganism : RemoteData ApiError (Maybe B.MyOrganism)
+    , myScope : RemoteData ApiError B.MyScope
     }
 
 
@@ -76,7 +76,7 @@ type Msg
     | CloseCreateSidebar
     | SubmitCreate
     | CreateResponse (Result ApiError B.Palitra)
-    | MyOrganismResp (Result ApiError (Maybe B.MyOrganism))
+    | MyScopeResp (Result ApiError B.MyScope)
 
 
 init : () -> ( Model, Effect Msg )
@@ -87,7 +87,7 @@ init _ =
       , form = emptyForm
       , submitInFlight = False
       , showCreateSidebar = False
-      , myOrganism = NotAsked
+      , myScope = NotAsked
       }
     , E.sendCmd <| Api.palitra_list PalitraListResp
     )
@@ -152,19 +152,19 @@ update msg model =
             ( { model | form = form1 }, E.none )
 
         ShowCreateSidebar ->
-            -- Завантажуємо організм користувача, якщо ще не завантажено
-            if model.myOrganism == NotAsked then
-                ( { model | showCreateSidebar = True, myOrganism = Loading }
-                , E.sendCmd <| Api.my_organism MyOrganismResp
+            -- Завантажуємо scope користувача, якщо ще не завантажено
+            if model.myScope == NotAsked then
+                ( { model | showCreateSidebar = True, myScope = Loading }
+                , E.sendCmd <| Api.my_scope MyScopeResp
                 )
             else
                 ( { model | showCreateSidebar = True }, E.none )
 
-        MyOrganismResp (Ok organism) ->
-            ( { model | myOrganism = Success organism }, E.none )
+        MyScopeResp (Ok scope) ->
+            ( { model | myScope = Success scope }, E.none )
 
-        MyOrganismResp (Err err) ->
-            ( { model | myOrganism = Failure err }, E.none )
+        MyScopeResp (Err err) ->
+            ( { model | myScope = Failure err }, E.none )
 
         CloseCreateSidebar ->
             ( { model | showCreateSidebar = False, form = emptyForm }, E.none )
@@ -375,6 +375,19 @@ hasPrivilegedRole user =
         || Core.Auth.hasRole "CallsignsEditor" user
 
 
+-- Визначає, чи користувач є Admin (може вводити вручну)
+isAdmin : Auth.User -> Bool
+isAdmin user =
+    Core.Auth.hasRole "Admin" user
+
+
+-- Визначає, чи користувач є Editor (може вибирати, але значення автоматичні)
+isEditor : Auth.User -> Bool
+isEditor user =
+    Core.Auth.hasRole "UnitsEditor" user
+        || Core.Auth.hasRole "CallsignsEditor" user
+
+
 -- Визначає, чи користувач є Rer
 isRer : Auth.User -> Bool
 isRer user =
@@ -382,16 +395,22 @@ isRer user =
 
 
 -- Визначає доступні типи доступу для користувача
-getAvailableAccessTypes : Auth.User -> List AccessForm
-getAvailableAccessTypes user =
+getAvailableAccessTypes : Auth.User -> B.MyScope -> List AccessForm
+getAvailableAccessTypes user myScope =
     let
-        privileged =
-            hasPrivilegedRole user
+        admin =
+            isAdmin user
+        
+        editor =
+            isEditor user
+        
+        hasAorIds =
+            not (List.isEmpty myScope.aorIds)
     in
     List.filterMap identity
         [ Just (LoginsAccess "")
         , Just (OrganismsAccess "")
-        , if privileged then
+        , if admin || (editor && hasAorIds) then
             Just (AorAccess "")
 
           else
@@ -399,25 +418,23 @@ getAvailableAccessTypes user =
         ]
 
 
--- Визначає, чи опція доступу обмежена для користувача
+-- Визначає, чи опція доступу обмежена для користувача (readonly)
+-- Тільки Admin може вводити вручну, Editor і Rer мають readonly поля
 isAccessRestricted : Auth.User -> AccessForm -> Bool
 isAccessRestricted user access =
     let
-        privileged =
-            hasPrivilegedRole user
-
-        rer =
-            isRer user
+        admin =
+            isAdmin user
     in
     case access of
         LoginsAccess _ ->
-            not privileged && rer
+            not admin
 
         OrganismsAccess _ ->
-            not privileged && rer
+            not admin
 
         AorAccess _ ->
-            not privileged
+            not admin
 
 
 -- Отримує підказку для типу доступу
@@ -426,13 +443,22 @@ getAccessHint user access =
     if isAccessRestricted user access then
         case access of
             LoginsAccess _ ->
-                Just "Тільки ваш логін"
+                if isEditor user then
+                    Just "Редактор може надати доступ лише власному логіну"
+                else
+                    Just "Тільки ваш логін"
 
             OrganismsAccess _ ->
-                Just "Тільки ваші підрозділи"
+                if isEditor user then
+                    Just "Редактор може надати доступ лише власному підрозділу"
+                else
+                    Just "Тільки ваші підрозділи"
 
-            _ ->
-                Nothing
+            AorAccess _ ->
+                if isEditor user then
+                    Just "Редактор може надати доступ лише до смуг свого підрозділу"
+                else
+                    Nothing
 
     else
         Nothing
@@ -445,14 +471,39 @@ validateForm form =
         Just "Назва палітри обов'язкова"
 
     else
-        Nothing
+        case form.access of
+            AorAccess ids ->
+                let
+                    aorList =
+                        ids
+                            |> String.split ","
+                            |> List.filter (\s -> s /= "")
+                            |> List.filterMap String.toInt
+                in
+                if List.isEmpty aorList then
+                    Just "Для доступу за смугами необхідно вказати хоча б один AOR ID"
+
+                else
+                    Nothing
+
+            _ ->
+                Nothing
 
 
 createPalitraSidebarContent : Auth.User -> Model -> List (Html Msg)
 createPalitraSidebarContent user model =
     let
+        myScope =
+            case model.myScope of
+                Success scope ->
+                    scope
+
+                _ ->
+                    -- Default empty scope для випадку коли ще не завантажено
+                    { organism = Nothing, aorIds = [] }
+
         availableAccessTypes =
-            getAvailableAccessTypes user
+            getAvailableAccessTypes user myScope
 
         ( accessFields, accessHint ) =
             case model.form.access of
@@ -470,6 +521,7 @@ createPalitraSidebarContent user model =
 
                         loginField =
                             if loginRestricted then
+                                -- Readonly поле для Editor і Rer
                                 div
                                     [ class "w-full px-3 py-2 border border-dashed border-border rounded-md bg-muted/40 text-foreground flex items-center justify-between" ]
                                     [ span [] [ text user.name ]
@@ -477,6 +529,7 @@ createPalitraSidebarContent user model =
                                     ]
 
                             else
+                                -- Ручне введення для Admin
                                 input
                                     [ class "w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
                                     , type_ "text"
@@ -485,13 +538,6 @@ createPalitraSidebarContent user model =
                                     , onInput (\v -> UpdateForm (\f -> { f | access = LoginsAccess v }))
                                     ]
                                     []
-
-                        loginNote =
-                            if loginRestricted then
-                                div [ class "text-xs text-muted-foreground" ] [ text "Роль Rer може надати доступ лише власному логіну" ]
-
-                            else
-                                text ""
                     in
                     ( [ div [ class "space-y-2" ]
                             [ label [ class "text-sm font-medium text-foreground" ]
@@ -504,7 +550,6 @@ createPalitraSidebarContent user model =
                                     )
                                 ]
                             , loginField
-                            , loginNote
                             ]
                       ]
                     , getAccessHint user (LoginsAccess "")
@@ -515,28 +560,21 @@ createPalitraSidebarContent user model =
                         organismRestricted =
                             isAccessRestricted user (OrganismsAccess "")
 
-                        isEditor =
-                            Core.Auth.hasRole "UnitsEditor" user || Core.Auth.hasRole "CallsignsEditor" user
-
-                        restrictionHint =
-                            if isEditor then
-                                "Редактор може надати доступ лише власному підрозділу"
-                            else
-                                "Роль Rer може надати доступ лише власному підрозділу"
-
                         organismField =
                             if organismRestricted then
-                                case model.myOrganism of
-                                    Success (Just organism) ->
-                                        div [ class "flex flex-col gap-2" ]
-                                            [ div [ class "text-xs text-muted-foreground uppercase" ] [ text "Ваш підрозділ" ]
-                                            , Badge.view organism.name
-                                            , div [ class "text-xs text-muted-foreground" ] [ text restrictionHint ]
-                                            ]
+                                -- Для Editor і Rer - показуємо readonly поле
+                                case model.myScope of
+                                    Success scope ->
+                                        case scope.organism of
+                                            Just organism ->
+                                                div [ class "flex flex-col gap-2" ]
+                                                    [ div [ class "text-xs text-muted-foreground uppercase" ] [ text "Ваш підрозділ" ]
+                                                    , Badge.view organism.name
+                                                    ]
 
-                                    Success Nothing ->
-                                        div [ class "text-xs text-red-500" ]
-                                            [ text "Вашому логіну не призначено підрозділ. Зверніться до адміністратора." ]
+                                            Nothing ->
+                                                div [ class "text-xs text-red-500" ]
+                                                    [ text "Вашому логіну не призначено підрозділ. Зверніться до адміністратора." ]
 
                                     Loading ->
                                         div [ class "flex flex-col gap-2" ]
@@ -549,6 +587,7 @@ createPalitraSidebarContent user model =
                                             [ text "Завантаження..." ]
 
                             else
+                                -- Для Admin - ручне введення
                                 input
                                     [ class "w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
                                     , type_ "text"
@@ -567,16 +606,50 @@ createPalitraSidebarContent user model =
                     )
 
                 AorAccess ids ->
+                    let
+                        aorRestricted =
+                            isAccessRestricted user (AorAccess "")
+
+                        aorField =
+                            if aorRestricted then
+                                -- Для Editor і Rer - показуємо readonly поле з їхніми AOR IDs
+                                case model.myScope of
+                                    Success scope ->
+                                        if List.isEmpty scope.aorIds then
+                                            div [ class "text-xs text-red-500" ]
+                                                [ text "У вашому підрозділі немає призначених смуг (AOR). Зверніться до адміністратора або оберіть інший тип доступу." ]
+
+                                        else
+                                            div [ class "flex flex-col gap-2" ]
+                                                [ div [ class "text-xs text-muted-foreground uppercase" ] [ text "Доступні смуги вашого підрозділу" ]
+                                                , div [ class "flex flex-wrap gap-2" ]
+                                                    (List.map (\aorId -> Badge.view (String.fromInt aorId)) scope.aorIds)
+                                                ]
+
+                                    Loading ->
+                                        div [ class "flex flex-col gap-2" ]
+                                            [ div [ class "text-xs text-muted-foreground uppercase" ] [ text "Завантаження смуг..." ]
+                                            , Shared.Components.Spinner.loadingSpinner2Sm
+                                            ]
+
+                                    _ ->
+                                        div [ class "text-xs text-muted-foreground" ]
+                                            [ text "Завантаження..." ]
+
+                            else
+                                -- Для Admin - ручне введення
+                                input
+                                    [ class "w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
+                                    , type_ "text"
+                                    , placeholder "ID смуг через кому"
+                                    , value ids
+                                    , onInput (\v -> UpdateForm (\f -> { f | access = AorAccess v }))
+                                    ]
+                                    []
+                    in
                     ( [ div [ class "space-y-2" ]
-                            [ label [ class "text-sm font-medium text-foreground" ] [ text "AOR IDs (через кому)" ]
-                            , input
-                                [ class "w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
-                                , type_ "text"
-                                , placeholder "ID смуг через кому"
-                                , value ids
-                                , onInput (\v -> UpdateForm (\f -> { f | access = AorAccess v }))
-                                ]
-                                []
+                            [ label [ class "text-sm font-medium text-foreground" ] [ text "Смуги (AOR)" ]
+                            , aorField
                             ]
                       ]
                     , getAccessHint user (AorAccess "")
@@ -632,8 +705,28 @@ createPalitraSidebarContent user model =
                     else
                         ChangeAccess accessForm
 
-                _ ->
-                    ChangeAccess accessForm
+                AorAccess _ ->
+                    let
+                        admin =
+                            isAdmin user
+                    in
+                    if not admin then
+                        -- Editor і Rer автоматично використовують свої AOR IDs
+                        case model.myScope of
+                            Success scope ->
+                                let
+                                    aorIdsStr =
+                                        scope.aorIds
+                                            |> List.map String.fromInt
+                                            |> String.join ","
+                                in
+                                ChangeAccess (AorAccess aorIdsStr)
+
+                            _ ->
+                                ChangeAccess accessForm
+
+                    else
+                        ChangeAccess accessForm
     in
     [ div [ class "flex flex-col h-full" ]
         [ div [ class "p-6 border-b border-border" ]
