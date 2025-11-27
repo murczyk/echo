@@ -405,8 +405,6 @@ pub async fn count_group_messages<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
-    // TODO: REMOVE THIS
-    let num_days = if num_days > 1 { 1 } else { num_days };
     let cutoff = Utc::now().naive_utc() - chrono::Duration::days(num_days);
     let signal_message_counts = signal_message_group::Entity::find()
         .join(
