@@ -472,6 +472,7 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::users::types::DeactivationReasonType,
             crate::organism::types::Organism,
             crate::organism::types::MyOrganism,
+            crate::organism::types::MyScope,
             crate::organism::types::ListOrganismsSortBy,
             crate::organism::types::ListOrganismsReq,
             crate::organism::types::CreateOrganismReq,

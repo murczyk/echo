@@ -7791,6 +7791,13 @@ myOrganismDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" Json.Decode.string))
 
 
+myScopeDecoder : Json.Decode.Decoder MyScope
+myScopeDecoder =
+    Json.Decode.succeed MyScope
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "organism" (Json.Decode.nullable myOrganismDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aor_ids" (Json.Decode.list Json.Decode.int)))
+
+
 listOrganismsSortByDecoder : Json.Decode.Decoder ListOrganismsSortBy
 listOrganismsSortByDecoder =
     Json.Decode.oneOf
