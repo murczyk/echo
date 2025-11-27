@@ -3062,6 +3062,20 @@ myOrganismEncoder struct =
         ]
 
 
+type alias MyScope =
+    { organism : Maybe MyOrganism
+    , aorIds : List Int
+    }
+
+
+myScopeEncoder : MyScope -> Json.Encode.Value
+myScopeEncoder struct =
+    Json.Encode.object
+        [ ( "organism", (Maybe.withDefault Json.Encode.null << Maybe.map myOrganismEncoder) struct.organism )
+        , ( "aor_ids", Json.Encode.list Json.Encode.int struct.aorIds )
+        ]
+
+
 type ListOrganismsSortBy
     = OrganismCreatedAtDesc
     | OrganismCreatedAtAsc

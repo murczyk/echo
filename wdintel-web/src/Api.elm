@@ -1253,12 +1253,12 @@ organism_active_logins toMsg organismId =
         }
 
 
-my_organism : (Result ApiError (Maybe Bindings.MyOrganism) -> msg) -> Cmd msg
-my_organism toMsg =
+my_scope : (Result ApiError Bindings.MyScope -> msg) -> Cmd msg
+my_scope toMsg =
     Http.post
-        { url = "/api/organism/my-organism"
+        { url = "/api/organism/my-scope"
         , body = Http.jsonBody Encode.null
-        , expect = leExpectJson toMsg (Decode.nullable Bindings.myOrganismDecoder)
+        , expect = leExpectJson toMsg Bindings.myScopeDecoder
         }
 
 

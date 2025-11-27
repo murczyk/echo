@@ -102,3 +102,11 @@ pub struct MyOrganism {
     pub id: i64,
     pub name: String,
 }
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct MyScope {
+    pub organism: Option<MyOrganism>,
+    pub aor_ids: Vec<i64>,
+}

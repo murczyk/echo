@@ -148,12 +148,6 @@ pub async fn organism_active_logins(
     Ok(Json(logins))
 }
 
-#[derive(Serialize, Deserialize)]
-pub struct MyScope {
-    pub organism: Option<MyOrganism>,
-    pub aor_ids: Vec<i64>,
-}
-
 #[post("/api/organism/my-scope")]
 pub async fn my_scope(
     user: actix_identity::Identity,
