@@ -38,20 +38,15 @@ pub async fn upload_palitra_points(
         .await
         .c(h!())?
         .c(h!())?;
-    let privileged = crate::users::has_any_role(
-        &env.dbx,
-        &login,
-        vec!["UnitsEditor", "CallsignsEditor", "Admin"],
-    )
-    .await
-    .is_ok();
-    if !privileged {
+    let is_admin = crate::users::has_role(&env.dbx, &login, "Admin")
+        .await
+        .is_ok();
+    if !is_admin {
         match &palitra.author {
             Some(author) if author == &login => {}
             _ => {
                 return Err(AppError::Forbidden(
-                    "Only author or UnitsEditor/CallsignsEditor/Admin may delete palitra"
-                        .into(),
+                    "Only author or Admin may upload palitra points".into(),
                 ));
             }
         }
@@ -307,20 +302,15 @@ pub async fn update_palitra(
         .await
         .c(h!())?
         .c(h!())?;
-    let privileged = crate::users::has_any_role(
-        &env.dbx,
-        &login,
-        vec!["UnitsEditor", "CallsignsEditor", "Admin"],
-    )
-    .await
-    .is_ok();
-    if !privileged {
+    let is_admin = crate::users::has_role(&env.dbx, &login, "Admin")
+        .await
+        .is_ok();
+    if !is_admin {
         match &palitra.author {
             Some(author) if author == &login => {}
             _ => {
                 return Err(AppError::Forbidden(
-                    "Only author or UnitsEditor/CallsignsEditor/Admin may update palitra"
-                        .into(),
+                    "Only author or Admin may update palitra".into(),
                 ));
             }
         }
