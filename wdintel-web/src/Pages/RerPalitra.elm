@@ -11,6 +11,7 @@ import Html.Attributes exposing (..)
 import Html.Events  exposing (onInput, on, targetValue)
 import Json.Decode as Decode
 import Layouts
+import Utils.Api.ErrorHandling
 import Page exposing (Page)
 import Platform.Sub as Sub
 import Route exposing (Route)
@@ -112,7 +113,9 @@ update msg model =
             ( { model | palitras = Success list }, E.none )
 
         PalitraListResp (Err err) ->
-            ( { model | palitras = Failure err }, E.none )
+            ( { model | palitras = Failure err }
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Не вдалося завантажити палітри" err
+            )
 
         TableStateChanged state ->
             ( { model | tableState = state }, E.none )
@@ -135,8 +138,10 @@ update msg model =
                 _ ->
                     ( { model | deleting = Nothing }, E.none )
 
-        DeleteResponse _ (Err _) ->
-            ( { model | deleting = Nothing }, E.none )
+        DeleteResponse _ (Err err) ->
+            ( { model | deleting = Nothing }
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Не вдалося видалити палітру" err
+            )
 
         UpdateForm fn ->
             ( { model | form = fn model.form }, E.none )
@@ -164,7 +169,9 @@ update msg model =
             ( { model | myScope = Success scope }, E.none )
 
         MyScopeResp (Err err) ->
-            ( { model | myScope = Failure err }, E.none )
+            ( { model | myScope = Failure err }
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Не вдалося завантажити ваші дані" err
+            )
 
         CloseCreateSidebar ->
             ( { model | showCreateSidebar = False, form = emptyForm }, E.none )
@@ -205,8 +212,10 @@ update msg model =
             , E.none
             )
 
-        CreateResponse (Err _) ->
-            ( { model | submitInFlight = False }, E.none )
+        CreateResponse (Err err) ->
+            ( { model | submitInFlight = False }
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Не вдалося створити палітру" err
+            )
 
 
 view : Auth.User -> Shared.Model -> Model -> View Msg
@@ -367,14 +376,6 @@ renderAccess p =
         "без доступу"
 
 
--- Визначає, чи користувач має привілейовані ролі (UnitsEditor/CallsignsEditor/Admin)
-hasPrivilegedRole : Auth.User -> Bool
-hasPrivilegedRole user =
-    Core.Auth.hasRole "Admin" user
-        || Core.Auth.hasRole "UnitsEditor" user
-        || Core.Auth.hasRole "CallsignsEditor" user
-
-
 -- Визначає, чи користувач є Admin (може вводити вручну)
 isAdmin : Auth.User -> Bool
 isAdmin user =
@@ -386,12 +387,6 @@ isEditor : Auth.User -> Bool
 isEditor user =
     Core.Auth.hasRole "UnitsEditor" user
         || Core.Auth.hasRole "CallsignsEditor" user
-
-
--- Визначає, чи користувач є Rer
-isRer : Auth.User -> Bool
-isRer user =
-    Core.Auth.hasRole "Rer" user
 
 
 -- Визначає доступні типи доступу для користувача
