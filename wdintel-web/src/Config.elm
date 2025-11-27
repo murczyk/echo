@@ -1,5 +1,6 @@
 module Config exposing
     ( adjacentFreqsRangeOptions
+    , featureEnablePalitra
     , featureEnableTornado
     , featureShowCallsignsMetadata
     , thresholdStopCountingDays
@@ -18,6 +19,11 @@ featureEnableTornado =
 
 featureShowCallsignsMetadata : Bool
 featureShowCallsignsMetadata =
+    False
+
+
+featureEnablePalitra : Bool
+featureEnablePalitra =
     False
 
 
