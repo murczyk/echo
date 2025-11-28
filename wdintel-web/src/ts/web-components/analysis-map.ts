@@ -71,7 +71,7 @@ const liTemplate = (message_: Message, networkUnitName_: string | undefined, sel
 
     return `
           <li>
-            ${message_[1].message_uid ?`<p style="line-height: 22px;"><span style="font-weight: 700;">Повідомлення:</span> <a href={\`${updateStateUrl(window.location.href, message_[1].message_uid)}\`}>${message_[1].message_uid}</a></p>`: ''}
+            ${message_[1].message_uid ?`<p style="line-height: 22px;"><span style="font-weight: 700;">Повідомлення:</span><a href="${updateStateUrl(window.location.href, message_[1].message_uid)}">${message_[1].message_uid}</a></p>`: ''}
             ${message_[1].freq ? `<p style="line-height: 22px;"><span style="font-weight: 700;">Частота:</span> ${message_[1].freq}</p>` : ''}
             ${message_[1].coords ? `<p style="line-height: 16px;"><span style="font-weight: 700;">Координати:</span> ${message_[1].coords}</p>` : ''}
             ${message_[1].coords ? '<span style="font-weight: 700; line-height: 22px;">Повідомлення:</span><br>' : ''}
@@ -345,47 +345,27 @@ class AnalysisMap extends HTMLElement {
     }
 }
 
-/**
- * Decodes the 'state' parameter, inserts a new message_uid, and re-encodes the state.
- * @param {string} currentUrl The full current URL.
- * @param {string} messageUid The message ID to insert into the state object.
- * @returns {string} The updated URL with the new encoded 'state' parameter.
- */
 function updateStateUrl(currentUrl: string, messageUid: string): string {
     try {
         const url = new URL(currentUrl);
         const stateParam = url.searchParams.get('state');
-
-        if (!stateParam) {
+        if (stateParam) {
+            const decodedState = decodeURIComponent(stateParam);
+            const stateObject = JSON.parse(decodedState);
+            stateObject.message_uid = messageUid;
+            const updatedState = JSON.stringify(stateObject);
+            const encodedState = encodeURIComponent(updatedState);
+            url.searchParams.set('state', encodedState);
+        } else {
             // Handle case where 'state' parameter doesn't exist
-            const newState = JSON.stringify({ search: messageUid });
+            const newState = JSON.stringify({ message_uid: messageUid });
             url.searchParams.set('state', encodeURIComponent(newState));
-            return url.href;
         }
 
-        // 1. Decode the URL component (e.g., %7B to {)
-        const decodedState = decodeURIComponent(stateParam);
-
-        // 2. Parse the JSON string into an object
-        const stateObject = JSON.parse(decodedState);
-
-        // 3. Add or update the search field
-        stateObject.search = messageUid;
-
-        // 4. Stringify the updated object
-        const updatedState = JSON.stringify(stateObject);
-
-        // 5. URL-encode the updated JSON string
-        const encodedState = encodeURIComponent(updatedState);
-
-        // 6. Replace the old 'state' parameter with the new encoded string
-        url.searchParams.set('state', encodedState);
-
-        // Return the final updated URL
+        // Returns the clean, modified URL string
         return url.href;
     } catch (error) {
         console.error("Error updating URL state:", error);
-        // Fallback to a simple message link if something goes wrong
         return `/messages/${messageUid}`;
     }
 }
