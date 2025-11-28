@@ -3241,7 +3241,6 @@ type alias MessageMediaInfo =
     , href : String
     }
 
-
 messageMediaInfoEncoder : MessageMediaInfo -> Json.Encode.Value
 messageMediaInfoEncoder struct =
     Json.Encode.object
@@ -3251,7 +3250,6 @@ messageMediaInfoEncoder struct =
         , ( "size_bytes", Json.Encode.int struct.sizeBytes )
         , ( "href", Json.Encode.string struct.href )
         ]
-
 
 type alias SigintZone =
     { name : String
@@ -7935,6 +7933,16 @@ datasourceDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "display_name" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "signal_phone" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enabled" (Json.Decode.nullable Json.Decode.bool)))
+
+
+messageMediaInfoDecoder : Json.Decode.Decoder MessageMediaInfo
+messageMediaInfoDecoder =
+    Json.Decode.succeed MessageMediaInfo
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "content_type" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "file_name" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "size_bytes" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "href" Json.Decode.string))
 
 
 sigintZoneDecoder : Json.Decode.Decoder SigintZone
