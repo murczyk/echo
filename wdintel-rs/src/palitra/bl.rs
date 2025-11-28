@@ -260,7 +260,7 @@ where
 {
     #[derive(Debug, FromQueryResult)]
     pub struct Geometry {
-        sequence_index: u32,
+        sequence_index: i32,
         lat: f64,
         lon: f64,
     }
