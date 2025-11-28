@@ -3251,15 +3251,6 @@ messageMediaInfoEncoder struct =
         , ( "size_bytes", Json.Encode.int struct.sizeBytes )
         , ( "href", Json.Encode.string struct.href )
         ]
-messageMediaInfoEncoder : MessageMediaInfo -> Json.Encode.Value
-messageMediaInfoEncoder struct =
-    Json.Encode.object
-        [ ( "id", Json.Encode.string struct.id )
-        , ( "content_type", Json.Encode.string struct.contentType )
-        , ( "file_name", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.fileName )
-        , ( "size_bytes", Json.Encode.int struct.sizeBytes )
-        , ( "href", Json.Encode.string struct.href )
-        ]
 
 
 type alias SigintZone =
