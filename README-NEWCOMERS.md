@@ -1,6 +1,7 @@
 # Quick setup newcomers guide
 
-After following this guide the app should be available at https://echo.localhost:8443/
+After following this guide the app should be available at https://echo.localhost:8443/.
+
 Use `admin` and the password `fee_-_-_-FnoeKFBeebu87bf` (same as the DB default password) below to sign-in.
 
 ## Clone the repository
@@ -24,8 +25,6 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
 cargo install just
 cargo install cargo-watch
-
-pip3 install -U django psycopg toml uuid-utils django-multiselectfield
 
 # Install nvm
 curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
