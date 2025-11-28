@@ -376,23 +376,16 @@ update user msg model =
                         ]
                     else
                         []
-                
-                -- Завантажуємо AOR список для не-адмінів (для відображення назв)
-                nonAdminAorCmd =
-                    if not (isAdmin user) && model.aorList == NotAsked then
-                        Api.aor_list AorListResp { sortBy = Nothing }
-                    else
-                        Cmd.none
 
                 allCmds =
-                    (scopeCmd :: adminDataCmds) ++ [ nonAdminAorCmd ] |> List.filter (\cmd -> cmd /= Cmd.none)
+                    (scopeCmd :: adminDataCmds) |> List.filter (\cmd -> cmd /= Cmd.none)
             in
             ( { model 
                 | showCreateSidebar = True
                 , myScope = if model.myScope == NotAsked then Loading else model.myScope
                 , logins = if isAdmin user && model.logins == NotAsked then Loading else model.logins
                 , organisms = if isAdmin user && model.organisms == NotAsked then Loading else model.organisms
-                , aorList = if model.aorList == NotAsked then Loading else model.aorList
+                , aorList = if isAdmin user && model.aorList == NotAsked then Loading else model.aorList
               }
             , if List.isEmpty allCmds then
                 E.none
@@ -678,16 +671,9 @@ update user msg model =
                                         ]
                                     else
                                         []
-                                
-                                -- Завантажуємо AOR список для не-адмінів (для відображення назв)
-                                nonAdminAorCmd =
-                                    if not (isAdmin user) && model.aorList == NotAsked then
-                                        Api.aor_list AorListResp { sortBy = Nothing }
-                                    else
-                                        Cmd.none
 
                                 allCmds =
-                                    (scopeCmd :: adminDataCmds) ++ [ nonAdminAorCmd ] |> List.filter (\cmd -> cmd /= Cmd.none)
+                                    (scopeCmd :: adminDataCmds) |> List.filter (\cmd -> cmd /= Cmd.none)
 
                                 -- Синхронізуємо select states з формою
                                 ( loginsSelect, organismsSelect, aorSelect ) =
@@ -737,7 +723,7 @@ update user msg model =
                                 , myScope = if model.myScope == NotAsked then Loading else model.myScope
                                 , logins = if isAdmin user && model.logins == NotAsked then Loading else model.logins
                                 , organisms = if isAdmin user && model.organisms == NotAsked then Loading else model.organisms
-                                , aorList = if model.aorList == NotAsked then Loading else model.aorList
+                                , aorList = if isAdmin user && model.aorList == NotAsked then Loading else model.aorList
                                 , loginsSelect = loginsSelect
                                 , organismsSelect = organismsSelect
                                 , aorSelect = aorSelect
