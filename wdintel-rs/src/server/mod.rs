@@ -211,9 +211,6 @@ pub async fn main_server(
             crate::sigint::aor::worker::aor_assignments_check_worker(&dbx10)
                 .await;
         });
-        spawn_named_worker("fix_data_worker", bg_set, async move {
-            crate::stats::fix_data_worker(mode).await;
-        });
         let token_1 = cancel_token.clone();
         let shutdown_handle_1 = shutdown_handle.clone();
         spawn_named_worker("messenger_receive_worker", bg_set, async move {

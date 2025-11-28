@@ -166,9 +166,11 @@ pub async fn my_scope(
     let organism_id = login_obj.organism_id;
     let id = match organism_id {
         Some(id) => id,
-        None => return Err(AppError::BL {
-            msg: "User without organism_id is not supported".to_string(),
-        }),
+        None => {
+            return Err(AppError::BL {
+                msg: "User without organism_id is not supported".to_string(),
+            })
+        }
     };
 
     let organism = organism::Entity::find_by_id(id)
