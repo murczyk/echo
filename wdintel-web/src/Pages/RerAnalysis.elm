@@ -237,7 +237,7 @@ init route _ =
         , E.getAnalysisSavedFilters SavedFiltersGot
         , E.getTags GotTags
         , E.map RowsMsg Shared.Components.RerMessage.init
-        , E.sendCmd <| Api.palitra_list GotPalitras
+        , E.sendCmd <| Api.palitra_list_detailed GotPalitras
         ]
     )
 

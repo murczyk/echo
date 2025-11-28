@@ -157,7 +157,7 @@ type alias Model =
     , editSidebar : Maybe Int
     
     -- палітри
-    , palitras : RemoteData ApiError (List B.Palitra)
+    , palitras : RemoteData ApiError (List B.PalitraDetails)
     , palitrasVisible : List Int
     }
 

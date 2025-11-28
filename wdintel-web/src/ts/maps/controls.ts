@@ -7,7 +7,7 @@ export interface TimeswitchControl extends L.Control {
 }
 
 export interface PalitrasControl extends L.Control {
-  updatePalitras: (palitras: Palitra[], visibleIds: number[]) => void
+  updatePalitras: (palitras: PalitraDetails[], visibleIds: number[]) => void
 }
 
 type Coords = { lat: number; lng: number };
@@ -21,6 +21,14 @@ type Palitra = {
   color_hex: string;
   geometry: Geometry | null;
   source_file_name?: string;
+};
+type PalitraPoint = {
+  coords: Coords;
+  label: string | null;
+};
+type PalitraDetails = {
+  palitra: Palitra;
+  points: PalitraPoint[];
 };
 export function createLayerSwitchControl(
   tileLayers: { openStreetMap: L.TileLayer, googleHybrid: L.TileLayer }
@@ -242,7 +250,7 @@ export function createExitControl2(closeMap: () => void) {
 }
 
 export function createPalitrasControl(
-  palitras: Palitra[], 
+  palitras: PalitraDetails[], 
   visibleIds: number[],
   onToggle: (palitraId: number) => void
 ): PalitrasControl {
@@ -347,9 +355,9 @@ export function createPalitrasControl(
       const listContainer = document.createElement('div');
       listContainer.className = 'palitras-control-list';
 
-      this._palitras.forEach((palitra: Palitra) => {
-        if (palitra && palitra.id !== undefined) {
-          const item = this._createPalitraItem(palitra);
+      this._palitras.forEach((palitraDetails: PalitraDetails) => {
+        if (palitraDetails && palitraDetails.palitra && palitraDetails.palitra.id !== undefined) {
+          const item = this._createPalitraItem(palitraDetails);
           listContainer.appendChild(item);
         }
       });
@@ -366,7 +374,10 @@ export function createPalitrasControl(
       }
     },
 
-    _createPalitraItem: function(palitra: Palitra) {
+    _createPalitraItem: function(palitraDetails: PalitraDetails) {
+      const palitra = palitraDetails.palitra;
+      const points = palitraDetails.points;
+      
       const item = document.createElement('div');
       item.className = 'palitra-item';
       
@@ -390,10 +401,12 @@ export function createPalitrasControl(
       
       if (palitra.geometry && palitra.geometry.center && palitra.geometry.perimeter_linear_ring) {
         const centerText = `Центр: ${palitra.geometry.center.lat.toFixed(4)}, ${palitra.geometry.center.lng.toFixed(4)}`;
-        const pointsText = `Точок: ${palitra.geometry.perimeter_linear_ring.length}`;
-        infoDiv.innerHTML = `<div>${centerText}</div><div>${pointsText}</div>`;
+        const perimeterPointsText = `Точок периметру: ${palitra.geometry.perimeter_linear_ring.length}`;
+        const dataPointsText = points.length > 0 ? `Точок даних: ${points.length}` : '';
+        infoDiv.innerHTML = `<div>${centerText}</div><div>${perimeterPointsText}</div>${dataPointsText ? `<div>${dataPointsText}</div>` : ''}`;
       } else {
-        infoDiv.innerHTML = '<div>Без геометрії</div>';
+        const dataPointsText = points.length > 0 ? `Точок даних: ${points.length}` : '';
+        infoDiv.innerHTML = dataPointsText ? `<div>${dataPointsText}</div>` : '<div>Без геометрії</div>';
       }
       
       const contentDiv = document.createElement('div');
@@ -421,7 +434,7 @@ export function createPalitrasControl(
       return item;
     },
 
-    updatePalitras: function(palitras: Palitra[], visibleIds: number[]) {
+    updatePalitras: function(palitras: PalitraDetails[], visibleIds: number[]) {
       this._palitras = palitras;
       this._visibleIds = visibleIds;
       this._render();

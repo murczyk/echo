@@ -10,6 +10,26 @@ import { TimeswitchControl, PalitrasControl, createLayerSwitchControl, createExi
 
 type NetworkUnit = { frequencies: string[]; name: string }
 type Message = [number, { freq: string; coords: number[], text: string, date: number, time: number, unit: string }]
+type Coords = { lat: number; lng: number }
+type Geometry = { 
+  center: Coords; 
+  perimeter_linear_ring: Coords[] 
+}
+type Palitra = {
+  id: number;
+  name: string;
+  color_hex: string;
+  geometry: Geometry | null;
+  source_file_name?: string;
+}
+type PalitraPoint = {
+  coords: Coords;
+  label: string | null;
+}
+type PalitraDetails = {
+  palitra: Palitra;
+  points: PalitraPoint[];
+}
 
 export class DataCircleMarker extends L.CircleMarker {
   data: { messageId: number };
@@ -101,7 +121,7 @@ class AnalysisMap extends HTMLElement {
   private _kmzLayer: KMZLayer | null = null;
   private _selectedUnits: string[] = []
   
-  private _palitras: any[] = [];
+  private _palitras: PalitraDetails[] = [];
   private _visiblePalitraIds: number[] = [];
   private _palitrasControl: PalitrasControl | null = null;
   private _palitrasLayerGroup: L.LayerGroup | null = null;
@@ -375,15 +395,15 @@ class AnalysisMap extends HTMLElement {
     this._palitrasLayerGroup.clearLayers();
 
     // Add visible palitras
-    const visiblePalitras = this._palitras.filter(p => 
-      this._visiblePalitraIds.includes(p.id) && p.geometry
+    const visiblePalitras = this._palitras.filter(pd => 
+      this._visiblePalitraIds.includes(pd.palitra.id) && pd.palitra.geometry
     );
 
 
     const polygons: L.Polygon[] = [];
     
-    visiblePalitras.forEach(palitra => {
-      const polygon = this._createPalitraPolygon(palitra);
+    visiblePalitras.forEach(palitraDetails => {
+      const polygon = this._createPalitraPolygon(palitraDetails);
       if (polygon) {
         this._palitrasLayerGroup!.addLayer(polygon);
         polygons.push(polygon);
@@ -402,7 +422,9 @@ class AnalysisMap extends HTMLElement {
     }
   }
 
-  private _createPalitraPolygon(palitra: any): L.Polygon | null {
+  private _createPalitraPolygon(palitraDetails: PalitraDetails): L.Polygon | null {
+    const palitra = palitraDetails.palitra;
+    
     if (!palitra.geometry || !palitra.geometry.perimeter_linear_ring) {
       return null;
     }

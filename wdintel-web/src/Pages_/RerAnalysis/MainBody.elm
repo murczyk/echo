@@ -719,13 +719,13 @@ view user model shared route =
                             case model.palitras of
                                 Success palitras ->
                                     palitras
-                                        |> List.filter (\p -> List.member p.id model.palitrasVisible)
+                                        |> List.filter (\p -> List.member p.palitra.id model.palitrasVisible)
                                 
                                 _ ->
                                     []
                         
                         encodedPalitras =
-                            Encode.list B.palitraEncoder (RD.withDefault [] model.palitras)
+                            Encode.list B.palitraDetailsEncoder (RD.withDefault [] model.palitras)
                         
                         encodedVisiblePalitraIds =
                             Encode.list Encode.int model.palitrasVisible
