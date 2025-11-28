@@ -62,7 +62,7 @@
 }
 
 .leaflet-custom-control {
-	background: white;
+	background: var(--bs-body-bg);
 	padding: 2px 4px;
 	border-radius: 2px;
 }
@@ -101,8 +101,8 @@ div [id="map-container-analysis"] {
 
 /* Palitras Control */
 .palitras-control {
-	background: var(--bs-card-bg, white);
-	border: 1px solid var(--bs-border-color, #ddd);
+	background: var(--bs-card-bg);
+	border: 1px solid var(--bs-border-color);
 	border-radius: 8px;
 	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 	max-width: 320px;
@@ -120,8 +120,8 @@ div [id="map-container-analysis"] {
 
 .palitras-control-header {
 	padding: 12px 16px;
-	border-bottom: 1px solid var(--bs-border-color, #ddd);
-	background: var(--bs-card-bg, white);
+	border-bottom: 1px solid var(--bs-border-color);
+	background: var(--bs-card-bg);
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
@@ -139,7 +139,7 @@ div [id="map-container-analysis"] {
 	margin: 0;
 	font-size: 14px;
 	font-weight: 600;
-	color: var(--bs-body-color, #333);
+	color: var(--bs-body-color);
 	flex: 1;
 }
 
@@ -148,7 +148,7 @@ div [id="map-container-analysis"] {
 	border: none;
 	cursor: pointer;
 	padding: 4px 8px;
-	color: var(--bs-body-color, #666);
+	color: var(--bs-body-color);
 	display: flex;
 	align-items: center;
 	justify-content: center;
@@ -159,12 +159,12 @@ div [id="map-container-analysis"] {
 }
 
 .palitras-toggle-button:hover {
-	background-color: var(--bs-secondary-bg, #f8f9fa);
-	color: var(--bs-body-color, #333);
+	background-color: var(--bs-secondary-bg);
+	color: var(--bs-body-color);
 }
 
 .palitras-toggle-button:focus {
-	outline: 2px solid var(--bs-primary, #0d6efd);
+	outline: 2px solid var(--bs-primary);
 	outline-offset: 2px;
 }
 
@@ -173,7 +173,7 @@ div [id="map-container-analysis"] {
 	border: none;
 	cursor: pointer;
 	padding: 8px;
-	color: var(--bs-body-color, #666);
+	color: var(--bs-body-color);
 	display: flex;
 	align-items: center;
 	justify-content: center;
@@ -185,12 +185,12 @@ div [id="map-container-analysis"] {
 }
 
 .palitras-palette-icon:hover {
-	background-color: var(--bs-secondary-bg, #f8f9fa);
-	color: var(--bs-primary, #0d6efd);
+	background-color: var(--bs-secondary-bg);
+	color: var(--bs-primary);
 }
 
 .palitras-palette-icon:focus {
-	outline: 2px solid var(--bs-primary, #0d6efd);
+	outline: 2px solid var(--bs-primary);
 	outline-offset: 2px;
 }
 
@@ -219,7 +219,7 @@ div [id="map-container-analysis"] {
 }
 
 .palitra-item:hover {
-	background-color: var(--bs-secondary-bg, #f8f9fa);
+	background-color: var(--bs-secondary-bg);
 }
 
 .palitra-checkbox {
@@ -245,14 +245,14 @@ div [id="map-container-analysis"] {
 	width: 16px;
 	height: 16px;
 	border-radius: 3px;
-	border: 1px solid var(--bs-border-color, #ddd);
+	border: 1px solid var(--bs-border-color);
 	flex-shrink: 0;
 }
 
 .palitra-name {
 	font-size: 13px;
 	font-weight: 500;
-	color: var(--bs-body-color, #333);
+	color: var(--bs-body-color);
 	white-space: nowrap;
 	overflow: hidden;
 	text-overflow: ellipsis;
@@ -260,7 +260,7 @@ div [id="map-container-analysis"] {
 
 .palitra-info {
 	font-size: 11px;
-	color: var(--bs-secondary-color, #6c757d);
+	color: var(--bs-secondary-color);
 	line-height: 1.4;
 }
 
@@ -270,8 +270,8 @@ div [id="map-container-analysis"] {
 
 /* Layer Switch Control */
 #analysis-map .layer-switch-control {
-	background: var(--bs-card-bg, white) !important;
-	border: 1px solid var(--bs-border-color, #ddd);
+	background: var(--bs-card-bg) !important;
+	border: 1px solid var(--bs-border-color);
 	border-radius: 8px;
 	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 	max-width: 200px;
@@ -289,8 +289,8 @@ div [id="map-container-analysis"] {
 
 #analysis-map .layer-switch-header {
 	padding: 12px 16px;
-	border-bottom: 1px solid var(--bs-border-color, #ddd);
-	background: var(--bs-card-bg, white);
+	border-bottom: 1px solid var(--bs-border-color);
+	background: var(--bs-card-bg);
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
@@ -308,7 +308,7 @@ div [id="map-container-analysis"] {
 	margin: 0;
 	font-size: 14px;
 	font-weight: 600;
-	color: var(--bs-body-color, #333);
+	color: var(--bs-body-color);
 	flex: 1;
 }
 
@@ -317,7 +317,7 @@ div [id="map-container-analysis"] {
 	border: none;
 	cursor: pointer;
 	padding: 4px 8px;
-	color: var(--bs-body-color, #666);
+	color: var(--bs-body-color);
 	display: flex;
 	align-items: center;
 	justify-content: center;
@@ -328,12 +328,12 @@ div [id="map-container-analysis"] {
 }
 
 #analysis-map .layer-switch-toggle-button:hover {
-	background-color: var(--bs-secondary-bg, #f8f9fa);
-	color: var(--bs-body-color, #333);
+	background-color: var(--bs-secondary-bg);
+	color: var(--bs-body-color);
 }
 
 #analysis-map .layer-switch-toggle-button:focus {
-	outline: 2px solid var(--bs-primary, #0d6efd);
+	outline: 2px solid var(--bs-primary);
 	outline-offset: 2px;
 }
 
@@ -342,7 +342,7 @@ div [id="map-container-analysis"] {
 	border: none;
 	cursor: pointer;
 	padding: 8px;
-	color: var(--bs-body-color, #666);
+	color: var(--bs-body-color);
 	display: flex;
 	align-items: center;
 	justify-content: center;
@@ -354,12 +354,12 @@ div [id="map-container-analysis"] {
 }
 
 #analysis-map .layer-switch-icon:hover {
-	background-color: var(--bs-secondary-bg, #f8f9fa);
-	color: var(--bs-primary, #0d6efd);
+	background-color: var(--bs-secondary-bg);
+	color: var(--bs-primary);
 }
 
 #analysis-map .layer-switch-icon:focus {
-	outline: 2px solid var(--bs-primary, #0d6efd);
+	outline: 2px solid var(--bs-primary);
 	outline-offset: 2px;
 }
 
@@ -387,7 +387,7 @@ div [id="map-container-analysis"] {
 }
 
 #analysis-map .layer-switch-item:hover {
-	background-color: var(--bs-secondary-bg, #f8f9fa);
+	background-color: var(--bs-secondary-bg);
 }
 
 #analysis-map .layer-switch-radio {
@@ -399,6 +399,82 @@ div [id="map-container-analysis"] {
 #analysis-map .layer-switch-label {
 	font-size: 13px;
 	font-weight: 500;
-	color: var(--bs-body-color, #333);
+	color: var(--bs-body-color);
 	flex: 1;
+}
+
+/* Light theme (default) */
+.leaflet-custom-control,
+.palitras-control,
+.palitras-control-header,
+#analysis-map .layer-switch-control,
+#analysis-map .layer-switch-header {
+	background: #ffffff !important;
+	border-color: #dee2e6 !important;
+}
+
+.palitras-control-header h3,
+.palitras-toggle-button,
+.palitras-palette-icon,
+.palitra-name,
+#analysis-map .layer-switch-header h3,
+#analysis-map .layer-switch-toggle-button,
+#analysis-map .layer-switch-icon,
+#analysis-map .layer-switch-label {
+	color: #212529 !important;
+}
+
+.palitras-toggle-button:hover,
+.palitras-palette-icon:hover,
+.palitra-item:hover,
+#analysis-map .layer-switch-toggle-button:hover,
+#analysis-map .layer-switch-icon:hover,
+#analysis-map .layer-switch-item:hover {
+	background-color: #f8f9fa !important;
+}
+
+.palitra-color {
+	border-color: #dee2e6 !important;
+}
+
+.palitra-info {
+	color: #6c757d !important;
+}
+
+/* Dark theme */
+html[data-bs-theme="dark"] .leaflet-custom-control,
+html[data-bs-theme="dark"] .palitras-control,
+html[data-bs-theme="dark"] .palitras-control-header,
+html[data-bs-theme="dark"] #analysis-map .layer-switch-control,
+html[data-bs-theme="dark"] #analysis-map .layer-switch-header {
+	background: #212529 !important;
+	border-color: #495057 !important;
+}
+
+html[data-bs-theme="dark"] .palitras-control-header h3,
+html[data-bs-theme="dark"] .palitras-toggle-button,
+html[data-bs-theme="dark"] .palitras-palette-icon,
+html[data-bs-theme="dark"] .palitra-name,
+html[data-bs-theme="dark"] #analysis-map .layer-switch-header h3,
+html[data-bs-theme="dark"] #analysis-map .layer-switch-toggle-button,
+html[data-bs-theme="dark"] #analysis-map .layer-switch-icon,
+html[data-bs-theme="dark"] #analysis-map .layer-switch-label {
+	color: #dee2e6 !important;
+}
+
+html[data-bs-theme="dark"] .palitras-toggle-button:hover,
+html[data-bs-theme="dark"] .palitras-palette-icon:hover,
+html[data-bs-theme="dark"] .palitra-item:hover,
+html[data-bs-theme="dark"] #analysis-map .layer-switch-toggle-button:hover,
+html[data-bs-theme="dark"] #analysis-map .layer-switch-icon:hover,
+html[data-bs-theme="dark"] #analysis-map .layer-switch-item:hover {
+	background-color: #343a40 !important;
+}
+
+html[data-bs-theme="dark"] .palitra-color {
+	border-color: #495057 !important;
+}
+
+html[data-bs-theme="dark"] .palitra-info {
+	color: #adb5bd !important;
 }
