@@ -71,7 +71,7 @@ const liTemplate = (message_: Message, networkUnitName_: string | undefined, sel
 
     return `
           <li>
-            ${message_[1].message_uid ?`<p style="line-height: 22px;"><span style="font-weight: 700;">Повідомлення:</span><a href="${updateStateUrl(window.location.href, message_[1].message_uid)}">${message_[1].message_uid}</a></p>`: ''}
+            ${message_[1].message_uid ?`<p style="line-height: 22px;"><span style="font-weight: 700;">Посилання:</span><a href="${updateStateUrl(window.location.href, message_[1].message_uid)}">${message_[1].message_uid}</a></p>`: ''}
             ${message_[1].freq ? `<p style="line-height: 22px;"><span style="font-weight: 700;">Частота:</span> ${message_[1].freq}</p>` : ''}
             ${message_[1].coords ? `<p style="line-height: 16px;"><span style="font-weight: 700;">Координати:</span> ${message_[1].coords}</p>` : ''}
             ${message_[1].coords ? '<span style="font-weight: 700; line-height: 22px;">Повідомлення:</span><br>' : ''}
