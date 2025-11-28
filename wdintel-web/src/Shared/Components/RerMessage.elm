@@ -775,7 +775,6 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
 
         renderAttachment : MessageMediaInfo -> Html msg
         renderAttachment attachment =
-         -- Get the file name, using "<???>" if it's Nothing
          let
              displayFileName =
                  withDefault "<файл без назви>" attachment.fileName
