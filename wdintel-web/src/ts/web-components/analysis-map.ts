@@ -104,6 +104,7 @@ class AnalysisMap extends HTMLElement {
   private _palitras: any[] = [];
   private _visiblePalitraIds: number[] = [];
   private _palitrasControl: PalitrasControl | null = null;
+  private _palitrasLayerGroup: L.LayerGroup | null = null;
 
   constructor() {
     super();
@@ -194,12 +195,14 @@ class AnalysisMap extends HTMLElement {
       if (this._palitrasControl) {
         this._palitrasControl.updatePalitras(this._palitras, this._visiblePalitraIds);
       }
+      this._updatePalitrasOnMap();
     }
     if (name === 'visible-palitra-ids') {
       this._visiblePalitraIds = JSON.parse(newValue);
       if (this._palitrasControl) {
         this._palitrasControl.updatePalitras(this._palitras, this._visiblePalitraIds);
       }
+      this._updatePalitrasOnMap();
     }
   }
 
@@ -231,6 +234,15 @@ class AnalysisMap extends HTMLElement {
       this._kmzLayer = kmzLayerFactory(null, { bindTooltip: true, bindPopup: false, permanentTooltip: true })
       this._kmzLayer.addTo(this._map);
       this._kmzLayer.parse(kmzData, {})
+     }
+     
+     // Initialize palitras layer group
+     this._palitrasLayerGroup = L.layerGroup();
+     this._palitrasLayerGroup.addTo(this._map);
+     
+     // Try to update palitras if we already have data
+     if (this._palitras.length > 0) {
+       this._updatePalitrasOnMap();
      }
     }
   }
@@ -352,6 +364,97 @@ class AnalysisMap extends HTMLElement {
     });
     this.dispatchEvent(event);
 
+  }
+
+  private _updatePalitrasOnMap() {
+    if (!this._palitrasLayerGroup || !this._map) {
+      return;
+    }
+
+    // Clear existing polygons
+    this._palitrasLayerGroup.clearLayers();
+
+    // Add visible palitras
+    const visiblePalitras = this._palitras.filter(p => 
+      this._visiblePalitraIds.includes(p.id) && p.geometry
+    );
+
+
+    const polygons: L.Polygon[] = [];
+    
+    visiblePalitras.forEach(palitra => {
+      const polygon = this._createPalitraPolygon(palitra);
+      if (polygon) {
+        this._palitrasLayerGroup!.addLayer(polygon);
+        polygons.push(polygon);
+      } else {
+        console.log('❌ Polygon creation failed');
+      }
+    });
+
+    // Fit map bounds to show all visible palitras
+    if (polygons.length > 0) {
+      const group = L.featureGroup(polygons);
+      this._map!.fitBounds(group.getBounds(), { 
+        padding: [50, 50],
+        maxZoom: 10 
+      });
+    }
+  }
+
+  private _createPalitraPolygon(palitra: any): L.Polygon | null {
+    if (!palitra.geometry || !palitra.geometry.perimeter_linear_ring) {
+      return null;
+    }
+
+    // Convert coordinates to Leaflet format [lat, lng]
+    const latlngs: [number, number][] = palitra.geometry.perimeter_linear_ring.map(
+      (coord: { lat: number; lng: number }) => [coord.lat, coord.lng] as [number, number]
+    );
+
+    if (latlngs.length < 3) {
+      return null; // Need at least 3 points for a polygon
+    }
+
+    // Create polygon with styling
+    const polygon = L.polygon(latlngs, {
+      color: palitra.color_hex,
+      fillColor: palitra.color_hex,
+      fillOpacity: 0.2,
+      weight: 2,
+      opacity: 0.8
+    });
+
+    // Add popup with palitra info
+    const pointsCount = palitra.geometry.perimeter_linear_ring.length;
+    // Swap lat/lng because they're reversed in the database
+    const centerLat = palitra.geometry.center.lng.toFixed(4);
+    const centerLng = palitra.geometry.center.lat.toFixed(4);
+    
+    const popupContent = `
+      <div style="padding: 8px;">
+        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+          <span style="display: inline-block; width: 16px; height: 16px; background-color: ${palitra.color_hex}; border: 1px solid #ccc; border-radius: 3px;"></span>
+          <strong style="font-size: 14px;">${palitra.name}</strong>
+        </div>
+        <div style="font-size: 12px; color: #666;">
+          <div>Центр: ${centerLat}, ${centerLng}</div>
+          <div>Точок периметру: ${pointsCount}</div>
+          ${palitra.source_file_name ? `<div>Файл: ${palitra.source_file_name}</div>` : ''}
+        </div>
+      </div>
+    `;
+    
+    polygon.bindPopup(popupContent);
+
+    // Add tooltip with name (always visible)
+    polygon.bindTooltip(palitra.name, {
+      permanent: true,
+      direction: 'center',
+      className: 'palitra-label'
+    });
+
+    return polygon;
   }
 }
 

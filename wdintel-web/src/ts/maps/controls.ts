@@ -11,12 +11,16 @@ export interface PalitrasControl extends L.Control {
 }
 
 type Coords = { lat: number; lng: number };
-type Geometry = { center: Coords; perimeterLinearRing: Coords[] };
+type Geometry = { 
+  center: Coords; 
+  perimeter_linear_ring: Coords[] 
+};
 type Palitra = {
   id: number;
   name: string;
-  colorHex: string;
+  color_hex: string;
   geometry: Geometry | null;
+  source_file_name?: string;
 };
 export function createLayerSwitchControl(tileLayers: { openStreetMap: L.TileLayer, googleHybrid: L.TileLayer }) {
   return L.control.layers({ 'OpenStreetMap': tileLayers.openStreetMap, 'Супутник': tileLayers.googleHybrid });
@@ -146,7 +150,7 @@ export function createPalitrasControl(
       
       const colorBox = document.createElement('span');
       colorBox.className = 'palitra-color';
-      colorBox.style.backgroundColor = palitra.colorHex;
+      colorBox.style.backgroundColor = palitra.color_hex;
       
       const nameSpan = document.createElement('span');
       nameSpan.className = 'palitra-name';
@@ -155,9 +159,9 @@ export function createPalitrasControl(
       const infoDiv = document.createElement('div');
       infoDiv.className = 'palitra-info';
       
-      if (palitra.geometry && palitra.geometry.center && palitra.geometry.perimeterLinearRing) {
+      if (palitra.geometry && palitra.geometry.center && palitra.geometry.perimeter_linear_ring) {
         const centerText = `Центр: ${palitra.geometry.center.lat.toFixed(4)}, ${palitra.geometry.center.lng.toFixed(4)}`;
-        const pointsText = `Точок: ${palitra.geometry.perimeterLinearRing.length}`;
+        const pointsText = `Точок: ${palitra.geometry.perimeter_linear_ring.length}`;
         infoDiv.innerHTML = `<div>${centerText}</div><div>${pointsText}</div>`;
       } else {
         infoDiv.innerHTML = '<div>Без геометрії</div>';
