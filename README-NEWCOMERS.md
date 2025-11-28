@@ -1,8 +1,11 @@
 # Quick setup newcomers guide
 
-After following this guide the app should be available at https://echo.localhost:8443/.
+After following this guide the app should be available at https://echo.localhost:8443/ after startup.
 
-Use `admin` and the password `fee_-_-_-FnoeKFBeebu87bf` (same as the DB default password) below to sign-in.
+To start it, use screen/tmux and run `just dev-back`, `just dev-front2`, `just dev-py`.
+
+Use `admin` and the password `fee_-_-_-FnoeKFBeebu87bf` (same as the DB default password) to sign-in.
+
 
 ## Clone the repository
 ```bash
