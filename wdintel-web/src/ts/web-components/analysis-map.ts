@@ -6,7 +6,7 @@ import { loadKmzData } from '../maps/maps'
 import { KMZLayer, kmzLayerFactory } from '../maps/leaflet-kmz'
 import { MapPointDetailed } from '../maps/types';
 import { messagesCountText } from '../maps/language-utils';
-import { TimeswitchControl, createLayerSwitchControl, createExitControl2, createTimeswitchControl, createAttributionControl } from '../maps/controls';
+import { TimeswitchControl, PalitrasControl, createLayerSwitchControl, createExitControl2, createTimeswitchControl, createAttributionControl, createPalitrasControl } from '../maps/controls';
 
 type NetworkUnit = { frequencies: string[]; name: string }
 type Message = [number, { freq: string; coords: number[], text: string, date: number, time: number, unit: string }]
@@ -85,7 +85,7 @@ function getPointPopupTemplate(sortedMessages: Message[], networkUnits: NetworkU
 
 
 class AnalysisMap extends HTMLElement {
-  static observedAttributes = ["points", "daterange", "messages", "visibility", "network-units", "selected-units"]
+  static observedAttributes = ["points", "daterange", "messages", "visibility", "network-units", "selected-units", "palitras", "visible-palitra-ids"]
 
   private _map: L.Map | null = null;
   private _daterange: { startDate: number, endDate: number } = { startDate: new Date().getDate(), endDate: new Date().getDate() };
@@ -100,6 +100,10 @@ class AnalysisMap extends HTMLElement {
   private _initialized = false;
   private _kmzLayer: KMZLayer | null = null;
   private _selectedUnits: string[] = []
+  
+  private _palitras: any[] = [];
+  private _visiblePalitraIds: number[] = [];
+  private _palitrasControl: PalitrasControl | null = null;
 
   constructor() {
     super();
@@ -185,6 +189,18 @@ class AnalysisMap extends HTMLElement {
     if (name === 'selected-units') {
       this._selectedUnits = JSON.parse(newValue)
     }
+    if (name === 'palitras') {
+      this._palitras = JSON.parse(newValue);
+      if (this._palitrasControl) {
+        this._palitrasControl.updatePalitras(this._palitras, this._visiblePalitraIds);
+      }
+    }
+    if (name === 'visible-palitra-ids') {
+      this._visiblePalitraIds = JSON.parse(newValue);
+      if (this._palitrasControl) {
+        this._palitrasControl.updatePalitras(this._palitras, this._visiblePalitraIds);
+      }
+    }
   }
 
 
@@ -230,12 +246,26 @@ class AnalysisMap extends HTMLElement {
       this.dispatchEvent(event);
     }
 
+    const palitraToggleCallback = (palitraId: number) => {
+      const event = new CustomEvent('palitra-visibility-toggled', {
+        detail: { palitraId },
+        bubbles: true,
+        composed: true
+      });
+      this.dispatchEvent(event);
+    }
+
     const switchTimeControl = createTimeswitchControl(this._daterange);
     map.addControl(switchTimeControl)
 
     map.addControl(createExitControl2(exitCallback));
     map.addControl(createLayerSwitchControl(tileLayers));
     map.addControl(createAttributionControl());
+    
+    const palitrasControl = createPalitrasControl(this._palitras, this._visiblePalitraIds, palitraToggleCallback);
+    this._palitrasControl = palitrasControl;
+    map.addControl(palitrasControl);
+    
     return { map, switchTimeControl };
   }
 

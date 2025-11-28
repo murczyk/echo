@@ -714,6 +714,25 @@ view user model shared route =
 
                         encodedSelectedUnits =
                             Encode.list Encode.string model.unitsSelected
+                        
+                        visiblePalitras =
+                            case model.palitras of
+                                Success palitras ->
+                                    palitras
+                                        |> List.filter (\p -> List.member p.id model.palitrasVisible)
+                                
+                                _ ->
+                                    []
+                        
+                        encodedPalitras =
+                            Encode.list B.palitraEncoder (RD.withDefault [] model.palitras)
+                        
+                        encodedVisiblePalitraIds =
+                            Encode.list Encode.int model.palitrasVisible
+                        
+                        palitraToggleDecoder =
+                            Decode.at [ "detail" ] <|
+                                Decode.field "palitraId" Decode.int
                     in
                     div
                         (class "h-full relative"
@@ -730,6 +749,8 @@ view user model shared route =
                             , attribute "points" (Encode.encode 0 encodedPoints)
                             , attribute "messages" (Encode.encode 0 encodedMessagesAndUnits)
                             , attribute "selected-units" (Encode.encode 0 encodedSelectedUnits)
+                            , attribute "palitras" (Encode.encode 0 encodedPalitras)
+                            , attribute "visible-palitra-ids" (Encode.encode 0 encodedVisiblePalitraIds)
                             , attribute "visibility"
                                 (if model.unfoldMapBlock then
                                     "true"
@@ -741,6 +762,7 @@ view user model shared route =
                             , Events.on "date-range-changed" (Decode.map MapPeriodChanged dateRangeDecoder)
                             , Events.on "load-messages-description" (Decode.map LoadMessagesForMap messagesIdsDecoder)
                             , Events.on "message-unit-clicked" (Decode.map SetUnitFilterFromMap unitNameDecoder)
+                            , Events.on "palitra-visibility-toggled" (Decode.map TogglePalitraVisibility palitraToggleDecoder)
                             ]
                             []
                             :: (if model.mapPoints == Loading || model.mapOpenMessages == Loading then
