@@ -207,6 +207,8 @@ init route _ =
             , filterTagsOption = B.OneOfTags
             , unitsExactMatchOnly = True
             , editSidebar = Nothing
+            , palitras = NotAsked
+            , palitrasVisible = []
             }
 
         m2 =
@@ -235,6 +237,7 @@ init route _ =
         , E.getAnalysisSavedFilters SavedFiltersGot
         , E.getTags GotTags
         , E.map RowsMsg Shared.Components.RerMessage.init
+        , E.sendCmd <| Api.palitra_list GotPalitras
         ]
     )
 
@@ -1614,6 +1617,28 @@ update user shared route msg model =
 
         EditSidebarSaveDone _ (Ok ()) ->
             ( { model | editSidebar = Nothing }
+            , E.none
+            )
+
+        GotPalitras (Ok palitras) ->
+            ( { model | palitras = Success palitras }
+            , E.none
+            )
+
+        GotPalitras (Err err) ->
+            ( { model | palitras = Failure err }
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Не вдалося завантажити палітри" err
+            )
+
+        TogglePalitraVisibility palitraId ->
+            let
+                newVisible =
+                    if List.member palitraId model.palitrasVisible then
+                        List.filter (\id -> id /= palitraId) model.palitrasVisible
+                    else
+                        palitraId :: model.palitrasVisible
+            in
+            ( { model | palitrasVisible = newVisible }
             , E.none
             )
 

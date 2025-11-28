@@ -155,6 +155,10 @@ type alias Model =
     , filterTagsOption : B.TagFilterOption
     , unitsExactMatchOnly : Bool
     , editSidebar : Maybe Int
+    
+    -- палітри
+    , palitras : RemoteData ApiError (List B.Palitra)
+    , palitrasVisible : List Int
     }
 
 
