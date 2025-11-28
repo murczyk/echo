@@ -953,7 +953,8 @@ config-deploy:
       -H 'Content-Type: application/json' \
       -d "{\"content\":\"deploying config for {{ server }} from $(hostname)\"}" \
       '{{ discord_webhook }}' || true
-    bw_sync "{{ server }}" "echo-config-{{ server }}" "/etc/echo/config.toml" "wdintel-rs"
+    # bw_sync "{{ server }}" "echo-config-{{ server }}" "/etc/echo/config.toml" "wdintel-rs"
+    echo-install-utils bw-sync "{{ server }}" "echo-config-{{ server }}" "/etc/echo/config.toml" "wdintel-rs"
 
 stop-processing:
     ssh {{ server }} 'sudo systemctl stop wdintel-rs-sigint-worker'
