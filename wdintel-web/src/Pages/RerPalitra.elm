@@ -73,7 +73,6 @@ type alias Form =
     { name : String
     , colorHex : String
     , access : AccessForm
-    , fileName : String
     }
 
 
@@ -190,7 +189,6 @@ emptyForm =
     { name = ""
     , colorHex = "#00bcd4"
     , access = LoginsAccess ""
-    , fileName = ""
     }
 
 
@@ -1699,17 +1697,6 @@ createPalitraSidebarContent isDark user model =
                         []
                     ]
                 , div [ class "space-y-2" ]
-                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Назва файлу (опціонально)" ]
-                    , input
-                        [ class "w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
-                        , type_ "text"
-                        , placeholder "Назва файлу"
-                        , value model.form.fileName
-                        , onInput (\v -> UpdateForm (\f -> { f | fileName = v }))
-                        ]
-                        []
-                    ]
-                , div [ class "space-y-2" ]
                     [ label [ class "text-sm font-medium text-foreground" ] [ text "Доступ" ]
                     , div [ class "flex flex-wrap gap-2" ]
                         [ SegmentedControl.new
@@ -1755,12 +1742,7 @@ buildCreateReq form =
     { name = form.name
     , colorHex = form.colorHex
     , access = accessToBinding form.access
-    , sourceFileName =
-        if String.isEmpty form.fileName then
-            Nothing
-
-        else
-            Just form.fileName
+    , sourceFileName = Nothing
     , lastUploadedAtTs = Nothing
     }
 
@@ -2096,17 +2078,6 @@ editPalitraSidebarContent isDark user model =
                                 []
                             ]
                         , div [ class "space-y-2" ]
-                            [ label [ class "text-sm font-medium text-foreground" ] [ text "Назва файлу (опціонально)" ]
-                            , input
-                                [ class "w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
-                                , type_ "text"
-                                , placeholder "Назва файлу"
-                                , value editForm.fileName
-                                , onInput (\v -> UpdateEditForm (\f -> { f | fileName = v }))
-                                ]
-                                []
-                            ]
-                        , div [ class "space-y-2" ]
                             [ label [ class "text-sm font-medium text-foreground" ] [ text "Доступ" ]
                             , div [ class "flex flex-wrap gap-2" ]
                                 [ SegmentedControl.new
@@ -2166,5 +2137,4 @@ palitraToForm palitra =
     { name = palitra.name
     , colorHex = palitra.colorHex
     , access = access
-    , fileName = Maybe.withDefault "" palitra.sourceFileName
     }
