@@ -187,12 +187,22 @@ where
     C: ConnectionTrait + 'async_trait,
 {
     let query = r"
-        UPDATE palitra
-        SET center = ST_Centroid(ST_Collect(ST_SetSRID(ST_MakePoint(lng, lat), 4326)))
-        FROM palitra_point
+        UPDATE palitra as p
+        SET center = sub.calculated_center
+        FROM (
+            SELECT
+                palitra_id,
+                ST_Centroid(ST_Collect(ST_SetSRID(ST_MakePoint(lng, lat), 4326))) AS calculated_center
+            FROM
+                palitra_point
+            WHERE
+                deleted = FALSE
+            GROUP BY
+                palitra_id
+        ) AS sub
         WHERE
-            palitra_point.palitra_id = $1
-            AND palitra_point.deleted = FALSE;
+            p.id = $1
+            AND p.id = sub.palitra_id;
     ";
     dbx.execute(Statement::from_sql_and_values(
         DbBackend::Postgres,
@@ -250,13 +260,13 @@ where
 {
     #[derive(Debug, FromQueryResult)]
     pub struct Geometry {
-        sequence_index: u16,
+        sequence_index: u32,
         lat: f64,
         lon: f64,
     }
     let query = r"
         SELECT
-            (dp.path[1] - 1) AS sequence_index,
+            (dp.path[1] - 1)::int4 AS sequence_index,
             ST_X(dp.geom) AS lon,
             ST_Y(dp.geom) AS lat
         FROM
