@@ -379,9 +379,30 @@ update user msg model =
 
                 allCmds =
                     (scopeCmd :: adminDataCmds) |> List.filter (\cmd -> cmd /= Cmd.none)
+
+                -- Автоматично заповнюємо форму для не-admin користувачів
+                initialForm =
+                    if isAdmin user then
+                        emptyForm
+                    else
+                        -- Для не-admin автоматично підставляємо логін
+                        { emptyForm | access = LoginsAccess user.name }
+
+                -- Синхронізуємо select з формою
+                loginsSelect =
+                    if isAdmin user then
+                        model.loginsSelect
+                    else
+                        let
+                            ls =
+                                model.loginsSelect
+                        in
+                        { ls | selected = [ user.name ] }
             in
             ( { model 
                 | showCreateSidebar = True
+                , form = initialForm
+                , loginsSelect = loginsSelect
                 , myScope = if model.myScope == NotAsked then Loading else model.myScope
                 , logins = if isAdmin user && model.logins == NotAsked then Loading else model.logins
                 , organisms = if isAdmin user && model.organisms == NotAsked then Loading else model.organisms
@@ -402,14 +423,29 @@ update user msg model =
             )
 
         CloseCreateSidebar ->
-            ( { model | showCreateSidebar = False, form = emptyForm }, E.none )
+            let
+                -- Очищаємо select states
+                loginsSelect =
+                    model.loginsSelect
+
+                organismsSelect =
+                    model.organismsSelect
+
+                aorSelect =
+                    model.aorSelect
+            in
+            ( { model
+                | showCreateSidebar = False
+                , form = emptyForm
+                , loginsSelect = { loginsSelect | selected = [] }
+                , organismsSelect = { organismsSelect | selected = [] }
+                , aorSelect = { aorSelect | selected = [] }
+              }
+            , E.none
+            )
 
         SubmitCreate ->
-            let
-                validationError =
-                    validateForm model.form
-            in
-            if validationError == Nothing then
+            if isFormValid model.form then
                 let
                     req =
                         buildCreateReq model.form
@@ -417,8 +453,8 @@ update user msg model =
                 ( { model | submitInFlight = True }
                 , E.sendCmd <| Api.palitra_create CreateResponse req
                 )
-
             else
+                -- Форма невалідна, не відправляємо запит (це не має статися при правильній роботі UI)
                 ( model, E.none )
 
         CreateResponse (Ok p) ->
@@ -430,12 +466,25 @@ update user msg model =
 
                         _ ->
                             Success [ p ]
+
+                -- Очищаємо select states
+                loginsSelect =
+                    model.loginsSelect
+
+                organismsSelect =
+                    model.organismsSelect
+
+                aorSelect =
+                    model.aorSelect
             in
             ( { model
                 | palitras = newList
                 , form = emptyForm
                 , submitInFlight = False
                 , showCreateSidebar = False
+                , loginsSelect = { loginsSelect | selected = [] }
+                , organismsSelect = { organismsSelect | selected = [] }
+                , aorSelect = { aorSelect | selected = [] }
               }
             , E.none
             )
@@ -807,11 +856,7 @@ update user msg model =
         SubmitEdit ->
             case ( model.editSidebar, model.editForm ) of
                 ( Just palitraId, Just form ) ->
-                    let
-                        validationError =
-                            validateForm form
-                    in
-                    if validationError == Nothing then
+                    if isFormValid form then
                         let
                             req =
                                 buildCreateReq form
@@ -819,8 +864,8 @@ update user msg model =
                         ( { model | editSubmitInFlight = True }
                         , E.sendCmd <| Api.palitra_update (UpdateResponse palitraId) palitraId req
                         )
-
                     else
+                        -- Форма невалідна, не відправляємо запит (це не має статися при правильній роботі UI)
                         ( model, E.none )
 
                 _ ->
@@ -1228,12 +1273,24 @@ getAvailableAccessTypes user myScope =
         editor =
             isEditor user
 
+        hasOrganism =
+            case myScope.organism of
+                Just _ ->
+                    True
+
+                Nothing ->
+                    False
+
         hasAorIds =
             not (List.isEmpty myScope.aorIds)
     in
     List.filterMap identity
         [ Just (LoginsAccess "")
-        , Just (OrganismsAccess "")
+        , if admin || hasOrganism then
+            Just (OrganismsAccess "")
+
+          else
+            Nothing
         , if admin || (editor && hasAorIds) then
             Just (AorAccess "")
 
@@ -1301,13 +1358,33 @@ getAccessHint user access =
 -- Валідація форми перед відправкою
 
 
-validateForm : Form -> Maybe String
-validateForm form =
+isFormValid : Form -> Bool
+isFormValid form =
     if String.isEmpty form.name then
-        Just "Назва палітри обов'язкова"
+        False
 
     else
         case form.access of
+            LoginsAccess logins ->
+                let
+                    loginList =
+                        logins
+                            |> String.split ","
+                            |> List.map String.trim
+                            |> List.filter (\s -> s /= "")
+                in
+                not (List.isEmpty loginList)
+
+            OrganismsAccess ids ->
+                let
+                    organismList =
+                        ids
+                            |> String.split ","
+                            |> List.filter (\s -> s /= "")
+                            |> List.filterMap String.toInt
+                in
+                not (List.isEmpty organismList)
+
             AorAccess ids ->
                 let
                     aorList =
@@ -1316,14 +1393,7 @@ validateForm form =
                             |> List.filter (\s -> s /= "")
                             |> List.filterMap String.toInt
                 in
-                if List.isEmpty aorList then
-                    Just "Для доступу за смугами необхідно вказати хоча б один AOR ID"
-
-                else
-                    Nothing
-
-            _ ->
-                Nothing
+                not (List.isEmpty aorList)
 
 
 createPalitraSidebarContent : Bool -> Auth.User -> Model -> List (Html Msg)
@@ -1558,16 +1628,21 @@ createPalitraSidebarContent isDark user model =
                     let
                         restrictedOrganism =
                             isAccessRestricted user (OrganismsAccess "")
-
-                        userOrganismValue =
-                            user.organismId |> Maybe.map String.fromInt
                     in
                     if restrictedOrganism then
-                        case userOrganismValue of
-                            Just value ->
-                                ChangeAccess (OrganismsAccess value)
+                        -- Для не-admin підставляємо organismId з myScope
+                        case model.myScope of
+                            Success scope ->
+                                case scope.organism of
+                                    Just organism ->
+                                        ChangeAccess (OrganismsAccess (String.fromInt organism.id))
 
-                            Nothing ->
+                                    Nothing ->
+                                        -- Не повинно статися, бо getAvailableAccessTypes це відфільтрує
+                                        ChangeAccess accessForm
+
+                            _ ->
+                                -- myScope ще не завантажено
                                 ChangeAccess accessForm
 
                     else
@@ -1579,7 +1654,7 @@ createPalitraSidebarContent isDark user model =
                             isAdmin user
                     in
                     if not admin then
-                        -- Editor і Rer автоматично використовують свої AOR IDs
+                        -- Editor і Rer автоматично використовують свої AOR IDS
                         case model.myScope of
                             Success scope ->
                                 let
@@ -1951,16 +2026,21 @@ editPalitraSidebarContent isDark user model =
                             let
                                 restrictedOrganism =
                                     isAccessRestricted user (OrganismsAccess "")
-
-                                userOrganismValue =
-                                    user.organismId |> Maybe.map String.fromInt
                             in
                             if restrictedOrganism then
-                                case userOrganismValue of
-                                    Just value ->
-                                        ChangeAccess (OrganismsAccess value)
+                                -- Для не-admin підставляємо organismId з myScope
+                                case model.myScope of
+                                    Success scope ->
+                                        case scope.organism of
+                                            Just organism ->
+                                                ChangeAccess (OrganismsAccess (String.fromInt organism.id))
 
-                                    Nothing ->
+                                            Nothing ->
+                                                -- Не повинно статися, бо getAvailableAccessTypes це відфільтрує
+                                                ChangeAccess accessForm
+
+                                    _ ->
+                                        -- myScope ще не завантажено
                                         ChangeAccess accessForm
 
                             else
