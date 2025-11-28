@@ -22,8 +22,170 @@ type Palitra = {
   geometry: Geometry | null;
   source_file_name?: string;
 };
-export function createLayerSwitchControl(tileLayers: { openStreetMap: L.TileLayer, googleHybrid: L.TileLayer }) {
-  return L.control.layers({ 'OpenStreetMap': tileLayers.openStreetMap, 'Супутник': tileLayers.googleHybrid });
+export function createLayerSwitchControl(
+  tileLayers: { openStreetMap: L.TileLayer, googleHybrid: L.TileLayer }
+) {
+  const STORAGE_KEY = 'layer-control-collapsed';
+  
+  const LayerSwitchControl = L.Control.extend({
+    _tileLayers: tileLayers,
+    _currentLayer: tileLayers.googleHybrid,
+    _isCollapsed: true,
+
+    onAdd: function(map: L.Map) {
+      this._map = map; // Store map reference from onAdd
+      this._container = L.DomUtil.create('div', 'leaflet-bar leaflet-control layer-switch-control');
+      
+      // Load collapsed state from localStorage (default: collapsed)
+      try {
+        const saved = localStorage.getItem(STORAGE_KEY);
+        this._isCollapsed = saved !== 'false';
+      } catch (e) {
+        this._isCollapsed = true;
+      }
+      
+      this._render();
+      
+      // Prevent map events from bubbling through the control
+      L.DomEvent.disableClickPropagation(this._container);
+      L.DomEvent.disableScrollPropagation(this._container);
+      
+      return this._container;
+    },
+
+    onRemove: function(map: L.Map) {
+      // Cleanup if needed
+    },
+    
+    _toggleCollapsed: function() {
+      this._isCollapsed = !this._isCollapsed;
+      
+      // Save state to localStorage
+      try {
+        localStorage.setItem(STORAGE_KEY, this._isCollapsed.toString());
+      } catch (e) {
+        console.warn('Failed to save layer control state:', e);
+      }
+      
+      // Re-render to update structure
+      this._render();
+    },
+    
+    _switchLayer: function(layerName: 'openStreetMap' | 'googleHybrid') {
+      // Remove current layer
+      if (this._currentLayer) {
+        this._map.removeLayer(this._currentLayer);
+      }
+      
+      // Add new layer
+      const newLayer = this._tileLayers[layerName];
+      newLayer.addTo(this._map);
+      this._currentLayer = newLayer;
+      
+      // Re-render to update selected state
+      this._render();
+    },
+
+    _render: function() {
+      if (!this._container) {
+        return;
+      }
+
+      const header = document.createElement('div');
+      header.className = 'layer-switch-header';
+      
+      if (this._isCollapsed) {
+        // Collapsed state: only layers icon
+        const layersIcon = document.createElement('button');
+        layersIcon.className = 'layer-switch-icon';
+        layersIcon.innerHTML = '<i class="bi bi-layers"></i>';
+        layersIcon.type = 'button';
+        layersIcon.setAttribute('aria-label', 'Expand layers list');
+        layersIcon.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this._toggleCollapsed();
+        });
+        header.appendChild(layersIcon);
+      } else {
+        // Expanded state: title and collapse button
+        const title = document.createElement('h3');
+        title.textContent = 'Шари';
+        
+        const toggleButton = document.createElement('button');
+        toggleButton.className = 'layer-switch-toggle-button';
+        toggleButton.innerHTML = '<i class="bi bi-chevron-down"></i>';
+        toggleButton.type = 'button';
+        toggleButton.setAttribute('aria-label', 'Collapse layers list');
+        
+        toggleButton.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this._toggleCollapsed();
+        });
+        
+        header.appendChild(title);
+        header.appendChild(toggleButton);
+      }
+
+      const listContainer = document.createElement('div');
+      listContainer.className = 'layer-switch-list';
+      
+      // OpenStreetMap option
+      const osmItem = this._createLayerItem(
+        'OpenStreetMap',
+        'openStreetMap',
+        this._currentLayer === this._tileLayers.openStreetMap
+      );
+      listContainer.appendChild(osmItem);
+      
+      // Google Hybrid option
+      const hybridItem = this._createLayerItem(
+        'Супутник',
+        'googleHybrid',
+        this._currentLayer === this._tileLayers.googleHybrid
+      );
+      listContainer.appendChild(hybridItem);
+
+      this._container.innerHTML = '';
+      this._container.appendChild(header);
+      this._container.appendChild(listContainer);
+      
+      // Apply collapsed class if needed
+      if (this._isCollapsed) {
+        this._container.classList.add('collapsed');
+      } else {
+        this._container.classList.remove('collapsed');
+      }
+    },
+    
+    _createLayerItem: function(label: string, layerName: 'openStreetMap' | 'googleHybrid', isSelected: boolean) {
+      const item = document.createElement('div');
+      item.className = 'layer-switch-item';
+      
+      const radio = document.createElement('input');
+      radio.type = 'radio';
+      radio.name = 'layer-switch';
+      radio.checked = isSelected;
+      radio.className = 'layer-switch-radio';
+      
+      const labelSpan = document.createElement('span');
+      labelSpan.className = 'layer-switch-label';
+      labelSpan.textContent = label;
+      
+      item.appendChild(radio);
+      item.appendChild(labelSpan);
+      
+      item.addEventListener('click', (e) => {
+        if (e.target !== radio) {
+          radio.checked = true;
+        }
+        this._switchLayer(layerName);
+      });
+      
+      return item;
+    }
+  });
+
+  return new LayerSwitchControl({ position: 'topright' });
 }
 
 export function createAttributionControl() {
@@ -84,13 +246,24 @@ export function createPalitrasControl(
   visibleIds: number[],
   onToggle: (palitraId: number) => void
 ): PalitrasControl {
+  const STORAGE_KEY = 'palitras-control-collapsed';
+  
   const PalitrasControl = L.Control.extend({
     _palitras: palitras,
     _visibleIds: visibleIds,
     _onToggle: onToggle,
+    _isCollapsed: false,
 
     onAdd: function(map: L.Map) {
       this._container = L.DomUtil.create('div', 'palitras-control');
+      
+      // Load collapsed state from localStorage (default: expanded)
+      try {
+        const saved = localStorage.getItem(STORAGE_KEY);
+        this._isCollapsed = saved === 'true';
+      } catch (e) {
+        this._isCollapsed = false;
+      }
       
       // Don't render immediately - wait for palitras data
       if (this._palitras && this._palitras.length > 0) {
@@ -107,6 +280,20 @@ export function createPalitrasControl(
     onRemove: function(map: L.Map) {
       // Cleanup if needed
     },
+    
+    _toggleCollapsed: function() {
+      this._isCollapsed = !this._isCollapsed;
+      
+      // Save state to localStorage
+      try {
+        localStorage.setItem(STORAGE_KEY, this._isCollapsed.toString());
+      } catch (e) {
+        console.warn('Failed to save palitras control state:', e);
+      }
+      
+      // Re-render to update header structure
+      this._render();
+    },
 
     _render: function() {
       if (!this._container) {
@@ -118,9 +305,44 @@ export function createPalitrasControl(
         return;
       }
 
+      // Create header with title and toggle button
       const header = document.createElement('div');
       header.className = 'palitras-control-header';
-      header.innerHTML = '<h3>Палітри</h3>';
+      
+      if (this._isCollapsed) {
+        // Collapsed state: only palette icon
+        const paletteIcon = document.createElement('button');
+        paletteIcon.className = 'palitras-palette-icon';
+        paletteIcon.innerHTML = '<i class="bi bi-palette"></i>';
+        paletteIcon.type = 'button';
+        paletteIcon.setAttribute('aria-label', 'Expand palitras list');
+        paletteIcon.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this._toggleCollapsed();
+        });
+        header.appendChild(paletteIcon);
+      } else {
+        // Expanded state: title and collapse button
+        const title = document.createElement('h3');
+        title.textContent = 'Палітри';
+        
+        const toggleButton = document.createElement('button');
+        toggleButton.className = 'palitras-toggle-button';
+        toggleButton.innerHTML = '<i class="bi bi-chevron-down"></i>';
+        toggleButton.type = 'button';
+        toggleButton.setAttribute('aria-label', 'Collapse palitras list');
+        
+        // Store reference to update icon later
+        this._toggleButton = toggleButton;
+        
+        toggleButton.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this._toggleCollapsed();
+        });
+        
+        header.appendChild(title);
+        header.appendChild(toggleButton);
+      }
 
       const listContainer = document.createElement('div');
       listContainer.className = 'palitras-control-list';
@@ -135,6 +357,13 @@ export function createPalitrasControl(
       this._container.innerHTML = '';
       this._container.appendChild(header);
       this._container.appendChild(listContainer);
+      
+      // Apply collapsed class if needed
+      if (this._isCollapsed) {
+        this._container.classList.add('collapsed');
+      } else {
+        this._container.classList.remove('collapsed');
+      }
     },
 
     _createPalitraItem: function(palitra: Palitra) {
