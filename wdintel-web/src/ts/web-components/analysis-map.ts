@@ -200,7 +200,9 @@ class AnalysisMap extends HTMLElement {
     if (mapContainer) {
       const tileLayers = getTileLayers();
 
-      const map = L.map(mapContainer, { zoomControl: false, attributionControl: false, layers: Object.values(tileLayers) }).setView([47.42135, 35.62197], 8);
+      // Start with a single base layer to avoid loading two full tile stacks at once
+      const map = L.map(mapContainer, { zoomControl: false, attributionControl: false }).setView([47.42135, 35.62197], 8);
+      tileLayers.googleHybrid.addTo(map);
 
       const result = this._initializeControls(map, tileLayers)
       this._map = result.map;
