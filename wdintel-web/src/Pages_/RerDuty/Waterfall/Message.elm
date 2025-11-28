@@ -142,7 +142,7 @@ renderAttachment attachment =
          withDefault "<файл без назви>" attachment.fileName
  in
  a
-     [ class "btn btn-outline-secondary btn-sm m-5"
+     [ class "btn btn-outline-secondary btn-sm mb-2"
      , href attachment.href
      , download displayFileName
      , target "_blank"
