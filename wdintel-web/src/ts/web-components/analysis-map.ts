@@ -352,21 +352,19 @@ function updateStateUrl(currentUrl: string, messageUid: string): string {
         if (stateParam) {
             const decodedState = decodeURIComponent(stateParam);
             const stateObject = JSON.parse(decodedState);
-            stateObject.message_uid = messageUid;
+            stateObject.search = messageUid;
             const updatedState = JSON.stringify(stateObject);
             const encodedState = encodeURIComponent(updatedState);
             url.searchParams.set('state', encodedState);
         } else {
             // Handle case where 'state' parameter doesn't exist
-            const newState = JSON.stringify({ message_uid: messageUid });
+            const newState = JSON.stringify({ search: messageUid });
             url.searchParams.set('state', encodeURIComponent(newState));
         }
-
-        // Returns the clean, modified URL string
         return url.href;
     } catch (error) {
         console.error("Error updating URL state:", error);
-        return `/messages/${messageUid}`;
+        return currentUrl;
     }
 }
 
