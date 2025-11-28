@@ -10,7 +10,8 @@ import File exposing (File)
 import File.Select
 import Html exposing (..)
 import Html.Attributes exposing (..)
-import Html.Events exposing (on, onInput, targetValue)
+import Html.Attributes as Attr
+import Html.Events exposing (on, onClick, onInput, targetValue)
 import Html.Styled as Styled
 import Json.Decode as Decode
 import Layouts
@@ -674,32 +675,33 @@ renderTable user model palitras =
                                 { attributes = [ class "col-narrow" ]
                                 , children =
                                     if canModify then
-                                        [ div [ class "flex gap-2 items-center" ]
-                                            [ Button.view
-                                                (Button.new
-                                                    { label = "Точки"
-                                                    , onClick =
-                                                        if isUploading then
-                                                            NoOp
+                                        [ div [ class "flex gap-[4px] text-sm items-center" ]
+                                            [ button
+                                                [ title "Завантажити точки"
+                                                , class "icon-btn icon-btn-primary"
+                                                , onClick
+                                                    (if isUploading then
+                                                        NoOp
 
-                                                        else
-                                                            UploadPointsClicked p.id
-                                                    }
-                                                    |> Button.withDisabled isUploading
-                                                )
-                                            , Button.view
-                                                (Button.new
-                                                    { label = "Видалити"
-                                                    , onClick =
-                                                        if isDeleting then
-                                                            NoOp
+                                                     else
+                                                        UploadPointsClicked p.id
+                                                    )
+                                                , Attr.disabled isUploading
+                                                ]
+                                                [ i [ class "bi bi-cloud-upload" ] [] ]
+                                            , button
+                                                [ title "Видалити"
+                                                , class "icon-btn icon-btn-danger"
+                                                , onClick
+                                                    (if isDeleting then
+                                                        NoOp
 
-                                                        else
-                                                            DeleteRequested p.id
-                                                    }
-                                                    |> Button.withStyleDanger
-                                                    |> Button.withDisabled isDeleting
-                                                )
+                                                     else
+                                                        DeleteRequested p.id
+                                                    )
+                                                , Attr.disabled isDeleting
+                                                ]
+                                                [ i [ class "bi bi-trash" ] [] ]
                                             , if isDeleting || isUploading then
                                                 Shared.Components.Spinner.loadingSpinner2Sm
 
