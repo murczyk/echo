@@ -125,6 +125,8 @@ class AnalysisMap extends HTMLElement {
   private _visiblePalitraIds: number[] = [];
   private _palitrasControl: PalitrasControl | null = null;
   private _palitrasLayerGroup: L.LayerGroup | null = null;
+  private _palitrasPointsClusters: Map<number, L.MarkerClusterGroup> = new Map();
+  private _minZoomForPoints = 12; // Мінімальний зум для показу точок палітр
 
   constructor() {
     super();
@@ -259,6 +261,11 @@ class AnalysisMap extends HTMLElement {
      // Initialize palitras layer group
      this._palitrasLayerGroup = L.layerGroup();
      this._palitrasLayerGroup.addTo(this._map);
+     
+     // Listen for zoom changes to show/hide points
+     this._map.on('zoomend', () => {
+       this._updatePalitraPointsOnMap();
+     });
      
      // Try to update palitras if we already have data
      if (this._palitras.length > 0) {
@@ -412,6 +419,9 @@ class AnalysisMap extends HTMLElement {
       }
     });
 
+    // Update points clusters
+    this._updatePalitraPointsOnMap();
+
     // Fit map bounds to show all visible palitras
     if (polygons.length > 0) {
       const group = L.featureGroup(polygons);
@@ -477,6 +487,106 @@ class AnalysisMap extends HTMLElement {
     });
 
     return polygon;
+  }
+
+  private _createPalitraPointsCluster(palitraDetails: PalitraDetails): L.MarkerClusterGroup | null {
+    const palitra = palitraDetails.palitra;
+    const points = palitraDetails.points;
+
+    if (!points || points.length === 0) {
+      return null;
+    }
+
+    // Create cluster group with custom styling
+    const clusterGroup = L.markerClusterGroup({
+      maxClusterRadius: 40,
+      spiderfyOnMaxZoom: true,
+      showCoverageOnHover: false,
+      zoomToBoundsOnClick: true,
+      iconCreateFunction: (cluster) => {
+        const childCount = cluster.getChildCount();
+        return L.divIcon({
+          html: `<div style="background-color: ${palitra.color_hex}; border: 2px solid #fff; border-radius: 50%; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 12px; font-weight: bold; color: white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);">
+                ${childCount}
+            </div>`,
+          className: 'palitra-point-cluster',
+          iconSize: L.point(30, 30)
+        });
+      }
+    });
+
+    // Add points to cluster
+    points.forEach(point => {
+      const marker = L.circleMarker([point.coords.lat, point.coords.lng], {
+        radius: 6,
+        fillColor: palitra.color_hex,
+        color: '#fff',
+        weight: 2,
+        opacity: 1,
+        fillOpacity: 0.8
+      });
+
+      // Add popup with point info
+      const popupContent = `
+        <div style="padding: 8px;">
+          <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+            <span style="display: inline-block; width: 16px; height: 16px; background-color: ${palitra.color_hex}; border: 1px solid #ccc; border-radius: 50%;"></span>
+            <strong style="font-size: 14px;">${palitra.name}</strong>
+          </div>
+          ${point.label ? `<div style="font-size: 13px; margin-bottom: 4px;"><strong>Мітка:</strong> ${point.label}</div>` : ''}
+          <div style="font-size: 12px; color: #666;">
+            <div>Координати: ${point.coords.lat.toFixed(5)}, ${point.coords.lng.toFixed(5)}</div>
+          </div>
+        </div>
+      `;
+      
+      marker.bindPopup(popupContent);
+
+      // Add tooltip with label if exists
+      if (point.label) {
+        marker.bindTooltip(point.label, {
+          permanent: false,
+          direction: 'top',
+          offset: [0, -10]
+        });
+      }
+
+      clusterGroup.addLayer(marker);
+    });
+
+    return clusterGroup;
+  }
+
+  private _updatePalitraPointsOnMap() {
+    if (!this._map) {
+      return;
+    }
+
+    // Remove all existing point clusters from map
+    this._palitrasPointsClusters.forEach((cluster) => {
+      this._map!.removeLayer(cluster);
+    });
+    this._palitrasPointsClusters.clear();
+
+    // Check zoom level - only show points at close zoom levels
+    const currentZoom = this._map.getZoom();
+    if (currentZoom < this._minZoomForPoints) {
+      // Too far out, don't show points
+      return;
+    }
+
+    // Add point clusters for visible palitras
+    const visiblePalitras = this._palitras.filter(pd => 
+      this._visiblePalitraIds.includes(pd.palitra.id)
+    );
+
+    visiblePalitras.forEach(palitraDetails => {
+      const cluster = this._createPalitraPointsCluster(palitraDetails);
+      if (cluster) {
+        this._palitrasPointsClusters.set(palitraDetails.palitra.id, cluster);
+        this._map!.addLayer(cluster);
+      }
+    });
   }
 }
 

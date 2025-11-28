@@ -478,3 +478,13 @@ html[data-bs-theme="dark"] .palitra-color {
 html[data-bs-theme="dark"] .palitra-info {
 	color: #adb5bd !important;
 }
+
+/* Palitra points cluster styles */
+.palitra-point-cluster {
+	transition: transform 0.2s ease;
+}
+
+.palitra-point-cluster:hover {
+	transform: scale(1.1);
+	cursor: pointer;
+}
