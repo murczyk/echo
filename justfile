@@ -445,6 +445,7 @@ _copy-db:
     echo "Run: sudo -u postgres pg_restore -d wd ~/Downloads/wd-{{ dt1 }}.pgrestore"
     set -x
 
+# run like `just server=zp2 copy-db-backup`
 copy-db-backup:
     #!/bin/bash
     set -euo pipefail
