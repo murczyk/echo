@@ -64,6 +64,7 @@ pub struct MessageMediaInfo {
 )]
 pub struct InboxMapItem {
     pub id: i64,
+    pub message_uid: Option<String>,
     pub freq: Option<String>,
     pub coords: Option<String>,
 }
@@ -113,6 +114,7 @@ pub struct NetworkUnit {
 )]
 pub struct FreqDetailedPoint {
     pub message_id: i64,
+    pub message_uid: Option<String>,
     pub id: i64,
     pub lat: f64,
     pub lng: f64,

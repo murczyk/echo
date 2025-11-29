@@ -2318,6 +2318,7 @@ inboxMessagesRspEncoder struct =
 
 type alias FreqDetailedPoint =
     { messageId : Int
+    , messageUid : Maybe String
     , id : Int
     , lat : Float
     , lng : Float
@@ -2331,6 +2332,7 @@ freqDetailedPointEncoder : FreqDetailedPoint -> Json.Encode.Value
 freqDetailedPointEncoder struct =
     Json.Encode.object
         [ ( "message_id", Json.Encode.int struct.messageId )
+        , ( "message_uid", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.messageUid )
         , ( "id", Json.Encode.int struct.id )
         , ( "lat", Json.Encode.float struct.lat )
         , ( "lng", Json.Encode.float struct.lng )
@@ -2342,6 +2344,7 @@ freqDetailedPointEncoder struct =
 
 type alias InboxMapItem =
     { id : Int
+    , messageUid : Maybe String
     , freq : Maybe String
     , coords : Maybe String
     }
@@ -2351,6 +2354,7 @@ inboxMapItemEncoder : InboxMapItem -> Json.Encode.Value
 inboxMapItemEncoder struct =
     Json.Encode.object
         [ ( "id", Json.Encode.int struct.id )
+        , ( "message_uid", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.messageUid )
         , ( "freq", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.freq )
         , ( "coords", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.coords )
         ]
@@ -3236,7 +3240,6 @@ type alias MessageMediaInfo =
     , sizeBytes : Int
     , href : String
     }
-
 
 messageMediaInfoEncoder : MessageMediaInfo -> Json.Encode.Value
 messageMediaInfoEncoder struct =
@@ -6647,14 +6650,6 @@ areaOfResponsibilityStatsRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aors" (Json.Decode.list analysisStatsAorDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aor_names" (Json.Decode.list areaOfResponsibilityEntryDecoder)))
 
-messageMediaInfoDecoder : Json.Decode.Decoder MessageMediaInfo
-messageMediaInfoDecoder =
-    Json.Decode.succeed MessageMediaInfo
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.string))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "content_type" Json.Decode.string))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "file_name" (Json.Decode.nullable Json.Decode.string)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "size_bytes" Json.Decode.int))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "href" Json.Decode.string))
 
 inboxMessageDecoder : Json.Decode.Decoder InboxMessage
 inboxMessageDecoder =
@@ -7404,6 +7399,7 @@ inboxMapItemDecoder : Json.Decode.Decoder InboxMapItem
 inboxMapItemDecoder =
     Json.Decode.succeed InboxMapItem
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message_uid" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freq" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "coords" (Json.Decode.nullable Json.Decode.string)))
 
@@ -7418,6 +7414,7 @@ freqDetailedPointDecoder : Json.Decode.Decoder FreqDetailedPoint
 freqDetailedPointDecoder =
     Json.Decode.succeed FreqDetailedPoint
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message_id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message_uid" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "lat" Json.Decode.float))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "lng" Json.Decode.float))
@@ -7936,6 +7933,16 @@ datasourceDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "display_name" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "signal_phone" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enabled" (Json.Decode.nullable Json.Decode.bool)))
+
+
+messageMediaInfoDecoder : Json.Decode.Decoder MessageMediaInfo
+messageMediaInfoDecoder =
+    Json.Decode.succeed MessageMediaInfo
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "content_type" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "file_name" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "size_bytes" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "href" Json.Decode.string))
 
 
 sigintZoneDecoder : Json.Decode.Decoder SigintZone

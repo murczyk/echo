@@ -10,6 +10,7 @@
 ## NEXT
 
 - Відображаємо фільтр "Смуги" для всіх користувачів
+- [PR#1701](https://github.com/echoua/echo/pull/1701) Показувати посилання на пошук по ID на карті
 - [#1692](https://github.com/echoua/echo/issues/1692) ✅ Звіт Еталонка. Виправлено проблему з відображенням частот.
 - [#1688](https://github.com/echoua/echo/issues/1688) Міграція stats на group batch замість group
 - [#1686](https://github.com/echoua/echo/issues/1686) ✅ Медіа файли на хмарному сховищі (Backblaze) - відтепер зберігаємо картинки та інші медіа файли довше
