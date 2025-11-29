@@ -445,7 +445,7 @@ _copy-db:
     echo "Run: sudo -u postgres pg_restore -d wd ~/Downloads/wd-{{ dt1 }}.pgrestore"
     set -x
 
-# run like `just server=zp2 copy-db-backup`
+# run like `just server=echo-zp2 copy-db-backup`
 copy-db-backup:
     #!/bin/bash
     set -euo pipefail
@@ -492,7 +492,9 @@ copy-db-backup:
     listing=$(s5cmd --endpoint-url "$ENDPOINT_URL" ls "$remote_dir")
     match=$(
         printf "%s\n" "$listing" \
-        | awk -v srv="{{ server }}" '$0 ~ ("wd-echo-" srv "\\.") {print $NF}' \
+        | awk -v srv="{{ server }}" -v srv_norm="${server#echo-}" '
+            $0 ~ ("wd-" srv "\\.") \
+            || $0 ~ ("wd-" srv_norm "\\.") {print $NF}' \
         | sort \
         | tail -n 1
     )
