@@ -449,13 +449,14 @@ _copy-db:
 copy-db-backup:
     #!/bin/bash
     set -euo pipefail
+    server="{{ server }}"
 
     if [[ -z "${AWS_ACCESS_KEY_ID:-}" || -z "${AWS_SECRET_ACCESS_KEY:-}" ]]; then
         echo "❌ Please export AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY for Backblaze S3 access"
         exit 1
     fi
 
-    if [[ "{{ server }}" == "" ]]; then
+    if [[ -z "$server" ]]; then
         echo "❌ server parameter is required, e.g. server=volyn2"
         exit 1
     fi
@@ -492,7 +493,7 @@ copy-db-backup:
     listing=$(s5cmd --endpoint-url "$ENDPOINT_URL" ls "$remote_dir")
     match=$(
         printf "%s\n" "$listing" \
-        | awk -v srv="{{ server }}" -v srv_norm="${server#echo-}" '
+        | awk -v srv="$server" -v srv_norm="${server#echo-}" '
             $0 ~ ("wd-" srv "\\.") \
             || $0 ~ ("wd-" srv_norm "\\.") {print $NF}' \
         | sort \
@@ -500,7 +501,7 @@ copy-db-backup:
     )
 
     if [[ -z "$match" ]]; then
-        echo "❌ No backup found for server '{{ server }}' under $remote_dir"
+        echo "❌ No backup found for server '$server' under $remote_dir"
         exit 1
     fi
 
