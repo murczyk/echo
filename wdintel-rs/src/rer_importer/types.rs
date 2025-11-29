@@ -987,6 +987,23 @@ pub struct BatchMessageCommentsReq {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub struct DraftCommentEvent {
+    pub id: String,
+    pub message_id: i64,
+    pub value: String,
+    pub created_at_ms: i64,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct DraftCommentEventsReq {
+    pub events: Vec<DraftCommentEvent>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct MessageComments {
     pub data: Vec<MessageCommentEntry>,
 }

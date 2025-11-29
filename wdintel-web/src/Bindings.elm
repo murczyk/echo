@@ -1414,6 +1414,36 @@ messageCommentsEncoder struct =
         ]
 
 
+type alias DraftCommentEvent =
+    { id : String
+    , messageId : Int
+    , value : String
+    , createdAtMs : Int
+    }
+
+
+draftCommentEventEncoder : DraftCommentEvent -> Json.Encode.Value
+draftCommentEventEncoder struct =
+    Json.Encode.object
+        [ ( "id", Json.Encode.string struct.id )
+        , ( "message_id", Json.Encode.int struct.messageId )
+        , ( "value", Json.Encode.string struct.value )
+        , ( "created_at_ms", Json.Encode.int struct.createdAtMs )
+        ]
+
+
+type alias DraftCommentEventsReq =
+    { events : List DraftCommentEvent
+    }
+
+
+draftCommentEventsReqEncoder : DraftCommentEventsReq -> Json.Encode.Value
+draftCommentEventsReqEncoder struct =
+    Json.Encode.object
+        [ ( "events", Json.Encode.list draftCommentEventEncoder struct.events )
+        ]
+
+
 type alias SignalProfileSaveReq =
     { uuid : String
     , givenName : Maybe String
@@ -3241,6 +3271,7 @@ type alias MessageMediaInfo =
     , href : String
     }
 
+
 messageMediaInfoEncoder : MessageMediaInfo -> Json.Encode.Value
 messageMediaInfoEncoder struct =
     Json.Encode.object
@@ -3250,6 +3281,7 @@ messageMediaInfoEncoder struct =
         , ( "size_bytes", Json.Encode.int struct.sizeBytes )
         , ( "href", Json.Encode.string struct.href )
         ]
+
 
 type alias SigintZone =
     { name : String
@@ -7265,6 +7297,21 @@ messageCommentEntryDecoder =
     Json.Decode.succeed MessageCommentEntry
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message_id" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "comments" (Json.Decode.list messageCommentDecoder)))
+
+
+draftCommentEventDecoder : Json.Decode.Decoder DraftCommentEvent
+draftCommentEventDecoder =
+    Json.Decode.succeed DraftCommentEvent
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message_id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "value" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at_ms" Json.Decode.int))
+
+
+draftCommentEventsReqDecoder : Json.Decode.Decoder DraftCommentEventsReq
+draftCommentEventsReqDecoder =
+    Json.Decode.succeed DraftCommentEventsReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "events" (Json.Decode.list draftCommentEventDecoder)))
 
 
 signalProfileEntryDecoder : Json.Decode.Decoder SignalProfileEntry

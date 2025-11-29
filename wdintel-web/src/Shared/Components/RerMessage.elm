@@ -1174,6 +1174,8 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                     , style "min-height" "100px"
                     , style "font-size" ".9rem"
                     , placeholder "коментар"
+                    , attribute "data-comment-draft" "rer-analysis"
+                    , attribute "data-message-id" (String.fromInt msgId)
                     , onInput (ExtendedFormChanged msgId)
                     , onFocus (TextareaFocus msgId)
                     , onBlur (TextareaBlur msgId)

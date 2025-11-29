@@ -70,10 +70,16 @@ pub async fn get_inbox_map_items(
     let mut result = vec![];
     for query_res in query_res {
         let id: i64 = query_res.try_get("", "id")?;
-        let message_uid: Option<String> = query_res.try_get("", "message_uid")?;
+        let message_uid: Option<String> =
+            query_res.try_get("", "message_uid")?;
         let freq: Option<String> = query_res.try_get("", "freq")?;
         let coords: Option<String> = query_res.try_get("", "coords")?;
-        result.push(InboxMapItem { id, message_uid, freq, coords });
+        result.push(InboxMapItem {
+            id,
+            message_uid,
+            freq,
+            coords,
+        });
     }
     Ok(result)
 }
