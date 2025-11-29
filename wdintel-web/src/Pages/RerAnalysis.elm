@@ -2919,37 +2919,24 @@ update user shared route msg model =
             ( { model | importants = (List.map .messageId >> Set.fromList) vs }, E.none )
 
         LoadMoreMessages ->
-            let
-                mLastMsgId =
-                    model.messages |> ListX.last |> mmap Tuple.first
-
-                mLastDate =
-                    model.messages |> ListX.last |> mmap (Tuple.second >> .timestamp)
-            in
-            case ( mLastMsgId, mLastDate ) of
-                ( Just lastMsgId, Just lastDate ) ->
+            case model.messages |> ListX.last of
+                Just ( lastMsgId, _ ) ->
                     let
-                        req =
+                        inboxReq =
                             getInboxReq model
 
-                        req2 =
+                        paginatedReq =
                             if model.newestFirst then
-                                { req
-                                    | beforeIdNoninclusive = Just lastMsgId
-                                    , tillDateInclusiveMs = lastDate
-                                }
+                                { inboxReq | beforeIdNoninclusive = Just lastMsgId }
 
                             else
-                                { req
-                                    | sinceIdNoninclusive = Just lastMsgId
-                                    , sinceDateInclusiveMs = lastDate
-                                }
+                                { inboxReq | sinceIdNoninclusive = Just lastMsgId }
                     in
                     ( { model | loadingInboxMessages = True }
-                    , E.getInboxMessages Nothing GotInboxMore req2
+                    , E.getInboxMessages Nothing GotInboxMore paginatedReq
                     )
 
-                _ ->
+                Nothing ->
                     ( model, E.none )
 
         LoadNewCallsignStats ->
