@@ -10,6 +10,7 @@
 ## NEXT
 
 - [#1707](https://github.com/echoua/echo/issues/1707) Логувати чорнетки коментарів
+- [PR#1709](https://github.com/echoua/echo/pull/1709) 🚨 вправили фільтри по datetime/timestamp и підвантаження повідомлень в аналізі
 - Відображаємо фільтр "Смуги" для всіх користувачів
 - [PR#1701](https://github.com/echoua/echo/pull/1701) Показувати посилання на пошук по ID на карті
 - [#1692](https://github.com/echoua/echo/issues/1692) ✅ Звіт Еталонка. Виправлено проблему з відображенням частот.
