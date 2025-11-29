@@ -52,6 +52,11 @@ pub fn extract_datetime(body: &str) -> Result<Option<NaiveDateTime>, AppError> {
                 r"(?P<day>\d{2})\.(?P<mon>\d{2})\.(?P<year>\d{4}) (?P<hour>\d{2})\s*:(?P<minute>\d{2})\s*:(?P<second>\d{2})",
                 |capts| { parse_datetime(capts, true, true, true, true) },
             ),
+            // Work with formats like HH:MI DD.MM.YYYY
+            (
+                r"(?P<hour>\d{2})\s*:(?P<minute>\d{2}) (?P<day>\d{2})\.(?P<mon>\d{2})\.(?P<year>\d{4})",
+                |capts| { parse_datetime(capts, true, true, true, false) },
+            ),
             (
                 r"\s+(?P<hour>\d\d?)\s*:(?P<minute>\d{2})\s+",
                 |capts| { parse_datetime(capts, false, false, false, false) },
@@ -511,6 +516,23 @@ mod tests {
             NaiveDate::from_ymd_opt(2025, 11, 20)
                 .unwrap()
                 .and_hms_opt(16, 56, 1)
+                .unwrap(),
+        );
+        assert_eq!(res, expected);
+    }
+
+    #[test]
+    fn extract_datetime_time_before_date() {
+        let input = r#"11:37 29.11.2025
+Пост: КВАНТ
+Частота: 143.545
+Напрямок: Пн. Дворічна
+Координати (MGRS): 37U DR 03349 25624"#;
+        let res = extract_datetime(input).unwrap();
+        let expected = Some(
+            NaiveDate::from_ymd_opt(2025, 11, 29)
+                .unwrap()
+                .and_hms_opt(11, 37, 0)
                 .unwrap(),
         );
         assert_eq!(res, expected);
