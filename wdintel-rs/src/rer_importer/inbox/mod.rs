@@ -8,7 +8,7 @@ use crate::rer_importer::inbox::query::*;
 use crate::session::record_page_visit;
 use crate::types::*;
 use actix_identity::Identity;
-use actix_web::web::Json;
+use actix_web::web::{Data, Json};
 use actix_web::{get, post};
 use chrono::*;
 use itertools::Itertools;
@@ -344,6 +344,21 @@ async fn inbox_submit(
     env: actix_web::web::Data<Env>,
     req: Json<InboxSubmitReq>,
 ) -> Result<Json<()>, AppError> {
+    match do_submit_inbox(user, &env, req).await {
+        // FIXME logging doesn't work for this function, please fix
+        Ok(_) => Ok(Json(())),
+        Err(e) => {
+            error!("failed to submit inbox: {e:?}");
+            Err(e)
+        }
+    }
+}
+
+async fn do_submit_inbox(
+    user: Identity,
+    env: &Data<Env>,
+    req: Json<InboxSubmitReq>,
+) -> Result<(), AppError> {
     let login = user.id().c(h!())?;
     crate::users::has_role(&env.dbx, &login, "Rer")
         .await
@@ -355,7 +370,7 @@ async fn inbox_submit(
 
     let Some(new_cursor_val) = req.messages.iter().map(|(id, _x)| id).max()
     else {
-        return Ok(Json(()));
+        return Ok(());
     };
     delta_kv::Entity::insert(delta_kv::ActiveModel {
         id: NotSet,
@@ -389,7 +404,8 @@ async fn inbox_submit(
             .c(h!())?,
         );
         message.keyword_tokens = Some(
-            crate::rer_importer::highlight::extract_keywords(&message.text)?,
+            crate::rer_importer::highlight::extract_keywords(&message.text)
+                .c(h!())?,
         );
         let all_ids = find_all_duplicates(&txn, *id).await.c(h!())?;
         for id in all_ids {
@@ -406,7 +422,7 @@ async fn inbox_submit(
         }
     }
     txn.commit().await.c(h!())?;
-    Ok(Json(()))
+    Ok(())
 }
 
 /// Get the cursor position. Cursor is used as "since_id_noninclusive" default when loading inbox. So, equal to zero on empty inbox, or last seen/submitted message otherwise.
