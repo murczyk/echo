@@ -71,7 +71,7 @@ const liTemplate = (message_: Message, networkUnitName_: string | undefined, sel
 
     return `
           <li>
-            ${message_[1].message_uid ?`<p style="line-height: 22px;"><span style="font-weight: 700;">Посилання:</span><a href="${updateStateUrl(window.location.href, message_[1].message_uid)}">${message_[1].message_uid}</a></p>`: ''}
+            ${message_[1].message_uid ?`<p style="line-height: 22px;"><span style="font-weight: 700;">Посилання: </span><a href="${updateStateUrl(window.location.href, message_[1].message_uid)}">${message_[1].message_uid}</a></p>`: ''}
             ${message_[1].freq ? `<p style="line-height: 22px;"><span style="font-weight: 700;">Частота:</span> ${message_[1].freq}</p>` : ''}
             ${message_[1].coords ? `<p style="line-height: 16px;"><span style="font-weight: 700;">Координати:</span> ${message_[1].coords}</p>` : ''}
             ${message_[1].coords ? '<span style="font-weight: 700; line-height: 22px;">Повідомлення:</span><br>' : ''}
@@ -349,18 +349,16 @@ function updateStateUrl(currentUrl: string, messageUid: string): string {
     try {
         const url = new URL(currentUrl);
         const stateParam = url.searchParams.get('state');
+        let stateObject;
         if (stateParam) {
             const decodedState = decodeURIComponent(stateParam);
-            const stateObject = JSON.parse(decodedState);
-            stateObject.search = messageUid;
-            const updatedState = JSON.stringify(stateObject);
-            const encodedState = encodeURIComponent(updatedState);
-            url.searchParams.set('state', encodedState);
+            stateObject = JSON.parse(decodedState);
         } else {
-            // Handle case where 'state' parameter doesn't exist
-            const newState = JSON.stringify({ search: messageUid });
-            url.searchParams.set('state', encodeURIComponent(newState));
+            stateObject = {};
         }
+        stateObject.search = messageUid;
+        const updatedState = JSON.stringify(stateObject);
+        url.searchParams.set('state', updatedState);
         return url.href;
     } catch (error) {
         console.error("Error updating URL state:", error);
