@@ -17,6 +17,7 @@ import Json.Encode as Encode
 import Layouts
 import List.Extra as ListX
 import Page exposing (Page)
+import PagePorts.RerAnalysisPorts as Ports
 import Pages_.RerAnalysis.Constants exposing (..)
 import Pages_.RerAnalysis.FiltersReloading as FiltersReloading exposing (FilterDataState(..), FilterInteraction(..), invalidateFiltersState)
 import Pages_.RerAnalysis.MainBody
@@ -65,6 +66,10 @@ init route _ =
                     (Decode.decodeString B.rerAnalysisQueryStateDecoder
                         >> Result.toMaybe
                     )
+
+        initialQueryState : B.RerAnalysisQueryState
+        initialQueryState =
+            Maybe.withDefault Query.emptyQueryState ms
 
         model : Model
         model =
@@ -235,6 +240,7 @@ init route _ =
         , E.getAnalysisSavedFilters SavedFiltersGot
         , E.getTags GotTags
         , E.map RowsMsg Shared.Components.RerMessage.init
+        , E.sendCmd <| Ports.rer_analysis_saveQueryState (B.rerAnalysisQueryStateEncoder initialQueryState)
         ]
     )
 
@@ -526,8 +532,11 @@ loadCoreStats model =
 loadCoreStatsAndPushUrl : Model -> ( Model, Effect Msg )
 loadCoreStatsAndPushUrl model =
     let
+        queryState =
+            Query.modelQueryState model
+
         stateS =
-            Encode.encode 0 (B.rerAnalysisQueryStateEncoder (Query.modelQueryState model))
+            Encode.encode 0 (B.rerAnalysisQueryStateEncoder queryState)
 
         ( m2, eff2 ) =
             loadCoreStats model
@@ -536,6 +545,7 @@ loadCoreStatsAndPushUrl model =
             E.batch
                 [ eff2
                 , E.pushRoute { path = Route.Path.RerAnalysis, hash = Nothing, query = Dict.fromList [ ( "state", stateS ) ] }
+                , E.sendCmd <| Ports.rer_analysis_saveQueryState (B.rerAnalysisQueryStateEncoder queryState)
                 ]
     in
     ( m2, cmd3 )

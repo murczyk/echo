@@ -22,6 +22,7 @@ import './ts/web-components/modal-dialog.ts'
 import './ts/web-components/bar-chart-2.ts'
 import './ts/web-components/small-map.ts'
 import './ts/web-components/floating-popup.ts'
+import { saveRerAnalysisQueryState } from "./ts/rer-analysis-query-state"
 
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';
@@ -529,6 +530,12 @@ export const onReady = ({ app, env }) => {
                 presentScripts = document.getElementsByTagName('script');
             };
             document.body.appendChild(script);
+        });
+    }
+
+    if (app.ports && app.ports.rer_analysis_saveQueryState) {
+        app.ports.rer_analysis_saveQueryState.subscribe((queryState: unknown) => {
+            saveRerAnalysisQueryState(queryState);
         });
     }
 

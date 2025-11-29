@@ -6,6 +6,7 @@ import {loadKmzData} from '../maps/maps'
 import {KMZLayer, kmzLayerFactory} from '../maps/leaflet-kmz'
 import {MapPointDetailed} from '../maps/types';
 import {messagesCountText} from '../maps/language-utils';
+import { loadRerAnalysisQueryState, RerAnalysisQueryState, saveRerAnalysisQueryState } from '../rer-analysis-query-state';
 import {
     createAttributionControl,
     createExitControl2,
@@ -345,18 +346,40 @@ class AnalysisMap extends HTMLElement {
     }
 }
 
+function parseStateFromUrl(stateParam: string | null): RerAnalysisQueryState | null {
+    if (!stateParam) {
+        return null;
+    }
+
+    try {
+        const parsed = JSON.parse(stateParam);
+
+        if (parsed && typeof parsed === 'object') {
+            return parsed as RerAnalysisQueryState;
+        }
+    } catch (error) {
+        try {
+            const decodedState = decodeURIComponent(stateParam);
+            const parsed = JSON.parse(decodedState);
+
+            if (parsed && typeof parsed === 'object') {
+                return parsed as RerAnalysisQueryState;
+            }
+        } catch (_) {
+        }
+    }
+
+    return null;
+}
+
 function updateStateUrl(currentUrl: string, messageUid: string): string {
     try {
         const url = new URL(currentUrl);
-        const stateParam = url.searchParams.get('state');
-        let stateObject;
-        if (stateParam) {
-            const decodedState = decodeURIComponent(stateParam);
-            stateObject = JSON.parse(decodedState);
-        } else {
-            stateObject = {};
-        }
-        stateObject.search = messageUid;
+        const storedState = loadRerAnalysisQueryState();
+        const baseState = storedState ?? parseStateFromUrl(url.searchParams.get('state')) ?? {};
+        const stateObject: RerAnalysisQueryState = { ...(baseState as RerAnalysisQueryState), search: messageUid };
+        saveRerAnalysisQueryState(stateObject);
+
         const updatedState = JSON.stringify(stateObject);
         url.searchParams.set('state', updatedState);
         return url.href;
