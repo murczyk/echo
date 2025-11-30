@@ -70,6 +70,13 @@
 - Generated types, encoders, and decoders appear in `wdintel-web/src/Bindings.elm`
 - When you need a new type on frontend - add it to `elm.rs` first, then regenerate
 
+### Compilation and Checking
+
+- When editing Elm files, **DO NOT** build the entire frontend with `just build-front`
+- Instead, check only the modified file(s) using: `elm make path/to/file.elm --output=/dev/null`
+- This is much faster and sufficient to verify syntax and type checking
+- Example: `cd wdintel-web && elm make src/Pages/RerPalitra.elm --output=/dev/null`
+
 ### HTTP Error Handling
 
 - **ALWAYS** handle API errors and show them to users via toasts

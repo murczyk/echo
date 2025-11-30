@@ -72,7 +72,7 @@ pub async fn upload_palitra_points(
     let palitra_id = palitra.id;
     let mut model = palitra.into_active_model();
     model.source_file_name = Set(Some(filename));
-    model.update(&env.dbx).await.c(h!())?;
+    model.update(&txn).await.c(h!())?;
 
     bl::rewrite_palitra_points(palitra_id, points, &txn)
         .await

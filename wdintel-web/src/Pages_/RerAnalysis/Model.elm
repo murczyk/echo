@@ -155,6 +155,13 @@ type alias Model =
     , filterTagsOption : B.TagFilterOption
     , unitsExactMatchOnly : Bool
     , editSidebar : Maybe Int
+    
+    -- палітри
+    , palitras : RemoteData ApiError (List B.PalitraDetails)
+    , palitrasVisible : List Int
+    , palitrasEnabled : Bool
+    , kmzEnabled : Bool
+    , pelengsEnabled : Bool
     }
 
 

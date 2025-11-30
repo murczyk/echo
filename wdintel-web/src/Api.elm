@@ -1557,6 +1557,15 @@ palitra_list toMsg =
         }
 
 
+palitra_list_detailed : (Result ApiError (List PalitraDetails) -> msg) -> Cmd msg
+palitra_list_detailed toMsg =
+    Http.post
+        { url = "/api/palitra/list-detailed"
+        , body = Http.emptyBody
+        , expect = leExpectJson toMsg (Decode.list palitraDetailsDecoder)
+        }
+
+
 palitra_delete : (Result ApiError () -> msg) -> Int -> Cmd msg
 palitra_delete toMsg palitraId =
     Http.post
@@ -1581,6 +1590,19 @@ palitra_update toMsg palitraId req =
         { url = "/api/palitra/update/" ++ String.fromInt palitraId
         , body = Http.jsonBody (createPalitraReqEncoder req)
         , expect = leExpectJson toMsg palitraDetailsDecoder
+        }
+
+
+palitra_upload_points : (Result ApiError () -> msg) -> Int -> File -> Cmd msg
+palitra_upload_points toMsg palitraId file =
+    Http.request
+        { method = "POST"
+        , headers = []
+        , url = "/api/palitra/upload-points/" ++ String.fromInt palitraId
+        , body = Http.multipartBody [ Http.filePart (File.name file) file ]
+        , expect = leExpectJson toMsg (Decode.succeed ())
+        , timeout = Nothing
+        , tracker = Nothing
         }
 
 

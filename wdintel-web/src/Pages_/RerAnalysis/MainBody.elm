@@ -714,6 +714,31 @@ view user model shared route =
 
                         encodedSelectedUnits =
                             Encode.list Encode.string model.unitsSelected
+                        
+                        visiblePalitras =
+                            case model.palitras of
+                                Success palitras ->
+                                    palitras
+                                        |> List.filter (\p -> List.member p.palitra.id model.palitrasVisible)
+                                
+                                _ ->
+                                    []
+                        
+                        encodedPalitras =
+                            Encode.list B.palitraDetailsEncoder (RD.withDefault [] model.palitras)
+                        
+                        encodedVisiblePalitraIds =
+                            Encode.list Encode.int model.palitrasVisible
+                        
+                        palitraToggleDecoder =
+                            Decode.at [ "detail" ] <|
+                                Decode.field "palitraId" Decode.int
+
+                        featureToggleDecoder =
+                            Decode.at [ "detail" ] <|
+                                Decode.map2 Tuple.pair
+                                    (Decode.field "feature" Decode.string)
+                                    (Decode.field "enabled" Decode.bool)
                     in
                     div
                         (class "h-full relative"
@@ -730,6 +755,11 @@ view user model shared route =
                             , attribute "points" (Encode.encode 0 encodedPoints)
                             , attribute "messages" (Encode.encode 0 encodedMessagesAndUnits)
                             , attribute "selected-units" (Encode.encode 0 encodedSelectedUnits)
+                            , attribute "palitras" (Encode.encode 0 encodedPalitras)
+                            , attribute "visible-palitra-ids" (Encode.encode 0 encodedVisiblePalitraIds)
+                            , attribute "palitras-enabled" (Encode.encode 0 (Encode.bool model.palitrasEnabled))
+                            , attribute "kmz-enabled" (Encode.encode 0 (Encode.bool model.kmzEnabled))
+                            , attribute "pelengs-enabled" (Encode.encode 0 (Encode.bool model.pelengsEnabled))
                             , attribute "visibility"
                                 (if model.unfoldMapBlock then
                                     "true"
@@ -741,6 +771,8 @@ view user model shared route =
                             , Events.on "date-range-changed" (Decode.map MapPeriodChanged dateRangeDecoder)
                             , Events.on "load-messages-description" (Decode.map LoadMessagesForMap messagesIdsDecoder)
                             , Events.on "message-unit-clicked" (Decode.map SetUnitFilterFromMap unitNameDecoder)
+                            , Events.on "palitra-visibility-toggled" (Decode.map TogglePalitraVisibility palitraToggleDecoder)
+                            , Events.on "feature-toggle" (Decode.map (\( feature, enabled ) -> FeatureToggled feature enabled) featureToggleDecoder)
                             ]
                             []
                             :: (if model.mapPoints == Loading || model.mapOpenMessages == Loading then

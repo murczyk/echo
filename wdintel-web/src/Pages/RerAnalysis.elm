@@ -212,6 +212,11 @@ init route _ =
             , filterTagsOption = B.OneOfTags
             , unitsExactMatchOnly = True
             , editSidebar = Nothing
+            , palitras = NotAsked
+            , palitrasVisible = []
+            , palitrasEnabled = True
+            , kmzEnabled = True
+            , pelengsEnabled = True
             }
 
         m2 =
@@ -241,6 +246,7 @@ init route _ =
         , E.getTags GotTags
         , E.map RowsMsg Shared.Components.RerMessage.init
         , E.sendCmd <| Ports.rer_analysis_saveQueryState (B.rerAnalysisQueryStateEncoder initialQueryState)
+        , E.sendCmd <| Api.palitra_list_detailed GotPalitras
         ]
     )
 
@@ -1626,6 +1632,42 @@ update user shared route msg model =
             ( { model | editSidebar = Nothing }
             , E.none
             )
+
+        GotPalitras (Ok palitras) ->
+            ( { model | palitras = Success palitras }
+            , E.none
+            )
+
+        GotPalitras (Err err) ->
+            ( { model | palitras = Failure err }
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Не вдалося завантажити палітри" err
+            )
+
+        TogglePalitraVisibility palitraId ->
+            let
+                newVisible =
+                    if List.member palitraId model.palitrasVisible then
+                        List.filter (\id -> id /= palitraId) model.palitrasVisible
+                    else
+                        palitraId :: model.palitrasVisible
+            in
+            ( { model | palitrasVisible = newVisible }
+            , E.none
+            )
+
+        FeatureToggled feature enabled ->
+            case feature of
+                "palitras" ->
+                    ( { model | palitrasEnabled = enabled }, E.none )
+
+                "kmz" ->
+                    ( { model | kmzEnabled = enabled }, E.none )
+
+                "pelengs" ->
+                    ( { model | pelengsEnabled = enabled }, E.none )
+
+                _ ->
+                    ( model, E.none )
 
         ToggleUnfoldLocationsFilter ->
             ( { model | unfoldLocationsFilter = not model.unfoldLocationsFilter }

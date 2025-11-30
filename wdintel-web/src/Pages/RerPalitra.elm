@@ -6,9 +6,11 @@ import Bindings as B
 import Core.Auth
 import Core.Types exposing (ApiError)
 import Effect as E exposing (Effect)
+import File exposing (File)
+import File.Select
 import Html exposing (..)
-import Html.Attributes exposing (..)
-import Html.Events exposing (on, onInput, targetValue)
+import Html.Attributes as Attr exposing (..)
+import Html.Events exposing (on, onClick, onInput, targetValue)
 import Html.Styled as Styled
 import Json.Decode as Decode
 import Layouts
@@ -37,9 +39,13 @@ type alias Model =
     { palitras : RemoteData ApiError (List B.Palitra)
     , tableState : Table.State
     , deleting : Maybe Int
+    , uploadingPoints : Maybe Int
     , form : Form
     , submitInFlight : Bool
     , showCreateSidebar : Bool
+    , editSidebar : Maybe Int
+    , editForm : Maybe Form
+    , editSubmitInFlight : Bool
     , myScope : RemoteData ApiError B.MyScope
     , loginsSelect :
         { state : Select.State
@@ -66,7 +72,6 @@ type alias Form =
     { name : String
     , colorHex : String
     , access : AccessForm
-    , fileName : String
     }
 
 
@@ -95,12 +100,20 @@ type Msg
     | TableStateChanged Table.State
     | DeleteRequested Int
     | DeleteResponse Int (Result ApiError ())
+    | UploadPointsClicked Int
+    | FileSelectedForUpload Int File
+    | UploadPointsResponse Int (Result ApiError ())
     | UpdateForm (Form -> Form)
     | ChangeAccess AccessForm
     | ShowCreateSidebar
     | CloseCreateSidebar
     | SubmitCreate
     | CreateResponse (Result ApiError B.Palitra)
+    | OpenEditSidebar Int
+    | CloseEditSidebar
+    | UpdateEditForm (Form -> Form)
+    | SubmitEdit
+    | UpdateResponse Int (Result ApiError B.PalitraDetails)
     | MyScopeResp (Result ApiError B.MyScope)
     | LoginsSelectMsg (Select.Msg String)
     | OrganismsSelectMsg (Select.Msg Int)
@@ -133,9 +146,13 @@ init user _ =
     ( { palitras = Loading
       , tableState = Table.initialSort "Назва"
       , deleting = Nothing
+      , uploadingPoints = Nothing
       , form = emptyForm
       , submitInFlight = False
       , showCreateSidebar = False
+      , editSidebar = Nothing
+      , editForm = Nothing
+      , editSubmitInFlight = False
       , myScope = Loading
       , loginsSelect =
             { state = Select.initState (Select.selectIdentifier "sel-logins")
@@ -153,8 +170,18 @@ init user _ =
             , selected = []
             }
       , logins = NotAsked
-      , organisms = if admin then Loading else NotAsked
-      , aorList = if admin then Loading else NotAsked
+      , organisms =
+            if admin then
+                Loading
+
+            else
+                NotAsked
+      , aorList =
+            if admin then
+                Loading
+
+            else
+                NotAsked
       }
     , E.sendCmd <|
         Cmd.batch
@@ -171,7 +198,6 @@ emptyForm =
     { name = ""
     , colorHex = "#00bcd4"
     , access = LoginsAccess ""
-    , fileName = ""
     }
 
 
@@ -215,17 +241,40 @@ update user msg model =
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Не вдалося видалити палітру" err
             )
 
+        UploadPointsClicked palitraId ->
+            ( model
+            , E.sendCmd <|
+                File.Select.file
+                    [ "application/vnd.google-earth.kmz"
+                    , "application/vnd.google-earth.kml+xml"
+                    , ".kmz"
+                    , ".kml"
+                    ]
+                    (FileSelectedForUpload palitraId)
+            )
+
+        FileSelectedForUpload palitraId file ->
+            ( { model | uploadingPoints = Just palitraId }
+            , E.sendCmd <| Api.palitra_upload_points (UploadPointsResponse palitraId) palitraId file
+            )
+
+        UploadPointsResponse _ (Ok _) ->
+            ( { model | uploadingPoints = Nothing }
+            , E.batch
+                [ E.sendCmd <| Api.palitra_list PalitraListResp
+                ]
+            )
+
+        UploadPointsResponse _ (Err err) ->
+            ( { model | uploadingPoints = Nothing }
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Не вдалося завантажити точки" err
+            )
+
         UpdateForm fn ->
             ( { model | form = fn model.form }, E.none )
 
         ChangeAccess access ->
             let
-                form =
-                    model.form
-
-                form1 =
-                    { form | access = access }
-
                 -- Синхронізуємо select states з новим типом доступу
                 ( loginsSelect, organismsSelect, aorSelect ) =
                     case access of
@@ -268,14 +317,45 @@ update user msg model =
                             in
                             ( model.loginsSelect, model.organismsSelect, { as_ | selected = selected } )
             in
-            ( { model
-                | form = form1
-                , loginsSelect = loginsSelect
-                , organismsSelect = organismsSelect
-                , aorSelect = aorSelect
-              }
-            , E.none
-            )
+            if model.editSidebar /= Nothing then
+                -- Оновлюємо editForm
+                case model.editForm of
+                    Just editForm ->
+                        ( { model
+                            | editForm = Just { editForm | access = access }
+                            , loginsSelect = loginsSelect
+                            , organismsSelect = organismsSelect
+                            , aorSelect = aorSelect
+                          }
+                        , E.none
+                        )
+
+                    Nothing ->
+                        ( { model
+                            | loginsSelect = loginsSelect
+                            , organismsSelect = organismsSelect
+                            , aorSelect = aorSelect
+                          }
+                        , E.none
+                        )
+
+            else
+                -- Оновлюємо form
+                let
+                    form =
+                        model.form
+
+                    form1 =
+                        { form | access = access }
+                in
+                ( { model
+                    | form = form1
+                    , loginsSelect = loginsSelect
+                    , organismsSelect = organismsSelect
+                    , aorSelect = aorSelect
+                  }
+                , E.none
+                )
 
         ShowCreateSidebar ->
             let
@@ -283,6 +363,7 @@ update user msg model =
                 scopeCmd =
                     if model.myScope == NotAsked then
                         Api.my_scope MyScopeResp
+
                     else
                         Cmd.none
 
@@ -291,45 +372,145 @@ update user msg model =
                     if isAdmin user then
                         [ if model.logins == NotAsked then
                             Api.list_logins LoginsResp { sortBy = Nothing, filterByRoles = Nothing }
+
                           else
                             Cmd.none
                         , if model.organisms == NotAsked then
                             Api.list_organisms OrganismsResp { sortBy = Nothing }
+
                           else
                             Cmd.none
                         , if model.aorList == NotAsked then
                             Api.aor_list AorListResp { sortBy = Nothing }
+
                           else
                             Cmd.none
                         ]
+
                     else
                         []
-                
-                -- Завантажуємо AOR список для не-адмінів (для відображення назв)
-                nonAdminAorCmd =
-                    if not (isAdmin user) && model.aorList == NotAsked then
-                        Api.aor_list AorListResp { sortBy = Nothing }
-                    else
-                        Cmd.none
 
                 allCmds =
-                    (scopeCmd :: adminDataCmds) ++ [ nonAdminAorCmd ] |> List.filter (\cmd -> cmd /= Cmd.none)
+                    (scopeCmd :: adminDataCmds) |> List.filter (\cmd -> cmd /= Cmd.none)
+
+                -- Автоматично заповнюємо форму для не-admin користувачів
+                initialForm =
+                    if isAdmin user then
+                        emptyForm
+
+                    else
+                        -- Для не-admin автоматично підставляємо логін
+                        { emptyForm | access = LoginsAccess user.name }
+
+                -- Синхронізуємо select з формою
+                loginsSelect =
+                    if isAdmin user then
+                        model.loginsSelect
+
+                    else
+                        let
+                            ls =
+                                model.loginsSelect
+                        in
+                        { ls | selected = [ user.name ] }
             in
-            ( { model 
+            ( { model
                 | showCreateSidebar = True
-                , myScope = if model.myScope == NotAsked then Loading else model.myScope
-                , logins = if isAdmin user && model.logins == NotAsked then Loading else model.logins
-                , organisms = if isAdmin user && model.organisms == NotAsked then Loading else model.organisms
-                , aorList = if model.aorList == NotAsked then Loading else model.aorList
+                , form = initialForm
+                , loginsSelect = loginsSelect
+                , aorSelect =
+                    case ( isAdmin user, model.myScope ) of
+                        ( False, Success scope ) ->
+                            let
+                                items =
+                                    scope.aors
+                                        |> List.map (\aor -> Select.basicMenuItem { item = aor.id, label = aor.name })
+
+                                currentAorSelect =
+                                    model.aorSelect
+
+                                selectedAors =
+                                    if List.isEmpty model.aorSelect.selected then
+                                        scope.aorIds
+
+                                    else
+                                        model.aorSelect.selected
+                            in
+                            { currentAorSelect | items = items, selected = selectedAors }
+
+                        _ ->
+                            model.aorSelect
+                , myScope =
+                    if model.myScope == NotAsked then
+                        Loading
+
+                    else
+                        model.myScope
+                , logins =
+                    if isAdmin user && model.logins == NotAsked then
+                        Loading
+
+                    else
+                        model.logins
+                , organisms =
+                    if isAdmin user && model.organisms == NotAsked then
+                        Loading
+
+                    else
+                        model.organisms
+                , aorList =
+                    if isAdmin user && model.aorList == NotAsked then
+                        Loading
+
+                    else
+                        model.aorList
               }
             , if List.isEmpty allCmds then
                 E.none
+
               else
                 E.sendCmd <| Cmd.batch allCmds
             )
 
         MyScopeResp (Ok scope) ->
-            ( { model | myScope = Success scope }, E.none )
+            let
+                aorItems =
+                    scope.aors
+                        |> List.map (\aor -> Select.basicMenuItem { item = aor.id, label = aor.name })
+
+                allowedAorIds =
+                    scope.aorIds
+
+                currentSelected =
+                    model.aorSelect.selected
+                        |> List.filter (\id -> List.member id allowedAorIds)
+
+                defaultSelected =
+                    if List.isEmpty currentSelected then
+                        allowedAorIds
+
+                    else
+                        currentSelected
+
+                currentAorSelect =
+                    model.aorSelect
+
+                updatedAorSelect =
+                    if isAdmin user then
+                        currentAorSelect
+
+                    else
+                        { currentAorSelect
+                            | items = aorItems
+                            , selected = defaultSelected
+                        }
+            in
+            ( { model
+                | myScope = Success scope
+                , aorSelect = updatedAorSelect
+              }
+            , E.none
+            )
 
         MyScopeResp (Err err) ->
             ( { model | myScope = Failure err }
@@ -337,14 +518,29 @@ update user msg model =
             )
 
         CloseCreateSidebar ->
-            ( { model | showCreateSidebar = False, form = emptyForm }, E.none )
+            let
+                -- Очищаємо select states
+                loginsSelect =
+                    model.loginsSelect
+
+                organismsSelect =
+                    model.organismsSelect
+
+                aorSelect =
+                    model.aorSelect
+            in
+            ( { model
+                | showCreateSidebar = False
+                , form = emptyForm
+                , loginsSelect = { loginsSelect | selected = [] }
+                , organismsSelect = { organismsSelect | selected = [] }
+                , aorSelect = { aorSelect | selected = [] }
+              }
+            , E.none
+            )
 
         SubmitCreate ->
-            let
-                validationError =
-                    validateForm model.form
-            in
-            if validationError == Nothing then
+            if isFormValid model.form then
                 let
                     req =
                         buildCreateReq model.form
@@ -354,6 +550,7 @@ update user msg model =
                 )
 
             else
+                -- Форма невалідна, не відправляємо запит (це не має статися при правильній роботі UI)
                 ( model, E.none )
 
         CreateResponse (Ok p) ->
@@ -365,12 +562,25 @@ update user msg model =
 
                         _ ->
                             Success [ p ]
+
+                -- Очищаємо select states
+                loginsSelect =
+                    model.loginsSelect
+
+                organismsSelect =
+                    model.organismsSelect
+
+                aorSelect =
+                    model.aorSelect
             in
             ( { model
                 | palitras = newList
                 , form = emptyForm
                 , submitInFlight = False
                 , showCreateSidebar = False
+                , loginsSelect = { loginsSelect | selected = [] }
+                , organismsSelect = { organismsSelect | selected = [] }
+                , aorSelect = { aorSelect | selected = [] }
               }
             , E.none
             )
@@ -394,15 +604,37 @@ update user msg model =
                 newSelect =
                     { loginsSelect | state = newState, selected = updatedSelected }
 
-                form =
-                    model.form
-
-                newForm =
-                    { form | access = LoginsAccess (String.join "," updatedSelected) }
+                accessValue =
+                    LoginsAccess (String.join "," updatedSelected)
             in
-            ( { model | loginsSelect = newSelect, form = newForm }
-            , E.sendCmd <| Cmd.map LoginsSelectMsg selectCmd
-            )
+            if model.editSidebar /= Nothing then
+                -- Оновлюємо editForm
+                case model.editForm of
+                    Just editForm ->
+                        ( { model
+                            | loginsSelect = newSelect
+                            , editForm = Just { editForm | access = accessValue }
+                          }
+                        , E.sendCmd <| Cmd.map LoginsSelectMsg selectCmd
+                        )
+
+                    Nothing ->
+                        ( { model | loginsSelect = newSelect }
+                        , E.sendCmd <| Cmd.map LoginsSelectMsg selectCmd
+                        )
+
+            else
+                -- Оновлюємо form
+                let
+                    form =
+                        model.form
+
+                    newForm =
+                        { form | access = accessValue }
+                in
+                ( { model | loginsSelect = newSelect, form = newForm }
+                , E.sendCmd <| Cmd.map LoginsSelectMsg selectCmd
+                )
 
         OrganismsSelectMsg selectMsg ->
             let
@@ -418,15 +650,37 @@ update user msg model =
                 newSelect =
                     { organismsSelect | state = newState, selected = updatedSelected }
 
-                form =
-                    model.form
-
-                newForm =
-                    { form | access = OrganismsAccess (String.join "," (List.map String.fromInt updatedSelected)) }
+                accessValue =
+                    OrganismsAccess (String.join "," (List.map String.fromInt updatedSelected))
             in
-            ( { model | organismsSelect = newSelect, form = newForm }
-            , E.sendCmd <| Cmd.map OrganismsSelectMsg selectCmd
-            )
+            if model.editSidebar /= Nothing then
+                -- Оновлюємо editForm
+                case model.editForm of
+                    Just editForm ->
+                        ( { model
+                            | organismsSelect = newSelect
+                            , editForm = Just { editForm | access = accessValue }
+                          }
+                        , E.sendCmd <| Cmd.map OrganismsSelectMsg selectCmd
+                        )
+
+                    Nothing ->
+                        ( { model | organismsSelect = newSelect }
+                        , E.sendCmd <| Cmd.map OrganismsSelectMsg selectCmd
+                        )
+
+            else
+                -- Оновлюємо form
+                let
+                    form =
+                        model.form
+
+                    newForm =
+                        { form | access = accessValue }
+                in
+                ( { model | organismsSelect = newSelect, form = newForm }
+                , E.sendCmd <| Cmd.map OrganismsSelectMsg selectCmd
+                )
 
         AorSelectMsg selectMsg ->
             let
@@ -442,15 +696,37 @@ update user msg model =
                 newSelect =
                     { aorSelect | state = newState, selected = updatedSelected }
 
-                form =
-                    model.form
-
-                newForm =
-                    { form | access = AorAccess (String.join "," (List.map String.fromInt updatedSelected)) }
+                accessValue =
+                    AorAccess (String.join "," (List.map String.fromInt updatedSelected))
             in
-            ( { model | aorSelect = newSelect, form = newForm }
-            , E.sendCmd <| Cmd.map AorSelectMsg selectCmd
-            )
+            if model.editSidebar /= Nothing then
+                -- Оновлюємо editForm
+                case model.editForm of
+                    Just editForm ->
+                        ( { model
+                            | aorSelect = newSelect
+                            , editForm = Just { editForm | access = accessValue }
+                          }
+                        , E.sendCmd <| Cmd.map AorSelectMsg selectCmd
+                        )
+
+                    Nothing ->
+                        ( { model | aorSelect = newSelect }
+                        , E.sendCmd <| Cmd.map AorSelectMsg selectCmd
+                        )
+
+            else
+                -- Оновлюємо form
+                let
+                    form =
+                        model.form
+
+                    newForm =
+                        { form | access = accessValue }
+                in
+                ( { model | aorSelect = newSelect, form = newForm }
+                , E.sendCmd <| Cmd.map AorSelectMsg selectCmd
+                )
 
         LoginsResp (Ok loginsResp) ->
             let
@@ -509,6 +785,251 @@ update user msg model =
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Не вдалося завантажити смуги" err
             )
 
+        OpenEditSidebar palitraId ->
+            case model.palitras of
+                Success list ->
+                    case ListX.find (\p -> p.id == palitraId) list of
+                        Just palitra ->
+                            let
+                                initializedForm =
+                                    palitraToForm palitra
+
+                                -- Завантажуємо scope якщо ще не завантажено
+                                scopeCmd =
+                                    if model.myScope == NotAsked then
+                                        Api.my_scope MyScopeResp
+
+                                    else
+                                        Cmd.none
+
+                                -- Завантажуємо дані для Admin якщо ще не завантажені
+                                adminDataCmds =
+                                    if isAdmin user then
+                                        [ if model.logins == NotAsked then
+                                            Api.list_logins LoginsResp { sortBy = Nothing, filterByRoles = Nothing }
+
+                                          else
+                                            Cmd.none
+                                        , if model.organisms == NotAsked then
+                                            Api.list_organisms OrganismsResp { sortBy = Nothing }
+
+                                          else
+                                            Cmd.none
+                                        , if model.aorList == NotAsked then
+                                            Api.aor_list AorListResp { sortBy = Nothing }
+
+                                          else
+                                            Cmd.none
+                                        ]
+
+                                    else
+                                        []
+
+                                allCmds =
+                                    (scopeCmd :: adminDataCmds) |> List.filter (\cmd -> cmd /= Cmd.none)
+
+                                -- Синхронізуємо select states з формою
+                                ( loginsSelect, organismsSelect, aorSelect ) =
+                                    case initializedForm.access of
+                                        LoginsAccess logins ->
+                                            let
+                                                ls =
+                                                    model.loginsSelect
+
+                                                selected =
+                                                    logins
+                                                        |> String.split ","
+                                                        |> List.map String.trim
+                                                        |> List.filter (\s -> s /= "")
+                                            in
+                                            ( { ls | selected = selected }, model.organismsSelect, model.aorSelect )
+
+                                        OrganismsAccess ids ->
+                                            let
+                                                os =
+                                                    model.organismsSelect
+
+                                                selected =
+                                                    ids
+                                                        |> String.split ","
+                                                        |> List.filter (\s -> s /= "")
+                                                        |> List.filterMap String.toInt
+                                            in
+                                            ( model.loginsSelect, { os | selected = selected }, model.aorSelect )
+
+                                        AorAccess ids ->
+                                            let
+                                                as_ =
+                                                    model.aorSelect
+
+                                                selected =
+                                                    ids
+                                                        |> String.split ","
+                                                        |> List.filter (\s -> s /= "")
+                                                        |> List.filterMap String.toInt
+                                            in
+                                            ( model.loginsSelect, model.organismsSelect, { as_ | selected = selected } )
+                            in
+                            ( { model
+                                | editSidebar = Just palitraId
+                                , editForm = Just initializedForm
+                                , myScope =
+                                    if model.myScope == NotAsked then
+                                        Loading
+
+                                    else
+                                        model.myScope
+                                , logins =
+                                    if isAdmin user && model.logins == NotAsked then
+                                        Loading
+
+                                    else
+                                        model.logins
+                                , organisms =
+                                    if isAdmin user && model.organisms == NotAsked then
+                                        Loading
+
+                                    else
+                                        model.organisms
+                                , aorList =
+                                    if isAdmin user && model.aorList == NotAsked then
+                                        Loading
+
+                                    else
+                                        model.aorList
+                                , loginsSelect = loginsSelect
+                                , organismsSelect = organismsSelect
+                                , aorSelect = aorSelect
+                              }
+                            , if List.isEmpty allCmds then
+                                E.none
+
+                              else
+                                E.sendCmd <| Cmd.batch allCmds
+                            )
+
+                        Nothing ->
+                            ( model, E.none )
+
+                _ ->
+                    ( model, E.none )
+
+        CloseEditSidebar ->
+            ( { model | editSidebar = Nothing, editForm = Nothing }, E.none )
+
+        UpdateEditForm fn ->
+            case model.editForm of
+                Just form ->
+                    let
+                        updatedForm =
+                            fn form
+
+                        -- Синхронізуємо select states з новим типом доступу
+                        ( loginsSelect, organismsSelect, aorSelect ) =
+                            case updatedForm.access of
+                                LoginsAccess logins ->
+                                    let
+                                        ls =
+                                            model.loginsSelect
+
+                                        selected =
+                                            logins
+                                                |> String.split ","
+                                                |> List.map String.trim
+                                                |> List.filter (\s -> s /= "")
+                                    in
+                                    ( { ls | selected = selected }, model.organismsSelect, model.aorSelect )
+
+                                OrganismsAccess ids ->
+                                    let
+                                        os =
+                                            model.organismsSelect
+
+                                        selected =
+                                            ids
+                                                |> String.split ","
+                                                |> List.filter (\s -> s /= "")
+                                                |> List.filterMap String.toInt
+                                    in
+                                    ( model.loginsSelect, { os | selected = selected }, model.aorSelect )
+
+                                AorAccess ids ->
+                                    let
+                                        as_ =
+                                            model.aorSelect
+
+                                        selected =
+                                            ids
+                                                |> String.split ","
+                                                |> List.filter (\s -> s /= "")
+                                                |> List.filterMap String.toInt
+                                    in
+                                    ( model.loginsSelect, model.organismsSelect, { as_ | selected = selected } )
+                    in
+                    ( { model
+                        | editForm = Just updatedForm
+                        , loginsSelect = loginsSelect
+                        , organismsSelect = organismsSelect
+                        , aorSelect = aorSelect
+                      }
+                    , E.none
+                    )
+
+                Nothing ->
+                    ( model, E.none )
+
+        SubmitEdit ->
+            case ( model.editSidebar, model.editForm ) of
+                ( Just palitraId, Just form ) ->
+                    if isFormValid form then
+                        let
+                            req =
+                                buildCreateReq form
+                        in
+                        ( { model | editSubmitInFlight = True }
+                        , E.sendCmd <| Api.palitra_update (UpdateResponse palitraId) palitraId req
+                        )
+
+                    else
+                        -- Форма невалідна, не відправляємо запит (це не має статися при правильній роботі UI)
+                        ( model, E.none )
+
+                _ ->
+                    ( model, E.none )
+
+        UpdateResponse palitraId (Ok palitraDetails) ->
+            let
+                updatedList =
+                    case model.palitras of
+                        Success list ->
+                            list
+                                |> List.map
+                                    (\p ->
+                                        if p.id == palitraId then
+                                            palitraDetails.palitra
+
+                                        else
+                                            p
+                                    )
+                                |> Success
+
+                        _ ->
+                            model.palitras
+            in
+            ( { model
+                | palitras = updatedList
+                , editSidebar = Nothing
+                , editForm = Nothing
+                , editSubmitInFlight = False
+              }
+            , E.none
+            )
+
+        UpdateResponse _ (Err err) ->
+            ( { model | editSubmitInFlight = False }
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Не вдалося оновити палітру" err
+            )
+
 
 view : Auth.User -> Shared.Model -> Model -> View Msg
 view user shared model =
@@ -519,10 +1040,16 @@ view user shared model =
     { title = "палітри"
     , body =
         [ div
-            [ classList [ ( "overflow-hidden", model.showCreateSidebar ) ]
+            [ classList [ ( "overflow-hidden", model.showCreateSidebar || model.editSidebar /= Nothing ) ]
             , class "w-5/6 mx-auto"
             ]
             [ Sidebar.view model.showCreateSidebar CloseCreateSidebar (createPalitraSidebarContent isDark user model)
+            , case model.editSidebar of
+                Just _ ->
+                    Sidebar.view True CloseEditSidebar (editPalitraSidebarContent isDark user model)
+
+                Nothing ->
+                    text ""
             , case model.palitras of
                 Loading ->
                     div [ class "p-4" ] [ Shared.Components.Spinner.loadingSpinner2Sm ]
@@ -628,28 +1155,55 @@ renderTable user model palitras =
                                 let
                                     isDeleting =
                                         model.deleting == Just p.id
+
+                                    isUploading =
+                                        model.uploadingPoints == Just p.id
+
+                                    canModify =
+                                        canDelete p
                                 in
-                                { attributes = [ class "col-narrow flex gap-2 items-center" ]
+                                { attributes = [ class "col-narrow" ]
                                 , children =
-                                    if canDelete p then
-                                        [ Button.view
-                                            (Button.new
-                                                { label = "Видалити"
-                                                , onClick =
-                                                    if isDeleting then
+                                    if canModify then
+                                        [ div [ class "flex gap-[4px] text-sm items-center" ]
+                                            [ button
+                                                [ title "Редагувати"
+                                                , class "icon-btn icon-btn-primary"
+                                                , onClick (OpenEditSidebar p.id)
+                                                ]
+                                                [ i [ class "bi bi-pencil" ] [] ]
+                                            , button
+                                                [ title "Завантажити точки"
+                                                , class "icon-btn icon-btn-primary"
+                                                , onClick
+                                                    (if isUploading then
                                                         NoOp
 
-                                                    else
-                                                        DeleteRequested p.id
-                                                }
-                                                |> Button.withStyleDanger
-                                                |> Button.withDisabled isDeleting
-                                            )
-                                        , if isDeleting then
-                                            Shared.Components.Spinner.loadingSpinner2Sm
+                                                     else
+                                                        UploadPointsClicked p.id
+                                                    )
+                                                , Attr.disabled isUploading
+                                                ]
+                                                [ i [ class "bi bi-cloud-upload" ] [] ]
+                                            , button
+                                                [ title "Видалити"
+                                                , class "icon-btn icon-btn-danger"
+                                                , onClick
+                                                    (if isDeleting then
+                                                        NoOp
 
-                                          else
-                                            text ""
+                                                     else
+                                                        DeleteRequested p.id
+                                                    )
+                                                , Attr.disabled isDeleting
+                                                ]
+                                                [ i [ class "bi bi-trash" ] [] ]
+                                            , if isDeleting || isUploading then
+                                                Shared.Components.Spinner.loadingSpinner2Sm
+
+                                              else
+                                                text ""
+                                            ]
                                         ]
 
                                     else
@@ -782,38 +1336,33 @@ renderAccessCompact user myScopeData organismsData aorData p =
             -- Не-Admin автор - показуємо назви смуг з p.accessAorId, але тільки ті, що є в myScope.aorIds
             case myScopeData of
                 Success myScope ->
-                    case aorData of
-                        Success aors ->
-                            let
-                                -- Фільтруємо тільки ті AOR, які є в myScope.aorIds для безпеки
-                                allowedAorIds =
-                                    myScope.aorIds
+                    let
+                        allowedAorIds =
+                            myScope.aorIds
 
-                                names =
-                                    p.accessAorId
-                                        |> List.filter (\id -> List.member id allowedAorIds)
-                                        |> List.filterMap
-                                            (\id ->
-                                                ListX.find (\aor -> aor.id == id) aors
-                                                    |> Maybe.map .name
-                                            )
-                            in
-                            div []
-                                [ div [ class "text-xs text-muted-foreground uppercase" ] [ text "Смуги" ]
-                                , renderList names
-                                ]
+                        names =
+                            p.accessAorId
+                                |> List.filter (\id -> List.member id allowedAorIds)
+                                |> List.filterMap
+                                    (\id ->
+                                        myScope.aors
+                                            |> ListX.find (\aor -> aor.id == id)
+                                            |> Maybe.map .name
+                                    )
 
-                        Loading ->
-                            div []
-                                [ div [ class "text-xs text-muted-foreground uppercase" ] [ text "Смуги" ]
-                                , div [ class "text-xs text-muted-foreground" ] [ text "завантаження..." ]
-                                ]
+                        namesOrIds =
+                            if List.isEmpty names then
+                                p.accessAorId
+                                    |> List.filter (\id -> List.member id allowedAorIds)
+                                    |> List.map String.fromInt
 
-                        _ ->
-                            div []
-                                [ div [ class "text-xs text-muted-foreground uppercase" ] [ text "Смуги" ]
-                                , div [ class "text-xs" ] [ text (String.fromInt (List.length p.accessAorId) ++ " шт") ]
-                                ]
+                            else
+                                names
+                    in
+                    div []
+                        [ div [ class "text-xs text-muted-foreground uppercase" ] [ text "Смуги" ]
+                        , renderList namesOrIds
+                        ]
 
                 _ ->
                     div [ class "text-xs text-muted-foreground" ] [ text "завантаження..." ]
@@ -845,12 +1394,24 @@ getAvailableAccessTypes user myScope =
         editor =
             isEditor user
 
+        hasOrganism =
+            case myScope.organism of
+                Just _ ->
+                    True
+
+                Nothing ->
+                    False
+
         hasAorIds =
             not (List.isEmpty myScope.aorIds)
     in
     List.filterMap identity
         [ Just (LoginsAccess "")
-        , Just (OrganismsAccess "")
+        , if admin || hasOrganism then
+            Just (OrganismsAccess "")
+
+          else
+            Nothing
         , if admin || (editor && hasAorIds) then
             Just (AorAccess "")
 
@@ -918,13 +1479,33 @@ getAccessHint user access =
 -- Валідація форми перед відправкою
 
 
-validateForm : Form -> Maybe String
-validateForm form =
+isFormValid : Form -> Bool
+isFormValid form =
     if String.isEmpty form.name then
-        Just "Назва палітри обов'язкова"
+        False
 
     else
         case form.access of
+            LoginsAccess logins ->
+                let
+                    loginList =
+                        logins
+                            |> String.split ","
+                            |> List.map String.trim
+                            |> List.filter (\s -> s /= "")
+                in
+                not (List.isEmpty loginList)
+
+            OrganismsAccess ids ->
+                let
+                    organismList =
+                        ids
+                            |> String.split ","
+                            |> List.filter (\s -> s /= "")
+                            |> List.filterMap String.toInt
+                in
+                not (List.isEmpty organismList)
+
             AorAccess ids ->
                 let
                     aorList =
@@ -933,14 +1514,7 @@ validateForm form =
                             |> List.filter (\s -> s /= "")
                             |> List.filterMap String.toInt
                 in
-                if List.isEmpty aorList then
-                    Just "Для доступу за смугами необхідно вказати хоча б один AOR ID"
-
-                else
-                    Nothing
-
-            _ ->
-                Nothing
+                not (List.isEmpty aorList)
 
 
 createPalitraSidebarContent : Bool -> Auth.User -> Model -> List (Html Msg)
@@ -953,7 +1527,7 @@ createPalitraSidebarContent isDark user model =
 
                 _ ->
                     -- Default empty scope для випадку коли ще не завантажено
-                    { organism = Nothing, aorIds = [] }
+                    { organism = Nothing, aorIds = [], aors = [] }
 
         availableAccessTypes =
             getAvailableAccessTypes user myScope
@@ -1072,31 +1646,37 @@ createPalitraSidebarContent isDark user model =
 
                         aorField =
                             if aorRestricted then
-                                -- Для Editor і Rer - показуємо readonly поле з їхніми AOR IDs
                                 case model.myScope of
                                     Success scope ->
-                                        if List.isEmpty scope.aorIds then
+                                        if List.isEmpty scope.aors then
                                             div [ class "text-xs text-red-500" ]
                                                 [ text "У вашому підрозділі немає призначених смуг (AOR). Зверніться до адміністратора або оберіть інший тип доступу." ]
 
                                         else
-                                            div [ class "flex flex-col gap-2" ]
-                                                [ div [ class "text-xs text-muted-foreground uppercase" ] [ text "Доступні смуги вашого підрозділу" ]
-                                                , div [ class "flex flex-wrap gap-2" ]
-                                                    (List.map
-                                                        (\aorId ->
-                                                            case model.aorList of
-                                                                Success aors ->
-                                                                    ListX.find (\aor -> aor.id == aorId) aors
-                                                                        |> Maybe.map (\aor -> Badge.view aor.name)
-                                                                        |> Maybe.withDefault (Badge.view (String.fromInt aorId))
+                                            let
+                                                baseOptions =
+                                                    Utils.Select.defaultOptions isDark
 
-                                                                _ ->
-                                                                    Badge.view (String.fromInt aorId)
+                                                selectOptions =
+                                                    { baseOptions | clearable = False }
+                                            in
+                                            Html.map AorSelectMsg <|
+                                                Styled.toUnstyled <|
+                                                    Utils.Select.renderSelect
+                                                        (model.aorSelect.selected
+                                                            |> List.filterMap
+                                                                (\id ->
+                                                                    scope.aors
+                                                                        |> ListX.find (\aor -> aor.id == id)
+                                                                        |> Maybe.map (\aor -> Select.basicMenuItem { item = id, label = aor.name })
+                                                                )
                                                         )
-                                                        scope.aorIds
-                                                    )
-                                                ]
+                                                        model.aorSelect.state
+                                                        (scope.aors
+                                                            |> List.map (\aor -> Select.basicMenuItem { item = aor.id, label = aor.name })
+                                                        )
+                                                        "Оберіть смуги"
+                                                        selectOptions
 
                                     Loading ->
                                         div [ class "flex flex-col gap-2" ]
@@ -1109,6 +1689,13 @@ createPalitraSidebarContent isDark user model =
                                             [ text "Завантаження..." ]
 
                             else
+                                let
+                                    baseOptions =
+                                        Utils.Select.defaultOptions isDark
+
+                                    selectOptions =
+                                        { baseOptions | clearable = False }
+                                in
                                 -- elm-select для Admin
                                 Html.map AorSelectMsg <|
                                     Styled.toUnstyled <|
@@ -1125,11 +1712,11 @@ createPalitraSidebarContent isDark user model =
                                                             _ ->
                                                                 Select.basicMenuItem { item = id, label = "Loading..." }
                                                     )
-                                            )
-                                            model.aorSelect.state
-                                            model.aorSelect.items
-                                            "Оберіть смуги"
-                                            (Utils.Select.defaultOptions isDark)
+                                        )
+                                        model.aorSelect.state
+                                        model.aorSelect.items
+                                        "Оберіть смуги"
+                                        selectOptions
                     in
                     ( [ div [ class "space-y-2" ]
                             [ label [ class "text-sm font-medium text-foreground" ] [ text "Смуги (AOR)" ]
@@ -1175,16 +1762,21 @@ createPalitraSidebarContent isDark user model =
                     let
                         restrictedOrganism =
                             isAccessRestricted user (OrganismsAccess "")
-
-                        userOrganismValue =
-                            user.organismId |> Maybe.map String.fromInt
                     in
                     if restrictedOrganism then
-                        case userOrganismValue of
-                            Just value ->
-                                ChangeAccess (OrganismsAccess value)
+                        -- Для не-admin підставляємо organismId з myScope
+                        case model.myScope of
+                            Success scope ->
+                                case scope.organism of
+                                    Just organism ->
+                                        ChangeAccess (OrganismsAccess (String.fromInt organism.id))
 
-                            Nothing ->
+                                    Nothing ->
+                                        -- Не повинно статися, бо getAvailableAccessTypes це відфільтрує
+                                        ChangeAccess accessForm
+
+                            _ ->
+                                -- myScope ще не завантажено
                                 ChangeAccess accessForm
 
                     else
@@ -1196,16 +1788,10 @@ createPalitraSidebarContent isDark user model =
                             isAdmin user
                     in
                     if not admin then
-                        -- Editor і Rer автоматично використовують свої AOR IDs
+                        -- Editor і Rer автоматично використовують свої AOR IDS
                         case model.myScope of
                             Success scope ->
-                                let
-                                    aorIdsStr =
-                                        scope.aorIds
-                                            |> List.map String.fromInt
-                                            |> String.join ","
-                                in
-                                ChangeAccess (AorAccess aorIdsStr)
+                                ChangeAccess (AorAccess (String.join "," (List.map String.fromInt scope.aorIds)))
 
                             _ ->
                                 ChangeAccess accessForm
@@ -1230,24 +1816,17 @@ createPalitraSidebarContent isDark user model =
                         ]
                         []
                     ]
-                , div [ class "space-y-2" ]
-                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Колір" ]
+                , div [ class "flex flex-col gap-2" ]
+                    [ label
+                        [ class "text-sm font-medium text-foreground"
+                        , style "display" "block"
+                        ]
+                        [ text "Колір" ]
                     , input
                         [ type_ "color"
                         , class "w-16 h-10 border border-border rounded-md"
                         , value model.form.colorHex
                         , on "change" (Decode.map (\v -> UpdateForm (\f -> { f | colorHex = v })) targetValue)
-                        ]
-                        []
-                    ]
-                , div [ class "space-y-2" ]
-                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Назва файлу (опціонально)" ]
-                    , input
-                        [ class "w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
-                        , type_ "text"
-                        , placeholder "Назва файлу"
-                        , value model.form.fileName
-                        , onInput (\v -> UpdateForm (\f -> { f | fileName = v }))
                         ]
                         []
                     ]
@@ -1297,12 +1876,7 @@ buildCreateReq form =
     { name = form.name
     , colorHex = form.colorHex
     , access = accessToBinding form.access
-    , sourceFileName =
-        if String.isEmpty form.fileName then
-            Nothing
-
-        else
-            Just form.fileName
+    , sourceFileName = Nothing
     , lastUploadedAtTs = Nothing
     }
 
@@ -1339,3 +1913,377 @@ accessToBinding accessForm =
                         |> List.filterMap String.toInt
             in
             B.ByAor { aorIds = items }
+
+
+editPalitraSidebarContent : Bool -> Auth.User -> Model -> List (Html Msg)
+editPalitraSidebarContent isDark user model =
+    case model.editForm of
+        Just editForm ->
+            let
+                myScope =
+                    case model.myScope of
+                        Success scope ->
+                            scope
+
+                        _ ->
+                            { organism = Nothing, aorIds = [], aors = [] }
+
+                availableAccessTypes =
+                    getAvailableAccessTypes user myScope
+
+                ( accessFields, accessHint ) =
+                    case editForm.access of
+                        LoginsAccess _ ->
+                            let
+                                loginRestricted =
+                                    isAccessRestricted user (LoginsAccess "")
+
+                                loginField =
+                                    if loginRestricted then
+                                        div
+                                            [ class "w-full px-3 py-2 border border-dashed border-border rounded-md bg-muted/40 text-foreground flex items-center justify-between" ]
+                                            [ span [] [ text user.name ]
+                                            , span [ class "text-xs text-muted-foreground" ] [ text "Автоматично" ]
+                                            ]
+
+                                    else
+                                        Html.map LoginsSelectMsg <|
+                                            Styled.toUnstyled <|
+                                                Utils.Select.renderSelect
+                                                    (model.loginsSelect.selected
+                                                        |> List.map (\login -> Select.basicMenuItem { item = login, label = login })
+                                                    )
+                                                    model.loginsSelect.state
+                                                    model.loginsSelect.items
+                                                    "Оберіть логіни"
+                                                    (Utils.Select.defaultOptions isDark)
+                            in
+                            ( [ div [ class "space-y-2" ]
+                                    [ label [ class "text-sm font-medium text-foreground" ]
+                                        [ text
+                                            (if loginRestricted then
+                                                "Ваш логін"
+
+                                             else
+                                                "Логіни"
+                                            )
+                                        ]
+                                    , loginField
+                                    ]
+                              ]
+                            , getAccessHint user (LoginsAccess "")
+                            )
+
+                        OrganismsAccess _ ->
+                            let
+                                organismRestricted =
+                                    isAccessRestricted user (OrganismsAccess "")
+
+                                organismField =
+                                    if organismRestricted then
+                                        case model.myScope of
+                                            Success scope ->
+                                                case scope.organism of
+                                                    Just organism ->
+                                                        div [ class "flex flex-col gap-2" ]
+                                                            [ div [ class "text-xs text-muted-foreground uppercase" ] [ text "Ваш підрозділ" ]
+                                                            , Badge.view organism.name
+                                                            ]
+
+                                                    Nothing ->
+                                                        div [ class "text-xs text-red-500" ]
+                                                            [ text "Вашому логіну не призначено підрозділ. Зверніться до адміністратора." ]
+
+                                            Loading ->
+                                                div [ class "flex flex-col gap-2" ]
+                                                    [ div [ class "text-xs text-muted-foreground uppercase" ] [ text "Ваш підрозділ" ]
+                                                    , Shared.Components.Spinner.loadingSpinner2Sm
+                                                    ]
+
+                                            _ ->
+                                                div [ class "text-xs text-muted-foreground" ]
+                                                    [ text "Завантаження..." ]
+
+                                    else
+                                        Html.map OrganismsSelectMsg <|
+                                            Styled.toUnstyled <|
+                                                Utils.Select.renderSelect
+                                                    (model.organismsSelect.selected
+                                                        |> List.map
+                                                            (\id ->
+                                                                case model.organisms of
+                                                                    Success orgs ->
+                                                                        ListX.find (\org -> org.id == id) orgs
+                                                                            |> Maybe.map (\org -> Select.basicMenuItem { item = id, label = org.name })
+                                                                            |> Maybe.withDefault (Select.basicMenuItem { item = id, label = "Unknown" })
+
+                                                                    _ ->
+                                                                        Select.basicMenuItem { item = id, label = "Loading..." }
+                                                            )
+                                                    )
+                                                    model.organismsSelect.state
+                                                    model.organismsSelect.items
+                                                    "Оберіть підрозділи"
+                                                    (Utils.Select.defaultOptions isDark)
+                            in
+                            ( [ div [ class "space-y-2" ]
+                                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Підрозділи" ]
+                                    , organismField
+                                    ]
+                              ]
+                            , getAccessHint user (OrganismsAccess "")
+                            )
+
+                        AorAccess _ ->
+                            let
+                                aorRestricted =
+                                    isAccessRestricted user (AorAccess "")
+
+                                aorField =
+                                    if aorRestricted then
+                                        case model.myScope of
+                                            Success scope ->
+                                                if List.isEmpty scope.aors then
+                                                    div [ class "text-xs text-red-500" ]
+                                                        [ text "У вашому підрозділі немає призначених смуг (AOR). Зверніться до адміністратора або оберіть інший тип доступу." ]
+
+                                                else
+                                                    let
+                                                        baseOptions =
+                                                            Utils.Select.defaultOptions isDark
+
+                                                        selectOptions =
+                                                            { baseOptions | clearable = False }
+                                                    in
+                                                    Html.map AorSelectMsg <|
+                                                        Styled.toUnstyled <|
+                                                            Utils.Select.renderSelect
+                                                                (model.aorSelect.selected
+                                                                    |> List.filterMap
+                                                                        (\id ->
+                                                                            scope.aors
+                                                                                |> ListX.find (\aor -> aor.id == id)
+                                                                                |> Maybe.map (\aor -> Select.basicMenuItem { item = id, label = aor.name })
+                                                                        )
+                                                            )
+                                                            model.aorSelect.state
+                                                            (scope.aors
+                                                                |> List.map (\aor -> Select.basicMenuItem { item = aor.id, label = aor.name })
+                                                            )
+                                                            "Оберіть смуги"
+                                                            selectOptions
+
+                                            Loading ->
+                                                div [ class "flex flex-col gap-2" ]
+                                                    [ div [ class "text-xs text-muted-foreground uppercase" ] [ text "Завантаження смуг..." ]
+                                                    , Shared.Components.Spinner.loadingSpinner2Sm
+                                                    ]
+
+                                            _ ->
+                                                div [ class "text-xs text-muted-foreground" ]
+                                                    [ text "Завантаження..." ]
+
+                                    else
+                                        let
+                                            baseOptions =
+                                                Utils.Select.defaultOptions isDark
+
+                                            selectOptions =
+                                                { baseOptions | clearable = False }
+                                        in
+                                        Html.map AorSelectMsg <|
+                                            Styled.toUnstyled <|
+                                                Utils.Select.renderSelect
+                                                    (model.aorSelect.selected
+                                                        |> List.map
+                                                            (\id ->
+                                                                case model.aorList of
+                                                                    Success aors ->
+                                                                        ListX.find (\aor -> aor.id == id) aors
+                                                                            |> Maybe.map (\aor -> Select.basicMenuItem { item = id, label = aor.name })
+                                                                            |> Maybe.withDefault (Select.basicMenuItem { item = id, label = "Unknown" })
+
+                                                                    _ ->
+                                                                        Select.basicMenuItem { item = id, label = "Loading..." }
+                                                            )
+                                                )
+                                                model.aorSelect.state
+                                                model.aorSelect.items
+                                                "Оберіть смуги"
+                                                selectOptions
+                            in
+                            ( [ div [ class "space-y-2" ]
+                                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Смуги (AOR)" ]
+                                    , aorField
+                                    ]
+                              ]
+                            , getAccessHint user (AorAccess "")
+                            )
+
+                accessOptions =
+                    List.filterMap
+                        (\accessType ->
+                            let
+                                normalized =
+                                    normalizeAccessForm accessType
+                            in
+                            case normalized of
+                                LoginsAccess _ ->
+                                    Just { value = normalized, label = "Логіни" }
+
+                                OrganismsAccess _ ->
+                                    Just { value = normalized, label = "Підрозділи" }
+
+                                AorAccess _ ->
+                                    Just { value = normalized, label = "Смуги" }
+                        )
+                        availableAccessTypes
+
+                accessSegmentOnChange accessForm =
+                    case accessForm of
+                        LoginsAccess _ ->
+                            let
+                                restrictedLogin =
+                                    isAccessRestricted user (LoginsAccess "")
+                            in
+                            if restrictedLogin then
+                                ChangeAccess (LoginsAccess user.name)
+
+                            else
+                                ChangeAccess accessForm
+
+                        OrganismsAccess _ ->
+                            let
+                                restrictedOrganism =
+                                    isAccessRestricted user (OrganismsAccess "")
+                            in
+                            if restrictedOrganism then
+                                -- Для не-admin підставляємо organismId з myScope
+                                case model.myScope of
+                                    Success scope ->
+                                        case scope.organism of
+                                            Just organism ->
+                                                ChangeAccess (OrganismsAccess (String.fromInt organism.id))
+
+                                            Nothing ->
+                                                -- Не повинно статися, бо getAvailableAccessTypes це відфільтрує
+                                                ChangeAccess accessForm
+
+                                    _ ->
+                                        -- myScope ще не завантажено
+                                        ChangeAccess accessForm
+
+                            else
+                                ChangeAccess accessForm
+
+                        AorAccess _ ->
+                            let
+                                admin =
+                                    isAdmin user
+                            in
+                            if not admin then
+                                case model.myScope of
+                                    Success scope ->
+                                        ChangeAccess (AorAccess (String.join "," (List.map String.fromInt scope.aorIds)))
+
+                                    _ ->
+                                        ChangeAccess accessForm
+
+                            else
+                                ChangeAccess accessForm
+            in
+            [ div [ class "flex flex-col h-full" ]
+                [ div [ class "p-6 border-b border-border" ]
+                    [ h2 [ class "text-lg font-semibold mb-1" ] [ text "Редагувати палітру" ]
+                    ]
+                , div [ class "flex-1 overflow-y-auto p-6" ]
+                    [ div [ class "space-y-6" ]
+                        [ div [ class "space-y-2" ]
+                            [ label [ class "text-sm font-medium text-foreground" ] [ text "Назва *" ]
+                            , input
+                                [ class "w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
+                                , type_ "text"
+                        , placeholder "Назва палітри"
+                        , value editForm.name
+                        , onInput (\v -> UpdateEditForm (\f -> { f | name = v }))
+                        ]
+                        []
+                    ]
+                , div [ class "flex flex-col gap-2" ]
+                    [ label
+                        [ class "text-sm font-medium text-foreground"
+                        , style "display" "block"
+                        ]
+                        [ text "Колір" ]
+                    , input
+                        [ type_ "color"
+                        , class "w-16 h-10 border border-border rounded-md"
+                        , value editForm.colorHex
+                        , on "change" (Decode.map (\v -> UpdateEditForm (\f -> { f | colorHex = v })) targetValue)
+                        ]
+                                []
+                            ]
+                        , div [ class "space-y-2" ]
+                            [ label [ class "text-sm font-medium text-foreground" ] [ text "Доступ" ]
+                            , div [ class "flex flex-wrap gap-2" ]
+                                [ SegmentedControl.new
+                                    (normalizeAccessForm editForm.access)
+                                    accessSegmentOnChange
+                                    accessOptions
+                                    |> SegmentedControl.view
+                                ]
+                            , case accessHint of
+                                Just hint ->
+                                    div [ class "text-xs text-muted-foreground mt-1" ] [ text hint ]
+
+                                Nothing ->
+                                    text ""
+                            , div [] accessFields
+                            ]
+                        ]
+                    ]
+                , div [ class "p-6 border-t border-border bg-muted/30" ]
+                    [ div [ class "flex justify-end gap-3" ]
+                        [ Button.new { label = "Скасувати", onClick = CloseEditSidebar }
+                            |> Button.withStyleSecondary
+                            |> Button.view
+                        , Button.new
+                            { label = "Зберегти"
+                            , onClick =
+                                if model.editSubmitInFlight then
+                                    NoOp
+
+                                else
+                                    SubmitEdit
+                            }
+                            |> Button.withDisabled model.editSubmitInFlight
+                            |> Button.view
+                        ]
+                    ]
+                ]
+            ]
+
+        Nothing ->
+            []
+
+
+palitraToForm : B.Palitra -> Form
+palitraToForm palitra =
+    let
+        access =
+            if not (List.isEmpty palitra.accessLogins) then
+                LoginsAccess (String.join "," palitra.accessLogins)
+
+            else if not (List.isEmpty palitra.accessOrganismIds) then
+                OrganismsAccess (String.join "," (List.map String.fromInt palitra.accessOrganismIds))
+
+            else if not (List.isEmpty palitra.accessAorId) then
+                AorAccess (String.join "," (List.map String.fromInt palitra.accessAorId))
+
+            else
+                LoginsAccess ""
+    in
+    { name = palitra.name
+    , colorHex = palitra.colorHex
+    , access = access
+    }

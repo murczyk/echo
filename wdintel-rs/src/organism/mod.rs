@@ -183,16 +183,30 @@ pub async fn my_scope(
             name: o.name,
         });
 
-    let aor_ids = organism_aor::Entity::find()
+    let aor_rows = organism_aor::Entity::find()
         .filter(organism_aor::Column::OrganismId.eq(id))
+        .find_also_related(area_of_responsibility::Entity)
         .all(&env.dbx)
         .await
-        .c(h!())?
-        .into_iter()
-        .map(|o| o.aor_id)
-        .collect();
+        .c(h!())?;
 
-    Ok(Json(MyScope { organism, aor_ids }))
+    let mut aor_ids = Vec::with_capacity(aor_rows.len());
+    let mut aors = Vec::with_capacity(aor_rows.len());
+    for (oa, aor_opt) in aor_rows {
+        aor_ids.push(oa.aor_id);
+        if let Some(aor) = aor_opt {
+            aors.push(MyAor {
+                id: aor.id,
+                name: aor.name,
+            });
+        }
+    }
+
+    Ok(Json(MyScope {
+        organism,
+        aor_ids,
+        aors,
+    }))
 }
 
 #[post("/api/organism/update")]
