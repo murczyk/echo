@@ -126,7 +126,7 @@ class AnalysisMap extends HTMLElement {
   private _palitrasControl: PalitrasControl | null = null;
   private _palitrasLayerGroup: L.LayerGroup | null = null;
   private _palitrasPointsClusters: Map<number, L.MarkerClusterGroup> = new Map();
-  private _minZoomForPoints = 12; // Мінімальний зум для показу точок палітр
+  private _minZoomForPoints = 13; // Мінімальний зум для показу точок палітр
 
   constructor() {
     super();
