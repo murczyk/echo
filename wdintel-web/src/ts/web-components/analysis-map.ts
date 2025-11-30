@@ -105,7 +105,7 @@ function getPointPopupTemplate(sortedMessages: Message[], networkUnits: NetworkU
 
 
 class AnalysisMap extends HTMLElement {
-  static observedAttributes = ["points", "daterange", "messages", "visibility", "network-units", "selected-units", "palitras", "visible-palitra-ids"]
+  static observedAttributes = ["points", "daterange", "messages", "visibility", "network-units", "selected-units", "palitras", "visible-palitra-ids", "palitras-enabled", "kmz-enabled", "pelengs-enabled"]
 
   private _map: L.Map | null = null;
   private _daterange: { startDate: number, endDate: number } = { startDate: new Date().getDate(), endDate: new Date().getDate() };
@@ -127,6 +127,9 @@ class AnalysisMap extends HTMLElement {
   private _palitrasLayerGroup: L.LayerGroup | null = null;
   private _palitrasPointsClusters: Map<number, L.MarkerClusterGroup> = new Map();
   private _minZoomForPoints = 13; // Мінімальний зум для показу точок палітр
+  private _palitrasEnabled = true;
+  private _kmzEnabled = true;
+  private _pelengsEnabled = true;
 
   constructor() {
     super();
@@ -225,6 +228,15 @@ class AnalysisMap extends HTMLElement {
         this._palitrasControl.updatePalitras(this._palitras, this._visiblePalitraIds);
       }
       this._updatePalitrasOnMap();
+    }
+    if (name === 'palitras-enabled') {
+      this._palitrasEnabled = JSON.parse(newValue);
+    }
+    if (name === 'kmz-enabled') {
+      this._kmzEnabled = JSON.parse(newValue);
+    }
+    if (name === 'pelengs-enabled') {
+      this._pelengsEnabled = JSON.parse(newValue);
     }
   }
 

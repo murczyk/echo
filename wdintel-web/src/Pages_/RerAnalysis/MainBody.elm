@@ -751,6 +751,9 @@ view user model shared route =
                             , attribute "selected-units" (Encode.encode 0 encodedSelectedUnits)
                             , attribute "palitras" (Encode.encode 0 encodedPalitras)
                             , attribute "visible-palitra-ids" (Encode.encode 0 encodedVisiblePalitraIds)
+                            , attribute "palitras-enabled" (Encode.encode 0 (Encode.bool model.palitrasEnabled))
+                            , attribute "kmz-enabled" (Encode.encode 0 (Encode.bool model.kmzEnabled))
+                            , attribute "pelengs-enabled" (Encode.encode 0 (Encode.bool model.pelengsEnabled))
                             , attribute "visibility"
                                 (if model.unfoldMapBlock then
                                     "true"

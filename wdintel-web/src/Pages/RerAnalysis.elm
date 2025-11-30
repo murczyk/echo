@@ -209,6 +209,9 @@ init route _ =
             , editSidebar = Nothing
             , palitras = NotAsked
             , palitrasVisible = []
+            , palitrasEnabled = True
+            , kmzEnabled = True
+            , pelengsEnabled = True
             }
 
         m2 =
