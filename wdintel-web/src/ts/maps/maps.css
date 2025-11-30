@@ -71,66 +71,23 @@
 	box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
 }
 
-.feature-toggle-control {
-	background: var(--bs-card-bg);
-	border: 1px solid var(--bs-border-color);
-	border-radius: 8px;
-	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-	padding: 8px 10px;
-	min-width: 170px;
-}
-
-.feature-toggle-control.collapsed {
-	min-width: auto;
-}
-
-.feature-toggle-header {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	gap: 8px;
-	margin-bottom: 6px;
-}
-
-.feature-toggle-header h3 {
-	margin: 0;
-	font-size: 13px;
-	font-weight: 600;
-	color: var(--bs-body-color);
-}
-
-.feature-toggle-collapse {
-	background: none;
-	border: none;
-	cursor: pointer;
-	padding: 4px;
-	color: var(--bs-body-color);
-	border-radius: 4px;
-}
-
-.feature-toggle-list {
-	display: flex;
-	flex-direction: column;
-	gap: 6px;
-}
-
-.feature-toggle-item {
-	display: flex;
-	align-items: center;
-	gap: 8px;
-	font-size: 12px;
-	color: var(--bs-body-color);
-	cursor: pointer;
-}
-
-.feature-toggle-item input[type="checkbox"] {
-	cursor: pointer;
-}
-
 .leaflet-custom-control {
 	background: var(--bs-body-bg);
 	padding: 2px 4px;
 	border-radius: 2px;
+}
+
+.layer-switch-subheader {
+	font-size: 11px;
+	font-weight: 700;
+	color: var(--bs-secondary-color);
+	padding: 4px 12px 2px 12px;
+	text-transform: uppercase;
+	letter-spacing: 0.02em;
+}
+
+.layer-switch-features .layer-switch-item {
+	padding: 6px 12px;
 }
 
 div [id^="map-container-"] {
