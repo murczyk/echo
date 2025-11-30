@@ -127,6 +127,7 @@ class AnalysisMap extends HTMLElement {
   private _palitrasControl: PalitrasControl | null = null;
   private _palitrasLayerGroup: L.LayerGroup | null = null;
   private _palitrasPointsClusters: Map<number, L.MarkerClusterGroup> = new Map();
+  private _pelengsLayerGroup: L.LayerGroup | null = null;
   private _minZoomForPoints = 13; // Мінімальний зум для показу точок палітр
   private _palitrasEnabled = true;
   private _kmzEnabled = true;
@@ -244,6 +245,7 @@ class AnalysisMap extends HTMLElement {
     if (name === 'pelengs-enabled') {
       this._pelengsEnabled = JSON.parse(newValue);
       this._updateFeaturesControl();
+      this._applyPelengVisibility();
     }
   }
 
@@ -277,6 +279,9 @@ class AnalysisMap extends HTMLElement {
      // Initialize palitras layer group
      this._palitrasLayerGroup = L.layerGroup();
      this._palitrasLayerGroup.addTo(this._map);
+
+     this._pelengsLayerGroup = L.layerGroup();
+     this._applyPelengVisibility();
      
      // Listen for zoom changes to show/hide points
      this._map.on('zoomend', () => {
@@ -341,12 +346,14 @@ class AnalysisMap extends HTMLElement {
     if (this._markersGroup) {
       this._markersGroup.off();
       this._markersGroup.eachLayer(l => l.off())
+      this._pelengsLayerGroup?.removeLayer(this._markersGroup);
       this._map?.removeLayer(this._markersGroup)
     }
     const { bounds, markersGroup } = this._addPointsMarkersGroup(points);
     this._markersGroup = markersGroup;
 
-    this._map?.addLayer(this._markersGroup)
+    this._pelengsLayerGroup?.addLayer(this._markersGroup);
+    this._applyPelengVisibility();
 
     if (bounds.isValid() && !this._boundedAlready) {
       this._map?.fitBounds(bounds);
@@ -643,6 +650,19 @@ class AnalysisMap extends HTMLElement {
     if (this._featuresControl) {
       this._featuresControl.updateFeatures(this._getFeatureToggleState());
     }
+  }
+
+  private _applyPelengVisibility() {
+    if (!this._map || !this._pelengsLayerGroup) {
+      return;
+    }
+
+    if (!this._pelengsEnabled) {
+      this._map.removeLayer(this._pelengsLayerGroup);
+      return;
+    }
+
+    this._pelengsLayerGroup.addTo(this._map);
   }
 
   private async _loadKmzLayer() {
