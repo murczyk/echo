@@ -145,12 +145,6 @@ where
     };
 
     // these are simple filters that double-check we don't accidentally show wrong data after we apply complex (more fragile) filter later in this method
-    if let Some(id) = req.since_id_noninclusive {
-        q = q.filter(signal_message::Column::Id.gt(id));
-    }
-    if let Some(id) = req.before_id_noninclusive {
-        q = q.filter(signal_message::Column::Id.lt(id));
-    }
     let req_sort_by = req.sort_by.unwrap_or(InboxMessagesSortBy::IMSDatetime);
     match req_sort_by {
         InboxMessagesSortBy::IMSDatetime => {
@@ -185,9 +179,6 @@ where
                     .await
                     .c(h!())?
             else {
-                q = q.filter(
-                    signal_message::Column::Id.gt(since_id_noninclusive),
-                );
                 break '_if;
             };
             match req.sort_by.unwrap_or(InboxMessagesSortBy::IMSDatetime) {
@@ -198,17 +189,9 @@ where
                             .await
                             .c(h!())?
                     else {
-                        q = q.filter(
-                            signal_message::Column::Id
-                                .gt(since_id_noninclusive),
-                        );
                         break '_if;
                     };
                     let Some(datetime) = inbox.datetime else {
-                        q = q.filter(
-                            signal_message::Column::Id
-                                .gt(since_id_noninclusive),
-                        );
                         break '_if;
                     };
 
@@ -229,10 +212,6 @@ where
                 }
                 InboxMessagesSortBy::IMSTimestamp => {
                     let Some(timestamp) = message.timestamp else {
-                        q = q.filter(
-                            signal_message::Column::Id
-                                .gt(since_id_noninclusive),
-                        );
                         break '_if;
                     };
                     let ts = to_ts_expr(timestamp);
@@ -260,9 +239,6 @@ where
                     .await
                     .c(h!())?
             else {
-                q = q.filter(
-                    signal_message::Column::Id.lt(before_id_noninclusive),
-                );
                 break '_if;
             };
             match req_sort_by {
@@ -273,17 +249,9 @@ where
                             .await
                             .c(h!())?
                     else {
-                        q = q.filter(
-                            signal_message::Column::Id
-                                .lt(before_id_noninclusive),
-                        );
                         break '_if;
                     };
                     let Some(datetime) = inbox.datetime else {
-                        q = q.filter(
-                            signal_message::Column::Id
-                                .lt(before_id_noninclusive),
-                        );
                         break '_if;
                     };
                     let datetime = to_ts_expr(datetime);
@@ -303,10 +271,6 @@ where
                 }
                 InboxMessagesSortBy::IMSTimestamp => {
                     let Some(timestamp) = message.timestamp else {
-                        q = q.filter(
-                            signal_message::Column::Id
-                                .lt(before_id_noninclusive),
-                        );
                         break '_if;
                     };
                     let timestamp = to_ts_expr(timestamp);

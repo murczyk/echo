@@ -1,7 +1,7 @@
 module Pages_.RerDuty.Waterfall.Message exposing (ClipboardObject(..), InternalMsg, Model, Msg, TranslationDictionary, Translator, ViewParams, clipboardMessage, init, setIsDuplicate, translator, update, view)
 
 import Api
-import Bindings as B
+import Bindings as B exposing (MessageMediaInfo)
 import Browser.Dom
 import Config
 import Core.Auth
@@ -16,6 +16,7 @@ import Html.Events exposing (..)
 import Html.Extra as HtmlX
 import Json.Encode as Encode
 import List.Extra as ListX
+import Maybe exposing (withDefault)
 import Maybe.Extra as MaybeX
 import Set exposing (Set)
 import Shared.Components.Popup as Popup
@@ -117,7 +118,6 @@ datasourceKind message datasources =
                         DKSignal
            )
 
-
 renderImage : String -> Html msg
 renderImage image =
     div [ style "display" "inline-block" ]
@@ -135,6 +135,30 @@ renderImage image =
             ]
         ]
 
+renderAttachment : MessageMediaInfo -> Html msg
+renderAttachment attachment =
+ let
+     displayFileName =
+         withDefault "<файл без назви>" attachment.fileName
+ in
+ a
+     [ class "btn btn-outline-secondary btn-sm mb-2"
+     , href attachment.href
+     , download displayFileName
+     , target "_blank"
+     ]
+     [
+       i [ class "bi bi-download me-2" ] []
+     ,
+       text displayFileName
+     ]
+
+renderMedia : MessageMediaInfo -> Html msg
+renderMedia attachment =
+    if String.startsWith "image/" attachment.contentType then
+        renderImage attachment.href
+    else
+        renderAttachment attachment
 
 clipboardMessage :
     B.InboxMessage
@@ -982,7 +1006,7 @@ rightColumn ( messageId, message ) ps model =
                     )
                   <|
                     (div [] <|
-                        List.map renderImage message.images
+                        List.map renderMedia message.media
                     )
                         :: metaFields
                         ++ [ Watermark.new ps.user.name |> Watermark.withPositioning ( 60, 80 ) |> Watermark.withFontSize "1.8rem" |> Watermark.view

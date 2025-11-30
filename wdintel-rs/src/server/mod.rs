@@ -387,6 +387,7 @@ pub async fn main_server(
             .service(crate::rer_importer::analysis::new_callsigns)
             .service(crate::rer_importer::analysis::message_comments)
             .service(crate::rer_importer::analysis::batch_message_comments)
+            .service(crate::rer_importer::analysis::message_draft_events)
             .service(crate::rer_importer::bookmark::bookmark_add)
             .service(crate::rer_importer::bookmark::bookmarks_list)
             .service(crate::rer_importer::bookmark::bookmark_rm)

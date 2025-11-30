@@ -431,6 +431,15 @@ getBasicInboxParams model =
     }
 
 
+getInboxParamsForMessages : Model -> B.InboxMessagesReq
+getInboxParamsForMessages model =
+    let
+        params =
+            getBasicInboxParams model
+    in
+    { params | sortBy = Just B.ImsTimestamp }
+
+
 setBeforeIdNoninclusive : Maybe Int -> B.InboxMessagesReq -> B.InboxMessagesReq
 setBeforeIdNoninclusive v params =
     { params | beforeIdNoninclusive = v }
@@ -466,7 +475,7 @@ loadInitialStats model reload =
               }
             , E.getInboxMessages Nothing
                 (GotInitialInbox False)
-                (getBasicInboxParams model
+                (getInboxParamsForMessages model
                     |> setLoadLatest (Just True)
                     |> setBeforeIdNoninclusive (WUtils.lastViewedIdToMaybe model.lastViewedMessageId)
                 )
@@ -480,7 +489,7 @@ loadInitialStats model reload =
                     , loadingInboxDigest = False
                   }
                 , E.batch
-                    [ E.getInboxMessages Nothing (GotInitialInbox True) (getBasicInboxParams model |> setLoadLatest (Just True))
+                    [ E.getInboxMessages Nothing (GotInitialInbox True) (getInboxParamsForMessages model |> setLoadLatest (Just True))
                     , E.sendCmd <| Task.perform (\_ -> InboxLoopSleptBeforeLoadNewer) (Process.sleep loadingNewMessagesInterval)
                     , E.sendCmd <| Http.cancel <| loadEarlierTracker model.id
                     , E.sendCmd <| Http.cancel <| loadNewerTracker model.id
@@ -493,7 +502,7 @@ loadInitialStats model reload =
                     | loadingInboxMessages = True
                     , noEarlierMessagesLeft = False
                   }
-                , E.getInboxMessages Nothing (GotInitialInbox False) (getBasicInboxParams model |> setLoadLatest (Just True))
+                , E.getInboxMessages Nothing (GotInitialInbox False) (getInboxParamsForMessages model |> setLoadLatest (Just True))
                 )
 
         _ ->
@@ -555,7 +564,7 @@ loadInboxDigest model strategy =
         SinceTime time ->
             Api.inbox_messages_digest (Just (loadDigestTracker model.id))
                 GotInboxMessagesDigest
-                (getBasicInboxParams model
+                (getInboxParamsForMessages model
                     |> setSinceDateInclusiveMs (Just (Time.posixToMillis time))
                     |> setNolimit (Just True)
                 )
@@ -1507,7 +1516,7 @@ update shared user msg model =
                     | loadingEarlier = Loading
                     , loadingInboxMessages = True
                   }
-                , E.getInboxMessages (Just (loadEarlierTracker model.id)) GotInboxEarlier (getBasicInboxParams model |> setBeforeIdNoninclusive mFirstId)
+                , E.getInboxMessages (Just (loadEarlierTracker model.id)) GotInboxEarlier (getInboxParamsForMessages model |> setBeforeIdNoninclusive mFirstId)
                 )
 
             else
@@ -1539,7 +1548,7 @@ update shared user msg model =
                                   }
                                 , E.getInboxMessages Nothing
                                     (InboxLoopGotMessages False)
-                                    (getBasicInboxParams model |> setSinceIdNoninclusive (Just messageId))
+                                    (getInboxParamsForMessages model |> setSinceIdNoninclusive (Just messageId))
                                 )
 
                             else
@@ -1550,7 +1559,7 @@ update shared user msg model =
                             , E.batch
                                 [ E.getInboxMessages Nothing
                                     (InboxLoopGotMessages True)
-                                    (getBasicInboxParams model |> setSinceIdNoninclusive (Just messageId))
+                                    (getInboxParamsForMessages model |> setSinceIdNoninclusive (Just messageId))
                                 , E.sendCmd <| loadInboxDigest model model.digestLoadingTimestamp
                                 ]
                             )
@@ -1573,7 +1582,7 @@ update shared user msg model =
                                                 ( m2
                                                 , [ E.getInboxMessages (Just (loadNewerTracker model.id))
                                                         (InboxLoopGotMessages False)
-                                                        (getBasicInboxParams model |> setSinceIdNoninclusive (Just messageId))
+                                                        (getInboxParamsForMessages model |> setSinceIdNoninclusive (Just messageId))
                                                   ]
                                                 )
 
@@ -1581,7 +1590,7 @@ update shared user msg model =
                                                 ( m2
                                                 , [ E.getInboxMessages (Just (loadNewerTracker model.id))
                                                         (InboxLoopGotMessages False)
-                                                        (getBasicInboxParams model |> setSinceIdNoninclusive (Just messageId))
+                                                        (getInboxParamsForMessages model |> setSinceIdNoninclusive (Just messageId))
                                                   ]
                                                 )
 

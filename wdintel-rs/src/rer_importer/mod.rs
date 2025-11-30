@@ -72,7 +72,7 @@ async fn messenger_media(
     resp.insert_header((header::CONTENT_LENGTH, size.to_string()));
     if let Some(file_name) = media.file_name.clone() {
         let cd = header::ContentDisposition {
-            disposition: header::DispositionType::Attachment,
+            disposition: header::DispositionType::Inline,
             parameters: vec![header::DispositionParam::FilenameExt(
                 header::ExtendedValue {
                     charset: header::Charset::Ext("UTF-8".into()),

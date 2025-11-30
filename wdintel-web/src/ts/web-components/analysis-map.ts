@@ -6,14 +6,15 @@ import { loadKmzData } from '../maps/maps'
 import { KMZLayer, kmzLayerFactory } from '../maps/leaflet-kmz'
 import { MapPointDetailed } from '../maps/types';
 import { messagesCountText } from '../maps/language-utils';
+import { loadRerAnalysisQueryState, RerAnalysisQueryState, saveRerAnalysisQueryState } from '../rer-analysis-query-state';
 import { TimeswitchControl, PalitrasControl, FeatureToggleState, createLayerSwitchControl, createExitControl2, createTimeswitchControl, createAttributionControl, createPalitrasControl, FeatureName, LayerSwitchControl } from '../maps/controls';
 
 type NetworkUnit = { frequencies: string[]; name: string }
-type Message = [number, { freq: string; coords: number[], text: string, date: number, time: number, unit: string }]
+type Message = [number, { message_uid: string; freq: string; coords: number[], text: string, date: number, time: number, unit: string }]
 type Coords = { lat: number; lng: number }
-type Geometry = { 
-  center: Coords; 
-  perimeter_linear_ring: Coords[] 
+type Geometry = {
+  center: Coords;
+  perimeter_linear_ring: Coords[]
 }
 type Palitra = {
   id: number;
@@ -78,6 +79,7 @@ const liTemplate = (message_: Message, networkUnitName_: string | undefined, sel
 
   return `
           <li>
+            ${message_[1].message_uid ? `<p style="line-height: 22px;"><span style="font-weight: 700;">Посилання: </span><a href="${updateStateUrl(window.location.href, message_[1].message_uid)}">${message_[1].message_uid}</a></p>` : ''}
             ${message_[1].freq ? `<p style="line-height: 22px;"><span style="font-weight: 700;">Частота:</span> ${message_[1].freq}</p>` : ''}
             ${message_[1].coords ? `<p style="line-height: 16px;"><span style="font-weight: 700;">Координати:</span> ${message_[1].coords}</p>` : ''}
             ${message_[1].coords ? '<span style="font-weight: 700; line-height: 22px;">Повідомлення:</span><br>' : ''}
@@ -121,7 +123,7 @@ class AnalysisMap extends HTMLElement {
   private _kmzLayer: KMZLayer | null = null;
   private _kmzLoading: Promise<void> | null = null;
   private _selectedUnits: string[] = []
-  
+
   private _palitras: PalitraDetails[] = [];
   private _visiblePalitraIds: number[] = [];
   private _palitrasControl: PalitrasControl | null = null;
@@ -276,19 +278,19 @@ class AnalysisMap extends HTMLElement {
 
         await this._loadKmzLayer();
      }
-     
+
      // Initialize palitras layer group
      this._palitrasLayerGroup = L.layerGroup();
      this._palitrasLayerGroup.addTo(this._map);
 
      this._pelengsLayerGroup = L.layerGroup();
      this._applyPelengVisibility();
-     
+
      // Listen for zoom changes to show/hide points
      this._map.on('zoomend', () => {
        this._updatePalitraPointsOnMap();
      });
-     
+
      // Try to update palitras if we already have data
      if (this._palitras.length > 0) {
        this._updatePalitrasOnMap();
@@ -333,12 +335,12 @@ class AnalysisMap extends HTMLElement {
     this._layerSwitchControl = layerSwitchControl;
     map.addControl(layerSwitchControl);
     map.addControl(createAttributionControl());
-    
+
     const palitrasControl = createPalitrasControl(this._palitras, this._visiblePalitraIds, palitraToggleCallback);
     this._palitrasControl = palitrasControl;
     map.addControl(palitrasControl);
     this._applyPalitrasControlVisibility();
-    
+
     return { map, switchTimeControl };
   }
 
@@ -445,13 +447,13 @@ class AnalysisMap extends HTMLElement {
     this._palitrasLayerGroup.clearLayers();
 
     // Add visible palitras
-    const visiblePalitras = this._palitras.filter(pd => 
+    const visiblePalitras = this._palitras.filter(pd =>
       this._visiblePalitraIds.includes(pd.palitra.id) && pd.palitra.geometry
     );
 
 
     const polygons: L.Polygon[] = [];
-    
+
     visiblePalitras.forEach(palitraDetails => {
       const polygon = this._createPalitraPolygon(palitraDetails);
       if (polygon) {
@@ -468,16 +470,16 @@ class AnalysisMap extends HTMLElement {
     // Fit map bounds to show all visible palitras
     if (polygons.length > 0) {
       const group = L.featureGroup(polygons);
-      this._map!.fitBounds(group.getBounds(), { 
+      this._map!.fitBounds(group.getBounds(), {
         padding: [50, 50],
-        maxZoom: 10 
+        maxZoom: 10
       });
     }
   }
 
   private _createPalitraPolygon(palitraDetails: PalitraDetails): L.Polygon | null {
     const palitra = palitraDetails.palitra;
-    
+
     if (!palitra.geometry || !palitra.geometry.perimeter_linear_ring) {
       return null;
     }
@@ -505,7 +507,7 @@ class AnalysisMap extends HTMLElement {
     // Swap lat/lng because they're reversed in the database
     const centerLat = palitra.geometry.center.lng.toFixed(4);
     const centerLng = palitra.geometry.center.lat.toFixed(4);
-    
+
     const popupContent = `
       <div style="padding: 8px;">
         <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
@@ -519,7 +521,7 @@ class AnalysisMap extends HTMLElement {
         </div>
       </div>
     `;
-    
+
     polygon.bindPopup(popupContent);
 
     // Add tooltip with name (always visible)
@@ -582,7 +584,7 @@ class AnalysisMap extends HTMLElement {
           </div>
         </div>
       `;
-      
+
       marker.bindPopup(popupContent);
 
       // Add tooltip with label if exists
@@ -625,7 +627,7 @@ class AnalysisMap extends HTMLElement {
     }
 
     // Add point clusters for visible palitras
-    const visiblePalitras = this._palitras.filter(pd => 
+    const visiblePalitras = this._palitras.filter(pd =>
       this._visiblePalitraIds.includes(pd.palitra.id)
     );
 
@@ -724,6 +726,49 @@ class AnalysisMap extends HTMLElement {
     }
 
     this._loadKmzLayer();
+  }
+}
+
+function parseStateFromUrl(stateParam: string | null): RerAnalysisQueryState | null {
+  if (!stateParam) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(stateParam);
+
+    if (parsed && typeof parsed === 'object') {
+      return parsed as RerAnalysisQueryState;
+    }
+  } catch (error) {
+    try {
+      const decodedState = decodeURIComponent(stateParam);
+      const parsed = JSON.parse(decodedState);
+
+      if (parsed && typeof parsed === 'object') {
+        return parsed as RerAnalysisQueryState;
+      }
+    } catch (_) {
+    }
+  }
+
+  return null;
+}
+
+function updateStateUrl(currentUrl: string, messageUid: string): string {
+  try {
+    const url = new URL(currentUrl);
+    const storedState = loadRerAnalysisQueryState();
+    const baseState = storedState ?? parseStateFromUrl(url.searchParams.get('state')) ?? {};
+    const stateObject: RerAnalysisQueryState = { ...(baseState as RerAnalysisQueryState), search: messageUid };
+    saveRerAnalysisQueryState(stateObject);
+
+    const updatedState = JSON.stringify(stateObject);
+    url.searchParams.set('state', updatedState);
+    return url.href;
+  } catch (error) {
+    console.error("Error updating URL state:", error);
+    return currentUrl;
   }
 }
 

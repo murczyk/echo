@@ -775,13 +775,12 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
 
         renderAttachment : MessageMediaInfo -> Html msg
         renderAttachment attachment =
-         -- Get the file name, using "<???>" if it's Nothing
          let
              displayFileName =
                  withDefault "<файл без назви>" attachment.fileName
          in
          a
-             [ class "btn btn-outline-secondary btn-sm m-5"
+             [ class "btn btn-outline-secondary btn-sm mb-2"
              , href attachment.href
              , download displayFileName
              , target "_blank"
@@ -1175,6 +1174,8 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                     , style "min-height" "100px"
                     , style "font-size" ".9rem"
                     , placeholder "коментар"
+                    , attribute "data-comment-draft" "rer-analysis"
+                    , attribute "data-message-id" (String.fromInt msgId)
                     , onInput (ExtendedFormChanged msgId)
                     , onFocus (TextareaFocus msgId)
                     , onBlur (TextareaBlur msgId)

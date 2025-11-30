@@ -2128,6 +2128,43 @@ pub async fn message_comments(
     Ok(Json(res))
 }
 
+#[post("/api/rer/analysis/message-draft-events")]
+pub async fn message_draft_events(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<DraftCommentEventsReq>,
+) -> Result<HttpResponse, AppError> {
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
+        .await
+        .c(h!())?;
+
+    let server_ts_ms = chrono::Utc::now().timestamp_millis();
+    for event in req.events.iter() {
+        let comment_preview: String =
+            event.value.replace('\n', " ").chars().take(500).collect();
+        let comment_to_log = if event.value.len() > comment_preview.len() {
+            format!("{comment_preview}…")
+        } else {
+            comment_preview
+        };
+
+        info!(
+            target: "comment_draft",
+            "COMMENT_DRAFT_EVENT login={} message_id={} event_id={} created_at_ms={} server_ts_ms={} len={} text={}",
+            login,
+            event.message_id,
+            event.id,
+            event.created_at_ms,
+            server_ts_ms,
+            event.value.len(),
+            comment_to_log
+        );
+    }
+
+    Ok(HttpResponse::Ok().finish())
+}
+
 /// STATS
 #[post("/api/rer/analysis/stats/groups")]
 async fn group_stats(

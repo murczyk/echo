@@ -1414,6 +1414,36 @@ messageCommentsEncoder struct =
         ]
 
 
+type alias DraftCommentEvent =
+    { id : String
+    , messageId : Int
+    , value : String
+    , createdAtMs : Int
+    }
+
+
+draftCommentEventEncoder : DraftCommentEvent -> Json.Encode.Value
+draftCommentEventEncoder struct =
+    Json.Encode.object
+        [ ( "id", Json.Encode.string struct.id )
+        , ( "message_id", Json.Encode.int struct.messageId )
+        , ( "value", Json.Encode.string struct.value )
+        , ( "created_at_ms", Json.Encode.int struct.createdAtMs )
+        ]
+
+
+type alias DraftCommentEventsReq =
+    { events : List DraftCommentEvent
+    }
+
+
+draftCommentEventsReqEncoder : DraftCommentEventsReq -> Json.Encode.Value
+draftCommentEventsReqEncoder struct =
+    Json.Encode.object
+        [ ( "events", Json.Encode.list draftCommentEventEncoder struct.events )
+        ]
+
+
 type alias SignalProfileSaveReq =
     { uuid : String
     , givenName : Maybe String
@@ -2318,6 +2348,7 @@ inboxMessagesRspEncoder struct =
 
 type alias FreqDetailedPoint =
     { messageId : Int
+    , messageUid : Maybe String
     , id : Int
     , lat : Float
     , lng : Float
@@ -2331,6 +2362,7 @@ freqDetailedPointEncoder : FreqDetailedPoint -> Json.Encode.Value
 freqDetailedPointEncoder struct =
     Json.Encode.object
         [ ( "message_id", Json.Encode.int struct.messageId )
+        , ( "message_uid", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.messageUid )
         , ( "id", Json.Encode.int struct.id )
         , ( "lat", Json.Encode.float struct.lat )
         , ( "lng", Json.Encode.float struct.lng )
@@ -2342,6 +2374,7 @@ freqDetailedPointEncoder struct =
 
 type alias InboxMapItem =
     { id : Int
+    , messageUid : Maybe String
     , freq : Maybe String
     , coords : Maybe String
     }
@@ -2351,6 +2384,7 @@ inboxMapItemEncoder : InboxMapItem -> Json.Encode.Value
 inboxMapItemEncoder struct =
     Json.Encode.object
         [ ( "id", Json.Encode.int struct.id )
+        , ( "message_uid", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.messageUid )
         , ( "freq", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.freq )
         , ( "coords", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.coords )
         ]
@@ -7281,6 +7315,21 @@ messageCommentEntryDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "comments" (Json.Decode.list messageCommentDecoder)))
 
 
+draftCommentEventDecoder : Json.Decode.Decoder DraftCommentEvent
+draftCommentEventDecoder =
+    Json.Decode.succeed DraftCommentEvent
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message_id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "value" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at_ms" Json.Decode.int))
+
+
+draftCommentEventsReqDecoder : Json.Decode.Decoder DraftCommentEventsReq
+draftCommentEventsReqDecoder =
+    Json.Decode.succeed DraftCommentEventsReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "events" (Json.Decode.list draftCommentEventDecoder)))
+
+
 signalProfileEntryDecoder : Json.Decode.Decoder SignalProfileEntry
 signalProfileEntryDecoder =
     Json.Decode.succeed SignalProfileEntry
@@ -7413,6 +7462,7 @@ inboxMapItemDecoder : Json.Decode.Decoder InboxMapItem
 inboxMapItemDecoder =
     Json.Decode.succeed InboxMapItem
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message_uid" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freq" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "coords" (Json.Decode.nullable Json.Decode.string)))
 
@@ -7427,6 +7477,7 @@ freqDetailedPointDecoder : Json.Decode.Decoder FreqDetailedPoint
 freqDetailedPointDecoder =
     Json.Decode.succeed FreqDetailedPoint
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message_id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message_uid" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "lat" Json.Decode.float))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "lng" Json.Decode.float))

@@ -413,7 +413,6 @@ pub struct OneoffCalculateHistoricStatsPs {
 enum Cmd {
     Server(ServerPs),
     GenElm,
-    SigintWorker,
     Migration,
     ExportUnit(ExportUnitPs),
     ImportUnit(ImportUnitPs),
@@ -711,7 +710,6 @@ async fn async_main(
                 .await
         }
         Cmd::OneoffFixKmz(ps) => kml::oneoff_fix_kml_main(mode, &ps).await,
-        Cmd::SigintWorker => sigint::worker::sigint_worker(mode).await,
         Cmd::Migration => migration::run_migration(mode).await,
         Cmd::RenewTailscaleCert(ps) => {
             renew_tailscale_cert(mode, ps.force).await

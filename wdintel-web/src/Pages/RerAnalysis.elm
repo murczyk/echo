@@ -17,6 +17,7 @@ import Json.Encode as Encode
 import Layouts
 import List.Extra as ListX
 import Page exposing (Page)
+import PagePorts.RerAnalysisPorts as Ports
 import Pages_.RerAnalysis.Constants exposing (..)
 import Pages_.RerAnalysis.FiltersReloading as FiltersReloading exposing (FilterDataState(..), FilterInteraction(..), invalidateFiltersState)
 import Pages_.RerAnalysis.MainBody
@@ -65,6 +66,10 @@ init route _ =
                     (Decode.decodeString B.rerAnalysisQueryStateDecoder
                         >> Result.toMaybe
                     )
+
+        initialQueryState : B.RerAnalysisQueryState
+        initialQueryState =
+            Maybe.withDefault Query.emptyQueryState ms
 
         model : Model
         model =
@@ -240,6 +245,7 @@ init route _ =
         , E.getAnalysisSavedFilters SavedFiltersGot
         , E.getTags GotTags
         , E.map RowsMsg Shared.Components.RerMessage.init
+        , E.sendCmd <| Ports.rer_analysis_saveQueryState (B.rerAnalysisQueryStateEncoder initialQueryState)
         , E.sendCmd <| Api.palitra_list_detailed GotPalitras
         ]
     )
@@ -532,8 +538,11 @@ loadCoreStats model =
 loadCoreStatsAndPushUrl : Model -> ( Model, Effect Msg )
 loadCoreStatsAndPushUrl model =
     let
+        queryState =
+            Query.modelQueryState model
+
         stateS =
-            Encode.encode 0 (B.rerAnalysisQueryStateEncoder (Query.modelQueryState model))
+            Encode.encode 0 (B.rerAnalysisQueryStateEncoder queryState)
 
         ( m2, eff2 ) =
             loadCoreStats model
@@ -542,6 +551,7 @@ loadCoreStatsAndPushUrl model =
             E.batch
                 [ eff2
                 , E.pushRoute { path = Route.Path.RerAnalysis, hash = Nothing, query = Dict.fromList [ ( "state", stateS ) ] }
+                , E.sendCmd <| Ports.rer_analysis_saveQueryState (B.rerAnalysisQueryStateEncoder queryState)
                 ]
     in
     ( m2, cmd3 )
@@ -2951,37 +2961,24 @@ update user shared route msg model =
             ( { model | importants = (List.map .messageId >> Set.fromList) vs }, E.none )
 
         LoadMoreMessages ->
-            let
-                mLastMsgId =
-                    model.messages |> ListX.last |> mmap Tuple.first
-
-                mLastDate =
-                    model.messages |> ListX.last |> mmap (Tuple.second >> .timestamp)
-            in
-            case ( mLastMsgId, mLastDate ) of
-                ( Just lastMsgId, Just lastDate ) ->
+            case model.messages |> ListX.last of
+                Just ( lastMsgId, _ ) ->
                     let
-                        req =
+                        inboxReq =
                             getInboxReq model
 
-                        req2 =
+                        paginatedReq =
                             if model.newestFirst then
-                                { req
-                                    | beforeIdNoninclusive = Just lastMsgId
-                                    , tillDateInclusiveMs = lastDate
-                                }
+                                { inboxReq | beforeIdNoninclusive = Just lastMsgId }
 
                             else
-                                { req
-                                    | sinceIdNoninclusive = Just lastMsgId
-                                    , sinceDateInclusiveMs = lastDate
-                                }
+                                { inboxReq | sinceIdNoninclusive = Just lastMsgId }
                     in
                     ( { model | loadingInboxMessages = True }
-                    , E.getInboxMessages Nothing GotInboxMore req2
+                    , E.getInboxMessages Nothing GotInboxMore paginatedReq
                     )
 
-                _ ->
+                Nothing ->
                     ( model, E.none )
 
         LoadNewCallsignStats ->

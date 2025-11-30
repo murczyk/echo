@@ -59,7 +59,7 @@ pub async fn get_inbox_map_items(
 ) -> Result<Vec<InboxMapItem>, AppError> {
     let q = build_inbox_query(login, logins, env, req).await.c(h!())?;
     let q = format!(
-        r#"SELECT id, "freq" as freq, "coords" as coords from ({q}) q"#
+        r#"SELECT id, message_uid, "freq" as freq, "coords" as coords from ({q}) q"#
     );
 
     let query_res: Vec<QueryResult> = env
@@ -70,9 +70,16 @@ pub async fn get_inbox_map_items(
     let mut result = vec![];
     for query_res in query_res {
         let id: i64 = query_res.try_get("", "id")?;
+        let message_uid: Option<String> =
+            query_res.try_get("", "message_uid")?;
         let freq: Option<String> = query_res.try_get("", "freq")?;
         let coords: Option<String> = query_res.try_get("", "coords")?;
-        result.push(InboxMapItem { id, freq, coords });
+        result.push(InboxMapItem {
+            id,
+            message_uid,
+            freq,
+            coords,
+        });
     }
     Ok(result)
 }
@@ -609,6 +616,7 @@ pub fn collect_map_points(
     let mut result: Vec<FreqDetailedPoint> = vec![];
     for item in inbox_items {
         let item_id = item.id;
+        let message_uid = item.message_uid;
         let freq = item.freq;
         let points = points.get(&item_id).cloned().unwrap_or(vec![]);
         for point in points {
@@ -633,6 +641,7 @@ pub fn collect_map_points(
                 sk42_coords,
                 id: point.id,
                 message_id: item_id,
+                message_uid: message_uid.clone(),
             });
         }
     }
