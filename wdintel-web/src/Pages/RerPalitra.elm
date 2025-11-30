@@ -9,8 +9,7 @@ import Effect as E exposing (Effect)
 import File exposing (File)
 import File.Select
 import Html exposing (..)
-import Html.Attributes exposing (..)
-import Html.Attributes as Attr
+import Html.Attributes as Attr exposing (..)
 import Html.Events exposing (on, onClick, onInput, targetValue)
 import Html.Styled as Styled
 import Json.Decode as Decode
@@ -171,8 +170,18 @@ init user _ =
             , selected = []
             }
       , logins = NotAsked
-      , organisms = if admin then Loading else NotAsked
-      , aorList = if admin then Loading else NotAsked
+      , organisms =
+            if admin then
+                Loading
+
+            else
+                NotAsked
+      , aorList =
+            if admin then
+                Loading
+
+            else
+                NotAsked
       }
     , E.sendCmd <|
         Cmd.batch
@@ -234,13 +243,13 @@ update user msg model =
 
         UploadPointsClicked palitraId ->
             ( model
-            , E.sendCmd <| 
-                File.Select.file 
+            , E.sendCmd <|
+                File.Select.file
                     [ "application/vnd.google-earth.kmz"
                     , "application/vnd.google-earth.kml+xml"
                     , ".kmz"
                     , ".kml"
-                    ] 
+                    ]
                     (FileSelectedForUpload palitraId)
             )
 
@@ -329,6 +338,7 @@ update user msg model =
                           }
                         , E.none
                         )
+
             else
                 -- Оновлюємо form
                 let
@@ -353,6 +363,7 @@ update user msg model =
                 scopeCmd =
                     if model.myScope == NotAsked then
                         Api.my_scope MyScopeResp
+
                     else
                         Cmd.none
 
@@ -361,17 +372,21 @@ update user msg model =
                     if isAdmin user then
                         [ if model.logins == NotAsked then
                             Api.list_logins LoginsResp { sortBy = Nothing, filterByRoles = Nothing }
+
                           else
                             Cmd.none
                         , if model.organisms == NotAsked then
                             Api.list_organisms OrganismsResp { sortBy = Nothing }
+
                           else
                             Cmd.none
                         , if model.aorList == NotAsked then
                             Api.aor_list AorListResp { sortBy = Nothing }
+
                           else
                             Cmd.none
                         ]
+
                     else
                         []
 
@@ -382,6 +397,7 @@ update user msg model =
                 initialForm =
                     if isAdmin user then
                         emptyForm
+
                     else
                         -- Для не-admin автоматично підставляємо логін
                         { emptyForm | access = LoginsAccess user.name }
@@ -390,6 +406,7 @@ update user msg model =
                 loginsSelect =
                     if isAdmin user then
                         model.loginsSelect
+
                     else
                         let
                             ls =
@@ -397,23 +414,103 @@ update user msg model =
                         in
                         { ls | selected = [ user.name ] }
             in
-            ( { model 
+            ( { model
                 | showCreateSidebar = True
                 , form = initialForm
                 , loginsSelect = loginsSelect
-                , myScope = if model.myScope == NotAsked then Loading else model.myScope
-                , logins = if isAdmin user && model.logins == NotAsked then Loading else model.logins
-                , organisms = if isAdmin user && model.organisms == NotAsked then Loading else model.organisms
-                , aorList = if isAdmin user && model.aorList == NotAsked then Loading else model.aorList
+                , aorSelect =
+                    case ( isAdmin user, model.myScope ) of
+                        ( False, Success scope ) ->
+                            let
+                                items =
+                                    scope.aors
+                                        |> List.map (\aor -> Select.basicMenuItem { item = aor.id, label = aor.name })
+
+                                currentAorSelect =
+                                    model.aorSelect
+
+                                selectedAors =
+                                    if List.isEmpty model.aorSelect.selected then
+                                        scope.aorIds
+
+                                    else
+                                        model.aorSelect.selected
+                            in
+                            { currentAorSelect | items = items, selected = selectedAors }
+
+                        _ ->
+                            model.aorSelect
+                , myScope =
+                    if model.myScope == NotAsked then
+                        Loading
+
+                    else
+                        model.myScope
+                , logins =
+                    if isAdmin user && model.logins == NotAsked then
+                        Loading
+
+                    else
+                        model.logins
+                , organisms =
+                    if isAdmin user && model.organisms == NotAsked then
+                        Loading
+
+                    else
+                        model.organisms
+                , aorList =
+                    if isAdmin user && model.aorList == NotAsked then
+                        Loading
+
+                    else
+                        model.aorList
               }
             , if List.isEmpty allCmds then
                 E.none
+
               else
                 E.sendCmd <| Cmd.batch allCmds
             )
 
         MyScopeResp (Ok scope) ->
-            ( { model | myScope = Success scope }, E.none )
+            let
+                aorItems =
+                    scope.aors
+                        |> List.map (\aor -> Select.basicMenuItem { item = aor.id, label = aor.name })
+
+                allowedAorIds =
+                    scope.aorIds
+
+                currentSelected =
+                    model.aorSelect.selected
+                        |> List.filter (\id -> List.member id allowedAorIds)
+
+                defaultSelected =
+                    if List.isEmpty currentSelected then
+                        allowedAorIds
+
+                    else
+                        currentSelected
+
+                currentAorSelect =
+                    model.aorSelect
+
+                updatedAorSelect =
+                    if isAdmin user then
+                        currentAorSelect
+
+                    else
+                        { currentAorSelect
+                            | items = aorItems
+                            , selected = defaultSelected
+                        }
+            in
+            ( { model
+                | myScope = Success scope
+                , aorSelect = updatedAorSelect
+              }
+            , E.none
+            )
 
         MyScopeResp (Err err) ->
             ( { model | myScope = Failure err }
@@ -451,6 +548,7 @@ update user msg model =
                 ( { model | submitInFlight = True }
                 , E.sendCmd <| Api.palitra_create CreateResponse req
                 )
+
             else
                 -- Форма невалідна, не відправляємо запит (це не має статися при правильній роботі UI)
                 ( model, E.none )
@@ -524,6 +622,7 @@ update user msg model =
                         ( { model | loginsSelect = newSelect }
                         , E.sendCmd <| Cmd.map LoginsSelectMsg selectCmd
                         )
+
             else
                 -- Оновлюємо form
                 let
@@ -569,6 +668,7 @@ update user msg model =
                         ( { model | organismsSelect = newSelect }
                         , E.sendCmd <| Cmd.map OrganismsSelectMsg selectCmd
                         )
+
             else
                 -- Оновлюємо form
                 let
@@ -614,6 +714,7 @@ update user msg model =
                         ( { model | aorSelect = newSelect }
                         , E.sendCmd <| Cmd.map AorSelectMsg selectCmd
                         )
+
             else
                 -- Оновлюємо form
                 let
@@ -697,6 +798,7 @@ update user msg model =
                                 scopeCmd =
                                     if model.myScope == NotAsked then
                                         Api.my_scope MyScopeResp
+
                                     else
                                         Cmd.none
 
@@ -705,17 +807,21 @@ update user msg model =
                                     if isAdmin user then
                                         [ if model.logins == NotAsked then
                                             Api.list_logins LoginsResp { sortBy = Nothing, filterByRoles = Nothing }
+
                                           else
                                             Cmd.none
                                         , if model.organisms == NotAsked then
                                             Api.list_organisms OrganismsResp { sortBy = Nothing }
+
                                           else
                                             Cmd.none
                                         , if model.aorList == NotAsked then
                                             Api.aor_list AorListResp { sortBy = Nothing }
+
                                           else
                                             Cmd.none
                                         ]
+
                                     else
                                         []
 
@@ -767,16 +873,37 @@ update user msg model =
                             ( { model
                                 | editSidebar = Just palitraId
                                 , editForm = Just initializedForm
-                                , myScope = if model.myScope == NotAsked then Loading else model.myScope
-                                , logins = if isAdmin user && model.logins == NotAsked then Loading else model.logins
-                                , organisms = if isAdmin user && model.organisms == NotAsked then Loading else model.organisms
-                                , aorList = if isAdmin user && model.aorList == NotAsked then Loading else model.aorList
+                                , myScope =
+                                    if model.myScope == NotAsked then
+                                        Loading
+
+                                    else
+                                        model.myScope
+                                , logins =
+                                    if isAdmin user && model.logins == NotAsked then
+                                        Loading
+
+                                    else
+                                        model.logins
+                                , organisms =
+                                    if isAdmin user && model.organisms == NotAsked then
+                                        Loading
+
+                                    else
+                                        model.organisms
+                                , aorList =
+                                    if isAdmin user && model.aorList == NotAsked then
+                                        Loading
+
+                                    else
+                                        model.aorList
                                 , loginsSelect = loginsSelect
                                 , organismsSelect = organismsSelect
                                 , aorSelect = aorSelect
                               }
                             , if List.isEmpty allCmds then
                                 E.none
+
                               else
                                 E.sendCmd <| Cmd.batch allCmds
                             )
@@ -862,6 +989,7 @@ update user msg model =
                         ( { model | editSubmitInFlight = True }
                         , E.sendCmd <| Api.palitra_update (UpdateResponse palitraId) palitraId req
                         )
+
                     else
                         -- Форма невалідна, не відправляємо запит (це не має статися при правильній роботі UI)
                         ( model, E.none )
@@ -1027,10 +1155,10 @@ renderTable user model palitras =
                                 let
                                     isDeleting =
                                         model.deleting == Just p.id
-                                    
+
                                     isUploading =
                                         model.uploadingPoints == Just p.id
-                                    
+
                                     canModify =
                                         canDelete p
                                 in
@@ -1518,27 +1646,37 @@ createPalitraSidebarContent isDark user model =
 
                         aorField =
                             if aorRestricted then
-                                -- Для Editor і Rer - показуємо readonly поле з їхніми AOR IDs
                                 case model.myScope of
                                     Success scope ->
-                                        if List.isEmpty scope.aorIds then
+                                        if List.isEmpty scope.aors then
                                             div [ class "text-xs text-red-500" ]
                                                 [ text "У вашому підрозділі немає призначених смуг (AOR). Зверніться до адміністратора або оберіть інший тип доступу." ]
 
                                         else
-                                            div [ class "flex flex-col gap-2" ]
-                                                [ div [ class "text-xs text-muted-foreground uppercase" ] [ text "Доступні смуги вашого підрозділу" ]
-                                                , div [ class "flex flex-wrap gap-2" ]
-                                                    (List.map
-                                                        (\aorId ->
-                                                            scope.aors
-                                                                |> ListX.find (\aor -> aor.id == aorId)
-                                                                |> Maybe.map (\aor -> Badge.view aor.name)
-                                                                |> Maybe.withDefault (Badge.view (String.fromInt aorId))
+                                            let
+                                                baseOptions =
+                                                    Utils.Select.defaultOptions isDark
+
+                                                selectOptions =
+                                                    { baseOptions | clearable = False }
+                                            in
+                                            Html.map AorSelectMsg <|
+                                                Styled.toUnstyled <|
+                                                    Utils.Select.renderSelect
+                                                        (model.aorSelect.selected
+                                                            |> List.filterMap
+                                                                (\id ->
+                                                                    scope.aors
+                                                                        |> ListX.find (\aor -> aor.id == id)
+                                                                        |> Maybe.map (\aor -> Select.basicMenuItem { item = id, label = aor.name })
+                                                                )
                                                         )
-                                                        scope.aorIds
-                                                    )
-                                                ]
+                                                        model.aorSelect.state
+                                                        (scope.aors
+                                                            |> List.map (\aor -> Select.basicMenuItem { item = aor.id, label = aor.name })
+                                                        )
+                                                        "Оберіть смуги"
+                                                        selectOptions
 
                                     Loading ->
                                         div [ class "flex flex-col gap-2" ]
@@ -1551,6 +1689,13 @@ createPalitraSidebarContent isDark user model =
                                             [ text "Завантаження..." ]
 
                             else
+                                let
+                                    baseOptions =
+                                        Utils.Select.defaultOptions isDark
+
+                                    selectOptions =
+                                        { baseOptions | clearable = False }
+                                in
                                 -- elm-select для Admin
                                 Html.map AorSelectMsg <|
                                     Styled.toUnstyled <|
@@ -1567,11 +1712,11 @@ createPalitraSidebarContent isDark user model =
                                                             _ ->
                                                                 Select.basicMenuItem { item = id, label = "Loading..." }
                                                     )
-                                            )
-                                            model.aorSelect.state
-                                            model.aorSelect.items
-                                            "Оберіть смуги"
-                                            (Utils.Select.defaultOptions isDark)
+                                        )
+                                        model.aorSelect.state
+                                        model.aorSelect.items
+                                        "Оберіть смуги"
+                                        selectOptions
                     in
                     ( [ div [ class "space-y-2" ]
                             [ label [ class "text-sm font-medium text-foreground" ] [ text "Смуги (AOR)" ]
@@ -1646,13 +1791,7 @@ createPalitraSidebarContent isDark user model =
                         -- Editor і Rer автоматично використовують свої AOR IDS
                         case model.myScope of
                             Success scope ->
-                                let
-                                    aorIdsStr =
-                                        scope.aorIds
-                                            |> List.map String.fromInt
-                                            |> String.join ","
-                                in
-                                ChangeAccess (AorAccess aorIdsStr)
+                                ChangeAccess (AorAccess (String.join "," (List.map String.fromInt scope.aorIds)))
 
                             _ ->
                                 ChangeAccess accessForm
@@ -1677,8 +1816,12 @@ createPalitraSidebarContent isDark user model =
                         ]
                         []
                     ]
-                , div [ class "space-y-2" ]
-                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Колір" ]
+                , div [ class "flex flex-col gap-2" ]
+                    [ label
+                        [ class "text-sm font-medium text-foreground"
+                        , style "display" "block"
+                        ]
+                        [ text "Колір" ]
                     , input
                         [ type_ "color"
                         , class "w-16 h-10 border border-border rounded-md"
@@ -1900,24 +2043,35 @@ editPalitraSidebarContent isDark user model =
                                     if aorRestricted then
                                         case model.myScope of
                                             Success scope ->
-                                                if List.isEmpty scope.aorIds then
+                                                if List.isEmpty scope.aors then
                                                     div [ class "text-xs text-red-500" ]
                                                         [ text "У вашому підрозділі немає призначених смуг (AOR). Зверніться до адміністратора або оберіть інший тип доступу." ]
 
                                                 else
-                                                    div [ class "flex flex-col gap-2" ]
-                                                        [ div [ class "text-xs text-muted-foreground uppercase" ] [ text "Доступні смуги вашого підрозділу" ]
-                                                        , div [ class "flex flex-wrap gap-2" ]
-                                                            (List.map
-                                                                (\aorId ->
-                                                                    scope.aors
-                                                                        |> ListX.find (\aor -> aor.id == aorId)
-                                                                        |> Maybe.map (\aor -> Badge.view aor.name)
-                                                                        |> Maybe.withDefault (Badge.view (String.fromInt aorId))
-                                                                )
-                                                                scope.aorIds
+                                                    let
+                                                        baseOptions =
+                                                            Utils.Select.defaultOptions isDark
+
+                                                        selectOptions =
+                                                            { baseOptions | clearable = False }
+                                                    in
+                                                    Html.map AorSelectMsg <|
+                                                        Styled.toUnstyled <|
+                                                            Utils.Select.renderSelect
+                                                                (model.aorSelect.selected
+                                                                    |> List.filterMap
+                                                                        (\id ->
+                                                                            scope.aors
+                                                                                |> ListX.find (\aor -> aor.id == id)
+                                                                                |> Maybe.map (\aor -> Select.basicMenuItem { item = id, label = aor.name })
+                                                                        )
                                                             )
-                                                        ]
+                                                            model.aorSelect.state
+                                                            (scope.aors
+                                                                |> List.map (\aor -> Select.basicMenuItem { item = aor.id, label = aor.name })
+                                                            )
+                                                            "Оберіть смуги"
+                                                            selectOptions
 
                                             Loading ->
                                                 div [ class "flex flex-col gap-2" ]
@@ -1930,6 +2084,13 @@ editPalitraSidebarContent isDark user model =
                                                     [ text "Завантаження..." ]
 
                                     else
+                                        let
+                                            baseOptions =
+                                                Utils.Select.defaultOptions isDark
+
+                                            selectOptions =
+                                                { baseOptions | clearable = False }
+                                        in
                                         Html.map AorSelectMsg <|
                                             Styled.toUnstyled <|
                                                 Utils.Select.renderSelect
@@ -1945,11 +2106,11 @@ editPalitraSidebarContent isDark user model =
                                                                     _ ->
                                                                         Select.basicMenuItem { item = id, label = "Loading..." }
                                                             )
-                                                    )
-                                                    model.aorSelect.state
-                                                    model.aorSelect.items
-                                                    "Оберіть смуги"
-                                                    (Utils.Select.defaultOptions isDark)
+                                                )
+                                                model.aorSelect.state
+                                                model.aorSelect.items
+                                                "Оберіть смуги"
+                                                selectOptions
                             in
                             ( [ div [ class "space-y-2" ]
                                     [ label [ class "text-sm font-medium text-foreground" ] [ text "Смуги (AOR)" ]
@@ -2023,13 +2184,7 @@ editPalitraSidebarContent isDark user model =
                             if not admin then
                                 case model.myScope of
                                     Success scope ->
-                                        let
-                                            aorIdsStr =
-                                                scope.aorIds
-                                                    |> List.map String.fromInt
-                                                    |> String.join ","
-                                        in
-                                        ChangeAccess (AorAccess aorIdsStr)
+                                        ChangeAccess (AorAccess (String.join "," (List.map String.fromInt scope.aorIds)))
 
                                     _ ->
                                         ChangeAccess accessForm
@@ -2048,20 +2203,24 @@ editPalitraSidebarContent isDark user model =
                             , input
                                 [ class "w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
                                 , type_ "text"
-                                , placeholder "Назва палітри"
-                                , value editForm.name
-                                , onInput (\v -> UpdateEditForm (\f -> { f | name = v }))
-                                ]
-                                []
-                            ]
-                        , div [ class "space-y-2" ]
-                            [ label [ class "text-sm font-medium text-foreground" ] [ text "Колір" ]
-                            , input
-                                [ type_ "color"
-                                , class "w-16 h-10 border border-border rounded-md"
-                                , value editForm.colorHex
-                                , on "change" (Decode.map (\v -> UpdateEditForm (\f -> { f | colorHex = v })) targetValue)
-                                ]
+                        , placeholder "Назва палітри"
+                        , value editForm.name
+                        , onInput (\v -> UpdateEditForm (\f -> { f | name = v }))
+                        ]
+                        []
+                    ]
+                , div [ class "flex flex-col gap-2" ]
+                    [ label
+                        [ class "text-sm font-medium text-foreground"
+                        , style "display" "block"
+                        ]
+                        [ text "Колір" ]
+                    , input
+                        [ type_ "color"
+                        , class "w-16 h-10 border border-border rounded-md"
+                        , value editForm.colorHex
+                        , on "change" (Decode.map (\v -> UpdateEditForm (\f -> { f | colorHex = v })) targetValue)
+                        ]
                                 []
                             ]
                         , div [ class "space-y-2" ]
@@ -2114,10 +2273,13 @@ palitraToForm palitra =
         access =
             if not (List.isEmpty palitra.accessLogins) then
                 LoginsAccess (String.join "," palitra.accessLogins)
+
             else if not (List.isEmpty palitra.accessOrganismIds) then
                 OrganismsAccess (String.join "," (List.map String.fromInt palitra.accessOrganismIds))
+
             else if not (List.isEmpty palitra.accessAorId) then
                 AorAccess (String.join "," (List.map String.fromInt palitra.accessAorId))
+
             else
                 LoginsAccess ""
     in
