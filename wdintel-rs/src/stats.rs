@@ -1779,13 +1779,13 @@ async fn update_5min_stats_post_id(
                 acc
             });
         let mut batch_stats: HashMap<(i64, i64), i32> = HashMap::new();
-        for ((_, freq), keys) in group_stats {
+        for ((_, post_id), keys) in group_stats {
             let batch_key = all_to_batch_key(keys);
             ensure_batch_key(dbx, batches_map, &batch_key)
                 .await
                 .c(h!())?;
             let batch_id = *batches_map.get(&batch_key).c(h!())?;
-            let key = (batch_id, freq);
+            let key = (batch_id, post_id);
             let count = *batch_stats.entry(key).or_default();
             batch_stats.insert(key, count + 1);
         }
@@ -1880,7 +1880,7 @@ async fn update_5min_stats_location(
     till_ts: NaiveDateTime,
     batches_map: &mut HashMap<String, i64>,
 ) -> Result<(), AppError> {
-    stats_group_post_id_5min::Entity::delete_many()
+    stats_group_location_5min::Entity::delete_many()
         .filter(stats_group_post_id_5min::Column::Dt.gte(since_ts))
         .filter(stats_group_post_id_5min::Column::Dt.lt(till_ts))
         .exec(dbx)
