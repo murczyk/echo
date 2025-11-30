@@ -6,7 +6,7 @@ import { loadKmzData } from '../maps/maps'
 import { KMZLayer, kmzLayerFactory } from '../maps/leaflet-kmz'
 import { MapPointDetailed } from '../maps/types';
 import { messagesCountText } from '../maps/language-utils';
-import { TimeswitchControl, PalitrasControl, createLayerSwitchControl, createExitControl2, createTimeswitchControl, createAttributionControl, createPalitrasControl } from '../maps/controls';
+import { TimeswitchControl, PalitrasControl, FeaturesControl, FeatureToggleState, createLayerSwitchControl, createExitControl2, createTimeswitchControl, createAttributionControl, createPalitrasControl, createFeaturesControl, FeatureName } from '../maps/controls';
 
 type NetworkUnit = { frequencies: string[]; name: string }
 type Message = [number, { freq: string; coords: number[], text: string, date: number, time: number, unit: string }]
@@ -130,6 +130,7 @@ class AnalysisMap extends HTMLElement {
   private _palitrasEnabled = true;
   private _kmzEnabled = true;
   private _pelengsEnabled = true;
+  private _featuresControl: FeaturesControl | null = null;
 
   constructor() {
     super();
@@ -231,12 +232,15 @@ class AnalysisMap extends HTMLElement {
     }
     if (name === 'palitras-enabled') {
       this._palitrasEnabled = JSON.parse(newValue);
+      this._updateFeaturesControl();
     }
     if (name === 'kmz-enabled') {
       this._kmzEnabled = JSON.parse(newValue);
+      this._updateFeaturesControl();
     }
     if (name === 'pelengs-enabled') {
       this._pelengsEnabled = JSON.parse(newValue);
+      this._updateFeaturesControl();
     }
   }
 
@@ -306,6 +310,15 @@ class AnalysisMap extends HTMLElement {
       this.dispatchEvent(event);
     }
 
+    const featureToggleCallback = (feature: FeatureName, enabled: boolean) => {
+      const event = new CustomEvent('feature-toggle', {
+        detail: { feature, enabled },
+        bubbles: true,
+        composed: true
+      });
+      this.dispatchEvent(event);
+    }
+
     const switchTimeControl = createTimeswitchControl(this._daterange);
     map.addControl(switchTimeControl)
 
@@ -316,6 +329,10 @@ class AnalysisMap extends HTMLElement {
     const palitrasControl = createPalitrasControl(this._palitras, this._visiblePalitraIds, palitraToggleCallback);
     this._palitrasControl = palitrasControl;
     map.addControl(palitrasControl);
+
+    const featuresControl = createFeaturesControl(this._getFeatureToggleState(), featureToggleCallback);
+    this._featuresControl = featuresControl;
+    map.addControl(featuresControl);
     
     return { map, switchTimeControl };
   }
@@ -601,6 +618,20 @@ class AnalysisMap extends HTMLElement {
         this._map!.addLayer(cluster);
       }
     });
+  }
+
+  private _getFeatureToggleState(): FeatureToggleState {
+    return {
+      palitrasEnabled: this._palitrasEnabled,
+      kmzEnabled: this._kmzEnabled,
+      pelengsEnabled: this._pelengsEnabled
+    };
+  }
+
+  private _updateFeaturesControl() {
+    if (this._featuresControl) {
+      this._featuresControl.updateFeatures(this._getFeatureToggleState());
+    }
   }
 }
 

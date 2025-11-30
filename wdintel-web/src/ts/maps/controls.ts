@@ -10,6 +10,18 @@ export interface PalitrasControl extends L.Control {
   updatePalitras: (palitras: PalitraDetails[], visibleIds: number[]) => void
 }
 
+export type FeatureName = 'palitras' | 'kmz' | 'pelengs';
+
+export type FeatureToggleState = {
+  palitrasEnabled: boolean;
+  kmzEnabled: boolean;
+  pelengsEnabled: boolean;
+};
+
+export interface FeaturesControl extends L.Control {
+  updateFeatures: (state: FeatureToggleState) => void
+}
+
 type Coords = { lat: number; lng: number };
 type Geometry = { 
   center: Coords; 
@@ -442,4 +454,113 @@ export function createPalitrasControl(
   });
 
   return new PalitrasControl({ position: 'topright' });
+}
+
+export function createFeaturesControl(
+  initialState: FeatureToggleState,
+  onToggle: (feature: FeatureName, enabled: boolean) => void
+): FeaturesControl {
+  const STORAGE_KEY = 'feature-toggle-control-collapsed';
+
+  const FeaturesControl = L.Control.extend({
+    _state: initialState,
+    _isCollapsed: false,
+
+    onAdd: function(map: L.Map) {
+      this._container = L.DomUtil.create('div', 'feature-toggle-control');
+
+      try {
+        const saved = localStorage.getItem(STORAGE_KEY);
+        this._isCollapsed = saved === 'true';
+      } catch (e) {
+        this._isCollapsed = false;
+      }
+
+      this._render();
+
+      L.DomEvent.disableClickPropagation(this._container);
+      L.DomEvent.disableScrollPropagation(this._container);
+
+      return this._container;
+    },
+
+    _toggleCollapsed: function() {
+      this._isCollapsed = !this._isCollapsed;
+      try {
+        localStorage.setItem(STORAGE_KEY, this._isCollapsed.toString());
+      } catch (e) {
+        console.warn('Failed to save feature toggle control state:', e);
+      }
+      this._render();
+    },
+
+    _render: function() {
+      if (!this._container) {
+        return;
+      }
+
+      const header = document.createElement('div');
+      header.className = 'feature-toggle-header';
+
+      const title = document.createElement('h3');
+      title.textContent = 'Шари';
+      header.appendChild(title);
+
+      const toggleButton = document.createElement('button');
+      toggleButton.className = 'feature-toggle-collapse';
+      toggleButton.type = 'button';
+      toggleButton.innerHTML = this._isCollapsed ? '<i class="bi bi-chevron-up"></i>' : '<i class="bi bi-chevron-down"></i>';
+      toggleButton.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this._toggleCollapsed();
+      });
+      header.appendChild(toggleButton);
+
+      const list = document.createElement('div');
+      list.className = 'feature-toggle-list';
+
+      const createItem = (feature: FeatureName, label: string) => {
+        const item = document.createElement('label');
+        item.className = 'feature-toggle-item';
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.checked = this._state[`${feature}Enabled` as keyof FeatureToggleState] as boolean;
+        checkbox.addEventListener('change', (e) => {
+          e.stopPropagation();
+          onToggle(feature, checkbox.checked);
+        });
+
+        const span = document.createElement('span');
+        span.textContent = label;
+
+        item.appendChild(checkbox);
+        item.appendChild(span);
+        return item;
+      };
+
+      list.appendChild(createItem('palitras', 'Палітри'));
+      list.appendChild(createItem('pelengs', 'Пеленги'));
+      list.appendChild(createItem('kmz', 'KMZ підкладка'));
+
+      this._container.innerHTML = '';
+      this._container.appendChild(header);
+      if (!this._isCollapsed) {
+        this._container.appendChild(list);
+      }
+
+      if (this._isCollapsed) {
+        this._container.classList.add('collapsed');
+      } else {
+        this._container.classList.remove('collapsed');
+      }
+    },
+
+    updateFeatures: function(state: FeatureToggleState) {
+      this._state = state;
+      this._render();
+    }
+  });
+
+  return new FeaturesControl({ position: 'topright' });
 }
