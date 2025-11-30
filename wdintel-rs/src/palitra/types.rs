@@ -72,12 +72,38 @@ pub struct PalitraPoint {
 
 impl Coords {
     pub fn from_csv(csv: &str) -> anyhow::Result<Coords> {
-        let parts: Vec<&str> = csv.split(',').collect();
-        if parts.len() < 2 {
-            anyhow::bail!("bad coordinates: {csv}");
-        }
-        let lat = parts[0].trim().parse::<f64>().c(h!())?;
-        let lng = parts[1].trim().parse::<f64>().c(h!())?;
+        // KML stores coordinates as "lon,lat[,alt]" so parse in that order.
+        let mut parts = csv.split(',').map(str::trim);
+        let lng = parts
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("bad coordinates: {csv}"))?
+            .parse::<f64>()
+            .c(h!())?;
+        let lat = parts
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("bad coordinates: {csv}"))?
+            .parse::<f64>()
+            .c(h!())?;
         Ok(Coords { lat, lng })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_kml_lon_lat_order() {
+        let coords = Coords::from_csv("30.5,50.4,0").expect("parse coords");
+        assert_eq!(coords.lat, 50.4);
+        assert_eq!(coords.lng, 30.5);
+    }
+
+    #[test]
+    fn trims_whitespace_in_coordinates() {
+        let coords =
+            Coords::from_csv("  31.1234 ,  49.9876 ").expect("parse coords");
+        assert_eq!(coords.lat, 49.9876);
+        assert_eq!(coords.lng, 31.1234);
     }
 }
