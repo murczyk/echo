@@ -1208,38 +1208,33 @@ renderAccessCompact user myScopeData organismsData aorData p =
             -- Не-Admin автор - показуємо назви смуг з p.accessAorId, але тільки ті, що є в myScope.aorIds
             case myScopeData of
                 Success myScope ->
-                    case aorData of
-                        Success aors ->
-                            let
-                                -- Фільтруємо тільки ті AOR, які є в myScope.aorIds для безпеки
-                                allowedAorIds =
-                                    myScope.aorIds
+                    let
+                        allowedAorIds =
+                            myScope.aorIds
 
-                                names =
-                                    p.accessAorId
-                                        |> List.filter (\id -> List.member id allowedAorIds)
-                                        |> List.filterMap
-                                            (\id ->
-                                                ListX.find (\aor -> aor.id == id) aors
-                                                    |> Maybe.map .name
-                                            )
-                            in
-                            div []
-                                [ div [ class "text-xs text-muted-foreground uppercase" ] [ text "Смуги" ]
-                                , renderList names
-                                ]
+                        names =
+                            p.accessAorId
+                                |> List.filter (\id -> List.member id allowedAorIds)
+                                |> List.filterMap
+                                    (\id ->
+                                        myScope.aors
+                                            |> ListX.find (\aor -> aor.id == id)
+                                            |> Maybe.map .name
+                                    )
 
-                        Loading ->
-                            div []
-                                [ div [ class "text-xs text-muted-foreground uppercase" ] [ text "Смуги" ]
-                                , div [ class "text-xs text-muted-foreground" ] [ text "завантаження..." ]
-                                ]
+                        namesOrIds =
+                            if List.isEmpty names then
+                                p.accessAorId
+                                    |> List.filter (\id -> List.member id allowedAorIds)
+                                    |> List.map String.fromInt
 
-                        _ ->
-                            div []
-                                [ div [ class "text-xs text-muted-foreground uppercase" ] [ text "Смуги" ]
-                                , div [ class "text-xs" ] [ text (String.fromInt (List.length p.accessAorId) ++ " шт") ]
-                                ]
+                            else
+                                names
+                    in
+                    div []
+                        [ div [ class "text-xs text-muted-foreground uppercase" ] [ text "Смуги" ]
+                        , renderList namesOrIds
+                        ]
 
                 _ ->
                     div [ class "text-xs text-muted-foreground" ] [ text "завантаження..." ]
@@ -1404,7 +1399,7 @@ createPalitraSidebarContent isDark user model =
 
                 _ ->
                     -- Default empty scope для випадку коли ще не завантажено
-                    { organism = Nothing, aorIds = [] }
+                    { organism = Nothing, aorIds = [], aors = [] }
 
         availableAccessTypes =
             getAvailableAccessTypes user myScope
@@ -1536,14 +1531,10 @@ createPalitraSidebarContent isDark user model =
                                                 , div [ class "flex flex-wrap gap-2" ]
                                                     (List.map
                                                         (\aorId ->
-                                                            case model.aorList of
-                                                                Success aors ->
-                                                                    ListX.find (\aor -> aor.id == aorId) aors
-                                                                        |> Maybe.map (\aor -> Badge.view aor.name)
-                                                                        |> Maybe.withDefault (Badge.view (String.fromInt aorId))
-
-                                                                _ ->
-                                                                    Badge.view (String.fromInt aorId)
+                                                            scope.aors
+                                                                |> ListX.find (\aor -> aor.id == aorId)
+                                                                |> Maybe.map (\aor -> Badge.view aor.name)
+                                                                |> Maybe.withDefault (Badge.view (String.fromInt aorId))
                                                         )
                                                         scope.aorIds
                                                     )
@@ -1792,7 +1783,7 @@ editPalitraSidebarContent isDark user model =
                             scope
 
                         _ ->
-                            { organism = Nothing, aorIds = [] }
+                            { organism = Nothing, aorIds = [], aors = [] }
 
                 availableAccessTypes =
                     getAvailableAccessTypes user myScope
@@ -1919,14 +1910,10 @@ editPalitraSidebarContent isDark user model =
                                                         , div [ class "flex flex-wrap gap-2" ]
                                                             (List.map
                                                                 (\aorId ->
-                                                                    case model.aorList of
-                                                                        Success aors ->
-                                                                            ListX.find (\aor -> aor.id == aorId) aors
-                                                                                |> Maybe.map (\aor -> Badge.view aor.name)
-                                                                                |> Maybe.withDefault (Badge.view (String.fromInt aorId))
-
-                                                                        _ ->
-                                                                            Badge.view (String.fromInt aorId)
+                                                                    scope.aors
+                                                                        |> ListX.find (\aor -> aor.id == aorId)
+                                                                        |> Maybe.map (\aor -> Badge.view aor.name)
+                                                                        |> Maybe.withDefault (Badge.view (String.fromInt aorId))
                                                                 )
                                                                 scope.aorIds
                                                             )

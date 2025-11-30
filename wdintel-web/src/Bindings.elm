@@ -3064,9 +3064,24 @@ myOrganismEncoder struct =
         ]
 
 
+type alias MyAor =
+    { id : Int
+    , name : String
+    }
+
+
+myAorEncoder : MyAor -> Json.Encode.Value
+myAorEncoder struct =
+    Json.Encode.object
+        [ ( "id", Json.Encode.int struct.id )
+        , ( "name", Json.Encode.string struct.name )
+        ]
+
+
 type alias MyScope =
     { organism : Maybe MyOrganism
     , aorIds : List Int
+    , aors : List MyAor
     }
 
 
@@ -3075,6 +3090,7 @@ myScopeEncoder struct =
     Json.Encode.object
         [ ( "organism", (Maybe.withDefault Json.Encode.null << Maybe.map myOrganismEncoder) struct.organism )
         , ( "aor_ids", Json.Encode.list Json.Encode.int struct.aorIds )
+        , ( "aors", Json.Encode.list myAorEncoder struct.aors )
         ]
 
 
@@ -3247,6 +3263,7 @@ messageMediaInfoEncoder struct =
         , ( "size_bytes", Json.Encode.int struct.sizeBytes )
         , ( "href", Json.Encode.string struct.href )
         ]
+
 
 type alias SigintZone =
     { name : String
@@ -6647,14 +6664,6 @@ areaOfResponsibilityStatsRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aors" (Json.Decode.list analysisStatsAorDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aor_names" (Json.Decode.list areaOfResponsibilityEntryDecoder)))
 
-messageMediaInfoDecoder : Json.Decode.Decoder MessageMediaInfo
-messageMediaInfoDecoder =
-    Json.Decode.succeed MessageMediaInfo
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.string))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "content_type" Json.Decode.string))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "file_name" (Json.Decode.nullable Json.Decode.string)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "size_bytes" Json.Decode.int))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "href" Json.Decode.string))
 
 inboxMessageDecoder : Json.Decode.Decoder InboxMessage
 inboxMessageDecoder =
@@ -7821,11 +7830,19 @@ myOrganismDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" Json.Decode.string))
 
 
+myAorDecoder : Json.Decode.Decoder MyAor
+myAorDecoder =
+    Json.Decode.succeed MyAor
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" Json.Decode.string))
+
+
 myScopeDecoder : Json.Decode.Decoder MyScope
 myScopeDecoder =
     Json.Decode.succeed MyScope
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "organism" (Json.Decode.nullable myOrganismDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aor_ids" (Json.Decode.list Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aors" (Json.Decode.list myAorDecoder)))
 
 
 listOrganismsSortByDecoder : Json.Decode.Decoder ListOrganismsSortBy
@@ -7936,6 +7953,16 @@ datasourceDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "display_name" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "signal_phone" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enabled" (Json.Decode.nullable Json.Decode.bool)))
+
+
+messageMediaInfoDecoder : Json.Decode.Decoder MessageMediaInfo
+messageMediaInfoDecoder =
+    Json.Decode.succeed MessageMediaInfo
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "content_type" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "file_name" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "size_bytes" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "href" Json.Decode.string))
 
 
 sigintZoneDecoder : Json.Decode.Decoder SigintZone
