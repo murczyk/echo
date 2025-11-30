@@ -733,6 +733,12 @@ view user model shared route =
                         palitraToggleDecoder =
                             Decode.at [ "detail" ] <|
                                 Decode.field "palitraId" Decode.int
+
+                        featureToggleDecoder =
+                            Decode.at [ "detail" ] <|
+                                Decode.map2 Tuple.pair
+                                    (Decode.field "feature" Decode.string)
+                                    (Decode.field "enabled" Decode.bool)
                     in
                     div
                         (class "h-full relative"
@@ -766,6 +772,7 @@ view user model shared route =
                             , Events.on "load-messages-description" (Decode.map LoadMessagesForMap messagesIdsDecoder)
                             , Events.on "message-unit-clicked" (Decode.map SetUnitFilterFromMap unitNameDecoder)
                             , Events.on "palitra-visibility-toggled" (Decode.map TogglePalitraVisibility palitraToggleDecoder)
+                            , Events.on "feature-toggle" (Decode.map (\( feature, enabled ) -> FeatureToggled feature enabled) featureToggleDecoder)
                             ]
                             []
                             :: (if model.mapPoints == Loading || model.mapOpenMessages == Loading then

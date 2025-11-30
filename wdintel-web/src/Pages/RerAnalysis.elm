@@ -1645,6 +1645,20 @@ update user shared route msg model =
             , E.none
             )
 
+        FeatureToggled feature enabled ->
+            case feature of
+                "palitras" ->
+                    ( { model | palitrasEnabled = enabled }, E.none )
+
+                "kmz" ->
+                    ( { model | kmzEnabled = enabled }, E.none )
+
+                "pelengs" ->
+                    ( { model | pelengsEnabled = enabled }, E.none )
+
+                _ ->
+                    ( model, E.none )
+
         ToggleUnfoldLocationsFilter ->
             ( { model | unfoldLocationsFilter = not model.unfoldLocationsFilter }
             , E.none

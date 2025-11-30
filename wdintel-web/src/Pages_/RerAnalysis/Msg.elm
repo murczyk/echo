@@ -150,3 +150,4 @@ type Msg
     | EditSidebarSaveDone Int (Result ApiError ())
     | GotPalitras (Result ApiError (List B.PalitraDetails))
     | TogglePalitraVisibility Int
+    | FeatureToggled String Bool
