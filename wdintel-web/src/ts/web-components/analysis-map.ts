@@ -543,11 +543,13 @@ class AnalysisMap extends HTMLElement {
       marker.bindPopup(popupContent);
 
       // Add tooltip with label if exists
-      if (point.label) {
-        marker.bindTooltip(point.label, {
-          permanent: false,
+      const tooltipLabel = point.label ?? palitra.name;
+      if (tooltipLabel) {
+        marker.bindTooltip(tooltipLabel, {
+          permanent: true,
           direction: 'top',
-          offset: [0, -10]
+          offset: [0, -10],
+          className: 'palitra-point-label'
         });
       }
 
