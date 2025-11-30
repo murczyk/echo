@@ -119,6 +119,7 @@ class AnalysisMap extends HTMLElement {
   private _boundedAlready = false;
   private _initialized = false;
   private _kmzLayer: KMZLayer | null = null;
+  private _kmzLoading: Promise<void> | null = null;
   private _selectedUnits: string[] = []
   
   private _palitras: PalitraDetails[] = [];
@@ -233,10 +234,12 @@ class AnalysisMap extends HTMLElement {
     if (name === 'palitras-enabled') {
       this._palitrasEnabled = JSON.parse(newValue);
       this._updateFeaturesControl();
+      this._updatePalitrasOnMap();
     }
     if (name === 'kmz-enabled') {
       this._kmzEnabled = JSON.parse(newValue);
       this._updateFeaturesControl();
+      this._applyKmzVisibility();
     }
     if (name === 'pelengs-enabled') {
       this._pelengsEnabled = JSON.parse(newValue);
@@ -268,10 +271,7 @@ class AnalysisMap extends HTMLElement {
      //TODO: remove
       if (!window.location.hostname.includes('echo-soledarnist')) {
 
-      const kmzData = await loadKmzData();
-      this._kmzLayer = kmzLayerFactory(null, { bindTooltip: true, bindPopup: false, permanentTooltip: true })
-      this._kmzLayer.addTo(this._map);
-      this._kmzLayer.parse(kmzData, {})
+        await this._loadKmzLayer();
      }
      
      // Initialize palitras layer group
@@ -424,6 +424,13 @@ class AnalysisMap extends HTMLElement {
 
   private _updatePalitrasOnMap() {
     if (!this._palitrasLayerGroup || !this._map) {
+      return;
+    }
+
+    if (!this._palitrasEnabled) {
+      this._palitrasLayerGroup.clearLayers();
+      this._palitrasPointsClusters.forEach((cluster) => this._map!.removeLayer(cluster));
+      this._palitrasPointsClusters.clear();
       return;
     }
 
@@ -599,6 +606,10 @@ class AnalysisMap extends HTMLElement {
     });
     this._palitrasPointsClusters.clear();
 
+    if (!this._palitrasEnabled) {
+      return;
+    }
+
     // Check zoom level - only show points at close zoom levels
     const currentZoom = this._map.getZoom();
     if (currentZoom < this._minZoomForPoints) {
@@ -632,6 +643,54 @@ class AnalysisMap extends HTMLElement {
     if (this._featuresControl) {
       this._featuresControl.updateFeatures(this._getFeatureToggleState());
     }
+  }
+
+  private async _loadKmzLayer() {
+    if (!this._map || !this._kmzEnabled) {
+      return;
+    }
+
+    if (this._kmzLayer) {
+      this._kmzLayer.addTo(this._map);
+      return;
+    }
+
+    if (this._kmzLoading) {
+      await this._kmzLoading;
+      return;
+    }
+
+    this._kmzLoading = (async () => {
+      try {
+        const kmzData = await loadKmzData();
+        this._kmzLayer = kmzLayerFactory(null, { bindTooltip: true, bindPopup: false, permanentTooltip: true });
+        if (this._map && this._kmzEnabled) {
+          this._kmzLayer.addTo(this._map);
+          this._kmzLayer.parse(kmzData, {});
+        }
+      } catch (e) {
+        console.error('Failed to load KMZ data', e);
+      } finally {
+        this._kmzLoading = null;
+      }
+    })();
+
+    await this._kmzLoading;
+  }
+
+  private _applyKmzVisibility() {
+    if (!this._map) {
+      return;
+    }
+
+    if (!this._kmzEnabled) {
+      if (this._kmzLayer) {
+        this._map.removeLayer(this._kmzLayer);
+      }
+      return;
+    }
+
+    this._loadKmzLayer();
   }
 }
 
