@@ -504,9 +504,8 @@ class AnalysisMap extends HTMLElement {
 
     // Add popup with palitra info
     const pointsCount = palitra.geometry.perimeter_linear_ring.length;
-    // Swap lat/lng because they're reversed in the database
-    const centerLat = palitra.geometry.center.lng.toFixed(4);
-    const centerLng = palitra.geometry.center.lat.toFixed(4);
+    const centerLat = palitra.geometry.center.lat.toFixed(4);
+    const centerLng = palitra.geometry.center.lng.toFixed(4);
 
     const popupContent = `
       <div style="padding: 8px;">
