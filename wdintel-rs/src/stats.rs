@@ -1881,8 +1881,8 @@ async fn update_5min_stats_location(
     batches_map: &mut HashMap<String, i64>,
 ) -> Result<(), AppError> {
     stats_group_location_5min::Entity::delete_many()
-        .filter(stats_group_post_id_5min::Column::Dt.gte(since_ts))
-        .filter(stats_group_post_id_5min::Column::Dt.lt(till_ts))
+        .filter(stats_group_location_5min::Column::Dt.gte(since_ts))
+        .filter(stats_group_location_5min::Column::Dt.lt(till_ts))
         .exec(dbx)
         .await
         .context(h!())?;
