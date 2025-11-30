@@ -236,6 +236,7 @@ class AnalysisMap extends HTMLElement {
       this._palitrasEnabled = JSON.parse(newValue);
       this._updateLayerSwitchControl();
       this._updatePalitrasOnMap();
+      this._applyPalitrasControlVisibility();
     }
     if (name === 'kmz-enabled') {
       this._kmzEnabled = JSON.parse(newValue);
@@ -336,6 +337,7 @@ class AnalysisMap extends HTMLElement {
     const palitrasControl = createPalitrasControl(this._palitras, this._visiblePalitraIds, palitraToggleCallback);
     this._palitrasControl = palitrasControl;
     map.addControl(palitrasControl);
+    this._applyPalitrasControlVisibility();
     
     return { map, switchTimeControl };
   }
@@ -661,6 +663,19 @@ class AnalysisMap extends HTMLElement {
     }
 
     this._pelengsLayerGroup.addTo(this._map);
+  }
+
+  private _applyPalitrasControlVisibility() {
+    if (!this._palitrasControl || !this._map) {
+      return;
+    }
+
+    if (!this._palitrasEnabled) {
+      this._map.removeControl(this._palitrasControl);
+      return;
+    }
+
+    this._map.addControl(this._palitrasControl);
   }
 
   private async _loadKmzLayer() {
