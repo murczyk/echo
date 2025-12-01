@@ -111,6 +111,7 @@ setup-dev:
 gen-seaorm:
     (cd wdintel-rs && sea-orm-cli generate entity --with-serde both -u postgres://wd:fee_-_-_-FnoeKFBeebu87bf@localhost:5432/wd -o src/entities)
     python3 deploy/patch_seaorm.py
+    just fmt
 
 gen-front: gen-elm
 
