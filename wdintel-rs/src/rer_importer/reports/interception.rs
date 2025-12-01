@@ -1,7 +1,9 @@
 use super::super::types::*;
+use crate::config::*;
 use crate::entities::{prelude::*, *};
 use crate::error::AppError;
 use crate::rer_importer::analysis::*;
+use crate::rer_importer::inbox::query::get_sigint_inbox_item_tags_expr;
 use crate::types::*;
 use actix_identity::Identity;
 use chrono::prelude::*;
@@ -44,7 +46,7 @@ async fn get_inbox_messages_report(
         .column(sigint_inbox_item::Column::Date)
         .column(sigint_inbox_item::Column::Time)
         .column(sigint_inbox_item::Column::Freq)
-        .column(sigint_inbox_item::Column::Tags)
+        .column_as(get_sigint_inbox_item_tags_expr(TAG_MINIMUM_CONFIDENCE), "tags")
         .column(signal_message::Column::Body)
         .column_as(sigint_inbox_item::Column::CallsignsAlg1, "callsigns")
         .column_as(

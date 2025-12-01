@@ -17,7 +17,7 @@ pub async fn oneoff_fill_sigint_inbox_item_tag(
                 sigint_inbox_item_id,
                 tag_id
             )
-            select 
+            select distinct
                 x.sigint_inbox_item_id,
                 x.tag_id::bigint
             from (

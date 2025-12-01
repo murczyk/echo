@@ -1,6 +1,7 @@
 use crate::config::*;
 use crate::entities::*;
 use crate::error::AppError;
+use crate::rer_importer::inbox::query::get_sigint_inbox_item_tags_expr;
 use crate::rer_importer::types::*;
 use crate::sigint::freq::types::FreqGroupsMessageCountByDay;
 use crate::types::{Env, Mode, ShortContext};
@@ -1079,7 +1080,7 @@ pub async fn recalculate_group_stats(
             .column(sigint_inbox_item::Column::LocationV2)
             .column(sigint_inbox_item::Column::UnitV2)
             .column(sigint_inbox_item::Column::PostId)
-            .column(sigint_inbox_item::Column::Tags)
+            .column_as(get_sigint_inbox_item_tags_expr(TAG_MINIMUM_CONFIDENCE), "tags")
             .column(signal_message::Column::Sender)
             .column(signal_group_aor::Column::AorId)
             .filter(since_filter_1.or(since_filter_2))

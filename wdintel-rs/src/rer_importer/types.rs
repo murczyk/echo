@@ -48,6 +48,7 @@ pub struct InboxMessage {
     pub location: Option<String>,
     pub tags: Option<Vec<i64>>,
     pub network_ids: Option<Vec<i64>>,
+    // pub inbox_tags: Option<Vec<InboxMessageTag>>,
 }
 
 #[derive(
@@ -59,6 +60,18 @@ pub struct MessageMediaInfo {
     pub file_name: Option<String>,
     pub size_bytes: i64,
     pub href: String,
+}
+
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct InboxMessageTag {
+    pub id: i64,
+    pub tag_id: i64,
+    pub confidence: f64,
+    pub login: Option<String>,
+    pub model: Option<String>,
 }
 
 #[derive(

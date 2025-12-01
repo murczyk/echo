@@ -1,6 +1,8 @@
+use crate::config::TAG_MINIMUM_CONFIDENCE;
 use crate::entities::*;
 use crate::error::AppError;
 use crate::rer_importer::analysis::*;
+use crate::rer_importer::inbox::query::get_sigint_inbox_item_tags_expr;
 use crate::rer_importer::types::{
     AnalysisStatsReq, InboxMessagesReq, NewCallsignsRes,
 };
@@ -567,9 +569,9 @@ pub async fn get_inbox_messages_report_unit(
             // sigint_inbox_item::Column::Id,
             sigint_inbox_item::Column::Lat,
             sigint_inbox_item::Column::Lng,
-            sigint_inbox_item::Column::Tags,
         ])
         .column(signal_message::Column::Body)
+        .column_as(get_sigint_inbox_item_tags_expr(TAG_MINIMUM_CONFIDENCE), "tags")
         // For the messages without a network assigned (or no frequency), we use the unit_v2 field
         .expr_as(
             Expr::cust(

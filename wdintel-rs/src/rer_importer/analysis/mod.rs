@@ -398,11 +398,8 @@ fn get_related_tag_items_filter(
             let subquery = q
                 .expr(Expr::col(sigint_inbox_item_tag::Column::Id).count())
                 .into_query()
-                .to_string(PostgresQueryBuilder);
-            // see https://github.com/SeaQL/sea-query/issues/951
-            // can't compare a scalar count subquery with a literal
-            let expr = format!("({subquery}) = {expected_count}");
-            Expr::cust(expr)
+                .into_sub_query_statement();
+            SimpleExpr::SubQuery(None, Box::new(subquery)).eq(expected_count as u64)
         }
     }
 }

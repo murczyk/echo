@@ -1,4 +1,4 @@
-use crate::config::*;
+use crate::config::{RER_DUTY_MAX_DAYS, TAG_MINIMUM_CONFIDENCE};
 use crate::entities::{prelude::*, *};
 use crate::rer_importer::analysis::*;
 use crate::rer_importer::types::*;
@@ -518,6 +518,23 @@ fn to_ts_expr(ts: NaiveDateTime) -> SimpleExpr {
     Expr::cust(txt)
 }
 
+pub fn get_sigint_inbox_item_tags_expr(confidence: f64) -> SimpleExpr {
+    let e = Query::select()
+        .from(sigint_inbox_item_tag::Entity)
+        .expr(Expr::cust_with_expr("jsonb_agg($1)", Expr::col(sigint_inbox_item_tag::Column::TagId)))
+        .and_where(sigint_inbox_item_tag::Column::Confidence.gte(confidence))
+        .and_where(
+            Expr::col((
+                sigint_inbox_item_tag::Entity,
+                sigint_inbox_item_tag::Column::SigintInboxItemId,
+            ))
+            .equals((sigint_inbox_item::Entity, sigint_inbox_item::Column::Id)),
+        )
+        .clone()
+        .into_sub_query_statement();
+    SimpleExpr::SubQuery(None, Box::new(e))
+}
+
 pub fn add_inbox_message_columns<E>(select: Select<E>) -> Select<E>
 where
     E: EntityTrait,
@@ -544,5 +561,8 @@ where
         .column_as(sigint_inbox_item::Column::PostId, "post_id")
         .column_as(sigint_inbox_item::Column::Datetime, "datetime")
         .column_as(sigint_post::Column::Name, "post_name")
-        .column_as(sigint_inbox_item::Column::Tags, "tags")
+        .expr_as(
+            get_sigint_inbox_item_tags_expr(TAG_MINIMUM_CONFIDENCE),
+            "tags",
+        )
 }
