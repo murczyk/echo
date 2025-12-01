@@ -1,7 +1,7 @@
+use crate::config::*;
 use crate::entities::*;
 use crate::error::AppError;
 use crate::types::*;
-use crate::config::*;
 use actix_web::web::Json;
 use sea_orm::*;
 use std::io::BufRead;

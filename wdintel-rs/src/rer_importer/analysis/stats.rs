@@ -849,7 +849,10 @@ pub async fn count_tags(
 pub fn get_sigint_inbox_item_tags_ids_expr(confidence: f64) -> SimpleExpr {
     let e = Query::select()
         .from(sigint_inbox_item_tag::Entity)
-        .expr(Expr::cust_with_expr("array_agg($1)", Expr::col(sigint_inbox_item_tag::Column::TagId).cast_as("INT")))
+        .expr(Expr::cust_with_expr(
+            "array_agg($1)",
+            Expr::col(sigint_inbox_item_tag::Column::TagId).cast_as("INT"),
+        ))
         .and_where(sigint_inbox_item_tag::Column::Confidence.gte(confidence))
         .and_where(
             Expr::col((

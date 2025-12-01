@@ -1080,7 +1080,10 @@ pub async fn recalculate_group_stats(
             .column(sigint_inbox_item::Column::LocationV2)
             .column(sigint_inbox_item::Column::UnitV2)
             .column(sigint_inbox_item::Column::PostId)
-            .column_as(get_sigint_inbox_item_tags_expr(TAG_MINIMUM_CONFIDENCE), "tags")
+            .column_as(
+                get_sigint_inbox_item_tags_expr(TAG_MINIMUM_CONFIDENCE),
+                "tags",
+            )
             .column(signal_message::Column::Sender)
             .column(signal_group_aor::Column::AorId)
             .filter(since_filter_1.or(since_filter_2))

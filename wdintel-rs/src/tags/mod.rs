@@ -1,16 +1,16 @@
 use self::types::*;
+use crate::config::*;
 use crate::entities::*;
 use crate::error::AppError;
 use crate::types::Env;
 use crate::types::*;
-use crate::config::*;
 use actix_web::post;
 use actix_web::web::Json;
 use sea_orm::*;
 
+pub mod modify;
 pub mod ordering;
 pub mod types;
-pub mod modify;
 
 #[post("/api/tags/tags-list")]
 async fn tags_list(
@@ -59,7 +59,9 @@ async fn inbox_message_tags_add(
         .ok_or(AppError::NotFound)?;
 
     let tag = sigint_inbox_item_tag::Entity::find()
-        .filter(sigint_inbox_item_tag::Column::SigintInboxItemId.eq(req.message_id))
+        .filter(
+            sigint_inbox_item_tag::Column::SigintInboxItemId.eq(req.message_id),
+        )
         .filter(sigint_inbox_item_tag::Column::TagId.eq(req.tag_id))
         .one(&txn)
         .await
@@ -81,7 +83,7 @@ async fn inbox_message_tags_add(
         };
         attached_tag.insert(&txn).await.c(h!())?;
     }
- 
+
     txn.commit().await.c(h!())?;
     Ok(Json(()))
 }
@@ -107,7 +109,9 @@ async fn inbox_message_tags_rm(
         .ok_or(AppError::NotFound)?;
 
     let tag_option = sigint_inbox_item_tag::Entity::find()
-        .filter(sigint_inbox_item_tag::Column::SigintInboxItemId.eq(req.message_id))
+        .filter(
+            sigint_inbox_item_tag::Column::SigintInboxItemId.eq(req.message_id),
+        )
         .filter(sigint_inbox_item_tag::Column::TagId.eq(req.tag_id))
         .one(&txn)
         .await

@@ -521,7 +521,10 @@ fn to_ts_expr(ts: NaiveDateTime) -> SimpleExpr {
 pub fn get_sigint_inbox_item_tags_expr(confidence: f64) -> SimpleExpr {
     let e = Query::select()
         .from(sigint_inbox_item_tag::Entity)
-        .expr(Expr::cust_with_expr("jsonb_agg($1)", Expr::col(sigint_inbox_item_tag::Column::TagId)))
+        .expr(Expr::cust_with_expr(
+            "jsonb_agg($1)",
+            Expr::col(sigint_inbox_item_tag::Column::TagId),
+        ))
         .and_where(sigint_inbox_item_tag::Column::Confidence.gte(confidence))
         .and_where(
             Expr::col((

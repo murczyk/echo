@@ -399,7 +399,8 @@ fn get_related_tag_items_filter(
                 .expr(Expr::col(sigint_inbox_item_tag::Column::Id).count())
                 .into_query()
                 .into_sub_query_statement();
-            SimpleExpr::SubQuery(None, Box::new(subquery)).eq(expected_count as u64)
+            SimpleExpr::SubQuery(None, Box::new(subquery))
+                .eq(expected_count as u64)
         }
     }
 }

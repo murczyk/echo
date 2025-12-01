@@ -62,7 +62,6 @@ pub struct MessageMediaInfo {
     pub href: String,
 }
 
-
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
