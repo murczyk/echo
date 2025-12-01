@@ -6,22 +6,13 @@ To start it, use screen/tmux and run `just dev-back`, `just dev-front2`, `just d
 
 Use `admin` and the password `fee_-_-_-FnoeKFBeebu87bf` (same as the DB default password) to sign-in.
 
-
-## Clone the repository
-```bash
-# Generate SSH key and add to GitHub (crates use Git SSH transport)
-ssh-keygen -t ed25519
-cat ~/.ssh/id_ed25519.pub
-
-git clone git@github.com:echoua/echo.git
-```
-
 ## Setup base system (Ubuntu 22.04)
 
 ```bash
+# adjust postgresql-14 to postgresql-16 if using a newer version of Ubuntu
 sudo apt install pkg-config libssl-dev libsqlite3-dev sqlite3 curl \
     python3-pip ca-certificates cmake build-essential python3-venv python3-virtualenv postgresql-14 postgis postgresql-14-postgis-3 \
-    git git-lfs redis nginx
+    git git-lfs nginx
 
 # Install rustup
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
@@ -50,6 +41,15 @@ sudo vim /etc/postgresql/14/main/pg_hba.conf
 sudo systemctl reload postgresql@14-main.service
 ```
 
+## Clone the repository
+```bash
+# Generate SSH key and add to GitHub (crates use Git SSH transport)
+ssh-keygen -t ed25519
+cat ~/.ssh/id_ed25519.pub
+
+git clone git@github.com:echoua/echo.git
+```
+
 ## Setup database
 
 ```bash
@@ -66,6 +66,7 @@ PGPASSWORD=fee_-_-_-FnoeKFBeebu87bf pg_restore -U wd -d wd --clean deploy/wd-ini
 ```bash
 cd echo
 cargo build
+cp deploy/config-debug.toml deploy/config.toml # and adjust storage_dir in config.toml
 just dev-back
 # ctrl+C and then add local dev admin login
 cargo run --bin=wdintel-rs -- --mode debug oneoff-register-user --login admin --password fee_-_-_-FnoeKFBeebu87bf --role Admin --sigint-zone 1
