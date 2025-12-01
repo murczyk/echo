@@ -4,10 +4,10 @@ use crate::types::{Mode, ShortContext};
 use log::info;
 use sea_orm::ConnectionTrait;
 
-pub async fn oneoff_fill_sigint_inbox_item_tag(
+pub async fn oneoff_fill_sigint_inbox_item_tags(
     mode: Mode,
 ) -> Result<(), AppError> {
-    info!("starting oneoff_fill_sigint_inbox_item_tag...");
+    info!("starting oneoff_fill_sigint_inbox_item_tags...");
     let config = crate::config::read_config(mode)?;
     let db = crate::new_pg_pool_from_config(&config).await?;
 
@@ -37,6 +37,6 @@ pub async fn oneoff_fill_sigint_inbox_item_tag(
     )
     .await
     .c(h!())?;
-    info!("done oneoff_fill_sigint_inbox_item_tag");
+    info!("done oneoff_fill_sigint_inbox_item_tags");
     Ok(())
 }
