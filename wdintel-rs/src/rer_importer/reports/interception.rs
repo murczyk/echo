@@ -131,9 +131,11 @@ async fn get_inbox_messages_report(
                 .c(h!())?,
         ));
 
+    let mut only_tags_by_logins = None;
     if req.report_tags_only_this_unit == Some(true) {
-        q = q.filter(sigint_comment::Column::Login.is_in(logins));
+        only_tags_by_logins = Some(logins.clone());
     }
+
     q = crate::rer_importer::inbox::query::get_pagination_filters(
         env,
         req,
@@ -170,6 +172,7 @@ async fn get_inbox_messages_report(
         &req.or_with_extended_form,
         &req.filter_tags_option,
         &login,
+        only_tags_by_logins,
     )?;
     let q = filter_selected_locations(
         q,

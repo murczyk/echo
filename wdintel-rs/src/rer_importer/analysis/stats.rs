@@ -169,6 +169,7 @@ fn build_groups_query(
         &req.or_with_extended_form,
         &req.filter_tags_option,
         user.id().c(h!())?.as_str(),
+        None,
     )
     .context(h!())?;
     let groups_res =
@@ -308,6 +309,7 @@ fn build_senders_query(
         &req.or_with_extended_form,
         &req.filter_tags_option,
         &user.id().context(h!())?,
+        None,
     )
     .context(h!())?;
     let senders_res =
@@ -446,6 +448,7 @@ fn build_posts_query(
         &req.or_with_extended_form,
         &req.filter_tags_option,
         &user.id().context(h!())?,
+        None,
     )
     .context(h!())?;
     let post_res = filter_selected_networks(post_res, &req.selected_networks)
@@ -636,6 +639,7 @@ fn build_freqs_query(
         &req.or_with_extended_form,
         &req.filter_tags_option,
         &user.id().context(h!())?,
+        None,
     )
     .context(h!())?;
     let freqs_res = filter_selected_networks(freqs_res, &req.selected_networks)
@@ -1049,6 +1053,7 @@ fn build_units_query(
         &req.or_with_extended_form,
         &req.filter_tags_option,
         &user.id().context(h!())?,
+        None,
     )
     .context(h!())?;
     let units_res = filter_selected_networks(units_res, &req.selected_networks)
@@ -1192,6 +1197,7 @@ fn build_locations_query(
         &req.or_with_extended_form,
         &req.filter_tags_option,
         &user.id().context(h!())?,
+        None,
     )
     .context(h!())?;
     let locations_res =
@@ -1346,6 +1352,7 @@ fn build_aors_query(
         &req.or_with_extended_form,
         &req.filter_tags_option,
         &user.id().context(h!())?,
+        None,
     )
     .context(h!())?;
     let aors_res = filter_search(aors_res, &req.search).context(h!())?;
@@ -1553,6 +1560,7 @@ fn build_networks_query(
         &req.or_with_extended_form,
         &req.filter_tags_option,
         user.id().c(h!())?.as_str(),
+        None,
     )
     .context(h!())?;
 
@@ -1776,6 +1784,7 @@ async fn fetch_counts_for_login_with_conn(
         &req.or_with_extended_form,
         &req.filter_tags_option,
         login_str,
+        None,
     )
     .context(h!())?;
     let selected_count_res =

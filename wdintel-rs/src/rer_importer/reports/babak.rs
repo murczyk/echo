@@ -646,48 +646,14 @@ pub async fn get_inbox_messages_report_unit(
     if req.checked_only == Some(true) {
         q = q.filter(sigint_inbox_item::Column::Checked.eq(Some(true)));
     }
+    q = q.join(
+        JoinType::LeftJoin,
+        signal_message::Relation::SigintComment.def(),
+    );
 
-    let or_with_extended_form = req.or_with_extended_form.unwrap_or(false);
+    let mut only_tags_by_logins = None;
     if req.report_tags_only_this_unit == Some(true) {
-        q = q.join(
-            JoinType::InnerJoin,
-            sigint_comment::Relation::SignalMessage
-                .def()
-                .rev()
-                .on_condition(move |_left, right| {
-                    let mut expr = Expr::col((
-                        right.clone(),
-                        sigint_comment::Column::Login,
-                    ))
-                    .is_in(logins.clone());
-
-                    if or_with_extended_form {
-                        expr = expr.and(
-                            Expr::col((right, sigint_comment::Column::Comment))
-                                .ne(""),
-                        );
-                    }
-
-                    expr.into_condition()
-                }),
-        );
-    } else if or_with_extended_form {
-        q = q.join(
-            JoinType::InnerJoin,
-            sigint_comment::Relation::SignalMessage
-                .def()
-                .rev()
-                .on_condition(|_left, right| {
-                    Expr::col((right, sigint_comment::Column::Comment))
-                        .ne("")
-                        .into_condition()
-                }),
-        );
-    } else {
-        q = q.join(
-            JoinType::LeftJoin,
-            signal_message::Relation::SigintComment.def(),
-        );
+        only_tags_by_logins = Some(logins.clone());
     }
 
     // let q = q.filter(signal_message::Column::DuplicateOf.is_null());
@@ -713,9 +679,10 @@ pub async fn get_inbox_messages_report_unit(
         &req.or_bookmarked,
         &req.or_important,
         &req.or_with_coords,
-        &Some(false),
+        &req.or_with_extended_form,
         &req.filter_tags_option,
-        login,
+        &login,
+        only_tags_by_logins,
     )?;
     if let Some(since_date_inclusive_ms) = req.since_date_inclusive_ms {
         q = q.filter(

@@ -12,7 +12,7 @@ use sea_query::{Expr, Query, SelectStatement, SimpleExpr};
 
 pub(crate) async fn build_inbox_query(
     login: &str,
-    _logins: &Vec<String>,
+    logins: &Vec<String>,
     env: &Env,
     req: &InboxMessagesReq,
 ) -> Result<String, AppError> {
@@ -55,10 +55,11 @@ pub(crate) async fn build_inbox_query(
     if req.ignore_imported_coords.unwrap_or(false) {
         q = q.filter(signal_group::Column::IgnoreOperativny.eq(Some(false)));
     }
-    // if req.report_tags_only_this_unit.unwrap_or(false) {
-    //     q = q.filter(sigint_inbox_item::Column::UserId.is_in(logins))
-    // }
-    //
+
+    let mut only_tags_by_logins = None;
+    if req.report_tags_only_this_unit == Some(true) {
+        only_tags_by_logins = Some(logins.clone());
+    }
 
     if req.only_show_unprocessed == Some(true) {
         q = q.filter(sigint_inbox_item::Column::Reviewed.ne(Some(true)));
@@ -89,6 +90,7 @@ pub(crate) async fn build_inbox_query(
         &req.or_with_extended_form,
         &req.filter_tags_option,
         login,
+        only_tags_by_logins
     )?;
     let q = filter_selected_aors(q, &req.selected_aors).context(h!())?;
     let q =

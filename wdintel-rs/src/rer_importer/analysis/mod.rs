@@ -372,10 +372,11 @@ where
 fn get_related_tag_items_filter(
     unique_tags: BTreeSet<i64>,
     tag_filter_option: TagFilterOption,
+    only_tags_by_logins: Option<Vec<String>>,
 ) -> SimpleExpr {
     let expected_count = unique_tags.len();
 
-    let q = sigint_inbox_item_tag::Entity::find()
+    let mut q = sigint_inbox_item_tag::Entity::find()
         .filter(
             Expr::col((
                 sigint_inbox_item_tag::Entity,
@@ -389,6 +390,15 @@ fn get_related_tag_items_filter(
                 .gte(TAG_MINIMUM_CONFIDENCE),
         )
         .select_only();
+
+    if let Some(logins) = only_tags_by_logins {
+        if !logins.is_empty() {
+            q = q.filter(
+                Expr::col(sigint_inbox_item_tag::Column::Login)
+                    .is_in(logins),
+            );
+        }
+    }
 
     match tag_filter_option {
         TagFilterOption::OneOfTags => {
@@ -414,6 +424,7 @@ pub fn filter_selected_tags<Q>(
     or_with_extended_form: &Option<bool>,
     filter_tags_option: &Option<TagFilterOption>,
     user_id: &str,
+    only_tags_by_logins: Option<Vec<String>>,
 ) -> Result<Q, AppError>
 where
     Q: QueryFilter + QuerySelect + Clone,
@@ -429,6 +440,7 @@ where
             m_inner_expr = Some(get_related_tag_items_filter(
                 unique_tags,
                 tag_filter_option,
+                only_tags_by_logins,
             ));
         }
     }
@@ -981,6 +993,7 @@ pub async fn summary_table_freq_1(
         &req.or_with_extended_form,
         &req.filter_tags_option,
         &user.id().c(h!())?,
+        None,
     )?;
     let dedup_subquery =
         filter_selected_aors(dedup_subquery, &req.selected_aors)
@@ -1572,6 +1585,7 @@ pub async fn edit_freq_unit_name(
         &None,
         &req.filter_tags_option,
         &user.id().c(h!())?,
+        None,
     )?;
     let rows_res = filter_selected_networks(rows_res, &reqan.selected_networks)
         .context(h!())?;
@@ -1938,6 +1952,7 @@ pub async fn bi_new_callsigns(
         &req.or_with_extended_form,
         &req.filter_tags_option,
         user_id,
+        None,
     )?;
     let rows_res =
         filter_selected_aors(rows_res, &req.selected_aors).context(h!())?;
@@ -2015,6 +2030,7 @@ pub async fn bi_new_callsigns(
         &req.or_with_extended_form,
         &req.filter_tags_option,
         user_id,
+        None,
     )?;
     let rows_res = filter_selected_networks(rows_res, &req.selected_networks)
         .context(h!())?;

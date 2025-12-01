@@ -317,6 +317,7 @@ pub async fn get_inbox_messages_report_network(
         &Some(false),
         &req.filter_tags_option,
         &login,
+        None,
     )?;
     if let Some(since_date_inclusive_ms) = req.since_date_inclusive_ms {
         q = q.filter(
