@@ -77,7 +77,20 @@ async fn upsert_tag_by_item(
             }
             new_tag.insert(txn).await.c(h!())?;
         }
-        _ => {}
+        EitherOrBoth::Both(tag, new_values) => {
+            if login == SYSTEM_LOGIN_NAME {
+                let mut tag = tag.into_active_model();
+                tag.confidence = Set(new_values.confidence);
+                tag.model = Set(new_values.model.clone());
+                tag.login = Set(Some(login.to_owned()));
+                tag.update(txn).await.c(h!())?;
+            } else if tag.confidence != new_values.confidence {
+                let mut tag = tag.into_active_model();
+                tag.login = Set(Some(login.to_owned()));
+                tag.confidence = Set(new_values.confidence);
+                tag.update(txn).await.c(h!())?;
+            }
+        }
     };
     Ok(())
 }
