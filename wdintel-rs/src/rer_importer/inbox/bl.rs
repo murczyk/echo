@@ -919,7 +919,7 @@ pub async fn submit_upsert_inbox_item(
         .await
         .c(h!())?;
     let inbox_id = insert_res.last_insert_id;
-    crate::tags::modify::upsert_tags(login, inbox_id, &message, txn)
+    crate::tags::modify::upsert_tags(login, inbox_id, message, txn)
         .await
         .c(h!())?;
     crate::location::peleng::delete_inbox_pelengs(inbox_id, txn)
