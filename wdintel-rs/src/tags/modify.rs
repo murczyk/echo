@@ -4,7 +4,7 @@ use crate::error::AppError;
 use crate::h;
 use crate::rer_importer::types::{InboxMessage, InboxMessageTag};
 use crate::types::ShortContext;
-use itertools::EitherOrBoth;
+use itertools::{EitherOrBoth, Itertools};
 use log::info;
 use sea_orm::*;
 use std::collections::BTreeSet;
@@ -27,9 +27,11 @@ pub async fn upsert_tags(
             .c(h!())?;
 
     if let Some(inbox_tags) = &inbox_message.inbox_tags {
-        for entry in itertools::merge_join_by(tags, inbox_tags, |a, b| {
-            a.tag_id.cmp(&b.tag_id)
-        }) {
+        for entry in itertools::merge_join_by(
+            tags,
+            inbox_tags.iter().sorted_by_key(|x| x.tag_id),
+            |a, b| a.tag_id.cmp(&b.tag_id),
+        ) {
             upsert_tag_by_item(login, inbox_item_id, entry, txn)
                 .await
                 .c(h!())?;
