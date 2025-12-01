@@ -51,6 +51,16 @@ pub struct InboxMessageDesc {
     pub tags: Option<serde_json::Value>,
 }
 
+#[derive(Debug, FromQueryResult)]
+pub struct InboxMessageTagDesc {
+    pub id: i64,
+    pub sigint_inbox_item_id: i64,
+    pub tag_id: i64,
+    pub confidence: f64,
+    pub login: Option<String>,
+    pub model: Option<String>,
+}
+
 pub async fn get_inbox_map_items(
     login: &str,
     logins: &Vec<String>,
@@ -119,6 +129,29 @@ pub async fn aggregate_to_inbox_messages(
         .into_iter()
         .map(|bm| bm.signal_message_id)
         .collect::<HashSet<_>>();
+    let tags = sigint_inbox_item_tag::Entity::find()
+        .filter(
+            sigint_inbox_item_tag::Column::SigintInboxItemId
+                .is_in(message_ids.clone()),
+        )
+        .into_model::<InboxMessageTagDesc>()
+        .all(&env.dbx)
+        .await
+        .context(h!())?;
+
+    let mut tags_map: HashMap<i64, Vec<InboxMessageTag>> = HashMap::new();
+    for tag in tags {
+        tags_map.entry(tag.sigint_inbox_item_id).or_default().push(
+            InboxMessageTag {
+                id: tag.id,
+                tag_id: tag.tag_id,
+                confidence: tag.confidence,
+                login: tag.login,
+                model: tag.model,
+            },
+        );
+    }
+
     let mut group_query = signal_message_group::Entity::find().filter(
         signal_message_group::Column::SignalMessageId
             .is_in(message_ids.clone()),
@@ -269,6 +302,10 @@ pub async fn aggregate_to_inbox_messages(
             Some(location) => Some(to_location_list(&location).join(", ")),
         };
         let network_ids = messages_networks.get(&message.id).cloned();
+        let inbox_tags = tags_map
+            .get_mut(&message.id)
+            .map(std::mem::take)
+            .unwrap_or_default();
 
         res.push((
             message.id,
@@ -310,6 +347,7 @@ pub async fn aggregate_to_inbox_messages(
                 tags: Some(from_m_val_vec(message.tags.clone())?),
                 callsigns_alg2: from_m_val_vec(message.callsigns_alg2.clone())?,
                 network_ids,
+                inbox_tags: Some(inbox_tags),
             },
         ));
     }
@@ -844,9 +882,7 @@ pub async fn submit_upsert_inbox_item(
             nominatimres_id: Set(None),
             location: Set(location),
             location_v2: Set(location_v2),
-            tags: Set(Some(
-                serde_json::to_value(message.tags.clone()).context(h!())?,
-            )),
+            tags: NotSet,
             callsigns_alg1: NotSet,
             callsigns_alg2: NotSet,
             signal_tokens: NotSet,
@@ -875,7 +911,6 @@ pub async fn submit_upsert_inbox_item(
                     sigint_inbox_item::Column::Lng,
                     sigint_inbox_item::Column::Location,
                     sigint_inbox_item::Column::LocationV2,
-                    sigint_inbox_item::Column::Tags,
                     sigint_inbox_item::Column::PostId,
                 ])
                 .to_owned(),
@@ -884,6 +919,9 @@ pub async fn submit_upsert_inbox_item(
         .await
         .c(h!())?;
     let inbox_id = insert_res.last_insert_id;
+    crate::tags::modify::upsert_tags(login, inbox_id, &message, txn)
+        .await
+        .c(h!())?;
     crate::location::peleng::delete_inbox_pelengs(inbox_id, txn)
         .await
         .c(h!())?;

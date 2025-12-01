@@ -48,7 +48,7 @@ pub struct InboxMessage {
     pub location: Option<String>,
     pub tags: Option<Vec<i64>>,
     pub network_ids: Option<Vec<i64>>,
-    // pub inbox_tags: Option<Vec<InboxMessageTag>>,
+    pub inbox_tags: Option<Vec<InboxMessageTag>>,
 }
 
 #[derive(

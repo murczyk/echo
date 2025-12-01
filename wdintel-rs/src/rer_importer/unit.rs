@@ -1,6 +1,7 @@
 use crate::entities::*;
 use crate::error::AppError;
 use crate::types::*;
+use crate::config::*;
 use actix_web::web::Json;
 use sea_orm::*;
 use std::io::BufRead;
@@ -216,7 +217,7 @@ pub async fn import_unit(
                         .clone()
                         .unwrap_or_default()),
                     comment: Set(json_unit.comment.clone().unwrap_or_default()),
-                    created_by: Set("system".to_string()),
+                    created_by: Set(SYSTEM_LOGIN_NAME.to_string()),
                     sigint_origin_id: Set(Some(sigint_origin_id)),
                     ..Default::default()
                 })

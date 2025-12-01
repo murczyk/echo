@@ -117,7 +117,7 @@ async fn inbox_message_tags_rm(
             let tag_id = req.tag_id;
             let message_id = inbox.id;
             let confidence = tag.confidence;
-            info!("suggested tag_id={tag_id} is being removed by user (sigint_inbox_item={message_id}, model={model}, confidence={confidence:.2})");
+            info!("suggested tag_id={tag_id} is being removed by user={user_id} (sigint_inbox_item={message_id}, model={model}, confidence={confidence:.2})");
         }
 
         let attached_tag: sigint_inbox_item_tag::ActiveModel = tag.into();
