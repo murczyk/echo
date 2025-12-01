@@ -93,7 +93,7 @@ impl actix_web::error::ResponseError for AppError {
         }
         match self {
             AppError::NotFound => {
-                warn!(target: "not_found_details", "Not found error triggered");
+                warn!(target: "not_found_details", "Not found triggered");
                 actix_web::HttpResponseBuilder::new(
                     actix_web::http::StatusCode::NOT_FOUND,
                 )
