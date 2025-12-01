@@ -20,7 +20,7 @@ struct Message {
     pub id: i64,
     pub body: String,
     pub timestamp: Option<chrono::NaiveDateTime>,
-    pub sender: String,
+    pub sender: Option<String>,
     pub date: Option<String>,
     pub time: Option<String>,
     pub freq: Option<String>,
@@ -260,7 +260,7 @@ pub async fn get_inbox_messages_report(
                         .timestamp
                         .map(|x| x.and_utc().timestamp_millis()),
                     group_master_key: None,
-                    sender: Some(m.sender.clone()),
+                    sender: m.sender.clone(),
                     extended_form: None,
                     unit: m.unit.clone(),
                     callsign_tokens: None,
