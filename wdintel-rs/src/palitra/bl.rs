@@ -274,6 +274,7 @@ where
             ST_DumpPoints(palitra.convex_hull) AS dp
         WHERE
             palitra.id = $1
+            and palitra.convex_hull is not null
         ORDER BY
             sequence_index;
     ";
@@ -299,7 +300,7 @@ where
 async fn read_palitra_center<'a, 'async_trait, C>(
     dbx: &'a C,
     palitra_id: i64,
-) -> anyhow::Result<Coords>
+) -> anyhow::Result<Option<Coords>>
 where
     C: ConnectionTrait + 'async_trait,
 {
@@ -315,22 +316,21 @@ where
         FROM
             palitra
         WHERE
-            palitra.id = $1;
+            palitra.id = $1
+            and center is not null;
     ";
-    let center: Geometry =
-        Geometry::find_by_statement(Statement::from_sql_and_values(
-            DbBackend::Postgres,
-            query,
-            [palitra_id.into()],
-        ))
-        .one(dbx)
-        .await
-        .context(h!())?
-        .context(h!())?;
-    Ok(Coords {
-        lat: center.lat,
-        lng: center.lon,
-    })
+    let center = Geometry::find_by_statement(Statement::from_sql_and_values(
+        DbBackend::Postgres,
+        query,
+        [palitra_id.into()],
+    ))
+    .one(dbx)
+    .await
+    .context(h!())?;
+    Ok(center.map(|c| Coords {
+        lat: c.lat,
+        lng: c.lon,
+    }))
 }
 
 pub async fn rewrite_palitra_points(
@@ -405,13 +405,7 @@ where
     let last_uploaded_at_ts = palitra_model
         .last_uploaded_at
         .map(|ts| ts.and_utc().timestamp_millis());
-    let center = match read_palitra_center(dbx, palitra_id).await {
-        Ok(c) => Some(c),
-        Err(e) => {
-            error!("failed to calculate palitra center: {e:#?}");
-            None
-        }
-    };
+    let center = read_palitra_center(dbx, palitra_id).await.c(h!())?;
     let convex_hull = match read_palitra_convex_hull(dbx, palitra_id).await {
         Ok(c) => Some(c),
         Err(e) => {
