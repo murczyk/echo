@@ -161,7 +161,7 @@ pub async fn report_docx_kind_tag(
             .collect();
 
     let mut rows: Vec<Paragraph> = vec![];
-    for (message_id, message) in messages.iter() {
+    for (message_id, _message) in messages.iter() {
         let message_id = *message_id;
         let mut ps = vec![];
         let Some((msg, group)) = signal_message::Entity::find_by_id(message_id)
