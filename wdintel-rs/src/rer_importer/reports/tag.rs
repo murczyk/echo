@@ -162,11 +162,6 @@ pub async fn report_docx_kind_tag(
 
     let mut rows: Vec<Paragraph> = vec![];
     for (message_id, message) in messages.iter() {
-        if req.req.report_tags_only_this_unit == Some(true)
-            && message.extended_form.is_none()
-        {
-            continue;
-        }
         let message_id = *message_id;
         let mut ps = vec![];
         let Some((msg, group)) = signal_message::Entity::find_by_id(message_id)
@@ -193,9 +188,6 @@ pub async fn report_docx_kind_tag(
         };
         let m_comment = sigint_comment::Entity::find()
             .filter(sigint_comment::Column::SignalMessageId.eq(message_id))
-            .apply_if(req.req.report_tags_only_this_unit, |q, _| {
-                q.filter(sigint_comment::Column::Login.is_in(logins.clone()))
-            })
             .one(&txn)
             .await
             .context(h!())?;
