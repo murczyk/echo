@@ -7,6 +7,7 @@ use crate::utils::*;
 use actix_identity::Identity;
 use chrono::prelude::*;
 use docx_rs::*;
+use echo_migration::IntoCondition;
 use sea_orm::{sea_query::PostgresQueryBuilder, *};
 use sea_query::{Alias, CommonTableExpression, Expr, Func, Query, SimpleExpr};
 use serde::Deserialize;
@@ -572,10 +573,6 @@ pub async fn get_inbox_messages_report_unit(
             JoinType::InnerJoin,
             signal_message::Relation::DatasourceGroup.def(),
         )
-        // .join(
-        //     JoinType::LeftJoin,
-        //     signal_message::Relation::SigintComment.def(),
-        // )
         .join(
             JoinType::LeftJoin,
             sigint_inbox_item::Relation::SigintNetworkFreq.def(),
@@ -610,29 +607,54 @@ pub async fn get_inbox_messages_report_unit(
                 .await
                 .c(h!())?,
         ));
-
-    if !req.or_with_extended_form.unwrap_or(false) {
-        q = q.join(
-            JoinType::LeftJoin,
-            signal_message::Relation::SigintComment.def(),
-        );
-    } else {
-        q = q.join(
-            JoinType::InnerJoin,
-            signal_message::Relation::SigintComment.def(),
-        );
-        q = q.filter(sigint_comment::Column::Comment.eq("").not());
-    }
-
     if req.only_show_unprocessed == Some(true) {
         q = q.filter(sigint_inbox_item::Column::Reviewed.ne(Some(true)));
     }
     if req.checked_only == Some(true) {
         q = q.filter(sigint_inbox_item::Column::Checked.eq(Some(true)));
     }
+
+    let or_with_extended_form = req.or_with_extended_form.unwrap_or(false);
     if req.report_tags_only_this_unit == Some(true) {
-        q = q.filter(sigint_comment::Column::Login.is_in(logins));
+        q = q.join(
+            JoinType::InnerJoin,
+            sigint_comment::Relation::SignalMessage
+                .def()
+                .rev()
+                .on_condition(move |_left, right| {
+                    let mut expr =
+                        Expr::col((right.clone(), sigint_comment::Column::Login))
+                            .is_in(logins.clone());
+
+                    if or_with_extended_form {
+                        expr = expr.and(
+                            Expr::col((right, sigint_comment::Column::Comment))
+                                .ne(""),
+                        );
+                    }
+
+                    expr.into_condition()
+                }),
+        );
+    } else if or_with_extended_form {
+        q = q.join(
+            JoinType::InnerJoin,
+            sigint_comment::Relation::SignalMessage
+                .def()
+                .rev()
+                .on_condition(|_left, right| {
+                    Expr::col((right, sigint_comment::Column::Comment))
+                        .ne("")
+                        .into_condition()
+                }),
+        );
+    } else {
+        q = q.join(
+            JoinType::LeftJoin,
+            sigint_comment::Relation::SignalMessage.def(),
+        );
     }
+
     // let q = q.filter(signal_message::Column::DuplicateOf.is_null());
     let q = filter_selected_groups(q, &req.selected_groups)?;
     let q = filter_selected_senders(q, &req.selected_senders)?;
