@@ -126,6 +126,7 @@ pub struct Config {
     pub fill_comp_freq_worker: bool,
     pub disable_cleanup_networks_worker: Option<bool>,
     pub disable_unit_location_v2_worker: Option<bool>,
+    pub disable_suggest_message_tags_worker: Option<bool>,
     pub backup_key_id: Option<String>,
     pub backup_key: Option<String>,
     /// Used for clustering in Babak report, 2km is the default

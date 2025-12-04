@@ -4,13 +4,15 @@ use crate::entities::*;
 use crate::error::AppError;
 use crate::types::Env;
 use crate::types::*;
-use actix_web::post;
 use actix_web::web::Json;
+use actix_web::{delete, post, put};
+use futures::future::try_join_all;
 use sea_orm::*;
 
 pub mod modify;
 pub mod ordering;
 pub mod types;
+pub mod worker;
 
 #[post("/api/tags/tags-list")]
 async fn tags_list(
@@ -26,17 +28,175 @@ async fn tags_list(
         .await
         .c(h!())?;
     let mut res = vec![];
-    for tag in tags {
+    for (tag, keywords) in tags {
+        let keywords = keywords
+            .into_iter()
+            .map(|tag_keyword| TagKeyword {
+                tag_keyword_id: tag_keyword.tag_keyword_id,
+                is_positive: tag_keyword.is_positive,
+                keyword: tag_keyword.keyword,
+                keyword_forms: tag_keyword.keyword_forms,
+            })
+            .collect();
         res.push((
             tag.id,
             Tag {
                 label: tag.label.clone(),
                 extra: tag.extra,
                 ord: tag.ord,
+                keywords: Some(keywords),
             },
         ));
     }
     Ok(Json(res))
+}
+
+#[post("/api/tags/{tag_id}/keywords")]
+async fn add_tag_keywords(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    path: actix_web::web::Path<(i64,)>,
+    req: Json<Vec<TagKeywordAddReq>>,
+) -> Result<Json<Vec<TagKeyword>>, AppError> {
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Admin")
+        .await
+        .c(h!())?;
+    let tag_id = path.0;
+
+    let _tag = tag::Entity::find_by_id(tag_id)
+        .one(&env.dbx)
+        .await
+        .c(h!())?
+        .ok_or(AppError::NotFound)?;
+
+    let keywords_task = req.0.into_iter().map(
+        async |r| -> anyhow::Result<tag_keyword::ActiveModel> {
+            let TagKeywordAddReq {
+                is_positive,
+                keyword,
+                keyword_forms,
+            } = r;
+
+            let mut keyword_forms: Vec<String> =
+                keyword_forms.unwrap_or_default();
+            if keyword_forms.is_empty() {
+                keyword_forms =
+                    crate::nlp::token_lexemes(&env.rq.clone(), &keyword)
+                        .await
+                        .c(h!())?;
+            }
+
+            let model = tag_keyword::ActiveModel {
+                tag_id: Set(tag_id),
+                is_positive: Set(is_positive),
+                keyword: Set(keyword),
+                keyword_forms: Set(keyword_forms),
+                ..Default::default()
+            };
+            Ok(model)
+        },
+    );
+
+    let tag_keywords_to_insert = try_join_all(keywords_task).await.c(h!())?;
+
+    let res = tag_keyword::Entity::insert_many(tag_keywords_to_insert)
+        .exec_with_returning_many(&env.dbx)
+        .await
+        .c(h!())?;
+
+    expire_tag_keyword_regex_cache(tag_id, &env.tag_keyword_regex_cache);
+
+    let tag_keywords: Vec<TagKeyword> = res
+        .into_iter()
+        .map(|x| TagKeyword {
+            tag_keyword_id: x.tag_keyword_id,
+            is_positive: x.is_positive,
+            keyword: x.keyword,
+            keyword_forms: x.keyword_forms,
+        })
+        .collect();
+
+    Ok(Json(tag_keywords))
+}
+
+fn expire_tag_keyword_regex_cache(
+    tag_id: i64,
+    tag_keyword_regex_cache: &Arc<RwLock<TagKeywordRegexCache>>,
+) {
+    let mut cache = tag_keyword_regex_cache.write().unwrap();
+    cache.keywords_regex_per_tag.remove(&tag_id);
+}
+
+#[delete("/api/tags/{tag_id}/keywords/{tag_keyword_id}")]
+async fn delete_tag_keyword(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    path: actix_web::web::Path<(i64, i64)>,
+) -> Result<(), AppError> {
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Admin")
+        .await
+        .c(h!())?;
+    let tag_id = path.0;
+    let tag_keyword_id = path.1;
+
+    let tag_keyword = tag_keyword::Entity::find_by_id(tag_keyword_id)
+        .filter(tag_keyword::Column::TagId.eq(tag_id))
+        .one(&env.dbx)
+        .await
+        .c(h!())?
+        .ok_or(AppError::NotFound)?;
+
+    tag_keyword.delete(&env.dbx).await.c(h!())?;
+    expire_tag_keyword_regex_cache(tag_id, &env.tag_keyword_regex_cache);
+
+    Ok(())
+}
+
+#[put("/api/tags/{tag_id}/keywords/{tag_keyword_id}")]
+async fn update_tag_keyword(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    path: actix_web::web::Path<(i64, i64)>,
+    req: Json<TagKeywordAddReq>,
+) -> Result<(), AppError> {
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Admin")
+        .await
+        .c(h!())?;
+    let tag_id = path.0;
+    let tag_keyword_id = path.1;
+
+    let tag_keyword = tag_keyword::Entity::find_by_id(tag_keyword_id)
+        .filter(tag_keyword::Column::TagId.eq(tag_id))
+        .one(&env.dbx)
+        .await
+        .c(h!())?
+        .ok_or(AppError::NotFound)?;
+
+    let mut tag_keyword = tag_keyword.into_active_model();
+    let TagKeywordAddReq {
+        is_positive,
+        keyword,
+        keyword_forms,
+    } = req.0;
+
+    let mut keyword_forms: Vec<String> = keyword_forms.unwrap_or_default();
+    if keyword_forms.is_empty() {
+        keyword_forms = crate::nlp::token_lexemes(&env.rq.clone(), &keyword)
+            .await
+            .c(h!())?;
+    }
+
+    tag_keyword.is_positive = Set(is_positive);
+    tag_keyword.keyword = Set(keyword);
+    tag_keyword.keyword_forms = Set(keyword_forms);
+
+    tag_keyword.update(&env.dbx).await.c(h!())?;
+    expire_tag_keyword_regex_cache(tag_id, &env.tag_keyword_regex_cache);
+
+    Ok(())
 }
 
 #[post("/api/tags/tags-add")]

@@ -115,6 +115,18 @@ pub struct Env {
     pub version: String,
     pub callsigns_whitelist: HashSet<String>,
     pub replicas: Vec<ReplicaPool>,
+    pub tag_keyword_regex_cache: Arc<RwLock<TagKeywordRegexCache>>,
+}
+
+#[derive(Default)]
+pub struct TagKeywordRegexCache {
+    pub keywords_regex_per_tag: HashMap<i64, TagKeywordRegexCacheItem>,
+}
+
+#[derive(Clone)]
+pub struct TagKeywordRegexCacheItem {
+    pub regex_set_positive: regex::RegexSet,
+    pub regex_set_negative: regex::RegexSet,
 }
 
 #[derive(Clone)]

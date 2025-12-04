@@ -120,6 +120,7 @@ pub use super::stats_group_tag_day::Entity as StatsGroupTagDay;
 pub use super::stats_group_unit_5min::Entity as StatsGroupUnit5min;
 pub use super::stats_group_unit_day::Entity as StatsGroupUnitDay;
 pub use super::tag::Entity as Tag;
+pub use super::tag_keyword::Entity as TagKeyword;
 pub use super::tags_ordering::Entity as TagsOrdering;
 pub use super::url_visit_notification::Entity as UrlVisitNotification;
 pub use super::whatsapp_group::Entity as WhatsappGroup;
