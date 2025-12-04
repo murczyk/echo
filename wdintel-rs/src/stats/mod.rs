@@ -13,6 +13,8 @@ use sea_orm::*;
 use std::collections::{HashMap, HashSet};
 use tokio::time::sleep;
 
+pub mod worker;
+
 pub async fn oneoff_count_group_batches(mode: Mode) -> Result<(), AppError> {
     let dbx = crate::new_pg_pool_from_mode(mode).await.context(h!())?;
     let mut offset = 0;

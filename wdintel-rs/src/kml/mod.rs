@@ -3,6 +3,7 @@ use crate::error::AppError;
 use crate::kml::types::*;
 use crate::types::*;
 use crate::utils::*;
+use ::zip::CompressionMethod;
 use actix_identity::Identity;
 use actix_multipart::Multipart;
 use actix_web::web::Json;
@@ -634,7 +635,7 @@ pub async fn oneoff_fix_kml(
     let kmz_fname = kmz_path.file_name().ok_or("no filename")?;
     let tmp_dir_kmz = tmp_dir.path().join(kmz_fname);
     std::fs::copy(kmz_path, &tmp_dir_kmz)?;
-    crate::zip::unzip(&tmp_dir_kmz)?;
+    crate::utils::zip::unzip(&tmp_dir_kmz)?;
     std::fs::remove_file(&tmp_dir_kmz)?;
     crate::utils::backup_tmp_dir(tmp_dir.path())?;
     // todo: list dir, search for kml file name
@@ -691,12 +692,13 @@ pub async fn oneoff_fix_kml(
     let walkdir = WalkDir::new(res_p);
     let it = walkdir.into_iter();
     let dst_file_opened = std::fs::File::create(&ps.res)?;
-    crate::zip::zip_dir(
+    crate::utils::zip::zip_dir(
         &mut it.filter_map(|e| e.ok()),
         &res_p.to_string_lossy(),
         &dst_file_opened,
-        zip::CompressionMethod::Deflated,
-    )?;
+        CompressionMethod::Deflated,
+    )
+    .c(h!())?;
 
     Ok(())
 }
@@ -1202,7 +1204,7 @@ pub async fn oneoff_radio_per_day_per_abonent(
     }
     std::fs::copy(kmz_path, &tmp_dir_kmz)?;
     bgtask_log2(m_bgtask_id, "> unzip", m_dbx).await.c(h!())?;
-    crate::zip::unzip(&tmp_dir_kmz)?;
+    crate::utils::zip::unzip(&tmp_dir_kmz)?;
     bgtask_log2(m_bgtask_id, "> rm", m_dbx).await.c(h!())?;
     std::fs::remove_file(&tmp_dir_kmz)?;
     bgtask_log2(m_bgtask_id, "> backup", m_dbx).await.c(h!())?;

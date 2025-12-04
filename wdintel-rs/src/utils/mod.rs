@@ -20,6 +20,7 @@ pub mod multipart;
 pub mod orm;
 pub mod string;
 pub mod worker_watch;
+pub mod zip;
 
 pub fn backup_tmp_dir(tmp_dir: &Path) -> Result<(), AppError> {
     let dt = chrono::offset::Utc::now();

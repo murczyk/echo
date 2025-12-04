@@ -20,12 +20,12 @@ messageStub =
     , coords = Nothing
     , datasourceId = Just 1
     , date = Just "2024-09-19"
-    , duplicateIds = Just []
     , extendedForm = Nothing
     , freq = Just "461.3400"
     , groupMasterKey = Just "fsUEaAfYdDM8F1uQ+0AZwFRFXj13DaXuLLnRce4ykpA="
     , imageRecognized = []
     , images = []
+    , media = []
     , keywordTokens = Just []
     , location = Just "КАМ'ЯНКА-ДНІПРОВСЬКА"
     , noHeadersBody = Just { body = "НВ\nКОЛЬЦО 22\n— Кольцо, 22, 22, Штиль 1, Штиль 1.", end = 74, start = 0 }

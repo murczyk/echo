@@ -201,7 +201,7 @@ fn folder_to_data_package_zip(
     let walkdir = WalkDir::new(&base_path);
     let it = walkdir.into_iter();
     let dst_file_opened = std::fs::File::create(&dst_file)?;
-    crate::zip::zip_dir(
+    crate::utils::zip::zip_dir(
         &mut it.filter_map(|e| e.ok()),
         &base_path.to_string_lossy(),
         &dst_file_opened,

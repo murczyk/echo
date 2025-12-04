@@ -31,7 +31,7 @@ pub async fn rer_delta_kmz_import(
     println!("> kmz_file: {}", &original_path.display());
     std::fs::write(&kmz_file, val)?;
     println!("> running unzip {}", &original_path.display());
-    crate::zip::unzip(&kmz_file)?;
+    crate::utils::zip::unzip(&kmz_file)?;
     println!("> unzip done");
     let mut doc_kml = tmp_dir.path().join("doc.kml");
     if !doc_kml.exists() {
