@@ -7,7 +7,6 @@ use crate::messenger::bl::{deactivate_account, list_echo_accounts};
 use crate::messenger::id;
 use crate::messenger::media::{self, MediaUploadInput};
 use crate::messenger::types::*;
-use crate::messenger::worker_pool::*;
 use crate::new_pg_pool_from_mode;
 use crate::types::*;
 use chrono::*;
@@ -23,119 +22,11 @@ use tokio::task::JoinSet;
 use tokio::time::{sleep, Duration};
 use tokio_util::sync::CancellationToken;
 
+pub mod cleanup;
+pub mod pool;
+pub mod queue;
+
 static SIGNAL_LOGIN_DELAY_DONE: AtomicBool = AtomicBool::new(false);
-
-pub async fn run_cleanup_worker(mode: Mode) {
-    loop {
-        let db = match new_pg_pool_from_mode(mode).await {
-            Ok(db) => db,
-            Err(e) => {
-                error!("Messenger Cleanup worker failed, cannot establish db connection: {e:#?}");
-                sleep(Duration::from_secs(MESSENGER_CLEANUP_ERR_SLEEP_SEC))
-                    .await;
-                continue;
-            }
-        };
-        if let Err(e) = echo_im::worker::run_cleanup_worker(&db).await {
-            error!("Messenger Cleanup worker failed: {e:#?}");
-            sleep(Duration::from_secs(15)).await;
-        }
-
-        sleep(Duration::from_secs(MESSENGER_CLEANUP_OK_SLEEP_SEC)).await;
-    }
-}
-
-pub async fn process_queue_nofail(mode: Mode, cancel_token: CancellationToken) {
-    loop {
-        if let Err(e) = process_queue_inner(mode, &cancel_token).await {
-            error!("process_queue_inner encountered an error: {e:?}");
-            sleep(Duration::from_millis(MESSENGER_WORKER_LONG_SLEEP_MS)).await;
-        }
-        sleep(Duration::from_millis(MESSENGER_WORKER_IDLE_SLEEP_MS)).await;
-    }
-}
-
-pub async fn process_queue_inner(
-    mode: Mode,
-    cancel_token: &CancellationToken,
-) -> Result<(), AppError> {
-    let config = read_config(mode).c(h!())?;
-    let dbx = crate::new_pg_pool_from_config(&config).await.c(h!())?;
-
-    info!("started process_queue_inner");
-
-    let mut worker_pool = mk_message_processor_pool(mode).await.c(h!())?;
-
-    loop {
-        if cancel_token.is_cancelled() {
-            info!("cancel token received, stopping process_queue_inner...");
-            return Ok(());
-        }
-        let has_items = process_queue_inner_iteration(&mut worker_pool, &dbx)
-            .await
-            .c(h!())?;
-        let sleep_duration = if has_items {
-            MESSENGER_WORKER_IDLE_SLEEP_MS
-        } else {
-            MESSENGER_WORKER_LONG_SLEEP_MS
-        };
-        sleep(Duration::from_millis(sleep_duration)).await;
-    }
-}
-
-/// - Pull `signal_message_queue` rows in batches
-async fn process_queue_inner_iteration(
-    worker_pool: &mut ProcessorPool,
-    dbx: &DatabaseConnection,
-) -> Result<bool, AppError> {
-    let datasources = list_echo_accounts(None, dbx).await.c(h!())?;
-    let datasource_ids = datasources
-        .iter()
-        .filter(|a| a.is_linked)
-        .map(|a| a.id)
-        .collect_vec();
-    let next_items = signal_message_queue::Entity::find()
-        .filter(
-            signal_message_queue::Column::DatasourceId.is_in(datasource_ids),
-        )
-        .order_by_asc(signal_message_queue::Column::CreatedAt)
-        .limit(MESSENGER_WORKER_BATCH_SIZE)
-        .all(dbx)
-        .await
-        .c(h!())?;
-    if next_items.is_empty() {
-        return Ok(false);
-    }
-    let signal_message_queue_ids =
-        next_items.iter().map(|a| a.id).collect_vec();
-    let attachments = if signal_message_queue_ids.is_empty() {
-        vec![]
-    } else {
-        signal_message_queue_attachment::Entity::find()
-            .filter(
-                signal_message_queue_attachment::Column::MessageId
-                    .is_in(signal_message_queue_ids),
-            )
-            .all(dbx)
-            .await
-            .c(h!())?
-    };
-    process_queue(
-        worker_pool,
-        next_items.clone(),
-        attachments.clone(),
-        datasources,
-    )
-    .await
-    .c(h!())?;
-    for a in attachments {
-        a.delete(dbx).await.c(h!())?;
-    }
-    for i in next_items {
-        i.delete(dbx).await.c(h!())?;
-    }
-    Ok(true)
-}
 
 pub async fn receive_thread_nofail(
     mode: Mode,
