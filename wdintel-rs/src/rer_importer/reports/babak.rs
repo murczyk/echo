@@ -622,9 +622,11 @@ pub async fn get_inbox_messages_report_unit(
                 .def()
                 .rev()
                 .on_condition(move |_left, right| {
-                    let mut expr =
-                        Expr::col((right.clone(), sigint_comment::Column::Login))
-                            .is_in(logins.clone());
+                    let mut expr = Expr::col((
+                        right.clone(),
+                        sigint_comment::Column::Login,
+                    ))
+                    .is_in(logins.clone());
 
                     if or_with_extended_form {
                         expr = expr.and(
