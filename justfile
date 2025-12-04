@@ -423,7 +423,7 @@ copy-db:
     else \
         just _print-servers; exit 1; \
     fi
-    echo "⭐ You can disable messengers by running: cargo run -- --mode=debug oneoff-disable-im"
+    echo "⭐ You can disable messengers by running: cargo run -p wdintel-rs -- --mode=debug oneoff-disable-im"
 
 # _jvln-copy-db:
 #     ssh -t jvln '(cd /fast/kon/Downloads && PGPASSWORD="{{ pgpwd }}" pg_dump --user wd -Fc wd > wd-{{ dt1 }}.pgrestore && ls -lah wd-{{ dt1 }}.pgrestore)'
@@ -438,12 +438,12 @@ _copy-db:
     set -euxo pipefail
 
     ssh -t {{ server }} '(cd /var/tmp && PGPASSWORD="{{ pgpwd }}" pg_dump --user wd -Fc wd > wd-{{ dt1 }}.pgrestore && ls -lah wd-{{ dt1 }}.pgrestore)'
-    scp {{ server }}:/var/tmp/wd-{{ dt1 }}.pgrestore ~/Downloads/
+    scp {{ server }}:/var/tmp/wd-{{ dt1 }}.pgrestore /var/tmp/
     ssh -t {{ server }} 'rm /var/tmp/wd-{{ dt1 }}.pgrestore'
     set +x
     echo "Run: sudo -u postgres dropdb --force wd"
     echo "Run: sudo -u postgres psql postgres -c \"CREATE DATABASE wd\""
-    echo "Run: sudo -u postgres pg_restore -d wd ~/Downloads/wd-{{ dt1 }}.pgrestore"
+    echo "Run: sudo -u postgres pg_restore -d wd /var/tmp/wd-{{ dt1 }}.pgrestore"
     set -x
 
 # run like `just server=echo-zp2 copy-db-backup`
@@ -528,7 +528,7 @@ copy-db-backup:
     echo "  scp $local_plain DEV_HOST:/var/tmp/"
     echo "  ssh DEV_HOST \"sudo -u postgres dropdb --force wd && sudo -u postgres psql postgres -c \\\"CREATE DATABASE wd\\\" && sudo -u postgres pg_restore -d wd /var/tmp/${local_plain_basename}\""
     echo
-    echo "⭐ You can disable messengers by running: cargo run -- --mode=debug oneoff-disable-im"
+    echo "⭐ You can disable messengers by running: cargo run -p wdintel-rs -- --mode=debug oneoff-disable-im"
     set -x
 
 copy-db-gpu:
@@ -562,7 +562,7 @@ copy-db-dev:
     ssh -t $TARGET "sudo -u postgres psql -c 'drop database {{ pgdb }} with (FORCE)' | echo 'ok'"
     ssh -t $TARGET "sudo -u postgres psql -c 'create database {{ pgdb }}'"
     ssh -t $TARGET "sudo -u postgres pg_restore -d {{ pgdb }} /var/tmp/wd-{{ dt1 }}.pgrestore && sudo rm /var/tmp/wd-{{ dt1 }}.pgrestore"
-    echo "⭐ You can disable messengers by running: cargo run -- --mode=debug oneoff-disable-im"
+    echo "⭐ You can disable messengers by running: cargo run -p wdintel-rs -- --mode=debug oneoff-disable-im"
 
 copy-db-to-target:
     #!/bin/bash
