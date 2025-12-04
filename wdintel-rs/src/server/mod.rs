@@ -236,8 +236,7 @@ pub async fn main_server(
             "worker_calculate_group_stats",
             bg_set,
             async move {
-                crate::messenger::worker::worker_calculate_group_stats(mode)
-                    .await;
+                crate::stats::worker::group_stats::worker_calculate_group_stats(mode).await;
             },
         );
     }
