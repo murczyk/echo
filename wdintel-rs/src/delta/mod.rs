@@ -674,7 +674,7 @@ pub async fn import_map(
             )
             .await
             .c(h!())?;
-            crate::zip::unzip(&kmz_file)?;
+            crate::utils::zip::unzip(&kmz_file)?;
             bgtask_log(Some(bgtask_id), "> unzip done", &dbx)
                 .await
                 .c(h!())?;
@@ -906,7 +906,7 @@ pub async fn kmz_to_geojson(
         .args([tmp_dir.path()])
         .spawn()?;
     println!("> running unzip {}", &kmz_file.display());
-    crate::zip::unzip(&kmz_file)?;
+    crate::utils::zip::unzip(&kmz_file)?;
     println!("> unzip done");
     crate::utils::backup_tmp_dir(tmp_dir.path())?;
     let src_dir = tmp_dir
