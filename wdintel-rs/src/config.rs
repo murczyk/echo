@@ -91,6 +91,7 @@ pub const STATS_MIN_DATETIME_DAYS: i64 = 366;
 pub const STATS_READ_FROM_TABLE_MINIMUM_MIN: i64 = 15;
 pub const STATS_5MIN_MAX_NUM_DAYS: i64 = 2000; // FIXME change to 2
 pub const FEATURE_GROUP_STATS_AGGREGATED_DEFAULT: bool = true;
+pub const FEATURE_DELETE_UPLOADED_ATTACHMENT_DEFAULT: bool = true;
 pub const ONEOFF_COUNT_BATCHES_SLEEP_MS: u64 = 200;
 pub const ONEOFF_COUNT_BATCHES_SIZE: u64 = 10000;
 pub const PALITRA_STORAGE_DIR_NAME: &str = "palitra_assets";
@@ -145,6 +146,7 @@ pub struct Config {
     pub server_id: Option<u32>,
     pub messenger_worker_pool_capacity: Option<usize>,
     pub feature_group_stats_aggregated: Option<bool>,
+    pub feature_delete_uploaded_attachment: Option<bool>,
     pub s3_config: Option<S3Config>,
 }
 

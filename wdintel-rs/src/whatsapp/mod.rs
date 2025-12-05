@@ -1,4 +1,4 @@
-use crate::config::mk_s3;
+use crate::config::{mk_s3, FEATURE_DELETE_UPLOADED_ATTACHMENT_DEFAULT};
 use crate::entities::*;
 use crate::messenger::id;
 use crate::messenger::media::{self, MediaUploadInput};
@@ -201,6 +201,9 @@ async fn receive_once(
                     config,
                     &s3,
                     &txn,
+                    config
+                        .feature_delete_uploaded_attachment
+                        .unwrap_or(FEATURE_DELETE_UPLOADED_ATTACHMENT_DEFAULT),
                 )
                 .await
                 .c(h!())?;

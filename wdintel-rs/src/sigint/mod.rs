@@ -1,4 +1,6 @@
-use crate::config::REDIS_MGS_ID_TTL;
+use crate::config::{
+    FEATURE_DELETE_UPLOADED_ATTACHMENT_DEFAULT, REDIS_MGS_ID_TTL,
+};
 use crate::entities::{prelude::*, *};
 use crate::error::AppError;
 use crate::messenger::id;
@@ -283,6 +285,9 @@ pub async fn save_attachment_restapi(
                 config,
                 s3,
                 dbx,
+                config
+                    .feature_delete_uploaded_attachment
+                    .unwrap_or(FEATURE_DELETE_UPLOADED_ATTACHMENT_DEFAULT),
             )
             .await
             .c(h!())?;

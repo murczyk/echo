@@ -5,7 +5,7 @@ use crate::h;
 use crate::storage;
 use crate::types::ShortContext;
 use echo_im::types::MessageAttachmentF1;
-use log::warn;
+use log::{error, warn};
 use opendal::Operator;
 use sea_orm::{ActiveModelTrait, ConnectionTrait, NotSet, Set};
 use std::path::Path;
@@ -70,6 +70,7 @@ pub async fn store_media_attachments(
     config: &Config,
     s3: &Option<Operator>,
     txn: &impl ConnectionTrait,
+    delete_uploaded: bool,
 ) -> Result<Vec<signal_message_media::Model>, AppError> {
     if attachments.is_empty() {
         return Ok(vec![]);
@@ -81,7 +82,9 @@ pub async fn store_media_attachments(
     let s3_config = storage::S3Config::from(config);
     let strongbox_key = &config.strongbox_key;
     let mut stored = Vec::with_capacity(attachments.len());
+    let mut files_to_delete = vec![];
     for attachment in attachments {
+        files_to_delete.push(attachment.path.clone());
         let data = fs::read(&attachment.path).await.c(h!())?;
         let ct = attachment.content_type.clone().unwrap_or_else(|| {
             detect_content_type(
@@ -105,7 +108,8 @@ pub async fn store_media_attachments(
             &object_key,
             &data,
         )
-        .await?;
+        .await
+        .c(h!())?;
 
         let model = signal_message_media::ActiveModel {
             id: Set(media_id),
@@ -127,6 +131,13 @@ pub async fn store_media_attachments(
         .await
         .c(h!())?;
         stored.push(model);
+    }
+    if delete_uploaded {
+        for file in files_to_delete {
+            if let Err(e) = tokio::fs::remove_file(&file).await {
+                error!("failed to delete attachment file {file}: {e:?}");
+            }
+        }
     }
     Ok(stored)
 }

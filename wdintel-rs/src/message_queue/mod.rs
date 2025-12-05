@@ -88,6 +88,9 @@ pub async fn process_signal_message_queue_item(
             config,
             s3,
             txn,
+            config
+                .feature_delete_uploaded_attachment
+                .unwrap_or(FEATURE_DELETE_UPLOADED_ATTACHMENT_DEFAULT),
         )
         .await
         .c(h!())?;
