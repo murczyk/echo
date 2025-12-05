@@ -29,6 +29,7 @@ pub mod event_stream;
 pub mod functest;
 pub mod icons;
 pub mod importer;
+pub mod inbox;
 mod install;
 pub mod kml;
 pub mod kv;
@@ -57,7 +58,6 @@ pub mod unit;
 pub mod users;
 pub mod utils;
 pub mod whatsapp;
-pub mod inbox;
 
 #[macro_export]
 macro_rules! h {

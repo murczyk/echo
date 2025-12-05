@@ -4,8 +4,8 @@ use crate::event_stream::fanout;
 use crate::event_stream::types::EventMsg;
 use crate::event_stream::types::EventType;
 use crate::types::*;
-use sea_orm::*;
 use chrono::prelude::*;
+use sea_orm::*;
 
 /// The main workhorse parsing signal_message into sigint_inbox_item
 ///
@@ -83,10 +83,12 @@ where
     let coords_vec = milgeo_rs::coordinates::rer_extract_coords(&body).await;
     let mut other_coords = coords_vec.clone();
     let coords = crate::utils::pop_vector(&mut other_coords);
-    let callsign_tokens = crate::rer_importer::callsigns::find_known_callsigns(rq, &body)
-        .await
-        .c(h!())?;
-    let keyword_tokens = crate::rer_importer::highlight::extract_keywords(&body)?;
+    let callsign_tokens =
+        crate::rer_importer::callsigns::find_known_callsigns(rq, &body)
+            .await
+            .c(h!())?;
+    let keyword_tokens =
+        crate::rer_importer::highlight::extract_keywords(&body)?;
     let callsigns: Vec<String> = crate::utils::uniq_via_btreeset(
         &callsign_tokens
             .iter()
@@ -105,10 +107,13 @@ where
     let callsigns_alg1 = callsigns.clone();
     let callsigns_alg2 =
         crate::nlp::complete_callsigns(rq, &body).await.c(h!())?;
-    let signal_tokens =
-        crate::rer_importer::signals::find_signal_tokens(txn, &body, &body_noheader)
-            .await
-            .c(h!())?;
+    let signal_tokens = crate::rer_importer::signals::find_signal_tokens(
+        txn,
+        &body,
+        &body_noheader,
+    )
+    .await
+    .c(h!())?;
     let all_callsigns = callsigns_alg1
         .clone()
         .into_iter()
@@ -136,7 +141,9 @@ where
     let location_v2 = if settlement_list.is_empty() {
         None
     } else {
-        Some(crate::location::utils::format_settlements_list(settlement_list))
+        Some(crate::location::utils::format_settlements_list(
+            settlement_list,
+        ))
     };
 
     if crate::rer_importer::important::is_important(&body) {
@@ -238,13 +245,14 @@ where
             .next()
             .and_then(|(m, gs)| gs.into_iter().next().map(|g| (m, g)))
     {
-        let datasource_group_id = crate::messenger::group::ensure_datasource_group_id(
-            txn,
-            IMPORT_DIRECTION_FINDING_UUID.to_string(),
-            group.datasource_id,
-        )
-        .await
-        .c(h!())?;
+        let datasource_group_id =
+            crate::messenger::group::ensure_datasource_group_id(
+                txn,
+                IMPORT_DIRECTION_FINDING_UUID.to_string(),
+                group.datasource_id,
+            )
+            .await
+            .c(h!())?;
         let mut signal_message = signal_message.into_active_model();
         signal_message.datasource_group_id = Set(Some(datasource_group_id));
         signal_message.update(txn).await.c(h!())?;

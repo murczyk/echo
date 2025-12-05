@@ -292,39 +292,6 @@ pub async fn save_attachment_restapi(
     Ok(())
 }
 
-fn display_message(message: &restapi::Message) -> Result<String, AppError> {
-    // message example in json: {"exception":null,"envelope":{"source":"+380969540887","sourceNumber":"+380969540887","sourceUuid":"d39ae116-5141-4dcb-a10c-328d3acdfcf4","sourceName":"пост Майк 140","sourceDevice":4,"timestamp":1701448256350,"dataMessage":{"timestamp":1701448256350,"message":"01.12, 18:28:53\n415.4150\nУКХ р/м НВ підрозділу 415.415 МГц\nНВ\nНВ\n\n— Сейчас надо наводиться... 268.","expiresInSeconds":0,"viewOnce":false,"attachments":null,"reaction":null,"quote":null,"groupInfo":{"groupId":"GbjoAAUhQKZ46SSA8UIl+ApktWIH/t4E1YgbxiH0zMk=","type":"DELIVER"}}},"account":"+380502711438"}
-    if message.exception.is_some() {
-        return Ok(serde_json::to_string(message).c(h!())?);
-    };
-    let timestamp = message.envelope.timestamp;
-    let Some(datetime) = chrono::DateTime::from_timestamp_millis(timestamp)
-        .map(|x| x.naive_utc())
-    else {
-        return Ok(serde_json::to_string(message).c(h!())?);
-    };
-    let datetime = datetime.format("%Y-%m-%d %H:%M:%S").to_string();
-    let source_name = message
-        .envelope
-        .source_name
-        .clone()
-        .unwrap_or("".to_string());
-    let source_number = message
-        .envelope
-        .source_number
-        .clone()
-        .unwrap_or("".to_string());
-    let message = message
-        .envelope
-        .data_message
-        .as_ref()
-        .map(|x| x.message.clone().unwrap_or("".to_string()))
-        .unwrap_or("".to_string());
-    Ok(format!(
-        "{datetime} {source_name} ({source_number}): {message}"
-    ))
-}
-
 pub async fn oneoff_sigint_import_mouse(
     mode: Mode,
     ps: &crate::OneoffSigintImportMousePs,
@@ -582,56 +549,36 @@ fn extract_network_name(s: &str) -> Result<Option<String>, AppError> {
     }
 }
 
-/// There's a [special case](https://github.com/users/k-bx/projects/2/views/1?pane=issue&itemId=46378472) where people post multiple messages in one.
-fn message_to_many(
-    message: restapi::Message,
-) -> Result<Vec<restapi::Message>, AppError> {
-    let Some(data_message) = message.envelope.data_message.as_ref() else {
-        return Ok(vec![message.clone()]);
-    };
-    let Some(body) = data_message.message.as_ref() else {
-        return Ok(vec![message.clone()]);
-    };
-    let bodies = message_to_many_str(body)?;
-    let mut messages = vec![];
-    for body in bodies {
-        let mut message = message.clone();
-        message.envelope.data_message.as_mut().unwrap().message = Some(body);
-        messages.push(message);
-    }
-    Ok(messages)
-}
-
-fn message_to_many_str(body: &str) -> Result<Vec<String>, AppError> {
-    lazy_static! {
-        static ref RE: Regex =
-            Regex::new(r"⚡⚡⚡ \d\d+[\.,]\d\d\d\d*.*").unwrap();
-    }
-
-    if !body.contains("⚡⚡⚡") {
-        return Ok(vec![body.to_string()]);
-    }
-
-    let mut bodies = vec![];
-    let items = split_keep(&RE, body);
-    let mut iter = items.into_iter();
-    if iter.len() == 1 {
-        return Ok(vec![body.to_string()]);
-    }
-    while let Some(header) = iter.next() {
-        let Some(rest) = iter.next() else { continue };
-        let rest = rest.trim();
-        if rest.is_empty() {
-            continue;
-        }
-        bodies.push(format!("{header}\n\n{rest}"));
-    }
-    Ok(bodies)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn message_to_many_str(body: &str) -> Result<Vec<String>, AppError> {
+        lazy_static! {
+            static ref RE: Regex =
+                Regex::new(r"⚡⚡⚡ \d\d+[\.,]\d\d\d\d*.*").unwrap();
+        }
+
+        if !body.contains("⚡⚡⚡") {
+            return Ok(vec![body.to_string()]);
+        }
+
+        let mut bodies = vec![];
+        let items = split_keep(&RE, body);
+        let mut iter = items.into_iter();
+        if iter.len() == 1 {
+            return Ok(vec![body.to_string()]);
+        }
+        while let Some(header) = iter.next() {
+            let Some(rest) = iter.next() else { continue };
+            let rest = rest.trim();
+            if rest.is_empty() {
+                continue;
+            }
+            bodies.push(format!("{header}\n\n{rest}"));
+        }
+        Ok(bodies)
+    }
 
     #[test]
     fn test_base64_01() {

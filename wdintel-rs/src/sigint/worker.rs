@@ -3,7 +3,7 @@ use crate::messenger::types::UnstageResult;
 use crate::types::ShortContext;
 
 /// Unsage logic
-/// 
+///
 /// - when we create a message we set it deleted
 /// - if we find that it's a duplicate - we link it to the original and delete the staged one
 /// - if it's not a duplicate - we unmark it as deleted and create the link
