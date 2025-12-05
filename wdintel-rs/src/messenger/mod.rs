@@ -12,6 +12,7 @@ use regex::Regex;
 use sea_orm::*;
 
 pub mod bl;
+pub mod dedupe;
 pub mod group;
 pub mod id;
 pub mod media;
