@@ -4,6 +4,10 @@ use crate::messenger::worker::*;
 use tokio::time::{sleep, Duration};
 use tokio_util::sync::CancellationToken;
 
+/// Worker which ultimately consumes [signal_message_queue](crate::entities::signal_message_queue) rows
+///
+/// - TODO: document producers, consumers etc.
+/// - at the end main processing business logic is done by [process_signal_message_queue_item](crate::message_queue::process_signal_message_queue_item)
 pub async fn process_queue_nofail(mode: Mode, cancel_token: CancellationToken) {
     loop {
         if let Err(e) = process_queue_inner(mode, &cancel_token).await {
@@ -45,7 +49,7 @@ pub async fn process_queue_inner(
     }
 }
 
-/// - Pull `signal_message_queue` rows in batches
+/// - Pull [signal_message_queue](crate::entities::signal_message_queue) rows in batches
 async fn process_queue_inner_iteration(
     worker_pool: &mut ProcessorPool,
     dbx: &DatabaseConnection,
@@ -90,11 +94,5 @@ async fn process_queue_inner_iteration(
     )
     .await
     .c(h!())?;
-    for a in attachments {
-        a.delete(dbx).await.c(h!())?;
-    }
-    for i in next_items {
-        i.delete(dbx).await.c(h!())?;
-    }
     Ok(true)
 }

@@ -7,9 +7,9 @@ use crate::types::*;
 use chrono::prelude::*;
 use sea_orm::*;
 
-/// The main workhorse parsing signal_message into sigint_inbox_item
+/// The main workhorse parsing [signal_message](crate::entities::signal_message) into [sigint_inbox_item](crate::entities::sigint_inbox_item)
 ///
-/// It does not do any extremely-slow AI operations and such, those are done separately in TODO:link and an additional ETInboxChanged event is fired
+/// It does not do any extremely-slow AI operations and such, those are done separately in TODO:link and an additional [ETInboxChanged](crate::event_stream::types::EventType::ETInboxChanged) event is fired
 ///
 /// Some ofthe main tasks performed here:
 /// - extracting callsigns
@@ -20,7 +20,7 @@ use sea_orm::*;
 /// - marking important messages
 /// - setting proper signal_message.sender if possible
 /// - changing datasource_group_id if coordinates are present
-/// - firing ETInboxChanged event
+/// - firing [ETInboxChanged](crate::event_stream::types::EventType::ETInboxChanged) event
 pub async fn construct_inbox_item<'a, 'async_trait, C>(
     settlements: Arc<RwLock<crate::location::SettlementsData>>,
     txn: &'a C,

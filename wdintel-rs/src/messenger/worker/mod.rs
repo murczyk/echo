@@ -1,23 +1,15 @@
 use crate::config::*;
 use crate::entities::sea_orm_active_enums::*;
 use crate::entities::*;
-use crate::error::{AppError, ContextAndError};
-use crate::location::SettlementsData;
+use crate::error::*;
 use crate::messenger::bl::{deactivate_account, list_echo_accounts};
-use crate::messenger::id;
-use crate::messenger::media::{self, MediaUploadInput};
 use crate::messenger::types::*;
 use crate::new_pg_pool_from_mode;
 use crate::types::*;
 use chrono::*;
-use echo_im::types::MessageAttachmentF1;
-use log::*;
-use redis::aio::ConnectionManager;
-use reqwest::Client;
 use sea_orm::*;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::runtime::*;
-use tokio::task::JoinSet;
 use tokio::time::{sleep, Duration};
 use tokio_util::sync::CancellationToken;
 
@@ -28,6 +20,13 @@ pub mod queue;
 
 static SIGNAL_LOGIN_DELAY_DONE: AtomicBool = AtomicBool::new(false);
 
+/// Receive thread for all datasources (messengers)
+///
+/// - queries echo-im for signal/whatsapp
+/// - updates group list
+/// - receives new messages
+/// - puts them into the signal_message_queue table for further processing
+/// - messages are further processed by process_signal_message_queue_item function
 pub async fn receive_thread_nofail(
     mode: Mode,
     cancel_token: CancellationToken,
@@ -445,109 +444,6 @@ async fn list_clients(
     let live_clients = list_echo_accounts(None, &txn).await.c(h!())?;
     txn.commit().await.c(h!())?;
     Ok(live_clients)
-}
-
-pub async fn process_signal_message_queue_item(
-    m: Message,
-    attachments: Vec<MessageAttachmentF1>,
-    redis: &mut ConnectionManager,
-    settlements: Arc<RwLock<SettlementsData>>,
-    rq: &Client,
-    config: &Config,
-    s3: &Option<opendal::Operator>,
-    txn: &DatabaseTransaction,
-    skip_process_inbox_item: bool,
-) -> Result<String, AppError> {
-    // Normalize body
-    info!("received message: {m:?}");
-    let body = m.body.replace("\r\n", "\n");
-    let datasource_group_id =
-        crate::messenger::group::ensure_datasource_group_id(
-            txn,
-            m.group_id.clone(),
-            m.datasource_id,
-        )
-        .await
-        .c(h!())?;
-    let signal_message = signal_message::ActiveModel {
-        id: NotSet,
-        body: Set(Some(body.clone())),
-        datasource_group_id: Set(Some(datasource_group_id)),
-        created_at: NotSet,
-        timestamp: Set(Some(m.timestamp)),
-        sender: Set(m.sender),
-        format: NotSet,
-        deleted: Set(true), // unstaged message
-        external_id: NotSet,
-        message_uid: NotSet,
-        duplicate_of: NotSet,
-    }
-    .insert(txn)
-    .await
-    .c(h!())?;
-    let m_duplicate_of = crate::sigint::find_duplicate_of(
-        txn,
-        &body,
-        Some(m.timestamp),
-        signal_message.id,
-        redis,
-    )
-    .await
-    .c(h!())?;
-    let res = crate::sigint::worker::unstage_message(
-        txn,
-        &m.group_id,
-        signal_message,
-        m_duplicate_of,
-    )
-    .await
-    .c(h!())?;
-
-    if res.is_duplicate {
-        return Ok(res.message.message_uid.context(h!())?);
-    }
-
-    let signal_message = id::update_message_with_uid(txn, config, res.message)
-        .await
-        .c(h!())?;
-
-    let message_uid = signal_message.message_uid.clone().c(h!())?;
-
-    if !attachments.is_empty() {
-        let upload_inputs: Vec<MediaUploadInput> =
-            attachments.clone().into_iter().map(Into::into).collect();
-        media::store_media_attachments(
-            &upload_inputs,
-            signal_message.id,
-            config,
-            s3,
-            txn,
-        )
-        .await
-        .c(h!())?;
-    }
-
-    if !skip_process_inbox_item {
-        // inbox item processing happens behind the scene
-        crate::rer_importer::bgworker::process_message_to_inbox_nofail(
-            settlements.clone(),
-            txn,
-            rq,
-            config,
-            redis,
-            signal_message.id,
-            None,
-        )
-        .await;
-
-        crate::sigint::worker::incoming_message_after_insert(
-            txn,
-            signal_message.id,
-        )
-        .await
-        .c(h!())?;
-    }
-    Ok(message_uid)
 }
 
 async fn load_client_datasource<'a, 'async_trait, C>(
