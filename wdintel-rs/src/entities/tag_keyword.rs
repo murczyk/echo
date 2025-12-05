@@ -15,6 +15,7 @@ pub struct Model {
     #[sea_orm(column_type = "Text")]
     pub keyword: String,
     pub keyword_forms: Vec<String>,
+    pub is_regex: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

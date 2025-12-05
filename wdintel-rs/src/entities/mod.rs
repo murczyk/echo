@@ -124,6 +124,7 @@ pub mod stats_group_unit_5min;
 pub mod stats_group_unit_day;
 pub mod tag;
 pub mod tag_keyword;
+pub mod tag_suggestion_worker_queue;
 pub mod tags_ordering;
 pub mod url_visit_notification;
 pub mod whatsapp_group;

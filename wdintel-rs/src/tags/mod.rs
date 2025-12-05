@@ -34,6 +34,7 @@ async fn tags_list(
             .map(|tag_keyword| TagKeyword {
                 tag_keyword_id: tag_keyword.tag_keyword_id,
                 is_positive: tag_keyword.is_positive,
+                is_regex: tag_keyword.is_regex,
                 keyword: tag_keyword.keyword,
                 keyword_forms: tag_keyword.keyword_forms,
             })
@@ -74,9 +75,14 @@ async fn add_tag_keywords(
         async |r| -> anyhow::Result<tag_keyword::ActiveModel> {
             let TagKeywordAddReq {
                 is_positive,
+                is_regex,
                 keyword,
                 keyword_forms,
             } = r;
+
+            if is_regex {
+                let _ = regex::Regex::new(&keyword).c(h!())?;
+            }
 
             let mut keyword_forms: Vec<String> =
                 keyword_forms.unwrap_or_default();
@@ -85,11 +91,16 @@ async fn add_tag_keywords(
                     crate::nlp::token_lexemes(&env.rq.clone(), &keyword)
                         .await
                         .c(h!())?;
+            } else {
+                for pattern in &keyword_forms {
+                    let _ = regex::Regex::new(&pattern).c(h!())?;
+                }
             }
 
             let model = tag_keyword::ActiveModel {
                 tag_id: Set(tag_id),
                 is_positive: Set(is_positive),
+                is_regex: Set(is_regex),
                 keyword: Set(keyword),
                 keyword_forms: Set(keyword_forms),
                 ..Default::default()
@@ -112,6 +123,7 @@ async fn add_tag_keywords(
         .map(|x| TagKeyword {
             tag_keyword_id: x.tag_keyword_id,
             is_positive: x.is_positive,
+            is_regex: x.is_regex,
             keyword: x.keyword,
             keyword_forms: x.keyword_forms,
         })
@@ -178,15 +190,23 @@ async fn update_tag_keyword(
     let mut tag_keyword = tag_keyword.into_active_model();
     let TagKeywordAddReq {
         is_positive,
+        is_regex,
         keyword,
         keyword_forms,
     } = req.0;
+    if is_regex {
+        let _ = regex::Regex::new(&keyword).c(h!())?;
+    }
 
     let mut keyword_forms: Vec<String> = keyword_forms.unwrap_or_default();
     if keyword_forms.is_empty() {
         keyword_forms = crate::nlp::token_lexemes(&env.rq.clone(), &keyword)
             .await
             .c(h!())?;
+    } else {
+        for pattern in &keyword_forms {
+            let _ = regex::Regex::new(&pattern).c(h!())?;
+        }
     }
 
     tag_keyword.is_positive = Set(is_positive);

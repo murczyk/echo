@@ -17,6 +17,7 @@ pub struct Tag {
 pub struct TagKeyword {
     pub tag_keyword_id: i64,
     pub is_positive: bool,
+    pub is_regex: bool,
     pub keyword: String,
     pub keyword_forms: Vec<String>,
 }
@@ -26,6 +27,7 @@ pub struct TagKeyword {
 )]
 pub struct TagKeywordAddReq {
     pub is_positive: bool,
+    pub is_regex: bool,
     pub keyword: String,
     pub keyword_forms: Option<Vec<String>>,
 }

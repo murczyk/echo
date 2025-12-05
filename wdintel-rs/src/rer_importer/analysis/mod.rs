@@ -394,8 +394,7 @@ fn get_related_tag_items_filter(
     if let Some(logins) = only_tags_by_logins {
         if !logins.is_empty() {
             q = q.filter(
-                Expr::col(sigint_inbox_item_tag::Column::Login)
-                    .is_in(logins),
+                Expr::col(sigint_inbox_item_tag::Column::Login).is_in(logins),
             );
         }
     }
