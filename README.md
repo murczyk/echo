@@ -39,12 +39,6 @@ Python service (optional, for NLP stuff only):
 just dev-py
 ```
 
-Sigint signal worker (reads messages from signal):
-
-```
-(cd wdintel-rs && cargo run --release -- --mode=debug sigint-worker)
-```
-
 nginx macos: see [[deploy/README]]
 
 Then open http://wildducks.localhost

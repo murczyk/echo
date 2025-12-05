@@ -195,7 +195,7 @@ $ scp deploy/nginx/<server> <server>: && ssh <server> 'sudo mv <server> /etc/ngi
 
 ## Enable services
 
-Once also enable services in systemd: `sudo systemctl enable wdintel-rs wdintel-rs-sigint-worker echo-whatsapp echo-signal-cli`
+Once also enable services in systemd: `sudo systemctl enable wdintel-rs echo-whatsapp echo-signal-cli`
 
 ## SSL/Letsencrypt Tailscale
 
