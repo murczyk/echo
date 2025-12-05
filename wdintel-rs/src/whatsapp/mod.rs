@@ -134,7 +134,7 @@ async fn receive_once(
         let body = wq.body.clone();
         // Normalize body
         let body = body.replace("\r\n", "\n");
-        let body =
+        let body_for_dedupe =
             dedupe::body_with_attachment_markers(&body, &whatsapp_attachments)
                 .await;
 
@@ -166,7 +166,7 @@ async fn receive_once(
 
         let m_duplicate_of = crate::sigint::find_duplicate_of(
             &txn,
-            &body,
+            &body_for_dedupe,
             Some(wq.timestamp),
             signal_message.id,
             redis,
