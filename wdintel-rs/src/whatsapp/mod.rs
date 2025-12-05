@@ -1,5 +1,6 @@
 use crate::config::{mk_s3, FEATURE_DELETE_UPLOADED_ATTACHMENT_DEFAULT};
 use crate::entities::*;
+use crate::messenger::dedupe;
 use crate::messenger::id;
 use crate::messenger::media::{self, MediaUploadInput};
 use crate::types::*;
@@ -117,9 +118,25 @@ async fn receive_once(
             continue;
         }
         let txn = dbx.begin().await.c(h!())?;
+        let whatsapp_attachments =
+            if let Some(whatsapp_id) = wq.whatsapp_id.as_ref() {
+                whatsapp_queue_attachment::Entity::find()
+                    .filter(
+                        whatsapp_queue_attachment::Column::WhatsappId
+                            .eq(whatsapp_id),
+                    )
+                    .all(&txn)
+                    .await
+                    .c(h!())?
+            } else {
+                vec![]
+            };
         let body = wq.body.clone();
         // Normalize body
         let body = body.replace("\r\n", "\n");
+        let body =
+            dedupe::body_with_attachment_markers(&body, &whatsapp_attachments)
+                .await;
 
         let datasource_group_id =
             crate::messenger::group::ensure_datasource_group_id(
@@ -176,39 +193,28 @@ async fn receive_once(
                 .await
                 .c(h!())?;
 
-        if let Some(whatsapp_id) = wq.whatsapp_id.as_ref() {
-            // attachments if any
-            let attachments = whatsapp_queue_attachment::Entity::find()
-                .filter(
-                    whatsapp_queue_attachment::Column::WhatsappId
-                        .eq(whatsapp_id),
-                )
-                .all(&txn)
-                .await
-                .c(h!())?;
-            if !attachments.is_empty() {
-                let uploads: Vec<MediaUploadInput> = attachments
-                    .iter()
-                    .map(|a| MediaUploadInput {
-                        path: a.path.clone(),
-                        name: None,
-                        content_type: None,
-                    })
-                    .collect();
-                media::store_media_attachments(
-                    &uploads,
-                    signal_message.id,
-                    config,
-                    &s3,
-                    &txn,
-                    config
-                        .feature_delete_uploaded_attachment
-                        .unwrap_or(FEATURE_DELETE_UPLOADED_ATTACHMENT_DEFAULT),
-                )
-                .await
-                .c(h!())?;
-            }
-            for a in attachments {
+        if !whatsapp_attachments.is_empty() {
+            let uploads: Vec<MediaUploadInput> = whatsapp_attachments
+                .iter()
+                .map(|a| MediaUploadInput {
+                    path: a.path.clone(),
+                    name: None,
+                    content_type: None,
+                })
+                .collect();
+            media::store_media_attachments(
+                &uploads,
+                signal_message.id,
+                config,
+                &s3,
+                &txn,
+                config
+                    .feature_delete_uploaded_attachment
+                    .unwrap_or(FEATURE_DELETE_UPLOADED_ATTACHMENT_DEFAULT),
+            )
+            .await
+            .c(h!())?;
+            for a in whatsapp_attachments {
                 a.delete(&txn).await.c(h!())?;
             }
         }
