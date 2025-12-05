@@ -27,8 +27,7 @@ pub async fn process_signal_message_queue_item(
     // Normalize body
     info!("received message: {m:?}");
     let body = m.body.replace("\r\n", "\n");
-    let body_for_dedupe =
-        dedupe::body_with_attachment_markers(&body, &attachments).await;
+    let body = dedupe::body_with_attachment_markers(&body, &attachments).await;
     let datasource_group_id =
         crate::messenger::group::ensure_datasource_group_id(
             txn,
@@ -55,7 +54,7 @@ pub async fn process_signal_message_queue_item(
     .c(h!())?;
     let m_duplicate_of = crate::sigint::find_duplicate_of(
         txn,
-        &body_for_dedupe,
+        &body,
         Some(m.timestamp),
         signal_message.id,
         redis,
