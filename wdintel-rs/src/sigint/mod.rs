@@ -170,13 +170,14 @@ pub async fn oneoff_reprocess_coords(
 
 pub async fn find_duplicate_of(
     txn: &DatabaseTransaction,
-    body: &str,
+    body_for_dedupe: &str,
     m_timestamp: Option<NaiveDateTime>,
     db_message_id: i64,
     manager: &mut ConnectionManager,
 ) -> Result<Option<(signal_message::Model, datasource_group::Model)>, AppError>
 {
-    let body_base64 = general_purpose::STANDARD.encode(body.as_bytes());
+    let body_base64 =
+        general_purpose::STANDARD.encode(body_for_dedupe.as_bytes());
     let key = format!("signal_message:{body_base64}");
     let new_value = format!("{db_message_id}");
     redis::cmd("SET")
@@ -226,7 +227,7 @@ pub async fn find_duplicate_of(
             return Ok(Some(original));
         }
     }
-    info!("{db_message_id} is not a duplicate, with body {body}");
+    info!("{db_message_id} is not a duplicate, with body {body_for_dedupe}");
 
     // find duplicate created N mins ago or later
     let created_recently = signal_message::Column::CreatedAt
@@ -239,7 +240,7 @@ pub async fn find_duplicate_of(
         created_recently
     };
 
-    let mut chars = body.chars();
+    let mut chars = body_for_dedupe.chars();
     chars.next_back();
     let alt_body = chars.as_str().to_string();
 
@@ -249,7 +250,7 @@ pub async fn find_duplicate_of(
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(
             signal_message::Column::Body
-                .eq(body)
+                .eq(body_for_dedupe)
                 .or(signal_message::Column::Body.eq(alt_body)),
         )
         .order_by_asc(signal_message::Column::CreatedAt)
