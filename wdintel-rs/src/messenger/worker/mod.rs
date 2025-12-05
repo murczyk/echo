@@ -529,7 +529,7 @@ pub async fn process_signal_message_queue_item(
 
     if !skip_process_inbox_item {
         // inbox item processing happens behind the scene
-        crate::rer_importer::bgworker::inbox_item_oneoff_nofail(
+        crate::rer_importer::bgworker::process_message_to_inbox_nofail(
             settlements.clone(),
             txn,
             rq,

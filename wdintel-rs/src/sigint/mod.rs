@@ -536,7 +536,7 @@ async fn xlsx_import_process_one(
     id::update_message_with_uid(dbx, config, message)
         .await
         .c(h!())?;
-    crate::rer_importer::bgworker::inbox_item_oneoff_nofail(
+    crate::rer_importer::bgworker::process_message_to_inbox_nofail(
         settlements.clone(),
         dbx,
         rq,

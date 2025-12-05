@@ -170,7 +170,7 @@ pub async fn oneoff_rer_csv_import_1(
             .await
             .c(h!())?;
 
-        crate::rer_importer::bgworker::inbox_item_oneoff_nofail(
+        crate::rer_importer::bgworker::process_message_to_inbox_nofail(
             settlements.clone(),
             &dbx,
             &rq,
@@ -467,7 +467,7 @@ pub async fn rer_delta_csv_import_go(
         id::update_message_with_uid(dbx, config, message)
             .await
             .c(h!())?;
-        crate::rer_importer::bgworker::inbox_item_oneoff_nofail(
+        crate::rer_importer::bgworker::process_message_to_inbox_nofail(
             settlements.clone(),
             dbx,
             rq,

@@ -36,7 +36,7 @@ pub mod important;
 pub mod inbox;
 pub mod keywords;
 pub mod location;
-mod multimessage;
+pub mod multimessage;
 pub mod post;
 pub mod reports;
 pub mod search;

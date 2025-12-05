@@ -83,7 +83,7 @@ async fn receive_once(
         .c(h!())?;
     for id in echo_operator_queue {
         let txn = dbx.begin().await.c(h!())?;
-        crate::rer_importer::bgworker::inbox_item_oneoff_nofail(
+        crate::rer_importer::bgworker::process_message_to_inbox_nofail(
             settlements.clone(),
             &txn,
             rq,

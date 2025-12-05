@@ -250,7 +250,7 @@ pub async fn rer_delta_kmz_import_go(
             .await
             .c(h!())?;
 
-        crate::rer_importer::bgworker::inbox_item_oneoff_nofail(
+        crate::rer_importer::bgworker::process_message_to_inbox_nofail(
             settlements.clone(),
             dbx,
             rq,
