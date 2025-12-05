@@ -57,6 +57,7 @@ pub mod unit;
 pub mod users;
 pub mod utils;
 pub mod whatsapp;
+pub mod inbox;
 
 #[macro_export]
 macro_rules! h {

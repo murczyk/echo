@@ -101,9 +101,6 @@ dev-py:
     STORAGE="$HOME/Downloads/storage"
     (cd wdintel-rs/wdintel-py && WD_CALLSIGNS_SPM=$STORAGE/wiki.model WD_CALLSIGNS=$STORAGE/callsigns20230512.pt $FLASK --app service --debug run)
 
-dev-sigint-worker:
-    (cd wdintel-rs && cargo run -- --mode=debug sigint-worker)
-
 setup-dev:
     # todo: setup everything?
     npm install uglify-js -g
@@ -620,54 +617,6 @@ backup:
     ssh -t {{ server }} 'rm ~/Downloads/wd-{{ server }}-{{ dt1 }}.pgrestore.gpg'
     ssh -t {{ server }} 'rm ~/Downloads/wd-{{ server }}-{{ dt1 }}.pgrestore'
 
-_jvln-deploy: _jvln-deploy-front _jvln-deploy-back
-
-_jvln-deploy-front:
-    (cd wdintel-web && npm ci && npx elm-land build)
-    rm ./wdintel-web/static/dist/wdintel-rs || true
-    rsync -az -i --progress --exclude .git ./wdintel-web/dist/ kon@jvln:/fast/kon/www/wd/ ;
-    echo "Front-end is ready. Now open https://wildducks.online"
-
-_jvln-deploy-back:
-    #!/bin/bash
-    set -euxo pipefail
-
-    SERVER=jvln
-    bw sync
-    NAME="echo-config-$SERVER"
-    res=$(bw list items --pretty $NAME | jq -r '[.[] | select(.name=="'$NAME'")][0].notes')
-    if [[ "$res" == "null" ]]; then
-        echo "❌ Config not found in Bitwarden"
-        exit 1
-    else
-        echo "$res" > /tmp/config-bitwarden.toml
-    fi
-    diff_result=$(diff /tmp/config-server.toml /tmp/config-bitwarden.toml || true)
-    if [[ -z "$diff_result" ]]; then
-        echo "✅ Configs are equal"
-    else
-        echo "❌ Configs are different"
-        echo "diff: $diff_result"
-        read -p "Do you want to update the config on the server? (y/N) " -n 1 -r
-        echo
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-            scp /tmp/config-bitwarden.toml $SERVER:/tmp/config.toml && ssh $SERVER 'sudo mv /tmp/config.toml /etc/echo/config.toml'
-            ssh $SERVER 'sudo systemctl restart wdintel-rs wdintel-rs-sigint-worker'
-            echo "✅ Config updated and echo restarted"
-        else
-            echo "❌ Config not updated"
-        fi
-    fi
-
-    ssh jvln '(cd /fast/kon/workspace/echo-dev && git fetch origin && git clean -df && git checkout {{ branch }} && git pull)'
-    ssh jvln '(source .profile && cd /fast/kon/workspace/echo-dev/wdintel-rs && /fast/kon/.cargo/bin/cargo build --release)'
-    ssh jvln sudo systemctl stop wdintel-rs
-    ssh jvln 'rm /fast/kon/www/wd/dist/wdintel-rs || true'
-    ssh jvln 'cp /fast/kon/workspace/echo-dev/wdintel-rs/target/release/wdintel-rs /fast/kon/www/wd/dist/'
-    ssh jvln sudo systemctl start wdintel-rs
-    rm /tmp/config-server.toml /tmp/config-bitwarden.toml || true
-    echo "Back-end is ready. Now open https://wildducks.online"
-
 _echo-generic-deploy:
     #!/bin/bash
     set -euxo pipefail
@@ -763,11 +712,6 @@ _echo-zaporizhzha-setup-py:
     scp deploy/wdintel-py.service echo-zaporizhzha: && ssh -t echo-zaporizhzha 'sudo mv wdintel-py.service /etc/systemd/system/'
     ssh -t echo-zaporizhzha sudo systemctl daemon-reload
     ssh -t echo-zaporizhzha sudo systemctl enable wdintel-py
-
-_echo-zaporizhzha-setup-sigint-worker:
-    scp deploy/wdintel-rs-sigint-worker.service echo-zaporizhzha: && ssh -t echo-zaporizhzha 'sudo mv wdintel-rs-sigint-worker.service /etc/systemd/system/'
-    ssh -t echo-zaporizhzha sudo systemctl daemon-reload
-    ssh -t echo-zaporizhzha sudo systemctl enable wdintel-rs-sigint-worker
 
 echo-zaporizhzha-forward-postgresql:
     echo "Forwarding echo-zaporizhzha's postgresql port to localhost:6432"
@@ -960,16 +904,6 @@ config-deploy:
       '{{ discord_webhook }}' || true
     # bw_sync "{{ server }}" "echo-config-{{ server }}" "/etc/echo/config.toml" "wdintel-rs"
     echo-install-utils bw-sync "{{ server }}" "echo-config-{{ server }}" "/etc/echo/config.toml" "wdintel-rs"
-
-stop-processing:
-    ssh {{ server }} 'sudo systemctl stop wdintel-rs-sigint-worker'
-    ssh {{ server }} 'sudo systemctl stop echo-signal-cli'
-    ssh {{ server }} 'sudo systemctl stop echo-whatsapp'
-
-resume-processing:
-    ssh {{ server }} 'sudo systemctl start wdintel-rs-sigint-worker'
-    ssh {{ server }} 'sudo systemctl start echo-signal-cli'
-    ssh {{ server }} 'sudo systemctl start echo-whatsapp'
 
 setup-vault:
     just is_dev='false' app="echo" server={{ server }} vault_server=srv-vault vault_addr='https://srv-vault.golden-banded.ts.net:7300' _setup-vault

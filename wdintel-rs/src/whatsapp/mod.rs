@@ -3,7 +3,6 @@ use crate::entities::*;
 use crate::messenger::id;
 use crate::messenger::media::{self, MediaUploadInput};
 use crate::types::*;
-use chrono::prelude::*;
 use sea_orm::*;
 
 pub mod types;
@@ -211,7 +210,7 @@ async fn receive_once(
             }
         }
 
-        crate::rer_importer::bgworker::inbox_item_oneoff_nofail(
+        crate::rer_importer::bgworker::process_message_to_inbox_nofail(
             settlements.clone(),
             &txn,
             rq,
