@@ -1,5 +1,7 @@
 module Config exposing
     ( adjacentFreqsRangeOptions
+    , analysisHourAfterWhichWeTakeADayTomorrow
+    , featureDisableRerDutyDedup
     , featureEnableTornado
     , featureShowCallsignsMetadata
     , thresholdStopCountingDays
@@ -21,6 +23,11 @@ featureShowCallsignsMetadata =
     False
 
 
+featureDisableRerDutyDedup : Bool
+featureDisableRerDutyDedup =
+    True
+
+
 {-| Only after X allow loading earlier messages
 -}
 waterfallLoadEarlierThresholdMs : Int
@@ -38,10 +45,15 @@ adjacentFreqsRangeOptions =
     [ 0, 0.0005, 0.002, 0.005 ]
 
 
-
--- | Threshold controlling if we show counters or not
-
-
+{-| Threshold controlling if we show counters or not
+-}
 thresholdStopCountingDays : Int
 thresholdStopCountingDays =
     15
+
+
+{-| If it's past this hour -- take one more day
+-}
+analysisHourAfterWhichWeTakeADayTomorrow : Int
+analysisHourAfterWhichWeTakeADayTomorrow =
+    19

@@ -1,5 +1,6 @@
 module Shared.Components.DateTime exposing (DateTime, Model, Msg(..), dateFormErrId, init, initAnalysisRanges, initFromDt, initFromPosix, new, setDateModelValue, setDisabled, setTimeModelValue, update, view)
 
+import Config
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
 import Html exposing (..)
@@ -121,6 +122,22 @@ initAnalysisRanges :
     -> ( Model, Model )
 initAnalysisRanges ps =
     let
+        nowHour =
+            Time.toHour ps.zone ps.now
+
+        tomorrowMidnight =
+            Time.Extra.posixToParts ps.zone ps.now
+                |> (\parts ->
+                        { parts
+                            | hour = 0
+                            , minute = 0
+                            , second = 0
+                            , millisecond = 0
+                            , day = parts.day + 1
+                        }
+                   )
+                |> Time.Extra.partsToPosix ps.zone
+
         zoneOffsetMillis =
             Time.Extra.toOffset ps.zone ps.now * 60 * 1000
 
@@ -146,6 +163,17 @@ initAnalysisRanges ps =
                             + (1000 * 60 * 60 * 24)
                    )
                 |> Time.millisToPosix
+
+        defaultToPosix =
+            if
+                (ps.to.dateStr == "")
+                    && (ps.to.timeStr == "")
+                    && (nowHour >= Config.analysisHourAfterWhichWeTakeADayTomorrow)
+            then
+                tomorrowMidnight
+
+            else
+                dateRound12HoursAfter
 
         dateFromStr =
             if ps.from.dateStr /= "" then
@@ -174,24 +202,24 @@ initAnalysisRanges ps =
             if dateToStr /= "" && timeToStr /= "" then
                 MaybeX.or
                     (Utils.Time.mParseDatetimeStr ps.zone (dateToStr ++ "T" ++ timeToStr))
-                    (Just dateRound12HoursAfter)
+                    (Just defaultToPosix)
 
             else
-                Just dateRound12HoursAfter
+                Just defaultToPosix
 
         dateToStr =
             if ps.to.dateStr /= "" then
                 ps.to.dateStr
 
             else
-                Utils.Time.posixToInputValueDate ps.zone dateRound12HoursAfter
+                Utils.Time.posixToInputValueDate ps.zone defaultToPosix
 
         timeToStr =
             if ps.to.timeStr /= "" then
                 ps.to.timeStr
 
             else
-                Utils.Time.posixToInputValueTime ps.zone dateRound12HoursAfter
+                Utils.Time.posixToInputValueTime ps.zone defaultToPosix
 
         from =
             initFromDtAndPosix

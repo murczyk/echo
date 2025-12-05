@@ -5,6 +5,7 @@ import Auth
 import Bindings as B exposing (..)
 import Browser.Events
 import Core.Types exposing (..)
+import Config
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
 import Html exposing (..)
@@ -148,6 +149,10 @@ type alias RecalcDuplicatesAcc =
 
 recalcDuplicates : Model -> Set Int
 recalcDuplicates model =
+    if Config.featureDisableRerDutyDedup || List.length model.waterfalls > 1 then
+        Set.empty
+
+    else
     let
         msgs : List ( Int, B.InboxMessage )
         msgs =
