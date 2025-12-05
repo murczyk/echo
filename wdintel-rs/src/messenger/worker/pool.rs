@@ -3,13 +3,14 @@ use crate::entities::signal_message_queue;
 use crate::entities::*;
 use crate::location::SettlementsData;
 use crate::messenger::types::{EchoAccountF1, Message};
-use crate::messenger::worker::process_signal_message_queue_item;
 use crate::types::*;
 use crate::utils::setup_worker;
 use echo_im::types::{MessageAttachmentF1, MessageF1, MessageSource, SenderF1};
 use redis::aio::ConnectionManager;
 use reqwest::Client;
-use sea_orm::{DatabaseConnection, TransactionTrait};
+use sea_orm::{
+    ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, TransactionTrait,
+};
 
 pub struct ProcessorPool {
     pub capacity: usize,
@@ -40,81 +41,24 @@ pub async fn process_queue(
         .collect::<HashMap<_, _>>();
     let mut item_queue = VecDeque::new();
     for entry in queue {
-        let attachments = attachments
-            .iter()
-            .filter(|x| x.message_id.eq(&entry.id))
-            .map(|a| MessageAttachmentF1 {
-                path: a.path.clone(),
-                name: a.name.clone(),
-            })
-            .collect();
-        let src_entry = entry.clone();
-        let datasource = datasources.get(&entry.datasource_id).c(h!())?;
-        let sender = entry.sender_id.map(|id| SenderF1 {
-            uuid: id,
-            name: entry.sender_name,
-            phone_number: entry.sender_phone_number,
-        });
-        let message_source = match datasource.messenger.to_lowercase().as_str()
+        if let Some(item) =
+            make_item_from_entry(entry, &attachments, &datasources).c(h!())?
         {
-            "signal" => MessageSource::Signal,
-            "whatsapp" => MessageSource::Whatsapp,
-            _x => {
-                error!("unexpected messenger occurred, skipping: {_x}");
-                continue;
-            }
-        };
-        let sender_phone_number =
-            sender.clone().and_then(|sender| sender.phone_number);
-        let message = MessageF1 {
-            id: entry.external_id,
-            text: entry.body,
-            timestamp: entry.timestamp,
-            internal_id: entry.internal_id as i32,
-            group_id: entry.group_id,
-            sender_phone_number,
-            sender,
-            attachments,
-            message_source,
-            reply_to: None,
-        };
-        let item = Item {
-            message,
-            datasource_id: datasource.id,
-            client_name: datasource.system_service_name.clone().c(h!())?,
-            model: src_entry,
-        };
-        item_queue.push_back((item, 0));
+            item_queue.push_back((item, 0));
+        }
     }
     loop {
         // if queue is empty -  wait for remaining tasks, probably some should be retried
         if item_queue.is_empty() {
-            while let Some(res) = pool.join_set.join_next().await {
-                let result = match res {
-                    Ok(res) => res,
-                    Err(e) => {
-                        error!("unexpected error occurred while processing inbox messages: {e:#?}");
-                        continue;
-                    }
-                };
-                if result.failed {
-                    item_queue
-                        .push_front((result.item, result.attempt_num + 1));
-                    break;
-                }
-            }
-            if item_queue.is_empty() {
-                // queue is empty and no retries left; that means the queue was processed
+            let queue_is_empty_and_no_retries_left: bool =
+                wait_for_remaining_tasks(pool, &mut item_queue)
+                    .await
+                    .c(h!())?;
+            if queue_is_empty_and_no_retries_left {
                 break;
             }
         }
         let (item, attempt_num) = item_queue.pop_front().c(h!())?;
-        if attempt_num > 3 {
-            error!(
-                "failed to process item, dropping after 3 attempts: {item:?}"
-            );
-            continue;
-        }
         if pool.join_set.len() >= pool.capacity {
             trace!(
                 "Concurrency limit reached. Waiting for a task to complete..."
@@ -123,16 +67,32 @@ pub async fn process_queue(
                 let result = match res {
                     Ok(res) => res,
                     Err(e) => {
+                        // The join pool is poisoned, finish already-processed items and halt
                         error!("unexpected error occurred while processing inbox messages: {e:#?}");
+                        // this will get us closer to "break" the loop by emptying the queue
+                        item_queue.clear();
                         continue;
                     }
                 };
                 if result.failed {
-                    item_queue
-                        .push_front((result.item, result.attempt_num + 1));
+                    if result.attempt_num > 3 {
+                        error!(
+                            "failed to process item, dropping after 3 attempts: {item:?}"
+                        );
+                    } else {
+                        item_queue
+                            .push_front((result.item, result.attempt_num + 1));
+                    }
+                } else {
+                    delete_message_and_attachments_nofail(
+                        &pool.ctx.dbx,
+                        result.item.model.id,
+                    )
+                    .await;
                 }
             } else {
-                break;
+                // impossible: the pool is empty
+                continue;
             }
         }
         pool.join_set.spawn(process_item_nofail(
@@ -143,6 +103,118 @@ pub async fn process_queue(
     }
     trace!("All tasks completed.");
     Ok(())
+}
+
+fn make_item_from_entry(
+    entry: signal_message_queue::Model,
+    attachments: &[signal_message_queue_attachment::Model],
+    datasources: &HashMap<i64, EchoAccountF1>,
+) -> anyhow::Result<Option<Item>> {
+    let message_attachments = attachments
+        .iter()
+        .filter(|x| x.message_id.eq(&entry.id))
+        .map(|a| MessageAttachmentF1 {
+            path: a.path.clone(),
+            name: a.name.clone(),
+        })
+        .collect();
+    let src_entry = entry.clone();
+    let datasource = datasources.get(&entry.datasource_id).c(h!())?;
+    let sender = entry.sender_id.map(|id| SenderF1 {
+        uuid: id,
+        name: entry.sender_name,
+        phone_number: entry.sender_phone_number,
+    });
+    let message_source = match datasource.messenger.to_lowercase().as_str() {
+        "signal" => MessageSource::Signal,
+        "whatsapp" => MessageSource::Whatsapp,
+        _x => {
+            error!("unexpected messenger occurred, skipping: {_x}");
+            return Ok(None);
+        }
+    };
+    let sender_phone_number =
+        sender.clone().and_then(|sender| sender.phone_number);
+    let message = MessageF1 {
+        id: entry.external_id,
+        text: entry.body,
+        timestamp: entry.timestamp,
+        internal_id: entry.internal_id as i32,
+        group_id: entry.group_id,
+        sender_phone_number,
+        sender,
+        attachments: message_attachments,
+        message_source,
+        reply_to: None,
+    };
+    let item = Item {
+        message,
+        datasource_id: datasource.id,
+        client_name: datasource.system_service_name.clone().c(h!())?,
+        model: src_entry,
+    };
+    Ok(Some(item))
+}
+
+async fn wait_for_remaining_tasks(
+    pool: &mut ProcessorPool,
+    item_queue: &mut VecDeque<(Item, usize)>,
+) -> anyhow::Result<bool> {
+    while let Some(res) = pool.join_set.join_next().await {
+        let result = match res {
+            Ok(res) => res,
+            Err(e) => {
+                error!("unexpected error occurred while processing inbox messages: {e:#?}");
+                continue;
+            }
+        };
+        if result.failed {
+            item_queue.push_front((result.item, result.attempt_num + 1));
+            break;
+        } else {
+            delete_message_and_attachments_nofail(
+                &pool.ctx.dbx,
+                result.item.model.id,
+            )
+            .await;
+        }
+    }
+    if item_queue.is_empty() {
+        // queue is empty and no retries left; that means the queue was processed
+        return Ok(true);
+    }
+    Ok(false)
+}
+
+async fn delete_message_and_attachments(
+    dbx: &DatabaseConnection,
+    message_id: i64,
+) -> anyhow::Result<()> {
+    let txn = dbx.begin().await.c(h!())?;
+    signal_message_queue_attachment::Entity::delete_many()
+        .filter(
+            signal_message_queue_attachment::Column::MessageId.eq(message_id),
+        )
+        .exec(&txn)
+        .await
+        .c(h!())?;
+    signal_message_queue::Entity::delete_by_id(message_id)
+        .exec(&txn)
+        .await
+        .c(h!())?;
+    txn.commit().await.c(h!())?;
+    Ok(())
+}
+
+async fn delete_message_and_attachments_nofail(
+    dbx: &DatabaseConnection,
+    message_id: i64,
+) {
+    if let Err(e) = delete_message_and_attachments(dbx, message_id).await {
+        error!(
+            "failed to delete processed message queue item {message_id}: {e:#?}"
+        );
+    }
 }
 
 pub async fn mk_message_processor_pool(
@@ -232,7 +304,7 @@ async fn process_item_once(
             datasource_id,
         };
         let mut redis = context.redis.clone();
-        if let Err(e) = process_signal_message_queue_item(
+        if let Err(e) = crate::message_queue::process_signal_message_queue_item(
             message,
             m.attachments,
             &mut redis,
