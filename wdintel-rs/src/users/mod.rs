@@ -952,15 +952,13 @@ pub async fn oneoff_register_delta_user(
     Ok(())
 }
 
-pub async fn get_organism_logins<'a, 'async_trait, C>(
+async fn get_organism_logins_inner<'a, 'async_trait, C>(
     txn: &'a C,
-    // login_s: &str,
-    user: actix_identity::Identity,
-) -> Result<Vec<String>, AppError>
+    login_s: &str,
+) -> Result<(login::Model, Vec<String>), AppError>
 where
     C: ConnectionTrait + 'async_trait,
 {
-    let login_s = user.id().c(h!())?;
     let login = login::Entity::find()
         .filter(login::Column::Login.eq(login_s.to_string()))
         .filter(login::Column::DeletedPermanently.eq(false))
@@ -968,10 +966,6 @@ where
         .await
         .c(h!())?
         .ok_or(AppError::Unauthenticated)?;
-    if login.deleted {
-        user.logout();
-        return Err(AppError::Unauthenticated);
-    }
     let mut res = vec![login_s.to_string()];
     if let Some(organism_id) = login.organism_id {
         let logins = login::Entity::find()
@@ -985,6 +979,37 @@ where
                 res.push(login.login.to_string());
             }
         }
+    }
+    Ok((login, res))
+}
+
+pub async fn get_organism_logins<'a, 'async_trait, C>(
+    txn: &'a C,
+    // login_s: &str,
+    user: actix_identity::Identity,
+) -> Result<Vec<String>, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let login_s = user.id().c(h!())?;
+    let (login, res) = get_organism_logins_inner(txn, &login_s).await?;
+    if login.deleted {
+        user.logout();
+        return Err(AppError::Unauthenticated);
+    }
+    Ok(res)
+}
+
+pub async fn get_organism_logins_by_login<'a, 'async_trait, C>(
+    txn: &'a C,
+    login_s: &str,
+) -> Result<Vec<String>, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let (login, res) = get_organism_logins_inner(txn, login_s).await?;
+    if login.deleted {
+        return Err(AppError::Unauthenticated);
     }
     Ok(res)
 }

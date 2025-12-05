@@ -1,10 +1,11 @@
 use crate::entities::*;
 use crate::error::AppError;
 use crate::rer_importer::analysis::*;
-use crate::rer_importer::types::{AnalysisStatsReq, InboxMessagesReq};
+use crate::rer_importer::types::{
+    AnalysisStatsReq, InboxMessagesReq, NewCallsignsRes,
+};
 use crate::types::*;
 use crate::utils::*;
-use actix_identity::Identity;
 use chrono::prelude::*;
 use docx_rs::*;
 use echo_migration::IntoCondition;
@@ -15,13 +16,18 @@ use serde_json::Value;
 use std::fmt::Debug;
 use std::path::Path;
 
-pub async fn report_docx_kind_babak(
-    user: Identity,
+pub struct BabakReportData {
+    pub units: Vec<StatsPerUnitReport>,
+    pub new_callsigns: NewCallsignsRes,
+    pub date_from: NaiveDateTime,
+    pub date_to: NaiveDateTime,
+}
+
+pub async fn bl_babak_report(
+    user_login: &str,
     env: &Env,
     req: &super::types::ReportPreviewReq,
-    outpath: &Path,
-) -> Result<(), AppError> {
-    let user_id = &user.id().c(h!())?;
+) -> Result<BabakReportData, AppError> {
     let Some(since_date_inclusive_ms) = req.req.since_date_inclusive_ms else {
         return Err("Since date must be specified".into());
     };
@@ -30,16 +36,16 @@ pub async fn report_docx_kind_babak(
     };
     let date_from_dt = dt_from_millis(since_date_inclusive_ms)?;
     let date_to_dt = dt_from_millis(till_date_inclusive_ms)?;
-    let tz = crate::config::get_tz();
-    let date_from_dt_tz =
-        Utc.from_utc_datetime(&date_from_dt).with_timezone(&tz);
-    let date_to_dt_tz = Utc.from_utc_datetime(&date_to_dt).with_timezone(&tz);
+    let read_db = env.replica();
+    let logins =
+        crate::users::get_organism_logins_by_login(&read_db, user_login)
+            .await
+            .c(h!())?;
 
-    let file = std::fs::File::create(outpath)?;
-
-    let units = get_inbox_messages_report_unit(user, env, &req.req)
-        .await
-        .c(h!())?;
+    let units =
+        get_inbox_messages_report_unit(user_login, &logins, env, &req.req)
+            .await
+            .c(h!())?;
 
     let new_callsing_req = AnalysisStatsReq {
         since_date_inclusive_ms: req.req.since_date_inclusive_ms.unwrap_or(0),
@@ -63,9 +69,36 @@ pub async fn report_docx_kind_babak(
         filter_tags_option: req.req.filter_tags_option,
         selected_aors: req.req.selected_aors.clone(),
     };
-    let new_callsigns_res = bi_new_callsigns(user_id, env, &new_callsing_req)
-        .await
-        .context(h!())?;
+    let new_callsigns_res =
+        bi_new_callsigns(user_login, env, &new_callsing_req)
+            .await
+            .context(h!())?;
+
+    Ok(BabakReportData {
+        units,
+        new_callsigns: new_callsigns_res,
+        date_from: date_from_dt,
+        date_to: date_to_dt,
+    })
+}
+
+pub async fn report_docx_kind_babak(
+    user_login: &str,
+    env: &Env,
+    req: &super::types::ReportPreviewReq,
+    outpath: &Path,
+) -> Result<(), AppError> {
+    let BabakReportData {
+        units,
+        new_callsigns: new_callsigns_res,
+        date_from,
+        date_to,
+    } = bl_babak_report(user_login, env, req).await?;
+    let tz = crate::config::get_tz();
+    let date_from_dt_tz = Utc.from_utc_datetime(&date_from).with_timezone(&tz);
+    let date_to_dt_tz = Utc.from_utc_datetime(&date_to).with_timezone(&tz);
+
+    let file = std::fs::File::create(outpath)?;
 
     let units_list = units
         .iter()
@@ -512,15 +545,13 @@ pub struct StatsPerUnitReport {
 }
 
 pub async fn get_inbox_messages_report_unit(
-    user: Identity,
+    login: &str,
+    logins: &[String],
     env: &Env,
     req: &InboxMessagesReq,
 ) -> Result<Vec<StatsPerUnitReport>, AppError> {
     let read_db = env.replica();
-    let login = user.id().c(h!())?;
-    let logins = crate::users::get_organism_logins(&read_db, user)
-        .await
-        .c(h!())?;
+    let logins = logins.to_vec();
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
     let mut q = signal_message::Entity::find()
@@ -603,7 +634,7 @@ pub async fn get_inbox_messages_report_unit(
             .add(sigint_unit::Column::Deleted.is_null())
         )
         .filter(datasource_group::Column::GroupMasterKey.is_in(
-            crate::messenger::group::get_identity_sigint_groups(&read_db, &login)
+            crate::messenger::group::get_identity_sigint_groups(&read_db, login)
                 .await
                 .c(h!())?,
         ));
@@ -682,7 +713,7 @@ pub async fn get_inbox_messages_report_unit(
         &req.or_with_coords,
         &Some(false),
         &req.filter_tags_option,
-        &login,
+        login,
     )?;
     if let Some(since_date_inclusive_ms) = req.since_date_inclusive_ms {
         q = q.filter(
@@ -893,4 +924,93 @@ pub async fn get_inbox_messages_report_unit(
         .iter()
         .map(|row| StatsPerUnitReport::from_query_result(row, "").unwrap())
         .collect::<Vec<StatsPerUnitReport>>())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::functest::tests::*;
+    use crate::rer_importer::reports::types::ReportPreviewReq;
+    use crate::rer_importer::types::InboxMessagesReq;
+    use chrono::Utc;
+    use sea_orm::ActiveValue::Set;
+    use serde_json::json;
+    use serial_test::serial;
+
+    #[serial]
+    #[tokio::test]
+    async fn test_bl_babak_report_returns_unit_stats() {
+        let env = cleanup().await.unwrap();
+        let now = Utc::now().naive_utc();
+
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let datasource_group =
+            find_test_datasource_group(&env.dbx).await.unwrap();
+        let bpla_tag = find_test_bpla_tag(&env.dbx).await.unwrap();
+
+        let message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some("test message".to_string())),
+                created_at: Set(now),
+                timestamp: Set(Some(now)),
+                sender: Set(Some("sender".to_string())),
+                message_uid: Set(Some("uid-1".to_string())),
+                datasource_group_id: Set(Some(datasource_group.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let inbox_item = mk_sigint_inbox_item(
+            &env.dbx,
+            sigint_inbox_item::ActiveModel {
+                id: Set(message.id),
+                freq: Set(Some("123.45".to_string())),
+                callsigns: Set(Some(json!(["Alpha"]))),
+                lat: Set(Some(50.0)),
+                lng: Set(Some(30.0)),
+                tags: Set(Some(json!([bpla_tag.id]))),
+                date: Set(Some(now.date().to_string())),
+                time: Set(Some(now.time().format("%H:%M:%S").to_string())),
+                unit_v2: Set(Some("TestUnit".to_string())),
+                checked: Set(Some(true)),
+                reviewed: Set(Some(true)),
+                parsed_unit_v2: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let datetime = inbox_item
+            .datetime
+            .expect("expected auto-set datetime on sigint_inbox_item");
+        let ts = datetime.and_utc().timestamp_millis();
+
+        let req = ReportPreviewReq {
+            kind: "babak".to_string(),
+            req: InboxMessagesReq {
+                since_date_inclusive_ms: Some(ts - 1_000),
+                till_date_inclusive_ms: Some(ts + 1_000),
+                nolimit: Some(true),
+                ..Default::default()
+            },
+            report_type: None,
+        };
+
+        let res = bl_babak_report(&login.login, &env, &req).await.unwrap();
+
+        assert_eq!(res.units.len(), 1);
+        let unit = &res.units[0];
+        assert_eq!(unit.unit.as_deref(), Some("TestUnit"));
+        assert_eq!(unit.count, 1);
+        assert!(
+            res.new_callsigns
+                .not_seen_7days
+                .contains(&"Alpha".to_string()),
+            "expected Alpha to be reported as new callsign"
+        );
+    }
 }

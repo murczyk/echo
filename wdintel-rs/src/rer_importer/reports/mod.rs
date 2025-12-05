@@ -130,7 +130,7 @@ pub async fn report_docx(
         .await
         .c(h!())?;
     } else if req.kind == "babak" {
-        self::babak::report_docx_kind_babak(user, &env, &req, &outpath)
+        self::babak::report_docx_kind_babak(&user_login, &env, &req, &outpath)
             .await
             .c(h!())?;
     } else if req.kind == "mouse" {
