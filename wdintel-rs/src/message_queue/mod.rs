@@ -1,6 +1,5 @@
 use crate::config::*;
 use crate::entities::*;
-use crate::messenger::dedupe;
 use crate::messenger::media::MediaUploadInput;
 use crate::{location::SettlementsData, messenger::types::Message, types::*};
 use echo_im::types::MessageAttachmentF1;
@@ -27,7 +26,6 @@ pub async fn process_signal_message_queue_item(
     // Normalize body
     info!("received message: {m:?}");
     let body = m.body.replace("\r\n", "\n");
-    let body = dedupe::body_with_attachment_markers(&body, &attachments).await;
     let datasource_group_id =
         crate::messenger::group::ensure_datasource_group_id(
             txn,
