@@ -22,9 +22,9 @@ use tokio::time::{sleep, Duration};
 use tokio_util::sync::CancellationToken;
 
 pub mod cleanup;
+pub mod group;
 pub mod pool;
 pub mod queue;
-pub mod group;
 
 static SIGNAL_LOGIN_DELAY_DONE: AtomicBool = AtomicBool::new(false);
 

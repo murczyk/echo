@@ -1,17 +1,23 @@
-use crate::{messenger::{group::ensure_signal_group, worker::sources_eq}, types::*};
-use sea_orm::*;
-use chrono::*;
-use crate::entities::*;
-use echo_migration::Expr;
 use crate::entities::sea_orm_active_enums::*;
+use crate::entities::*;
 use crate::error::*;
+use crate::{
+    messenger::{group::ensure_signal_group, worker::sources_eq},
+    types::*,
+};
+use chrono::*;
+use echo_migration::Expr;
+use sea_orm::*;
 
 pub async fn sync_groups(
     txn: &DatabaseTransaction,
     client_name: &str,
     client_groups_sync_ts_map: &mut BTreeMap<String, NaiveDateTime>,
 ) -> anyhow::Result<()> {
-    let datasource = crate::messenger::worker::load_client_datasource(txn, client_name).await.c(h!())?;
+    let datasource =
+        crate::messenger::worker::load_client_datasource(txn, client_name)
+            .await
+            .c(h!())?;
     let now = Utc::now().naive_utc();
     if let Some(last_updated_ts) =
         client_groups_sync_ts_map.get(client_name).cloned()
