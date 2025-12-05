@@ -5,7 +5,6 @@ use crate::messenger::id;
 use crate::messenger::media::{self, MediaUploadInput};
 use crate::types::*;
 use crate::utils::pop_vector;
-use crate::utils::string::*;
 use crate::OneoffReprocessCoordsPs;
 use base64::engine::general_purpose;
 use base64::Engine;
@@ -552,6 +551,7 @@ fn extract_network_name(s: &str) -> Result<Option<String>, AppError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::string::*;
 
     fn message_to_many_str(body: &str) -> Result<Vec<String>, AppError> {
         lazy_static! {
