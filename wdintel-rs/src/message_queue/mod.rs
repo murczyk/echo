@@ -26,6 +26,14 @@ pub async fn process_signal_message_queue_item(
 ) -> Result<String, AppError> {
     // Normalize body
     info!("received message: {m:?}");
+    let attachment_paths: Vec<_> =
+        attachments.iter().map(|a| a.path.clone()).collect();
+    info!(
+        "processing queue item: datasource_id={} attachments_count={} attachment_paths={:?}",
+        m.datasource_id,
+        attachments.len(),
+        attachment_paths
+    );
     let body = m.body.replace("\r\n", "\n");
     let body_for_dedupe =
         dedupe::body_with_attachment_markers(&body, &attachments).await;

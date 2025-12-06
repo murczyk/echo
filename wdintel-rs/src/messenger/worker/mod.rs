@@ -7,6 +7,7 @@ use crate::messenger::types::*;
 use crate::new_pg_pool_from_mode;
 use crate::types::*;
 use chrono::*;
+use log::info;
 use sea_orm::*;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::runtime::*;
@@ -434,6 +435,15 @@ async fn write_to_signal_message_queue(
         .await
         .c(h!())?;
     }
+    let attachment_paths: Vec<_> =
+        item.attachments.iter().map(|a| a.path.clone()).collect();
+    info!(
+        "enqueued message to signal queue: queue_id={} datasource_id={} attachments_count={} attachment_paths={:?}",
+        signal_message_queue_item.id,
+        datasource_id,
+        attachment_paths.len(),
+        attachment_paths
+    );
     Ok(())
 }
 
