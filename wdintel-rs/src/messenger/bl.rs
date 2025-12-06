@@ -200,14 +200,14 @@ pub async fn link_account(
         txn,
         SignalCliMode::Native,
     )
-    .await
-    .map_err(|res| {
-        warn!("AppError: {:?}", res.to_string());
-        AppError::BL {
-            msg: format!("{res:?}"),
-        }
-    })
-    .cae(h!())?;
+        .await
+        .map_err(|res| {
+            warn!("AppError: {:?}", res.to_string());
+            AppError::BL {
+                msg: format!("{res:?}"),
+            }
+        })
+        .cae(h!())?;
 
     let lock = echo_im::set_account_phone(
         String::from(phone_number),
@@ -216,8 +216,8 @@ pub async fn link_account(
         true,
         txn,
     )
-    .await
-    .cae(h!())?;
+        .await
+        .cae(h!())?;
 
     let id = if let Some(id) = datasource_id {
         let datasource = datasource::Entity::find_by_id(id)
@@ -248,10 +248,10 @@ pub async fn link_account(
             deleted: NotSet,
             last_sync_at: NotSet,
         }
-        .insert(txn)
-        .await
-        .c(h!())?
-        .id
+            .insert(txn)
+            .await
+            .c(h!())?
+            .id
     };
 
     match src {
@@ -263,8 +263,8 @@ pub async fn link_account(
             CLIENT_DATA_DIR_NAME,
             &SignalCliMode::Native,
         )
-        .await
-        .c(h!())?,
+            .await
+            .c(h!())?,
         MessageSource::Whatsapp => os_specific::start_new_whatsapp_client(
             system_service_name,
             WHATSAPP_CLIENT_CONFIG,
@@ -272,8 +272,8 @@ pub async fn link_account(
             WHATSAPP_UNIT_NAME,
             CLIENT_DATA_DIR_NAME,
         )
-        .await
-        .c(h!())?,
+            .await
+            .c(h!())?,
     };
 
     load_echo_account(id, txn).await
@@ -351,8 +351,8 @@ async fn link_existing_datasource(
         txn,
         login,
     )
-    .await
-    .c(h!())
+        .await
+        .c(h!())
 }
 
 pub async fn list_echo_accounts<'a, 'async_trait, C>(
@@ -373,6 +373,8 @@ where
         pub status: AccountStatus,
         pub created_at: DateTime,
         pub client_id: Option<i32>,
+        pub account_id: Option<i32>,
+        pub echo_client_lock_id: Option<i32>,
         pub echo_client_name: Option<String>,
         pub source: Option<sea_orm_active_enums::EchoMessageSource>,
         pub echo_phone_number: Option<String>,
@@ -380,6 +382,9 @@ where
         pub api_endpoint: Option<String>,
         pub is_linked: Option<bool>,
         pub is_client_deleted: Option<bool>,
+        pub signal_port: Option<i32>,
+        pub process_name: Option<String>,
+        pub attachments_path: Option<String>,
     }
 
     let mut q = datasource::Entity::find();
@@ -394,6 +399,10 @@ where
         .join(
             JoinType::LeftJoin,
             echo_client_lock::Relation::EchoClient.def(),
+        )
+        .join(
+            JoinType::LeftJoin,
+            echo_client::Relation::EchoClientConfig.def(),
         )
         .join(
             JoinType::LeftJoin,
@@ -412,11 +421,16 @@ where
         .column(datasource::Column::Status)
         .column(datasource::Column::CreatedAt)
         .column(echo_client_lock::Column::ClientId)
+        .column(echo_client_lock::Column::AccountId)
+        .column_as(echo_client_lock::Column::Id, "echo_client_lock_id")
         .column_as(echo_client::Column::Name, "echo_client_name")
         .column(echo_account::Column::Source)
         .column_as(echo_account::Column::PhoneNumber, "echo_phone_number")
         .column(echo_account::Column::IsLinked)
         .column_as(echo_client::Column::Deleted, "is_client_deleted")
+        .column_as(echo_client_config::Column::SignalPort, "signal_port")
+        .column_as(echo_client_config::Column::ProcessName, "process_name")
+        .column_as(echo_client_config::Column::SignalApiAttachmentPath, "attachments_path")
         .into_model::<LinkedAccountRow>()
         .all(txn)
         .await
@@ -469,6 +483,12 @@ where
             is_linked: a.is_linked.unwrap_or(false),
             description: a.description,
             is_imported,
+            signal_port: a.signal_port.map(|p| p.to_string()),
+            process_name: a.process_name,
+            attachments_path: a.attachments_path,
+            echo_client_id: a.client_id.map(|p| p.to_string()),
+            echo_account_id: a.account_id.map(|p| p.to_string()),
+            echo_client_lock_id: a.echo_client_lock_id.map(|p| p.to_string()),
         });
     }
     let operator_datasources = datasource::Entity::find()
@@ -511,6 +531,12 @@ where
                 is_linked: true,
                 description: ods.description,
                 is_imported: false,
+                signal_port: None,
+                process_name: None,
+                attachments_path: None,
+                echo_client_id: None,
+                echo_account_id: None,
+                echo_client_lock_id: None,
             })
         }
     }
@@ -568,9 +594,9 @@ pub async fn upsert_group_area_of_responsibility(
                     id: NotSet,
                     created_at: NotSet,
                 }
-                .insert(txn)
-                .await
-                .c(h!())?;
+                    .insert(txn)
+                    .await
+                    .c(h!())?;
             }
 
             // Return all AOR models
@@ -618,11 +644,11 @@ pub async fn bl_group_update(
             id: NotSet,
             created_at: NotSet,
         }
-        .insert(txn)
-        .await
-        .c(h!())?,
+            .insert(txn)
+            .await
+            .c(h!())?,
     }
-    .into_active_model();
+        .into_active_model();
 
     let aor_ids = match &req.area_of_responsibility_ids {
         None => req.area_of_responsibility_id.map(|id| vec![id]),

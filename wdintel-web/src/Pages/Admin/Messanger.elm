@@ -1976,6 +1976,51 @@ messengerAccountsTableConfig isLoading aorList =
                 }
                 |> Table.withColumnWidth "6%"
             , Table.veryCustomColumn
+                { name = "Інформація для дебагу"
+                , viewData =
+                    \account ->
+                        let
+                            -- Helper function to render a single detail line if the value is Just
+                            -- Note: The key is hardcoded based on the field name
+                            viewDetail : String -> Maybe String -> List (Html msg)
+                            viewDetail key maybeValue =
+                                case maybeValue of
+                                    Just value ->
+                                       [ li []
+                                           [ b [] [ text key ]
+                                           , text (": " ++ value)
+                                           ]
+                                       ]
+                                    Nothing ->
+                                        []
+
+                            -- Render all details in the desired order
+                            allDetails =
+                                List.concat
+                                    [ viewDetail "echo_client_config.process_name" account.processName
+                                    , viewDetail "echo_client_config.signal_port" account.signalPort
+                                    , viewDetail "echo_client_config.signal_api_attachment_path" account.attachmentsPath
+                                    , viewDetail "echo_client.id" account.echoClientId
+                                    , viewDetail "echo_account.id" account.echoAccountId
+                                    , viewDetail "echo_client_lock.id" account.echoClientLockId
+                                    ]
+                        in
+                        TableColumn.HtmlDetails []
+                            [ div [ class "space-y-1" ]
+                                (if List.isEmpty allDetails then
+                                    -- Display a placeholder if no fields are present
+                                    [ span [ class "text-muted-foreground" ] [ text "—" ] ]
+                                 else
+                                    -- Render the list of details
+                                    [ ul [ class "space-y-1 list-disc list-inside ml-2" ]
+                                        allDetails
+                                    ]
+                                )
+                            ]
+                , sorter = Table.unsortable
+                }
+                |> Table.withColumnWidth "20%"
+            , Table.veryCustomColumn
                 { name = "Опис"
                 , viewData =
                     \account ->

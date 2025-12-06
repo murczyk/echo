@@ -31,6 +31,12 @@ pub struct EchoAccountF1 {
     pub api_endpoint: Option<String>,
     pub is_linked: bool,
     pub is_imported: bool,
+    pub signal_port: Option<String>,
+    pub process_name: Option<String>,
+    pub attachments_path: Option<String>,
+    pub echo_client_id: Option<String>,
+    pub echo_account_id: Option<String>,
+    pub echo_client_lock_id: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Elm, ElmEncode, ElmDecode)]
