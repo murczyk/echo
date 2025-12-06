@@ -423,7 +423,7 @@ async fn write_to_signal_message_queue(
     .insert(txn)
     .await
     .c(h!())?;
-    for attachment in item.attachments {
+    for attachment in &item.attachments {
         signal_message_queue_attachment::ActiveModel {
             id: NotSet,
             message_id: Set(signal_message_queue_item.id),
