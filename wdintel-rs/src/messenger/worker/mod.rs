@@ -445,28 +445,7 @@ async fn write_to_signal_message_queue(
     datasource_id: i64,
     txn: &DatabaseTransaction,
 ) -> anyhow::Result<()> {
-    let mut attachments = item.attachments.clone();
-    if attachments.is_empty() {
-        let fallback_attachments = echo_attachment::Entity::find()
-            .filter(echo_attachment::Column::MessageId.eq(item.internal_id))
-            .all(txn)
-            .await
-            .c(h!())?
-            .into_iter()
-            .map(|a| echo_im::types::MessageAttachmentF1 {
-                path: a.path,
-                name: a.name,
-            })
-            .collect::<Vec<_>>();
-        if !fallback_attachments.is_empty() {
-            info!(
-                "attachments missing in MessageF1, fetched {} from echo_attachment for message_id={}",
-                fallback_attachments.len(),
-                item.internal_id
-            );
-            attachments = fallback_attachments;
-        }
-    }
+    let attachments = item.attachments.clone();
     let signal_message_queue_item = signal_message_queue::ActiveModel {
         id: NotSet,
         datasource_id: Set(datasource_id),

@@ -200,14 +200,14 @@ pub async fn link_account(
         txn,
         SignalCliMode::Native,
     )
-        .await
-        .map_err(|res| {
-            warn!("AppError: {:?}", res.to_string());
-            AppError::BL {
-                msg: format!("{res:?}"),
-            }
-        })
-        .cae(h!())?;
+    .await
+    .map_err(|res| {
+        warn!("AppError: {:?}", res.to_string());
+        AppError::BL {
+            msg: format!("{res:?}"),
+        }
+    })
+    .cae(h!())?;
 
     let lock = echo_im::set_account_phone(
         String::from(phone_number),
@@ -216,8 +216,8 @@ pub async fn link_account(
         true,
         txn,
     )
-        .await
-        .cae(h!())?;
+    .await
+    .cae(h!())?;
 
     let id = if let Some(id) = datasource_id {
         let datasource = datasource::Entity::find_by_id(id)
@@ -248,10 +248,10 @@ pub async fn link_account(
             deleted: NotSet,
             last_sync_at: NotSet,
         }
-            .insert(txn)
-            .await
-            .c(h!())?
-            .id
+        .insert(txn)
+        .await
+        .c(h!())?
+        .id
     };
 
     match src {
@@ -263,8 +263,8 @@ pub async fn link_account(
             CLIENT_DATA_DIR_NAME,
             &SignalCliMode::Native,
         )
-            .await
-            .c(h!())?,
+        .await
+        .c(h!())?,
         MessageSource::Whatsapp => os_specific::start_new_whatsapp_client(
             system_service_name,
             WHATSAPP_CLIENT_CONFIG,
@@ -272,8 +272,8 @@ pub async fn link_account(
             WHATSAPP_UNIT_NAME,
             CLIENT_DATA_DIR_NAME,
         )
-            .await
-            .c(h!())?,
+        .await
+        .c(h!())?,
     };
 
     load_echo_account(id, txn).await
@@ -351,8 +351,8 @@ async fn link_existing_datasource(
         txn,
         login,
     )
-        .await
-        .c(h!())
+    .await
+    .c(h!())
 }
 
 pub async fn list_echo_accounts<'a, 'async_trait, C>(
@@ -430,7 +430,10 @@ where
         .column_as(echo_client::Column::Deleted, "is_client_deleted")
         .column_as(echo_client_config::Column::SignalPort, "signal_port")
         .column_as(echo_client_config::Column::ProcessName, "process_name")
-        .column_as(echo_client_config::Column::SignalApiAttachmentPath, "attachments_path")
+        .column_as(
+            echo_client_config::Column::SignalApiAttachmentPath,
+            "attachments_path",
+        )
         .into_model::<LinkedAccountRow>()
         .all(txn)
         .await
@@ -594,9 +597,9 @@ pub async fn upsert_group_area_of_responsibility(
                     id: NotSet,
                     created_at: NotSet,
                 }
-                    .insert(txn)
-                    .await
-                    .c(h!())?;
+                .insert(txn)
+                .await
+                .c(h!())?;
             }
 
             // Return all AOR models
@@ -644,11 +647,11 @@ pub async fn bl_group_update(
             id: NotSet,
             created_at: NotSet,
         }
-            .insert(txn)
-            .await
-            .c(h!())?,
+        .insert(txn)
+        .await
+        .c(h!())?,
     }
-        .into_active_model();
+    .into_active_model();
 
     let aor_ids = match &req.area_of_responsibility_ids {
         None => req.area_of_responsibility_id.map(|id| vec![id]),
