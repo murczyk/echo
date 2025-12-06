@@ -1976,7 +1976,7 @@ messengerAccountsTableConfig isLoading aorList =
                 }
                 |> Table.withColumnWidth "6%"
             , Table.veryCustomColumn
-                { name = "Подробиці"
+                { name = "Інформація для дебагу"
                 , viewData =
                     \account ->
                         let
@@ -1986,21 +1986,20 @@ messengerAccountsTableConfig isLoading aorList =
                             viewDetail key maybeValue =
                                 case maybeValue of
                                     Just value ->
-                                        [ div []
-                                            [ text "- "
-                                            , b [] [ text key ]
-                                            , text (": " ++ value)
-                                            ]
-                                        ]
+                                       [ li []
+                                           [ b [] [ text key ]
+                                           , text (": " ++ value)
+                                           ]
+                                       ]
                                     Nothing ->
                                         []
 
                             -- Render all details in the desired order
                             allDetails =
                                 List.concat
-                                    [ viewDetail "Процес" account.processName
-                                    , viewDetail "Порт" account.signalPort
-                                    , viewDetail "Атачменти" account.attachmentsPath
+                                    [ viewDetail "echo_client_config.process_name" account.processName
+                                    , viewDetail "echo_client_config.signal_port" account.signalPort
+                                    , viewDetail "echo_client_config.signal_api_attachment_path" account.attachmentsPath
                                     ]
                         in
                         TableColumn.HtmlDetails []
@@ -2010,7 +2009,9 @@ messengerAccountsTableConfig isLoading aorList =
                                     [ span [ class "text-muted-foreground" ] [ text "—" ] ]
                                  else
                                     -- Render the list of details
-                                    allDetails
+                                    [ ul [ class "space-y-1 list-disc list-inside ml-2" ]
+                                        allDetails
+                                    ]
                                 )
                             ]
                 , sorter = Table.unsortable
