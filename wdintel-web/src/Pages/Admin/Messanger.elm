@@ -1998,7 +1998,7 @@ messengerAccountsTableConfig isLoading aorList =
                             -- Render all details in the desired order
                             allDetails =
                                 List.concat
-                                    [ viewDetail "Процес" account.processMame
+                                    [ viewDetail "Процес" account.processName
                                     , viewDetail "Порт" account.signalPort
                                     , viewDetail "Атачменти" account.attachmentsPath
                                     ]
