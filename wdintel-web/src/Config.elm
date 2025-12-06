@@ -3,6 +3,7 @@ module Config exposing
     , analysisHourAfterWhichWeTakeADayTomorrow
     , featureDisableRerDutyDedup
     , featureEnableTornado
+    , featureHideDocuments
     , featureShowCallsignsMetadata
     , thresholdStopCountingDays
     , waterfallLoadEarlierThresholdMs
@@ -25,6 +26,11 @@ featureShowCallsignsMetadata =
 
 featureDisableRerDutyDedup : Bool
 featureDisableRerDutyDedup =
+    True
+
+
+featureHideDocuments : Bool
+featureHideDocuments =
     True
 
 

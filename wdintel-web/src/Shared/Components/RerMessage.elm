@@ -2,6 +2,7 @@ module Shared.Components.RerMessage exposing (Edited, Model, Msg(..), OutSignal(
 
 import Api
 import Bindings as B exposing (..)
+import Config
 import Core.Auth
 import Core.Callsigns.HintStrategy
 import Core.Types exposing (..)
@@ -775,21 +776,43 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
 
         renderAttachment : MessageMediaInfo -> Html msg
         renderAttachment attachment =
-         let
-             displayFileName =
-                 withDefault "<файл без назви>" attachment.fileName
-         in
-         a
-             [ class "btn btn-outline-secondary btn-sm mb-2"
-             , href attachment.href
-             , download displayFileName
-             , target "_blank"
-             ]
-             [
-               i [ class "bi bi-download me-2" ] []
-             ,
-               text displayFileName
-             ]
+            let
+                displayFileName =
+                    withDefault "<файл без назви>" attachment.fileName
+            in
+            a
+                [ class "btn btn-outline-secondary btn-sm mb-2"
+                , href attachment.href
+                , download displayFileName
+                , target "_blank"
+                ]
+                [ i [ class "bi bi-download me-2" ] []
+                , text displayFileName
+                ]
+
+        renderMedia : MessageMediaInfo -> Maybe (Html msg)
+        renderMedia attachment =
+            let
+                isImage =
+                    String.startsWith "image/" attachment.contentType
+
+                isMp3 =
+                    String.contains "mpeg" attachment.contentType
+                        || String.contains "mp3" attachment.contentType
+                        || (attachment.fileName
+                                |> Maybe.map String.toLower
+                                |> Maybe.map (String.endsWith ".mp3")
+                                |> withDefault False
+                           )
+            in
+            if isImage then
+                Nothing
+            else if isMp3 then
+                Just <| renderAttachment attachment
+            else if Config.featureHideDocuments then
+                Nothing
+            else
+                Just <| renderAttachment attachment
 
         timeColumn =
             let
@@ -1045,10 +1068,7 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                 , div [ class "m-1" ] <|
                     List.map renderImage message.images
                 , div [ class "mt-1" ] <|
-                      ( message.media
-                        |> List.filter (\attachment -> not (String.startsWith "image/" attachment.contentType))
-                        |> List.map renderAttachment
-                        )
+                    List.filterMap renderMedia message.media
                 , div
                     [ style "margin" "0 auto"
                     , style "font-size" "1rem"

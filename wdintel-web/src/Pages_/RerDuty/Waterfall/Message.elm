@@ -137,28 +137,43 @@ renderImage image =
 
 renderAttachment : MessageMediaInfo -> Html msg
 renderAttachment attachment =
- let
-     displayFileName =
-         withDefault "<файл без назви>" attachment.fileName
- in
- a
-     [ class "btn btn-outline-secondary btn-sm mb-2"
-     , href attachment.href
-     , download displayFileName
-     , target "_blank"
-     ]
-     [
-       i [ class "bi bi-download me-2" ] []
-     ,
-       text displayFileName
-     ]
+    let
+        displayFileName =
+            withDefault "<файл без назви>" attachment.fileName
+    in
+    a
+        [ class "btn btn-outline-secondary btn-sm mb-2"
+        , href attachment.href
+        , download displayFileName
+        , target "_blank"
+        ]
+        [ i [ class "bi bi-download me-2" ] []
+        , text displayFileName
+        ]
 
-renderMedia : MessageMediaInfo -> Html msg
+renderMedia : MessageMediaInfo -> Maybe (Html msg)
 renderMedia attachment =
-    if String.startsWith "image/" attachment.contentType then
-        renderImage attachment.href
+    let
+        isImage =
+            String.startsWith "image/" attachment.contentType
+
+        isMp3 =
+            String.contains "mpeg" attachment.contentType
+                || String.contains "mp3" attachment.contentType
+                || (attachment.fileName
+                        |> Maybe.map String.toLower
+                        |> Maybe.map (String.endsWith ".mp3")
+                        |> withDefault False
+                   )
+    in
+    if isImage then
+        Just <| renderImage attachment.href
+    else if isMp3 then
+        Just <| renderAttachment attachment
+    else if Config.featureHideDocuments then
+        Nothing
     else
-        renderAttachment attachment
+        Just <| renderAttachment attachment
 
 clipboardMessage :
     B.InboxMessage
@@ -1006,7 +1021,7 @@ rightColumn ( messageId, message ) ps model =
                     )
                   <|
                     (div [] <|
-                        List.map renderMedia message.media
+                        List.filterMap renderMedia message.media
                     )
                         :: metaFields
                         ++ [ Watermark.new ps.user.name |> Watermark.withPositioning ( 60, 80 ) |> Watermark.withFontSize "1.8rem" |> Watermark.view
