@@ -419,6 +419,8 @@ enum Cmd {
     ImportUnit(ImportUnitPs),
     RenewTailscaleCert(RenewTailscaleCertPs),
     Backup,
+    /// Restarts all active echo-im whatsapp units.
+    RestartWhatsappUnits,
     OneoffSigintImportMouse(OneoffSigintImportMousePs),
     OneoffTestKml,
     OneoffTestXmlLib,
@@ -716,6 +718,9 @@ async fn async_main(
             renew_tailscale_cert(mode, ps.force).await
         }
         Cmd::Backup => backup::backup(mode).await,
+        Cmd::RestartWhatsappUnits => {
+            messenger::ops::restart_whatsapp_units(mode).await
+        }
         Cmd::OneoffSigintImportMouse(ps) => {
             sigint::oneoff_sigint_import_mouse(mode, &ps).await
         }

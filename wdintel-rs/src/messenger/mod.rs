@@ -16,6 +16,7 @@ pub mod dedupe;
 pub mod group;
 pub mod id;
 pub mod media;
+pub mod ops;
 #[cfg(test)]
 pub mod tests;
 pub mod types;
