@@ -1976,6 +1976,47 @@ messengerAccountsTableConfig isLoading aorList =
                 }
                 |> Table.withColumnWidth "6%"
             , Table.veryCustomColumn
+                { name = "Подробиці"
+                , viewData =
+                    \account ->
+                        let
+                            -- Helper function to render a single detail line if the value is Just
+                            -- Note: The key is hardcoded based on the field name
+                            viewDetail : String -> Maybe String -> List (Html msg)
+                            viewDetail key maybeValue =
+                                case maybeValue of
+                                    Just value ->
+                                        [ div []
+                                            [ text "- "
+                                            , b [] [ text key ]
+                                            , text (": " ++ value)
+                                            ]
+                                        ]
+                                    Nothing ->
+                                        []
+
+                            -- Render all details in the desired order
+                            allDetails =
+                                List.concat
+                                    [ viewDetail "Процес" account.processMame
+                                    , viewDetail "Порт" account.signalPort
+                                    , viewDetail "Атачменти" account.attachmentsPath
+                                    ]
+                        in
+                        TableColumn.HtmlDetails []
+                            [ div [ class "space-y-1" ]
+                                (if List.isEmpty allDetails then
+                                    -- Display a placeholder if no fields are present
+                                    [ span [ class "text-muted-foreground" ] [ text "—" ] ]
+                                 else
+                                    -- Render the list of details
+                                    allDetails
+                                )
+                            ]
+                , sorter = Table.unsortable
+                }
+                |> Table.withColumnWidth "20%"
+            , Table.veryCustomColumn
                 { name = "Опис"
                 , viewData =
                     \account ->
