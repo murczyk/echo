@@ -673,6 +673,22 @@ _echo-generic-deploy-back:
     set -x
     echo "Back-end is ready. Now open {{ server }}'s URL"
 
+ziggy-echo-build-local builder="echo-build-local" server="echo-staging" branch="main":
+    #!/bin/bash
+    set -euxo pipefail
+    BUILDER="{{ builder }}"
+    TARGET="{{ server }}"
+    BRANCH="{{ branch }}"
+
+    echo "🔄 Pulling latest code on ${BUILDER}..."
+    ssh "${BUILDER}" 'set -euxo pipefail; cd workspace/echo && git fetch origin "$BRANCH" && git checkout "$BRANCH" && git pull --ff-only origin "$BRANCH"'
+
+    echo "📦 Copying wdintel-rs binary from ${BUILDER} to ${TARGET}..."
+    scp "${BUILDER}:workspace/echo/target/debug/wdintel-rs" "${TARGET}:/var/tmp/"
+
+    echo "🚀 Updating binary on ${TARGET} and restarting wdintel-rs..."
+    ssh "${TARGET}" 'set -euxo pipefail; sudo mv /var/tmp/wdintel-rs /usr/bin/wdintel-rs && sudo systemctl restart wdintel-rs'
+
 build-geo-screenshot:
     ssh {{ builder }} '(cd workspace/map-bot && git fetch origin && git clean -df && git checkout {{ branch }} && git pull)'
     ssh {{ builder }} '(cd workspace/map-bot/geo-screenshot && $HOME/.cargo/bin/cargo deb)'
