@@ -679,9 +679,10 @@ ziggy-echo-build-local builder="echo-build-local" server="echo-staging" branch="
     BUILDER="{{ builder }}"
     TARGET="{{ server }}"
     BRANCH="{{ branch }}"
+    PADD='$HOME/.local/bin:$HOME/.cargo/bin'
 
     echo "🔄 Pulling latest code on ${BUILDER}..."
-    ssh "${BUILDER}" "set -euxo pipefail; cd workspace/echo && git fetch origin \"${BRANCH}\" && git checkout \"${BRANCH}\" && git pull --ff-only origin \"${BRANCH}\" && cargo build --release"
+    ssh "${BUILDER}" 'set -euxo pipefail; cd workspace/echo && git fetch origin '"${BRANCH}"' && git checkout '"${BRANCH}"' && git pull --ff-only origin '"${BRANCH}"' && PATH='"$PADD"':$PATH cargo build --release'
 
     echo "📦 Copying wdintel-rs binary from ${BUILDER} to ${TARGET}..."
     scp "${BUILDER}:workspace/echo/target/release/wdintel-rs" "${TARGET}:/var/tmp/"
