@@ -9,11 +9,11 @@
 
 ## NEXT
 
+- [#1674](https://github.com/echoua/echo/issues/1674) Виводити інформацію для дебагу ECHO IM на сторінці `/admin/messanger`
 - [#1716](https://github.com/echoua/echo/issues/1716) 🐞 Звіт "Бабак". Виправили дублювання перехоплень з галочкою "лише коментарі мого підрозділу".
 
 ## 2025-12-02
 
-- [#1674](https://github.com/echoua/echo/issues/1674) Виводити інформацію для дебагу ECHO IM на сторінці `/admin/messanger`
 - [#1707](https://github.com/echoua/echo/issues/1707) Логувати чорнетки коментарів
 - [PR#1709](https://github.com/echoua/echo/pull/1709) 🚨 вправили фільтри по datetime/timestamp и підвантаження повідомлень в аналізі
 - Відображаємо фільтр "Смуги" для всіх користувачів
