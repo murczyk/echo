@@ -5919,6 +5919,9 @@ type alias EchoAccountF1 =
     , signalPort : Maybe String
     , processName : Maybe String
     , attachmentsPath : Maybe String
+    , echoClientId : Maybe String
+    , echoAccountId : Maybe String
+    , echoClientLockId : Maybe String
     }
 
 
@@ -5942,6 +5945,9 @@ echoAccountF1Encoder struct =
         , ( "signal_port", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.signalPort )
         , ( "process_name", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.processName )
         , ( "attachments_path", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.attachmentsPath )
+        , ( "echo_client_id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.echoClientId )
+        , ( "echo_account_id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.echoAccountId )
+        , ( "echo_client_lock_id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.echoClientLockId )
         ]
 
 
@@ -9765,6 +9771,9 @@ echoAccountF1Decoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "signal_port" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "process_name" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "attachments_path" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "echo_client_id" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "echo_account_id" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "echo_client_lock_id" (Json.Decode.nullable Json.Decode.string)))
 
 
 qrCodeReqDecoder : Json.Decode.Decoder QrCodeReq

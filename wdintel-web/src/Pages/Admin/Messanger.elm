@@ -2000,6 +2000,9 @@ messengerAccountsTableConfig isLoading aorList =
                                     [ viewDetail "echo_client_config.process_name" account.processName
                                     , viewDetail "echo_client_config.signal_port" account.signalPort
                                     , viewDetail "echo_client_config.signal_api_attachment_path" account.attachmentsPath
+                                    , viewDetail "echo_client.id" account.echoClientId
+                                    , viewDetail "echo_account.id" account.echoAccountId
+                                    , viewDetail "echo_client_lock.id" account.echoClientLockId
                                     ]
                         in
                         TableColumn.HtmlDetails []

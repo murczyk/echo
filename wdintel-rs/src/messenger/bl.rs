@@ -373,6 +373,8 @@ where
         pub status: AccountStatus,
         pub created_at: DateTime,
         pub client_id: Option<i32>,
+        pub account_id: Option<i32>,
+        pub echo_client_lock_id: Option<i32>,
         pub echo_client_name: Option<String>,
         pub source: Option<sea_orm_active_enums::EchoMessageSource>,
         pub echo_phone_number: Option<String>,
@@ -419,6 +421,8 @@ where
         .column(datasource::Column::Status)
         .column(datasource::Column::CreatedAt)
         .column(echo_client_lock::Column::ClientId)
+        .column(echo_client_lock::Column::AccountId)
+        .column_as(echo_client_lock::Column::Id, "echo_client_lock_id")
         .column_as(echo_client::Column::Name, "echo_client_name")
         .column(echo_account::Column::Source)
         .column_as(echo_account::Column::PhoneNumber, "echo_phone_number")
@@ -482,6 +486,9 @@ where
             signal_port: a.signal_port.map(|p| p.to_string()),
             process_name: a.process_name,
             attachments_path: a.attachments_path,
+            echo_client_id: a.client_id.map(|p| p.to_string()),
+            echo_account_id: a.account_id.map(|p| p.to_string()),
+            echo_client_lock_id: a.echo_client_lock_id.map(|p| p.to_string()),
         });
     }
     let operator_datasources = datasource::Entity::find()
@@ -527,6 +534,9 @@ where
                 signal_port: None,
                 process_name: None,
                 attachments_path: None,
+                echo_client_id: None,
+                echo_account_id: None,
+                echo_client_lock_id: None,
             })
         }
     }
