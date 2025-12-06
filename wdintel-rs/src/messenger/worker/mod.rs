@@ -375,6 +375,44 @@ async fn sync_inbox(
         echo_im::list_inbox_since(client_name, time.naive_utc(), &txn)
             .await
             .c(h!())?;
+    let inbox_internal_ids: Vec<i32> =
+        inbox_messages.iter().map(|m| m.internal_id).collect();
+    let db_attachment_counts = if inbox_internal_ids.is_empty() {
+        BTreeMap::new()
+    } else {
+        let rows = echo_attachment::Entity::find()
+            .filter(
+                echo_attachment::Column::MessageId
+                    .is_in(inbox_internal_ids.clone()),
+            )
+            .all(&txn)
+            .await
+            .c(h!())?;
+        let mut counts = BTreeMap::new();
+        for att in rows {
+            *counts.entry(att.message_id).or_insert(0usize) += 1;
+        }
+        counts
+    };
+    let message_attachment_info: Vec<_> = inbox_messages
+        .iter()
+        .map(|m| {
+            (
+                m.internal_id,
+                m.attachments.len(),
+                db_attachment_counts
+                    .get(&m.internal_id)
+                    .cloned()
+                    .unwrap_or(0),
+            )
+        })
+        .collect();
+    info!(
+        "[{}] inbox sync: messages={} attachment_counts={:?}",
+        client_name,
+        inbox_internal_ids.len(),
+        message_attachment_info
+    );
     let senders = inbox_messages
         .iter()
         .flat_map(|m| m.sender.clone())
