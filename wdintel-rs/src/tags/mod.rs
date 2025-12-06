@@ -93,7 +93,7 @@ async fn add_tag_keywords(
                         .c(h!())?;
             } else {
                 for pattern in &keyword_forms {
-                    let _ = regex::Regex::new(&pattern).c(h!())?;
+                    let _ = regex::Regex::new(pattern.as_str()).c(h!())?;
                 }
             }
 
@@ -195,7 +195,7 @@ async fn update_tag_keyword(
         keyword_forms,
     } = req.0;
     if is_regex {
-        let _ = regex::Regex::new(&keyword).c(h!())?;
+        let _ = regex::Regex::new(keyword.as_str()).c(h!())?;
     }
 
     let mut keyword_forms: Vec<String> = keyword_forms.unwrap_or_default();
@@ -205,7 +205,7 @@ async fn update_tag_keyword(
             .c(h!())?;
     } else {
         for pattern in &keyword_forms {
-            let _ = regex::Regex::new(&pattern).c(h!())?;
+            let _ = regex::Regex::new(pattern.as_str()).c(h!())?;
         }
     }
 

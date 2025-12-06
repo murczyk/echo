@@ -681,7 +681,7 @@ pub async fn get_inbox_messages_report_unit(
         &req.or_with_coords,
         &req.or_with_extended_form,
         &req.filter_tags_option,
-        &login,
+        login,
         only_tags_by_logins,
     )?;
     if let Some(since_date_inclusive_ms) = req.since_date_inclusive_ms {

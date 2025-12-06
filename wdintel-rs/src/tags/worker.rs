@@ -59,7 +59,7 @@ pub async fn suggest_message_tags_worker(
                 }
             }
             if do_sleep {
-                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
             }
         }
     } else {
@@ -116,7 +116,7 @@ async fn get_message(
 
 async fn process_suggest_message_tags(
     tags: &[tag::Model],
-    rq: &reqwest::Client,
+    _rq: &reqwest::Client,
     dbx: &DatabaseConnection,
     tag_keyword_regex_cache: &Arc<RwLock<TagKeywordRegexCache>>,
 ) -> Result<bool, AppError> {
@@ -141,8 +141,6 @@ async fn process_suggest_message_tags(
         while let Some(join_result) = join_set.join_next().await {
             let verify_result = join_result.c(h!())?;
             let (tag_id, tag_matches) = verify_result.c(h!())?;
-
-            info!("tag_id={tag_id}, tag_matches={tag_matches}");
 
             if tag_matches {
                 let login = Some("system".to_string());
