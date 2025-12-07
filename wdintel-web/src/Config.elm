@@ -31,7 +31,7 @@ featureDisableRerDutyDedup =
 
 featureHideDocuments : Bool
 featureHideDocuments =
-    True
+    False
 
 
 {-| Only after X allow loading earlier messages
