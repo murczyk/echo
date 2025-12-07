@@ -547,7 +547,7 @@ fn translate_direction(dir: String) -> anyhow::Result<String> {
                 let suffix = translate_direction(String::from(b))?;
                 Ok(format!("{prefix}-{suffix}"))
             }
-            _ => bail!("failed to parse: {}", dir),
+            _ => bail!("failed to parse: {dir}"),
         },
     }
 }
