@@ -110,7 +110,7 @@ rev = "892339cdcbd6d967e4baaa6e95f0e432df18f873"
 
 [dependencies.milgeo-rs]
 git = "ssh://git@github.com/echoua/milgeo-rs.git"
-rev = "a8c039d42468b98e9efdffa82e403fe27733d76d"
+rev = "b4dc3debf83eee1c62ccf4440951a45c2bef4c3c"
 
 [dependencies.opencv]
 git = "https://github.com/twistedfall/opencv-rust"
