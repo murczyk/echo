@@ -24,6 +24,7 @@ pub struct Model {
     pub reply_to_outbox_message_id: Option<i32>,
     pub internal_timestamp: Option<i64>,
     pub seen: bool,
+    pub deleted: bool,
     pub client_id: Option<i32>,
 }
 

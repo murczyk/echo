@@ -371,6 +371,13 @@ async fn sync_inbox(
     }
     let time = inbox_sync_at - TimeDelta::seconds(100); // double-check maybe we missed messages not labeled as seen
     let txn = db.begin().await.c(h!())?;
+    let inbox_updates =
+        echo_im::list_updates_since(client_name, time.naive_utc(), &txn)
+            .await
+            .c(h!())?;
+    apply_inbox_updates(datasource.id, &inbox_updates, &txn)
+        .await
+        .c(h!())?;
     let inbox_messages =
         echo_im::list_inbox_since(client_name, time.naive_utc(), &txn)
             .await
@@ -483,6 +490,126 @@ async fn write_to_signal_message_queue(
         attachment_paths.len(),
         attachment_paths
     );
+    Ok(())
+}
+
+async fn apply_inbox_updates(
+    datasource_id: i64,
+    updates: &[echo_im::types::MessageF1],
+    txn: &DatabaseTransaction,
+) -> anyhow::Result<()> {
+    for update in updates {
+        if update.deleted {
+            mark_message_deleted(datasource_id, update.internal_id as i64, txn)
+                .await
+                .c(h!())?;
+        }
+    }
+    Ok(())
+}
+
+async fn mark_message_deleted(
+    datasource_id: i64,
+    inbox_message_id: i64,
+    txn: &DatabaseTransaction,
+) -> anyhow::Result<()> {
+    let queue_items = signal_message_queue::Entity::find()
+        .filter(signal_message_queue::Column::DatasourceId.eq(datasource_id))
+        .filter(signal_message_queue::Column::InternalId.eq(inbox_message_id))
+        .all(txn)
+        .await
+        .c(h!())?;
+    if !queue_items.is_empty() {
+        let queue_ids: Vec<i64> = queue_items.iter().map(|q| q.id).collect();
+        signal_message_queue_attachment::Entity::delete_many()
+            .filter(
+                signal_message_queue_attachment::Column::MessageId
+                    .is_in(queue_ids.clone()),
+            )
+            .exec(txn)
+            .await
+            .c(h!())?;
+        signal_message_queue::Entity::delete_many()
+            .filter(signal_message_queue::Column::Id.is_in(queue_ids))
+            .exec(txn)
+            .await
+            .c(h!())?;
+        info!(
+            "removed {} pending queue items for deleted inbox_message_id={}",
+            queue_items.len(),
+            inbox_message_id
+        );
+    }
+
+    let inbox_id_i32 = match i32::try_from(inbox_message_id) {
+        Ok(v) => v,
+        Err(e) => {
+            warn!(
+                "failed to convert inbox_message_id={inbox_message_id} to i32: {e}; skipping delete"
+            );
+            return Ok(());
+        }
+    };
+    let inbox_message = echo_inbox_message::Entity::find_by_id(inbox_id_i32)
+        .one(txn)
+        .await
+        .c(h!())?
+        .c(h!())?;
+    let Some(group_id) = inbox_message.group_id else {
+        // private chat, nothing to map into signal_message
+        return Ok(());
+    };
+    let Some(echo_group) = echo_group::Entity::find_by_id(group_id)
+        .one(txn)
+        .await
+        .c(h!())?
+    else {
+        warn!(
+                "no echo_group found for id={group_id} while deleting inbox_message_id={inbox_message_id}"
+            );
+        return Ok(());
+    };
+    let group_master_key = echo_group.group_id;
+    let datasource_group = datasource_group::Entity::find()
+        .filter(datasource_group::Column::DatasourceId.eq(datasource_id))
+        .filter(
+            datasource_group::Column::GroupMasterKey
+                .eq(group_master_key.clone()),
+        )
+        .one(txn)
+        .await
+        .c(h!())?;
+    let Some(datasource_group_id) = datasource_group.map(|g| g.id) else {
+        warn!(
+            "no datasource_group found for datasource_id={datasource_id} group_master_key={group_master_key}"
+        );
+        return Ok(());
+    };
+    let messages = signal_message::Entity::find()
+        .filter(
+            signal_message::Column::DatasourceGroupId.eq(datasource_group_id),
+        )
+        .filter(signal_message::Column::Timestamp.eq(inbox_message.timestamp))
+        .filter(signal_message::Column::Deleted.eq(false))
+        .filter(
+            signal_message::Column::Body.eq(Some(inbox_message.body.clone())),
+        )
+        .all(txn)
+        .await
+        .c(h!())?;
+    if messages.is_empty() {
+        if queue_items.is_empty() {
+            warn!(
+                "no signal_message found to delete: inbox_message_id={inbox_message_id} datasource_id={datasource_id}"
+            );
+        }
+        return Ok(());
+    }
+    for message in messages {
+        let mut message_am = message.into_active_model();
+        message_am.deleted = Set(true);
+        message_am.update(txn).await.c(h!())?;
+    }
     Ok(())
 }
 

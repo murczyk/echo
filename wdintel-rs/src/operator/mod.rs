@@ -41,6 +41,7 @@ async fn message_submit(
         sender: Some(sender_id),
         timestamp,
         datasource_id,
+        inbox_message_id: None,
     };
     let message_uid = crate::message_queue::process_signal_message_queue_item(
         message,

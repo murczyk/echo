@@ -146,6 +146,7 @@ fn make_item_from_entry(
         attachments: message_attachments,
         message_source,
         reply_to: None,
+        deleted: false,
     };
     let item = Item {
         message,
@@ -302,6 +303,7 @@ async fn process_item_once(
             sender: m.sender.map(|s| s.uuid),
             timestamp: m.timestamp,
             datasource_id,
+            inbox_message_id: Some(m.internal_id as i64),
         };
         let mut redis = context.redis.clone();
         if let Err(e) = crate::message_queue::process_signal_message_queue_item(

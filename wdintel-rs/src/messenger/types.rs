@@ -13,6 +13,7 @@ pub struct Message {
     pub sender: Option<String>,
     pub timestamp: NaiveDateTime,
     pub datasource_id: i64,
+    pub inbox_message_id: Option<i64>,
 }
 
 #[derive(Debug, Serialize, Clone, Deserialize, Elm, ElmEncode, ElmDecode)]
