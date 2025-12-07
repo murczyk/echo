@@ -660,6 +660,19 @@ fn main() -> Result<(), AppError> {
     )
     .ok();
 
+    let rust_log =
+        std::env::var("RUST_LOG").unwrap_or_else(|_| "<unset>".to_string());
+    info!(
+        "logger initialized; RUST_LOG={}; trace_enabled={} debug_enabled={} info_enabled={}",
+        rust_log,
+        log::log_enabled!(log::Level::Trace),
+        log::log_enabled!(log::Level::Debug),
+        log::log_enabled!(log::Level::Info)
+    );
+    trace!("logger trace probe: hello from wdintel-rs startup");
+    debug!("logger debug probe: hello from wdintel-rs startup");
+    info!("logger info probe: hello from wdintel-rs startup");
+
     let args = Arg::parse();
 
     let runtime = tokio::runtime::Builder::new_multi_thread()
