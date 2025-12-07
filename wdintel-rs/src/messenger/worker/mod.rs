@@ -556,10 +556,22 @@ async fn mark_message_deleted(
         .await
         .c(h!())?
         .c(h!())?;
-    let Some(group_master_key) = inbox_message.group_id else {
+    let Some(group_id) = inbox_message.group_id else {
         // private chat, nothing to map into signal_message
         return Ok(());
     };
+    let Some(echo_group) = echo_group::Entity::find_by_id(group_id)
+        .one(txn)
+        .await
+        .c(h!())?
+    else {
+        warn!(
+            "no echo_group found for id={} while deleting inbox_message_id={}",
+            group_id, inbox_message_id
+        );
+        return Ok(());
+    };
+    let group_master_key = echo_group.group_id;
     let datasource_group = datasource_group::Entity::find()
         .filter(datasource_group::Column::DatasourceId.eq(datasource_id))
         .filter(
