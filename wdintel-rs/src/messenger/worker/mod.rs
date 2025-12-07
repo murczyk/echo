@@ -545,8 +545,7 @@ async fn mark_message_deleted(
         Ok(v) => v,
         Err(e) => {
             warn!(
-                "failed to convert inbox_message_id={} to i32: {}; skipping delete",
-                inbox_message_id, e
+                "failed to convert inbox_message_id={inbox_message_id} to i32: {e}; skipping delete"
             );
             return Ok(());
         }
@@ -566,9 +565,8 @@ async fn mark_message_deleted(
         .c(h!())?
     else {
         warn!(
-            "no echo_group found for id={} while deleting inbox_message_id={}",
-            group_id, inbox_message_id
-        );
+                "no echo_group found for id={group_id} while deleting inbox_message_id={inbox_message_id}"
+            );
         return Ok(());
     };
     let group_master_key = echo_group.group_id;
@@ -583,8 +581,7 @@ async fn mark_message_deleted(
         .c(h!())?;
     let Some(datasource_group_id) = datasource_group.map(|g| g.id) else {
         warn!(
-            "no datasource_group found for datasource_id={} group_master_key={}",
-            datasource_id, group_master_key
+            "no datasource_group found for datasource_id={datasource_id} group_master_key={group_master_key}"
         );
         return Ok(());
     };
@@ -603,8 +600,7 @@ async fn mark_message_deleted(
     if messages.is_empty() {
         if queue_items.is_empty() {
             warn!(
-                "no signal_message found to delete: inbox_message_id={} datasource_id={}",
-                inbox_message_id, datasource_id
+                "no signal_message found to delete: inbox_message_id={inbox_message_id} datasource_id={datasource_id}"
             );
         }
         return Ok(());
