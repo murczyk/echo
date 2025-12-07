@@ -9,6 +9,7 @@
 
 ## NEXT
 
+- [#1728](https://github.com/echoua/echo/issues/1728) ✅ Видалення повідомлення в Signal/WhatsApp також видаляє його з ЕХО
 - [#1706](https://github.com/echoua/echo/issues/1705) ✅ Показувати довгі повідомлення
 - [#1674](https://github.com/echoua/echo/issues/1674) Виводити інформацію для дебагу ECHO IM на сторінці `/admin/messanger`
 - [#1716](https://github.com/echoua/echo/issues/1716) 🐞 Звіт "Бабак". Виправили дублювання перехоплень з галочкою "лише коментарі мого підрозділу".
