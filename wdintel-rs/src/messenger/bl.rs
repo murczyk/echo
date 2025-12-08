@@ -13,6 +13,7 @@ use crate::new_pg_pool_from_config;
 use crate::sigint::aor::{load_default_aor, render_aor};
 use crate::types::AppError;
 use crate::types::*;
+use crate::utils::orm::ArrayColumnOps;
 use echo_im::entities::sea_orm_active_enums::*;
 use echo_im::os_specific;
 use echo_im::types::MessageSource;
@@ -509,7 +510,7 @@ where
             HashMap::new()
         } else {
             area_of_responsibility::Entity::find()
-                .filter(area_of_responsibility::Column::Id.is_in(aor_ids))
+                .filter(area_of_responsibility::Column::Id.eq_any(aor_ids))
                 .all(txn)
                 .await
                 .c(h!())?

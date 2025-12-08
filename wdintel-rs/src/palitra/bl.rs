@@ -2,6 +2,7 @@ use crate::entities::*;
 use crate::h;
 use crate::palitra::types::*;
 use crate::types::*;
+use crate::utils::orm::ArrayColumnOps;
 use anyhow::Context;
 use chrono::Utc;
 use itertools::{Either, Itertools};
@@ -155,7 +156,7 @@ where
     C: ConnectionTrait + 'async_trait,
 {
     let points = palitra_point::Entity::find()
-        .filter(palitra_point::Column::PalitraId.is_in(palitra_ids.clone()))
+        .filter(palitra_point::Column::PalitraId.eq_any(palitra_ids.clone()))
         .filter(palitra_point::Column::Deleted.eq(false))
         .all(txn)
         .await
@@ -466,10 +467,10 @@ async fn collect_palitra_ids(
         .add(login::Column::Login.contains(login))
         .add(login::Column::Login.is_null());
     let organism_filter = Condition::any()
-        .add(organism::Column::Id.is_in(login_organism_ids))
+        .add(organism::Column::Id.eq_any(login_organism_ids))
         .add(organism::Column::Id.is_null());
     let aor_filter = Condition::any()
-        .add(area_of_responsibility::Column::Id.is_in(login_aor_ids))
+        .add(area_of_responsibility::Column::Id.eq_any(login_aor_ids))
         .add(area_of_responsibility::Column::Id.is_null());
     let filter = Condition::all()
         .add(login_filter)

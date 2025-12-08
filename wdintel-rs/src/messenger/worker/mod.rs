@@ -6,6 +6,7 @@ use crate::messenger::bl::{deactivate_account, list_echo_accounts};
 use crate::messenger::types::*;
 use crate::new_pg_pool_from_mode;
 use crate::types::*;
+use crate::utils::orm::ArrayColumnOps;
 use chrono::*;
 use log::info;
 use sea_orm::*;
@@ -656,7 +657,7 @@ async fn sync_senders(
     let mut senders = senders;
     let sender_ids = senders.keys().cloned().collect::<Vec<_>>();
     let existing_senders = signal_profile::Entity::find()
-        .filter(signal_profile::Column::Uuid.is_in(sender_ids))
+        .filter(signal_profile::Column::Uuid.eq_any(sender_ids))
         .select_only()
         .column(signal_profile::Column::Uuid)
         .into_tuple::<String>()

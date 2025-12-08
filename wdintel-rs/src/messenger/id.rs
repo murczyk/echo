@@ -3,6 +3,7 @@ use crate::entities::signal_message;
 use crate::error::AppError;
 use crate::h;
 use crate::types::{Mode, ShortContext};
+use crate::utils::orm::ArrayColumnOps;
 use chrono::*;
 use echo_migration::Expr;
 use itertools::Itertools;
@@ -168,7 +169,7 @@ pub async fn oneoff_assign_message_ids(
         let mut actual_collisions_num = 1;
         for message_ids in message_ids {
             signal_message::Entity::find()
-                .filter(signal_message::Column::Id.is_in(message_ids))
+                .filter(signal_message::Column::Id.eq_any(message_ids))
                 .all(&dbx)
                 .await
                 .c(h!())?

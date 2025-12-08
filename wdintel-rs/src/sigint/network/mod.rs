@@ -15,6 +15,7 @@ use crate::sigint::etalonka::types::*;
 use crate::sigint::network::bl::*;
 use crate::sigint::network::merge::*;
 use crate::types::*;
+use crate::utils::orm::ArrayColumnOps;
 use crate::utils::*;
 use actix_web::web::Json;
 use actix_web::{post, HttpRequest, HttpResponse};
@@ -116,7 +117,7 @@ pub async fn network_list(
                     Alias::new("sigint_network_aor"),
                 )
                 .filter(
-                    sigint_network_aor::Column::AorId.is_in(aor_ids.clone()),
+                    sigint_network_aor::Column::AorId.eq_any(aor_ids.clone()),
                 );
         }
     }
@@ -751,8 +752,8 @@ pub async fn network_callsigns(
         )
         .from(SigintNetworkFreq::Table)
         .and_where(
-            Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::NetworkId))
-                .is_in(req.network_ids.clone()),
+            sigint_network_freq::Column::NetworkId
+                .eq_any(req.network_ids.clone()),
         )
         .to_owned();
 
@@ -792,13 +793,7 @@ pub async fn network_callsigns(
         .and_where(
             Expr::col((SignalMessage::Table, SignalMessage::Deleted)).eq(false),
         )
-        .and_where(
-            Expr::col((
-                DatasourceGroup::Table,
-                DatasourceGroup::GroupMasterKey,
-            ))
-            .is_in(groups),
-        )
+        .and_where(datasource_group::Column::GroupMasterKey.eq_any(groups))
         .to_owned();
     if let Some(cut) = cutoff_since {
         network_messages.and_where(
@@ -1012,7 +1007,7 @@ pub async fn network_freqs_activity_one(
             ),
     )
     .and_where(Expr::col((SignalMessage::Table, SignalMessage::Deleted)).eq(false))
-    .and_where(Expr::col((DatasourceGroup::Table, DatasourceGroup::GroupMasterKey)).is_in(groups))
+    .and_where(datasource_group::Column::GroupMasterKey.eq_any(groups))
     .add_group_by([
         // Expr::col((Alias::new("network_freqs"), Alias::new("network_id"))).into(),
         Expr::col((SigintInboxItem::Table, SigintInboxItem::Freq)).into(),
@@ -1711,7 +1706,7 @@ async fn cleanup_networks_worker_1(
             .context(h!())?;
 
     let networks = sigint_network::Entity::find()
-        .filter(sigint_network::Column::Id.is_in(network_ids.clone()))
+        .filter(sigint_network::Column::Id.eq_any(network_ids.clone()))
         .find_with_related(sigint_network_freq::Entity)
         .all(dbx)
         .await
@@ -1777,7 +1772,7 @@ async fn cleanup_networks_worker_1(
 
     let other_networks = sigint_network::Entity::find()
         .find_with_related(sigint_network_freq::Entity)
-        .filter(sigint_network::Column::Id.is_not_in(network_ids))
+        .filter(sigint_network::Column::Id.ne_any(network_ids))
         .filter(sigint_network::Column::Deleted.eq(false))
         .filter(
             sigint_network::Column::CreatedAt
@@ -2057,7 +2052,7 @@ pub async fn update_network_posts(
         sigint_network_post::Entity::update_many()
             .col_expr(sigint_network_post::Column::Deleted, Expr::value(true))
             .filter(sigint_network_post::Column::NetworkId.eq(req.network_id))
-            .filter(sigint_network_post::Column::PostId.is_in(to_delete))
+            .filter(sigint_network_post::Column::PostId.eq_any(to_delete))
             .exec(&txn)
             .await
             .context(h!())?;
@@ -2174,7 +2169,7 @@ pub async fn update_network_units(
     if !to_delete.is_empty() {
         sigint_network_unit::Entity::delete_many()
             .filter(sigint_network_unit::Column::NetworkId.eq(req.network_id))
-            .filter(sigint_network_unit::Column::UnitId.is_in(to_delete))
+            .filter(sigint_network_unit::Column::UnitId.eq_any(to_delete))
             .exec(&txn)
             .await
             .context(h!())?;

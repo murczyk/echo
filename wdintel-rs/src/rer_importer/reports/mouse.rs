@@ -6,6 +6,7 @@ use crate::utils::*;
 use actix_identity::Identity;
 use anyhow::Context;
 // Add this import if h!() uses anyhow::Context
+use crate::utils::orm::ArrayColumnOps;
 use chrono::prelude::*;
 use docx_rs::AlignmentType;
 use docx_rs::LineSpacing;
@@ -93,7 +94,7 @@ pub async fn report_docx_kind_mouse(
     };
     let comp_freqs = comp_freq::Entity::find()
         .filter(comp_freq::Column::ZoneId.eq(zone_id))
-        .filter(comp_freq::Column::Freq.is_in(uniq_freqs_sorted.clone()))
+        .filter(comp_freq::Column::Freq.eq_any(uniq_freqs_sorted.clone()))
         .all(&read_db)
         .await
         .c(h!())?;
@@ -106,7 +107,7 @@ pub async fn report_docx_kind_mouse(
     let comp_freqs_callsigns = comp_freq_callsign::Entity::find()
         .filter(comp_freq_callsign::Column::ZoneId.eq(zone_id))
         .filter(
-            comp_freq_callsign::Column::Freq.is_in(uniq_freqs_sorted.clone()),
+            comp_freq_callsign::Column::Freq.eq_any(uniq_freqs_sorted.clone()),
         )
         .all(&read_db)
         .await
@@ -194,7 +195,7 @@ pub async fn report_docx_kind_mouse(
         )
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(sigint_inbox_item::Column::Datetime.lte(date_to_dt.naive_utc()))
-        .filter(datasource_group::Column::GroupMasterKey.is_in(&groups))
+        .filter(datasource_group::Column::GroupMasterKey.eq_any(groups.clone()))
         .all(&read_db)
         .await
         .c(h!())?;
@@ -222,7 +223,7 @@ pub async fn report_docx_kind_mouse(
         )
         .filter(sigint_inbox_item::Column::Datetime.lte(date_to_dt.naive_utc()))
         .filter(signal_message::Column::Deleted.eq(false))
-        .filter(datasource_group::Column::GroupMasterKey.is_in(&groups))
+        .filter(datasource_group::Column::GroupMasterKey.eq_any(groups.clone()))
         .all(&read_db)
         .await
         .c(h!())?;
@@ -511,7 +512,7 @@ pub async fn report_docx_kind_mouse(
     let message_map: BTreeMap<i64, signal_message::Model> =
         signal_message::Entity::find()
             .filter(signal_message::Column::Deleted.eq(false))
-            .filter(signal_message::Column::Id.is_in(all_message_ids.clone()))
+            .filter(signal_message::Column::Id.eq_any(all_message_ids.clone()))
             .all(&read_db)
             .await
             .context(h!())?
@@ -522,7 +523,7 @@ pub async fn report_docx_kind_mouse(
     let inbox_map: BTreeMap<i64, sigint_inbox_item::Model> =
         sigint_inbox_item::Entity::find()
             .filter(
-                sigint_inbox_item::Column::Id.is_in(all_message_ids.clone()),
+                sigint_inbox_item::Column::Id.eq_any(all_message_ids.clone()),
             )
             .all(&read_db)
             .await
@@ -534,9 +535,9 @@ pub async fn report_docx_kind_mouse(
     let all_comments: Vec<sigint_comment::Model> =
         sigint_comment::Entity::find()
             .filter(
-                sigint_comment::Column::SignalMessageId.is_in(all_message_ids),
+                sigint_comment::Column::SignalMessageId.eq_any(all_message_ids),
             )
-            .filter(sigint_comment::Column::Login.is_in(logins.clone()))
+            .filter(sigint_comment::Column::Login.eq_any(logins.clone()))
             .all(&read_db)
             .await
             .context(h!())?;

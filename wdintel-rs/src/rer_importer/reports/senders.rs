@@ -6,6 +6,7 @@ use crate::rer_importer::inbox::query::build_inbox_query;
 use crate::rer_importer::types::InboxMessagesReq;
 use crate::types::{Env, ShortContext};
 use crate::utils::dt_zoned_from_millis;
+use crate::utils::orm::ArrayColumnOps;
 use anyhow::Context;
 use chrono::{NaiveDate, Utc};
 use itertools::Itertools;
@@ -131,7 +132,7 @@ async fn map_senders(
     let sender_ids = senders.into_iter().map(|x| x.to_string()).collect_vec();
     let senders = match aggregation_kind {
         ReportAggregation::ByProfile => signal_profile::Entity::find()
-            .filter(signal_profile::Column::Uuid.is_in(sender_ids))
+            .filter(signal_profile::Column::Uuid.eq_any(sender_ids))
             .all(dbx)
             .await
             .c(h!())?

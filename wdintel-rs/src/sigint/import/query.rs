@@ -1,5 +1,6 @@
 use crate::entities::*;
 use crate::h;
+use crate::utils::orm::ArrayColumnOps;
 use anyhow::Context;
 use sea_orm::*;
 use std::collections::BTreeMap;
@@ -24,7 +25,7 @@ where
 
     let ids_map = area_of_responsibility::Entity::find()
         .filter(area_of_responsibility::Column::SigintOriginId.eq(origin_id))
-        .filter(area_of_responsibility::Column::OriginalId.is_in(ids))
+        .filter(area_of_responsibility::Column::OriginalId.eq_any(ids))
         .all(txn)
         .await
         .context(h!())?
@@ -71,7 +72,7 @@ where
 
     let ids_map = source::Entity::find()
         .filter(source::Column::SigintOriginId.eq(origin_id))
-        .filter(source::Column::OriginalId.is_in(ids))
+        .filter(source::Column::OriginalId.eq_any(ids))
         .all(txn)
         .await
         .context(h!())?
@@ -96,7 +97,7 @@ where
 
     let ids_map = sigint_signal::Entity::find()
         .filter(sigint_signal::Column::SigintOriginId.eq(origin_id))
-        .filter(sigint_signal::Column::OriginalId.is_in(ids))
+        .filter(sigint_signal::Column::OriginalId.eq_any(ids))
         .all(txn)
         .await
         .context(h!())?
@@ -121,7 +122,7 @@ where
 
     let ids_map = sigint_unit::Entity::find()
         .filter(sigint_unit::Column::SigintOriginId.eq(origin_id))
-        .filter(sigint_unit::Column::OriginalId.is_in(ids))
+        .filter(sigint_unit::Column::OriginalId.eq_any(ids))
         .all(txn)
         .await
         .context(h!())?
@@ -146,7 +147,7 @@ where
 
     let ids_map = sigint_network::Entity::find()
         .filter(sigint_network::Column::SigintOriginId.eq(origin_id))
-        .filter(sigint_network::Column::OriginalId.is_in(ids))
+        .filter(sigint_network::Column::OriginalId.eq_any(ids))
         .all(txn)
         .await
         .context(h!())?
@@ -171,7 +172,7 @@ where
 
     let ids_map = sigint_network_aor::Entity::find()
         .filter(sigint_network_aor::Column::SigintOriginId.eq(origin_id))
-        .filter(sigint_network_aor::Column::OriginalId.is_in(ids))
+        .filter(sigint_network_aor::Column::OriginalId.eq_any(ids))
         .all(txn)
         .await
         .context(h!())?
@@ -196,7 +197,7 @@ where
 
     let ids_map = sigint_zone_aor::Entity::find()
         .filter(sigint_zone_aor::Column::SigintOriginId.eq(origin_id))
-        .filter(sigint_zone_aor::Column::OriginalId.is_in(ids))
+        .filter(sigint_zone_aor::Column::OriginalId.eq_any(ids))
         .all(txn)
         .await
         .context(h!())?
@@ -221,7 +222,7 @@ where
 
     let ids_map = sigint_post::Entity::find()
         .filter(sigint_post::Column::SigintOriginId.eq(origin_id))
-        .filter(sigint_post::Column::OriginalId.is_in(ids))
+        .filter(sigint_post::Column::OriginalId.eq_any(ids))
         .all(txn)
         .await
         .context(h!())?
@@ -248,7 +249,7 @@ where
         .filter(
             sigint_network_description::Column::SigintOriginId.eq(origin_id),
         )
-        .filter(sigint_network_description::Column::OriginalId.is_in(ids))
+        .filter(sigint_network_description::Column::OriginalId.eq_any(ids))
         .all(txn)
         .await
         .context(h!())?
@@ -273,7 +274,7 @@ where
 
     let ids_map = sigint_network_freq::Entity::find()
         .filter(sigint_network_freq::Column::SigintOriginId.eq(origin_id))
-        .filter(sigint_network_freq::Column::OriginalId.is_in(ids))
+        .filter(sigint_network_freq::Column::OriginalId.eq_any(ids))
         .all(txn)
         .await
         .context(h!())?
@@ -298,7 +299,7 @@ where
 
     let ids_map = sigint_network_callsign::Entity::find()
         .filter(sigint_network_callsign::Column::SigintOriginId.eq(origin_id))
-        .filter(sigint_network_callsign::Column::OriginalId.is_in(ids))
+        .filter(sigint_network_callsign::Column::OriginalId.eq_any(ids))
         .all(txn)
         .await
         .context(h!())?
@@ -323,7 +324,7 @@ where
 
     let ids_map = sigint_callsign::Entity::find()
         .filter(sigint_callsign::Column::SigintOriginId.eq(origin_id))
-        .filter(sigint_callsign::Column::OriginalId.is_in(ids))
+        .filter(sigint_callsign::Column::OriginalId.eq_any(ids))
         .all(txn)
         .await
         .context(h!())?
@@ -348,7 +349,7 @@ where
 
     let ids_map = sigint_network_unit::Entity::find()
         .filter(sigint_network_unit::Column::SigintOriginId.eq(origin_id))
-        .filter(sigint_network_unit::Column::OriginalId.is_in(ids))
+        .filter(sigint_network_unit::Column::OriginalId.eq_any(ids))
         .all(txn)
         .await
         .context(h!())?
@@ -375,7 +376,7 @@ where
         .filter(
             sigint_network_unit_changelog::Column::SigintOriginId.eq(origin_id),
         )
-        .filter(sigint_network_unit_changelog::Column::OriginalId.is_in(ids))
+        .filter(sigint_network_unit_changelog::Column::OriginalId.eq_any(ids))
         .all(txn)
         .await
         .context(h!())?
@@ -400,7 +401,7 @@ where
 
     let ids_map = sigint_callsign_changelog::Entity::find()
         .filter(sigint_callsign_changelog::Column::SigintOriginId.eq(origin_id))
-        .filter(sigint_callsign_changelog::Column::OriginalId.is_in(ids))
+        .filter(sigint_callsign_changelog::Column::OriginalId.eq_any(ids))
         .all(txn)
         .await
         .context(h!())?
@@ -433,7 +434,7 @@ where
                 .eq(origin_id),
         )
         .filter(
-            sigint_network_callsign_changelog::Column::OriginalId.is_in(ids),
+            sigint_network_callsign_changelog::Column::OriginalId.eq_any(ids),
         )
         .all(txn)
         .await
@@ -459,7 +460,7 @@ where
 
     let ids_map = sigint_signal_changelog::Entity::find()
         .filter(sigint_signal_changelog::Column::SigintOriginId.eq(origin_id))
-        .filter(sigint_signal_changelog::Column::OriginalId.is_in(ids))
+        .filter(sigint_signal_changelog::Column::OriginalId.eq_any(ids))
         .all(txn)
         .await
         .context(h!())?
@@ -484,7 +485,7 @@ where
 
     let ids_map = sigint_network_post::Entity::find()
         .filter(sigint_network_post::Column::SigintOriginId.eq(origin_id))
-        .filter(sigint_network_post::Column::OriginalId.is_in(ids))
+        .filter(sigint_network_post::Column::OriginalId.eq_any(ids))
         .all(txn)
         .await
         .context(h!())?
@@ -511,7 +512,7 @@ where
         .filter(
             sigint_network_freq_changelog::Column::SigintOriginId.eq(origin_id),
         )
-        .filter(sigint_network_freq_changelog::Column::OriginalId.is_in(ids))
+        .filter(sigint_network_freq_changelog::Column::OriginalId.eq_any(ids))
         .all(txn)
         .await
         .context(h!())?
@@ -536,7 +537,7 @@ where
 
     let ids_map = sigint_network_changelog::Entity::find()
         .filter(sigint_network_changelog::Column::SigintOriginId.eq(origin_id))
-        .filter(sigint_network_changelog::Column::OriginalId.is_in(ids))
+        .filter(sigint_network_changelog::Column::OriginalId.eq_any(ids))
         .all(txn)
         .await
         .context(h!())?

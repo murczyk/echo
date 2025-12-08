@@ -1,13 +1,14 @@
 use crate::config::*;
 use crate::entities::*;
 use crate::error::AppError;
-use crate::rer_importer::inbox::query::get_sigint_inbox_item_tags_expr;
 use crate::rer_importer::types::*;
 use crate::sigint::freq::types::FreqGroupsMessageCountByDay;
 use crate::types::{Env, Mode, ShortContext};
+use crate::utils::orm::ArrayColumnOps;
 use crate::{h, OneoffCalculateHistoricStatsPs};
 use anyhow::Context;
 use chrono::*;
+use echo_migration::{Expr, IntoCondition};
 use itertools::Itertools;
 use log::*;
 use sea_orm::*;
@@ -224,7 +225,7 @@ pub async fn get_last_hour_stats(
 ) -> anyhow::Result<Vec<(NaiveDateTime, HashMap<i64, i32>)>> {
     let now = round_to_5min(Utc::now().naive_utc()).c(h!())?;
     let stats = stats_group_5min::Entity::find()
-        .filter(stats_group_5min::Column::SignalGroupBatchId.is_in(batch_ids))
+        .filter(stats_group_5min::Column::SignalGroupBatchId.eq_any(batch_ids))
         .filter(stats_group_5min::Column::Dt.lte(now))
         .filter(stats_group_5min::Column::Dt.gt(now - Duration::hours(1)))
         .all(dbx)
@@ -295,7 +296,7 @@ pub async fn read_group_stats_aggregated(
         .filter(interval_5mins_filter)
         .filter(
             stats_group_5min::Column::SignalGroupBatchId
-                .is_in(batch_ids.clone()),
+                .eq_any(batch_ids.clone()),
         )
         .all(dbx)
         .await
@@ -323,7 +324,7 @@ pub async fn read_group_stats_aggregated(
             .filter(interval_day_filter)
             .filter(
                 stats_group_day::Column::SignalGroupBatchId
-                    .is_in(batch_ids.clone()),
+                    .eq_any(batch_ids.clone()),
             )
             .all(dbx)
             .await
@@ -375,7 +376,7 @@ pub async fn read_sender_stats_aggregated(
             .filter(interval_5mins_filter)
             .filter(
                 stats_group_sender_5min::Column::SignalGroupBatchId
-                    .is_in(batch_ids.clone()),
+                    .eq_any(batch_ids.clone()),
             )
             .all(&env.dbx)
             .await
@@ -396,7 +397,7 @@ pub async fn read_sender_stats_aggregated(
             .filter(interval_day_filter)
             .filter(
                 stats_group_sender_day::Column::SignalGroupBatchId
-                    .is_in(batch_ids.clone()),
+                    .eq_any(batch_ids.clone()),
             )
             .all(&env.dbx)
             .await
@@ -439,7 +440,7 @@ pub async fn read_post_stats_aggregated(
         .filter(interval_5mins_filter)
         .filter(
             stats_group_post_id_5min::Column::SignalGroupBatchId
-                .is_in(batch_ids.clone()),
+                .eq_any(batch_ids.clone()),
         )
         .all(&env.dbx)
         .await
@@ -460,7 +461,7 @@ pub async fn read_post_stats_aggregated(
             .filter(interval_day_filter)
             .filter(
                 stats_group_post_id_day::Column::SignalGroupBatchId
-                    .is_in(batch_ids.clone()),
+                    .eq_any(batch_ids.clone()),
             )
             .all(&env.dbx)
             .await
@@ -471,7 +472,7 @@ pub async fn read_post_stats_aggregated(
             });
     };
     let posts = sigint_post::Entity::find()
-        .filter(sigint_post::Column::Id.is_in(stats.keys().copied()))
+        .filter(sigint_post::Column::Id.eq_any(stats.keys().copied().collect()))
         .all(&env.dbx)
         .await
         .c(h!())?
@@ -513,7 +514,7 @@ pub async fn read_aor_stats_aggregated(
         .filter(interval_5mins_filter)
         .filter(
             stats_group_aor_id_5min::Column::SignalGroupBatchId
-                .is_in(batch_ids.clone()),
+                .eq_any(batch_ids.clone()),
         )
         .all(&env.dbx)
         .await
@@ -534,7 +535,7 @@ pub async fn read_aor_stats_aggregated(
             .filter(interval_day_filter)
             .filter(
                 stats_group_aor_id_day::Column::SignalGroupBatchId
-                    .is_in(batch_ids.clone()),
+                    .eq_any(batch_ids.clone()),
             )
             .all(&env.dbx)
             .await
@@ -577,7 +578,7 @@ pub async fn read_frequency_stats_aggregated(
         .filter(interval_5mins_filter)
         .filter(
             stats_group_freq_5min::Column::SignalGroupBatchId
-                .is_in(batch_ids.clone()),
+                .eq_any(batch_ids.clone()),
         )
         .all(&env.dbx)
         .await
@@ -598,7 +599,7 @@ pub async fn read_frequency_stats_aggregated(
             .filter(interval_day_filter)
             .filter(
                 stats_group_freq_day::Column::SignalGroupBatchId
-                    .is_in(batch_ids.clone()),
+                    .eq_any(batch_ids.clone()),
             )
             .all(&env.dbx)
             .await
@@ -652,7 +653,7 @@ pub async fn read_frequency_stats_day(
         .filter(interval_5mins_filter)
         .filter(
             stats_group_freq_5min::Column::SignalGroupBatchId
-                .is_in(batch_ids.clone()),
+                .eq_any(batch_ids.clone()),
         )
         .all(&env.dbx)
         .await
@@ -688,7 +689,7 @@ pub async fn read_frequency_stats_day(
             .filter(interval_day_filter)
             .filter(
                 stats_group_freq_day::Column::SignalGroupBatchId
-                    .is_in(batch_ids.clone()),
+                    .eq_any(batch_ids.clone()),
             )
             .all(&env.dbx)
             .await
@@ -758,7 +759,7 @@ pub async fn read_callsign_stats_aggregated(
             .filter(interval_5mins_filter)
             .filter(
                 stats_group_callsign_5min::Column::SignalGroupBatchId
-                    .is_in(batch_ids.clone()),
+                    .eq_any(batch_ids.clone()),
             )
             .all(&env.dbx)
             .await
@@ -779,7 +780,7 @@ pub async fn read_callsign_stats_aggregated(
             .filter(interval_day_filter)
             .filter(
                 stats_group_callsign_day::Column::SignalGroupBatchId
-                    .is_in(batch_ids.clone()),
+                    .eq_any(batch_ids.clone()),
             )
             .all(&env.dbx)
             .await
@@ -822,7 +823,7 @@ pub async fn read_tag_stats_aggregated(
         .filter(interval_5mins_filter)
         .filter(
             stats_group_tag_5min::Column::SignalGroupBatchId
-                .is_in(batch_ids.clone()),
+                .eq_any(batch_ids.clone()),
         )
         .all(&env.dbx)
         .await
@@ -843,7 +844,7 @@ pub async fn read_tag_stats_aggregated(
             .filter(interval_day_filter)
             .filter(
                 stats_group_tag_day::Column::SignalGroupBatchId
-                    .is_in(batch_ids.clone()),
+                    .eq_any(batch_ids.clone()),
             )
             .all(&env.dbx)
             .await
@@ -886,7 +887,7 @@ pub async fn read_unit_stats_aggregated(
         .filter(interval_5mins_filter)
         .filter(
             stats_group_unit_5min::Column::SignalGroupBatchId
-                .is_in(batch_ids.clone()),
+                .eq_any(batch_ids.clone()),
         )
         .all(&env.dbx)
         .await
@@ -907,7 +908,7 @@ pub async fn read_unit_stats_aggregated(
             .filter(interval_day_filter)
             .filter(
                 stats_group_unit_day::Column::SignalGroupBatchId
-                    .is_in(batch_ids.clone()),
+                    .eq_any(batch_ids.clone()),
             )
             .all(&env.dbx)
             .await
@@ -951,7 +952,7 @@ pub async fn read_location_stats_aggregated(
             .filter(interval_5mins_filter)
             .filter(
                 stats_group_location_5min::Column::SignalGroupBatchId
-                    .is_in(batch_ids.clone()),
+                    .eq_any(batch_ids.clone()),
             )
             .all(&env.dbx)
             .await
@@ -972,7 +973,7 @@ pub async fn read_location_stats_aggregated(
             .filter(interval_day_filter)
             .filter(
                 stats_group_location_day::Column::SignalGroupBatchId
-                    .is_in(batch_ids.clone()),
+                    .eq_any(batch_ids.clone()),
             )
             .all(&env.dbx)
             .await
@@ -1007,7 +1008,10 @@ struct StatsRow {
     pub post_id: Option<i64>,
     pub sender: Option<String>,
     pub callsigns: Option<sea_orm::prelude::Json>,
-    pub tags: Option<sea_orm::prelude::Json>,
+    #[deprecated(
+        note = "This field is deprecated; use `sigint_inbox_item_tag` instead."
+    )]
+    pub tags: Option<Vec<i64>>,
     pub location_v2: Option<String>,
     pub unit_v2: Option<String>,
 }
@@ -1070,6 +1074,20 @@ pub async fn recalculate_group_stats(
                 JoinType::InnerJoin,
                 signal_group::Relation::SignalGroupAor.def(),
             )
+            .join(
+                JoinType::LeftJoin,
+                sigint_inbox_item_tag::Relation::SigintInboxItem
+                    .def()
+                    .rev()
+                    .on_condition(|_left, right| {
+                        Expr::col((
+                            right,
+                            sigint_inbox_item_tag::Column::Confidence,
+                        ))
+                        .gte(TAG_MINIMUM_CONFIDENCE)
+                        .into_condition()
+                    }),
+            )
             .select_only()
             .column(signal_message::Column::Id)
             .column(signal_message::Column::CreatedAt)
@@ -1080,15 +1098,22 @@ pub async fn recalculate_group_stats(
             .column(sigint_inbox_item::Column::LocationV2)
             .column(sigint_inbox_item::Column::UnitV2)
             .column(sigint_inbox_item::Column::PostId)
-            .column_as(
-                get_sigint_inbox_item_tags_expr(TAG_MINIMUM_CONFIDENCE),
-                "tags",
-            )
             .column(signal_message::Column::Sender)
             .column(signal_group_aor::Column::AorId)
+            .expr_as(
+                Expr::cust_with_expr(
+                    "array_agg($1) filter (where $1 is not null)",
+                    Expr::col(sigint_inbox_item_tag::Column::TagId),
+                ),
+                "tags",
+            )
             .filter(since_filter_1.or(since_filter_2))
             .filter(till_filter_1.or(till_filter_2))
             .filter(signal_message::Column::Deleted.eq(false))
+            .group_by(signal_message::Column::Id)
+            .group_by(sigint_inbox_item::Column::Id)
+            .group_by(signal_message_group::Column::GroupMasterKey)
+            .group_by(signal_group_aor::Column::Id)
             .into_model::<StatsRow>()
             .all(dbx)
             .await
@@ -1181,10 +1206,7 @@ pub async fn recalculate_group_stats(
             .clone()
             .into_iter()
             .flat_map(|x| {
-                let tags: Vec<i64> = x
-                    .tags
-                    .and_then(|c| serde_json::from_value(c).ok())
-                    .unwrap_or_default();
+                let tags: Vec<i64> = x.tags.unwrap_or_default();
                 tags.into_iter().map(move |t| {
                     (
                         x.group_master_key.clone(),

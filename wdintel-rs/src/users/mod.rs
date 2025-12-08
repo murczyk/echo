@@ -7,6 +7,7 @@ use crate::messenger::group::get_identity_sigint_groups;
 use crate::messenger::group::types::SignalGroupEntryF2;
 use crate::session::{record_new_session, record_page_visit};
 use crate::types::*;
+use crate::utils::orm::ArrayColumnOps;
 use actix_identity::Identity;
 use actix_web::web::Json;
 use actix_web::{get, post, HttpMessage, HttpRequest, HttpResponse};
@@ -797,7 +798,7 @@ pub async fn user_sigint_groups(
         .select_only()
         .column(signal_message_group::Column::GroupMasterKey)
         .filter(signal_message::Column::Timestamp.gt(ts))
-        .filter(signal_message_group::Column::GroupMasterKey.is_in(all_groups))
+        .filter(signal_message_group::Column::GroupMasterKey.eq_any(all_groups))
         .group_by(signal_message_group::Column::GroupMasterKey)
         .into_tuple::<Option<String>>()
         .all(&env.dbx)
@@ -830,7 +831,7 @@ pub async fn user_sigint_groups_detailed(
             .select_only()
             .column(signal_message_group::Column::GroupMasterKey)
             .filter(signal_message::Column::Timestamp.gt(ts))
-            .filter(signal_message_group::Column::GroupMasterKey.is_in(keys))
+            .filter(signal_message_group::Column::GroupMasterKey.eq_any(keys))
             .group_by(signal_message_group::Column::GroupMasterKey)
             .into_tuple::<Option<String>>()
             .all(&env.dbx)

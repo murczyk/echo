@@ -12,6 +12,7 @@ use sea_orm::prelude::Json;
 use sea_orm::*;
 use std::cmp::Ordering;
 use std::path::Path;
+use crate::utils::orm::ArrayColumnOps;
 
 const DOC_NAME: &str = "Форма №1.2.17/ОСУВ";
 const DOC_HEADER: &str =
@@ -326,10 +327,10 @@ async fn collect_report(
 
     let networks = collect_networks(dbx, freqs, &groups).await.context(h!())?;
     let sigint_unit_ids =
-        networks.values().map(|n| n.unit_id).collect::<Vec<_>>();
+        networks.values().flat_map(|n| n.unit_id).collect::<Vec<_>>();
 
     let network_units = sigint_unit::Entity::find()
-        .filter(sigint_unit::Column::Id.is_in(sigint_unit_ids))
+        .filter(sigint_unit::Column::Id.eq_any(sigint_unit_ids))
         .all(dbx)
         .await
         .context(h!())?
@@ -362,7 +363,7 @@ async fn collect_report(
         .collect::<HashMap<_, _>>();
 
     let group_aors = signal_group_aor::Entity::find()
-        .filter(signal_group_aor::Column::MasterKey.is_in(groups.clone()))
+        .filter(signal_group_aor::Column::MasterKey.eq_any(groups.clone()))
         .all(dbx)
         .await
         .context(h!())?
@@ -594,7 +595,7 @@ async fn collect_networks(
             JoinType::LeftJoin,
             sigint_network_unit::Relation::SigintUnit.def(),
         )
-        .filter(sigint_network_freq::Column::Freq.is_in(freqs.clone()))
+        .filter(sigint_network_freq::Column::Freq.eq_any(freqs.clone()))
         .filter(sigint_network::Column::Deleted.eq(false))
         .filter(sigint_network::Column::Name.is_not_null())
         .select_only()
@@ -637,11 +638,11 @@ async fn collect_networks(
             JoinType::LeftJoin,
             sigint_network_unit::Relation::SigintUnit.def(),
         )
-        .filter(sigint_network_freq::Column::Freq.is_in(freqs))
+        .filter(sigint_network_freq::Column::Freq.eq_any(freqs))
         .filter(
             signal_group_aor::Column::Id
                 .is_null()
-                .or(signal_group_aor::Column::MasterKey.is_in(groups.clone())),
+                .or(signal_group_aor::Column::MasterKey.eq_any(groups.clone())),
         )
         .filter(sigint_network::Column::Deleted.eq(false))
         .filter(
@@ -712,7 +713,7 @@ async fn load_messages_with_comments(
                 JoinType::LeftJoin,
                 signal_message::Relation::SigintInboxItem.def(),
             )
-            .filter(sigint_comment::Column::SignalMessageId.is_in(ids))
+            .filter(sigint_comment::Column::SignalMessageId.eq_any(ids))
             .select_only()
             .column(sigint_comment::Column::SignalMessageId)
             .column(sigint_comment::Column::Comment)

@@ -2,6 +2,7 @@ use crate::entities::*;
 use crate::error::AppError;
 use crate::rer_importer::types::*;
 use crate::types::*;
+use crate::utils::orm::ArrayColumnOps;
 use actix_identity::Identity;
 use actix_web::post;
 use actix_web::web::{Data, Json};
@@ -77,7 +78,7 @@ async fn collect_reported_networks_per_callsign(
     let callsign_records = crate::entities::sigint_callsign::Entity::find()
         .filter(
             crate::entities::sigint_callsign::Column::Id
-                .is_in(callsign_ids.clone()),
+                .eq_any(callsign_ids.clone()),
         )
         .all(dbx)
         .await
@@ -98,7 +99,7 @@ async fn collect_reported_networks_per_callsign(
     let reported_in = crate::entities::sigint_network_callsign::Entity::find()
         .filter(
             crate::entities::sigint_network_callsign::Column::SigintCallsign
-                .is_in(callsign_texts),
+                .eq_any(callsign_texts),
         )
         .filter(
             crate::entities::sigint_network_callsign::Column::Deleted.eq(false),
@@ -159,7 +160,7 @@ pub async fn load_callsigns(
             .find_also_related(sigint_unit::Entity)
             .filter(
                 sigint_callsign::Column::Callsign
-                    .is_in(lowercased_to_query.clone()),
+                    .eq_any(lowercased_to_query.clone()),
             )
             .filter(sigint_unit::Column::Deleted.eq(false))
             .filter(sigint_unit::Column::Active.eq(true))

@@ -4,6 +4,7 @@ use crate::location::utils::to_location_list;
 use crate::rer_importer::analysis::message_in_groups_exists;
 use crate::sigint::sender::message_ids_for_senders;
 use crate::types::*;
+use crate::utils::orm::ArrayColumnOps;
 use crate::utils::*;
 use actix_web::post;
 use actix_web::web::{Data, Json};
@@ -16,7 +17,6 @@ use sea_orm::{
     ColumnTrait, Condition, EntityTrait, QueryFilter, QuerySelect, Statement,
 };
 use sea_query::{Alias, CommonTableExpression, Expr, Order, Query, SimpleExpr};
-
 use std::collections::{BTreeSet, HashMap};
 
 use self::bl::*;
@@ -171,7 +171,7 @@ pub async fn list_alt_unit_by_freqs(
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
         .filter(sigint_inbox_item::Column::Unit.is_not_null())
-        .filter(sigint_inbox_item::Column::Freq.is_in(req.freqs.clone()));
+        .filter(sigint_inbox_item::Column::Freq.eq_any(req.freqs.clone()));
 
     if let Some(groups) = &req.filter_group_master_keys {
         alt_units = alt_units.filter(message_in_groups_exists(groups.clone()))
@@ -365,7 +365,7 @@ async fn collect_freq_counts(
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(sigint_inbox_item::Column::Datetime.lte(dt_till))
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
-        .filter(sigint_inbox_item::Column::Freq.is_in(freqs));
+        .filter(sigint_inbox_item::Column::Freq.eq_any(freqs));
 
     let callsigns = callsigns
         .clone()
@@ -426,7 +426,7 @@ pub async fn list_callsigns_by_freqs(
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
-        .filter(sigint_inbox_item::Column::Freq.is_in(req.freqs.clone()));
+        .filter(sigint_inbox_item::Column::Freq.eq_any(req.freqs.clone()));
 
     // println!(
     //     "> sql: {}",

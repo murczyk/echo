@@ -3,6 +3,7 @@ use crate::entities::*;
 use crate::location::SettlementsData;
 use crate::sigint::worker::incoming_message_after_insert;
 use crate::types::*;
+use crate::utils::orm::ArrayColumnOps;
 use redis::aio::ConnectionManager;
 use reqwest::Client;
 use sea_orm::*;
@@ -88,7 +89,7 @@ pub async fn upsert_signal_groups(
 ) -> anyhow::Result<()> {
     let group_keys = groups.iter().map(|g| g.master_key.clone()).collect_vec();
     let existing_groups = signal_group::Entity::find()
-        .filter(signal_group::Column::MasterKey.is_in(group_keys))
+        .filter(signal_group::Column::MasterKey.eq_any(group_keys))
         .all(db)
         .await
         .context(h!())?
@@ -360,7 +361,7 @@ pub async fn upsert_messages(
     for messages in message_chunks.into_iter() {
         let message_ids = messages.iter().map(|x| x.message.id).collect_vec();
         let existing_messages = signal_message::Entity::find()
-            .filter(signal_message::Column::ExternalId.is_in(message_ids))
+            .filter(signal_message::Column::ExternalId.eq_any(message_ids))
             .join(
                 JoinType::InnerJoin,
                 signal_message::Relation::DatasourceGroup.def(),
@@ -384,7 +385,7 @@ pub async fn upsert_messages(
             let groups = signal_message_group::Entity::find()
                 .filter(
                     signal_message_group::Column::SignalMessageId
-                        .is_in(existing_message_ids.clone()),
+                        .eq_any(existing_message_ids.clone()),
                 )
                 .all(db)
                 .await

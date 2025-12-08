@@ -4,6 +4,7 @@ use crate::error::AppError;
 use crate::event_stream::fanout;
 use crate::event_stream::types::*;
 use crate::types::*;
+use crate::utils::orm::ArrayColumnOps;
 use actix_web::post;
 use actix_web::web::Json;
 use sea_orm::*;
@@ -169,7 +170,7 @@ pub async fn list_units_by_id(
     let mut units = sigint_unit::Entity::find()
         .filter(sigint_unit::Column::Deleted.eq(false));
     if let Some(ids) = &req.ids {
-        units = units.filter(sigint_unit::Column::Id.is_in(ids.clone()));
+        units = units.filter(sigint_unit::Column::Id.eq_any(ids.clone()));
     }
     let units = units.all(&env.dbx).await.c(h!())?;
 

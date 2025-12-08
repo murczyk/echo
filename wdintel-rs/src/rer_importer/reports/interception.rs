@@ -3,11 +3,11 @@ use crate::config::*;
 use crate::entities::{prelude::*, *};
 use crate::error::AppError;
 use crate::rer_importer::analysis::*;
-use crate::rer_importer::inbox::query::get_sigint_inbox_item_tags_expr;
 use crate::types::*;
 use actix_identity::Identity;
 use chrono::prelude::*;
 // Import necessary items from rust_xlsxwriter
+use crate::utils::orm::ArrayColumnOps;
 use rust_xlsxwriter::{Color, Format, FormatAlign, FormatBorder, Workbook};
 use sea_orm::{prelude::Expr, *};
 use sea_query::*;
@@ -24,6 +24,9 @@ struct InboxMessage {
     body: Option<String>,
     comment: Option<String>,
     coords: Option<String>,
+    #[deprecated(
+        note = "This field is deprecated; use `sigint_inbox_item_tag` instead."
+    )]
     tags: Option<JsonValue>,
     important: Option<i64>,
 }
@@ -46,8 +49,14 @@ async fn get_inbox_messages_report(
         .column(sigint_inbox_item::Column::Date)
         .column(sigint_inbox_item::Column::Time)
         .column(sigint_inbox_item::Column::Freq)
-        .column_as(get_sigint_inbox_item_tags_expr(TAG_MINIMUM_CONFIDENCE), "tags")
         .column(signal_message::Column::Body)
+        .expr_as(
+            Expr::cust_with_expr(
+                "array_agg($1) filter (where $1 is not null)",
+                Expr::col(sigint_inbox_item_tag::Column::TagId),
+            ),
+            "tags",
+        )
         .column_as(sigint_inbox_item::Column::CallsignsAlg1, "callsigns")
         .column_as(
             Expr::col((
@@ -112,6 +121,17 @@ async fn get_inbox_messages_report(
         )
         .join(
             JoinType::LeftJoin,
+            sigint_inbox_item_tag::Relation::SigintInboxItem
+                .def()
+                .rev()
+                .on_condition(|_left, right| {
+                    Expr::col((right, sigint_inbox_item_tag::Column::Confidence))
+                        .gte(TAG_MINIMUM_CONFIDENCE)
+                        .into_condition()
+                }),
+        )
+        .join(
+            JoinType::LeftJoin,
             signal_message::Relation::SigintImportant
                 .def()
                 .on_condition(|_left, right| {
@@ -122,20 +142,17 @@ async fn get_inbox_messages_report(
         )
         .group_by(signal_message::Column::Id)
         .group_by(sigint_inbox_item::Column::Id)
-        .group_by(signal_message::Column::Id)
         .group_by(sigint_important::Column::SignalMessageId)
         .filter(signal_message::Column::Deleted.eq(false))
-        .filter(datasource_group::Column::GroupMasterKey.is_in(
+        .filter(datasource_group::Column::GroupMasterKey.eq_any(
             crate::messenger::group::get_identity_sigint_groups(&read_db, &login)
                 .await
                 .c(h!())?,
         ));
 
-    let mut only_tags_by_logins = None;
     if req.report_tags_only_this_unit == Some(true) {
-        only_tags_by_logins = Some(logins.clone());
+        q = q.filter(sigint_comment::Column::Login.eq_any(logins));
     }
-
     q = crate::rer_importer::inbox::query::get_pagination_filters(
         env,
         req,
@@ -172,7 +189,7 @@ async fn get_inbox_messages_report(
         &req.or_with_extended_form,
         &req.filter_tags_option,
         &login,
-        only_tags_by_logins,
+        None,
     )?;
     let q = filter_selected_locations(
         q,

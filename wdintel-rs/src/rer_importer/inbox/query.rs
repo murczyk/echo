@@ -1,14 +1,18 @@
 use crate::config::{RER_DUTY_MAX_DAYS, TAG_MINIMUM_CONFIDENCE};
 use crate::entities::{prelude::*, *};
+use crate::error::AppError;
 use crate::rer_importer::analysis::*;
 use crate::rer_importer::types::*;
 use crate::sigint::sender::preferred_sender_expr;
 use crate::types::*;
+use crate::utils::orm::ArrayColumnOps;
 use crate::utils::*;
 use chrono::{Duration, NaiveDateTime, Utc};
+use echo_migration::IntoCondition;
+use log::*;
 use sea_orm::{sea_query::PostgresQueryBuilder, *};
 use sea_query::types::IntoColumnRef;
-use sea_query::{Expr, Query, SelectStatement, SimpleExpr};
+use sea_query::{Asterisk, Expr, Query, SelectStatement, SimpleExpr};
 
 pub(crate) async fn build_inbox_query(
     login: &str,
@@ -44,7 +48,7 @@ pub(crate) async fn build_inbox_query(
         .from(signal_message_group::Entity)
         .and_where(
             signal_message_group::Column::GroupMasterKey
-                .is_in(sigint_groups.clone()),
+                .eq_any(sigint_groups.clone()),
         )
         .to_owned();
 
@@ -90,7 +94,7 @@ pub(crate) async fn build_inbox_query(
         &req.or_with_extended_form,
         &req.filter_tags_option,
         login,
-        only_tags_by_logins
+        only_tags_by_logins,
     )?;
     let q = filter_selected_aors(q, &req.selected_aors).context(h!())?;
     let q =
@@ -112,14 +116,59 @@ pub(crate) async fn build_inbox_query(
                 Utc::now().naive_utc() - Duration::days(RER_DUTY_MAX_DAYS),
             ));
     }
+
     q = get_pagination_filters(env, req, q).await.c(h!())?;
     let q = get_bl_ordering_select(req, q).await.c(h!())?;
+
+    let query_tags = sigint_inbox_item_tag::Entity::find()
+        .select_only()
+        .column(sigint_inbox_item_tag::Column::SigintInboxItemId)
+        .expr_as(
+            Expr::cust_with_exprs(
+                "array_agg($1) filter (where $2 >= $3)",
+                [
+                    Expr::col((
+                        sigint_inbox_item_tag::Entity,
+                        sigint_inbox_item_tag::Column::TagId,
+                    ))
+                    .into_simple_expr(),
+                    Expr::col((
+                        sigint_inbox_item_tag::Entity,
+                        sigint_inbox_item_tag::Column::Confidence,
+                    ))
+                    .into_simple_expr(),
+                    Expr::val(TAG_MINIMUM_CONFIDENCE).into_simple_expr(),
+                ],
+            ),
+            "tags",
+        )
+        .expr_as(
+            Expr::cust("jsonb_agg(sigint_inbox_item_tag.*)"),
+            "inbox_tags",
+        )
+        .filter(
+            Expr::col((
+                sigint_inbox_item_tag::Entity,
+                sigint_inbox_item_tag::Column::SigintInboxItemId,
+            ))
+            .equals((signal_message::Entity, signal_message::Column::Id)),
+        )
+        .group_by(sigint_inbox_item_tag::Column::SigintInboxItemId)
+        .into_query();
+
     let mut query = q.into_query();
     if req.nolimit != Some(true) {
         query.limit(20);
     }
-    let sql = query.to_string(PostgresQueryBuilder);
-    trace!("> Inbox items query: {sql}");
+    
+    let q_tags = "q_tags";
+    let sql = query
+        .join_lateral(JoinType::LeftJoin, query_tags, q_tags, Expr::value(true))
+        .column((q_tags, "tags"))
+        .column((q_tags, "inbox_tags"))
+        .to_string(PostgresQueryBuilder);
+
+    println!("> Inbox items query: {sql}");
     Ok(sql)
 }
 
@@ -520,26 +569,6 @@ fn to_ts_expr(ts: NaiveDateTime) -> SimpleExpr {
     Expr::cust(txt)
 }
 
-pub fn get_sigint_inbox_item_tags_expr(confidence: f64) -> SimpleExpr {
-    let e = Query::select()
-        .from(sigint_inbox_item_tag::Entity)
-        .expr(Expr::cust_with_expr(
-            "jsonb_agg($1)",
-            Expr::col(sigint_inbox_item_tag::Column::TagId),
-        ))
-        .and_where(sigint_inbox_item_tag::Column::Confidence.gte(confidence))
-        .and_where(
-            Expr::col((
-                sigint_inbox_item_tag::Entity,
-                sigint_inbox_item_tag::Column::SigintInboxItemId,
-            ))
-            .equals((sigint_inbox_item::Entity, sigint_inbox_item::Column::Id)),
-        )
-        .clone()
-        .into_sub_query_statement();
-    SimpleExpr::SubQuery(None, Box::new(e))
-}
-
 pub fn add_inbox_message_columns<E>(select: Select<E>) -> Select<E>
 where
     E: EntityTrait,
@@ -566,8 +595,4 @@ where
         .column_as(sigint_inbox_item::Column::PostId, "post_id")
         .column_as(sigint_inbox_item::Column::Datetime, "datetime")
         .column_as(sigint_post::Column::Name, "post_name")
-        .expr_as(
-            get_sigint_inbox_item_tags_expr(TAG_MINIMUM_CONFIDENCE),
-            "tags",
-        )
 }

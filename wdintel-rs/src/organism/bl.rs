@@ -2,6 +2,7 @@ use crate::entities::*;
 use crate::error::AppError;
 use crate::organism::types::*;
 use crate::types::*;
+use crate::utils::orm::ArrayColumnOps;
 use actix_web::web::Json;
 use sea_orm::*;
 
@@ -84,7 +85,7 @@ where
         parents.into_iter().map(|x| x.id).collect();
     organism_ids.push(organism_id);
     let organism_groups = organism_group::Entity::find()
-        .filter(organism_group::Column::OrganismId.is_in(organism_ids.clone()))
+        .filter(organism_group::Column::OrganismId.eq_any(organism_ids.clone()))
         .all(txn)
         .await
         .c(h!())?;
@@ -314,13 +315,13 @@ async fn upsert_organism_aors(
         Some(aor_ids) => {
             organism_aor::Entity::delete_many()
                 .filter(organism_aor::Column::OrganismId.eq(organism_id))
-                .filter(organism_aor::Column::AorId.is_not_in(aor_ids.clone()))
+                .filter(organism_aor::Column::AorId.ne_any(aor_ids.clone()))
                 .exec(txn)
                 .await
                 .c(h!())?;
             let existing_ids = organism_aor::Entity::find()
                 .filter(organism_aor::Column::OrganismId.eq(organism_id))
-                .filter(organism_aor::Column::AorId.is_in(aor_ids.clone()))
+                .filter(organism_aor::Column::AorId.eq_any(aor_ids.clone()))
                 .select_only()
                 .column(organism_aor::Column::AorId)
                 .into_tuple::<i64>()

@@ -1,5 +1,6 @@
 use super::*;
 use crate::types::ShortContext;
+use crate::utils::orm::ArrayColumnOps;
 use actix_web::post;
 use std::collections::HashMap;
 use tempfile::TempDir;
@@ -58,7 +59,7 @@ pub async fn rer_analysis_download_geojson(
         .column_as(sigint_inbox_item::Column::Datetime, "datetime")
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(
-            datasource_group::Column::GroupMasterKey.is_in(
+            datasource_group::Column::GroupMasterKey.eq_any(
                 crate::messenger::group::get_identity_sigint_groups(
                     &env.dbx, &login,
                 )
@@ -119,12 +120,13 @@ pub async fn rer_analysis_download_geojson(
     let filter_active_ts =
         crate::sigint::freq::util::filter_by_active_ts(dt_since, dt_till);
 
+    let unique_freqs: Vec<String> = unique_freqs.into_iter().collect();
     // Pre-load networks
     let networks: HashMap<String, String> = sigint_network::Entity::find()
         .find_also_related(sigint_network_freq::Entity)
         .filter(sigint_network::Column::Deleted.eq(false))
         .filter(filter_active_ts)
-        .filter(sigint_network_freq::Column::Freq.is_in(unique_freqs.clone()))
+        .filter(sigint_network_freq::Column::Freq.eq_any(unique_freqs.clone()))
         .all(&env.dbx)
         .await
         .context(h!())?
@@ -155,7 +157,9 @@ pub async fn rer_analysis_download_geojson(
                 Expr::cust("jsonb_array_elements_text(callsigns)"),
                 "callsign",
             )
-            .filter(sigint_inbox_item::Column::Freq.is_in(unique_freqs.clone()))
+            .filter(
+                sigint_inbox_item::Column::Freq.eq_any(unique_freqs.clone()),
+            )
             .filter(sigint_inbox_item::Column::Datetime.gte(dt_since_minus_24h))
             .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
             .filter(signal_message::Column::Deleted.eq(false))

@@ -7,10 +7,12 @@ use crate::rer_importer::inbox::bl::*;
 use crate::rer_importer::inbox::query::*;
 use crate::session::record_page_visit;
 use crate::types::*;
+use crate::utils::orm::ArrayColumnOps;
 use actix_identity::Identity;
 use actix_web::web::{Data, Json};
 use actix_web::{get, post};
 use chrono::*;
+use echo_migration::{Expr, PostgresQueryBuilder};
 use itertools::Itertools;
 use log::*;
 use sea_orm::*;
@@ -115,17 +117,65 @@ async fn messages_by_id(
             JoinType::LeftJoin,
             sigint_inbox_item::Relation::SigintPost.def(),
         );
+
     messages = add_inbox_message_columns(messages);
+
     messages = messages
         .filter(signal_message::Column::Deleted.eq(false))
-        .filter(datasource_group::Column::GroupMasterKey.is_in(sigint_groups))
-        .filter(signal_message::Column::Id.is_in(req.message_ids.clone()));
+        .filter(datasource_group::Column::GroupMasterKey.eq_any(sigint_groups))
+        .filter(signal_message::Column::Id.eq_any(req.message_ids.clone()));
 
-    let messages = messages
-        .into_model::<InboxMessageDesc>()
-        .all(&env.dbx)
-        .await
-        .context(h!())?;
+    let query_tags = sigint_inbox_item_tag::Entity::find()
+        .select_only()
+        .column(sigint_inbox_item_tag::Column::SigintInboxItemId)
+        .expr_as(
+            Expr::cust_with_exprs(
+                "array_agg($1) filter (where $2 >= $3)",
+                [
+                    Expr::col((
+                        sigint_inbox_item_tag::Entity,
+                        sigint_inbox_item_tag::Column::TagId,
+                    ))
+                    .into_simple_expr(),
+                    Expr::col((
+                        sigint_inbox_item_tag::Entity,
+                        sigint_inbox_item_tag::Column::Confidence,
+                    ))
+                    .into_simple_expr(),
+                    Expr::val(TAG_MINIMUM_CONFIDENCE).into_simple_expr(),
+                ],
+            ),
+            "tags",
+        )
+        .expr_as(
+            Expr::cust("jsonb_agg(sigint_inbox_item_tag.*)"),
+            "inbox_tags",
+        )
+        .filter(
+            Expr::col((
+                sigint_inbox_item_tag::Entity,
+                sigint_inbox_item_tag::Column::SigintInboxItemId,
+            ))
+            .equals((signal_message::Entity, signal_message::Column::Id)),
+        )
+        .group_by(sigint_inbox_item_tag::Column::SigintInboxItemId)
+        .into_query();
+
+    let q_tags = "q_tags";
+
+    let (sql, values) = messages
+        .into_query()
+        .join_lateral(JoinType::LeftJoin, query_tags, q_tags, Expr::value(true))
+        .column((q_tags, "tags"))
+        .column((q_tags, "inbox_tags"))
+        .build(PostgresQueryBuilder);
+
+    let messages = InboxMessageDesc::find_by_statement(
+        Statement::from_sql_and_values(DatabaseBackend::Postgres, sql, values),
+    )
+    .all(&env.dbx)
+    .await
+    .context(h!())?;
     let req = InboxMessagesReq::default();
     let env: &Env = &env;
     let messages =
@@ -211,7 +261,7 @@ async fn inbox_group_stats(
             .await
             .c(h!())?;
     let group_names = signal_group::Entity::find()
-        .filter(signal_group::Column::MasterKey.is_in(master_keys.clone()))
+        .filter(signal_group::Column::MasterKey.eq_any(master_keys.clone()))
         .all(&env.dbx)
         .await
         .c(h!())?

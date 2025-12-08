@@ -3,6 +3,7 @@ use crate::error::AppError;
 use crate::rer_importer::types::{InboxMapItem, MapPointsFilter};
 use crate::sigint::network::types::*;
 use crate::types::*;
+use crate::utils::orm::ArrayColumnOps;
 use crate::utils::*;
 use chrono::*;
 use itertools::Itertools;
@@ -102,7 +103,7 @@ where
 
     let freqs = sigint_network_freq::Entity::find()
         .filter(
-            sigint_network_freq::Column::NetworkId.is_in(network_ids.to_vec()),
+            sigint_network_freq::Column::NetworkId.eq_any(network_ids.to_vec()),
         )
         .filter(sigint_network_freq::Column::Deleted.eq(false))
         .all(txn)
@@ -150,7 +151,7 @@ where
             sigint_network_unit::Relation::SigintUnit.def(),
         )
         .filter(
-            sigint_network_unit::Column::NetworkId.is_in(network_ids.to_vec()),
+            sigint_network_unit::Column::NetworkId.eq_any(network_ids.to_vec()),
         )
         .filter(sigint_unit::Column::Deleted.eq(false))
         .all(txn)
@@ -182,7 +183,7 @@ where
 
     let network_posts = sigint_network_post::Entity::find()
         .filter(
-            sigint_network_post::Column::NetworkId.is_in(network_ids.to_vec()),
+            sigint_network_post::Column::NetworkId.eq_any(network_ids.to_vec()),
         )
         .filter(sigint_network_post::Column::Deleted.eq(false))
         .all(txn)
@@ -214,7 +215,7 @@ where
 
     let network_aors = sigint_network_aor::Entity::find()
         .filter(
-            sigint_network_aor::Column::NetworkId.is_in(network_ids.to_vec()),
+            sigint_network_aor::Column::NetworkId.eq_any(network_ids.to_vec()),
         )
         .all(txn)
         .await
@@ -246,7 +247,7 @@ where
     let network_descriptions = sigint_network_description::Entity::find()
         .filter(
             sigint_network_description::Column::NetworkId
-                .is_in(network_ids.to_vec()),
+                .eq_any(network_ids.to_vec()),
         )
         .filter(sigint_network_description::Column::Deleted.eq(false))
         .order_by_asc(sigint_network_description::Column::Type)
@@ -300,7 +301,7 @@ pub async fn bl_network_info_freqs(
                 .into_simple_expr()
                 .eq(sigint_network::Column::Id.into_simple_expr()),
         )
-        .filter(sigint_network_freq::Column::Freq.is_in(&freqs));
+        .filter(sigint_network_freq::Column::Freq.eq_any(freqs));
 
     let networks = sigint_network::Entity::find()
         .filter(sigint_network::Column::Deleted.eq(false))
@@ -325,7 +326,7 @@ pub async fn bl_network_info_batch(
     txn: &DatabaseTransaction,
 ) -> Result<Vec<Network>, AppError> {
     let networks = sigint_network::Entity::find()
-        .filter(sigint_network::Column::Id.is_in(network_ids));
+        .filter(sigint_network::Column::Id.eq_any(network_ids));
     // .order_by_asc(sigint_network::Column::Freq);
 
     // println!(
@@ -387,7 +388,7 @@ pub async fn network_group_activity_bl(
         ))
         .filter(signal_group::Column::Deleted.eq(false))
         .filter(
-            datasource_group::Column::GroupMasterKey.is_in(
+            datasource_group::Column::GroupMasterKey.eq_any(
                 crate::messenger::group::get_identity_sigint_groups_noimport(
                     &env.dbx,
                     &user,
@@ -399,7 +400,7 @@ pub async fn network_group_activity_bl(
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(sigint_inbox_item::Column::Datetime.lte(dt_till))
         .filter(Expr::cust_with_values("sigint_inbox_item.datetime >= $1 - INTERVAL '10 days'", vec![dt_till]))
-        .filter(sigint_network_freq::Column::NetworkId.is_in(req.network_ids.clone()));
+        .filter(sigint_network_freq::Column::NetworkId.eq_any(req.network_ids.clone()));
 
     let networks_group_stat = networks_group_stat
         .clone()
@@ -458,7 +459,7 @@ pub async fn collect_network_units(
             JoinType::InnerJoin,
             sigint_network::Relation::SigintNetworkFreq.def(),
         )
-        .filter(sigint_network_freq::Column::Freq.is_in(freqs))
+        .filter(sigint_network_freq::Column::Freq.eq_any(freqs))
         .filter(sigint_network_freq::Column::ActiveTo.is_null())
         .filter(sigint_network_freq::Column::Deleted.eq(false))
         .select_only()
@@ -471,7 +472,7 @@ pub async fn collect_network_units(
     let network_ids = freq_networks.iter().map(|x| x.0).unique().collect_vec();
     let units = sigint_network_unit::Entity::find()
         .find_with_related(sigint_unit::Entity)
-        .filter(sigint_network_unit::Column::NetworkId.is_in(network_ids))
+        .filter(sigint_network_unit::Column::NetworkId.eq_any(network_ids))
         .all(dbx)
         .await
         .context(h!())?;
@@ -539,7 +540,7 @@ pub async fn load_networks_units_desc(
             JoinType::InnerJoin,
             sigint_network_unit::Relation::SigintNetwork.def(),
         )
-        .filter(sigint_network::Column::Id.is_in(network_ids))
+        .filter(sigint_network::Column::Id.eq_any(network_ids))
         .select_only()
         .column_as(sigint_network_unit::Column::NetworkId, "network_id")
         .column_as(sigint_unit::Column::Name, "unit_name")
@@ -877,7 +878,7 @@ pub fn build_signal_message_conditions(
 ) -> Condition {
     Condition::all()
         .add(signal_message::Column::Deleted.eq(false))
-        .add(datasource_group::Column::GroupMasterKey.is_in(groups))
+        .add(datasource_group::Column::GroupMasterKey.eq_any(groups.clone()))
         .add(
             SeaExpr::col((
                 sigint_inbox_item::Entity,

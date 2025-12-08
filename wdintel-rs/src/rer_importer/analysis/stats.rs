@@ -123,11 +123,7 @@ fn build_groups_query(
             "count",
         )
         .filter(
-            Expr::col((
-                signal_message_group::Entity,
-                signal_message_group::Column::GroupMasterKey,
-            ))
-            .is_in(accessible_groups.clone()),
+            signal_message_group::Column::GroupMasterKey.eq_any(accessible_groups.clone()),
         )
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
@@ -800,7 +796,7 @@ pub async fn fetch_tags(
         count: i64,
     }
     let tags_res = build_tags_query(&req, dt_since, dt_till, master_keys)?;
-    
+
     let tags_res: Vec<TagsRes> = tags_res
         .into_model::<TagsRes>()
         .all(&env.dbx)
@@ -839,26 +835,6 @@ pub async fn count_tags(
     let groups_res = build_tags_query(&req, dt_since, dt_till, master_keys)?;
     let count = groups_res.count(&read_db).await.context(h!())?;
     Ok(count as i64)
-}
-
-pub fn get_sigint_inbox_item_tags_ids_expr(confidence: f64) -> SimpleExpr {
-    let e = Query::select()
-        .from(sigint_inbox_item_tag::Entity)
-        .expr(Expr::cust_with_expr(
-            "array_agg($1)",
-            Expr::col(sigint_inbox_item_tag::Column::TagId).cast_as("INT"),
-        ))
-        .and_where(sigint_inbox_item_tag::Column::Confidence.gte(confidence))
-        .and_where(
-            Expr::col((
-                sigint_inbox_item_tag::Entity,
-                sigint_inbox_item_tag::Column::SigintInboxItemId,
-            ))
-            .equals((sigint_inbox_item::Entity, sigint_inbox_item::Column::Id)),
-        )
-        .clone()
-        .into_sub_query_statement();
-    SimpleExpr::SubQuery(None, Box::new(e))
 }
 
 fn build_tags_query(
@@ -1795,13 +1771,14 @@ async fn fetch_counts_for_login_with_conn(
         filter_selected_aors(selected_count_res, &req.selected_aors)
             .context(h!())
             .context(h!())?;
-    // let selected_count_sql = selected_count_res
-    //     .clone()
-    //     .build(DbBackend::Postgres)
-    //     .to_string();
-    // println!(
-    //     "> selected count res sql (login={login_str}): {selected_count_sql}"
-    // );
+    //println!(
+    //    "> selected count res sql (login={}): {}",
+    //    login_str,
+    //    selected_count_res
+    //    .clone()
+    //    .build(DbBackend::Postgres)
+    //    .to_string();
+    //);
     let selected_count_res: SelectedCountRes = selected_count_res
         .into_model::<SelectedCountRes>()
         .one(&db_conn)
