@@ -22,7 +22,9 @@ select
 	cc.signal_api_attachment_path,
     cc.signal_port,
 	ea.phone_number,
-	ea.is_linked
+	ea.is_linked,
+    ea.id as echo_account_id, 
+    ea.source as echo_account_source
 from
     echo_client_lock cl
 left join echo_client_config cc on
