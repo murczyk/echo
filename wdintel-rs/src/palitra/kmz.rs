@@ -169,4 +169,38 @@ mod tests {
         assert_eq!(data.len(), 6991);
         Ok(())
     }
+
+    #[tokio::test]
+    async fn test_load_coordinates_from_kmz_with_atom_link(
+    ) -> anyhow::Result<()> {
+        let path = PathBuf::from(
+            "data/951. Срібні - Новопідгородне Райполе 433 мсп.kmz",
+        );
+        let data = load_coordinates_from_kmz(path.as_path()).await.c(h!())?;
+        assert_eq!(data.len(), 991);
+
+        let first = data
+            .iter()
+            .find(|point| point.label.as_deref() == Some("1"))
+            .expect("first placemark present");
+        assert!((first.coords.lat - 48.2371106).abs() < 1e-6);
+        assert!((first.coords.lng - 36.9258872).abs() < 1e-6);
+
+        let last = data
+            .iter()
+            .find(|point| point.label.as_deref() == Some("991"))
+            .expect("last placemark present");
+        assert!(
+            (last.coords.lat - 48.2752553).abs() < 1e-6,
+            "unexpected lat: {}",
+            last.coords.lat
+        );
+        assert!(
+            (last.coords.lng - 36.8752738).abs() < 1e-6,
+            "unexpected lng: {}",
+            last.coords.lng
+        );
+
+        Ok(())
+    }
 }

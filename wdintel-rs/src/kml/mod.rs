@@ -128,6 +128,7 @@ fn node_as_folder(node: &Node) -> Result<Option<Folder>, AppError> {
         Node::CascadingStyle(_) => Ok(None),
         Node::StyleMap(_) => Ok(None),
         Node::Author(_) => Ok(None),
+        Node::AtomLink(_) => Ok(None),
     }
 }
 
@@ -355,6 +356,7 @@ pub fn folder_placemarks(folder: &Folder) -> Result<Vec<Placemark>, AppError> {
             Node::CascadingStyle(_) => {}
             Node::StyleMap(_) => {}
             Node::Author(_) => {}
+            Node::AtomLink(_) => {}
         }
     }
     Ok(rv)
@@ -378,6 +380,7 @@ pub fn gather_all_placemarks(
             Node::CascadingStyle(_) => {}
             Node::StyleMap(_) => {}
             Node::Author(_) => {}
+            Node::AtomLink(_) => {}
         }
     }
     Ok(ret_val)
@@ -813,6 +816,7 @@ pub async fn oneoff_fix_kml_go1(
         Node::CascadingStyle(_) => {}
         Node::StyleMap(_) => {}
         Node::Author(_) => {}
+        Node::AtomLink(_) => {}
     }
     Ok(())
 }
@@ -892,6 +896,7 @@ pub fn oneoff_fix_kml_go2(
         Node::CascadingStyle(_) => {}
         Node::StyleMap(_) => {}
         Node::Author(_) => {}
+        Node::AtomLink(_) => {}
     }
     Ok(())
 }

@@ -490,6 +490,20 @@ pub struct Link {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub struct AtomLink {
+    #[serde(rename = "@rel")]
+    pub rel: Option<String>,
+    #[serde(rename = "@href")]
+    pub href: Option<String>,
+    #[serde(rename = "@title")]
+    pub title: Option<String>,
+    #[serde(rename = "@type")]
+    pub type_: Option<String>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct NetworkLink {
     pub name: Option<Name>,
     pub visibility: Option<Visibility>,
@@ -516,6 +530,8 @@ pub enum Node {
     StyleMap(StyleMap),
     #[serde(rename = "author")]
     Author(Author),
+    #[serde(rename = "link")]
+    AtomLink(AtomLink),
     #[serde(rename = "CascadingStyle")]
     CascadingStyle(CascadingStyle),
 }
