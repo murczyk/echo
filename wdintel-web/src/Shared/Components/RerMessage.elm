@@ -840,7 +840,7 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                     HtmlX.viewIf (formattedDateTime /= "") <|
                         div
                             [ class "flex items-center gap-2"
-                            , title "Час коли попало в групу"
+                            , title "Час перехоплення"
                             ]
                             [ i [ class "bi bi-calendar-event text-icons" ] []
                             , span [ class "font-medium" ] [ text formattedDateTime ]
@@ -945,7 +945,7 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                         |> Maybe.map (Utils.Time.renderDateTimeF1 vps.zone << Time.millisToPosix)
             in
             div [ class "flex flex-col gap-1" ]
-                [ div [ title "Час перехоплення" ]
+                [ div [ title "Час коли попало в групу" ]
                     [ itemBlock
                         { iconTitle = String.fromInt msgId
                         , iconName = "bi-clock-history"
