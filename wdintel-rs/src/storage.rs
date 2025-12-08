@@ -66,11 +66,13 @@ pub fn build_s3_operator(config: &S3Config) -> Result<Operator, AppError> {
     if !config.secret_access_key.trim().is_empty() {
         b = b.secret_access_key(&config.secret_access_key);
     }
-    // Add OpenDAL retry layer: 2 retries with gentle backoff (300ms, 1500ms)
+    // Add OpenDAL retry layer: 3 retries with exponential backoff to soften S3 throttling
     let retry = opendal::layers::RetryLayer::new()
-        .with_min_delay(Duration::from_millis(300))
-        .with_factor(5.0)
-        .with_max_times(2);
+        .with_min_delay(Duration::from_secs(1))
+        .with_factor(2.0)
+        .with_jitter()
+        .with_max_times(3)
+        .with_notify(|_err: &opendal::Error, _dur: Duration| {});
     let op = Operator::new(b)
         .map_err(|e| AppError::BL {
             msg: format!("s3 store build error: {e}"),
