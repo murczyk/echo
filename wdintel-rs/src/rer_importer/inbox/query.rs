@@ -1,8 +1,8 @@
+use crate::config::*;
 use crate::entities::{prelude::*, *};
+use crate::rer_importer::analysis::*;
 use crate::rer_importer::types::*;
 use crate::sigint::sender::preferred_sender_expr;
-use crate::config::*;
-use crate::rer_importer::analysis::*;
 use crate::types::*;
 use crate::utils::*;
 use chrono::{Duration, NaiveDateTime, Utc};
@@ -105,10 +105,10 @@ pub(crate) async fn build_inbox_query(
         && req.since_date_inclusive_ms.is_none()
     {
         // TODO FIXME filter by 1 days
-        q = q.filter(
-            signal_message::Column::Timestamp
-                .gte(Utc::now().naive_utc() - Duration::days(RER_DUTY_MAX_DAYS)),
-        );
+        q =
+            q.filter(signal_message::Column::Timestamp.gte(
+                Utc::now().naive_utc() - Duration::days(RER_DUTY_MAX_DAYS),
+            ));
     }
     q = get_pagination_filters(env, req, q).await.c(h!())?;
     let q = get_bl_ordering_select(req, q).await.c(h!())?;
@@ -163,7 +163,8 @@ where
         if let Some(since_id_noninclusive) = since_id_noninclusive {
             let Some(message) =
                 SignalMessage::find_by_id(since_id_noninclusive)
-                    .filter(signal_message::Column::Deleted.eq(false))
+                    // we want to query even if it got deleted
+                    // .filter(signal_message::Column::Deleted.eq(false))
                     .one(&env.dbx)
                     .await
                     .c(h!())?
@@ -223,7 +224,8 @@ where
         if let Some(before_id_noninclusive) = req.before_id_noninclusive {
             let Some(message) =
                 SignalMessage::find_by_id(before_id_noninclusive)
-                    .filter(signal_message::Column::Deleted.eq(false))
+                    // we want to query even if it got deleted
+                    // .filter(signal_message::Column::Deleted.eq(false))
                     .one(&env.dbx)
                     .await
                     .c(h!())?
