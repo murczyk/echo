@@ -368,21 +368,6 @@ async fn do_submit_inbox(
         .context(h!())?;
     let txn = env.dbx.begin().await.c(h!())?;
 
-    let Some(new_cursor_val) = req.messages.iter().map(|(id, _x)| id).max()
-    else {
-        return Ok(());
-    };
-    delta_kv::Entity::insert(delta_kv::ActiveModel {
-        id: NotSet,
-        k: Set("rer_importer_id_cursor".to_string()),
-        v: Set(serde_json::to_value(new_cursor_val).context(h!())?),
-    })
-    .on_conflict(
-        sea_query::OnConflict::column(delta_kv::Column::K)
-            .update_columns([delta_kv::Column::V])
-            .to_owned(),
-    );
-
     for (id, message) in req.messages.iter() {
         let mut message = message.clone();
         let callsigns: Vec<String> = crate::utils::uniq_via_btreeset(
@@ -425,7 +410,7 @@ async fn do_submit_inbox(
     Ok(())
 }
 
-/// Get the cursor position. Cursor is used as "since_id_noninclusive" default when loading inbox. So, equal to zero on empty inbox, or last seen/submitted message otherwise.
+/// DEPRECATED Get the cursor position. Cursor is used as "since_id_noninclusive" default when loading inbox. So, equal to zero on empty inbox, or last seen/submitted message otherwise.
 #[get("/api/rer-importer/inbox/cursor")]
 async fn inbox_cursor(
     user: actix_identity::Identity,
@@ -434,55 +419,23 @@ async fn inbox_cursor(
     crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
         .await
         .c(h!())?;
-    let since_id_noninclusive: Option<i64> = match DeltaKv::find()
-        .filter(delta_kv::Column::K.eq("rer_importer_id_cursor".to_string()))
-        .one(&env.dbx)
-        .await
-        .c(h!())?
-    {
-        None => None,
-        Some(kv) => Some(serde_json::from_value(kv.v).context(h!())?),
-    };
+    // no op
+    let since_id_noninclusive = None;
     Ok(Json(since_id_noninclusive))
 }
 
-/// Get the cursor position. Cursor is used as "since_id_noninclusive" default when loading inbox. So, equal to zero on empty inbox, or last seen/submitted message otherwise.
+/// DEPRECATED. Get the cursor position. Cursor is used as "since_id_noninclusive" default when loading inbox. So, equal to zero on empty inbox, or last seen/submitted message otherwise.
 #[post("/api/rer-importer/inbox/cursor-update")]
 async fn update_inbox_cursor(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
-    req: Json<UpdateCursorReq>,
+    _req: Json<UpdateCursorReq>,
 ) -> Result<Json<()>, AppError> {
     crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
         .await
         .c(h!())?;
-    let txn = env.dbx.begin().await.c(h!())?;
-    let cursor_existing = DeltaKv::find()
-        .filter(delta_kv::Column::K.eq("rer_importer_id_cursor".to_string()))
-        .one(&txn)
-        .await
-        .c(h!())?;
-    // {
-    //     None => None,
-    //     Some(kv) => Some(serde_json::from_value(kv.v)?),
-    // };
-    match cursor_existing {
-        None => {
-            let kv = delta_kv::ActiveModel {
-                id: NotSet,
-                k: Set("rer_importer_id_cursor".to_string()),
-                v: Set(serde_json::to_value(req.cursor).context(h!())?),
-            };
-            kv.insert(&txn).await.c(h!())?;
-        }
-        Some(kv) => {
-            let mut kv: delta_kv::ActiveModel = kv.into();
-            kv.v = Set(serde_json::to_value(req.cursor).context(h!())?);
-            kv.update(&txn).await.c(h!())?;
-        }
-    }
-    txn.commit().await.c(h!())?;
 
+    // no op
     Ok(Json(()))
 }
 

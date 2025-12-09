@@ -133,16 +133,7 @@ where
     Q: QueryFilter,
 {
     let mut q = q;
-    let mut since_id_noninclusive: Option<i64> = req.since_id_noninclusive;
-    if req.since_id_noninclusive.is_none()
-        && req.since_date_inclusive_ms.is_none()
-        && req.load_latest.is_none()
-    {
-        since_id_noninclusive =
-            crate::kv::get_kv(&env.dbx, "rer_importer_id_cursor")
-                .await
-                .c(h!())?
-    };
+    let since_id_noninclusive: Option<i64> = req.since_id_noninclusive;
 
     // these are simple filters that double-check we don't accidentally show wrong data after we apply complex (more fragile) filter later in this method
     let req_sort_by = req.sort_by.unwrap_or(InboxMessagesSortBy::IMSDatetime);
