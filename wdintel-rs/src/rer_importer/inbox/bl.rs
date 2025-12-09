@@ -1,3 +1,4 @@
+use crate::config::TAG_MINIMUM_CONFIDENCE;
 use crate::entities::{prelude::*, *};
 use crate::rer_importer::types::*;
 use milgeo_rs::coordinates::{
@@ -301,9 +302,12 @@ pub async fn aggregate_to_inbox_messages(
                 None => None,
                 Some(jv) => Some(serde_json::from_value(jv).context(h!())?),
             };
-        let inbox_tag_ids = m_inbox_tags
-            .as_ref()
-            .map(|tags| tags.iter().map(|tag| tag.tag_id).collect::<Vec<_>>());
+        let inbox_tag_ids = m_inbox_tags.as_ref().map(|tags| {
+            tags.iter()
+                .filter(|tag| tag.confidence >= TAG_MINIMUM_CONFIDENCE)
+                .map(|tag| tag.tag_id)
+                .collect::<Vec<_>>()
+        });
 
         res.push((
             message.id,
