@@ -77,7 +77,8 @@ fi
 export PGPASSWORD="$PG_PASSWORD"
 
 echo "Checking if database $DB_NAME already exists..."
-if psql -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USER" -lqt | cut -d \| -f 1 | grep -qw "$DB_NAME"; then
+DB_EXISTS=$(psql -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USER" -tAc "SELECT 1 FROM pg_database WHERE datname = '${DB_NAME}';")
+if [ -n "$DB_EXISTS" ]; then
     echo "Database $DB_NAME already exists, dropping it..."
     dropdb -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USER" "$DB_NAME" || {
         echo "Warning: Failed to drop existing database $DB_NAME"
