@@ -16,8 +16,10 @@ if [ $# -eq 1 ] && [ "$1" = "--cleanup" ]; then
     PG_PASSWORD="${PG_PASSWORD:-fee_-_-_-FnoeKFBeebu87bf}"
     export PGPASSWORD="$PG_PASSWORD"
 
+    MAINTENANCE_DB="${PG_DATABASE:-postgres}"
+
     # Find and drop all test databases
-    psql -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USER" -t -c "SELECT datname FROM pg_database WHERE datname LIKE 'wd_test_%';" | while read -r db; do
+    psql -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USER" -d "$MAINTENANCE_DB" -t -c "SELECT datname FROM pg_database WHERE datname LIKE 'wd_test_%';" | while read -r db; do
         db=$(echo "$db" | xargs)  # trim whitespace
         if [ -n "$db" ]; then
             echo "Dropping database: $db"
@@ -64,6 +66,7 @@ PG_HOST="${PG_HOST:-localhost}"
 PG_PORT="${PG_PORT:-5432}"
 PG_USER="${PG_USER:-wd}"
 PG_PASSWORD="${PG_PASSWORD:-fee_-_-_-FnoeKFBeebu87bf}"
+MAINTENANCE_DB="${PG_DATABASE:-postgres}"
 
 # Path to the base dump file
 DUMP_FILE="$(dirname "$0")/wd_test-2025-08-17-07-43.pgrestore"
@@ -77,7 +80,7 @@ fi
 export PGPASSWORD="$PG_PASSWORD"
 
 echo "Checking if database $DB_NAME already exists..."
-DB_EXISTS=$(psql -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USER" -tAc "SELECT 1 FROM pg_database WHERE datname = '${DB_NAME}';")
+DB_EXISTS=$(psql -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USER" -d "$MAINTENANCE_DB" -tAc "SELECT 1 FROM pg_database WHERE datname = '${DB_NAME}';")
 if [ -n "$DB_EXISTS" ]; then
     echo "Database $DB_NAME already exists, dropping it..."
     dropdb -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USER" "$DB_NAME" || {
