@@ -127,7 +127,6 @@ async fn messages_by_id(
 
     let query_tags = sigint_inbox_item_tag::Entity::find()
         .select_only()
-        .column(sigint_inbox_item_tag::Column::SigintInboxItemId)
         .expr_as(
             Expr::cust_with_exprs(
                 "array_agg($1) filter (where $2 >= $3)",

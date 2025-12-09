@@ -24,10 +24,7 @@ struct InboxMessage {
     body: Option<String>,
     comment: Option<String>,
     coords: Option<String>,
-    #[deprecated(
-        note = "This field is deprecated; use `sigint_inbox_item_tag` instead."
-    )]
-    tags: Option<JsonValue>,
+    tags: Option<Vec<i64>>,
     important: Option<i64>,
 }
 
@@ -482,11 +479,8 @@ pub async fn report_xlsx_kind_interception(
         let mes_tags = m
             .tags
             .clone()
-            .unwrap_or(json!([]))
-            .as_array()
-            .unwrap_or(&vec![])
-            .iter()
-            .filter_map(|x| x.as_i64())
+            .unwrap_or_default()
+            .into_iter()
             .filter_map(|x| all_tags.get(&x))
             .map(|s| s.to_string())
             .join(",");

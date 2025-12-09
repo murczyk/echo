@@ -46,7 +46,6 @@ pub struct InboxMessage {
     pub text_marked: Option<Vec<crate::rer_importer::highlight::ContentNode>>,
     pub datasource_id: Option<i64>,
     pub location: Option<String>,
-    #[deprecated(note = "This field is deprecated; use `sigint_inbox_item_tag` instead.")]
     pub tags: Option<Vec<i64>>,
     pub network_ids: Option<Vec<i64>>,
     pub inbox_tags: Option<Vec<InboxMessageTag>>,

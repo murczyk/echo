@@ -127,7 +127,7 @@ pub async fn get_inbox_messages_report(
         .group_by(sigint_network::Column::Id)
         .group_by(sigint_network_unit::Column::Id)
         .group_by(sigint_post::Column::Id)
-        .group_by(datasource::Column::Id)
+        .group_by(datasource_group::Column::Id)
         .filter(datasource_group::Column::GroupMasterKey.eq_any(
             crate::messenger::group::get_identity_sigint_groups(&read_db, &login).await.c(h!())?,
         ));

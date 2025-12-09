@@ -720,7 +720,7 @@ pub async fn get_inbox_messages_report_unit(
         include_peleng_locations,
     )?;
     // group by to get rid of duplicates
-    let q = q.group_by(Expr::cust("1,2,3,4,5,6,7,8"));
+    let q = q.group_by(Expr::cust("1,2,3,5,6,7,8"));
     let q = q.order_by_asc(Expr::col(Alias::new("unit")));
 
     let clustered_points = CommonTableExpression::new()

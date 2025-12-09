@@ -1008,9 +1008,6 @@ struct StatsRow {
     pub post_id: Option<i64>,
     pub sender: Option<String>,
     pub callsigns: Option<sea_orm::prelude::Json>,
-    #[deprecated(
-        note = "This field is deprecated; use `sigint_inbox_item_tag` instead."
-    )]
     pub tags: Option<Vec<i64>>,
     pub location_v2: Option<String>,
     pub unit_v2: Option<String>,

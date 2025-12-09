@@ -8,11 +8,9 @@ use crate::types::*;
 use crate::utils::orm::ArrayColumnOps;
 use crate::utils::*;
 use chrono::{Duration, NaiveDateTime, Utc};
-use echo_migration::IntoCondition;
-use log::*;
 use sea_orm::{sea_query::PostgresQueryBuilder, *};
 use sea_query::types::IntoColumnRef;
-use sea_query::{Asterisk, Expr, Query, SelectStatement, SimpleExpr};
+use sea_query::{Expr, Query, SelectStatement, SimpleExpr};
 
 pub(crate) async fn build_inbox_query(
     login: &str,
@@ -122,7 +120,6 @@ pub(crate) async fn build_inbox_query(
 
     let query_tags = sigint_inbox_item_tag::Entity::find()
         .select_only()
-        .column(sigint_inbox_item_tag::Column::SigintInboxItemId)
         .expr_as(
             Expr::cust_with_exprs(
                 "array_agg($1) filter (where $2 >= $3)",
@@ -168,7 +165,7 @@ pub(crate) async fn build_inbox_query(
         .column((q_tags, "inbox_tags"))
         .to_string(PostgresQueryBuilder);
 
-    println!("> Inbox items query: {sql}");
+    // println!("> Inbox items query: {sql}");
     Ok(sql)
 }
 
