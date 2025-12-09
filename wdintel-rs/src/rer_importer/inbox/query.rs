@@ -1,13 +1,11 @@
 use crate::entities::{prelude::*, *};
 use crate::rer_importer::types::*;
 use crate::sigint::sender::preferred_sender_expr;
-
-use crate::error::AppError;
+use crate::config::*;
 use crate::rer_importer::analysis::*;
 use crate::types::*;
 use crate::utils::*;
 use chrono::{Duration, NaiveDateTime, Utc};
-use log::*;
 use sea_orm::{sea_query::PostgresQueryBuilder, *};
 use sea_query::types::IntoColumnRef;
 use sea_query::{Expr, Query, SelectStatement, SimpleExpr};
@@ -109,7 +107,7 @@ pub(crate) async fn build_inbox_query(
         // TODO FIXME filter by 1 days
         q = q.filter(
             signal_message::Column::Timestamp
-                .gte(Utc::now().naive_utc() - Duration::days(1)),
+                .gte(Utc::now().naive_utc() - Duration::days(RER_DUTY_MAX_DAYS)),
         );
     }
     q = get_pagination_filters(env, req, q).await.c(h!())?;
