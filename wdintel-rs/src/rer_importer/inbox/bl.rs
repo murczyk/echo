@@ -49,6 +49,7 @@ pub struct InboxMessageDesc {
     pub unit_v2: Option<String>,
     pub post_id: Option<i64>,
     pub post_name: Option<String>,
+    #[allow(dead_code)]
     #[deprecated(note = "This field is deprecated; use `inbox_tags` instead.")]
     pub tags: Option<Vec<i64>>,
     pub inbox_tags: Option<serde_json::Value>,
@@ -300,6 +301,9 @@ pub async fn aggregate_to_inbox_messages(
                 None => None,
                 Some(jv) => Some(serde_json::from_value(jv).context(h!())?),
             };
+        let inbox_tag_ids = m_inbox_tags
+            .as_ref()
+            .map(|tags| tags.iter().map(|tag| tag.tag_id).collect::<Vec<_>>());
 
         res.push((
             message.id,
@@ -338,7 +342,7 @@ pub async fn aggregate_to_inbox_messages(
                     .and_then(|(_, datasource_group)| datasource_group.as_ref())
                     .map(|dg| dg.datasource_id),
                 location: location_v2,
-                tags: message.tags.clone(),
+                tags: inbox_tag_ids,
                 callsigns_alg2: from_m_val_vec(message.callsigns_alg2.clone())?,
                 network_ids,
                 inbox_tags: m_inbox_tags,

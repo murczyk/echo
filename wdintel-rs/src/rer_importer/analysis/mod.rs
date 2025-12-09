@@ -235,7 +235,8 @@ where
         if !selected_units.is_empty() {
             let in_subquery_condition = sigint_inbox_item::Column::Freq
                 .in_subquery(select_sigint_units_by_names(
-                    sigint_unit::Column::Name.eq_any(selected_units.clone().into_iter().collect()),
+                    sigint_unit::Column::Name
+                        .eq_any(selected_units.clone().into_iter().collect()),
                 ));
 
             // якщо встановлено прапорець `units_exact_match_only`, то фільтруємо ТІЛЬКИ по підрозділам, які вказані через прив'язку по Еталонці
@@ -385,7 +386,10 @@ fn get_related_tag_items_filter(
             ))
             .equals((sigint_inbox_item::Entity, sigint_inbox_item::Column::Id)),
         )
-        .filter(sigint_inbox_item_tag::Column::TagId.eq_any(unique_tags.into_iter().collect()))
+        .filter(
+            sigint_inbox_item_tag::Column::TagId
+                .eq_any(unique_tags.into_iter().collect()),
+        )
         .filter(
             sigint_inbox_item_tag::Column::Confidence
                 .gte(TAG_MINIMUM_CONFIDENCE),
@@ -394,9 +398,7 @@ fn get_related_tag_items_filter(
 
     if let Some(logins) = only_tags_by_logins {
         if !logins.is_empty() {
-            q = q.filter(
-                sigint_inbox_item_tag::Column::Login.eq_any(logins),
-            );
+            q = q.filter(sigint_inbox_item_tag::Column::Login.eq_any(logins));
         }
     }
 

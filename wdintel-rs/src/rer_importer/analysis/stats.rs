@@ -123,7 +123,8 @@ fn build_groups_query(
             "count",
         )
         .filter(
-            signal_message_group::Column::GroupMasterKey.eq_any(accessible_groups.clone()),
+            signal_message_group::Column::GroupMasterKey
+                .eq_any(accessible_groups.clone()),
         )
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))

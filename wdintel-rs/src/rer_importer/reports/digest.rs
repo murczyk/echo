@@ -4,6 +4,7 @@ use crate::error::AppError;
 use crate::rer_importer::reports::util;
 use crate::rer_importer::reports::util::*;
 use crate::types::*;
+use crate::utils::orm::ArrayColumnOps;
 use actix_identity::Identity;
 use anyhow::Context;
 use chrono::prelude::*;
@@ -12,7 +13,6 @@ use sea_orm::prelude::Json;
 use sea_orm::*;
 use std::cmp::Ordering;
 use std::path::Path;
-use crate::utils::orm::ArrayColumnOps;
 
 const DOC_NAME: &str = "Форма №1.2.17/ОСУВ";
 const DOC_HEADER: &str =
@@ -326,8 +326,10 @@ async fn collect_report(
         .collect::<Vec<_>>();
 
     let networks = collect_networks(dbx, freqs, &groups).await.context(h!())?;
-    let sigint_unit_ids =
-        networks.values().flat_map(|n| n.unit_id).collect::<Vec<_>>();
+    let sigint_unit_ids = networks
+        .values()
+        .flat_map(|n| n.unit_id)
+        .collect::<Vec<_>>();
 
     let network_units = sigint_unit::Entity::find()
         .filter(sigint_unit::Column::Id.eq_any(sigint_unit_ids))

@@ -509,7 +509,8 @@ async fn collect_report(
         )
         .filter(sigint_callsign::Column::Callsign.eq_any(callsigns))
         .filter(
-            sigint_network_unit::Column::NetworkId.eq_any(network_ids.clone().into_iter().collect()),
+            sigint_network_unit::Column::NetworkId
+                .eq_any(network_ids.clone().into_iter().collect()),
         )
         .filter(sigint_unit::Column::Deleted.eq(false))
         .filter(sigint_callsign::Column::Deleted.eq(false))

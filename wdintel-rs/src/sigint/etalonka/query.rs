@@ -935,7 +935,8 @@ where
 
     // Clone and filter the select statement before wrapping it in the CTE
     let mut filtered_select = callsigns_select.clone();
-    filtered_select.and_where(Expr::col(Alias::new("callsign")).is_in(callsigns));
+    filtered_select
+        .and_where(Expr::col(Alias::new("callsign")).is_in(callsigns));
 
     let callsigns_cte = CommonTableExpression::new()
         .query(filtered_select)

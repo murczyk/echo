@@ -157,7 +157,7 @@ pub(crate) async fn build_inbox_query(
     if req.nolimit != Some(true) {
         query.limit(20);
     }
-    
+
     let q_tags = "q_tags";
     let sql = query
         .join_lateral(JoinType::LeftJoin, query_tags, q_tags, Expr::value(true))
