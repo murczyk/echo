@@ -342,12 +342,9 @@ async fn find_best_message(
     let from_ts = message_ts - Duration::minutes(15);
     let to_ts = message_ts + Duration::minutes(15);
     let candidates = signal_message::Entity::find()
-        .join(
-            JoinType::InnerJoin,
-            signal_message::Relation::SigintInboxItem.def(),
-        )
         .filter(signal_message::Column::Body.eq(body))
         .filter(message_time_condition(from_ts, to_ts))
+        .filter(sigint_inbox_item::Column::Id.is_not_null())
         .find_also_related(sigint_inbox_item::Entity)
         .all(dbx)
         .await
