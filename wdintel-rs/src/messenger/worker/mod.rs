@@ -414,12 +414,20 @@ async fn sync_inbox(
             )
         })
         .collect();
-    info!(
-        "[{}] inbox sync: messages={} attachment_counts={:?}",
-        client_name,
-        inbox_internal_ids.len(),
-        message_attachment_info
-    );
+    let inbox_message_count = inbox_internal_ids.len();
+    if inbox_message_count == 0 && message_attachment_info.is_empty() {
+        trace!(
+            "[{}] inbox sync: messages={} attachment_counts={:?}",
+            client_name,
+            inbox_message_count,
+            message_attachment_info
+        );
+    } else {
+        info!(
+            "[{}] inbox sync: messages={} attachment_counts={:?}",
+            client_name, inbox_message_count, message_attachment_info
+        );
+    }
     let senders = inbox_messages
         .iter()
         .flat_map(|m| m.sender.clone())
