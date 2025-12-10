@@ -269,8 +269,7 @@ pub async fn oneoff_import_sigint_comments(
     }
 
     info!(
-        "import completed: inserted {}, skipped {}, not_found {}, failed {}",
-        inserted, skipped_existing, not_found, failed
+        "import completed: inserted {inserted}, skipped {skipped_existing}, not_found {not_found}, failed {failed}",
     );
     Ok(())
 }
