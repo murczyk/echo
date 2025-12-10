@@ -685,7 +685,8 @@ ziggy-echo-build-local builder="echo-build-local" server="echo-staging" branch="
     ssh "${BUILDER}" 'set -euxo pipefail; cd workspace/echo && git fetch origin '"${BRANCH}"' && git checkout '"${BRANCH}"' && git pull --ff-only origin '"${BRANCH}"' && PATH='"$PADD"':$PATH cargo build --release'
 
     echo "📦 Copying wdintel-rs binary from ${BUILDER} to ${TARGET}..."
-    scp "${BUILDER}:workspace/echo/target/release/wdintel-rs" "${TARGET}:/var/tmp/"
+    rsync --info=progress2 "${BUILDER}:workspace/echo/target/release/wdintel-rs" /var/tmp/
+    rsync --info=progress2 /var/tmp/wdintel-rs "${TARGET}:/var/tmp/"
 
     echo "🚀 Updating binary on ${TARGET} and restarting wdintel-rs..."
     ssh "${TARGET}" 'set -euxo pipefail; sudo mv /var/tmp/wdintel-rs /usr/bin/wdintel-rs && sudo systemctl restart wdintel-rs'
