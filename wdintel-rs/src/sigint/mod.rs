@@ -25,6 +25,7 @@ use uuid::Uuid;
 
 pub mod aor;
 pub mod callsign;
+pub mod comments;
 pub mod etalonka;
 pub mod freq;
 pub(crate) mod import;

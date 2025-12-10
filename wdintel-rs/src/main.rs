@@ -184,6 +184,26 @@ pub struct OneoffRadioPerDayPerAbonentPs {
 }
 
 #[derive(clap::Parser, Debug)]
+pub struct OneoffExportSigintCommentsPs {
+    #[arg(long)]
+    pub organism_name: String,
+    #[arg(long)]
+    pub from: String,
+    #[arg(long)]
+    pub to: String,
+    #[arg(long)]
+    pub output: String,
+}
+
+#[derive(clap::Parser, Debug)]
+pub struct OneoffImportSigintCommentsPs {
+    #[arg(long)]
+    pub input: String,
+    #[arg(long)]
+    pub target_login: String,
+}
+
+#[derive(clap::Parser, Debug)]
 #[command(
     name = "OneoffReprocessSearchIndex",
     about = "Updates the full-text search index"
@@ -436,6 +456,8 @@ enum Cmd {
     OneoffDeltaCsvToKmz(OneoffDeltaCsvToKmzPs),
     OneoffReprocessCallsigns(OneoffReprocessCallsignsPs),
     OneoffReprocessCallsignTokens(OneoffReprocessCallsignTokensPs),
+    OneoffExportSigintComments(OneoffExportSigintCommentsPs),
+    OneoffImportSigintComments(OneoffImportSigintCommentsPs),
     OneoffGenDatasetCallsigns,
     OneoffReprocessCoords(OneoffReprocessCoordsPs),
     OneoffReprocessUnitNames,
@@ -756,6 +778,12 @@ async fn async_main(
         }
         Cmd::OneoffReprocessCallsigns(ps) => {
             rer_importer::callsigns::oneoff_reprocess_callsigns(mode, &ps).await
+        }
+        Cmd::OneoffExportSigintComments(ps) => {
+            sigint::comments::oneoff_export_sigint_comments(mode, &ps).await
+        }
+        Cmd::OneoffImportSigintComments(ps) => {
+            sigint::comments::oneoff_import_sigint_comments(mode, &ps).await
         }
         Cmd::OneoffGenDatasetCallsigns => {
             ml::oneoff_gen_dataset_callsigns(mode).await
