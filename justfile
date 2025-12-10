@@ -517,13 +517,13 @@ copy-db-backup:
     set +x
     echo
     echo "📥 Restore locally:"
-    echo "  sudo -u postgres dropdb --force wd"
-    echo "  sudo -u postgres psql postgres -c \"CREATE DATABASE wd\""
-    echo "  sudo -u postgres pg_restore -d wd $local_plain"
+    echo "sudo -u postgres dropdb --force wd"
+    echo "sudo -u postgres psql postgres -c \"CREATE DATABASE wd\""
+    echo "sudo -u postgres pg_restore -d wd $local_plain"
     echo
     echo "💻 Restore on dev machine:"
-    echo "  scp $local_plain DEV_HOST:/var/tmp/"
-    echo "  ssh DEV_HOST \"sudo -u postgres dropdb --force wd && sudo -u postgres psql postgres -c \\\"CREATE DATABASE wd\\\" && sudo -u postgres pg_restore -d wd /var/tmp/${local_plain_basename}\""
+    echo "scp $local_plain DEV_HOST:/var/tmp/"
+    echo "ssh DEV_HOST \"sudo -u postgres dropdb --force wd && sudo -u postgres psql postgres -c \\\"CREATE DATABASE wd\\\" && sudo -u postgres pg_restore -d wd /var/tmp/${local_plain_basename}\""
     echo
     echo "⭐ You can disable messengers by running: cargo run -p wdintel-rs -- --mode=debug oneoff-disable-im"
     set -x
