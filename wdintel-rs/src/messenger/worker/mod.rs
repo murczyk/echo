@@ -417,15 +417,11 @@ async fn sync_inbox(
     let inbox_message_count = inbox_internal_ids.len();
     if inbox_message_count == 0 && message_attachment_info.is_empty() {
         trace!(
-            "[{}] inbox sync: messages={} attachment_counts={:?}",
-            client_name,
-            inbox_message_count,
-            message_attachment_info
+            "[{client_name}] inbox sync: messages={inbox_message_count} attachment_counts={message_attachment_info:?}"
         );
     } else {
         info!(
-            "[{}] inbox sync: messages={} attachment_counts={:?}",
-            client_name, inbox_message_count, message_attachment_info
+            "[{client_name}] inbox sync: messages={inbox_message_count} attachment_counts={message_attachment_info:?}"
         );
     }
     let senders = inbox_messages
