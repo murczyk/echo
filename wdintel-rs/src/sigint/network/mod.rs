@@ -84,6 +84,13 @@ pub async fn network_list(
             .eq(req.show_only_deleted.unwrap_or(false)),
     );
 
+    if let Some(ids) = &req.ids {
+        if !ids.is_empty() {
+            networks =
+                networks.filter(sigint_network::Column::Id.is_in(ids.clone()));
+        }
+    }
+
     if !req.show_inactive.unwrap_or(false) {
         networks = networks.filter(sigint_network::Column::ActiveTo.is_null());
     }
@@ -145,6 +152,27 @@ pub async fn network_list(
     } else {
         networks.order_by_asc(sigint_network::Column::Name)
     };
+
+    let has_filters = req.filter_freq.is_some()
+        || req.filter_unit.is_some()
+        || req
+            .aor_ids
+            .as_ref()
+            .map(|aor_ids| !aor_ids.is_empty())
+            .unwrap_or(false)
+        || req.show_only_further_inverstigation.unwrap_or(false)
+        || req.ids.as_ref().map(|ids| !ids.is_empty()).unwrap_or(false);
+
+    if !has_filters {
+        networks = networks.order_by_desc(sigint_network::Column::CreatedAt);
+
+        networks = networks.limit(
+            req.limit
+                .unwrap_or(SIGINT_NETWORK_LIST_DEFAULT_LIMIT)
+                .try_into()
+                .unwrap_or(SIGINT_NETWORK_LIST_MAX_LIMIT),
+        );
+    }
 
     // debug!(
     //     "> networks list sql: {}",

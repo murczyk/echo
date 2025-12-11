@@ -1,3 +1,4 @@
+use crate::config::RER_IMPORTER_IMPORTANT_LIST_LIMIT;
 use crate::error::AppError;
 use crate::types::*;
 use crate::{entities::*, utils::*};
@@ -93,6 +94,8 @@ async fn importants_list(
                     (Utc::now() - chrono::Duration::days(7)).naive_utc()
                 },
             ))
+            .order_by_desc(sigint_important::Column::CreatedAt)
+            .limit(RER_IMPORTER_IMPORTANT_LIST_LIMIT)
             .all(&env.dbx)
             .await
             .c(h!())?

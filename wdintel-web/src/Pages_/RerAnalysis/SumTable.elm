@@ -139,7 +139,7 @@ sumTableBlock2 model shared route sumTable =
         renderRow row =
             let
                 sharedNetworks =
-                    RD.withDefault Dict.empty shared.networks
+                    Dict.union model.networksExtra (RD.withDefault Dict.empty shared.networks)
 
                 actionMenuBody =
                     [ span []

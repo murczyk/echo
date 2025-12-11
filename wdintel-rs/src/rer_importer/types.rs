@@ -22,6 +22,8 @@ pub struct InboxMessage {
     pub callsigns: Vec<String>,
     pub callsigns_alg2: Vec<String>,
     pub checked: bool,
+    pub important: bool,
+    pub bookmarked: bool,
     pub timestamp: Option<i64>,
     pub group_master_key: Option<String>,
     pub sender: Option<String>,

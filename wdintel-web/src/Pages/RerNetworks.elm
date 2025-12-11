@@ -199,6 +199,8 @@ loadNetworks model =
 
             else
                 Just model.aorFilterSelect.selected
+        , ids = Nothing
+        , limit = Nothing
         }
     )
 
@@ -224,6 +226,8 @@ loadNetworksWithTracker model tracker =
 
             else
                 Just model.aorFilterSelect.selected
+        , ids = Nothing
+        , limit = Nothing
         }
 
 
@@ -605,6 +609,8 @@ update shared msg model =
 
                         else
                             Just model.aorFilterSelect.selected
+                    , ids = Nothing
+                    , limit = Nothing
                     }
 
                 apiCall reportType ctx =

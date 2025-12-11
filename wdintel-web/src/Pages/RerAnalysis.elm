@@ -5,7 +5,7 @@ import Auth
 import Bindings as B
 import Config
 import Core.Types exposing (..)
-import Dict
+import Dict exposing (Dict)
 import Dict.Extra as DE
 import Effect as E exposing (Effect)
 import Html exposing (..)
@@ -92,6 +92,7 @@ init route _ =
             , includePelengLocations = True
             , includeOnlyNewFreqs = False
             , groupInfos = Dict.empty
+            , networksExtra = Dict.empty
             , rowsModel = Shared.Components.RerMessage.model0
             , senderInput = ""
             , callsignInput = ""
@@ -169,8 +170,6 @@ init route _ =
 
             -- , reportIframeUrl = Nothing
             , reportDownloadInProgress = False
-            , bookmarks = Set.empty
-            , importants = Set.empty
             , noMoreToLoad = False
             , newCallsignsLoading = False
             , newCallsignsRsp = Nothing
@@ -522,10 +521,6 @@ loadCoreStats model =
                     (getInboxReq model)
                 , cmdLoadSummaryTable loadingSumTable
                 , cmdLoadCallsignGraph model { dtFromPosix = dtFromPosix, dtToPosix = dtToPosix }
-                , E.getBookmarks GotBookmarks
-                    { sinceTsMillis = Just (Time.posixToMillis dtFromPosix) }
-                , E.getImportantMessagesIds GotImportants
-                    { sinceTsMillis = Just (Time.posixToMillis dtFromPosix) }
                 , eff2
                 , eff3
                 ]
@@ -666,6 +661,36 @@ extractMetaInfo inboxRsp model =
             inboxRsp.callsigns
                 |> List.foldl (\{ callsign, res } dict -> Dict.insert callsign res dict) model.callsignsInfo
     }
+
+
+networksForView : Shared.Model -> Model -> Dict Int B.Network
+networksForView shared model =
+    Dict.union model.networksExtra (RD.withDefault Dict.empty shared.networks)
+
+
+missingNetworkIdsForMessages : Shared.Model -> Model -> List ( Int, B.InboxMessage ) -> List Int
+missingNetworkIdsForMessages shared model messages =
+    let
+        knownNetworks =
+            networksForView shared model
+    in
+    messages
+        |> List.concatMap (\( _, msg ) -> msg.networkIds |> Maybe.withDefault [])
+        |> List.filter (\networkId -> not (Dict.member networkId knownNetworks))
+        |> ListX.unique
+
+
+loadNetworksForMessages : Shared.Model -> Model -> List ( Int, B.InboxMessage ) -> Effect Msg
+loadNetworksForMessages shared model messages =
+    let
+        missingIds =
+            missingNetworkIdsForMessages shared model messages
+    in
+    if List.isEmpty missingIds then
+        E.none
+
+    else
+        E.getNetworksInfoByIds NetworksInfoLoaded missingIds
 
 
 update : B.User -> Shared.Model -> Route () -> Msg -> Model -> ( Model, Effect Msg )
@@ -810,7 +835,10 @@ update user shared route msg model =
                     extractMetaInfo rsp m2
             in
             ( m3
-            , eff3
+            , E.batch
+                [ eff3
+                , loadNetworksForMessages shared model messages
+                ]
             )
 
         GotInboxMore (Err e) ->
@@ -842,8 +870,23 @@ update user shared route msg model =
                     extractMetaInfo rsp m2
             in
             ( m3
-            , eff3
+            , E.batch
+                [ eff3
+                , loadNetworksForMessages shared model messages
+                ]
             )
+
+        NetworksInfoLoaded (Err e) ->
+            ( model, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження мереж" e )
+
+        NetworksInfoLoaded (Ok networks) ->
+            let
+                newNetworks =
+                    networks
+                        |> List.map (\network -> ( network.id, network ))
+                        |> Dict.fromList
+            in
+            ( { model | networksExtra = Dict.union newNetworks model.networksExtra }, E.none )
 
         GotStatsCount (Err e) ->
             ( { model | counts = Failure e }
@@ -1235,20 +1278,12 @@ update user shared route msg model =
                     , zone = shared.timeZone
                     , messages = model.messages
                     , tags = model.tags
-                    , bookmarks = model.bookmarks
-                    , importants = model.importants
                     , callsignsInfo = model.callsignsInfo
                     , messageComments = model.messageComments
                     , user = user
                     , users = model.users
                     , serverInfo = shared.serverInfo
-                    , networks =
-                        case shared.networks of
-                            Success networks ->
-                                networks
-
-                            _ ->
-                                Dict.empty
+                    , networks = networksForView shared model
                     , masterUnits = masterUnitsDict
                     , currentRoute = Just route
                     }
@@ -1271,26 +1306,6 @@ update user shared route msg model =
 
                                 Shared.Components.RerMessage.OutFormErrors es ->
                                     ( { accM | formErrors = Dict.union es accM.formErrors }
-                                    , accCmds
-                                    )
-
-                                Shared.Components.RerMessage.OutBookmarkAdd msgId ->
-                                    ( { accM | bookmarks = Set.insert msgId accM.bookmarks }
-                                    , accCmds
-                                    )
-
-                                Shared.Components.RerMessage.OutBookmarkRm msgId ->
-                                    ( { accM | bookmarks = Set.remove msgId accM.bookmarks }
-                                    , accCmds
-                                    )
-
-                                Shared.Components.RerMessage.OutImportantAdd msgId ->
-                                    ( { accM | importants = Set.insert msgId accM.importants }
-                                    , accCmds
-                                    )
-
-                                Shared.Components.RerMessage.OutImportantRm msgId ->
-                                    ( { accM | importants = Set.remove msgId accM.importants }
                                     , accCmds
                                     )
 
@@ -2944,22 +2959,6 @@ update user shared route msg model =
                 }
             )
 
-        GotBookmarks (Err e) ->
-            ( model
-            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження закладок" e
-            )
-
-        GotBookmarks (Ok vs) ->
-            ( { model | bookmarks = (List.map .messageId >> Set.fromList) vs }, E.none )
-
-        GotImportants (Err e) ->
-            ( model
-            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження важливих повідомлень" e
-            )
-
-        GotImportants (Ok vs) ->
-            ( { model | importants = (List.map .messageId >> Set.fromList) vs }, E.none )
-
         LoadMoreMessages ->
             case model.messages |> ListX.last of
                 Just ( lastMsgId, _ ) ->
@@ -3127,7 +3126,9 @@ update user shared route msg model =
             ( m2, E.getMessagesByIds GotMessagesForMap { messageIds = ids } )
 
         GotMessagesForMap (Ok rsp) ->
-            ( { model | mapOpenMessages = Success rsp.messages }, E.none )
+            ( { model | mapOpenMessages = Success rsp.messages }
+            , loadNetworksForMessages shared model rsp.messages
+            )
 
         GotMessagesForMap (Err err) ->
             ( model

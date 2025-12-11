@@ -490,7 +490,7 @@ pub struct Link {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
-pub struct AtomLink {
+pub struct AtomLinkData {
     #[serde(rename = "@rel")]
     pub rel: Option<String>,
     #[serde(rename = "@href")]
@@ -531,7 +531,7 @@ pub enum Node {
     #[serde(rename = "author")]
     Author(Author),
     #[serde(rename = "link")]
-    AtomLink(AtomLink),
+    AtomLink(AtomLinkData),
     #[serde(rename = "CascadingStyle")]
     CascadingStyle(CascadingStyle),
 }

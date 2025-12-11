@@ -4,7 +4,6 @@ import Bindings as B
 import Core.Types exposing (ApiError, GroupsActivityPerDayRsp)
 import Dict exposing (Dict)
 import Select
-import Set exposing (Set)
 import Shared.Components.DateRangePicker
 import Shared.Components.DateTime
 import Shared.Components.RerMessage
@@ -36,6 +35,7 @@ type alias Model =
     , includeOnlyNewFreqs : Bool
     , tagsSelected : List Int
     , groupInfos : Dict String B.SignalGroupEntry
+    , networksExtra : Dict Int B.Network
     , rowsModel : Shared.Components.RerMessage.Model
     , senderInput : String
     , callsignInput : String
@@ -115,8 +115,6 @@ type alias Model =
 
     -- , reportIframeUrl : Maybe String
     , reportDownloadInProgress : Bool
-    , bookmarks : Set Int
-    , importants : Set Int
     , noMoreToLoad : Bool
     , newCallsignsLoading : Bool
     , newCallsignsRsp : Maybe B.NewCallsignsRes

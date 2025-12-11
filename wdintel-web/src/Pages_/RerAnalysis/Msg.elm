@@ -19,6 +19,7 @@ type Msg
     | DateRangePickerMsg Shared.Components.DateRangePicker.Msg
     | GotInbox (Result ApiError B.InboxMessagesRsp)
     | GotInboxMore (Result ApiError B.InboxMessagesRsp)
+    | NetworksInfoLoaded (Result ApiError (List B.Network))
     | GetSumTable
     | GotSumTable (Result ApiError B.SummaryTableFreq)
     | SelectFreq String
@@ -109,8 +110,6 @@ type Msg
     | ReportDownloadDocx
     | ReportDownloadDocxDone (Result ApiError Bytes)
     | ScrollMessagesToTop
-    | GotBookmarks (Result ApiError (List B.Bookmark))
-    | GotImportants (Result ApiError (List B.Important))
     | LoadMoreMessages
     | LoadNewCallsignStats
     | GotNewCallsignStats (Result ApiError B.NewCallsignsRes)

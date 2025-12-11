@@ -18,7 +18,6 @@ import Json.Encode as Encode
 import List.Extra as ListX
 import Maybe exposing (withDefault)
 import Maybe.Extra as MaybeX
-import Set exposing (Set)
 import Shared.Components.Popup as Popup
 import Shared.Components.RerMessage
 import Shared.Components.Watermark as Watermark
@@ -75,8 +74,6 @@ type alias ViewParams =
     , masterUnits : Dict Int B.Unit
     , signals : List B.Signal
     , copied : Maybe ClipboardObject
-    , bookmarks : Set Int
-    , importants : Set Int
     , isMsgVisible : List Int
     , groupInfos : Dict String B.SignalGroupEntry
     , messageNetworkIds : List Int
@@ -568,7 +565,7 @@ leftColumn ( messageId, message ) ps model =
             div [ class "flex justify-around mb-2" ] <|
                 [ let
                     bookmarked =
-                        Set.member messageId ps.bookmarks
+                        message.bookmarked
                   in
                   div
                     [ style "font-size" "1rem"
@@ -587,7 +584,7 @@ leftColumn ( messageId, message ) ps model =
                     ]
                 , let
                     important =
-                        Set.member messageId ps.importants
+                        message.important
                   in
                   div
                     [ style "font-size" "1rem"
@@ -917,7 +914,9 @@ rightColumn ( messageId, message ) ps model =
                                                             ]
 
                                                     _ ->
-                                                        text "Невідома мережа"
+                                                        div
+                                                            [ title <| "ID мережі " ++ String.fromInt networkId ]
+                                                            [ text "Невідома мережа" ]
                                             )
                                             ps.messageNetworkIds
 

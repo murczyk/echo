@@ -513,6 +513,7 @@ type Node
     | NStyle Style
     | NStyleMap StyleMap
     | NAuthor Author
+    | AtomLink AtomLinkData
     | NCascadingStyle CascadingStyle
 
 
@@ -539,6 +540,9 @@ nodeEncoder enum =
 
         NAuthor inner ->
             Json.Encode.object [ ( "author", authorEncoder inner ) ]
+
+        AtomLink inner ->
+            Json.Encode.object [ ( "link", atomLinkDataEncoder inner ) ]
 
         NCascadingStyle inner ->
             Json.Encode.object [ ( "CascadingStyle", cascadingStyleEncoder inner ) ]
@@ -663,6 +667,24 @@ linkEncoder : Link -> Json.Encode.Value
 linkEncoder struct =
     Json.Encode.object
         [ ( "href", (Maybe.withDefault Json.Encode.null << Maybe.map hrefEncoder) struct.href )
+        ]
+
+
+type alias AtomLinkData =
+    { rel : Maybe String
+    , href : Maybe String
+    , title : Maybe String
+    , type_ : Maybe String
+    }
+
+
+atomLinkDataEncoder : AtomLinkData -> Json.Encode.Value
+atomLinkDataEncoder struct =
+    Json.Encode.object
+        [ ( "@rel", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.rel )
+        , ( "@href", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.href )
+        , ( "@title", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.title )
+        , ( "@type", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.type_ )
         ]
 
 
@@ -915,6 +937,8 @@ type alias InboxMessage =
     , callsigns : List String
     , callsignsAlg2 : List String
     , checked : Bool
+    , important : Bool
+    , bookmarked : Bool
     , timestamp : Maybe Int
     , groupMasterKey : Maybe String
     , sender : Maybe String
@@ -949,6 +973,8 @@ inboxMessageEncoder struct =
         , ( "callsigns", Json.Encode.list Json.Encode.string struct.callsigns )
         , ( "callsigns_alg2", Json.Encode.list Json.Encode.string struct.callsignsAlg2 )
         , ( "checked", Json.Encode.bool struct.checked )
+        , ( "important", Json.Encode.bool struct.important )
+        , ( "bookmarked", Json.Encode.bool struct.bookmarked )
         , ( "timestamp", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.timestamp )
         , ( "group_master_key", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.groupMasterKey )
         , ( "sender", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.sender )
@@ -5178,6 +5204,8 @@ type alias ListNetworksReq =
     , showInactive : Maybe Bool
     , showOnlyDeleted : Maybe Bool
     , aorIds : Maybe (List Int)
+    , ids : Maybe (List Int)
+    , limit : Maybe Int
     , sortBy : Maybe (List ListNetworksSortBy)
     }
 
@@ -5191,6 +5219,8 @@ listNetworksReqEncoder struct =
         , ( "show_inactive", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.showInactive )
         , ( "show_only_deleted", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.showOnlyDeleted )
         , ( "aor_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.int)) struct.aorIds )
+        , ( "ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.int)) struct.ids )
+        , ( "limit", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.limit )
         , ( "sort_by", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list listNetworksSortByEncoder)) struct.sortBy )
         ]
 
@@ -6528,6 +6558,7 @@ nodeDecoder =
         , Json.Decode.map NStyle (Json.Decode.field "Style" styleDecoder)
         , Json.Decode.map NStyleMap (Json.Decode.field "StyleMap" styleMapDecoder)
         , Json.Decode.map NAuthor (Json.Decode.field "author" authorDecoder)
+        , Json.Decode.map AtomLink (Json.Decode.field "link" atomLinkDataDecoder)
         , Json.Decode.map NCascadingStyle (Json.Decode.field "CascadingStyle" cascadingStyleDecoder)
         ]
 
@@ -6591,6 +6622,15 @@ linkDecoder : Json.Decode.Decoder Link
 linkDecoder =
     Json.Decode.succeed Link
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "href" (Json.Decode.nullable hrefDecoder)))
+
+
+atomLinkDataDecoder : Json.Decode.Decoder AtomLinkData
+atomLinkDataDecoder =
+    Json.Decode.succeed AtomLinkData
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "@rel" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "@href" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "@title" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "@type" (Json.Decode.nullable Json.Decode.string)))
 
 
 lookAtDecoder : Json.Decode.Decoder LookAt
@@ -6726,6 +6766,8 @@ inboxMessageDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsigns" (Json.Decode.list Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsigns_alg2" (Json.Decode.list Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "checked" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "important" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "bookmarked" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "timestamp" (Json.Decode.nullable Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_master_key" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sender" (Json.Decode.nullable Json.Decode.string)))
@@ -9178,6 +9220,8 @@ listNetworksReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "show_inactive" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "show_only_deleted" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aor_ids" (Json.Decode.nullable (Json.Decode.list Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ids" (Json.Decode.nullable (Json.Decode.list Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "limit" (Json.Decode.nullable Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sort_by" (Json.Decode.nullable (Json.Decode.list listNetworksSortByDecoder))))
 
 
