@@ -128,9 +128,10 @@ async fn messages_by_id(
         .context(h!())?;
     let req = InboxMessagesReq::default();
     let env: &Env = &env;
-    let messages = aggregate_to_inbox_messages(messages, &logins, &&req, &env)
-        .await
-        .context(h!())?;
+    let messages =
+        aggregate_to_inbox_messages(&login, messages, &logins, &&req, &env)
+            .await
+            .context(h!())?;
     Ok(Json(MessageIdsRsp { messages }))
 }
 
@@ -468,7 +469,7 @@ pub async fn get_inbox_messages_with_conn(
         .collect::<Result<Vec<_>, DbErr>>()
         .context(h!())?;
 
-    let res = aggregate_to_inbox_messages(messages, logins, &req, &env)
+    let res = aggregate_to_inbox_messages(login, messages, logins, &req, &env)
         .await
         .context(h!())?;
     Ok(res)

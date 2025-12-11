@@ -36,8 +36,6 @@ type alias ViewParams =
     , groupInfos : Dict String B.SignalGroupEntry
     , zone : Time.Zone
     , messages : List ( Int, InboxMessage )
-    , bookmarks : Set Int
-    , importants : Set Int
     , tags : List ( Int, B.Tag )
     , callsignsInfo : Dict String (List B.CallsignInfo)
     , messageComments : Dict Int (List B.MessageComment)
@@ -113,10 +111,6 @@ type Msg
 type OutSignal
     = OutFocus { elemId : String }
     | OutFormErrors (Dict String String)
-    | OutBookmarkAdd Int
-    | OutBookmarkRm Int
-    | OutImportantAdd Int
-    | OutImportantRm Int
     | OutDeleteMessage Int
     | OutSelectFreqAndShowMap String
     | OutOpenSidebarEdit Int
@@ -530,8 +524,11 @@ update vps msg model =
         BookmarkAdd id_ ->
             { model = model
             , cmds = E.sendCmd <| Api.rer_bookmark_add BookmarkAddDone { messageId = id_ }
-            , sigs = [ OutBookmarkAdd id_ ]
-            , messages = vps.messages
+            , sigs = []
+            , messages =
+                updateV id_
+                    (\message -> { message | bookmarked = True })
+                    vps.messages
             }
 
         BookmarkAddDone (Err e) ->
@@ -551,8 +548,11 @@ update vps msg model =
         BookmarkRemove id_ ->
             { model = model
             , cmds = E.sendCmd <| Api.rer_bookmark_rm BookmarkRemoveDone { messageId = id_ }
-            , sigs = [ OutBookmarkRm id_ ]
-            , messages = vps.messages
+            , sigs = []
+            , messages =
+                updateV id_
+                    (\message -> { message | bookmarked = False })
+                    vps.messages
             }
 
         BookmarkRemoveDone (Err e) ->
@@ -572,8 +572,11 @@ update vps msg model =
         ImportantAdd id_ ->
             { model = model
             , cmds = E.sendCmd <| Api.rer_important_add ImportantAddDone { messageId = id_ }
-            , sigs = [ OutImportantAdd id_ ]
-            , messages = vps.messages
+            , sigs = []
+            , messages =
+                updateV id_
+                    (\message -> { message | important = True })
+                    vps.messages
             }
 
         ImportantAddDone (Err e) ->
@@ -593,8 +596,11 @@ update vps msg model =
         ImportantRemove id_ ->
             { model = model
             , cmds = E.sendCmd <| Api.rer_important_rm ImportantRemoveDone { messageId = id_ }
-            , sigs = [ OutImportantRm id_ ]
-            , messages = vps.messages
+            , sigs = []
+            , messages =
+                updateV id_
+                    (\message -> { message | important = False })
+                    vps.messages
             }
 
         ImportantRemoveDone (Err e) ->
@@ -850,7 +856,7 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                     div [ class "flex justify-center gap-4" ]
                         [ let
                             bookmarked =
-                                Set.member msgId vps.bookmarks
+                                message.bookmarked
                           in
                           div
                             [ title "додати в закладки"
@@ -874,7 +880,7 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                             ]
                         , let
                             important =
-                                Set.member msgId vps.importants
+                                message.important
                           in
                           div
                             [ title "помітити як важливе"
@@ -1051,7 +1057,11 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                                                         ]
 
                                                 _ ->
-                                                    div [ class "font-medium" ] [ text "Невідома мережа" ]
+                                                    div
+                                                        [ class "font-medium"
+                                                        , title <| "ID мережі " ++ String.fromInt networkId
+                                                        ]
+                                                        [ text "Невідома мережа" ]
                                         )
                                         networkIds
 

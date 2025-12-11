@@ -1,3 +1,4 @@
+use crate::config::RER_IMPORTER_BOOKMARK_LIST_LIMIT;
 use crate::error::AppError;
 use crate::types::*;
 use crate::{entities::*, utils::*};
@@ -96,6 +97,8 @@ async fn bookmarks_list(
                 },
             ))
             .filter(sigint_bookmark::Column::Deleted.eq(false))
+            .order_by_desc(sigint_bookmark::Column::CreatedAt)
+            .limit(RER_IMPORTER_BOOKMARK_LIST_LIMIT)
             .all(&env.dbx)
             .await
             .c(h!())?

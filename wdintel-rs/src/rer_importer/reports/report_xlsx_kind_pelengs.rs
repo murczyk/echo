@@ -256,6 +256,8 @@ pub async fn get_inbox_messages_report(
                     )
                     .unwrap_or_else(|_| vec![]),
                     checked: m.checked.unwrap_or(false),
+                    important: false,
+                    bookmarked: false,
                     timestamp: m
                         .timestamp
                         .map(|x| x.and_utc().timestamp_millis()),

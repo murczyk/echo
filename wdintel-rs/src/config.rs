@@ -38,6 +38,8 @@ pub const DISCORD_WEBHOOK: &str = "https://discord.com/api/webhooks/141708483338
 pub const FEATURE_CALLSIGNS_ALG2: bool = false;
 /// Safety limit: cut network-callsigns time window if too wide
 pub const NETWORK_CALLSIGNS_MAX_WINDOW_DAYS: i64 = 60;
+pub const SIGINT_NETWORK_LIST_DEFAULT_LIMIT: i64 = 100;
+pub const SIGINT_NETWORK_LIST_MAX_LIMIT: u64 = 100;
 /// Ukraine boundaries WGS84
 pub const LAT_MIN: f64 = 40.0;
 pub const LAT_MAX: f64 = 60.0;
@@ -97,6 +99,8 @@ pub const ONEOFF_COUNT_BATCHES_SIZE: u64 = 10000;
 pub const PALITRA_STORAGE_DIR_NAME: &str = "palitra_assets";
 /// Global limit when since_id_noninclusive and since_date_inclusive_ms is not set, safety measure
 pub const RER_DUTY_MAX_DAYS: i64 = 3;
+pub const RER_IMPORTER_BOOKMARK_LIST_LIMIT: u64 = 100;
+pub const RER_IMPORTER_IMPORTANT_LIST_LIMIT: u64 = 100;
 
 /// Dynamic config that's different on different deployments
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]

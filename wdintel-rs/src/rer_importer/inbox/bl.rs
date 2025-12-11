@@ -3,7 +3,7 @@ use crate::rer_importer::types::*;
 use milgeo_rs::coordinates::{
     parse_latlng_f64, rer_extract_coords, Coords, Wgs84,
 };
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use crate::error::AppError;
 use crate::location::utils;
@@ -85,6 +85,7 @@ pub async fn get_inbox_map_items(
 }
 
 pub async fn aggregate_to_inbox_messages(
+    login: &str,
     messages: Vec<InboxMessageDesc>,
     logins: &Vec<String>,
     req: &&InboxMessagesReq,
@@ -94,6 +95,30 @@ pub async fn aggregate_to_inbox_messages(
     let dbx_raw = env.dbx.get_postgres_connection_pool();
 
     let message_ids: Vec<i64> = messages.iter().map(|m| m.id).collect();
+    let important_ids = sigint_important::Entity::find()
+        .filter(
+            sigint_important::Column::SignalMessageId
+                .is_in(message_ids.clone()),
+        )
+        .filter(sigint_important::Column::Deleted.eq(false))
+        .all(&env.dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|imp| imp.signal_message_id)
+        .collect::<HashSet<_>>();
+    let bookmarked_ids = sigint_bookmark::Entity::find()
+        .filter(
+            sigint_bookmark::Column::SignalMessageId.is_in(message_ids.clone()),
+        )
+        .filter(sigint_bookmark::Column::UserId.eq(login.to_string()))
+        .filter(sigint_bookmark::Column::Deleted.eq(false))
+        .all(&env.dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|bm| bm.signal_message_id)
+        .collect::<HashSet<_>>();
     let mut group_query = signal_message_group::Entity::find().filter(
         signal_message_group::Column::SignalMessageId
             .is_in(message_ids.clone()),
@@ -259,6 +284,8 @@ pub async fn aggregate_to_inbox_messages(
                 coords,
                 callsigns,
                 checked: message.checked.unwrap_or(false),
+                important: important_ids.contains(&message.id),
+                bookmarked: bookmarked_ids.contains(&message.id),
                 timestamp: message
                     .timestamp
                     .map(|x| x.and_utc().timestamp_millis()),

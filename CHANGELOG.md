@@ -9,6 +9,8 @@
 
 ## NEXT
 
+- [#1733](https://github.com/echoua/echo/issues/1733) 🐞 Виправлено помилку при підказці позивного
+- [#1733](https://github.com/echoua/echo/issues/1733) 🚨 Оптимізовано завантаження сторінки аналізу, список важливих та закладок тепер не грузиться
 - [#1728](https://github.com/echoua/echo/issues/1728) ✅ Видалення повідомлення в Signal/WhatsApp також видаляє його з ЕХО
 - [#1706](https://github.com/echoua/echo/issues/1705) ✅ Показувати довгі повідомлення
 - [#1674](https://github.com/echoua/echo/issues/1674) Виводити інформацію для дебагу ECHO IM на сторінці `/admin/messanger`

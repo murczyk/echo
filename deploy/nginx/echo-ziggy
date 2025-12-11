@@ -39,15 +39,15 @@ server {
     #     add_header Cache-Control "no-cache";
     # }
     location /api {
-        proxy_pass http://localhost:8081;
+        proxy_pass http://127.0.0.1:8081;
         proxy_set_header Host $host;
     }
     location /api-public {
-        proxy_pass http://localhost:8081/api-public;
+        proxy_pass http://127.0.0.1:8081/api-public;
         proxy_set_header Host $host;
     }
     location /grafana {
-        proxy_pass https://localhost:3000;
+        proxy_pass https://127.0.0.1:3000;
         proxy_set_header Host $host;
     }
     location /docs {

@@ -73,14 +73,13 @@ type Msg
     | GotSignals (Result ApiError B.ListSignalsRsp)
     | GotLatestFrequencies (Result ApiError (List String))
     | GotCallsignsInfo (Result ApiError (List B.CallsignInfoRes))
+    | GotNetworksInfo (Result ApiError (List B.Network))
     | GotGroupKeys (Result ApiError (List String))
     | GotTags (Result ApiError (List ( Int, B.Tag )))
     | InitGotLatestSenders (Result ApiError B.SignalProfilesRsp)
     | GotProfileInfos (Result ApiError B.SignalProfilesRsp)
     | GotGroupInfos (Result ApiError B.SignalGroupsRsp)
     | ReloadLatestFrequencies
-    | GotImportants (Result ApiError (List B.Important))
-    | GotBookmarks (Result ApiError (List B.Bookmark))
       -- FILTERS
     | FiltersMsg FilterMsg
       -- CLIPBOARD
@@ -181,12 +180,11 @@ type alias Model =
     , posts : List String
     , profiles : Dict String (Maybe B.SignalProfileEntry)
     , groupInfos : Dict String B.SignalGroupEntry
+    , networksExtra : Dict Int B.Network
     , groups : List String
     , messages : Messages.Messages
     , loadingEarlier : LoadingEarlierStatus
     , loadingInboxMessages : Bool
-    , bookmarks : Set Int
-    , importants : Set Int
     , clipboardCopied : Maybe ( Int, Pages_.RerDuty.Waterfall.Message.ClipboardObject )
     , isMsgVisible : List Int
     , unreadIds : List Int
@@ -282,11 +280,10 @@ init id_ ms =
       , posts = []
       , profiles = Dict.empty
       , groupInfos = Dict.empty
+      , networksExtra = Dict.empty
       , groups = []
       , messages = Messages.fromList []
       , loadingEarlier = NotLoading
-      , bookmarks = Set.empty
-      , importants = Set.empty
       , clipboardCopied = Nothing
       , isMsgVisible = []
       , unreadIds = []
@@ -662,6 +659,36 @@ updateFreqsAndCallsigns messages model =
             E.none
         ]
     )
+
+
+networksForView : Shared.Model -> Model -> Dict Int B.Network
+networksForView shared model =
+    Dict.union model.networksExtra (RD.withDefault Dict.empty shared.networks)
+
+
+missingNetworkIdsForMessages : Shared.Model -> Model -> List ( Int, B.InboxMessage ) -> List Int
+missingNetworkIdsForMessages shared model messages =
+    let
+        knownNetworks =
+            networksForView shared model
+    in
+    messages
+        |> List.concatMap (\( _, msg ) -> msg.networkIds |> Maybe.withDefault [])
+        |> List.filter (\networkId -> not (Dict.member networkId knownNetworks))
+        |> ListX.unique
+
+
+loadNetworksForMessages : Shared.Model -> Model -> List ( Int, B.InboxMessage ) -> Effect Msg
+loadNetworksForMessages shared model messages =
+    let
+        missingIds =
+            missingNetworkIdsForMessages shared model messages
+    in
+    if List.isEmpty missingIds then
+        E.none
+
+    else
+        E.getNetworksInfoByIds GotNetworksInfo missingIds
 
 
 commonGotVisibleMsgFunc : List Int -> { a | unreadIds : List Int, lastViewedMessageId : LastViewedMessageId, isMsgVisible : List Int } -> { a | unreadIds : List Int, lastViewedMessageId : LastViewedMessageId, isMsgVisible : List Int }
@@ -1388,6 +1415,7 @@ update shared user msg model =
             , E.batch <|
                 [ loadNewGroups messages model
                 , loadNewProfiles messages model
+                , loadNetworksForMessages shared model messages
                 , E.sendCmd <| jumpToBottom (waterfallDivId model.id) NoOp
                 , eff1
                 ]
@@ -1429,6 +1457,7 @@ update shared user msg model =
             , E.batch <|
                 [ loadNewGroups messages model
                 , loadNewProfiles messages model
+                , loadNetworksForMessages shared model messages
 
                 --, E.getViewportById (waterfallDivId model.id) (GotViewportBeforePrepending messages)
                 , E.sendCmd <|
@@ -1695,6 +1724,7 @@ update shared user msg model =
                     , E.batch <|
                         [ eff1
                         , eff3
+                        , loadNetworksForMessages shared model messages
                         , E.sendCmd <|
                             if List.length m3.notRenderedMessagesYet > 0 then
                                 Ports.waterfall_getVisibleMsgIds
@@ -1733,6 +1763,7 @@ update shared user msg model =
                     , E.batch <|
                         [ eff1
                         , eff3
+                        , loadNetworksForMessages shared model messages
                         , if List.length messages > 0 then
                             E.sendCmd <| jumpToBottom (waterfallDivId model.id) NoOp
 
@@ -1774,27 +1805,12 @@ update shared user msg model =
                     , E.batch <|
                         [ eff1
                         , eff3
+                        , loadNetworksForMessages shared model messages
                         ]
                     )
 
         CloseWaterfall ->
             ( model, E.none )
-
-        GotBookmarks (Err e) ->
-            ( model, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження закладок" e )
-
-        GotBookmarks (Ok bookmarks) ->
-            ( { model | bookmarks = Set.fromList (List.map .messageId bookmarks) }
-            , E.none
-            )
-
-        GotImportants (Err e) ->
-            ( model, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження важливих повідомлень" e )
-
-        GotImportants (Ok importants) ->
-            ( { model | importants = Set.fromList (List.map .messageId importants) }
-            , E.none
-            )
 
         GetVisibleMsgIdsRes res ->
             if model.id == res.waterfallId then
@@ -1971,17 +1987,8 @@ update shared user msg model =
             , E.none
             )
 
-        GotTime now ->
-            let
-                since =
-                    Time.posixToMillis now - (1000 * 60 * 60 * 24)
-            in
-            ( model
-            , E.batch
-                [ E.getBookmarks GotBookmarks { sinceTsMillis = Just since }
-                , E.getImportantMessagesIds GotImportants { sinceTsMillis = Just since }
-                ]
-            )
+        GotTime _ ->
+            ( model, E.none )
 
         GotLatestFrequencies (Ok freqs) ->
             let
@@ -2044,6 +2051,18 @@ update shared user msg model =
             in
             ( m2, E.none )
 
+        GotNetworksInfo (Err e) ->
+            ( model, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження мереж" e )
+
+        GotNetworksInfo (Ok networks) ->
+            let
+                newNetworks =
+                    networks
+                        |> List.map (\network -> ( network.id, network ))
+                        |> Dict.fromList
+            in
+            ( { model | networksExtra = Dict.union newNetworks model.networksExtra }, E.none )
+
         GotSignals (Err err) ->
             ( model, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження сигналів" err )
 
@@ -2071,7 +2090,7 @@ update shared user msg model =
                         vps =
                             let
                                 networksDict =
-                                    RD.withDefault Dict.empty shared.networks
+                                    networksForView shared model
 
                                 messageNetworkIds =
                                     case message_.networkIds of
@@ -2103,8 +2122,6 @@ update shared user msg model =
                             , signals = model.signals
                             , message = ( id, message_ )
                             , copied = copied
-                            , bookmarks = model.bookmarks
-                            , importants = model.importants
                             , isMsgVisible = model.isMsgVisible
                             , groupInfos = model.groupInfos
                             }
@@ -2156,53 +2173,75 @@ update shared user msg model =
 
         BookmarkChanged id ->
             let
-                isBookmarked =
-                    Set.member id model.bookmarks
-            in
-            ( model
-            , if isBookmarked then
-                E.sendCmd <| Api.rer_bookmark_rm (BookmarkRemoveDone id) { messageId = id }
+                updatedMessages =
+                    case Messages.getItem id model.messages of
+                        Just ( message, _ ) ->
+                            Messages.updateMessage id ( id, { message | bookmarked = not message.bookmarked } ) model.messages
 
-              else
-                E.sendCmd <| Api.rer_bookmark_add (BookmarkAddDone id) { messageId = id }
-            )
+                        Nothing ->
+                            model.messages
+
+                cmd =
+                    case Messages.getItem id model.messages of
+                        Just ( message, _ ) ->
+                            if message.bookmarked then
+                                E.sendCmd <| Api.rer_bookmark_rm (BookmarkRemoveDone id) { messageId = id }
+
+                            else
+                                E.sendCmd <| Api.rer_bookmark_add (BookmarkAddDone id) { messageId = id }
+
+                        Nothing ->
+                            E.none
+            in
+            ( { model | messages = updatedMessages }, cmd )
 
         BookmarkAddDone _ (Err e) ->
             ( model, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка додавання закладки" e )
 
-        BookmarkAddDone id (Ok ()) ->
-            ( { model | bookmarks = Set.insert id model.bookmarks }, E.none )
+        BookmarkAddDone _ (Ok ()) ->
+            ( model, E.none )
 
         BookmarkRemoveDone _ (Err e) ->
             ( model, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення закладки" e )
 
-        BookmarkRemoveDone id (Ok ()) ->
-            ( { model | bookmarks = Set.remove id model.bookmarks }, E.none )
+        BookmarkRemoveDone _ (Ok ()) ->
+            ( model, E.none )
 
         ImportantChanged id ->
             let
-                isImportant =
-                    Set.member id model.importants
-            in
-            ( model
-            , if isImportant then
-                E.sendCmd <| Api.rer_important_rm (ImportantRemoveDone id) { messageId = id }
+                updatedMessages =
+                    case Messages.getItem id model.messages of
+                        Just ( message, _ ) ->
+                            Messages.updateMessage id ( id, { message | important = not message.important } ) model.messages
 
-              else
-                E.sendCmd <| Api.rer_important_add (ImportantAddDone id) { messageId = id }
-            )
+                        Nothing ->
+                            model.messages
+
+                cmd =
+                    case Messages.getItem id model.messages of
+                        Just ( message, _ ) ->
+                            if message.important then
+                                E.sendCmd <| Api.rer_important_rm (ImportantRemoveDone id) { messageId = id }
+
+                            else
+                                E.sendCmd <| Api.rer_important_add (ImportantAddDone id) { messageId = id }
+
+                        Nothing ->
+                            E.none
+            in
+            ( { model | messages = updatedMessages }, cmd )
 
         ImportantAddDone _ (Err e) ->
             ( model, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка додавання важливого повідомлення" e )
 
-        ImportantAddDone id (Ok ()) ->
-            ( { model | importants = Set.insert id model.importants }, E.none )
+        ImportantAddDone _ (Ok ()) ->
+            ( model, E.none )
 
         ImportantRemoveDone _ (Err e) ->
             ( model, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення важливого повідомлення" e )
 
-        ImportantRemoveDone id (Ok ()) ->
-            ( { model | importants = Set.remove id model.importants }, E.none )
+        ImportantRemoveDone _ (Ok ()) ->
+            ( model, E.none )
 
         ScrollIntoMessageDone ->
             ( { model | loadingEarlier = NotLoading }, E.none )
@@ -2408,7 +2447,7 @@ waterfallDiv user isDarkMode duplicates datasources serverInfo masterUnits model
                                         vps =
                                             let
                                                 networksDict =
-                                                    RD.withDefault Dict.empty shared.networks
+                                                    networksForView shared model
 
                                                 messageNetworkIds =
                                                     case message.networkIds of
@@ -2434,8 +2473,6 @@ waterfallDiv user isDarkMode duplicates datasources serverInfo masterUnits model
                                             , signals = model.signals
                                             , message = ( id, message )
                                             , copied = copied
-                                            , bookmarks = model.bookmarks
-                                            , importants = model.importants
                                             , isMsgVisible = model.isMsgVisible
                                             , groupInfos = model.groupInfos
                                             }

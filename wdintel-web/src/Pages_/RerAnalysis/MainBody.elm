@@ -21,7 +21,6 @@ import Pages_.RerAnalysis.SumTable
 import Route exposing (Route)
 import Route.Path
 import Select
-import Set
 import Shared
 import Shared.Components.Button as Button
 import Shared.Components.ModalDialog exposing (modalDialog)
@@ -114,14 +113,15 @@ mainBody user model shared route =
                         , zone = shared.timeZone
                         , messages = model.messages
                         , tags = model.tags
-                        , bookmarks = model.bookmarks
-                        , importants = model.importants
                         , callsignsInfo = model.callsignsInfo
                         , messageComments = model.messageComments
                         , user = user
                         , users = model.users
                         , serverInfo = shared.serverInfo
-                        , networks = RD.withDefault Dict.empty shared.networks
+                        , networks =
+                            Dict.union
+                                model.networksExtra
+                                (RD.withDefault Dict.empty shared.networks)
                         , masterUnits = masterUnitsDict
                         , currentRoute = Just route
                         }

@@ -147,6 +147,8 @@ update req msg model =
                     , showInactive = Nothing
                     , showOnlyDeleted = Nothing
                     , aorIds = Nothing
+                    , ids = Nothing
+                    , limit = Nothing
                     }
                 ]
             )
@@ -424,6 +426,8 @@ update req msg model =
                         , showInactive = Nothing
                         , showOnlyDeleted = Nothing
                         , aorIds = Nothing
+                        , ids = Nothing
+                        , limit = Nothing
                         }
                     )
 

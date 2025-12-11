@@ -215,6 +215,10 @@ pub struct ListNetworksReq {
     pub show_only_deleted: Option<bool>,
     /// Optional filter by Areas of Responsibility (AOR) IDs
     pub aor_ids: Option<Vec<i64>>,
+    /// Optional list of network IDs to fetch
+    pub ids: Option<Vec<i64>>,
+    /// Optional limit, applied when no filters are provided
+    pub limit: Option<i64>,
     pub sort_by: Option<Vec<ListNetworksSortBy>>,
 }
 
