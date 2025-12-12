@@ -1,5 +1,6 @@
 use crate::entities::*;
 use crate::error::AppError;
+use crate::config::SYSTEM_LOGIN_NAME;
 use crate::rer_importer::body_noheader::NoHeadersBody;
 use crate::types::*;
 use crate::utils::worker_watch;
@@ -11,6 +12,9 @@ use sea_orm::prelude::*;
 use sea_orm::*;
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
+
+const KEYWORDS_REGEX_MODEL_NAME: &str = "keywords-and-regex 0.1.0";
+const NLP_MODEL_NAME: &str = "nlp-fasttext 0.1.0";
 
 #[derive(FromQueryResult)]
 pub struct SigintInboxItemText {
@@ -116,7 +120,7 @@ async fn get_message(
 
 async fn process_suggest_message_tags(
     tags: &[tag::Model],
-    _rq: &reqwest::Client,
+    rq: &reqwest::Client,
     dbx: &DatabaseConnection,
     tag_keyword_regex_cache: &Arc<RwLock<TagKeywordRegexCache>>,
 ) -> Result<bool, AppError> {
@@ -126,10 +130,13 @@ async fn process_suggest_message_tags(
 
         let text = Arc::new(text);
 
-        for tag in tags {
+        let mut tags_to_predict: HashMap<String, i64> = HashMap::new();
+        for (tag_index, tag) in tags.iter().enumerate() {
             let tag_id = tag.id;
+            tags_to_predict.insert(tag.label.clone(), tag_id);
             join_set.spawn(verify_tag(
                 text.clone(),
+                tag_index,
                 tag_id,
                 dbx.clone(),
                 tag_keyword_regex_cache.clone(),
@@ -140,11 +147,14 @@ async fn process_suggest_message_tags(
 
         while let Some(join_result) = join_set.join_next().await {
             let verify_result = join_result.c(h!())?;
-            let (tag_id, tag_matches) = verify_result.c(h!())?;
+            let (tag_index, tag_id, tag_matches) = verify_result.c(h!())?;
 
             if tag_matches {
-                let login = Some("system".to_string());
-                let model = Some("keywords-and-regex 0.1.0".to_owned());
+                let tag = &tags[tag_index];
+                tags_to_predict.remove(&tag.label);
+
+                let login = Some(SYSTEM_LOGIN_NAME.to_string());
+                let model = Some(KEYWORDS_REGEX_MODEL_NAME.to_owned());
                 let model = sigint_inbox_item_tag::ActiveModel {
                     tag_id: Set(tag_id),
                     sigint_inbox_item_id: Set(message_id),
@@ -153,6 +163,34 @@ async fn process_suggest_message_tags(
                     ..Default::default()
                 };
                 message_tags.push(model);
+            }
+        }
+
+        if !tags_to_predict.is_empty() {
+            let texts = vec![text.as_ref().clone()];
+            let tags_filtered: HashSet<String> =
+                tags_to_predict.keys().map(|label| label.clone()).collect();
+
+            let mut response =
+                crate::nlp::predict_tags(rq, texts, Some(tags_filtered))
+                    .await
+                    .c(h!())?;
+            if let Some(result) = response.pop() {
+                for (key, value) in &result.0 {
+                    let tag_id = tags_to_predict[key];
+                    let confidence: f64 = *value;
+                    let login = Some(SYSTEM_LOGIN_NAME.to_string());
+                    let model = Some(NLP_MODEL_NAME.to_owned());
+                    let model = sigint_inbox_item_tag::ActiveModel {
+                        tag_id: Set(tag_id),
+                        sigint_inbox_item_id: Set(message_id),
+                        login: Set(login),
+                        model: Set(model),
+                        confidence: Set(confidence),
+                        ..Default::default()
+                    };
+                    message_tags.push(model);
+                }
             }
         }
 
@@ -179,10 +217,11 @@ async fn process_suggest_message_tags(
 
 async fn verify_tag(
     haystack: Arc<String>,
+    tag_index: usize,
     tag_id: i64,
     dbx: DatabaseConnection,
     tag_keyword_regex_cache: Arc<RwLock<TagKeywordRegexCache>>,
-) -> Result<(i64, bool), AppError> {
+) -> Result<(usize, i64, bool), AppError> {
     let cache_item =
         get_regex_sets_for_tag(tag_id, &dbx, &tag_keyword_regex_cache)
             .await
@@ -192,7 +231,7 @@ async fn verify_tag(
         !cache_item.regex_set_negative.is_match(haystack.as_str())
             && cache_item.regex_set_positive.is_match(haystack.as_str());
 
-    Ok((tag_id, tag_matches))
+    Ok((tag_index, tag_id, tag_matches))
 }
 
 async fn get_regex_sets_for_tag(

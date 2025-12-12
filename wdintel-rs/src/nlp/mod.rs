@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use self::types::*;
 use crate::error::AppError;
 use crate::h;
@@ -55,6 +57,33 @@ pub async fn token_lexemes(
     }
     let rsp_data = rsp_e.c(h!())?;
     Ok(rsp_data.lexeme)
+}
+
+pub async fn predict_tags(
+    rq: &reqwest::Client,
+    texts: Vec<String>,
+    tags: Option<HashSet<String>>,
+) -> Result<Vec<PredictTagsPyRsp>, AppError> {
+    let local_url = format!("{}/api/tags/predict", crate::config::NLP_ADDR);
+    let req = PredictTagsPyReq {
+        texts,
+        tags: tags.unwrap_or_default(),
+    };
+    let rsp = rq
+        .post(&local_url)
+        .header("content-type", "application/json")
+        .body(serde_json::to_string(&req).c(h!())?)
+        .send()
+        .await
+        .c(h!())?;
+    let rsp_t = rsp.text().await.c(h!())?;
+    let rsp_e: Result<Vec<PredictTagsPyRsp>, serde_json::Error> =
+        serde_json::from_str(&rsp_t);
+    if let Err(ref e) = rsp_e {
+        println!("> error: {e:?}\nrsp_t: {rsp_t}");
+    }
+    let rsp_data = rsp_e.c(h!())?;
+    Ok(rsp_data)
 }
 
 pub async fn complete_callsigns(

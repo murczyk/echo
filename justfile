@@ -26,6 +26,9 @@ till_ts := "1961204400000"
 datasource_id := "1"
 message := ""
 unit := ""
+b2_endpoint_url := "https://s3.eu-central-003.backblazeb2.com"
+storage_dir := home_directory() + "/Downloads/storage"
+ai_bucket_prefix := "s3://echouastorage/lfs/echo-ai/models"
 
 default:
     @just --list
@@ -98,8 +101,8 @@ dev-py:
     fi
 
     FLASK="$PWD/wdintel-rs/wdintel-py/.venv/bin/flask"
-    STORAGE="$HOME/Downloads/storage"
-    (cd wdintel-rs/wdintel-py && WD_CALLSIGNS_SPM=$STORAGE/wiki.model WD_CALLSIGNS=$STORAGE/callsigns20230512.pt $FLASK --app service --debug run)
+    STORAGE="{{ storage_dir }}"
+    (cd wdintel-rs/wdintel-py && WD_CALLSIGNS_SPM=$STORAGE/wiki.model WD_CALLSIGNS=$STORAGE/callsigns20230512.pt WD_FASTTEXT_MODELS=$STORAGE/fasttext-models $FLASK --app service --debug run)
 
 setup-dev:
     # todo: setup everything?
@@ -442,6 +445,46 @@ _copy-db:
     echo "Run: sudo -u postgres psql postgres -c \"CREATE DATABASE wd\""
     echo "Run: sudo -u postgres pg_restore -d wd /var/tmp/wd-{{ dt1 }}.pgrestore"
     set -x
+
+ai-sync-from-cloud:
+    #!/bin/bash
+    if [[ -z "${AWS_ACCESS_KEY_ID:-}" || -z "${AWS_SECRET_ACCESS_KEY:-}" ]]; then
+        echo "❌ Please export AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY for Backblaze S3 access"
+        exit 1
+    fi
+    if ! command -v s5cmd >/dev/null 2>&1; then
+        echo "❌ s5cmd is required to ai models (https://github.com/peak/s5cmd)"
+        exit 1
+    fi
+    
+    BUCKET_PREFIX="{{ ai_bucket_prefix }}"
+    STORAGE="{{ storage_dir }}"
+    ENDPOINT_URL="{{ b2_endpoint_url }}"
+    WD_FASTTEXT_MODELS="$STORAGE/fasttext-models"
+
+    remote_files="${BUCKET_PREFIX}/*"
+    local_directory="${WD_FASTTEXT_MODELS}/"
+    s5cmd --endpoint-url "$ENDPOINT_URL" cp --if-source-newer --show-progress "$remote_files" "$local_directory"
+
+ai-sync-to-cloud:
+    #!/bin/bash
+    if [[ -z "${AWS_ACCESS_KEY_ID:-}" || -z "${AWS_SECRET_ACCESS_KEY:-}" ]]; then
+        echo "❌ Please export AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY for Backblaze S3 access"
+        exit 1
+    fi
+    if ! command -v s5cmd >/dev/null 2>&1; then
+        echo "❌ s5cmd is required to ai models (https://github.com/peak/s5cmd)"
+        exit 1
+    fi
+    
+    BUCKET_PREFIX="{{ ai_bucket_prefix }}"
+    STORAGE="{{ storage_dir }}"
+    ENDPOINT_URL="{{ b2_endpoint_url }}"
+    WD_FASTTEXT_MODELS="$STORAGE/fasttext-models"
+
+    local_directory="${WD_FASTTEXT_MODELS}/"
+    remote_directory="${BUCKET_PREFIX}/"
+    s5cmd --endpoint-url "$ENDPOINT_URL" sync "$local_directory" "$remote_directory"
 
 # run like `just server=echo-zp2 copy-db-backup`
 copy-db-backup:
