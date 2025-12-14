@@ -42,7 +42,7 @@ pub struct ListCallsignsReq {
     pub filter_unit: Option<String>,
     pub since_date_inclusive_ms: Option<i64>,
     pub till_date_inclusive_ms: Option<i64>,
-    pub limit: Option<i64>,
+    pub limit: Option<u64>,
     pub sort_by: Option<Vec<ListCallsignsSortBy>>,
 }
 
