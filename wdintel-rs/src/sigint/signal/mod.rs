@@ -50,7 +50,7 @@ pub async fn list_signals_csv(
     let signals = list_signals_impl(&env.dbx, &req.0, None).await.c(h!())?;
     let sigint_unit_ids: Vec<i64> = signals
         .iter()
-        .flat_map(|signal| signal.unit.clone())
+        .flat_map(|signal| signal.unit)
         .unique()
         .collect();
 
