@@ -12,6 +12,7 @@ use sea_orm::{
     *,
 };
 use sea_query::Alias;
+use std::collections::HashMap;
 
 pub mod types;
 
