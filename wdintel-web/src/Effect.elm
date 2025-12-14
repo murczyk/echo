@@ -1,7 +1,7 @@
 port module Effect exposing
     ( Effect
     , none, batch
-    , sendCmd, sendMsg
+    , sendCmd, sendMsg, sendSharedMsg
     , pushRoute, replaceRoute
     , pushRoutePath, replaceRoutePath
     , loadExternalUrl, back
@@ -180,6 +180,11 @@ sendMsg msg =
     Task.succeed msg
         |> Task.perform identity
         |> SendCmd
+
+
+sendSharedMsg : Shared.Msg.Msg -> Effect msg
+sendSharedMsg msg =
+    SendSharedMsg msg
 
 
 

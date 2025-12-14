@@ -4,6 +4,7 @@ import Api
 import Auth
 import Bindings as B
 import Config
+import Core.EventHelpers
 import Core.Types exposing (..)
 import Dict exposing (Dict)
 import Dict.Extra as DE
@@ -12,6 +13,7 @@ import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (onInput)
 import Html.Styled
+import Http
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Layouts
@@ -25,6 +27,7 @@ import Pages_.RerAnalysis.Model exposing (..)
 import Pages_.RerAnalysis.Msg exposing (..)
 import Pages_.RerAnalysis.Query as Query
 import Pages_.RerDuty.Waterfall.Filters
+import Process
 import Route exposing (Route)
 import Route.Path
 import Select
@@ -38,8 +41,10 @@ import Shared.Components.Sidebar as Sidebar
 import Shared.Components.Toast
 import Shared.Model exposing (isDarkMode)
 import String exposing (fromInt)
+import Task
 import Time exposing (Posix)
 import Utils.Api.ErrorHandling
+import Utils.Api.Temp exposing (leExpectJson)
 import Utils.Components exposing (..)
 import Utils.RemoteData as RD exposing (RemoteData(..))
 import Utils.Select
@@ -211,6 +216,7 @@ init route _ =
             , filterTagsOption = B.OneOfTags
             , unitsExactMatchOnly = True
             , editSidebar = Nothing
+            , eventLastId = Nothing
             , palitras = NotAsked
             , palitrasVisible = []
             , palitrasEnabled = True
@@ -248,8 +254,10 @@ init route _ =
         , E.getAnalysisSavedFilters SavedFiltersGot
         , E.getTags GotTags
         , E.map RowsMsg Shared.Components.RerMessage.init
+        , Core.EventHelpers.subscribeToInboxChanges route.path
         , E.sendCmd <| Ports.rer_analysis_saveQueryState (B.rerAnalysisQueryStateEncoder initialQueryState)
         , palitrasEff
+        , pollEvents Nothing
         ]
     )
 
@@ -304,6 +312,28 @@ getInboxReq model =
             |> List.filterMap String.toInt
             |> emptyToNothing
     }
+
+
+pollEventsDelayed : Float -> Maybe String -> Effect Msg
+pollEventsDelayed delayMs lastEventId =
+    E.sendCmd <| Task.perform (\_ -> EventPollTrigger lastEventId) (Process.sleep delayMs)
+
+
+pollEvents : Maybe String -> Effect Msg
+pollEvents lastEventId =
+    let
+        request : B.LongPollReq
+        request =
+            { sessionId = "current"
+            , lastEventId = lastEventId
+            }
+    in
+    E.sendCmd <|
+        Http.post
+            { url = "/api/event-stream/long-poll"
+            , body = Http.jsonBody (B.longPollReqEncoder request)
+            , expect = leExpectJson EventPollReceived B.longPollRspDecoder
+            }
 
 
 cmdLoadCallsignGraph : Model -> { dtFromPosix : Posix, dtToPosix : Posix } -> Effect Msg
@@ -724,6 +754,33 @@ update user shared route msg model =
         NoOp ->
             ( model, E.none )
 
+        EventPollTrigger lastId ->
+            ( model, pollEvents lastId )
+
+        EventPollReceived (Err _) ->
+            ( model, pollEventsDelayed 1000 model.eventLastId )
+
+        EventPollReceived (Ok rsp) ->
+            let
+                inboxEvents =
+                    rsp.events
+                        |> List.filter
+                            (\event ->
+                                case event.eventType of
+                                    B.EtInboxChanged _ ->
+                                        True
+
+                                    _ ->
+                                        False
+                            )
+
+                effects =
+                    [ pollEvents rsp.lastEventId
+                    , E.sendMsg <| InboxEvents inboxEvents
+                    ]
+            in
+            ( { model | eventLastId = rsp.lastEventId }, E.batch effects )
+
         ToastMsg imsg ->
             let
                 ( im, icmds ) =
@@ -835,6 +892,53 @@ update user shared route msg model =
 
                 _ ->
                     ( m2, E.none )
+
+        InboxEvents events ->
+            events
+                |> List.filterMap
+                    (\event ->
+                        case event.eventType of
+                            B.EtInboxChanged messageId ->
+                                Just messageId
+
+                            _ ->
+                                Nothing
+                    )
+                |> ListX.unique
+                |> (\ids ->
+                        if List.isEmpty ids then
+                            ( model, E.none )
+
+                        else
+                            ( model
+                            , E.getMessagesByIds InboxMessagesUpdated { messageIds = ids }
+                            )
+                   )
+
+        InboxMessagesUpdated (Err e) ->
+            ( model
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Не вдалося оновити повідомлення" e
+            )
+
+        InboxMessagesUpdated (Ok rsp) ->
+            let
+                messages2 =
+                    List.foldl
+                        (\( msgId, message ) acc ->
+                            acc
+                                |> List.map
+                                    (\( existingId, existingMessage ) ->
+                                        if existingId == msgId then
+                                            ( existingId, message )
+
+                                        else
+                                            ( existingId, existingMessage )
+                                    )
+                        )
+                        model.messages
+                        rsp.messages
+            in
+            ( { model | messages = messages2 }, E.none )
 
         GotInbox (Err e) ->
             ( { model | loadingInboxMessages = False }

@@ -153,6 +153,7 @@ type alias Model =
     , filterTagsOption : B.TagFilterOption
     , unitsExactMatchOnly : Bool
     , editSidebar : Maybe Int
+    , eventLastId : Maybe String
     
     -- палітри
     , palitras : RemoteData ApiError (List B.PalitraDetails)

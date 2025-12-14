@@ -2,6 +2,8 @@ use self::types::*;
 use crate::config::*;
 use crate::entities::*;
 use crate::error::AppError;
+use crate::event_stream::fanout;
+use crate::event_stream::types::{EventMsg, EventType};
 use crate::types::Env;
 use crate::types::*;
 use actix_web::web::Json;
@@ -265,6 +267,8 @@ async fn inbox_message_tags_add(
     }
 
     txn.commit().await.c(h!())?;
+    let event = EventMsg::new(EventType::ETInboxChanged(inbox.id));
+    fanout(&mut env.redis.clone(), event).await.c(h!())?;
     Ok(Json(()))
 }
 
@@ -306,6 +310,12 @@ async fn inbox_message_tags_rm(
 
         let attached_tag: sigint_inbox_item_tag::ActiveModel = tag.into();
         attached_tag.delete(&txn).await.c(h!())?;
+        txn.commit().await.c(h!())?;
+
+        let event = EventMsg::new(EventType::ETInboxChanged(inbox.id));
+        fanout(&mut env.redis.clone(), event).await.c(h!())?;
+
+        return Ok(Json(()));
     }
 
     txn.commit().await.c(h!())?;

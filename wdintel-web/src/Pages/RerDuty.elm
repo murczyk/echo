@@ -4,6 +4,7 @@ import Api
 import Auth
 import Bindings as B exposing (..)
 import Browser.Events
+import Core.EventHelpers
 import Core.Types exposing (..)
 import Config
 import Dict exposing (Dict)
@@ -11,14 +12,17 @@ import Effect as E exposing (Effect)
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (..)
+import Http
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Layouts
+import List.Extra as ListX
 import Maybe.Extra as MaybeX exposing (isJust)
 import Page exposing (Page)
 import Pages_.RerDuty.Waterfall exposing (Msg(..), waterfallDivId)
 import Pages_.RerDuty.Waterfall.Messages as Messages
 import Pages_.RerDuty.Waterfall.Utils as Utils
+import Process
 import Random
 import Route exposing (Route)
 import Route.Path
@@ -26,10 +30,12 @@ import Set exposing (Set)
 import Shared
 import Shared.Components.Navbar exposing (navBar)
 import Shared.Components.ThemeSwitcher exposing (themeSwitcher)
+import Task
 import Shared.Model exposing (isDarkMode)
 import Task
 import Time
 import Utils.Api.ErrorHandling
+import Utils.Api.Temp exposing (leExpectJson)
 import Utils.RemoteData as RD exposing (RemoteData(..))
 import Utils.Utils exposing (..)
 import Utils.Views
@@ -43,6 +49,7 @@ type alias Model =
     , duplicates : Set Int
     , lastPushQuery : Dict String String
     , datasources : List ( Int, Datasource )
+    , eventLastId : Maybe String
     }
 
 
@@ -82,7 +89,8 @@ init route _ =
                     )
 
         cmds =
-            (E.sendCmd <| Api.datasource_list GotDatasourceList)
+            Core.EventHelpers.subscribeToInboxChanges route.path
+                :: (E.sendCmd <| Api.datasource_list GotDatasourceList)
                 :: (waterfallStates
                         |> List.map
                             (\( wfId, wfState ) ->
@@ -102,19 +110,24 @@ init route _ =
             , duplicates = Set.empty
             , lastPushQuery = route.query
             , datasources = []
+            , eventLastId = Nothing
             }
 
         pushUrlCmd =
             getPushUrlCmd model
     in
     ( model
-    , E.batch (pushUrlCmd :: cmds)
+    , E.batch (pushUrlCmd :: pollEvents Nothing :: cmds)
     )
 
 
 type Msg
     = WaterfallMsg String Pages_.RerDuty.Waterfall.Msg
     | ResizeHappened
+    | EventPollTrigger (Maybe String)
+    | EventPollReceived (Result ApiError B.LongPollRsp)
+    | InboxEvents (List B.EventMsg)
+    | InboxMessagesUpdated (Result ApiError B.MessageIdsRsp)
     | GenerateNewWaterfallId
     | AddWaterfall String
     | CollapseNavToggle
@@ -215,6 +228,93 @@ update shared user msg model =
             ( { model | navCollapsed = not model.navCollapsed }
             , E.sendCmd <| Task.perform (\_ -> ResizeHappened) Time.now
             )
+
+        EventPollTrigger lastId ->
+            ( model, pollEvents lastId )
+
+        EventPollReceived (Err _) ->
+            ( model, pollEventsDelayed 1000 model.eventLastId )
+
+        EventPollReceived (Ok rsp) ->
+            let
+                inboxEvents =
+                    rsp.events
+                        |> List.filter
+                            (\event ->
+                                case event.eventType of
+                                    B.EtInboxChanged _ ->
+                                        True
+
+                                    _ ->
+                                        False
+                            )
+            in
+            ( { model | eventLastId = rsp.lastEventId }
+            , E.batch
+                [ pollEvents rsp.lastEventId
+                , E.sendMsg <| InboxEvents inboxEvents
+                ]
+            )
+
+        InboxEvents events ->
+            events
+                |> List.filterMap
+                    (\event ->
+                        case event.eventType of
+                            B.EtInboxChanged messageId ->
+                                Just messageId
+
+                            _ ->
+                                Nothing
+                    )
+                |> ListX.unique
+                |> (\ids ->
+                        if List.isEmpty ids then
+                            ( model, E.none )
+
+                        else
+                            ( model
+                            , E.getMessagesByIds InboxMessagesUpdated { messageIds = ids }
+                            )
+                   )
+
+        InboxMessagesUpdated (Err e) ->
+            ( model
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Не вдалося оновити повідомлення" e
+            )
+
+        InboxMessagesUpdated (Ok rsp) ->
+            let
+                waterfalls2 =
+                    List.map
+                        (\( wfId, wf ) ->
+                            let
+                                wfMessageIds =
+                                    wf.messages
+                                        |> Messages.toMessageList
+                                        |> List.map Tuple.first
+                                        |> Set.fromList
+
+                                updatedMessages =
+                                    List.foldl
+                                        (\( msgId, message ) acc ->
+                                            if Set.member msgId wfMessageIds then
+                                                Messages.updateMessage msgId ( msgId, message ) acc
+
+                                            else
+                                                acc
+                                        )
+                                        wf.messages
+                                        rsp.messages
+                            in
+                            ( wfId, { wf | messages = updatedMessages } )
+                        )
+                        model.waterfalls
+
+                m2 =
+                    { model | waterfalls = waterfalls2 }
+            in
+            ( { m2 | duplicates = recalcDuplicates m2 }, E.none )
 
         WaterfallMsg id_ imsg ->
             case findK id_ model.waterfalls of
@@ -370,6 +470,28 @@ buildQuery model =
     Dict.fromList
         [ ( "state", stateS )
         ]
+
+
+pollEventsDelayed : Float -> Maybe String -> Effect Msg
+pollEventsDelayed delayMs lastEventId =
+    E.sendCmd <| Task.perform (\_ -> EventPollTrigger lastEventId) (Process.sleep delayMs)
+
+
+pollEvents : Maybe String -> Effect Msg
+pollEvents lastEventId =
+    let
+        request : B.LongPollReq
+        request =
+            { sessionId = "current"
+            , lastEventId = lastEventId
+            }
+    in
+    E.sendCmd <|
+        Http.post
+            { url = "/api/event-stream/long-poll"
+            , body = Http.jsonBody (B.longPollReqEncoder request)
+            , expect = leExpectJson EventPollReceived B.longPollRspDecoder
+            }
 
 
 getPushUrlCmd : Model -> Effect Msg
