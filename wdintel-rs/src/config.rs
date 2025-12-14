@@ -105,6 +105,7 @@ pub const RER_IMPORTER_IMPORTANT_LIST_LIMIT: u64 = 100;
 pub const TAG_MINIMUM_CONFIDENCE: f64 = 0.8;
 pub const TAG_MAXIMUM_CONFIDENCE: f64 = 1.0;
 pub const SYSTEM_LOGIN_NAME: &str = "system";
+pub const TAG_SUGGEST_WORKER_BATCH_SIZE: usize = 100;
 
 /// Dynamic config that's different on different deployments
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]

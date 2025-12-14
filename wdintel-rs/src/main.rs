@@ -429,6 +429,16 @@ pub struct OneoffCalculateHistoricStatsPs {
     pub skip_day: bool,
 }
 
+#[derive(clap::Args, Debug, Clone)]
+pub struct OneoffSuggestInboxMessageTagsPs {
+    /// Start datetime (inclusive). Example: `2023-04-17T00:00:00`
+    #[arg(long, value_enum)]
+    pub start: String,
+    /// Start datetime (non-inclusive). Example: `2023-04-18T00:00:00`
+    #[arg(long, value_enum)]
+    pub end: String,
+}
+
 #[derive(clap::Subcommand, Debug)]
 #[command(author, version, about, long_about = None)]
 enum Cmd {
@@ -496,6 +506,7 @@ enum Cmd {
     OneoffCountGroupBatches,
     OneoffGenerateStrongboxKey,
     OneoffFillSigintInboxItemTags,
+    OneoffSuggestInboxMessageTags(OneoffSuggestInboxMessageTagsPs),
 }
 
 #[derive(clap::Parser, Debug)]
@@ -918,6 +929,9 @@ async fn async_main(
         }
         Cmd::OneoffFillSigintInboxItemTags => {
             sigint::oneoff::oneoff_fill_sigint_inbox_item_tags(mode).await
+        }
+        Cmd::OneoffSuggestInboxMessageTags(ps) => {
+            sigint::oneoff::oneoff_suggest_inbox_message_tags(mode, &ps).await
         }
     }
 }

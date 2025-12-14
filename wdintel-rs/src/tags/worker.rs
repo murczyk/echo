@@ -1,8 +1,9 @@
-use crate::config::SYSTEM_LOGIN_NAME;
+use crate::config::*;
 use crate::entities::*;
 use crate::error::AppError;
 use crate::rer_importer::body_noheader::NoHeadersBody;
 use crate::types::*;
+use crate::utils::orm::ArrayColumnOps;
 use crate::utils::worker_watch;
 use echo_migration::OnConflict;
 use lazy_static::lazy_static;
@@ -10,7 +11,6 @@ use log::{error, info};
 use regex::Regex;
 use sea_orm::prelude::*;
 use sea_orm::*;
-use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 
 const KEYWORDS_REGEX_MODEL_NAME: &str = "keywords-and-regex 0.1.0";
@@ -18,6 +18,7 @@ const NLP_MODEL_NAME: &str = "nlp-fasttext 0.1.0";
 
 #[derive(FromQueryResult)]
 pub struct SigintInboxItemText {
+    pub id: i64,
     pub body_noheader: Json,
 }
 
@@ -73,49 +74,27 @@ pub async fn suggest_message_tags_worker(
     }
 }
 
-async fn get_message(
-    txn: &DatabaseTransaction,
-) -> Result<Option<(i64, String)>, AppError> {
-    let subquery = r#"
+async fn get_messages(txn: &DatabaseTransaction) -> Result<Vec<i64>, AppError> {
+    let subquery = format!(
+        r#"
         SELECT "sigint_inbox_item_id" FROM "tag_suggestion_worker_queue"
         ORDER BY "sigint_inbox_item_id" 
         FOR UPDATE SKIP LOCKED 
-        LIMIT 1"#;
+        LIMIT {TAG_SUGGEST_WORKER_BATCH_SIZE}"#
+    );
 
-    let expr = Expr::cust(format!("sigint_inbox_item_id = ({subquery})"));
+    let expr = Expr::cust(format!("sigint_inbox_item_id IN ({subquery})"));
 
-    let mut items = tag_suggestion_worker_queue::Entity::delete_many()
+    let items = tag_suggestion_worker_queue::Entity::delete_many()
         .filter(expr)
         .exec_with_returning(txn)
         .await
-        .c(h!())?;
+        .c(h!())?
+        .into_iter()
+        .map(|item| item.sigint_inbox_item_id)
+        .collect();
 
-    if let Some(item) = items.pop() {
-        let sigint_inbox_item_id = item.sigint_inbox_item_id;
-
-        let inbox_item =
-            sigint_inbox_item::Entity::find_by_id(sigint_inbox_item_id)
-                .filter(sigint_inbox_item::Column::BodyNoheader.is_not_null())
-                .select_only()
-                .select_column(sigint_inbox_item::Column::BodyNoheader)
-                .into_model::<SigintInboxItemText>()
-                .one(txn)
-                .await
-                .c(h!())?;
-
-        if let Some(inner) = inbox_item {
-            let parsed_body: NoHeadersBody =
-                serde_json::from_value(inner.body_noheader).c(h!())?;
-
-            let trimmed_lowercase_body: String = RE_TRIM_BODY_PREFIX
-                .replace(&parsed_body.body, "")
-                .to_lowercase();
-
-            return Ok(Some((sigint_inbox_item_id, trimmed_lowercase_body)));
-        }
-    }
-
-    Ok(None)
+    Ok(items)
 }
 
 async fn process_suggest_message_tags(
@@ -125,34 +104,68 @@ async fn process_suggest_message_tags(
     tag_keyword_regex_cache: &Arc<RwLock<TagKeywordRegexCache>>,
 ) -> Result<bool, AppError> {
     let txn = dbx.begin().await.c(h!())?;
-    if let Some((message_id, text)) = get_message(&txn).await.c(h!())? {
-        let mut join_set = JoinSet::new();
 
-        let text = Arc::new(text);
+    let message_ids = get_messages(&txn).await.c(h!())?;
+    if message_ids.is_empty() {
+        Ok(false)
+    } else {
+        process_messages(message_ids, tags, rq, &txn, tag_keyword_regex_cache)
+            .await
+            .c(h!())?;
+        txn.commit().await.c(h!())?;
+        Ok(true)
+    }
+}
 
-        let mut tags_to_predict: HashMap<String, i64> = HashMap::new();
-        for (tag_index, tag) in tags.iter().enumerate() {
-            let tag_id = tag.id;
-            tags_to_predict.insert(tag.label.clone(), tag_id);
-            join_set.spawn(verify_tag(
-                text.clone(),
-                tag_index,
-                tag_id,
-                dbx.clone(),
-                tag_keyword_regex_cache.clone(),
-            ));
-        }
+pub async fn process_messages<C: ConnectionTrait>(
+    message_ids: Vec<i64>,
+    tags: &[tag::Model],
+    rq: &reqwest::Client,
+    dbx: &C,
+    tag_keyword_regex_cache: &Arc<RwLock<TagKeywordRegexCache>>,
+) -> Result<(), AppError> {
+    let inbox_items = sigint_inbox_item::Entity::find()
+        .filter(sigint_inbox_item::Column::Id.eq_any(message_ids))
+        .filter(sigint_inbox_item::Column::BodyNoheader.is_not_null())
+        .select_only()
+        .select_column(sigint_inbox_item::Column::Id)
+        .select_column(sigint_inbox_item::Column::BodyNoheader)
+        .into_model::<SigintInboxItemText>()
+        .all(dbx)
+        .await
+        .c(h!())?;
 
-        let mut message_tags: Vec<sigint_inbox_item_tag::ActiveModel> = vec![];
+    let mut texts: Vec<String> = Vec::with_capacity(inbox_items.len());
+    for item in inbox_items.iter() {
+        let parsed_body: NoHeadersBody =
+            serde_json::from_value(item.body_noheader.clone()).c(h!())?;
 
-        while let Some(join_result) = join_set.join_next().await {
-            let verify_result = join_result.c(h!())?;
-            let (tag_index, tag_id, tag_matches) = verify_result.c(h!())?;
+        let text: String = RE_TRIM_BODY_PREFIX
+            .replace(&parsed_body.body, "")
+            .to_lowercase();
+        texts.push(text);
+    }
 
+    let mut regex_tags: HashSet<(i64, i64)> = HashSet::new();
+    let mut message_tags: Vec<sigint_inbox_item_tag::ActiveModel> = vec![];
+
+    let mut tags_to_predict: HashMap<String, i64> = HashMap::new();
+    for tag in tags.iter() {
+        let tag_id = tag.id;
+        tags_to_predict.insert(tag.label.clone(), tag_id);
+
+        let cache_item =
+            get_regex_sets_for_tag(tag_id, dbx, tag_keyword_regex_cache)
+                .await
+                .c(h!())?;
+
+        for (index, text) in texts.iter().enumerate() {
+            let message_id = inbox_items[index].id;
+            let tag_matches =
+                !cache_item.regex_set_negative.is_match(text.as_str())
+                    && cache_item.regex_set_positive.is_match(text.as_str());
             if tag_matches {
-                let tag = &tags[tag_index];
-                tags_to_predict.remove(&tag.label);
-
+                regex_tags.insert((tag_id, message_id));
                 let login = Some(SYSTEM_LOGIN_NAME.to_string());
                 let model = Some(KEYWORDS_REGEX_MODEL_NAME.to_owned());
                 let model = sigint_inbox_item_tag::ActiveModel {
@@ -165,78 +178,57 @@ async fn process_suggest_message_tags(
                 message_tags.push(model);
             }
         }
+    }
 
-        if !tags_to_predict.is_empty() {
-            let texts = vec![text.as_ref().clone()];
-            let tags_filtered: HashSet<String> =
-                tags_to_predict.keys().cloned().collect();
+    let response = crate::nlp::predict_tags(
+        rq,
+        texts,
+        Some(tags_to_predict.keys().cloned().collect()),
+    )
+    .await
+    .c(h!())?;
 
-            let mut response =
-                crate::nlp::predict_tags(rq, texts, Some(tags_filtered))
-                    .await
-                    .c(h!())?;
-            if let Some(result) = response.pop() {
-                for (key, value) in &result.0 {
-                    let tag_id = tags_to_predict[key];
-                    let confidence: f64 = *value;
-                    let login = Some(SYSTEM_LOGIN_NAME.to_string());
-                    let model = Some(NLP_MODEL_NAME.to_owned());
-                    let model = sigint_inbox_item_tag::ActiveModel {
-                        tag_id: Set(tag_id),
-                        sigint_inbox_item_id: Set(message_id),
-                        login: Set(login),
-                        model: Set(model),
-                        confidence: Set(confidence),
-                        ..Default::default()
-                    };
-                    message_tags.push(model);
-                }
+    for (index, result) in response.iter().enumerate() {
+        let message_id = inbox_items[index].id;
+        for (key, value) in &result.0 {
+            let tag_id = tags_to_predict[key];
+            if !regex_tags.contains(&(tag_id, message_id)) {
+                let confidence: f64 = *value;
+                let login = Some(SYSTEM_LOGIN_NAME.to_string());
+                let model = Some(NLP_MODEL_NAME.to_owned());
+                let model = sigint_inbox_item_tag::ActiveModel {
+                    tag_id: Set(tag_id),
+                    sigint_inbox_item_id: Set(message_id),
+                    login: Set(login),
+                    model: Set(model),
+                    confidence: Set(confidence),
+                    ..Default::default()
+                };
+                message_tags.push(model);
             }
         }
-
-        sigint_inbox_item_tag::Entity::insert_many(message_tags)
-            .on_conflict(
-                OnConflict::columns([
-                    sigint_inbox_item_tag::Column::SigintInboxItemId,
-                    sigint_inbox_item_tag::Column::TagId,
-                ])
-                .do_nothing()
-                .to_owned(),
-            )
-            .do_nothing()
-            .exec(dbx)
-            .await
-            .c(h!())?;
-
-        txn.commit().await.c(h!())?;
-        Ok(true)
-    } else {
-        Ok(false)
     }
+
+    sigint_inbox_item_tag::Entity::insert_many(message_tags)
+        .on_conflict(
+            OnConflict::columns([
+                sigint_inbox_item_tag::Column::SigintInboxItemId,
+                sigint_inbox_item_tag::Column::TagId,
+            ])
+            .do_nothing()
+            .to_owned(),
+        )
+        .do_nothing()
+        .exec(dbx)
+        .await
+        .c(h!())?;
+
+    Ok(())
 }
 
-async fn verify_tag(
-    haystack: Arc<String>,
-    tag_index: usize,
+async fn get_regex_sets_for_tag<C: ConnectionTrait>(
     tag_id: i64,
-    dbx: DatabaseConnection,
-    tag_keyword_regex_cache: Arc<RwLock<TagKeywordRegexCache>>,
-) -> Result<(usize, i64, bool), AppError> {
-    let cache_item =
-        get_regex_sets_for_tag(tag_id, &dbx, &tag_keyword_regex_cache)
-            .await
-            .c(h!())?;
-
-    let tag_matches =
-        !cache_item.regex_set_negative.is_match(haystack.as_str())
-            && cache_item.regex_set_positive.is_match(haystack.as_str());
-
-    Ok((tag_index, tag_id, tag_matches))
-}
-
-async fn get_regex_sets_for_tag(
-    tag_id: i64,
-    dbx: &DatabaseConnection,
+    dbx: &C,
     tag_keyword_regex_cache: &Arc<RwLock<TagKeywordRegexCache>>,
 ) -> Result<TagKeywordRegexCacheItem, AppError> {
     {
