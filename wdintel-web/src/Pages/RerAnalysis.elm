@@ -238,14 +238,18 @@ init route _ =
                 Nothing ->
                     m2
     in
-    ( m3
+    let
+        ( m4, palitrasEff ) =
+            loadPalitrasIfNeeded m3
+    in
+    ( m4
     , E.batch
         [ E.getCurrentTime InitGotTime
         , E.getAnalysisSavedFilters SavedFiltersGot
         , E.getTags GotTags
         , E.map RowsMsg Shared.Components.RerMessage.init
         , E.sendCmd <| Ports.rer_analysis_saveQueryState (B.rerAnalysisQueryStateEncoder initialQueryState)
-        , E.sendCmd <| Api.palitra_list_detailed GotPalitras
+        , palitrasEff
         ]
     )
 
@@ -337,6 +341,22 @@ cmdLoadCallsignGraph model { dtFromPosix, dtToPosix } =
 
     else
         E.none
+
+
+loadPalitrasIfNeeded : Model -> ( Model, Effect Msg )
+loadPalitrasIfNeeded model =
+    if model.unfoldMapBlock then
+        case model.palitras of
+            NotAsked ->
+                ( { model | palitras = Loading }
+                , E.sendCmd <| Api.palitra_list_detailed GotPalitras
+                )
+
+            _ ->
+                ( model, E.none )
+
+    else
+        ( model, E.none )
 
 
 loadSumTableOnly : Model -> ( Model, Effect Msg )
@@ -496,7 +516,11 @@ loadCoreStats model =
                         _ ->
                             ( m2, E.none )
             in
-            ( { m3
+            let
+                ( m4, palitrasEff ) =
+                    loadPalitrasIfNeeded m3
+            in
+            ( { m4
                 | loadingInboxMessages = True
                 , loadingCallsignGraph =
                     if model.unfoldCallsignGraph then
@@ -523,6 +547,7 @@ loadCoreStats model =
                 , cmdLoadCallsignGraph model { dtFromPosix = dtFromPosix, dtToPosix = dtToPosix }
                 , eff2
                 , eff3
+                , palitrasEff
                 ]
             )
 
@@ -1816,10 +1841,15 @@ update user shared route msg model =
                         _ ->
                             ( model, E.none )
             in
-            ( { m2
-                | unfoldMapBlock = unfoldMapBlock
-              }
-            , eff2
+            let
+                m3 =
+                    { m2 | unfoldMapBlock = unfoldMapBlock }
+
+                ( m4, palitrasEff ) =
+                    loadPalitrasIfNeeded m3
+            in
+            ( m4
+            , E.batch [ eff2, palitrasEff ]
             )
 
         GotCallsignGraph (Err e) ->
