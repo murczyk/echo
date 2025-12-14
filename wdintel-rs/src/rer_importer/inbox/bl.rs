@@ -125,28 +125,6 @@ pub async fn aggregate_to_inbox_messages(
         .into_iter()
         .map(|bm| bm.signal_message_id)
         .collect::<HashSet<_>>();
-    let tags = sigint_inbox_item_tag::Entity::find()
-        .filter(
-            sigint_inbox_item_tag::Column::SigintInboxItemId
-                .eq_any(message_ids.clone()),
-        )
-        .into_model::<InboxMessageTagDesc>()
-        .all(&env.dbx)
-        .await
-        .context(h!())?;
-
-    let mut tags_map: HashMap<i64, Vec<InboxMessageTag>> = HashMap::new();
-    for tag in tags {
-        tags_map.entry(tag.sigint_inbox_item_id).or_default().push(
-            InboxMessageTag {
-                id: tag.id,
-                tag_id: tag.tag_id,
-                confidence: tag.confidence,
-                login: tag.login,
-                model: tag.model,
-            },
-        );
-    }
 
     let mut group_query = signal_message_group::Entity::find().filter(
         signal_message_group::Column::SignalMessageId
