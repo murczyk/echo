@@ -6,6 +6,7 @@ use crate::event_stream::types::*;
 use crate::types::*;
 use actix_web::post;
 use actix_web::web::Json;
+use itertools::Itertools;
 use sea_orm::{
     sea_query::{extension::postgres::PgExpr, Expr},
     *,
@@ -24,6 +25,102 @@ pub async fn list_signals(
         .await
         .c(h!())?;
     const LIMIT: u64 = 100000;
+
+    let signals = list_signals_impl(&env.dbx, &req.0, Some(LIMIT))
+        .await
+        .c(h!())?;
+
+    Ok(Json(ListSignalsRsp {
+        show_load_more: signals.len() as u64 == LIMIT,
+        signals,
+    }))
+}
+
+#[post("/api/sigint/signals/csv")]
+pub async fn list_signals_csv(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<ListSignalsReq>,
+    http_req: actix_web::HttpRequest,
+) -> Result<actix_web::HttpResponse, AppError> {
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .c(h!())?;
+
+    let signals = list_signals_impl(&env.dbx, &req.0, None).await.c(h!())?;
+    let sigint_unit_ids: Vec<i64> = signals
+        .iter()
+        .flat_map(|signal| signal.unit.clone())
+        .unique()
+        .collect();
+
+    let units: HashMap<i64, String> = sigint_unit::Entity::find()
+        .filter(sigint_unit::Column::Id.is_in(sigint_unit_ids))
+        .all(&env.dbx)
+        .await
+        .context(h!())?
+        .into_iter()
+        .map(|unit| (unit.id, unit.name))
+        .collect();
+
+    let temp_file = tempfile::Builder::new()
+        .prefix("sigint-signals")
+        .suffix(".csv")
+        .rand_bytes(5)
+        .tempfile()
+        .context(h!())?;
+
+    let temp_file_name = temp_file.path().to_str().context(h!())?;
+    {
+        #[derive(Serialize, Debug)]
+        struct SignalCsvRow<'a> {
+            pub id: i64,
+            pub text: String,
+            pub meaning: Option<String>,
+            pub unit_id: Option<i64>,
+            pub unit_name: Option<&'a str>,
+            pub active: bool,
+            pub coordinates: Option<String>,
+            pub created_at: String,
+        }
+
+        let tz = crate::config::get_tz();
+        let mut wtr = csv::Writer::from_path(temp_file_name).c(h!())?;
+        for signal in signals.into_iter() {
+            let created_at =
+                chrono::DateTime::from_timestamp_millis(signal.created_at)
+                    .unwrap();
+            let row = SignalCsvRow {
+                id: signal.id,
+                text: signal.text,
+                meaning: signal.meaning,
+                unit_id: signal.unit,
+                unit_name: signal
+                    .unit
+                    .and_then(|id| units.get(&id).map(String::as_str)),
+                active: signal.active,
+                coordinates: signal.coordinates,
+                created_at: created_at
+                    .with_timezone(&tz)
+                    .format("%Y-%m-%d %H:%M:%S")
+                    .to_string(),
+            };
+            wtr.serialize(&row).c(h!())?;
+        }
+        wtr.flush().c(h!())?;
+    }
+
+    let file = actix_files::NamedFile::open_async(temp_file_name)
+        .await
+        .c(h!())?;
+    Ok(file.into_response(&http_req))
+}
+
+async fn list_signals_impl(
+    dbx: &DatabaseConnection,
+    req: &ListSignalsReq,
+    limit: Option<u64>,
+) -> Result<Vec<Signal>, AppError> {
     let q = sigint_signal::Entity::find()
         .find_also_related(sigint_unit::Entity)
         .filter(sigint_signal::Column::Deleted.eq(false))
@@ -53,18 +150,15 @@ pub async fn list_signals(
         }
     });
     let signals: Vec<types::Signal> = q
-        .limit(LIMIT)
-        .all(&env.dbx)
+        .limit(limit)
+        .all(dbx)
         .await
         .c(h!())?
         .into_iter()
-        .map(move |(signal, unit)| render_signal(&signal, unit))
+        .map(move |(signal, unit)| render_signal(signal, unit))
         .collect();
 
-    Ok(Json(ListSignalsRsp {
-        show_load_more: signals.len() as u64 == LIMIT,
-        signals,
-    }))
+    Ok(signals)
 }
 
 pub async fn find_signal(
@@ -291,16 +385,16 @@ pub async fn delete_signal(
 }
 
 pub fn render_signal(
-    signal: &sigint_signal::Model,
+    signal: sigint_signal::Model,
     unit: Option<sigint_unit::Model>,
 ) -> Signal {
     Signal {
         id: signal.id,
-        text: signal.text.clone(),
-        meaning: signal.meaning.clone(),
+        text: signal.text,
+        meaning: signal.meaning,
         unit: signal.unit,
         active: unit.is_none_or(|u| u.active),
-        coordinates: signal.coordinates.clone(),
+        coordinates: signal.coordinates,
         created_at: signal.created_at.and_utc().timestamp_millis(),
     }
 }

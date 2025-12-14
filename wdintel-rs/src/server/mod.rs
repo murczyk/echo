@@ -536,6 +536,7 @@ pub async fn main_server(
             .service(crate::sigint::source::list_sources)
             .service(crate::sigint::signal::create_signal)
             .service(crate::sigint::signal::list_signals)
+            .service(crate::sigint::signal::list_signals_csv)
             .service(crate::sigint::signal::delete_signal)
             .service(crate::sigint::signal::update_signal)
             .service(crate::sigint::signal::signal_unit_stats)

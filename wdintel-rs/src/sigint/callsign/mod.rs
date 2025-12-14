@@ -52,6 +52,37 @@ pub async fn list_callsigns_csv(
 
     let res = list_callsigns_impl(&env.dbx, &req.0).await.c(h!())?;
 
+    let sigint_unit_ids: Vec<i64> = res
+        .iter()
+        .map(|callsign| callsign.unit_id)
+        .unique()
+        .collect();
+
+    let source_ids: Vec<i64> = res
+        .iter()
+        .flat_map(|callsign| callsign.source_id)
+        .map(|id| id as i64)
+        .unique()
+        .collect();
+
+    let units: HashMap<i64, String> = sigint_unit::Entity::find()
+        .filter(sigint_unit::Column::Id.is_in(sigint_unit_ids))
+        .all(&env.dbx)
+        .await
+        .context(h!())?
+        .into_iter()
+        .map(|unit| (unit.id, unit.name))
+        .collect();
+
+    let sources: HashMap<i64, String> = source::Entity::find()
+        .filter(source::Column::Id.is_in(source_ids))
+        .all(&env.dbx)
+        .await
+        .context(h!())?
+        .into_iter()
+        .map(|source| (source.id, source.name))
+        .collect();
+
     let temp_file = tempfile::Builder::new()
         .prefix("sigint-callsigns")
         .suffix(".csv")
@@ -61,9 +92,51 @@ pub async fn list_callsigns_csv(
 
     let temp_file_name = temp_file.path().to_str().context(h!())?;
     {
+        #[derive(Serialize)]
+        pub struct CallsignCsvRow<'se> {
+            pub id: i64,
+            pub callsign: String,
+            pub position: String,
+            pub comment: String,
+            pub unit_id: i64,
+            pub unit_name: &'se str,
+            pub active: bool,
+            pub source_id: Option<i32>,
+            pub source_name: Option<&'se str>,
+            pub created_at: String,
+            pub developing: bool,
+            /// Set when source_id points to "radio" (id=2)
+            pub radio_freq: Option<String>,
+        }
+        let tz = crate::config::get_tz();
         let mut wtr = csv::Writer::from_path(temp_file_name).c(h!())?;
-        for row in res.iter() {
-            wtr.serialize(row).c(h!())?;
+        for callsign in res.into_iter() {
+            let created_at =
+                chrono::DateTime::from_timestamp_millis(callsign.created_at)
+                    .unwrap();
+            let row = CallsignCsvRow {
+                id: callsign.id,
+                callsign: callsign.callsign,
+                position: callsign.position,
+                comment: callsign.comment,
+                unit_id: callsign.unit_id,
+                unit_name: units
+                    .get(&callsign.unit_id)
+                    .map(String::as_str)
+                    .unwrap_or(""),
+                active: callsign.active,
+                source_id: callsign.source_id,
+                source_name: callsign.source_id.and_then(|id| {
+                    sources.get(&(id as i64)).map(String::as_str)
+                }),
+                created_at: created_at
+                    .with_timezone(&tz)
+                    .format("%Y-%m-%d %H:%M:%S")
+                    .to_string(),
+                developing: callsign.developing,
+                radio_freq: callsign.radio_freq,
+            };
+            wtr.serialize(&row).c(h!())?;
         }
         wtr.flush().c(h!())?;
     }
@@ -199,11 +272,10 @@ async fn list_callsigns_impl(
     let callsigns = callsigns.limit(req.limit).all(dbx).await.c(h!())?;
     let mut res = vec![];
     for (callsign, unit) in callsigns {
-        let mut c = render_callsign(&callsign, unit)?;
+        let mut c = render_callsign(unit, callsign)?;
         if let Some(changelog) = sigint_callsign_changelog::Entity::find()
             .filter(
-                sigint_callsign_changelog::Column::SigintCallsignId
-                    .eq(callsign.id),
+                sigint_callsign_changelog::Column::SigintCallsignId.eq(c.id),
             )
             .order_by_desc(sigint_callsign_changelog::Column::Id)
             .one(dbx)
@@ -380,11 +452,11 @@ pub async fn create_callsign(
 
     Ok(Json(
         render_callsign(
-            &callsign,
             sigint_unit::Entity::find_by_id(callsign.unit_id)
                 .one(&env.dbx)
                 .await
                 .context(h!())?,
+            callsign,
         )
         .context(h!())?,
     ))
@@ -417,11 +489,11 @@ pub async fn update_callsign(
     fanout(&mut env.redis.clone(), event).await.context(h!())?;
 
     Ok(Json(render_callsign(
-        &callsign,
         sigint_unit::Entity::find_by_id(callsign.unit_id)
             .one(&env.dbx)
             .await
             .c(h!())?,
+        callsign,
     )?))
 }
 
@@ -477,29 +549,29 @@ pub async fn delete_callsign(
     .c(h!())?;
 
     Ok(Json(render_callsign(
-        &callsign,
         sigint_unit::Entity::find_by_id(callsign.unit_id)
             .one(&env.dbx)
             .await
             .c(h!())?,
+        callsign,
     )?))
 }
 
 pub fn render_callsign(
-    callsign: &sigint_callsign::Model,
     unit: Option<sigint_unit::Model>,
+    callsign: sigint_callsign::Model,
 ) -> Result<Callsign, AppError> {
     Ok(Callsign {
         id: callsign.id,
-        callsign: callsign.callsign.clone(),
-        position: callsign.position.clone(),
+        callsign: callsign.callsign,
+        position: callsign.position,
         unit_id: callsign.unit_id,
         active: unit.is_none_or(|u| u.active),
         source_id: callsign.source_id,
-        comment: callsign.comment.clone(),
+        comment: callsign.comment,
         created_at: callsign.created_at.and_utc().timestamp_millis(),
         developing: callsign.developing,
-        radio_freq: Some(callsign.radio_freq.clone()),
+        radio_freq: Some(callsign.radio_freq),
     })
 }
 
