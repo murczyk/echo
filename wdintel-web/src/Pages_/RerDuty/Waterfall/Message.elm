@@ -22,6 +22,7 @@ import Shared.Components.Popup as Popup
 import Shared.Components.RerMessage
 import Shared.Components.Watermark as Watermark
 import Shared.MarkedText
+import String
 import Task
 import Time
 import Time.Extra
@@ -115,6 +116,7 @@ datasourceKind message datasources =
                         DKSignal
            )
 
+
 renderImage : String -> Html msg
 renderImage image =
     div [ style "display" "inline-block" ]
@@ -132,6 +134,7 @@ renderImage image =
             ]
         ]
 
+
 renderAttachment : MessageMediaInfo -> Html msg
 renderAttachment attachment =
     let
@@ -147,6 +150,7 @@ renderAttachment attachment =
         [ i [ class "bi bi-download me-2" ] []
         , text displayFileName
         ]
+
 
 renderMedia : MessageMediaInfo -> Maybe (Html msg)
 renderMedia attachment =
@@ -165,12 +169,16 @@ renderMedia attachment =
     in
     if isImage then
         Just <| renderImage attachment.href
+
     else if isMp3 then
         Just <| renderAttachment attachment
+
     else if Config.featureHideDocuments then
         Nothing
+
     else
         Just <| renderAttachment attachment
+
 
 clipboardMessage :
     B.InboxMessage
@@ -283,7 +291,7 @@ type InternalMsg
     | EditCancel
     | EditSave
     | UnfoldDuplicate
-    | InboxSubmitDone Int (Result ApiError ())
+    | CommentSaveDone Int (Result ApiError ())
 
 
 type OutMsg
@@ -399,7 +407,7 @@ update vps msg model =
 
                 else
                     Api.inbox_message_tags_add (always NoOp) { messageId = msgId, tagId = tagId }
-            , case Shared.Components.RerMessage.toggleTag msgId tagId [ vps.message ] |> List.head of
+            , case Shared.Components.RerMessage.toggleTag msgId tagId (Just vps.user.name) [ vps.message ] |> List.head of
                 Just message_ ->
                     message_
 
@@ -476,19 +484,33 @@ update vps msg model =
                         Nothing ->
                             E.none
 
-                        Just v ->
-                            Api.rer_importer_inbox_submit (InboxSubmitDone model.id)
-                                { messages = [ v ] }
+                        Just ( msgId, messageVal ) ->
+                            let
+                                commentCleaned =
+                                    messageVal.extendedForm
+                                        |> Maybe.map String.trim
+                                        |> Maybe.andThen
+                                            (\v ->
+                                                if v == "" then
+                                                    Nothing
+
+                                                else
+                                                    Just v
+                                            )
+                            in
+                            Api.rer_importer_comment_save (CommentSaveDone model.id)
+                                { messageId = msgId, comment = commentCleaned }
+                                |> E.sendCmd
             in
             ( { model | isEditPopupOpen = False }
             , cmds
             , messageToReturn
             )
 
-        InboxSubmitDone _ (Err e) ->
+        CommentSaveDone _ (Err e) ->
             ( model, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Повідомлення не збереглося" e, vps.message )
 
-        InboxSubmitDone _ (Ok ()) ->
+        CommentSaveDone _ (Ok ()) ->
             ( { model | edited = Nothing, isEditPopupOpen = False }
             , E.none
             , vps.message
@@ -1080,6 +1102,7 @@ rightColumn ( messageId, message ) ps model =
                                 (if not model.isDuplicate || model.isUnfolded then
                                     [ tagsBlock
                                         message.tags
+                                        message.inboxTags
                                         (ForSelf << ToggleTag model.id)
                                         ps.tags
                                     ]

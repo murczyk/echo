@@ -358,6 +358,18 @@ rer_importer_inbox_submit toMsg req =
         }
 
 
+rer_importer_comment_save :
+    (Result ApiError () -> msg)
+    -> InboxCommentSaveReq
+    -> Cmd msg
+rer_importer_comment_save toMsg req =
+    Http.post
+        { url = "/api/rer-importer/comment-save"
+        , body = Http.jsonBody (inboxCommentSaveReqEncoder req)
+        , expect = leExpectJson toMsg (Decode.succeed ())
+        }
+
+
 rer_importer_inbox_cursor :
     (Result ApiError (Maybe Int) -> msg)
     -> Cmd msg

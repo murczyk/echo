@@ -15,6 +15,10 @@ pub async fn upsert_tags(
     inbox_message: &InboxMessage,
     txn: &impl ConnectionTrait,
 ) -> Result<(), AppError> {
+    if inbox_message.inbox_tags.is_none() && inbox_message.tags.is_none() {
+        return Ok(());
+    }
+
     let tags: Vec<sigint_inbox_item_tag::Model> =
         sigint_inbox_item_tag::Entity::find()
             .filter(

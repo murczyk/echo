@@ -166,7 +166,7 @@ init route _ =
                 { state = Select.initState (Select.selectIdentifier "selectReportAdjacentFreqsRange")
                 , items = Config.adjacentFreqsRangeOptions |> List.map (\x -> Select.basicMenuItem { item = x, label = String.fromFloat (x * 1000) ++ " кГц" })
                 , selected = 0
-                }            
+                }
 
             -- , reportIframeUrl = Nothing
             , reportDownloadInProgress = False
@@ -1663,6 +1663,7 @@ update user shared route msg model =
                 newVisible =
                     if List.member palitraId model.palitrasVisible then
                         List.filter (\id -> id /= palitraId) model.palitrasVisible
+
                     else
                         palitraId :: model.palitrasVisible
             in
@@ -3245,7 +3246,6 @@ update user shared route msg model =
                                 _ ->
                                     reportAdjacentFreqsRangeSelect.selected
                     }
-
             in
             ( { model | reportAdjacentFreqsRangeSelect = a2 }, E.none )
 
@@ -3314,6 +3314,7 @@ subscriptions : Model -> Sub Msg
 subscriptions _ =
     Sub.none
 
+
 reportTemplateToApiType : Model -> ReportTemplate -> Maybe B.ReportType
 reportTemplateToApiType model template =
     case template of
@@ -3350,6 +3351,7 @@ reportTemplateToApiType model template =
 
         RTDigest ->
             Just B.Digest
+
 
 
 --VIEW

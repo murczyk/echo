@@ -269,6 +269,14 @@ pub struct InboxSubmitReq {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub struct InboxCommentSaveReq {
+    pub message_id: i64,
+    pub comment: Option<String>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct RerImporterCallsignsReq {
     pub filter: Option<String>,
 }

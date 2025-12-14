@@ -367,6 +367,7 @@ pub async fn main_server(
             .service(crate::rer_importer::inbox::get_inbox_map)
             .service(crate::rer_importer::inbox::inbox_messages_count)
             .service(crate::rer_importer::inbox::delete_message)
+            .service(crate::rer_importer::inbox::comment_save)
             .service(crate::rer_importer::inbox::inbox_submit)
             .service(crate::rer_importer::inbox::inbox_cursor)
             .service(crate::rer_importer::inbox::update_inbox_cursor)

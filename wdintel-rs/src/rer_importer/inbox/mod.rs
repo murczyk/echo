@@ -404,6 +404,84 @@ async fn inbox_submit(
     }
 }
 
+#[post("/api/rer-importer/comment-save")]
+async fn comment_save(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<InboxCommentSaveReq>,
+) -> Result<Json<()>, AppError> {
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
+        .await
+        .c(h!())?;
+    let sigint_groups =
+        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
+            .await
+            .c(h!())?;
+
+    let _ = SignalMessage::find_by_id(req.message_id)
+        .join(
+            JoinType::LeftJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
+        .filter(signal_message::Column::Deleted.eq(false))
+        .filter(datasource_group::Column::GroupMasterKey.eq_any(sigint_groups))
+        .one(&env.dbx)
+        .await
+        .c(h!())?
+        .ok_or(AppError::NotFound)?;
+
+    let txn = env.dbx.begin().await.c(h!())?;
+    let message_ids =
+        find_all_duplicates(&txn, req.message_id).await.c(h!())?;
+    let comment = req.comment.as_ref().map(|c| c.trim()).unwrap_or("");
+    for id in message_ids {
+        if comment.is_empty() {
+            sigint_comment::Entity::delete_many()
+                .filter(sigint_comment::Column::SignalMessageId.eq(id))
+                .filter(sigint_comment::Column::Login.eq(login.clone()))
+                .exec(&txn)
+                .await
+                .c(h!())?;
+        } else {
+            let m_comment = sigint_comment::Entity::find()
+                .filter(sigint_comment::Column::SignalMessageId.eq(id))
+                .filter(sigint_comment::Column::Login.eq(login.clone()))
+                .one(&txn)
+                .await
+                .c(h!())?;
+            match m_comment {
+                None => {
+                    sigint_comment::ActiveModel {
+                        id: NotSet,
+                        signal_message_id: Set(id),
+                        login: Set(login.clone()),
+                        comment: Set(comment.to_string()),
+                        created_at: NotSet,
+                    }
+                    .insert(&txn)
+                    .await
+                    .c(h!())?;
+                }
+                Some(comment_model) => {
+                    sigint_comment::ActiveModel {
+                        id: Set(comment_model.id),
+                        signal_message_id: Set(id),
+                        login: Set(login.clone()),
+                        comment: Set(comment.to_string()),
+                        created_at: NotSet,
+                    }
+                    .update(&txn)
+                    .await
+                    .c(h!())?;
+                }
+            }
+        }
+    }
+    txn.commit().await.c(h!())?;
+    Ok(Json(()))
+}
+
 async fn do_submit_inbox(
     user: Identity,
     env: &Data<Env>,
