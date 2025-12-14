@@ -8,6 +8,7 @@ pub const DEFAULT_PG_PORT: u16 = 5432;
 pub const DEFAULT_PG_USER: &str = "wd";
 pub const DEFAULT_PG_PASSWORD: &str = "fee_-_-_-FnoeKFBeebu87bf";
 pub const DEFAULT_PG_DBNAME: &str = "wd";
+pub const PG_SLOW_STATEMENT_THRESHOLD_MS: u64 = 5_000;
 pub const NLP_ADDR: &str = "http://127.0.0.1:5000";
 pub const RQ_TIMEOUT: u64 = 10;
 // pub const CALLSIGNS_SEEN_LATELY_PERIOD_DAYS: i64 = 1;

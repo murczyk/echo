@@ -540,7 +540,7 @@ async fn new_pg_pool_from_conn_string(
         .sqlx_logging_level(LevelFilter::Debug)
         .sqlx_slow_statements_logging_settings(
             LevelFilter::Warn,
-            core::time::Duration::from_millis(1000),
+            core::time::Duration::from_millis(PG_SLOW_STATEMENT_THRESHOLD_MS),
         );
 
     let db = sea_orm::Database::connect(opt).await.c(h!())?;
