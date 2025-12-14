@@ -369,6 +369,44 @@ where
     Ok(q)
 }
 
+fn get_related_tag_items_filter(
+    unique_tags: BTreeSet<i64>,
+    tag_filter_option: TagFilterOption,
+) -> SimpleExpr {
+    let expected_count = unique_tags.len();
+
+    let q = sigint_inbox_item_tag::Entity::find()
+        .filter(
+            Expr::col((
+                sigint_inbox_item_tag::Entity,
+                sigint_inbox_item_tag::Column::SigintInboxItemId,
+            ))
+            .equals((sigint_inbox_item::Entity, sigint_inbox_item::Column::Id)),
+        )
+        .filter(sigint_inbox_item_tag::Column::TagId.is_in(unique_tags))
+        .filter(
+            sigint_inbox_item_tag::Column::Confidence
+                .gte(TAG_MINIMUM_CONFIDENCE),
+        )
+        .select_only();
+
+    match tag_filter_option {
+        TagFilterOption::OneOfTags => {
+            Expr::exists(q.expr(Expr::value(1)).into_query())
+        }
+        TagFilterOption::AllTags => {
+            let subquery = q
+                .expr(Expr::col(sigint_inbox_item_tag::Column::Id).count())
+                .into_query()
+                .to_string(PostgresQueryBuilder);
+            // see https://github.com/SeaQL/sea-query/issues/951
+            // can't compare a scalar count subquery with a literal
+            let expr = format!("({subquery}) = {expected_count}");
+            Expr::cust(expr)
+        }
+    }
+}
+
 pub fn filter_selected_tags<Q>(
     q: Q,
     selected_tags: &Option<Vec<i64>>,
@@ -386,18 +424,14 @@ where
     let mut m_inner_expr = None;
     if let Some(selected_tags) = selected_tags.as_ref() {
         if !selected_tags.is_empty() {
-            match filter_tags_option.unwrap_or(TagFilterOption::OneOfTags) {
-                TagFilterOption::OneOfTags => {
-                    m_inner_expr = Some(SimpleExpr::Custom(
-                        cond_json_contains_oneof_i64("tags", selected_tags),
-                    ));
-                }
-                TagFilterOption::AllTags => {
-                    m_inner_expr = Some(SimpleExpr::Custom(
-                        cond_json_contains_all_i64("tags", selected_tags),
-                    ));
-                }
-            }
+            let unique_tags: BTreeSet<i64> =
+                selected_tags.iter().cloned().collect();
+            let tag_filter_option =
+                filter_tags_option.unwrap_or(TagFilterOption::OneOfTags);
+            m_inner_expr = Some(get_related_tag_items_filter(
+                unique_tags,
+                tag_filter_option,
+            ));
         }
     }
     if or_bookmarked == &Some(true) {

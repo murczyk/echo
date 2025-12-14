@@ -495,6 +495,7 @@ enum Cmd {
     OneoffDisableIm,
     OneoffCountGroupBatches,
     OneoffGenerateStrongboxKey,
+    OneoffFixSigintInboxItemTags,
 }
 
 #[derive(clap::Parser, Debug)]
@@ -914,6 +915,9 @@ async fn async_main(
             let key = storage::generate_strongbox_key_b64();
             println!("{key}");
             Ok(())
+        }
+        Cmd::OneoffFixSigintInboxItemTags => {
+            sigint::oneoff::oneoff_fill_sigint_inbox_item_tag(mode).await
         }
     }
 }

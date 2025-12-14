@@ -175,6 +175,7 @@ mod m20251124_084954_signal_message_media;
 mod m20251124_145441_add_group_batch;
 mod m20251127_112149_delete_signal_attachments;
 mod m20251129_112846_sigint_inbox_item_tags_many_to_many;
+mod m20251129_124751_sigint_inbox_item_tags_unique;
 mod m20251206_234500_add_signal_message_indexes;
 
 pub struct Migrator;
@@ -358,6 +359,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20251124_145441_add_group_batch::Migration),
             Box::new(m20251127_112149_delete_signal_attachments::Migration),
             Box::new(m20251129_112846_sigint_inbox_item_tags_many_to_many::Migration),
+            Box::new(m20251129_124751_sigint_inbox_item_tags_unique::Migration),
             Box::new(m20251206_234500_add_signal_message_indexes::Migration),
         ]
     }

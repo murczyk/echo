@@ -101,6 +101,7 @@ pub const PALITRA_STORAGE_DIR_NAME: &str = "palitra_assets";
 pub const RER_DUTY_MAX_DAYS: i64 = 3;
 pub const RER_IMPORTER_BOOKMARK_LIST_LIMIT: u64 = 100;
 pub const RER_IMPORTER_IMPORTANT_LIST_LIMIT: u64 = 100;
+pub const TAG_MINIMUM_CONFIDENCE: f64 = 0.8;
 
 /// Dynamic config that's different on different deployments
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
