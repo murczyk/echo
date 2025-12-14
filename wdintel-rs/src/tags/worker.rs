@@ -169,7 +169,7 @@ async fn process_suggest_message_tags(
         if !tags_to_predict.is_empty() {
             let texts = vec![text.as_ref().clone()];
             let tags_filtered: HashSet<String> =
-                tags_to_predict.keys().map(|label| label.clone()).collect();
+                tags_to_predict.keys().cloned().collect();
 
             let mut response =
                 crate::nlp::predict_tags(rq, texts, Some(tags_filtered))
