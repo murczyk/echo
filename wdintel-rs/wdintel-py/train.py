@@ -4,7 +4,6 @@ import os
 import fasttext
 from datasets import load_dataset, Dataset, DatasetDict, Features, ClassLabel, Value, Sequence
 import numpy as np
-from sklearn.metrics import classification_report
 import matplotlib.pyplot as plt
 from sklearn.metrics import precision_recall_curve, average_precision_score
 
@@ -223,11 +222,9 @@ def test_models(splits: list[DatasetDict], models):
         y_true = np.array(res['label'])
         y_pred = np.array(res['y_pred'])
         y_scores = np.array(res['y_scores'])
-        print(f'classification_report model {label_name}:')
-        print(classification_report(y_true, y_pred, labels=[1, 0], target_names=['positive', 'negative']))
 
         precision, recall, thresholds = precision_recall_curve(y_true, y_scores)
-        label_recalls.append(recall)
+        label_recalls.append(recall[:-1])
         label_thresholds.append(thresholds)
         ap = average_precision_score(y_true, y_scores)
         plt.plot(recall, precision, label=f"{label_name} (AP={ap:.3f})")
@@ -244,11 +241,11 @@ def test_models(splits: list[DatasetDict], models):
     plt.figure(figsize=(12, 10))
     for label_index, label_name in label_dict.items():
         recall = label_recalls[label_index]
-        thresholds = np.insert(label_thresholds[label_index], 1.0, axis=0)
+        thresholds = label_thresholds[label_index]
         indexes = np.argwhere(recall >= 0.8)
         best_threshold = np.max(thresholds[indexes])
 
-        plt.plot(recall, np.insert(thresholds, 0, 1.0, axis=0), label=f"{label_name} (0.8={best_threshold:.3f})")
+        plt.plot(recall, thresholds, label=f"{label_name} (0.8={best_threshold:.3f})")
 
     plt.grid(True)
     plt.xlabel("Recall")
