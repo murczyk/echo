@@ -722,6 +722,7 @@ deploy-echo-ai:
     if [[ "{{ server }}" == "" ]]; then
         just _print-servers; exit 1;
     fi
+    . deploy/utils.sh
     ensure_nonempty "server" "{{ server }}"
     just ai-sync-from-cloud
     [ -f target/debian/echo-ai_0.1.0-1_amd64.deb ] || cargo deb -p echo-ai --no-build
