@@ -444,7 +444,8 @@ pub struct OneoffSuggestInboxMessageTagsPs {
 enum Cmd {
     Server(ServerPs),
     GenElm,
-    Migration,
+    #[command(visible_alias = "migration")]
+    Migrate,
     ExportUnit(ExportUnitPs),
     ImportUnit(ImportUnitPs),
     RenewTailscaleCert(RenewTailscaleCertPs),
@@ -760,7 +761,7 @@ async fn async_main(
                 .await
         }
         Cmd::OneoffFixKmz(ps) => kml::oneoff_fix_kml_main(mode, &ps).await,
-        Cmd::Migration => migration::run_migration(mode).await,
+        Cmd::Migrate => migration::run_migration_1(mode).await,
         Cmd::RenewTailscaleCert(ps) => {
             renew_tailscale_cert(mode, ps.force).await
         }

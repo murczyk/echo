@@ -852,8 +852,12 @@ oneoff-import-gdocs:
     # ssh echo-donetsk '/usr/bin/wdintel-rs --mode=live oneoff-import-callsigns-gdoc'
     echo "DONE. Now redeploy all the sigint workers"
 
+# WARNING! ECHO-IM migrations are not applied here. To apply ECHO-IM migrations too, run `cargo run -p wdintel-rs -- --mode=debug migrate`
+# 
+# If you want to migrate test database, run `cargo run -p wdintel-rs -- --mode=test migrate`
 migrate-up:
     cd echo-migration && DATABASE_URL=postgresql://wd:fee_-_-_-FnoeKFBeebu87bf@localhost:5432/wd cargo run -- up
+	echo "⚠️ WARNING! ECHO-IM migrations are not applied here. To apply ECHO-IM migrations too, run `cargo run -p wdintel-rs -- --mode=debug migrate`"
 
 migrate-down:
     cd echo-migration && DATABASE_URL=postgresql://wd:fee_-_-_-FnoeKFBeebu87bf@localhost:5432/wd cargo run -- down
