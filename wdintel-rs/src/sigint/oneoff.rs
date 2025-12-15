@@ -97,7 +97,7 @@ pub async fn oneoff_suggest_inbox_message_tags(
     for chunk in message_ids.chunks(TAG_SUGGEST_WORKER_BATCH_SIZE) {
         let txn: DatabaseTransaction = dbx.begin().await.c(h!())?;
 
-        let count = crate::tags::worker::process_messages(
+        let result = crate::tags::worker::process_messages(
             chunk.to_vec(),
             &tags,
             &env.rq,
@@ -108,7 +108,7 @@ pub async fn oneoff_suggest_inbox_message_tags(
         .c(h!())?;
 
         processed += chunk.len();
-        suggested += count;
+        suggested += result.inserted_count;
 
         info!("oneoff_suggest_inbox_message_tags, {suggested} tags suggested for {processed}/{total_len} messages");
 

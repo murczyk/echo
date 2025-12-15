@@ -247,14 +247,17 @@ pub async fn main_server(
         let rq2 = env.rq.clone();
         let tag_keyword_regex_cache = env.tag_keyword_regex_cache.clone();
         let token_2 = cancel_token.clone();
+        let redis2 = env.redis.clone();
         if !config.disable_suggest_message_tags_worker.unwrap_or(false) {
             spawn_named_worker(
                 "suggest_message_tags_worker",
                 bg_set,
                 async move {
+                    let mut redis = redis2;
                     crate::tags::worker::suggest_message_tags_worker(
                         &rq2,
                         &dbx11,
+                        &mut redis,
                         &tag_keyword_regex_cache,
                         token_2,
                     )

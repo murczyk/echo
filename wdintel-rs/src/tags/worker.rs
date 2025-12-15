@@ -1,13 +1,15 @@
 use crate::config::*;
 use crate::entities::*;
 use crate::error::AppError;
+use crate::event_stream::fanout_mult;
+use crate::event_stream::types::{EventMsg, EventType};
 use crate::rer_importer::body_noheader::NoHeadersBody;
 use crate::types::*;
 use crate::utils::orm::ArrayColumnOps;
 use crate::utils::worker_watch;
 use echo_migration::OnConflict;
 use lazy_static::lazy_static;
-use log::{error, info};
+use log::{error, info, warn};
 use regex::Regex;
 use sea_orm::prelude::*;
 use sea_orm::*;
@@ -15,6 +17,12 @@ use tokio_util::sync::CancellationToken;
 
 const KEYWORDS_REGEX_MODEL_NAME: &str = "bot-navara-v1";
 const NLP_MODEL_NAME: &str = "bot-willys-v1";
+
+#[derive(Default)]
+pub struct ProcessMessagesResult {
+    pub inserted_count: u64,
+    pub message_ids_for_events: BTreeSet<i64>,
+}
 
 #[derive(FromQueryResult)]
 pub struct SigintInboxItemText {
@@ -29,6 +37,7 @@ lazy_static! {
 pub async fn suggest_message_tags_worker(
     rq: &reqwest::Client,
     dbx: &DatabaseConnection,
+    redis: &mut redis::aio::ConnectionManager,
     tag_keyword_regex_cache: &Arc<RwLock<TagKeywordRegexCache>>,
     cancel_token: CancellationToken,
 ) {
@@ -50,6 +59,7 @@ pub async fn suggest_message_tags_worker(
                 &tags,
                 rq,
                 dbx,
+                redis,
                 tag_keyword_regex_cache,
             )
             .await
@@ -101,6 +111,7 @@ async fn process_suggest_message_tags(
     tags: &[tag::Model],
     rq: &reqwest::Client,
     dbx: &DatabaseConnection,
+    redis: &mut redis::aio::ConnectionManager,
     tag_keyword_regex_cache: &Arc<RwLock<TagKeywordRegexCache>>,
 ) -> Result<bool, AppError> {
     let txn = dbx.begin().await.c(h!())?;
@@ -109,10 +120,27 @@ async fn process_suggest_message_tags(
     if message_ids.is_empty() {
         Ok(false)
     } else {
-        process_messages(message_ids, tags, rq, &txn, tag_keyword_regex_cache)
-            .await
-            .c(h!())?;
+        let result = process_messages(
+            message_ids,
+            tags,
+            rq,
+            &txn,
+            tag_keyword_regex_cache,
+        )
+        .await
+        .c(h!())?;
         txn.commit().await.c(h!())?;
+        if result.inserted_count > 0
+            && !result.message_ids_for_events.is_empty()
+        {
+            let events: Vec<EventMsg> = result
+                .message_ids_for_events
+                .into_iter()
+                .map(EventType::ETInboxChanged)
+                .map(EventMsg::new)
+                .collect();
+            fanout_mult(redis, events).await.c(h!())?;
+        }
         Ok(true)
     }
 }
@@ -123,7 +151,7 @@ pub async fn process_messages<C: ConnectionTrait>(
     rq: &reqwest::Client,
     dbx: &C,
     tag_keyword_regex_cache: &Arc<RwLock<TagKeywordRegexCache>>,
-) -> Result<u64, AppError> {
+) -> Result<ProcessMessagesResult, AppError> {
     let inbox_items = sigint_inbox_item::Entity::find()
         .filter(sigint_inbox_item::Column::Id.eq_any(message_ids))
         .filter(sigint_inbox_item::Column::BodyNoheader.is_not_null())
@@ -148,6 +176,7 @@ pub async fn process_messages<C: ConnectionTrait>(
 
     let mut regex_tags: HashSet<(i64, i64)> = HashSet::new();
     let mut message_tags: Vec<sigint_inbox_item_tag::ActiveModel> = vec![];
+    let mut message_ids_for_events: BTreeSet<i64> = BTreeSet::new();
 
     let mut tags_to_predict: HashMap<String, i64> = HashMap::new();
     for tag in tags.iter() {
@@ -177,6 +206,7 @@ pub async fn process_messages<C: ConnectionTrait>(
                     ..Default::default()
                 };
                 message_tags.push(model);
+                message_ids_for_events.insert(message_id);
             }
         }
     }
@@ -206,12 +236,13 @@ pub async fn process_messages<C: ConnectionTrait>(
                     ..Default::default()
                 };
                 message_tags.push(model);
+                message_ids_for_events.insert(message_id);
             }
         }
     }
 
     if message_tags.is_empty() {
-        Ok(0)
+        Ok(ProcessMessagesResult::default())
     } else {
         let suggestions_count = message_tags.len();
         let result = sigint_inbox_item_tag::Entity::insert_many(message_tags)
@@ -235,10 +266,13 @@ pub async fn process_messages<C: ConnectionTrait>(
         match result {
             TryInsertResult::Conflicted => {
                 warn!("ignored {suggestions_count} conflicting tag suggestions for {message_count} messages");
-                Ok(0)
+                Ok(ProcessMessagesResult::default())
             }
-            TryInsertResult::Inserted(count) => Ok(count),
-            TryInsertResult::Empty => Ok(0),
+            TryInsertResult::Inserted(count) => Ok(ProcessMessagesResult {
+                inserted_count: count,
+                message_ids_for_events,
+            }),
+            TryInsertResult::Empty => Ok(ProcessMessagesResult::default()),
         }
     }
 }
