@@ -29,7 +29,7 @@ unit := ""
 b2_endpoint_url := "https://s3.eu-central-003.backblazeb2.com"
 storage_dir := home_directory() + "/Downloads/storage"
 ai_bucket_prefix := "s3://echouastorage/lfs/echo-ai/models"
-
+wd_fasttext_models := justfile_directory() + "/echo-ai/fasttext-models"
 default:
     @just --list
 
@@ -102,7 +102,7 @@ dev-py:
 
     FLASK="$PWD/wdintel-rs/wdintel-py/.venv/bin/flask"
     STORAGE="{{ storage_dir }}"
-    (cd wdintel-rs/wdintel-py && WD_CALLSIGNS_SPM=$STORAGE/wiki.model WD_CALLSIGNS=$STORAGE/callsigns20230512.pt WD_FASTTEXT_MODELS=$STORAGE/fasttext-models $FLASK --app service --debug run)
+    (cd wdintel-rs/wdintel-py && WD_CALLSIGNS_SPM=$STORAGE/wiki.model WD_CALLSIGNS=$STORAGE/callsigns20230512.pt WD_FASTTEXT_MODELS="{{ wd_fasttext_models }}" $FLASK --app service --debug run)
 
 setup-dev:
     # todo: setup everything?
@@ -459,9 +459,8 @@ ai-sync-from-cloud:
     fi
 
     BUCKET_PREFIX="{{ ai_bucket_prefix }}"
-    STORAGE="{{ storage_dir }}"
     ENDPOINT_URL="{{ b2_endpoint_url }}"
-    WD_FASTTEXT_MODELS="$STORAGE/fasttext-models"
+    WD_FASTTEXT_MODELS="{{ wd_fasttext_models }}"
 
     remote_files="${BUCKET_PREFIX}/*"
     local_directory="${WD_FASTTEXT_MODELS}/"
@@ -479,9 +478,8 @@ ai-sync-to-cloud:
     fi
 
     BUCKET_PREFIX="{{ ai_bucket_prefix }}"
-    STORAGE="{{ storage_dir }}"
     ENDPOINT_URL="{{ b2_endpoint_url }}"
-    WD_FASTTEXT_MODELS="$STORAGE/fasttext-models"
+    WD_FASTTEXT_MODELS="{{ wd_fasttext_models }}"
 
     local_directory="${WD_FASTTEXT_MODELS}/"
     remote_directory="${BUCKET_PREFIX}/"
@@ -716,6 +714,14 @@ _echo-generic-deploy-back:
     echo "\n❗ Not deploying signal-cli-native, read echo-im project README.md for that"
     set -x
     echo "Back-end is ready. Now open {{ server }}'s URL"
+
+deploy-echo-ai server="echo-staging":
+    #!/bin/bash
+    set -euxo pipefail
+    just ai-sync-from-cloud
+    [ -f target/debian/echo-ai_0.1.0-1_amd64.deb ] || cargo deb -p echo-ai --no-build
+    rsync -t --progress target/debian/echo-ai_0.1.0-1_amd64.deb {{ server }}:
+    ssh {{ server }} 'sudo apt-get -y install ./echo-ai_0.1.0-1_amd64.deb'
 
 ziggy-echo-build-local builder="echo-build-local" server="echo-staging" branch="main":
     #!/bin/bash

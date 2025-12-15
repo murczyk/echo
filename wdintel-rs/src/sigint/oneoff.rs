@@ -62,6 +62,18 @@ pub async fn oneoff_suggest_inbox_message_tags(
         .await
         .c(h!())?;
 
+    let q = sigint_inbox_item_tag::Entity::find()
+        .filter(
+            Expr::col((
+                sigint_inbox_item_tag::Entity,
+                sigint_inbox_item_tag::Column::SigintInboxItemId,
+            ))
+            .equals((sigint_inbox_item::Entity, sigint_inbox_item::Column::Id)),
+        )
+        .filter(sigint_inbox_item_tag::Column::Model.is_not_null())
+        .select_only();
+    let exists = Expr::exists(q.expr(Expr::value(1)).into_query());
+
     let message_ids: Vec<i64> = sigint_inbox_item::Entity::find()
         .join(
             JoinType::LeftJoin,
@@ -71,9 +83,8 @@ pub async fn oneoff_suggest_inbox_message_tags(
         .filter(sigint_inbox_item::Column::BodyNoheader.is_not_null())
         .filter(sigint_inbox_item::Column::Datetime.gte(start))
         .filter(sigint_inbox_item::Column::Datetime.lte(end))
-        .filter(sigint_inbox_item_tag::Column::Model.is_null())
+        .filter(exists.not())
         .column(sigint_inbox_item::Column::Id)
-        .distinct()
         .into_tuple::<i64>()
         .all(&dbx)
         .await

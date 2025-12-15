@@ -173,6 +173,7 @@ pub async fn process_messages<C: ConnectionTrait>(
                     sigint_inbox_item_id: Set(message_id),
                     login: Set(login),
                     model: Set(model),
+                    confidence: Set(TAG_SUGGEST_WORKER_REGEX_CONFIDENCE),
                     ..Default::default()
                 };
                 message_tags.push(model);
