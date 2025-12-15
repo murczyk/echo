@@ -785,15 +785,6 @@ deploy-geo-screenshot:
 build-docker:
     docker buildx build --platform linux/amd64 .
 
-_echo-zaporizhzha-setup-py:
-    scp deploy/wdintel-py.service echo-zaporizhzha: && ssh -t echo-zaporizhzha 'sudo mv wdintel-py.service /etc/systemd/system/'
-    ssh -t echo-zaporizhzha sudo systemctl daemon-reload
-    ssh -t echo-zaporizhzha sudo systemctl enable wdintel-py
-
-echo-zaporizhzha-forward-postgresql:
-    echo "Forwarding echo-zaporizhzha's postgresql port to localhost:6432"
-    ssh -nNT -L 6432:localhost:5432 echo-zaporizhzha
-
 gen-db-skeleton:
     # just server=echo-zaporizhzha copy-db
     echo "assuming just copy-db is done..."
