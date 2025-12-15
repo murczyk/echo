@@ -829,6 +829,100 @@ inbox_message_tags_rm toMsg req =
         }
 
 
+admin_tags_list :
+    (Result ApiError (List TagAdmin) -> msg)
+    -> Cmd msg
+admin_tags_list toMsg =
+    Http.post
+        { url = "/api/admin/tags/list"
+        , body = Http.emptyBody
+        , expect = leExpectJson toMsg (Decode.list tagAdminDecoder)
+        }
+
+
+admin_create_tag :
+    (Result ApiError TagAdmin -> msg)
+    -> TagUpsertReq
+    -> Cmd msg
+admin_create_tag toMsg req =
+    Http.post
+        { url = "/api/admin/tags"
+        , body = Http.jsonBody (tagUpsertReqEncoder req)
+        , expect = leExpectJson toMsg tagAdminDecoder
+        }
+
+
+admin_update_tag :
+    (Result ApiError TagAdmin -> msg)
+    -> Int
+    -> TagUpsertReq
+    -> Cmd msg
+admin_update_tag toMsg tagId req =
+    Http.request
+        { method = "PUT"
+        , url = "/api/admin/tags/" ++ String.fromInt tagId
+        , body = Http.jsonBody (tagUpsertReqEncoder req)
+        , headers = []
+        , expect = leExpectJson toMsg tagAdminDecoder
+        , timeout = Nothing
+        , tracker = Nothing
+        }
+
+
+tag_keywords_add :
+    (Result ApiError (List TagKeyword) -> msg)
+    -> Int
+    -> List TagKeywordAddReq
+    -> Cmd msg
+tag_keywords_add toMsg tagId req =
+    Http.post
+        { url = "/api/tags/" ++ String.fromInt tagId ++ "/keywords"
+        , body = Http.jsonBody (Encode.list tagKeywordAddReqEncoder req)
+        , expect = leExpectJson toMsg (Decode.list tagKeywordDecoder)
+        }
+
+
+tag_keyword_update :
+    (Result ApiError () -> msg)
+    -> { tagId : Int, tagKeywordId : Int }
+    -> TagKeywordAddReq
+    -> Cmd msg
+tag_keyword_update toMsg params req =
+    Http.request
+        { method = "PUT"
+        , url =
+            "/api/tags/"
+                ++ String.fromInt params.tagId
+                ++ "/keywords/"
+                ++ String.fromInt params.tagKeywordId
+        , body = Http.jsonBody (tagKeywordAddReqEncoder req)
+        , headers = []
+        , expect = Http.expectStringResponse toMsg (resolve (\_ -> Ok ()))
+        , timeout = Nothing
+        , tracker = Nothing
+        }
+
+
+tag_keyword_delete :
+    (Result ApiError () -> msg)
+    -> { tagId : Int, tagKeywordId : Int }
+    -> Cmd msg
+tag_keyword_delete toMsg params =
+    Http.request
+        { method = "DELETE"
+        , url =
+            "/api/tags/"
+                ++ String.fromInt params.tagId
+                ++ "/keywords/"
+                ++ String.fromInt params.tagKeywordId
+        , body = Http.emptyBody
+        , headers = []
+        , expect = Http.expectStringResponse toMsg (resolve (\_ -> Ok ()))
+        , timeout = Nothing
+        , tracker = Nothing
+        }
+
+
 
 -- POST /api/sigint/units
 

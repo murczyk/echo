@@ -16,6 +16,30 @@ pub mod ordering;
 pub mod types;
 pub mod worker;
 
+fn map_tag_keyword(model: tag_keyword::Model) -> TagKeyword {
+    TagKeyword {
+        tag_keyword_id: model.tag_keyword_id,
+        is_positive: model.is_positive,
+        is_regex: model.is_regex,
+        keyword: model.keyword,
+        keyword_forms: model.keyword_forms,
+    }
+}
+
+fn map_tag_admin(
+    tag: tag::Model,
+    keywords: Vec<tag_keyword::Model>,
+) -> TagAdmin {
+    TagAdmin {
+        tag_id: tag.id,
+        label: tag.label,
+        extra: tag.extra,
+        ord: tag.ord,
+        enabled: tag.enabled,
+        keywords: keywords.into_iter().map(map_tag_keyword).collect(),
+    }
+}
+
 #[post("/api/tags/tags-list")]
 async fn tags_list(
     user: actix_identity::Identity,
@@ -31,16 +55,7 @@ async fn tags_list(
         .c(h!())?;
     let mut res = vec![];
     for (tag, keywords) in tags {
-        let keywords = keywords
-            .into_iter()
-            .map(|tag_keyword| TagKeyword {
-                tag_keyword_id: tag_keyword.tag_keyword_id,
-                is_positive: tag_keyword.is_positive,
-                is_regex: tag_keyword.is_regex,
-                keyword: tag_keyword.keyword,
-                keyword_forms: tag_keyword.keyword_forms,
-            })
-            .collect();
+        let keywords = keywords.into_iter().map(map_tag_keyword).collect();
         res.push((
             tag.id,
             Tag {
@@ -52,6 +67,98 @@ async fn tags_list(
         ));
     }
     Ok(Json(res))
+}
+
+#[post("/api/admin/tags/list")]
+async fn admin_list_tags(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+) -> Result<Json<Vec<TagAdmin>>, AppError> {
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Admin")
+        .await
+        .c(h!())?;
+
+    let tags = tag::Entity::find()
+        .order_by_asc(tag::Column::Ord)
+        .order_by_asc(tag::Column::Id)
+        .all(&env.dbx)
+        .await
+        .c(h!())?;
+    let keywords = tags
+        .load_many(tag_keyword::Entity, &env.dbx)
+        .await
+        .c(h!())?;
+
+    let res = tags
+        .into_iter()
+        .zip(keywords.into_iter())
+        .map(|(tag, keywords)| map_tag_admin(tag, keywords))
+        .collect();
+
+    Ok(Json(res))
+}
+
+#[post("/api/admin/tags")]
+async fn create_tag(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<TagUpsertReq>,
+) -> Result<Json<TagAdmin>, AppError> {
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Admin")
+        .await
+        .c(h!())?;
+
+    let req = req.0;
+    let tag = tag::ActiveModel {
+        label: Set(req.label),
+        extra: Set(req.extra),
+        ord: Set(req.ord),
+        enabled: Set(req.enabled),
+        ..Default::default()
+    }
+    .insert(&env.dbx)
+    .await
+    .c(h!())?;
+
+    Ok(Json(map_tag_admin(tag, vec![])))
+}
+
+#[put("/api/admin/tags/{tag_id}")]
+async fn update_tag(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    path: actix_web::web::Path<(i64,)>,
+    req: Json<TagUpsertReq>,
+) -> Result<Json<TagAdmin>, AppError> {
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Admin")
+        .await
+        .c(h!())?;
+    let tag_id = path.0;
+
+    let req = req.0;
+    let tag = tag::Entity::find_by_id(tag_id)
+        .one(&env.dbx)
+        .await
+        .c(h!())?
+        .ok_or(AppError::NotFound)?;
+
+    let mut tag = tag.into_active_model();
+    tag.label = Set(req.label);
+    tag.extra = Set(req.extra);
+    tag.ord = Set(req.ord);
+    tag.enabled = Set(req.enabled);
+
+    let tag = tag.update(&env.dbx).await.c(h!())?;
+    let keywords = tag
+        .find_related(tag_keyword::Entity)
+        .all(&env.dbx)
+        .await
+        .c(h!())?;
+
+    Ok(Json(map_tag_admin(tag, keywords)))
 }
 
 #[post("/api/tags/{tag_id}/keywords")]
@@ -120,16 +227,8 @@ async fn add_tag_keywords(
 
     expire_tag_keyword_regex_cache(tag_id, &env.tag_keyword_regex_cache);
 
-    let tag_keywords: Vec<TagKeyword> = res
-        .into_iter()
-        .map(|x| TagKeyword {
-            tag_keyword_id: x.tag_keyword_id,
-            is_positive: x.is_positive,
-            is_regex: x.is_regex,
-            keyword: x.keyword,
-            keyword_forms: x.keyword_forms,
-        })
-        .collect();
+    let tag_keywords: Vec<TagKeyword> =
+        res.into_iter().map(map_tag_keyword).collect();
 
     Ok(Json(tag_keywords))
 }

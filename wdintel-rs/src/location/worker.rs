@@ -7,8 +7,8 @@ use milgeo_rs::coord_util::{LatLng, Locality};
 use milgeo_rs::MilGeo;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection,
-    EntityTrait, IntoActiveModel, NotSet, QueryFilter, QueryOrder,
-    QuerySelect, Set,
+    EntityTrait, IntoActiveModel, NotSet, QueryFilter, QueryOrder, QuerySelect,
+    Set,
 };
 
 pub async fn process_location_v2_coords_worker(

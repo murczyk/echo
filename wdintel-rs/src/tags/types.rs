@@ -14,6 +14,28 @@ pub struct Tag {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub struct TagAdmin {
+    pub tag_id: i64,
+    pub label: String,
+    pub extra: Option<bool>,
+    pub ord: Option<f64>,
+    pub enabled: bool,
+    pub keywords: Vec<TagKeyword>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct TagUpsertReq {
+    pub label: String,
+    pub extra: Option<bool>,
+    pub ord: Option<f64>,
+    pub enabled: bool,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct TagKeyword {
     pub tag_keyword_id: i64,
     pub is_positive: bool,

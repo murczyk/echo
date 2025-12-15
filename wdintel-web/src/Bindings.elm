@@ -3511,6 +3511,64 @@ tagKeywordEncoder struct =
         ]
 
 
+type alias TagKeywordAddReq =
+    { isPositive : Bool
+    , isRegex : Bool
+    , keyword : String
+    , keywordForms : Maybe (List String)
+    }
+
+
+tagKeywordAddReqEncoder : TagKeywordAddReq -> Json.Encode.Value
+tagKeywordAddReqEncoder struct =
+    Json.Encode.object
+        [ ( "is_positive", Json.Encode.bool struct.isPositive )
+        , ( "is_regex", Json.Encode.bool struct.isRegex )
+        , ( "keyword", Json.Encode.string struct.keyword )
+        , ( "keyword_forms", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.string)) struct.keywordForms )
+        ]
+
+
+type alias TagAdmin =
+    { tagId : Int
+    , label : String
+    , extra : Maybe Bool
+    , ord : Maybe Float
+    , enabled : Bool
+    , keywords : List TagKeyword
+    }
+
+
+tagAdminEncoder : TagAdmin -> Json.Encode.Value
+tagAdminEncoder struct =
+    Json.Encode.object
+        [ ( "tag_id", Json.Encode.int struct.tagId )
+        , ( "label", Json.Encode.string struct.label )
+        , ( "extra", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.extra )
+        , ( "ord", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.float) struct.ord )
+        , ( "enabled", Json.Encode.bool struct.enabled )
+        , ( "keywords", Json.Encode.list tagKeywordEncoder struct.keywords )
+        ]
+
+
+type alias TagUpsertReq =
+    { label : String
+    , extra : Maybe Bool
+    , ord : Maybe Float
+    , enabled : Bool
+    }
+
+
+tagUpsertReqEncoder : TagUpsertReq -> Json.Encode.Value
+tagUpsertReqEncoder struct =
+    Json.Encode.object
+        [ ( "label", Json.Encode.string struct.label )
+        , ( "extra", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.extra )
+        , ( "ord", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.float) struct.ord )
+        , ( "enabled", Json.Encode.bool struct.enabled )
+        ]
+
+
 type alias InboxMessageTagsAddReq =
     { messageId : Int
     , tagId : Int
@@ -8219,6 +8277,35 @@ tagKeywordDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_regex" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "keyword" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "keyword_forms" (Json.Decode.list Json.Decode.string)))
+
+
+tagKeywordAddReqDecoder : Json.Decode.Decoder TagKeywordAddReq
+tagKeywordAddReqDecoder =
+    Json.Decode.succeed TagKeywordAddReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_positive" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_regex" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "keyword" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "keyword_forms" (Json.Decode.nullable (Json.Decode.list Json.Decode.string))))
+
+
+tagAdminDecoder : Json.Decode.Decoder TagAdmin
+tagAdminDecoder =
+    Json.Decode.succeed TagAdmin
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tag_id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "label" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "extra" (Json.Decode.nullable Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ord" (Json.Decode.nullable Json.Decode.float)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enabled" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "keywords" (Json.Decode.list tagKeywordDecoder)))
+
+
+tagUpsertReqDecoder : Json.Decode.Decoder TagUpsertReq
+tagUpsertReqDecoder =
+    Json.Decode.succeed TagUpsertReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "label" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "extra" (Json.Decode.nullable Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ord" (Json.Decode.nullable Json.Decode.float)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enabled" Json.Decode.bool))
 
 
 inboxMessageTagsAddReqDecoder : Json.Decode.Decoder InboxMessageTagsAddReq
