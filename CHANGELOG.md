@@ -17,6 +17,7 @@
 - [#1706](https://github.com/echoua/echo/issues/1705) ✅ Показувати довгі повідомлення
 - [#1703](https://github.com/echoua/echo/issues/1703) ✅👷 Аналіз: Авто розмітка тегів: інтерфейс та структура.
   - `just server=$server deploy-echo-ai`
+  - `just server=$server setup-py`
   - `sudo wdintel-rs --mode=live oneoff-fill-sigint-inbox-item-tags` для переносу тегів повідомлень в окрему табличку
 - [#1674](https://github.com/echoua/echo/issues/1674) Виводити інформацію для дебагу ECHO IM на сторінці `/admin/messanger`
 - [#1716](https://github.com/echoua/echo/issues/1716) 🐞 Звіт "Бабак". Виправили дублювання перехоплень з галочкою "лише коментарі мого підрозділу".
