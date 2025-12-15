@@ -1,4 +1,5 @@
 use super::super::types::*;
+use crate::config::*;
 use crate::entities::*;
 use crate::error::AppError;
 use crate::types::*;
@@ -59,14 +60,35 @@ pub async fn report_docx_kind_mouse(
         .to_string();
 
     let file = std::fs::File::create(outpath)?;
+    let without_model_tags = req.req.without_model_tags.unwrap_or(false);
+
+    let message_tags_map: BTreeMap<i64, Vec<InboxMessageTag>> = messages
+        .iter()
+        .map(|(message_id, message)| {
+            let tags = message
+                .inbox_tags
+                .clone()
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|tag| {
+                    tag.confidence >= TAG_MINIMUM_CONFIDENCE
+                        && (!without_model_tags || tag.model.is_none())
+                })
+                .collect::<Vec<_>>();
+            (*message_id, tags)
+        })
+        .collect();
 
     let mut per_tag_msgs: BTreeMap<i64, Vec<InboxMessage>> = BTreeMap::new();
-    for (_message_id, message) in messages.iter() {
-        let tags = message.tags.clone().unwrap_or(vec![]);
-        if tags.is_empty() {
+    for (message_id, message) in messages.iter() {
+        let tag_ids: Vec<i64> = message_tags_map
+            .get(message_id)
+            .map(|tags| tags.iter().map(|tag| tag.tag_id).collect())
+            .unwrap_or_default();
+        if tag_ids.is_empty() {
             per_tag_msgs.entry(0).or_default().push(message.clone());
         } else {
-            for tag_id in tags {
+            for tag_id in tag_ids {
                 per_tag_msgs
                     .entry(tag_id)
                     .or_default()
@@ -697,11 +719,10 @@ pub async fn report_docx_kind_mouse(
             else {
                 continue;
             };
-            let mut need_highlight = false;
-            let tags: Vec<i64> = from_m_val_vec(inbox.tags.clone())?;
-            if !tags.is_empty() {
-                need_highlight = true;
-            }
+            let mut need_highlight = message_tags_map
+                .get(&message_id)
+                .map(|tags| !tags.is_empty())
+                .unwrap_or(false);
             if important_ids.contains(&message_id) {
                 need_highlight = true;
             }

@@ -317,6 +317,7 @@ pub async fn get_inbox_messages_report_network(
         &req.or_with_coords,
         &Some(false),
         &req.filter_tags_option,
+        &req.without_model_tags,
         &login,
         None,
     )?;

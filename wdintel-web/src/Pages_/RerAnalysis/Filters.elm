@@ -234,6 +234,11 @@ view isDark user model =
                           Shared.Components.Checkbox.new { isChecked = model.filterTagsOption == B.AllTags, onToggle = FilterTagsOptionChanged }
                             |> Shared.Components.Checkbox.withContent checkboxLabel
                             |> Shared.Components.Checkbox.view
+                        , div [ class "mt-1" ] <|
+                            [ Shared.Components.Checkbox.new { isChecked = model.withoutModelTags, onToggle = always ToggleWithoutModelTags }
+                                |> Shared.Components.Checkbox.withContent [ text "без відміток роботами" ]
+                                |> Shared.Components.Checkbox.view
+                            ]
                         , div
                             [ class "mt-4 flex flex-wrap gap-2 text-xs"
                             ]
@@ -352,6 +357,7 @@ view isDark user model =
                                 + trueToOne model.orImportant
                                 + trueToOne model.orWithCoords
                                 + trueToOne model.orWithExtendedForm
+                                + trueToOne model.withoutModelTags
                             )
                                 |> zeroToNothing
                                 |> mmap String.fromInt

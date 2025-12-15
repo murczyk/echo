@@ -74,10 +74,10 @@
 
 ### Compilation and Checking
 
-- Instead, check only the modified file(s) using: `elm make path/to/file.elm --output=/dev/null`
+- Check the modified file(s) using: `elm make path/to/file.elm --output=/dev/null`
 - This is much faster and sufficient to verify syntax and type checking
 - Example: `cd wdintel-web && elm make src/Pages/RerPalitra.elm --output=/dev/null`
-- Once you're fully done, check yourself with `just build-front`
+- Once you're fully done with changes, verify yourself with `just build-front` to check full front-end build
 
 ### HTTP Error Handling
 

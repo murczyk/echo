@@ -165,6 +165,7 @@ fn build_groups_query(
         &req.or_with_coords,
         &req.or_with_extended_form,
         &req.filter_tags_option,
+        &req.without_model_tags,
         user.id().c(h!())?.as_str(),
         None,
     )
@@ -305,6 +306,7 @@ fn build_senders_query(
         &req.or_with_coords,
         &req.or_with_extended_form,
         &req.filter_tags_option,
+        &req.without_model_tags,
         &user.id().context(h!())?,
         None,
     )
@@ -444,6 +446,7 @@ fn build_posts_query(
         &req.or_with_coords,
         &req.or_with_extended_form,
         &req.filter_tags_option,
+        &req.without_model_tags,
         &user.id().context(h!())?,
         None,
     )
@@ -635,6 +638,7 @@ fn build_freqs_query(
         &req.or_with_coords,
         &req.or_with_extended_form,
         &req.filter_tags_option,
+        &req.without_model_tags,
         &user.id().context(h!())?,
         None,
     )
@@ -781,7 +785,9 @@ pub async fn fetch_tags(
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
 
-    if should_read_stats_aggregated(req, env, dt_since, dt_till).c(h!())? {
+    if req.without_model_tags != Some(true)
+        && should_read_stats_aggregated(req, env, dt_since, dt_till).c(h!())?
+    {
         let result =
             read_tag_stats_aggregated(env, master_keys, dt_since, dt_till)
                 .await
@@ -846,7 +852,7 @@ fn build_tags_query(
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
-    let tags_res = sigint_inbox_item::Entity::find()
+    let mut tags_res = sigint_inbox_item::Entity::find()
         .join(
             JoinType::InnerJoin,
             sigint_inbox_item::Relation::SignalMessage.def(),
@@ -878,6 +884,10 @@ fn build_tags_query(
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
         .group_by(sigint_inbox_item_tag::Column::TagId);
     // .filter(sigint_inbox_item::Column::Checked.eq(Some(true)))
+    if req.without_model_tags == Some(true) {
+        tags_res =
+            tags_res.filter(sigint_inbox_item_tag::Column::Model.is_null());
+    }
     let tags_res = filter_selected_groups(tags_res, &req.selected_groups)?;
     let tags_res = filter_selected_senders(tags_res, &req.selected_senders)?;
     let tags_res = filter_selected_freqs(tags_res, &req.selected_freqs)?;
@@ -1028,6 +1038,7 @@ fn build_units_query(
         &req.or_with_coords,
         &req.or_with_extended_form,
         &req.filter_tags_option,
+        &req.without_model_tags,
         &user.id().context(h!())?,
         None,
     )
@@ -1172,6 +1183,7 @@ fn build_locations_query(
         &req.or_with_coords,
         &req.or_with_extended_form,
         &req.filter_tags_option,
+        &req.without_model_tags,
         &user.id().context(h!())?,
         None,
     )
@@ -1327,6 +1339,7 @@ fn build_aors_query(
         &req.or_with_coords,
         &req.or_with_extended_form,
         &req.filter_tags_option,
+        &req.without_model_tags,
         &user.id().context(h!())?,
         None,
     )
@@ -1535,6 +1548,7 @@ fn build_networks_query(
         &req.or_with_coords,
         &req.or_with_extended_form,
         &req.filter_tags_option,
+        &req.without_model_tags,
         user.id().c(h!())?.as_str(),
         None,
     )
@@ -1759,6 +1773,7 @@ async fn fetch_counts_for_login_with_conn(
         &req.or_with_coords,
         &req.or_with_extended_form,
         &req.filter_tags_option,
+        &req.without_model_tags,
         login_str,
         None,
     )

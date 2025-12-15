@@ -24,7 +24,7 @@ struct InboxMessage {
     body: Option<String>,
     comment: Option<String>,
     coords: Option<String>,
-    tags: Option<Vec<i64>>,
+    inbox_tags: Option<serde_json::Value>,
     important: Option<i64>,
 }
 
@@ -48,11 +48,10 @@ async fn get_inbox_messages_report(
         .column(sigint_inbox_item::Column::Freq)
         .column(signal_message::Column::Body)
         .expr_as(
-            Expr::cust_with_expr(
-                "array_agg($1) filter (where $1 is not null)",
-                Expr::col(sigint_inbox_item_tag::Column::TagId),
+            Expr::cust(
+                "jsonb_agg(sigint_inbox_item_tag.*) FILTER (WHERE sigint_inbox_item_tag.id is not null)",
             ),
-            "tags",
+            "inbox_tags",
         )
         .column_as(sigint_inbox_item::Column::CallsignsAlg1, "callsigns")
         .column_as(
@@ -185,6 +184,7 @@ async fn get_inbox_messages_report(
         &req.or_with_coords,
         &req.or_with_extended_form,
         &req.filter_tags_option,
+        &req.without_model_tags,
         &login,
         None,
     )?;
@@ -283,6 +283,7 @@ pub async fn report_xlsx_kind_interception(
     let mut workbook = Workbook::new(); // Use rust_xlsxwriter
     let sheet1 = workbook.add_worksheet().set_name("Пеленги").context(h!())?; // Use rust_xlsxwriter
     let date_format = Format::new().set_num_format("dd.mm.yyyy");
+    let without_model_tags = req.req.without_model_tags.unwrap_or(false);
     // Define formats using rust_xlsxwriter
     let coltitle_base = Format::new()
         .set_bold()
@@ -476,12 +477,16 @@ pub async fn report_xlsx_kind_interception(
             .write_string(i, 8, m.coords.clone().unwrap_or("".to_string()))
             .context(h!())?;
 
-        let mes_tags = m
-            .tags
+        let inbox_tags: Vec<InboxMessageTag> = m
+            .inbox_tags
             .clone()
-            .unwrap_or_default()
+            .map(|val| serde_json::from_value(val).unwrap_or_default())
+            .unwrap_or_default();
+        let mes_tags = inbox_tags
             .into_iter()
-            .filter_map(|x| all_tags.get(&x))
+            .filter(|tag| tag.confidence >= TAG_MINIMUM_CONFIDENCE)
+            .filter(|tag| !without_model_tags || tag.model.is_none())
+            .filter_map(|tag| all_tags.get(&tag.tag_id))
             .map(|s| s.to_string())
             .join(",");
         sheet1.write_string(i, 9, &mes_tags).context(h!())?;

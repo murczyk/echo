@@ -232,6 +232,7 @@ pub struct InboxMessagesReq {
     pub skip_group_stats: Option<bool>,
     pub filter_tags_option: Option<TagFilterOption>,
     pub page_id: Option<String>,
+    pub without_model_tags: Option<bool>,
 }
 
 #[derive(
@@ -467,6 +468,7 @@ pub struct AnalysisStatsReq {
     pub include_peleng_locations: Option<bool>,
     pub units_exact_match_only: Option<bool>,
     pub filter_tags_option: Option<TagFilterOption>,
+    pub without_model_tags: Option<bool>,
 }
 
 #[derive(
@@ -494,6 +496,7 @@ pub struct CallsignsGraphReq {
     pub include_peleng_locations: Option<bool>,
     pub units_exact_match_only: Option<bool>,
     pub filter_tags_option: Option<TagFilterOption>,
+    pub without_model_tags: Option<bool>,
 }
 
 #[derive(
@@ -869,6 +872,7 @@ pub struct RerAnalysisQueryState {
     pub include_peleng_locations: bool,
     pub units_exact_match_only: bool,
     pub adjacent_freqs_range: f64,
+    pub without_model_tags: bool,
 }
 
 #[derive(

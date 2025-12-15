@@ -91,6 +91,7 @@ pub(crate) async fn build_inbox_query(
         &req.or_with_coords,
         &req.or_with_extended_form,
         &req.filter_tags_option,
+        &req.without_model_tags,
         login,
         only_tags_by_logins,
     )?;
@@ -149,6 +150,16 @@ pub(crate) async fn build_inbox_query(
                 sigint_inbox_item_tag::Column::SigintInboxItemId,
             ))
             .equals((signal_message::Entity, signal_message::Column::Id)),
+        )
+        .apply_if(
+            req.without_model_tags.and_then(|flag| {
+                if flag {
+                    Some(flag)
+                } else {
+                    None
+                }
+            }),
+            |q, _| q.filter(sigint_inbox_item_tag::Column::Model.is_null()),
         )
         .group_by(sigint_inbox_item_tag::Column::SigintInboxItemId)
         .into_query();

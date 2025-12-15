@@ -375,6 +375,7 @@ fn get_related_tag_items_filter(
     unique_tags: BTreeSet<i64>,
     tag_filter_option: TagFilterOption,
     only_tags_by_logins: Option<Vec<String>>,
+    without_model_tags: bool,
 ) -> SimpleExpr {
     let expected_count = unique_tags.len();
 
@@ -395,6 +396,10 @@ fn get_related_tag_items_filter(
                 .gte(TAG_MINIMUM_CONFIDENCE),
         )
         .select_only();
+
+    if without_model_tags {
+        q = q.filter(sigint_inbox_item_tag::Column::Model.is_null());
+    }
 
     if let Some(logins) = only_tags_by_logins {
         if !logins.is_empty() {
@@ -425,6 +430,7 @@ pub fn filter_selected_tags<Q>(
     or_with_coords: &Option<bool>,
     or_with_extended_form: &Option<bool>,
     filter_tags_option: &Option<TagFilterOption>,
+    without_model_tags: &Option<bool>,
     user_id: &str,
     only_tags_by_logins: Option<Vec<String>>,
 ) -> Result<Q, AppError>
@@ -439,10 +445,12 @@ where
                 selected_tags.iter().cloned().collect();
             let tag_filter_option =
                 filter_tags_option.unwrap_or(TagFilterOption::OneOfTags);
+            let without_model_tags = without_model_tags.unwrap_or(false);
             m_inner_expr = Some(get_related_tag_items_filter(
                 unique_tags,
                 tag_filter_option,
                 only_tags_by_logins,
+                without_model_tags,
             ));
         }
     }
@@ -994,6 +1002,7 @@ pub async fn summary_table_freq_1(
         &req.or_with_coords,
         &req.or_with_extended_form,
         &req.filter_tags_option,
+        &req.without_model_tags,
         &user.id().c(h!())?,
         None,
     )?;
@@ -1586,6 +1595,7 @@ pub async fn edit_freq_unit_name(
         &None,
         &None,
         &req.filter_tags_option,
+        &reqan.without_model_tags,
         &user.id().c(h!())?,
         None,
     )?;
@@ -1953,6 +1963,7 @@ pub async fn bi_new_callsigns(
         &req.or_with_coords,
         &req.or_with_extended_form,
         &req.filter_tags_option,
+        &req.without_model_tags,
         user_id,
         None,
     )?;
@@ -2031,6 +2042,7 @@ pub async fn bi_new_callsigns(
         &req.or_with_coords,
         &req.or_with_extended_form,
         &req.filter_tags_option,
+        &req.without_model_tags,
         user_id,
         None,
     )?;

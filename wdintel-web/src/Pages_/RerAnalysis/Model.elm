@@ -152,6 +152,7 @@ type alias Model =
     , groupsActivityPeriod : GroupsActivityPeriod
     , filterTagsOption : B.TagFilterOption
     , unitsExactMatchOnly : Bool
+    , withoutModelTags : Bool
     , editSidebar : Maybe Int
     , eventLastId : Maybe String
     

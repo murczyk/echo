@@ -275,17 +275,24 @@ pub async fn aggregate_to_inbox_messages(
             Some(location) => Some(to_location_list(&location).join(", ")),
         };
         let network_ids = messages_networks.get(&message.id).cloned();
+        let without_model_tags = req.without_model_tags.unwrap_or(false);
         let m_inbox_tags: Option<Vec<InboxMessageTag>> =
             match message.inbox_tags {
                 None => None,
-                Some(jv) => Some(serde_json::from_value(jv).context(h!())?),
+                Some(jv) => Some(
+                    serde_json::from_value::<Vec<InboxMessageTag>>(jv)
+                        .context(h!())?
+                        .into_iter()
+                        .filter(|tag| {
+                            tag.confidence >= TAG_MINIMUM_CONFIDENCE
+                                && (!without_model_tags || tag.model.is_none())
+                        })
+                        .collect(),
+                ),
             };
-        let inbox_tag_ids = m_inbox_tags.as_ref().map(|tags| {
-            tags.iter()
-                .filter(|tag| tag.confidence >= TAG_MINIMUM_CONFIDENCE)
-                .map(|tag| tag.tag_id)
-                .collect::<Vec<_>>()
-        });
+        let inbox_tag_ids = m_inbox_tags
+            .as_ref()
+            .map(|tags| tags.iter().map(|tag| tag.tag_id).collect::<Vec<_>>());
 
         res.push((
             message.id,

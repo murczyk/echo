@@ -44,6 +44,7 @@ type Msg
     | ToggleOnlyBookmarked
     | ToggleOnlyImportant
     | ToggleOrWithCoords
+    | ToggleWithoutModelTags
     | ToggleUnfoldAorsFilter
     | ToggleUnfoldGroupsFilter
     | ToggleUnfoldSendersFilter

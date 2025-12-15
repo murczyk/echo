@@ -215,6 +215,7 @@ init route _ =
             , groupsActivityPeriod = FilterSelectedRange
             , filterTagsOption = B.OneOfTags
             , unitsExactMatchOnly = True
+            , withoutModelTags = False
             , editSidebar = Nothing
             , eventLastId = Nothing
             , palitras = NotAsked
@@ -311,6 +312,12 @@ getInboxReq model =
         model.networksSelected
             |> List.filterMap String.toInt
             |> emptyToNothing
+    , withoutModelTags =
+        if model.withoutModelTags then
+            Just True
+
+        else
+            Nothing
     }
 
 
@@ -363,6 +370,12 @@ cmdLoadCallsignGraph model { dtFromPosix, dtToPosix } =
             , selectedTags = emptyToNothing model.tagsSelected
             , filterTagsOption = Just model.filterTagsOption
             , unitsExactMatchOnly = Just model.unitsExactMatchOnly
+            , withoutModelTags =
+                if model.withoutModelTags then
+                    Just True
+
+                else
+                    Nothing
             , selectedNetworks =
                 model.networksSelected
                     |> List.filterMap String.toInt
@@ -1518,6 +1531,12 @@ update user shared route msg model =
                     model.networksSelected
                         |> List.filterMap String.toInt
                         |> emptyToNothing
+                , withoutModelTags =
+                    if model.withoutModelTags then
+                        Just True
+
+                    else
+                        Nothing
                 }
             )
 
@@ -1690,6 +1709,24 @@ update user shared route msg model =
                 m2 =
                     { model
                         | orWithCoords = not model.orWithCoords
+                        , locations = NeedsReload (RD.withDefault [] model.locations)
+                        , senders = NeedsReload (RD.withDefault [] model.senders)
+                        , units = NeedsReload (RD.withDefault [] model.units)
+                        , posts = NeedsReload (RD.withDefault [] model.posts)
+                        , freqs = NeedsReload (RD.withDefault [] model.freqs)
+                        , callsigns = NeedsReload (RD.withDefault [] model.callsigns)
+                        , groups = NeedsReload (RD.withDefault [] model.groups)
+                        , aors = NeedsReload (RD.withDefault [] model.aors)
+                        , networksStats = NeedsReload (RD.withDefault [] model.networksStats)
+                    }
+            in
+            loadCoreStatsAndPushUrl m2
+
+        ToggleWithoutModelTags ->
+            let
+                m2 =
+                    { model
+                        | withoutModelTags = not model.withoutModelTags
                         , locations = NeedsReload (RD.withDefault [] model.locations)
                         , senders = NeedsReload (RD.withDefault [] model.senders)
                         , units = NeedsReload (RD.withDefault [] model.units)

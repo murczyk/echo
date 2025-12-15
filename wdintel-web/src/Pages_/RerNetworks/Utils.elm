@@ -120,4 +120,5 @@ createAnalysisQueryState shared network callsign =
     , tags = []
     , unitsExactMatchOnly = True
     , adjacentFreqsRange = 0
+    , withoutModelTags = False
     }

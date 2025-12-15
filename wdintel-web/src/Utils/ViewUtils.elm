@@ -1,6 +1,7 @@
 module Utils.ViewUtils exposing (..)
 
 import Bindings as B
+import Dict
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (..)
@@ -58,9 +59,34 @@ tagsBlock tagIdsSet inboxTags toggleTagMsg tags =
 
         botModels tagId =
             tagInboxContribs tagId
-                |> List.filter (\tag -> MaybeX.isJust tag.model)
-                |> List.filterMap .model
-                |> ListX.unique
+                |> List.foldl
+                    (\tag acc ->
+                        case tag.model of
+                            Just modelName ->
+                                let
+                                    percent =
+                                        tag.confidence
+                                            |> clamp 0 1
+                                            |> (*) 100
+                                            |> round
+                                in
+                                Dict.update modelName
+                                    (\existing ->
+                                        Just <|
+                                            Maybe.withDefault percent
+                                                (Maybe.map (Basics.max percent) existing)
+                                    )
+                                    acc
+
+                            Nothing ->
+                                acc
+                    )
+                    Dict.empty
+                |> Dict.toList
+                |> List.map
+                    (\( modelName, percent ) ->
+                        modelName ++ " (впевненість " ++ String.fromInt percent ++ "%)"
+                    )
 
         tooltipSection label entries =
             div [ class "flex gap-1 text-xs items-start" ]
@@ -102,17 +128,42 @@ tagsBlock tagIdsSet inboxTags toggleTagMsg tags =
                        )
                 )
 
-        viewCountBadge iconClass entries =
-            if List.isEmpty entries then
+        combinedBadge humans robots =
+            let
+                showHuman =
+                    not (List.isEmpty humans)
+
+                showRobot =
+                    not (List.isEmpty robots)
+            in
+            if not (showHuman || showRobot) then
                 Nothing
 
             else
                 Just <|
                     div
-                        [ class "bg-card text-text border border-border rounded-full px-1 py-[1px] flex items-center gap-1 shadow-sm" ]
-                        [ i [ class (iconClass ++ " text-[10px]") ] []
-                        , text <| String.fromInt <| List.length entries
-                        ]
+                        [ class "bg-card text-text border border-border rounded-full px-2 py-[1px] flex items-center gap-2 shadow-sm" ]
+                        (List.filterMap identity
+                            [ if showRobot then
+                                Just <|
+                                    span [ class "flex items-center gap-1" ]
+                                        [ i [ class "bi bi-robot text-[10px]" ] []
+                                        , text <| String.fromInt <| List.length robots
+                                        ]
+
+                              else
+                                Nothing
+                            , if showHuman then
+                                Just <|
+                                    span [ class "flex items-center gap-1" ]
+                                        [ i [ class "bi bi-person-fill text-[10px]" ] []
+                                        , text <| String.fromInt <| List.length humans
+                                        ]
+
+                              else
+                                Nothing
+                            ]
+                        )
 
         overlaysFor tagId =
             let
@@ -121,30 +172,25 @@ tagsBlock tagIdsSet inboxTags toggleTagMsg tags =
 
                 robots =
                     botModels tagId
-
-                badges =
-                    List.filterMap identity
-                        [ viewCountBadge "bi bi-person-fill" humans
-                        , viewCountBadge "bi bi-robot" robots
-                        ]
             in
-            if List.isEmpty badges then
-                []
+            case combinedBadge humans robots of
+                Nothing ->
+                    []
 
-            else
-                [ node
-                    "sl-tooltip"
-                    [ attribute "hoist" "", attribute "placement" "top" ]
-                    [ div
-                        [ attribute "slot" "content"
-                        , class "p-1"
+                Just badge ->
+                    [ node
+                        "sl-tooltip"
+                        [ attribute "hoist" "", attribute "placement" "top" ]
+                        [ div
+                            [ attribute "slot" "content"
+                            , class "p-1"
+                            ]
+                            [ tooltipBody humans robots ]
+                        , div
+                            [ class "absolute -top-2 -right-1 flex items-center text-[10px]" ]
+                            [ badge ]
                         ]
-                        [ tooltipBody humans robots ]
-                    , div
-                        [ class "absolute -top-1 -right-1 flex gap-1 items-center text-[10px]" ]
-                        badges
                     ]
-                ]
 
         dropdownItem ( tagId, tag ) =
             let
