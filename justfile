@@ -716,6 +716,16 @@ _echo-generic-deploy-back:
     set -x
     echo "Back-end is ready. Now open {{ server }}'s URL"
 
+setup-py:
+    #!/bin/bash
+    set -euxo pipefail
+    if [[ "{{ server }}" == "" ]]; then
+        just _print-servers; exit 1;
+    fi
+    . deploy/utils.sh
+    ensure_nonempty "server" "{{ server }}"
+    ssh {{ server }} 'sudo python3 -m pip install -U -r /usr/share/wdintel-py/requirements.txt'
+
 deploy-echo-ai:
     #!/bin/bash
     set -euxo pipefail
@@ -774,13 +784,6 @@ deploy-geo-screenshot:
 
 build-docker:
     docker buildx build --platform linux/amd64 .
-
-setup-py:
-    @if [[ "{{ server }}" == "echo-zaporizhzha" ]]; then \
-        just _echo-zaporizhzha-setup-py; \
-    else \
-        just _print-servers; exit 1; \
-    fi
 
 _echo-zaporizhzha-setup-py:
     scp deploy/wdintel-py.service echo-zaporizhzha: && ssh -t echo-zaporizhzha 'sudo mv wdintel-py.service /etc/systemd/system/'
