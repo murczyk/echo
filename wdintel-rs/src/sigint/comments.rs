@@ -3,7 +3,7 @@ use crate::error::AppError;
 use crate::h;
 use crate::types::{Mode, ShortContext};
 use chrono::{Duration, NaiveDateTime};
-use log::{error, info};
+use log::{error, info, warn};
 use sea_orm::sea_query::Expr;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait,
@@ -11,6 +11,7 @@ use sea_orm::{
     QueryFilter, QueryOrder, QuerySelect, RelationTrait, Set,
 };
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, FromQueryResult)]
 struct CommentExportRow {
@@ -28,6 +29,7 @@ struct CommentCsvRow {
     comment: String,
     message_ts: String,
     source_login: String,
+    source_organism: String,
 }
 
 pub async fn oneoff_export_sigint_comments(
@@ -35,26 +37,34 @@ pub async fn oneoff_export_sigint_comments(
     ps: &crate::OneoffExportSigintCommentsPs,
 ) -> Result<(), AppError> {
     info!(
-        "starting oneoff_export_sigint_comments organism={} from={} to={} output={}",
-        ps.organism_name, ps.from, ps.to, ps.output
+        "starting oneoff_export_sigint_comments organisms={:?} from={} to={} output={}",
+        ps.organisms, ps.from, ps.to, ps.output
     );
     let from_dt = parse_naive_datetime(&ps.from)?;
     let to_dt = parse_naive_datetime(&ps.to)?;
     let dbx = crate::new_pg_pool_from_mode(mode).await.c(h!())?;
 
-    let organism = organism::Entity::find()
-        .filter(organism::Column::DeletedPermanently.eq(false))
-        .filter(organism::Column::Name.eq(ps.organism_name.clone()))
-        .one(&dbx)
+    let mut q = organism::Entity::find()
+        .filter(organism::Column::DeletedPermanently.eq(false));
+
+    if !ps.organisms.is_empty() {
+        q = q.filter(organism::Column::Name.is_in(ps.organisms.clone()));
+    }
+
+    let organisms: HashMap<i64, String> = q
+        .all(&dbx)
         .await
         .c(h!())?
-        .c(h!())?;
+        .into_iter()
+        .map(|organism| (organism.id, organism.name))
+        .collect();
 
-    let logins = load_organism_logins(&dbx, organism.id).await?;
+    let logins =
+        load_organism_logins(&dbx, organisms.keys().copied().collect()).await?;
     if logins.is_empty() {
         info!(
-            "no active logins found for organism {}, nothing to export",
-            ps.organism_name
+            "no active logins found for organisms {:?}, nothing to export",
+            &ps.organisms
         );
         return Ok(());
     }
@@ -69,7 +79,9 @@ pub async fn oneoff_export_sigint_comments(
             JoinType::InnerJoin,
             signal_message::Relation::SigintInboxItem.def(),
         )
-        .filter(sigint_comment::Column::Login.is_in(logins.clone()))
+        .filter(
+            sigint_comment::Column::Login.is_in(logins.keys().cloned().clone()),
+        )
         .filter(time_condition)
         .select_only()
         .column(sigint_comment::Column::Login)
@@ -122,10 +134,23 @@ pub async fn oneoff_export_sigint_comments(
             row.message_timestamp,
             row.message_created_at,
         );
+        let login_organism_name =
+            logins.get(&row.login).and_then(|k| organisms.get(k));
+
+        let Some(source_organism) = login_organism_name else {
+            error!(
+                "skipping comment from login {} because organism is missing",
+                row.login
+            );
+            skipped += 1;
+            continue;
+        };
+
         let csv_row = CommentCsvRow {
             body: body.clone(),
             comment: row.comment.clone(),
             message_ts: message_ts.format("%Y-%m-%dT%H:%M:%S").to_string(),
+            source_organism: source_organism.clone(),
             source_login: row.login.clone(),
         };
         writer.serialize(&csv_row).c(h!())?;
@@ -149,25 +174,69 @@ pub async fn oneoff_import_sigint_comments(
     mode: Mode,
     ps: &crate::OneoffImportSigintCommentsPs,
 ) -> Result<(), AppError> {
-    info!(
-        "starting oneoff_import_sigint_comments input={} target_login={}",
-        ps.input, ps.target_login
-    );
+    info!("starting oneoff_import_sigint_comments input={}", ps.input,);
     let dbx = crate::new_pg_pool_from_mode(mode).await.c(h!())?;
-    let Some(_) = login::Entity::find_by_id(ps.target_login.clone())
+
+    let login_to_organism_id: HashMap<String, i64> = login::Entity::find()
         .filter(login::Column::Deleted.eq(false))
         .filter(login::Column::DeletedPermanently.eq(false))
-        .one(&dbx)
+        .filter(login::Column::OrganismId.is_not_null())
+        .select_only()
+        .column(login::Column::Login)
+        .column(login::Column::OrganismId)
+        .into_tuple::<(String, i64)>()
+        .all(&dbx)
         .await
         .c(h!())?
-    else {
-        return Err(AppError::BL {
-            msg: format!(
-                "target login not found or deleted: {}",
-                ps.target_login
-            ),
-        });
-    };
+        .into_iter()
+        .collect();
+
+    let organisms: HashMap<i64, String> = organism::Entity::find()
+        .filter(organism::Column::DeletedPermanently.eq(false))
+        .select_only()
+        .column(organism::Column::Id)
+        .column(organism::Column::Name)
+        .into_tuple::<(i64, String)>()
+        .all(&dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .collect();
+
+    let mut logins_to_map: HashSet<(String, String)> = HashSet::new();
+    let mut organism_login_mapping: HashMap<String, HashMap<String, String>>;
+    if let Some(path) = &ps.organism_login_mapping {
+        let file = std::fs::File::open(path).c(h!())?;
+        let reader = std::io::BufReader::new(file);
+        organism_login_mapping = serde_json::from_reader(reader).c(h!())?;
+
+        let len = organism_login_mapping.len();
+        info!("organism_login_mapping loaded, {len} entrires");
+
+        for (source_organism, logins) in &organism_login_mapping {
+            for (source_login, target_login) in logins {
+                let Some(target_organism_id) =
+                    login_to_organism_id.get(target_login)
+                else {
+                    return Err(AppError::BL {
+                        msg: format!(
+                            "target login not found or deleted: {target_login}"
+                        ),
+                    });
+                };
+                let Some(target_organism) = organisms.get(target_organism_id)
+                else {
+                    return Err(AppError::BL {
+                        msg: format!("target login organism not found or deleted: {target_organism_id}"),
+                    });
+                };
+
+                info!("loaded mapping '{source_organism}/{source_login}' to '{target_organism}/{target_login}'");
+            }
+        }
+    } else {
+        organism_login_mapping = HashMap::new();
+    }
 
     let mut reader = csv::ReaderBuilder::new()
         .trim(csv::Trim::All)
@@ -178,22 +247,71 @@ pub async fn oneoff_import_sigint_comments(
     let mut skipped_existing = 0_usize;
     let mut not_found = 0_usize;
     let mut failed = 0_usize;
+    let mut excluded: usize = 0_usize;
+    let mut not_mapped = 0_usize;
 
+    let excluded_organisms: HashSet<String> =
+        ps.excluded_organisms.iter().cloned().collect();
+    let excluded_logins: HashSet<String> =
+        ps.excluded_logins.iter().cloned().collect();
+
+    let dry_run = if ps.dry_run { " (dry-run)" } else { "" };
     for (idx, record) in reader.deserialize::<CommentCsvRow>().enumerate() {
         let row: CommentCsvRow = match record {
             Ok(row) => row,
             Err(err) => {
                 failed += 1;
-                error!("row {}: failed to read csv record: {err}", idx + 1);
+                error!(
+                    "row {}{dry_run}: failed to read csv record: {err}",
+                    idx + 1
+                );
                 continue;
             }
         };
+        let source_organism = row.source_organism.clone();
+        if excluded_organisms.contains(&row.source_organism) {
+            excluded += 1;
+            continue;
+        }
+        let source_login = row.source_login.clone();
+        if excluded_logins.contains(&row.source_login) {
+            excluded += 1;
+            continue;
+        }
+        let login: String;
+        let organism_mapping = organism_login_mapping
+            .entry(source_organism.clone())
+            .or_default();
+
+        if let Some(target_login) = organism_mapping.get(&row.source_login) {
+            login = target_login.clone();
+        } else {
+            if let Some(target_organism_id) =
+                login_to_organism_id.get(&row.source_login)
+            {
+                let target_login = source_login.clone();
+                login = target_login.clone();
+                let target_organism = &organisms[target_organism_id];
+
+                info!("detected mapping{dry_run} '{source_organism}/{source_login}' to '{target_organism}/{target_login}'");
+                organism_mapping.insert(source_login.clone(), target_login);
+            } else {
+                not_mapped += 1;
+                if logins_to_map.insert((source_organism, source_login)) {
+                    let source_organism = &row.source_organism;
+                    let source_login = &row.source_login;
+                    error!("missing mapping{dry_run} for '{source_organism}/{source_login}', target login doesn't exist or has no organism");
+                }
+                continue;
+            }
+        }
+
         let message_ts = match parse_naive_datetime(&row.message_ts) {
             Ok(ts) => ts,
             Err(err) => {
                 failed += 1;
                 error!(
-                    "row {}: invalid message_ts '{}': {err}",
+                    "row {}{dry_run}: invalid message_ts '{}': {err}",
                     idx + 1,
                     row.message_ts
                 );
@@ -206,7 +324,7 @@ pub async fn oneoff_import_sigint_comments(
         else {
             not_found += 1;
             error!(
-                "row {}: message not found within +/-15m for ts {} body={}",
+                "row {}{dry_run}: message not found within +/-15m for ts {} body={}",
                 idx + 1,
                 row.message_ts,
                 format_body_sample(&row.body)
@@ -216,7 +334,7 @@ pub async fn oneoff_import_sigint_comments(
 
         if let Some(existing) = sigint_comment::Entity::find()
             .filter(sigint_comment::Column::SignalMessageId.eq(message.id))
-            .filter(sigint_comment::Column::Login.eq(ps.target_login.clone()))
+            .filter(sigint_comment::Column::Login.eq(login.clone()))
             .one(&dbx)
             .await
             .c(h!())?
@@ -224,53 +342,80 @@ pub async fn oneoff_import_sigint_comments(
             skipped_existing += 1;
             if existing.comment.trim() == row.comment.trim() {
                 info!(
-                    "row {}: skipping message {} because same comment already exists",
+                    "row {}{dry_run}: skipping message {} because same comment already exists",
                     idx + 1,
                     message.id
                 );
             } else {
                 info!(
-                    "row {}: skipping message {} because another comment already exists for login {}",
+                    "row {}{dry_run}: skipping message {} because another comment already exists for login {}",
                     idx + 1,
                     message.id,
-                    ps.target_login
+                    login
                 );
             }
             continue;
         }
 
-        let active = sigint_comment::ActiveModel {
-            id: NotSet,
-            login: Set(ps.target_login.clone()),
-            signal_message_id: Set(message.id),
-            comment: Set(row.comment.clone()),
-            created_at: NotSet,
-        };
+        if ps.dry_run {
+            inserted += 1;
+            info!(
+                "row {}{dry_run}: will import comment for message {} at {}",
+                idx + 1,
+                message.id,
+                resolved_ts
+            );
+        } else {
+            let active = sigint_comment::ActiveModel {
+                id: NotSet,
+                login: Set(login),
+                signal_message_id: Set(message.id),
+                comment: Set(row.comment.clone()),
+                created_at: NotSet,
+            };
 
-        match active.insert(&dbx).await {
-            Ok(_) => {
-                inserted += 1;
-                info!(
-                    "row {}: imported comment for message {} at {}",
-                    idx + 1,
-                    message.id,
-                    resolved_ts
-                );
-            }
-            Err(err) => {
-                failed += 1;
-                error!(
+            match active.insert(&dbx).await {
+                Ok(_) => {
+                    inserted += 1;
+                    info!(
+                        "row {}: imported comment for message {} at {}",
+                        idx + 1,
+                        message.id,
+                        resolved_ts
+                    );
+                }
+                Err(err) => {
+                    failed += 1;
+                    error!(
                     "row {}: failed to insert comment for message {}: {err}",
                     idx + 1,
                     message.id
                 );
+                }
             }
         }
     }
 
+
     info!(
-        "import completed: inserted {inserted}, skipped {skipped_existing}, not_found {not_found}, failed {failed}",
+        "import completed{dry_run}: inserted {inserted}, skipped {skipped_existing}, excluded {excluded}, not_found {not_found}, not_mapped {not_mapped}, failed {failed}",
     );
+
+    if !logins_to_map.is_empty() {
+        let count = logins_to_map.len();
+        for (org, login) in logins_to_map {
+            let login_mapping = organism_login_mapping.entry(org).or_default();
+            login_mapping.insert(login, "<TARGET LOGIN>".to_owned());
+        }
+        let json =
+            serde_json::to_string_pretty(&organism_login_mapping).c(h!())?;
+
+        warn!("{count} not mapped logins found");
+        println!("missing mappings:\n{json}");
+        println!("fill it and provide it with --organism_login_mapping <path to mapping.json>");
+        println!("or exclude using --excluded-organisms <organism 1> <organism2> --excluded-logins <login 1> <login2> flags");
+    }
+
     Ok(())
 }
 
@@ -316,22 +461,25 @@ fn message_time_condition(
 
 async fn load_organism_logins<'a, 'async_trait, C>(
     txn: &'a C,
-    organism_id: i64,
-) -> Result<Vec<String>, AppError>
+    organism_ids: Vec<i64>,
+) -> Result<HashMap<String, i64>, AppError>
 where
     C: ConnectionTrait + 'async_trait,
 {
     let logins = login::Entity::find()
-        .filter(login::Column::OrganismId.eq(organism_id))
+        .filter(login::Column::OrganismId.is_in(organism_ids))
         .filter(login::Column::Deleted.eq(false))
         .filter(login::Column::DeletedPermanently.eq(false))
+        .filter(login::Column::OrganismId.is_not_null())
         .select_only()
         .column(login::Column::Login)
-        .into_tuple::<String>()
+        .column(login::Column::OrganismId)
+        .into_tuple::<(String, i64)>()
         .all(txn)
         .await
         .c(h!())?;
-    Ok(logins)
+
+    Ok(logins.into_iter().collect())
 }
 
 async fn find_best_message(
