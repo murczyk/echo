@@ -829,6 +829,18 @@ inbox_message_tags_rm toMsg req =
         }
 
 
+inbox_message_tags_model_error :
+    (Result ApiError () -> msg)
+    -> InboxMessageTagModelErrorReq
+    -> Cmd msg
+inbox_message_tags_model_error toMsg req =
+    Http.post
+        { url = "/api/tags/tag-model-error"
+        , body = Http.jsonBody (inboxMessageTagModelErrorReqEncoder req)
+        , expect = leExpectJson toMsg (Decode.succeed ())
+        }
+
+
 admin_tags_list :
     (Result ApiError (List TagAdmin) -> msg)
     -> Cmd msg

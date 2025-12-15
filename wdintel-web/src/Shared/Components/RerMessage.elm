@@ -58,12 +58,18 @@ type alias RenderParams =
 type alias Edited =
     { original : B.InboxMessage }
 
+type alias BotTagAction =
+    { messageId : Int
+    , tagId : Int
+    }
+
 
 type alias Model =
     { callsignInputs : Dict Int String
     , edited : Dict Int Edited
     , extendedForm : Set Int
     , focusedTextarea : Maybe Int
+    , botTagAction : Maybe BotTagAction
     }
 
 
@@ -73,6 +79,7 @@ model0 =
     , edited = Dict.empty
     , extendedForm = Set.empty
     , focusedTextarea = Nothing
+    , botTagAction = Nothing
     }
 
 
@@ -96,6 +103,9 @@ type Msg
     | ExtendedFormChanged Int String
     | ToggleTag Int Int
     | TagSaveDone Int Int InboxMessage (Result ApiError ())
+    | MarkBotTagWrong Int Int
+    | MarkBotTagWrongDone Int Int (Result ApiError ())
+    | CancelBotTagAction
     | BookmarkAdd Int
     | BookmarkAddDone (Result ApiError ())
     | BookmarkRemove Int
@@ -574,17 +584,24 @@ update vps msg model =
 
                 Just messageBefore ->
                     let
-                        isSet =
-                            isTagSet msgId tagId vps.messages
+                        userHasTag =
+                            hasUserTag msgId tagId vps.user.name vps.messages
 
                         cmd =
-                            if isSet then
+                            if userHasTag then
                                 Api.inbox_message_tags_rm (TagSaveDone msgId tagId messageBefore) { messageId = msgId, tagId = tagId }
 
                             else
                                 Api.inbox_message_tags_add (TagSaveDone msgId tagId messageBefore) { messageId = msgId, tagId = tagId }
+
+                        botPanel =
+                            if userHasTag && hasBotTag msgId tagId vps.messages then
+                                Just { messageId = msgId, tagId = tagId }
+
+                            else
+                                Nothing
                     in
-                    { model = model
+                    { model = { model | botTagAction = botPanel }
                     , cmds = E.sendCmd cmd
                     , sigs = []
                     , messages = toggleTag msgId tagId (Just vps.user.name) vps.messages
@@ -599,6 +616,38 @@ update vps msg model =
 
         TagSaveDone _ _ _ (Ok _) ->
             { model = model
+            , cmds = E.none
+            , sigs = []
+            , messages = vps.messages
+            }
+
+        MarkBotTagWrong msgId tagId ->
+            { model = model
+            , cmds =
+                Api.inbox_message_tags_model_error
+                    (MarkBotTagWrongDone msgId tagId)
+                    { messageId = msgId, tagId = tagId }
+                    |> E.sendCmd
+            , sigs = []
+            , messages = vps.messages
+            }
+
+        MarkBotTagWrongDone msgId tagId (Err e) ->
+            { model = model
+            , cmds = Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Не вдалося оновити тег бота" e
+            , sigs = []
+            , messages = vps.messages
+            }
+
+        MarkBotTagWrongDone msgId tagId (Ok _) ->
+            { model = { model | botTagAction = Nothing }
+            , cmds = E.none
+            , sigs = []
+            , messages = removeBotTags msgId tagId vps.messages
+            }
+
+        CancelBotTagAction ->
+            { model = { model | botTagAction = Nothing }
             , cmds = E.none
             , sigs = []
             , messages = vps.messages
@@ -810,8 +859,61 @@ isTagSet : Int -> Int -> List ( Int, B.InboxMessage ) -> Bool
 isTagSet msgId tagId messages =
     messages
         |> findK msgId
-        |> mmap (.tags >> def [] >> List.member tagId)
-        |> def False
+        |> Maybe.map (.inboxTags >> Maybe.withDefault [] >> List.any (\t -> t.tagId == tagId))
+        |> Maybe.withDefault False
+
+
+hasUserTag : Int -> Int -> String -> List ( Int, B.InboxMessage ) -> Bool
+hasUserTag msgId tagId login messages =
+    messages
+        |> findK msgId
+        |> Maybe.map
+            (\m ->
+                inboxTagsFor m
+                    |> List.any
+                        (\t ->
+                            t.tagId == tagId
+                                && t.model
+                                == Nothing
+                                && t.login
+                                == Just login
+                        )
+            )
+        |> Maybe.withDefault False
+
+
+hasBotTag : Int -> Int -> List ( Int, B.InboxMessage ) -> Bool
+hasBotTag msgId tagId messages =
+    messages
+        |> findK msgId
+        |> Maybe.map
+            (\m ->
+                inboxTagsFor m
+                    |> List.any
+                        (\t ->
+                            t.tagId == tagId && MaybeX.isJust t.model
+                        )
+            )
+        |> Maybe.withDefault False
+
+
+inboxTagsFor : B.InboxMessage -> List B.InboxMessageTag
+inboxTagsFor message =
+    message.inboxTags |> Maybe.withDefault []
+
+
+tagIdsWithFallback : List B.InboxMessageTag -> List Int -> List Int
+tagIdsWithFallback inboxTags fallbackTags =
+    let
+        ids =
+            inboxTags
+                |> List.map .tagId
+                |> ListX.unique
+    in
+    ids
+        ++ (fallbackTags
+                |> List.filter (\tid -> not (List.member tid ids))
+           )
 
 
 toggleTag :
@@ -822,62 +924,82 @@ toggleTag :
     -> List ( Int, B.InboxMessage )
 toggleTag msgId tagId login messages =
     let
-        isSet =
-            isTagSet msgId tagId messages
+        updateMessage message =
+            let
+                currentTags =
+                    inboxTagsFor message
+
+                remainingTags =
+                    case login of
+                        Just loginName ->
+                            List.filter
+                                (\tag ->
+                                    not
+                                        (tag.tagId == tagId
+                                            && tag.model
+                                            == Nothing
+                                            && tag.login
+                                            == Just loginName
+                                        )
+                                )
+                                currentTags
+
+                        Nothing ->
+                            currentTags
+
+                hasRemoved =
+                    List.length remainingTags /= List.length currentTags
+
+                added =
+                    case ( login, hasRemoved ) of
+                        ( Just loginName, False ) ->
+                            [ { id = 0
+                              , tagId = tagId
+                              , confidence = 1
+                              , login = Just loginName
+                              , model = Nothing
+                              }
+                            ]
+
+                        _ ->
+                            []
+
+                inboxTags2 =
+                    added ++ remainingTags
+
+                tags2 =
+                    tagIdsWithFallback inboxTags2 (message.tags |> def [])
+            in
+            { message | tags = Just tags2, inboxTags = Just inboxTags2 }
     in
-    messages
-        |> updateV msgId
-            (\m ->
-                let
-                    tags2 : Maybe (List Int)
-                    tags2 =
-                        m.tags
-                            |> def []
-                            |> (\tags ->
-                                    if isSet then
-                                        List.filter (\x -> x /= tagId) tags
+    messages |> updateV msgId updateMessage
 
-                                    else
-                                        tags ++ [ tagId ]
-                               )
-                            |> Just
 
-                    inboxTags2 : Maybe (List B.InboxMessageTag)
-                    inboxTags2 =
-                        let
-                            currentTags =
-                                m.inboxTags |> Maybe.withDefault []
-                        in
-                        if isSet then
-                            let
-                                remaining =
-                                    currentTags
-                                        |> List.filter (\tag -> tag.tagId /= tagId)
-                            in
-                            if List.isEmpty remaining then
-                                Nothing
+removeBotTags :
+    Int
+    -> Int
+    -> List ( Int, B.InboxMessage )
+    -> List ( Int, B.InboxMessage )
+removeBotTags msgId tagId messages =
+    let
+        updateMessage message =
+            let
+                inboxTags2 =
+                    inboxTagsFor message
+                        |> List.filter
+                            (\tag ->
+                                not
+                                    (tag.tagId == tagId
+                                        && MaybeX.isJust tag.model
+                                    )
+                            )
 
-                            else
-                                Just remaining
-
-                        else
-                            case login of
-                                Just loginName ->
-                                    currentTags
-                                        ++ [ { id = 0
-                                             , tagId = tagId
-                                             , confidence = 1
-                                             , login = Just loginName
-                                             , model = Nothing
-                                             }
-                                           ]
-                                        |> Just
-
-                                Nothing ->
-                                    m.inboxTags
-                in
-                { m | tags = tags2, inboxTags = inboxTags2 }
-            )
+                tags2 =
+                    tagIdsWithFallback inboxTags2 (message.tags |> def [])
+            in
+            { message | inboxTags = Just inboxTags2, tags = Just tags2 }
+    in
+    messages |> updateV msgId updateMessage
 
 
 renderRow :
@@ -1353,6 +1475,30 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                   <|
                     [ tagsBlock message.tags message.inboxTags (ToggleTag msgId) vps.tags
                     ]
+                , case model.botTagAction of
+                    Just action ->
+                        if action.messageId == msgId then
+                            div
+                                [ class "flex gap-2 items-center text-xs bg-card border border-border rounded px-3 py-2 shadow-sm" ]
+                                [ button
+                                    [ type_ "button"
+                                    , class "btn btn-primary btn-sm"
+                                    , onClick <| MarkBotTagWrong action.messageId action.tagId
+                                    ]
+                                    [ text "бот помилився" ]
+                                , button
+                                    [ type_ "button"
+                                    , class "btn btn-outline-secondary btn-sm"
+                                    , onClick CancelBotTagAction
+                                    ]
+                                    [ text "закрити" ]
+                                ]
+
+                        else
+                            text ""
+
+                    Nothing ->
+                        text ""
                 , textarea
                     [ class "w-full grow-1 px-3 py-2 border border-border rounded-lg bg-card text-text resize-none focus:outline-none focus:ring-2 focus:ring-secondary-light-active focus:border-transparent transition-all"
                     , style "min-height" "100px"

@@ -69,3 +69,11 @@ pub struct InboxMessageTagsRmReq {
     pub message_id: i64,
     pub tag_id: i64,
 }
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct InboxMessageTagModelErrorReq {
+    pub message_id: i64,
+    pub tag_id: i64,
+}

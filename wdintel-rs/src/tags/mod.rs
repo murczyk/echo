@@ -344,22 +344,24 @@ async fn inbox_message_tags_add(
             sigint_inbox_item_tag::Column::SigintInboxItemId.eq(req.message_id),
         )
         .filter(sigint_inbox_item_tag::Column::TagId.eq(req.tag_id))
+        .filter(sigint_inbox_item_tag::Column::Login.eq(Some(user_id.clone())))
+        .filter(sigint_inbox_item_tag::Column::Model.is_null())
         .one(&txn)
         .await
         .c(h!())?;
 
-    let login = Some(user_id.clone());
     let mut attached_tag: sigint_inbox_item_tag::ActiveModel;
     if let Some(model) = tag {
         attached_tag = model.into();
         attached_tag.confidence = Set(TAG_MAXIMUM_CONFIDENCE);
-        attached_tag.login = Set(login);
+        attached_tag.model = Set(None);
         attached_tag.update(&txn).await.c(h!())?;
     } else {
         attached_tag = sigint_inbox_item_tag::ActiveModel {
             sigint_inbox_item_id: Set(inbox.id),
             tag_id: Set(req.tag_id),
-            login: Set(login),
+            login: Set(Some(user_id.clone())),
+            model: Set(None),
             ..Default::default()
         };
         attached_tag.insert(&txn).await.c(h!())?;
@@ -396,17 +398,12 @@ async fn inbox_message_tags_rm(
             sigint_inbox_item_tag::Column::SigintInboxItemId.eq(req.message_id),
         )
         .filter(sigint_inbox_item_tag::Column::TagId.eq(req.tag_id))
+        .filter(sigint_inbox_item_tag::Column::Login.eq(Some(user_id.clone())))
+        .filter(sigint_inbox_item_tag::Column::Model.is_null())
         .one(&txn)
         .await
         .c(h!())?;
     if let Some(tag) = tag_option {
-        if let Some(model) = &tag.model {
-            let tag_id = req.tag_id;
-            let message_id = inbox.id;
-            let confidence = tag.confidence;
-            info!("suggested tag_id={tag_id} is being removed by user={user_id} (sigint_inbox_item={message_id}, model={model}, confidence={confidence:.2})");
-        }
-
         let attached_tag: sigint_inbox_item_tag::ActiveModel = tag.into();
         attached_tag.delete(&txn).await.c(h!())?;
         txn.commit().await.c(h!())?;
@@ -418,5 +415,79 @@ async fn inbox_message_tags_rm(
     }
 
     txn.commit().await.c(h!())?;
+    Ok(Json(()))
+}
+
+#[post("/api/tags/tag-model-error")]
+async fn inbox_message_tags_model_error(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<InboxMessageTagModelErrorReq>,
+) -> Result<Json<()>, AppError> {
+    let user_id: String = user.id().c(h!())?;
+
+    crate::users::has_role(&env.dbx, &user_id, "Rer")
+        .await
+        .c(h!())?;
+
+    let txn: DatabaseTransaction = env.dbx.begin().await.c(h!())?;
+
+    let inbox = sigint_inbox_item::Entity::find_by_id(req.message_id)
+        .one(&txn)
+        .await
+        .c(h!())?
+        .ok_or(AppError::NotFound)?;
+
+    let bot_tags = sigint_inbox_item_tag::Entity::find()
+        .filter(
+            sigint_inbox_item_tag::Column::SigintInboxItemId.eq(req.message_id),
+        )
+        .filter(sigint_inbox_item_tag::Column::TagId.eq(req.tag_id))
+        .filter(sigint_inbox_item_tag::Column::Model.is_not_null())
+        .all(&txn)
+        .await
+        .c(h!())?;
+
+    if bot_tags.is_empty() {
+        txn.commit().await.c(h!())?;
+        return Ok(Json(()));
+    }
+
+    let mut error_records = vec![];
+    for tag in bot_tags.iter() {
+        let model_name = tag
+            .model
+            .clone()
+            .unwrap_or_else(|| "unknown-model".to_string());
+        info!(
+            "bot tag removal requested: tag_id={} model={} confidence={:.3} by user={} (sigint_inbox_item={})",
+            tag.tag_id, model_name, tag.confidence, user_id, tag.sigint_inbox_item_id
+        );
+        error_records.push(sigint_inbox_tag_model_error::ActiveModel {
+            sigint_inbox_item_id: Set(tag.sigint_inbox_item_id),
+            tag_id: Set(tag.tag_id),
+            model: Set(model_name),
+            model_login: Set(tag.login.clone()),
+            confidence: Set(tag.confidence),
+            removed_by_login: Set(user_id.clone()),
+            ..Default::default()
+        });
+    }
+
+    if !error_records.is_empty() {
+        sigint_inbox_tag_model_error::Entity::insert_many(error_records)
+            .exec(&txn)
+            .await
+            .c(h!())?;
+    }
+
+    for tag in bot_tags {
+        let active: sigint_inbox_item_tag::ActiveModel = tag.into();
+        active.delete(&txn).await.c(h!())?;
+    }
+
+    txn.commit().await.c(h!())?;
+    let event = EventMsg::new(EventType::ETInboxChanged(inbox.id));
+    fanout(&mut env.redis.clone(), event).await.c(h!())?;
     Ok(Json(()))
 }

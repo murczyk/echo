@@ -179,6 +179,7 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::tags::types::TagUpsertReq,
             crate::tags::types::InboxMessageTagsAddReq,
             crate::tags::types::InboxMessageTagsRmReq,
+            crate::tags::types::InboxMessageTagModelErrorReq,
             crate::rer_importer::reports::types::ReoReportSettings,
             crate::rer_importer::reports::types::ReportAggregation,
             crate::rer_importer::reports::types::ReportPreviewReq,

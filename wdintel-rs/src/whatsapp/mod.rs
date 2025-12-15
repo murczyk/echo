@@ -286,6 +286,8 @@ pub async fn sync_groups(
                     is_secret: Set(false),
                     ignore_operativny: Default::default(),
                     deleted: NotSet,
+                    short_note: Set(None),
+                    long_note: Set(None),
                 };
                 let signal_group =
                     crate::messenger::group::add_group(group, dbx)

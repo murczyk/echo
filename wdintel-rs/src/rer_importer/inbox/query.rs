@@ -122,7 +122,7 @@ pub(crate) async fn build_inbox_query(
         .select_only()
         .expr_as(
             Expr::cust_with_exprs(
-                "array_agg($1) filter (where $2 >= $3)",
+                "array_agg(distinct $1) filter (where $2 >= $3)",
                 [
                     Expr::col((
                         sigint_inbox_item_tag::Entity,

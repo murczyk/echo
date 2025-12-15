@@ -544,6 +544,7 @@ pub async fn main_server(
             .service(crate::tags::delete_tag_keyword)
             .service(crate::tags::inbox_message_tags_add)
             .service(crate::tags::inbox_message_tags_rm)
+            .service(crate::tags::inbox_message_tags_model_error)
             .service(crate::log_api::log_error)
             .service(crate::event_stream::long_poll)
             .service(crate::messenger::list_messengers)

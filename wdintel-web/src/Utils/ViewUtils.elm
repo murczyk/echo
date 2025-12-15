@@ -26,9 +26,14 @@ tagsBlock tagIdsSet inboxTags toggleTagMsg tags =
             tags |> List.filter (\( _, x ) -> x.extra == Just True)
 
         isSet tagId =
-            tagIdsSet
-                |> def []
-                |> List.member tagId
+            case inboxTags of
+                Just entries ->
+                    List.any (\tag -> tag.tagId == tagId) entries
+
+                Nothing ->
+                    tagIdsSet
+                        |> def []
+                        |> List.member tagId
 
         isExtraSet =
             tagsExtra
@@ -78,8 +83,24 @@ tagsBlock tagIdsSet inboxTags toggleTagMsg tags =
                           else
                             Just <| tooltipSection "Боти:" robots
                         ]
+
+                callout =
+                    if List.isEmpty robots then
+                        Nothing
+
+                    else
+                        Just <|
+                            div
+                                [ class "text-xs text-warning mt-1 leading-snug" ]
+                                [ text "Знайшли помилку? Відмітьте та зніміть тег, та натисніть \"Бот помилився\"" ]
             in
-            div [ class "space-y-1 max-w-[260px]" ] sections
+            div [ class "space-y-1 max-w-[260px]" ]
+                (sections
+                    ++ (callout
+                            |> Maybe.map List.singleton
+                            |> Maybe.withDefault []
+                       )
+                )
 
         viewCountBadge iconClass entries =
             if List.isEmpty entries then

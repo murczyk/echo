@@ -30,6 +30,7 @@ b2_endpoint_url := "https://s3.eu-central-003.backblazeb2.com"
 storage_dir := home_directory() + "/Downloads/storage"
 ai_bucket_prefix := "s3://echouastorage/lfs/echo-ai/models"
 wd_fasttext_models := justfile_directory() + "/echo-ai/fasttext-models"
+
 default:
     @just --list
 

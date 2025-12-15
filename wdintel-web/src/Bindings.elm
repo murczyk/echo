@@ -3597,6 +3597,20 @@ inboxMessageTagsRmReqEncoder struct =
         ]
 
 
+type alias InboxMessageTagModelErrorReq =
+    { messageId : Int
+    , tagId : Int
+    }
+
+
+inboxMessageTagModelErrorReqEncoder : InboxMessageTagModelErrorReq -> Json.Encode.Value
+inboxMessageTagModelErrorReqEncoder struct =
+    Json.Encode.object
+        [ ( "message_id", Json.Encode.int struct.messageId )
+        , ( "tag_id", Json.Encode.int struct.tagId )
+        ]
+
+
 type alias ReoReportSettings =
     { adjacentFreqsDistance : Float
     }

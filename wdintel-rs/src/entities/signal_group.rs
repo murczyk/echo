@@ -17,6 +17,10 @@ pub struct Model {
     pub ignore_operativny: bool,
     pub is_secret: bool,
     pub deleted: bool,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub short_note: Option<String>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub long_note: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

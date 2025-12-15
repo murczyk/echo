@@ -219,6 +219,8 @@ pub async fn process_messages<C: ConnectionTrait>(
                 OnConflict::columns([
                     sigint_inbox_item_tag::Column::SigintInboxItemId,
                     sigint_inbox_item_tag::Column::TagId,
+                    sigint_inbox_item_tag::Column::Login,
+                    sigint_inbox_item_tag::Column::Model,
                 ])
                 .do_nothing()
                 .to_owned(),
