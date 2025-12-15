@@ -285,25 +285,23 @@ pub async fn oneoff_import_sigint_comments(
 
         if let Some(target_login) = organism_mapping.get(&row.source_login) {
             login = target_login.clone();
-        } else {
-            if let Some(target_organism_id) =
-                login_to_organism_id.get(&row.source_login)
-            {
-                let target_login = source_login.clone();
-                login = target_login.clone();
-                let target_organism = &organisms[target_organism_id];
+        } else if let Some(target_organism_id) =
+            login_to_organism_id.get(&row.source_login)
+        {
+            let target_login = source_login.clone();
+            login = target_login.clone();
+            let target_organism = &organisms[target_organism_id];
 
-                info!("detected mapping{dry_run} '{source_organism}/{source_login}' to '{target_organism}/{target_login}'");
-                organism_mapping.insert(source_login.clone(), target_login);
-            } else {
-                not_mapped += 1;
-                if logins_to_map.insert((source_organism, source_login)) {
-                    let source_organism = &row.source_organism;
-                    let source_login = &row.source_login;
-                    error!("missing mapping{dry_run} for '{source_organism}/{source_login}', target login doesn't exist or has no organism");
-                }
-                continue;
+            info!("detected mapping{dry_run} '{source_organism}/{source_login}' to '{target_organism}/{target_login}'");
+            organism_mapping.insert(source_login.clone(), target_login);
+        } else {
+            not_mapped += 1;
+            if logins_to_map.insert((source_organism, source_login)) {
+                let source_organism = &row.source_organism;
+                let source_login = &row.source_login;
+                error!("missing mapping{dry_run} for '{source_organism}/{source_login}', target login doesn't exist or has no organism");
             }
+            continue;
         }
 
         let message_ts = match parse_naive_datetime(&row.message_ts) {
@@ -395,7 +393,6 @@ pub async fn oneoff_import_sigint_comments(
             }
         }
     }
-
 
     info!(
         "import completed{dry_run}: inserted {inserted}, skipped {skipped_existing}, excluded {excluded}, not_found {not_found}, not_mapped {not_mapped}, failed {failed}",
