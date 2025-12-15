@@ -13,8 +13,8 @@ use sea_orm::prelude::*;
 use sea_orm::*;
 use tokio_util::sync::CancellationToken;
 
-const KEYWORDS_REGEX_MODEL_NAME: &str = "keywords-and-regex 0.1.0";
-const NLP_MODEL_NAME: &str = "nlp-fasttext 0.1.0";
+const KEYWORDS_REGEX_MODEL_NAME: &str = "bot-navara-v1";
+const NLP_MODEL_NAME: &str = "bot-willys-v1";
 
 #[derive(FromQueryResult)]
 pub struct SigintInboxItemText {
@@ -78,8 +78,8 @@ async fn get_messages(txn: &DatabaseTransaction) -> Result<Vec<i64>, AppError> {
     let subquery = format!(
         r#"
         SELECT "sigint_inbox_item_id" FROM "tag_suggestion_worker_queue"
-        ORDER BY "sigint_inbox_item_id" 
-        FOR UPDATE SKIP LOCKED 
+        ORDER BY "sigint_inbox_item_id"
+        FOR UPDATE SKIP LOCKED
         LIMIT {TAG_SUGGEST_WORKER_BATCH_SIZE}"#
     );
 
