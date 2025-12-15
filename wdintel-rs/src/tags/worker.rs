@@ -123,7 +123,7 @@ pub async fn process_messages<C: ConnectionTrait>(
     rq: &reqwest::Client,
     dbx: &C,
     tag_keyword_regex_cache: &Arc<RwLock<TagKeywordRegexCache>>,
-) -> Result<(), AppError> {
+) -> Result<u64, AppError> {
     let inbox_items = sigint_inbox_item::Entity::find()
         .filter(sigint_inbox_item::Column::Id.eq_any(message_ids))
         .filter(sigint_inbox_item::Column::BodyNoheader.is_not_null())
@@ -209,21 +209,35 @@ pub async fn process_messages<C: ConnectionTrait>(
         }
     }
 
-    sigint_inbox_item_tag::Entity::insert_many(message_tags)
-        .on_conflict(
-            OnConflict::columns([
-                sigint_inbox_item_tag::Column::SigintInboxItemId,
-                sigint_inbox_item_tag::Column::TagId,
-            ])
+    if message_tags.is_empty() {
+        Ok(0)
+    } else {
+        let suggestions_count = message_tags.len();
+        let result = sigint_inbox_item_tag::Entity::insert_many(message_tags)
+            .on_conflict(
+                OnConflict::columns([
+                    sigint_inbox_item_tag::Column::SigintInboxItemId,
+                    sigint_inbox_item_tag::Column::TagId,
+                ])
+                .do_nothing()
+                .to_owned(),
+            )
             .do_nothing()
-            .to_owned(),
-        )
-        .do_nothing()
-        .exec(dbx)
-        .await
-        .c(h!())?;
+            .exec_without_returning(dbx)
+            .await
+            .c(h!())?;
 
-    Ok(())
+        let message_count = inbox_items.len();
+
+        match result {
+            TryInsertResult::Conflicted => {
+                warn!("ignored {suggestions_count} conflicting tag suggestions for {message_count} messages");
+                Ok(0)
+            }
+            TryInsertResult::Inserted(count) => Ok(count),
+            TryInsertResult::Empty => Ok(0),
+        }
+    }
 }
 
 async fn get_regex_sets_for_tag<C: ConnectionTrait>(

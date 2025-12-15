@@ -1,9 +1,10 @@
+use crate::config::TAG_SUGGEST_WORKER_BATCH_SIZE;
 use crate::entities::{sigint_inbox_item, sigint_inbox_item_tag, tag};
 use crate::error::AppError;
 use crate::types::{Mode, ShortContext};
 use crate::{h, OneoffSuggestInboxMessageTagsPs};
 use chrono::NaiveDateTime;
-use log::info;
+use log::{info, warn};
 use sea_orm::prelude::*;
 use sea_orm::*;
 
@@ -70,29 +71,45 @@ pub async fn oneoff_suggest_inbox_message_tags(
         .filter(sigint_inbox_item::Column::BodyNoheader.is_not_null())
         .filter(sigint_inbox_item::Column::Datetime.gte(start))
         .filter(sigint_inbox_item::Column::Datetime.lte(end))
-        .filter(sigint_inbox_item_tag::Column::Id.is_null())
+        .filter(sigint_inbox_item_tag::Column::Model.is_null())
         .column(sigint_inbox_item::Column::Id)
+        .distinct()
         .into_tuple::<i64>()
         .all(&dbx)
         .await
         .c(h!())?;
 
-    let txn = dbx.begin().await.c(h!())?;
+    let total_len = message_ids.len();
+    info!("oneoff_suggest_inbox_message_tags, about to process {total_len} messages");
+    let mut processed = 0;
+    let mut suggested = 0;
+    for chunk in message_ids.chunks(TAG_SUGGEST_WORKER_BATCH_SIZE) {
+        let txn: DatabaseTransaction = dbx.begin().await.c(h!())?;
 
-    let len = message_ids.len();
-    crate::tags::worker::process_messages(
-        message_ids,
-        &tags,
-        &env.rq,
-        &txn,
-        &env.tag_keyword_regex_cache,
-    )
-    .await
-    .c(h!())?;
+        let count = crate::tags::worker::process_messages(
+            chunk.to_vec(),
+            &tags,
+            &env.rq,
+            &txn,
+            &env.tag_keyword_regex_cache,
+        )
+        .await
+        .c(h!())?;
 
-    txn.commit().await.c(h!())?;
+        processed += chunk.len();
+        suggested += count;
 
-    info!("done oneoff_suggest_inbox_message_tags, processed {len} messages");
+        info!("oneoff_suggest_inbox_message_tags, {suggested} tags suggested for {processed}/{total_len} messages");
+
+        txn.commit().await.c(h!())?;
+    }
+
+    if suggested == 0 {
+        warn!("no tags suggested for {processed} messages, did you forget to set up tag keywords or run `just ai-sync-from-cloud`?")
+    } else {
+        info!("done oneoff_suggest_inbox_message_tags, total {suggested} tags suggested for {processed} messages");
+    }
+
     Ok(())
 }
 

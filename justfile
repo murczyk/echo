@@ -449,14 +449,15 @@ _copy-db:
 ai-sync-from-cloud:
     #!/bin/bash
     if [[ -z "${AWS_ACCESS_KEY_ID:-}" || -z "${AWS_SECRET_ACCESS_KEY:-}" ]]; then
-        echo "❌ Please export AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY for Backblaze S3 access"
-        exit 1
+        # readonly default keys
+        export AWS_ACCESS_KEY_ID='003f325aff5dd5c000000001c'
+        export AWS_SECRET_ACCESS_KEY='K003uL32BhqEzo+9UCp+kOFUvTVoPfg'
     fi
     if ! command -v s5cmd >/dev/null 2>&1; then
         echo "❌ s5cmd is required to ai models (https://github.com/peak/s5cmd)"
         exit 1
     fi
-    
+
     BUCKET_PREFIX="{{ ai_bucket_prefix }}"
     STORAGE="{{ storage_dir }}"
     ENDPOINT_URL="{{ b2_endpoint_url }}"
@@ -476,7 +477,7 @@ ai-sync-to-cloud:
         echo "❌ s5cmd is required to ai models (https://github.com/peak/s5cmd)"
         exit 1
     fi
-    
+
     BUCKET_PREFIX="{{ ai_bucket_prefix }}"
     STORAGE="{{ storage_dir }}"
     ENDPOINT_URL="{{ b2_endpoint_url }}"

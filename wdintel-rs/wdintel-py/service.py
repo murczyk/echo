@@ -91,8 +91,12 @@ def predict_tags():
     output = {tag: process_predict(model, texts) for tag, model in models.items() if not tags or tag in tags}
     res = []
     for index, _ in enumerate(texts):
-        output = {tag: probs[index] for tag, probs in output.items() if probs[index] >= thresholds[tag] }
-        res.append(output)
+        row = {}
+        for tag, probs in output.items():
+            prob = probs[index]
+            if prob >= thresholds[tag]:
+                row[tag] = prob
+        res.append(row)
 
     return jsonify(res)
 
