@@ -57,15 +57,3 @@ pub struct SettlementFileRow {
     pub coords: Option<(f64, f64)>,
     pub language_details: Option<String>,
 }
-
-#[derive(
-    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
-)]
-pub struct CreateSettlementReq {
-    pub name: String,
-    pub lat: f64,
-    pub lng: f64,
-    pub alternative_names: Vec<String>,
-    pub post_id: Option<i64>,
-    pub openstreetmap_id: Option<i32>,
-}

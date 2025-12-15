@@ -1,6 +1,5 @@
-use crate::entities::sigint_settlement;
 use crate::location::trie::Trie;
-use crate::location::types::{CreateSettlementReq, Language};
+use crate::location::types::Language;
 pub(crate) use crate::location::types::{
     FindSettlementReq, SettlementDetails, SettlementFileRow,
 };
@@ -10,8 +9,6 @@ use actix_web::{get, post, HttpRequest};
 use itertools::Itertools;
 use lazy_static::lazy_static;
 use regex::Regex;
-use sea_orm::*;
-use serde_json::json;
 use std::fs;
 
 pub mod peleng;
@@ -26,36 +23,6 @@ pub type SettlementsData = (
     Trie<SettlementDetails>,
     BTreeMap<i32, SettlementDetails>,
 );
-
-#[post("/api/sigint/settlement/create")]
-pub async fn create_settlement(
-    user: actix_identity::Identity,
-    env: actix_web::web::Data<Env>,
-    req: Json<CreateSettlementReq>,
-) -> Result<Json<i64>, AppError> {
-    let user_id = user.id().c(h!())?;
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
-        .await
-        .c(h!())?;
-
-    let res = sigint_settlement::ActiveModel {
-        id: NotSet,
-        name: Set(req.name.clone()),
-        lat: Set(req.lat),
-        lon: Set(req.lng),
-        alt_names: Set(json!(req.alternative_names)),
-        updated_by: Set(Some(user_id.clone())),
-        deleted: NotSet,
-        updated_at: NotSet,
-        created_at: NotSet,
-        openstreetmap_id: Set(req.openstreetmap_id),
-    }
-    .insert(&env.dbx)
-    .await
-    .c(h!())?;
-
-    Ok(Json(res.id))
-}
 
 #[post("/api/settlement/find")]
 async fn find_locations(

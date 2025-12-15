@@ -7,25 +7,6 @@ use redis::AsyncCommands;
 
 pub mod types;
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-struct SessionActivity {
-    pub start: NaiveDateTime,
-    pub last_activity: NaiveDateTime,
-    pub pages_time_spent_secs: BTreeMap<String, i32>,
-    pub pages_filters: BTreeMap<String, BTreeSet<String>>,
-}
-
-impl Default for SessionActivity {
-    fn default() -> Self {
-        SessionActivity {
-            start: Utc::now().naive_utc(),
-            last_activity: Utc::now().naive_utc(),
-            pages_time_spent_secs: BTreeMap::new(),
-            pages_filters: BTreeMap::new(),
-        }
-    }
-}
-
 pub async fn record_new_session(
     user_id: &str,
     session_id: Uuid,
