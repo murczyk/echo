@@ -5,7 +5,8 @@ use crate::rer_importer::types::*;
 use crate::sigint::freq::types::FreqGroupsMessageCountByDay;
 use crate::types::{Env, Mode, ShortContext};
 use crate::utils::orm::ArrayColumnOps;
-use crate::{h, OneoffCalculateHistoricStatsPs};
+use crate::utils::parse_local_datetime;
+use crate::{h, OneoffCalculateHistoricStatsPs, OneoffCalculateStatsPs};
 use anyhow::Context;
 use chrono::*;
 use echo_migration::{Expr, IntoCondition};
@@ -72,15 +73,14 @@ pub async fn oneoff_count_group_batches(mode: Mode) -> Result<(), AppError> {
 
 pub async fn oneoff_calculate_stats(
     mode: Mode,
-    since_epoch_ms: Option<i64>,
-    till_epoch_ms: Option<i64>,
+    ps: &OneoffCalculateStatsPs,
 ) -> Result<(), AppError> {
-    let till_ts = match till_epoch_ms {
-        Some(ts) => DateTime::from_timestamp_millis(ts).c(h!())?.naive_utc(),
+    let till_ts = match ps.end.as_deref() {
+        Some(val) => parse_local_datetime(val).c(h!())?,
         None => Utc::now().naive_utc(),
     };
-    let since_ts = match since_epoch_ms {
-        Some(ts) => DateTime::from_timestamp_millis(ts).c(h!())?.naive_utc(),
+    let since_ts = match ps.start.as_deref() {
+        Some(val) => parse_local_datetime(val).c(h!())?,
         None => start_of_day(till_ts.date() - Duration::days(1)).c(h!())?,
     };
     let config = read_config(mode).context(h!())?;

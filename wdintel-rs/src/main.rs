@@ -419,10 +419,12 @@ pub struct OneoffFixEchoimGroupsPs {
 
 #[derive(clap::Args, Debug, Clone)]
 pub struct OneoffCalculateStatsPs {
-    #[arg(long, value_enum)]
-    pub since_epoch_ms: Option<i64>,
-    #[arg(long, value_enum)]
-    pub till_epoch_ms: Option<i64>,
+    /// Start datetime (inclusive). Example: `2023-04-17T00:00:00`
+    #[arg(long)]
+    pub start: Option<String>,
+    /// End datetime (non-inclusive). Example: `2023-04-18T00:00:00`
+    #[arg(long)]
+    pub end: Option<String>,
 }
 
 #[derive(clap::Args, Debug, Clone)]
@@ -915,12 +917,7 @@ async fn async_main(
             .await
         }
         Cmd::OneoffCalculateStats(ps) => {
-            stats::oneoff_calculate_stats(
-                mode,
-                ps.since_epoch_ms,
-                ps.till_epoch_ms,
-            )
-            .await
+            stats::oneoff_calculate_stats(mode, &ps).await
         }
         Cmd::OneoffCalculateHistoricStats(ps) => {
             stats::oneoff_calculate_historic_stats(mode, ps).await

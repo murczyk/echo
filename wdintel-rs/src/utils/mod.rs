@@ -1,4 +1,4 @@
-use crate::config::{read_config, Config};
+use crate::config::{get_tz, read_config, Config};
 use crate::error::AppError;
 use crate::h;
 use crate::location::SettlementsData;
@@ -64,6 +64,18 @@ pub fn dt_zoned_from_millis(
         chrono::DateTime::from_naive_utc_and_offset(dt_from_millis(ms)?, Utc);
     let dt: chrono::DateTime<chrono_tz::Tz> = dt.with_timezone(&Kyiv);
     Ok(dt)
+}
+
+pub fn parse_local_datetime(val: &str) -> Result<NaiveDateTime, AppError> {
+    let local_datetime =
+        NaiveDateTime::parse_from_str(val, "%Y-%m-%dT%H:%M:%S").c(h!())?;
+    let zoned = local_datetime.and_local_timezone(get_tz()).single().ok_or(
+        AppError::BL {
+            msg: format!("Ambiguous local datetime: {val}"),
+        },
+    )?;
+
+    Ok(zoned.to_utc().naive_utc())
 }
 
 pub fn cond_json_contains_oneof(col: &str, vs: &[String]) -> String {

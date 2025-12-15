@@ -2,8 +2,8 @@ use crate::config::TAG_SUGGEST_WORKER_BATCH_SIZE;
 use crate::entities::{sigint_inbox_item, sigint_inbox_item_tag, tag};
 use crate::error::AppError;
 use crate::types::{Mode, ShortContext};
+use crate::utils::parse_local_datetime;
 use crate::{h, OneoffSuggestInboxMessageTagsPs};
-use chrono::NaiveDateTime;
 use log::{info, warn};
 use sea_orm::prelude::*;
 use sea_orm::*;
@@ -53,8 +53,8 @@ pub async fn oneoff_suggest_inbox_message_tags(
     let env = crate::server::new_env(mode).await.c(h!())?;
 
     let dbx = env.dbx.clone();
-    let start = parse_date(&ps.start).c(h!())?;
-    let end = parse_date(&ps.end).c(h!())?;
+    let start = parse_local_datetime(&ps.start).c(h!())?;
+    let end = parse_local_datetime(&ps.end).c(h!())?;
 
     let tags = tag::Entity::find()
         .filter(tag::Column::Enabled.eq(true))
@@ -122,13 +122,4 @@ pub async fn oneoff_suggest_inbox_message_tags(
     }
 
     Ok(())
-}
-
-fn parse_date(val: &str) -> Result<NaiveDateTime, AppError> {
-    let local_datetime =
-        NaiveDateTime::parse_from_str(val, "%Y-%m-%dT%H:%M:%S").c(h!())?;
-    let tz = crate::config::get_tz();
-    let zoned = local_datetime.and_local_timezone(tz).unwrap();
-
-    Ok(zoned.to_utc().naive_utc())
 }
