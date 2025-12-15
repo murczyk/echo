@@ -24,6 +24,7 @@
   - POST-deploy:
 	  - `just server=$server setup-py`
 	  - `sudo wdintel-rs --mode=live oneoff-fill-sigint-inbox-item-tags` для переносу тегів повідомлень в окрему табличку
+	  - `sudo wdintel-rs --mode=live oneoff-suggest-inbox-message-tags --start "2025-12-01T00:00:00" --end "2025-12-15T00:00:00"` щоби заповнити заднім числом
 - [#1674](https://github.com/echoua/echo/issues/1674) Виводити інформацію для дебагу ECHO IM на сторінці `/admin/messanger`
 - [#1716](https://github.com/echoua/echo/issues/1716) 🐞 Звіт "Бабак". Виправили дублювання перехоплень з галочкою "лише коментарі мого підрозділу".
 
