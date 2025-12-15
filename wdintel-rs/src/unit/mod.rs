@@ -4,23 +4,17 @@ use crate::unit::const_units::*;
 use lazy_static::lazy_static;
 use regex::{Regex, RegexBuilder};
 use sea_orm::*;
-use std::cell::OnceCell;
+use std::sync::OnceLock;
 
 mod const_units;
 pub mod parser;
 
-#[allow(clippy::declare_interior_mutable_const)]
-const NAMES_RE: OnceCell<Regex> = OnceCell::new();
-#[allow(clippy::declare_interior_mutable_const)]
-const DIVISIONS_RE: OnceCell<Regex> = OnceCell::new();
-#[allow(clippy::declare_interior_mutable_const)]
-const BATTALIONS_RE: OnceCell<Regex> = OnceCell::new();
-#[allow(clippy::declare_interior_mutable_const)]
-const COMPANIES_RE: OnceCell<Regex> = OnceCell::new();
-#[allow(clippy::declare_interior_mutable_const)]
-const ARMIES_RE: OnceCell<Regex> = OnceCell::new();
-#[allow(clippy::declare_interior_mutable_const)]
-const REGIMENTS_RE: OnceCell<Regex> = OnceCell::new();
+static NAMES_RE: OnceLock<Regex> = OnceLock::new();
+static DIVISIONS_RE: OnceLock<Regex> = OnceLock::new();
+static BATTALIONS_RE: OnceLock<Regex> = OnceLock::new();
+static COMPANIES_RE: OnceLock<Regex> = OnceLock::new();
+static ARMIES_RE: OnceLock<Regex> = OnceLock::new();
+static REGIMENTS_RE: OnceLock<Regex> = OnceLock::new();
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct UnitInfo {
