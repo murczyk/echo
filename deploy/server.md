@@ -117,22 +117,15 @@ local   all             all                                     md5
 cd /usr/share/zoneinfo/Europe && sudo cp Kyiv Kiev && sudo systemctl restart postgresql
 ```
 
+## Install apt
+
+- Встановлення (apt): [../docs/INSTALL_APT.md](./docs/INSTALL_APT.md)
+
 ## Install python worker with NLP
 
-Put requirements.txt contents from [../wdintel-rs/wdintel-py/requirements.txt]([../wdintel-rs/wdintel-py/requirements.txt]):
-
 ```
-sudo su
-pip install -r requirements.txt
-python3 -m spacy download ru_core_news_md
+just server=$SERVER setup-py
 ```
-
-- [ ] TODO: auto-download the models
-	- [ ] TODO: Environment="WD_CALLSIGNS_SPM=/home/zptzr/storage/wiki.model"
-	- [ ] TODO: Environment="WD_CALLSIGNS=/home/zptzr/storage/callsigns20230512.pt"
-
-## Install apt
-- Встановлення (apt): [../docs/INSTALL_APT.md](./docs/INSTALL_APT.md)
 
 ## Edit `justfile`, expand `just deploy` command with your server
 
