@@ -853,7 +853,8 @@ oneoff-import-gdocs:
     echo "DONE. Now redeploy all the sigint workers"
 
 # WARNING! ECHO-IM migrations are not applied here. To apply ECHO-IM migrations too, run `cargo run -p wdintel-rs -- --mode=debug migrate`
-# 
+#
+
 # If you want to migrate test database, run `cargo run -p wdintel-rs -- --mode=test migrate`
 migrate-up:
     cd echo-migration && DATABASE_URL=postgresql://wd:fee_-_-_-FnoeKFBeebu87bf@localhost:5432/wd cargo run -- up
