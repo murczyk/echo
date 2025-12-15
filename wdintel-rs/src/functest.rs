@@ -116,6 +116,10 @@ pub mod tests {
             .exec(&env.dbx)
             .await
             .context(h!())?;
+        tag_keyword::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
         tag::Entity::delete_many()
             .exec(&env.dbx)
             .await
