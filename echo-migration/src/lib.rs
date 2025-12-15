@@ -181,6 +181,7 @@ mod m20251205_121716_tag_suggestion_worker_queue;
 mod m20251206_234500_add_signal_message_indexes;
 mod m20251215_130030_sigint_inbox_tag_multilabel;
 mod m20251215_143321_drop_signal_group_notes;
+mod m20251215_110739_tag_keywords_seed_data;
 
 pub struct Migrator;
 
@@ -369,6 +370,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20251206_234500_add_signal_message_indexes::Migration),
             Box::new(m20251215_130030_sigint_inbox_tag_multilabel::Migration),
             Box::new(m20251215_143321_drop_signal_group_notes::Migration),
+            Box::new(m20251215_110739_tag_keywords_seed_data::Migration),
         ]
     }
 }
