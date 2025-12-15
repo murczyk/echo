@@ -2,6 +2,7 @@ use crate::config::*;
 use crate::entities::*;
 use crate::error::AppError;
 use crate::types::*;
+use crate::utils::orm::ArrayColumnOps;
 use crate::{config, h};
 use anyhow::Context;
 use chrono::*;
@@ -217,7 +218,7 @@ pub async fn oneoff_populate_signal_message_group_ids(
                 info!("[{counter}/{count}] updating signal_message.group_id values for datasource_group {}...", datasource_group.id);
             }
             signal_message::Entity::update_many()
-                .filter(signal_message::Column::Id.is_in(messages_to_update))
+                .filter(signal_message::Column::Id.eq_any(messages_to_update))
                 .col_expr(
                     signal_message::Column::DatasourceGroupId,
                     Expr::value(datasource_group.id),
@@ -348,7 +349,7 @@ async fn fix_retro_signal_group_mappings(
     info!("all group keys: {all_keys:?}");
     let datasource_groups = datasource_group::Entity::find()
         .filter(
-            datasource_group::Column::GroupMasterKey.is_in(all_keys.clone()),
+            datasource_group::Column::GroupMasterKey.eq_any(all_keys.clone()),
         )
         .all(db)
         .await
@@ -440,7 +441,7 @@ async fn fix_retro_signal_group_mappings(
                 }
                 signal_message::Entity::update_many()
                     .filter(
-                        signal_message::Column::Id.is_in(messages_to_update),
+                        signal_message::Column::Id.eq_any(messages_to_update),
                     )
                     .col_expr(
                         signal_message::Column::DatasourceGroupId,
@@ -457,7 +458,7 @@ async fn fix_retro_signal_group_mappings(
         let organism_groups = organism_group::Entity::find()
             .filter(
                 organism_group::Column::SignalGroupMasterKey
-                    .is_in(all_keys.clone()),
+                    .eq_any(all_keys.clone()),
             )
             .all(db)
             .await
@@ -486,7 +487,7 @@ async fn fix_retro_signal_group_mappings(
         let sigint_zone_datasources = sigint_zone_datasource::Entity::find()
             .filter(
                 sigint_zone_datasource::Column::GroupMasterKey
-                    .is_in(all_keys.clone()),
+                    .eq_any(all_keys.clone()),
             )
             .all(db)
             .await

@@ -69,13 +69,15 @@
 - Run `just gen-front` to generate Elm bindings from backend definitions
 - Generated types, encoders, and decoders appear in `wdintel-web/src/Bindings.elm`
 - When you need a new type on frontend - add it to `elm.rs` first, then regenerate
+- Front-end is using the Elm Land framework https://elm.land/guide/ ,
+  use its `elm-land` command-line utility to manage pages etc.
 
 ### Compilation and Checking
 
-- When editing Elm files, **DO NOT** build the entire frontend with `just build-front`
-- Instead, check only the modified file(s) using: `elm make path/to/file.elm --output=/dev/null`
+- Check the modified file(s) using: `elm make path/to/file.elm --output=/dev/null`
 - This is much faster and sufficient to verify syntax and type checking
 - Example: `cd wdintel-web && elm make src/Pages/RerPalitra.elm --output=/dev/null`
+- Once you're fully done with changes, verify yourself with `just build-front` to check full front-end build
 
 ### HTTP Error Handling
 

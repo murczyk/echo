@@ -1,3 +1,4 @@
+use crate::config::*;
 use crate::entities::*;
 use crate::error::AppError;
 use crate::rer_importer::analysis::*;
@@ -5,6 +6,7 @@ use crate::rer_importer::types::{
     AnalysisStatsReq, InboxMessagesReq, NewCallsignsRes,
 };
 use crate::types::*;
+use crate::utils::orm::ArrayColumnOps;
 use crate::utils::*;
 use chrono::prelude::*;
 use docx_rs::*;
@@ -68,6 +70,7 @@ pub async fn bl_babak_report(
         units_exact_match_only: req.req.units_exact_match_only,
         filter_tags_option: req.req.filter_tags_option,
         selected_aors: req.req.selected_aors.clone(),
+        without_model_tags: req.req.without_model_tags,
     };
     let new_callsigns_res =
         bi_new_callsigns(user_login, env, &new_callsing_req)
@@ -567,8 +570,14 @@ pub async fn get_inbox_messages_report_unit(
             // sigint_inbox_item::Column::Id,
             sigint_inbox_item::Column::Lat,
             sigint_inbox_item::Column::Lng,
-            sigint_inbox_item::Column::Tags,
         ])
+        .expr_as(
+            Expr::cust_with_expr(
+                "array_agg($1) filter (where $1 is not null)",
+                Expr::col(sigint_inbox_item_tag::Column::TagId),
+            ),
+            "tags",
+        )
         .column(signal_message::Column::Body)
         // For the messages without a network assigned (or no frequency), we use the unit_v2 field
         .expr_as(
@@ -624,6 +633,17 @@ pub async fn get_inbox_messages_report_unit(
             JoinType::LeftJoin,
             sigint_inbox_item::Relation::SigintPost.def(),
         )
+        .join(
+            JoinType::LeftJoin,
+            sigint_inbox_item_tag::Relation::SigintInboxItem
+                .def()
+                .rev()
+                .on_condition(|_left, right| {
+                    Expr::col((right, sigint_inbox_item_tag::Column::Confidence))
+                        .gte(TAG_MINIMUM_CONFIDENCE)
+                        .into_condition()
+                }),
+        )
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(Condition::any()
             .add(sigint_network::Column::Deleted.eq(false))
@@ -633,7 +653,7 @@ pub async fn get_inbox_messages_report_unit(
             .add(sigint_unit::Column::Deleted.eq(false))
             .add(sigint_unit::Column::Deleted.is_null())
         )
-        .filter(datasource_group::Column::GroupMasterKey.is_in(
+        .filter(datasource_group::Column::GroupMasterKey.eq_any(
             crate::messenger::group::get_identity_sigint_groups(&read_db, login)
                 .await
                 .c(h!())?,
@@ -644,48 +664,15 @@ pub async fn get_inbox_messages_report_unit(
     if req.checked_only == Some(true) {
         q = q.filter(sigint_inbox_item::Column::Checked.eq(Some(true)));
     }
+    q = q.join(
+        JoinType::LeftJoin,
+        signal_message::Relation::SigintComment.def(),
+    );
 
-    let or_with_extended_form = req.or_with_extended_form.unwrap_or(false);
+    let mut only_tags_by_logins = None;
     if req.report_tags_only_this_unit == Some(true) {
-        q = q.join(
-            JoinType::InnerJoin,
-            sigint_comment::Relation::SignalMessage
-                .def()
-                .rev()
-                .on_condition(move |_left, right| {
-                    let mut expr = Expr::col((
-                        right.clone(),
-                        sigint_comment::Column::Login,
-                    ))
-                    .is_in(logins.clone());
-
-                    if or_with_extended_form {
-                        expr = expr.and(
-                            Expr::col((right, sigint_comment::Column::Comment))
-                                .ne(""),
-                        );
-                    }
-
-                    expr.into_condition()
-                }),
-        );
-    } else if or_with_extended_form {
-        q = q.join(
-            JoinType::InnerJoin,
-            sigint_comment::Relation::SignalMessage
-                .def()
-                .rev()
-                .on_condition(|_left, right| {
-                    Expr::col((right, sigint_comment::Column::Comment))
-                        .ne("")
-                        .into_condition()
-                }),
-        );
-    } else {
-        q = q.join(
-            JoinType::LeftJoin,
-            signal_message::Relation::SigintComment.def(),
-        );
+        q = q.filter(sigint_comment::Column::Login.eq_any(logins.clone()));
+        only_tags_by_logins = Some(logins.clone());
     }
 
     // let q = q.filter(signal_message::Column::DuplicateOf.is_null());
@@ -711,9 +698,11 @@ pub async fn get_inbox_messages_report_unit(
         &req.or_bookmarked,
         &req.or_important,
         &req.or_with_coords,
-        &Some(false),
+        &req.or_with_extended_form,
         &req.filter_tags_option,
+        &req.without_model_tags,
         login,
+        only_tags_by_logins,
     )?;
     if let Some(since_date_inclusive_ms) = req.since_date_inclusive_ms {
         q = q.filter(
@@ -733,7 +722,7 @@ pub async fn get_inbox_messages_report_unit(
         include_peleng_locations,
     )?;
     // group by to get rid of duplicates
-    let q = q.group_by(Expr::cust("1,2,3,4,5,6,7,8"));
+    let q = q.group_by(Expr::cust("1,2,3,5,6,7,8"));
     let q = q.order_by_asc(Expr::col(Alias::new("unit")));
 
     let clustered_points = CommonTableExpression::new()
@@ -765,49 +754,49 @@ pub async fn get_inbox_messages_report_unit(
                 .expr_as(
                     Expr::cust_with_expr(
                         "COUNT(*) FILTER (WHERE tags @> $1)",
-                        SimpleExpr::SubQuery(None, Box::new(Query::select().from(tag::Entity).expr(Expr::cust("jsonb_agg(id)")).and_where(tag::Column::Label.eq(bpla_tag)).clone().into_sub_query_statement())),
+                        SimpleExpr::SubQuery(None, Box::new(Query::select().from(tag::Entity).expr(Expr::cust("array_agg(id)")).and_where(tag::Column::Label.eq(bpla_tag)).clone().into_sub_query_statement())),
                     ),
                     Alias::new("bpla"),
                 )
                 .expr_as(
                     Expr::cust_with_expr(
                         "COUNT(*) FILTER (WHERE tags @> $1)",
-                        SimpleExpr::SubQuery(None, Box::new(Query::select().from(tag::Entity).expr(Expr::cust("jsonb_agg(id)")).and_where(tag::Column::Label.eq(rer_tag)).clone().into_sub_query_statement())),
+                        SimpleExpr::SubQuery(None, Box::new(Query::select().from(tag::Entity).expr(Expr::cust("array_agg(id)")).and_where(tag::Column::Label.eq(rer_tag)).clone().into_sub_query_statement())),
                     ),
                     Alias::new("reb"),
                 )
                 .expr_as(
                     Expr::cust_with_expr(
                         "COUNT(*) FILTER (WHERE tags @> $1)",
-                        SimpleExpr::SubQuery(None, Box::new(Query::select().from(tag::Entity).expr(Expr::cust("jsonb_agg(id)")).and_where(tag::Column::Label.eq(arta_tag)).clone().into_sub_query_statement())),
+                        SimpleExpr::SubQuery(None, Box::new(Query::select().from(tag::Entity).expr(Expr::cust("array_agg(id)")).and_where(tag::Column::Label.eq(arta_tag)).clone().into_sub_query_statement())),
                     ),
                     Alias::new("arta"),
                 )
                 .expr_as(
                     Expr::cust_with_expr(
                         "COUNT(*) FILTER (WHERE tags @> $1)",
-                        SimpleExpr::SubQuery(None, Box::new(Query::select().from(tag::Entity).expr(Expr::cust("jsonb_agg(id)")).and_where(tag::Column::Label.eq(software_tag)).clone().into_sub_query_statement())),
+                        SimpleExpr::SubQuery(None, Box::new(Query::select().from(tag::Entity).expr(Expr::cust("array_agg(id)")).and_where(tag::Column::Label.eq(software_tag)).clone().into_sub_query_statement())),
                     ),
                     Alias::new("software"),
                 )
                 .expr_as(
                     Expr::cust_with_expr(
                         "COUNT(*) FILTER (WHERE tags @> $1)",
-                        SimpleExpr::SubQuery(None, Box::new(Query::select().from(tag::Entity).expr(Expr::cust("jsonb_agg(id)")).and_where(tag::Column::Label.eq(losses_tag)).clone().into_sub_query_statement())),
+                        SimpleExpr::SubQuery(None, Box::new(Query::select().from(tag::Entity).expr(Expr::cust("array_agg(id)")).and_where(tag::Column::Label.eq(losses_tag)).clone().into_sub_query_statement())),
                     ),
                     Alias::new("losses"),
                 )
                 .expr_as(
                     Expr::cust_with_expr(
                         "json_agg(jsonb_build_object('datetime', datetime, 'comment', comment, 'text', body) ORDER BY \"datetime\") FILTER (WHERE tags @> $1)",
-                        SimpleExpr::SubQuery(None, Box::new(Query::select().from(tag::Entity).expr(Expr::cust("jsonb_agg(id)")).and_where(tag::Column::Label.eq(losses_tag)).clone().into_sub_query_statement())),
+                        SimpleExpr::SubQuery(None, Box::new(Query::select().from(tag::Entity).expr(Expr::cust("array_agg(id)")).and_where(tag::Column::Label.eq(losses_tag)).clone().into_sub_query_statement())),
                     ),
                     Alias::new("losses_comments"),
                 )
                 .expr_as(
                     Expr::cust_with_expr(
                         "json_agg(jsonb_build_object('datetime', datetime, 'comment', comment, 'text', body) ORDER BY \"datetime\") FILTER (WHERE NOT(tags @> $1))",
-                        SimpleExpr::SubQuery(None, Box::new(Query::select().from(tag::Entity).expr(Expr::cust("jsonb_agg(id)")).and_where(tag::Column::Label.eq(losses_tag)).clone().into_sub_query_statement())),
+                        SimpleExpr::SubQuery(None, Box::new(Query::select().from(tag::Entity).expr(Expr::cust("array_agg(id)")).and_where(tag::Column::Label.eq(losses_tag)).clone().into_sub_query_statement())),
                     ),
                     Alias::new("others_comments"),
                 )

@@ -1,7 +1,6 @@
 module Shared.Components.Navbar exposing (navBar)
 
 import Auth
-import Shared.Components.ThemeSwitcher exposing (themeSwitcher)
 import Core.Auth exposing (hasRole, serverModeIs)
 import Dict
 import Html exposing (..)
@@ -10,6 +9,7 @@ import Html.Events exposing (onClick)
 import Route
 import Route.Path
 import Shared
+import Shared.Components.ThemeSwitcher exposing (themeSwitcher)
 import Shared.Model exposing (ThemeMode(..), isDarkMode)
 import Utils.Utils exposing (..)
 
@@ -49,6 +49,7 @@ navBar user shared activeName props =
             [ Menu (Internal Route.Path.Admin) "zones" "напрямки"
             , Menu (Internal Route.Path.Admin_Users) "users" "користувачі"
             , Menu (Internal Route.Path.Admin_Organisms) "organisms" "організми"
+            , Menu (Internal Route.Path.Admin_Tags) "tags" "теги"
             , Menu (Internal Route.Path.AreasOfResponsibility) "areasOfResponsibility" "смуги"
             , Menu (Internal Route.Path.Admin_Messanger) "messanger" "месенджери"
             ]

@@ -22,10 +22,28 @@ pub struct Model {
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
+    #[sea_orm(has_many = "super::sigint_inbox_item_tag::Entity")]
+    SigintInboxItemTag,
+    #[sea_orm(has_many = "super::sigint_inbox_tag_model_error::Entity")]
+    SigintInboxTagModelError,
     #[sea_orm(has_many = "super::stats_group_tag_5min::Entity")]
     StatsGroupTag5min,
     #[sea_orm(has_many = "super::stats_group_tag_day::Entity")]
     StatsGroupTagDay,
+    #[sea_orm(has_many = "super::tag_keyword::Entity")]
+    TagKeyword,
+}
+
+impl Related<super::sigint_inbox_item_tag::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintInboxItemTag.def()
+    }
+}
+
+impl Related<super::sigint_inbox_tag_model_error::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintInboxTagModelError.def()
+    }
 }
 
 impl Related<super::stats_group_tag_5min::Entity> for Entity {
@@ -37,6 +55,12 @@ impl Related<super::stats_group_tag_5min::Entity> for Entity {
 impl Related<super::stats_group_tag_day::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::StatsGroupTagDay.def()
+    }
+}
+
+impl Related<super::tag_keyword::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::TagKeyword.def()
     }
 }
 

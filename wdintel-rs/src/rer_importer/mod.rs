@@ -7,6 +7,7 @@ use crate::location::peleng::reset_inbox_pelengs;
 use crate::location::utils;
 use crate::sigint::sender::preferred_sender_expr;
 use crate::types::*;
+use crate::utils::orm::ArrayColumnOps;
 use actix_web::http::header;
 use actix_web::web::{Bytes, Json};
 use actix_web::{get, post, HttpResponse};
@@ -100,7 +101,7 @@ async fn ensure_media_access(
             signal_message_group::Column::SignalMessageId.eq(signal_message_id),
         )
         .filter(
-            signal_message_group::Column::GroupMasterKey.is_in(allowed_groups),
+            signal_message_group::Column::GroupMasterKey.eq_any(allowed_groups),
         )
         .select_only()
         .column(signal_message_group::Column::Id)
@@ -223,7 +224,7 @@ async fn list_messages(
             JoinType::InnerJoin,
             signal_group::Relation::SigintZoneDatasource.def(),
         )
-        .filter(datasource_group::Column::GroupMasterKey.is_in(groups))
+        .filter(datasource_group::Column::GroupMasterKey.eq_any(groups))
         .filter(sigint_inbox_item::Column::Lat.is_not_null())
         .filter(sigint_inbox_item::Column::Lng.is_not_null())
         .filter(sigint_inbox_item::Column::Lat.ne(0.0))
@@ -692,7 +693,7 @@ pub async fn latest_senders(
         .select_only()
         .column_as(sender_expr.clone(), "sender")
         .filter(signal_message::Column::Deleted.eq(false))
-        .filter(datasource_group::Column::GroupMasterKey.is_in(master_keys))
+        .filter(datasource_group::Column::GroupMasterKey.eq_any(master_keys))
         .filter(
             signal_message::Column::CreatedAt
                 .gt(now - chrono::Duration::days(2)),
@@ -718,7 +719,7 @@ where
     C: ConnectionTrait + 'async_trait,
 {
     let profiles: BTreeMap<String, Model> = signal_profile::Entity::find()
-        .filter(signal_profile::Column::Uuid.is_in(sender_uuids.clone()))
+        .filter(signal_profile::Column::Uuid.eq_any(sender_uuids.clone()))
         .all(txn)
         .await
         .c(h!())?

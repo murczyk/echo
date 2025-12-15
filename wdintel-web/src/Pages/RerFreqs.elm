@@ -1557,6 +1557,7 @@ freqsTableConfig shared model user =
                                     , tags = []
                                     , unitsExactMatchOnly = True
                                     , adjacentFreqsRange = 0
+                                    , withoutModelTags = False
                                     }
                                 )
 

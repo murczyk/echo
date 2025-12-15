@@ -23,6 +23,7 @@ import Shared.Callsign
 import Shared.Components.Watermark as Watermark
 import Shared.Icons as Icons
 import Shared.MarkedText
+import String exposing (fromInt, trim)
 import Time
 import Time.Extra as TimeExtra
 import Utils.Api.ErrorHandling
@@ -57,12 +58,18 @@ type alias RenderParams =
 type alias Edited =
     { original : B.InboxMessage }
 
+type alias BotTagAction =
+    { messageId : Int
+    , tagId : Int
+    }
+
 
 type alias Model =
     { callsignInputs : Dict Int String
     , edited : Dict Int Edited
     , extendedForm : Set Int
     , focusedTextarea : Maybe Int
+    , botTagAction : Maybe BotTagAction
     }
 
 
@@ -72,6 +79,7 @@ model0 =
     , edited = Dict.empty
     , extendedForm = Set.empty
     , focusedTextarea = Nothing
+    , botTagAction = Nothing
     }
 
 
@@ -90,9 +98,14 @@ type Msg
     | AddCallsignS Int String
     | EditCancel Int
     | EditSave Int
-    | InboxSubmitDone Int (Result ApiError ())
+    | InboxSubmitDone Int Bool (Result ApiError ())
+    | CommentSaveDone Int (Result ApiError ())
     | ExtendedFormChanged Int String
     | ToggleTag Int Int
+    | TagSaveDone Int Int InboxMessage (Result ApiError ())
+    | MarkBotTagWrong Int Int
+    | MarkBotTagWrongDone Int Int (Result ApiError ())
+    | CancelBotTagAction
     | BookmarkAdd Int
     | BookmarkAddDone (Result ApiError ())
     | BookmarkRemove Int
@@ -434,68 +447,114 @@ update vps msg model =
             }
 
         EditSave id_ ->
-            let
-                updatedMsgs =
-                    case Dict.get id_ model.edited of
+            case Dict.get id_ model.edited of
+                Nothing ->
+                    { model = model
+                    , cmds = E.none
+                    , sigs = []
+                    , messages = vps.messages
+                    }
+
+                Just edited ->
+                    case findK id_ vps.messages of
                         Nothing ->
-                            []
+                            { model = model
+                            , cmds = E.none
+                            , sigs = []
+                            , messages = vps.messages
+                            }
 
-                        Just _ ->
-                            case findK id_ vps.messages of
-                                Nothing ->
-                                    []
+                        Just message ->
+                            let
+                                message2 =
+                                    case Dict.get id_ model.callsignInputs of
+                                        Nothing ->
+                                            message
 
-                                Just message ->
-                                    let
-                                        message2 =
-                                            case Dict.get id_ model.callsignInputs of
-                                                Nothing ->
-                                                    message
+                                        Just c ->
+                                            if c /= "" then
+                                                { message
+                                                    | callsigns =
+                                                        message.callsigns
+                                                            ++ [ trim c ]
+                                                }
 
-                                                Just c ->
-                                                    if c /= "" then
-                                                        { message
-                                                            | callsigns =
-                                                                message.callsigns
-                                                                    ++ [ String.trim c ]
-                                                        }
+                                            else
+                                                message
 
-                                                    else
-                                                        message
-                                    in
-                                    [ ( id_, message2 ) ]
+                                messages2 =
+                                    updateV id_ (\_ -> message2) vps.messages
 
-                messages2 =
-                    case updatedMsgs of
-                        x :: [] ->
-                            updateV id_ (\_ -> Tuple.second x) vps.messages
+                                otherChanges =
+                                    sanitizeMessageForSubmit edited.original
+                                        /= sanitizeMessageForSubmit message2
 
-                        _ ->
-                            vps.messages
+                                commentChanged =
+                                    edited.original.extendedForm
+                                        /= message2.extendedForm
 
-                cmds =
-                    case updatedMsgs of
-                        [] ->
-                            E.none
+                                submitCmd =
+                                    if otherChanges then
+                                        Api.rer_importer_inbox_submit (InboxSubmitDone id_ commentChanged)
+                                            { messages =
+                                                [ ( id_
+                                                  , sanitizeMessageForSubmit message2
+                                                  )
+                                                ]
+                                            }
 
-                        _ ->
-                            Api.rer_importer_inbox_submit (InboxSubmitDone id_)
-                                { messages = updatedMsgs }
-            in
-            { model = model
-            , cmds = cmds
-            , sigs = []
-            , messages = messages2
-            }
+                                    else
+                                        E.none
 
-        InboxSubmitDone _ (Err e) ->
+                                commentCmd =
+                                    if not otherChanges && commentChanged then
+                                        buildCommentSaveCmd id_ message2
+
+                                    else
+                                        E.none
+                            in
+                            { model = model
+                            , cmds = E.batch [ submitCmd, commentCmd ]
+                            , sigs = []
+                            , messages = messages2
+                            }
+
+        InboxSubmitDone _ _ (Err e) ->
             { model = model
             , cmds = Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка збереження повідомлення" e
             , sigs = []
             , messages = vps.messages
             }
 
-        InboxSubmitDone id_ (Ok ()) ->
+        InboxSubmitDone id_ commentChanged (Ok ()) ->
+            if commentChanged then
+                let
+                    commentCmd =
+                        findK id_ vps.messages
+                            |> Maybe.map (buildCommentSaveCmd id_)
+                            |> Maybe.withDefault E.none
+                in
+                { model = model
+                , cmds = commentCmd
+                , sigs = []
+                , messages = vps.messages
+                }
+
+            else
+                { model = { model | edited = Dict.remove id_ model.edited, callsignInputs = Dict.remove id_ model.callsignInputs }
+                , cmds = E.none
+                , sigs = []
+                , messages = vps.messages
+                }
+
+        CommentSaveDone id_ (Err e) ->
+            { model = model
+            , cmds = Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка збереження коментаря" e
+            , sigs = []
+            , messages = vps.messages
+            }
+
+        CommentSaveDone id_ (Ok ()) ->
             { model = { model | edited = Dict.remove id_ model.edited, callsignInputs = Dict.remove id_ model.callsignInputs }
             , cmds = E.none
             , sigs = []
@@ -515,10 +574,83 @@ update vps msg model =
             }
 
         ToggleTag msgId tagId ->
-            { model = { model | edited = addEdited msgId model.edited vps.messages }
+            case findK msgId vps.messages of
+                Nothing ->
+                    { model = model
+                    , cmds = E.none
+                    , sigs = []
+                    , messages = vps.messages
+                    }
+
+                Just messageBefore ->
+                    let
+                        userHasTag =
+                            hasUserTag msgId tagId vps.user.name vps.messages
+
+                        cmd =
+                            if userHasTag then
+                                Api.inbox_message_tags_rm (TagSaveDone msgId tagId messageBefore) { messageId = msgId, tagId = tagId }
+
+                            else
+                                Api.inbox_message_tags_add (TagSaveDone msgId tagId messageBefore) { messageId = msgId, tagId = tagId }
+
+                        botPanel =
+                            if userHasTag && hasBotTag msgId tagId vps.messages then
+                                Just { messageId = msgId, tagId = tagId }
+
+                            else
+                                Nothing
+                    in
+                    { model = { model | botTagAction = botPanel }
+                    , cmds = E.sendCmd cmd
+                    , sigs = []
+                    , messages = toggleTag msgId tagId (Just vps.user.name) vps.messages
+                    }
+
+        TagSaveDone msgId _ messageBefore (Err e) ->
+            { model = model
+            , cmds = Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Не вдалося оновити тег" e
+            , sigs = []
+            , messages = updateV msgId (\_ -> messageBefore) vps.messages
+            }
+
+        TagSaveDone _ _ _ (Ok _) ->
+            { model = model
             , cmds = E.none
             , sigs = []
-            , messages = toggleTag msgId tagId vps.messages
+            , messages = vps.messages
+            }
+
+        MarkBotTagWrong msgId tagId ->
+            { model = model
+            , cmds =
+                Api.inbox_message_tags_model_error
+                    (MarkBotTagWrongDone msgId tagId)
+                    { messageId = msgId, tagId = tagId }
+                    |> E.sendCmd
+            , sigs = []
+            , messages = vps.messages
+            }
+
+        MarkBotTagWrongDone msgId tagId (Err e) ->
+            { model = model
+            , cmds = Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Не вдалося оновити тег бота" e
+            , sigs = []
+            , messages = vps.messages
+            }
+
+        MarkBotTagWrongDone msgId tagId (Ok _) ->
+            { model = { model | botTagAction = Nothing }
+            , cmds = E.none
+            , sigs = []
+            , messages = removeBotTags msgId tagId vps.messages
+            }
+
+        CancelBotTagAction ->
+            { model = { model | botTagAction = Nothing }
+            , cmds = E.none
+            , sigs = []
+            , messages = vps.messages
             }
 
         BookmarkAdd id_ ->
@@ -694,39 +826,180 @@ groupName masterKey groupInfos =
             masterKey
 
 
+sanitizeMessageForSubmit : InboxMessage -> InboxMessage
+sanitizeMessageForSubmit message =
+    { message
+        | tags = Nothing
+        , inboxTags = Nothing
+        , extendedForm = Nothing
+    }
+
+
+buildCommentSaveCmd : Int -> InboxMessage -> Effect Msg
+buildCommentSaveCmd msgId message =
+    let
+        commentCleaned =
+            message.extendedForm
+                |> Maybe.map trim
+                |> Maybe.andThen
+                    (\v ->
+                        if v == "" then
+                            Nothing
+
+                        else
+                            Just v
+                    )
+    in
+    Api.rer_importer_comment_save (CommentSaveDone msgId)
+        { messageId = msgId, comment = commentCleaned }
+        |> E.sendCmd
+
+
 isTagSet : Int -> Int -> List ( Int, B.InboxMessage ) -> Bool
 isTagSet msgId tagId messages =
     messages
         |> findK msgId
-        |> mmap (.tags >> def [] >> List.member tagId)
-        |> def False
+        |> Maybe.map (.inboxTags >> Maybe.withDefault [] >> List.any (\t -> t.tagId == tagId))
+        |> Maybe.withDefault False
 
 
-toggleTag : Int -> Int -> List ( Int, B.InboxMessage ) -> List ( Int, B.InboxMessage )
-toggleTag msgId tagId messages =
-    let
-        isSet =
-            isTagSet msgId tagId messages
-    in
+hasUserTag : Int -> Int -> String -> List ( Int, B.InboxMessage ) -> Bool
+hasUserTag msgId tagId login messages =
     messages
-        |> updateV msgId
+        |> findK msgId
+        |> Maybe.map
             (\m ->
-                let
-                    tags2 : Maybe (List Int)
-                    tags2 =
-                        m.tags
-                            |> def []
-                            |> (\tags ->
-                                    if isSet then
-                                        List.filter (\x -> x /= tagId) tags
-
-                                    else
-                                        tags ++ [ tagId ]
-                               )
-                            |> Just
-                in
-                { m | tags = tags2 }
+                inboxTagsFor m
+                    |> List.any
+                        (\t ->
+                            t.tagId == tagId
+                                && t.model
+                                == Nothing
+                                && t.login
+                                == Just login
+                        )
             )
+        |> Maybe.withDefault False
+
+
+hasBotTag : Int -> Int -> List ( Int, B.InboxMessage ) -> Bool
+hasBotTag msgId tagId messages =
+    messages
+        |> findK msgId
+        |> Maybe.map
+            (\m ->
+                inboxTagsFor m
+                    |> List.any
+                        (\t ->
+                            t.tagId == tagId && MaybeX.isJust t.model
+                        )
+            )
+        |> Maybe.withDefault False
+
+
+inboxTagsFor : B.InboxMessage -> List B.InboxMessageTag
+inboxTagsFor message =
+    message.inboxTags |> Maybe.withDefault []
+
+
+tagIdsWithFallback : List B.InboxMessageTag -> List Int -> List Int
+tagIdsWithFallback inboxTags fallbackTags =
+    let
+        ids =
+            inboxTags
+                |> List.map .tagId
+                |> ListX.unique
+    in
+    ids
+        ++ (fallbackTags
+                |> List.filter (\tid -> not (List.member tid ids))
+           )
+
+
+toggleTag :
+    Int
+    -> Int
+    -> Maybe String
+    -> List ( Int, B.InboxMessage )
+    -> List ( Int, B.InboxMessage )
+toggleTag msgId tagId login messages =
+    let
+        updateMessage message =
+            let
+                currentTags =
+                    inboxTagsFor message
+
+                remainingTags =
+                    case login of
+                        Just loginName ->
+                            List.filter
+                                (\tag ->
+                                    not
+                                        (tag.tagId == tagId
+                                            && tag.model
+                                            == Nothing
+                                            && tag.login
+                                            == Just loginName
+                                        )
+                                )
+                                currentTags
+
+                        Nothing ->
+                            currentTags
+
+                hasRemoved =
+                    List.length remainingTags /= List.length currentTags
+
+                added =
+                    case ( login, hasRemoved ) of
+                        ( Just loginName, False ) ->
+                            [ { id = 0
+                              , tagId = tagId
+                              , confidence = 1
+                              , login = Just loginName
+                              , model = Nothing
+                              }
+                            ]
+
+                        _ ->
+                            []
+
+                inboxTags2 =
+                    added ++ remainingTags
+
+                tags2 =
+                    tagIdsWithFallback inboxTags2 (message.tags |> def [])
+            in
+            { message | tags = Just tags2, inboxTags = Just inboxTags2 }
+    in
+    messages |> updateV msgId updateMessage
+
+
+removeBotTags :
+    Int
+    -> Int
+    -> List ( Int, B.InboxMessage )
+    -> List ( Int, B.InboxMessage )
+removeBotTags msgId tagId messages =
+    let
+        updateMessage message =
+            let
+                inboxTags2 =
+                    inboxTagsFor message
+                        |> List.filter
+                            (\tag ->
+                                not
+                                    (tag.tagId == tagId
+                                        && MaybeX.isJust tag.model
+                                    )
+                            )
+
+                tags2 =
+                    tagIdsWithFallback inboxTags2 (message.tags |> def [])
+            in
+            { message | inboxTags = Just inboxTags2, tags = Just tags2 }
+    in
+    messages |> updateV msgId updateMessage
 
 
 renderRow :
@@ -813,10 +1086,13 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
             in
             if isImage then
                 Nothing
+
             else if isMp3 then
                 Just <| renderAttachment attachment
+
             else if Config.featureHideDocuments then
                 Nothing
+
             else
                 Just <| renderAttachment attachment
 
@@ -1197,8 +1473,32 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                     [ class "flex justify-center"
                     ]
                   <|
-                    [ tagsBlock message.tags (ToggleTag msgId) vps.tags
+                    [ tagsBlock message.tags message.inboxTags (ToggleTag msgId) vps.tags
                     ]
+                , case model.botTagAction of
+                    Just action ->
+                        if action.messageId == msgId then
+                            div
+                                [ class "flex gap-2 items-center text-xs bg-card border border-border rounded px-3 py-2 shadow-sm" ]
+                                [ button
+                                    [ type_ "button"
+                                    , class "btn btn-primary btn-sm"
+                                    , onClick <| MarkBotTagWrong action.messageId action.tagId
+                                    ]
+                                    [ text "бот помилився" ]
+                                , button
+                                    [ type_ "button"
+                                    , class "btn btn-outline-secondary btn-sm"
+                                    , onClick CancelBotTagAction
+                                    ]
+                                    [ text "закрити" ]
+                                ]
+
+                        else
+                            text ""
+
+                    Nothing ->
+                        text ""
                 , textarea
                     [ class "w-full grow-1 px-3 py-2 border border-border rounded-lg bg-card text-text resize-none focus:outline-none focus:ring-2 focus:ring-secondary-light-active focus:border-transparent transition-all"
                     , style "min-height" "100px"

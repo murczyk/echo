@@ -28,6 +28,7 @@ emptyQueryState =
     , tags = []
     , unitsExactMatchOnly = True
     , adjacentFreqsRange = 0
+    , withoutModelTags = False
     }
 
 
@@ -52,6 +53,7 @@ modelQueryState model =
     , tags = model.tagsSelected
     , unitsExactMatchOnly = model.unitsExactMatchOnly
     , adjacentFreqsRange = model.adjacentFreqsRangeSelect.selected
+    , withoutModelTags = model.withoutModelTags
     }
 
 
@@ -72,6 +74,7 @@ updModelFromQueryState model ms =
         , orBookmarked = ms.orBookmarked
         , searchInput = ms.search
         , unitsExactMatchOnly = ms.unitsExactMatchOnly
+        , withoutModelTags = ms.withoutModelTags
         , adjacentFreqsRangeSelect =
             let
                 current =
@@ -109,6 +112,12 @@ analysisStatsParams dtFromPosix dtToPosix model =
             |> emptyToNothing
     , filterTagsOption = Nothing
     , unitsExactMatchOnly = Just model.unitsExactMatchOnly
+    , withoutModelTags =
+        if model.withoutModelTags then
+            Just True
+
+        else
+            Nothing
     }
 
 
@@ -134,6 +143,7 @@ analysisStatsDefaultParams dtFromPosix dtToPosix =
     , selectedNetworks = Nothing
     , filterTagsOption = Nothing
     , unitsExactMatchOnly = Nothing
+    , withoutModelTags = Nothing
     }
 
 
@@ -147,6 +157,7 @@ updModelFromRerAnalysisStatsReq model req =
         , unitsSelected = req.selectedUnits |> def []
         , orWithExtendedForm = req.orWithExtendedForm |> def False
         , orBookmarked = req.orBookmarked |> def False
+        , withoutModelTags = req.withoutModelTags |> def False
         , includePelengLocations = req.includePelengLocations |> def True
         , locationsSelected = req.selectedLocations |> def []
         , postsSelected = req.selectedPosts |> def []

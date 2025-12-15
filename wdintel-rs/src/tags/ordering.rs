@@ -1,4 +1,4 @@
-use crate::entities::{login, tag, tags_ordering};
+use crate::entities::{login, tag, tag_keyword, tags_ordering};
 use crate::error::AppError;
 use crate::h;
 use crate::types::{Mode, ShortContext};
@@ -14,7 +14,7 @@ type OrderingData = Vec<i64>;
 pub async fn collect_tags_list(
     user_id: &str,
     db: &DatabaseConnection,
-) -> anyhow::Result<Vec<tag::Model>> {
+) -> anyhow::Result<Vec<(tag::Model, Vec<tag_keyword::Model>)>> {
     let (tag_ids_list, tags) =
         collect_enabled_regular_tags(db).await.c(h!())?;
     let ordering = ensure_matching_ordering(user_id, db, tag_ids_list, &tags)
@@ -29,7 +29,16 @@ pub async fn collect_tags_list(
         .await
         .c(h!())?;
     regular_tags.append(&mut extra_tags);
-    Ok(regular_tags)
+
+    let keywords = regular_tags
+        .load_many(tag_keyword::Entity, db)
+        .await
+        .c(h!())?;
+
+    let tags_and_keywords: Vec<_> =
+        regular_tags.into_iter().zip(keywords.into_iter()).collect();
+
+    Ok(tags_and_keywords)
 }
 
 pub async fn oneoff_ensure_tags_ordering(mode: Mode) -> Result<(), AppError> {

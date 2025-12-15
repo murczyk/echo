@@ -3,6 +3,7 @@ use crate::organism::bl::load_organism_group_ids;
 use crate::organism::types::OrganismGroups;
 use crate::sigint::aor::bl::collect_group_aors;
 use crate::types::*;
+use crate::utils::orm::ArrayColumnOps;
 use chrono::Utc;
 use echo_migration::{Expr, JoinType};
 use sea_orm::*;
@@ -26,7 +27,7 @@ pub async fn collect_groups(
 ) -> Result<Vec<types::SignalGroupEntry>, AppError> {
     let signal_groups = signal_group::Entity::find()
         .filter(signal_group::Column::Deleted.eq(false))
-        .filter(signal_group::Column::MasterKey.is_in(keys.clone()))
+        .filter(signal_group::Column::MasterKey.eq_any(keys.clone()))
         .all(txn)
         .await
         .context(h!())?;
@@ -92,7 +93,7 @@ pub async fn collect_groups_f2(
         )
         .filter(signal_group::Column::Deleted.eq(false))
         .filter(signal_group::Column::Name.is_not_null())
-        .filter(signal_group::Column::MasterKey.is_in(keys.clone()))
+        .filter(signal_group::Column::MasterKey.eq_any(keys.clone()))
         .select_only()
         .column(signal_group::Column::Name)
         .column(signal_group::Column::MasterKey)
@@ -378,7 +379,7 @@ where
     C: ConnectionTrait + 'async_trait,
 {
     let result = group_admin_data::Entity::find()
-        .filter(group_admin_data::Column::GroupMasterKey.is_in(keys.clone()))
+        .filter(group_admin_data::Column::GroupMasterKey.eq_any(keys.clone()))
         .all(txn)
         .await
         .context(h!())?
@@ -424,7 +425,7 @@ where
         .column_as(Expr::cust("count(*)"), "count")
         .group_by(signal_group::Column::MasterKey)
         .filter(signal_group::Column::Deleted.eq(false))
-        .filter(signal_group::Column::MasterKey.is_in(keys))
+        .filter(signal_group::Column::MasterKey.eq_any(keys))
         .filter(signal_message::Column::Timestamp.gte(cutoff))
         .into_tuple::<(String, i64)>()
         .all(txn)
@@ -466,7 +467,7 @@ where
         .filter(signal_group::Column::Deleted.eq(false))
         .filter(
             signal_group::Column::MasterKey
-                .is_in(organism_groups.available_keys),
+                .eq_any(organism_groups.available_keys),
         )
         .filter(
             Expr::col((signal_group::Entity, signal_group::Column::MasterKey))
@@ -488,11 +489,21 @@ where
             datasource::Relation::SigintZoneDatasource.def(),
         )
         .filter(sigint_zone_datasource::Column::SigintZoneId.eq(zone_id));
+
+    #[derive(FromQueryResult)]
+    struct OrganismGroupsRes {
+        pub master_key: String,
+    }
+
     let organism_groups_obj =
         crate::sigint::zone::filter_out_ineligible_secret_chats(
             group_query,
             login,
         )
+        .select_only()
+        .column(signal_group::Column::MasterKey)
+        .distinct()
+        .into_model::<OrganismGroupsRes>()
         .all(txn)
         .await
         .context(h!())?

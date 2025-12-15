@@ -955,6 +955,7 @@ type alias InboxMessage =
     , location : Maybe String
     , tags : Maybe (List Int)
     , networkIds : Maybe (List Int)
+    , inboxTags : Maybe (List InboxMessageTag)
     }
 
 
@@ -991,6 +992,27 @@ inboxMessageEncoder struct =
         , ( "location", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.location )
         , ( "tags", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.int)) struct.tags )
         , ( "network_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.int)) struct.networkIds )
+        , ( "inbox_tags", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list inboxMessageTagEncoder)) struct.inboxTags )
+        ]
+
+
+type alias InboxMessageTag =
+    { id : Int
+    , tagId : Int
+    , confidence : Float
+    , login : Maybe String
+    , model : Maybe String
+    }
+
+
+inboxMessageTagEncoder : InboxMessageTag -> Json.Encode.Value
+inboxMessageTagEncoder struct =
+    Json.Encode.object
+        [ ( "id", Json.Encode.int struct.id )
+        , ( "tag_id", Json.Encode.int struct.tagId )
+        , ( "confidence", Json.Encode.float struct.confidence )
+        , ( "login", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.login )
+        , ( "model", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.model )
         ]
 
 
@@ -1066,6 +1088,7 @@ type alias InboxMessagesReq =
     , skipGroupStats : Maybe Bool
     , filterTagsOption : Maybe TagFilterOption
     , pageId : Maybe String
+    , withoutModelTags : Maybe Bool
     }
 
 
@@ -1113,6 +1136,7 @@ inboxMessagesReqEncoder struct =
         , ( "skip_group_stats", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.skipGroupStats )
         , ( "filter_tags_option", (Maybe.withDefault Json.Encode.null << Maybe.map tagFilterOptionEncoder) struct.filterTagsOption )
         , ( "page_id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.pageId )
+        , ( "without_model_tags", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.withoutModelTags )
         ]
 
 
@@ -1125,6 +1149,20 @@ inboxSubmitReqEncoder : InboxSubmitReq -> Json.Encode.Value
 inboxSubmitReqEncoder struct =
     Json.Encode.object
         [ ( "messages", Json.Encode.list (\( a, b ) -> Json.Encode.list identity [ Json.Encode.int a, inboxMessageEncoder b ]) struct.messages )
+        ]
+
+
+type alias InboxCommentSaveReq =
+    { messageId : Int
+    , comment : Maybe String
+    }
+
+
+inboxCommentSaveReqEncoder : InboxCommentSaveReq -> Json.Encode.Value
+inboxCommentSaveReqEncoder struct =
+    Json.Encode.object
+        [ ( "message_id", Json.Encode.int struct.messageId )
+        , ( "comment", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.comment )
         ]
 
 
@@ -1535,6 +1573,7 @@ type alias AnalysisStatsReq =
     , includePelengLocations : Maybe Bool
     , unitsExactMatchOnly : Maybe Bool
     , filterTagsOption : Maybe TagFilterOption
+    , withoutModelTags : Maybe Bool
     }
 
 
@@ -1561,6 +1600,7 @@ analysisStatsReqEncoder struct =
         , ( "include_peleng_locations", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.includePelengLocations )
         , ( "units_exact_match_only", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.unitsExactMatchOnly )
         , ( "filter_tags_option", (Maybe.withDefault Json.Encode.null << Maybe.map tagFilterOptionEncoder) struct.filterTagsOption )
+        , ( "without_model_tags", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.withoutModelTags )
         ]
 
 
@@ -1860,6 +1900,7 @@ type alias CallsignsGraphReq =
     , includePelengLocations : Maybe Bool
     , unitsExactMatchOnly : Maybe Bool
     , filterTagsOption : Maybe TagFilterOption
+    , withoutModelTags : Maybe Bool
     }
 
 
@@ -1887,6 +1928,7 @@ callsignsGraphReqEncoder struct =
         , ( "include_peleng_locations", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.includePelengLocations )
         , ( "units_exact_match_only", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.unitsExactMatchOnly )
         , ( "filter_tags_option", (Maybe.withDefault Json.Encode.null << Maybe.map tagFilterOptionEncoder) struct.filterTagsOption )
+        , ( "without_model_tags", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.withoutModelTags )
         ]
 
 
@@ -2054,6 +2096,7 @@ type alias RerAnalysisQueryState =
     , includePelengLocations : Bool
     , unitsExactMatchOnly : Bool
     , adjacentFreqsRange : Float
+    , withoutModelTags : Bool
     }
 
 
@@ -2079,6 +2122,7 @@ rerAnalysisQueryStateEncoder struct =
         , ( "include_peleng_locations", Json.Encode.bool struct.includePelengLocations )
         , ( "units_exact_match_only", Json.Encode.bool struct.unitsExactMatchOnly )
         , ( "adjacent_freqs_range", Json.Encode.float struct.adjacentFreqsRange )
+        , ( "without_model_tags", Json.Encode.bool struct.withoutModelTags )
         ]
 
 
@@ -3441,6 +3485,7 @@ type alias Tag =
     { label : String
     , extra : Maybe Bool
     , ord : Maybe Float
+    , keywords : Maybe (List TagKeyword)
     }
 
 
@@ -3450,6 +3495,85 @@ tagEncoder struct =
         [ ( "label", Json.Encode.string struct.label )
         , ( "extra", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.extra )
         , ( "ord", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.float) struct.ord )
+        , ( "keywords", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list tagKeywordEncoder)) struct.keywords )
+        ]
+
+
+type alias TagKeyword =
+    { tagKeywordId : Int
+    , isPositive : Bool
+    , isRegex : Bool
+    , keyword : String
+    , keywordForms : List String
+    }
+
+
+tagKeywordEncoder : TagKeyword -> Json.Encode.Value
+tagKeywordEncoder struct =
+    Json.Encode.object
+        [ ( "tag_keyword_id", Json.Encode.int struct.tagKeywordId )
+        , ( "is_positive", Json.Encode.bool struct.isPositive )
+        , ( "is_regex", Json.Encode.bool struct.isRegex )
+        , ( "keyword", Json.Encode.string struct.keyword )
+        , ( "keyword_forms", Json.Encode.list Json.Encode.string struct.keywordForms )
+        ]
+
+
+type alias TagKeywordAddReq =
+    { isPositive : Bool
+    , isRegex : Bool
+    , keyword : String
+    , keywordForms : Maybe (List String)
+    }
+
+
+tagKeywordAddReqEncoder : TagKeywordAddReq -> Json.Encode.Value
+tagKeywordAddReqEncoder struct =
+    Json.Encode.object
+        [ ( "is_positive", Json.Encode.bool struct.isPositive )
+        , ( "is_regex", Json.Encode.bool struct.isRegex )
+        , ( "keyword", Json.Encode.string struct.keyword )
+        , ( "keyword_forms", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.string)) struct.keywordForms )
+        ]
+
+
+type alias TagAdmin =
+    { tagId : Int
+    , label : String
+    , extra : Maybe Bool
+    , ord : Maybe Float
+    , enabled : Bool
+    , keywords : List TagKeyword
+    }
+
+
+tagAdminEncoder : TagAdmin -> Json.Encode.Value
+tagAdminEncoder struct =
+    Json.Encode.object
+        [ ( "tag_id", Json.Encode.int struct.tagId )
+        , ( "label", Json.Encode.string struct.label )
+        , ( "extra", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.extra )
+        , ( "ord", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.float) struct.ord )
+        , ( "enabled", Json.Encode.bool struct.enabled )
+        , ( "keywords", Json.Encode.list tagKeywordEncoder struct.keywords )
+        ]
+
+
+type alias TagUpsertReq =
+    { label : String
+    , extra : Maybe Bool
+    , ord : Maybe Float
+    , enabled : Bool
+    }
+
+
+tagUpsertReqEncoder : TagUpsertReq -> Json.Encode.Value
+tagUpsertReqEncoder struct =
+    Json.Encode.object
+        [ ( "label", Json.Encode.string struct.label )
+        , ( "extra", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.extra )
+        , ( "ord", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.float) struct.ord )
+        , ( "enabled", Json.Encode.bool struct.enabled )
         ]
 
 
@@ -3475,6 +3599,20 @@ type alias InboxMessageTagsRmReq =
 
 inboxMessageTagsRmReqEncoder : InboxMessageTagsRmReq -> Json.Encode.Value
 inboxMessageTagsRmReqEncoder struct =
+    Json.Encode.object
+        [ ( "message_id", Json.Encode.int struct.messageId )
+        , ( "tag_id", Json.Encode.int struct.tagId )
+        ]
+
+
+type alias InboxMessageTagModelErrorReq =
+    { messageId : Int
+    , tagId : Int
+    }
+
+
+inboxMessageTagModelErrorReqEncoder : InboxMessageTagModelErrorReq -> Json.Encode.Value
+inboxMessageTagModelErrorReqEncoder struct =
     Json.Encode.object
         [ ( "message_id", Json.Encode.int struct.messageId )
         , ( "tag_id", Json.Encode.int struct.tagId )
@@ -6784,6 +6922,17 @@ inboxMessageDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "location" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tags" (Json.Decode.nullable (Json.Decode.list Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_ids" (Json.Decode.nullable (Json.Decode.list Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "inbox_tags" (Json.Decode.nullable (Json.Decode.list inboxMessageTagDecoder))))
+
+
+inboxMessageTagDecoder : Json.Decode.Decoder InboxMessageTag
+inboxMessageTagDecoder =
+    Json.Decode.succeed InboxMessageTag
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tag_id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "confidence" Json.Decode.float))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "login" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "model" (Json.Decode.nullable Json.Decode.string)))
 
 
 inboxMessagesSortByDecoder : Json.Decode.Decoder InboxMessagesSortBy
@@ -6882,12 +7031,20 @@ inboxMessagesReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "skip_group_stats" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_tags_option" (Json.Decode.nullable tagFilterOptionDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "page_id" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "without_model_tags" (Json.Decode.nullable Json.Decode.bool)))
 
 
 inboxSubmitReqDecoder : Json.Decode.Decoder InboxSubmitReq
 inboxSubmitReqDecoder =
     Json.Decode.succeed InboxSubmitReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messages" (Json.Decode.list (Json.Decode.map2 (\a b -> ( a, b )) (Json.Decode.index 0 Json.Decode.int) (Json.Decode.index 1 inboxMessageDecoder)))))
+
+
+inboxCommentSaveReqDecoder : Json.Decode.Decoder InboxCommentSaveReq
+inboxCommentSaveReqDecoder =
+    Json.Decode.succeed InboxCommentSaveReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message_id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "comment" (Json.Decode.nullable Json.Decode.string)))
 
 
 rerImporterCallsignsReqDecoder : Json.Decode.Decoder RerImporterCallsignsReq
@@ -7036,6 +7193,7 @@ analysisStatsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_peleng_locations" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "units_exact_match_only" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_tags_option" (Json.Decode.nullable tagFilterOptionDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "without_model_tags" (Json.Decode.nullable Json.Decode.bool)))
 
 
 analysisStatsRspDecoder : Json.Decode.Decoder AnalysisStatsRsp
@@ -7199,6 +7357,7 @@ callsignsGraphReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_peleng_locations" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "units_exact_match_only" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_tags_option" (Json.Decode.nullable tagFilterOptionDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "without_model_tags" (Json.Decode.nullable Json.Decode.bool)))
 
 
 netJsonLinkPropertiesDecoder : Json.Decode.Decoder NetJsonLinkProperties
@@ -7314,6 +7473,7 @@ rerAnalysisQueryStateDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_peleng_locations" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "units_exact_match_only" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "adjacent_freqs_range" Json.Decode.float))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "without_model_tags" Json.Decode.bool))
 
 
 editFreqUnitNameReqDecoder : Json.Decode.Decoder EditFreqUnitNameReq
@@ -8132,6 +8292,46 @@ tagDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "label" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "extra" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ord" (Json.Decode.nullable Json.Decode.float)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "keywords" (Json.Decode.nullable (Json.Decode.list tagKeywordDecoder))))
+
+
+tagKeywordDecoder : Json.Decode.Decoder TagKeyword
+tagKeywordDecoder =
+    Json.Decode.succeed TagKeyword
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tag_keyword_id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_positive" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_regex" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "keyword" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "keyword_forms" (Json.Decode.list Json.Decode.string)))
+
+
+tagKeywordAddReqDecoder : Json.Decode.Decoder TagKeywordAddReq
+tagKeywordAddReqDecoder =
+    Json.Decode.succeed TagKeywordAddReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_positive" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_regex" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "keyword" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "keyword_forms" (Json.Decode.nullable (Json.Decode.list Json.Decode.string))))
+
+
+tagAdminDecoder : Json.Decode.Decoder TagAdmin
+tagAdminDecoder =
+    Json.Decode.succeed TagAdmin
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tag_id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "label" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "extra" (Json.Decode.nullable Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ord" (Json.Decode.nullable Json.Decode.float)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enabled" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "keywords" (Json.Decode.list tagKeywordDecoder)))
+
+
+tagUpsertReqDecoder : Json.Decode.Decoder TagUpsertReq
+tagUpsertReqDecoder =
+    Json.Decode.succeed TagUpsertReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "label" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "extra" (Json.Decode.nullable Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ord" (Json.Decode.nullable Json.Decode.float)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enabled" Json.Decode.bool))
 
 
 inboxMessageTagsAddReqDecoder : Json.Decode.Decoder InboxMessageTagsAddReq

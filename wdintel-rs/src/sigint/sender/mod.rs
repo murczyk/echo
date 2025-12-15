@@ -1,6 +1,6 @@
 use crate::entities::*;
+use crate::utils::orm::ArrayColumnOps;
 use sea_orm::sea_query::{Expr, Query, SelectStatement, SimpleExpr};
-use sea_orm::ColumnTrait;
 
 fn quote_identifier(ident: &str) -> String {
     let escaped = ident.replace('"', "\"\"");
@@ -30,7 +30,9 @@ pub fn message_ids_for_senders(senders: &[String]) -> SelectStatement {
     Query::select()
         .column(signal_message_group::Column::SignalMessageId)
         .from(signal_message_group::Entity)
-        .and_where(signal_message_group::Column::Sender.is_in(senders.to_vec()))
+        .and_where(
+            signal_message_group::Column::Sender.eq_any(senders.to_vec()),
+        )
         .to_owned()
 }
 

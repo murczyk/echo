@@ -1,6 +1,7 @@
 use crate::entities::sea_orm_active_enums::*;
 use crate::entities::*;
 use crate::error::*;
+use crate::utils::orm::ArrayColumnOps;
 use crate::{
     messenger::{group::ensure_signal_group, worker::sources_eq},
     types::*,
@@ -82,7 +83,7 @@ pub async fn sync_groups(
     let group_models = signal_group::Entity::find()
         .filter(signal_group::Column::Deleted.eq(false))
         .filter(
-            signal_group::Column::MasterKey.is_in(group_master_keys.clone()),
+            signal_group::Column::MasterKey.eq_any(group_master_keys.clone()),
         )
         .all(txn)
         .await
@@ -99,7 +100,7 @@ pub async fn sync_groups(
     }
     whatsapp_group::Entity::find()
         .filter(whatsapp_group::Column::Deleted.eq(false))
-        .filter(whatsapp_group::Column::Jid.is_in(group_master_keys))
+        .filter(whatsapp_group::Column::Jid.eq_any(group_master_keys))
         .all(txn)
         .await
         .cae(h!())?

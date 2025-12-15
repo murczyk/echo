@@ -6,6 +6,7 @@ use crate::rer_importer::analysis::{
 use crate::sigint::network::types::ListNetworksSortBy;
 use crate::sigint::signal::types::Signal;
 use crate::types::*;
+use crate::utils::orm::ArrayColumnOps;
 use crate::utils::*;
 use actix_web::web::Json;
 use chrono::prelude::*;
@@ -18,12 +19,11 @@ use sea_query::{
 };
 use serde::Serialize;
 use std::cmp::Ordering;
+use std::collections::HashMap;
 use std::collections::HashSet;
 use tempfile::Builder;
 use tokio::process::Command;
 use tokio_util::io::ReaderStream;
-
-use std::collections::HashMap;
 
 use crate::sigint::etalonka::types::*;
 
@@ -175,10 +175,7 @@ pub async fn load_freqs(
         Expr::col((SigintNetwork::Table, SigintNetwork::Id))
             .equals((nf.clone(), SigintNetworkFreq::NetworkId)),
     )
-    .and_where(
-        Expr::col((DatasourceGroup::Table, DatasourceGroup::GroupMasterKey))
-            .is_in(groups),
-    )
+    .and_where(datasource_group::Column::GroupMasterKey.eq_any(groups.clone()))
     .and_where(
         Expr::col((SignalMessage::Table, SignalMessage::Deleted)).eq(false),
     )
@@ -662,13 +659,7 @@ pub fn build_callsigns_queries(
                 .equals((DatasourceGroup::Table, DatasourceGroup::Id)),
         )
         .join(JoinType::InnerJoin, nf.clone(), join_condition)
-        .and_where(
-            Expr::col((
-                DatasourceGroup::Table,
-                DatasourceGroup::GroupMasterKey,
-            ))
-            .is_in(groups),
-        )
+        .and_where(datasource::Column::GroupMasterKey.eq_any(groups.clone()))
         .and_where(
             Expr::col((SignalMessage::Table, SignalMessage::Deleted)).eq(false),
         );
@@ -1208,7 +1199,7 @@ pub async fn bl_get_network_points(
         .column_as(sigint_peleng::Column::Lat, "lat")
         .column_as(sigint_peleng::Column::Lng, "lng")
         .column_as(signal_message::Column::Body, "body")
-        .filter(datasource_group::Column::GroupMasterKey.is_in(groups))
+        .filter(datasource_group::Column::GroupMasterKey.eq_any(groups.clone()))
         .filter(sigint_network::Column::Id.eq(network_id))
         .filter(sigint_inbox_item::Column::Coords.is_not_null())
         .filter(signal_message::Column::Deleted.eq(false))
@@ -1405,7 +1396,7 @@ pub async fn load_networks(
                     Alias::new("sigint_network_aor"),
                 )
                 .filter(
-                    sigint_network_aor::Column::AorId.is_in(aor_ids.clone()),
+                    sigint_network_aor::Column::AorId.eq_any(aor_ids.clone()),
                 );
         }
     }
@@ -1507,7 +1498,7 @@ pub async fn load_networks_by_id(
         .column(sigint_network::Column::ActiveFrom)
         .column(sigint_network::Column::ActiveTo)
         .filter(sigint_network::Column::Deleted.eq(false))
-        .filter(sigint_network::Column::Id.is_in(req.network_ids.clone()));
+        .filter(sigint_network::Column::Id.eq_any(req.network_ids.clone()));
 
     networks = if let Some(sort_by) = &req.sort_by {
         sort_by

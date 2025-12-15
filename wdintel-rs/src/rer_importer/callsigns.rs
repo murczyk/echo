@@ -4,6 +4,7 @@ use crate::error::AppError;
 use crate::rer_importer::analysis::*;
 use crate::rer_importer::types::*;
 use crate::types::*;
+use crate::utils::orm::ArrayColumnOps;
 use crate::utils::string::*;
 use crate::utils::*;
 use actix_web::post;
@@ -1125,6 +1126,7 @@ pub async fn callsigns_graph(
         units_exact_match_only: req.units_exact_match_only,
         filter_tags_option: req.filter_tags_option,
         selected_aors: req.selected_aors.clone(),
+        without_model_tags: req.without_model_tags,
     };
 
     let summary_table: SummaryTableFreq =
@@ -1171,7 +1173,7 @@ pub async fn callsigns_graph(
         .column_as(Expr::cust("distinct callsigns"), "callsigns")
         .column_as(Expr::col(signal_message::Entity).count(), "count")
         .filter(
-            datasource_group::Column::GroupMasterKey.is_in(
+            datasource_group::Column::GroupMasterKey.eq_any(
                 crate::messenger::group::get_identity_sigint_groups(
                     &env.dbx, &login,
                 )
@@ -1182,7 +1184,7 @@ pub async fn callsigns_graph(
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
-        .filter(sigint_inbox_item::Column::Freq.is_in(freqs))
+        .filter(sigint_inbox_item::Column::Freq.eq_any(freqs))
         .filter(sigint_inbox_item::Column::Checked.eq(Some(true)))
         .group_by(Expr::cust("1"));
 
@@ -1256,7 +1258,7 @@ pub async fn callsigns_graph(
         .column_as(sigint_inbox_item::Column::Callsigns, "callsigns")
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(
-            datasource_group::Column::GroupMasterKey.is_in(
+            datasource_group::Column::GroupMasterKey.eq_any(
                 crate::messenger::group::get_identity_sigint_groups(
                     &env.dbx, &login,
                 )

@@ -3,13 +3,13 @@ use crate::entities::sea_orm_active_enums::AccountStatus;
 use crate::entities::*;
 use crate::error::AppError;
 use crate::types::*;
+use crate::utils::orm::ArrayColumnOps;
 use crate::{config, h};
 use actix_web::post;
 use actix_web::web::Json;
 use chrono::prelude::*;
 use sea_orm::*;
 use sea_query::Expr;
-
 pub(crate) mod importer;
 pub mod types;
 
@@ -81,7 +81,7 @@ pub async fn datasource_group_list(
             .filter(signal_message::Column::Deleted.eq(false));
         if !is_admin {
             select = select.filter(
-                datasource_group::Column::GroupMasterKey.is_in(
+                datasource_group::Column::GroupMasterKey.eq_any(
                     crate::messenger::group::get_identity_sigint_groups(
                         &env.dbx,
                         &user.id().c(h!())?,

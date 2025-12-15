@@ -1,6 +1,7 @@
 use crate::entities::{prelude::*, *};
 use crate::error::AppError;
 use crate::types::*;
+use crate::utils::orm::ArrayColumnOps;
 use chrono::prelude::*;
 use futures_util::TryStreamExt;
 use indicatif::ProgressBar;
@@ -15,7 +16,7 @@ async fn format_f2(
     callsigns: &Vec<String>,
 ) -> Result<String, AppError> {
     let callsign_lexemes = CallsignLexeme::find()
-        .filter(callsign_lexeme::Column::Callsign.is_in(callsigns))
+        .filter(callsign_lexeme::Column::Callsign.eq_any(callsigns.clone()))
         .all(dbx)
         .await
         .c(h!())?;

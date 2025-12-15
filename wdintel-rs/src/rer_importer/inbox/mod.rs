@@ -3,17 +3,22 @@ use crate::rer_importer::types::*;
 
 use crate::config::*;
 use crate::error::AppError;
+use crate::event_stream::fanout_mult;
+use crate::event_stream::types::{EventMsg, EventType};
 use crate::rer_importer::inbox::bl::*;
 use crate::rer_importer::inbox::query::*;
 use crate::session::record_page_visit;
 use crate::types::*;
+use crate::utils::orm::ArrayColumnOps;
 use actix_identity::Identity;
 use actix_web::web::{Data, Json};
 use actix_web::{get, post};
 use chrono::*;
+use echo_migration::{Expr, PostgresQueryBuilder};
 use itertools::Itertools;
 use log::*;
 use sea_orm::*;
+use std::collections::BTreeSet;
 
 pub(crate) mod bl;
 pub mod query;
@@ -115,17 +120,64 @@ async fn messages_by_id(
             JoinType::LeftJoin,
             sigint_inbox_item::Relation::SigintPost.def(),
         );
+
     messages = add_inbox_message_columns(messages);
+
     messages = messages
         .filter(signal_message::Column::Deleted.eq(false))
-        .filter(datasource_group::Column::GroupMasterKey.is_in(sigint_groups))
-        .filter(signal_message::Column::Id.is_in(req.message_ids.clone()));
+        .filter(datasource_group::Column::GroupMasterKey.eq_any(sigint_groups))
+        .filter(signal_message::Column::Id.eq_any(req.message_ids.clone()));
 
-    let messages = messages
-        .into_model::<InboxMessageDesc>()
-        .all(&env.dbx)
-        .await
-        .context(h!())?;
+    let query_tags = sigint_inbox_item_tag::Entity::find()
+        .select_only()
+        .expr_as(
+            Expr::cust_with_exprs(
+                "array_agg($1) filter (where $2 >= $3)",
+                [
+                    Expr::col((
+                        sigint_inbox_item_tag::Entity,
+                        sigint_inbox_item_tag::Column::TagId,
+                    ))
+                    .into_simple_expr(),
+                    Expr::col((
+                        sigint_inbox_item_tag::Entity,
+                        sigint_inbox_item_tag::Column::Confidence,
+                    ))
+                    .into_simple_expr(),
+                    Expr::val(TAG_MINIMUM_CONFIDENCE).into_simple_expr(),
+                ],
+            ),
+            "tags",
+        )
+        .expr_as(
+            Expr::cust("jsonb_agg(sigint_inbox_item_tag.*)"),
+            "inbox_tags",
+        )
+        .filter(
+            Expr::col((
+                sigint_inbox_item_tag::Entity,
+                sigint_inbox_item_tag::Column::SigintInboxItemId,
+            ))
+            .equals((signal_message::Entity, signal_message::Column::Id)),
+        )
+        .group_by(sigint_inbox_item_tag::Column::SigintInboxItemId)
+        .into_query();
+
+    let q_tags = "q_tags";
+
+    let (sql, values) = messages
+        .into_query()
+        .join_lateral(JoinType::LeftJoin, query_tags, q_tags, Expr::value(true))
+        .column((q_tags, "tags"))
+        .column((q_tags, "inbox_tags"))
+        .build(PostgresQueryBuilder);
+
+    let messages = InboxMessageDesc::find_by_statement(
+        Statement::from_sql_and_values(DatabaseBackend::Postgres, sql, values),
+    )
+    .all(&env.dbx)
+    .await
+    .context(h!())?;
     let req = InboxMessagesReq::default();
     let env: &Env = &env;
     let messages =
@@ -211,7 +263,7 @@ async fn inbox_group_stats(
             .await
             .c(h!())?;
     let group_names = signal_group::Entity::find()
-        .filter(signal_group::Column::MasterKey.is_in(master_keys.clone()))
+        .filter(signal_group::Column::MasterKey.eq_any(master_keys.clone()))
         .all(&env.dbx)
         .await
         .c(h!())?
@@ -353,6 +405,92 @@ async fn inbox_submit(
             Err(e)
         }
     }
+}
+
+#[post("/api/rer-importer/comment-save")]
+async fn comment_save(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<InboxCommentSaveReq>,
+) -> Result<Json<()>, AppError> {
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
+        .await
+        .c(h!())?;
+    let sigint_groups =
+        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
+            .await
+            .c(h!())?;
+
+    let _ = SignalMessage::find_by_id(req.message_id)
+        .join(
+            JoinType::LeftJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
+        .filter(signal_message::Column::Deleted.eq(false))
+        .filter(datasource_group::Column::GroupMasterKey.eq_any(sigint_groups))
+        .one(&env.dbx)
+        .await
+        .c(h!())?
+        .ok_or(AppError::NotFound)?;
+
+    let txn = env.dbx.begin().await.c(h!())?;
+    let message_ids =
+        find_all_duplicates(&txn, req.message_id).await.c(h!())?;
+    let comment = req.comment.as_ref().map(|c| c.trim()).unwrap_or("");
+    for id in &message_ids {
+        if comment.is_empty() {
+            sigint_comment::Entity::delete_many()
+                .filter(sigint_comment::Column::SignalMessageId.eq(*id))
+                .filter(sigint_comment::Column::Login.eq(login.clone()))
+                .exec(&txn)
+                .await
+                .c(h!())?;
+        } else {
+            let m_comment = sigint_comment::Entity::find()
+                .filter(sigint_comment::Column::SignalMessageId.eq(*id))
+                .filter(sigint_comment::Column::Login.eq(login.clone()))
+                .one(&txn)
+                .await
+                .c(h!())?;
+            match m_comment {
+                None => {
+                    sigint_comment::ActiveModel {
+                        id: NotSet,
+                        signal_message_id: Set(*id),
+                        login: Set(login.clone()),
+                        comment: Set(comment.to_string()),
+                        created_at: NotSet,
+                    }
+                    .insert(&txn)
+                    .await
+                    .c(h!())?;
+                }
+                Some(comment_model) => {
+                    sigint_comment::ActiveModel {
+                        id: Set(comment_model.id),
+                        signal_message_id: Set(*id),
+                        login: Set(login.clone()),
+                        comment: Set(comment.to_string()),
+                        created_at: NotSet,
+                    }
+                    .update(&txn)
+                    .await
+                    .c(h!())?;
+                }
+            }
+        }
+    }
+    txn.commit().await.c(h!())?;
+    let events: Vec<EventMsg> = message_ids
+        .into_iter()
+        .collect::<BTreeSet<i64>>()
+        .into_iter()
+        .map(EventType::ETInboxChanged)
+        .map(EventMsg::new)
+        .collect();
+    fanout_mult(&mut env.redis.clone(), events).await.c(h!())?;
+    Ok(Json(()))
 }
 
 async fn do_submit_inbox(

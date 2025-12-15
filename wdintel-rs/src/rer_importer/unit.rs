@@ -1,6 +1,8 @@
+use crate::config::*;
 use crate::entities::*;
 use crate::error::AppError;
 use crate::types::*;
+use crate::utils::orm::ArrayColumnOps;
 use actix_web::web::Json;
 use sea_orm::*;
 use std::io::BufRead;
@@ -98,7 +100,7 @@ pub async fn export_unit(
     let mut result = vec![];
     let all_signals = sigint_signal::Entity::find()
         .filter(sigint_signal::Column::Deleted.eq(false))
-        .filter(sigint_signal::Column::Unit.is_in(unit_ids))
+        .filter(sigint_signal::Column::Unit.eq_any(unit_ids))
         .all(&dbx)
         .await
         .c(h!())?;
@@ -216,7 +218,7 @@ pub async fn import_unit(
                         .clone()
                         .unwrap_or_default()),
                     comment: Set(json_unit.comment.clone().unwrap_or_default()),
-                    created_by: Set("system".to_string()),
+                    created_by: Set(SYSTEM_LOGIN_NAME.to_string()),
                     sigint_origin_id: Set(Some(sigint_origin_id)),
                     ..Default::default()
                 })

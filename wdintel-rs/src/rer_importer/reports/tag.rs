@@ -1,9 +1,7 @@
-use std::collections::BTreeSet;
-use std::path::PathBuf;
-
 use crate::entities::*;
 use crate::error::AppError;
 use crate::types::*;
+use crate::utils::orm::ArrayColumnOps;
 use crate::utils::*;
 use actix_identity::Identity;
 use docx_rs::AlignmentType;
@@ -13,6 +11,8 @@ use docx_rs::Run;
 use docx_rs::Style;
 use docx_rs::StyleType;
 use sea_orm::*;
+use std::collections::BTreeSet;
+use std::path::PathBuf;
 
 pub async fn report_docx_kind_tag(
     user: Identity,
@@ -66,7 +66,7 @@ pub async fn report_docx_kind_tag(
     let date_to: String = date_to_dt.format("%H:%M %d.%m.%Y").to_string();
 
     let importants = sigint_important::Entity::find()
-        .filter(sigint_important::Column::UserId.is_in(&logins))
+        .filter(sigint_important::Column::UserId.eq_any(logins.clone()))
         .join(
             JoinType::InnerJoin,
             sigint_important::Relation::SignalMessage.def(),
@@ -80,7 +80,7 @@ pub async fn report_docx_kind_tag(
             signal_message::Relation::DatasourceGroup.def(),
         )
         .filter(
-            datasource_group::Column::GroupMasterKey.is_in(
+            datasource_group::Column::GroupMasterKey.eq_any(
                 crate::messenger::group::get_identity_sigint_groups(
                     &txn, &login,
                 )
@@ -194,7 +194,7 @@ pub async fn report_docx_kind_tag(
         let m_comment = sigint_comment::Entity::find()
             .filter(sigint_comment::Column::SignalMessageId.eq(message_id))
             .apply_if(req.req.report_tags_only_this_unit, |q, _| {
-                q.filter(sigint_comment::Column::Login.is_in(logins.clone()))
+                q.filter(sigint_comment::Column::Login.eq_any(logins.clone()))
             })
             .one(&txn)
             .await
@@ -224,7 +224,7 @@ pub async fn report_docx_kind_tag(
         );
         let m_comment = sigint_comment::Entity::find()
             .filter(sigint_comment::Column::SignalMessageId.eq(message_id))
-            .filter(sigint_comment::Column::Login.is_in(logins.clone()))
+            .filter(sigint_comment::Column::Login.eq_any(logins.clone()))
             .one(&txn)
             .await
             .context(h!())?;

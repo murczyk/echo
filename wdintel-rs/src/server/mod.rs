@@ -123,6 +123,7 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
         callsigns_whitelist: callsigns_whitelist.clone(),
         version: version.clone(),
         replicas,
+        tag_keyword_regex_cache: Arc::new(RwLock::new(Default::default())),
     };
     Ok(Arc::new(env))
 }
@@ -148,6 +149,7 @@ pub async fn main_server(
     let dbx8 = env.dbx.clone();
     let dbx9 = env.dbx.clone();
     let dbx10 = env.dbx.clone();
+    let dbx11 = env.dbx.clone();
     let mil_geo2 = env.mil_geo.clone();
     if let Err(e) = crate::rer_importer::import_csv::ensure_import_group_exists(
         &env.dbx, &config,
@@ -242,6 +244,27 @@ pub async fn main_server(
                 crate::stats::worker::group_stats::worker_calculate_group_stats(mode).await;
             },
         );
+        let rq2 = env.rq.clone();
+        let tag_keyword_regex_cache = env.tag_keyword_regex_cache.clone();
+        let token_2 = cancel_token.clone();
+        let redis2 = env.redis.clone();
+        if !config.disable_suggest_message_tags_worker.unwrap_or(false) {
+            spawn_named_worker(
+                "suggest_message_tags_worker",
+                bg_set,
+                async move {
+                    let mut redis = redis2;
+                    crate::tags::worker::suggest_message_tags_worker(
+                        &rq2,
+                        &dbx11,
+                        &mut redis,
+                        &tag_keyword_regex_cache,
+                        token_2,
+                    )
+                    .await;
+                },
+            );
+        }
     }
 
     spawn_named_worker("signal_cli_verbose_logger", bg_set, async move {
@@ -347,6 +370,7 @@ pub async fn main_server(
             .service(crate::rer_importer::inbox::get_inbox_map)
             .service(crate::rer_importer::inbox::inbox_messages_count)
             .service(crate::rer_importer::inbox::delete_message)
+            .service(crate::rer_importer::inbox::comment_save)
             .service(crate::rer_importer::inbox::inbox_submit)
             .service(crate::rer_importer::inbox::inbox_cursor)
             .service(crate::rer_importer::inbox::update_inbox_cursor)
@@ -514,9 +538,16 @@ pub async fn main_server(
             .service(crate::sigint::signal::delete_signal)
             .service(crate::sigint::signal::update_signal)
             .service(crate::sigint::signal::signal_unit_stats)
+            .service(crate::tags::admin_list_tags)
+            .service(crate::tags::create_tag)
+            .service(crate::tags::update_tag)
             .service(crate::tags::tags_list)
+            .service(crate::tags::add_tag_keywords)
+            .service(crate::tags::update_tag_keyword)
+            .service(crate::tags::delete_tag_keyword)
             .service(crate::tags::inbox_message_tags_add)
             .service(crate::tags::inbox_message_tags_rm)
+            .service(crate::tags::inbox_message_tags_model_error)
             .service(crate::log_api::log_error)
             .service(crate::event_stream::long_poll)
             .service(crate::messenger::list_messengers)

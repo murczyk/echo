@@ -6,6 +6,9 @@ import pymorphy3
 import spacy
 from flask import Flask, json, jsonify, request
 from words2numsrus import NumberExtractor
+from pathlib import Path
+import fasttext
+import re
 
 # import ha.attention as hat
 # import sentencepiece as spm
@@ -20,6 +23,15 @@ morph = pymorphy3.MorphAnalyzer()
 app = Flask(__name__)
 json.provider.DefaultJSONProvider.ensure_ascii = False
 
+models_root = Path(os.environ.get('WD_FASTTEXT_MODELS', 'fasttext-models'))
+models = {item.stem: fasttext.load_model(str(item.absolute())) for item in models_root.glob('*.bin') if item.is_file()}
+pat_alnum_apostrophe = re.compile(r"[\w'`\u2019\u02BC]+", re.UNICODE)
+
+try:
+    with models_root.joinpath('thresholds.json').open() as file:
+        thresholds = json.load(file)
+except FileNotFoundError:
+    thresholds = {key: 0.5 for key in models.keys()}
 
 @app.route("/")
 def hello_world():
@@ -54,6 +66,40 @@ def extract_numbers():
         {"sentance": (NumberExtractor().replace_groups(request.get_json()["sentence"]))}
     )
 
+def preprocess_text(text):
+    words = pat_alnum_apostrophe.findall(text)
+    return ' '.join(words)
+
+def process_predict(model, texts):
+    all_labels, all_probs = model.predict(texts, k=1)
+    res = []
+    for labels, probs in zip(all_labels, all_probs):
+        label = labels[0]
+        prob = float(probs[0])
+        adj_prob = prob if label == "__label__1" else 1.0 - prob
+        res.append(adj_prob)
+
+    return res
+
+@app.post("/api/tags/predict")
+def predict_tags():
+    req = request.get_json()
+    texts = req["texts"]
+    tags = req["tags"]
+
+    texts = list(map(preprocess_text, texts))
+    output = {tag: process_predict(model, texts) for tag, model in models.items() if not tags or tag in tags}
+    res = []
+    for index, _ in enumerate(texts):
+        row = {}
+        for tag, probs in output.items():
+            prob = probs[index]
+            if prob >= thresholds[tag]:
+                row[tag] = prob
+        res.append(row)
+
+    return jsonify(res)
+
 
 # @app.post("/api/completions/callsigns")
 # def complete_callsigns():
@@ -82,3 +128,6 @@ def extract_numbers():
 #     generated_tokens = [token.item() for token in hat.generate(callsigns_model, prompt_tokens, max_new_tokens=100, temperature=1.0, top_k=1)]
 #     completions = sp.decode(generated_tokens)
 #     return jsonify({"completions": [completions]})
+
+if __name__ == '__main__':
+    app.run(debug=True)

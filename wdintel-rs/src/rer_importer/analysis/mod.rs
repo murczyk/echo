@@ -12,6 +12,7 @@ use crate::sigint::aor::bl::collect_group_aors;
 use crate::sigint::sender::message_ids_for_senders;
 use crate::types::*;
 use crate::users::*;
+use crate::utils::orm::ArrayColumnOps;
 use crate::utils::string::*;
 use crate::utils::*;
 use actix_identity::Identity;
@@ -64,7 +65,7 @@ pub fn message_in_groups_exists(keys: Vec<String>) -> SimpleExpr {
             ))
             .equals((signal_message::Entity, signal_message::Column::Id)),
         )
-        .filter(signal_message_group::Column::GroupMasterKey.is_in(keys))
+        .filter(signal_message_group::Column::GroupMasterKey.eq_any(keys))
         .into_query();
 
     Expr::exists(subquery)
@@ -234,7 +235,8 @@ where
         if !selected_units.is_empty() {
             let in_subquery_condition = sigint_inbox_item::Column::Freq
                 .in_subquery(select_sigint_units_by_names(
-                    sigint_unit::Column::Name.is_in(selected_units.clone()),
+                    sigint_unit::Column::Name
+                        .eq_any(selected_units.clone().into_iter().collect()),
                 ));
 
             // якщо встановлено прапорець `units_exact_match_only`, то фільтруємо ТІЛЬКИ по підрозділам, які вказані через прив'язку по Еталонці
@@ -243,7 +245,7 @@ where
             } else {
                 // інакше фільтруємо по підрозділам які було вказано в шапці повідомлення, або по прив'язаним через Еталонні мережі
                 sigint_inbox_item::Column::UnitV2
-                    .is_in(selected_units)
+                    .eq_any(selected_units.clone().into_iter().collect())
                     .or(in_subquery_condition)
             };
 
@@ -332,7 +334,7 @@ where
                             .from(freq_location::Entity)
                             .and_where(
                                 freq_location::Column::Location
-                                    .is_in(nonempty_locations),
+                                    .eq_any(nonempty_locations),
                             )
                             .to_owned(),
                     ),
@@ -369,6 +371,57 @@ where
     Ok(q)
 }
 
+fn get_related_tag_items_filter(
+    unique_tags: BTreeSet<i64>,
+    tag_filter_option: TagFilterOption,
+    only_tags_by_logins: Option<Vec<String>>,
+    without_model_tags: bool,
+) -> SimpleExpr {
+    let expected_count = unique_tags.len();
+
+    let mut q = sigint_inbox_item_tag::Entity::find()
+        .filter(
+            Expr::col((
+                sigint_inbox_item_tag::Entity,
+                sigint_inbox_item_tag::Column::SigintInboxItemId,
+            ))
+            .equals((sigint_inbox_item::Entity, sigint_inbox_item::Column::Id)),
+        )
+        .filter(
+            sigint_inbox_item_tag::Column::TagId
+                .eq_any(unique_tags.into_iter().collect()),
+        )
+        .filter(
+            sigint_inbox_item_tag::Column::Confidence
+                .gte(TAG_MINIMUM_CONFIDENCE),
+        )
+        .select_only();
+
+    if without_model_tags {
+        q = q.filter(sigint_inbox_item_tag::Column::Model.is_null());
+    }
+
+    if let Some(logins) = only_tags_by_logins {
+        if !logins.is_empty() {
+            q = q.filter(sigint_inbox_item_tag::Column::Login.eq_any(logins));
+        }
+    }
+
+    match tag_filter_option {
+        TagFilterOption::OneOfTags => {
+            Expr::exists(q.expr(Expr::value(1)).into_query())
+        }
+        TagFilterOption::AllTags => {
+            let subquery = q
+                .expr(Expr::col(sigint_inbox_item_tag::Column::Id).count())
+                .into_query()
+                .into_sub_query_statement();
+            SimpleExpr::SubQuery(None, Box::new(subquery))
+                .eq(expected_count as u64)
+        }
+    }
+}
+
 pub fn filter_selected_tags<Q>(
     q: Q,
     selected_tags: &Option<Vec<i64>>,
@@ -377,7 +430,9 @@ pub fn filter_selected_tags<Q>(
     or_with_coords: &Option<bool>,
     or_with_extended_form: &Option<bool>,
     filter_tags_option: &Option<TagFilterOption>,
+    without_model_tags: &Option<bool>,
     user_id: &str,
+    only_tags_by_logins: Option<Vec<String>>,
 ) -> Result<Q, AppError>
 where
     Q: QueryFilter + QuerySelect + Clone,
@@ -386,18 +441,17 @@ where
     let mut m_inner_expr = None;
     if let Some(selected_tags) = selected_tags.as_ref() {
         if !selected_tags.is_empty() {
-            match filter_tags_option.unwrap_or(TagFilterOption::OneOfTags) {
-                TagFilterOption::OneOfTags => {
-                    m_inner_expr = Some(SimpleExpr::Custom(
-                        cond_json_contains_oneof_i64("tags", selected_tags),
-                    ));
-                }
-                TagFilterOption::AllTags => {
-                    m_inner_expr = Some(SimpleExpr::Custom(
-                        cond_json_contains_all_i64("tags", selected_tags),
-                    ));
-                }
-            }
+            let unique_tags: BTreeSet<i64> =
+                selected_tags.iter().cloned().collect();
+            let tag_filter_option =
+                filter_tags_option.unwrap_or(TagFilterOption::OneOfTags);
+            let without_model_tags = without_model_tags.unwrap_or(false);
+            m_inner_expr = Some(get_related_tag_items_filter(
+                unique_tags,
+                tag_filter_option,
+                only_tags_by_logins,
+                without_model_tags,
+            ));
         }
     }
     if or_bookmarked == &Some(true) {
@@ -830,7 +884,7 @@ where
         if !search_parts.message_uids.is_empty() {
             q2 = q2.filter(
                 signal_message::Column::MessageUid
-                    .is_in(search_parts.message_uids),
+                    .eq_any(search_parts.message_uids),
             )
         }
 
@@ -912,7 +966,7 @@ pub async fn summary_table_freq_1(
             "dedup_key",
         )
         .distinct_on([dedup_key_alias.clone()])
-        .filter(datasource_group::Column::GroupMasterKey.is_in(master_keys))
+        .filter(datasource_group::Column::GroupMasterKey.eq_any(master_keys))
         .filter(signal_message::Column::Deleted.eq(false))
         // .filter(signal_message::Column::DuplicateOf.is_null())
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
@@ -948,7 +1002,9 @@ pub async fn summary_table_freq_1(
         &req.or_with_coords,
         &req.or_with_extended_form,
         &req.filter_tags_option,
+        &req.without_model_tags,
         &user.id().c(h!())?,
+        None,
     )?;
     let dedup_subquery =
         filter_selected_aors(dedup_subquery, &req.selected_aors)
@@ -1377,7 +1433,7 @@ async fn correlated_freqs(
             signal_message::Relation::DatasourceGroup.def(),
         )
         .filter(
-            datasource_group::Column::GroupMasterKey.is_in(
+            datasource_group::Column::GroupMasterKey.eq_any(
                 crate::messenger::group::get_identity_sigint_groups(
                     &env.dbx, &login,
                 )
@@ -1420,7 +1476,7 @@ async fn correlated_freqs(
                 signal_message::Relation::DatasourceGroup.def(),
             )
             .filter(
-                datasource_group::Column::GroupMasterKey.is_in(
+                datasource_group::Column::GroupMasterKey.eq_any(
                     crate::messenger::group::get_identity_sigint_groups(
                         &env.dbx, &login,
                     )
@@ -1507,7 +1563,7 @@ pub async fn edit_freq_unit_name(
         .column_as(Expr::cust("signal_message.id"), "id")
         // .column_as(Expr::col(signal_message::Column::Id), "id")
         .filter(
-            datasource_group::Column::GroupMasterKey.is_in(
+            datasource_group::Column::GroupMasterKey.eq_any(
                 crate::messenger::group::get_identity_sigint_groups(
                     &env.dbx, &login,
                 )
@@ -1539,7 +1595,9 @@ pub async fn edit_freq_unit_name(
         &None,
         &None,
         &req.filter_tags_option,
+        &reqan.without_model_tags,
         &user.id().c(h!())?,
+        None,
     )?;
     let rows_res = filter_selected_networks(rows_res, &reqan.selected_networks)
         .context(h!())?;
@@ -1872,7 +1930,7 @@ pub async fn bi_new_callsigns(
         .column_as(sigint_inbox_item::Column::Callsigns, "callsigns")
         .column_as(sigint_inbox_item::Column::Datetime, "timestamp")
         .filter(
-            datasource_group::Column::GroupMasterKey.is_in(
+            datasource_group::Column::GroupMasterKey.eq_any(
                 get_identity_sigint_groups(&env.dbx, user_id)
                     .await
                     .c(h!())?,
@@ -1905,7 +1963,9 @@ pub async fn bi_new_callsigns(
         &req.or_with_coords,
         &req.or_with_extended_form,
         &req.filter_tags_option,
+        &req.without_model_tags,
         user_id,
+        None,
     )?;
     let rows_res =
         filter_selected_aors(rows_res, &req.selected_aors).context(h!())?;
@@ -1949,7 +2009,7 @@ pub async fn bi_new_callsigns(
         .column_as(sigint_inbox_item::Column::Callsigns, "callsigns")
         .column_as(sigint_inbox_item::Column::Datetime, "timestamp")
         .filter(
-            datasource_group::Column::GroupMasterKey.is_in(
+            datasource_group::Column::GroupMasterKey.eq_any(
                 get_identity_sigint_groups(&env.dbx, user_id)
                     .await
                     .c(h!())?,
@@ -1982,7 +2042,9 @@ pub async fn bi_new_callsigns(
         &req.or_with_coords,
         &req.or_with_extended_form,
         &req.filter_tags_option,
+        &req.without_model_tags,
         user_id,
+        None,
     )?;
     let rows_res = filter_selected_networks(rows_res, &req.selected_networks)
         .context(h!())?;
@@ -2065,7 +2127,7 @@ pub async fn batch_message_comments(
     let message_ids: Vec<i64> =
         req.messages.iter().map(|m| m.message_id).collect();
     let comments = sigint_comment::Entity::find()
-        .filter(sigint_comment::Column::SignalMessageId.is_in(message_ids))
+        .filter(sigint_comment::Column::SignalMessageId.eq_any(message_ids))
         .order_by_asc(sigint_comment::Column::CreatedAt)
         .all(&env.dbx)
         .await
@@ -2486,7 +2548,7 @@ async fn collect_network_names(
             sigint_network_unit::Relation::SigintUnit.def(),
         )
         .filter(sigint_network::Column::Deleted.eq(false))
-        .filter(sigint_network::Column::Id.is_in(network_ids))
+        .filter(sigint_network::Column::Id.eq_any(network_ids))
         .group_by(sigint_network::Column::Id)
         .group_by(sigint_network::Column::Name);
 
@@ -2901,7 +2963,7 @@ async fn collect_sender_names(
             signal_profile::Column::FamilyName,
             signal_profile::Column::GivenName,
         ])
-        .filter(signal_profile::Column::Uuid.is_in(sender_keys.clone()))
+        .filter(signal_profile::Column::Uuid.eq_any(sender_keys.clone()))
         .into_tuple::<(String, Option<String>, Option<String>)>()
         .all(txn)
         .await
@@ -2938,7 +3000,7 @@ async fn collect_group_names(
             signal_group::Column::Name,
             signal_group::Column::IgnoreOperativny,
         ])
-        .filter(signal_group::Column::MasterKey.is_in(group_keys.clone()))
+        .filter(signal_group::Column::MasterKey.eq_any(group_keys.clone()))
         .into_tuple::<(String, Option<String>, bool)>()
         .all(txn)
         .await
@@ -2984,8 +3046,8 @@ async fn collect_group_names(
         .filter(whatsapp_group::Column::Deleted.eq(false))
         .select_only()
         .columns([whatsapp_group::Column::Jid, whatsapp_group::Column::Name])
-        .filter(whatsapp_group::Column::Jid.is_in(group_keys.clone()))
-        .filter(whatsapp_group::Column::Jid.is_not_in(resolved_keys))
+        .filter(whatsapp_group::Column::Jid.eq_any(group_keys.clone()))
+        .filter(whatsapp_group::Column::Jid.ne_any(resolved_keys))
         .into_tuple::<(String, String)>()
         .all(txn)
         .await
@@ -3025,7 +3087,7 @@ async fn collect_aor_names(
             area_of_responsibility::Column::Id,
             area_of_responsibility::Column::Name,
         ])
-        .filter(area_of_responsibility::Column::Id.is_in(aor_ids))
+        .filter(area_of_responsibility::Column::Id.eq_any(aor_ids))
         .into_tuple::<(i64, String)>()
         .all(txn)
         .await

@@ -174,7 +174,13 @@ mod m20251119_121701_fix_tag_stats;
 mod m20251124_084954_signal_message_media;
 mod m20251124_145441_add_group_batch;
 mod m20251127_112149_delete_signal_attachments;
+mod m20251129_112846_sigint_inbox_item_tags_many_to_many;
+mod m20251129_124751_sigint_inbox_item_tags_unique;
+mod m20251204_070600_tags_keywords;
+mod m20251205_121716_tag_suggestion_worker_queue;
 mod m20251206_234500_add_signal_message_indexes;
+mod m20251215_130030_sigint_inbox_tag_multilabel;
+mod m20251215_143321_drop_signal_group_notes;
 
 pub struct Migrator;
 
@@ -356,7 +362,13 @@ impl MigratorTrait for Migrator {
             Box::new(m20251124_084954_signal_message_media::Migration),
             Box::new(m20251124_145441_add_group_batch::Migration),
             Box::new(m20251127_112149_delete_signal_attachments::Migration),
+            Box::new(m20251129_112846_sigint_inbox_item_tags_many_to_many::Migration),
+            Box::new(m20251129_124751_sigint_inbox_item_tags_unique::Migration),
+            Box::new(m20251204_070600_tags_keywords::Migration),
+            Box::new(m20251205_121716_tag_suggestion_worker_queue::Migration),
             Box::new(m20251206_234500_add_signal_message_indexes::Migration),
+            Box::new(m20251215_130030_sigint_inbox_tag_multilabel::Migration),
+            Box::new(m20251215_143321_drop_signal_group_notes::Migration),
         ]
     }
 }

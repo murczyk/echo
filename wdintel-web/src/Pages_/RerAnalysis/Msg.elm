@@ -17,6 +17,10 @@ type Msg
     | ToastMsg Shared.Components.Toast.Msg
     | InitGotTime Posix
     | DateRangePickerMsg Shared.Components.DateRangePicker.Msg
+    | EventPollTrigger (Maybe String)
+    | EventPollReceived (Result ApiError B.LongPollRsp)
+    | InboxEvents (List B.EventMsg)
+    | InboxMessagesUpdated (Result ApiError B.MessageIdsRsp)
     | GotInbox (Result ApiError B.InboxMessagesRsp)
     | GotInboxMore (Result ApiError B.InboxMessagesRsp)
     | NetworksInfoLoaded (Result ApiError (List B.Network))
@@ -40,6 +44,7 @@ type Msg
     | ToggleOnlyBookmarked
     | ToggleOnlyImportant
     | ToggleOrWithCoords
+    | ToggleWithoutModelTags
     | ToggleUnfoldAorsFilter
     | ToggleUnfoldGroupsFilter
     | ToggleUnfoldSendersFilter

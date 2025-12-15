@@ -8,6 +8,7 @@ pub const DEFAULT_PG_PORT: u16 = 5432;
 pub const DEFAULT_PG_USER: &str = "wd";
 pub const DEFAULT_PG_PASSWORD: &str = "fee_-_-_-FnoeKFBeebu87bf";
 pub const DEFAULT_PG_DBNAME: &str = "wd";
+pub const PG_SLOW_STATEMENT_THRESHOLD_MS: u64 = 5_000;
 pub const NLP_ADDR: &str = "http://127.0.0.1:5000";
 pub const RQ_TIMEOUT: u64 = 10;
 // pub const CALLSIGNS_SEEN_LATELY_PERIOD_DAYS: i64 = 1;
@@ -101,6 +102,11 @@ pub const PALITRA_STORAGE_DIR_NAME: &str = "palitra_assets";
 pub const RER_DUTY_MAX_DAYS: i64 = 3;
 pub const RER_IMPORTER_BOOKMARK_LIST_LIMIT: u64 = 100;
 pub const RER_IMPORTER_IMPORTANT_LIST_LIMIT: u64 = 100;
+pub const TAG_MINIMUM_CONFIDENCE: f64 = 0.8;
+pub const TAG_MAXIMUM_CONFIDENCE: f64 = 1.0;
+pub const SYSTEM_LOGIN_NAME: &str = "system";
+pub const TAG_SUGGEST_WORKER_BATCH_SIZE: usize = 100;
+pub const TAG_SUGGEST_WORKER_REGEX_CONFIDENCE: f64 = 0.8;
 
 /// Dynamic config that's different on different deployments
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
@@ -123,6 +129,7 @@ pub struct Config {
     pub fill_comp_freq_worker: bool,
     pub disable_cleanup_networks_worker: Option<bool>,
     pub disable_unit_location_v2_worker: Option<bool>,
+    pub disable_suggest_message_tags_worker: Option<bool>,
     pub backup_key_id: Option<String>,
     pub backup_key: Option<String>,
     /// Used for clustering in Babak report, 2km is the default

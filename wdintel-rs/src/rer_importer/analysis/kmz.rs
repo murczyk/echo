@@ -46,7 +46,7 @@ pub async fn rer_analysis_download_kmz(
         .column_as(Expr::col(sigint_inbox_item::Column::Lat), "lat")
         .column_as(Expr::col(sigint_inbox_item::Column::Lng), "lng")
         .filter(
-            datasource_group::Column::GroupMasterKey.is_in(
+            datasource_group::Column::GroupMasterKey.eq_any(
                 crate::messenger::group::get_identity_sigint_groups(
                     &env.dbx, &login,
                 )
@@ -77,7 +77,9 @@ pub async fn rer_analysis_download_kmz(
         &req.or_with_coords,
         &req.or_with_extended_form,
         &req.filter_tags_option,
+        &req.without_model_tags,
         &user.id().c(h!())?,
+        None,
     )?;
     let items =
         filter_selected_aors(items, &req.selected_aors).context(h!())?;
@@ -107,7 +109,7 @@ pub async fn rer_analysis_download_kmz(
         let Some(ref lng) = item.lng else { continue };
         let m_comment = sigint_comment::Entity::find()
             .filter(sigint_comment::Column::SignalMessageId.eq(item.id))
-            .filter(sigint_comment::Column::Login.is_in(logins.clone()))
+            .filter(sigint_comment::Column::Login.eq_any(logins.clone()))
             .one(&env.dbx)
             .await
             .c(h!())?;

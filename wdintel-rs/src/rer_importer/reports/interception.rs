@@ -1,4 +1,5 @@
 use super::super::types::*;
+use crate::config::*;
 use crate::entities::{prelude::*, *};
 use crate::error::AppError;
 use crate::rer_importer::analysis::*;
@@ -6,6 +7,7 @@ use crate::types::*;
 use actix_identity::Identity;
 use chrono::prelude::*;
 // Import necessary items from rust_xlsxwriter
+use crate::utils::orm::ArrayColumnOps;
 use rust_xlsxwriter::{Color, Format, FormatAlign, FormatBorder, Workbook};
 use sea_orm::{prelude::Expr, *};
 use sea_query::*;
@@ -22,7 +24,7 @@ struct InboxMessage {
     body: Option<String>,
     comment: Option<String>,
     coords: Option<String>,
-    tags: Option<JsonValue>,
+    inbox_tags: Option<serde_json::Value>,
     important: Option<i64>,
 }
 
@@ -44,8 +46,13 @@ async fn get_inbox_messages_report(
         .column(sigint_inbox_item::Column::Date)
         .column(sigint_inbox_item::Column::Time)
         .column(sigint_inbox_item::Column::Freq)
-        .column(sigint_inbox_item::Column::Tags)
         .column(signal_message::Column::Body)
+        .expr_as(
+            Expr::cust(
+                "jsonb_agg(sigint_inbox_item_tag.*) FILTER (WHERE sigint_inbox_item_tag.id is not null)",
+            ),
+            "inbox_tags",
+        )
         .column_as(sigint_inbox_item::Column::CallsignsAlg1, "callsigns")
         .column_as(
             Expr::col((
@@ -110,6 +117,17 @@ async fn get_inbox_messages_report(
         )
         .join(
             JoinType::LeftJoin,
+            sigint_inbox_item_tag::Relation::SigintInboxItem
+                .def()
+                .rev()
+                .on_condition(|_left, right| {
+                    Expr::col((right, sigint_inbox_item_tag::Column::Confidence))
+                        .gte(TAG_MINIMUM_CONFIDENCE)
+                        .into_condition()
+                }),
+        )
+        .join(
+            JoinType::LeftJoin,
             signal_message::Relation::SigintImportant
                 .def()
                 .on_condition(|_left, right| {
@@ -120,17 +138,16 @@ async fn get_inbox_messages_report(
         )
         .group_by(signal_message::Column::Id)
         .group_by(sigint_inbox_item::Column::Id)
-        .group_by(signal_message::Column::Id)
         .group_by(sigint_important::Column::SignalMessageId)
         .filter(signal_message::Column::Deleted.eq(false))
-        .filter(datasource_group::Column::GroupMasterKey.is_in(
+        .filter(datasource_group::Column::GroupMasterKey.eq_any(
             crate::messenger::group::get_identity_sigint_groups(&read_db, &login)
                 .await
                 .c(h!())?,
         ));
 
     if req.report_tags_only_this_unit == Some(true) {
-        q = q.filter(sigint_comment::Column::Login.is_in(logins));
+        q = q.filter(sigint_comment::Column::Login.eq_any(logins));
     }
     q = crate::rer_importer::inbox::query::get_pagination_filters(
         env,
@@ -167,7 +184,9 @@ async fn get_inbox_messages_report(
         &req.or_with_coords,
         &req.or_with_extended_form,
         &req.filter_tags_option,
+        &req.without_model_tags,
         &login,
+        None,
     )?;
     let q = filter_selected_locations(
         q,
@@ -264,6 +283,7 @@ pub async fn report_xlsx_kind_interception(
     let mut workbook = Workbook::new(); // Use rust_xlsxwriter
     let sheet1 = workbook.add_worksheet().set_name("Пеленги").context(h!())?; // Use rust_xlsxwriter
     let date_format = Format::new().set_num_format("dd.mm.yyyy");
+    let without_model_tags = req.req.without_model_tags.unwrap_or(false);
     // Define formats using rust_xlsxwriter
     let coltitle_base = Format::new()
         .set_bold()
@@ -457,15 +477,16 @@ pub async fn report_xlsx_kind_interception(
             .write_string(i, 8, m.coords.clone().unwrap_or("".to_string()))
             .context(h!())?;
 
-        let mes_tags = m
-            .tags
+        let inbox_tags: Vec<InboxMessageTag> = m
+            .inbox_tags
             .clone()
-            .unwrap_or(json!([]))
-            .as_array()
-            .unwrap_or(&vec![])
-            .iter()
-            .filter_map(|x| x.as_i64())
-            .filter_map(|x| all_tags.get(&x))
+            .map(|val| serde_json::from_value(val).unwrap_or_default())
+            .unwrap_or_default();
+        let mes_tags = inbox_tags
+            .into_iter()
+            .filter(|tag| tag.confidence >= TAG_MINIMUM_CONFIDENCE)
+            .filter(|tag| !without_model_tags || tag.model.is_none())
+            .filter_map(|tag| all_tags.get(&tag.tag_id))
             .map(|s| s.to_string())
             .join(",");
         sheet1.write_string(i, 9, &mes_tags).context(h!())?;

@@ -9,38 +9,38 @@ import Task
 
 -- Helper functions for pages to subscribe to events
 
-subscribeToEvent : Route.Path.Path -> B.EventType -> Effect Msg
+subscribeToEvent : Route.Path.Path -> B.EventType -> Effect msg
 subscribeToEvent pageId eventType =
-    E.sendCmd <| Task.perform (\_ -> SubscribeToEvents pageId [ eventType ]) (Task.succeed ())
+    E.sendSharedMsg <| SubscribeToEvents pageId [ eventType ]
 
 
-subscribeToEvents : Route.Path.Path -> List B.EventType -> Effect Msg
+subscribeToEvents : Route.Path.Path -> List B.EventType -> Effect msg
 subscribeToEvents pageId eventTypes =
-    E.sendCmd <| Task.perform (\_ -> SubscribeToEvents pageId eventTypes) (Task.succeed ())
+    E.sendSharedMsg <| SubscribeToEvents pageId eventTypes
 
 
-unsubscribeFromEvents : Route.Path.Path -> Effect Msg
+unsubscribeFromEvents : Route.Path.Path -> Effect msg
 unsubscribeFromEvents pageId =
-    E.sendCmd <| Task.perform (\_ -> UnsubscribeFromEvents pageId) (Task.succeed ())
+    E.sendSharedMsg <| UnsubscribeFromEvents pageId
 
 
 -- Convenience functions for common event subscriptions
 
-subscribeToNetworkChanges : Route.Path.Path -> Effect Msg
+subscribeToNetworkChanges : Route.Path.Path -> Effect msg
 subscribeToNetworkChanges pageId =
     subscribeToEvent pageId B.EtNetworkChanged
 
 
-subscribeToCallsignChanges : Route.Path.Path -> Effect Msg
+subscribeToCallsignChanges : Route.Path.Path -> Effect msg
 subscribeToCallsignChanges pageId =
     subscribeToEvent pageId B.EtCallsignChanged
 
 
-subscribeToSignalChanges : Route.Path.Path -> Effect Msg
+subscribeToSignalChanges : Route.Path.Path -> Effect msg
 subscribeToSignalChanges pageId =
     subscribeToEvent pageId B.EtSignalChanged
 
 
-subscribeToInboxChanges : Route.Path.Path -> Effect Msg
+subscribeToInboxChanges : Route.Path.Path -> Effect msg
 subscribeToInboxChanges pageId =
     subscribeToEvent pageId (B.EtInboxChanged 0) -- The Int parameter will be handled by the backend

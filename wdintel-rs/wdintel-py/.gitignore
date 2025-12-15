@@ -1,2 +1,8 @@
 .venv
 my-venv
+*.txt
+*.bin
+*.vec
+!requirements.txt
+*.log
+*.png

@@ -1,6 +1,7 @@
 use crate::config::RER_IMPORTER_IMPORTANT_LIST_LIMIT;
 use crate::error::AppError;
 use crate::types::*;
+use crate::utils::orm::ArrayColumnOps;
 use crate::{entities::*, utils::*};
 use actix_identity::Identity;
 use actix_web::post;
@@ -131,7 +132,7 @@ async fn important_rm(
             sigint_important::Column::UserId.eq(user.id().c(h!())?.to_string()),
         )
         .filter(
-            sigint_important::Column::SignalMessageId.is_in(
+            sigint_important::Column::SignalMessageId.eq_any(
                 crate::rer_importer::inbox::find_all_duplicates(
                     &txn,
                     req.message_id,

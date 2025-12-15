@@ -169,8 +169,8 @@ impl AppError {
             msg.contains("Tokio 1.x context") && msg.contains("being shutdown")
         }
 
-        fn chain_has_shutdown(err: &(dyn StdError)) -> bool {
-            let mut cur: Option<&(dyn StdError)> = Some(err);
+        fn chain_has_shutdown(err: &dyn StdError) -> bool {
+            let mut cur: Option<&dyn StdError> = Some(err);
             while let Some(e) = cur {
                 if message_indicates_shutdown(&e.to_string()) {
                     return true;

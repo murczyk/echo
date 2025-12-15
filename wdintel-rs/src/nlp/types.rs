@@ -1,3 +1,5 @@
+use std::collections::{HashMap, HashSet};
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
@@ -36,3 +38,12 @@ pub struct CompleteCallsignReq {
 pub struct CompleteCallsignRsp {
     pub completions: Vec<String>,
 }
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct PredictTagsPyReq {
+    pub texts: Vec<String>,
+    pub tags: HashSet<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct PredictTagsPyRsp(pub HashMap<String, f64>);

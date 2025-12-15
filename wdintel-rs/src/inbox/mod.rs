@@ -258,6 +258,15 @@ where
         signal_message.update(txn).await.c(h!())?;
     }
 
+    let job = tag_suggestion_worker_queue::ActiveModel {
+        sigint_inbox_item_id: Set(message.id),
+    };
+    tag_suggestion_worker_queue::Entity::insert(job)
+        .on_conflict_do_nothing()
+        .exec(txn)
+        .await
+        .c(h!())?;
+
     let event = EventMsg::new(EventType::ETInboxChanged(result.id));
     fanout(redis, event).await.c(h!())?;
 

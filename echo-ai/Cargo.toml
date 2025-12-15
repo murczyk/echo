@@ -1,0 +1,12 @@
+[package]
+name = "echo-ai"
+version = "0.1.0"
+edition = "2021"
+authors = ["nazarmx@gmail.com"]
+license = "AllRightsReserved"
+description = "ЕХО AI assets"
+
+
+[package.metadata.deb]
+depends = ""
+assets = [["fasttext-models/*", "usr/share/wdintel-py/fasttext-models/", "755"]]

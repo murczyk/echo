@@ -3,6 +3,7 @@ use crate::error::AppError;
 use crate::h;
 use crate::rer_importer::types::InboxMapItem;
 use crate::types::ShortContext;
+use crate::utils::orm::ArrayColumnOps;
 use chrono::NaiveDateTime;
 use milgeo_rs::coordinates::Coords;
 use sea_orm::*;
@@ -81,7 +82,7 @@ pub async fn collect_inbox_pelengs(
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<Vec<sigint_peleng::Model>> {
     sigint_peleng::Entity::find()
-        .filter(sigint_peleng::Column::SourceInboxItemId.is_in(inbox_item_ids))
+        .filter(sigint_peleng::Column::SourceInboxItemId.eq_any(inbox_item_ids))
         .filter(sigint_peleng::Column::Deleted.eq(false))
         .all(dbx)
         .await

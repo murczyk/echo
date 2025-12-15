@@ -7,6 +7,7 @@ use crate::sigint::callsign::{
 use crate::sigint::etalonka::query::*;
 use crate::sigint::network::bl::find_network;
 use crate::types::*;
+use crate::utils::orm::ArrayColumnOps;
 use chrono::*;
 use sea_orm::QuerySelect;
 use sea_orm::*;
@@ -538,7 +539,9 @@ where
         );
     query = add_network_callsign_query_columns(query);
     query = query
-        .filter(sigint_network_callsign::Column::Id.is_in(network_callsign_ids))
+        .filter(
+            sigint_network_callsign::Column::Id.eq_any(network_callsign_ids),
+        )
         .filter(
             Condition::any()
                 .add(sigint_callsign::Column::Deleted.eq(false))

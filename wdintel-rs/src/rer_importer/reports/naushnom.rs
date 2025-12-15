@@ -3,6 +3,7 @@ use crate::error::AppError;
 use crate::rer_importer::analysis::*;
 use crate::sigint::network::display_network_type;
 use crate::types::*;
+use crate::utils::orm::ArrayColumnOps;
 use crate::utils::*;
 use actix_identity::Identity;
 use chrono::{NaiveDateTime, TimeZone};
@@ -277,7 +278,7 @@ pub async fn get_inbox_messages_report_network(
         )
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(
-            datasource_group::Column::GroupMasterKey.is_in(
+            datasource_group::Column::GroupMasterKey.eq_any(
                 crate::messenger::group::get_identity_sigint_groups(
                     &read_db, &login,
                 )
@@ -316,7 +317,9 @@ pub async fn get_inbox_messages_report_network(
         &req.or_with_coords,
         &Some(false),
         &req.filter_tags_option,
+        &req.without_model_tags,
         &login,
+        None,
     )?;
     if let Some(since_date_inclusive_ms) = req.since_date_inclusive_ms {
         q = q.filter(

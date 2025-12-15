@@ -1,9 +1,11 @@
-use crate::config::*;
+use crate::config::{RER_DUTY_MAX_DAYS, TAG_MINIMUM_CONFIDENCE};
 use crate::entities::{prelude::*, *};
+use crate::error::AppError;
 use crate::rer_importer::analysis::*;
 use crate::rer_importer::types::*;
 use crate::sigint::sender::preferred_sender_expr;
 use crate::types::*;
+use crate::utils::orm::ArrayColumnOps;
 use crate::utils::*;
 use chrono::{Duration, NaiveDateTime, Utc};
 use sea_orm::{sea_query::PostgresQueryBuilder, *};
@@ -12,7 +14,7 @@ use sea_query::{Expr, Query, SelectStatement, SimpleExpr};
 
 pub(crate) async fn build_inbox_query(
     login: &str,
-    _logins: &Vec<String>,
+    logins: &Vec<String>,
     env: &Env,
     req: &InboxMessagesReq,
 ) -> Result<String, AppError> {
@@ -44,7 +46,7 @@ pub(crate) async fn build_inbox_query(
         .from(signal_message_group::Entity)
         .and_where(
             signal_message_group::Column::GroupMasterKey
-                .is_in(sigint_groups.clone()),
+                .eq_any(sigint_groups.clone()),
         )
         .to_owned();
 
@@ -55,10 +57,11 @@ pub(crate) async fn build_inbox_query(
     if req.ignore_imported_coords.unwrap_or(false) {
         q = q.filter(signal_group::Column::IgnoreOperativny.eq(Some(false)));
     }
-    // if req.report_tags_only_this_unit.unwrap_or(false) {
-    //     q = q.filter(sigint_inbox_item::Column::UserId.is_in(logins))
-    // }
-    //
+
+    let mut only_tags_by_logins = None;
+    if req.report_tags_only_this_unit == Some(true) {
+        only_tags_by_logins = Some(logins.clone());
+    }
 
     if req.only_show_unprocessed == Some(true) {
         q = q.filter(sigint_inbox_item::Column::Reviewed.ne(Some(true)));
@@ -88,7 +91,9 @@ pub(crate) async fn build_inbox_query(
         &req.or_with_coords,
         &req.or_with_extended_form,
         &req.filter_tags_option,
+        &req.without_model_tags,
         login,
+        only_tags_by_logins,
     )?;
     let q = filter_selected_aors(q, &req.selected_aors).context(h!())?;
     let q =
@@ -110,14 +115,68 @@ pub(crate) async fn build_inbox_query(
                 Utc::now().naive_utc() - Duration::days(RER_DUTY_MAX_DAYS),
             ));
     }
+
     q = get_pagination_filters(env, req, q).await.c(h!())?;
     let q = get_bl_ordering_select(req, q).await.c(h!())?;
+
+    let query_tags = sigint_inbox_item_tag::Entity::find()
+        .select_only()
+        .expr_as(
+            Expr::cust_with_exprs(
+                "array_agg(distinct $1) filter (where $2 >= $3)",
+                [
+                    Expr::col((
+                        sigint_inbox_item_tag::Entity,
+                        sigint_inbox_item_tag::Column::TagId,
+                    ))
+                    .into_simple_expr(),
+                    Expr::col((
+                        sigint_inbox_item_tag::Entity,
+                        sigint_inbox_item_tag::Column::Confidence,
+                    ))
+                    .into_simple_expr(),
+                    Expr::val(TAG_MINIMUM_CONFIDENCE).into_simple_expr(),
+                ],
+            ),
+            "tags",
+        )
+        .expr_as(
+            Expr::cust("jsonb_agg(sigint_inbox_item_tag.*)"),
+            "inbox_tags",
+        )
+        .filter(
+            Expr::col((
+                sigint_inbox_item_tag::Entity,
+                sigint_inbox_item_tag::Column::SigintInboxItemId,
+            ))
+            .equals((signal_message::Entity, signal_message::Column::Id)),
+        )
+        .apply_if(
+            req.without_model_tags.and_then(|flag| {
+                if flag {
+                    Some(flag)
+                } else {
+                    None
+                }
+            }),
+            |q, _| q.filter(sigint_inbox_item_tag::Column::Model.is_null()),
+        )
+        .group_by(sigint_inbox_item_tag::Column::SigintInboxItemId)
+        .into_query();
+
     let mut query = q.into_query();
     if req.nolimit != Some(true) {
         query.limit(20);
     }
-    let sql = query.to_string(PostgresQueryBuilder);
-    trace!("> Inbox items query: {sql}");
+
+    let q_tags = "q_tags";
+    let sql = query
+        .join_lateral(JoinType::LeftJoin, query_tags, q_tags, Expr::value(true))
+        .column((q_tags, "tags"))
+        .column((q_tags, "inbox_tags"))
+        .to_string(PostgresQueryBuilder);
+
+    // println!("> Inbox items query: {sql}");
     Ok(sql)
 }
 
@@ -544,5 +603,4 @@ where
         .column_as(sigint_inbox_item::Column::PostId, "post_id")
         .column_as(sigint_inbox_item::Column::Datetime, "datetime")
         .column_as(sigint_post::Column::Name, "post_name")
-        .column_as(sigint_inbox_item::Column::Tags, "tags")
 }

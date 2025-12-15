@@ -4,6 +4,7 @@ import Api
 import Auth
 import Bindings as B
 import Config
+import Core.EventHelpers
 import Core.Types exposing (..)
 import Dict exposing (Dict)
 import Dict.Extra as DE
@@ -12,6 +13,7 @@ import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (onInput)
 import Html.Styled
+import Http
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Layouts
@@ -25,6 +27,7 @@ import Pages_.RerAnalysis.Model exposing (..)
 import Pages_.RerAnalysis.Msg exposing (..)
 import Pages_.RerAnalysis.Query as Query
 import Pages_.RerDuty.Waterfall.Filters
+import Process
 import Route exposing (Route)
 import Route.Path
 import Select
@@ -38,8 +41,10 @@ import Shared.Components.Sidebar as Sidebar
 import Shared.Components.Toast
 import Shared.Model exposing (isDarkMode)
 import String exposing (fromInt)
+import Task
 import Time exposing (Posix)
 import Utils.Api.ErrorHandling
+import Utils.Api.Temp exposing (leExpectJson)
 import Utils.Components exposing (..)
 import Utils.RemoteData as RD exposing (RemoteData(..))
 import Utils.Select
@@ -166,7 +171,7 @@ init route _ =
                 { state = Select.initState (Select.selectIdentifier "selectReportAdjacentFreqsRange")
                 , items = Config.adjacentFreqsRangeOptions |> List.map (\x -> Select.basicMenuItem { item = x, label = String.fromFloat (x * 1000) ++ " кГц" })
                 , selected = 0
-                }            
+                }
 
             -- , reportIframeUrl = Nothing
             , reportDownloadInProgress = False
@@ -210,7 +215,9 @@ init route _ =
             , groupsActivityPeriod = FilterSelectedRange
             , filterTagsOption = B.OneOfTags
             , unitsExactMatchOnly = True
+            , withoutModelTags = False
             , editSidebar = Nothing
+            , eventLastId = Nothing
             , palitras = NotAsked
             , palitrasVisible = []
             , palitrasEnabled = True
@@ -238,14 +245,20 @@ init route _ =
                 Nothing ->
                     m2
     in
-    ( m3
+    let
+        ( m4, palitrasEff ) =
+            loadPalitrasIfNeeded m3
+    in
+    ( m4
     , E.batch
         [ E.getCurrentTime InitGotTime
         , E.getAnalysisSavedFilters SavedFiltersGot
         , E.getTags GotTags
         , E.map RowsMsg Shared.Components.RerMessage.init
+        , Core.EventHelpers.subscribeToInboxChanges route.path
         , E.sendCmd <| Ports.rer_analysis_saveQueryState (B.rerAnalysisQueryStateEncoder initialQueryState)
-        , E.sendCmd <| Api.palitra_list_detailed GotPalitras
+        , palitrasEff
+        , pollEvents Nothing
         ]
     )
 
@@ -299,7 +312,35 @@ getInboxReq model =
         model.networksSelected
             |> List.filterMap String.toInt
             |> emptyToNothing
+    , withoutModelTags =
+        if model.withoutModelTags then
+            Just True
+
+        else
+            Nothing
     }
+
+
+pollEventsDelayed : Float -> Maybe String -> Effect Msg
+pollEventsDelayed delayMs lastEventId =
+    E.sendCmd <| Task.perform (\_ -> EventPollTrigger lastEventId) (Process.sleep delayMs)
+
+
+pollEvents : Maybe String -> Effect Msg
+pollEvents lastEventId =
+    let
+        request : B.LongPollReq
+        request =
+            { sessionId = "current"
+            , lastEventId = lastEventId
+            }
+    in
+    E.sendCmd <|
+        Http.post
+            { url = "/api/event-stream/long-poll"
+            , body = Http.jsonBody (B.longPollReqEncoder request)
+            , expect = leExpectJson EventPollReceived B.longPollRspDecoder
+            }
 
 
 cmdLoadCallsignGraph : Model -> { dtFromPosix : Posix, dtToPosix : Posix } -> Effect Msg
@@ -329,6 +370,12 @@ cmdLoadCallsignGraph model { dtFromPosix, dtToPosix } =
             , selectedTags = emptyToNothing model.tagsSelected
             , filterTagsOption = Just model.filterTagsOption
             , unitsExactMatchOnly = Just model.unitsExactMatchOnly
+            , withoutModelTags =
+                if model.withoutModelTags then
+                    Just True
+
+                else
+                    Nothing
             , selectedNetworks =
                 model.networksSelected
                     |> List.filterMap String.toInt
@@ -337,6 +384,22 @@ cmdLoadCallsignGraph model { dtFromPosix, dtToPosix } =
 
     else
         E.none
+
+
+loadPalitrasIfNeeded : Model -> ( Model, Effect Msg )
+loadPalitrasIfNeeded model =
+    if model.unfoldMapBlock then
+        case model.palitras of
+            NotAsked ->
+                ( { model | palitras = Loading }
+                , E.sendCmd <| Api.palitra_list_detailed GotPalitras
+                )
+
+            _ ->
+                ( model, E.none )
+
+    else
+        ( model, E.none )
 
 
 loadSumTableOnly : Model -> ( Model, Effect Msg )
@@ -496,7 +559,11 @@ loadCoreStats model =
                         _ ->
                             ( m2, E.none )
             in
-            ( { m3
+            let
+                ( m4, palitrasEff ) =
+                    loadPalitrasIfNeeded m3
+            in
+            ( { m4
                 | loadingInboxMessages = True
                 , loadingCallsignGraph =
                     if model.unfoldCallsignGraph then
@@ -523,6 +590,7 @@ loadCoreStats model =
                 , cmdLoadCallsignGraph model { dtFromPosix = dtFromPosix, dtToPosix = dtToPosix }
                 , eff2
                 , eff3
+                , palitrasEff
                 ]
             )
 
@@ -699,6 +767,33 @@ update user shared route msg model =
         NoOp ->
             ( model, E.none )
 
+        EventPollTrigger lastId ->
+            ( model, pollEvents lastId )
+
+        EventPollReceived (Err _) ->
+            ( model, pollEventsDelayed 1000 model.eventLastId )
+
+        EventPollReceived (Ok rsp) ->
+            let
+                inboxEvents =
+                    rsp.events
+                        |> List.filter
+                            (\event ->
+                                case event.eventType of
+                                    B.EtInboxChanged _ ->
+                                        True
+
+                                    _ ->
+                                        False
+                            )
+
+                effects =
+                    [ pollEvents rsp.lastEventId
+                    , E.sendMsg <| InboxEvents inboxEvents
+                    ]
+            in
+            ( { model | eventLastId = rsp.lastEventId }, E.batch effects )
+
         ToastMsg imsg ->
             let
                 ( im, icmds ) =
@@ -810,6 +905,53 @@ update user shared route msg model =
 
                 _ ->
                     ( m2, E.none )
+
+        InboxEvents events ->
+            events
+                |> List.filterMap
+                    (\event ->
+                        case event.eventType of
+                            B.EtInboxChanged messageId ->
+                                Just messageId
+
+                            _ ->
+                                Nothing
+                    )
+                |> ListX.unique
+                |> (\ids ->
+                        if List.isEmpty ids then
+                            ( model, E.none )
+
+                        else
+                            ( model
+                            , E.getMessagesByIds InboxMessagesUpdated { messageIds = ids }
+                            )
+                   )
+
+        InboxMessagesUpdated (Err e) ->
+            ( model
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Не вдалося оновити повідомлення" e
+            )
+
+        InboxMessagesUpdated (Ok rsp) ->
+            let
+                messages2 =
+                    List.foldl
+                        (\( msgId, message ) acc ->
+                            acc
+                                |> List.map
+                                    (\( existingId, existingMessage ) ->
+                                        if existingId == msgId then
+                                            ( existingId, message )
+
+                                        else
+                                            ( existingId, existingMessage )
+                                    )
+                        )
+                        model.messages
+                        rsp.messages
+            in
+            ( { model | messages = messages2 }, E.none )
 
         GotInbox (Err e) ->
             ( { model | loadingInboxMessages = False }
@@ -1389,6 +1531,12 @@ update user shared route msg model =
                     model.networksSelected
                         |> List.filterMap String.toInt
                         |> emptyToNothing
+                , withoutModelTags =
+                    if model.withoutModelTags then
+                        Just True
+
+                    else
+                        Nothing
                 }
             )
 
@@ -1574,6 +1722,24 @@ update user shared route msg model =
             in
             loadCoreStatsAndPushUrl m2
 
+        ToggleWithoutModelTags ->
+            let
+                m2 =
+                    { model
+                        | withoutModelTags = not model.withoutModelTags
+                        , locations = NeedsReload (RD.withDefault [] model.locations)
+                        , senders = NeedsReload (RD.withDefault [] model.senders)
+                        , units = NeedsReload (RD.withDefault [] model.units)
+                        , posts = NeedsReload (RD.withDefault [] model.posts)
+                        , freqs = NeedsReload (RD.withDefault [] model.freqs)
+                        , callsigns = NeedsReload (RD.withDefault [] model.callsigns)
+                        , groups = NeedsReload (RD.withDefault [] model.groups)
+                        , aors = NeedsReload (RD.withDefault [] model.aors)
+                        , networksStats = NeedsReload (RD.withDefault [] model.networksStats)
+                    }
+            in
+            loadCoreStatsAndPushUrl m2
+
         ToggleUnfoldAorsFilter ->
             ( { model | unfoldAorsFilter = not model.unfoldAorsFilter }
             , E.none
@@ -1663,6 +1829,7 @@ update user shared route msg model =
                 newVisible =
                     if List.member palitraId model.palitrasVisible then
                         List.filter (\id -> id /= palitraId) model.palitrasVisible
+
                     else
                         palitraId :: model.palitrasVisible
             in
@@ -1815,10 +1982,15 @@ update user shared route msg model =
                         _ ->
                             ( model, E.none )
             in
-            ( { m2
-                | unfoldMapBlock = unfoldMapBlock
-              }
-            , eff2
+            let
+                m3 =
+                    { m2 | unfoldMapBlock = unfoldMapBlock }
+
+                ( m4, palitrasEff ) =
+                    loadPalitrasIfNeeded m3
+            in
+            ( m4
+            , E.batch [ eff2, palitrasEff ]
             )
 
         GotCallsignGraph (Err e) ->
@@ -3245,7 +3417,6 @@ update user shared route msg model =
                                 _ ->
                                     reportAdjacentFreqsRangeSelect.selected
                     }
-
             in
             ( { model | reportAdjacentFreqsRangeSelect = a2 }, E.none )
 
@@ -3314,6 +3485,7 @@ subscriptions : Model -> Sub Msg
 subscriptions _ =
     Sub.none
 
+
 reportTemplateToApiType : Model -> ReportTemplate -> Maybe B.ReportType
 reportTemplateToApiType model template =
     case template of
@@ -3350,6 +3522,7 @@ reportTemplateToApiType model template =
 
         RTDigest ->
             Just B.Digest
+
 
 
 --VIEW

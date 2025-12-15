@@ -3,6 +3,7 @@ use crate::entities::*;
 use crate::error::AppError;
 use crate::organism::bl::*;
 use crate::types::*;
+use crate::utils::orm::ArrayColumnOps;
 use actix_web::post;
 use actix_web::web::Json;
 use sea_orm::sea_query::Expr;
@@ -88,7 +89,7 @@ pub async fn remove_group_from_organism(
     organism_ids.push(organism.id);
 
     organism_group::Entity::delete_many()
-        .filter(organism_group::Column::OrganismId.is_in(organism_ids))
+        .filter(organism_group::Column::OrganismId.eq_any(organism_ids))
         .filter(
             organism_group::Column::SignalGroupMasterKey
                 .eq(req.group_name.clone()),
@@ -304,7 +305,7 @@ pub async fn organism_available_groups(
 
     let groups_list = signal_group::Entity::find()
         .filter(signal_group::Column::Deleted.eq(false))
-        .filter(signal_group::Column::MasterKey.is_in(groups.available_keys))
+        .filter(signal_group::Column::MasterKey.eq_any(groups.available_keys))
         .all(&env.dbx)
         .await
         .c(h!())?;
@@ -338,7 +339,7 @@ pub async fn organism_compute_available_groups(
 
     let groups_list = signal_group::Entity::find()
         .filter(signal_group::Column::Deleted.eq(false))
-        .filter(signal_group::Column::MasterKey.is_in(groups.available_keys))
+        .filter(signal_group::Column::MasterKey.eq_any(groups.available_keys))
         .all(&txn)
         .await
         .c(h!())?;
@@ -375,7 +376,7 @@ pub async fn organism_compute_available_groups_for_new(
 
     let groups_list = signal_group::Entity::find()
         .filter(signal_group::Column::Deleted.eq(false))
-        .filter(signal_group::Column::MasterKey.is_in(groups.available_keys))
+        .filter(signal_group::Column::MasterKey.eq_any(groups.available_keys))
         .all(&txn)
         .await
         .c(h!())?;
@@ -415,7 +416,7 @@ pub async fn organism_available_groups_batch(
 
     let groups_dictionary = signal_group::Entity::find()
         .filter(signal_group::Column::Deleted.eq(false))
-        .filter(signal_group::Column::MasterKey.is_in(keys_list))
+        .filter(signal_group::Column::MasterKey.eq_any(keys_list))
         .all(&env.dbx)
         .await
         .c(h!())?
@@ -545,7 +546,7 @@ async fn fetch_login_counts(
         .column_as(Expr::col(login::Column::Login).count(), "count")
         .filter(login::Column::Deleted.eq(false))
         .filter(login::Column::DeletedPermanently.eq(false))
-        .filter(login::Column::OrganismId.is_in(ids))
+        .filter(login::Column::OrganismId.eq_any(ids))
         .group_by(login::Column::OrganismId)
         .into_tuple()
         .all(db)

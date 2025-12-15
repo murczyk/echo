@@ -1,3 +1,4 @@
+use crate::config::TAG_MINIMUM_CONFIDENCE;
 use crate::entities::{prelude::*, *};
 use crate::rer_importer::types::*;
 use milgeo_rs::coordinates::{
@@ -16,6 +17,7 @@ use crate::rer_importer::inbox::query::build_inbox_query;
 use crate::rer_importer::signals::*;
 use crate::storage::mk_media_url;
 use crate::types::*;
+use crate::utils::orm::ArrayColumnOps;
 use crate::utils::string::*;
 use crate::utils::*;
 use actix_web::web::Data;
@@ -48,7 +50,10 @@ pub struct InboxMessageDesc {
     pub unit_v2: Option<String>,
     pub post_id: Option<i64>,
     pub post_name: Option<String>,
-    pub tags: Option<serde_json::Value>,
+    #[allow(dead_code)]
+    #[deprecated(note = "This field is deprecated; use `inbox_tags` instead.")]
+    pub tags: Option<Vec<i64>>,
+    pub inbox_tags: Option<serde_json::Value>,
 }
 
 pub async fn get_inbox_map_items(
@@ -98,7 +103,7 @@ pub async fn aggregate_to_inbox_messages(
     let important_ids = sigint_important::Entity::find()
         .filter(
             sigint_important::Column::SignalMessageId
-                .is_in(message_ids.clone()),
+                .eq_any(message_ids.clone()),
         )
         .filter(sigint_important::Column::Deleted.eq(false))
         .all(&env.dbx)
@@ -109,7 +114,8 @@ pub async fn aggregate_to_inbox_messages(
         .collect::<HashSet<_>>();
     let bookmarked_ids = sigint_bookmark::Entity::find()
         .filter(
-            sigint_bookmark::Column::SignalMessageId.is_in(message_ids.clone()),
+            sigint_bookmark::Column::SignalMessageId
+                .eq_any(message_ids.clone()),
         )
         .filter(sigint_bookmark::Column::UserId.eq(login.to_string()))
         .filter(sigint_bookmark::Column::Deleted.eq(false))
@@ -119,15 +125,16 @@ pub async fn aggregate_to_inbox_messages(
         .into_iter()
         .map(|bm| bm.signal_message_id)
         .collect::<HashSet<_>>();
+
     let mut group_query = signal_message_group::Entity::find().filter(
         signal_message_group::Column::SignalMessageId
-            .is_in(message_ids.clone()),
+            .eq_any(message_ids.clone()),
     );
     if let Some(selected_groups) = req.selected_groups.as_ref() {
         if !selected_groups.is_empty() {
             group_query = group_query.filter(
                 signal_message_group::Column::GroupMasterKey
-                    .is_in(selected_groups.clone()),
+                    .eq_any(selected_groups.clone()),
             );
         }
     }
@@ -154,11 +161,10 @@ pub async fn aggregate_to_inbox_messages(
         load_messages_networks(&messages, &groups_map, &env.dbx)
             .await
             .context(h!())?;
-    let message_ids: Vec<i64> = messages.iter().map(|m| m.id).collect_vec();
     let media_entries = signal_message_media::Entity::find()
         .filter(
             signal_message_media::Column::SignalMessageId
-                .is_in(message_ids.clone()),
+                .eq_any(message_ids.clone()),
         )
         .all(&env.dbx)
         .await
@@ -260,7 +266,7 @@ pub async fn aggregate_to_inbox_messages(
         )?;
         let m_comment = sigint_comment::Entity::find()
             .filter(sigint_comment::Column::SignalMessageId.eq(message.id))
-            .filter(sigint_comment::Column::Login.is_in(logins.clone()))
+            .filter(sigint_comment::Column::Login.eq_any(logins.clone()))
             .one(&env.dbx)
             .await
             .c(h!())?;
@@ -269,6 +275,24 @@ pub async fn aggregate_to_inbox_messages(
             Some(location) => Some(to_location_list(&location).join(", ")),
         };
         let network_ids = messages_networks.get(&message.id).cloned();
+        let without_model_tags = req.without_model_tags.unwrap_or(false);
+        let m_inbox_tags: Option<Vec<InboxMessageTag>> =
+            match message.inbox_tags {
+                None => None,
+                Some(jv) => Some(
+                    serde_json::from_value::<Vec<InboxMessageTag>>(jv)
+                        .context(h!())?
+                        .into_iter()
+                        .filter(|tag| {
+                            tag.confidence >= TAG_MINIMUM_CONFIDENCE
+                                && (!without_model_tags || tag.model.is_none())
+                        })
+                        .collect(),
+                ),
+            };
+        let inbox_tag_ids = m_inbox_tags
+            .as_ref()
+            .map(|tags| tags.iter().map(|tag| tag.tag_id).collect::<Vec<_>>());
 
         res.push((
             message.id,
@@ -307,9 +331,10 @@ pub async fn aggregate_to_inbox_messages(
                     .and_then(|(_, datasource_group)| datasource_group.as_ref())
                     .map(|dg| dg.datasource_id),
                 location: location_v2,
-                tags: Some(from_m_val_vec(message.tags.clone())?),
+                tags: inbox_tag_ids,
                 callsigns_alg2: from_m_val_vec(message.callsigns_alg2.clone())?,
                 network_ids,
+                inbox_tags: m_inbox_tags,
             },
         ));
     }
@@ -390,7 +415,7 @@ pub async fn load_messages_networks(
         .find_with_related(area_of_responsibility::Entity)
         .filter(
             signal_group_aor::Column::MasterKey
-                .is_in(group_master_keys.clone()),
+                .eq_any(group_master_keys.into_iter().collect()),
         )
         .filter(area_of_responsibility::Column::Deleted.eq(false))
         .all(dbx)
@@ -413,7 +438,10 @@ pub async fn load_messages_networks(
         .select_only()
         .column(sigint_network_freq::Column::NetworkId)
         .column(sigint_network_freq::Column::Freq)
-        .filter(sigint_network_freq::Column::Freq.is_in(freqs.clone()))
+        .filter(
+            sigint_network_freq::Column::Freq
+                .eq_any(freqs.into_iter().collect()),
+        )
         .filter(
             Condition::any()
                 .add(sigint_network_freq::Column::ActiveTo.is_null())
@@ -452,7 +480,8 @@ pub async fn load_messages_networks(
         .find_with_related(area_of_responsibility::Entity)
         .filter(area_of_responsibility::Column::Deleted.eq(false))
         .filter(
-            sigint_network_aor::Column::NetworkId.is_in(network_ids.clone()),
+            sigint_network_aor::Column::NetworkId
+                .eq_any(network_ids.into_iter().collect()),
         )
         .all(dbx)
         .await
@@ -625,7 +654,7 @@ pub async fn load_inbox_freq_pelengs_summary(
         .filter(sigint_inbox_item::Column::Freq.is_not_null())
         .filter(
             sigint_inbox_item::Column::Id
-                .is_in(inbox_items.iter().map(|x| x.0).collect_vec()),
+                .eq_any(inbox_items.iter().map(|x| x.0).collect_vec()),
         )
         .group_by(sigint_inbox_item::Column::Freq)
         .into_model::<FreqPelengsEntry>()
@@ -762,7 +791,7 @@ pub async fn submit_upsert_inbox_item(
     if let Some(extended_form) = message.extended_form.as_ref() {
         let m_comment = sigint_comment::Entity::find()
             .filter(sigint_comment::Column::SignalMessageId.eq(id))
-            .filter(sigint_comment::Column::Login.is_in(logins.clone()))
+            .filter(sigint_comment::Column::Login.eq_any(logins.clone()))
             .one(txn)
             .await
             .c(h!())?;
@@ -844,9 +873,7 @@ pub async fn submit_upsert_inbox_item(
             nominatimres_id: Set(None),
             location: Set(location),
             location_v2: Set(location_v2),
-            tags: Set(Some(
-                serde_json::to_value(message.tags.clone()).context(h!())?,
-            )),
+            tags: NotSet,
             callsigns_alg1: NotSet,
             callsigns_alg2: NotSet,
             signal_tokens: NotSet,
@@ -875,7 +902,6 @@ pub async fn submit_upsert_inbox_item(
                     sigint_inbox_item::Column::Lng,
                     sigint_inbox_item::Column::Location,
                     sigint_inbox_item::Column::LocationV2,
-                    sigint_inbox_item::Column::Tags,
                     sigint_inbox_item::Column::PostId,
                 ])
                 .to_owned(),
@@ -884,6 +910,9 @@ pub async fn submit_upsert_inbox_item(
         .await
         .c(h!())?;
     let inbox_id = insert_res.last_insert_id;
+    crate::tags::modify::upsert_tags(login, inbox_id, message, txn)
+        .await
+        .c(h!())?;
     crate::location::peleng::delete_inbox_pelengs(inbox_id, txn)
         .await
         .c(h!())?;

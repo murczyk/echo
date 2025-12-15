@@ -1,6 +1,7 @@
 use crate::entities::*;
 use crate::sigint::zone::ZoneDatasourceGroup;
 use crate::types::*;
+use crate::utils::orm::ArrayColumnOps;
 use chrono::Utc;
 use sea_orm::*;
 
@@ -180,7 +181,7 @@ where
         return Ok(());
     }
     let groups = datasource_group::Entity::find()
-        .filter(datasource_group::Column::Id.is_in(live_groups))
+        .filter(datasource_group::Column::Id.eq_any(live_groups))
         .all(dbx)
         .await
         .context(h!())?;

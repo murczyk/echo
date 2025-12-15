@@ -4,6 +4,7 @@ use crate::entities::*;
 use crate::error::AppError;
 use crate::location::SettlementsData;
 use crate::types::*;
+use crate::utils::orm::ArrayColumnOps;
 use crate::{OneoffExportDataSourcePs, OneoffImportDataSourcePs};
 use chrono::Utc;
 use redis::aio::ConnectionManager;
@@ -141,7 +142,7 @@ async fn collect_datasource_data(
 
     let mut messages_q = sigint_inbox_item::Entity::find()
         .find_with_related(signal_message::Entity)
-        .filter(signal_message::Column::DatasourceGroupId.is_in(group_ids));
+        .filter(signal_message::Column::DatasourceGroupId.eq_any(group_ids));
 
     if let Some(since_ms) = params.since_epoch_ms {
         if let Some(datetime) =
@@ -185,7 +186,7 @@ async fn collect_datasource_data(
         signal_message_group::Entity::find()
             .filter(
                 signal_message_group::Column::SignalMessageId
-                    .is_in(message_ids.clone()),
+                    .eq_any(message_ids),
             )
             .all(&db)
             .await

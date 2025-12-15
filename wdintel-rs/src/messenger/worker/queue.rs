@@ -1,6 +1,7 @@
 use crate::config::*;
 use crate::messenger::worker::pool::ProcessorPool;
 use crate::messenger::worker::*;
+use crate::utils::orm::ArrayColumnOps;
 use tokio::time::{sleep, Duration};
 use tokio_util::sync::CancellationToken;
 
@@ -62,7 +63,7 @@ async fn process_queue_inner_iteration(
         .collect_vec();
     let next_items = signal_message_queue::Entity::find()
         .filter(
-            signal_message_queue::Column::DatasourceId.is_in(datasource_ids),
+            signal_message_queue::Column::DatasourceId.eq_any(datasource_ids),
         )
         .order_by_asc(signal_message_queue::Column::CreatedAt)
         .limit(MESSENGER_WORKER_BATCH_SIZE)
@@ -80,7 +81,7 @@ async fn process_queue_inner_iteration(
         signal_message_queue_attachment::Entity::find()
             .filter(
                 signal_message_queue_attachment::Column::MessageId
-                    .is_in(signal_message_queue_ids),
+                    .eq_any(signal_message_queue_ids),
             )
             .all(dbx)
             .await

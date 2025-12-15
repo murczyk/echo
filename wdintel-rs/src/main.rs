@@ -429,12 +429,23 @@ pub struct OneoffCalculateHistoricStatsPs {
     pub skip_day: bool,
 }
 
+#[derive(clap::Args, Debug, Clone)]
+pub struct OneoffSuggestInboxMessageTagsPs {
+    /// Start datetime (inclusive). Example: `2023-04-17T00:00:00`
+    #[arg(long, value_enum)]
+    pub start: String,
+    /// Start datetime (non-inclusive). Example: `2023-04-18T00:00:00`
+    #[arg(long, value_enum)]
+    pub end: String,
+}
+
 #[derive(clap::Subcommand, Debug)]
 #[command(author, version, about, long_about = None)]
 enum Cmd {
     Server(ServerPs),
     GenElm,
-    Migration,
+    #[command(visible_alias = "migration")]
+    Migrate,
     ExportUnit(ExportUnitPs),
     ImportUnit(ImportUnitPs),
     RenewTailscaleCert(RenewTailscaleCertPs),
@@ -495,6 +506,8 @@ enum Cmd {
     OneoffDisableIm,
     OneoffCountGroupBatches,
     OneoffGenerateStrongboxKey,
+    OneoffFillSigintInboxItemTags,
+    OneoffSuggestInboxMessageTags(OneoffSuggestInboxMessageTagsPs),
 }
 
 #[derive(clap::Parser, Debug)]
@@ -539,7 +552,7 @@ async fn new_pg_pool_from_conn_string(
         .sqlx_logging_level(LevelFilter::Debug)
         .sqlx_slow_statements_logging_settings(
             LevelFilter::Warn,
-            core::time::Duration::from_millis(1000),
+            core::time::Duration::from_millis(PG_SLOW_STATEMENT_THRESHOLD_MS),
         );
 
     let db = sea_orm::Database::connect(opt).await.c(h!())?;
@@ -748,7 +761,7 @@ async fn async_main(
                 .await
         }
         Cmd::OneoffFixKmz(ps) => kml::oneoff_fix_kml_main(mode, &ps).await,
-        Cmd::Migration => migration::run_migration(mode).await,
+        Cmd::Migrate => migration::run_migration_1(mode).await,
         Cmd::RenewTailscaleCert(ps) => {
             renew_tailscale_cert(mode, ps.force).await
         }
@@ -914,6 +927,12 @@ async fn async_main(
             let key = storage::generate_strongbox_key_b64();
             println!("{key}");
             Ok(())
+        }
+        Cmd::OneoffFillSigintInboxItemTags => {
+            sigint::oneoff::oneoff_fill_sigint_inbox_item_tags(mode).await
+        }
+        Cmd::OneoffSuggestInboxMessageTags(ps) => {
+            sigint::oneoff::oneoff_suggest_inbox_message_tags(mode, &ps).await
         }
     }
 }

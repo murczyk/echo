@@ -123,11 +123,8 @@ fn build_groups_query(
             "count",
         )
         .filter(
-            Expr::col((
-                signal_message_group::Entity,
-                signal_message_group::Column::GroupMasterKey,
-            ))
-            .is_in(accessible_groups.clone()),
+            signal_message_group::Column::GroupMasterKey
+                .eq_any(accessible_groups.clone()),
         )
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
@@ -168,7 +165,9 @@ fn build_groups_query(
         &req.or_with_coords,
         &req.or_with_extended_form,
         &req.filter_tags_option,
+        &req.without_model_tags,
         user.id().c(h!())?.as_str(),
+        None,
     )
     .context(h!())?;
     let groups_res =
@@ -307,7 +306,9 @@ fn build_senders_query(
         &req.or_with_coords,
         &req.or_with_extended_form,
         &req.filter_tags_option,
+        &req.without_model_tags,
         &user.id().context(h!())?,
+        None,
     )
     .context(h!())?;
     let senders_res =
@@ -445,7 +446,9 @@ fn build_posts_query(
         &req.or_with_coords,
         &req.or_with_extended_form,
         &req.filter_tags_option,
+        &req.without_model_tags,
         &user.id().context(h!())?,
+        None,
     )
     .context(h!())?;
     let post_res = filter_selected_networks(post_res, &req.selected_networks)
@@ -635,7 +638,9 @@ fn build_freqs_query(
         &req.or_with_coords,
         &req.or_with_extended_form,
         &req.filter_tags_option,
+        &req.without_model_tags,
         &user.id().context(h!())?,
+        None,
     )
     .context(h!())?;
     let freqs_res = filter_selected_networks(freqs_res, &req.selected_networks)
@@ -780,7 +785,9 @@ pub async fn fetch_tags(
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
 
-    if should_read_stats_aggregated(req, env, dt_since, dt_till).c(h!())? {
+    if req.without_model_tags != Some(true)
+        && should_read_stats_aggregated(req, env, dt_since, dt_till).c(h!())?
+    {
         let result =
             read_tag_stats_aggregated(env, master_keys, dt_since, dt_till)
                 .await
@@ -792,33 +799,24 @@ pub async fn fetch_tags(
 
     #[derive(FromQueryResult)]
     struct TagsRes {
-        tag_ids: Option<Vec<i32>>,
+        tag_id: i64,
         count: i64,
     }
     let tags_res = build_tags_query(&req, dt_since, dt_till, master_keys)?;
-    // println!(
-    //     "> tags_res: {}",
-    //     tags_res.build(DbBackend::Postgres).to_string()
-    // );
+
     let tags_res: Vec<TagsRes> = tags_res
         .into_model::<TagsRes>()
         .all(&env.dbx)
         .await
         .c(h!())?;
-    let mut count_per_tag: BTreeMap<i64, i64> = BTreeMap::new();
-    for x in tags_res {
-        let Some(tag_ids) = x.tag_ids else { continue };
-        for tag_id in tag_ids.iter() {
-            count_per_tag
-                .entry(*tag_id as i64)
-                .and_modify(|c| *c += x.count)
-                .or_insert(x.count);
-        }
-    }
-    let mut tags = vec![];
-    for (tag_id, count) in count_per_tag {
-        tags.push(AnalysisStatsTag { tag_id, count });
-    }
+
+    let tags: Vec<_> = tags_res
+        .iter()
+        .map(|item| AnalysisStatsTag {
+            tag_id: item.tag_id,
+            count: item.count,
+        })
+        .collect();
 
     if instant.elapsed().as_secs() > 4 {
         debug!("tags op took: {:?}; req: {:?}", instant.elapsed(), req);
@@ -854,7 +852,7 @@ fn build_tags_query(
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
-    let tags_res = sigint_inbox_item::Entity::find()
+    let mut tags_res = sigint_inbox_item::Entity::find()
         .join(
             JoinType::InnerJoin,
             sigint_inbox_item::Relation::SignalMessage.def(),
@@ -863,21 +861,33 @@ fn build_tags_query(
             JoinType::LeftJoin,
             sigint_inbox_item::Relation::SigintPost.def(),
         )
+        .join(
+            JoinType::InnerJoin,
+            sigint_inbox_item_tag::Relation::SigintInboxItem
+                .def()
+                .rev()
+                .on_condition(|_left, right| {
+                    Expr::col((
+                        right,
+                        sigint_inbox_item_tag::Column::Confidence,
+                    ))
+                    .gte(TAG_MINIMUM_CONFIDENCE)
+                    .into_condition()
+                }),
+        )
         .select_only()
-        .column_as(
-            Expr::cust("array(select jsonb_array_elements_text(tags))::int[]"),
-            "tag_ids",
-        )
-        .column_as(
-            Expr::cust(r#"COUNT(DISTINCT "signal_message"."id")"#),
-            "count",
-        )
+        .column(sigint_inbox_item_tag::Column::TagId)
+        .column_as(Expr::count(Expr::val(1)), "count")
         .filter(message_in_groups_exists(master_keys.clone()))
         // .filter(signal_message::Column::DuplicateOf.is_null())
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
-        // .filter(sigint_inbox_item::Column::Checked.eq(Some(true)))
-        .group_by(SimpleExpr::Custom("tag_ids".to_string()));
+        .group_by(sigint_inbox_item_tag::Column::TagId);
+    // .filter(sigint_inbox_item::Column::Checked.eq(Some(true)))
+    if req.without_model_tags == Some(true) {
+        tags_res =
+            tags_res.filter(sigint_inbox_item_tag::Column::Model.is_null());
+    }
     let tags_res = filter_selected_groups(tags_res, &req.selected_groups)?;
     let tags_res = filter_selected_senders(tags_res, &req.selected_senders)?;
     let tags_res = filter_selected_freqs(tags_res, &req.selected_freqs)?;
@@ -1028,7 +1038,9 @@ fn build_units_query(
         &req.or_with_coords,
         &req.or_with_extended_form,
         &req.filter_tags_option,
+        &req.without_model_tags,
         &user.id().context(h!())?,
+        None,
     )
     .context(h!())?;
     let units_res = filter_selected_networks(units_res, &req.selected_networks)
@@ -1171,7 +1183,9 @@ fn build_locations_query(
         &req.or_with_coords,
         &req.or_with_extended_form,
         &req.filter_tags_option,
+        &req.without_model_tags,
         &user.id().context(h!())?,
+        None,
     )
     .context(h!())?;
     let locations_res =
@@ -1325,7 +1339,9 @@ fn build_aors_query(
         &req.or_with_coords,
         &req.or_with_extended_form,
         &req.filter_tags_option,
+        &req.without_model_tags,
         &user.id().context(h!())?,
+        None,
     )
     .context(h!())?;
     let aors_res = filter_search(aors_res, &req.search).context(h!())?;
@@ -1532,7 +1548,9 @@ fn build_networks_query(
         &req.or_with_coords,
         &req.or_with_extended_form,
         &req.filter_tags_option,
+        &req.without_model_tags,
         user.id().c(h!())?.as_str(),
+        None,
     )
     .context(h!())?;
 
@@ -1755,7 +1773,9 @@ async fn fetch_counts_for_login_with_conn(
         &req.or_with_coords,
         &req.or_with_extended_form,
         &req.filter_tags_option,
+        &req.without_model_tags,
         login_str,
+        None,
     )
     .context(h!())?;
     let selected_count_res =
@@ -1767,13 +1787,14 @@ async fn fetch_counts_for_login_with_conn(
         filter_selected_aors(selected_count_res, &req.selected_aors)
             .context(h!())
             .context(h!())?;
-    // let selected_count_sql = selected_count_res
-    //     .clone()
-    //     .build(DbBackend::Postgres)
-    //     .to_string();
-    // println!(
-    //     "> selected count res sql (login={login_str}): {selected_count_sql}"
-    // );
+    //println!(
+    //    "> selected count res sql (login={}): {}",
+    //    login_str,
+    //    selected_count_res
+    //    .clone()
+    //    .build(DbBackend::Postgres)
+    //    .to_string();
+    //);
     let selected_count_res: SelectedCountRes = selected_count_res
         .into_model::<SelectedCountRes>()
         .one(&db_conn)

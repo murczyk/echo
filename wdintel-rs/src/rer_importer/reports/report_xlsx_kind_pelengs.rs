@@ -5,6 +5,7 @@ use crate::location::peleng::collect_inbox_pelengs;
 use crate::rer_importer::analysis::*;
 use crate::sigint::sender::preferred_sender_sql_snippet;
 use crate::types::*;
+use crate::utils::orm::ArrayColumnOps;
 use actix_identity::Identity;
 use anyhow::bail;
 use chrono::prelude::*;
@@ -122,8 +123,12 @@ pub async fn get_inbox_messages_report(
         )
         .group_by(signal_message::Column::Id)
         .group_by(sigint_inbox_item::Column::Id)
-        .group_by(signal_message::Column::Id)
-        .filter(datasource_group::Column::GroupMasterKey.is_in(
+        .group_by(sigint_network_freq::Column::Id)
+        .group_by(sigint_network::Column::Id)
+        .group_by(sigint_network_unit::Column::Id)
+        .group_by(sigint_post::Column::Id)
+        .group_by(datasource_group::Column::Id)
+        .filter(datasource_group::Column::GroupMasterKey.eq_any(
             crate::messenger::group::get_identity_sigint_groups(&read_db, &login).await.c(h!())?,
         ));
 
@@ -168,7 +173,9 @@ pub async fn get_inbox_messages_report(
         &req.or_with_coords,
         &req.or_with_extended_form,
         &req.filter_tags_option,
+        &req.without_model_tags,
         &user.id().c(h!())?,
+        None,
     )?;
     let q = filter_selected_locations(
         q,
@@ -276,6 +283,7 @@ pub async fn get_inbox_messages_report(
                     tags: None,
                     callsigns_alg2: vec![],
                     network_ids: None,
+                    inbox_tags: None,
                 },
             ));
         }

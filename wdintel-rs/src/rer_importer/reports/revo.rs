@@ -6,6 +6,7 @@ use crate::error::AppError;
 use crate::rer_importer::reports::util;
 use crate::rer_importer::reports::util::*;
 use crate::types::*;
+use crate::utils::orm::ArrayColumnOps;
 use actix_identity::Identity;
 use anyhow::Context;
 use chrono::prelude::*;
@@ -331,7 +332,7 @@ async fn collect_report(
             JoinType::LeftJoin,
             sigint_network_unit::Relation::SigintUnit.def(),
         )
-        .filter(sigint_network_freq::Column::Freq.is_in(freqs.clone()))
+        .filter(sigint_network_freq::Column::Freq.eq_any(freqs.clone()))
         .filter(sigint_network::Column::Deleted.eq(false))
         .filter(sigint_network::Column::Name.is_not_null())
         .select_only()
@@ -380,11 +381,11 @@ async fn collect_report(
             JoinType::LeftJoin,
             sigint_network_unit::Relation::SigintUnit.def(),
         )
-        .filter(sigint_network_freq::Column::Freq.is_in(freqs))
+        .filter(sigint_network_freq::Column::Freq.eq_any(freqs))
         .filter(
             signal_group_aor::Column::Id
                 .is_null()
-                .or(signal_group_aor::Column::MasterKey.is_in(groups)),
+                .or(signal_group_aor::Column::MasterKey.eq_any(groups)),
         )
         .filter(sigint_network::Column::Deleted.eq(false))
         .filter(
@@ -422,7 +423,7 @@ async fn collect_report(
     // Load all comments in a single query if possible, otherwise chunk
     if message_ids.len() <= 20000 {
         sigint_comment::Entity::find()
-            .filter(sigint_comment::Column::SignalMessageId.is_in(message_ids))
+            .filter(sigint_comment::Column::SignalMessageId.eq_any(message_ids))
             .select_only()
             .column(sigint_comment::Column::SignalMessageId)
             .column(sigint_comment::Column::Comment)
@@ -439,7 +440,8 @@ async fn collect_report(
         for ids in message_ids.chunks(20000) {
             sigint_comment::Entity::find()
                 .filter(
-                    sigint_comment::Column::SignalMessageId.is_in(ids.to_vec()),
+                    sigint_comment::Column::SignalMessageId
+                        .eq_any(ids.to_vec()),
                 )
                 .select_only()
                 .column(sigint_comment::Column::SignalMessageId)
@@ -505,9 +507,10 @@ async fn collect_report(
             JoinType::InnerJoin,
             sigint_unit::Relation::SigintNetworkUnit.def(),
         )
-        .filter(sigint_callsign::Column::Callsign.is_in(callsigns))
+        .filter(sigint_callsign::Column::Callsign.eq_any(callsigns))
         .filter(
-            sigint_network_unit::Column::NetworkId.is_in(network_ids.clone()),
+            sigint_network_unit::Column::NetworkId
+                .eq_any(network_ids.clone().into_iter().collect()),
         )
         .filter(sigint_unit::Column::Deleted.eq(false))
         .filter(sigint_callsign::Column::Deleted.eq(false))

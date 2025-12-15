@@ -22,6 +22,7 @@ import Shared.Components.Popup as Popup
 import Shared.Components.RerMessage
 import Shared.Components.Watermark as Watermark
 import Shared.MarkedText
+import String
 import Task
 import Time
 import Time.Extra
@@ -40,6 +41,7 @@ type alias Model =
     , isUnfolded : Bool
     , edited : Maybe { original : B.InboxMessage, current : B.InboxMessage }
     , isEditPopupOpen : Bool
+    , botTagAction : Maybe { messageId : Int, tagId : Int }
     }
 
 
@@ -50,6 +52,7 @@ init x =
     , isUnfolded = False
     , edited = Nothing
     , isEditPopupOpen = False
+    , botTagAction = Nothing
     }
 
 
@@ -115,6 +118,7 @@ datasourceKind message datasources =
                         DKSignal
            )
 
+
 renderImage : String -> Html msg
 renderImage image =
     div [ style "display" "inline-block" ]
@@ -132,6 +136,7 @@ renderImage image =
             ]
         ]
 
+
 renderAttachment : MessageMediaInfo -> Html msg
 renderAttachment attachment =
     let
@@ -147,6 +152,7 @@ renderAttachment attachment =
         [ i [ class "bi bi-download me-2" ] []
         , text displayFileName
         ]
+
 
 renderMedia : MessageMediaInfo -> Maybe (Html msg)
 renderMedia attachment =
@@ -165,12 +171,16 @@ renderMedia attachment =
     in
     if isImage then
         Just <| renderImage attachment.href
+
     else if isMp3 then
         Just <| renderAttachment attachment
+
     else if Config.featureHideDocuments then
         Nothing
+
     else
         Just <| renderAttachment attachment
+
 
 clipboardMessage :
     B.InboxMessage
@@ -279,11 +289,14 @@ type InternalMsg
     | EditPopupClose
     | FocusTextarea (Result Browser.Dom.Error ())
     | ToggleTag Int Int
+    | MarkBotTagWrong Int Int
+    | MarkBotTagWrongDone Int Int (Result ApiError ())
+    | CancelBotTagAction
     | ExtendedFormChanged String
     | EditCancel
     | EditSave
     | UnfoldDuplicate
-    | InboxSubmitDone Int (Result ApiError ())
+    | CommentSaveDone Int (Result ApiError ())
 
 
 type OutMsg
@@ -330,6 +343,46 @@ translator { onInternalMessage, onCopyToClipboard, onBookmarkChanged, onImportan
 
                 DeleteMessage id ->
                     onMessageDelete id
+
+
+inboxTagsFor : B.InboxMessage -> List B.InboxMessageTag
+inboxTagsFor message =
+    message.inboxTags |> Maybe.withDefault []
+
+
+hasUserTag : Int -> String -> B.InboxMessage -> Bool
+hasUserTag tagId login message =
+    inboxTagsFor message
+        |> List.any
+            (\t ->
+                t.tagId == tagId
+                    && t.login == Just login
+                    && MaybeX.isNothing t.model
+            )
+
+
+hasBotTag : Int -> B.InboxMessage -> Bool
+hasBotTag tagId message =
+    inboxTagsFor message
+        |> List.any (\t -> t.tagId == tagId && MaybeX.isJust t.model)
+
+
+removeBotTags : Int -> B.InboxMessage -> B.InboxMessage
+removeBotTags tagId message =
+    let
+        filtered =
+            inboxTagsFor message
+                |> List.filter (\tag -> not (tag.tagId == tagId && MaybeX.isJust tag.model))
+
+        tagsCombined =
+            let
+                botlessIds =
+                    filtered |> List.map .tagId |> ListX.unique
+            in
+            botlessIds
+                ++ (message.tags |> def [] |> List.filter (\id -> not (List.member id botlessIds)))
+    in
+    { message | inboxTags = Just filtered, tags = Just tagsCombined }
 
 
 update : ViewParams -> InternalMsg -> Model -> ( Model, Effect InternalMsg, ( Int, B.InboxMessage ) )
@@ -392,20 +445,56 @@ update vps msg model =
             )
 
         ToggleTag msgId tagId ->
-            ( model
+            let
+                botPanel =
+                    if hasUserTag tagId vps.user.name (Tuple.second vps.message) && hasBotTag tagId (Tuple.second vps.message) then
+                        Just { messageId = msgId, tagId = tagId }
+
+                    else
+                        Nothing
+
+                updatedMessage =
+                    Shared.Components.RerMessage.toggleTag msgId tagId (Just vps.user.name) [ vps.message ]
+                        |> List.head
+                        |> Maybe.withDefault vps.message
+            in
+            ( { model | botTagAction = botPanel }
             , E.sendCmd <|
                 if Shared.Components.RerMessage.isTagSet msgId tagId [ vps.message ] then
                     Api.inbox_message_tags_rm (always NoOp) { messageId = msgId, tagId = tagId }
 
                 else
                     Api.inbox_message_tags_add (always NoOp) { messageId = msgId, tagId = tagId }
-            , case Shared.Components.RerMessage.toggleTag msgId tagId [ vps.message ] |> List.head of
-                Just message_ ->
-                    message_
-
-                Nothing ->
-                    vps.message
+            , updatedMessage
             )
+
+        MarkBotTagWrong msgId tagId ->
+            ( model
+            , E.sendCmd <|
+                Api.inbox_message_tags_model_error
+                    (MarkBotTagWrongDone msgId tagId)
+                    { messageId = msgId, tagId = tagId }
+            , vps.message
+            )
+
+        MarkBotTagWrongDone _ tagId (Err e) ->
+            ( model
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Не вдалося оновити тег бота" e
+            , vps.message
+            )
+
+        MarkBotTagWrongDone _ tagId (Ok _) ->
+            let
+                updatedMessage =
+                    removeBotTags tagId (Tuple.second vps.message)
+            in
+            ( { model | botTagAction = Nothing }
+            , E.none
+            , ( Tuple.first vps.message, updatedMessage )
+            )
+
+        CancelBotTagAction ->
+            ( { model | botTagAction = Nothing }, E.none, vps.message )
 
         ExtendedFormChanged str ->
             let
@@ -476,19 +565,33 @@ update vps msg model =
                         Nothing ->
                             E.none
 
-                        Just v ->
-                            Api.rer_importer_inbox_submit (InboxSubmitDone model.id)
-                                { messages = [ v ] }
+                        Just ( msgId, messageVal ) ->
+                            let
+                                commentCleaned =
+                                    messageVal.extendedForm
+                                        |> Maybe.map String.trim
+                                        |> Maybe.andThen
+                                            (\v ->
+                                                if v == "" then
+                                                    Nothing
+
+                                                else
+                                                    Just v
+                                            )
+                            in
+                            Api.rer_importer_comment_save (CommentSaveDone model.id)
+                                { messageId = msgId, comment = commentCleaned }
+                                |> E.sendCmd
             in
             ( { model | isEditPopupOpen = False }
             , cmds
             , messageToReturn
             )
 
-        InboxSubmitDone _ (Err e) ->
+        CommentSaveDone _ (Err e) ->
             ( model, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Повідомлення не збереглося" e, vps.message )
 
-        InboxSubmitDone _ (Ok ()) ->
+        CommentSaveDone _ (Ok ()) ->
             ( { model | edited = Nothing, isEditPopupOpen = False }
             , E.none
             , vps.message
@@ -745,6 +848,7 @@ leftColumn ( messageId, message ) ps model =
                                         , tags = []
                                         , unitsExactMatchOnly = True
                                         , adjacentFreqsRange = 0
+                                        , withoutModelTags = False
                                         }
                                     )
 
@@ -1074,19 +1178,44 @@ rightColumn ( messageId, message ) ps model =
                                     msgToHtml message.text
                            )
                         ++ [ div
-                                [ class "flex justify-start mt-2"
+                                [ class "flex flex-col items-start gap-2 mt-2"
                                 , style "color" "var(--bs-secondary-color)"
                                 ]
-                                (if not model.isDuplicate || model.isUnfolded then
+                              <|
+                                if not model.isDuplicate || model.isUnfolded then
                                     [ tagsBlock
                                         message.tags
+                                        message.inboxTags
                                         (ForSelf << ToggleTag model.id)
                                         ps.tags
+                                    , case model.botTagAction of
+                                        Just action ->
+                                            if action.messageId == model.id then
+                                                div
+                                                    [ class "flex gap-2 items-center text-xs bg-[var(--color-card)] border border-[var(--color-border)] rounded px-3 py-2 shadow-sm" ]
+                                                    [ button
+                                                        [ type_ "button"
+                                                        , class "btn btn-primary btn-sm"
+                                                        , onClick <| ForSelf <| MarkBotTagWrong action.messageId action.tagId
+                                                        ]
+                                                        [ text "бот помилився" ]
+                                                    , button
+                                                        [ type_ "button"
+                                                        , class "btn btn-outline-secondary btn-sm"
+                                                        , onClick <| ForSelf CancelBotTagAction
+                                                        ]
+                                                        [ text "закрити" ]
+                                                    ]
+
+                                            else
+                                                text ""
+
+                                        Nothing ->
+                                            text ""
                                     ]
 
-                                 else
+                                else
                                     []
-                                )
                            ]
                 ]
                )

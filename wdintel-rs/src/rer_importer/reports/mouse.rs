@@ -1,4 +1,5 @@
 use super::super::types::*;
+use crate::config::*;
 use crate::entities::*;
 use crate::error::AppError;
 use crate::types::*;
@@ -6,6 +7,7 @@ use crate::utils::*;
 use actix_identity::Identity;
 use anyhow::Context;
 // Add this import if h!() uses anyhow::Context
+use crate::utils::orm::ArrayColumnOps;
 use chrono::prelude::*;
 use docx_rs::AlignmentType;
 use docx_rs::LineSpacing;
@@ -58,14 +60,35 @@ pub async fn report_docx_kind_mouse(
         .to_string();
 
     let file = std::fs::File::create(outpath)?;
+    let without_model_tags = req.req.without_model_tags.unwrap_or(false);
+
+    let message_tags_map: BTreeMap<i64, Vec<InboxMessageTag>> = messages
+        .iter()
+        .map(|(message_id, message)| {
+            let tags = message
+                .inbox_tags
+                .clone()
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|tag| {
+                    tag.confidence >= TAG_MINIMUM_CONFIDENCE
+                        && (!without_model_tags || tag.model.is_none())
+                })
+                .collect::<Vec<_>>();
+            (*message_id, tags)
+        })
+        .collect();
 
     let mut per_tag_msgs: BTreeMap<i64, Vec<InboxMessage>> = BTreeMap::new();
-    for (_message_id, message) in messages.iter() {
-        let tags = message.tags.clone().unwrap_or(vec![]);
-        if tags.is_empty() {
+    for (message_id, message) in messages.iter() {
+        let tag_ids: Vec<i64> = message_tags_map
+            .get(message_id)
+            .map(|tags| tags.iter().map(|tag| tag.tag_id).collect())
+            .unwrap_or_default();
+        if tag_ids.is_empty() {
             per_tag_msgs.entry(0).or_default().push(message.clone());
         } else {
-            for tag_id in tags {
+            for tag_id in tag_ids {
                 per_tag_msgs
                     .entry(tag_id)
                     .or_default()
@@ -93,7 +116,7 @@ pub async fn report_docx_kind_mouse(
     };
     let comp_freqs = comp_freq::Entity::find()
         .filter(comp_freq::Column::ZoneId.eq(zone_id))
-        .filter(comp_freq::Column::Freq.is_in(uniq_freqs_sorted.clone()))
+        .filter(comp_freq::Column::Freq.eq_any(uniq_freqs_sorted.clone()))
         .all(&read_db)
         .await
         .c(h!())?;
@@ -106,7 +129,7 @@ pub async fn report_docx_kind_mouse(
     let comp_freqs_callsigns = comp_freq_callsign::Entity::find()
         .filter(comp_freq_callsign::Column::ZoneId.eq(zone_id))
         .filter(
-            comp_freq_callsign::Column::Freq.is_in(uniq_freqs_sorted.clone()),
+            comp_freq_callsign::Column::Freq.eq_any(uniq_freqs_sorted.clone()),
         )
         .all(&read_db)
         .await
@@ -194,7 +217,7 @@ pub async fn report_docx_kind_mouse(
         )
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(sigint_inbox_item::Column::Datetime.lte(date_to_dt.naive_utc()))
-        .filter(datasource_group::Column::GroupMasterKey.is_in(&groups))
+        .filter(datasource_group::Column::GroupMasterKey.eq_any(groups.clone()))
         .all(&read_db)
         .await
         .c(h!())?;
@@ -222,7 +245,7 @@ pub async fn report_docx_kind_mouse(
         )
         .filter(sigint_inbox_item::Column::Datetime.lte(date_to_dt.naive_utc()))
         .filter(signal_message::Column::Deleted.eq(false))
-        .filter(datasource_group::Column::GroupMasterKey.is_in(&groups))
+        .filter(datasource_group::Column::GroupMasterKey.eq_any(groups.clone()))
         .all(&read_db)
         .await
         .c(h!())?;
@@ -511,7 +534,7 @@ pub async fn report_docx_kind_mouse(
     let message_map: BTreeMap<i64, signal_message::Model> =
         signal_message::Entity::find()
             .filter(signal_message::Column::Deleted.eq(false))
-            .filter(signal_message::Column::Id.is_in(all_message_ids.clone()))
+            .filter(signal_message::Column::Id.eq_any(all_message_ids.clone()))
             .all(&read_db)
             .await
             .context(h!())?
@@ -522,7 +545,7 @@ pub async fn report_docx_kind_mouse(
     let inbox_map: BTreeMap<i64, sigint_inbox_item::Model> =
         sigint_inbox_item::Entity::find()
             .filter(
-                sigint_inbox_item::Column::Id.is_in(all_message_ids.clone()),
+                sigint_inbox_item::Column::Id.eq_any(all_message_ids.clone()),
             )
             .all(&read_db)
             .await
@@ -534,9 +557,9 @@ pub async fn report_docx_kind_mouse(
     let all_comments: Vec<sigint_comment::Model> =
         sigint_comment::Entity::find()
             .filter(
-                sigint_comment::Column::SignalMessageId.is_in(all_message_ids),
+                sigint_comment::Column::SignalMessageId.eq_any(all_message_ids),
             )
-            .filter(sigint_comment::Column::Login.is_in(logins.clone()))
+            .filter(sigint_comment::Column::Login.eq_any(logins.clone()))
             .all(&read_db)
             .await
             .context(h!())?;
@@ -696,11 +719,10 @@ pub async fn report_docx_kind_mouse(
             else {
                 continue;
             };
-            let mut need_highlight = false;
-            let tags: Vec<i64> = from_m_val_vec(inbox.tags.clone())?;
-            if !tags.is_empty() {
-                need_highlight = true;
-            }
+            let mut need_highlight = message_tags_map
+                .get(&message_id)
+                .map(|tags| !tags.is_empty())
+                .unwrap_or(false);
             if important_ids.contains(&message_id) {
                 need_highlight = true;
             }
