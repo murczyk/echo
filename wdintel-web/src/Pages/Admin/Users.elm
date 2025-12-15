@@ -329,8 +329,21 @@ update msg model =
                 inpZone =
                     model.inpZone
 
+                selectedZoneId =
+                    case model.inpZone.selectedItem of
+                        Just existing ->
+                            Just existing
+
+                        Nothing ->
+                            case vs of
+                                [ ( zoneId, _ ) ] ->
+                                    Just zoneId
+
+                                _ ->
+                                    Nothing
+
                 inpZone2 =
-                    { inpZone | items = zoneMenuItems }
+                    { inpZone | items = zoneMenuItems, selectedItem = selectedZoneId }
             in
             ( { model | zones = vs, inpZone = inpZone2 }, E.none )
 
