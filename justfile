@@ -716,13 +716,17 @@ _echo-generic-deploy-back:
     set -x
     echo "Back-end is ready. Now open {{ server }}'s URL"
 
-deploy-echo-ai server="echo-staging":
+deploy-echo-ai:
     #!/bin/bash
     set -euxo pipefail
+    if [[ "{{ server }}" == "" ]]; then
+        just _print-servers; exit 1;
+    fi
+    ensure_nonempty "server" "{{ server }}"
     just ai-sync-from-cloud
     [ -f target/debian/echo-ai_0.1.0-1_amd64.deb ] || cargo deb -p echo-ai --no-build
-    rsync -t --progress target/debian/echo-ai_0.1.0-1_amd64.deb {{ server }}:
-    ssh {{ server }} 'sudo apt-get -y install ./echo-ai_0.1.0-1_amd64.deb'
+    rsync -t --progress target/debian/echo-ai_0.1.0-1_amd64.deb {{ server }}:/var/tmp/
+    ssh {{ server }} 'sudo apt-get -y install /var/tmp/echo-ai_0.1.0-1_amd64.deb'
 
 ziggy-echo-build-local builder="echo-build-local" server="echo-staging" branch="main":
     #!/bin/bash
