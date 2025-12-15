@@ -3,12 +3,14 @@ module Pages.RerCallsigns exposing (AddState, EditCallsignState, Model, Msg, cel
 import Api
 import Auth
 import Bindings as B
+import Bytes exposing (Bytes)
 import Core.Auth
 import Core.Types exposing (ApiError)
 import Core.UnitHierarchy
 import Debounce exposing (Debounce)
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
+import File.Download as Download
 import Html exposing (..)
 import Html.Attributes as Attr exposing (..)
 import Html.Events exposing (..)
@@ -94,6 +96,7 @@ type alias Model =
     , sortingOrder : SortingOrder
     , showLoadMore : Bool
     , loadingMore : Bool
+    , downloadCsvInProgress : Bool
     , inpSourceSelState : Select.State
     , inpSourceSelMenu : List (Select.MenuItem Int)
     , expandedArmies : Set.Set String
@@ -159,6 +162,7 @@ init req _ =
             , sortingOrder = UnitAsc
             , showLoadMore = False
             , loadingMore = False
+            , downloadCsvInProgress = False
             , inpSourceSelState = Select.initState (Select.selectIdentifier "inpSourceSelState")
             , inpSourceSelMenu = []
             , expandedArmies = Set.empty
@@ -209,6 +213,8 @@ type Msg
     | FilterCommentDebounceMsg Debounce.Msg
     | FilterUnitDebounceMsg Debounce.Msg
     | Refresh
+    | DownloadCsv Bool
+    | DownloadCsvDone (Result ApiError Bytes)
     | GotUnitStats (Result ApiError B.CallsignUnitStatsRsp)
     | DateTimeFromMsg (Shared.Components.DateTime.Msg Msg)
     | DateTimeToMsg (Shared.Components.DateTime.Msg Msg)
@@ -316,30 +322,35 @@ populateUnitMenu shared =
             []
 
 
+buildListCallsignsReq : Model -> { afterId : Maybe Int, limit : Maybe Int } -> B.ListCallsignsReq
+buildListCallsignsReq model params =
+    { afterId = params.afterId
+    , beforeId = Nothing
+    , filterCallsign = Just model.filterCallsign
+    , filterPosition = Just model.filterPosition
+    , filterComment = Just model.filterComment
+    , filterUnit = Just model.filterUnit
+    , sinceDateInclusiveMs =
+        if model.isIgnoringDateFilter then
+            Nothing
+
+        else
+            Maybe.map Time.posixToMillis model.from.datePosix
+    , tillDateInclusiveMs =
+        if model.isIgnoringDateFilter then
+            Nothing
+
+        else
+            Maybe.map Time.posixToMillis model.to.datePosix
+    , limit = params.limit
+    , sortBy = Just (sortingOrderToBackendSort model.sortingOrder)
+    }
+
+
 loadCallsignsCmd : Model -> Cmd Msg
 loadCallsignsCmd model =
     Api.sigint_list_callsigns GotCallsigns
-        { afterId = Nothing
-        , beforeId = Nothing
-        , filterCallsign = Just model.filterCallsign
-        , filterPosition = Just model.filterPosition
-        , filterComment = Just model.filterComment
-        , filterUnit = Just model.filterUnit
-        , sinceDateInclusiveMs =
-            if model.isIgnoringDateFilter then
-                Nothing
-
-            else
-                Maybe.map Time.posixToMillis model.from.datePosix
-        , tillDateInclusiveMs =
-            if model.isIgnoringDateFilter then
-                Nothing
-
-            else
-                Maybe.map Time.posixToMillis model.to.datePosix
-        , limit = Just 100
-        , sortBy = Just (sortingOrderToBackendSort model.sortingOrder)
-        }
+        (buildListCallsignsReq model { afterId = Nothing, limit = Just 100 })
 
 
 loadMoreCallsignsCmd : Model -> Cmd Msg
@@ -350,27 +361,7 @@ loadMoreCallsignsCmd model =
 
         Just lastCallsign ->
             Api.sigint_list_callsigns GotCallsigns
-                { afterId = Just lastCallsign.id
-                , beforeId = Nothing
-                , filterCallsign = Just model.filterCallsign
-                , filterPosition = Just model.filterPosition
-                , filterComment = Just model.filterComment
-                , filterUnit = Just model.filterUnit
-                , sinceDateInclusiveMs =
-                    if model.isIgnoringDateFilter then
-                        Nothing
-
-                    else
-                        Maybe.map Time.posixToMillis model.from.datePosix
-                , tillDateInclusiveMs =
-                    if model.isIgnoringDateFilter then
-                        Nothing
-
-                    else
-                        Maybe.map Time.posixToMillis model.to.datePosix
-                , limit = Just 100
-                , sortBy = Just (sortingOrderToBackendSort model.sortingOrder)
-                }
+                (buildListCallsignsReq model { afterId = Just lastCallsign.id, limit = Just 100 })
 
 
 loadCallsigns : Model -> Effect Msg
@@ -951,6 +942,28 @@ update req shared msg model =
         Refresh ->
             ( { model | loading = True, loadingUnitStats = True }
             , initLoad model
+            )
+
+        DownloadCsv allowed ->
+            if allowed then
+                ( { model | downloadCsvInProgress = True }
+                , E.sendCmd <|
+                    Api.sigint_list_callsigns_csv
+                        DownloadCsvDone
+                        (buildListCallsignsReq model { afterId = Nothing, limit = Nothing })
+                )
+
+            else
+                ( model, E.none )
+
+        DownloadCsvDone (Err err) ->
+            ( { model | downloadCsvInProgress = False }
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження CSV" err
+            )
+
+        DownloadCsvDone (Ok bytes) ->
+            ( { model | downloadCsvInProgress = False }
+            , E.sendCmd <| Download.bytes "callsigns.csv" "text/csv" bytes
             )
 
         GotUnitStats (Err err) ->
@@ -1687,6 +1700,8 @@ contentBlock shared model user =
     let
         hasEditorRole =
             Core.Auth.hasRole "CallsignsEditor" user || Core.Auth.hasRole "UnitsEditor" user
+        hasUnitEditorRole =
+            Core.Auth.hasRole "Admin" user || Core.Auth.hasRole "UnitsEditor" user
 
         deleteConfirmationModal =
             let
@@ -1928,7 +1943,7 @@ contentBlock shared model user =
                     ]
                 , div [ class "flex items-center gap-3" ]
                     [ div [ class "flex-grow" ]
-                        [ div [ class "flex flex-wrap gap-2 mb-2" ]
+                        [ div [ class "flex flex-wrap gap-2 mb-2" ] <|
                             [ input
                                 [ class "form-input uppercase min-w-[180px]"
                                 , type_ "text"
@@ -1961,19 +1976,40 @@ contentBlock shared model user =
                                 , onInput FilterUnitMsg
                                 ]
                                 []
-                            , button
-                                [ class "px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-700"
-                                , onClick ToggleSidebar
-                                , attribute "title"
-                                    (if model.showSidebar then
-                                        "Сховати підрозділи"
-
-                                     else
-                                        "Показати підрозділи"
-                                    )
-                                ]
-                                [ text "Підрозділи" ]
                             ]
+                                ++ [ button
+                                        [ class "px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-700"
+                                        , onClick ToggleSidebar
+                                        , attribute "title"
+                                            (if model.showSidebar then
+                                                "Сховати підрозділи"
+
+                                             else
+                                                "Показати підрозділи"
+                                            )
+                                        ]
+                                        [ text "Підрозділи" ]
+                                   ]
+                                ++ if hasUnitEditorRole then
+                                        [ button
+                                            [ class "px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-700 flex items-center gap-2 ml-4"
+                                            , onClick (DownloadCsv hasUnitEditorRole)
+                                            , Attr.disabled model.downloadCsvInProgress
+                                            , attribute "title" "Завантажити CSV з обраними фільтрами"
+                                            , style "margin-left" "12px"
+                                            ]
+                                            ([ text "Завантажити csv" ]
+                                                ++ (if model.downloadCsvInProgress then
+                                                        [ Shared.Components.Spinner.loadingSpinner2Sm ]
+
+                                                    else
+                                                        []
+                                                   )
+                                            )
+                                        ]
+
+                                    else
+                                        []
                         , div [ class "flex items-center gap-4" ]
                             [ div [ class "flex items-center gap-2" ]
                                 [ div [ class "flex items-center gap-1" ]

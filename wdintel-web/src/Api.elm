@@ -1063,6 +1063,18 @@ sigint_list_callsigns toMsg req =
         }
 
 
+sigint_list_callsigns_csv :
+    (Result ApiError Bytes -> msg)
+    -> ListCallsignsReq
+    -> Cmd msg
+sigint_list_callsigns_csv toMsg req =
+    Http.post
+        { url = "/api/sigint/callsigns/csv"
+        , body = Http.jsonBody (listCallsignsReqEncoder req)
+        , expect = Http.expectBytesResponse toMsg (resolve Ok)
+        }
+
+
 sigint_callsigns_with_units_from_inbox :
     (Result ApiError GetCallsignsWithUnitsFromInboxRsp -> msg)
     -> GetCallsignsWithUnitsFromInboxReq
