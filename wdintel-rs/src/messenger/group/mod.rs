@@ -361,8 +361,6 @@ where
             ignore_operativny: NotSet,
             is_secret: NotSet,
             deleted: NotSet,
-            short_note: Set(None),
-            long_note: Set(None),
         }
         .insert(db)
         .await
