@@ -186,7 +186,7 @@ pub struct OneoffRadioPerDayPerAbonentPs {
 #[derive(clap::Parser, Debug)]
 pub struct OneoffExportSigintCommentsPs {
     #[arg(long)]
-    pub organism_name: String,
+    pub organisms: Vec<String>,
     #[arg(long)]
     pub from: String,
     #[arg(long)]
@@ -200,7 +200,13 @@ pub struct OneoffImportSigintCommentsPs {
     #[arg(long)]
     pub input: String,
     #[arg(long)]
-    pub target_login: String,
+    pub organism_login_mapping: Option<String>,
+    #[arg(long)]
+    pub dry_run: bool,
+    #[arg(long)]
+    pub excluded_organisms: Vec<String>,
+    #[arg(long)]
+    pub excluded_logins: Vec<String>,
 }
 
 #[derive(clap::Parser, Debug)]
