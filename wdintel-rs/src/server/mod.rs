@@ -578,6 +578,7 @@ pub async fn main_server(
             .service(crate::palitra::delete_palitra)
             .service(crate::palitra::upload_palitra_points)
             .service(crate::palitra::analyze_kmz)
+            .service(crate::alpine::convert_alpinequest_file)
             .service(
                 web::scope(get_assets_url())
                     .route("/{filename:.*}", web::get().to(crate::storage::serve_assets)))
