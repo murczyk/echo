@@ -139,6 +139,12 @@ just builder=jvln server=<server> deploy-signal-cli-native
 just builder=echo-gpu server=<server> deploy
 ```
 
+## Instal AI
+
+```
+just server=$server deploy-echo-ai
+```
+
 ## Signal
 
 - after deploy, scan QR code
