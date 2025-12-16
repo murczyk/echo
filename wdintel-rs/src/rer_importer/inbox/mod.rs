@@ -130,6 +130,7 @@ async fn messages_by_id(
 
     let query_tags = sigint_inbox_item_tag::Entity::find()
         .select_only()
+        .join(JoinType::LeftJoin, sigint_inbox_item_tag::Relation::Login.def())
         .expr_as(
             Expr::cust_with_exprs(
                 "array_agg($1) filter (where $2 >= $3)",
@@ -150,7 +151,43 @@ async fn messages_by_id(
             "tags",
         )
         .expr_as(
-            Expr::cust("jsonb_agg(sigint_inbox_item_tag.*)"),
+            Expr::cust_with_exprs(
+                "jsonb_agg(jsonb_build_object('id', $1, 'sigint_inbox_item_id', $2, 'tag_id', $3, 'confidence', $4, 'login', $5, 'model', $6, 'organism_id', $7))",
+                [
+                    Expr::col((
+                        sigint_inbox_item_tag::Entity,
+                        sigint_inbox_item_tag::Column::Id,
+                    ))
+                    .into_simple_expr(),
+                    Expr::col((
+                        sigint_inbox_item_tag::Entity,
+                        sigint_inbox_item_tag::Column::SigintInboxItemId,
+                    ))
+                    .into_simple_expr(),
+                    Expr::col((
+                        sigint_inbox_item_tag::Entity,
+                        sigint_inbox_item_tag::Column::TagId,
+                    ))
+                    .into_simple_expr(),
+                    Expr::col((
+                        sigint_inbox_item_tag::Entity,
+                        sigint_inbox_item_tag::Column::Confidence,
+                    ))
+                    .into_simple_expr(),
+                    Expr::col((
+                        sigint_inbox_item_tag::Entity,
+                        sigint_inbox_item_tag::Column::Login,
+                    ))
+                    .into_simple_expr(),
+                    Expr::col((
+                        sigint_inbox_item_tag::Entity,
+                        sigint_inbox_item_tag::Column::Model,
+                    ))
+                    .into_simple_expr(),
+                    Expr::col((login::Entity, login::Column::OrganismId))
+                        .into_simple_expr(),
+                ],
+            ),
             "inbox_tags",
         )
         .filter(

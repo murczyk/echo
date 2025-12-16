@@ -47,8 +47,8 @@ import Shared
 import Shared.Components.Badges exposing (badgeNotSelectedHtml, badgeSelectedCloseCounter, badgeSelectedHtml)
 import Shared.Components.RerMessage exposing (model0)
 import Shared.Components.Spinner
-import Shared.Components.Toggle as Toggle
 import Shared.Components.Toast
+import Shared.Components.Toggle as Toggle
 import Shared.Components.Tooltip as Tooltip
 import Shared.Model exposing (isDarkMode)
 import Task
@@ -190,6 +190,7 @@ type alias Model =
     , unreadIds : List Int
     , unfoldSettings : Bool
     , highlightSignalsEnabled : Bool
+    , onlyMyUnitTagsEnabled : Bool
     , datasources : List ( Int, B.Datasource )
     , tags : List ( Int, B.Tag )
     , edited : Dict Int Shared.Components.RerMessage.Edited
@@ -233,6 +234,7 @@ init id_ ms =
       , dtFromPosix = Nothing
       , loadingInboxMessages = True
       , highlightSignalsEnabled = False
+      , onlyMyUnitTagsEnabled = False
       , groupsSelected = ms |> andThen .groupsSelected |> def []
       , sendersSelect =
             { state = Select.initState (Select.selectIdentifier "selectSenders")
@@ -1022,6 +1024,11 @@ updateFilters msg model =
         ToggleHighlightSignals ->
             ( { model | highlightSignalsEnabled = not model.highlightSignalsEnabled }
             , E.getCurrentTime LoadInitialStatsNow
+            )
+
+        ToggleOnlyMyUnitTags ->
+            ( { model | onlyMyUnitTagsEnabled = not model.onlyMyUnitTagsEnabled }
+            , E.none
             )
 
         SelectSendersMsg imsg ->
@@ -2125,6 +2132,7 @@ update shared user msg model =
                             , copied = copied
                             , isMsgVisible = model.isMsgVisible
                             , groupInfos = model.groupInfos
+                            , onlyMyUnitTagsEnabled = model.onlyMyUnitTagsEnabled
                             }
 
                         ( innerModel_, innerCmd_, updatedMessage_ ) =
@@ -2476,6 +2484,7 @@ waterfallDiv user isDarkMode duplicates datasources serverInfo masterUnits model
                                             , copied = copied
                                             , isMsgVisible = model.isMsgVisible
                                             , groupInfos = model.groupInfos
+                                            , onlyMyUnitTagsEnabled = model.onlyMyUnitTagsEnabled
                                             }
                                     in
                                     ( String.fromInt msgModel.id
@@ -2876,6 +2885,7 @@ messageTab ps shared model =
                                                 ]
                                             ]
                                         ]
+
                                 additionalSettingsBlock =
                                     let
                                         highlightToggle =
@@ -2884,12 +2894,21 @@ messageTab ps shared model =
                                                 , label = "підсвічувати сигнали"
                                                 , id = "highlight-signals-" ++ model.id
                                                 }
+
+                                        onlyMyUnitTagsToggle =
+                                            Toggle.new
+                                                { onToggle = FiltersMsg ToggleOnlyMyUnitTags
+                                                , label = "лише теги мого підрозділу"
+                                                , id = "only-my-unit-tags-" ++ model.id
+                                                }
                                     in
                                     div
                                         [ class "mt-3" ]
                                         [ p [ class "fw-bold" ] [ text "додатково" ]
-                                        , div [ style "padding-left" "110px", class "mt-2 flex" ]
-                                            [ Toggle.view model.highlightSignalsEnabled highlightToggle ]
+                                        , div [ style "padding-left" "110px", class "mt-2 flex flex-col gap-2" ]
+                                            [ Toggle.view model.highlightSignalsEnabled highlightToggle
+                                            , Toggle.view model.onlyMyUnitTagsEnabled onlyMyUnitTagsToggle
+                                            ]
                                         ]
                             in
                             [ div [ style "margin-bottom" "12px" ]
