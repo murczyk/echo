@@ -45,6 +45,54 @@ pub enum CallsignTableType {
     AbsentMainStation,
 }
 
+pub async fn bl_etalonka_report_networks_data(
+    dbx: &DatabaseConnection,
+    user_login: &str,
+    req: &EtalonkaJimForksReq,
+    trace_id: Uuid,
+) -> Result<EtalonkaData, AppError> {
+    let groups =
+        crate::messenger::group::get_identity_sigint_groups(dbx, user_login)
+            .await
+            .c(h!())?;
+    let networks_data = load_networks(dbx, req).await.context(h!())?;
+
+    Ok(collect_etalonka_data(
+        dbx,
+        user_login,
+        groups,
+        networks_data,
+        &req.etalonka_type,
+        trace_id,
+    )
+    .await
+    .c(h!())?)
+}
+
+pub async fn bl_etalonka_report_networks_batch_id_data(
+    dbx: &DatabaseConnection,
+    user_login: &str,
+    req: &EtalonkaNetworkBatchReq,
+    trace_id: Uuid,
+) -> Result<EtalonkaData, AppError> {
+    let groups =
+        crate::messenger::group::get_identity_sigint_groups(dbx, user_login)
+            .await
+            .c(h!())?;
+    let networks_data = load_networks_by_id(dbx, req).await.context(h!())?;
+
+    Ok(collect_etalonka_data(
+        dbx,
+        user_login,
+        groups,
+        networks_data,
+        &req.etalonka_type,
+        trace_id,
+    )
+    .await
+    .c(h!())?)
+}
+
 /// Generate etalonka report for filtered set of networks
 #[post("/api/sigint/etalonka/report-networks")]
 pub async fn report_networks(
@@ -61,31 +109,16 @@ pub async fn report_networks(
         .await
         .c(h!())?;
     cleanup_old_reports_nofail(&env.dbx, &env.config).await;
-    let groups = crate::messenger::group::get_identity_sigint_groups_noimport(
-        &env.dbx,
-        &user,
-        &env.config,
-    )
-    .await
-    .c(h!())?;
-
-    let networks_data: HashMap<String, Vec<NetworkEtalonkaResult>> =
-        load_networks(&env.dbx, &req).await.context(h!())?;
+    let req = req.into_inner();
     info!("[trace_id={trace_id}] Etalon Networks report collected network data, querying report data...");
 
     let filename =
         format!("report_{}.docx", Utc::now().format("%Y-%m-%d-%H-%M-%S-%3f"));
 
-    let etalonka_data = collect_etalonka_data(
-        &env.dbx,
-        &user_login,
-        groups,
-        networks_data,
-        &req.etalonka_type,
-        trace_id,
-    )
-    .await
-    .context(h!())?;
+    let etalonka_data =
+        bl_etalonka_report_networks_data(&env.dbx, &user_login, &req, trace_id)
+            .await
+            .context(h!())?;
     info!("[trace_id={trace_id}] Etalon Networks report: collected report data, building a report...");
 
     let outpath = generate_networks_docx_report(
@@ -127,28 +160,16 @@ pub async fn report_networks_batch_id(
         .await
         .c(h!())?;
     cleanup_old_reports_nofail(&env.dbx, &env.config).await;
-    let groups = crate::messenger::group::get_identity_sigint_groups_noimport(
-        &env.dbx,
-        &user,
-        &env.config,
-    )
-    .await
-    .c(h!())?;
-
-    let networks_data: HashMap<String, Vec<NetworkEtalonkaResult>> =
-        load_networks_by_id(&env.dbx, &req).await.context(h!())?;
-
     info!("[trace_id={trace_id}] Etalon Networks by IDs report: collected network data, querying report data...");
+    let req = req.into_inner();
 
     let filename =
         format!("report_{}.docx", Utc::now().format("%Y-%m-%d-%H-%M-%S-%3f"));
 
-    let etalonka_data = collect_etalonka_data(
+    let etalonka_data = bl_etalonka_report_networks_batch_id_data(
         &env.dbx,
         &user_login,
-        groups,
-        networks_data,
-        &req.etalonka_type,
+        &req,
         trace_id,
     )
     .await
@@ -1743,5 +1764,235 @@ where
         crate::utils::uniq_via_btreeset(&vec).join(", ")
     } else {
         String::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::entities::*;
+    use crate::functest::tests::*;
+    use crate::sigint::network::types::ListNetworksReq;
+    use chrono::Utc;
+    use sea_orm::ActiveValue::Set;
+    use sea_orm::*;
+    use serde_json::json;
+    use serial_test::serial;
+
+    #[serial]
+    #[tokio::test]
+    async fn test_bl_etalonka_report_networks_data_includes_callsigns() {
+        let env = cleanup().await.unwrap();
+        let now = Utc::now().naive_utc();
+
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let datasource_group =
+            find_test_datasource_group(&env.dbx).await.unwrap();
+        let signal_group = find_test_signal_group(&env.dbx).await.unwrap();
+        let aor = find_test_aor(&env.dbx).await.unwrap();
+
+        let unit = sigint_unit::ActiveModel {
+            company: Set("C".to_string()),
+            regiment: Set("R".to_string()),
+            division: Set("D".to_string()),
+            army: Set("A".to_string()),
+            active: Set(true),
+            deleted: Set(false),
+            created_at: Set(now),
+            created_by: Set(login.login.clone()),
+            name: Set("TestUnit".to_string()),
+            comment: Set("".to_string()),
+            battalion: Set("B".to_string()),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        let network = sigint_network::ActiveModel {
+            name: Set("TestNetwork".to_string()),
+            location: Set("TestLocation".to_string()),
+            deleted: Set(false),
+            created_at: Set(now),
+            updated_by: Set(None),
+            updated_at: Set(now),
+            radio_station: Set(None),
+            purpose: Set(Some("purpose".to_string())),
+            operation_mode: Set(None),
+            operation_type: Set(None),
+            operation_period: Set(None),
+            merged_to: Set(None),
+            active_from: Set(Some(now)),
+            active_to: Set(None),
+            sigint_origin_id: Set(None),
+            original_id: Set(None),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        sigint_network_unit::ActiveModel {
+            network_id: Set(network.id),
+            unit_id: Set(unit.id),
+            created_at: Set(now),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        sigint_network_aor::ActiveModel {
+            network_id: Set(network.id),
+            aor_id: Set(aor.id),
+            created_at: Set(now),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        let freq = "123.4500".to_string();
+
+        sigint_network_freq::ActiveModel {
+            network_id: Set(network.id),
+            freq: Set(freq.clone()),
+            created_at: Set(now),
+            kind: Set(sea_orm_active_enums::SigintNetworkKind::Vhf),
+            modulation_id: Set(None),
+            active_from: Set(now - chrono::Duration::days(1)),
+            active_to: Set(None),
+            sigint_origin_id: Set(None),
+            deleted: Set(false),
+            original_id: Set(None),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        sigint_callsign::ActiveModel {
+            callsign: Set("Alpha".to_string()),
+            position: Set("pos".to_string()),
+            comment: Set("comment".to_string()),
+            unit_id: Set(unit.id),
+            deleted: Set(false),
+            created_at: Set(now),
+            source_id: Set(None),
+            developing: Set(false),
+            radio_freq: Set(freq.clone()),
+            sigint_origin_id: Set(None),
+            original_id: Set(None),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        let message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some("test message".to_string())),
+                created_at: Set(now),
+                timestamp: Set(Some(now)),
+                sender: Set(Some("sender".to_string())),
+                message_uid: Set(Some("uid-1".to_string())),
+                datasource_group_id: Set(Some(datasource_group.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let inbox_item = mk_sigint_inbox_item(
+            &env.dbx,
+            sigint_inbox_item::ActiveModel {
+                id: Set(message.id),
+                freq: Set(Some(freq.clone())),
+                callsigns: Set(Some(json!(["Alpha"]))),
+                date: Set(Some(now.date().to_string())),
+                time: Set(Some(now.time().format("%H:%M:%S").to_string())),
+                parsed_unit_v2: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        signal_message_group::ActiveModel {
+            signal_message_id: Set(message.id),
+            group_master_key: Set(Some(signal_group.master_key.clone())),
+            sender: Set(Some("sender".to_string())),
+            message_uid: Set(Some("uid-1".to_string())),
+            datasource_group_id: Set(Some(datasource_group.id)),
+            created_at: Set(now),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        let datetime = inbox_item.datetime.expect("expected datetime");
+        let ts = datetime.and_utc().timestamp_millis();
+
+        let req = EtalonkaJimForksReq {
+            req: ListNetworksReq {
+                filter_freq: None,
+                filter_unit: None,
+                show_only_further_inverstigation: None,
+                show_inactive: None,
+                show_only_deleted: None,
+                aor_ids: None,
+                ids: None,
+                limit: None,
+                sort_by: None,
+            },
+            etalonka_type: EtalonkaReportType::ExtendedReport(
+                EtalonkaExtendedSettings {
+                    since_date_inclusive_ms: ts - 1_000,
+                    till_date_inclusive_ms: Some(ts + 1_000),
+                    active_freqs_only: true,
+                    include_unit_callsigns: false,
+                    include_sigint_signs: false,
+                    include_confirmation: false,
+                    include_pelengs_map: false,
+                },
+            ),
+        };
+
+        let data = bl_etalonka_report_networks_data(
+            &env.dbx,
+            &login.login,
+            &req,
+            Uuid::new_v4(),
+        )
+        .await
+        .unwrap();
+
+        assert!(data.groups.contains(&signal_group.master_key));
+
+        let entry_key = EtalonkaEntryKey {
+            unit_name: "TestUnit".to_string(),
+            network_id: network.id,
+        };
+        let entry = data.entries.get(&entry_key).expect("expected entry");
+
+        let callsign = entry
+            .callsigns_detailed
+            .iter()
+            .find(|c| c.callsign == "Alpha")
+            .expect("expected callsign Alpha");
+        assert_eq!(callsign.message_count, 1);
+        assert!(callsign.known_callsigns.is_some());
+        assert_eq!(callsign.freqs.as_ref().unwrap(), &vec![freq.clone()]);
+        assert!(callsign
+            .network_names
+            .as_ref()
+            .unwrap()
+            .contains(&format!("р/м {}", network.name)));
+
+        assert_eq!(entry.freqs.len(), 1);
+        assert_eq!(entry.freqs[0].freq, freq);
+        assert_eq!(entry.freqs[0].message_count, 1);
     }
 }

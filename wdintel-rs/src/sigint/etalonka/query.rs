@@ -8,7 +8,6 @@ use crate::sigint::signal::types::Signal;
 use crate::types::*;
 use crate::utils::orm::ArrayColumnOps;
 use crate::utils::*;
-use actix_web::web::Json;
 use chrono::prelude::*;
 use futures::stream::TryStreamExt;
 use log::*;
@@ -1331,7 +1330,7 @@ async fn get_map_image(
 
 pub async fn load_networks(
     db: &DatabaseConnection,
-    req: &Json<EtalonkaJimForksReq>,
+    req: &EtalonkaJimForksReq,
 ) -> Result<HashMap<String, Vec<NetworkEtalonkaResult>>, AppError> {
     let mut networks = sigint_network::Entity::find()
         .join_as(
@@ -1463,7 +1462,7 @@ pub async fn load_networks(
 
 pub async fn load_networks_by_id(
     db: &DatabaseConnection,
-    req: &Json<EtalonkaNetworkBatchReq>,
+    req: &EtalonkaNetworkBatchReq,
 ) -> Result<HashMap<String, Vec<NetworkEtalonkaResult>>, AppError> {
     let mut networks = sigint_network::Entity::find()
         .join_as(
