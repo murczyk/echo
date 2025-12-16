@@ -179,9 +179,9 @@ mod m20251129_124751_sigint_inbox_item_tags_unique;
 mod m20251204_070600_tags_keywords;
 mod m20251205_121716_tag_suggestion_worker_queue;
 mod m20251206_234500_add_signal_message_indexes;
+mod m20251215_110739_tag_keywords_seed_data;
 mod m20251215_130030_sigint_inbox_tag_multilabel;
 mod m20251215_143321_drop_signal_group_notes;
-mod m20251215_110739_tag_keywords_seed_data;
 
 pub struct Migrator;
 

@@ -659,7 +659,9 @@ pub fn build_callsigns_queries(
                 .equals((DatasourceGroup::Table, DatasourceGroup::Id)),
         )
         .join(JoinType::InnerJoin, nf.clone(), join_condition)
-        .and_where(datasource::Column::GroupMasterKey.eq_any(groups.clone()))
+        .and_where(
+            datasource_group::Column::GroupMasterKey.eq_any(groups.clone()),
+        )
         .and_where(
             Expr::col((SignalMessage::Table, SignalMessage::Deleted)).eq(false),
         );
