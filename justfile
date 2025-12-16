@@ -735,9 +735,9 @@ deploy-echo-ai:
     . deploy/utils.sh
     ensure_nonempty "server" "{{ server }}"
     just ai-sync-from-cloud
-    [ -f target/debian/echo-ai_0.1.0-1_amd64.deb ] || cargo deb -p echo-ai --no-build
-    rsync -t --progress target/debian/echo-ai_0.1.0-1_amd64.deb {{ server }}:/var/tmp/
-    ssh {{ server }} 'sudo apt-get -y install /var/tmp/echo-ai_0.1.0-1_amd64.deb'
+    [ -f target/debian/echo-ai_0.1.1-1_amd64.deb ] || cargo deb -p echo-ai --no-build
+    rsync -t --progress target/debian/echo-ai_0.1.1-1_amd64.deb {{ server }}:/var/tmp/
+    ssh {{ server }} 'sudo apt-get -y install /var/tmp/echo-ai_0.1.1-1_amd64.deb && sudo systemctl restart wdintel-py'
 
 ziggy-echo-build-local builder="echo-build-local" server="echo-staging" branch="main":
     #!/bin/bash

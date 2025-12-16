@@ -16,18 +16,20 @@ label_dict = {
     5: "втрати",
     6: "іфо",
     7: "палітра",
-    8: "мораль"
+    8: "мораль",
+    9: "зіткнення"
 }
-label_thresholds = {
-    "переміщення": 0.667,
+label_pred_thresholds = {
+    "переміщення": 0.672,
     "бпла": 0.424,
-    "звʼязок": 0.283,
-    "забезп": 0.414,
-    "арта": 0.697,
-    "втрати": 0.364,
-    "іфо": 0.152,
-    "палітра": 0.071,
-    "мораль": 0.152
+    "звʼязок": 0.280,
+    "забезп": 0.413,
+    "арта": 0.680,
+    "втрати": 0.350,
+    "іфо": 0.148,
+    "палітра": 0.068,
+    "мораль": 0.125,
+    "зіткнення": 0.183
 }
 label_ids = list(label_dict.keys())
 
@@ -137,6 +139,8 @@ def train_supervised(args):
                 # ws=args.ws,
                 autotuneValidationFile=test_csv,
                 autotuneMetric=args.autotuneMetric,
+                autotuneDuration=args.autotuneDuration,
+                autotunePredictions=args.autotunePredictions,
                 pretrainedVectors=args.pretrainedVectors,
                 wordNgrams=args.wordNgrams,
                 minCount=args.minCount,
@@ -192,7 +196,7 @@ def test_batch(examples, label_index, model):
     all_probs[mask] = 1.0 - all_probs[mask]
 
     label_name = label_dict[label_index]
-    threshold = label_thresholds[label_name]
+    threshold = label_pred_thresholds[label_name]
     
     y_scores = all_probs
     y_pred = np.where(y_scores >= threshold, 1, 0)
@@ -202,7 +206,7 @@ def test_batch(examples, label_index, model):
         'y_pred': y_pred,
     }
 
-def test_models(splits: list[DatasetDict], models):
+def test_models(splits: list[DatasetDict], models, target):
     results = []
     plt.clf()
     plt.figure(figsize=(12, 10))
@@ -214,8 +218,8 @@ def test_models(splits: list[DatasetDict], models):
     for label_index, label_name in label_dict.items():
         split = splits[label_index]
         model = models[label_index]
-        print(f'testing model {label_name}')
-        res = split['test'].map(lambda examples: test_batch(examples, label_index, model), load_from_cache_file=False, batched=True)
+        print(f'testing model {label_name} on {target}')
+        res = split[target].map(lambda examples: test_batch(examples, label_index, model), load_from_cache_file=False, batched=True)
         res = res.with_format('numpy')
         results.append(res)
 
@@ -232,9 +236,9 @@ def test_models(splits: list[DatasetDict], models):
     plt.grid(True)
     plt.xlabel("Recall")
     plt.ylabel("Precision")
-    plt.title(f"Precision-Recall Curves for {num_labels} FastText Models (test)")
+    plt.title(f"Precision-Recall Curves for {num_labels} FastText Models ({target})")
     plt.legend(loc="lower left")
-    plt.savefig(f'Precision–Recall.png')
+    plt.savefig(f'Precision-Recall-{target}.png')
     plt.clf()
     
 
@@ -250,31 +254,14 @@ def test_models(splits: list[DatasetDict], models):
     plt.grid(True)
     plt.xlabel("Recall")
     plt.ylabel("Threshold")
-    plt.title(f"Threshold-Recall Curves for {num_labels} FastText Models (test)")
+    plt.title(f"Threshold-Recall Curves for {num_labels} FastText Models ({target})")
     plt.legend(loc="lower left")
-    plt.savefig(f'Threshold–Recall.png')
+    plt.savefig(f'Threshold-Recall-{target}.png')
     plt.clf()
 
     return results
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--cpus', type=int)
-    parser.add_argument('--model', type=str, default='skipgram')
-    parser.add_argument('--lr', type=float, default=0.05)
-    parser.add_argument('--ws', type=int, default=5)
-    parser.add_argument('--dim', type=int, default=100)
-    parser.add_argument('--epoch', type=int, default=20)
-    parser.add_argument('--minCount', type=int, default=1)
-    parser.add_argument('--wordNgrams', type=int, default=1)
-    parser.add_argument('--verbose', type=int, default=3)
-    parser.add_argument('--autotune', action='store_true', default=False)
-    parser.add_argument('--autotuneMetric', type=str, default='precisionAtRecall:80')
-    parser.add_argument('--corpus', type=str, default='corpus.txt')
-    parser.add_argument('--pretrainedVectors', type=str, default='pretrained.vec')
-    parser.add_argument('datafile', nargs='+')
-    args = parser.parse_args()
-
+def main(args):
     features = Features({
         'text': Value('string'),
         'labels': Sequence(ClassLabel(names=list(label_dict.values()))),
@@ -304,7 +291,26 @@ def main():
     dataset = dataset.remove_columns('label_count')
     splits = generate_splits(args, dataset)
     models = train_supervised(args)
-    test_models(splits, models)
+    test_models(splits, models, 'test')
+    test_models(splits, models, 'train')
 
 if __name__ == '__main__':
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--cpus', type=int)
+    parser.add_argument('--model', type=str, default='skipgram')
+    parser.add_argument('--lr', type=float, default=0.05)
+    parser.add_argument('--ws', type=int, default=5)
+    parser.add_argument('--dim', type=int, default=100)
+    parser.add_argument('--epoch', type=int, default=20)
+    parser.add_argument('--minCount', type=int, default=1)
+    parser.add_argument('--wordNgrams', type=int, default=1)
+    parser.add_argument('--verbose', type=int, default=3)
+    parser.add_argument('--autotune', action='store_true', default=False)
+    parser.add_argument('--autotunePredictions',type=int, default=2)
+    parser.add_argument('--autotuneMetric', type=str, default='precisionAtRecall:80:__label__1')
+    parser.add_argument('--corpus', type=str, default='corpus.txt')
+    parser.add_argument('--pretrainedVectors', type=str, default='pretrained.vec')
+    parser.add_argument('--autotuneDuration',type=int, default=600)
+    parser.add_argument('datafile', nargs='+')
+    args = parser.parse_args()
+    main(args)
