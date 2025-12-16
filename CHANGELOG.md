@@ -25,7 +25,7 @@
 	  - `just server=$server setup-py`
 	  - `sudo wdintel-rs --mode=live oneoff-fill-sigint-inbox-item-tags` для переносу тегів повідомлень в окрему табличку
 	  - `sudo wdintel-rs --mode=live oneoff-suggest-inbox-message-tags --start "2025-12-01T00:00:00" --end "2025-12-15T00:00:00"` щоби заповнити заднім числом
-	- final deploy command: `for server in echo-luhansk; do just server=$server deploy-echo-ai; just server=$server deploy; just server=$server setup-py; ssh $server 'sudo wdintel-rs --mode=live oneoff-fill-sigint-inbox-item-tags'; ssh $server 'sudo wdintel-rs --mode=live oneoff-suggest-inbox-message-tags --start "2025-12-01T00:00:00" --end "2025-12-16T00:00:00"'; ssh $server 'sudo wdintel-rs --mode live oneoff-calculate-stats --start "2025-12-12T00:00:00" --end "2025-12-16T00:00:00"';  done`
+	- final deploy command: `for server in echo-luhansk; do just server=$server deploy-echo-ai; just server=$server deploy; just server=$server setup-py; ssh $server 'sudo wdintel-rs --mode=live oneoff-fill-sigint-inbox-item-tags'; ssh $server 'sudo wdintel-rs --mode=live oneoff-suggest-inbox-message-tags --start "2025-12-01T00:00:00" --end "2025-12-16T00:00:00"'; ssh $server 'sudo wdintel-rs --mode live oneoff-calculate-stats --start "2025-12-14T00:00:00" --end "2025-12-16T00:00:00"';  done`
 - [#1674](https://github.com/echoua/echo/issues/1674) Виводити інформацію для дебагу ECHO IM на сторінці `/admin/messanger`
 - [#1716](https://github.com/echoua/echo/issues/1716) 🐞 Звіт "Бабак". Виправили дублювання перехоплень з галочкою "лише коментарі мого підрозділу".
 
