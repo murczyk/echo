@@ -1208,17 +1208,10 @@ rightColumn ( messageId, message ) ps model =
                                                                 onlyMyUnitInboxTags
                                                                     |> List.map .tagId
                                                                     |> ListX.unique
-
-                                                            onlyMyUnitTags =
-                                                                ps.tags
-                                                                    |> List.filter
-                                                                        (\( tagId, _ ) ->
-                                                                            List.member tagId onlyMyUnitTagIds
-                                                                        )
                                                         in
                                                         ( Just onlyMyUnitTagIds
                                                         , Just onlyMyUnitInboxTags
-                                                        , onlyMyUnitTags
+                                                        , ps.tags
                                                         )
 
                                                     _ ->
