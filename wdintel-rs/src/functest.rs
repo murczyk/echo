@@ -120,6 +120,10 @@ pub mod tests {
             .exec(&env.dbx)
             .await
             .context(h!())?;
+        sigint_inbox_item_tag::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
         tag::Entity::delete_many()
             .exec(&env.dbx)
             .await
