@@ -573,9 +573,7 @@ fn dedup_babak_comment_values(
     value: Option<Value>,
     seen: &mut BTreeSet<BabakComment>,
 ) -> Option<Value> {
-    let Some(value) = value else {
-        return None;
-    };
+    let value = value?;
     let original = value.clone();
     let comments: Vec<BabakComment> = match serde_json::from_value(value) {
         Ok(items) => items,
