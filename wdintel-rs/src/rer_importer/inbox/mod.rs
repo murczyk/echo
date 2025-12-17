@@ -99,8 +99,19 @@ async fn messages_by_id(
         .await
         .context(h!())?;
 
+    let messages =
+        messages_by_id_bl(&login, &logins, &env, &req.message_ids).await?;
+    Ok(Json(MessageIdsRsp { messages }))
+}
+
+async fn messages_by_id_bl(
+    login: &str,
+    logins: &Vec<String>,
+    env: &Env,
+    message_ids: &[i64],
+) -> Result<Vec<(i64, InboxMessage)>, AppError> {
     let sigint_groups =
-        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
+        crate::messenger::group::get_identity_sigint_groups(&env.dbx, login)
             .await
             .c(h!())?;
     let mut messages = SignalMessage::find()
@@ -126,10 +137,11 @@ async fn messages_by_id(
     messages = messages
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(datasource_group::Column::GroupMasterKey.eq_any(sigint_groups))
-        .filter(signal_message::Column::Id.eq_any(req.message_ids.clone()));
+        .filter(signal_message::Column::Id.eq_any(message_ids.to_vec()));
 
     let query_tags = sigint_inbox_item_tag::Entity::find()
         .select_only()
+        .join(JoinType::LeftJoin, sigint_inbox_item_tag::Relation::Login.def())
         .expr_as(
             Expr::cust_with_exprs(
                 "array_agg($1) filter (where $2 >= $3)",
@@ -150,7 +162,43 @@ async fn messages_by_id(
             "tags",
         )
         .expr_as(
-            Expr::cust("jsonb_agg(sigint_inbox_item_tag.*)"),
+            Expr::cust_with_exprs(
+                "jsonb_agg(jsonb_build_object('id', $1, 'sigint_inbox_item_id', $2, 'tag_id', $3, 'confidence', $4, 'login', $5, 'model', $6, 'organism_id', $7))",
+                [
+                    Expr::col((
+                        sigint_inbox_item_tag::Entity,
+                        sigint_inbox_item_tag::Column::Id,
+                    ))
+                    .into_simple_expr(),
+                    Expr::col((
+                        sigint_inbox_item_tag::Entity,
+                        sigint_inbox_item_tag::Column::SigintInboxItemId,
+                    ))
+                    .into_simple_expr(),
+                    Expr::col((
+                        sigint_inbox_item_tag::Entity,
+                        sigint_inbox_item_tag::Column::TagId,
+                    ))
+                    .into_simple_expr(),
+                    Expr::col((
+                        sigint_inbox_item_tag::Entity,
+                        sigint_inbox_item_tag::Column::Confidence,
+                    ))
+                    .into_simple_expr(),
+                    Expr::col((
+                        sigint_inbox_item_tag::Entity,
+                        sigint_inbox_item_tag::Column::Login,
+                    ))
+                    .into_simple_expr(),
+                    Expr::col((
+                        sigint_inbox_item_tag::Entity,
+                        sigint_inbox_item_tag::Column::Model,
+                    ))
+                    .into_simple_expr(),
+                    Expr::col((login::Entity, login::Column::OrganismId))
+                        .into_simple_expr(),
+                ],
+            ),
             "inbox_tags",
         )
         .filter(
@@ -179,12 +227,11 @@ async fn messages_by_id(
     .await
     .context(h!())?;
     let req = InboxMessagesReq::default();
-    let env: &Env = &env;
     let messages =
-        aggregate_to_inbox_messages(&login, messages, &logins, &&req, &env)
+        aggregate_to_inbox_messages(login, messages, logins, &&req, &env)
             .await
             .context(h!())?;
-    Ok(Json(MessageIdsRsp { messages }))
+    Ok(messages)
 }
 
 #[post("/api/rer-importer/get-inbox")]
@@ -725,4 +772,208 @@ async fn get_freq_pelengs_summary(
     Ok(Json(FreqPelengsActivityRsp {
         freq_pelengs_summary: result,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::entities::{
+        datasource_group, login, organism, sigint_inbox_item,
+        sigint_inbox_item_tag, signal_message, signal_message_group, tag,
+    };
+    use crate::functest::tests::*;
+    use chrono::Utc;
+    use sea_orm::ActiveValue::Set;
+    use serde_json::json;
+    use serial_test::serial;
+    use std::sync::Arc;
+
+    async fn seed_message_with_tags(
+        env: &Arc<Env>,
+        datasource_group: &datasource_group::Model,
+        tag: &tag::Model,
+        tag_logins: &[login::Model],
+    ) -> Result<signal_message::Model, AppError> {
+        let now = Utc::now().naive_utc();
+        let uid = format!("uid-{}", now.and_utc().timestamp_millis());
+
+        let message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some("test message".to_string())),
+                created_at: Set(now),
+                timestamp: Set(Some(now)),
+                sender: Set(Some("sender".to_string())),
+                message_uid: Set(Some(uid.clone())),
+                datasource_group_id: Set(Some(datasource_group.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .context(h!())?;
+
+        signal_message_group::ActiveModel {
+            signal_message_id: Set(message.id),
+            group_master_key: Set(Some(
+                datasource_group.group_master_key.clone(),
+            )),
+            sender: Set(Some("sender".to_string())),
+            message_uid: Set(Some(uid)),
+            datasource_group_id: Set(Some(datasource_group.id)),
+            created_at: Set(now),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .context(h!())?;
+
+        mk_sigint_inbox_item(
+            &env.dbx,
+            sigint_inbox_item::ActiveModel {
+                id: Set(message.id),
+                freq: Set(Some("123.45".to_string())),
+                callsigns: Set(Some(json!(["Alpha"]))),
+                tags: Set(Some(json!([tag.id]))),
+                date: Set(Some(now.date().to_string())),
+                time: Set(Some(now.time().format("%H:%M:%S").to_string())),
+                reviewed: Set(Some(true)),
+                parsed_unit_v2: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .context(h!())?;
+
+        for login_model in tag_logins {
+            sigint_inbox_item_tag::ActiveModel {
+                sigint_inbox_item_id: Set(message.id),
+                tag_id: Set(tag.id),
+                confidence: Set(1.0),
+                login: Set(Some(login_model.login.clone())),
+                model: Set(None),
+                ..Default::default()
+            }
+            .insert(&env.dbx)
+            .await
+            .context(h!())?;
+        }
+
+        Ok(message)
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_messages_by_id_includes_organism_on_tags() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let tag = find_test_bpla_tag(&env.dbx).await.unwrap();
+        let datasource_group =
+            find_test_datasource_group(&env.dbx).await.unwrap();
+
+        let message = seed_message_with_tags(
+            &env,
+            &datasource_group,
+            &tag,
+            std::slice::from_ref(&login),
+        )
+        .await
+        .unwrap();
+
+        let logins = vec![login.login.clone()];
+        let messages =
+            messages_by_id_bl(&login.login, &logins, &env, &[message.id])
+                .await
+                .unwrap();
+
+        assert_eq!(messages.len(), 1);
+        let inbox_tags = messages[0]
+            .1
+            .inbox_tags
+            .as_ref()
+            .expect("inbox tags must be present");
+        let tag_entry = inbox_tags
+            .iter()
+            .find(|t| t.login == Some(login.login.clone()))
+            .expect("tag by login must be present");
+        assert_eq!(tag_entry.organism_id, login.organism_id);
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_get_inbox_messages_keeps_tag_organisms() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let tag = find_test_bpla_tag(&env.dbx).await.unwrap();
+        let datasource_group =
+            find_test_datasource_group(&env.dbx).await.unwrap();
+        let sigint_zone = find_test_sigint_zone(&env.dbx).await.unwrap();
+
+        let other_org = mk_organism(
+            &env.dbx,
+            organism::ActiveModel {
+                name: Set("OtherOrg".to_string()),
+                created_at: Set(Utc::now().naive_utc()),
+                roles: Set(json!(["Rer"])),
+                enabled: Set(true),
+                parent_id: Set(None),
+                deleted_permanently: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let other_login = mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                login: Set("OtherTester".to_string()),
+                organism_id: Set(Some(other_org.id)),
+                sigint_zone_id: Set(Some(sigint_zone.id)),
+                created_at: Set(Utc::now().naive_utc()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let _message = seed_message_with_tags(
+            &env,
+            &datasource_group,
+            &tag,
+            &[login.clone(), other_login.clone()],
+        )
+        .await
+        .unwrap();
+
+        let req = InboxMessagesReq {
+            nolimit: Some(true),
+            ..Default::default()
+        };
+        let logins = vec![login.login.clone()];
+        let messages = get_inbox_messages(&login.login, &logins, &env, &req)
+            .await
+            .unwrap();
+
+        assert_eq!(messages.len(), 1);
+        let inbox_tags = messages[0]
+            .1
+            .inbox_tags
+            .as_ref()
+            .expect("inbox tags must be present");
+
+        assert!(
+            inbox_tags
+                .iter()
+                .any(|t| t.login == Some(login.login.clone())
+                    && t.organism_id == login.organism_id),
+            "expected tag from primary login with organism id"
+        );
+        assert!(
+            inbox_tags
+                .iter()
+                .any(|t| t.login == Some(other_login.login.clone())
+                    && t.organism_id == Some(other_org.id)),
+            "expected tag from other login with its organism id"
+        );
+    }
 }
