@@ -111,7 +111,7 @@ async fn messages_by_id_bl(
     message_ids: &[i64],
 ) -> Result<Vec<(i64, InboxMessage)>, AppError> {
     let sigint_groups =
-        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
+        crate::messenger::group::get_identity_sigint_groups(&env.dbx, login)
             .await
             .c(h!())?;
     let mut messages = SignalMessage::find()
@@ -227,9 +227,8 @@ async fn messages_by_id_bl(
     .await
     .context(h!())?;
     let req = InboxMessagesReq::default();
-    let env: &Env = &env;
     let messages =
-        aggregate_to_inbox_messages(&login, messages, &logins, &&req, &env)
+        aggregate_to_inbox_messages(login, messages, logins, &&req, &env)
             .await
             .context(h!())?;
     Ok(messages)
@@ -831,7 +830,7 @@ mod tests {
             &env,
             &datasource_group,
             &tag,
-            &[login.clone()],
+            std::slice::from_ref(&login),
         )
         .await
         .unwrap();
