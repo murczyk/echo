@@ -407,6 +407,59 @@ async fn inbox_submit(
     }
 }
 
+async fn ensure_comment_save_access(
+    env: &Env,
+    login: &str,
+    sigint_groups: &[String],
+    message_id: i64,
+) -> Result<(), AppError> {
+    let message = SignalMessage::find_by_id(message_id)
+        .join(
+            JoinType::LeftJoin,
+            signal_message::Relation::SignalMessageGroup.def(),
+        )
+        .filter(signal_message::Column::Deleted.eq(false))
+        .filter(
+            signal_message_group::Column::GroupMasterKey
+                .eq_any(sigint_groups.to_vec()),
+        )
+        .one(&env.dbx)
+        .await
+        .c(h!())?;
+
+    if message.is_some() {
+        return Ok(());
+    }
+
+    let message_row = SignalMessage::find_by_id(message_id)
+        .one(&env.dbx)
+        .await
+        .c(h!())?;
+    let message_groups: Vec<Option<String>> =
+        signal_message_group::Entity::find()
+            .filter(
+                signal_message_group::Column::SignalMessageId.eq(message_id),
+            )
+            .all(&env.dbx)
+            .await
+            .c(h!())?
+            .into_iter()
+            .map(|row| row.group_master_key)
+            .collect();
+    let (message_exists, message_deleted, datasource_group_id) =
+        match message_row {
+            Some(row) => (true, Some(row.deleted), row.datasource_group_id),
+            None => (false, None, None),
+        };
+
+    warn!(
+        target: "not_found_details",
+        "comment-save not found login={login} message_id={message_id} message_exists={message_exists} message_deleted={message_deleted:?} datasource_group_id={datasource_group_id:?} message_groups={message_groups:?} user_groups={sigint_groups:?}",
+    );
+
+    Err(AppError::NotFound)
+}
+
 #[post("/api/rer-importer/comment-save")]
 async fn comment_save(
     user: actix_identity::Identity,
@@ -422,17 +475,8 @@ async fn comment_save(
             .await
             .c(h!())?;
 
-    let _ = SignalMessage::find_by_id(req.message_id)
-        .join(
-            JoinType::LeftJoin,
-            signal_message::Relation::DatasourceGroup.def(),
-        )
-        .filter(signal_message::Column::Deleted.eq(false))
-        .filter(datasource_group::Column::GroupMasterKey.eq_any(sigint_groups))
-        .one(&env.dbx)
-        .await
-        .c(h!())?
-        .ok_or(AppError::NotFound)?;
+    ensure_comment_save_access(&env, &login, &sigint_groups, req.message_id)
+        .await?;
 
     let txn = env.dbx.begin().await.c(h!())?;
     let message_ids =
