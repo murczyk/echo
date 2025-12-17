@@ -1,12 +1,17 @@
+use crate::delta::{bgtask_log, finish_bgtask};
+use crate::entities::{bgtask, bgtask_res};
 use crate::error::AppError;
 use crate::h;
 use crate::types::{Env, ShortContext};
 use actix_multipart::Multipart;
-use actix_web::{get, HttpRequest, HttpResponse};
+use actix_web::web::Json;
+use actix_web::get;
 use bytes::Bytes;
 use futures_util::StreamExt;
 use reqwest::header::CONTENT_TYPE;
 use reqwest::multipart::{Form, Part};
+use sea_orm::ActiveValue::{NotSet, Set};
+use sea_orm::ActiveModelTrait;
 use std::path::Path;
 
 struct UploadData {
@@ -27,29 +32,84 @@ struct ConversionResult {
 async fn convert_alpinequest_file(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
-    _http_req: HttpRequest,
     mut payload: Multipart,
-) -> Result<HttpResponse, AppError> {
+) -> Result<Json<i64>, AppError> {
     let login = user.id().c(h!())?;
     crate::users::has_role(&env.dbx, &login, "Rer")
         .await
         .c(h!())?;
     let converter_url = env.config.alpine_converter_url.clone().c(h!())?;
     let upload = read_payload(&mut payload).await.c(h!())?;
-    let result = call_converter(&env, &converter_url, &upload)
-        .await
-        .c(h!())?;
 
-    let b2_url = crate::messenger::media::store_file(
-        &env,
-        &result.body,
-        result.name.as_deref(),
-        result.content_type.as_deref(),
-    )
+    let loglines: Vec<String> = vec![];
+    let bgtask = bgtask::ActiveModel {
+        id: NotSet,
+        progress: Set(0),
+        loglines: Set(serde_json::to_value(loglines).c(h!())?),
+        running: Set(true),
+        finished_with_error: Set(None),
+    }
+    .insert(&env.dbx)
     .await
     .c(h!())?;
 
-    Ok(HttpResponse::Ok().json(b2_url))
+    let bgtask_id = bgtask.id;
+    let env_inner = env.get_ref().clone();
+    tokio::spawn(async move {
+        let dbx = env_inner.dbx.clone();
+        let res = async {
+            bgtask_log(
+                Some(bgtask_id),
+                "> starting alpine conversion",
+                &dbx,
+            )
+            .await
+            .c(h!())?;
+            let result = call_converter(&env_inner, &converter_url, &upload)
+                .await
+                .map_err(|e| AppError::AnyhowError { source: e })?;
+            bgtask_log(
+                Some(bgtask_id),
+                "> converter finished, uploading",
+                &dbx,
+            )
+            .await
+            .c(h!())?;
+            let res_url = crate::messenger::media::store_kmz_file(
+                &env_inner,
+                &result.body,
+                result.name.as_deref(),
+                result.content_type.as_deref(),
+            )
+            .await
+            .c(h!())?;
+            bgtask_log(
+                Some(bgtask_id),
+                &format!("> uploaded result: {res_url}"),
+                &dbx,
+            )
+            .await
+            .c(h!())?;
+            let res_row = bgtask_res::ActiveModel {
+                id: Set(bgtask_id),
+                res_json: Set(None),
+                res_bytes: Set(None),
+                res_url: Set(Some(res_url)),
+            };
+            res_row.insert(&dbx).await.c(h!())?;
+            bgtask_log(Some(bgtask_id), "> saved bgtask result", &dbx)
+                .await
+                .c(h!())?;
+            Ok::<(), AppError>(())
+        };
+        let res = res.await;
+        if let Err(ref e) = res {
+            println!("> alpine conversion failed: {e:?}");
+        }
+        let _ = finish_bgtask(Some(bgtask_id), &dbx, &res).await;
+    });
+
+    Ok(Json(bgtask_id))
 }
 
 async fn read_payload(payload: &mut Multipart) -> Result<UploadData, AppError> {
@@ -99,7 +159,7 @@ async fn read_payload(payload: &mut Multipart) -> Result<UploadData, AppError> {
         data.file_name = field
             .content_disposition()
             .and_then(|cd| cd.get_filename().map(|v| v.to_string()))
-            .or_else(|| Some(field_name));
+            .or(Some(field_name));
         data.content_type = field.content_type().map(|ct| ct.to_string());
     }
 

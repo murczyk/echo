@@ -25,7 +25,6 @@ pub struct Model {
     pub internal_timestamp: Option<i64>,
     pub seen: bool,
     pub client_id: Option<i32>,
-    pub deleted: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
