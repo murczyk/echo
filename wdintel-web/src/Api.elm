@@ -300,6 +300,22 @@ delta_kmz_to_geojson toMsg file =
         }
 
 
+alpine_convert :
+    (Result ApiError Bytes -> msg)
+    -> File
+    -> Cmd msg
+alpine_convert toMsg file =
+    Http.request
+        { method = "POST"
+        , headers = []
+        , url = "/api/alpine/convert"
+        , body = Http.multipartBody [ Http.filePart (File.name file) file ]
+        , expect = Http.expectBytesResponse toMsg (resolve Ok)
+        , timeout = Nothing
+        , tracker = Nothing
+        }
+
+
 kmz_to_fix :
     (Result ApiError Bytes -> msg)
     -> File
