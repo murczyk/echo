@@ -80,6 +80,7 @@ type alias ViewParams =
     , isMsgVisible : List Int
     , groupInfos : Dict String B.SignalGroupEntry
     , messageNetworkIds : List Int
+    , onlyMyUnitTagsEnabled : Bool
     }
 
 
@@ -355,8 +356,10 @@ hasUserTag tagId login message =
     inboxTagsFor message
         |> List.any
             (\t ->
-                t.tagId == tagId
-                    && t.login == Just login
+                t.tagId
+                    == tagId
+                    && t.login
+                    == Just login
                     && MaybeX.isNothing t.model
             )
 
@@ -446,21 +449,24 @@ update vps msg model =
 
         ToggleTag msgId tagId ->
             let
+                userHasTag =
+                    hasUserTag tagId vps.user.name (Tuple.second vps.message)
+
                 botPanel =
-                    if hasUserTag tagId vps.user.name (Tuple.second vps.message) && hasBotTag tagId (Tuple.second vps.message) then
+                    if userHasTag && hasBotTag tagId (Tuple.second vps.message) then
                         Just { messageId = msgId, tagId = tagId }
 
                     else
                         Nothing
 
                 updatedMessage =
-                    Shared.Components.RerMessage.toggleTag msgId tagId (Just vps.user.name) [ vps.message ]
+                    Shared.Components.RerMessage.toggleTag msgId tagId (Just vps.user.name) vps.user.organismId [ vps.message ]
                         |> List.head
                         |> Maybe.withDefault vps.message
             in
             ( { model | botTagAction = botPanel }
             , E.sendCmd <|
-                if Shared.Components.RerMessage.isTagSet msgId tagId [ vps.message ] then
+                if userHasTag then
                     Api.inbox_message_tags_rm (always NoOp) { messageId = msgId, tagId = tagId }
 
                 else
@@ -1181,13 +1187,44 @@ rightColumn ( messageId, message ) ps model =
                                 [ class "flex flex-col items-start gap-2 mt-2"
                                 , style "color" "var(--bs-secondary-color)"
                                 ]
-                              <|
+                             <|
                                 if not model.isDuplicate || model.isUnfolded then
+                                    let
+                                        ( tagIdsForRender, inboxTagsForRender, tagsForRender ) =
+                                            if ps.onlyMyUnitTagsEnabled then
+                                                case ( ps.user.organismId, message.inboxTags ) of
+                                                    ( Just organismId, Just inboxTags ) ->
+                                                        let
+                                                            onlyMyUnitInboxTags =
+                                                                inboxTags
+                                                                    |> List.filter
+                                                                        (\tag ->
+                                                                            tag.organismId
+                                                                                == Just organismId
+                                                                                && MaybeX.isNothing tag.model
+                                                                        )
+
+                                                            onlyMyUnitTagIds =
+                                                                onlyMyUnitInboxTags
+                                                                    |> List.map .tagId
+                                                                    |> ListX.unique
+                                                        in
+                                                        ( Just onlyMyUnitTagIds
+                                                        , Just onlyMyUnitInboxTags
+                                                        , ps.tags
+                                                        )
+
+                                                    _ ->
+                                                        ( message.tags, message.inboxTags, ps.tags )
+
+                                            else
+                                                ( message.tags, message.inboxTags, ps.tags )
+                                    in
                                     [ tagsBlock
-                                        message.tags
-                                        message.inboxTags
+                                        tagIdsForRender
+                                        inboxTagsForRender
                                         (ForSelf << ToggleTag model.id)
-                                        ps.tags
+                                        tagsForRender
                                     , case model.botTagAction of
                                         Just action ->
                                             if action.messageId == model.id then

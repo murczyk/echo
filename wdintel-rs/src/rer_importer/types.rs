@@ -71,6 +71,7 @@ pub struct InboxMessageTag {
     pub confidence: f64,
     pub login: Option<String>,
     pub model: Option<String>,
+    pub organism_id: Option<i64>,
 }
 
 #[derive(

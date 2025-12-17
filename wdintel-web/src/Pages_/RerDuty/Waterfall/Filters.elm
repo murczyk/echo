@@ -1,13 +1,13 @@
 module Pages_.RerDuty.Waterfall.Filters exposing (Filter, FilterMsg(..), createMenu, ensureAllSendersNamed, extractSendersIds, groupNameToIds, updateSelectItems)
 
 import Bindings as B
-import Shared.Components.RerMessage
-import Shared.Components.Toast
-import Pages_.RerDuty.Waterfall.Types exposing (..)
 import Core.Types exposing (ApiError)
 import Dict exposing (Dict)
+import Pages_.RerDuty.Waterfall.Types exposing (..)
 import Select
 import Set
+import Shared.Components.RerMessage
+import Shared.Components.Toast
 import Utils.Select as LeSelect
 import Utils.Utils exposing (getLabelOrDefault)
 
@@ -44,6 +44,7 @@ type alias Filter r =
             , selected : Float
             }
         , highlightSignalsEnabled : Bool
+        , onlyMyUnitTagsEnabled : Bool
     }
 
 
@@ -69,6 +70,7 @@ type FilterMsg
     | ToggleUnfoldSettings
     | SelectFilterFreqsRange (Select.Msg Float)
     | ToggleHighlightSignals
+    | ToggleOnlyMyUnitTags
 
 
 extractSendersIds : List String -> List String -> Dict String (Maybe B.SignalProfileEntry) -> List String -> List String

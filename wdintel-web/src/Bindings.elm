@@ -1002,6 +1002,7 @@ type alias InboxMessageTag =
     , confidence : Float
     , login : Maybe String
     , model : Maybe String
+    , organismId : Maybe Int
     }
 
 
@@ -1013,6 +1014,7 @@ inboxMessageTagEncoder struct =
         , ( "confidence", Json.Encode.float struct.confidence )
         , ( "login", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.login )
         , ( "model", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.model )
+        , ( "organism_id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.organismId )
         ]
 
 
@@ -6933,6 +6935,7 @@ inboxMessageTagDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "confidence" Json.Decode.float))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "login" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "model" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "organism_id" (Json.Decode.nullable Json.Decode.int)))
 
 
 inboxMessagesSortByDecoder : Json.Decode.Decoder InboxMessagesSortBy
