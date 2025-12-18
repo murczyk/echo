@@ -121,7 +121,6 @@ pub struct Config {
     pub pg_password: Option<String>,
     pub pg_dbname: Option<String>,
     pub cookie_session_secret: String,
-    pub storage_dir: String,
     pub signal_api_phone: String,
     pub whatsapp_api_phone: String,
     pub signal_import_group_name: String,
@@ -338,8 +337,8 @@ pub fn get_data_folder(mode: Mode) -> Result<PathBuf, AppError> {
     Ok(path)
 }
 
-pub fn get_assets_folder(config: &Config) -> String {
-    let path = PathBuf::from(&config.storage_dir).join("kmz_assets");
+pub fn get_assets_folder(_config: &Config) -> String {
+    let path = std::env::temp_dir().join("kmz_assets");
     std::fs::create_dir_all(&path)
         .context(path.display().to_string())
         .context(h!())

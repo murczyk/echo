@@ -7,6 +7,7 @@ use crate::kml::types::*;
 use crate::types::*;
 use crate::utils::multipart;
 use actix_multipart::Multipart;
+use actix_web::http::header;
 use actix_web::web::Json;
 use actix_web::HttpResponse;
 use actix_web::{get, post, HttpRequest};
@@ -14,6 +15,7 @@ use chrono::prelude::*;
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 use sea_orm::*;
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
@@ -23,6 +25,13 @@ pub mod login;
 pub mod types;
 
 const TEMPORARY_KML_FILE_EXTENSION: &str = "kml.tmp";
+
+#[derive(Debug, Serialize, Deserialize)]
+struct RadiosOutputKeys {
+    kmz_per_radio: String,
+    kmz_per_date: String,
+    csv: String,
+}
 
 pub fn oneoff_kmz_to_geojson(
     ps: &crate::OneoffKmzToGeojsonPs,
@@ -341,14 +350,11 @@ async fn radios_convert(
     .c(h!())?;
     let bgtask_id = bgtask.id;
 
-    let dbx2 = env.dbx.clone();
-    let config = env.config.clone();
+    let env_spawn = env.clone();
     tokio::spawn(async {
         let _tmp_dir = tmp_dir;
-        let config2 = config;
         let data_file2 = data_file;
-        let dbx3 = dbx2;
-        radios_convert_go(&config2, &data_file2, Some(bgtask), &dbx3)
+        radios_convert_go(env_spawn, &data_file2, Some(bgtask))
             .await
             .c(h!())?;
         Ok::<(), AppError>(())
@@ -358,49 +364,124 @@ async fn radios_convert(
 }
 
 pub async fn radios_convert_go(
-    config: &crate::config::Config,
+    env: actix_web::web::Data<Env>,
     data_file: &Path,
     m_bgtask: Option<bgtask::Model>,
-    dbx: &sea_orm::DatabaseConnection,
 ) -> Result<(), AppError> {
-    let res = radios_convert_go2(config, data_file, &m_bgtask, dbx).await;
-    finish_bgtask(m_bgtask.map(|x| x.id), dbx, &res)
+    let res = radios_convert_go2(env.clone(), data_file, &m_bgtask).await;
+    finish_bgtask(m_bgtask.map(|x| x.id), &env.dbx, &res)
         .await
         .c(h!())?;
     res
 }
 
 pub async fn radios_convert_go2(
-    config: &crate::config::Config,
+    env: actix_web::web::Data<Env>,
     data_file: &Path,
     m_bgtask: &Option<bgtask::Model>,
-    dbx: &sea_orm::DatabaseConnection,
 ) -> Result<(), AppError> {
     let bgtask_id = m_bgtask
         .clone()
         .map(|x| x.id)
         .ok_or("Must have bgtask id")?;
     let m_bgtask_id = Some(bgtask_id);
-    bgtask_log(m_bgtask_id, "Starting radios_convert_go2", dbx)
+    bgtask_log(m_bgtask_id, "Starting radios_convert_go2", &env.dbx)
         .await
         .c(h!())?;
 
-    crate::kml::oneoff_radio_per_day_per_abonent(
-        config,
+    let outputs = crate::kml::oneoff_radio_per_day_per_abonent(
+        &env.config,
         &crate::OneoffRadioPerDayPerAbonentPs {
             input: data_file.to_path_buf().to_string_lossy().to_string(),
         },
         m_bgtask_id,
-        Some(dbx),
+        Some(&env.dbx),
     )
     .await
     .c(h!())?;
+    store_radios_outputs(env.as_ref(), bgtask_id, &outputs)
+        .await
+        .c(h!())?;
 
-    bgtask_log(m_bgtask_id, "Finished radios_convert_go2", dbx)
+    bgtask_log(m_bgtask_id, "Finished radios_convert_go2", &env.dbx)
         .await
         .c(h!())?;
 
     Ok(())
+}
+
+async fn store_radios_outputs(
+    env: &Env,
+    bgtask_id: i64,
+    outputs: &crate::kml::RadioRenderOutputs,
+) -> Result<(), AppError> {
+    let kmz_per_radio_key = crate::messenger::media::store_kmz_file(
+        env,
+        &outputs.kmz_per_radio_bytes,
+        Some(outputs.kmz_per_radio_name.as_str()),
+        Some("application/vnd.google-earth.kmz"),
+    )
+    .await
+    .c(h!())?;
+    let kmz_per_date_key = crate::messenger::media::store_kmz_file(
+        env,
+        &outputs.kmz_per_date_bytes,
+        Some(outputs.kmz_per_date_name.as_str()),
+        Some("application/vnd.google-earth.kmz"),
+    )
+    .await
+    .c(h!())?;
+    let csv_key = crate::messenger::media::store_kmz_file(
+        env,
+        &outputs.csv_bytes,
+        Some(outputs.csv_name.as_str()),
+        Some("text/csv"),
+    )
+    .await
+    .c(h!())?;
+
+    let payload = json!(RadiosOutputKeys {
+        kmz_per_radio: kmz_per_radio_key,
+        kmz_per_date: kmz_per_date_key,
+        csv: csv_key,
+    });
+
+    if let Some(existing) = BgtaskRes::find_by_id(bgtask_id)
+        .one(&env.dbx)
+        .await
+        .c(h!())?
+    {
+        let mut model: bgtask_res::ActiveModel = existing.into();
+        model.res_json = Set(Some(payload));
+        model.res_bytes = Set(None);
+        model.update(&env.dbx).await.c(h!())?;
+    } else {
+        let model = bgtask_res::ActiveModel {
+            id: Set(bgtask_id),
+            res_json: Set(Some(payload)),
+            res_bytes: Set(None),
+        };
+        model.insert(&env.dbx).await.c(h!())?;
+    }
+    Ok(())
+}
+
+async fn load_radios_output_keys(
+    env: &Env,
+    bgtask_id: i64,
+) -> Result<Option<RadiosOutputKeys>, AppError> {
+    let Some(res) = BgtaskRes::find_by_id(bgtask_id)
+        .one(&env.dbx)
+        .await
+        .c(h!())?
+    else {
+        return Ok(None);
+    };
+    let Some(res_json) = res.res_json else {
+        return Ok(None);
+    };
+    let keys: RadiosOutputKeys = serde_json::from_value(res_json).c(h!())?;
+    Ok(Some(keys))
 }
 
 #[derive(
@@ -415,49 +496,89 @@ pub struct RadiosDownloadResultReq {
 #[post("/api/radios-download-result-per-radio")]
 pub async fn radios_download_result_per_radio(
     user: actix_identity::Identity,
-    http_req: HttpRequest,
+    _http_req: HttpRequest,
     env: actix_web::web::Data<Env>,
     req: Json<RadiosDownloadResultReq>,
 ) -> Result<HttpResponse, AppError> {
     crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Basic")
         .await
         .c(h!())?;
-    let res_file = PathBuf::from(env.config.storage_dir.clone())
-        .join(format!("radios-{}-radio.kmz", req.bgtask_id));
-    if !res_file.exists() {
-        return Err(AppError::NotFound);
-    }
-    let file = actix_files::NamedFile::open_async(&res_file)
+    if let Some(keys) =
+        load_radios_output_keys(env.as_ref(), req.bgtask_id).await?
+    {
+        let data = crate::messenger::media::fetch_media_bytes_by_key(
+            env.as_ref(),
+            &keys.kmz_per_radio,
+        )
         .await
         .c(h!())?;
-    Ok(file.into_response(&http_req))
+        let cd = header::ContentDisposition {
+            disposition: header::DispositionType::Attachment,
+            parameters: vec![header::DispositionParam::FilenameExt(
+                header::ExtendedValue {
+                    charset: header::Charset::Ext("UTF-8".into()),
+                    language_tag: None,
+                    value: format!("radios-{}-radio.kmz", req.bgtask_id)
+                        .into_bytes(),
+                },
+            )],
+        };
+        return Ok(HttpResponse::Ok()
+            .insert_header((
+                header::CONTENT_TYPE,
+                "application/vnd.google-earth.kmz",
+            ))
+            .insert_header(cd)
+            .body(data));
+    }
+    Err(AppError::NotFound)
 }
 
 #[post("/api/radios-download-result-per-date")]
 pub async fn radios_download_result_per_date(
     user: actix_identity::Identity,
-    http_req: HttpRequest,
+    _http_req: HttpRequest,
     env: actix_web::web::Data<Env>,
     req: Json<RadiosDownloadResultReq>,
 ) -> Result<HttpResponse, AppError> {
     crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Basic")
         .await
         .c(h!())?;
-    let res_file = PathBuf::from(env.config.storage_dir.clone())
-        .join(format!("radios-{}-date.kmz", req.bgtask_id));
-    if !res_file.exists() {
-        return Err(AppError::NotFound);
-    }
-    let file = actix_files::NamedFile::open_async(&res_file)
+    if let Some(keys) =
+        load_radios_output_keys(env.as_ref(), req.bgtask_id).await?
+    {
+        let data = crate::messenger::media::fetch_media_bytes_by_key(
+            env.as_ref(),
+            &keys.kmz_per_date,
+        )
         .await
         .c(h!())?;
-    Ok(file.into_response(&http_req))
+        let cd = header::ContentDisposition {
+            disposition: header::DispositionType::Attachment,
+            parameters: vec![header::DispositionParam::FilenameExt(
+                header::ExtendedValue {
+                    charset: header::Charset::Ext("UTF-8".into()),
+                    language_tag: None,
+                    value: format!("radios-{}-date.kmz", req.bgtask_id)
+                        .into_bytes(),
+                },
+            )],
+        };
+        return Ok(HttpResponse::Ok()
+            .insert_header((
+                header::CONTENT_TYPE,
+                "application/vnd.google-earth.kmz",
+            ))
+            .insert_header(cd)
+            .body(data));
+    }
+    Err(AppError::NotFound)
 }
 
 #[post("/api/radios-download-result-csv")]
 pub async fn radios_download_result_csv(
     user: actix_identity::Identity,
-    http_req: HttpRequest,
+    _http_req: HttpRequest,
     env: actix_web::web::Data<Env>,
     req: Json<RadiosDownloadResultReq>,
 ) -> Result<HttpResponse, AppError> {
@@ -468,16 +589,35 @@ pub async fn radios_download_result_csv(
         None => "".to_string(),
         Some(page) => format!("-page-{page}"),
     };
-    let res_file = PathBuf::from(env.config.storage_dir.clone())
-        .join(format!("radios-{}-radio{page_part}.csv", req.bgtask_id));
-    println!("> radios_download_result_csv res_file: {:?}", &res_file);
-    if !res_file.exists() {
-        return Err(AppError::NotFound);
-    }
-    let file = actix_files::NamedFile::open_async(&res_file)
+    if let Some(keys) =
+        load_radios_output_keys(env.as_ref(), req.bgtask_id).await?
+    {
+        let data = crate::messenger::media::fetch_media_bytes_by_key(
+            env.as_ref(),
+            &keys.csv,
+        )
         .await
         .c(h!())?;
-    Ok(file.into_response(&http_req))
+        let cd = header::ContentDisposition {
+            disposition: header::DispositionType::Attachment,
+            parameters: vec![header::DispositionParam::FilenameExt(
+                header::ExtendedValue {
+                    charset: header::Charset::Ext("UTF-8".into()),
+                    language_tag: None,
+                    value: format!(
+                        "radios-{}-radio{page_part}.csv",
+                        req.bgtask_id
+                    )
+                    .into_bytes(),
+                },
+            )],
+        };
+        return Ok(HttpResponse::Ok()
+            .insert_header((header::CONTENT_TYPE, "text/csv"))
+            .insert_header(cd)
+            .body(data));
+    }
+    Err(AppError::NotFound)
 }
 
 pub async fn bgtask_log(
@@ -559,15 +699,16 @@ pub async fn get_geojson(
         .c(h!())?
         .unwrap();
 
-    let geojson_file = PathBuf::from(env.config.storage_dir.clone())
-        .join(format!("enemy-units-{}.geojson", geojson.id));
-    if geojson_file.exists() {
-        let geojson = std::fs::read_to_string(&geojson_file)?;
-        let geojson: GeoJson = serde_json::from_str(&geojson).c(h!())?;
-        Ok(Json(geojson))
-    } else {
-        Err(AppError::NotFound)
+    let key = format!("enemy-units-{}.geojson", geojson.id);
+    let data =
+        crate::messenger::media::fetch_media_bytes_by_key(env.as_ref(), &key)
+            .await
+            .c(h!())?;
+    if data.is_empty() {
+        return Err(AppError::NotFound);
     }
+    let geojson: GeoJson = serde_json::from_slice(&data).c(h!())?;
+    Ok(Json(geojson))
 }
 
 #[get("/api/delta/kml/latest")]
@@ -641,6 +782,7 @@ pub async fn import_map(
     let bgtask_id = bgtask.id;
     let config = env.config.clone();
     let dbx = env.dbx.clone();
+    let env_clone = env.clone();
     let convert_id = convert.id;
 
     tokio::spawn(async move {
@@ -710,28 +852,14 @@ pub async fn import_map(
             .c(h!())?;
 
             let geojson_name = format!("enemy-units-{convert_id}.geojson");
-            let raw_kmz_output = PathBuf::from(config.storage_dir.clone())
-                .join(geojson_name.clone())
-                .with_extension("kmz");
-            std::fs::copy(&kmz_file, &raw_kmz_output)?;
 
             let output = tmp_dir.path().join(geojson_file);
             kmz_to_geojson_1(&doc_kml, &output).map_err(|e| -> AppError {
                 format!("convert error: {e:?}").into()
             })?;
 
-            // move geojson to storage_dir with name enemy-units-{{convert.id}}.geojson
-            let output2 = PathBuf::from(config.storage_dir.clone())
-                .join(geojson_name.clone());
-            bgtask_log(
-                Some(bgtask_id),
-                &format!("> copy to storage: {}", &output2.display()),
-                &dbx,
-            )
-            .await
-            .c(h!())?;
             let kmz_dir = output.parent().unwrap();
-            let geojson_id = PathBuf::from(geojson_name).with_extension("");
+            let geojson_id = PathBuf::from(&geojson_name).with_extension("");
             let processed_kml_path =
                 doc_kml.with_extension(TEMPORARY_KML_FILE_EXTENSION);
             let mut input = std::fs::read_to_string(&processed_kml_path)?;
@@ -754,11 +882,24 @@ pub async fn import_map(
                 input = input.replace(&old_tag[..], &new_tag[..]);
             }
             std::fs::write(target_path.with_extension("kml"), input)?;
-            let res = std::fs::copy(&output, &output2)
-                .map_err(|e| -> AppError {
-                    format!("error copying to storage: {e:?}").into()
-                })
-                .map(|_| ());
+            let geojson_bytes = std::fs::read(&output)?;
+            let geojson_key = crate::messenger::media::store_kmz_file(
+                env_clone.as_ref(),
+                &geojson_bytes,
+                Some(geojson_name.as_str()),
+                Some("application/geo+json"),
+            )
+            .await
+            .c(h!())?;
+            bgtask_log(
+                Some(bgtask_id),
+                &format!("> stored geojson to {geojson_key}"),
+                &dbx,
+            )
+            .await
+            .c(h!())?;
+
+            let res: Result<(), AppError> = Ok(());
 
             finish_bgtask(Some(bgtask_id), &dbx, &res).await.c(h!())?;
             Ok::<(), AppError>(())

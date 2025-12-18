@@ -20,7 +20,6 @@ rer_gdocs_document_id = ""
 rer_gdocs_port = 8090
 # terminal_mysql_url = "mysql://root:terminal@zptzr.alpines-banded.ts.net:3306/terminal"
 terminal_mysql_url = ""
-storage_dir = "/Users/kon/Downloads/storage"
 signal_api_phone = ""
 whatsapp_api_phone = ""
 signal_import_group_name = "Rer Import"

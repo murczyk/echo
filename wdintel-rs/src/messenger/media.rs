@@ -3,7 +3,7 @@ use crate::entities::signal_message_media;
 use crate::error::AppError;
 use crate::h;
 use crate::storage;
-use crate::types::ShortContext;
+use crate::types::{Env, ShortContext};
 use echo_im::types::MessageAttachmentF1;
 use log::{error, warn};
 use opendal::Operator;
@@ -158,4 +158,58 @@ pub async fn fetch_media_bytes(
         &object_key,
     )
     .await
+}
+
+pub async fn fetch_media_bytes_by_key(
+    env: &Env,
+    object_key: &str,
+) -> Result<Vec<u8>, AppError> {
+    let Some(config) = env.config.s3_config.as_ref() else {
+        warn!("S3 is not configured, cannot store attachment!");
+        return Ok(vec![]);
+    };
+    storage::download_and_decrypt_from_s3_with_operator(
+        &env.s3,
+        &env.s3_config,
+        &config.strongbox_key,
+        object_key,
+    )
+    .await
+}
+
+pub async fn store_kmz_file(
+    env: &Env,
+    data: &[u8],
+    name: Option<&str>,
+    content_type: Option<&str>,
+) -> Result<String, AppError> {
+    let config = env.config.s3_config.as_ref().ok_or(AppError::BL {
+        msg: "S3 is not configured".to_string(),
+    })?;
+    let s3_config = env.s3_config.as_ref().ok_or(AppError::BL {
+        msg: "S3 is not configured".to_string(),
+    })?;
+    let _ct = content_type.map(|s| s.to_string()).unwrap_or_else(|| {
+        detect_content_type(name, Path::new(name.unwrap_or("")), data)
+    });
+    let object_id = Uuid::now_v7();
+    let ext = guess_extension(name, Path::new(name.unwrap_or("")));
+    let object_key_base = storage::nested_object_key(&object_id);
+    let object_key = if ext.is_empty() {
+        object_key_base
+    } else {
+        format!("{object_key_base}.{ext}")
+    };
+
+    storage::upload_encrypted_to_s3_with_operator(
+        &env.s3,
+        s3_config,
+        &config.strongbox_key,
+        &object_key,
+        data,
+    )
+    .await
+    .c(h!())?;
+
+    Ok(object_key)
 }

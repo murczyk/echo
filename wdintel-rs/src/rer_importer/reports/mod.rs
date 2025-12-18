@@ -1,6 +1,5 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
-use std::str::FromStr;
 
 use crate::config::CLEANUP_REPORT_DAYS;
 use crate::entities::*;
@@ -27,9 +26,13 @@ pub mod tag;
 pub mod types;
 mod util;
 
+pub fn reports_storage_dir() -> PathBuf {
+    std::env::temp_dir().join("reports_log")
+}
+
 pub(crate) async fn cleanup_old_reports_nofail(
     dbx: &DatabaseConnection,
-    config: &crate::Config,
+    _config: &crate::Config,
 ) {
     if let Some(cleanup_until) = Utc::now()
         .naive_utc()
@@ -48,10 +51,9 @@ pub(crate) async fn cleanup_old_reports_nofail(
             .await
         {
             Ok(logs) => {
+                let storage_path = reports_storage_dir();
                 for one_log in logs {
-                    let Ok(filepath) = PathBuf::from_str(&one_log.report_path);
-                    let Ok(storage_path) =
-                        PathBuf::from_str(&config.storage_dir);
+                    let filepath = PathBuf::from(&one_log.report_path);
                     if let Err(e) =
                         std::fs::remove_file(storage_path.join(&filepath))
                     {
@@ -111,9 +113,7 @@ pub async fn report_docx(
     let mut req = req.into_inner().clone();
     req.req.nolimit = Some(true);
 
-    let storage_dir =
-        std::path::PathBuf::from_str(&env.config.storage_dir).context(h!())?;
-    let outfolder = storage_dir.join("reports_log");
+    let outfolder = reports_storage_dir();
     let _ = std::fs::create_dir_all(&outfolder);
     let filename =
         format!("report_{}.docx", Utc::now().format("%Y-%m-%d-%H-%M-%S-%3f"));

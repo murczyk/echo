@@ -66,7 +66,7 @@ PGPASSWORD=fee_-_-_-FnoeKFBeebu87bf pg_restore -U wd -d wd --clean deploy/wd-ini
 ```bash
 cd echo
 cargo build
-cp deploy/config-debug.toml deploy/config.toml # and adjust storage_dir in config.toml
+cp deploy/config-debug.toml deploy/config.toml
 just dev-back
 # ctrl+C and then add local dev admin login
 cargo run --bin=wdintel-rs -- --mode debug oneoff-register-user --login admin --password fee_-_-_-FnoeKFBeebu87bf --role Admin --sigint-zone 1
@@ -138,5 +138,4 @@ server {
     }
 }
 ```
-
 

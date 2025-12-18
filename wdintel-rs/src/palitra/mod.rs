@@ -341,8 +341,8 @@ pub async fn upload_palitra_points(
     Ok(Json(()))
 }
 
-async fn ensure_storage_dir(env: &Data<Env>) -> anyhow::Result<PathBuf> {
-    let storage_dir = PathBuf::from(env.config.storage_dir.clone())
+async fn ensure_storage_dir(_env: &Data<Env>) -> anyhow::Result<PathBuf> {
+    let storage_dir = std::env::temp_dir()
         .join(PALITRA_STORAGE_DIR_NAME)
         .join(format!("{}", Utc::now().naive_utc().date()));
     tokio::fs::create_dir_all(storage_dir.as_path())
