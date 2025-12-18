@@ -176,6 +176,7 @@ pub async fn get_inbox_messages_report(
         &req.without_model_tags,
         &user.id().c(h!())?,
         None,
+        req.report_tags_only_this_unit.unwrap_or(false)
     )?;
     let q = filter_selected_locations(
         q,

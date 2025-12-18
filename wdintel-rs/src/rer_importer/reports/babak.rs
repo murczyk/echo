@@ -72,6 +72,7 @@ pub async fn bl_babak_report(
         filter_tags_option: req.req.filter_tags_option,
         selected_aors: req.req.selected_aors.clone(),
         without_model_tags: req.req.without_model_tags,
+        report_tags_only_this_unit: req.report_tags_only_this_unit,
     };
     let new_callsigns_res =
         bi_new_callsigns(user_login, env, &new_callsing_req)
@@ -745,6 +746,7 @@ pub async fn get_inbox_messages_report_unit(
         &req.without_model_tags,
         login,
         only_tags_by_logins,
+        req.report_tags_only_this_unit.unwrap_or(false),
     )?;
     if let Some(since_date_inclusive_ms) = req.since_date_inclusive_ms {
         q = q.filter(
@@ -1035,6 +1037,7 @@ mod tests {
                 ..Default::default()
             },
             report_type: None,
+            report_tags_only_this_unit: Some(true),
         };
 
         let res = bl_babak_report(&login.login, &env, &req).await.unwrap();

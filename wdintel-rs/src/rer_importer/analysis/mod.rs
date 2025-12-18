@@ -376,6 +376,8 @@ fn get_related_tag_items_filter(
     tag_filter_option: TagFilterOption,
     only_tags_by_logins: Option<Vec<String>>,
     without_model_tags: bool,
+    report_tags_only_this_unit: bool,
+    user_id: &str,
 ) -> SimpleExpr {
     let expected_count = unique_tags.len();
 
@@ -399,6 +401,28 @@ fn get_related_tag_items_filter(
 
     if without_model_tags {
         q = q.filter(sigint_inbox_item_tag::Column::Model.is_null());
+    }
+
+    if report_tags_only_this_unit {
+        let user_alias = Alias::new("u2");
+
+        let mut query = Query::select();
+        query
+            .column(login::Column::Login)
+            .from(login::Entity)
+            .join_as(
+                JoinType::InnerJoin,
+                login::Entity,
+                user_alias.clone(),
+                Expr::col((login::Entity, login::Column::OrganismId))
+                    .equals((user_alias.clone(), login::Column::OrganismId)),
+            )
+            .and_where(
+                Expr::col((user_alias, login::Column::Login))
+                    .eq(user_id.to_string()),
+            );
+
+        q = q.filter(sigint_inbox_item_tag::Column::Login.in_subquery(query));
     }
 
     if let Some(logins) = only_tags_by_logins {
@@ -433,6 +457,7 @@ pub fn filter_selected_tags<Q>(
     without_model_tags: &Option<bool>,
     user_id: &str,
     only_tags_by_logins: Option<Vec<String>>,
+    report_tags_only_this_unit: bool,
 ) -> Result<Q, AppError>
 where
     Q: QueryFilter + QuerySelect + Clone,
@@ -451,6 +476,8 @@ where
                 tag_filter_option,
                 only_tags_by_logins,
                 without_model_tags,
+                report_tags_only_this_unit,
+                user_id,
             ));
         }
     }
@@ -1005,6 +1032,7 @@ pub async fn summary_table_freq_1(
         &req.without_model_tags,
         &user.id().c(h!())?,
         None,
+        req.report_tags_only_this_unit.unwrap_or(false),
     )?;
     let dedup_subquery =
         filter_selected_aors(dedup_subquery, &req.selected_aors)
@@ -1598,6 +1626,7 @@ pub async fn edit_freq_unit_name(
         &reqan.without_model_tags,
         &user.id().c(h!())?,
         None,
+        req.report_tags_only_this_unit.unwrap_or(false),
     )?;
     let rows_res = filter_selected_networks(rows_res, &reqan.selected_networks)
         .context(h!())?;
@@ -1966,6 +1995,7 @@ pub async fn bi_new_callsigns(
         &req.without_model_tags,
         user_id,
         None,
+        req.report_tags_only_this_unit.unwrap_or(false),
     )?;
     let rows_res =
         filter_selected_aors(rows_res, &req.selected_aors).context(h!())?;
@@ -2045,6 +2075,7 @@ pub async fn bi_new_callsigns(
         &req.without_model_tags,
         user_id,
         None,
+        req.report_tags_only_this_unit.unwrap_or(false),
     )?;
     let rows_res = filter_selected_networks(rows_res, &req.selected_networks)
         .context(h!())?;
