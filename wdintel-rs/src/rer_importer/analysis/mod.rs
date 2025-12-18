@@ -446,6 +446,42 @@ fn get_related_tag_items_filter(
     }
 }
 
+fn tags_from_user_organism_exists(user_id: &str) -> SimpleExpr {
+    let user_alias = Alias::new("t_user");
+    let allowed_logins = Query::select()
+        .column((login::Entity, login::Column::Login))
+        .from(login::Entity)
+        .join_as(
+            JoinType::InnerJoin,
+            login::Entity,
+            user_alias.clone(),
+            Expr::col((login::Entity, login::Column::OrganismId))
+                .equals((user_alias.clone(), login::Column::OrganismId)),
+        )
+        .and_where(
+            Expr::col((user_alias, login::Column::Login))
+                .eq(user_id.to_string()),
+        )
+        .to_owned();
+
+    let subquery = sigint_inbox_item_tag::Entity::find()
+        .select_only()
+        .expr(Expr::value(1))
+        .filter(
+            Expr::col((
+                sigint_inbox_item_tag::Entity,
+                sigint_inbox_item_tag::Column::SigintInboxItemId,
+            ))
+            .equals((sigint_inbox_item::Entity, sigint_inbox_item::Column::Id)),
+        )
+        .filter(
+            sigint_inbox_item_tag::Column::Login.in_subquery(allowed_logins),
+        )
+        .into_query();
+
+    Expr::exists(subquery)
+}
+
 pub fn filter_selected_tags<Q>(
     q: Q,
     selected_tags: &Option<Vec<i64>>,
@@ -546,6 +582,10 @@ where
 
     if let Some(ref inner_expr) = m_inner_expr {
         q = q.filter(inner_expr.clone());
+    }
+
+    if report_tags_only_this_unit && m_inner_expr.is_none() {
+        q = q.filter(tags_from_user_organism_exists(user_id));
     }
     // println!(
     //     "> filter_selected_tags q sql: {}",
