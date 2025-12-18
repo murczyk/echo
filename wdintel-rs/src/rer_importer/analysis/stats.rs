@@ -168,7 +168,7 @@ fn build_groups_query(
         &req.without_model_tags,
         user.id().c(h!())?.as_str(),
         None,
-        req.report_tags_only_this_unit.unwrap_or(false)
+        req.report_tags_only_this_unit.unwrap_or(false),
     )
     .context(h!())?;
     let groups_res =
@@ -310,7 +310,7 @@ fn build_senders_query(
         &req.without_model_tags,
         &user.id().context(h!())?,
         None,
-        req.report_tags_only_this_unit.unwrap_or(false)
+        req.report_tags_only_this_unit.unwrap_or(false),
     )
     .context(h!())?;
     let senders_res =
@@ -451,7 +451,7 @@ fn build_posts_query(
         &req.without_model_tags,
         &user.id().context(h!())?,
         None,
-        req.report_tags_only_this_unit.unwrap_or(false)
+        req.report_tags_only_this_unit.unwrap_or(false),
     )
     .context(h!())?;
     let post_res = filter_selected_networks(post_res, &req.selected_networks)
@@ -644,7 +644,7 @@ fn build_freqs_query(
         &req.without_model_tags,
         &user.id().context(h!())?,
         None,
-        req.report_tags_only_this_unit.unwrap_or(false)
+        req.report_tags_only_this_unit.unwrap_or(false),
     )
     .context(h!())?;
     let freqs_res = filter_selected_networks(freqs_res, &req.selected_networks)
@@ -1045,7 +1045,7 @@ fn build_units_query(
         &req.without_model_tags,
         &user.id().context(h!())?,
         None,
-        req.report_tags_only_this_unit.unwrap_or(false)
+        req.report_tags_only_this_unit.unwrap_or(false),
     )
     .context(h!())?;
     let units_res = filter_selected_networks(units_res, &req.selected_networks)
@@ -1191,7 +1191,7 @@ fn build_locations_query(
         &req.without_model_tags,
         &user.id().context(h!())?,
         None,
-        req.report_tags_only_this_unit.unwrap_or(false)
+        req.report_tags_only_this_unit.unwrap_or(false),
     )
     .context(h!())?;
     let locations_res =
@@ -1348,7 +1348,7 @@ fn build_aors_query(
         &req.without_model_tags,
         &user.id().context(h!())?,
         None,
-        req.report_tags_only_this_unit.unwrap_or(false)
+        req.report_tags_only_this_unit.unwrap_or(false),
     )
     .context(h!())?;
     let aors_res = filter_search(aors_res, &req.search).context(h!())?;
@@ -1558,7 +1558,7 @@ fn build_networks_query(
         &req.without_model_tags,
         user.id().c(h!())?.as_str(),
         None,
-        req.report_tags_only_this_unit.unwrap_or(false)
+        req.report_tags_only_this_unit.unwrap_or(false),
     )
     .context(h!())?;
 
@@ -1784,7 +1784,7 @@ async fn fetch_counts_for_login_with_conn(
         &req.without_model_tags,
         login_str,
         None,
-        req.report_tags_only_this_unit.unwrap_or(false)
+        req.report_tags_only_this_unit.unwrap_or(false),
     )
     .context(h!())?;
     let selected_count_res =

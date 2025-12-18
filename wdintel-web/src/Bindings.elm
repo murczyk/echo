@@ -1576,6 +1576,7 @@ type alias AnalysisStatsReq =
     , unitsExactMatchOnly : Maybe Bool
     , filterTagsOption : Maybe TagFilterOption
     , withoutModelTags : Maybe Bool
+    , reportTagsOnlyThisUnit : Maybe Bool
     }
 
 
@@ -1603,6 +1604,7 @@ analysisStatsReqEncoder struct =
         , ( "units_exact_match_only", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.unitsExactMatchOnly )
         , ( "filter_tags_option", (Maybe.withDefault Json.Encode.null << Maybe.map tagFilterOptionEncoder) struct.filterTagsOption )
         , ( "without_model_tags", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.withoutModelTags )
+        , ( "report_tags_only_this_unit", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.reportTagsOnlyThisUnit )
         ]
 
 
@@ -1903,6 +1905,7 @@ type alias CallsignsGraphReq =
     , unitsExactMatchOnly : Maybe Bool
     , filterTagsOption : Maybe TagFilterOption
     , withoutModelTags : Maybe Bool
+    , reportTagsOnlyThisUnit : Maybe Bool
     }
 
 
@@ -1931,6 +1934,7 @@ callsignsGraphReqEncoder struct =
         , ( "units_exact_match_only", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.unitsExactMatchOnly )
         , ( "filter_tags_option", (Maybe.withDefault Json.Encode.null << Maybe.map tagFilterOptionEncoder) struct.filterTagsOption )
         , ( "without_model_tags", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.withoutModelTags )
+        , ( "report_tags_only_this_unit", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.reportTagsOnlyThisUnit )
         ]
 
 
@@ -2135,6 +2139,7 @@ type alias EditFreqUnitNameReq =
     , unitNew : String
     , search : Maybe String
     , filterTagsOption : Maybe TagFilterOption
+    , reportTagsOnlyThisUnit : Maybe Bool
     }
 
 
@@ -2147,6 +2152,7 @@ editFreqUnitNameReqEncoder struct =
         , ( "unit_new", Json.Encode.string struct.unitNew )
         , ( "search", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.search )
         , ( "filter_tags_option", (Maybe.withDefault Json.Encode.null << Maybe.map tagFilterOptionEncoder) struct.filterTagsOption )
+        , ( "report_tags_only_this_unit", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.reportTagsOnlyThisUnit )
         ]
 
 
@@ -3652,6 +3658,7 @@ type alias ReportPreviewReq =
     { kind : String
     , req : InboxMessagesReq
     , reportType : Maybe ReportType
+    , reportTagsOnlyThisUnit : Maybe Bool
     }
 
 
@@ -3661,6 +3668,7 @@ reportPreviewReqEncoder struct =
         [ ( "kind", Json.Encode.string struct.kind )
         , ( "req", inboxMessagesReqEncoder struct.req )
         , ( "report_type", (Maybe.withDefault Json.Encode.null << Maybe.map reportTypeEncoder) struct.reportType )
+        , ( "report_tags_only_this_unit", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.reportTagsOnlyThisUnit )
         ]
 
 
@@ -7197,6 +7205,7 @@ analysisStatsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "units_exact_match_only" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_tags_option" (Json.Decode.nullable tagFilterOptionDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "without_model_tags" (Json.Decode.nullable Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "report_tags_only_this_unit" (Json.Decode.nullable Json.Decode.bool)))
 
 
 analysisStatsRspDecoder : Json.Decode.Decoder AnalysisStatsRsp
@@ -7361,6 +7370,7 @@ callsignsGraphReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "units_exact_match_only" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_tags_option" (Json.Decode.nullable tagFilterOptionDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "without_model_tags" (Json.Decode.nullable Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "report_tags_only_this_unit" (Json.Decode.nullable Json.Decode.bool)))
 
 
 netJsonLinkPropertiesDecoder : Json.Decode.Decoder NetJsonLinkProperties
@@ -7488,6 +7498,7 @@ editFreqUnitNameReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_new" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "search" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_tags_option" (Json.Decode.nullable tagFilterOptionDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "report_tags_only_this_unit" (Json.Decode.nullable Json.Decode.bool)))
 
 
 batchSignalGroupReqDecoder : Json.Decode.Decoder BatchSignalGroupReq
@@ -8389,6 +8400,7 @@ reportPreviewReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "kind" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "req" inboxMessagesReqDecoder))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "report_type" (Json.Decode.nullable reportTypeDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "report_tags_only_this_unit" (Json.Decode.nullable Json.Decode.bool)))
 
 
 reportTypeDecoder : Json.Decode.Decoder ReportType

@@ -107,6 +107,7 @@ type alias Model =
     , showReportConstructor : Bool
     , reportTemplate : ReportTemplate
     , reportTagsOnlyThisUnit : Bool
+    , reportTagsOnlyThisUnitForReport : Bool
     , reportAdjacentFreqsRangeSelect :
         { state : Select.State
         , items : List (Select.MenuItem Float)

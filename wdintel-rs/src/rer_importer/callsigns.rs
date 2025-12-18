@@ -1127,7 +1127,7 @@ pub async fn callsigns_graph(
         filter_tags_option: req.filter_tags_option,
         selected_aors: req.selected_aors.clone(),
         without_model_tags: req.without_model_tags,
-        report_tags_only_this_unit: req.report_tags_only_this_unit
+        report_tags_only_this_unit: req.report_tags_only_this_unit,
     };
 
     let summary_table: SummaryTableFreq =

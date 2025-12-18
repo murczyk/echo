@@ -408,7 +408,7 @@ fn get_related_tag_items_filter(
 
         let mut query = Query::select();
         query
-            .column(login::Column::Login)
+            .column((login::Entity, login::Column::Login))
             .from(login::Entity)
             .join_as(
                 JoinType::InnerJoin,
