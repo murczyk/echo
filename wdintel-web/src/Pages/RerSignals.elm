@@ -3,11 +3,13 @@ module Pages.RerSignals exposing (EditSignalState, Model, Msg, page)
 import Api
 import Auth
 import Bindings as B
+import Bytes exposing (Bytes)
 import Core.Auth
 import Core.Types exposing (ApiError)
 import Debounce exposing (Debounce)
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
+import File.Download as Download
 import Html exposing (..)
 import Html.Attributes as Attr exposing (..)
 import Html.Events exposing (..)
@@ -80,6 +82,7 @@ type alias Model =
     , unitStats : List B.SignalUnitStatRow
     , sortBy : List B.ListSignalsSortBy
     , tableState : Table.State
+    , downloadCsvInProgress : Bool
     }
 
 
@@ -108,6 +111,8 @@ type Msg
     | FilterTextMsg String
     | FilterTextDebounceMsg Debounce.Msg
     | Refresh
+    | DownloadCsv Bool
+    | DownloadCsvDone (Result ApiError Bytes)
     | ClearInputs
     | GotUnitStats (Result ApiError B.SignalUnitStatsRsp)
     | SetTableState Table.State
@@ -171,6 +176,7 @@ init _ =
             , sortBy = []
             , unitStats = []
             , tableState = Table.sortBy "Дата внесення" False
+            , downloadCsvInProgress = False
             }
     in
     ( m2
@@ -501,6 +507,25 @@ update shared msg model =
             , initLoad model
             )
 
+        DownloadCsv allowed ->
+            if allowed then
+                ( { model | downloadCsvInProgress = True }
+                , E.sendCmd <| Api.sigint_list_signals_csv DownloadCsvDone (listSignalsReq model)
+                )
+
+            else
+                ( model, E.none )
+
+        DownloadCsvDone (Err err) ->
+            ( { model | downloadCsvInProgress = False }
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження CSV" err
+            )
+
+        DownloadCsvDone (Ok bytes) ->
+            ( { model | downloadCsvInProgress = False }
+            , E.sendCmd <| Download.bytes "signals.csv" "text/csv" bytes
+            )
+
         ClearInputs ->
             ( { model | inpText = "", inpMeaning = "", inpUnit = Nothing, inpCoordinates = "" }, E.none )
 
@@ -570,14 +595,18 @@ loadUnitStats =
     E.sendCmd <| Api.sigint_signal_unit_stats GotUnitStats ()
 
 
+listSignalsReq : Model -> B.ListSignalsReq
+listSignalsReq model =
+    { sortBy = model.sortBy
+    , filterText = model.filterText
+    , filterMeaning = model.filterMeaning
+    , filterUnit = model.filterUnit
+    }
+
+
 loadSignalsCmd : Model -> Cmd Msg
 loadSignalsCmd model =
-    Api.sigint_list_signals GotSignals
-        { sortBy = model.sortBy
-        , filterText = model.filterText
-        , filterMeaning = model.filterMeaning
-        , filterUnit = model.filterUnit
-        }
+    Api.sigint_list_signals GotSignals (listSignalsReq model)
 
 
 loadSignals : Model -> Effect Msg
@@ -1027,18 +1056,41 @@ contentBlock shared model user =
             Core.Auth.hasRole "UnitsEditor" user
 
         filterPanel =
+            let
+                downloadCsvButton =
+                    if hasEditorRole then
+                        [ button
+                            [ class "btn btn-outline-secondary d-flex align-items-center gap-2"
+                            , style "white-space" "nowrap"
+                            , onClick (DownloadCsv hasEditorRole)
+                            , Attr.disabled (not hasEditorRole || model.downloadCsvInProgress)
+                            , attribute "title" "Завантажити CSV з обраними фільтрами"
+                            ]
+                            ([ text "Завантажити csv" ]
+                                ++ (if model.downloadCsvInProgress then
+                                        [ Shared.Components.Spinner.loadingSpinner2Sm ]
+
+                                    else
+                                        []
+                                   )
+                            )
+                        ]
+
+                    else
+                        []
+            in
             div
                 [ class "d-flex justify-content-start align-items-center"
                 , style "width" "200px"
                 ]
-                [ div [ class "me-2" ]
+                ([ div [ class "me-2" ]
                     [ if model.loading then
                         Shared.Components.Spinner.loadingSpinner2Sm
 
                       else
                         i [ class "bi bi-filter text-[21px] text-action" ] []
                     ]
-                , input
+                 , input
                     [ class "form-control me-2 text-uppercase"
                     , style "min-width" "200px"
                     , type_ "text"
@@ -1047,7 +1099,7 @@ contentBlock shared model user =
                     , onInput FilterTextMsg
                     ]
                     []
-                , input
+                 , input
                     [ class "form-control me-2"
                     , style "width" "200px"
                     , type_ "text"
@@ -1056,7 +1108,7 @@ contentBlock shared model user =
                     , onInput FilterMeaningMsg
                     ]
                     []
-                , input
+                 , input
                     [ class "form-control me-2"
                     , style "width" "200px"
                     , type_ "text"
@@ -1065,7 +1117,9 @@ contentBlock shared model user =
                     , onInput FilterUnitMsg
                     ]
                     []
-                ]
+                 ]
+                    ++ downloadCsvButton
+                )
 
         addSignalPanel =
             div
