@@ -55,111 +55,26 @@ pub async fn oneoff_import_signals_callsigns_csv(
     }
 
     let mut suggested_mapping: HashMap<String, Option<i64>> = HashMap::new();
-
-    let mut signals: Vec<sigint_signal::ActiveModel> = vec![];
-
-    let mut skipped_signals: usize = 0;
-    if let Some(signals_path) = &ps.signals {
-        let rdr_signals = csv::ReaderBuilder::new()
-            .has_headers(true)
-            .from_path(signals_path)
-            .c(h!())?;
-        for signal in rdr_signals.into_deserialize() {
-            let SignalCsvRow {
-                id,
-                text,
-                meaning,
-                unit_name,
-                coordinates,
-                created_at,
-            } = signal.c(h!())?;
-
-            let unit_id: Option<i64>;
-            if let Some(unit_name) = &unit_name {
-                unit_id = find_matching_unit(
-                    &units,
-                    unit_name,
-                    &mut unit_mapping,
-                    &mut suggested_mapping,
-                );
-                if unit_id.is_none() {
-                    skipped_signals += 1;
-                    continue;
-                }
-            } else {
-                unit_id = None;
-            }
-
-            let created_at = chrono::NaiveDateTime::parse_from_str(
-                &created_at,
-                "%Y-%m-%d %H:%M:%S",
-            )
-            .c(h!())?;
-
-            let model = sigint_signal::ActiveModel {
-                text: Set(text),
-                meaning: Set(meaning),
-                coordinates: Set(coordinates),
-                unit: Set(unit_id),
-                created_at: Set(created_at),
-                original_id: Set(Some(id)),
-                ..Default::default()
-            };
-            signals.push(model);
-        }
-    }
-    let mut skipped_callsigns: usize = 0;
-    let mut callsigns: Vec<sigint_callsign::ActiveModel> = vec![];
-    if let Some(callsigns_path) = &ps.callsigns {
-        let rdr_callsigns = csv::ReaderBuilder::new()
-            .has_headers(true)
-            .from_path(callsigns_path)
-            .c(h!())?;
-
-        for callsign in rdr_callsigns.into_deserialize() {
-            let CallsignCsvRow {
-                id,
-                callsign,
-                position,
-                comment,
-                unit_name,
-                source_id,
-                developing,
-                radio_freq,
-                created_at,
-            } = callsign.c(h!())?;
-
-            let Some(unit_id) = find_matching_unit(
-                &units,
-                &unit_name,
-                &mut unit_mapping,
-                &mut suggested_mapping,
-            ) else {
-                skipped_callsigns += 1;
-                continue;
-            };
-
-            let created_at = chrono::NaiveDateTime::parse_from_str(
-                &created_at,
-                "%Y-%m-%d %H:%M:%S",
-            )
-            .c(h!())?;
-
-            let model = sigint_callsign::ActiveModel {
-                callsign: Set(callsign),
-                position: Set(position),
-                comment: Set(comment),
-                unit_id: Set(unit_id),
-                source_id: Set(source_id),
-                developing: Set(developing),
-                radio_freq: Set(radio_freq),
-                created_at: Set(created_at),
-                original_id: Set(Some(id)),
-                ..Default::default()
-            };
-            callsigns.push(model);
-        }
-    }
+    let (skipped_signals, signals) = match &ps.signals {
+        Some(signals_path) => parse_signals(
+            signals_path,
+            &units,
+            &mut unit_mapping,
+            &mut suggested_mapping,
+        )
+        .c(h!())?,
+        None => (0, vec![]),
+    };
+    let (skipped_callsigns, callsigns) = match &ps.callsigns {
+        Some(callsigns_path) => parse_callsigns(
+            callsigns_path,
+            &units,
+            &mut unit_mapping,
+            &mut suggested_mapping,
+        )
+        .c(h!())?,
+        None => (0, vec![]),
+    };
 
     if !suggested_mapping.is_empty() {
         warn!("unmapped unit named detected, use --unit-mapping mapping.json, example: ");
@@ -243,5 +158,199 @@ fn find_matching_unit(
                 None
             }
         }
+    }
+}
+
+fn parse_signals(
+    signals_path: &str,
+    units: &[sigint_unit::Model],
+    unit_mapping: &mut HashMap<String, i64>,
+    suggested_mapping: &mut HashMap<String, Option<i64>>,
+) -> Result<(usize, Vec<sigint_signal::ActiveModel>), AppError> {
+    let mut skipped_signals: usize = 0;
+    let mut signals: Vec<sigint_signal::ActiveModel> = Vec::new();
+    let rdr_signals = csv::ReaderBuilder::new()
+        .has_headers(true)
+        .from_path(signals_path)
+        .c(h!())?;
+    for signal in rdr_signals.into_deserialize() {
+        let SignalCsvRow {
+            id,
+            text,
+            meaning,
+            unit_name,
+            coordinates,
+            created_at,
+        } = signal.c(h!())?;
+
+        let unit_id: Option<i64>;
+        if let Some(unit_name) = &unit_name {
+            unit_id = find_matching_unit(
+                units,
+                unit_name,
+                unit_mapping,
+                suggested_mapping,
+            );
+            if unit_id.is_none() {
+                skipped_signals += 1;
+                continue;
+            }
+        } else {
+            unit_id = None;
+        }
+
+        let created_at = chrono::NaiveDateTime::parse_from_str(
+            &created_at,
+            "%Y-%m-%d %H:%M:%S",
+        )
+        .c(h!())?;
+
+        let model = sigint_signal::ActiveModel {
+            text: Set(text),
+            meaning: Set(meaning),
+            coordinates: Set(coordinates),
+            unit: Set(unit_id),
+            created_at: Set(created_at),
+            original_id: Set(Some(id)),
+            ..Default::default()
+        };
+        signals.push(model);
+    }
+    Ok((skipped_signals, signals))
+}
+
+fn parse_callsigns(
+    callsigns_path: &str,
+    units: &[sigint_unit::Model],
+    unit_mapping: &mut HashMap<String, i64>,
+    suggested_mapping: &mut HashMap<String, Option<i64>>,
+) -> Result<(usize, Vec<sigint_callsign::ActiveModel>), AppError> {
+    let mut skipped_callsigns: usize = 0;
+    let mut callsigns: Vec<sigint_callsign::ActiveModel> = vec![];
+
+    let rdr_callsigns = csv::ReaderBuilder::new()
+        .has_headers(true)
+        .from_path(callsigns_path)
+        .c(h!())?;
+
+    for callsign in rdr_callsigns.into_deserialize() {
+        let CallsignCsvRow {
+            id,
+            callsign,
+            position,
+            comment,
+            unit_name,
+            source_id,
+            developing,
+            radio_freq,
+            created_at,
+        } = callsign.c(h!())?;
+
+        let Some(unit_id) = find_matching_unit(
+            units,
+            &unit_name,
+            unit_mapping,
+            suggested_mapping,
+        ) else {
+            skipped_callsigns += 1;
+            continue;
+        };
+
+        let created_at = chrono::NaiveDateTime::parse_from_str(
+            &created_at,
+            "%Y-%m-%d %H:%M:%S",
+        )
+        .c(h!())?;
+
+        let model = sigint_callsign::ActiveModel {
+            callsign: Set(callsign),
+            position: Set(position),
+            comment: Set(comment),
+            unit_id: Set(unit_id),
+            source_id: Set(source_id),
+            developing: Set(developing),
+            radio_freq: Set(radio_freq),
+            created_at: Set(created_at),
+            original_id: Set(Some(id)),
+            ..Default::default()
+        };
+        callsigns.push(model);
+    }
+    Ok((skipped_callsigns, callsigns))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_callsigns_works() {
+        let units = vec![sigint_unit::Model {
+            id: 1,
+            company: Default::default(),
+            regiment: Default::default(),
+            division: Default::default(),
+            army: Default::default(),
+            active: Default::default(),
+            deleted: Default::default(),
+            created_at: Default::default(),
+            created_by: Default::default(),
+            name: String::from("штурмовий загін 11 отбр 25 А"),
+            comment: Default::default(),
+            battalion: Default::default(),
+            sigint_origin_id: Default::default(),
+            original_id: Default::default(),
+        }];
+        let mut unit_mapping = Default::default();
+        let mut suggested_mapping = Default::default();
+        let (skipped_callsigns, callsigns) = parse_callsigns(
+            "data/callsigns.csv",
+            &units,
+            &mut unit_mapping,
+            &mut suggested_mapping,
+        )
+        .unwrap();
+        assert_eq!(skipped_callsigns, 0);
+        assert_eq!(callsigns.len(), 8);
+        assert_eq!(callsigns[0].callsign, Set("джони".to_owned()));
+        assert_eq!(callsigns[0].position, Set("стрілець шр".to_owned()));
+        assert_eq!(callsigns[0].comment, Set("полонений".to_owned()));
+        assert_eq!(callsigns[0].unit_id, Set(1));
+        assert_eq!(unit_mapping.len(), 1);
+    }
+
+    #[test]
+    fn parse_signals_works() {
+        let units = vec![sigint_unit::Model {
+            id: 1,
+            company: Default::default(),
+            regiment: Default::default(),
+            division: Default::default(),
+            army: Default::default(),
+            active: Default::default(),
+            deleted: Default::default(),
+            created_at: Default::default(),
+            created_by: Default::default(),
+            name: String::from("пдб 83 одшбр ПДВ"),
+            comment: Default::default(),
+            battalion: Default::default(),
+            sigint_origin_id: Default::default(),
+            original_id: Default::default(),
+        }];
+        let mut unit_mapping = Default::default();
+        let mut suggested_mapping = Default::default();
+        let (skipped_signals, signals) = parse_signals(
+            "data/signals.csv",
+            &units,
+            &mut unit_mapping,
+            &mut suggested_mapping,
+        )
+        .unwrap();
+
+        assert_eq!(skipped_signals, 13);
+        assert_eq!(signals.len(), 2);
+        assert_eq!(signals[0].text, Set("Шторм".to_owned()));
+        assert_eq!(signals[0].meaning, Set(Some("робота РЕБ".to_owned())));
+        assert_eq!(suggested_mapping.len(), 6);
     }
 }
