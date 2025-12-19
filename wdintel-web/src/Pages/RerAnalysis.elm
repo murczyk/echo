@@ -394,7 +394,7 @@ loadPalitrasIfNeeded model =
         case model.palitras of
             NotAsked ->
                 ( { model | palitras = Loading }
-                , E.sendCmd <| Api.palitra_list_detailed GotPalitras
+                , E.sendCmd <| Api.palitra_list GotPalitras
                 )
 
             _ ->
@@ -402,6 +402,33 @@ loadPalitrasIfNeeded model =
 
     else
         ( model, E.none )
+
+
+palitraToDetails : B.Palitra -> B.PalitraDetails
+palitraToDetails palitra =
+    { palitra = palitra
+    , points = []
+    }
+
+
+applyPalitraPoints : List B.PalitraPoints -> List B.PalitraDetails -> List B.PalitraDetails
+applyPalitraPoints palitraPoints palitras =
+    let
+        pointsById =
+            palitraPoints
+                |> List.map (\palitraPointsEntry -> ( palitraPointsEntry.palitraId, palitraPointsEntry.points ))
+                |> Dict.fromList
+    in
+    palitras
+        |> List.map
+            (\palitraDetails ->
+                case Dict.get palitraDetails.palitra.id pointsById of
+                    Just points ->
+                        { palitraDetails | points = points }
+
+                    Nothing ->
+                        palitraDetails
+            )
 
 
 loadSumTableOnly : Model -> ( Model, Effect Msg )
@@ -1817,13 +1844,43 @@ update user shared route msg model =
             )
 
         GotPalitras (Ok palitras) ->
-            ( { model | palitras = Success palitras }
+            ( { model | palitras = Success (List.map palitraToDetails palitras) }
             , E.none
             )
 
         GotPalitras (Err err) ->
             ( { model | palitras = Failure err }
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Не вдалося завантажити палітри" err
+            )
+
+        PalitraPointsNeeded bbox _ ->
+            if model.palitrasEnabled && not (List.isEmpty model.palitrasVisible) then
+                let
+                    req =
+                        { palitraIds = model.palitrasVisible
+                        , bbox = bbox
+                        }
+                in
+                ( model
+                , E.sendCmd <| Api.palitra_points GotPalitraPoints req
+                )
+
+            else
+                ( model, E.none )
+
+        GotPalitraPoints (Ok palitraPoints) ->
+            case model.palitras of
+                Success palitras ->
+                    ( { model | palitras = Success (applyPalitraPoints palitraPoints palitras) }
+                    , E.none
+                    )
+
+                _ ->
+                    ( model, E.none )
+
+        GotPalitraPoints (Err err) ->
+            ( model
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Не вдалося завантажити точки палітр" err
             )
 
         TogglePalitraVisibility palitraId ->

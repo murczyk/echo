@@ -153,6 +153,8 @@ type Msg
     | SaveEditSidebar
     | EditSidebarUpdate Int (B.InboxMessage -> B.InboxMessage)
     | EditSidebarSaveDone Int (Result ApiError ())
-    | GotPalitras (Result ApiError (List B.PalitraDetails))
+    | GotPalitras (Result ApiError (List B.Palitra))
+    | PalitraPointsNeeded B.Bbox Int
+    | GotPalitraPoints (Result ApiError (List B.PalitraPoints))
     | TogglePalitraVisibility Int
     | FeatureToggled String Bool

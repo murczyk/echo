@@ -131,6 +131,9 @@ class AnalysisMap extends HTMLElement {
   private _palitrasPointsClusters: Map<number, L.MarkerClusterGroup> = new Map();
   private _pelengsLayerGroup: L.LayerGroup | null = null;
   private _minZoomForPoints = 13; // Мінімальний зум для показу точок палітр
+  private _palitraPointsRequestTimer: number | null = null;
+  private _palitraPointsRequestDelayMs = 200;
+  private _palitrasBoundsApplied = false;
   private _palitrasEnabled = true;
   private _kmzEnabled = true;
   private _pelengsEnabled = true;
@@ -226,19 +229,24 @@ class AnalysisMap extends HTMLElement {
         this._palitrasControl.updatePalitras(this._palitras, this._visiblePalitraIds);
       }
       this._updatePalitrasOnMap();
+      this._schedulePalitraPointsRequest();
     }
     if (name === 'visible-palitra-ids') {
       this._visiblePalitraIds = JSON.parse(newValue);
       if (this._palitrasControl) {
         this._palitrasControl.updatePalitras(this._palitras, this._visiblePalitraIds);
       }
+      this._palitrasBoundsApplied = false;
       this._updatePalitrasOnMap();
+      this._schedulePalitraPointsRequest();
     }
     if (name === 'palitras-enabled') {
       this._palitrasEnabled = JSON.parse(newValue);
       this._updateLayerSwitchControl();
+      this._palitrasBoundsApplied = false;
       this._updatePalitrasOnMap();
       this._applyPalitrasControlVisibility();
+      this._schedulePalitraPointsRequest();
     }
     if (name === 'kmz-enabled') {
       this._kmzEnabled = JSON.parse(newValue);
@@ -257,6 +265,47 @@ class AnalysisMap extends HTMLElement {
     this.innerHTML = `
     <div id="analysis-map"> </div>
       `;
+  }
+
+  private _schedulePalitraPointsRequest() {
+    if (this._palitraPointsRequestTimer !== null) {
+      window.clearTimeout(this._palitraPointsRequestTimer);
+    }
+    this._palitraPointsRequestTimer = window.setTimeout(() => {
+      this._palitraPointsRequestTimer = null;
+      this._emitPalitraPointsRequest();
+    }, this._palitraPointsRequestDelayMs);
+  }
+
+  private _emitPalitraPointsRequest() {
+    if (!this._map) {
+      return;
+    }
+    if (!this._palitrasEnabled) {
+      return;
+    }
+    if (this._visiblePalitraIds.length === 0) {
+      return;
+    }
+    const currentZoom = this._map.getZoom();
+    if (currentZoom < this._minZoomForPoints) {
+      return;
+    }
+    const bounds = this._map.getBounds();
+    const event = new CustomEvent('palitra-points-needed', {
+      detail: {
+        bbox: {
+          min_lat: bounds.getSouth(),
+          min_lng: bounds.getWest(),
+          max_lat: bounds.getNorth(),
+          max_lng: bounds.getEast()
+        },
+        zoom: currentZoom
+      },
+      bubbles: true,
+      composed: true
+    });
+    this.dispatchEvent(event);
   }
 
 
@@ -289,11 +338,16 @@ class AnalysisMap extends HTMLElement {
      // Listen for zoom changes to show/hide points
      this._map.on('zoomend', () => {
        this._updatePalitraPointsOnMap();
+       this._schedulePalitraPointsRequest();
+     });
+     this._map.on('moveend', () => {
+       this._schedulePalitraPointsRequest();
      });
 
      // Try to update palitras if we already have data
      if (this._palitras.length > 0) {
        this._updatePalitrasOnMap();
+       this._schedulePalitraPointsRequest();
      }
     }
   }
@@ -468,12 +522,14 @@ class AnalysisMap extends HTMLElement {
     this._updatePalitraPointsOnMap();
 
     // Fit map bounds to show all visible palitras
-    if (polygons.length > 0) {
+    const currentZoom = this._map!.getZoom();
+    if (!this._palitrasBoundsApplied && polygons.length > 0 && currentZoom < this._minZoomForPoints) {
       const group = L.featureGroup(polygons);
       this._map!.fitBounds(group.getBounds(), {
         padding: [50, 50],
         maxZoom: 10
       });
+      this._palitrasBoundsApplied = true;
     }
   }
 
