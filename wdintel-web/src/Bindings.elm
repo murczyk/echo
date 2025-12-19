@@ -2685,6 +2685,52 @@ palitraPointEncoder struct =
         ]
 
 
+type alias PalitraPointsReq =
+    { palitraIds : List Int
+    , bbox : Bbox
+    }
+
+
+palitraPointsReqEncoder : PalitraPointsReq -> Json.Encode.Value
+palitraPointsReqEncoder struct =
+    Json.Encode.object
+        [ ( "palitra_ids", Json.Encode.list Json.Encode.int struct.palitraIds )
+        , ( "bbox", bboxEncoder struct.bbox )
+        ]
+
+
+type alias PalitraPoints =
+    { palitraId : Int
+    , points : List PalitraPoint
+    }
+
+
+palitraPointsEncoder : PalitraPoints -> Json.Encode.Value
+palitraPointsEncoder struct =
+    Json.Encode.object
+        [ ( "palitra_id", Json.Encode.int struct.palitraId )
+        , ( "points", Json.Encode.list palitraPointEncoder struct.points )
+        ]
+
+
+type alias Bbox =
+    { minLat : Float
+    , minLng : Float
+    , maxLat : Float
+    , maxLng : Float
+    }
+
+
+bboxEncoder : Bbox -> Json.Encode.Value
+bboxEncoder struct =
+    Json.Encode.object
+        [ ( "min_lat", Json.Encode.float struct.minLat )
+        , ( "min_lng", Json.Encode.float struct.minLng )
+        , ( "max_lat", Json.Encode.float struct.maxLat )
+        , ( "max_lng", Json.Encode.float struct.maxLng )
+        ]
+
+
 type alias Geometry =
     { center : Coords
     , perimeterLinearRing : List Coords
@@ -7818,6 +7864,29 @@ palitraPointDecoder =
     Json.Decode.succeed PalitraPoint
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "coords" coordsDecoder))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "label" (Json.Decode.nullable Json.Decode.string)))
+
+
+palitraPointsReqDecoder : Json.Decode.Decoder PalitraPointsReq
+palitraPointsReqDecoder =
+    Json.Decode.succeed PalitraPointsReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "palitra_ids" (Json.Decode.list Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "bbox" bboxDecoder))
+
+
+palitraPointsDecoder : Json.Decode.Decoder PalitraPoints
+palitraPointsDecoder =
+    Json.Decode.succeed PalitraPoints
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "palitra_id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "points" (Json.Decode.list palitraPointDecoder)))
+
+
+bboxDecoder : Json.Decode.Decoder Bbox
+bboxDecoder =
+    Json.Decode.succeed Bbox
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "min_lat" Json.Decode.float))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "min_lng" Json.Decode.float))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "max_lat" Json.Decode.float))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "max_lng" Json.Decode.float))
 
 
 geometryDecoder : Json.Decode.Decoder Geometry
