@@ -94,6 +94,7 @@ pub(crate) async fn build_inbox_query(
         &req.without_model_tags,
         login,
         only_tags_by_logins,
+        req.report_tags_only_this_unit.unwrap_or(false),
     )?;
     let q = filter_selected_aors(q, &req.selected_aors).context(h!())?;
     let q =

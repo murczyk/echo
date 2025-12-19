@@ -121,6 +121,7 @@ type Msg
     | GotMessagesComments (Result ApiError B.MessageComments)
     | GotUserInfo String (Result ApiError B.User)
     | ReportTagsOnlyThisUnitToggle
+    | ReportTagsOnlyThisUnitForReportToggle
     | DeleteMessageConfirm
     | DeleteMessageCancel
     | DeleteMessageDone Int (Result ApiError ())

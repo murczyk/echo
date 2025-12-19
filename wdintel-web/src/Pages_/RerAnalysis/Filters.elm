@@ -235,6 +235,11 @@ view isDark user model =
                             |> Shared.Components.Checkbox.withContent checkboxLabel
                             |> Shared.Components.Checkbox.view
                         , div [ class "mt-1" ] <|
+                            [ Shared.Components.Checkbox.new { isChecked = model.reportTagsOnlyThisUnit, onToggle = always ReportTagsOnlyThisUnitToggle }
+                                |> Shared.Components.Checkbox.withContent [ text "лише теги мого підрозділу" ]
+                                |> Shared.Components.Checkbox.view
+                            ]
+                        , div [ class "mt-1" ] <|
                             [ Shared.Components.Checkbox.new { isChecked = model.withoutModelTags, onToggle = always ToggleWithoutModelTags }
                                 |> Shared.Components.Checkbox.withContent [ text "без відміток роботами" ]
                                 |> Shared.Components.Checkbox.view
@@ -358,13 +363,14 @@ view isDark user model =
                                 + trueToOne model.orWithCoords
                                 + trueToOne model.orWithExtendedForm
                                 + trueToOne model.withoutModelTags
+                                + trueToOne model.reportTagsOnlyThisUnit
                             )
                                 |> zeroToNothing
                                 |> mmap String.fromInt
                         , overallLabel =
                             extractMRecordField (\r -> r.tagsCount) (List.length model.tags) (RD.toMaybe model.counts)
                                 |> String.fromInt
-                        , withGreenCircle = False
+                        , withGreenCircle = model.reportTagsOnlyThisUnit
                         }
                         tagListBlock
                    , div [ class "flex-grow-1", style "margin-top" "100px" ]

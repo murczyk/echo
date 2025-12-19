@@ -118,6 +118,7 @@ analysisStatsParams dtFromPosix dtToPosix model =
 
         else
             Nothing
+    , reportTagsOnlyThisUnit = Just model.reportTagsOnlyThisUnit
     }
 
 
@@ -144,6 +145,7 @@ analysisStatsDefaultParams dtFromPosix dtToPosix =
     , filterTagsOption = Nothing
     , unitsExactMatchOnly = Nothing
     , withoutModelTags = Nothing
+    , reportTagsOnlyThisUnit = Nothing
     }
 
 
@@ -161,6 +163,7 @@ updModelFromRerAnalysisStatsReq model req =
         , includePelengLocations = req.includePelengLocations |> def True
         , locationsSelected = req.selectedLocations |> def []
         , postsSelected = req.selectedPosts |> def []
+        , reportTagsOnlyThisUnit = req.reportTagsOnlyThisUnit |> def False
     }
 
 

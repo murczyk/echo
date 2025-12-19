@@ -167,6 +167,7 @@ init route _ =
             , showReportConstructor = False
             , reportTemplate = RTTags
             , reportTagsOnlyThisUnit = False
+            , reportTagsOnlyThisUnitForReport = False
             , reportAdjacentFreqsRangeSelect =
                 { state = Select.initState (Select.selectIdentifier "selectReportAdjacentFreqsRange")
                 , items = Config.adjacentFreqsRangeOptions |> List.map (\x -> Select.basicMenuItem { item = x, label = String.fromFloat (x * 1000) ++ " кГц" })
@@ -380,6 +381,7 @@ cmdLoadCallsignGraph model { dtFromPosix, dtToPosix } =
                 model.networksSelected
                     |> List.filterMap String.toInt
                     |> emptyToNothing
+            , reportTagsOnlyThisUnit = Just model.reportTagsOnlyThisUnit
             }
 
     else
@@ -2236,6 +2238,7 @@ update user shared route msg model =
                                     , unitNew = unitNew
                                     , search = Just model.searchInput
                                     , filterTagsOption = Just model.filterTagsOption
+                                    , reportTagsOnlyThisUnit = Just model.reportTagsOnlyThisUnit
                                     }
                             in
                             ( { model | editUnitMap = Dict.remove ( freq, unit ) model.editUnitMap }
@@ -3048,7 +3051,25 @@ update user shared route msg model =
             )
 
         ReportTagsOnlyThisUnitToggle ->
-            ( { model | reportTagsOnlyThisUnit = not model.reportTagsOnlyThisUnit }
+            let
+                m2 =
+                    { model
+                        | reportTagsOnlyThisUnit = not model.reportTagsOnlyThisUnit
+                        , locations = NeedsReload (RD.withDefault [] model.locations)
+                        , senders = NeedsReload (RD.withDefault [] model.senders)
+                        , units = NeedsReload (RD.withDefault [] model.units)
+                        , posts = NeedsReload (RD.withDefault [] model.posts)
+                        , freqs = NeedsReload (RD.withDefault [] model.freqs)
+                        , callsigns = NeedsReload (RD.withDefault [] model.callsigns)
+                        , groups = NeedsReload (RD.withDefault [] model.groups)
+                        , aors = NeedsReload (RD.withDefault [] model.aors)
+                        , networksStats = NeedsReload (RD.withDefault [] model.networksStats)
+                    }
+            in
+            loadCoreStatsAndPushUrl m2
+
+        ReportTagsOnlyThisUnitForReportToggle ->
+            ( { model | reportTagsOnlyThisUnitForReport = not model.reportTagsOnlyThisUnitForReport }
             , E.none
             )
 
@@ -3058,6 +3079,7 @@ update user shared route msg model =
                 { kind = reportTemplateToString model.reportTemplate
                 , reportType = reportTemplateToApiType model model.reportTemplate
                 , req = getInboxReq model
+                , reportTagsOnlyThisUnit = Just model.reportTagsOnlyThisUnitForReport
                 }
             )
 

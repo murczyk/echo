@@ -470,6 +470,7 @@ pub struct AnalysisStatsReq {
     pub units_exact_match_only: Option<bool>,
     pub filter_tags_option: Option<TagFilterOption>,
     pub without_model_tags: Option<bool>,
+    pub report_tags_only_this_unit: Option<bool>,
 }
 
 #[derive(
@@ -498,6 +499,7 @@ pub struct CallsignsGraphReq {
     pub units_exact_match_only: Option<bool>,
     pub filter_tags_option: Option<TagFilterOption>,
     pub without_model_tags: Option<bool>,
+    pub report_tags_only_this_unit: Option<bool>,
 }
 
 #[derive(
@@ -886,6 +888,7 @@ pub struct EditFreqUnitNameReq {
     pub unit_new: String,
     pub search: Option<String>,
     pub filter_tags_option: Option<TagFilterOption>,
+    pub report_tags_only_this_unit: Option<bool>,
 }
 
 #[derive(

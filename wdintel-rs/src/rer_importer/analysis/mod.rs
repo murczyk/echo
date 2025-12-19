@@ -376,6 +376,8 @@ fn get_related_tag_items_filter(
     tag_filter_option: TagFilterOption,
     only_tags_by_logins: Option<Vec<String>>,
     without_model_tags: bool,
+    report_tags_only_this_unit: bool,
+    user_id: &str,
 ) -> SimpleExpr {
     let expected_count = unique_tags.len();
 
@@ -401,6 +403,32 @@ fn get_related_tag_items_filter(
         q = q.filter(sigint_inbox_item_tag::Column::Model.is_null());
     }
 
+    if report_tags_only_this_unit {
+        let user_alias = Alias::new("u2");
+
+        let mut query = Query::select();
+        query
+            .column((login::Entity, login::Column::Login))
+            .from(login::Entity)
+            .join_as(
+                JoinType::InnerJoin,
+                login::Entity,
+                user_alias.clone(),
+                Expr::col((login::Entity, login::Column::OrganismId))
+                    .equals((user_alias.clone(), login::Column::OrganismId)),
+            )
+            .and_where(
+                Expr::col((user_alias, login::Column::Login))
+                    .eq(user_id.to_string()),
+            );
+
+        info!(
+            "filtering tags for {user_id}: {}",
+            query.to_string(PostgresQueryBuilder)
+        );
+        q = q.filter(sigint_inbox_item_tag::Column::Login.in_subquery(query));
+    }
+
     if let Some(logins) = only_tags_by_logins {
         if !logins.is_empty() {
             q = q.filter(sigint_inbox_item_tag::Column::Login.eq_any(logins));
@@ -422,6 +450,42 @@ fn get_related_tag_items_filter(
     }
 }
 
+fn tags_from_user_organism_exists(user_id: &str) -> SimpleExpr {
+    let user_alias = Alias::new("t_user");
+    let allowed_logins = Query::select()
+        .column((login::Entity, login::Column::Login))
+        .from(login::Entity)
+        .join_as(
+            JoinType::InnerJoin,
+            login::Entity,
+            user_alias.clone(),
+            Expr::col((login::Entity, login::Column::OrganismId))
+                .equals((user_alias.clone(), login::Column::OrganismId)),
+        )
+        .and_where(
+            Expr::col((user_alias, login::Column::Login))
+                .eq(user_id.to_string()),
+        )
+        .to_owned();
+
+    let subquery = sigint_inbox_item_tag::Entity::find()
+        .select_only()
+        .expr(Expr::value(1))
+        .filter(
+            Expr::col((
+                sigint_inbox_item_tag::Entity,
+                sigint_inbox_item_tag::Column::SigintInboxItemId,
+            ))
+            .equals((sigint_inbox_item::Entity, sigint_inbox_item::Column::Id)),
+        )
+        .filter(
+            sigint_inbox_item_tag::Column::Login.in_subquery(allowed_logins),
+        )
+        .into_query();
+
+    Expr::exists(subquery)
+}
+
 pub fn filter_selected_tags<Q>(
     q: Q,
     selected_tags: &Option<Vec<i64>>,
@@ -433,6 +497,7 @@ pub fn filter_selected_tags<Q>(
     without_model_tags: &Option<bool>,
     user_id: &str,
     only_tags_by_logins: Option<Vec<String>>,
+    report_tags_only_this_unit: bool,
 ) -> Result<Q, AppError>
 where
     Q: QueryFilter + QuerySelect + Clone,
@@ -451,6 +516,8 @@ where
                 tag_filter_option,
                 only_tags_by_logins,
                 without_model_tags,
+                report_tags_only_this_unit,
+                user_id,
             ));
         }
     }
@@ -519,6 +586,10 @@ where
 
     if let Some(ref inner_expr) = m_inner_expr {
         q = q.filter(inner_expr.clone());
+    }
+
+    if report_tags_only_this_unit && m_inner_expr.is_none() {
+        q = q.filter(tags_from_user_organism_exists(user_id));
     }
     // println!(
     //     "> filter_selected_tags q sql: {}",
@@ -1005,6 +1076,7 @@ pub async fn summary_table_freq_1(
         &req.without_model_tags,
         &user.id().c(h!())?,
         None,
+        req.report_tags_only_this_unit.unwrap_or(false),
     )?;
     let dedup_subquery =
         filter_selected_aors(dedup_subquery, &req.selected_aors)
@@ -1598,6 +1670,7 @@ pub async fn edit_freq_unit_name(
         &reqan.without_model_tags,
         &user.id().c(h!())?,
         None,
+        req.report_tags_only_this_unit.unwrap_or(false),
     )?;
     let rows_res = filter_selected_networks(rows_res, &reqan.selected_networks)
         .context(h!())?;
@@ -1966,6 +2039,7 @@ pub async fn bi_new_callsigns(
         &req.without_model_tags,
         user_id,
         None,
+        req.report_tags_only_this_unit.unwrap_or(false),
     )?;
     let rows_res =
         filter_selected_aors(rows_res, &req.selected_aors).context(h!())?;
@@ -2045,6 +2119,7 @@ pub async fn bi_new_callsigns(
         &req.without_model_tags,
         user_id,
         None,
+        req.report_tags_only_this_unit.unwrap_or(false),
     )?;
     let rows_res = filter_selected_networks(rows_res, &req.selected_networks)
         .context(h!())?;

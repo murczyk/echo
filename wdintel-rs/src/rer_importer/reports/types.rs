@@ -34,6 +34,7 @@ pub struct ReportPreviewReq {
     pub kind: String,
     pub req: InboxMessagesReq,
     pub report_type: Option<ReportType>,
+    pub report_tags_only_this_unit: Option<bool>,
 }
 
 #[derive(
