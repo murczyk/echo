@@ -173,24 +173,29 @@ pub async fn oneoff_import_signals_callsigns_csv(
         ps.dry_run,
         skipped_signals
     );
-    if !ps.dry_run {
-        sigint_signal::Entity::insert_many(signals)
-            .exec_without_returning(&dbx)
-            .await
-            .c(h!())?;
-    }
-
     info!(
         "importing {} sigint_callsign rows, dry_run={}, skipped={}",
         callsigns.len(),
         ps.dry_run,
         skipped_callsigns
     );
-    if !ps.dry_run {
-        sigint_callsign::Entity::insert_many(callsigns)
-            .exec_without_returning(&dbx)
+    let txn = dbx.begin().await.c(h!())?;
+    if !signals.is_empty() {
+        sigint_signal::Entity::insert_many(signals)
+            .exec_without_returning(&txn)
             .await
             .c(h!())?;
+    }
+    if !callsigns.is_empty() {
+        sigint_callsign::Entity::insert_many(callsigns)
+            .exec_without_returning(&txn)
+            .await
+            .c(h!())?;
+    }
+    if ps.dry_run {
+        txn.rollback().await.c(h!())?;
+    } else {
+        txn.commit().await.c(h!())?;
     }
 
     Ok(())
