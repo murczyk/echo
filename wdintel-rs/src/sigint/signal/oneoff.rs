@@ -203,11 +203,11 @@ fn find_matching_unit(
     suggested_mapping: &mut HashMap<String, Option<i64>>,
 ) -> Option<i64> {
     if let Some(mapped_unit_id) = unit_mapping.get(unit_name) {
-        return Some(*mapped_unit_id);
+        Some(*mapped_unit_id)
     } else {
         let candidate_units: Vec<_> = units
             .iter()
-            .filter(|unit| &unit.name == unit_name)
+            .filter(|unit| unit.name.as_str() == unit_name)
             .collect();
         match candidate_units.as_slice() {
             [] => {
@@ -217,13 +217,13 @@ fn find_matching_unit(
                 {
                     warn!("no matching unit for '{unit_name}'");
                 }
-                return None;
+                None
             }
             [unit] => {
                 let id = unit.id;
                 info!("found unit '{unit_name}': id={id}");
                 unit_mapping.insert(unit_name.to_owned(), id);
-                return Some(id);
+                Some(id)
             }
             [head, ..] => {
                 if suggested_mapping
@@ -235,7 +235,7 @@ fn find_matching_unit(
                         println!("{candidate:?}");
                     }
                 }
-                return None;
+                None
             }
         }
     }
