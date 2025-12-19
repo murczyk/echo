@@ -772,6 +772,8 @@ fn network_filter_expr(
         //     AND gaor.left_bound  <= naor.left_bound
         //     AND gaor.right_bound >= naor.right_bound
         //     AND n.id = ANY($selected_networks)
+        //     AND n.deleted = false
+        //     AND nf.deleted = false
         // )
         let condition = Condition::any()
             // (gaor.left_bound >= naor.left_bound AND gaor.left_bound <= naor.right_bound)
@@ -899,6 +901,14 @@ fn network_filter_expr(
             .and_where(
                 Expr::col((n.clone(), sigint_network::Column::Id))
                     .is_in(ids.clone()),
+            )
+            .and_where(
+                Expr::col((nf.clone(), sigint_network_freq::Column::Deleted))
+                    .eq(false),
+            )
+            .and_where(
+                Expr::col((n.clone(), sigint_network::Column::Deleted))
+                    .eq(false),
             )
             .and_where(condition.into())
             .to_owned();
