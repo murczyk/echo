@@ -1003,6 +1003,18 @@ sigint_list_signals toMsg req =
         }
 
 
+sigint_list_signals_csv :
+    (Result ApiError Bytes -> msg)
+    -> ListSignalsReq
+    -> Cmd msg
+sigint_list_signals_csv toMsg req =
+    Http.post
+        { url = "/api/sigint/signals/csv"
+        , body = Http.jsonBody (listSignalsReqEncoder req)
+        , expect = Http.expectBytesResponse toMsg (resolve Ok)
+        }
+
+
 sigint_signal_create :
     (Result ApiError Int -> msg)
     -> CreateSignalReq
