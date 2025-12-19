@@ -422,6 +422,10 @@ fn get_related_tag_items_filter(
                     .eq(user_id.to_string()),
             );
 
+        info!(
+            "filtering tags for {user_id}: {}",
+            query.to_string(PostgresQueryBuilder)
+        );
         q = q.filter(sigint_inbox_item_tag::Column::Login.in_subquery(query));
     }
 
