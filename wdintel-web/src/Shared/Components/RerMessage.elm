@@ -58,6 +58,7 @@ type alias RenderParams =
 type alias Edited =
     { original : B.InboxMessage }
 
+
 type alias BotTagAction =
     { messageId : Int
     , tagId : Int
@@ -604,7 +605,8 @@ update vps msg model =
                     { model = { model | botTagAction = botPanel }
                     , cmds = E.sendCmd cmd
                     , sigs = []
-                    , messages = toggleTag msgId tagId (Just vps.user.name) vps.messages
+                    , messages =
+                        toggleTag msgId tagId (Just vps.user.name) vps.user.organismId vps.messages
                     }
 
         TagSaveDone msgId _ messageBefore (Err e) ->
@@ -872,7 +874,8 @@ hasUserTag msgId tagId login messages =
                 inboxTagsFor m
                     |> List.any
                         (\t ->
-                            t.tagId == tagId
+                            t.tagId
+                                == tagId
                                 && t.model
                                 == Nothing
                                 && t.login
@@ -920,9 +923,10 @@ toggleTag :
     Int
     -> Int
     -> Maybe String
+    -> Maybe Int
     -> List ( Int, B.InboxMessage )
     -> List ( Int, B.InboxMessage )
-toggleTag msgId tagId login messages =
+toggleTag msgId tagId login organismId messages =
     let
         updateMessage message =
             let
@@ -935,7 +939,8 @@ toggleTag msgId tagId login messages =
                             List.filter
                                 (\tag ->
                                     not
-                                        (tag.tagId == tagId
+                                        (tag.tagId
+                                            == tagId
                                             && tag.model
                                             == Nothing
                                             && tag.login
@@ -958,6 +963,7 @@ toggleTag msgId tagId login messages =
                               , confidence = 1
                               , login = Just loginName
                               , model = Nothing
+                              , organismId = organismId
                               }
                             ]
 
@@ -989,7 +995,8 @@ removeBotTags msgId tagId messages =
                         |> List.filter
                             (\tag ->
                                 not
-                                    (tag.tagId == tagId
+                                    (tag.tagId
+                                        == tagId
                                         && MaybeX.isJust tag.model
                                     )
                             )

@@ -13,8 +13,9 @@ use docx_rs::*;
 use echo_migration::IntoCondition;
 use sea_orm::{sea_query::PostgresQueryBuilder, *};
 use sea_query::{Alias, CommonTableExpression, Expr, Func, Query, SimpleExpr};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::BTreeSet;
 use std::fmt::Debug;
 use std::path::Path;
 
@@ -324,15 +325,8 @@ pub async fn report_docx_kind_babak(
         )
         .add_paragraph(Paragraph::new());
 
-    #[derive(Clone, Deserialize, Eq, PartialEq, Ord, PartialOrd)]
-    pub struct Comment {
-        datetime: Option<chrono::NaiveDateTime>,
-        comment: Option<String>,
-        text: Option<String>,
-    }
-
     for unit in &units {
-        let comments: Vec<Comment> = serde_json::from_value(
+        let comments: Vec<BabakComment> = serde_json::from_value(
             unit.comments.clone().unwrap_or(Vec::<Value>::new().into()),
         )
         .unwrap_or(vec![]);
@@ -391,7 +385,7 @@ pub async fn report_docx_kind_babak(
         .add_paragraph(Paragraph::new());
 
     for unit in &units {
-        let losses_comments: Vec<Comment> = serde_json::from_value(
+        let losses_comments: Vec<BabakComment> = serde_json::from_value(
             unit.losses_comments
                 .clone()
                 .unwrap_or(Vec::<Value>::new().into()),
@@ -469,7 +463,7 @@ pub async fn report_docx_kind_babak(
         .add_paragraph(Paragraph::new());
 
     for unit in &units {
-        let others_comments: Vec<Comment> = serde_json::from_value(
+        let others_comments: Vec<BabakComment> = serde_json::from_value(
             unit.others_comments
                 .clone()
                 .unwrap_or(Vec::<Value>::new().into()),
@@ -545,6 +539,54 @@ pub struct StatsPerUnitReport {
     pub comments: Option<Value>,
     pub others_comments: Option<Value>,
     pub losses_comments: Option<Value>,
+}
+
+#[derive(Clone, Deserialize, Serialize, Eq, PartialEq, Ord, PartialOrd)]
+struct BabakComment {
+    datetime: Option<chrono::NaiveDateTime>,
+    comment: Option<String>,
+    text: Option<String>,
+}
+
+fn dedup_babak_comments_across_units(units: &mut [StatsPerUnitReport]) {
+    let mut seen_comments = BTreeSet::new();
+    let mut seen_losses = BTreeSet::new();
+    let mut seen_others = BTreeSet::new();
+
+    for unit in units.iter_mut() {
+        unit.comments = dedup_babak_comment_values(
+            unit.comments.take(),
+            &mut seen_comments,
+        );
+        unit.losses_comments = dedup_babak_comment_values(
+            unit.losses_comments.take(),
+            &mut seen_losses,
+        );
+        unit.others_comments = dedup_babak_comment_values(
+            unit.others_comments.take(),
+            &mut seen_others,
+        );
+    }
+}
+
+fn dedup_babak_comment_values(
+    value: Option<Value>,
+    seen: &mut BTreeSet<BabakComment>,
+) -> Option<Value> {
+    let value = value?;
+    let original = value.clone();
+    let comments: Vec<BabakComment> = match serde_json::from_value(value) {
+        Ok(items) => items,
+        Err(_) => return Some(original),
+    };
+    let mut deduped = Vec::with_capacity(comments.len());
+    for comment in comments {
+        if seen.insert(comment.clone()) {
+            deduped.push(comment);
+        }
+    }
+
+    serde_json::to_value(deduped).ok().or(Some(original))
 }
 
 pub async fn get_inbox_messages_report_unit(
@@ -903,7 +945,7 @@ pub async fn get_inbox_messages_report_unit(
 
     print!("{raw_query}");
 
-    Ok(read_db
+    let mut units = read_db
         .query_all(Statement::from_string(
             DatabaseBackend::Postgres,
             raw_query.to_string(),
@@ -912,7 +954,13 @@ pub async fn get_inbox_messages_report_unit(
         .c(h!())?
         .iter()
         .map(|row| StatsPerUnitReport::from_query_result(row, "").unwrap())
-        .collect::<Vec<StatsPerUnitReport>>())
+        .collect::<Vec<StatsPerUnitReport>>();
+
+    if req.report_tags_only_this_unit == Some(true) {
+        dedup_babak_comments_across_units(&mut units);
+    }
+
+    Ok(units)
 }
 
 #[cfg(test)]

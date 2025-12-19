@@ -9,6 +9,8 @@
 
 ## NEXT
 
+- [#1758](https://github.com/echoua/echo/issues/1758) 🐞 Дедублікація коментарів звіт Бабак
+- [#1760](https://github.com/echoua/echo/issues/1760) ✅ Оперативний: показувати теги лише мого підрозділу
 - [#1738](https://github.com/echoua/echo/issues/1738) ✅ Додано oneoff для імпорту .csv з позивними та сигналами з [#1740](https://github.com/echoua/echo/issues/1740)
 - [#1737](https://github.com/echoua/echo/issues/1737) ✅ Додано можливість імпортувати/експортувати коментарі з кількох організмів та логінів.
 

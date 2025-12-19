@@ -84,7 +84,11 @@ async fn monitoring(
             signal_message::Entity::find()
                 .join(
                     JoinType::InnerJoin,
-                    signal_message::Relation::DatasourceGroup.def(),
+                    signal_message::Relation::SignalMessageGroup.def(),
+                )
+                .join(
+                    JoinType::InnerJoin,
+                    signal_message_group::Relation::DatasourceGroup.def(),
                 )
                 .filter(
                     datasource_group::Column::DatasourceId.eq(datasource.id),
