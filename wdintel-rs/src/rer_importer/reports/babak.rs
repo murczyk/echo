@@ -1037,7 +1037,7 @@ mod tests {
                 ..Default::default()
             },
             report_type: None,
-            report_tags_only_this_unit: Some(true),
+            report_tags_only_this_unit: Some(false),
         };
 
         let res = bl_babak_report(&login.login, &env, &req).await.unwrap();
