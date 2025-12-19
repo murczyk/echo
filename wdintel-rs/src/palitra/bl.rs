@@ -8,6 +8,7 @@ use chrono::Utc;
 use itertools::{Either, Itertools};
 use sea_orm::prelude::*;
 use sea_orm::*;
+use std::collections::{HashMap, HashSet};
 
 enum PalitraUpdateAction {
     Insert,
@@ -100,6 +101,58 @@ pub async fn list_all_palitras_detailed(
     Ok(result)
 }
 
+pub async fn list_palitra_points_by_bbox(
+    login: String,
+    req: PalitraPointsReq,
+    dbx: &DatabaseConnection,
+) -> anyhow::Result<Vec<PalitraPoints>> {
+    let allowed_ids = collect_palitra_ids(login, dbx).await.c(h!())?;
+    let allowed_ids: HashSet<i64> = allowed_ids.into_iter().collect();
+    let palitra_ids: Vec<i64> = req
+        .palitra_ids
+        .into_iter()
+        .filter(|id| allowed_ids.contains(id))
+        .collect();
+    if palitra_ids.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let bbox = normalize_bbox(req.bbox);
+    let points = palitra_point::Entity::find()
+        .filter(palitra_point::Column::PalitraId.eq_any(palitra_ids.clone()))
+        .filter(palitra_point::Column::Deleted.eq(false))
+        .filter(palitra_point::Column::Lat.gte(bbox.min_lat))
+        .filter(palitra_point::Column::Lat.lte(bbox.max_lat))
+        .filter(palitra_point::Column::Lng.gte(bbox.min_lng))
+        .filter(palitra_point::Column::Lng.lte(bbox.max_lng))
+        .all(dbx)
+        .await
+        .c(h!())?;
+
+    let mut points_by_id: HashMap<i64, Vec<PalitraPoint>> = HashMap::new();
+    for point in points {
+        points_by_id
+            .entry(point.palitra_id)
+            .or_default()
+            .push(PalitraPoint {
+                label: point.label,
+                coords: Coords {
+                    lat: point.lat,
+                    lng: point.lng,
+                },
+            });
+    }
+
+    let result = palitra_ids
+        .into_iter()
+        .map(|palitra_id| PalitraPoints {
+            palitra_id,
+            points: points_by_id.remove(&palitra_id).unwrap_or_default(),
+        })
+        .collect();
+    Ok(result)
+}
+
 pub async fn list_all_palitras(
     login: String,
     dbx: &DatabaseConnection,
@@ -178,6 +231,19 @@ where
         result.push(PalitraDetails { palitra, points });
     }
     Ok(result)
+}
+
+fn normalize_bbox(bbox: Bbox) -> Bbox {
+    let min_lat = bbox.min_lat.min(bbox.max_lat);
+    let max_lat = bbox.min_lat.max(bbox.max_lat);
+    let min_lng = bbox.min_lng.min(bbox.max_lng);
+    let max_lng = bbox.min_lng.max(bbox.max_lng);
+    Bbox {
+        min_lat,
+        min_lng,
+        max_lat,
+        max_lng,
+    }
 }
 
 async fn recalculate_center<'a, 'async_trait, C>(

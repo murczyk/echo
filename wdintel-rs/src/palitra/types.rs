@@ -70,6 +70,32 @@ pub struct PalitraPoint {
     pub label: Option<String>,
 }
 
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct Bbox {
+    pub min_lat: f64,
+    pub min_lng: f64,
+    pub max_lat: f64,
+    pub max_lng: f64,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct PalitraPointsReq {
+    pub palitra_ids: Vec<i64>,
+    pub bbox: Bbox,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct PalitraPoints {
+    pub palitra_id: i64,
+    pub points: Vec<PalitraPoint>,
+}
+
 impl Coords {
     pub fn from_csv(csv: &str) -> anyhow::Result<Coords> {
         // KML stores coordinates as "lon,lat[,alt]" so parse in that order.
