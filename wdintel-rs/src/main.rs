@@ -447,6 +447,26 @@ pub struct OneoffSuggestInboxMessageTagsPs {
     pub end: String,
 }
 
+#[derive(clap::Parser, Debug)]
+pub struct OneoffImportCallsignsCsvPs {
+    #[arg(long)]
+    pub input: String,
+    #[arg(long, action)]
+    pub dry_run: bool,
+}
+
+#[derive(clap::Parser, Debug)]
+pub struct OneoffImportSignalsCallsignsCsvPs {
+    #[arg(long)]
+    pub signals: Option<String>,
+    #[arg(long)]
+    pub callsigns: Option<String>,
+    #[arg(long, action)]
+    pub dry_run: bool,
+    #[arg(long)]
+    pub unit_mapping: Option<String>,
+}
+
 #[derive(clap::Subcommand, Debug)]
 #[command(author, version, about, long_about = None)]
 enum Cmd {
@@ -516,6 +536,7 @@ enum Cmd {
     OneoffGenerateStrongboxKey,
     OneoffFillSigintInboxItemTags,
     OneoffSuggestInboxMessageTags(OneoffSuggestInboxMessageTagsPs),
+    OneoffImportSignalsCallsignsCsv(OneoffImportSignalsCallsignsCsvPs),
 }
 
 #[derive(clap::Parser, Debug)]
@@ -936,6 +957,12 @@ async fn async_main(
         }
         Cmd::OneoffSuggestInboxMessageTags(ps) => {
             sigint::oneoff::oneoff_suggest_inbox_message_tags(mode, &ps).await
+        }
+        Cmd::OneoffImportSignalsCallsignsCsv(ps) => {
+            sigint::signal::oneoff::oneoff_import_signals_callsigns_csv(
+                mode, &ps,
+            )
+            .await
         }
     }
 }
