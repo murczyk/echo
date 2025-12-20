@@ -18,6 +18,7 @@ pub async fn run_cleanup_worker(mode: Mode) {
             error!("Messenger Cleanup worker failed: {e:#?}");
             sleep(Duration::from_secs(15)).await;
         }
+        echo_im::worker::cleanup_signal_attachment_worker_once(&db).await;
 
         sleep(Duration::from_secs(MESSENGER_CLEANUP_OK_SLEEP_SEC)).await;
     }
