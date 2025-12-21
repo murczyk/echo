@@ -195,24 +195,27 @@ fn parse_datetime(
         });
     };
 
-    if !has_month && !has_day {
-        if res_tz > lnow {
-            res_tz -= chrono::Duration::days(1);
-        }
-    }
-
-    if !has_year {
-        let current_diff = lnow - res_tz;
-        if let Some(res_tz_prev_year) = res_tz.with_year(res_tz.year() - 1) {
-            let prev_year_diff = lnow - res_tz_prev_year;
-            // choose closer date if no year
-            if prev_year_diff.abs() < current_diff.abs() {
-                res_tz = res_tz_prev_year;
-            }
-        }
+    if !has_month && !has_day && res_tz > lnow {
+        res_tz -= chrono::Duration::days(1);
     }
 
     let lmax = lnow + chrono::Duration::days(2);
+    if !has_year {
+        let res_tz_prev_year = try_offset_year(res_tz, -1, lmax);
+        let res_tz_next_year = try_offset_year(res_tz, 1, lmax);
+
+        if let Some(res_tz_prev_year) = res_tz_prev_year
+            .filter(|val| (lnow - val).abs() < (lnow - res_tz).abs())
+        {
+            res_tz = res_tz_prev_year;
+        }
+        if let Some(res_tz_next_year) = res_tz_next_year
+            .filter(|val| (lnow - val).abs() < (lnow - res_tz).abs())
+        {
+            res_tz = res_tz_next_year;
+        }
+    }
+
     if res_tz > lmax {
         return Err(AppError::BL {
             msg: "Date or time too far in future".to_string(),
@@ -220,6 +223,14 @@ fn parse_datetime(
     }
 
     Ok(res_tz.naive_local())
+}
+
+fn try_offset_year(
+    d: DateTime<Tz>,
+    offset: i32,
+    max: DateTime<Tz>,
+) -> Option<DateTime<Tz>> {
+    d.with_year(d.year() + offset).filter(|val| val < &max)
 }
 
 /// Parses datetime string like "11 грудня 2023 19:46"
@@ -633,7 +644,7 @@ mod tests {
 
 Коментар: T2"#;
         let tz = crate::config::get_tz();
-        let lnow = tz.with_ymd_and_hms(2025, 02, 01, 01, 15, 22).unwrap();
+        let lnow = tz.with_ymd_and_hms(2025, 2, 1, 1, 15, 22).unwrap();
         let res = extract_datetime(lnow, input).unwrap();
         let expected = Some(
             NaiveDate::from_ymd_opt(2024, 12, 31)
@@ -656,10 +667,33 @@ mod tests {
 
 Коментар: T2"#;
         let tz = crate::config::get_tz();
-        let lnow = tz.with_ymd_and_hms(2024, 12, 30, 01, 15, 22).unwrap();
+        let lnow = tz.with_ymd_and_hms(2024, 12, 30, 1, 15, 22).unwrap();
         let res = extract_datetime(lnow, input).unwrap();
         let expected = Some(
             NaiveDate::from_ymd_opt(2024, 12, 31)
+                .unwrap()
+                .and_hms_opt(19, 31, 34)
+                .unwrap(),
+        );
+        assert_eq!(res, expected);
+    }
+
+    #[test]
+    fn extract_datetime_no_year_next_year_future() {
+        let input = r#"01.01, 19:31:34
+446.000
+УКХ ймовірно, 344 мсп 69 мсд 6 А (МИКОЛАЇВКА-ЛИМАН ДРУГИЙ)
+НВ
+НВ
+
+– Да, давай синьки.
+
+Коментар: T2"#;
+        let tz = crate::config::get_tz();
+        let lnow = tz.with_ymd_and_hms(2024, 12, 31, 1, 15, 22).unwrap();
+        let res = extract_datetime(lnow, input).unwrap();
+        let expected = Some(
+            NaiveDate::from_ymd_opt(2025, 1, 1)
                 .unwrap()
                 .and_hms_opt(19, 31, 34)
                 .unwrap(),
@@ -679,7 +713,7 @@ mod tests {
 
 Коментар: T2"#;
         let tz = crate::config::get_tz();
-        let lnow = tz.with_ymd_and_hms(2024, 11, 01, 21, 15, 22).unwrap();
+        let lnow = tz.with_ymd_and_hms(2024, 11, 1, 21, 15, 22).unwrap();
         let res = extract_datetime(lnow, input).unwrap();
         let expected = None;
         assert_eq!(res, expected);
