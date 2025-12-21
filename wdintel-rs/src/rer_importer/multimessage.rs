@@ -2,6 +2,8 @@ use crate::entities::signal_message;
 use crate::error::AppError;
 use crate::h;
 use crate::types::ShortContext;
+use chrono::{DateTime, Local};
+use chrono_tz::Tz;
 use log::{error, warn};
 use sea_orm::*;
 
@@ -30,7 +32,9 @@ where
 {
     let mut models = vec![];
     let is_src_valid = check_message_length_is_valid(body);
-    let new_messages: Vec<String> = slice_message(body);
+    let tz = crate::config::get_tz();
+    let lnow = Local::now().with_timezone(&tz);
+    let new_messages: Vec<String> = slice_message(lnow, body);
     if new_messages.len() == 1 && is_src_valid {
         return Ok(models);
     }
@@ -63,7 +67,7 @@ where
     Ok(models)
 }
 
-fn slice_message(signal_message: &str) -> Vec<String> {
+fn slice_message(lnow: DateTime<Tz>, signal_message: &str) -> Vec<String> {
     let mut rows = signal_message
         .split('\n')
         .collect::<Vec<&str>>()
@@ -86,7 +90,7 @@ fn slice_message(signal_message: &str) -> Vec<String> {
             let Some(row) = rows.next() else {
                 break;
             };
-            if is_header(row) {
+            if is_header(lnow, row) {
                 is_a_header = true;
                 result.push(container.join("\n"));
                 container = vec![];
@@ -100,8 +104,8 @@ fn slice_message(signal_message: &str) -> Vec<String> {
     result
 }
 
-fn is_header(row: &str) -> bool {
-    let m_ts = super::datetime::extract_datetime(row).ok().flatten();
+fn is_header(lnow: DateTime<Tz>, row: &str) -> bool {
+    let m_ts = super::datetime::extract_datetime(lnow, row).ok().flatten();
     if m_ts.is_some() {
         return true;
     }
@@ -119,9 +123,11 @@ mod tests {
     #[cfg_attr(debug_assertions, ignore)]
     #[tokio::test]
     async fn test_multi_message() {
+        let tz = crate::config::get_tz();
+        let lnow = Local::now().with_timezone(&tz);
         let messages50 =
             std::fs::read_to_string("data/test_multi_message.txt").unwrap();
-        let messages = slice_message(&messages50);
+        let messages = slice_message(lnow, &messages50);
         assert_eq!(messages.len(), 50);
         assert!(should_try_split_message(&messages50));
         for m in messages {
@@ -132,10 +138,12 @@ mod tests {
     #[cfg_attr(debug_assertions, ignore)]
     #[tokio::test]
     async fn test_multi_message2() {
+        let tz = crate::config::get_tz();
+        let lnow = Local::now().with_timezone(&tz);
         let messages_real =
             std::fs::read_to_string("data/test_multi_message2.txt").unwrap();
         assert!(should_try_split_message(&messages_real));
-        let messages = slice_message(&messages_real);
+        let messages = slice_message(lnow, &messages_real);
         assert_eq!(messages.len(), 84);
         for m in messages {
             assert!(check_message_length_is_valid(&m));
@@ -145,6 +153,8 @@ mod tests {
     #[cfg_attr(debug_assertions, ignore)]
     #[tokio::test]
     async fn test_multi_message3() {
+        let tz = crate::config::get_tz();
+        let lnow = Local::now().with_timezone(&tz);
         let text = r#"Отримано з поста "Khartiia"
 --------------------------------------
 03.04, 05:45:53
@@ -164,7 +174,7 @@ mod tests {
 1 — Упаковочка для Грача
 г — Принял тебя."#;
         assert!(!should_try_split_message(text));
-        let messages = slice_message(text);
+        let messages = slice_message(lnow, text);
         assert_eq!(messages.len(), 2);
     }
 }

@@ -53,9 +53,10 @@ where
             return Ok(spawned);
         }
     }
-
+    let tz = crate::config::get_tz();
+    let lnow = Local::now().with_timezone(&tz);
     let mut m_dt: Option<chrono::DateTime<chrono_tz::Tz>> =
-        match crate::rer_importer::datetime::extract_datetime(&body)? {
+        match crate::rer_importer::datetime::extract_datetime(lnow, &body)? {
             None => None,
             Some(dt) => match Kyiv.from_local_datetime(&dt) {
                 chrono::offset::LocalResult::None => {

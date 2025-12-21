@@ -1,70 +1,75 @@
 use crate::error::AppError;
 use crate::types::*;
 use chrono::prelude::*;
+use chrono_tz::Tz;
 use lazy_static::lazy_static;
 use regex::{Captures, Regex};
 
-type ProcessorFn = fn(&Captures) -> Result<NaiveDateTime, AppError>;
+type ProcessorFn =
+    fn(DateTime<Tz>, &Captures) -> Result<NaiveDateTime, AppError>;
 
-/// Витягує дату та час з тіла повідомлення.  
+/// Витягує дату та час з тіла повідомлення.
 /// ***ВАЖЛИВО:*** при додаванні нових форматів дати та часу
 /// потрібно також додати їх у rer_importer::body_noheader::extract_text для коректного виділення тіла повідомлення.
-pub fn extract_datetime(body: &str) -> Result<Option<NaiveDateTime>, AppError> {
+pub fn extract_datetime(
+    lnow: DateTime<Tz>,
+    body: &str,
+) -> Result<Option<NaiveDateTime>, AppError> {
     lazy_static! {
         static ref REGEX_PATTERNS: Vec<(&'static str, ProcessorFn)> = vec![
             // Work with formats like DD.MM.YYYY_HH:MI
             (
                 r"(?P<day>\d{2})\.(?P<mon>\d{2})\.(?P<year>\d{4})_(?P<hour>\d{2})\s*:(?P<minute>\d{2})",
-                |capts| { parse_datetime(capts, true, true, true, false) },
+                |lnow, capts| { parse_datetime(lnow, capts, true, true, true, false) },
             ),
             // Work with formats like DD.MM.YYYY, HH:MI:SS
             (
                 r"(?P<day>\d{2})\.(?P<mon>\d{2})\.(?P<year>\d{4}), (?P<hour>\d{2})\s*:(?P<minute>\d{2})\s*:(?P<second>\d{2})",
-                |capts| { parse_datetime(capts, true, true, true, true) },
+                |lnow, capts| { parse_datetime(lnow, capts, true, true, true, true) },
             ),
             // Work with formats like YYYY-MM-DD_HH:MI
             (
                 r"(?P<year>\d{4})-(?P<mon>\d{2})-(?P<day>\d{2})_(?P<hour>\d{2})\s*:(?P<minute>\d{2})",
-                |capts| { parse_datetime(capts, true, true, true, false) },
+                |lnow, capts| { parse_datetime(lnow, capts, true, true, true, false) },
             ),
             // Work with formats like YYYY-MM-DDTHH:MI:SS
             (
                 r"(?P<year>\d{4})-(?P<mon>\d{2})-(?P<day>\d{2})T(?P<hour>\d{2})\s*:(?P<minute>\d{2})\s*:(?P<second>\d{2})",
-                |capts| { parse_datetime(capts, true, true, true, true) },
+                |lnow, capts| { parse_datetime(lnow, capts, true, true, true, true) },
             ),
             // Work with formats like YYYY_MM_DD HH-MI-SS
             (
                 r"(?P<year>\d{4})_(?P<mon>\d{2})_(?P<day>\d{2}) (?P<hour>\d{2})-(?P<minute>\d{2})-(?P<second>\d{2})",
-                |capts| { parse_datetime(capts, true, true, true, true) },
+                |lnow, capts| { parse_datetime(lnow, capts, true, true, true, true) },
             ),
             // Work with formats like 17.11, 00:01:49
             (
                 r"(?P<day>\d{2})\.(?P<mon>\d{2}),? (?P<hour>\d{2})\s*:(?P<minute>\d{2})\s*:(?P<second>\d{2})",
-                |capts| { parse_datetime(capts, false, true, true, true) },
+                |lnow, capts| { parse_datetime(lnow, capts, false, true, true, true) },
             ),
             // Work with formats like Час: 20:09:41
             (
                 r"Час: (?P<hour>\d{2})\s*:(?P<minute>\d{2})\s*:(?P<second>\d{2})",
-                |capts| { parse_datetime(capts, false, false, false, true) },
+                |lnow, capts| { parse_datetime(lnow, capts, false, false, false, true) },
             ),
             // Work with formats like DD.MM.YYYY HH:MI:SS
             (
                 r"(?P<day>\d{2})\.(?P<mon>\d{2})\.(?P<year>\d{4}) (?P<hour>\d{2})\s*:(?P<minute>\d{2})\s*:(?P<second>\d{2})",
-                |capts| { parse_datetime(capts, true, true, true, true) },
+                |lnow, capts| { parse_datetime(lnow, capts, true, true, true, true) },
             ),
             // Work with formats like HH:MI DD.MM.YYYY
             (
                 r"(?P<hour>\d{2})\s*:(?P<minute>\d{2}) (?P<day>\d{2})\.(?P<mon>\d{2})\.(?P<year>\d{4})",
-                |capts| { parse_datetime(capts, true, true, true, false) },
+                |lnow, capts| { parse_datetime(lnow, capts, true, true, true, false) },
             ),
             (
                 r"\s+(?P<hour>\d\d?)\s*:(?P<minute>\d{2})\s+",
-                |capts| { parse_datetime(capts, false, false, false, false) },
+                |lnow, capts| { parse_datetime(lnow, capts, false, false, false, false) },
             ),
             // Work with formats like 20-11 16:53:04
             (
                 r"(?P<day>\d{2})-(?P<mon>\d{2}) (?P<hour>\d{2})\s*:(?P<minute>\d{2})\s*:(?P<second>\d{2})",
-                |capts| { parse_datetime(capts, false, true, true, true) },
+                |lnow, capts| { parse_datetime(lnow, capts, false, true, true, true) },
             ),
         ];
     }
@@ -72,7 +77,7 @@ pub fn extract_datetime(body: &str) -> Result<Option<NaiveDateTime>, AppError> {
     for (pattern, processor) in REGEX_PATTERNS.iter() {
         let regex = Regex::new(pattern).unwrap();
         if let Some(capts) = regex.captures(body) {
-            match processor(&capts) {
+            match processor(lnow, &capts) {
                 Ok(datetime) => return Ok(Some(datetime)),
                 Err(_) => {
                     // println!("Error processing pattern {}: {:?}", pattern, e);
@@ -109,9 +114,6 @@ pub fn extract_datetime(body: &str) -> Result<Option<NaiveDateTime>, AppError> {
             };
             let year: i32 = year.as_str().parse().c(h!())?;
 
-            let tz = crate::config::get_tz();
-
-            let lnow = Local::now().with_timezone(&tz);
             let Some(hour) = capts_hm.name("hour") else {
                 break '_if;
             };
@@ -127,11 +129,17 @@ pub fn extract_datetime(body: &str) -> Result<Option<NaiveDateTime>, AppError> {
                 break '_if;
             };
             let mut res: NaiveDateTime = res;
-            let Some(res_tz) = tz.from_local_datetime(&res).earliest() else {
+            let Some(res_tz) =
+                lnow.timezone().from_local_datetime(&res).earliest()
+            else {
                 break '_if;
             };
             if res_tz > lnow {
                 res -= chrono::Duration::days(1);
+            }
+            let lmax = lnow + chrono::Duration::days(2);
+            if res_tz > lmax {
+                break '_if;
             }
             return Ok(Some(res));
         }
@@ -141,20 +149,13 @@ pub fn extract_datetime(body: &str) -> Result<Option<NaiveDateTime>, AppError> {
 }
 
 fn parse_datetime(
+    lnow: DateTime<Tz>,
     capts: &regex::Captures,
     has_year: bool,
     has_month: bool,
     has_day: bool,
     has_second: bool,
 ) -> Result<NaiveDateTime, AppError> {
-    let tz = crate::config::get_tz();
-    let lnow = Local::now().with_timezone(&tz);
-
-    let year: i32 = if has_year {
-        capts["year"].parse().c(h!())?
-    } else {
-        lnow.year()
-    };
     let mon: u32 = if has_month {
         capts["mon"].parse().c(h!())?
     } else {
@@ -173,6 +174,12 @@ fn parse_datetime(
         0
     };
 
+    let year: i32 = if has_year {
+        capts["year"].parse().c(h!())?
+    } else {
+        lnow.year()
+    };
+
     let Some(res) = NaiveDate::from_ymd_opt(year, mon, day)
         .and_then(|d| d.and_hms_opt(hour, minute, second))
     else {
@@ -181,19 +188,38 @@ fn parse_datetime(
         });
     };
 
-    let mut res: NaiveDateTime = res;
+    let tz = lnow.timezone();
+    let Some(mut res_tz) = tz.from_local_datetime(&res).earliest() else {
+        return Err(AppError::BL {
+            msg: "Invalid date or time".to_string(),
+        });
+    };
 
     if !has_month && !has_day {
-        let Some(res_tz) = tz.from_local_datetime(&res).earliest() else {
-            return Err(AppError::BL {
-                msg: "Invalid date or time".to_string(),
-            });
-        };
         if res_tz > lnow {
-            res -= chrono::Duration::days(1);
+            res_tz -= chrono::Duration::days(1);
         }
     }
-    Ok(res)
+
+    if !has_year {
+        let current_diff = lnow - res_tz;
+        if let Some(res_tz_prev_year) = res_tz.with_year(res_tz.year() - 1) {
+            let prev_year_diff = lnow - res_tz_prev_year;
+            // choose closer date if no year
+            if prev_year_diff.abs() < current_diff.abs() {
+                res_tz = res_tz_prev_year;
+            }
+        }
+    }
+
+    let lmax = lnow + chrono::Duration::days(2);
+    if res_tz > lmax {
+        return Err(AppError::BL {
+            msg: "Date or time too far in future".to_string(),
+        });
+    }
+
+    Ok(res_tz.naive_local())
 }
 
 /// Parses datetime string like "11 грудня 2023 19:46"
@@ -241,7 +267,9 @@ mod tests {
 НВ (НВ)
 НВ (НВ)
 "Назвать его Ебаньком он начал атаковать своих, ему пизда, тебе пизда, как принял прием? Принял тебя Заря, ты где сейчас?""#;
-        let res = extract_datetime(input).unwrap();
+        let tz = crate::config::get_tz();
+        let lnow = Local::now().with_timezone(&tz);
+        let res = extract_datetime(lnow, input).unwrap();
         let expected = Some(
             NaiveDate::from_ymd_opt(2023, 2, 8)
                 .unwrap()
@@ -253,16 +281,18 @@ mod tests {
 
     #[test]
     fn extract_datetime_test02() {
-        let input = r#"17.11, 00:01:49  
-465.8250  
-УКХ р/м управління штурмової роти "Шторм Z" 136 омсбр 58 А   
-НВ  
-НВ  
-  
-1. Дойди до Ахиллеса, посмотри, может там батарейка села на рации.  
-2. Принял.  
+        let input = r#"17.11, 00:01:49
+465.8250
+УКХ р/м управління штурмової роти "Шторм Z" 136 омсбр 58 А 
+НВ
+НВ
+
+1. Дойди до Ахиллеса, посмотри, может там батарейка села на рации.
+2. Принял.
 1. Ты видишь меня на дороге?"#;
-        let res = extract_datetime(input).unwrap();
+        let tz = crate::config::get_tz();
+        let lnow = Local::now().with_timezone(&tz);
+        let res = extract_datetime(lnow, input).unwrap();
         let year = Local::now().year();
         let expected = Some(
             NaiveDate::from_ymd_opt(year, 11, 17)
@@ -275,8 +305,10 @@ mod tests {
 
     #[test]
     fn extract_datetime_keeps_time() {
+        let tz = crate::config::get_tz();
+        let lnow = Local::now().with_timezone(&tz);
         let dt1: NaiveDateTime =
-            extract_datetime("16.02.2023_10:55").unwrap().unwrap();
+            extract_datetime(lnow, "16.02.2023_10:55").unwrap().unwrap();
         let dt2 = Kyiv.from_local_datetime(&dt1).unwrap();
         let expected: chrono::DateTime<chrono_tz::Tz> =
             Kyiv.with_ymd_and_hms(2023, 2, 16, 10, 55, 0).unwrap();
@@ -290,7 +322,9 @@ mod tests {
 НВ (НВ)
 НВ (НВ)
 "Назвать его Ебаньком он начал атаковать своих, ему пизда, тебе пизда, как принял прием? Принял тебя Заря, ты где сейчас?""#;
-        let res = extract_datetime(input).unwrap();
+        let tz = crate::config::get_tz();
+        let lnow = Local::now().with_timezone(&tz);
+        let res = extract_datetime(lnow, input).unwrap();
         let expected = Some(
             NaiveDate::from_ymd_opt(2023, 9, 4)
                 .unwrap()
@@ -311,7 +345,9 @@ mod tests {
 
 1. Там всё, две фары. Один вот, шуровый, чо жалеть...
 "#;
-        let res = extract_datetime(input).unwrap();
+        let tz = crate::config::get_tz();
+        let lnow = Local::now().with_timezone(&tz);
+        let res = extract_datetime(lnow, input).unwrap();
         let year = Local::now().year();
         let expected = Some(
             NaiveDate::from_ymd_opt(year, 11, 17)
@@ -332,7 +368,9 @@ mod tests {
 - 1 Провёл небольшую ротацию. Провели разведку в окопе, где КОСА сидел, я проводил и КОСА, вдвоём. Посадил щас туда 10 человек
 - 2 Ты им приборы дал?
 - 1 Да, всё дал, похавать дал"#;
-        let res = extract_datetime(input).unwrap();
+        let tz = crate::config::get_tz();
+        let lnow = Local::now().with_timezone(&tz);
+        let res = extract_datetime(lnow, input).unwrap();
         let year = Local::now().year();
         let expected = Some(
             NaiveDate::from_ymd_opt(year, 11, 19)
@@ -350,7 +388,9 @@ mod tests {
 Час: 20:09:41
 1. Дом, я Лесник, понаблюдайте, там наши соседи фонарики какие-то наблюдают где-то, посмотрите обтановочку и доложите
 "#;
-        let res = extract_datetime(input).unwrap();
+        let tz = crate::config::get_tz();
+        let lnow = Local::now().with_timezone(&tz);
+        let res = extract_datetime(lnow, input).unwrap();
         let tz = crate::config::get_tz();
         let now = Local::now().with_timezone(&tz);
         let dt = now;
@@ -375,7 +415,9 @@ mod tests {
     #[test]
     fn extract_datetime_test07() {
         let input = r#"2023-11-06T05:14:54"#;
-        let res = extract_datetime(input).unwrap();
+        let tz = crate::config::get_tz();
+        let lnow = Local::now().with_timezone(&tz);
+        let res = extract_datetime(lnow, input).unwrap();
         let expected = Some(
             NaiveDate::from_ymd_opt(2023, 11, 6)
                 .unwrap()
@@ -404,7 +446,9 @@ mod tests {
 1 - По закону 20-ть дней как полагается
 1 - Ти меня понял нет , это первая партия будет( . . .) выходить я хуй знает пойми короче , твоя задача встретить АЗГАРДА забрать и ЖОСТКОГО з собой , только тогда ти подходишь как меня понял прием
 2 - Да я принял тогда я один остаюсь остальных отправляю"#;
-        let res = extract_datetime(input).unwrap();
+        let tz = crate::config::get_tz();
+        let lnow = Local::now().with_timezone(&tz);
+        let res = extract_datetime(lnow, input).unwrap();
         let year = Local::now().year();
         let expected = Some(
             NaiveDate::from_ymd_opt(year, 12, 20)
@@ -423,7 +467,9 @@ mod tests {
 Напрямок: Суджа, Снагість, Обухівка
 
 — второй 076 Спасибо за прикрытие счастья здоровья"#;
-        let res = extract_datetime(input).unwrap();
+        let tz = crate::config::get_tz();
+        let lnow = Local::now().with_timezone(&tz);
+        let res = extract_datetime(lnow, input).unwrap();
         let expected = Some(
             NaiveDate::from_ymd_opt(2025, 1, 13)
                 .unwrap()
@@ -443,7 +489,9 @@ mod tests {
 
 — Депутат, Депутат Трактору.
 — Да, все живы, машине пизда."#;
-        let res = extract_datetime(input).unwrap();
+        let tz = crate::config::get_tz();
+        let lnow = Local::now().with_timezone(&tz);
+        let res = extract_datetime(lnow, input).unwrap();
         let expected = Some(
             NaiveDate::from_ymd_opt(2025, 7, 24)
                 .unwrap()
@@ -464,7 +512,9 @@ mod tests {
 НВ
 
 — Первый раунд 4, Шапка 1."#;
-        let res = extract_datetime(input).unwrap();
+        let tz = crate::config::get_tz();
+        let lnow = Local::now().with_timezone(&tz);
+        let res = extract_datetime(lnow, input).unwrap();
         let expected = Some(
             NaiveDate::from_ymd_opt(2025, 11, 20)
                 .unwrap()
@@ -485,7 +535,9 @@ mod tests {
 – Да, давай синьки.
 
 Коментар: T2"#;
-        let res = extract_datetime(input).unwrap();
+        let tz = crate::config::get_tz();
+        let lnow = Local::now().with_timezone(&tz);
+        let res = extract_datetime(lnow, input).unwrap();
         let year = Local::now().year();
         let expected = Some(
             NaiveDate::from_ymd_opt(year, 11, 20)
@@ -511,7 +563,9 @@ mod tests {
 1. Птицы лишние разогнали, если не слышите, блять, прям чухайте по-быстрому к саму дому, Комиком мы работаем.
 1. ШУТ, РЯБА , как раз пока по тому дому, где пидары сидят, ебашит слоник, птицы ми разогнали лишние, если никого не слышите, гасите домой, гасите домой.
 1. Давай, все у вас видим, давайте, пацаны, быстрее, быстрее, там далеко наша птица, висит другая, давайте быстрее."#;
-        let res = extract_datetime(input).unwrap();
+        let tz = crate::config::get_tz();
+        let lnow = Local::now().with_timezone(&tz);
+        let res = extract_datetime(lnow, input).unwrap();
         let expected = Some(
             NaiveDate::from_ymd_opt(2025, 11, 20)
                 .unwrap()
@@ -528,7 +582,9 @@ mod tests {
 Частота: 143.545
 Напрямок: Пн. Дворічна
 Координати (MGRS): 37U DR 03349 25624"#;
-        let res = extract_datetime(input).unwrap();
+        let tz = crate::config::get_tz();
+        let lnow = Local::now().with_timezone(&tz);
+        let res = extract_datetime(lnow, input).unwrap();
         let expected = Some(
             NaiveDate::from_ymd_opt(2025, 11, 29)
                 .unwrap()
@@ -540,20 +596,22 @@ mod tests {
 
     #[test]
     fn extract_datetime_23feb24_1() {
-        let input = r#"Дата: 2024-02-21;  
-Частота: 408.500;  
-Локація: Авдіївка (йм. в напрямку Ласточкине);  
-Підрозділ: УКХ р/м невизначеного підрозділу;  
-Час: 17:28;  
-Хто: Змей;  
-Кому: Чёрный;  
-Текст:  
-- Чёрный я Змей ответь по керосину  
-- ..  
-- 3 мсб? правильно?;  
-.  
+        let input = r#"Дата: 2024-02-21;
+Частота: 408.500;
+Локація: Авдіївка (йм. в напрямку Ласточкине);
+Підрозділ: УКХ р/м невизначеного підрозділу;
+Час: 17:28;
+Хто: Змей;
+Кому: Чёрный;
+Текст:
+- Чёрный я Змей ответь по керосину
+- ..
+- 3 мсб? правильно?;
+.
 Коментар: ( запит на зв'язок );"#;
-        let res = extract_datetime(input).unwrap();
+        let tz = crate::config::get_tz();
+        let lnow = Local::now().with_timezone(&tz);
+        let res = extract_datetime(lnow, input).unwrap();
         let expected = Some(
             NaiveDate::from_ymd_opt(2024, 2, 21)
                 .unwrap()
@@ -563,19 +621,84 @@ mod tests {
         assert_eq!(res, expected);
     }
 
+    #[test]
+    fn extract_datetime_no_year_closest_past() {
+        let input = r#"31.12, 19:31:34
+446.000
+УКХ ймовірно, 344 мсп 69 мсд 6 А (МИКОЛАЇВКА-ЛИМАН ДРУГИЙ)
+НВ
+НВ
+
+– Да, давай синьки.
+
+Коментар: T2"#;
+        let tz = crate::config::get_tz();
+        let lnow = tz.with_ymd_and_hms(2025, 02, 01, 01, 15, 22).unwrap();
+        let res = extract_datetime(lnow, input).unwrap();
+        let expected = Some(
+            NaiveDate::from_ymd_opt(2024, 12, 31)
+                .unwrap()
+                .and_hms_opt(19, 31, 34)
+                .unwrap(),
+        );
+        assert_eq!(res, expected);
+    }
+
+    #[test]
+    fn extract_datetime_no_year_closest_future() {
+        let input = r#"31.12, 19:31:34
+446.000
+УКХ ймовірно, 344 мсп 69 мсд 6 А (МИКОЛАЇВКА-ЛИМАН ДРУГИЙ)
+НВ
+НВ
+
+– Да, давай синьки.
+
+Коментар: T2"#;
+        let tz = crate::config::get_tz();
+        let lnow = tz.with_ymd_and_hms(2024, 12, 30, 01, 15, 22).unwrap();
+        let res = extract_datetime(lnow, input).unwrap();
+        let expected = Some(
+            NaiveDate::from_ymd_opt(2024, 12, 31)
+                .unwrap()
+                .and_hms_opt(19, 31, 34)
+                .unwrap(),
+        );
+        assert_eq!(res, expected);
+    }
+
+    #[test]
+    fn extract_datetime_no_year_toofar_future() {
+        let input = r#"31.12, 19:31:34
+446.000
+УКХ ймовірно, 344 мсп 69 мсд 6 А (МИКОЛАЇВКА-ЛИМАН ДРУГИЙ)
+НВ
+НВ
+
+– Да, давай синьки.
+
+Коментар: T2"#;
+        let tz = crate::config::get_tz();
+        let lnow = tz.with_ymd_and_hms(2024, 11, 01, 21, 15, 22).unwrap();
+        let res = extract_datetime(lnow, input).unwrap();
+        let expected = None;
+        assert_eq!(res, expected);
+    }
+
     #[ignore]
     #[test]
     fn extract_datetime_kharkiv() {
-        let body = r#"УКХ р/м управління мінометної батареї зі складу 155 обр МП 
+        let body = r#"УКХ р/м управління мінометної батареї зі складу 155 обр МП
 ( в районі СТРІЛЕЧА)
-23:52	МАКИМАК	ЧЕРНЫЙ	444.363	
-1. Там как СОЧИ до тебя дотянуться, узнай у них обстановку, как, че, кто там остался, и выйдешь на меня. 
-2. да принял. 
+23:52	МАКИМАК	ЧЕРНЫЙ	444.363
+1. Там как СОЧИ до тебя дотянуться, узнай у них обстановку, как, че, кто там остался, и выйдешь на меня.
+2. да принял.
 (Л)"#;
 
-        let res = extract_datetime(body).unwrap();
         let tz = crate::config::get_tz();
         let lnow = Local::now().with_timezone(&tz);
+        let res = extract_datetime(lnow, body).unwrap();
+
         let dt = lnow;
         let dt = if lnow.hour() <= 20 {
             if lnow.hour() == 20 && lnow.minute() > 9 {
