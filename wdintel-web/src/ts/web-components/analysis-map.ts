@@ -7,30 +7,12 @@ import { KMZLayer, kmzLayerFactory } from '../maps/leaflet-kmz'
 import { MapPointDetailed } from '../maps/types';
 import { messagesCountText } from '../maps/language-utils';
 import { loadRerAnalysisQueryState, RerAnalysisQueryState, saveRerAnalysisQueryState } from '../rer-analysis-query-state';
-import { TimeswitchControl, PalitrasControl, FeatureToggleState, createLayerSwitchControl, createExitControl2, createTimeswitchControl, createAttributionControl, createPalitrasControl, FeatureName, LayerSwitchControl } from '../maps/controls';
+import { TimeswitchControl, FeatureToggleState, createLayerSwitchControl, createExitControl2, createTimeswitchControl, createAttributionControl, createPalitrasControl, FeatureName, LayerSwitchControl } from '../maps/controls';
+import { PalitraManager } from '../maps/palitra-manager';
+import { PalitraDetails } from '../maps/palitra-types';
 
 type NetworkUnit = { frequencies: string[]; name: string }
 type Message = [number, { message_uid: string; freq: string; coords: number[], text: string, date: number, time: number, unit: string }]
-type Coords = { lat: number; lng: number }
-type Geometry = {
-  center: Coords;
-  perimeter_linear_ring: Coords[]
-}
-type Palitra = {
-  id: number;
-  name: string;
-  color_hex: string;
-  geometry: Geometry | null;
-  source_file_name?: string;
-}
-type PalitraPoint = {
-  coords: Coords;
-  label: string | null;
-}
-type PalitraDetails = {
-  palitra: Palitra;
-  points: PalitraPoint[];
-}
 
 export class DataCircleMarker extends L.CircleMarker {
   data: { messageId: number };
@@ -124,22 +106,8 @@ class AnalysisMap extends HTMLElement {
   private _kmzLoading: Promise<void> | null = null;
   private _selectedUnits: string[] = []
 
-  private _palitras: PalitraDetails[] = [];
-  private _visiblePalitraIds: number[] = [];
-  private _palitrasControl: PalitrasControl | null = null;
-  private _palitrasLayerGroup: L.LayerGroup | null = null;
-  private _palitrasPointsClusters: Map<number, L.MarkerClusterGroup> = new Map();
-  private _palitraPointsTiles: Map<number, Map<string, PalitraPoint[]>> = new Map();
+  private _palitraManager: PalitraManager | null = null;
   private _pelengsLayerGroup: L.LayerGroup | null = null;
-  private _minZoomForPoints = 13; // Мінімальний зум для показу точок палітр
-  private _palitraPointsRequestTimer: number | null = null;
-  private _palitraPointsRequestDelayMs = 200;
-  private _palitraPointsCache: Map<string, number> = new Map();
-  private _palitraPointsCacheTtlMs = 5 * 60 * 1000; // 5 minutes
-  private _maxCachedTiles = 50; // ~50-60k points, ~4 MB
-  private _pendingRequests: Set<string> = new Set();
-  private _palitrasBoundsApplied = false;
-  private _palitrasEnabled = true;
   private _kmzEnabled = true;
   private _pelengsEnabled = true;
   private _layerSwitchControl: LayerSwitchControl | null = null;
@@ -229,29 +197,17 @@ class AnalysisMap extends HTMLElement {
       this._selectedUnits = JSON.parse(newValue)
     }
     if (name === 'palitras') {
-      this._palitras = JSON.parse(newValue);
-      if (this._palitrasControl) {
-        this._palitrasControl.updatePalitras(this._palitras, this._visiblePalitraIds);
-      }
-      this._updatePalitrasOnMap();
-      this._schedulePalitraPointsRequest();
+      const palitras = JSON.parse(newValue);
+      this._palitraManager?.updatePalitras(palitras);
     }
     if (name === 'visible-palitra-ids') {
-      this._visiblePalitraIds = JSON.parse(newValue);
-      if (this._palitrasControl) {
-        this._palitrasControl.updatePalitras(this._palitras, this._visiblePalitraIds);
-      }
-      this._palitrasBoundsApplied = false;
-      this._updatePalitrasOnMap();
-      this._schedulePalitraPointsRequest();
+      const ids = JSON.parse(newValue);
+      this._palitraManager?.updateVisibleIds(ids);
     }
     if (name === 'palitras-enabled') {
-      this._palitrasEnabled = JSON.parse(newValue);
+      const enabled = JSON.parse(newValue);
+      this._palitraManager?.setEnabled(enabled);
       this._updateLayerSwitchControl();
-      this._palitrasBoundsApplied = false;
-      this._updatePalitrasOnMap();
-      this._applyPalitrasControlVisibility();
-      this._schedulePalitraPointsRequest();
     }
     if (name === 'kmz-enabled') {
       this._kmzEnabled = JSON.parse(newValue);
@@ -272,362 +228,6 @@ class AnalysisMap extends HTMLElement {
       `;
   }
 
-  private _schedulePalitraPointsRequest() {
-    if (this._palitraPointsRequestTimer !== null) {
-      window.clearTimeout(this._palitraPointsRequestTimer);
-    }
-    this._palitraPointsRequestTimer = window.setTimeout(() => {
-      this._palitraPointsRequestTimer = null;
-      this._emitPalitraPointsRequest();
-    }, this._palitraPointsRequestDelayMs);
-  }
-
-  private async _emitPalitraPointsRequest() {
-    if (!this._map) {
-      return;
-    }
-    if (!this._palitrasEnabled) {
-      return;
-    }
-    if (this._visiblePalitraIds.length === 0) {
-      return;
-    }
-    const currentZoom = this._map.getZoom();
-    if (currentZoom < this._minZoomForPoints) {
-      return;
-    }
-    const bounds = this._getBufferedBounds();
-    const palitraIds = this._filterPalitraIdsByBounds(bounds);
-    if (palitraIds.length === 0) {
-      return;
-    }
-    const requestPalitraIds = this._filterPalitraIdsByCache(palitraIds, bounds, currentZoom);
-    if (requestPalitraIds.length === 0) {
-      return;
-    }
-    const tileKey = this._buildBboxTileKey(bounds, currentZoom);
-    
-    // Filter out pending requests
-    const filteredIds = requestPalitraIds.filter(id => {
-      const requestKey = `${id}:${tileKey}`;
-      return !this._pendingRequests.has(requestKey);
-    });
-    
-    if (filteredIds.length === 0) {
-      return;
-    }
-    
-    // Mark as pending
-    filteredIds.forEach(id => {
-      this._pendingRequests.add(`${id}:${tileKey}`);
-    });
-    
-    this._markPalitraPointsRequested(filteredIds, tileKey);
-    
-    try {
-      await this._fetchPalitraPoints(filteredIds, bounds, tileKey);
-    } finally {
-      // Remove from pending
-      filteredIds.forEach(id => {
-        this._pendingRequests.delete(`${id}:${tileKey}`);
-      });
-    }
-  }
-
-  private _getBufferedBounds(): L.LatLngBounds {
-    const bounds = this._map!.getBounds();
-    return bounds.pad(0.2);
-  }
-
-  private _filterPalitraIdsByBounds(bounds: L.LatLngBounds): number[] {
-    return this._palitras
-      .filter(palitraDetails => this._visiblePalitraIds.includes(palitraDetails.palitra.id))
-      .filter(palitraDetails => {
-        const geometry = palitraDetails.palitra.geometry;
-        if (!geometry || !geometry.perimeter_linear_ring) {
-          return true;
-        }
-        const ring = geometry.perimeter_linear_ring;
-        if (ring.length === 0) {
-          return true;
-        }
-        const palitraBounds = this._buildPalitraBounds(ring);
-        return bounds.intersects(palitraBounds);
-      })
-      .map(palitraDetails => palitraDetails.palitra.id);
-  }
-
-  private _buildPalitraBounds(coords: { lat: number; lng: number }[]): L.LatLngBounds {
-    let minLat = coords[0].lat;
-    let maxLat = coords[0].lat;
-    let minLng = coords[0].lng;
-    let maxLng = coords[0].lng;
-    coords.forEach(coord => {
-      if (coord.lat < minLat) {
-        minLat = coord.lat;
-      }
-      if (coord.lat > maxLat) {
-        maxLat = coord.lat;
-      }
-      if (coord.lng < minLng) {
-        minLng = coord.lng;
-      }
-      if (coord.lng > maxLng) {
-        maxLng = coord.lng;
-      }
-    });
-    return L.latLngBounds([minLat, minLng], [maxLat, maxLng]);
-  }
-
-  private _filterPalitraIdsByCache(
-    palitraIds: number[],
-    bounds: L.LatLngBounds,
-    zoom: number
-  ): number[] {
-    const now = Date.now();
-    const tileKey = this._buildBboxTileKey(bounds, zoom);
-    let expiredCount = 0;
-    let cachedCount = 0;
-    
-    const filtered = palitraIds.filter(palitraId => {
-      const cacheKey = `${palitraId}:${tileKey}`;
-      const cachedAt = this._palitraPointsCache.get(cacheKey);
-      if (cachedAt === undefined) {
-        return true;
-      }
-      if (now - cachedAt > this._palitraPointsCacheTtlMs) {
-        this._palitraPointsCache.delete(cacheKey);
-        expiredCount++;
-        return true;
-      }
-      cachedCount++;
-      return false;
-    });
-    
-    if (expiredCount > 0) {
-      console.log(`[Palitra Cache] Expired ${expiredCount} tiles due to TTL`);
-    }
-    if (cachedCount > 0) {
-      console.log(`[Palitra Cache] Using cached data for ${cachedCount} palitras in tile ${tileKey}`);
-    }
-    
-    return filtered;
-  }
-
-  private _markPalitraPointsRequested(
-    palitraIds: number[],
-    tileKey: string
-  ) {
-    const now = Date.now();
-    palitraIds.forEach(palitraId => {
-      this._palitraPointsCache.set(`${palitraId}:${tileKey}`, now);
-    });
-  }
-
-  private _buildBboxTileKey(bounds: L.LatLngBounds, zoom: number): string {
-    const precision = this._getBboxPrecision(zoom);
-    const zoomBucket = this._getZoomBucket(zoom);
-    const minLat = this._roundCoord(bounds.getSouth(), precision);
-    const minLng = this._roundCoord(bounds.getWest(), precision);
-    const maxLat = this._roundCoord(bounds.getNorth(), precision);
-    const maxLng = this._roundCoord(bounds.getEast(), precision);
-    return `${zoomBucket}:${minLat},${minLng},${maxLat},${maxLng}`;
-  }
-
-  private _getBboxPrecision(zoom: number): number {
-    if (zoom >= 17) {
-      return 3;
-    }
-    if (zoom >= 15) {
-      return 2;
-    }
-    return 1;
-  }
-
-  private _getZoomBucket(zoom: number): number {
-    if (zoom >= 17) {
-      return 17;
-    }
-    if (zoom >= 15) {
-      return 15;
-    }
-    return 13;
-  }
-
-  private _roundCoord(value: number, precision: number): string {
-    const factor = Math.pow(10, precision);
-    const rounded = Math.round(value * factor) / factor;
-    return rounded.toFixed(precision);
-  }
-
-  private async _fetchPalitraPoints(
-    palitraIds: number[],
-    bounds: L.LatLngBounds,
-    tileKey: string
-  ): Promise<void> {
-    console.log(`[Palitra Cache] Fetching points for tile ${tileKey}, palitras: [${palitraIds.join(', ')}]`);
-    try {
-      const response = await fetch('/api/palitra/points', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          palitra_ids: palitraIds,
-          bbox: {
-            min_lat: bounds.getSouth(),
-            min_lng: bounds.getWest(),
-            max_lat: bounds.getNorth(),
-            max_lng: bounds.getEast()
-          }
-        })
-      });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-      
-      const data = await response.json();
-      this._storePalitraPoints(data, tileKey);
-      this._updatePalitraPointsOnMap();
-    } catch (error) {
-      console.error('[Palitra Cache] Failed to fetch palitra points:', error);
-      // Remove from cache to allow retry
-      palitraIds.forEach(id => {
-        this._palitraPointsCache.delete(`${id}:${tileKey}`);
-      });
-    }
-  }
-
-  private _storePalitraPoints(data: { palitra_id: number; points: PalitraPoint[] }[], tileKey: string) {
-    let totalNewPoints = 0;
-    data.forEach(item => {
-      if (item && typeof item.palitra_id === 'number') {
-        let tiles = this._palitraPointsTiles.get(item.palitra_id);
-        if (!tiles) {
-          tiles = new Map();
-          this._palitraPointsTiles.set(item.palitra_id, tiles);
-        }
-        const points = item.points || [];
-        tiles.set(tileKey, points);
-        totalNewPoints += points.length;
-      }
-    });
-    
-    console.log(`[Palitra Cache] Stored ${totalNewPoints} points for tile ${tileKey}`);
-    this._logCacheStats();
-    
-    // Evict old entries if needed
-    this._evictOldestCacheEntries();
-  }
-
-  private _evictOldestCacheEntries() {
-    const entries = Array.from(this._palitraPointsCache.entries());
-    if (entries.length <= this._maxCachedTiles) {
-      return;
-    }
-    
-    const beforeEviction = entries.length;
-    const beforePoints = this._countTotalPoints();
-    
-    // Sort by timestamp, keep newest
-    entries.sort((a, b) => b[1] - a[1]);
-    const toKeep = entries.slice(0, this._maxCachedTiles);
-    this._palitraPointsCache.clear();
-    toKeep.forEach(([key, timestamp]) => {
-      this._palitraPointsCache.set(key, timestamp);
-    });
-    
-    // Clean corresponding tiles
-    this._cleanOrphanedTiles();
-    
-    const afterPoints = this._countTotalPoints();
-    console.log(`[Palitra Cache] EVICTION: Removed ${beforeEviction - this._maxCachedTiles} tiles, freed ${beforePoints - afterPoints} points`);
-    this._logCacheStats();
-  }
-
-  private _cleanOrphanedTiles() {
-    this._palitraPointsTiles.forEach((tiles, palitraId) => {
-      tiles.forEach((_, tileKey) => {
-        const cacheKey = `${palitraId}:${tileKey}`;
-        if (!this._palitraPointsCache.has(cacheKey)) {
-          tiles.delete(tileKey);
-        }
-      });
-    });
-  }
-
-  private _countTotalPoints(): number {
-    let total = 0;
-    this._palitraPointsTiles.forEach((tiles) => {
-      tiles.forEach((points) => {
-        total += points.length;
-      });
-    });
-    return total;
-  }
-
-  private _logCacheStats() {
-    const totalTiles = this._palitraPointsCache.size;
-    const totalPoints = this._countTotalPoints();
-    const palitrasWithData = this._palitraPointsTiles.size;
-    
-    // Estimate memory usage (rough calculation)
-    const estimatedMemoryMB = (totalPoints * 70) / (1024 * 1024); // ~70 bytes per point
-    const avgPointsPerTile = totalTiles > 0 ? Math.round(totalPoints / totalTiles) : 0;
-    
-    console.log(`[Palitra Cache Stats] Tiles: ${totalTiles}/${this._maxCachedTiles}, Points: ${totalPoints}, ~${estimatedMemoryMB.toFixed(1)} MB, Avg: ${avgPointsPerTile} points/tile, Palitras: ${palitrasWithData}`);
-    
-    // Detailed breakdown per palitra
-    const breakdown: string[] = [];
-    this._palitraPointsTiles.forEach((tiles, palitraId) => {
-      let pointsCount = 0;
-      tiles.forEach((points) => {
-        pointsCount += points.length;
-      });
-      breakdown.push(`  Palitra ${palitraId}: ${tiles.size} tiles, ${pointsCount} points`);
-    });
-    if (breakdown.length > 0) {
-      console.log(breakdown.join('\n'));
-    }
-  }
-
-  private _collectPalitraPointsForBounds(
-    palitraId: number,
-    bounds: L.LatLngBounds
-  ): PalitraPoint[] {
-    const tiles = this._palitraPointsTiles.get(palitraId);
-    if (!tiles) {
-      return [];
-    }
-    const points: PalitraPoint[] = [];
-    tiles.forEach((tilePoints, tileKey) => {
-      const tileBounds = this._parseTileKeyBounds(tileKey);
-      if (!tileBounds) {
-        return;
-      }
-      if (bounds.intersects(tileBounds)) {
-        points.push(...tilePoints);
-      }
-    });
-    return points;
-  }
-
-  private _parseTileKeyBounds(tileKey: string): L.LatLngBounds | null {
-    const parts = tileKey.split(':');
-    if (parts.length !== 2) {
-      return null;
-    }
-    const coords = parts[1].split(',').map(value => Number(value));
-    if (coords.length !== 4) {
-      return null;
-    }
-    const [minLat, minLng, maxLat, maxLng] = coords;
-    if ([minLat, minLng, maxLat, maxLng].some(value => Number.isNaN(value))) {
-      return null;
-    }
-    return L.latLngBounds([minLat, minLng], [maxLat, maxLng]);
-  }
-
-
   private async _initializeMap() {
     const mapContainer = this.querySelector<HTMLDivElement>('#analysis-map')
     if (mapContainer) {
@@ -647,27 +247,29 @@ class AnalysisMap extends HTMLElement {
         await this._loadKmzLayer();
      }
 
-     // Initialize palitras layer group
-     this._palitrasLayerGroup = L.layerGroup();
-     this._palitrasLayerGroup.addTo(this._map);
+     // Initialize palitra manager
+     this._palitraManager = new PalitraManager(
+       this._map,
+       {
+         minZoomForPoints: 13,
+         requestDelayMs: 200,
+         cacheTtlMs: 5 * 60 * 1000,
+         maxCachedTiles: 50
+       },
+       {
+         onVisibilityToggle: (palitraId) => {
+           const event = new CustomEvent('palitra-visibility-toggled', {
+             detail: { palitraId },
+             bubbles: true,
+             composed: true
+           });
+           this.dispatchEvent(event);
+         }
+       }
+     );
 
      this._pelengsLayerGroup = L.layerGroup();
      this._applyPelengVisibility();
-
-     // Listen for zoom changes to show/hide points
-     this._map.on('zoomend', () => {
-       this._updatePalitraPointsOnMap();
-       this._schedulePalitraPointsRequest();
-     });
-     this._map.on('moveend', () => {
-       this._schedulePalitraPointsRequest();
-     });
-
-     // Try to update palitras if we already have data
-     if (this._palitras.length > 0) {
-       this._updatePalitrasOnMap();
-       this._schedulePalitraPointsRequest();
-     }
     }
   }
 
@@ -709,10 +311,8 @@ class AnalysisMap extends HTMLElement {
     map.addControl(layerSwitchControl);
     map.addControl(createAttributionControl());
 
-    const palitrasControl = createPalitrasControl(this._palitras, this._visiblePalitraIds, palitraToggleCallback);
-    this._palitrasControl = palitrasControl;
-    map.addControl(palitrasControl);
-    this._applyPalitrasControlVisibility();
+    const palitrasControl = createPalitrasControl([], [], palitraToggleCallback);
+    this._palitraManager?.setControl(palitrasControl);
 
     return { map, switchTimeControl };
   }
@@ -804,217 +404,9 @@ class AnalysisMap extends HTMLElement {
 
   }
 
-  private _updatePalitrasOnMap() {
-    if (!this._palitrasLayerGroup || !this._map) {
-      return;
-    }
-
-    if (!this._palitrasEnabled) {
-      this._palitrasLayerGroup.clearLayers();
-      this._palitrasPointsClusters.forEach((cluster) => this._map!.removeLayer(cluster));
-      this._palitrasPointsClusters.clear();
-      return;
-    }
-
-    // Clear existing polygons
-    this._palitrasLayerGroup.clearLayers();
-
-    // Add visible palitras
-    const visiblePalitras = this._palitras.filter(pd =>
-      this._visiblePalitraIds.includes(pd.palitra.id) && pd.palitra.geometry
-    );
-
-
-    const polygons: L.Polygon[] = [];
-
-    visiblePalitras.forEach(palitraDetails => {
-      const polygon = this._createPalitraPolygon(palitraDetails);
-      if (polygon) {
-        this._palitrasLayerGroup!.addLayer(polygon);
-        polygons.push(polygon);
-      } else {
-        console.log('❌ Polygon creation failed');
-      }
-    });
-
-    // Update points clusters
-    this._updatePalitraPointsOnMap();
-
-    // Fit map bounds to show all visible palitras
-    const currentZoom = this._map!.getZoom();
-    if (!this._palitrasBoundsApplied && polygons.length > 0 && currentZoom < this._minZoomForPoints) {
-      const group = L.featureGroup(polygons);
-      this._map!.fitBounds(group.getBounds(), {
-        padding: [50, 50],
-        maxZoom: 10
-      });
-      this._palitrasBoundsApplied = true;
-    }
-  }
-
-  private _createPalitraPolygon(palitraDetails: PalitraDetails): L.Polygon | null {
-    const palitra = palitraDetails.palitra;
-
-    if (!palitra.geometry || !palitra.geometry.perimeter_linear_ring) {
-      return null;
-    }
-
-    // Convert coordinates to Leaflet format [lat, lng]
-    const latlngs: [number, number][] = palitra.geometry.perimeter_linear_ring.map(
-      (coord: { lat: number; lng: number }) => [coord.lat, coord.lng] as [number, number]
-    );
-
-    if (latlngs.length < 3) {
-      return null; // Need at least 3 points for a polygon
-    }
-
-    // Create polygon with styling
-    const polygon = L.polygon(latlngs, {
-      color: palitra.color_hex,
-      fillColor: palitra.color_hex,
-      fillOpacity: 0.2,
-      weight: 2,
-      opacity: 0.8
-    });
-
-    // Add popup with palitra info
-    const pointsCount = palitra.geometry.perimeter_linear_ring.length;
-    const centerLat = palitra.geometry.center.lat.toFixed(4);
-    const centerLng = palitra.geometry.center.lng.toFixed(4);
-
-    const popupContent = `
-      <div style="padding: 8px;">
-        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
-          <span style="display: inline-block; width: 16px; height: 16px; background-color: ${palitra.color_hex}; border: 1px solid #ccc; border-radius: 3px;"></span>
-          <strong style="font-size: 14px;">${palitra.name}</strong>
-        </div>
-        <div style="font-size: 12px; color: #666;">
-          <div>Центр: ${centerLat}, ${centerLng}</div>
-          <div>Точок периметру: ${pointsCount}</div>
-          ${palitra.source_file_name ? `<div>Файл: ${palitra.source_file_name}</div>` : ''}
-        </div>
-      </div>
-    `;
-
-    polygon.bindPopup(popupContent);
-
-    // Add tooltip with name (always visible)
-    polygon.bindTooltip(palitra.name, {
-      permanent: true,
-      direction: 'center',
-      className: 'palitra-label'
-    });
-
-    return polygon;
-  }
-
-  private _createPalitraPointsCluster(palitra: Palitra, points: PalitraPoint[]): L.MarkerClusterGroup | null {
-    if (!points || points.length === 0) {
-      return null;
-    }
-
-    // Create cluster group with custom styling
-    const clusterGroup = L.markerClusterGroup({
-      maxClusterRadius: 40,
-      spiderfyOnMaxZoom: true,
-      showCoverageOnHover: false,
-      zoomToBoundsOnClick: true,
-      iconCreateFunction: (cluster) => {
-        const childCount = cluster.getChildCount();
-        return L.divIcon({
-          html: `<div style="background-color: ${palitra.color_hex}; border: 2px solid #fff; border-radius: 50%; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 12px; font-weight: bold; color: white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);">
-                ${childCount}
-            </div>`,
-          className: 'palitra-point-cluster',
-          iconSize: L.point(30, 30)
-        });
-      }
-    });
-
-    // Add points to cluster
-    points.forEach(point => {
-      const marker = L.circleMarker([point.coords.lat, point.coords.lng], {
-        radius: 6,
-        fillColor: palitra.color_hex,
-        color: '#fff',
-        weight: 2,
-        opacity: 1,
-        fillOpacity: 0.8
-      });
-
-      // Add popup with point info
-      const popupContent = `
-        <div style="padding: 8px;">
-          <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
-            <span style="display: inline-block; width: 16px; height: 16px; background-color: ${palitra.color_hex}; border: 1px solid #ccc; border-radius: 50%;"></span>
-            <strong style="font-size: 14px;">${palitra.name}</strong>
-          </div>
-          ${point.label ? `<div style="font-size: 13px; margin-bottom: 4px;"><strong>Мітка:</strong> ${point.label}</div>` : ''}
-          <div style="font-size: 12px; color: #666;">
-            <div>Координати: ${point.coords.lat.toFixed(5)}, ${point.coords.lng.toFixed(5)}</div>
-          </div>
-        </div>
-      `;
-
-      marker.bindPopup(popupContent);
-
-      // Add tooltip with label if exists
-      const tooltipLabel = point.label ?? palitra.name;
-      if (tooltipLabel) {
-        marker.bindTooltip(tooltipLabel, {
-          permanent: true,
-          direction: 'top',
-          offset: [0, -10],
-          className: 'palitra-point-label'
-        });
-      }
-
-      clusterGroup.addLayer(marker);
-    });
-
-    return clusterGroup;
-  }
-
-  private _updatePalitraPointsOnMap() {
-    if (!this._map) {
-      return;
-    }
-
-    // Remove all existing point clusters from map
-    this._palitrasPointsClusters.forEach((cluster) => {
-      this._map!.removeLayer(cluster);
-    });
-    this._palitrasPointsClusters.clear();
-
-    if (!this._palitrasEnabled) {
-      return;
-    }
-
-    // Check zoom level - only show points at close zoom levels
-    const currentZoom = this._map.getZoom();
-    if (currentZoom < this._minZoomForPoints) {
-      // Too far out, don't show points
-      return;
-    }
-
-    const currentBounds = this._map.getBounds();
-    const visiblePalitras = this._palitras.filter(pd =>
-      this._visiblePalitraIds.includes(pd.palitra.id)
-    );
-
-    visiblePalitras.forEach(palitraDetails => {
-      const points = this._collectPalitraPointsForBounds(palitraDetails.palitra.id, currentBounds);
-      const cluster = this._createPalitraPointsCluster(palitraDetails.palitra, points);
-      if (cluster) {
-        this._palitrasPointsClusters.set(palitraDetails.palitra.id, cluster);
-        this._map!.addLayer(cluster);
-      }
-    });
-  }
-
   private _getFeatureToggleState(): FeatureToggleState {
     return {
-      palitrasEnabled: this._palitrasEnabled,
+      palitrasEnabled: this._palitraManager !== null,
       kmzEnabled: this._kmzEnabled,
       pelengsEnabled: this._pelengsEnabled
     };
@@ -1037,19 +429,6 @@ class AnalysisMap extends HTMLElement {
     }
 
     this._pelengsLayerGroup.addTo(this._map);
-  }
-
-  private _applyPalitrasControlVisibility() {
-    if (!this._palitrasControl || !this._map) {
-      return;
-    }
-
-    if (!this._palitrasEnabled) {
-      this._map.removeControl(this._palitrasControl);
-      return;
-    }
-
-    this._map.addControl(this._palitrasControl);
   }
 
   private async _loadKmzLayer() {
