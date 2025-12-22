@@ -136,7 +136,7 @@ class AnalysisMap extends HTMLElement {
   private _palitraPointsRequestDelayMs = 200;
   private _palitraPointsCache: Map<string, number> = new Map();
   private _palitraPointsCacheTtlMs = 5 * 60 * 1000; // 5 minutes
-  private _maxCachedTiles = 100;
+  private _maxCachedTiles = 50; // ~50-60k points, ~4 MB
   private _pendingRequests: Set<string> = new Set();
   private _palitrasBoundsApplied = false;
   private _palitrasEnabled = true;
@@ -386,7 +386,10 @@ class AnalysisMap extends HTMLElement {
   ): number[] {
     const now = Date.now();
     const tileKey = this._buildBboxTileKey(bounds, zoom);
-    return palitraIds.filter(palitraId => {
+    let expiredCount = 0;
+    let cachedCount = 0;
+    
+    const filtered = palitraIds.filter(palitraId => {
       const cacheKey = `${palitraId}:${tileKey}`;
       const cachedAt = this._palitraPointsCache.get(cacheKey);
       if (cachedAt === undefined) {
@@ -394,10 +397,21 @@ class AnalysisMap extends HTMLElement {
       }
       if (now - cachedAt > this._palitraPointsCacheTtlMs) {
         this._palitraPointsCache.delete(cacheKey);
+        expiredCount++;
         return true;
       }
+      cachedCount++;
       return false;
     });
+    
+    if (expiredCount > 0) {
+      console.log(`[Palitra Cache] Expired ${expiredCount} tiles due to TTL`);
+    }
+    if (cachedCount > 0) {
+      console.log(`[Palitra Cache] Using cached data for ${cachedCount} palitras in tile ${tileKey}`);
+    }
+    
+    return filtered;
   }
 
   private _markPalitraPointsRequested(
@@ -451,6 +465,7 @@ class AnalysisMap extends HTMLElement {
     bounds: L.LatLngBounds,
     tileKey: string
   ): Promise<void> {
+    console.log(`[Palitra Cache] Fetching points for tile ${tileKey}, palitras: [${palitraIds.join(', ')}]`);
     try {
       const response = await fetch('/api/palitra/points', {
         method: 'POST',
@@ -474,7 +489,7 @@ class AnalysisMap extends HTMLElement {
       this._storePalitraPoints(data, tileKey);
       this._updatePalitraPointsOnMap();
     } catch (error) {
-      console.error('Failed to fetch palitra points:', error);
+      console.error('[Palitra Cache] Failed to fetch palitra points:', error);
       // Remove from cache to allow retry
       palitraIds.forEach(id => {
         this._palitraPointsCache.delete(`${id}:${tileKey}`);
@@ -483,6 +498,7 @@ class AnalysisMap extends HTMLElement {
   }
 
   private _storePalitraPoints(data: { palitra_id: number; points: PalitraPoint[] }[], tileKey: string) {
+    let totalNewPoints = 0;
     data.forEach(item => {
       if (item && typeof item.palitra_id === 'number') {
         let tiles = this._palitraPointsTiles.get(item.palitra_id);
@@ -490,9 +506,14 @@ class AnalysisMap extends HTMLElement {
           tiles = new Map();
           this._palitraPointsTiles.set(item.palitra_id, tiles);
         }
-        tiles.set(tileKey, item.points || []);
+        const points = item.points || [];
+        tiles.set(tileKey, points);
+        totalNewPoints += points.length;
       }
     });
+    
+    console.log(`[Palitra Cache] Stored ${totalNewPoints} points for tile ${tileKey}`);
+    this._logCacheStats();
     
     // Evict old entries if needed
     this._evictOldestCacheEntries();
@@ -504,6 +525,9 @@ class AnalysisMap extends HTMLElement {
       return;
     }
     
+    const beforeEviction = entries.length;
+    const beforePoints = this._countTotalPoints();
+    
     // Sort by timestamp, keep newest
     entries.sort((a, b) => b[1] - a[1]);
     const toKeep = entries.slice(0, this._maxCachedTiles);
@@ -514,6 +538,10 @@ class AnalysisMap extends HTMLElement {
     
     // Clean corresponding tiles
     this._cleanOrphanedTiles();
+    
+    const afterPoints = this._countTotalPoints();
+    console.log(`[Palitra Cache] EVICTION: Removed ${beforeEviction - this._maxCachedTiles} tiles, freed ${beforePoints - afterPoints} points`);
+    this._logCacheStats();
   }
 
   private _cleanOrphanedTiles() {
@@ -525,6 +553,41 @@ class AnalysisMap extends HTMLElement {
         }
       });
     });
+  }
+
+  private _countTotalPoints(): number {
+    let total = 0;
+    this._palitraPointsTiles.forEach((tiles) => {
+      tiles.forEach((points) => {
+        total += points.length;
+      });
+    });
+    return total;
+  }
+
+  private _logCacheStats() {
+    const totalTiles = this._palitraPointsCache.size;
+    const totalPoints = this._countTotalPoints();
+    const palitrasWithData = this._palitraPointsTiles.size;
+    
+    // Estimate memory usage (rough calculation)
+    const estimatedMemoryMB = (totalPoints * 70) / (1024 * 1024); // ~70 bytes per point
+    const avgPointsPerTile = totalTiles > 0 ? Math.round(totalPoints / totalTiles) : 0;
+    
+    console.log(`[Palitra Cache Stats] Tiles: ${totalTiles}/${this._maxCachedTiles}, Points: ${totalPoints}, ~${estimatedMemoryMB.toFixed(1)} MB, Avg: ${avgPointsPerTile} points/tile, Palitras: ${palitrasWithData}`);
+    
+    // Detailed breakdown per palitra
+    const breakdown: string[] = [];
+    this._palitraPointsTiles.forEach((tiles, palitraId) => {
+      let pointsCount = 0;
+      tiles.forEach((points) => {
+        pointsCount += points.length;
+      });
+      breakdown.push(`  Palitra ${palitraId}: ${tiles.size} tiles, ${pointsCount} points`);
+    });
+    if (breakdown.length > 0) {
+      console.log(breakdown.join('\n'));
+    }
   }
 
   private _collectPalitraPointsForBounds(
