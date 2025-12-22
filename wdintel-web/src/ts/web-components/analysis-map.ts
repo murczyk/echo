@@ -133,6 +133,8 @@ class AnalysisMap extends HTMLElement {
   private _minZoomForPoints = 13; // Мінімальний зум для показу точок палітр
   private _palitraPointsRequestTimer: number | null = null;
   private _palitraPointsRequestDelayMs = 200;
+  private _palitraPointsCache: Map<string, number> = new Map();
+  private _palitraPointsCacheTtlMs = 60 * 1000;
   private _palitrasBoundsApplied = false;
   private _palitrasEnabled = true;
   private _kmzEnabled = true;
@@ -296,6 +298,11 @@ class AnalysisMap extends HTMLElement {
     if (palitraIds.length === 0) {
       return;
     }
+    const requestPalitraIds = this._filterPalitraIdsByCache(palitraIds, bounds, currentZoom);
+    if (requestPalitraIds.length === 0) {
+      return;
+    }
+    this._markPalitraPointsRequested(requestPalitraIds, bounds, currentZoom);
     const event = new CustomEvent('palitra-points-needed', {
       detail: {
         bbox: {
@@ -305,7 +312,7 @@ class AnalysisMap extends HTMLElement {
           max_lng: bounds.getEast()
         },
         zoom: currentZoom,
-        palitraIds
+        palitraIds: requestPalitraIds
       },
       bubbles: true,
       composed: true
@@ -356,6 +363,75 @@ class AnalysisMap extends HTMLElement {
       }
     });
     return L.latLngBounds([minLat, minLng], [maxLat, maxLng]);
+  }
+
+  private _filterPalitraIdsByCache(
+    palitraIds: number[],
+    bounds: L.LatLngBounds,
+    zoom: number
+  ): number[] {
+    const now = Date.now();
+    const tileKey = this._buildBboxTileKey(bounds, zoom);
+    return palitraIds.filter(palitraId => {
+      const cacheKey = `${palitraId}:${tileKey}`;
+      const cachedAt = this._palitraPointsCache.get(cacheKey);
+      if (cachedAt === undefined) {
+        return true;
+      }
+      if (now - cachedAt > this._palitraPointsCacheTtlMs) {
+        this._palitraPointsCache.delete(cacheKey);
+        return true;
+      }
+      return false;
+    });
+  }
+
+  private _markPalitraPointsRequested(
+    palitraIds: number[],
+    bounds: L.LatLngBounds,
+    zoom: number
+  ) {
+    const now = Date.now();
+    const tileKey = this._buildBboxTileKey(bounds, zoom);
+    palitraIds.forEach(palitraId => {
+      this._palitraPointsCache.set(`${palitraId}:${tileKey}`, now);
+    });
+  }
+
+  private _buildBboxTileKey(bounds: L.LatLngBounds, zoom: number): string {
+    const precision = this._getBboxPrecision(zoom);
+    const zoomBucket = this._getZoomBucket(zoom);
+    const minLat = this._roundCoord(bounds.getSouth(), precision);
+    const minLng = this._roundCoord(bounds.getWest(), precision);
+    const maxLat = this._roundCoord(bounds.getNorth(), precision);
+    const maxLng = this._roundCoord(bounds.getEast(), precision);
+    return `${zoomBucket}:${minLat},${minLng},${maxLat},${maxLng}`;
+  }
+
+  private _getBboxPrecision(zoom: number): number {
+    if (zoom >= 17) {
+      return 4;
+    }
+    if (zoom >= 15) {
+      return 3;
+    }
+    return 2;
+  }
+
+  private _getZoomBucket(zoom: number): number {
+    if (zoom >= 17) {
+      return 17;
+    }
+    if (zoom >= 15) {
+      return 15;
+    }
+    return 13;
+  }
+
+  private _roundCoord(value: number, precision: number): string {
+    const factor = Math.pow(10, precision);
+    const rounded = Math.round(value * factor) / factor;
+    return rounded.toFixed(precision);
   }
 
 
