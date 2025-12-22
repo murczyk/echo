@@ -14,6 +14,87 @@ import { PalitraDetails } from '../maps/palitra-types';
 type NetworkUnit = { frequencies: string[]; name: string }
 type Message = [number, { message_uid: string; freq: string; coords: number[], text: string, date: number, time: number, unit: string }]
 
+type AnalysisMapFeaturesState = {
+  palitras: boolean;
+  kmz: boolean;
+  pelengs: boolean;
+};
+
+type AnalysisMapStoredState = {
+  features: AnalysisMapFeaturesState;
+  visiblePalitraIds: number[];
+};
+
+const ANALYSIS_MAP_STATE_KEY = 'analysis-map-state';
+const DEFAULT_FEATURES_STATE: AnalysisMapFeaturesState = {
+  palitras: true,
+  kmz: true,
+  pelengs: true
+};
+
+function loadAnalysisMapState(): AnalysisMapStoredState {
+  try {
+    const stored = localStorage.getItem(ANALYSIS_MAP_STATE_KEY);
+    if (!stored) {
+      return { features: DEFAULT_FEATURES_STATE, visiblePalitraIds: [] };
+    }
+    const parsed = JSON.parse(stored);
+    return {
+      features: parseFeaturesState(parsed?.features),
+      visiblePalitraIds: parseVisiblePalitraIds(parsed?.visiblePalitraIds)
+    };
+  } catch (e) {
+    console.warn('[AnalysisMap] Failed to load state, using defaults:', e);
+    return { features: DEFAULT_FEATURES_STATE, visiblePalitraIds: [] };
+  }
+}
+
+function saveAnalysisMapState(state: AnalysisMapStoredState): void {
+  try {
+    localStorage.setItem(ANALYSIS_MAP_STATE_KEY, JSON.stringify(state));
+  } catch (e) {
+    console.warn('[AnalysisMap] Failed to save state:', e);
+  }
+}
+
+function parseFeaturesState(input: unknown): AnalysisMapFeaturesState {
+  const record = isRecord(input) ? input : {};
+  return {
+    palitras: readBool(record, 'palitras', DEFAULT_FEATURES_STATE.palitras),
+    kmz: readBool(record, 'kmz', DEFAULT_FEATURES_STATE.kmz),
+    pelengs: readBool(record, 'pelengs', DEFAULT_FEATURES_STATE.pelengs)
+  };
+}
+
+function parseVisiblePalitraIds(input: unknown): number[] {
+  if (!Array.isArray(input)) {
+    return [];
+  }
+  const unique = new Set<number>();
+  input.forEach((value) => {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      unique.add(value);
+    }
+  });
+  return Array.from(unique);
+}
+
+function isRecord(input: unknown): input is Record<string, unknown> {
+  return !!input && typeof input === 'object' && !Array.isArray(input);
+}
+
+function readBool(record: Record<string, unknown>, key: string, fallback: boolean): boolean {
+  const value = record[key];
+  return typeof value === 'boolean' ? value : fallback;
+}
+
+function arraysEqual(a: number[], b: number[]): boolean {
+  if (a.length !== b.length) {
+    return false;
+  }
+  return a.every((value, index) => value === b[index]);
+}
+
 export class DataCircleMarker extends L.CircleMarker {
   data: { messageId: number };
 
@@ -89,7 +170,7 @@ function getPointPopupTemplate(sortedMessages: Message[], networkUnits: NetworkU
 
 
 class AnalysisMap extends HTMLElement {
-  static observedAttributes = ["points", "daterange", "messages", "visibility", "network-units", "selected-units", "palitras", "visible-palitra-ids", "palitras-enabled", "kmz-enabled", "pelengs-enabled"]
+  static observedAttributes = ["points", "daterange", "messages", "visibility", "network-units", "selected-units", "palitras", "palitras-loaded"]
 
   private _map: L.Map | null = null;
   private _daterange: { startDate: number, endDate: number } = { startDate: new Date().getDate(), endDate: new Date().getDate() };
@@ -110,6 +191,7 @@ class AnalysisMap extends HTMLElement {
   private _pelengsLayerGroup: L.LayerGroup | null = null;
   private _palitras: PalitraDetails[] = [];
   private _visiblePalitraIds: number[] = [];
+  private _palitrasLoaded = false;
   private _palitrasEnabled = true;
   private _kmzEnabled = true;
   private _pelengsEnabled = true;
@@ -117,6 +199,7 @@ class AnalysisMap extends HTMLElement {
 
   constructor() {
     super();
+    this._loadStateFromStorage();
   }
 
   connectedCallback() { }
@@ -203,34 +286,19 @@ class AnalysisMap extends HTMLElement {
       const palitras = JSON.parse(newValue);
       console.log('[AnalysisMap] Palitras attribute changed, count:', palitras.length, 'manager exists:', !!this._palitraManager);
       this._palitras = palitras;
+      this._syncVisiblePalitraIds();
       if (this._palitraManager) {
         this._palitraManager.updatePalitras(palitras);
+        this._palitraManager.updateVisibleIds(this._visiblePalitraIds);
       }
     }
-    if (name === 'visible-palitra-ids') {
-      const ids = JSON.parse(newValue);
-      console.log('[AnalysisMap] Visible palitra IDs changed, count:', ids.length, 'manager exists:', !!this._palitraManager);
-      this._visiblePalitraIds = ids;
+    if (name === 'palitras-loaded') {
+      this._palitrasLoaded = JSON.parse(newValue);
+      this._syncVisiblePalitraIds();
       if (this._palitraManager) {
-        this._palitraManager.updateVisibleIds(ids);
+        this._palitraManager.updatePalitras(this._palitras);
+        this._palitraManager.updateVisibleIds(this._visiblePalitraIds);
       }
-    }
-    if (name === 'palitras-enabled') {
-      const enabled = JSON.parse(newValue);
-      console.log('[AnalysisMap] palitras-enabled attribute changed:', newValue, '→', enabled, 'initialized:', this._initialized, 'manager exists:', !!this._palitraManager);
-      this._palitrasEnabled = enabled;
-      this._updateLayerSwitchControl();
-      this._applyPalitraVisibility();
-    }
-    if (name === 'kmz-enabled') {
-      this._kmzEnabled = JSON.parse(newValue);
-      this._updateLayerSwitchControl();
-      this._applyKmzVisibility();
-    }
-    if (name === 'pelengs-enabled') {
-      this._pelengsEnabled = JSON.parse(newValue);
-      this._updateLayerSwitchControl();
-      this._applyPelengVisibility();
     }
   }
 
@@ -314,21 +382,11 @@ class AnalysisMap extends HTMLElement {
     }
 
     const palitraToggleCallback = (palitraId: number) => {
-      const event = new CustomEvent('palitra-visibility-toggled', {
-        detail: { palitraId },
-        bubbles: true,
-        composed: true
-      });
-      this.dispatchEvent(event);
+      this._togglePalitraVisibility(palitraId);
     }
 
     const featureToggleCallback = (feature: FeatureName, enabled: boolean) => {
-      const event = new CustomEvent('feature-toggle', {
-        detail: { feature, enabled },
-        bubbles: true,
-        composed: true
-      });
-      this.dispatchEvent(event);
+      this._setFeatureEnabled(feature, enabled);
     }
 
     const switchTimeControl = createTimeswitchControl(this._daterange);
@@ -443,6 +501,73 @@ class AnalysisMap extends HTMLElement {
   private _updateLayerSwitchControl() {
     if (this._layerSwitchControl) {
       this._layerSwitchControl.updateFeatures(this._getFeatureToggleState());
+    }
+  }
+
+  private _loadStateFromStorage() {
+    const stored = loadAnalysisMapState();
+    this._palitrasEnabled = stored.features.palitras;
+    this._kmzEnabled = stored.features.kmz;
+    this._pelengsEnabled = stored.features.pelengs;
+    this._visiblePalitraIds = stored.visiblePalitraIds;
+  }
+
+  private _saveStateToStorage() {
+    saveAnalysisMapState({
+      features: {
+        palitras: this._palitrasEnabled,
+        kmz: this._kmzEnabled,
+        pelengs: this._pelengsEnabled
+      },
+      visiblePalitraIds: this._visiblePalitraIds
+    });
+  }
+
+  private _setFeatureEnabled(feature: FeatureName, enabled: boolean) {
+    if (feature === 'palitras') {
+      this._palitrasEnabled = enabled;
+      this._applyPalitraVisibility();
+    }
+    if (feature === 'kmz') {
+      this._kmzEnabled = enabled;
+      this._applyKmzVisibility();
+    }
+    if (feature === 'pelengs') {
+      this._pelengsEnabled = enabled;
+      this._applyPelengVisibility();
+    }
+    this._updateLayerSwitchControl();
+    this._saveStateToStorage();
+  }
+
+  private _togglePalitraVisibility(palitraId: number) {
+    const nextVisible =
+      this._visiblePalitraIds.includes(palitraId)
+        ? this._visiblePalitraIds.filter(id => id !== palitraId)
+        : [palitraId, ...this._visiblePalitraIds];
+    this._visiblePalitraIds = nextVisible;
+    if (this._palitraManager) {
+      this._palitraManager.updateVisibleIds(nextVisible);
+    }
+    this._saveStateToStorage();
+  }
+
+  private _syncVisiblePalitraIds() {
+    if (!this._palitrasLoaded) {
+      return;
+    }
+    if (this._palitras.length === 0) {
+      if (this._visiblePalitraIds.length > 0) {
+        this._visiblePalitraIds = [];
+        this._saveStateToStorage();
+      }
+      return;
+    }
+    const existingIds = new Set(this._palitras.map(palitraDetails => palitraDetails.palitra.id));
+    const filtered = this._visiblePalitraIds.filter(id => existingIds.has(id));
+    if (!arraysEqual(filtered, this._visiblePalitraIds)) {
+      this._visiblePalitraIds = filtered;
+      this._saveStateToStorage();
     }
   }
 
