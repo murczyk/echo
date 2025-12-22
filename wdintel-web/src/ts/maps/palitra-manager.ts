@@ -45,6 +45,8 @@ export class PalitraManager {
     if (this.control) {
       this.control.updatePalitras(palitras, this.visibleIds);
     }
+    // Update control visibility after palitras change
+    this.updateControlVisibility();
     this.updatePolygons();
     this.schedulePointsRequest();
   }
@@ -54,6 +56,8 @@ export class PalitraManager {
     if (this.control) {
       this.control.updatePalitras(this.palitras, ids);
     }
+    // Update control visibility (in case it's the first update)
+    this.updateControlVisibility();
     this.boundsApplied = false;
     this.updatePolygons();
     this.schedulePointsRequest();
@@ -70,6 +74,10 @@ export class PalitraManager {
   setControl(control: PalitrasControl): void {
     this.control = control;
     this.updateControlVisibility();
+    // If we already have palitras, update the control
+    if (this.palitras.length > 0) {
+      this.control.updatePalitras(this.palitras, this.visibleIds);
+    }
   }
 
   destroy(): void {
@@ -390,11 +398,21 @@ export class PalitraManager {
       return;
     }
 
-    if (!this.enabled) {
-      this.map.removeControl(this.control);
+    const isControlOnMap = (this.control as any)._map === this.map;
+    const hasPalitras = this.palitras.length > 0;
+    console.log('[PalitraManager] updateControlVisibility: enabled:', this.enabled, 'isControlOnMap:', isControlOnMap, 'hasPalitras:', hasPalitras);
+
+    // Don't show control if disabled OR no palitras
+    if (!this.enabled || !hasPalitras) {
+      if (isControlOnMap) {
+        this.map.removeControl(this.control);
+      }
       return;
     }
 
-    this.map.addControl(this.control);
+    // Show control only if enabled AND has palitras
+    if (!isControlOnMap) {
+      this.map.addControl(this.control);
+    }
   }
 }

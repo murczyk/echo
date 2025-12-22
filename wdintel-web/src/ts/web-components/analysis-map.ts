@@ -108,6 +108,9 @@ class AnalysisMap extends HTMLElement {
 
   private _palitraManager: PalitraManager | null = null;
   private _pelengsLayerGroup: L.LayerGroup | null = null;
+  private _palitras: PalitraDetails[] = [];
+  private _visiblePalitraIds: number[] = [];
+  private _palitrasEnabled = true;
   private _kmzEnabled = true;
   private _pelengsEnabled = true;
   private _layerSwitchControl: LayerSwitchControl | null = null;
@@ -198,16 +201,26 @@ class AnalysisMap extends HTMLElement {
     }
     if (name === 'palitras') {
       const palitras = JSON.parse(newValue);
-      this._palitraManager?.updatePalitras(palitras);
+      console.log('[AnalysisMap] Palitras attribute changed, count:', palitras.length, 'manager exists:', !!this._palitraManager);
+      this._palitras = palitras;
+      if (this._palitraManager) {
+        this._palitraManager.updatePalitras(palitras);
+      }
     }
     if (name === 'visible-palitra-ids') {
       const ids = JSON.parse(newValue);
-      this._palitraManager?.updateVisibleIds(ids);
+      console.log('[AnalysisMap] Visible palitra IDs changed, count:', ids.length, 'manager exists:', !!this._palitraManager);
+      this._visiblePalitraIds = ids;
+      if (this._palitraManager) {
+        this._palitraManager.updateVisibleIds(ids);
+      }
     }
     if (name === 'palitras-enabled') {
       const enabled = JSON.parse(newValue);
-      this._palitraManager?.setEnabled(enabled);
+      console.log('[AnalysisMap] palitras-enabled attribute changed:', newValue, '→', enabled, 'initialized:', this._initialized, 'manager exists:', !!this._palitraManager);
+      this._palitrasEnabled = enabled;
       this._updateLayerSwitchControl();
+      this._applyPalitraVisibility();
     }
     if (name === 'kmz-enabled') {
       this._kmzEnabled = JSON.parse(newValue);
@@ -267,6 +280,22 @@ class AnalysisMap extends HTMLElement {
          }
        }
      );
+     
+     // Set the control after manager is created
+     console.log('[AnalysisMap] Setting control, _palitrasEnabled:', this._palitrasEnabled, 'stored palitras:', this._palitras.length, 'visible IDs:', this._visiblePalitraIds.length);
+     this._palitraManager.setControl(result.palitrasControl);
+     
+     // Update manager with any palitras that arrived before initialization
+     if (this._palitras.length > 0) {
+       console.log('[AnalysisMap] Applying stored palitras to manager');
+       this._palitraManager.updatePalitras(this._palitras);
+     }
+     if (this._visiblePalitraIds.length > 0) {
+       console.log('[AnalysisMap] Applying stored visible IDs to manager');
+       this._palitraManager.updateVisibleIds(this._visiblePalitraIds);
+     }
+     
+     this._applyPalitraVisibility();
 
      this._pelengsLayerGroup = L.layerGroup();
      this._applyPelengVisibility();
@@ -312,9 +341,8 @@ class AnalysisMap extends HTMLElement {
     map.addControl(createAttributionControl());
 
     const palitrasControl = createPalitrasControl([], [], palitraToggleCallback);
-    this._palitraManager?.setControl(palitrasControl);
 
-    return { map, switchTimeControl };
+    return { map, switchTimeControl, palitrasControl };
   }
 
   private _replacePointsOnMap(points: MapPointDetailed[]) {
@@ -406,7 +434,7 @@ class AnalysisMap extends HTMLElement {
 
   private _getFeatureToggleState(): FeatureToggleState {
     return {
-      palitrasEnabled: this._palitraManager !== null,
+      palitrasEnabled: this._palitrasEnabled,
       kmzEnabled: this._kmzEnabled,
       pelengsEnabled: this._pelengsEnabled
     };
@@ -429,6 +457,14 @@ class AnalysisMap extends HTMLElement {
     }
 
     this._pelengsLayerGroup.addTo(this._map);
+  }
+
+  private _applyPalitraVisibility() {
+    if (!this._palitraManager) {
+      return;
+    }
+
+    this._palitraManager.setEnabled(this._palitrasEnabled);
   }
 
   private async _loadKmzLayer() {
