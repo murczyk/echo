@@ -8,92 +8,12 @@ import { MapPointDetailed } from '../maps/types';
 import { messagesCountText } from '../maps/language-utils';
 import { loadRerAnalysisQueryState, RerAnalysisQueryState, saveRerAnalysisQueryState } from '../rer-analysis-query-state';
 import { TimeswitchControl, FeatureToggleState, createLayerSwitchControl, createExitControl2, createTimeswitchControl, createAttributionControl, createPalitrasControl, FeatureName, LayerSwitchControl } from '../maps/controls';
+import { AnalysisMapStateStore, AnalysisMapStoredState } from '../maps/analysis-map-state';
 import { PalitraManager } from '../maps/palitra-manager';
 import { PalitraDetails } from '../maps/palitra-types';
 
 type NetworkUnit = { frequencies: string[]; name: string }
 type Message = [number, { message_uid: string; freq: string; coords: number[], text: string, date: number, time: number, unit: string }]
-
-type AnalysisMapFeaturesState = {
-  palitras: boolean;
-  kmz: boolean;
-  pelengs: boolean;
-};
-
-type AnalysisMapStoredState = {
-  features: AnalysisMapFeaturesState;
-  visiblePalitraIds: number[];
-};
-
-const ANALYSIS_MAP_STATE_KEY = 'analysis-map-state';
-const DEFAULT_FEATURES_STATE: AnalysisMapFeaturesState = {
-  palitras: true,
-  kmz: true,
-  pelengs: true
-};
-
-function loadAnalysisMapState(): AnalysisMapStoredState {
-  try {
-    const stored = localStorage.getItem(ANALYSIS_MAP_STATE_KEY);
-    if (!stored) {
-      return { features: DEFAULT_FEATURES_STATE, visiblePalitraIds: [] };
-    }
-    const parsed = JSON.parse(stored);
-    return {
-      features: parseFeaturesState(parsed?.features),
-      visiblePalitraIds: parseVisiblePalitraIds(parsed?.visiblePalitraIds)
-    };
-  } catch (e) {
-    console.warn('[AnalysisMap] Failed to load state, using defaults:', e);
-    return { features: DEFAULT_FEATURES_STATE, visiblePalitraIds: [] };
-  }
-}
-
-function saveAnalysisMapState(state: AnalysisMapStoredState): void {
-  try {
-    localStorage.setItem(ANALYSIS_MAP_STATE_KEY, JSON.stringify(state));
-  } catch (e) {
-    console.warn('[AnalysisMap] Failed to save state:', e);
-  }
-}
-
-function parseFeaturesState(input: unknown): AnalysisMapFeaturesState {
-  const record = isRecord(input) ? input : {};
-  return {
-    palitras: readBool(record, 'palitras', DEFAULT_FEATURES_STATE.palitras),
-    kmz: readBool(record, 'kmz', DEFAULT_FEATURES_STATE.kmz),
-    pelengs: readBool(record, 'pelengs', DEFAULT_FEATURES_STATE.pelengs)
-  };
-}
-
-function parseVisiblePalitraIds(input: unknown): number[] {
-  if (!Array.isArray(input)) {
-    return [];
-  }
-  const unique = new Set<number>();
-  input.forEach((value) => {
-    if (typeof value === 'number' && Number.isFinite(value)) {
-      unique.add(value);
-    }
-  });
-  return Array.from(unique);
-}
-
-function isRecord(input: unknown): input is Record<string, unknown> {
-  return !!input && typeof input === 'object' && !Array.isArray(input);
-}
-
-function readBool(record: Record<string, unknown>, key: string, fallback: boolean): boolean {
-  const value = record[key];
-  return typeof value === 'boolean' ? value : fallback;
-}
-
-function arraysEqual(a: number[], b: number[]): boolean {
-  if (a.length !== b.length) {
-    return false;
-  }
-  return a.every((value, index) => value === b[index]);
-}
 
 export class DataCircleMarker extends L.CircleMarker {
   data: { messageId: number };
@@ -196,10 +116,12 @@ class AnalysisMap extends HTMLElement {
   private _kmzEnabled = true;
   private _pelengsEnabled = true;
   private _layerSwitchControl: LayerSwitchControl | null = null;
+  private _stateStore: AnalysisMapStateStore;
 
   constructor() {
     super();
-    this._loadStateFromStorage();
+    this._stateStore = new AnalysisMapStateStore();
+    this._applyState(this._stateStore.getState());
   }
 
   connectedCallback() { }
@@ -504,71 +426,39 @@ class AnalysisMap extends HTMLElement {
     }
   }
 
-  private _loadStateFromStorage() {
-    const stored = loadAnalysisMapState();
-    this._palitrasEnabled = stored.features.palitras;
-    this._kmzEnabled = stored.features.kmz;
-    this._pelengsEnabled = stored.features.pelengs;
-    this._visiblePalitraIds = stored.visiblePalitraIds;
-  }
-
-  private _saveStateToStorage() {
-    saveAnalysisMapState({
-      features: {
-        palitras: this._palitrasEnabled,
-        kmz: this._kmzEnabled,
-        pelengs: this._pelengsEnabled
-      },
-      visiblePalitraIds: this._visiblePalitraIds
-    });
+  private _applyState(state: AnalysisMapStoredState) {
+    this._palitrasEnabled = state.features.palitras;
+    this._kmzEnabled = state.features.kmz;
+    this._pelengsEnabled = state.features.pelengs;
+    this._visiblePalitraIds = state.visiblePalitraIds;
   }
 
   private _setFeatureEnabled(feature: FeatureName, enabled: boolean) {
+    const state = this._stateStore.setFeatures({ [feature]: enabled });
+    this._applyState(state);
     if (feature === 'palitras') {
-      this._palitrasEnabled = enabled;
       this._applyPalitraVisibility();
     }
     if (feature === 'kmz') {
-      this._kmzEnabled = enabled;
       this._applyKmzVisibility();
     }
     if (feature === 'pelengs') {
-      this._pelengsEnabled = enabled;
       this._applyPelengVisibility();
     }
     this._updateLayerSwitchControl();
-    this._saveStateToStorage();
   }
 
   private _togglePalitraVisibility(palitraId: number) {
-    const nextVisible =
-      this._visiblePalitraIds.includes(palitraId)
-        ? this._visiblePalitraIds.filter(id => id !== palitraId)
-        : [palitraId, ...this._visiblePalitraIds];
-    this._visiblePalitraIds = nextVisible;
+    const state = this._stateStore.toggleVisiblePalitraId(palitraId);
+    this._applyState(state);
     if (this._palitraManager) {
-      this._palitraManager.updateVisibleIds(nextVisible);
+      this._palitraManager.updateVisibleIds(this._visiblePalitraIds);
     }
-    this._saveStateToStorage();
   }
 
   private _syncVisiblePalitraIds() {
-    if (!this._palitrasLoaded) {
-      return;
-    }
-    if (this._palitras.length === 0) {
-      if (this._visiblePalitraIds.length > 0) {
-        this._visiblePalitraIds = [];
-        this._saveStateToStorage();
-      }
-      return;
-    }
-    const existingIds = new Set(this._palitras.map(palitraDetails => palitraDetails.palitra.id));
-    const filtered = this._visiblePalitraIds.filter(id => existingIds.has(id));
-    if (!arraysEqual(filtered, this._visiblePalitraIds)) {
-      this._visiblePalitraIds = filtered;
-      this._saveStateToStorage();
-    }
+    const state = this._stateStore.syncVisiblePalitraIds(this._palitras, this._palitrasLoaded);
+    this._applyState(state);
   }
 
   private _applyPelengVisibility() {
