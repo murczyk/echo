@@ -291,7 +291,11 @@ class AnalysisMap extends HTMLElement {
     if (currentZoom < this._minZoomForPoints) {
       return;
     }
-    const bounds = this._map.getBounds();
+    const bounds = this._getBufferedBounds();
+    const palitraIds = this._filterPalitraIdsByBounds(bounds);
+    if (palitraIds.length === 0) {
+      return;
+    }
     const event = new CustomEvent('palitra-points-needed', {
       detail: {
         bbox: {
@@ -300,12 +304,58 @@ class AnalysisMap extends HTMLElement {
           max_lat: bounds.getNorth(),
           max_lng: bounds.getEast()
         },
-        zoom: currentZoom
+        zoom: currentZoom,
+        palitraIds
       },
       bubbles: true,
       composed: true
     });
     this.dispatchEvent(event);
+  }
+
+  private _getBufferedBounds(): L.LatLngBounds {
+    const bounds = this._map!.getBounds();
+    return bounds.pad(0.2);
+  }
+
+  private _filterPalitraIdsByBounds(bounds: L.LatLngBounds): number[] {
+    return this._palitras
+      .filter(palitraDetails => this._visiblePalitraIds.includes(palitraDetails.palitra.id))
+      .filter(palitraDetails => {
+        const geometry = palitraDetails.palitra.geometry;
+        if (!geometry || !geometry.perimeter_linear_ring) {
+          return true;
+        }
+        const ring = geometry.perimeter_linear_ring;
+        if (ring.length === 0) {
+          return true;
+        }
+        const palitraBounds = this._buildPalitraBounds(ring);
+        return bounds.intersects(palitraBounds);
+      })
+      .map(palitraDetails => palitraDetails.palitra.id);
+  }
+
+  private _buildPalitraBounds(coords: { lat: number; lng: number }[]): L.LatLngBounds {
+    let minLat = coords[0].lat;
+    let maxLat = coords[0].lat;
+    let minLng = coords[0].lng;
+    let maxLng = coords[0].lng;
+    coords.forEach(coord => {
+      if (coord.lat < minLat) {
+        minLat = coord.lat;
+      }
+      if (coord.lat > maxLat) {
+        maxLat = coord.lat;
+      }
+      if (coord.lng < minLng) {
+        minLng = coord.lng;
+      }
+      if (coord.lng > maxLng) {
+        maxLng = coord.lng;
+      }
+    });
+    return L.latLngBounds([minLat, minLng], [maxLat, maxLng]);
   }
 
 

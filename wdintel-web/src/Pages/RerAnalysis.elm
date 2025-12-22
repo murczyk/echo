@@ -1853,11 +1853,11 @@ update user shared route msg model =
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Не вдалося завантажити палітри" err
             )
 
-        PalitraPointsNeeded bbox _ ->
-            if model.palitrasEnabled && not (List.isEmpty model.palitrasVisible) then
+        PalitraPointsNeeded bbox _ palitraIds ->
+            if model.palitrasEnabled && not (List.isEmpty palitraIds) then
                 let
                     req =
-                        { palitraIds = model.palitrasVisible
+                        { palitraIds = palitraIds
                         , bbox = bbox
                         }
                 in

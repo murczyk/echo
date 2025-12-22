@@ -758,9 +758,10 @@ view user model shared route =
 
                         palitraPointsNeededDecoder =
                             Decode.at [ "detail" ] <|
-                                Decode.map2 Tuple.pair
+                                Decode.map3 (\bbox zoom ids -> ( bbox, zoom, ids ))
                                     (Decode.field "bbox" B.bboxDecoder)
                                     (Decode.field "zoom" Decode.int)
+                                    (Decode.field "palitraIds" (Decode.list Decode.int))
                     in
                     div
                         (class "h-full relative"
@@ -794,7 +795,7 @@ view user model shared route =
                             , Events.on "load-messages-description" (Decode.map LoadMessagesForMap messagesIdsDecoder)
                             , Events.on "message-unit-clicked" (Decode.map SetUnitFilterFromMap unitNameDecoder)
                             , Events.on "palitra-visibility-toggled" (Decode.map TogglePalitraVisibility palitraToggleDecoder)
-                            , Events.on "palitra-points-needed" (Decode.map (\( bbox, zoom ) -> PalitraPointsNeeded bbox zoom) palitraPointsNeededDecoder)
+                            , Events.on "palitra-points-needed" (Decode.map (\( bbox, zoom, ids ) -> PalitraPointsNeeded bbox zoom ids) palitraPointsNeededDecoder)
                             , Events.on "feature-toggle" (Decode.map (\( feature, enabled ) -> FeatureToggled feature enabled) featureToggleDecoder)
                             ]
                             []
