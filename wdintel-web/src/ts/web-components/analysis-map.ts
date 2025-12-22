@@ -129,12 +129,15 @@ class AnalysisMap extends HTMLElement {
   private _palitrasControl: PalitrasControl | null = null;
   private _palitrasLayerGroup: L.LayerGroup | null = null;
   private _palitrasPointsClusters: Map<number, L.MarkerClusterGroup> = new Map();
+  private _palitraPointsTiles: Map<number, Map<string, PalitraPoint[]>> = new Map();
   private _pelengsLayerGroup: L.LayerGroup | null = null;
   private _minZoomForPoints = 13; // Мінімальний зум для показу точок палітр
   private _palitraPointsRequestTimer: number | null = null;
   private _palitraPointsRequestDelayMs = 200;
   private _palitraPointsCache: Map<string, number> = new Map();
-  private _palitraPointsCacheTtlMs = 60 * 1000;
+  private _palitraPointsCacheTtlMs = 5 * 60 * 1000; // 5 minutes
+  private _maxCachedTiles = 100;
+  private _pendingRequests: Set<string> = new Set();
   private _palitrasBoundsApplied = false;
   private _palitrasEnabled = true;
   private _kmzEnabled = true;
@@ -279,7 +282,7 @@ class AnalysisMap extends HTMLElement {
     }, this._palitraPointsRequestDelayMs);
   }
 
-  private _emitPalitraPointsRequest() {
+  private async _emitPalitraPointsRequest() {
     if (!this._map) {
       return;
     }
@@ -302,22 +305,33 @@ class AnalysisMap extends HTMLElement {
     if (requestPalitraIds.length === 0) {
       return;
     }
-    this._markPalitraPointsRequested(requestPalitraIds, bounds, currentZoom);
-    const event = new CustomEvent('palitra-points-needed', {
-      detail: {
-        bbox: {
-          min_lat: bounds.getSouth(),
-          min_lng: bounds.getWest(),
-          max_lat: bounds.getNorth(),
-          max_lng: bounds.getEast()
-        },
-        zoom: currentZoom,
-        palitraIds: requestPalitraIds
-      },
-      bubbles: true,
-      composed: true
+    const tileKey = this._buildBboxTileKey(bounds, currentZoom);
+    
+    // Filter out pending requests
+    const filteredIds = requestPalitraIds.filter(id => {
+      const requestKey = `${id}:${tileKey}`;
+      return !this._pendingRequests.has(requestKey);
     });
-    this.dispatchEvent(event);
+    
+    if (filteredIds.length === 0) {
+      return;
+    }
+    
+    // Mark as pending
+    filteredIds.forEach(id => {
+      this._pendingRequests.add(`${id}:${tileKey}`);
+    });
+    
+    this._markPalitraPointsRequested(filteredIds, tileKey);
+    
+    try {
+      await this._fetchPalitraPoints(filteredIds, bounds, tileKey);
+    } finally {
+      // Remove from pending
+      filteredIds.forEach(id => {
+        this._pendingRequests.delete(`${id}:${tileKey}`);
+      });
+    }
   }
 
   private _getBufferedBounds(): L.LatLngBounds {
@@ -388,11 +402,9 @@ class AnalysisMap extends HTMLElement {
 
   private _markPalitraPointsRequested(
     palitraIds: number[],
-    bounds: L.LatLngBounds,
-    zoom: number
+    tileKey: string
   ) {
     const now = Date.now();
-    const tileKey = this._buildBboxTileKey(bounds, zoom);
     palitraIds.forEach(palitraId => {
       this._palitraPointsCache.set(`${palitraId}:${tileKey}`, now);
     });
@@ -410,12 +422,12 @@ class AnalysisMap extends HTMLElement {
 
   private _getBboxPrecision(zoom: number): number {
     if (zoom >= 17) {
-      return 4;
-    }
-    if (zoom >= 15) {
       return 3;
     }
-    return 2;
+    if (zoom >= 15) {
+      return 2;
+    }
+    return 1;
   }
 
   private _getZoomBucket(zoom: number): number {
@@ -432,6 +444,124 @@ class AnalysisMap extends HTMLElement {
     const factor = Math.pow(10, precision);
     const rounded = Math.round(value * factor) / factor;
     return rounded.toFixed(precision);
+  }
+
+  private async _fetchPalitraPoints(
+    palitraIds: number[],
+    bounds: L.LatLngBounds,
+    tileKey: string
+  ): Promise<void> {
+    try {
+      const response = await fetch('/api/palitra/points', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          palitra_ids: palitraIds,
+          bbox: {
+            min_lat: bounds.getSouth(),
+            min_lng: bounds.getWest(),
+            max_lat: bounds.getNorth(),
+            max_lng: bounds.getEast()
+          }
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      
+      const data = await response.json();
+      this._storePalitraPoints(data, tileKey);
+      this._updatePalitraPointsOnMap();
+    } catch (error) {
+      console.error('Failed to fetch palitra points:', error);
+      // Remove from cache to allow retry
+      palitraIds.forEach(id => {
+        this._palitraPointsCache.delete(`${id}:${tileKey}`);
+      });
+    }
+  }
+
+  private _storePalitraPoints(data: { palitra_id: number; points: PalitraPoint[] }[], tileKey: string) {
+    data.forEach(item => {
+      if (item && typeof item.palitra_id === 'number') {
+        let tiles = this._palitraPointsTiles.get(item.palitra_id);
+        if (!tiles) {
+          tiles = new Map();
+          this._palitraPointsTiles.set(item.palitra_id, tiles);
+        }
+        tiles.set(tileKey, item.points || []);
+      }
+    });
+    
+    // Evict old entries if needed
+    this._evictOldestCacheEntries();
+  }
+
+  private _evictOldestCacheEntries() {
+    const entries = Array.from(this._palitraPointsCache.entries());
+    if (entries.length <= this._maxCachedTiles) {
+      return;
+    }
+    
+    // Sort by timestamp, keep newest
+    entries.sort((a, b) => b[1] - a[1]);
+    const toKeep = entries.slice(0, this._maxCachedTiles);
+    this._palitraPointsCache.clear();
+    toKeep.forEach(([key, timestamp]) => {
+      this._palitraPointsCache.set(key, timestamp);
+    });
+    
+    // Clean corresponding tiles
+    this._cleanOrphanedTiles();
+  }
+
+  private _cleanOrphanedTiles() {
+    this._palitraPointsTiles.forEach((tiles, palitraId) => {
+      tiles.forEach((_, tileKey) => {
+        const cacheKey = `${palitraId}:${tileKey}`;
+        if (!this._palitraPointsCache.has(cacheKey)) {
+          tiles.delete(tileKey);
+        }
+      });
+    });
+  }
+
+  private _collectPalitraPointsForBounds(
+    palitraId: number,
+    bounds: L.LatLngBounds
+  ): PalitraPoint[] {
+    const tiles = this._palitraPointsTiles.get(palitraId);
+    if (!tiles) {
+      return [];
+    }
+    const points: PalitraPoint[] = [];
+    tiles.forEach((tilePoints, tileKey) => {
+      const tileBounds = this._parseTileKeyBounds(tileKey);
+      if (!tileBounds) {
+        return;
+      }
+      if (bounds.intersects(tileBounds)) {
+        points.push(...tilePoints);
+      }
+    });
+    return points;
+  }
+
+  private _parseTileKeyBounds(tileKey: string): L.LatLngBounds | null {
+    const parts = tileKey.split(':');
+    if (parts.length !== 2) {
+      return null;
+    }
+    const coords = parts[1].split(',').map(value => Number(value));
+    if (coords.length !== 4) {
+      return null;
+    }
+    const [minLat, minLng, maxLat, maxLng] = coords;
+    if ([minLat, minLng, maxLat, maxLng].some(value => Number.isNaN(value))) {
+      return null;
+    }
+    return L.latLngBounds([minLat, minLng], [maxLat, maxLng]);
   }
 
 
@@ -715,10 +845,7 @@ class AnalysisMap extends HTMLElement {
     return polygon;
   }
 
-  private _createPalitraPointsCluster(palitraDetails: PalitraDetails): L.MarkerClusterGroup | null {
-    const palitra = palitraDetails.palitra;
-    const points = palitraDetails.points;
-
+  private _createPalitraPointsCluster(palitra: Palitra, points: PalitraPoint[]): L.MarkerClusterGroup | null {
     if (!points || points.length === 0) {
       return null;
     }
@@ -807,13 +934,14 @@ class AnalysisMap extends HTMLElement {
       return;
     }
 
-    // Add point clusters for visible palitras
+    const currentBounds = this._map.getBounds();
     const visiblePalitras = this._palitras.filter(pd =>
       this._visiblePalitraIds.includes(pd.palitra.id)
     );
 
     visiblePalitras.forEach(palitraDetails => {
-      const cluster = this._createPalitraPointsCluster(palitraDetails);
+      const points = this._collectPalitraPointsForBounds(palitraDetails.palitra.id, currentBounds);
+      const cluster = this._createPalitraPointsCluster(palitraDetails.palitra, points);
       if (cluster) {
         this._palitrasPointsClusters.set(palitraDetails.palitra.id, cluster);
         this._map!.addLayer(cluster);

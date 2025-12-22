@@ -411,26 +411,6 @@ palitraToDetails palitra =
     }
 
 
-applyPalitraPoints : List B.PalitraPoints -> List B.PalitraDetails -> List B.PalitraDetails
-applyPalitraPoints palitraPoints palitras =
-    let
-        pointsById =
-            palitraPoints
-                |> List.map (\palitraPointsEntry -> ( palitraPointsEntry.palitraId, palitraPointsEntry.points ))
-                |> Dict.fromList
-    in
-    palitras
-        |> List.map
-            (\palitraDetails ->
-                case Dict.get palitraDetails.palitra.id pointsById of
-                    Just points ->
-                        { palitraDetails | points = points }
-
-                    Nothing ->
-                        palitraDetails
-            )
-
-
 loadSumTableOnly : Model -> ( Model, Effect Msg )
 loadSumTableOnly model =
     case ( model.from.datePosix, model.to.datePosix ) of
@@ -1851,36 +1831,6 @@ update user shared route msg model =
         GotPalitras (Err err) ->
             ( { model | palitras = Failure err }
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Не вдалося завантажити палітри" err
-            )
-
-        PalitraPointsNeeded bbox _ palitraIds ->
-            if model.palitrasEnabled && not (List.isEmpty palitraIds) then
-                let
-                    req =
-                        { palitraIds = palitraIds
-                        , bbox = bbox
-                        }
-                in
-                ( model
-                , E.sendCmd <| Api.palitra_points GotPalitraPoints req
-                )
-
-            else
-                ( model, E.none )
-
-        GotPalitraPoints (Ok palitraPoints) ->
-            case model.palitras of
-                Success palitras ->
-                    ( { model | palitras = Success (applyPalitraPoints palitraPoints palitras) }
-                    , E.none
-                    )
-
-                _ ->
-                    ( model, E.none )
-
-        GotPalitraPoints (Err err) ->
-            ( model
-            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Не вдалося завантажити точки палітр" err
             )
 
         TogglePalitraVisibility palitraId ->
