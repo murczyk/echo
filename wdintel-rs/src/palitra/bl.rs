@@ -117,14 +117,14 @@ pub async fn list_palitra_points_by_bbox(
         return Ok(vec![]);
     }
 
-    let bbox = normalize_bbox(req.bbox);
+    let viewport_bounds = normalize_viewport_bounds(req.viewport_bounds);
     let points = palitra_point::Entity::find()
         .filter(palitra_point::Column::PalitraId.eq_any(palitra_ids.clone()))
         .filter(palitra_point::Column::Deleted.eq(false))
-        .filter(palitra_point::Column::Lat.gte(bbox.min_lat))
-        .filter(palitra_point::Column::Lat.lte(bbox.max_lat))
-        .filter(palitra_point::Column::Lng.gte(bbox.min_lng))
-        .filter(palitra_point::Column::Lng.lte(bbox.max_lng))
+        .filter(palitra_point::Column::Lat.gte(viewport_bounds.min_lat))
+        .filter(palitra_point::Column::Lat.lte(viewport_bounds.max_lat))
+        .filter(palitra_point::Column::Lng.gte(viewport_bounds.min_lng))
+        .filter(palitra_point::Column::Lng.lte(viewport_bounds.max_lng))
         .all(dbx)
         .await
         .c(h!())?;
@@ -233,12 +233,12 @@ where
     Ok(result)
 }
 
-fn normalize_bbox(bbox: Bbox) -> Bbox {
-    let min_lat = bbox.min_lat.min(bbox.max_lat);
-    let max_lat = bbox.min_lat.max(bbox.max_lat);
-    let min_lng = bbox.min_lng.min(bbox.max_lng);
-    let max_lng = bbox.min_lng.max(bbox.max_lng);
-    Bbox {
+fn normalize_viewport_bounds(viewport_bounds: ViewportBounds) -> ViewportBounds {
+    let min_lat = viewport_bounds.min_lat.min(viewport_bounds.max_lat);
+    let max_lat = viewport_bounds.min_lat.max(viewport_bounds.max_lat);
+    let min_lng = viewport_bounds.min_lng.min(viewport_bounds.max_lng);
+    let max_lng = viewport_bounds.min_lng.max(viewport_bounds.max_lng);
+    ViewportBounds {
         min_lat,
         min_lng,
         max_lat,

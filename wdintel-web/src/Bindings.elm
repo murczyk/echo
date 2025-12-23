@@ -2687,7 +2687,7 @@ palitraPointEncoder struct =
 
 type alias PalitraPointsReq =
     { palitraIds : List Int
-    , bbox : Bbox
+    , viewportBounds : ViewportBounds
     }
 
 
@@ -2695,7 +2695,7 @@ palitraPointsReqEncoder : PalitraPointsReq -> Json.Encode.Value
 palitraPointsReqEncoder struct =
     Json.Encode.object
         [ ( "palitra_ids", Json.Encode.list Json.Encode.int struct.palitraIds )
-        , ( "bbox", bboxEncoder struct.bbox )
+        , ( "viewport_bounds", viewportBoundsEncoder struct.viewportBounds )
         ]
 
 
@@ -2713,7 +2713,7 @@ palitraPointsEncoder struct =
         ]
 
 
-type alias Bbox =
+type alias ViewportBounds =
     { minLat : Float
     , minLng : Float
     , maxLat : Float
@@ -2721,8 +2721,8 @@ type alias Bbox =
     }
 
 
-bboxEncoder : Bbox -> Json.Encode.Value
-bboxEncoder struct =
+viewportBoundsEncoder : ViewportBounds -> Json.Encode.Value
+viewportBoundsEncoder struct =
     Json.Encode.object
         [ ( "min_lat", Json.Encode.float struct.minLat )
         , ( "min_lng", Json.Encode.float struct.minLng )
@@ -7870,7 +7870,7 @@ palitraPointsReqDecoder : Json.Decode.Decoder PalitraPointsReq
 palitraPointsReqDecoder =
     Json.Decode.succeed PalitraPointsReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "palitra_ids" (Json.Decode.list Json.Decode.int)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "bbox" bboxDecoder))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "viewport_bounds" viewportBoundsDecoder))
 
 
 palitraPointsDecoder : Json.Decode.Decoder PalitraPoints
@@ -7880,9 +7880,9 @@ palitraPointsDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "points" (Json.Decode.list palitraPointDecoder)))
 
 
-bboxDecoder : Json.Decode.Decoder Bbox
-bboxDecoder =
-    Json.Decode.succeed Bbox
+viewportBoundsDecoder : Json.Decode.Decoder ViewportBounds
+viewportBoundsDecoder =
+    Json.Decode.succeed ViewportBounds
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "min_lat" Json.Decode.float))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "min_lng" Json.Decode.float))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "max_lat" Json.Decode.float))

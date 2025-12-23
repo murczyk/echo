@@ -82,7 +82,7 @@ export class PalitraCacheManager {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           palitra_ids: palitraIds,
-          bbox: {
+          viewport_bounds: {
             min_lat: bounds.getSouth(),
             min_lng: bounds.getWest(),
             max_lat: bounds.getNorth(),

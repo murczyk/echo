@@ -73,7 +73,7 @@ pub struct PalitraPoint {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
-pub struct Bbox {
+pub struct ViewportBounds {
     pub min_lat: f64,
     pub min_lng: f64,
     pub max_lat: f64,
@@ -85,7 +85,7 @@ pub struct Bbox {
 )]
 pub struct PalitraPointsReq {
     pub palitra_ids: Vec<i64>,
-    pub bbox: Bbox,
+    pub viewport_bounds: ViewportBounds,
 }
 
 #[derive(
