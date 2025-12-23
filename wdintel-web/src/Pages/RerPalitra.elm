@@ -475,6 +475,9 @@ update user msg model =
 
                     else
                         model.aorList
+                , kmzAnalysis = NotAsked
+                , uploadedKmzFile = Nothing
+                , selectedColorFromKmz = Nothing
               }
             , if List.isEmpty allCmds then
                 E.none
@@ -595,6 +598,9 @@ update user msg model =
                 , loginsSelect = { loginsSelect | selected = [] }
                 , organismsSelect = { organismsSelect | selected = [] }
                 , aorSelect = { aorSelect | selected = [] }
+                , kmzAnalysis = NotAsked
+                , uploadedKmzFile = Nothing
+                , selectedColorFromKmz = Nothing
               }
             , E.none
             )
@@ -1606,6 +1612,55 @@ isFormValid form =
                 not (List.isEmpty aorList)
 
 
+isCreateFormValid : Auth.User -> Model -> Bool
+isCreateFormValid user model =
+    let
+        nameValid =
+            not (String.isEmpty (String.trim model.form.name))
+
+        admin =
+            isAdmin user
+    in
+    if not nameValid then
+        False
+
+    else if admin then
+        -- Для адмінів використовуємо стандартну валідацію форми
+        isFormValid model.form
+
+    else
+        -- Для звичайних користувачів перевіряємо restricted поля через myScope
+        case model.form.access of
+            LoginsAccess _ ->
+                -- LoginsAccess завжди валідне для не-адмінів (автоматично підставляється user.name)
+                True
+
+            OrganismsAccess _ ->
+                -- Перевіряємо, що myScope завантажено і organism призначено
+                case model.myScope of
+                    Success scope ->
+                        case scope.organism of
+                            Just _ ->
+                                True
+
+                            Nothing ->
+                                False
+
+                    _ ->
+                        -- myScope ще не завантажено
+                        False
+
+            AorAccess _ ->
+                -- Перевіряємо, що myScope завантажено і є хоча б одна смуга
+                case model.myScope of
+                    Success scope ->
+                        not (List.isEmpty scope.aorIds)
+
+                    _ ->
+                        -- myScope ще не завантажено
+                        False
+
+
 createPalitraSidebarContent : Bool -> Auth.User -> Model -> List (Html Msg)
 createPalitraSidebarContent isDark user model =
     let
@@ -2045,7 +2100,7 @@ createPalitraSidebarContent isDark user model =
                                 else
                                     SubmitCreateWithKmz
                             }
-                            |> Button.withDisabled model.submitInFlight
+                            |> Button.withDisabled (model.submitInFlight || not (isCreateFormValid user model))
                             |> Button.view
                         ]
                     ]
