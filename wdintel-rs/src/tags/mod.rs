@@ -189,10 +189,6 @@ async fn add_tag_keywords(
                 keyword_negative_forms,
             } = r;
 
-            if is_regex {
-                let _ = regex::Regex::new(&keyword).c(h!())?;
-            }
-
             let mut keyword_forms: Vec<String> =
                 keyword_forms.unwrap_or_default();
             let keyword_negative_forms =
@@ -202,13 +198,12 @@ async fn add_tag_keywords(
                     crate::nlp::token_lexemes(&env.rq.clone(), &keyword)
                         .await
                         .c(h!())?;
-            } else if is_regex {
-                for pattern in &keyword_forms {
-                    let _ = regex::Regex::new(pattern.as_str()).c(h!())?;
-                }
             }
 
             if is_regex {
+                for pattern in &keyword_forms {
+                    let _ = regex::Regex::new(pattern.as_str()).c(h!())?;
+                }
                 for pattern in &keyword_negative_forms {
                     let _ = regex::Regex::new(pattern.as_str()).c(h!())?;
                 }
@@ -303,9 +298,6 @@ async fn update_tag_keyword(
         keyword_forms,
         keyword_negative_forms,
     } = req.0;
-    if is_regex {
-        let _ = regex::Regex::new(keyword.as_str()).c(h!())?;
-    }
 
     let mut keyword_forms: Vec<String> = keyword_forms.unwrap_or_default();
     let keyword_negative_forms = keyword_negative_forms.unwrap_or_default();
@@ -313,12 +305,11 @@ async fn update_tag_keyword(
         keyword_forms = crate::nlp::token_lexemes(&env.rq.clone(), &keyword)
             .await
             .c(h!())?;
-    } else if is_regex {
+    }
+    if is_regex {
         for pattern in &keyword_forms {
             let _ = regex::Regex::new(pattern.as_str()).c(h!())?;
         }
-    }
-    if is_regex {
         for pattern in &keyword_negative_forms {
             let _ = regex::Regex::new(pattern.as_str()).c(h!())?;
         }
