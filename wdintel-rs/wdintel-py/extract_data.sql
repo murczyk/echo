@@ -1,4 +1,8 @@
-copy (from postgres_query('wd_pivnich', $$
+-- adjust wd_pivnich in postgres_query and 'echo-wd_pivnich.parquet'
+
+copy (
+with pg_query as (
+select * from postgres_query('wd_pivnich', $$
 with cte as materialized (
     select label_id,
         array_agg(tag.id) as label_tags
@@ -31,7 +35,10 @@ results as (
           "text"
         )) as "text",
         (
-            select array_agg (cte.label_id) filter (where x.tags && cte.label_tags)
+            select array_agg (
+              (x.tags && cte.label_tags)
+              ORDER BY cte.label_id
+            )
             from cte
         ) as labels
     from (
@@ -40,7 +47,7 @@ results as (
                 "datetime" AT TIME ZONE 'UTC' as "datetime",
                 case when tags is not null then
                   ARRAY(SELECT jsonb_array_elements_text(tags))::bigint[]
-                else 
+                else
                   array[]::bigint[]
                 end as tags
             from sigint_inbox_item
@@ -53,14 +60,25 @@ results as (
 )
 select
     "text",
-    coalesce(labels, array[]::int[]) as labels,
-    'wd-echo-pivnich.hyakutake-chromatic.ts.net-2025-12-08-02-40-01.pgrestore' as "__source",
+    current_database() as "__source",
     id as "__id",
-    "datetime" as "__datetime"
+    "datetime" as "__datetime",
+    labels[1] as label_0,
+    labels[2] as label_1,
+    labels[3] as label_2,
+    labels[4] as label_3,
+    labels[5] as label_4,
+    labels[6] as label_5,
+    labels[7] as label_6,
+    labels[8] as label_7,
+    labels[9] as label_8,
+    labels[10] as label_9
 from results
-where 1=1
-   and "text" <> ''
-   and array_length(labels, 1) > 0
-   and 1=1
-$$))
-  to 'echo-wd_pivnich.parquet' (compression 'zstd');
+where "text" <> ''
+and labels is not null
+and array_length(labels, 1) > 0
+$$
+))
+select * from pg_query
+-- limit 100
+) to 'echo-wd_pivnich.parquet' (compression 'zstd');
