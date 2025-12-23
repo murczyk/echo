@@ -38,20 +38,20 @@ pub struct TagUpsertReq {
 )]
 pub struct TagKeyword {
     pub tag_keyword_id: i64,
-    pub is_positive: bool,
     pub is_regex: bool,
     pub keyword: String,
     pub keyword_forms: Vec<String>,
+    pub keyword_negative_forms: Vec<String>,
 }
 
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub struct TagKeywordAddReq {
-    pub is_positive: bool,
     pub is_regex: bool,
     pub keyword: String,
     pub keyword_forms: Option<Vec<String>>,
+    pub keyword_negative_forms: Option<Vec<String>>,
 }
 
 #[derive(

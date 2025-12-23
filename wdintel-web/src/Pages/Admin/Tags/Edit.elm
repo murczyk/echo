@@ -511,8 +511,8 @@ keywordsBlock model =
                             [ tr []
                                 [ th [] [ text "Ключ" ]
                                 , th [] [ text "Regex" ]
-                                , th [] [ text "Позитивний" ]
                                 , th [] [ text "Форми" ]
+                                , th [] [ text "Форми (негативні)" ]
                                 , th [ class "text-end" ] [ text "Дії" ]
                                 ]
                             ]
@@ -540,16 +540,8 @@ keywordRow model kw =
                     "ні"
                 )
             ]
-        , td []
-            [ text
-                (if kw.isPositive then
-                    "так"
-
-                 else
-                    "ні"
-                )
-            ]
         , td [] [ text (String.join ", " kw.keywordForms) ]
+        , td [] [ text (String.join ", " kw.keywordNegativeForms) ]
         , td [ class "text-end flex gap-2 justify-end" ]
             [ button
                 [ class "btn btn-sm btn-outline-primary"

@@ -19,10 +19,10 @@ pub mod worker;
 fn map_tag_keyword(model: tag_keyword::Model) -> TagKeyword {
     TagKeyword {
         tag_keyword_id: model.tag_keyword_id,
-        is_positive: model.is_positive,
         is_regex: model.is_regex,
         keyword: model.keyword,
         keyword_forms: model.keyword_forms,
+        keyword_negative_forms: model.keyword_negative_forms,
     }
 }
 
@@ -183,10 +183,10 @@ async fn add_tag_keywords(
     let keywords_task = req.0.into_iter().map(
         async |r| -> anyhow::Result<tag_keyword::ActiveModel> {
             let TagKeywordAddReq {
-                is_positive,
                 is_regex,
                 keyword,
                 keyword_forms,
+                keyword_negative_forms,
             } = r;
 
             if is_regex {
@@ -195,23 +195,31 @@ async fn add_tag_keywords(
 
             let mut keyword_forms: Vec<String> =
                 keyword_forms.unwrap_or_default();
-            if keyword_forms.is_empty() {
+            let keyword_negative_forms =
+                keyword_negative_forms.unwrap_or_default();
+            if keyword_forms.is_empty() && keyword_negative_forms.is_empty() {
                 keyword_forms =
                     crate::nlp::token_lexemes(&env.rq.clone(), &keyword)
                         .await
                         .c(h!())?;
-            } else {
+            } else if is_regex {
                 for pattern in &keyword_forms {
+                    let _ = regex::Regex::new(pattern.as_str()).c(h!())?;
+                }
+            }
+
+            if is_regex {
+                for pattern in &keyword_negative_forms {
                     let _ = regex::Regex::new(pattern.as_str()).c(h!())?;
                 }
             }
 
             let model = tag_keyword::ActiveModel {
                 tag_id: Set(tag_id),
-                is_positive: Set(is_positive),
                 is_regex: Set(is_regex),
                 keyword: Set(keyword),
                 keyword_forms: Set(keyword_forms),
+                keyword_negative_forms: Set(keyword_negative_forms),
                 ..Default::default()
             };
             Ok(model)
@@ -290,29 +298,35 @@ async fn update_tag_keyword(
 
     let mut tag_keyword = tag_keyword.into_active_model();
     let TagKeywordAddReq {
-        is_positive,
         is_regex,
         keyword,
         keyword_forms,
+        keyword_negative_forms,
     } = req.0;
     if is_regex {
         let _ = regex::Regex::new(keyword.as_str()).c(h!())?;
     }
 
     let mut keyword_forms: Vec<String> = keyword_forms.unwrap_or_default();
-    if keyword_forms.is_empty() {
+    let keyword_negative_forms = keyword_negative_forms.unwrap_or_default();
+    if keyword_forms.is_empty() && keyword_negative_forms.is_empty() {
         keyword_forms = crate::nlp::token_lexemes(&env.rq.clone(), &keyword)
             .await
             .c(h!())?;
-    } else {
+    } else if is_regex {
         for pattern in &keyword_forms {
             let _ = regex::Regex::new(pattern.as_str()).c(h!())?;
         }
     }
+    if is_regex {
+        for pattern in &keyword_negative_forms {
+            let _ = regex::Regex::new(pattern.as_str()).c(h!())?;
+        }
+    }
 
-    tag_keyword.is_positive = Set(is_positive);
     tag_keyword.keyword = Set(keyword);
     tag_keyword.keyword_forms = Set(keyword_forms);
+    tag_keyword.keyword_negative_forms = Set(keyword_negative_forms);
 
     tag_keyword.update(&env.dbx).await.c(h!())?;
     expire_tag_keyword_regex_cache(tag_id, &env.tag_keyword_regex_cache);

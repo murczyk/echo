@@ -3509,10 +3509,10 @@ tagEncoder struct =
 
 type alias TagKeyword =
     { tagKeywordId : Int
-    , isPositive : Bool
     , isRegex : Bool
     , keyword : String
     , keywordForms : List String
+    , keywordNegativeForms : List String
     }
 
 
@@ -3520,28 +3520,28 @@ tagKeywordEncoder : TagKeyword -> Json.Encode.Value
 tagKeywordEncoder struct =
     Json.Encode.object
         [ ( "tag_keyword_id", Json.Encode.int struct.tagKeywordId )
-        , ( "is_positive", Json.Encode.bool struct.isPositive )
         , ( "is_regex", Json.Encode.bool struct.isRegex )
         , ( "keyword", Json.Encode.string struct.keyword )
         , ( "keyword_forms", Json.Encode.list Json.Encode.string struct.keywordForms )
+        , ( "keyword_negative_forms", Json.Encode.list Json.Encode.string struct.keywordNegativeForms )
         ]
 
 
 type alias TagKeywordAddReq =
-    { isPositive : Bool
-    , isRegex : Bool
+    { isRegex : Bool
     , keyword : String
     , keywordForms : Maybe (List String)
+    , keywordNegativeForms : Maybe (List String)
     }
 
 
 tagKeywordAddReqEncoder : TagKeywordAddReq -> Json.Encode.Value
 tagKeywordAddReqEncoder struct =
     Json.Encode.object
-        [ ( "is_positive", Json.Encode.bool struct.isPositive )
-        , ( "is_regex", Json.Encode.bool struct.isRegex )
+        [ ( "is_regex", Json.Encode.bool struct.isRegex )
         , ( "keyword", Json.Encode.string struct.keyword )
         , ( "keyword_forms", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.string)) struct.keywordForms )
+        , ( "keyword_negative_forms", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.string)) struct.keywordNegativeForms )
         ]
 
 
@@ -8313,19 +8313,19 @@ tagKeywordDecoder : Json.Decode.Decoder TagKeyword
 tagKeywordDecoder =
     Json.Decode.succeed TagKeyword
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tag_keyword_id" Json.Decode.int))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_positive" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_regex" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "keyword" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "keyword_forms" (Json.Decode.list Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "keyword_negative_forms" (Json.Decode.list Json.Decode.string)))
 
 
 tagKeywordAddReqDecoder : Json.Decode.Decoder TagKeywordAddReq
 tagKeywordAddReqDecoder =
     Json.Decode.succeed TagKeywordAddReq
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_positive" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_regex" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "keyword" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "keyword_forms" (Json.Decode.nullable (Json.Decode.list Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "keyword_negative_forms" (Json.Decode.nullable (Json.Decode.list Json.Decode.string))))
 
 
 tagAdminDecoder : Json.Decode.Decoder TagAdmin

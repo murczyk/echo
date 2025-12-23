@@ -174,7 +174,8 @@ pub async fn process_messages<C: ConnectionTrait>(
         texts.push(text);
     }
 
-    let mut regex_tags: HashSet<(i64, i64)> = HashSet::new();
+    let mut skip_nlp_tag_id_message_id: HashSet<(i64, i64)> = HashSet::new();
+
     let mut message_tags: Vec<sigint_inbox_item_tag::ActiveModel> = vec![];
     let mut message_ids_for_events: BTreeSet<i64> = BTreeSet::new();
 
@@ -190,11 +191,11 @@ pub async fn process_messages<C: ConnectionTrait>(
 
         for (index, text) in texts.iter().enumerate() {
             let message_id = inbox_items[index].id;
-            let tag_matches =
-                !cache_item.regex_set_negative.is_match(text.as_str())
-                    && cache_item.regex_set_positive.is_match(text.as_str());
-            if tag_matches {
-                regex_tags.insert((tag_id, message_id));
+
+            if cache_item.regex_set_negative.is_match(text.as_str()) {
+                skip_nlp_tag_id_message_id.insert((tag_id, message_id));
+            } else if cache_item.regex_set_positive.is_match(text.as_str()) {
+                skip_nlp_tag_id_message_id.insert((tag_id, message_id));
                 let login = Some(SYSTEM_LOGIN_NAME.to_string());
                 let model = Some(KEYWORDS_REGEX_MODEL_NAME.to_owned());
                 let model = sigint_inbox_item_tag::ActiveModel {
@@ -223,7 +224,7 @@ pub async fn process_messages<C: ConnectionTrait>(
         let message_id = inbox_items[index].id;
         for (key, value) in &result.0 {
             let tag_id = tags_to_predict[key];
-            if !regex_tags.contains(&(tag_id, message_id)) {
+            if !skip_nlp_tag_id_message_id.contains(&(tag_id, message_id)) {
                 let confidence: f64 = *value;
                 let login = Some(SYSTEM_LOGIN_NAME.to_string());
                 let model = Some(NLP_MODEL_NAME.to_owned());
@@ -291,7 +292,6 @@ async fn get_regex_sets_for_tag<C: ConnectionTrait>(
 
     let keywords = tag_keyword::Entity::find()
         .filter(tag_keyword::Column::TagId.eq(tag_id))
-        .order_by_asc(tag_keyword::Column::IsPositive)
         .all(dbx)
         .await
         .c(h!())?;
@@ -300,29 +300,35 @@ async fn get_regex_sets_for_tag<C: ConnectionTrait>(
     let mut patterns_negative = vec![];
     for model in keywords {
         let tag_keyword::Model {
-            is_positive,
             is_regex,
             mut keyword,
             mut keyword_forms,
+            mut keyword_negative_forms,
             ..
         } = model;
-
-        let patterns = match is_positive {
-            true => &mut patterns_positive,
-            false => &mut patterns_negative,
-        };
 
         if keyword_forms.is_empty() {
             if !is_regex {
                 keyword = regex::escape(&keyword);
             }
-            patterns.push(keyword);
+            patterns_positive.push(keyword);
         } else if is_regex {
-            patterns.append(&mut keyword_forms);
+            patterns_positive.append(&mut keyword_forms);
         } else {
             for literal in keyword_forms {
                 let escaped = regex::escape(&literal);
-                patterns.push(escaped);
+                patterns_positive.push(escaped);
+            }
+        }
+
+        if !keyword_negative_forms.is_empty() {
+            if is_regex {
+                patterns_negative.append(&mut keyword_negative_forms);
+            } else {
+                for literal in keyword_negative_forms {
+                    let escaped = regex::escape(&literal);
+                    patterns_negative.push(escaped);
+                }
             }
         }
     }
