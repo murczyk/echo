@@ -315,6 +315,7 @@ async fn update_tag_keyword(
         }
     }
 
+    tag_keyword.is_regex = Set(is_regex);
     tag_keyword.keyword = Set(keyword);
     tag_keyword.keyword_forms = Set(keyword_forms);
     tag_keyword.keyword_negative_forms = Set(keyword_negative_forms);
