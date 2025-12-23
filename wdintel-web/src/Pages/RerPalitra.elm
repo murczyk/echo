@@ -1072,11 +1072,15 @@ update user msg model =
 
         KmzAnalysisResponse (Ok analysis) ->
             let
-                -- Автоматично вибираємо перший колір (найпоширеніший)
+                -- Автоматично вибираємо перший колір (найпоширеніший), або дефолтний, якщо кольори не знайдено
                 firstColor =
-                    analysis.topColors
-                        |> List.head
-                        |> Maybe.map .colorHex
+                    if List.isEmpty analysis.topColors then
+                        Just "#00bcd4"
+
+                    else
+                        analysis.topColors
+                            |> List.head
+                            |> Maybe.map .colorHex
 
                 -- Передзаповнюємо назву з файлу
                 updatedForm =
@@ -2026,35 +2030,57 @@ createPalitraSidebarContent isDark user model =
                     [ div [ class "space-y-6" ]
                         [ div [ class "space-y-2" ]
                             [ label [ class "text-sm font-medium text-foreground" ] [ text "Оберіть колір з KMZ *" ]
-                            , div [ class "flex gap-3" ]
-                                (analysis.topColors
-                                    |> List.map
-                                        (\colorInfo ->
-                                            let
-                                                isSelected =
-                                                    model.selectedColorFromKmz == Just colorInfo.colorHex
-                                            in
-                                            button
-                                                [ class "flex flex-col items-center gap-2 p-4 border-2 rounded-lg transition-all cursor-pointer"
-                                                , class
-                                                    (if isSelected then
-                                                        "border-primary bg-primary/10"
+                            , if List.isEmpty analysis.topColors then
+                                -- Показуємо колор-пікер, якщо кольори не знайдено
+                                div [ class "flex flex-col gap-3" ]
+                                    [ div [ class "flex items-center gap-3" ]
+                                        [ input
+                                            [ type_ "color"
+                                            , class "w-20 h-12 border border-border rounded-md cursor-pointer"
+                                            , value (Maybe.withDefault "#00bcd4" model.selectedColorFromKmz)
+                                            , on "change" (Decode.map SelectColorFromKmz targetValue)
+                                            ]
+                                            []
+                                        , div [ class "flex flex-col" ]
+                                            [ div [ class "text-sm font-mono text-foreground" ]
+                                                [ text (Maybe.withDefault "#00bcd4" model.selectedColorFromKmz) ]
+                                            , div [ class "text-xs text-muted-foreground" ]
+                                                [ text "Кольори не знайдено в KMZ файлі" ]
+                                            ]
+                                        ]
+                                    ]
 
-                                                     else
-                                                        "border-border hover:border-primary/50"
-                                                    )
-                                                , onClick (SelectColorFromKmz colorInfo.colorHex)
-                                                ]
-                                                [ div
-                                                    [ class "w-16 h-16 rounded-md border border-border"
-                                                    , style "background-color" colorInfo.colorHex
+                              else
+                                -- Показуємо кнопки з кольорами, якщо вони знайдені
+                                div [ class "flex gap-3" ]
+                                    (analysis.topColors
+                                        |> List.map
+                                            (\colorInfo ->
+                                                let
+                                                    isSelected =
+                                                        model.selectedColorFromKmz == Just colorInfo.colorHex
+                                                in
+                                                button
+                                                    [ class "flex flex-col items-center gap-2 p-4 border-2 rounded-lg transition-all cursor-pointer"
+                                                    , class
+                                                        (if isSelected then
+                                                            "border-primary bg-primary/10"
+
+                                                         else
+                                                            "border-border hover:border-primary/50"
+                                                        )
+                                                    , onClick (SelectColorFromKmz colorInfo.colorHex)
                                                     ]
-                                                    []
-                                                , div [ class "text-xs font-mono" ] [ text colorInfo.colorHex ]
-                                                , div [ class "text-sm font-semibold" ] [ text (String.fromInt colorInfo.count ++ " точок") ]
-                                                ]
-                                        )
-                                )
+                                                    [ div
+                                                        [ class "w-16 h-16 rounded-md border border-border"
+                                                        , style "background-color" colorInfo.colorHex
+                                                        ]
+                                                        []
+                                                    , div [ class "text-xs font-mono" ] [ text colorInfo.colorHex ]
+                                                    , div [ class "text-sm font-semibold" ] [ text (String.fromInt colorInfo.count ++ " точок") ]
+                                                    ]
+                                            )
+                                    )
                             ]
                         , div [ class "space-y-2" ]
                             [ label [ class "text-sm font-medium text-foreground" ] [ text "Назва *" ]
