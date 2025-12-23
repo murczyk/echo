@@ -301,7 +301,6 @@ async fn get_regex_sets_for_tag<C: ConnectionTrait>(
     for model in keywords {
         let tag_keyword::Model {
             is_regex,
-            mut keyword,
             mut keyword_forms,
             mut keyword_negative_forms,
             ..
