@@ -207,6 +207,37 @@ pub async fn extract_top_colors_from_kmz(
     Ok(top_colors)
 }
 
+/// Extracts top 3 colors from a single KML file
+pub async fn extract_top_colors_from_kml(
+    kml_path: &Path,
+) -> anyhow::Result<Vec<KmzColorInfo>> {
+    let mut color_counts: HashMap<String, i32> = HashMap::new();
+
+    match extract_colors_from_kml(kml_path).await {
+        Ok(colors) => {
+            for color in colors {
+                *color_counts.entry(color).or_insert(0) += 1;
+            }
+        }
+        Err(e) => {
+            error!("Failed to extract colors from {kml_path:?}: {e:?}");
+            return Err(e);
+        }
+    }
+
+    // Sort by count descending and take top 3
+    let mut color_vec: Vec<(String, i32)> = color_counts.into_iter().collect();
+    color_vec.sort_by(|a, b| b.1.cmp(&a.1));
+    
+    let top_colors = color_vec
+        .into_iter()
+        .take(3)
+        .map(|(color_hex, count)| KmzColorInfo { color_hex, count })
+        .collect();
+
+    Ok(top_colors)
+}
+
 /// Extracts colors from a single KML file
 async fn extract_colors_from_kml(path: &Path) -> anyhow::Result<Vec<String>> {
     let parent = path.parent().c(h!())?;

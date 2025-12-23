@@ -247,10 +247,21 @@ pub async fn analyze_kmz(
     let tmp_path = tmp_dir.path().join(&filename);
     tokio::fs::write(&tmp_path, val).await.c(h!())?;
 
-    // Extract top 3 colors
-    let top_colors = kmz::extract_top_colors_from_kmz(&tmp_path)
-        .await
-        .c(h!())?;
+    // Extract top 3 colors based on file extension
+    let extension = tmp_path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .unwrap_or("kmz");
+    
+    let top_colors = match extension {
+        "kmz" => kmz::extract_top_colors_from_kmz(&tmp_path).await.c(h!())?,
+        "kml" => kmz::extract_top_colors_from_kml(&tmp_path).await.c(h!())?,
+        _ => {
+            return Err(AppError::BL {
+                msg: format!("Unsupported file extension: {extension}. Expected .kmz or .kml"),
+            });
+        }
+    };
 
     // Clean filename (remove extension)
     let name_without_ext = filename
