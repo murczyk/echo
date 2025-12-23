@@ -3,6 +3,7 @@ use crate::kml::types::*;
 use crate::palitra::types::*;
 use crate::types::ShortContext;
 use log::error;
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{self};
 use std::path::Path;
@@ -144,6 +145,126 @@ fn m_add_coordinates(
             }
             Err(e) => {
                 error!("Failed to parse coordinates {c}: {e:?}");
+            }
+        }
+    }
+}
+
+/// Extracts colors from KML document and counts their usage
+/// Returns top 3 most frequent colors with their counts
+pub async fn extract_top_colors_from_kmz(
+    kmz_path: &Path,
+) -> anyhow::Result<Vec<KmzColorInfo>> {
+    let tmp_dir = tempdir()?;
+    let extract_to = tmp_dir.path().to_path_buf();
+    let walkdir = WalkDir::new(extract_to.as_path()).into_iter();
+    let file_path = kmz_path.to_path_buf();
+    
+    task::spawn_blocking(move || {
+        let zip_file = File::open(file_path)?;
+        let mut archive = ZipArchive::new(zip_file)
+            .map_err(|e| io::Error::other(format!("Zip error: {e:?}")))?;
+        archive.extract(extract_to.as_path()).map_err(|e| {
+            io::Error::other(format!("Extraction error: {e:?}"))
+        })?;
+        anyhow::Ok(())
+    })
+    .await
+    .c(h!())?
+    .c(h!())?;
+
+    let mut color_counts: HashMap<String, i32> = HashMap::new();
+
+    for entry in walkdir.filter_map(|e| e.ok()) {
+        if entry.file_type().is_file() {
+            let path = entry.path();
+            if path.extension().and_then(|ext| ext.to_str()) == Some("kml") {
+                match extract_colors_from_kml(path).await {
+                    Ok(colors) => {
+                        for color in colors {
+                            *color_counts.entry(color).or_insert(0) += 1;
+                        }
+                    }
+                    Err(e) => {
+                        error!("Failed to extract colors from {path:?}: {e:?}");
+                        continue;
+                    }
+                }
+            }
+        }
+    }
+
+    // Sort by count descending and take top 3
+    let mut color_vec: Vec<(String, i32)> = color_counts.into_iter().collect();
+    color_vec.sort_by(|a, b| b.1.cmp(&a.1));
+    
+    let top_colors = color_vec
+        .into_iter()
+        .take(3)
+        .map(|(color_hex, count)| KmzColorInfo { color_hex, count })
+        .collect();
+
+    Ok(top_colors)
+}
+
+/// Extracts colors from a single KML file
+async fn extract_colors_from_kml(path: &Path) -> anyhow::Result<Vec<String>> {
+    let parent = path.parent().c(h!())?;
+    let doc = crate::kml::read_and_fix_kml(false, path, parent)
+        .await
+        .c(h!())?;
+    
+    let mut colors = Vec::new();
+    let mut queue = doc.nodes;
+    
+    loop {
+        let Some(node) = queue.pop() else {
+            break;
+        };
+        
+        match node {
+            Node::Folder(n) => {
+                for n in n.nodes {
+                    queue.push(n);
+                }
+            }
+            Node::Document(n) => {
+                for n in n.nodes {
+                    queue.push(n);
+                }
+            }
+            Node::Placemark(p) => {
+                // Extract color from inline style
+                if let Some(style) = p.style {
+                    extract_color_from_style(&style, &mut colors);
+                }
+            }
+            Node::Style(s) => {
+                // Extract colors from document-level styles
+                extract_color_from_style(&s, &mut colors);
+            }
+            _ => continue,
+        }
+    }
+    
+    Ok(colors)
+}
+
+fn extract_color_from_style(style: &Style, colors: &mut Vec<String>) {
+    // Extract from LineStyle
+    if let Some(line_style) = &style.line_style {
+        if let Some(color) = &line_style.color {
+            if let Ok(hex_color) = kml_color_to_hex(&color.body) {
+                colors.push(hex_color);
+            }
+        }
+    }
+    
+    // Extract from PolyStyle
+    if let Some(poly_style) = &style.poly_style {
+        if let Some(color) = &poly_style.color {
+            if let Ok(hex_color) = kml_color_to_hex(&color.body) {
+                colors.push(hex_color);
             }
         }
     }

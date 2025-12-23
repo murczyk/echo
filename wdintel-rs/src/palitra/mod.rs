@@ -12,6 +12,7 @@ use anyhow::{bail, Context};
 use chrono::Utc;
 use itertools::Itertools;
 use sea_orm::*;
+use tempfile::tempdir;
 
 mod bl;
 mod kmz;
@@ -21,6 +22,46 @@ pub mod types;
 struct UserScope {
     organism_ids: Vec<i64>,
     aor_ids: Vec<i64>,
+}
+
+#[post("/api/palitra/analyze-kmz")]
+pub async fn analyze_kmz(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    mut payload: Multipart,
+) -> Result<Json<AnalyzeKmzResponse>, AppError> {
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
+        .await
+        .context(h!())?;
+
+    let (field, val) = multipart::extract(&mut payload).await.c(h!())?;
+    let filename = field
+        .content_disposition()
+        .and_then(|cd| cd.get_filename().map(|s| s.to_string()))
+        .unwrap_or_else(|| "file.kmz".to_string());
+
+    // Save to temporary directory for analysis
+    let tmp_dir = tempdir().c(h!())?;
+    let tmp_path = tmp_dir.path().join(&filename);
+    tokio::fs::write(&tmp_path, val).await.c(h!())?;
+
+    // Extract top 3 colors
+    let top_colors = kmz::extract_top_colors_from_kmz(&tmp_path)
+        .await
+        .c(h!())?;
+
+    // Clean filename (remove extension)
+    let name_without_ext = filename
+        .strip_suffix(".kmz")
+        .or_else(|| filename.strip_suffix(".kml"))
+        .unwrap_or(&filename)
+        .to_string();
+
+    Ok(Json(AnalyzeKmzResponse {
+        top_colors,
+        filename: name_without_ext,
+    }))
 }
 
 #[post("/api/palitra/upload-points/{palitra_id}")]

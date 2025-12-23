@@ -2759,6 +2759,34 @@ coordsEncoder struct =
         ]
 
 
+type alias KmzColorInfo =
+    { colorHex : String
+    , count : Int
+    }
+
+
+kmzColorInfoEncoder : KmzColorInfo -> Json.Encode.Value
+kmzColorInfoEncoder struct =
+    Json.Encode.object
+        [ ( "color_hex", Json.Encode.string struct.colorHex )
+        , ( "count", Json.Encode.int struct.count )
+        ]
+
+
+type alias AnalyzeKmzResponse =
+    { topColors : List KmzColorInfo
+    , filename : String
+    }
+
+
+analyzeKmzResponseEncoder : AnalyzeKmzResponse -> Json.Encode.Value
+analyzeKmzResponseEncoder struct =
+    Json.Encode.object
+        [ ( "top_colors", Json.Encode.list kmzColorInfoEncoder struct.topColors )
+        , ( "filename", Json.Encode.string struct.filename )
+        ]
+
+
 type alias NoHeadersBody =
     { body : String
     , start : Int
@@ -7901,6 +7929,20 @@ coordsDecoder =
     Json.Decode.succeed Coords
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "lat" Json.Decode.float))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "lng" Json.Decode.float))
+
+
+kmzColorInfoDecoder : Json.Decode.Decoder KmzColorInfo
+kmzColorInfoDecoder =
+    Json.Decode.succeed KmzColorInfo
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "color_hex" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "count" Json.Decode.int))
+
+
+analyzeKmzResponseDecoder : Json.Decode.Decoder AnalyzeKmzResponse
+analyzeKmzResponseDecoder =
+    Json.Decode.succeed AnalyzeKmzResponse
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "top_colors" (Json.Decode.list kmzColorInfoDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filename" Json.Decode.string))
 
 
 noHeadersBodyDecoder : Json.Decode.Decoder NoHeadersBody
