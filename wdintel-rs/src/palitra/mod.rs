@@ -275,7 +275,7 @@ pub async fn list_palitra_points(
         .await
         .context(h!())?;
     let req = req.into_inner();
-    let points = bl::list_palitra_points_by_bbox(login, req, &env.dbx)
+    let points = bl::list_palitra_points_by_viewport_bounds(login, req, &env.dbx)
         .await
         .context(h!())?;
     Ok(Json(points))

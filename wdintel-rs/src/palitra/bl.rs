@@ -101,17 +101,17 @@ pub async fn list_all_palitras_detailed(
     Ok(result)
 }
 
-pub async fn list_palitra_points_by_bbox(
+pub async fn list_palitra_points_by_viewport_bounds(
     login: String,
     req: PalitraPointsReq,
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<Vec<PalitraPoints>> {
-    let allowed_ids = collect_palitra_ids(login, dbx).await.c(h!())?;
-    let allowed_ids: HashSet<i64> = allowed_ids.into_iter().collect();
+    let allowed_palitra_ids = collect_palitra_ids(login, dbx).await.c(h!())?;
+    let allowed_palitra_ids: HashSet<i64> = allowed_palitra_ids.into_iter().collect();
     let palitra_ids: Vec<i64> = req
         .palitra_ids
         .into_iter()
-        .filter(|id| allowed_ids.contains(id))
+        .filter(|id| allowed_palitra_ids.contains(id))
         .collect();
     if palitra_ids.is_empty() {
         return Ok(vec![]);
