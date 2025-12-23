@@ -255,11 +255,27 @@ async fn extract_colors_from_kml(path: &Path) -> anyhow::Result<Vec<String>> {
         
         match node {
             Node::Folder(n) => {
+                // Process styles from Folder
+                for style in &n.styles {
+                    extract_color_from_style(style, &mut colors);
+                }
+                // Process child nodes
                 for n in n.nodes {
                     queue.push(n);
                 }
             }
             Node::Document(n) => {
+                // Process styles from Document
+                for style in &n.styles {
+                    extract_color_from_style(style, &mut colors);
+                }
+                // Process cascading styles from Document
+                for cs in &n.cascading_styles {
+                    if let Some(style) = &cs.style {
+                        extract_color_from_style(style, &mut colors);
+                    }
+                }
+                // Process child nodes
                 for n in n.nodes {
                     queue.push(n);
                 }
@@ -271,8 +287,15 @@ async fn extract_colors_from_kml(path: &Path) -> anyhow::Result<Vec<String>> {
                 }
             }
             Node::Style(s) => {
-                // Extract colors from document-level styles
                 extract_color_from_style(&s, &mut colors);
+            }
+            Node::StyleMap(_) => {
+                // StyleMaps not yet processed for colors
+            }
+            Node::CascadingStyle(cs) => {
+                if let Some(style) = cs.style {
+                    extract_color_from_style(&style, &mut colors);
+                }
             }
             _ => continue,
         }
@@ -282,6 +305,15 @@ async fn extract_colors_from_kml(path: &Path) -> anyhow::Result<Vec<String>> {
 }
 
 fn extract_color_from_style(style: &Style, colors: &mut Vec<String>) {
+    // Extract from IconStyle
+    if let Some(icon_style) = &style.icon_style {
+        if let Some(color) = &icon_style.color {
+            if let Ok(hex_color) = kml_color_to_hex(&color.body) {
+                colors.push(hex_color);
+            }
+        }
+    }
+    
     // Extract from LineStyle
     if let Some(line_style) = &style.line_style {
         if let Some(color) = &line_style.color {

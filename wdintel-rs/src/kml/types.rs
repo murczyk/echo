@@ -166,6 +166,8 @@ pub struct LabelStyle {
 )]
 pub struct IconStyle {
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub color: Option<Color>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub scale: Option<Scale>,
     #[serde(rename = "Icon")]
     pub icon: Option<Icon>,

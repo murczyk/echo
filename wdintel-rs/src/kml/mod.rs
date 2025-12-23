@@ -265,6 +265,7 @@ async fn operatyvka_download(
                 styles.push(Style {
                     id: Some(style_id.clone()),
                     icon_style: Some(IconStyle {
+                        color: None,
                         scale: Some(Scale {
                             body: "1.0".to_string(),
                         }),
@@ -1604,6 +1605,7 @@ pub fn build_style_maps_per_app6d(
             Style {
                 id: Some(format!("normal-{}", sidc.clone())),
                 icon_style: Some(IconStyle {
+                    color: None,
                     scale: None,
                     icon: Some(Icon {
                         href: Some(Href {
@@ -1626,6 +1628,7 @@ pub fn build_style_maps_per_app6d(
             Style {
                 id: Some(format!("highlight-{}", sidc.clone())),
                 icon_style: Some(IconStyle {
+                    color: None,
                     scale: None,
                     icon: Some(Icon {
                         href: Some(Href {

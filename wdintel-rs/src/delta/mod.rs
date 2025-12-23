@@ -971,6 +971,7 @@ pub fn delta_objs_to_kmz(
                 Style {
                     id: Some(format!("normal-{}", symbol.app6d.sidc.clone())),
                     icon_style: Some(IconStyle {
+                        color: None,
                         scale: None,
                         icon: Some(Icon {
                             href: Some(Href {
@@ -996,6 +997,7 @@ pub fn delta_objs_to_kmz(
                         symbol.app6d.sidc.clone()
                     )),
                     icon_style: Some(IconStyle {
+                        color: None,
                         scale: None,
                         icon: Some(Icon {
                             href: Some(Href {
