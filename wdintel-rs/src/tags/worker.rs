@@ -307,12 +307,7 @@ async fn get_regex_sets_for_tag<C: ConnectionTrait>(
             ..
         } = model;
 
-        if keyword_forms.is_empty() {
-            if !is_regex {
-                keyword = regex::escape(&keyword);
-            }
-            patterns_positive.push(keyword);
-        } else if is_regex {
+        if is_regex {
             patterns_positive.append(&mut keyword_forms);
         } else {
             for literal in keyword_forms {
@@ -321,14 +316,12 @@ async fn get_regex_sets_for_tag<C: ConnectionTrait>(
             }
         }
 
-        if !keyword_negative_forms.is_empty() {
-            if is_regex {
-                patterns_negative.append(&mut keyword_negative_forms);
-            } else {
-                for literal in keyword_negative_forms {
-                    let escaped = regex::escape(&literal);
-                    patterns_negative.push(escaped);
-                }
+        if is_regex {
+            patterns_negative.append(&mut keyword_negative_forms);
+        } else {
+            for literal in keyword_negative_forms {
+                let escaped = regex::escape(&literal);
+                patterns_negative.push(escaped);
             }
         }
     }
