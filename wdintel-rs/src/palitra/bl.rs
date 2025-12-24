@@ -613,7 +613,7 @@ where
             palitra.source_file_name = Set(req.source_file_name);
             palitra.last_uploaded_at = Set(req
                 .last_uploaded_at_ts
-                .map(|ts| parse_uploaded_at(ts))
+                .map(parse_uploaded_at)
                 .transpose()
                 .c(h!())?);
         }
