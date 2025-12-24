@@ -7,30 +7,13 @@ import { KMZLayer, kmzLayerFactory } from '../maps/leaflet-kmz'
 import { MapPointDetailed } from '../maps/types';
 import { messagesCountText } from '../maps/language-utils';
 import { loadRerAnalysisQueryState, RerAnalysisQueryState, saveRerAnalysisQueryState } from '../rer-analysis-query-state';
-import { TimeswitchControl, PalitrasControl, FeatureToggleState, createLayerSwitchControl, createExitControl2, createTimeswitchControl, createAttributionControl, createPalitrasControl, FeatureName, LayerSwitchControl } from '../maps/controls';
+import { TimeswitchControl, FeatureToggleState, createLayerSwitchControl, createExitControl2, createTimeswitchControl, createAttributionControl, createPalitrasControl, FeatureName, LayerSwitchControl } from '../maps/controls';
+import { AnalysisMapStateStore, AnalysisMapStoredState } from '../maps/analysis-map-state';
+import { PalitraManager } from '../maps/palitra-manager';
+import { PalitraDetails } from '../maps/palitra-types';
 
 type NetworkUnit = { frequencies: string[]; name: string }
 type Message = [number, { message_uid: string; freq: string; coords: number[], text: string, date: number, time: number, unit: string }]
-type Coords = { lat: number; lng: number }
-type Geometry = {
-  center: Coords;
-  perimeter_linear_ring: Coords[]
-}
-type Palitra = {
-  id: number;
-  name: string;
-  color_hex: string;
-  geometry: Geometry | null;
-  source_file_name?: string;
-}
-type PalitraPoint = {
-  coords: Coords;
-  label: string | null;
-}
-type PalitraDetails = {
-  palitra: Palitra;
-  points: PalitraPoint[];
-}
 
 export class DataCircleMarker extends L.CircleMarker {
   data: { messageId: number };
@@ -107,7 +90,7 @@ function getPointPopupTemplate(sortedMessages: Message[], networkUnits: NetworkU
 
 
 class AnalysisMap extends HTMLElement {
-  static observedAttributes = ["points", "daterange", "messages", "visibility", "network-units", "selected-units", "palitras", "visible-palitra-ids", "palitras-enabled", "kmz-enabled", "pelengs-enabled"]
+  static observedAttributes = ["points", "daterange", "messages", "visibility", "network-units", "selected-units", "palitras", "palitras-loaded"]
 
   private _map: L.Map | null = null;
   private _daterange: { startDate: number, endDate: number } = { startDate: new Date().getDate(), endDate: new Date().getDate() };
@@ -124,20 +107,21 @@ class AnalysisMap extends HTMLElement {
   private _kmzLoading: Promise<void> | null = null;
   private _selectedUnits: string[] = []
 
+  private _palitraManager: PalitraManager | null = null;
+  private _pelengsLayerGroup: L.LayerGroup | null = null;
   private _palitras: PalitraDetails[] = [];
   private _visiblePalitraIds: number[] = [];
-  private _palitrasControl: PalitrasControl | null = null;
-  private _palitrasLayerGroup: L.LayerGroup | null = null;
-  private _palitrasPointsClusters: Map<number, L.MarkerClusterGroup> = new Map();
-  private _pelengsLayerGroup: L.LayerGroup | null = null;
-  private _minZoomForPoints = 13; // Мінімальний зум для показу точок палітр
+  private _palitrasLoaded = false;
   private _palitrasEnabled = true;
   private _kmzEnabled = true;
   private _pelengsEnabled = true;
   private _layerSwitchControl: LayerSwitchControl | null = null;
+  private _stateStore: AnalysisMapStateStore;
 
   constructor() {
     super();
+    this._stateStore = new AnalysisMapStateStore();
+    this._applyState(this._stateStore.getState());
   }
 
   connectedCallback() { }
@@ -221,34 +205,22 @@ class AnalysisMap extends HTMLElement {
       this._selectedUnits = JSON.parse(newValue)
     }
     if (name === 'palitras') {
-      this._palitras = JSON.parse(newValue);
-      if (this._palitrasControl) {
-        this._palitrasControl.updatePalitras(this._palitras, this._visiblePalitraIds);
+      const palitras = JSON.parse(newValue);
+      console.log('[AnalysisMap] Palitras attribute changed, count:', palitras.length, 'manager exists:', !!this._palitraManager);
+      this._palitras = palitras;
+      this._syncVisiblePalitraIds();
+      if (this._palitraManager) {
+        this._palitraManager.updatePalitras(palitras);
+        this._palitraManager.updateVisibleIds(this._visiblePalitraIds);
       }
-      this._updatePalitrasOnMap();
     }
-    if (name === 'visible-palitra-ids') {
-      this._visiblePalitraIds = JSON.parse(newValue);
-      if (this._palitrasControl) {
-        this._palitrasControl.updatePalitras(this._palitras, this._visiblePalitraIds);
+    if (name === 'palitras-loaded') {
+      this._palitrasLoaded = JSON.parse(newValue);
+      this._syncVisiblePalitraIds();
+      if (this._palitraManager) {
+        this._palitraManager.updatePalitras(this._palitras);
+        this._palitraManager.updateVisibleIds(this._visiblePalitraIds);
       }
-      this._updatePalitrasOnMap();
-    }
-    if (name === 'palitras-enabled') {
-      this._palitrasEnabled = JSON.parse(newValue);
-      this._updateLayerSwitchControl();
-      this._updatePalitrasOnMap();
-      this._applyPalitrasControlVisibility();
-    }
-    if (name === 'kmz-enabled') {
-      this._kmzEnabled = JSON.parse(newValue);
-      this._updateLayerSwitchControl();
-      this._applyKmzVisibility();
-    }
-    if (name === 'pelengs-enabled') {
-      this._pelengsEnabled = JSON.parse(newValue);
-      this._updateLayerSwitchControl();
-      this._applyPelengVisibility();
     }
   }
 
@@ -258,7 +230,6 @@ class AnalysisMap extends HTMLElement {
     <div id="analysis-map"> </div>
       `;
   }
-
 
   private async _initializeMap() {
     const mapContainer = this.querySelector<HTMLDivElement>('#analysis-map')
@@ -279,22 +250,45 @@ class AnalysisMap extends HTMLElement {
         await this._loadKmzLayer();
      }
 
-     // Initialize palitras layer group
-     this._palitrasLayerGroup = L.layerGroup();
-     this._palitrasLayerGroup.addTo(this._map);
+     // Initialize palitra manager
+     this._palitraManager = new PalitraManager(
+       this._map,
+       {
+         minZoomForPoints: 13,
+         requestDelayMs: 200,
+         cacheTtlMs: 5 * 60 * 1000,
+         maxCachedTiles: 50
+       },
+       {
+         onVisibilityToggle: (palitraId) => {
+           const event = new CustomEvent('palitra-visibility-toggled', {
+             detail: { palitraId },
+             bubbles: true,
+             composed: true
+           });
+           this.dispatchEvent(event);
+         }
+       }
+     );
+     
+     // Set the control after manager is created
+     console.log('[AnalysisMap] Setting control, _palitrasEnabled:', this._palitrasEnabled, 'stored palitras:', this._palitras.length, 'visible IDs:', this._visiblePalitraIds.length);
+     this._palitraManager.setControl(result.palitrasControl);
+     
+     // Update manager with any palitras that arrived before initialization
+     if (this._palitras.length > 0) {
+       console.log('[AnalysisMap] Applying stored palitras to manager');
+       this._palitraManager.updatePalitras(this._palitras);
+     }
+     if (this._visiblePalitraIds.length > 0) {
+       console.log('[AnalysisMap] Applying stored visible IDs to manager');
+       this._palitraManager.updateVisibleIds(this._visiblePalitraIds);
+     }
+     
+     this._applyPalitraVisibility();
 
      this._pelengsLayerGroup = L.layerGroup();
      this._applyPelengVisibility();
-
-     // Listen for zoom changes to show/hide points
-     this._map.on('zoomend', () => {
-       this._updatePalitraPointsOnMap();
-     });
-
-     // Try to update palitras if we already have data
-     if (this._palitras.length > 0) {
-       this._updatePalitrasOnMap();
-     }
     }
   }
 
@@ -310,21 +304,11 @@ class AnalysisMap extends HTMLElement {
     }
 
     const palitraToggleCallback = (palitraId: number) => {
-      const event = new CustomEvent('palitra-visibility-toggled', {
-        detail: { palitraId },
-        bubbles: true,
-        composed: true
-      });
-      this.dispatchEvent(event);
+      this._togglePalitraVisibility(palitraId);
     }
 
     const featureToggleCallback = (feature: FeatureName, enabled: boolean) => {
-      const event = new CustomEvent('feature-toggle', {
-        detail: { feature, enabled },
-        bubbles: true,
-        composed: true
-      });
-      this.dispatchEvent(event);
+      this._setFeatureEnabled(feature, enabled);
     }
 
     const switchTimeControl = createTimeswitchControl(this._daterange);
@@ -336,12 +320,9 @@ class AnalysisMap extends HTMLElement {
     map.addControl(layerSwitchControl);
     map.addControl(createAttributionControl());
 
-    const palitrasControl = createPalitrasControl(this._palitras, this._visiblePalitraIds, palitraToggleCallback);
-    this._palitrasControl = palitrasControl;
-    map.addControl(palitrasControl);
-    this._applyPalitrasControlVisibility();
+    const palitrasControl = createPalitrasControl([], [], palitraToggleCallback);
 
-    return { map, switchTimeControl };
+    return { map, switchTimeControl, palitrasControl };
   }
 
   private _replacePointsOnMap(points: MapPointDetailed[]) {
@@ -431,214 +412,6 @@ class AnalysisMap extends HTMLElement {
 
   }
 
-  private _updatePalitrasOnMap() {
-    if (!this._palitrasLayerGroup || !this._map) {
-      return;
-    }
-
-    if (!this._palitrasEnabled) {
-      this._palitrasLayerGroup.clearLayers();
-      this._palitrasPointsClusters.forEach((cluster) => this._map!.removeLayer(cluster));
-      this._palitrasPointsClusters.clear();
-      return;
-    }
-
-    // Clear existing polygons
-    this._palitrasLayerGroup.clearLayers();
-
-    // Add visible palitras
-    const visiblePalitras = this._palitras.filter(pd =>
-      this._visiblePalitraIds.includes(pd.palitra.id) && pd.palitra.geometry
-    );
-
-
-    const polygons: L.Polygon[] = [];
-
-    visiblePalitras.forEach(palitraDetails => {
-      const polygon = this._createPalitraPolygon(palitraDetails);
-      if (polygon) {
-        this._palitrasLayerGroup!.addLayer(polygon);
-        polygons.push(polygon);
-      } else {
-        console.log('❌ Polygon creation failed');
-      }
-    });
-
-    // Update points clusters
-    this._updatePalitraPointsOnMap();
-
-    // Fit map bounds to show all visible palitras
-    if (polygons.length > 0) {
-      const group = L.featureGroup(polygons);
-      this._map!.fitBounds(group.getBounds(), {
-        padding: [50, 50],
-        maxZoom: 10
-      });
-    }
-  }
-
-  private _createPalitraPolygon(palitraDetails: PalitraDetails): L.Polygon | null {
-    const palitra = palitraDetails.palitra;
-
-    if (!palitra.geometry || !palitra.geometry.perimeter_linear_ring) {
-      return null;
-    }
-
-    // Convert coordinates to Leaflet format [lat, lng]
-    const latlngs: [number, number][] = palitra.geometry.perimeter_linear_ring.map(
-      (coord: { lat: number; lng: number }) => [coord.lat, coord.lng] as [number, number]
-    );
-
-    if (latlngs.length < 3) {
-      return null; // Need at least 3 points for a polygon
-    }
-
-    // Create polygon with styling
-    const polygon = L.polygon(latlngs, {
-      color: palitra.color_hex,
-      fillColor: palitra.color_hex,
-      fillOpacity: 0.2,
-      weight: 2,
-      opacity: 0.8
-    });
-
-    // Add popup with palitra info
-    const pointsCount = palitra.geometry.perimeter_linear_ring.length;
-    const centerLat = palitra.geometry.center.lat.toFixed(4);
-    const centerLng = palitra.geometry.center.lng.toFixed(4);
-
-    const popupContent = `
-      <div style="padding: 8px;">
-        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
-          <span style="display: inline-block; width: 16px; height: 16px; background-color: ${palitra.color_hex}; border: 1px solid #ccc; border-radius: 3px;"></span>
-          <strong style="font-size: 14px;">${palitra.name}</strong>
-        </div>
-        <div style="font-size: 12px; color: #666;">
-          <div>Центр: ${centerLat}, ${centerLng}</div>
-          <div>Точок периметру: ${pointsCount}</div>
-          ${palitra.source_file_name ? `<div>Файл: ${palitra.source_file_name}</div>` : ''}
-        </div>
-      </div>
-    `;
-
-    polygon.bindPopup(popupContent);
-
-    // Add tooltip with name (always visible)
-    polygon.bindTooltip(palitra.name, {
-      permanent: true,
-      direction: 'center',
-      className: 'palitra-label'
-    });
-
-    return polygon;
-  }
-
-  private _createPalitraPointsCluster(palitraDetails: PalitraDetails): L.MarkerClusterGroup | null {
-    const palitra = palitraDetails.palitra;
-    const points = palitraDetails.points;
-
-    if (!points || points.length === 0) {
-      return null;
-    }
-
-    // Create cluster group with custom styling
-    const clusterGroup = L.markerClusterGroup({
-      maxClusterRadius: 40,
-      spiderfyOnMaxZoom: true,
-      showCoverageOnHover: false,
-      zoomToBoundsOnClick: true,
-      iconCreateFunction: (cluster) => {
-        const childCount = cluster.getChildCount();
-        return L.divIcon({
-          html: `<div style="background-color: ${palitra.color_hex}; border: 2px solid #fff; border-radius: 50%; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 12px; font-weight: bold; color: white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);">
-                ${childCount}
-            </div>`,
-          className: 'palitra-point-cluster',
-          iconSize: L.point(30, 30)
-        });
-      }
-    });
-
-    // Add points to cluster
-    points.forEach(point => {
-      const marker = L.circleMarker([point.coords.lat, point.coords.lng], {
-        radius: 6,
-        fillColor: palitra.color_hex,
-        color: '#fff',
-        weight: 2,
-        opacity: 1,
-        fillOpacity: 0.8
-      });
-
-      // Add popup with point info
-      const popupContent = `
-        <div style="padding: 8px;">
-          <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
-            <span style="display: inline-block; width: 16px; height: 16px; background-color: ${palitra.color_hex}; border: 1px solid #ccc; border-radius: 50%;"></span>
-            <strong style="font-size: 14px;">${palitra.name}</strong>
-          </div>
-          ${point.label ? `<div style="font-size: 13px; margin-bottom: 4px;"><strong>Мітка:</strong> ${point.label}</div>` : ''}
-          <div style="font-size: 12px; color: #666;">
-            <div>Координати: ${point.coords.lat.toFixed(5)}, ${point.coords.lng.toFixed(5)}</div>
-          </div>
-        </div>
-      `;
-
-      marker.bindPopup(popupContent);
-
-      // Add tooltip with label if exists
-      const tooltipLabel = point.label ?? palitra.name;
-      if (tooltipLabel) {
-        marker.bindTooltip(tooltipLabel, {
-          permanent: true,
-          direction: 'top',
-          offset: [0, -10],
-          className: 'palitra-point-label'
-        });
-      }
-
-      clusterGroup.addLayer(marker);
-    });
-
-    return clusterGroup;
-  }
-
-  private _updatePalitraPointsOnMap() {
-    if (!this._map) {
-      return;
-    }
-
-    // Remove all existing point clusters from map
-    this._palitrasPointsClusters.forEach((cluster) => {
-      this._map!.removeLayer(cluster);
-    });
-    this._palitrasPointsClusters.clear();
-
-    if (!this._palitrasEnabled) {
-      return;
-    }
-
-    // Check zoom level - only show points at close zoom levels
-    const currentZoom = this._map.getZoom();
-    if (currentZoom < this._minZoomForPoints) {
-      // Too far out, don't show points
-      return;
-    }
-
-    // Add point clusters for visible palitras
-    const visiblePalitras = this._palitras.filter(pd =>
-      this._visiblePalitraIds.includes(pd.palitra.id)
-    );
-
-    visiblePalitras.forEach(palitraDetails => {
-      const cluster = this._createPalitraPointsCluster(palitraDetails);
-      if (cluster) {
-        this._palitrasPointsClusters.set(palitraDetails.palitra.id, cluster);
-        this._map!.addLayer(cluster);
-      }
-    });
-  }
-
   private _getFeatureToggleState(): FeatureToggleState {
     return {
       palitrasEnabled: this._palitrasEnabled,
@@ -651,6 +424,41 @@ class AnalysisMap extends HTMLElement {
     if (this._layerSwitchControl) {
       this._layerSwitchControl.updateFeatures(this._getFeatureToggleState());
     }
+  }
+
+  private _applyState(state: AnalysisMapStoredState) {
+    this._palitrasEnabled = state.features.palitras;
+    this._kmzEnabled = state.features.kmz;
+    this._pelengsEnabled = state.features.pelengs;
+    this._visiblePalitraIds = state.visiblePalitraIds;
+  }
+
+  private _setFeatureEnabled(feature: FeatureName, enabled: boolean) {
+    const state = this._stateStore.setFeatures({ [feature]: enabled });
+    this._applyState(state);
+    if (feature === 'palitras') {
+      this._applyPalitraVisibility();
+    }
+    if (feature === 'kmz') {
+      this._applyKmzVisibility();
+    }
+    if (feature === 'pelengs') {
+      this._applyPelengVisibility();
+    }
+    this._updateLayerSwitchControl();
+  }
+
+  private _togglePalitraVisibility(palitraId: number) {
+    const state = this._stateStore.toggleVisiblePalitraId(palitraId);
+    this._applyState(state);
+    if (this._palitraManager) {
+      this._palitraManager.updateVisibleIds(this._visiblePalitraIds);
+    }
+  }
+
+  private _syncVisiblePalitraIds() {
+    const state = this._stateStore.syncVisiblePalitraIds(this._palitras, this._palitrasLoaded);
+    this._applyState(state);
   }
 
   private _applyPelengVisibility() {
@@ -666,17 +474,12 @@ class AnalysisMap extends HTMLElement {
     this._pelengsLayerGroup.addTo(this._map);
   }
 
-  private _applyPalitrasControlVisibility() {
-    if (!this._palitrasControl || !this._map) {
+  private _applyPalitraVisibility() {
+    if (!this._palitraManager) {
       return;
     }
 
-    if (!this._palitrasEnabled) {
-      this._map.removeControl(this._palitrasControl);
-      return;
-    }
-
-    this._map.addControl(this._palitrasControl);
+    this._palitraManager.setEnabled(this._palitrasEnabled);
   }
 
   private async _loadKmzLayer() {

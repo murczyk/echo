@@ -1708,6 +1708,15 @@ palitra_list_detailed toMsg =
         }
 
 
+palitra_points : (Result ApiError (List PalitraPoints) -> msg) -> PalitraPointsReq -> Cmd msg
+palitra_points toMsg req =
+    Http.post
+        { url = "/api/palitra/points"
+        , body = Http.jsonBody (palitraPointsReqEncoder req)
+        , expect = leExpectJson toMsg (Decode.list palitraPointsDecoder)
+        }
+
+
 palitra_delete : (Result ApiError () -> msg) -> Int -> Cmd msg
 palitra_delete toMsg palitraId =
     Http.post

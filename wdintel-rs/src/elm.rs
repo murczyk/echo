@@ -122,6 +122,9 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::palitra::types::Palitra,
             crate::palitra::types::PalitraDetails,
             crate::palitra::types::PalitraPoint,
+            crate::palitra::types::PalitraPointsReq,
+            crate::palitra::types::PalitraPoints,
+            crate::palitra::types::ViewportBounds,
             crate::palitra::types::Geometry,
             crate::palitra::types::Coords,
 
@@ -455,6 +458,9 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::palitra::types::Palitra,
             crate::palitra::types::PalitraDetails,
             crate::palitra::types::PalitraPoint,
+            crate::palitra::types::PalitraPointsReq,
+            crate::palitra::types::PalitraPoints,
+            crate::palitra::types::ViewportBounds,
             crate::palitra::types::Geometry,
             crate::palitra::types::Coords,
 

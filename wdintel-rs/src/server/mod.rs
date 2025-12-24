@@ -563,6 +563,7 @@ pub async fn main_server(
             .service(crate::operator::message_submit)
             .service(crate::palitra::list_all_palitras)
             .service(crate::palitra::list_all_palitras_detailed)
+            .service(crate::palitra::list_palitra_points)
             .service(crate::palitra::create_palitra)
             .service(crate::palitra::update_palitra)
             .service(crate::palitra::delete_palitra)
