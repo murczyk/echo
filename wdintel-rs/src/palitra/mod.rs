@@ -109,7 +109,12 @@ pub async fn create_palitra_with_kmz(
                 kmz_file = Some((filename, bytes));
             }
             _ => {
-                // Skip unknown fields
+                // Skip unknown fields but consume their data to avoid blocking multipart parser
+                while let Some(chunk) = field.next().await {
+                    let _ = chunk.map_err(|e| AppError::BL {
+                        msg: format!("Field read error: {e:?}"),
+                    })?;
+                }
             }
         }
     }
