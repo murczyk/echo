@@ -135,22 +135,21 @@ impl Coords {
 /// Returns hex color without alpha channel
 pub fn kml_color_to_hex(kml_color: &str) -> anyhow::Result<String> {
     let color = kml_color.trim();
-    
+
     // KML colors should be 8 characters: AABBGGRR
     if color.len() != 8 {
         anyhow::bail!("Invalid KML color format: {}", color);
     }
-    
+
     // Parse each 2-character hex pair manually
-    let parse_hex_pair = |s: &str| -> anyhow::Result<u8> {
-        u8::from_str_radix(s, 16).c(h!())
-    };
-    
+    let parse_hex_pair =
+        |s: &str| -> anyhow::Result<u8> { u8::from_str_radix(s, 16).c(h!()) };
+
     let _alpha = parse_hex_pair(&color[0..2])?;
     let blue = parse_hex_pair(&color[2..4])?;
     let green = parse_hex_pair(&color[4..6])?;
     let red = parse_hex_pair(&color[6..8])?;
-    
+
     // KML format: AABBGGRR -> Convert to #RRGGBB
     Ok(format!("#{:02x}{:02x}{:02x}", red, green, blue))
 }

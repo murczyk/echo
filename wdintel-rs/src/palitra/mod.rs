@@ -42,10 +42,8 @@ pub async fn create_palitra_with_kmz(
     let mut kmz_file: Option<(String, Vec<u8>)> = None;
 
     while let Some(item) = payload.next().await {
-        let mut field = item.map_err(|e| {
-            AppError::BL {
-                msg: format!("Multipart error: {e:?}"),
-            }
+        let mut field = item.map_err(|e| AppError::BL {
+            msg: format!("Multipart error: {e:?}"),
         })?;
         let content_disposition = field.content_disposition();
         let field_name = content_disposition
@@ -166,7 +164,7 @@ pub async fn create_palitra_with_kmz(
         .await
         .c(h!())?
         .c(h!())?;
-    
+
     let palitra_response = Palitra {
         id: result.id,
         name: result.name,
@@ -181,8 +179,7 @@ pub async fn create_palitra_with_kmz(
             .await
             .c(h!())?,
         access_organism_ids: bl::collect_palitra_access_organisms(
-            &env.dbx,
-            palitra.id,
+            &env.dbx, palitra.id,
         )
         .await
         .c(h!())?,
@@ -190,7 +187,7 @@ pub async fn create_palitra_with_kmz(
             .await
             .c(h!())?,
     };
-    
+
     Ok(Json(palitra_response))
 }
 
@@ -252,7 +249,7 @@ pub async fn analyze_kmz(
         .extension()
         .and_then(|ext| ext.to_str())
         .unwrap_or("kmz");
-    
+
     let top_colors = match extension {
         "kmz" => kmz::extract_top_colors_from_kmz(&tmp_path).await.c(h!())?,
         "kml" => kmz::extract_top_colors_from_kml(&tmp_path).await.c(h!())?,
@@ -528,9 +525,10 @@ pub async fn list_palitra_points(
         .await
         .context(h!())?;
     let req = req.into_inner();
-    let points = bl::list_palitra_points_by_viewport_bounds(login, req, &env.dbx)
-        .await
-        .context(h!())?;
+    let points =
+        bl::list_palitra_points_by_viewport_bounds(login, req, &env.dbx)
+            .await
+            .context(h!())?;
     Ok(Json(points))
 }
 

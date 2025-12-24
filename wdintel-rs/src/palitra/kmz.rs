@@ -159,7 +159,7 @@ pub async fn extract_top_colors_from_kmz(
     let extract_to = tmp_dir.path().to_path_buf();
     let walkdir = WalkDir::new(extract_to.as_path()).into_iter();
     let file_path = kmz_path.to_path_buf();
-    
+
     task::spawn_blocking(move || {
         let zip_file = File::open(file_path)?;
         let mut archive = ZipArchive::new(zip_file)
@@ -197,7 +197,7 @@ pub async fn extract_top_colors_from_kmz(
     // Sort by count descending and take top 3
     let mut color_vec: Vec<(String, i32)> = color_counts.into_iter().collect();
     color_vec.sort_by(|a, b| b.1.cmp(&a.1));
-    
+
     let top_colors = color_vec
         .into_iter()
         .take(3)
@@ -228,7 +228,7 @@ pub async fn extract_top_colors_from_kml(
     // Sort by count descending and take top 3
     let mut color_vec: Vec<(String, i32)> = color_counts.into_iter().collect();
     color_vec.sort_by(|a, b| b.1.cmp(&a.1));
-    
+
     let top_colors = color_vec
         .into_iter()
         .take(3)
@@ -244,15 +244,15 @@ async fn extract_colors_from_kml(path: &Path) -> anyhow::Result<Vec<String>> {
     let doc = crate::kml::read_and_fix_kml(false, path, parent)
         .await
         .c(h!())?;
-    
+
     let mut colors = Vec::new();
     let mut queue = doc.nodes;
-    
+
     loop {
         let Some(node) = queue.pop() else {
             break;
         };
-        
+
         match node {
             Node::Folder(n) => {
                 // Process styles from Folder
@@ -300,7 +300,7 @@ async fn extract_colors_from_kml(path: &Path) -> anyhow::Result<Vec<String>> {
             _ => continue,
         }
     }
-    
+
     Ok(colors)
 }
 
@@ -313,7 +313,7 @@ fn extract_color_from_style(style: &Style, colors: &mut Vec<String>) {
             }
         }
     }
-    
+
     // Extract from LineStyle
     if let Some(line_style) = &style.line_style {
         if let Some(color) = &line_style.color {
@@ -322,7 +322,7 @@ fn extract_color_from_style(style: &Style, colors: &mut Vec<String>) {
             }
         }
     }
-    
+
     // Extract from PolyStyle
     if let Some(poly_style) = &style.poly_style {
         if let Some(color) = &poly_style.color {
