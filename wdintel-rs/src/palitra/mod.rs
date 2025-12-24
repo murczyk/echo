@@ -14,6 +14,7 @@ use futures_util::StreamExt;
 use itertools::Itertools;
 use sea_orm::*;
 use tempfile::tempdir;
+use std::path::Path;
 
 mod bl;
 mod kmz;
@@ -93,10 +94,11 @@ pub async fn create_palitra_with_kmz(
                 access_values = Some(String::from_utf8(bytes).c(h!())?);
             }
             "kmz" => {
-                let filename = content_disposition
+                let raw_filename = content_disposition
                     .and_then(|cd| cd.get_filename())
                     .map(|s| s.to_string())
                     .unwrap_or_else(|| "file.kmz".to_string());
+                let filename = sanitize_upload_filename(&raw_filename);
                 let mut bytes = Vec::new();
                 while let Some(chunk) = field.next().await {
                     let chunk = chunk.map_err(|e| AppError::BL {
@@ -234,10 +236,11 @@ pub async fn analyze_kmz(
         .context(h!())?;
 
     let (field, val) = multipart::extract(&mut payload).await.c(h!())?;
-    let filename = field
+    let raw_filename = field
         .content_disposition()
         .and_then(|cd| cd.get_filename().map(|s| s.to_string()))
         .unwrap_or_else(|| "file.kmz".to_string());
+    let filename = sanitize_upload_filename(&raw_filename);
 
     // Save to temporary directory for analysis
     let tmp_dir = tempdir().c(h!())?;
@@ -308,7 +311,8 @@ pub async fn upload_palitra_points(
         .c(h!())?;
 
     let (field, val) = multipart::extract(&mut payload).await.c(h!())?;
-    let filename = field.name().c(h!())?.to_string();
+    let raw_filename = field.name().c(h!())?.to_string();
+    let filename = sanitize_upload_filename(&raw_filename);
     let storage_dir = ensure_storage_dir(&env).await.c(h!())?;
     let points = kmz::load_coordinates_from_file(
         filename.clone(),
@@ -339,6 +343,14 @@ async fn ensure_storage_dir(env: &Data<Env>) -> anyhow::Result<PathBuf> {
         .await
         .c(h!())?;
     Ok(storage_dir)
+}
+
+fn sanitize_upload_filename(filename: &str) -> String {
+    Path::new(filename)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .map(|name| name.to_string())
+        .unwrap_or_else(|| "file.kmz".to_string())
 }
 
 async fn ensure_palitra_permissions(

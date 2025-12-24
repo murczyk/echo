@@ -18,13 +18,14 @@ pub async fn load_coordinates_from_file(
     data: Vec<u8>,
     storage_dir: &Path,
 ) -> anyhow::Result<Vec<PalitraPoint>> {
-    let persistent_path = storage_dir.join(file_name.clone());
+    let safe_file_name = sanitize_upload_filename(&file_name);
+    let persistent_path = storage_dir.join(safe_file_name.clone());
     fs::write(persistent_path.as_path(), data.clone())
         .await
         .c(h!())?;
 
     let tmp_dir = tempdir()?;
-    let path = tmp_dir.path().join(&file_name);
+    let path = tmp_dir.path().join(&safe_file_name);
     fs::write(path.as_path(), data).await.c(h!())?;
     let extension = path.extension().c(h!())?.to_string_lossy().to_string();
     match extension.as_str() {
@@ -32,6 +33,14 @@ pub async fn load_coordinates_from_file(
         "kml" => load_coordinates_from_kml(path.as_path()).await,
         _ => anyhow::bail!("Unsupported coordinates extension: {extension}"),
     }
+}
+
+fn sanitize_upload_filename(filename: &str) -> String {
+    Path::new(filename)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .map(|name| name.to_string())
+        .unwrap_or_else(|| "file.kmz".to_string())
 }
 
 pub async fn load_coordinates_from_kmz(
