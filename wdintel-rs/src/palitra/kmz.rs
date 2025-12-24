@@ -27,7 +27,12 @@ pub async fn load_coordinates_from_file(
     let tmp_dir = tempdir()?;
     let path = tmp_dir.path().join(&safe_file_name);
     fs::write(path.as_path(), data).await.c(h!())?;
-    let extension = path.extension().c(h!())?.to_string_lossy().to_string();
+    let extension = path
+        .extension()
+        .c(h!())?
+        .to_string_lossy()
+        .to_string()
+        .to_ascii_lowercase();
     match extension.as_str() {
         "kmz" => load_coordinates_from_kmz(path.as_path()).await,
         "kml" => load_coordinates_from_kml(path.as_path()).await,

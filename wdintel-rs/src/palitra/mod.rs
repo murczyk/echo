@@ -251,7 +251,8 @@ pub async fn analyze_kmz(
     let extension = tmp_path
         .extension()
         .and_then(|ext| ext.to_str())
-        .unwrap_or("kmz");
+        .unwrap_or("kmz")
+        .to_ascii_lowercase();
 
     let top_colors = match extension {
         "kmz" => kmz::extract_top_colors_from_kmz(&tmp_path).await.c(h!())?,
