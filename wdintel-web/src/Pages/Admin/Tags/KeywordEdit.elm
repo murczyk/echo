@@ -24,10 +24,10 @@ type alias Model =
     { tagId : Maybe Int
     , keywordId : Maybe Int
     , tagLabel : Maybe String
-    , isPositive : Bool
     , isRegex : Bool
     , keyword : String
     , keywordFormsInput : String
+    , keywordNegativeFormsInput : String
     , loading : Bool
     , saving : Bool
     , formErrors : Dict String String
@@ -39,7 +39,7 @@ type Msg
     = Loaded Int (Maybe Int) (Result ApiError (List B.TagAdmin))
     | KeywordChanged String
     | KeywordFormsChanged String
-    | TogglePositive Bool
+    | KeywordNegativeFormsChanged String
     | ToggleRegex Bool
     | Save
     | Saved (Result ApiError ())
@@ -111,10 +111,10 @@ defaultModel tid kid =
     { tagId = tid
     , keywordId = kid
     , tagLabel = Nothing
-    , isPositive = True
     , isRegex = False
     , keyword = ""
     , keywordFormsInput = ""
+    , keywordNegativeFormsInput = ""
     , loading = False
     , saving = False
     , formErrors = Dict.empty
@@ -158,10 +158,10 @@ update msg model =
                                     ( { model
                                         | tagLabel = Just tag.label
                                         , keywordId = Just kid
-                                        , isPositive = kw.isPositive
                                         , isRegex = kw.isRegex
                                         , keyword = kw.keyword
                                         , keywordFormsInput = String.join "\n" kw.keywordForms
+                                        , keywordNegativeFormsInput = String.join "\n" kw.keywordNegativeForms
                                         , loading = False
                                       }
                                     , E.none
@@ -178,8 +178,8 @@ update msg model =
         KeywordFormsChanged v ->
             ( { model | keywordFormsInput = v }, E.none )
 
-        TogglePositive v ->
-            ( { model | isPositive = v }, E.none )
+        KeywordNegativeFormsChanged v ->
+            ( { model | keywordNegativeFormsInput = v }, E.none )
 
         ToggleRegex v ->
             ( { model | isRegex = v }, E.none )
@@ -262,20 +262,33 @@ buildRequest model =
                 |> List.map String.trim
                 |> List.filter (\v -> v /= "")
 
+        formsListNegative =
+            model.keywordNegativeFormsInput
+                |> String.split "\n"
+                |> List.map String.trim
+                |> List.filter (\v -> v /= "")
+
         keywordForms =
             if List.isEmpty formsList then
                 Nothing
 
             else
                 Just formsList
+
+        keywordNegativeForms =
+            if List.isEmpty formsListNegative then
+                Nothing
+
+            else
+                Just formsListNegative
     in
     if Dict.isEmpty errors then
         ( Dict.empty
         , Just
-            { isPositive = model.isPositive
-            , isRegex = model.isRegex
+            { isRegex = model.isRegex
             , keyword = trimmedKeyword
             , keywordForms = keywordForms
+            , keywordNegativeForms = keywordNegativeForms
             }
         )
 
@@ -382,19 +395,19 @@ formView model =
                     ]
                     []
                 ]
+            , div []
+                [ label [ class "form-label fw-semibold" ] [ text "Негативні форми (по одному на рядок, опційно)" ]
+                , textarea
+                    [ class "form-control"
+                    , value model.keywordNegativeFormsInput
+                    , onInput KeywordNegativeFormsChanged
+                    , rows 4
+                    , disabled model.saving
+                    ]
+                    []
+                ]
             , div [ class "flex items-center gap-3" ]
                 [ label [ class "flex items-center gap-2" ]
-                    [ input
-                        [ type_ "checkbox"
-                        , class "form-check-input"
-                        , checked model.isPositive
-                        , onCheck TogglePositive
-                        , disabled model.saving
-                        ]
-                        []
-                    , text "Позитивне"
-                    ]
-                , label [ class "flex items-center gap-2" ]
                     [ input
                         [ type_ "checkbox"
                         , class "form-check-input"
