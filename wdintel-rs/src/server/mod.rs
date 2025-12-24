@@ -565,9 +565,11 @@ pub async fn main_server(
             .service(crate::palitra::list_all_palitras_detailed)
             .service(crate::palitra::list_palitra_points)
             .service(crate::palitra::create_palitra)
+            .service(crate::palitra::create_palitra_with_kmz)
             .service(crate::palitra::update_palitra)
             .service(crate::palitra::delete_palitra)
             .service(crate::palitra::upload_palitra_points)
+            .service(crate::palitra::analyze_kmz)
             .service(actix_files::Files::new(get_assets_url(), get_assets_folder(&config)).show_files_listing())
     })
         .bind((bind_ip, bind_port))?

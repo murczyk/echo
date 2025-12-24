@@ -1757,6 +1757,62 @@ palitra_upload_points toMsg palitraId file =
         }
 
 
+palitra_analyze_kmz : (Result ApiError AnalyzeKmzResponse -> msg) -> File -> Cmd msg
+palitra_analyze_kmz toMsg file =
+    Http.request
+        { method = "POST"
+        , headers = []
+        , url = "/api/palitra/analyze-kmz"
+        , body = Http.multipartBody [ Http.filePart (File.name file) file ]
+        , expect = leExpectJson toMsg analyzeKmzResponseDecoder
+        , timeout = Nothing
+        , tracker = Nothing
+        }
+
+
+palitra_create_with_kmz : (Result ApiError Palitra -> msg) -> CreatePalitraReq -> File -> Cmd msg
+palitra_create_with_kmz toMsg req file =
+    let
+        accessType =
+            case req.access of
+                ByLogins _ ->
+                    "logins"
+
+                ByOrganisms _ ->
+                    "organisms"
+
+                ByAor _ ->
+                    "aor"
+
+        accessValues =
+            case req.access of
+                ByLogins { logins } ->
+                    String.join "," logins
+
+                ByOrganisms { organismIds } ->
+                    String.join "," (List.map String.fromInt organismIds)
+
+                ByAor { aorIds } ->
+                    String.join "," (List.map String.fromInt aorIds)
+    in
+    Http.request
+        { method = "POST"
+        , headers = []
+        , url = "/api/palitra/create-with-kmz"
+        , body =
+            Http.multipartBody
+                [ Http.stringPart "name" req.name
+                , Http.stringPart "color_hex" req.colorHex
+                , Http.stringPart "access_type" accessType
+                , Http.stringPart "access_values" accessValues
+                , Http.filePart "kmz" file
+                ]
+        , expect = leExpectJson toMsg palitraDecoder
+        , timeout = Nothing
+        , tracker = Nothing
+        }
+
+
 update_aor : (Result ApiError AreaOfResponsibility -> msg) -> UpdateAreaOfResponsibilityReq -> Cmd msg
 update_aor toMsg req =
     Http.post

@@ -127,6 +127,8 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::palitra::types::ViewportBounds,
             crate::palitra::types::Geometry,
             crate::palitra::types::Coords,
+            crate::palitra::types::KmzColorInfo,
+            crate::palitra::types::AnalyzeKmzResponse,
 
             crate::rer_importer::body_noheader::NoHeadersBody,
             crate::rer_importer::bookmark::BookmarkAddReq,
@@ -463,6 +465,8 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::palitra::types::ViewportBounds,
             crate::palitra::types::Geometry,
             crate::palitra::types::Coords,
+            crate::palitra::types::KmzColorInfo,
+            crate::palitra::types::AnalyzeKmzResponse,
 
             crate::rer_importer::body_noheader::NoHeadersBody,
             crate::rer_importer::bookmark::BookmarkAddReq,

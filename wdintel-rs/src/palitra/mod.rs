@@ -10,8 +10,11 @@ use actix_web::post;
 use actix_web::web::{Data, Json};
 use anyhow::{bail, Context};
 use chrono::Utc;
+use futures_util::StreamExt;
 use itertools::Itertools;
 use sea_orm::*;
+use std::path::Path;
+use tempfile::tempdir;
 
 mod bl;
 mod kmz;
@@ -21,6 +24,262 @@ pub mod types;
 struct UserScope {
     organism_ids: Vec<i64>,
     aor_ids: Vec<i64>,
+}
+
+#[post("/api/palitra/create-with-kmz")]
+pub async fn create_palitra_with_kmz(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    mut payload: Multipart,
+) -> Result<Json<Palitra>, AppError> {
+    let login = user.id().c(h!())?;
+    let scope = load_user_scope(&env.dbx, &login).await.c(h!())?;
+
+    // Extract multipart fields
+    let mut name: Option<String> = None;
+    let mut color_hex: Option<String> = None;
+    let mut access_type: Option<String> = None;
+    let mut access_values: Option<String> = None;
+    let mut kmz_file: Option<(String, Vec<u8>)> = None;
+
+    while let Some(item) = payload.next().await {
+        let mut field = item.map_err(|e| AppError::BL {
+            msg: format!("Multipart error: {e:?}"),
+        })?;
+        let content_disposition = field.content_disposition();
+        let field_name = content_disposition
+            .and_then(|cd| cd.get_name())
+            .map(|s| s.to_string())
+            .unwrap_or_default();
+
+        match field_name.as_str() {
+            "name" => {
+                let mut bytes = Vec::new();
+                while let Some(chunk) = field.next().await {
+                    let chunk = chunk.map_err(|e| AppError::BL {
+                        msg: format!("Field read error: {e:?}"),
+                    })?;
+                    bytes.extend_from_slice(&chunk);
+                }
+                name = Some(String::from_utf8(bytes).c(h!())?);
+            }
+            "color_hex" => {
+                let mut bytes = Vec::new();
+                while let Some(chunk) = field.next().await {
+                    let chunk = chunk.map_err(|e| AppError::BL {
+                        msg: format!("Field read error: {e:?}"),
+                    })?;
+                    bytes.extend_from_slice(&chunk);
+                }
+                color_hex = Some(String::from_utf8(bytes).c(h!())?);
+            }
+            "access_type" => {
+                let mut bytes = Vec::new();
+                while let Some(chunk) = field.next().await {
+                    let chunk = chunk.map_err(|e| AppError::BL {
+                        msg: format!("Field read error: {e:?}"),
+                    })?;
+                    bytes.extend_from_slice(&chunk);
+                }
+                access_type = Some(String::from_utf8(bytes).c(h!())?);
+            }
+            "access_values" => {
+                let mut bytes = Vec::new();
+                while let Some(chunk) = field.next().await {
+                    let chunk = chunk.map_err(|e| AppError::BL {
+                        msg: format!("Field read error: {e:?}"),
+                    })?;
+                    bytes.extend_from_slice(&chunk);
+                }
+                access_values = Some(String::from_utf8(bytes).c(h!())?);
+            }
+            "kmz" => {
+                let raw_filename = content_disposition
+                    .and_then(|cd| cd.get_filename())
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| "file.kmz".to_string());
+                let filename = sanitize_upload_filename(&raw_filename);
+                let mut bytes = Vec::new();
+                while let Some(chunk) = field.next().await {
+                    let chunk = chunk.map_err(|e| AppError::BL {
+                        msg: format!("Field read error: {e:?}"),
+                    })?;
+                    bytes.extend_from_slice(&chunk);
+                }
+                kmz_file = Some((filename, bytes));
+            }
+            _ => {
+                // Skip unknown fields but consume their data to avoid blocking multipart parser
+                while let Some(chunk) = field.next().await {
+                    let _ = chunk.map_err(|e| AppError::BL {
+                        msg: format!("Field read error: {e:?}"),
+                    })?;
+                }
+            }
+        }
+    }
+
+    // Validate required fields
+    let name = name.c(h!())?;
+    let color_hex = color_hex.c(h!())?;
+    let access_type = access_type.c(h!())?;
+    let access_values = access_values.unwrap_or_default();
+    let (filename, kmz_data) = kmz_file.c(h!())?;
+
+    // Parse access
+    let access = parse_access(&access_type, &access_values).c(h!())?;
+
+    // Validate permissions
+    ensure_palitra_permissions(&env, &login, &access, &scope)
+        .await
+        .c(h!())?;
+
+    // Create palitra request
+    let req = CreatePalitraReq {
+        name: name.clone(),
+        color_hex,
+        access,
+        source_file_name: Some(filename.clone()),
+        last_uploaded_at_ts: Some(Utc::now().timestamp_millis()),
+    };
+
+    // Create palitra first
+    let palitra = bl::create_palitra(login.clone(), req, &env.dbx)
+        .await
+        .c(h!())?;
+
+    // Upload points from KMZ in a separate transaction
+    let txn = env.dbx.begin().await.c(h!())?;
+    let storage_dir = ensure_storage_dir(&env).await.c(h!())?;
+    let points = kmz::load_coordinates_from_file(
+        filename.clone(),
+        kmz_data,
+        storage_dir.as_path(),
+    )
+    .await
+    .c(h!())?;
+
+    bl::rewrite_palitra_points(palitra.id, points, &txn)
+        .await
+        .c(h!())?;
+
+    txn.commit().await.c(h!())?;
+
+    // Reload and return created palitra with all data
+    let result = palitra::Entity::find_by_id(palitra.id)
+        .one(&env.dbx)
+        .await
+        .c(h!())?
+        .c(h!())?;
+
+    let palitra_response = Palitra {
+        id: result.id,
+        name: result.name,
+        color_hex: result.hex,
+        author: result.author,
+        source_file_name: result.source_file_name,
+        last_uploaded_at_ts: result
+            .last_uploaded_at
+            .map(|ts| ts.and_utc().timestamp_millis()),
+        geometry: None, // Will be calculated on next request
+        access_aor_id: bl::collect_palitra_access_aors(&env.dbx, palitra.id)
+            .await
+            .c(h!())?,
+        access_organism_ids: bl::collect_palitra_access_organisms(
+            &env.dbx, palitra.id,
+        )
+        .await
+        .c(h!())?,
+        access_logins: bl::collect_palitra_access_logins(&env.dbx, palitra.id)
+            .await
+            .c(h!())?,
+    };
+
+    Ok(Json(palitra_response))
+}
+
+fn parse_access(
+    access_type: &str,
+    access_values: &str,
+) -> anyhow::Result<PalitraAccess> {
+    match access_type {
+        "logins" => {
+            let logins: Vec<String> = access_values
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
+            Ok(PalitraAccess::ByLogins { logins })
+        }
+        "organisms" => {
+            let organism_ids: Vec<i64> = access_values
+                .split(',')
+                .filter_map(|s| s.trim().parse().ok())
+                .collect();
+            Ok(PalitraAccess::ByOrganisms { organism_ids })
+        }
+        "aor" => {
+            let aor_ids: Vec<i64> = access_values
+                .split(',')
+                .filter_map(|s| s.trim().parse().ok())
+                .collect();
+            Ok(PalitraAccess::ByAor { aor_ids })
+        }
+        _ => bail!("Invalid access type: {}", access_type),
+    }
+}
+
+#[post("/api/palitra/analyze-kmz")]
+pub async fn analyze_kmz(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    mut payload: Multipart,
+) -> Result<Json<AnalyzeKmzResponse>, AppError> {
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
+        .await
+        .context(h!())?;
+
+    let (field, val) = multipart::extract(&mut payload).await.c(h!())?;
+    let raw_filename = field
+        .content_disposition()
+        .and_then(|cd| cd.get_filename().map(|s| s.to_string()))
+        .unwrap_or_else(|| "file.kmz".to_string());
+    let filename = sanitize_upload_filename(&raw_filename);
+
+    // Save to temporary directory for analysis
+    let tmp_dir = tempdir().c(h!())?;
+    let tmp_path = tmp_dir.path().join(&filename);
+    tokio::fs::write(&tmp_path, val).await.c(h!())?;
+
+    // Extract top 3 colors based on file extension
+    let extension = tmp_path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .unwrap_or("kmz")
+        .to_ascii_lowercase();
+
+    let top_colors = match extension.as_str() {
+        "kmz" => kmz::extract_top_colors_from_kmz(&tmp_path).await.c(h!())?,
+        "kml" => kmz::extract_top_colors_from_kml(&tmp_path).await.c(h!())?,
+        _ => {
+            return Err(AppError::BL {
+                msg: format!("Unsupported file extension: {extension}. Expected .kmz or .kml"),
+            });
+        }
+    };
+
+    // Clean filename (remove extension)
+    let name_without_ext = filename
+        .strip_suffix(".kmz")
+        .or_else(|| filename.strip_suffix(".kml"))
+        .unwrap_or(&filename)
+        .to_string();
+
+    Ok(Json(AnalyzeKmzResponse {
+        top_colors,
+        filename: name_without_ext,
+    }))
 }
 
 #[post("/api/palitra/upload-points/{palitra_id}")]
@@ -58,7 +317,8 @@ pub async fn upload_palitra_points(
         .c(h!())?;
 
     let (field, val) = multipart::extract(&mut payload).await.c(h!())?;
-    let filename = field.name().c(h!())?.to_string();
+    let raw_filename = field.name().c(h!())?.to_string();
+    let filename = sanitize_upload_filename(&raw_filename);
     let storage_dir = ensure_storage_dir(&env).await.c(h!())?;
     let points = kmz::load_coordinates_from_file(
         filename.clone(),
@@ -89,6 +349,14 @@ async fn ensure_storage_dir(env: &Data<Env>) -> anyhow::Result<PathBuf> {
         .await
         .c(h!())?;
     Ok(storage_dir)
+}
+
+fn sanitize_upload_filename(filename: &str) -> String {
+    Path::new(filename)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .map(|name| name.to_string())
+        .unwrap_or_else(|| "file.kmz".to_string())
 }
 
 async fn ensure_palitra_permissions(
@@ -275,9 +543,10 @@ pub async fn list_palitra_points(
         .await
         .context(h!())?;
     let req = req.into_inner();
-    let points = bl::list_palitra_points_by_viewport_bounds(login, req, &env.dbx)
-        .await
-        .context(h!())?;
+    let points =
+        bl::list_palitra_points_by_viewport_bounds(login, req, &env.dbx)
+            .await
+            .context(h!())?;
     Ok(Json(points))
 }
 

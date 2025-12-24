@@ -133,6 +133,7 @@ pub async fn rer_analysis_download_kmz(
             )),
             style: Some(Style {
                 icon_style: Some(IconStyle {
+                    color: None,
                     scale: None,
                     icon: Some(Icon {
                         href: Some(Href {

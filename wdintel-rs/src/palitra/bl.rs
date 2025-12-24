@@ -4,7 +4,7 @@ use crate::palitra::types::*;
 use crate::types::*;
 use crate::utils::orm::ArrayColumnOps;
 use anyhow::Context;
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use itertools::{Either, Itertools};
 use sea_orm::prelude::*;
 use sea_orm::*;
@@ -107,7 +107,8 @@ pub async fn list_palitra_points_by_viewport_bounds(
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<Vec<PalitraPoints>> {
     let allowed_palitra_ids = collect_palitra_ids(login, dbx).await.c(h!())?;
-    let allowed_palitra_ids: HashSet<i64> = allowed_palitra_ids.into_iter().collect();
+    let allowed_palitra_ids: HashSet<i64> =
+        allowed_palitra_ids.into_iter().collect();
     let palitra_ids: Vec<i64> = req
         .palitra_ids
         .into_iter()
@@ -233,7 +234,9 @@ where
     Ok(result)
 }
 
-fn normalize_viewport_bounds(viewport_bounds: ViewportBounds) -> ViewportBounds {
+fn normalize_viewport_bounds(
+    viewport_bounds: ViewportBounds,
+) -> ViewportBounds {
     let min_lat = viewport_bounds.min_lat.min(viewport_bounds.max_lat);
     let max_lat = viewport_bounds.min_lat.max(viewport_bounds.max_lat);
     let min_lng = viewport_bounds.min_lng.min(viewport_bounds.max_lng);
@@ -591,6 +594,30 @@ where
     let mut palitra = palitra_val;
     palitra.name = Set(req.name);
     palitra.hex = Set(req.color_hex);
+    let parse_uploaded_at = |ts| {
+        DateTime::from_timestamp_millis(ts)
+            .map(|dt| dt.naive_utc())
+            .ok_or_else(|| anyhow::anyhow!("Invalid timestamp: {ts}"))
+    };
+    match action {
+        PalitraUpdateAction::Update => {
+            if let Some(source_file_name) = req.source_file_name {
+                palitra.source_file_name = Set(Some(source_file_name));
+            }
+            if let Some(last_uploaded_at_ts) = req.last_uploaded_at_ts {
+                palitra.last_uploaded_at =
+                    Set(Some(parse_uploaded_at(last_uploaded_at_ts).c(h!())?));
+            }
+        }
+        PalitraUpdateAction::Insert => {
+            palitra.source_file_name = Set(req.source_file_name);
+            palitra.last_uploaded_at = Set(req
+                .last_uploaded_at_ts
+                .map(parse_uploaded_at)
+                .transpose()
+                .c(h!())?);
+        }
+    }
     let palitra = match action {
         PalitraUpdateAction::Update => palitra.update(txn).await.c(h!())?,
         PalitraUpdateAction::Insert => palitra.insert(txn).await.c(h!())?,

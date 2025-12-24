@@ -66,6 +66,7 @@ async fn download_kmz(
         styles.push(Style {
             id: Some(style_id.clone()),
             icon_style: Some(IconStyle {
+                color: None,
                 scale: Some(Scale {
                     body: "1.0".to_string(),
                 }),
