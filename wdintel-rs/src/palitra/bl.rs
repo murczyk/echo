@@ -594,16 +594,30 @@ where
     let mut palitra = palitra_val;
     palitra.name = Set(req.name);
     palitra.hex = Set(req.color_hex);
-    palitra.source_file_name = Set(req.source_file_name);
-    palitra.last_uploaded_at = Set(req
-        .last_uploaded_at_ts
-        .map(|ts| {
-            DateTime::from_timestamp_millis(ts)
-                .map(|dt| dt.naive_utc())
-                .ok_or_else(|| anyhow::anyhow!("Invalid timestamp: {ts}"))
-        })
-        .transpose()
-        .c(h!())?);
+    let parse_uploaded_at = |ts| {
+        DateTime::from_timestamp_millis(ts)
+            .map(|dt| dt.naive_utc())
+            .ok_or_else(|| anyhow::anyhow!("Invalid timestamp: {ts}"))
+    };
+    match action {
+        PalitraUpdateAction::Update => {
+            if let Some(source_file_name) = req.source_file_name {
+                palitra.source_file_name = Set(Some(source_file_name));
+            }
+            if let Some(last_uploaded_at_ts) = req.last_uploaded_at_ts {
+                palitra.last_uploaded_at =
+                    Set(Some(parse_uploaded_at(last_uploaded_at_ts).c(h!())?));
+            }
+        }
+        PalitraUpdateAction::Insert => {
+            palitra.source_file_name = Set(req.source_file_name);
+            palitra.last_uploaded_at = Set(req
+                .last_uploaded_at_ts
+                .map(|ts| parse_uploaded_at(ts))
+                .transpose()
+                .c(h!())?);
+        }
+    }
     let palitra = match action {
         PalitraUpdateAction::Update => palitra.update(txn).await.c(h!())?,
         PalitraUpdateAction::Insert => palitra.insert(txn).await.c(h!())?,
