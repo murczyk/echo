@@ -13,8 +13,8 @@ use chrono::Utc;
 use futures_util::StreamExt;
 use itertools::Itertools;
 use sea_orm::*;
-use tempfile::tempdir;
 use std::path::Path;
+use tempfile::tempdir;
 
 mod bl;
 mod kmz;
@@ -254,7 +254,7 @@ pub async fn analyze_kmz(
         .unwrap_or("kmz")
         .to_ascii_lowercase();
 
-    let top_colors = match extension {
+    let top_colors = match extension.as_str() {
         "kmz" => kmz::extract_top_colors_from_kmz(&tmp_path).await.c(h!())?,
         "kml" => kmz::extract_top_colors_from_kml(&tmp_path).await.c(h!())?,
         _ => {
