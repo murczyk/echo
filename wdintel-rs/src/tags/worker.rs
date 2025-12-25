@@ -327,11 +327,9 @@ async fn get_regex_sets_for_tag<C: ConnectionTrait>(
 
     let item = TagKeywordRegexCacheItem {
         regex_set_positive: regex::RegexSetBuilder::new(patterns_positive)
-            .case_insensitive(true)
             .build()
             .c(h!())?,
         regex_set_negative: regex::RegexSetBuilder::new(patterns_negative)
-            .case_insensitive(true)
             .build()
             .c(h!())?,
     };
