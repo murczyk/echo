@@ -7,3 +7,4 @@ my-venv
 *.log
 *.png
 *.pkl
+*.parquet

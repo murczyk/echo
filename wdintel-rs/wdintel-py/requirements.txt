@@ -2,7 +2,7 @@ pymorphy3
 spacy
 Flask
 gunicorn
-fasttext==0.9.3
+fasttext==0.9.2
 # words2numsrus
 https://files.pythonhosted.org/packages/a8/fc/44c5858400d74ab7cc7374bb41ffbb8a27c2e16a1ed06a95bcdefea17ab5/words2numsrus-0.1.0-py3-none-any.whl
 # haloop==0.0.8
