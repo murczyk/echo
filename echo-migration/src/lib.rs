@@ -183,6 +183,7 @@ mod m20251215_110739_tag_keywords_seed_data;
 mod m20251215_130030_sigint_inbox_tag_multilabel;
 mod m20251215_143321_drop_signal_group_notes;
 mod m20251223_131547_tag_keywords_negative_forms;
+mod m20251223_144906_seed_negative_keyword_forms;
 
 pub struct Migrator;
 
@@ -373,6 +374,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20251215_130030_sigint_inbox_tag_multilabel::Migration),
             Box::new(m20251215_143321_drop_signal_group_notes::Migration),
             Box::new(m20251223_131547_tag_keywords_negative_forms::Migration),
+            Box::new(m20251223_144906_seed_negative_keyword_forms::Migration),
         ]
     }
 }
