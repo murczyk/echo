@@ -94,7 +94,10 @@ pub async fn oneoff_suggest_inbox_message_tags(
     info!("oneoff_suggest_inbox_message_tags, about to process {total_len} messages");
     let mut processed = 0;
     let mut suggested = 0;
-    let batch_size = ps.batch_size.unwrap_or(TAG_SUGGEST_WORKER_BATCH_SIZE);
+    let batch_size = ps
+        .batch_size
+        .filter(|sz| *sz > 0)
+        .unwrap_or(TAG_SUGGEST_WORKER_BATCH_SIZE);
     for chunk in message_ids.chunks(batch_size) {
         let txn: DatabaseTransaction = dbx.begin().await.c(h!())?;
 
