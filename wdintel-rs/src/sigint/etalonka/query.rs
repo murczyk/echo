@@ -541,7 +541,7 @@ pub async fn load_callsigns(
 
     let duration = start.elapsed();
     trace!(
-        "[load_callsigns] Execution time: {duration:.2?} (network: {network_id:?})"        
+        "[load_callsigns] Execution time: {duration:.2?} (network: {network_id:?})"
     );
 
     Ok(res)
@@ -784,9 +784,9 @@ pub fn build_callsigns_queries(
 
 /// Helper to build join condition for sigint_inbox_item adn sigint_network_freqs based on the filter.
 ///
-/// sigint_inbox_item.freq = network_freqs.freq  
-/// AND sigint_inbox_item.datetime >= GREATEST(since_date_inclusive, network_freqs.active_from)  
-/// AND sigint_inbox_item.datetime <= LEAST(till_date_inclusive, COALESCE(network_freqs.active_to, now()))  
+/// sigint_inbox_item.freq = network_freqs.freq
+/// AND sigint_inbox_item.datetime >= GREATEST(since_date_inclusive, network_freqs.active_from)
+/// AND sigint_inbox_item.datetime <= LEAST(till_date_inclusive, COALESCE(network_freqs.active_to, now()))
 pub fn build_network_freq_join_condition(
     filter: Option<&NetworkFreqFilter>,
 ) -> Result<SimpleExpr, AppError> {
@@ -1331,7 +1331,10 @@ async fn get_map_image(
 pub async fn load_networks(
     db: &DatabaseConnection,
     req: &EtalonkaJimForksReq,
-) -> Result<HashMap<String, Vec<NetworkEtalonkaResult>>, AppError> {
+) -> Result<
+    BTreeMap<NetworkEtalonkaUnitKey, Vec<NetworkEtalonkaResult>>,
+    AppError,
+> {
     let mut networks = sigint_network::Entity::find()
         .join_as(
             JoinType::InnerJoin,
@@ -1363,6 +1366,11 @@ pub async fn load_networks(
         .column(sigint_network::Column::OperationMode)
         .column(sigint_network::Column::OperationType)
         .column(sigint_network::Column::OperationPeriod)
+        .column_as(sigint_unit::Column::Army, "unit_army")
+        .column_as(sigint_unit::Column::Division, "unit_division")
+        .column_as(sigint_unit::Column::Regiment, "unit_regiment")
+        .column_as(sigint_unit::Column::Battalion, "unit_battalion")
+        .column_as(sigint_unit::Column::Company, "unit_company")
         .column_as(sigint_unit::Column::Name, "unit_name")
         .column(sigint_network::Column::ActiveFrom)
         .column(sigint_network::Column::ActiveTo);
@@ -1446,13 +1454,21 @@ pub async fn load_networks(
         .await
         .context(h!())?;
 
-    let mut res: HashMap<String, Vec<NetworkEtalonkaResult>> = HashMap::new();
-    for network in networks {
-        let key = network
-            .unit_name
-            .as_deref()
-            .unwrap_or(DEFAULT_EMPTY_UNIT_NAME)
-            .to_string();
+    let mut res: BTreeMap<NetworkEtalonkaUnitKey, Vec<NetworkEtalonkaResult>> =
+        BTreeMap::new();
+    for network in networks.into_iter() {
+        let key = NetworkEtalonkaUnitKey {
+            unit_army: network.unit_army.clone(),
+            unit_division: network.unit_division.clone(),
+            unit_regiment: network.unit_regiment.clone(),
+            unit_battalion: network.unit_battalion.clone(),
+            unit_company: network.unit_company.clone(),
+            unit_name: network
+                .unit_name
+                .as_deref()
+                .unwrap_or(DEFAULT_EMPTY_UNIT_NAME)
+                .to_string(),
+        };
 
         res.entry(key).or_default().push(network);
     }
@@ -1463,7 +1479,10 @@ pub async fn load_networks(
 pub async fn load_networks_by_id(
     db: &DatabaseConnection,
     req: &EtalonkaNetworkBatchReq,
-) -> Result<HashMap<String, Vec<NetworkEtalonkaResult>>, AppError> {
+) -> Result<
+    BTreeMap<NetworkEtalonkaUnitKey, Vec<NetworkEtalonkaResult>>,
+    AppError,
+> {
     let mut networks = sigint_network::Entity::find()
         .join_as(
             JoinType::LeftJoin,
@@ -1495,6 +1514,11 @@ pub async fn load_networks_by_id(
         .column(sigint_network::Column::OperationMode)
         .column(sigint_network::Column::OperationType)
         .column(sigint_network::Column::OperationPeriod)
+        .column_as(sigint_unit::Column::Army, "unit_army")
+        .column_as(sigint_unit::Column::Division, "unit_division")
+        .column_as(sigint_unit::Column::Regiment, "unit_regiment")
+        .column_as(sigint_unit::Column::Battalion, "unit_battalion")
+        .column_as(sigint_unit::Column::Company, "unit_company")
         .column_as(sigint_unit::Column::Name, "unit_name")
         .column(sigint_network::Column::ActiveFrom)
         .column(sigint_network::Column::ActiveTo)
@@ -1528,13 +1552,21 @@ pub async fn load_networks_by_id(
         .await
         .context(h!())?;
 
-    let mut res: HashMap<String, Vec<NetworkEtalonkaResult>> = HashMap::new();
-    for network in networks {
-        let key = network
-            .unit_name
-            .as_deref()
-            .unwrap_or(DEFAULT_EMPTY_UNIT_NAME)
-            .to_string();
+    let mut res: BTreeMap<NetworkEtalonkaUnitKey, Vec<NetworkEtalonkaResult>> =
+        BTreeMap::new();
+    for network in networks.into_iter() {
+        let key = NetworkEtalonkaUnitKey {
+            unit_army: network.unit_army.clone(),
+            unit_division: network.unit_division.clone(),
+            unit_regiment: network.unit_regiment.clone(),
+            unit_battalion: network.unit_battalion.clone(),
+            unit_company: network.unit_company.clone(),
+            unit_name: network
+                .unit_name
+                .as_deref()
+                .unwrap_or(DEFAULT_EMPTY_UNIT_NAME)
+                .to_string(),
+        };
 
         res.entry(key).or_default().push(network);
     }
