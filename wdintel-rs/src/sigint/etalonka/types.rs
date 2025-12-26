@@ -53,6 +53,16 @@ pub struct EtalonkaExtendedSettings {
     pub include_pelengs_map: bool,
 }
 
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct NetworkEtalonkaUnitKey {
+    pub unit_army: Option<String>,
+    pub unit_division: Option<String>,
+    pub unit_regiment: Option<String>,
+    pub unit_battalion: Option<String>,
+    pub unit_company: Option<String>,
+    pub unit_name: String,
+}
+
 #[derive(Debug, FromQueryResult)]
 pub struct NetworkEtalonkaResult {
     pub id: i64,
@@ -64,6 +74,11 @@ pub struct NetworkEtalonkaResult {
     pub operation_type: Option<String>,
     pub operation_period: Option<String>,
     pub unit_name: Option<String>,
+    pub unit_regiment: Option<String>,
+    pub unit_battalion: Option<String>,
+    pub unit_company: Option<String>,
+    pub unit_division: Option<String>,
+    pub unit_army: Option<String>,
     pub active_from: NaiveDateTime,
     pub active_to: Option<NaiveDateTime>,
 }

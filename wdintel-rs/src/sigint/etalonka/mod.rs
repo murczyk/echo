@@ -229,7 +229,7 @@ pub async fn generate_networks_docx_report(
 
 pub struct EtalonkaData {
     groups: Vec<String>,
-    networks_data: HashMap<String, Vec<NetworkEtalonkaResult>>,
+    networks_data: BTreeMap<NetworkEtalonkaUnitKey, Vec<NetworkEtalonkaResult>>,
     entries: HashMap<EtalonkaEntryKey, EtalonkaEntry>,
     sources: HashMap<i64, String>,
 }
@@ -256,7 +256,7 @@ pub async fn collect_etalonka_data(
     dbx: &DatabaseConnection,
     user_id: &str,
     groups: Vec<String>,
-    networks_data: HashMap<String, Vec<NetworkEtalonkaResult>>,
+    networks_data: BTreeMap<NetworkEtalonkaUnitKey, Vec<NetworkEtalonkaResult>>,
     report_type: &EtalonkaReportType,
     trace_id: Uuid,
 ) -> Result<EtalonkaData, AppError> {
@@ -311,7 +311,8 @@ pub async fn collect_etalonka_data(
     }
 
     let mut units_remaining = data.networks_data.len();
-    for (unit_name, unit_networks) in data.networks_data.iter() {
+    for (unit_key, unit_networks) in data.networks_data.iter() {
+        let unit_name = &unit_key.unit_name;
         units_remaining -= 1;
         info!("[trace_id={trace_id}] collecting report data for unit '{unit_name}', {units_remaining} left");
         let mut network_remaining = unit_networks.len();
@@ -437,13 +438,15 @@ pub async fn etalonka_due_form(
     doc = add_report_styles(doc);
     doc = add_report_header(doc);
 
-    for (i, (unit_name, unit_networks)) in
+    for (i, (unit_key, unit_networks)) in
         etalonka_data.networks_data.iter().enumerate()
     {
+        let unit_name = &unit_key.unit_name;
         // Add unit name as title
         doc = doc.add_paragraph(
             Paragraph::new()
-                .add_run(Run::new().size(28).bold().add_text(unit_name)), // .align(JustificationType::Center),
+                .add_run(Run::new().size(28).bold().add_text(unit_name))
+                .outline_lvl(0), // .align(JustificationType::Center),
         );
 
         for (index, network) in unit_networks.iter().enumerate() {
@@ -540,13 +543,15 @@ pub async fn etalonka_extended(
     doc = add_report_styles(doc);
     doc = add_report_header(doc);
 
-    for (i, (unit_name, unit_networks)) in
+    for (i, (unit_key, unit_networks)) in
         etalonka_data.networks_data.iter().enumerate()
     {
+        let unit_name = &unit_key.unit_name;
         // Add unit name as title
         doc = doc.add_paragraph(
             Paragraph::new()
-                .add_run(Run::new().size(28).bold().add_text(unit_name)), // .align(JustificationType::Center),
+                .add_run(Run::new().size(28).bold().add_text(unit_name))
+                .outline_lvl(0), // .align(JustificationType::Center),
         );
 
         for (index, network) in unit_networks.iter().enumerate() {
