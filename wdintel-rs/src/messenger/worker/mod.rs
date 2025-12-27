@@ -656,9 +656,12 @@ where
 
 async fn sync_senders(
     db: &DatabaseConnection,
-    senders: BTreeMap<String, echo_im::types::SenderF1>,
+    input_senders: BTreeMap<String, echo_im::types::SenderF1>,
 ) -> anyhow::Result<()> {
-    let mut senders = senders;
+    let mut senders = BTreeMap::new();
+    for (uuid, sender) in input_senders {
+        senders.insert(clear_lid_string(&uuid), sender);
+    }
     let sender_ids = senders.keys().cloned().collect::<Vec<_>>();
     let existing_senders = signal_profile::Entity::find()
         .filter(signal_profile::Column::Uuid.eq_any(sender_ids))
