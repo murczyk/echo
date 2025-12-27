@@ -108,6 +108,8 @@ pub const SYSTEM_LOGIN_NAME: &str = "system";
 pub const TAG_SUGGEST_WORKER_BATCH_SIZE: usize = 100;
 pub const TAG_SUGGEST_WORKER_REGEX_CONFIDENCE: f64 = 0.8;
 
+pub const MAX_FIX_WHATSAPP_SENDERS_MESSAGE_DAYS: i64 = 30;
+
 /// Dynamic config that's different on different deployments
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct Config {

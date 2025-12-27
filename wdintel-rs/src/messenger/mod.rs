@@ -16,6 +16,7 @@ pub mod dedupe;
 pub mod group;
 pub mod id;
 pub mod media;
+pub(crate) mod oneoff;
 pub mod ops;
 #[cfg(test)]
 pub mod tests;

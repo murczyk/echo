@@ -537,6 +537,7 @@ enum Cmd {
     OneoffFillSigintInboxItemTags,
     OneoffSuggestInboxMessageTags(OneoffSuggestInboxMessageTagsPs),
     OneoffImportSignalsCallsignsCsv(OneoffImportSignalsCallsignsCsvPs),
+    OneoffFixWhatsappSenders,
 }
 
 #[derive(clap::Parser, Debug)]
@@ -963,6 +964,9 @@ async fn async_main(
                 mode, &ps,
             )
             .await
+        }
+        Cmd::OneoffFixWhatsappSenders => {
+            messenger::oneoff::oneoff_fix_whatsapp_senders(mode).await
         }
     }
 }

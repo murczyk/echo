@@ -469,7 +469,7 @@ async fn write_to_signal_message_queue(
             .sender
             .clone()
             .map(|x| x.uuid)
-            .map(|id| clear_lid_string(&id))),
+            .map(|id| clear_messenger_login_string(&id))),
         sender_phone_number: Set(item.sender.and_then(|x| x.phone_number)),
         group_id: Set(item.group_id.clone()),
         timestamp: Set(item.timestamp),
@@ -660,7 +660,7 @@ async fn sync_senders(
 ) -> anyhow::Result<()> {
     let mut senders = BTreeMap::new();
     for (uuid, sender) in input_senders {
-        senders.insert(clear_lid_string(&uuid), sender);
+        senders.insert(clear_messenger_login_string(&uuid), sender);
     }
     let sender_ids = senders.keys().cloned().collect::<Vec<_>>();
     let existing_senders = signal_profile::Entity::find()
@@ -672,7 +672,7 @@ async fn sync_senders(
         .await
         .c(h!())?
         .into_iter()
-        .map(|id| clear_lid_string(&id))
+        .map(|id| clear_messenger_login_string(&id))
         .collect::<Vec<_>>();
     for s in existing_senders {
         senders.remove(&s);
@@ -691,7 +691,7 @@ async fn sync_senders(
     Ok(())
 }
 
-pub fn clear_lid_string(input: &str) -> String {
+pub fn clear_messenger_login_string(input: &str) -> String {
     let is_whatsapp_id =
         input.ends_with("@lid") || input.ends_with("@s.whatsapp.net");
     if !is_whatsapp_id || !input.contains(":") {
