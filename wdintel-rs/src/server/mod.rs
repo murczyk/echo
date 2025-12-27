@@ -5,7 +5,7 @@ use crate::{mk_conn_string, new_redis, new_redisb, storage};
 use actix_identity::IdentityMiddleware;
 use actix_session::{storage::RedisSessionStore, SessionMiddleware};
 use actix_web::cookie::Key;
-use actix_web::{App, HttpServer};
+use actix_web::{web, App, HttpServer};
 
 use crate::types::Mode::Live;
 use milgeo_rs::MilGeo;
@@ -570,7 +570,9 @@ pub async fn main_server(
             .service(crate::palitra::delete_palitra)
             .service(crate::palitra::upload_palitra_points)
             .service(crate::palitra::analyze_kmz)
-            .service(actix_files::Files::new(get_assets_url(), get_assets_folder(&config)).show_files_listing())
+            .service(
+                web::scope(get_assets_url())
+                    .route("/{filename:.*}", web::get().to(crate::assets::serve_assets)))
     })
         .bind((bind_ip, bind_port))?
         .run();

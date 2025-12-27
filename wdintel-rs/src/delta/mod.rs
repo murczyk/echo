@@ -415,7 +415,7 @@ async fn store_radios_outputs(
     bgtask_id: i64,
     outputs: &crate::kml::RadioRenderOutputs,
 ) -> Result<(), AppError> {
-    let kmz_per_radio_key = crate::messenger::media::store_kmz_file(
+    let kmz_per_radio_key = crate::messenger::media::store_asset(
         env,
         &outputs.kmz_per_radio_bytes,
         Some(outputs.kmz_per_radio_name.as_str()),
@@ -423,7 +423,7 @@ async fn store_radios_outputs(
     )
     .await
     .c(h!())?;
-    let kmz_per_date_key = crate::messenger::media::store_kmz_file(
+    let kmz_per_date_key = crate::messenger::media::store_asset(
         env,
         &outputs.kmz_per_date_bytes,
         Some(outputs.kmz_per_date_name.as_str()),
@@ -431,7 +431,7 @@ async fn store_radios_outputs(
     )
     .await
     .c(h!())?;
-    let csv_key = crate::messenger::media::store_kmz_file(
+    let csv_key = crate::messenger::media::store_asset(
         env,
         &outputs.csv_bytes,
         Some(outputs.csv_name.as_str()),
@@ -741,7 +741,7 @@ pub async fn get_kml(
                     .c(h!())?;
                 Ok(file.into_response(&http_req))
             } else {
-                Err(AppError::NotFound)
+                geojson.id // FIXME read from bucket
             }
         }
     }
@@ -780,7 +780,6 @@ pub async fn import_map(
     .await
     .c(h!())?;
     let bgtask_id = bgtask.id;
-    let config = env.config.clone();
     let dbx = env.dbx.clone();
     let env_clone = env.clone();
     let convert_id = convert.id;
@@ -865,8 +864,7 @@ pub async fn import_map(
             let mut input = std::fs::read_to_string(&processed_kml_path)?;
             std::fs::remove_file(&processed_kml_path)?;
             let dest_url = &PathBuf::from(get_assets_url()).join(&geojson_id);
-            let target_path = PathBuf::from(config::get_assets_folder(&config))
-                .join(&geojson_id);
+            let target_path = tmp_dir.path().join(&geojson_id);
             let orig_copied_files = copy_kmz_contents(
                 kmz_dir.to_path_buf(),
                 target_path.clone(),
@@ -883,7 +881,7 @@ pub async fn import_map(
             }
             std::fs::write(target_path.with_extension("kml"), input)?;
             let geojson_bytes = std::fs::read(&output)?;
-            let geojson_key = crate::messenger::media::store_kmz_file(
+            let geojson_key = crate::messenger::media::store_asset(
                 env_clone.as_ref(),
                 &geojson_bytes,
                 Some(geojson_name.as_str()),

@@ -177,7 +177,7 @@ pub async fn fetch_media_bytes_by_key(
     .await
 }
 
-pub async fn store_kmz_file(
+pub async fn store_asset(
     env: &Env,
     data: &[u8],
     name: Option<&str>,
