@@ -5,6 +5,7 @@ use crate::h;
 use crate::messenger::worker;
 use crate::types::{Mode, ShortContext};
 use chrono::Utc;
+use log::info;
 use sea_orm::*;
 
 pub async fn oneoff_fix_whatsapp_senders(mode: Mode) -> Result<(), AppError> {
@@ -14,7 +15,9 @@ pub async fn oneoff_fix_whatsapp_senders(mode: Mode) -> Result<(), AppError> {
         - chrono::Duration::days(MAX_FIX_WHATSAPP_SENDERS_MESSAGE_DAYS);
     let mut max_ts = Utc::now().naive_utc();
     let mut fuel = 1000;
+    info!("oneoff_fix_whatsapp_senders started");
     loop {
+        info!("fixed whatsapp logins in messages after {max_ts}");
         fuel -= 1;
         if fuel < 0 {
             return Err(AppError::AnyhowError {
@@ -45,5 +48,6 @@ pub async fn oneoff_fix_whatsapp_senders(mode: Mode) -> Result<(), AppError> {
             m_am.update(&dbx).await.c(h!())?;
         }
     }
+    info!("oneoff_fix_whatsapp_senders completed");
     Ok(())
 }
