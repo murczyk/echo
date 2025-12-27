@@ -14,6 +14,7 @@ pub struct Model {
     pub res_json: Option<Json>,
     #[sea_orm(column_type = "VarBinary(StringLen::None)", nullable)]
     pub res_bytes: Option<Vec<u8>>,
+    pub res_s3_id: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
