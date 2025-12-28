@@ -1,0 +1,26 @@
+[project]
+name = "echo-ai"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Nazar Mishturak", email = "nazarmx@gmail.com" }
+]
+requires-python = ">=3.10"
+dependencies = [
+    "datasets>=4.4.2",
+    "fasttext==0.9.2",
+    "mlflow>=3.8.1",
+    "polars>=1.36.1",
+    "scikit-learn>=1.7.2",
+]
+
+[project.scripts]
+echo-ai = "echo_ai:main"
+
+[build-system]
+requires = ["uv_build>=0.9.15,<0.10.0"]
+build-backend = "uv_build"
+
+[tool.uv.extra-build-dependencies]
+fasttext = [{ requirement = "pybind11", match-runtime = true }]
