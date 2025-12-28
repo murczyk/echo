@@ -445,6 +445,8 @@ pub struct OneoffSuggestInboxMessageTagsPs {
     /// Start datetime (non-inclusive). Example: `2023-04-18T00:00:00`
     #[arg(long, value_enum)]
     pub end: String,
+    #[arg(long)]
+    pub batch_size: Option<usize>,
 }
 
 #[derive(clap::Parser, Debug)]
