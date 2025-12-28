@@ -122,6 +122,8 @@ async fn create_tag(
     .await
     .c(h!())?;
 
+    expire_tags_to_predict_cache(&env.tag_keyword_regex_cache);
+
     Ok(Json(map_tag_admin(tag, vec![])))
 }
 
@@ -152,6 +154,7 @@ async fn update_tag(
     tag.enabled = Set(req.enabled);
 
     let tag = tag.update(&env.dbx).await.c(h!())?;
+    expire_tags_to_predict_cache(&env.tag_keyword_regex_cache);
     let keywords = tag
         .find_related(tag_keyword::Entity)
         .all(&env.dbx)
@@ -242,6 +245,13 @@ fn expire_tag_keyword_regex_cache(
 ) {
     let mut cache = tag_keyword_regex_cache.write().unwrap();
     cache.keywords_regex_per_tag.remove(&tag_id);
+}
+
+fn expire_tags_to_predict_cache(
+    tag_keyword_regex_cache: &Arc<RwLock<TagKeywordRegexCache>>,
+) {
+    let mut cache = tag_keyword_regex_cache.write().unwrap();
+    cache.tags_to_predict = Default::default();
 }
 
 #[delete("/api/tags/{tag_id}/keywords/{tag_keyword_id}")]
@@ -374,6 +384,7 @@ async fn inbox_message_tags_add(
     }
 
     txn.commit().await.c(h!())?;
+
     let event = EventMsg::new(EventType::ETInboxChanged(inbox.id));
     fanout(&mut env.redis.clone(), event).await.c(h!())?;
     Ok(Json(()))

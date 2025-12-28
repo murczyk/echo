@@ -120,6 +120,7 @@ pub struct Env {
 
 #[derive(Default)]
 pub struct TagKeywordRegexCache {
+    pub tags_to_predict: HashMap<String, i64>,
     pub keywords_regex_per_tag: HashMap<i64, TagKeywordRegexCacheItem>,
 }
 
