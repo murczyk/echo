@@ -1,5 +1,5 @@
 use crate::config::TAG_SUGGEST_WORKER_BATCH_SIZE;
-use crate::entities::{sigint_inbox_item, sigint_inbox_item_tag, tag};
+use crate::entities::{sigint_inbox_item, sigint_inbox_item_tag};
 use crate::error::AppError;
 use crate::types::{Mode, ShortContext};
 use crate::utils::parse_local_datetime;
@@ -56,12 +56,6 @@ pub async fn oneoff_suggest_inbox_message_tags(
     let start = parse_local_datetime(&ps.start).c(h!())?;
     let end = parse_local_datetime(&ps.end).c(h!())?;
 
-    let tags = tag::Entity::find()
-        .filter(tag::Column::Enabled.eq(true))
-        .all(&dbx)
-        .await
-        .c(h!())?;
-
     let q = sigint_inbox_item_tag::Entity::find()
         .filter(
             Expr::col((
@@ -103,7 +97,6 @@ pub async fn oneoff_suggest_inbox_message_tags(
 
         let result = crate::tags::worker::process_messages(
             chunk.to_vec(),
-            &tags,
             &env.rq,
             &txn,
             &env.tag_keyword_regex_cache,
