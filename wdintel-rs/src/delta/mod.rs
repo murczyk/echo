@@ -445,6 +445,15 @@ async fn store_radios_outputs(
         kmz_per_date: kmz_per_date_key,
         csv: csv_key,
     });
+    let payload_bytes = serde_json::to_vec(&payload).c(h!())?;
+    let payload_key = crate::messenger::media::store_asset(
+        env,
+        &payload_bytes,
+        Some(&format!("radios-{}-outputs.json", bgtask_id)),
+        Some("application/json"),
+    )
+    .await
+    .c(h!())?;
 
     if let Some(existing) = BgtaskRes::find_by_id(bgtask_id)
         .one(&env.dbx)
@@ -452,14 +461,16 @@ async fn store_radios_outputs(
         .c(h!())?
     {
         let mut model: bgtask_res::ActiveModel = existing.into();
-        model.res_json = Set(Some(payload));
+        model.res_json = Set(None);
+        model.res_s3_id = Set(Some(payload_key));
         model.res_bytes = Set(None);
         model.update(&env.dbx).await.c(h!())?;
     } else {
         let model = bgtask_res::ActiveModel {
             id: Set(bgtask_id),
-            res_json: Set(Some(payload)),
+            res_json: Set(None),
             res_bytes: Set(None),
+            res_s3_id: Set(Some(payload_key)),
         };
         model.insert(&env.dbx).await.c(h!())?;
     }
@@ -477,10 +488,22 @@ async fn load_radios_output_keys(
     else {
         return Ok(None);
     };
-    let Some(res_json) = res.res_json else {
+    if let Some(res_json) = res.res_json {
+        let keys: RadiosOutputKeys =
+            serde_json::from_value(res_json).c(h!())?;
+        return Ok(Some(keys));
+    }
+    let Some(res_s3_id) = res.res_s3_id else {
         return Ok(None);
     };
-    let keys: RadiosOutputKeys = serde_json::from_value(res_json).c(h!())?;
+    let data =
+        crate::messenger::media::fetch_media_bytes_by_key(env, &res_s3_id)
+            .await
+            .c(h!())?;
+    if data.is_empty() {
+        return Ok(None);
+    }
+    let keys: RadiosOutputKeys = serde_json::from_slice(&data).c(h!())?;
     Ok(Some(keys))
 }
 
@@ -699,7 +722,10 @@ pub async fn get_geojson(
         .c(h!())?
         .unwrap();
 
-    let key = format!("enemy-units-{}.geojson", geojson.id);
+    let key = geojson
+        .geojson_s3_id
+        .clone()
+        .unwrap_or_else(|| format!("enemy-units-{}.geojson", geojson.id));
     let data =
         crate::messenger::media::fetch_media_bytes_by_key(env.as_ref(), &key)
             .await
@@ -731,19 +757,35 @@ pub async fn get_kml(
         .c(h!())?
     {
         None => Err(AppError::NotFound),
-        Some(ref geojson) => {
-            let kml_file =
-                PathBuf::from(config::get_assets_folder(&env.config))
-                    .join(format!("enemy-units-{}.kml", geojson.id));
-            if kml_file.exists() {
-                let file = actix_files::NamedFile::open_async(&kml_file)
-                    .await
-                    .c(h!())?;
-                Ok(file.into_response(&http_req))
-            } else {
-                geojson.id // FIXME read from bucket
+        Some(ref geojson) => match geojson.kml_s3_id.clone() {
+            Some(kml_key) => {
+                let data = crate::messenger::media::fetch_media_bytes_by_key(
+                    env.as_ref(),
+                    &kml_key,
+                )
+                .await
+                .c(h!())?;
+                if data.is_empty() {
+                    return Err(AppError::NotFound);
+                }
+                Ok(HttpResponse::Ok()
+                    .content_type("application/vnd.google-earth.kml+xml")
+                    .body(data))
             }
-        }
+            None => {
+                let kml_file =
+                    PathBuf::from(config::get_assets_folder(&env.config))
+                        .join(format!("enemy-units-{}.kml", geojson.id));
+                if kml_file.exists() {
+                    let file = actix_files::NamedFile::open_async(&kml_file)
+                        .await
+                        .c(h!())?;
+                    Ok(file.into_response(&http_req))
+                } else {
+                    Err(AppError::NotFound)
+                }
+            }
+        },
     }
 }
 
@@ -761,6 +803,8 @@ pub async fn import_map(
     let convert = enemy_units_geojson::ActiveModel {
         id: NotSet,
         status: Set(Some(sea_orm_active_enums::StatusEnum::Pending)),
+        geojson_s3_id: Set(None),
+        kml_s3_id: Set(None),
         created_at: Set(Utc::now().naive_utc()),
         created_by: Set(user.id().c(h!())?),
     }
@@ -879,13 +923,22 @@ pub async fn import_map(
                 );
                 input = input.replace(&old_tag[..], &new_tag[..]);
             }
-            std::fs::write(target_path.with_extension("kml"), input)?;
+            std::fs::write(target_path.with_extension("kml"), &input)?;
             let geojson_bytes = std::fs::read(&output)?;
             let geojson_key = crate::messenger::media::store_asset(
                 env_clone.as_ref(),
                 &geojson_bytes,
                 Some(geojson_name.as_str()),
                 Some("application/geo+json"),
+            )
+            .await
+            .c(h!())?;
+            let kml_name = format!("enemy-units-{convert_id}.kml");
+            let kml_key = crate::messenger::media::store_asset(
+                env_clone.as_ref(),
+                input.as_bytes(),
+                Some(kml_name.as_str()),
+                Some("application/vnd.google-earth.kml+xml"),
             )
             .await
             .c(h!())?;
@@ -896,23 +949,39 @@ pub async fn import_map(
             )
             .await
             .c(h!())?;
+            bgtask_log(
+                Some(bgtask_id),
+                &format!("> stored kml to {kml_key}"),
+                &dbx,
+            )
+            .await
+            .c(h!())?;
 
-            let res: Result<(), AppError> = Ok(());
-
-            finish_bgtask(Some(bgtask_id), &dbx, &res).await.c(h!())?;
-            Ok::<(), AppError>(())
+            Ok::<(String, String), AppError>((geojson_key, kml_key))
         };
 
         println!("> task finished");
+        let res = res.await;
+        let res_for_bgtask =
+            res.as_ref().map(|_| ()).map_err(|e| AppError::BL {
+                msg: format!("{e:?}"),
+            });
         let mut convert_active = convert.into_active_model();
 
-        convert_active.status =
-            Set(Some(sea_orm_active_enums::StatusEnum::Success));
-        if let Err(e) = res.await {
-            println!("> error: {e:?}");
-            convert_active.status =
-                Set(Some(sea_orm_active_enums::StatusEnum::Failed));
+        match res {
+            Ok((geojson_key, kml_key)) => {
+                convert_active.status =
+                    Set(Some(sea_orm_active_enums::StatusEnum::Success));
+                convert_active.geojson_s3_id = Set(Some(geojson_key));
+                convert_active.kml_s3_id = Set(Some(kml_key));
+            }
+            Err(e) => {
+                println!("> error: {e:?}");
+                convert_active.status =
+                    Set(Some(sea_orm_active_enums::StatusEnum::Failed));
+            }
         }
+        let _ = finish_bgtask(Some(bgtask_id), &dbx, &res_for_bgtask).await;
         let _ = convert_active.update(&dbx).await;
     });
 
@@ -1594,7 +1663,7 @@ async fn download_layer_result(
         .await
         .c(h!())?
         .ok_or(format!("Result not found for task id: {}", req.bgtask_id))?;
-    let res_json = bgtask_res.res_json.ok_or(format!(
+    let res_json = bgtask_res.res_json.clone().ok_or(format!(
         "res_json must be non empty for task id: {}",
         req.bgtask_id
     ))?;
@@ -1603,10 +1672,42 @@ async fn download_layer_result(
     let tmp_dir = TempDir::new()?;
     let filename = format!("{}.kmz", downloaded_layer.overlay_name);
     let outfile = tmp_dir.path().join(filename);
-    let res_bytes = bgtask_res.res_bytes.ok_or(format!(
-        "res_bytes must be non empty for task id: {}",
-        req.bgtask_id
-    ))?;
+    let res_bytes = match bgtask_res.res_s3_id.as_deref() {
+        Some(key) => {
+            crate::messenger::media::fetch_media_bytes_by_key(env.as_ref(), key)
+                .await
+                .c(h!())?
+        }
+        None => {
+            let res_bytes = bgtask_res.res_bytes.clone().ok_or(format!(
+                "res_bytes must be non empty for task id: {}",
+                req.bgtask_id
+            ))?;
+            if env.config.s3_config.is_none() || env.s3_config.is_none() {
+                res_bytes
+            } else {
+                let filename_s = outfile
+                    .file_name()
+                    .ok_or("missing kmz filename")?
+                    .to_string_lossy()
+                    .to_string();
+                let res_s3_id = crate::messenger::media::store_asset(
+                    env.as_ref(),
+                    &res_bytes,
+                    Some(filename_s.as_str()),
+                    Some("application/vnd.google-earth.kmz"),
+                )
+                .await
+                .c(h!())?;
+                let mut bgtask_res_active: bgtask_res::ActiveModel =
+                    bgtask_res.into();
+                bgtask_res_active.res_s3_id = Set(Some(res_s3_id));
+                bgtask_res_active.res_bytes = Set(None);
+                bgtask_res_active.update(&env.dbx).await.c(h!())?;
+                res_bytes
+            }
+        }
+    };
     std::fs::write(&outfile, &res_bytes)?;
     let file = actix_files::NamedFile::open_async(outfile).await.c(h!())?;
     Ok(file.into_response(&http_req))

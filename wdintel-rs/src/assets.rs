@@ -1,8 +1,8 @@
 use crate::config::get_assets_folder;
-use crate::h;
-use crate::types::{Env, ShortContext};
+use crate::types::Env;
 use actix_files::NamedFile;
-use actix_web::{get, web, HttpRequest, HttpResponse, Responder};
+use actix_web::{web, HttpRequest, HttpResponse, Responder};
+use log::error;
 use std::path::PathBuf;
 
 pub async fn serve_assets(
@@ -20,17 +20,30 @@ pub async fn serve_assets(
     }
 
     // 2. Fallback: Attempt to read from S3
-    let key = path
+    let m_key = path
         .as_path()
         .file_stem()
-        .c(h!())?
-        .to_string_lossy()
-        .to_string();
+        .map(|s| s.to_string_lossy().to_string());
 
-    match crate::messenger::media::fetch_media_bytes_by_key(&env, &key).await {
-        Ok(body) => HttpResponse::Ok()
+    let m_body = match m_key {
+        None => None,
+        Some(key) => {
+            match crate::messenger::media::fetch_media_bytes_by_key(&env, &key)
+                .await
+            {
+                Ok(body) => Some(body),
+                Err(e) => {
+                    error!("failed to load asset: {e:?}");
+                    None
+                }
+            }
+        }
+    };
+
+    match m_body {
+        Some(body) => HttpResponse::Ok()
             .content_type("application/octet-stream")
             .body(body),
-        Err(_) => HttpResponse::NotFound().body("Asset not found"),
+        None => HttpResponse::NotFound().body("Asset not found"),
     }
 }

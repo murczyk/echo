@@ -10,7 +10,7 @@ impl MigrationTrait for Migration {
 
         db.execute_unprepared(
             "
-            alter table bgtask_res add column res_url text;
+            alter table bgtask_res add column res_s3_id text;
             ",
         )
         .await?;
@@ -23,7 +23,7 @@ impl MigrationTrait for Migration {
 
         db.execute_unprepared(
             "
-            alter table bgtask_res drop column res_url;
+            alter table bgtask_res drop column res_s3_id;
             ",
         )
         .await?;
