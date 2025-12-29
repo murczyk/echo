@@ -6,7 +6,7 @@ from typing import Any
 import fasttext
 import numpy as np
 import pandas as pd
-from fasttext.FastText import _FastText
+from fasttext.FastText import _FastText, loss_name, model_name
 from mlflow import pyfunc
 from mlflow.artifacts import download_artifacts
 from mlflow.models import Model
@@ -14,6 +14,53 @@ from mlflow.models.model import MLMODEL_FILE_NAME
 from mlflow.utils.environment import _CONDA_ENV_FILE_NAME, _PYTHON_ENV_FILE_NAME
 
 FLAVOR_NAME = "fasttext"
+UNSUPERVISED_ARGS = [
+    "model",
+    "lr",
+    "dim",
+    "ws",
+    "epoch",
+    "minCount",
+    "minCountLabel",
+    "minn",
+    "maxn",
+    "neg",
+    "wordNgrams",
+    "loss",
+    "bucket",
+    "thread",
+    "lrUpdateRate",
+    "t",
+    "label",
+    "verbose",
+    "pretrainedVectors",
+]
+SUPERVISED_ARGS = [
+    "lr",
+    "dim",
+    "ws",
+    "epoch",
+    "minCount",
+    "minCountLabel",
+    "minn",
+    "maxn",
+    "neg",
+    "wordNgrams",
+    "loss",
+    "bucket",
+    "thread",
+    "lrUpdateRate",
+    "t",
+    "label",
+    "verbose",
+    "pretrainedVectors",
+    "seed",
+    "autotuneValidationFile",
+    "autotuneMetric",
+    "autotunePredictions",
+    "autotuneDuration",
+    "autotuneModelSize",
+]
 
 
 def save_model(
@@ -141,6 +188,12 @@ class FastTextModelWrapper:
         records = map(make_record, zip(all_labels, all_probs))
         df = pd.DataFrame.from_records(records, columns=self.label_freq["label"])
 
+        positive_label = params.get("positive_label")
+        if positive_label:
+            df = df[positive_label]
+        if "threshold" in params:
+            df = (df > threshold).astype(int)
+
         return df
 
 
@@ -148,6 +201,53 @@ def _load_pyfunc(path):
     """Load model as PyFunc"""
     model = load_model(path)
     return FastTextModelWrapper(model)
+
+
+def get_training_args(keys: list[str], **kwargs):
+    return {
+        key: value for key, value in kwargs.items() if key in keys and value is not None
+    }
+
+
+def get_model_params(model: _FastText):
+    args = model.f.getArgs()
+    params = {}
+    keys = SUPERVISED_ARGS if args.model == model_name.supervised else UNSUPERVISED_ARGS
+
+    for key in keys:
+        params[key] = getattr(args, key)
+
+    if "model" in params:
+        params["model"] = convert_model_name(params["model"])
+
+    if "loss" in params:
+        params["loss"] = convert_loss_name(params["loss"])
+
+    return params
+
+
+def convert_model_name(model):
+    if model == model_name.cbow:
+        return "cbow"
+    if model == model_name.skipgram:
+        return "skipgram"
+    if model == model_name.supervised:
+        return "supervised"
+    else:
+        raise ValueError("Unrecognized model name")
+
+
+def convert_loss_name(loss):
+    if loss == loss_name.ns:
+        return "ns"
+    if loss == loss_name.hs:
+        return "hs"
+    if loss == loss_name.softmax:
+        return "softmax"
+    if loss == loss_name.ova:
+        return "ova"
+    else:
+        raise ValueError("Unrecognized loss name")
 
 
 def write_word_vectors(model: _FastText, path: str):

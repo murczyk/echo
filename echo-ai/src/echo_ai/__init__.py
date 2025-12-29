@@ -1,15 +1,18 @@
 import argparse
 import multiprocessing
+from concurrent.futures import ThreadPoolExecutor
 
 import mlflow
 
-from .loader import load_dataset
+from .loader import load_dataset, to_pandas
+from .supervised import train_supervised
 from .unsupervised import train_unsupervised
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--unsupervised", action="store_true", default=False)
+    parser.add_argument("--supervised", action="store_true", default=False)
     parser.add_argument("--thread", type=int, default=multiprocessing.cpu_count())
     parser.add_argument("--dim", type=int, default=100)
     parser.add_argument("--seed", type=int, default=4313)
@@ -20,10 +23,7 @@ def main() -> None:
     parser.add_argument("--minCount", type=int)
     parser.add_argument("--wordNgrams", type=int)
     parser.add_argument("--verbose", type=int, default=3)
-    parser.add_argument("--autotune", action="store_true", default=False)
-    parser.add_argument(
-        "--autotuneMetric", type=str, default="precisionAtRecall:80:__label__1"
-    )
+    parser.add_argument("--autotuneMetric", type=str)  # precisionAtRecall:80:__label__1
     parser.add_argument("--corpus", type=str, default="corpus.txt")
     parser.add_argument("--pretrainedVectors", type=str, default="pretrained.vec")
     parser.add_argument("--autotuneDuration", type=int)
@@ -35,14 +35,18 @@ def main() -> None:
     parser.add_argument("--bucket", type=int)
     parser.add_argument("--lrUpdateRate", type=int)
     parser.add_argument("--t", type=float)
-    parser.add_argument("--experiment", type=str, default="ECHO AI")
     parser.add_argument("data_file", type=str)
     args = vars(parser.parse_args())
 
-    mlflow.set_experiment(args["experiment"])
     dataset = load_dataset(args["data_file"])
+    df = to_pandas(dataset.ds)
+    print(df.head())
 
     if args["unsupervised"]:
+        mlflow.set_experiment("ECHO AI Unsupervised")
         with mlflow.start_run() as run:
             print(f"starting training for unsupervised model: {run.info.run_id}")
             model, model_info = train_unsupervised(dataset, **args)
+    if args["supervised"]:
+        with ThreadPoolExecutor(max_workers=multiprocessing.cpu_count()) as executor:
+            train_supervised(executor, dataset, **args)

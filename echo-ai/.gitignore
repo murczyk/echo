@@ -3,3 +3,5 @@ mlruns
 mlflow.db
 *.corpus.txt
 *.vec
+*.train.*.txt
+*.test.*.txt

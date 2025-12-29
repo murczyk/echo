@@ -3,6 +3,9 @@ import re
 from pathlib import Path
 
 import datasets
+import pandas as pd
+import pyarrow as pa
+from datasets import ClassLabel, Dataset, Features, Value
 from mlflow.data.huggingface_dataset import HuggingFaceDataset, from_huggingface
 
 pat_alnum_apostrophe = re.compile(r"[\w'`\u2019\u02BC]+", re.UNICODE)
@@ -15,6 +18,59 @@ def preprocess_text(text: str) -> str:
 
 def preprocess_batched(texts: list[str]):
     return {"text": [text for text in map(preprocess_text, texts) if text]}
+
+
+def to_pd_series(pa_array: pa.Array, **kwargs) -> pd.Series:
+    return pd.Series(pd.arrays.ArrowExtensionArray(pa_array), **kwargs)
+
+
+def prepend_labels(t: pa.Table):
+    df = to_pandas(t)
+    df.dropna(subset=["label"], inplace=True)
+
+    label = df["label"]
+    text = df["text"]
+
+    with_label = label == 1
+    text[with_label] = "__label__1 " + text[with_label]
+
+    without_label = label == 0
+    text[without_label] = "__label__0 " + text[without_label]
+
+    return pa.Table.from_pandas(df, preserve_index=False)
+
+
+def slice_for_label(ds: Dataset, label_column_name: str):
+    ds = ds.rename_column(label_column_name, "label")
+    ds = ds.select_columns(["text", "label"])
+    features = Features(
+        {
+            "text": Value("string"),
+            "label": ClassLabel(num_classes=2),
+        }
+    )
+    ds = ds.cast(features)
+    ds = ds.with_format("arrow")
+    ds = ds.map(
+        prepend_labels,
+        batched=True,
+        batch_size=100000,
+        num_proc=multiprocessing.cpu_count(),
+        remove_columns=["text", "label"],
+    )
+    ds = ds.select_columns(["text", "label"])
+
+    return ds
+
+
+def to_pandas(dataset: Dataset | pa.Table) -> pd.DataFrame:
+    if isinstance(dataset, pa.Table):
+        arrow_table = dataset
+    else:
+        arrow_table = dataset.with_format("arrow")[:]  # pyright: ignore
+
+    df = arrow_table.to_pandas(types_mapper=pd.ArrowDtype)  # pyright: ignore
+    return df
 
 
 def load_dataset(data_file: str, data_dir: str | None = None) -> HuggingFaceDataset:

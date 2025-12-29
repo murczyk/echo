@@ -5,38 +5,13 @@ import fasttext
 import mlflow
 from mlflow.data.huggingface_dataset import HuggingFaceDataset
 from mlflow.entities.logged_model_input import LoggedModelInput
-from mlflow.tracking.fluent import _initialize_logged_model
 
-from .fasttext_model import FLAVOR_NAME, log_model
-
-
-def get_unsupervised_args(args):
-    arg_names = [
-        "model",
-        "lr",
-        "dim",
-        "ws",
-        "epoch",
-        "minCount",
-        "minCountLabel",
-        "minn",
-        "maxn",
-        "neg",
-        "wordNgrams",
-        "loss",
-        "bucket",
-        "thread",
-        "lrUpdateRate",
-        "t",
-        "label",
-        "verbose",
-        "pretrainedVectors",
-    ]
-    return {
-        key: value
-        for key, value in args.items()
-        if key in arg_names and value is not None
-    }
+from .fasttext_model import (
+    UNSUPERVISED_ARGS,
+    get_model_params,
+    get_training_args,
+    log_model,
+)
 
 
 def train_unsupervised(dataset: HuggingFaceDataset, **kwargs):
@@ -54,16 +29,15 @@ def train_unsupervised(dataset: HuggingFaceDataset, **kwargs):
 
     pretrained_vectors = kwargs.get("pretrainedVectors", "pretrained.vec")
     del kwargs["pretrainedVectors"]
-    args = get_unsupervised_args(kwargs)
 
-    print(args)
-    model = fasttext.train_unsupervised(input=corpus, **args)
+    fasttext_kwargs = get_training_args(UNSUPERVISED_ARGS, **kwargs)
 
-    params = args.copy()
-    del params["verbose"]
-    del params["thread"]
+    print(f"fasttext arguments: {fasttext_kwargs}")
+    model = fasttext.train_unsupervised(input=corpus, **fasttext_kwargs)
 
-    mlflow.log_params(params)
+    model_params = get_model_params(model)
+    print(f"params: {model_params}")
+    mlflow.log_params(model_params)
 
     name = "unsupervised"
     model_info = log_model(model, name=name, pretrained_vectors=pretrained_vectors)
