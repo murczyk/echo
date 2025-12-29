@@ -604,22 +604,6 @@ view user model shared route =
                         [ input
                             [ class "form-check-input"
                             , type_ "checkbox"
-                            , checked model.reportTagsOnlyThisUnit
-                            , id "report-tags-only-this-unit"
-                            , onClick <| ReportTagsOnlyThisUnitToggle
-                            ]
-                            []
-                        , label
-                            [ class "form-check-label"
-                            , for "report-tags-only-this-unit"
-                            ]
-                            [ text "лише коментарі мого підрозділу"
-                            ]
-                        ]
-                    , div [ class "form-check mt-2" ]
-                        [ input
-                            [ class "form-check-input"
-                            , type_ "checkbox"
                             , checked model.reportTagsOnlyThisUnitForReport
                             , id "report-tags-only-this-unit-docx"
                             , onClick <| ReportTagsOnlyThisUnitForReportToggle
@@ -629,7 +613,7 @@ view user model shared route =
                             [ class "form-check-label"
                             , for "report-tags-only-this-unit-docx"
                             ]
-                            [ text "лише теги мого підрозділу"
+                            [ text "лише теги/коментарі мого підрозділу"
                             ]
                         ]
                     ]
