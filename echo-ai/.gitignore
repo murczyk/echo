@@ -1,2 +1,5 @@
 fasttext-models
 mlruns
+mlflow.db
+*.corpus.txt
+*.vec

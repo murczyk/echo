@@ -726,6 +726,22 @@ setup-py:
     ensure_nonempty "server" "{{ server }}"
     ssh {{ server }} 'sudo python3 -m pip install -U -r /usr/share/wdintel-py/requirements.txt'
 
+ai-mlflow-gc:
+    #!/bin/bash
+    cd echo-ai
+    . .env
+    [[ -d .venv ]] || uv venv --relocatable
+    . .venv/bin/activate
+    uv run mlflow gc --backend-store-uri="$MLFLOW_BACKEND_STORE_URI" --artifacts-destination="$MLFLOW_DEFAULT_ARTIFACT_ROOT"
+
+ai-mlflow-server:
+    #!/bin/bash
+    cd echo-ai
+    . .env
+    [[ -d .venv ]] || uv venv --relocatable
+    . .venv/bin/activate
+    uv run mlflow server
+
 deploy-echo-ai:
     #!/bin/bash
     set -euxo pipefail
