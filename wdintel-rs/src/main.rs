@@ -791,6 +791,7 @@ async fn async_main(
         Cmd::OneoffRadioPerDayPerAbonent(ps) => {
             kml::oneoff_radio_per_day_per_abonent_main(mode, &ps, None, None)
                 .await
+                .map(|_| ())
         }
         Cmd::OneoffFixKmz(ps) => kml::oneoff_fix_kml_main(mode, &ps).await,
         Cmd::Migrate => migration::run_migration_1(mode).await,

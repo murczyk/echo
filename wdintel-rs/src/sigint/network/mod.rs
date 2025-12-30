@@ -8,6 +8,7 @@ use crate::event_stream::types::*;
 use crate::rer_importer::reports::{
     cleanup_old_reports_nofail, save_report_log,
 };
+use std::str::FromStr;
 
 use crate::sigint;
 use crate::sigint::etalonka::query::*;
@@ -29,7 +30,6 @@ use sea_orm::{
 use sea_query::{Alias, Expr, Query};
 use sqlx::FromRow;
 use std::collections::{BTreeSet, HashMap};
-use std::str::FromStr;
 use time::{Duration as TimeDuration, PrimitiveDateTime};
 
 pub mod bl;
