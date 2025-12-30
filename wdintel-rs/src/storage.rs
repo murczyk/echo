@@ -11,6 +11,7 @@ use log::{info, warn};
 use opendal::Operator;
 use rand::Rng;
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::time::Duration;
 use strong_box::{Key, StaticStrongBox, StrongBox};
 use uuid::Uuid;
@@ -43,9 +44,27 @@ pub async fn serve_assets(
     }
 
     // 2. Fallback: Attempt to read from S3
-    match crate::messenger::media::fetch_media_bytes_by_key(&env, filename)
-        .await
-    {
+    let file_id = PathBuf::from(filename)
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .and_then(|f| Uuid::from_str(f.as_str()).ok());
+    let id = match file_id {
+        Some(id) => {
+            let m_ext = PathBuf::from(filename)
+                .extension()
+                .map(|s| s.to_string_lossy().to_string());
+            let key = nested_object_key(&id);
+            match m_ext {
+                None => key,
+                Some(ext) => format!("{key}.{ext}"),
+            }
+        }
+        None => {
+            warn!("unexpected filename format: {filename}, expected UUID + '.' + extension");
+            filename.to_string()
+        }
+    };
+    match crate::messenger::media::fetch_media_bytes_by_key(&env, &id).await {
         Ok(body) => Ok(HttpResponse::Ok()
             .content_type("application/octet-stream")
             .body(body)),
