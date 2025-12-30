@@ -1,8 +1,10 @@
+use crate::config::PALITRA_STORAGE_DIR_NAME;
 use crate::h;
 use crate::kml::types::*;
 use crate::palitra::types::*;
-use crate::types::ShortContext;
-use log::error;
+use crate::types::{Env, ShortContext};
+use chrono::Utc;
+use log::{error, info};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{self};
@@ -16,13 +18,31 @@ use zip::ZipArchive;
 pub async fn load_coordinates_from_file(
     file_name: String,
     data: Vec<u8>,
-    storage_dir: &Path,
+    env: &Env,
 ) -> anyhow::Result<Vec<PalitraPoint>> {
-    let safe_file_name = sanitize_upload_filename(&file_name);
-    let persistent_path = storage_dir.join(safe_file_name.clone());
-    fs::write(persistent_path.as_path(), data.clone())
+    let storage_dir = std::env::temp_dir()
+        .join(PALITRA_STORAGE_DIR_NAME)
+        .join(format!("{}", Utc::now().naive_utc().date()));
+    tokio::fs::create_dir_all(storage_dir.as_path())
         .await
         .c(h!())?;
+    let safe_file_name = sanitize_upload_filename(&file_name);
+    // store original palitra file in s3. update in config in order to disable
+    if env
+        .config
+        .store_palitra_in_s3
+        .unwrap_or(crate::config::DEFAULT_STORE_PALITRA_IN_S3)
+    {
+        let file_s3_id = crate::messenger::media::store_asset(
+            &env,
+            &data,
+            Some(&safe_file_name),
+            Some(crate::config::KMZ_CONTENT_TYPE),
+        )
+        .await
+        .c(h!())?;
+        info!("uploaded {safe_file_name} to b2, available at {file_s3_id}");
+    }
 
     let tmp_dir = tempdir()?;
     let path = tmp_dir.path().join(&safe_file_name);
@@ -40,7 +60,7 @@ pub async fn load_coordinates_from_file(
     }
 }
 
-fn sanitize_upload_filename(filename: &str) -> String {
+pub fn sanitize_upload_filename(filename: &str) -> String {
     Path::new(filename)
         .file_name()
         .and_then(|name| name.to_str())

@@ -16,7 +16,6 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::runtime::Handle;
 use tokio_util::sync::CancellationToken;
 
-mod assets;
 pub mod atak;
 pub mod aws;
 pub mod backup;

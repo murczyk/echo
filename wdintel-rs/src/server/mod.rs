@@ -572,7 +572,7 @@ pub async fn main_server(
             .service(crate::palitra::analyze_kmz)
             .service(
                 web::scope(get_assets_url())
-                    .route("/{filename:.*}", web::get().to(crate::assets::serve_assets)))
+                    .route("/{filename:.*}", web::get().to(crate::storage::serve_assets)))
     })
         .bind((bind_ip, bind_port))?
         .run();

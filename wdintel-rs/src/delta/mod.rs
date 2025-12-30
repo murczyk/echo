@@ -419,7 +419,7 @@ async fn store_radios_outputs(
         env,
         &outputs.kmz_per_radio_bytes,
         Some(outputs.kmz_per_radio_name.as_str()),
-        Some("application/vnd.google-earth.kmz"),
+        Some(crate::config::KMZ_CONTENT_TYPE),
     )
     .await
     .c(h!())?;
@@ -427,7 +427,7 @@ async fn store_radios_outputs(
         env,
         &outputs.kmz_per_date_bytes,
         Some(outputs.kmz_per_date_name.as_str()),
-        Some("application/vnd.google-earth.kmz"),
+        Some(crate::config::KMZ_CONTENT_TYPE),
     )
     .await
     .c(h!())?;
@@ -549,7 +549,7 @@ pub async fn radios_download_result_per_radio(
         return Ok(HttpResponse::Ok()
             .insert_header((
                 header::CONTENT_TYPE,
-                "application/vnd.google-earth.kmz",
+                crate::config::KMZ_CONTENT_TYPE,
             ))
             .insert_header(cd)
             .body(data));
@@ -590,7 +590,7 @@ pub async fn radios_download_result_per_date(
         return Ok(HttpResponse::Ok()
             .insert_header((
                 header::CONTENT_TYPE,
-                "application/vnd.google-earth.kmz",
+                crate::config::KMZ_CONTENT_TYPE,
             ))
             .insert_header(cd)
             .body(data));
@@ -1695,7 +1695,7 @@ async fn download_layer_result(
                     env.as_ref(),
                     &res_bytes,
                     Some(filename_s.as_str()),
-                    Some("application/vnd.google-earth.kmz"),
+                    Some(crate::config::KMZ_CONTENT_TYPE),
                 )
                 .await
                 .c(h!())?;

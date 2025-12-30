@@ -1,4 +1,3 @@
-use crate::config::PALITRA_STORAGE_DIR_NAME;
 use crate::entities::*;
 use crate::error::AppError;
 use crate::h;
@@ -13,7 +12,6 @@ use chrono::Utc;
 use futures_util::StreamExt;
 use itertools::Itertools;
 use sea_orm::*;
-use std::path::Path;
 use tempfile::tempdir;
 
 mod bl;
@@ -98,7 +96,7 @@ pub async fn create_palitra_with_kmz(
                     .and_then(|cd| cd.get_filename())
                     .map(|s| s.to_string())
                     .unwrap_or_else(|| "file.kmz".to_string());
-                let filename = sanitize_upload_filename(&raw_filename);
+                let filename = kmz::sanitize_upload_filename(&raw_filename);
                 let mut bytes = Vec::new();
                 while let Some(chunk) = field.next().await {
                     let chunk = chunk.map_err(|e| AppError::BL {
@@ -150,14 +148,10 @@ pub async fn create_palitra_with_kmz(
 
     // Upload points from KMZ in a separate transaction
     let txn = env.dbx.begin().await.c(h!())?;
-    let storage_dir = ensure_storage_dir(&env).await.c(h!())?;
-    let points = kmz::load_coordinates_from_file(
-        filename.clone(),
-        kmz_data,
-        storage_dir.as_path(),
-    )
-    .await
-    .c(h!())?;
+    let points =
+        kmz::load_coordinates_from_file(filename.clone(), kmz_data, &env)
+            .await
+            .c(h!())?;
 
     bl::rewrite_palitra_points(palitra.id, points, &txn)
         .await
@@ -245,7 +239,7 @@ pub async fn analyze_kmz(
         .content_disposition()
         .and_then(|cd| cd.get_filename().map(|s| s.to_string()))
         .unwrap_or_else(|| "file.kmz".to_string());
-    let filename = sanitize_upload_filename(&raw_filename);
+    let filename = kmz::sanitize_upload_filename(&raw_filename);
 
     // Save to temporary directory for analysis
     let tmp_dir = tempdir().c(h!())?;
@@ -318,15 +312,10 @@ pub async fn upload_palitra_points(
 
     let (field, val) = multipart::extract(&mut payload).await.c(h!())?;
     let raw_filename = field.name().c(h!())?.to_string();
-    let filename = sanitize_upload_filename(&raw_filename);
-    let storage_dir = ensure_storage_dir(&env).await.c(h!())?;
-    let points = kmz::load_coordinates_from_file(
-        filename.clone(),
-        val,
-        storage_dir.as_path(),
-    )
-    .await
-    .c(h!())?;
+    let filename = kmz::sanitize_upload_filename(&raw_filename);
+    let points = kmz::load_coordinates_from_file(filename.clone(), val, &env)
+        .await
+        .c(h!())?;
     let txn = env.dbx.begin().await.c(h!())?;
 
     let palitra_id = palitra.id;
@@ -339,24 +328,6 @@ pub async fn upload_palitra_points(
         .c(h!())?;
     txn.commit().await.c(h!())?;
     Ok(Json(()))
-}
-
-async fn ensure_storage_dir(_env: &Data<Env>) -> anyhow::Result<PathBuf> {
-    let storage_dir = std::env::temp_dir()
-        .join(PALITRA_STORAGE_DIR_NAME)
-        .join(format!("{}", Utc::now().naive_utc().date()));
-    tokio::fs::create_dir_all(storage_dir.as_path())
-        .await
-        .c(h!())?;
-    Ok(storage_dir)
-}
-
-fn sanitize_upload_filename(filename: &str) -> String {
-    Path::new(filename)
-        .file_name()
-        .and_then(|name| name.to_str())
-        .map(|name| name.to_string())
-        .unwrap_or_else(|| "file.kmz".to_string())
 }
 
 async fn ensure_palitra_permissions(

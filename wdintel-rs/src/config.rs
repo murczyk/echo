@@ -109,6 +109,8 @@ pub const TAG_SUGGEST_WORKER_BATCH_SIZE: usize = 100;
 pub const TAG_SUGGEST_WORKER_REGEX_CONFIDENCE: f64 = 0.8;
 
 pub const MAX_FIX_WHATSAPP_SENDERS_MESSAGE_DAYS: i64 = 30;
+pub const DEFAULT_STORE_PALITRA_IN_S3: bool = true;
+pub const KMZ_CONTENT_TYPE: &str = "application/vnd.google-earth.kmz";
 
 /// Dynamic config that's different on different deployments
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
@@ -163,6 +165,7 @@ pub struct Config {
     pub feature_group_stats_aggregated: Option<bool>,
     pub feature_delete_uploaded_attachment: Option<bool>,
     pub s3_config: Option<S3Config>,
+    pub store_palitra_in_s3: Option<bool>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
