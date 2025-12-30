@@ -7,6 +7,7 @@ use futures_util::TryStreamExt;
 use indicatif::ProgressBar;
 use sea_orm::*;
 use std::io::Write;
+use std::path::PathBuf;
 use unicode_segmentation::UnicodeSegmentation;
 
 async fn format_f2(
@@ -48,12 +49,11 @@ pub async fn oneoff_gen_dataset_callsigns(mode: Mode) -> Result<(), AppError> {
     let dbx = crate::new_pg_pool_from_config(&config).await.c(h!())?;
 
     let now = Utc::now();
-    let base_dir = std::env::temp_dir();
-    let outfile_p = base_dir.join(format!(
+    let outfile_p = PathBuf::from(config.storage_dir.clone()).join(format!(
         "callsigns-{}.txt",
         now.naive_utc().format("%Y-%m-%dT%H:%M:%S")
     ));
-    let outfile_p_f2 = base_dir.join(format!(
+    let outfile_p_f2 = PathBuf::from(config.storage_dir.clone()).join(format!(
         "callsigns-f2-{}.txt",
         now.naive_utc().format("%Y-%m-%dT%H:%M:%S")
     ));

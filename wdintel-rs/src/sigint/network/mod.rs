@@ -6,8 +6,9 @@ use crate::error::AppError;
 use crate::event_stream::fanout;
 use crate::event_stream::types::*;
 use crate::rer_importer::reports::{
-    cleanup_old_reports_nofail, reports_storage_dir, save_report_log,
+    cleanup_old_reports_nofail, save_report_log,
 };
+use std::str::FromStr;
 
 use crate::sigint;
 use crate::sigint::etalonka::query::*;
@@ -2446,7 +2447,9 @@ pub async fn report_networks_goi(
         .c(h!())?;
     cleanup_old_reports_nofail(&env.dbx, &env.config).await;
 
-    let outfolder = reports_storage_dir();
+    let storage_dir =
+        std::path::PathBuf::from_str(&env.config.storage_dir).c(h!())?;
+    let outfolder = storage_dir.join("reports_log");
     let _ = std::fs::create_dir_all(&outfolder);
     let filename = format!(
         "goi_report_{}.xlsx",

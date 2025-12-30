@@ -14,12 +14,13 @@ use log::*;
 
 use crate::config::Config;
 use crate::rer_importer::reports::{
-    cleanup_old_reports_nofail, reports_storage_dir, save_report_log,
+    cleanup_old_reports_nofail, save_report_log,
 };
 use crate::sigint::etalonka::query::*;
 use crate::sigint::etalonka::types::*;
 use crate::sigint::etalonka::util::*;
 use sea_orm::DatabaseConnection;
+use std::str::FromStr;
 
 const OLD_CALLSIGNS_COLOR: &str = "696969";
 const DEFAULT_TABLE_HEADER_COLOR: &str = "f2f2f2";
@@ -203,9 +204,11 @@ pub async fn generate_networks_docx_report(
     filename: &str,
     etalonka_type: &EtalonkaReportType,
     etalonka_data: EtalonkaData,
-    _config: &Config,
+    config: &Config,
 ) -> Result<PathBuf, AppError> {
-    let outfolder = reports_storage_dir();
+    let storage_dir =
+        std::path::PathBuf::from_str(&config.storage_dir).context(h!())?;
+    let outfolder = storage_dir.join("reports_log");
     let _ = std::fs::create_dir_all(&outfolder);
 
     let outpath = outfolder.join(filename);
