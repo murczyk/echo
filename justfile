@@ -726,6 +726,14 @@ setup-py:
     ensure_nonempty "server" "{{ server }}"
     ssh {{ server }} 'sudo python3 -m pip install -U -r /usr/share/wdintel-py/requirements.txt'
 
+ai-mlflow-train data_file *flags:
+    #!/bin/bash
+    cd echo-ai
+    . .env
+    [[ -d .venv ]] || uv venv --relocatable
+    . .venv/bin/activate
+    uv run -- echo-ai {{flags}} "{{data_file}}"
+
 ai-mlflow-gc:
     #!/bin/bash
     cd echo-ai

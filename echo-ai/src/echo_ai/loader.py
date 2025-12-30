@@ -17,15 +17,15 @@ def preprocess_text(text: str) -> str:
 
 
 def preprocess_batched(texts: list[str]):
-    return {"text": [text for text in map(preprocess_text, texts) if text]}
+    return {"text": [text for text in map(preprocess_text, texts)]}
 
 
-def to_pd_series(pa_array: pa.Array, **kwargs) -> pd.Series:
+def to_pd_series_arrow(pa_array: pa.Array, **kwargs) -> pd.Series:
     return pd.Series(pd.arrays.ArrowExtensionArray(pa_array), **kwargs)
 
 
 def prepend_labels(t: pa.Table):
-    df = to_pandas(t)
+    df = to_pandas_arrow(t)
     df.dropna(subset=["label"], inplace=True)
 
     label = df["label"]
@@ -43,13 +43,6 @@ def prepend_labels(t: pa.Table):
 def slice_for_label(ds: Dataset, label_column_name: str):
     ds = ds.rename_column(label_column_name, "label")
     ds = ds.select_columns(["text", "label"])
-    features = Features(
-        {
-            "text": Value("string"),
-            "label": ClassLabel(num_classes=2),
-        }
-    )
-    ds = ds.cast(features)
     ds = ds.with_format("arrow")
     ds = ds.map(
         prepend_labels,
@@ -63,7 +56,7 @@ def slice_for_label(ds: Dataset, label_column_name: str):
     return ds
 
 
-def to_pandas(dataset: Dataset | pa.Table) -> pd.DataFrame:
+def to_pandas_arrow(dataset: Dataset | pa.Table) -> pd.DataFrame:
     if isinstance(dataset, pa.Table):
         arrow_table = dataset
     else:
@@ -73,17 +66,37 @@ def to_pandas(dataset: Dataset | pa.Table) -> pd.DataFrame:
     return df
 
 
-def load_dataset(data_file: str, data_dir: str | None = None) -> HuggingFaceDataset:
+def filter_empty(t: pa.Table):
+    s = to_pd_series_arrow(t["text"])
+    mask = s != ""
+    return pa.array(mask)
+
+
+def load_dataset(
+    label_dict: dict[int, str], data_file: str, data_dir: str | None = None
+) -> HuggingFaceDataset:
     dataset_dict = datasets.load_dataset(
         "parquet", data_files=data_file, data_dir=data_dir
     )
+
+    features = {
+        "text": Value("string"),
+        "__source": Value("string"),
+        "__id": Value("string"),
+        "__datetime": Value("string"),
+    }
+    for label_index in label_dict.keys():
+        features[f"label_{label_index}"] = ClassLabel(num_classes=2)  # pyright: ignore
+
     hf_dataset = dataset_dict["train"].map(
         preprocess_batched,
         input_columns=["text"],
         batched=True,
         num_proc=multiprocessing.cpu_count(),
         remove_columns="text",
+        features=Features(features),
     )
+    hf_dataset = hf_dataset.with_format("arrow").filter(filter_empty, batched=True)
 
     dataset = from_huggingface(
         hf_dataset,

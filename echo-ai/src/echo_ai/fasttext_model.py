@@ -1,7 +1,7 @@
 import os
 import sys
 from importlib.metadata import version
-from typing import Any
+from typing import Any, cast
 
 import fasttext
 import numpy as np
@@ -11,6 +11,7 @@ from mlflow import pyfunc
 from mlflow.artifacts import download_artifacts
 from mlflow.models import Model
 from mlflow.models.model import MLMODEL_FILE_NAME
+from mlflow.pyfunc.model import PythonModel, PythonModelContext
 from mlflow.utils.environment import _CONDA_ENV_FILE_NAME, _PYTHON_ENV_FILE_NAME
 
 FLAVOR_NAME = "fasttext"
@@ -138,23 +139,24 @@ def load_model(model_uri: str) -> _FastText:
     return fasttext.load_model(model_path)
 
 
-class FastTextModelWrapper:
+class _FastTextModelWrapper:
     """PyFunc wrapper for FastText models"""
 
     def __init__(self, fasttext_model: _FastText):
         self.fasttext_model = fasttext_model
         label, freq = fasttext_model.f.getLabels("strict")
-        index = pd.Series(
-            [fasttext_model.get_label_id(label) for label in label], dtype=np.int32
-        )
-        label = pd.Series(label, index=index, dtype=str)
-        freq = pd.Series(freq, index=index, dtype=np.int64)
-        d = {"label": label, "freq": freq}
-        self.label_freq = pd.DataFrame(d, index=index)
+        label_dict = {fasttext_model.get_label_id(label): label for label in label}
+        freq = pd.Series(freq, index=label_dict.keys(), dtype=np.int64)
+        freq.sort_index(inplace=True)
+        freq.rename(index=label_dict, inplace=True)
+        self.label_freq = freq
 
-    def predict(self, model_input: pd.DataFrame, params: dict[str, Any] | None = None):
-        """Predict using configuration DataFrame"""
-
+    def predict(
+        self,
+        context: PythonModelContext,
+        model_input: pd.DataFrame,
+        params: dict[str, Any] | None = None,
+    ) -> pd.DataFrame | pd.Series:
         if model_input.shape[1] != 1:
             raise ValueError("DataFrame must have exactly 1 column")
 
@@ -168,12 +170,13 @@ class FastTextModelWrapper:
         text = text.to_list()
         if not params:
             params = {}
+        model_config = {}
+        if context and context.model_config:
+            model_config = cast(dict[str, Any], context.model_config)
 
-        k = params.get("k", -1)
-        threshold = params.get("threshold", 0)
-
+        k = -1
+        threshold = 0
         on_unicode_error = "strict"
-
         all_labels, all_probs = self.fasttext_model.f.multilinePredict(
             text, k, threshold, on_unicode_error
         )
@@ -186,21 +189,66 @@ class FastTextModelWrapper:
             return row
 
         records = map(make_record, zip(all_labels, all_probs))
-        df = pd.DataFrame.from_records(records, columns=self.label_freq["label"])
+        df = pd.DataFrame.from_records(records, columns=self.label_freq.index.tolist())
+        df.clip(0.0, 1.0, inplace=True)
 
-        positive_label = params.get("positive_label")
-        if positive_label:
-            df = df[positive_label]
-        if "threshold" in params:
-            df = (df > threshold).astype(int)
+        positive_label = params.get(
+            "positive_label", model_config.get("positive_label")
+        )
+        method = params.get("method", model_config.get("method"))
+
+        if method == "predict_proba":
+            return df.to_numpy()
+        else:
+            if positive_label:
+                df = df[positive_label]
+            threshold = params.get("threshold", model_config.get("threshold"))
+            if threshold is not None:
+                df = df > threshold
 
         return df
+
+
+class FastTextPythonModel(PythonModel):
+    def __init__(self, fasttext_model: _FastText) -> None:
+        self.wrapper = _FastTextModelWrapper(fasttext_model)
+
+    def load_context(self, context: PythonModelContext):
+        self.context = context
+
+    def predict(
+        self, model_input, params: dict[str, Any] | None = None
+    ) -> pd.DataFrame | pd.Series:
+        return self.wrapper.predict(self.context, model_input, params)
+
+
+def get_python_model(fasttext_model: _FastText, model_config: dict[str, Any] = {}):
+    model = FastTextPythonModel(fasttext_model)
+    context = PythonModelContext(artifacts={}, model_config=model_config)
+    model.load_context(context)
+    return model
+
+
+def get_pyfunc_model(
+    fasttext_model: _FastText,
+    model_config: dict[str, Any] = {},
+    model_id: str | None = None,
+):
+    python_model = get_python_model(fasttext_model, model_config)
+    model = Model()
+    model = pyfunc.add_to_model(
+        model,
+        __name__,  # Your module name
+        conda_env=_CONDA_ENV_FILE_NAME,
+        python_env=_PYTHON_ENV_FILE_NAME,
+    )
+    return pyfunc.PyFuncModel(model, python_model, model_id=model_id)
 
 
 def _load_pyfunc(path):
     """Load model as PyFunc"""
     model = load_model(path)
-    return FastTextModelWrapper(model)
+    return _FastTextModelWrapper(model)
 
 
 def get_training_args(keys: list[str], **kwargs):

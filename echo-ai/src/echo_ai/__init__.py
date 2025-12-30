@@ -4,15 +4,27 @@ from concurrent.futures import ThreadPoolExecutor
 
 import mlflow
 
-from .loader import load_dataset, to_pandas
+from .loader import load_dataset, to_pandas_arrow
 from .supervised import train_supervised
 from .unsupervised import train_unsupervised
+
+LABEL_DICT = {
+    0: "переміщення",
+    1: "бпла",
+    2: "звʼязок",
+    3: "забезп",
+    4: "арта",
+    5: "втрати",
+    6: "іфо",
+    7: "палітра",
+    8: "мораль",
+    9: "зіткнення",
+}
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--unsupervised", action="store_true", default=False)
-    parser.add_argument("--supervised", action="store_true", default=False)
     parser.add_argument("--thread", type=int, default=multiprocessing.cpu_count())
     parser.add_argument("--dim", type=int, default=100)
     parser.add_argument("--seed", type=int, default=4313)
@@ -35,11 +47,12 @@ def main() -> None:
     parser.add_argument("--bucket", type=int)
     parser.add_argument("--lrUpdateRate", type=int)
     parser.add_argument("--t", type=float)
+    parser.add_argument("-l", "--labels", action="extend", nargs=1, required=False)
     parser.add_argument("data_file", type=str)
     args = vars(parser.parse_args())
 
-    dataset = load_dataset(args["data_file"])
-    df = to_pandas(dataset.ds)
+    dataset = load_dataset(LABEL_DICT, args["data_file"])
+    df = to_pandas_arrow(dataset.ds)
     print(df.head())
 
     if args["unsupervised"]:
@@ -47,6 +60,18 @@ def main() -> None:
         with mlflow.start_run() as run:
             print(f"starting training for unsupervised model: {run.info.run_id}")
             model, model_info = train_unsupervised(dataset, **args)
-    if args["supervised"]:
+    else:
+        label_list = args["labels"]
+        label_dict = {}
+        if label_list:
+            label_dict = {
+                key: value
+                for key, value in LABEL_DICT.items()
+                if value in label_list or str(key) in label_list
+            }
+        else:
+            label_dict = LABEL_DICT.copy()
+        label_list = label_dict.values()
+        print(f"starting train_supervised for labels: {label_list}")
         with ThreadPoolExecutor(max_workers=multiprocessing.cpu_count()) as executor:
-            train_supervised(executor, dataset, **args)
+            train_supervised(label_dict, executor, dataset, **args)
