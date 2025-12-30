@@ -13,7 +13,7 @@ pub async fn serve_assets(
     env: web::Data<Env>,
 ) -> Result<impl Responder, AppError> {
     let login = user.id().c(crate::h!())?;
-    crate::users::has_role(&env.dbx, &login, "Rer")
+    crate::users::has_role(&env.dbx, &login, "Basic")
         .await
         .c(crate::h!())?;
 
