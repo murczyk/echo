@@ -375,7 +375,7 @@ pub async fn radios_convert_go(
     res
 }
 
-pub async fn radios_convert_go2(
+async fn radios_convert_go2(
     env: actix_web::web::Data<Env>,
     data_file: &Path,
     m_bgtask: &Option<bgtask::Model>,
