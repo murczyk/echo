@@ -1709,8 +1709,23 @@ async fn download_layer_result(
         }
     };
     std::fs::write(&outfile, &res_bytes)?;
+    let filename = outfile
+        .file_name()
+        .ok_or("missing kmz filename")?
+        .to_string_lossy()
+        .to_string();
+    let cd = header::ContentDisposition {
+        disposition: header::DispositionType::Attachment,
+        parameters: vec![header::DispositionParam::FilenameExt(
+            header::ExtendedValue {
+                charset: header::Charset::Ext("UTF-8".into()),
+                language_tag: None,
+                value: filename.into_bytes(),
+            },
+        )],
+    };
     let file = actix_files::NamedFile::open_async(outfile).await.c(h!())?;
-    Ok(file.into_response(&http_req))
+    Ok(file.set_content_disposition(cd).into_response(&http_req))
 }
 
 #[cfg(test)]
