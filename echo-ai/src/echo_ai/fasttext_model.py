@@ -10,9 +10,34 @@ from fasttext.FastText import _FastText, loss_name, model_name
 from mlflow import pyfunc
 from mlflow.artifacts import download_artifacts
 from mlflow.models import Model
+from mlflow.models.evaluation.evaluators import classifier
 from mlflow.models.model import MLMODEL_FILE_NAME
+from mlflow.pyfunc import PyFuncModel
 from mlflow.pyfunc.model import PythonModel, PythonModelContext
 from mlflow.utils.environment import _CONDA_ENV_FILE_NAME, _PYTHON_ENV_FILE_NAME
+
+original_extract_predict_fns = classifier._extract_predict_fn_and_prodict_proba_fn  # pyright: ignore
+
+
+def _patched_extract_predict_fns(model: PyFuncModel | None):
+    predict_fn, predict_proba_fn = original_extract_predict_fns(model)
+
+    if model and predict_proba_fn is None:
+        model_predict_fn = model._predict_fn
+        signature = model_predict_fn.__func__
+
+        if signature is FastTextPythonModel.predict:
+
+            def func(input_data):
+                params = {"method": "predict_proba"}
+                return model_predict_fn(input_data, params)
+
+            predict_proba_fn = func
+
+    return predict_fn, predict_proba_fn
+
+
+classifier._extract_predict_fn_and_prodict_proba_fn = _patched_extract_predict_fns  # pyright: ignore
 
 FLAVOR_NAME = "fasttext"
 UNSUPERVISED_ARGS = [
@@ -156,7 +181,7 @@ class _FastTextModelWrapper:
         context: PythonModelContext,
         model_input: pd.DataFrame,
         params: dict[str, Any] | None = None,
-    ) -> pd.DataFrame | pd.Series:
+    ) -> pd.DataFrame | pd.Series | np.ndarray:
         if model_input.shape[1] != 1:
             raise ValueError("DataFrame must have exactly 1 column")
 
@@ -168,11 +193,6 @@ class _FastTextModelWrapper:
         text = text + "\n"
 
         text = text.to_list()
-        if not params:
-            params = {}
-        model_config = {}
-        if context and context.model_config:
-            model_config = cast(dict[str, Any], context.model_config)
 
         k = -1
         threshold = 0
@@ -185,24 +205,32 @@ class _FastTextModelWrapper:
             labels, probs = tuple
             row = {}
             for label, prob in zip(labels, probs):
+                if prob > 1.0:
+                    prob = 1.0
                 row[label] = prob
             return row
 
         records = map(make_record, zip(all_labels, all_probs))
-        df = pd.DataFrame.from_records(records, columns=self.label_freq.index.tolist())
-        df.clip(0.0, 1.0, inplace=True)
+        df = pd.DataFrame.from_records(records, columns=self.label_freq.index)
 
-        positive_label = params.get(
-            "positive_label", model_config.get("positive_label")
-        )
-        method = params.get("method", model_config.get("method"))
+        if not params:
+            params = {}
+        model_config = {}
+        if context and context.model_config:
+            model_config = cast(dict[str, Any], context.model_config)
+
+        settings = params | model_config
+        method = settings.get("method", model_config.get("method"))
 
         if method == "predict_proba":
             return df.to_numpy()
         else:
+            positive_label = settings.get(
+                "positive_label", model_config.get("positive_label")
+            )
             if positive_label:
                 df = df[positive_label]
-            threshold = params.get("threshold", model_config.get("threshold"))
+            threshold = params.get("threshold", model_config.get("threshold", 0.5))
             if threshold is not None:
                 df = df > threshold
 
@@ -216,9 +244,12 @@ class FastTextPythonModel(PythonModel):
     def load_context(self, context: PythonModelContext):
         self.context = context
 
+    def get_raw_model(self) -> _FastText:
+        return self.wrapper.fasttext_model
+
     def predict(
         self, model_input, params: dict[str, Any] | None = None
-    ) -> pd.DataFrame | pd.Series:
+    ) -> pd.DataFrame | pd.Series | np.ndarray:
         return self.wrapper.predict(self.context, model_input, params)
 
 
@@ -245,10 +276,10 @@ def get_pyfunc_model(
     return pyfunc.PyFuncModel(model, python_model, model_id=model_id)
 
 
-def _load_pyfunc(path):
+def _load_pyfunc(path, model_config: dict[str, Any] = {}):
     """Load model as PyFunc"""
     model = load_model(path)
-    return _FastTextModelWrapper(model)
+    return get_python_model(fasttext_model=model, model_config=model_config)
 
 
 def get_training_args(keys: list[str], **kwargs):

@@ -8,6 +8,18 @@ import pyarrow as pa
 from datasets import ClassLabel, Dataset, Features, Value
 from mlflow.data.huggingface_dataset import HuggingFaceDataset, from_huggingface
 
+LABEL_DICT = {
+    0: "переміщення",
+    1: "бпла",
+    2: "звʼязок",
+    3: "забезп",
+    4: "арта",
+    5: "втрати",
+    6: "іфо",
+    7: "палітра",
+    8: "мораль",
+    9: "зіткнення",
+}
 pat_alnum_apostrophe = re.compile(r"[\w'`\u2019\u02BC]+", re.UNICODE)
 
 

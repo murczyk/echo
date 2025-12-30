@@ -9,39 +9,20 @@ from datasets import Dataset, DatasetDict
 from mlflow.data.huggingface_dataset import HuggingFaceDataset
 from mlflow.data.pandas_dataset import PandasDataset, from_pandas
 from mlflow.entities.logged_model_input import LoggedModelInput
-from mlflow.models.evaluation.evaluators import classifier
-from mlflow.pyfunc import PyFuncModel
+
+from echo_ai.evaluate import (
+    plot_precision_recall,
+    plot_threshold_recall,
+    run_evaluate_model,
+)
 
 from .fasttext_model import (
     SUPERVISED_ARGS,
-    FastTextPythonModel,
     get_model_params,
-    get_pyfunc_model,
     get_training_args,
     log_model,
 )
 from .loader import slice_for_label, to_pandas_arrow
-
-original_extract_predict_fns = classifier._extract_predict_fn_and_prodict_proba_fn  # pyright: ignore
-
-
-def _patched_extract_predict_fns(model: PyFuncModel):
-    predict_fn, predict_proba_fn = original_extract_predict_fns(model)
-
-    if predict_proba_fn is None:
-        model_predict_fn = model._predict_fn
-        if model_predict_fn.__func__ is FastTextPythonModel.predict:
-
-            def fun(input_data):
-                params = {"method": "predict_proba"}
-                return model_predict_fn(input_data, params)
-
-            predict_proba_fn = fun
-
-    return predict_fn, predict_proba_fn
-
-
-classifier._extract_predict_fn_and_prodict_proba_fn = _patched_extract_predict_fns  # pyright: ignore
 
 
 def to_csv(ds: Dataset, pd: PandasDataset) -> str:
@@ -49,7 +30,6 @@ def to_csv(ds: Dataset, pd: PandasDataset) -> str:
     if not os.path.isfile(path):
         ds.to_csv(
             path,
-            num_proc=multiprocessing.cpu_count(),
             columns=["text"],
             index=False,
             header=False,
@@ -125,6 +105,8 @@ def train_supervised(
                 }
             )
 
+    eval_jobs = []
+
     for job in jobs:
         label_index = job["label_index"]
         label_name = job["label_name"]
@@ -140,8 +122,7 @@ def train_supervised(
         pd_train = from_pandas(df_train, name=f"{label_name}.train", targets="label")
 
         ds_test = dataset_dict["test"]
-        print(f"converting test to pandas for label {label_name}")
-        df_test = ds_test.to_pandas()
+        df_test = to_pandas_arrow(ds_test)
         pd_test = from_pandas(df_test, name=f"{label_name}.test", targets="label")
 
         train_path = to_csv(ds_train, pd_train)
@@ -150,7 +131,7 @@ def train_supervised(
         experiment_name = f"ECHO AI Supervised for '{label_name}'"
         print(f"starting experiment {experiment_name}")
         mlflow.set_experiment(experiment_name)
-        with mlflow.start_run():
+        with mlflow.start_run() as run:
             print(f"starting training for {label_name}")
             print(f"fasttext arguments: {fasttext_kwargs}")
             fasttext_model = fasttext.train_supervised(
@@ -162,25 +143,37 @@ def train_supervised(
             mlflow.log_params(model_params)
 
             name = f"supervised-{label_name}"
-            model_info = log_model(fasttext_model, name=name)
+            model_info = log_model(
+                fasttext_model,
+                name=name,
+                model_type="classifier",
+            )
+            del fasttext_model
             logged_model = LoggedModelInput(model_id=model_info.model_id)
             mlflow.log_input(pd_train, context="training", model=logged_model)
-            mlflow.log_input(pd_test, context="testing", model=logged_model)
+            split_csv = {
+                "train": train_path,
+                "test": test_path,
+            }
+            experiment_id = run.info.experiment_id
+            eval_jobs.append([experiment_id, label_name, model_info, split_csv])
 
-            positive_label = "__label__1"
-            model_config = {"positive_label": positive_label, "threshold": 0.5}
-            model = get_pyfunc_model(
-                fasttext_model, model_config, model_id=model_info.model_id
-            )
+    with multiprocessing.Pool() as pool:
+        results_per_split = pool.map(process_evalute_job, eval_jobs)
+        results_test = [item["test"] for item in results_per_split]
+        results_train = [item["train"] for item in results_per_split]
 
-            mlflow.models.evaluate(
-                model,
-                pd_test,
-                model_id=model_info.model_id,
-                model_type="classifier",
-                evaluators="default",
-                evaluator_config={
-                    "label_list": [False, True],
-                    "pos_label": True,
-                },
-            )
+        mlflow.set_experiment("ECHO AI Supervised")
+        with mlflow.start_run():
+            labels = list(label_dict.values())
+            plot_precision_recall(labels, "test", results_test)
+            plot_threshold_recall(labels, "test", results_test)
+            plot_precision_recall(labels, "train", results_train)
+            plot_threshold_recall(labels, "train", results_train)
+
+
+def process_evalute_job(job):
+    experiment_id, label_name, model_info, split_csv = job
+    return run_evaluate_model(
+        experiment_id, model_info.run_id, label_name, model_info.model_uri, split_csv
+    )

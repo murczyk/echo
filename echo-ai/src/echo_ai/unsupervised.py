@@ -17,7 +17,7 @@ from .fasttext_model import (
 def train_unsupervised(dataset: HuggingFaceDataset, **kwargs):
     num_proc = kwargs.get("thread", multiprocessing.cpu_count())
 
-    corpus = f"{dataset.digest}.corpus.txt"
+    corpus = f"corpus.{dataset.digest}.txt"
     if not os.path.isfile(corpus):
         dataset.ds.to_csv(
             corpus,

@@ -4,22 +4,9 @@ from concurrent.futures import ThreadPoolExecutor
 
 import mlflow
 
-from .loader import load_dataset, to_pandas_arrow
+from .loader import LABEL_DICT, load_dataset, to_pandas_arrow
 from .supervised import train_supervised
 from .unsupervised import train_unsupervised
-
-LABEL_DICT = {
-    0: "переміщення",
-    1: "бпла",
-    2: "звʼязок",
-    3: "забезп",
-    4: "арта",
-    5: "втрати",
-    6: "іфо",
-    7: "палітра",
-    8: "мораль",
-    9: "зіткнення",
-}
 
 
 def main() -> None:
@@ -71,7 +58,7 @@ def main() -> None:
             }
         else:
             label_dict = LABEL_DICT.copy()
-        label_list = label_dict.values()
+        label_list = list(label_dict.values())
         print(f"starting train_supervised for labels: {label_list}")
         with ThreadPoolExecutor(max_workers=multiprocessing.cpu_count()) as executor:
             train_supervised(label_dict, executor, dataset, **args)

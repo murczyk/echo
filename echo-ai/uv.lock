@@ -742,6 +742,7 @@ source = { editable = "." }
 dependencies = [
     { name = "datasets" },
     { name = "fasttext" },
+    { name = "matplotlib" },
     { name = "mlflow" },
     { name = "scikit-learn", version = "1.7.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "scikit-learn", version = "1.8.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
@@ -751,6 +752,7 @@ dependencies = [
 requires-dist = [
     { name = "datasets", specifier = ">=4.4.2" },
     { name = "fasttext", specifier = "==0.9.2" },
+    { name = "matplotlib", specifier = ">=3.10.8" },
     { name = "mlflow", specifier = ">=3.8.1" },
     { name = "scikit-learn", specifier = ">=1.7.2" },
 ]
