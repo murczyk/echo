@@ -34,10 +34,18 @@ pub async fn serve_assets(
         .map(|s| s.to_string_lossy().to_string())
         .and_then(|s| Uuid::parse_str(&s).ok());
 
+    let m_ext = path
+        .as_path()
+        .extension()
+        .map(|s| s.to_string_lossy().to_string());
+
     let m_body = match m_id {
         None => None,
         Some(id) => {
-            let key = crate::storage::nested_object_key(&id);
+            let mut key = crate::storage::nested_object_key(&id);
+            if let Some(ext) = m_ext {
+                key = format!("{key}.{ext}");
+            }
             match crate::messenger::media::fetch_media_bytes_by_key(&env, &key)
                 .await
             {
