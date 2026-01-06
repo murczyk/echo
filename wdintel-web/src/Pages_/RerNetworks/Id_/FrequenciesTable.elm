@@ -107,6 +107,7 @@ update shared msg model =
                                       , freq = f.freq
                                       , kind = Maybe.withDefault "VHF" f.kind
                                       , modulationId = f.modulationId
+                                      , encryptionKeyId = f.encryptionKeyId
                                       , encryptionKey = f.encryptionKey
                                       , activeFrom = f.activeFrom
                                       , activeTo = f.activeTo
@@ -136,6 +137,8 @@ update shared msg model =
                         == originalFreq.activeFrom
                         && updateReq.encryptionKey
                         == originalFreq.encryptionKey
+                        && updateReq.encryptionKeyId
+                        == originalFreq.encryptionKeyId
                         && updateReq.activeTo
                         == originalFreq.activeTo
 
@@ -990,6 +993,7 @@ freqsTableConfig shared model user =
                                                                 , freq = freq.freq
                                                                 , kind = Maybe.withDefault "VHF" freq.kind
                                                                 , modulationId = freq.modulationId
+                                                                , encryptionKeyId = freq.encryptionKeyId
                                                                 , encryptionKey = freq.encryptionKey
                                                                 , activeFrom = freq.activeFrom
                                                                 , activeTo = freq.activeTo
@@ -1094,6 +1098,20 @@ freqActivityChartDetailed model shared =
 
 freqEditSidebarContent : Shared.Model -> Model -> Auth.User -> String -> B.UpdateNetworkFreqReq -> List (Html FrequenciesMsg)
 freqEditSidebarContent shared model user freqId updateReq =
+    let
+        encryptionKeyId =
+            case model.freqs of
+                Success freqs ->
+                    freqs
+                        |> ListX.find (\freq -> freq.freq == freqId)
+                        |> Maybe.andThen .encryptionKeyId
+
+                _ ->
+                    Nothing
+
+        isEncryptionKeyEditable =
+            encryptionKeyId /= Nothing
+    in
     [ div [ class "flex flex-col h-full" ]
         [ div [ class "p-6 border-b border-border" ]
             [ h2 [ class "text-lg font-semibold mb-1" ] [ text "Редагувати частоту" ]
@@ -1165,6 +1183,7 @@ freqEditSidebarContent shared model user freqId updateReq =
                         , type_ "text"
                         , placeholder "Введіть ключ шифрування"
                         , value <| Maybe.withDefault "" updateReq.encryptionKey
+                        , disabled (not isEncryptionKeyEditable)
                         , onInput <|
                             UpdateFreqEditSidebar
                                 << (\encryptionKey ->

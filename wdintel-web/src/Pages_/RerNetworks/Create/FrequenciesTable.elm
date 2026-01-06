@@ -98,6 +98,7 @@ update shared msg model =
                                       , freq = f.freq
                                       , kind = Maybe.withDefault "VHF" f.kind
                                       , modulationId = f.modulationId
+                                      , encryptionKeyId = f.encryptionKeyId
                                       , encryptionKey = f.encryptionKey
                                       , activeFrom = f.activeFrom
                                       , activeTo = f.activeTo
@@ -127,6 +128,8 @@ update shared msg model =
                         == originalFreq.activeFrom
                         && updateReq.encryptionKey
                         == originalFreq.encryptionKey
+                        && updateReq.encryptionKeyId
+                        == originalFreq.encryptionKeyId
                         && updateReq.activeTo
                         == originalFreq.activeTo
 
@@ -984,6 +987,7 @@ freqsTableConfig shared model user =
                                                                 , freq = freq.freq
                                                                 , kind = Maybe.withDefault "VHF" freq.kind
                                                                 , modulationId = freq.modulationId
+                                                                , encryptionKeyId = freq.encryptionKeyId
                                                                 , encryptionKey = freq.encryptionKey
                                                                 , activeFrom = freq.activeFrom
                                                                 , activeTo = freq.activeTo

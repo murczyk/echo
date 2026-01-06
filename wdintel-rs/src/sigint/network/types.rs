@@ -438,6 +438,7 @@ pub struct UpdateNetworkFreqReq {
     pub freq: String,
     pub kind: String,
     pub modulation_id: Option<i32>,
+    pub encryption_key_id: Option<i64>,
     pub encryption_key: Option<String>,
     pub active_from: i64,
     pub active_to: Option<i64>,

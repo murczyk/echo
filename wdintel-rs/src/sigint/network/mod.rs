@@ -1525,7 +1525,7 @@ pub async fn update_network_freq(
         model.active_to = Set(active_to);
         model.update(&txn).await.context(h!())?;
 
-        if let Some(encryption_key) = req.encryption_key.clone() {
+        if let Some(encryption_key_id) = req.encryption_key_id.clone() {
             let organism_id = login::Entity::find_by_id(user_id.clone())
                 .select_only()
                 .column(login::Column::OrganismId)
@@ -1538,7 +1538,8 @@ pub async fn update_network_freq(
                     crate::sigint::key::update_network_encryption_key(
                         &txn,
                         network_freq_id,
-                        encryption_key,
+                        encryption_key_id,
+                        req.encryption_key.clone().unwrap_or("".to_string()),
                         organism_id,
                     )
                     .await

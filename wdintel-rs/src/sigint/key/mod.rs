@@ -62,16 +62,12 @@ where
 pub async fn update_network_encryption_key(
     txn: &DatabaseTransaction,
     network_freq_id: i64,
-    // encryption_key_id: i64,
+    encryption_key_id: i64,
     encryption_key: String,
     organism_id: i64,
 ) -> Result<(), AppError> {
-    let old_key = sigint_network_encryption_key::Entity::find()
+    let old_key = sigint_network_encryption_key::Entity::find_by_id(encryption_key_id)
         .filter(sigint_network_encryption_key::Column::Deleted.eq(false))
-        .filter(
-            sigint_network_encryption_key::Column::SigintNetworkFreqId
-                .eq(network_freq_id),
-        )
         .filter(
             sigint_network_encryption_key::Column::OrganismId.eq(organism_id),
         )
