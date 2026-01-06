@@ -414,6 +414,7 @@ pub struct NetworkFreq {
     pub kind: String,
     pub modulation_id: Option<i32>,
     pub encryption_key: Option<String>,
+    pub encryption_key_id: Option<i64>,
 }
 
 #[derive(

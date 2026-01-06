@@ -1395,17 +1395,14 @@ pub async fn add_network_freq(
             .c(h!())?;
         match organism_id {
             Some(organism_id) => {
-                sigint_network_encryption_key::ActiveModel {
-                    id: NotSet,
-                    key: Set(encryption_key),
-                    sigint_network_freq_id: Set(Some(network_freq.id)),
-                    organism_id: Set(organism_id),
-                    deleted: NotSet,
-                    created_at: NotSet,
-                }
-                .insert(&txn)
+                crate::sigint::key::insert_new_key(
+                    &txn,
+                    network_freq,
+                    encryption_key,
+                    organism_id,
+                )
                 .await
-                .context(h!())?;
+                .c(h!())?;
             }
             None => {
                 error!("invalid user {user_id}: has no organism assigned");

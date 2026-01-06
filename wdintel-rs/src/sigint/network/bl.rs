@@ -1,3 +1,4 @@
+use crate::entities::sigint_network;
 use crate::entities::*;
 use crate::error::AppError;
 use crate::rer_importer::types::{InboxMapItem, MapPointsFilter};
@@ -5,22 +6,13 @@ use crate::sigint::network::types::*;
 use crate::types::*;
 use crate::utils::orm::ArrayColumnOps;
 use crate::utils::*;
+use actix_web::web::Json;
 use chrono::*;
 use itertools::Itertools;
+use log::*;
 use sea_orm::sea_query::*;
 use sea_orm::*;
-use std::collections::{BTreeSet, HashMap};
-
-use crate::entities::sigint_network;
-use actix_web::web::Json;
-use log::*;
-use sea_orm::{
-    ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QuerySelect,
-    Statement,
-};
-use sea_query::{
-    Alias, CommonTableExpression, Expr as SeaExpr, PostgresQueryBuilder, Query,
-};
+use sea_query::Expr as SeaExpr;
 
 pub async fn render_networks<'a, 'async_trait, C>(
     networks: Vec<sigint_network::Model>,
@@ -124,6 +116,10 @@ where
     let mut freq_map: HashMap<i64, Vec<NetworkFreq>> = HashMap::new();
 
     for freq in freqs {
+        let (key_id, key) = match keys.remove(&freq.id) {
+            None => (None, None),
+            Some(k) => (k.id, Some(k.key)),
+        };
         freq_map
             .entry(freq.network_id)
             .or_default()
@@ -139,7 +135,8 @@ where
                 created_at: freq.created_at.and_utc().timestamp_millis(),
                 kind: freq.kind.to_value(),
                 modulation_id: freq.modulation_id,
-                encryption_key: keys.remove(&freq.id),
+                encryption_key: key,
+                encryption_key_id: key_id,
             });
     }
 

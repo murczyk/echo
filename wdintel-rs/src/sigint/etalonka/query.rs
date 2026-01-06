@@ -360,6 +360,7 @@ pub async fn load_freqs(
                 freq: row.try_get("", "freq").unwrap_or_default(),
                 modulation_id: row.try_get("", "modulation_id").ok(),
                 modulation: row.try_get("", "modulation_name").ok(),
+                encryption_key_id: None,
                 encryption_key: None,
                 message_count: row.try_get("", "message_count").unwrap_or(0),
                 callsigns: row_callsigns,
@@ -384,7 +385,12 @@ pub async fn load_freqs(
         Ok(mut networks) => {
             for network in networks.iter_mut() {
                 let key = keys.remove(&network.network_freq_id);
+                let (id, key) = match key {
+                    None => (None, None),
+                    Some(k) => (k.id, Some(k.key)),
+                };
                 network.encryption_key = key;
+                network.encryption_key_id = id;
             }
             Ok(networks)
         }
