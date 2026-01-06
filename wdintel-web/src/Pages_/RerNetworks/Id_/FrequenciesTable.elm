@@ -1314,6 +1314,29 @@ freqCreateSidebarContent shared model user =
                         div [ class "text-sm text-muted-foreground" ] [ text "Завантаження модуляцій..." ]
                 ]
             , div []
+                [ label [ class "block text-sm font-medium mb-1" ] [ text "Ключ шифрування" ]
+                , input
+                    [ type_ "text"
+                    , class "w-full p-2 border border-border rounded"
+                    , placeholder "Введіть ключ шифрування"
+                    , value <| Maybe.withDefault "" model.freqCreateState.encryptionKey
+                    , onInput <|
+                        \encryptionKey ->
+                            UpdateFreqCreateField
+                                (\state ->
+                                    { state
+                                        | encryptionKey =
+                                            if String.trim encryptionKey == "" then
+                                                Nothing
+
+                                            else
+                                                Just encryptionKey
+                                    }
+                                )
+                    ]
+                    []
+                ]
+            , div []
                 [ label [ class "block text-sm font-medium mb-1" ] [ text "Обґрунтування прив'язки" ]
                 , textarea
                     [ class "w-full p-2 border border-border rounded resize-none"
