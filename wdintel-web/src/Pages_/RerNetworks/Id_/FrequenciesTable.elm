@@ -809,12 +809,23 @@ freqsTableConfig shared model user =
                 , sorter = TableSorter.unsortable
                 }
                 |> Table.withColumnWidth "10%"
-            , Table.customColumn
+            , Table.veryCustomColumn
                 { name = "Ключ"
-                , viewData = \freq -> Maybe.withDefault "" freq.encryptionKey
+                , viewData =
+                    \freq ->
+                        let
+                            encryptionKey =
+                                Maybe.withDefault "" freq.encryptionKey
+                        in
+                        { attributes =
+                            [ style "white-space" "pre-wrap"
+                            , style "word-break" "break-all"
+                            ]
+                        , children = [ text encryptionKey ]
+                        }
                 , sorter = TableSorter.unsortable
                 }
-                |> Table.withColumnWidth "10%"
+                |> Table.withColumnWidth "16%"
             , Table.customColumn
                 { name = "Тип"
                 , viewData =
