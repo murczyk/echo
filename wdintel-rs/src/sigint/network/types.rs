@@ -422,6 +422,7 @@ pub struct AddNetworkFreq {
     pub freq: String,
     pub kind: String,
     pub modulation_id: Option<i32>,
+    pub encryption_key: Option<String>,
     pub description: Option<AddNetworkFrequencyDescription>,
     pub active_from: Option<i64>,
     pub active_to: Option<i64>,

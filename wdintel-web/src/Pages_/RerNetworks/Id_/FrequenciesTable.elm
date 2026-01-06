@@ -432,6 +432,7 @@ update shared msg model =
                     { freq = ""
                     , kind = NetworksUtils.networkKindToString NetworksUtils.VHF
                     , modulationId = Nothing
+                    , encryptionKey = Nothing
                     , description = Nothing
                     , activeFrom = Nothing
                     , activeTo = Nothing
@@ -560,6 +561,7 @@ update shared msg model =
                                 { freq = model.freqCreateState.freq
                                 , kind = model.freqCreateState.kind
                                 , modulationId = model.freqCreateState.modulationId
+                                , encryptionKey = model.freqCreateState.encryptionKey
                                 , description = description
                                 , activeFrom = model.freqCreateState.activeFrom
                                 , activeTo = model.freqCreateState.activeTo
@@ -591,6 +593,7 @@ update shared msg model =
                     { freq = ""
                     , kind = NetworksUtils.networkKindToString NetworksUtils.VHF
                     , modulationId = Nothing
+                    , encryptionKey = Nothing
                     , description = Nothing
                     , activeFrom = Nothing
                     , activeTo = Nothing
@@ -803,6 +806,12 @@ freqsTableConfig shared model user =
             , Table.customColumn
                 { name = "Модуляція"
                 , viewData = \freq -> Maybe.withDefault "" freq.modulation
+                , sorter = TableSorter.unsortable
+                }
+                |> Table.withColumnWidth "10%"
+            , Table.customColumn
+                { name = "Ключ"
+                , viewData = \freq -> Maybe.withDefault "" freq.encryptionKey
                 , sorter = TableSorter.unsortable
                 }
                 |> Table.withColumnWidth "10%"

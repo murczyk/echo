@@ -1375,6 +1375,34 @@ pub async fn add_network_freq(
         .await
         .context(h!())?;
 
+    if let Some(encryption_key) = req.freq_rec.encryption_key.clone() {
+        let organism_id = login::Entity::find_by_id(user_login.to_string())
+            .select_only()
+            .column(login::Column::OrganismId)
+            .into_tuple::<i64>()
+            .one(&txn)
+            .await
+            .c(h!())?;
+        match organism_id {
+            Some(organism_id) => {
+                sigint_network_encryption_key::ActiveModel {
+                    id: NotSet,
+                    key: Set(encryption_key),
+                    sigint_network_freq_id: Set(Some(network_freq.id)),
+                    organism_id: Set(organism_id),
+                    deleted: NotSet,
+                    created_at: NotSet,
+                }
+                .insert(&txn)
+                .await
+                .context(h!())?;
+            }
+            None => {
+                error!("invalid user {user_login}: has no organism assigned");
+            }
+        };
+    }
+
     txn.commit().await.context(h!())?;
 
     let event = EventMsg::new(EventType::ETNetworkChanged);
@@ -1913,13 +1941,10 @@ pub async fn network_freqs_list(
     env: actix_web::web::Data<Env>,
     req: Json<SingleNetworkFreqsReq>,
 ) -> Result<Json<SingleNetworkFreqsListRsp>, AppError> {
-    crate::users::has_any_role(
-        &env.dbx,
-        &user.id().c(h!())?,
-        vec!["Rer", "Api"],
-    )
-    .await
-    .context(h!())?;
+    let user_login = user.id().c(h!())?;
+    crate::users::has_any_role(&env.dbx, &user_login, vec!["Rer", "Api"])
+        .await
+        .context(h!())?;
 
     let _network =
         find_network(&env.dbx, req.network_id).await.context(h!())?;
@@ -1932,9 +1957,10 @@ pub async fn network_freqs_list(
     .await
     .context(h!())?;
 
-    let freqs = load_freqs(&env.dbx, &groups, req.network_id, None)
-        .await
-        .context(h!())?;
+    let freqs =
+        load_freqs(&env.dbx, &groups, req.network_id, None, &user_login)
+            .await
+            .context(h!())?;
 
     let res = SingleNetworkFreqsListRsp { freqs };
 

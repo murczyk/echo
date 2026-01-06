@@ -1121,6 +1121,7 @@ update shared msg model =
                             { freq = freq
                             , kind = NetworksUtils.networkKindToString model.addExistingKindSelect.selected
                             , modulationId = model.addExistingModulationSelect.selected
+                            , encryptionKey = Nothing
                             , activeFrom = model.addExistingActiveFrom
                             , activeTo = model.addExistingActiveTo
                             , description =

@@ -372,10 +372,15 @@ pub async fn collect_etalonka_data(
 
             entry.callsigns_detailed = callsigns_detailed;
 
-            let freqs =
-                load_freqs(dbx, &data.groups, network.id, Some(&filter))
-                    .await
-                    .context(h!())?;
+            let freqs = load_freqs(
+                dbx,
+                &data.groups,
+                network.id,
+                Some(&filter),
+                user_id,
+            )
+            .await
+            .context(h!())?;
 
             let modulations = freqs
                 .iter()

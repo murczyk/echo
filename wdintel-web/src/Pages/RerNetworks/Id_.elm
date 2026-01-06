@@ -181,6 +181,7 @@ init route shared () =
             { freq = ""
             , kind = NetworksUtils.networkKindToString NetworksUtils.VHF
             , modulationId = Nothing
+            , encryptionKey = Nothing
             , description = Nothing
             , activeFrom = Nothing
             , activeTo = Nothing
