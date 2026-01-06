@@ -23,7 +23,7 @@ where
     let organism_id = login::Entity::find_by_id(user_login.to_string())
         .select_only()
         .column(login::Column::OrganismId)
-        .into_tuple::<i32>()
+        .into_tuple::<i64>()
         .one(db)
         .await
         .c(h!())?;

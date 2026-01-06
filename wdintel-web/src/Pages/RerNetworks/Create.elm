@@ -38,6 +38,7 @@ import Time.Extra
 import Utils.Api.ErrorHandling
 import Utils.Components exposing (fieldError, isInvalidCls)
 import Utils.NetworksUtils as NetworksUtils
+import Utils.Modulations as Modulations
 import Utils.RemoteData as RD exposing (RemoteData(..))
 import Utils.Select
 import Utils.Time
@@ -687,7 +688,15 @@ update shared route msg model =
 
                 updatedModulationSelect =
                     { modulationSelect
-                        | items = List.map (\mod -> Select.basicMenuItem { item = mod.id, label = mod.name }) res
+                        | items =
+                            List.map
+                                (\mod ->
+                                    Select.basicMenuItem
+                                        { item = mod.id
+                                        , label = Modulations.displayModulationName mod.name
+                                        }
+                                )
+                                res
                     }
 
                 freqCreateModulationSelect =
@@ -695,7 +704,15 @@ update shared route msg model =
 
                 updatedFreqCreateModulationSelect =
                     { freqCreateModulationSelect
-                        | items = List.map (\mod -> Select.basicMenuItem { item = mod.id, label = mod.name }) res
+                        | items =
+                            List.map
+                                (\mod ->
+                                    Select.basicMenuItem
+                                        { item = mod.id
+                                        , label = Modulations.displayModulationName mod.name
+                                        }
+                                )
+                                res
                     }
             in
             ( { model

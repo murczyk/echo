@@ -54,6 +54,7 @@ import Time
 import Time.Extra
 import Url.Builder
 import Utils.Api.ErrorHandling
+import Utils.Modulations as Modulations
 import Utils.NetworksUtils as NetworksUtils
 import Utils.RemoteData as RD exposing (RemoteData(..))
 import Utils.Select
@@ -811,7 +812,10 @@ freqsTableConfig shared model user =
             [ Table.stringColumn "Частота" .freq |> Table.withColumnWidth "9%"
             , Table.customColumn
                 { name = "Модуляція"
-                , viewData = \freq -> Maybe.withDefault "" freq.modulation
+                , viewData =
+                    \freq ->
+                        Maybe.withDefault "" freq.modulation
+                            |> Modulations.displayModulationName
                 , sorter = TableSorter.unsortable
                 }
                 |> Table.withColumnWidth "10%"
@@ -1109,8 +1113,91 @@ freqEditSidebarContent shared model user freqId updateReq =
                 _ ->
                     Nothing
 
+        selectedModulationName =
+            case ( model.modulations, updateReq.modulationId ) of
+                ( Success modulations, Just modulationId ) ->
+                    modulations
+                        |> ListX.find (\modulation -> modulation.id == modulationId)
+                        |> Maybe.map .name
+
+                _ ->
+                    Nothing
+
+        encryptionKeyMaxLength =
+            case selectedModulationName of
+                Just "DMR (ARC40)" ->
+                    Just 4
+
+                Just "DMR (AES256)" ->
+                    Just 64
+
+                Just "HYTERA (256 bit)" ->
+                    Just 64
+
+                Just "TYT (16 bit)" ->
+                    Just 4
+
+                Just "TYT (128 bit)" ->
+                    Just 32
+
+                Just "NFM" ->
+                    Nothing
+
+                Just "AM" ->
+                    Nothing
+
+                Just "АМ" ->
+                    Nothing
+
+                Just "DMR" ->
+                    Nothing
+
+                Just "HYTERA" ->
+                    Nothing
+
+                Just "TYT" ->
+                    Nothing
+
+                Just "TETRA" ->
+                    Nothing
+
+                Just "Гранит" ->
+                    Nothing
+
+                Just "GSM" ->
+                    Nothing
+
+                Just "Умовна" ->
+                    Nothing
+
+                _ ->
+                    Nothing
+
         isEncryptionKeyEditable =
-            encryptionKeyId /= Nothing
+            encryptionKeyId /= Nothing && encryptionKeyMaxLength /= Nothing
+
+        clampEncryptionKey encryptionKey =
+            case encryptionKeyMaxLength of
+                Just maxLen ->
+                    String.left maxLen encryptionKey
+
+                Nothing ->
+                    encryptionKey
+
+        encryptionKeyAttrs =
+            [ class "w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
+            , type_ "text"
+            , placeholder "Введіть ключ шифрування"
+            , value <| Maybe.withDefault "" updateReq.encryptionKey
+            , disabled (not isEncryptionKeyEditable)
+            ]
+                ++ (case encryptionKeyMaxLength of
+                        Just maxLen ->
+                            [ maxlength (String.fromInt maxLen) ]
+
+                        Nothing ->
+                            []
+                   )
     in
     [ div [ class "flex flex-col h-full" ]
         [ div [ class "p-6 border-b border-border" ]
@@ -1155,7 +1242,7 @@ freqEditSidebarContent shared model user freqId updateReq =
                                                     modulations
                                                         |> List.filter (\mod -> mod.id == modulationId)
                                                         |> List.head
-                                                        |> Maybe.map .name
+                                                        |> Maybe.map (.name >> Modulations.displayModulationName)
                                                         |> Maybe.withDefault ""
 
                                                 _ ->
@@ -1179,17 +1266,14 @@ freqEditSidebarContent shared model user freqId updateReq =
                 , div [ class "space-y-2" ]
                     [ label [ class "text-sm font-medium text-foreground" ] [ text "Ключ шифрування" ]
                     , input
-                        [ class "w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
-                        , type_ "text"
-                        , placeholder "Введіть ключ шифрування"
-                        , value <| Maybe.withDefault "" updateReq.encryptionKey
-                        , disabled (not isEncryptionKeyEditable)
-                        , onInput <|
-                            UpdateFreqEditSidebar
-                                << (\encryptionKey ->
-                                        { updateReq | encryptionKey = Just encryptionKey }
-                                   )
-                        ]
+                        (encryptionKeyAttrs
+                            ++ [ onInput <|
+                                    UpdateFreqEditSidebar
+                                        << (\encryptionKey ->
+                                                { updateReq | encryptionKey = Just (clampEncryptionKey encryptionKey) }
+                                           )
+                               ]
+                        )
                         []
                     ]
                 , div [ class "space-y-2" ]
@@ -1341,7 +1425,7 @@ freqCreateSidebarContent shared model user =
                                                 modulations
                                                     |> List.filter (\mod -> mod.id == item)
                                                     |> List.head
-                                                    |> Maybe.map .name
+                                                    |> Maybe.map (.name >> Modulations.displayModulationName)
                                                     |> Maybe.withDefault ""
                                             }
                                     )
