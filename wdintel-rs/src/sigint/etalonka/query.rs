@@ -377,24 +377,9 @@ pub async fn load_freqs(
         })
         .collect();
 
-    let mut keys = sigint_network_encryption_key::Entity::find()
-        .join(
-            JoinType::InnerJoin,
-            sigint_network_encryption_key::Relation::Organism.def(),
-        )
-        .join(JoinType::InnerJoin, organism::Relation::Login.def())
-        .filter(login::Column::Login.eq(user_login.to_string()))
-        .filter(sigint_network_encryption_key::Column::Deleted.eq(false))
-        .filter(
-            sigint_network_encryption_key::Column::SigintNetworkFreqId
-                .is_in(freq_ids),
-        )
-        .all(db)
+    let mut keys = crate::sigint::key::load_freq_keys(db, user_login, freq_ids)
         .await
-        .c(h!())?
-        .into_iter()
-        .flat_map(|e| e.sigint_network_freq_id.map(|id| (id, e.key)))
-        .collect::<HashMap<_, _>>();
+        .c(h!())?;
     match network_active_freqs {
         Ok(mut networks) => {
             for network in networks.iter_mut() {

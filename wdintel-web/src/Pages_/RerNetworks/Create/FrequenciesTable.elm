@@ -98,6 +98,7 @@ update shared msg model =
                                       , freq = f.freq
                                       , kind = Maybe.withDefault "VHF" f.kind
                                       , modulationId = f.modulationId
+                                      , encryptionKey = f.encryptionKey
                                       , activeFrom = f.activeFrom
                                       , activeTo = f.activeTo
                                       }
@@ -124,6 +125,8 @@ update shared msg model =
                         == originalFreq.freq
                         && updateReq.activeFrom
                         == originalFreq.activeFrom
+                        && updateReq.encryptionKey
+                        == originalFreq.encryptionKey
                         && updateReq.activeTo
                         == originalFreq.activeTo
 
@@ -981,6 +984,7 @@ freqsTableConfig shared model user =
                                                                 , freq = freq.freq
                                                                 , kind = Maybe.withDefault "VHF" freq.kind
                                                                 , modulationId = freq.modulationId
+                                                                , encryptionKey = freq.encryptionKey
                                                                 , activeFrom = freq.activeFrom
                                                                 , activeTo = freq.activeTo
                                                                 }
@@ -1147,6 +1151,21 @@ freqEditSidebarContent shared model user freqId updateReq =
                                 model.freqEditModulationSelect.items
                                 "Не вибрано"
                                 defaultOptions
+                    ]
+                , div [ class "space-y-2" ]
+                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Ключ шифрування" ]
+                    , input
+                        [ class "w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
+                        , type_ "text"
+                        , placeholder "Введіть ключ шифрування"
+                        , value <| Maybe.withDefault "" updateReq.encryptionKey
+                        , onInput <|
+                            UpdateFreqEditSidebar
+                                << (\encryptionKey ->
+                                        { updateReq | encryptionKey = Just encryptionKey }
+                                   )
+                        ]
+                        []
                     ]
                 , div [ class "space-y-2" ]
                     [ label [ class "text-sm font-medium text-foreground" ] [ text "Активна з" ]
