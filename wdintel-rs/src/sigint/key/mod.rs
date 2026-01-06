@@ -107,6 +107,9 @@ pub async fn insert_new_key(
     encryption_key: String,
     organism_id: i64,
 ) -> Result<(), AppError> {
+    if encryption_key.replace(" ", "").is_empty() {
+        return Ok(());
+    }
     sigint_network_encryption_key::ActiveModel {
         id: NotSet,
         key: Set(encryption_key),
