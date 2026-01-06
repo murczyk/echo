@@ -1193,7 +1193,7 @@ freqEditSidebarContent shared model user freqId updateReq =
             ]
                 ++ (case encryptionKeyMaxLength of
                         Just maxLen ->
-                            [ maxlength (String.fromInt maxLen) ]
+                            [ maxlength maxLen ]
 
                         Nothing ->
                             []
