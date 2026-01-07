@@ -2104,7 +2104,7 @@ messengerAccountsTableConfig isLoading aorList =
                                 div [ class "px-2 py-1 text-sm text-muted-foreground" ] [ text "..." ]
 
                               else if account.isLinked then
-                                div [ class "flex gap-1" ]
+                                div [ class "grid grid-cols-2 gap-1" ]
                                     [ button
                                         [ class "table-action-btn"
                                         , type_ "button"
@@ -2146,7 +2146,7 @@ messengerAccountsTableConfig isLoading aorList =
                                     ]
 
                               else
-                                div [ class "flex gap-1" ]
+                                div [ class "grid grid-cols-2 gap-1" ]
                                     [ button
                                         [ class "table-action-btn"
                                         , type_ "button"
