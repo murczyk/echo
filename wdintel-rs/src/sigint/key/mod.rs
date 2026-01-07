@@ -42,7 +42,7 @@ where
         .into_iter()
         .flat_map(|e| {
             e.sigint_network_freq_id.map(|id| {
-                let data = if e.organism_id.eq(&(organism_id as i64)) {
+                let data = if e.organism_id.eq(&(organism_id)) {
                     EncryptionKeyData {
                         id: Some(e.id),
                         key: e.key,
@@ -66,14 +66,16 @@ pub async fn update_network_encryption_key(
     encryption_key: String,
     organism_id: i64,
 ) -> Result<(), AppError> {
-    let old_key = sigint_network_encryption_key::Entity::find_by_id(encryption_key_id)
-        .filter(sigint_network_encryption_key::Column::Deleted.eq(false))
-        .filter(
-            sigint_network_encryption_key::Column::OrganismId.eq(organism_id),
-        )
-        .one(txn)
-        .await
-        .c(h!())?;
+    let old_key =
+        sigint_network_encryption_key::Entity::find_by_id(encryption_key_id)
+            .filter(sigint_network_encryption_key::Column::Deleted.eq(false))
+            .filter(
+                sigint_network_encryption_key::Column::OrganismId
+                    .eq(organism_id),
+            )
+            .one(txn)
+            .await
+            .c(h!())?;
 
     if let Some(old_key) = old_key {
         if old_key.key.eq(&encryption_key) {
@@ -106,14 +108,29 @@ pub async fn insert_new_key(
     network_freq: sigint_network_freq::Model,
     encryption_key: String,
     organism_id: i64,
-) -> Result<(), AppError> {
+) -> anyhow::Result<()> {
     if encryption_key.replace(" ", "").is_empty() {
         return Ok(());
     }
+    let sigint_network_freq_id = network_freq.id;
+    let existing_live_freq_keys_count =
+        sigint_network_encryption_key::Entity::find()
+            .filter(
+                sigint_network_encryption_key::Column::SigintNetworkFreqId
+                    .eq(sigint_network_freq_id),
+            )
+            .filter(sigint_network_encryption_key::Column::Deleted.eq(false))
+            .count(txn)
+            .await
+            .c(h!())?;
+    if existing_live_freq_keys_count > 0 {
+        anyhow::bail!("Live key for SigintNetworkFreq with ID={sigint_network_freq_id} already exists!");
+    }
+
     sigint_network_encryption_key::ActiveModel {
         id: NotSet,
         key: Set(encryption_key),
-        sigint_network_freq_id: Set(Some(network_freq.id)),
+        sigint_network_freq_id: Set(Some(sigint_network_freq_id)),
         organism_id: Set(organism_id),
         deleted: NotSet,
         created_at: NotSet,

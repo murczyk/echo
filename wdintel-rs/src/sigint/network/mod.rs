@@ -1525,7 +1525,7 @@ pub async fn update_network_freq(
         model.active_to = Set(active_to);
         model.update(&txn).await.context(h!())?;
 
-        if let Some(encryption_key_id) = req.encryption_key_id.clone() {
+        if let Some(encryption_key_id) = req.encryption_key_id {
             let organism_id = login::Entity::find_by_id(user_id.clone())
                 .select_only()
                 .column(login::Column::OrganismId)
