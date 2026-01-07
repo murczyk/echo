@@ -8,7 +8,8 @@
 - 🐞 - Виправлення багів
 
 ## NEXT
-- [#1675](https://github.com/echoua/echo/issues/1675) ✅ Адмін: панель керування, учний рестарт джерелр
+- [#1792](https://github.com/echoua/echo/issues/1792) ✅ Парсинг, Покращили розпізнавання позивних
+- [#1675](https://github.com/echoua/echo/issues/1675) ✅ Адмін: панель керування, ручний рестарт джерел
 - [#1797](https://github.com/echoua/echo/issues/1797) ✅ Частоти: зберігати ключ шифрування
 - [#1646](https://github.com/echoua/echo/issues/1646) ✅ Звіт Еталонка. Форматування та сортування розділів.
 - [#1782](https://github.com/echoua/echo/issues/1782) 🐞 Прибраний зайвий чекбокс при генерації звітів, який впливав на
