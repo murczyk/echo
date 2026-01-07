@@ -3565,6 +3565,46 @@ zoneDatasourceGroupUpdateReqEncoder struct =
         ]
 
 
+type alias EncryptionKeyData =
+    { id : Maybe Int
+    , sigintNetworkFreqId : Maybe Int
+    , key : String
+    }
+
+
+encryptionKeyDataEncoder : EncryptionKeyData -> Json.Encode.Value
+encryptionKeyDataEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.id )
+        , ( "sigint_network_freq_id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.sigintNetworkFreqId )
+        , ( "key", Json.Encode.string struct.key )
+        ]
+
+
+type alias ListKeysReq =
+    { sigintNetworkId : Int
+    }
+
+
+listKeysReqEncoder : ListKeysReq -> Json.Encode.Value
+listKeysReqEncoder struct =
+    Json.Encode.object
+        [ ( "sigint_network_id", Json.Encode.int struct.sigintNetworkId )
+        ]
+
+
+type alias ListKeysRsp =
+    { keys : List EncryptionKeyData
+    }
+
+
+listKeysRspEncoder : ListKeysRsp -> Json.Encode.Value
+listKeysRspEncoder struct =
+    Json.Encode.object
+        [ ( "keys", Json.Encode.list encryptionKeyDataEncoder struct.keys )
+        ]
+
+
 type alias Tag =
     { label : String
     , extra : Maybe Bool
@@ -8440,6 +8480,26 @@ zoneDatasourceGroupUpdateReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "long_note" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "area_of_responsibility_id" (Json.Decode.nullable Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "area_of_responsibility_ids" (Json.Decode.nullable (Json.Decode.list Json.Decode.int))))
+
+
+encryptionKeyDataDecoder : Json.Decode.Decoder EncryptionKeyData
+encryptionKeyDataDecoder =
+    Json.Decode.succeed EncryptionKeyData
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.nullable Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_network_freq_id" (Json.Decode.nullable Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "key" Json.Decode.string))
+
+
+listKeysReqDecoder : Json.Decode.Decoder ListKeysReq
+listKeysReqDecoder =
+    Json.Decode.succeed ListKeysReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_network_id" Json.Decode.int))
+
+
+listKeysRspDecoder : Json.Decode.Decoder ListKeysRsp
+listKeysRspDecoder =
+    Json.Decode.succeed ListKeysRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "keys" (Json.Decode.list encryptionKeyDataDecoder)))
 
 
 tagDecoder : Json.Decode.Decoder Tag
