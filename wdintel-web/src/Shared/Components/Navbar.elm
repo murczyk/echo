@@ -52,6 +52,7 @@ navBar user shared activeName props =
             , Menu (Internal Route.Path.Admin_Tags) "tags" "теги"
             , Menu (Internal Route.Path.AreasOfResponsibility) "areasOfResponsibility" "смуги"
             , Menu (Internal Route.Path.Admin_Messanger) "messanger" "месенджери"
+            , Menu (Internal Route.Path.Admin_ControlPanel) "control-panel" "панель керування"
             ]
 
         etalonkaSubs =

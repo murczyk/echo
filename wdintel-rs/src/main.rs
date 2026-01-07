@@ -469,6 +469,14 @@ pub struct OneoffImportSignalsCallsignsCsvPs {
     pub unit_mapping: Option<String>,
 }
 
+#[derive(clap::Parser, Debug, Clone)]
+pub struct OneoffRestartEchoPs {
+    #[arg(long, action)]
+    pub restart_postgres: Option<bool>,
+    #[arg(long, action)]
+    pub restart_messengers: Option<bool>,
+}
+
 #[derive(clap::Subcommand, Debug)]
 #[command(author, version, about, long_about = None)]
 enum Cmd {
@@ -540,6 +548,7 @@ enum Cmd {
     OneoffSuggestInboxMessageTags(OneoffSuggestInboxMessageTagsPs),
     OneoffImportSignalsCallsignsCsv(OneoffImportSignalsCallsignsCsvPs),
     OneoffFixWhatsappSenders,
+    OneoffRestartEcho(OneoffRestartEchoPs),
 }
 
 #[derive(clap::Parser, Debug)]
@@ -970,6 +979,9 @@ async fn async_main(
         }
         Cmd::OneoffFixWhatsappSenders => {
             messenger::oneoff::oneoff_fix_whatsapp_senders(mode).await
+        }
+        Cmd::OneoffRestartEcho(ps) => {
+            oneoff::oneoff_restart_echo(mode, &ps).await
         }
     }
 }

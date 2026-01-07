@@ -14,10 +14,12 @@ use tokio::signal::unix::{signal, SignalKind};
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 
+mod admin;
 pub mod discord;
 mod healthcheck;
 pub mod middleware;
 pub mod monitoring;
+pub use admin::RestartEchoRequest;
 
 pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
     let config = read_config(mode).c(h!())?;
@@ -329,6 +331,8 @@ pub async fn main_server(
             .service(self::monitoring::server_info)
             .service(self::monitoring::monitoring)
             // .service(api_logout)
+            .service(crate::server::admin::restart_echo)
+            .service(crate::server::admin::restart_datasource)
             .service(crate::kml::operatyvka)
             .service(crate::kml::operatyvka_download)
             .service(crate::kml::api_fix_kmz)

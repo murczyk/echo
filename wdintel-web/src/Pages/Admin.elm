@@ -11,7 +11,6 @@ import Shared.Components.Pager as Pager
 import Shared.Components.Sidebar as Sidebar
 import Shared.Components.Table as Table
 import Shared.Components.Table.Config as Config
-import Shared.Components.Tabs as Tabs
 import Shared.Components.Toggle as Toggle
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
@@ -3838,8 +3837,7 @@ mainBlock isDark model user shared =
 
 body : Bool -> Shared.Model -> B.User -> Model -> List (Html Msg)
 body dark shared user model =
-    [ div [ class "mt-2 w-5/6 mx-auto" ] [ mainBlock dark model user shared ]
-    ]
+    [ div [ class "mt-2 w-5/6 mx-auto" ] [ mainBlock dark model user shared ] ]
         ++ (case model.userSelectorDialog of
                 Just dialog ->
                     [ ModalDialog.modalDialog True

@@ -3703,6 +3703,20 @@ inboxMessageTagModelErrorReqEncoder struct =
         ]
 
 
+type alias RestartEchoRequest =
+    { restartPostgres : Maybe Bool
+    , restartOutdatedSources : Maybe Bool
+    }
+
+
+restartEchoRequestEncoder : RestartEchoRequest -> Json.Encode.Value
+restartEchoRequestEncoder struct =
+    Json.Encode.object
+        [ ( "restart_postgres", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.restartPostgres )
+        , ( "restart_outdated_sources", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.restartOutdatedSources )
+        ]
+
+
 type alias ReoReportSettings =
     { adjacentFreqsDistance : Float
     }
