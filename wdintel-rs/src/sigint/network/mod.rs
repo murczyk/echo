@@ -1538,6 +1538,7 @@ pub async fn update_network_freq(
                     crate::sigint::key::update_network_encryption_key(
                         &txn,
                         network_freq_id,
+                        req.network_id,
                         encryption_key_id,
                         req.encryption_key.clone().unwrap_or("".to_string()),
                         organism_id,

@@ -117,6 +117,17 @@ type alias Model =
     , freqsTableState : Table.State
     , keysTableState : Table.State
     , callsignsTableState : Table.State
+    , keyCreateSidebar : Bool
+    , keyCreateState :
+        { key : String
+        , description : String
+        , sigintNetworkFreqId : Maybe Int
+        }
+    , keyCreateFreqSelect : Utils.Select.SelectTypeSingle Int
+    , keyCreateSaving : Bool
+    , keyEditSidebar : Maybe B.UpdateEncryptionKeyReq
+    , keyEditFreqSelect : Utils.Select.SelectTypeSingle Int
+    , keyEditSaving : Bool
     , freqEditSidebar : Maybe ( String, B.UpdateNetworkFreqReq )
     , freqDetailPopup : Maybe String
     , modulations : RemoteData ApiError (List B.ModulationRec)

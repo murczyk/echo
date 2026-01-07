@@ -218,3 +218,17 @@ type FrequenciesMsg
 type KeysMsg
     = KeysReturnedByApi (Result ApiError B.ListKeysRsp)
     | SetKeysTableState Table.State
+    | OpenKeyCreateSidebar
+    | CloseKeyCreateSidebar
+    | KeyCreateKeyChanged String
+    | KeyCreateDescriptionChanged String
+    | KeyCreateFreqSelMsg (Select.Msg Int)
+    | CreateKeyClicked
+    | KeyCreated (Result ApiError B.EncryptionKeyData)
+    | OpenKeyEditSidebar B.EncryptionKeyData
+    | CloseKeyEditSidebar
+    | KeyEditKeyChanged String
+    | KeyEditDescriptionChanged String
+    | KeyEditFreqSelMsg (Select.Msg Int)
+    | SaveKeyEditClicked
+    | KeyUpdated (Result ApiError B.EncryptionKeyData)

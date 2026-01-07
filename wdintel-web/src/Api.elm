@@ -1210,6 +1210,30 @@ sigint_list_keys toMsg req =
         }
 
 
+sigint_create_key :
+    (Result ApiError EncryptionKeyData -> msg)
+    -> CreateEncryptionKeyReq
+    -> Cmd msg
+sigint_create_key toMsg req =
+    Http.post
+        { url = "/api/sigint/keys/create"
+        , body = Http.jsonBody (createEncryptionKeyReqEncoder req)
+        , expect = leExpectJson toMsg encryptionKeyDataDecoder
+        }
+
+
+sigint_update_key :
+    (Result ApiError EncryptionKeyData -> msg)
+    -> UpdateEncryptionKeyReq
+    -> Cmd msg
+sigint_update_key toMsg req =
+    Http.post
+        { url = "/api/sigint/keys/update"
+        , body = Http.jsonBody (updateEncryptionKeyReqEncoder req)
+        , expect = leExpectJson toMsg encryptionKeyDataDecoder
+        }
+
+
 sigint_callsign_unit_stats :
     (Result ApiError CallsignUnitStatsRsp -> msg)
     -> ()

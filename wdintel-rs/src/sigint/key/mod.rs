@@ -18,7 +18,9 @@ use std::collections::HashMap;
 pub struct EncryptionKeyData {
     pub id: Option<i64>,
     pub sigint_network_freq_id: Option<i64>,
+    pub sigint_network_id: Option<i64>,
     pub key: String,
+    pub description: Option<String>,
 }
 
 #[derive(
@@ -33,6 +35,26 @@ pub struct ListKeysReq {
 )]
 pub struct ListKeysRsp {
     pub keys: Vec<EncryptionKeyData>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct CreateEncryptionKeyReq {
+    pub sigint_network_id: i64,
+    pub sigint_network_freq_id: Option<i64>,
+    pub key: String,
+    pub description: Option<String>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct UpdateEncryptionKeyReq {
+    pub id: i64,
+    pub sigint_network_freq_id: Option<i64>,
+    pub key: String,
+    pub description: Option<String>,
 }
 
 
@@ -50,27 +72,163 @@ pub async fn list_keys(
     let freq_query = Query::select()
         .column(sigint_network_freq::Column::Id)
         .from(sigint_network_freq::Entity)
-        .and_where(
-            sigint_network_freq::Column::NetworkId.eq(req.sigint_network_id),
-        )
+        .and_where(sigint_network_freq::Column::NetworkId.eq(
+            req.sigint_network_id as i64,
+        ))
         .and_where(sigint_network_freq::Column::Deleted.eq(false))
         .to_owned();
 
     let filter_expr: SimpleExpr =
-        sigint_network_encryption_key::Column::SigintNetworkFreqId
-            .in_subquery(freq_query);
-    let keys_map = load_keys(&env.dbx, &user_login, filter_expr)
+        sigint_network_encryption_key::Column::SigintNetworkId
+            .eq(req.sigint_network_id as i64)
+            .or(
+                sigint_network_encryption_key::Column::SigintNetworkFreqId
+                    .in_subquery(freq_query),
+            );
+
+    let keys = load_keys_list(&env.dbx, &user_login, filter_expr)
         .await
         .c(h!())?;
-    let mut keys = vec![];
-    for (_, k) in keys_map {
-        keys.push(EncryptionKeyData {
-            id: k.id,
-            sigint_network_freq_id: k.sigint_network_freq_id,
-            key: k.key,
+
+    Ok(Json(ListKeysRsp { keys }))
+}
+
+#[post("/api/sigint/keys/create")]
+pub async fn create_key(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<CreateEncryptionKeyReq>,
+) -> Result<Json<EncryptionKeyData>, AppError> {
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .context(h!())?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "UnitsEditor")
+        .await
+        .context(h!())?;
+
+    let user_id = user.id().c(h!())?;
+    let organism_id = login::Entity::find_by_id(user_id.to_string())
+        .select_only()
+        .column(login::Column::OrganismId)
+        .into_tuple::<i64>()
+        .one(&env.dbx)
+        .await
+        .c(h!())?
+        .ok_or_else(|| AppError::BL {
+            msg: "User has no organism assigned".to_string(),
+        })?;
+
+    if req.key.trim().is_empty() {
+        return Err(AppError::BL {
+            msg: "Ключ шифрування не може бути порожнім".to_string(),
         });
     }
-    Ok(Json(ListKeysRsp { keys }))
+
+    if let Some(freq_id) = req.sigint_network_freq_id {
+        let freq_exists = sigint_network_freq::Entity::find()
+            .filter(sigint_network_freq::Column::Id.eq(freq_id))
+            .filter(
+                sigint_network_freq::Column::NetworkId
+                    .eq(req.sigint_network_id),
+            )
+            .filter(sigint_network_freq::Column::Deleted.eq(false))
+            .one(&env.dbx)
+            .await
+            .c(h!())?;
+        if freq_exists.is_none() {
+            return Err(AppError::NotFound);
+        }
+    }
+
+    let key = sigint_network_encryption_key::ActiveModel {
+        id: NotSet,
+        key: Set(req.key.clone()),
+        sigint_network_freq_id: Set(req.sigint_network_freq_id),
+        sigint_network_id: Set(Some(req.sigint_network_id)),
+        description: Set(req.description.clone()),
+        organism_id: Set(organism_id),
+        deleted: NotSet,
+        created_at: NotSet,
+    }
+    .insert(&env.dbx)
+    .await
+    .context(h!())?;
+
+    Ok(Json(EncryptionKeyData {
+        id: Some(key.id),
+        sigint_network_freq_id: key.sigint_network_freq_id,
+        sigint_network_id: key.sigint_network_id,
+        key: key.key,
+        description: key.description,
+    }))
+}
+
+#[post("/api/sigint/keys/update")]
+pub async fn update_key(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<UpdateEncryptionKeyReq>,
+) -> Result<Json<EncryptionKeyData>, AppError> {
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .context(h!())?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "UnitsEditor")
+        .await
+        .context(h!())?;
+
+    let user_id = user.id().c(h!())?;
+    let organism_id = login::Entity::find_by_id(user_id.to_string())
+        .select_only()
+        .column(login::Column::OrganismId)
+        .into_tuple::<i64>()
+        .one(&env.dbx)
+        .await
+        .c(h!())?
+        .ok_or_else(|| AppError::BL {
+            msg: "User has no organism assigned".to_string(),
+        })?;
+
+    if req.key.trim().is_empty() {
+        return Err(AppError::BL {
+            msg: "Ключ шифрування не може бути порожнім".to_string(),
+        });
+    }
+
+    let key = sigint_network_encryption_key::Entity::find_by_id(req.id)
+        .filter(sigint_network_encryption_key::Column::Deleted.eq(false))
+        .filter(
+            sigint_network_encryption_key::Column::OrganismId.eq(organism_id),
+        )
+        .one(&env.dbx)
+        .await
+        .c(h!())?
+        .ok_or(AppError::NotFound)?;
+
+    if let Some(freq_id) = req.sigint_network_freq_id {
+        let freq_exists = sigint_network_freq::Entity::find()
+            .filter(sigint_network_freq::Column::Id.eq(freq_id))
+            .filter(sigint_network_freq::Column::Deleted.eq(false))
+            .one(&env.dbx)
+            .await
+            .c(h!())?;
+        if freq_exists.is_none() {
+            return Err(AppError::NotFound);
+        }
+    }
+
+    let mut key_am = key.into_active_model();
+    key_am.key = Set(req.key.clone());
+    key_am.sigint_network_freq_id = Set(req.sigint_network_freq_id);
+    key_am.description = Set(req.description.clone());
+    let key = key_am.update(&env.dbx).await.c(h!())?;
+
+    Ok(Json(EncryptionKeyData {
+        id: Some(key.id),
+        sigint_network_freq_id: key.sigint_network_freq_id,
+        sigint_network_id: key.sigint_network_id,
+        key: key.key,
+        description: key.description,
+    }))
 }
 
 pub async fn load_freq_keys<'a, 'async_trait, C>(
@@ -84,10 +242,40 @@ where
     let filter_expr: SimpleExpr =
         sigint_network_encryption_key::Column::SigintNetworkFreqId
             .is_in(freq_ids);
-    load_keys(db, user_login, filter_expr).await
+    load_latest_keys_by_freq(db, user_login, filter_expr).await
 }
 
-async fn load_keys<'a, 'async_trait, C>(
+async fn load_keys_list<'a, 'async_trait, C>(
+    db: &'a C,
+    user_login: &str,
+    filter_expr: SimpleExpr,
+) -> Result<Vec<EncryptionKeyData>, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let organism_id = login::Entity::find_by_id(user_login.to_string())
+        .select_only()
+        .column(login::Column::OrganismId)
+        .into_tuple::<i64>()
+        .one(db)
+        .await
+        .c(h!())?;
+    let Some(organism_id) = organism_id else {
+        return Ok(vec![]);
+    };
+    Ok(sigint_network_encryption_key::Entity::find()
+        .filter(sigint_network_encryption_key::Column::Deleted.eq(false))
+        .filter(filter_expr)
+        .order_by_desc(sigint_network_encryption_key::Column::CreatedAt)
+        .all(db)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|e| map_key_for_list(&organism_id, e))
+        .collect::<Vec<_>>())
+}
+
+async fn load_latest_keys_by_freq<'a, 'async_trait, C>(
     db: &'a C,
     user_login: &str,
     filter_expr: SimpleExpr,
@@ -105,18 +293,26 @@ where
     let Some(organism_id) = organism_id else {
         return Ok(HashMap::new());
     };
-    Ok(sigint_network_encryption_key::Entity::find()
+    let mut by_freq = HashMap::new();
+    let keys = sigint_network_encryption_key::Entity::find()
         .filter(sigint_network_encryption_key::Column::Deleted.eq(false))
         .filter(filter_expr)
+        .order_by_desc(sigint_network_encryption_key::Column::CreatedAt)
         .all(db)
         .await
-        .c(h!())?
-        .into_iter()
-        .flat_map(|e| map_key(&organism_id, e))
-        .collect::<HashMap<_, _>>())
+        .c(h!())?;
+
+    for key in keys {
+        if let Some((freq_id, key_data)) = map_key_for_freq(&organism_id, key)
+        {
+            by_freq.entry(freq_id).or_insert(key_data);
+        }
+    }
+
+    Ok(by_freq)
 }
 
-fn map_key(
+fn map_key_for_freq(
     organism_id: &i64,
     e: sigint_network_encryption_key::Model,
 ) -> Option<(i64, EncryptionKeyData)> {
@@ -125,22 +321,50 @@ fn map_key(
             EncryptionKeyData {
                 id: Some(e.id),
                 sigint_network_freq_id: e.sigint_network_freq_id,
+                sigint_network_id: e.sigint_network_id,
                 key: e.key,
+                description: e.description,
             }
         } else {
             EncryptionKeyData {
                 id: None,
                 sigint_network_freq_id: e.sigint_network_freq_id,
+                sigint_network_id: e.sigint_network_id,
                 key: ENCRYPTION_KEY_PLACEHOLDER.to_string(),
+                description: None,
             }
         };
         (id, data)
     })
 }
 
+fn map_key_for_list(
+    organism_id: &i64,
+    e: sigint_network_encryption_key::Model,
+) -> EncryptionKeyData {
+    if e.organism_id.eq(organism_id) {
+        EncryptionKeyData {
+            id: Some(e.id),
+            sigint_network_freq_id: e.sigint_network_freq_id,
+            sigint_network_id: e.sigint_network_id,
+            key: e.key,
+            description: e.description,
+        }
+    } else {
+        EncryptionKeyData {
+            id: Some(e.id),
+            sigint_network_freq_id: e.sigint_network_freq_id,
+            sigint_network_id: e.sigint_network_id,
+            key: ENCRYPTION_KEY_PLACEHOLDER.to_string(),
+            description: None,
+        }
+    }
+}
+
 pub async fn update_network_encryption_key(
     txn: &DatabaseTransaction,
     network_freq_id: i64,
+    network_id: i64,
     encryption_key_id: i64,
     encryption_key: String,
     organism_id: i64,
@@ -156,7 +380,9 @@ pub async fn update_network_encryption_key(
             .await
             .c(h!())?;
 
+    let mut previous_description = None;
     if let Some(old_key) = old_key {
+        previous_description = old_key.description.clone();
         if old_key.key.eq(&encryption_key) {
             return Ok(()); // key did not change
         } else {
@@ -171,6 +397,8 @@ pub async fn update_network_encryption_key(
             id: NotSet,
             key: Set(encryption_key),
             sigint_network_freq_id: Set(Some(network_freq_id)),
+            sigint_network_id: Set(Some(network_id)),
+            description: Set(previous_description),
             organism_id: Set(organism_id),
             deleted: NotSet,
             created_at: NotSet,
@@ -210,6 +438,8 @@ pub async fn insert_new_key(
         id: NotSet,
         key: Set(encryption_key),
         sigint_network_freq_id: Set(Some(sigint_network_freq_id)),
+        sigint_network_id: Set(Some(network_freq.network_id)),
+        description: NotSet,
         organism_id: Set(organism_id),
         deleted: NotSet,
         created_at: NotSet,

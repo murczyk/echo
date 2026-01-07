@@ -163,6 +163,25 @@ init route shared () =
       , freqsTableState = Table.initialSort "Частота"
       , keysTableState = Table.initialSort "Частота"
       , callsignsTableState = Table.initialSort "Позивний"
+      , keyCreateSidebar = False
+      , keyCreateState =
+            { key = ""
+            , description = ""
+            , sigintNetworkFreqId = Nothing
+            }
+      , keyCreateFreqSelect =
+            { state = Select.initState (Select.selectIdentifier "key-create-freq-state")
+            , items = []
+            , selected = Nothing
+            }
+      , keyCreateSaving = False
+      , keyEditSidebar = Nothing
+      , keyEditFreqSelect =
+            { state = Select.initState (Select.selectIdentifier "key-edit-freq-state")
+            , items = []
+            , selected = Nothing
+            }
+      , keyEditSaving = False
       , freqEditSidebar = Nothing
       , freqDetailPopup = Nothing
       , modulations = NotAsked
@@ -968,7 +987,7 @@ contentBlock user shared network model =
             ]
         ]
     , Html.map Frequencies <| FrequenciesTable.view model user shared
-    , Html.map Keys <| KeysTable.view model
+    , Html.map Keys <| KeysTable.view model user
     , Html.map Callsigns <| CallsignsTables.view model user shared
     ]
 
@@ -1020,6 +1039,8 @@ view user shared model =
                 , Html.map Callsigns <| CallsignsTables.createCallsignsSidebar model user shared
                 , Html.map Callsigns <| CallsignsTables.editCallsignsSidebar model user shared
                 , Html.map Callsigns <| CallsignsTables.deleteCallsignModal model
+                , Html.map Keys <| KeysTable.editSidebar model user shared
+                , Html.map Keys <| KeysTable.createSidebar model user shared
                 , let
                     reportFormConfig =
                         { onReportTypeChanged = ReportTypeChanged

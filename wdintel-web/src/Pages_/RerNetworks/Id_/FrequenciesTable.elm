@@ -290,8 +290,31 @@ update shared msg model =
 
                 acfs2 =
                     { addConfirmationFreqSelect | items = List.map .freq res.freqs |> List.map (\freq -> Select.basicMenuItem { item = freq, label = freq }) }
+
+                keyFreqItems =
+                    res.freqs
+                        |> List.map
+                            (\freq ->
+                                Select.basicMenuItem
+                                    { item = freq.networkFreqId
+                                    , label = freq.freq
+                                    }
+                            )
+
+                keyCreateFreqSelect =
+                    { model.keyCreateFreqSelect | items = keyFreqItems }
+
+                keyEditFreqSelect =
+                    { model.keyEditFreqSelect | items = keyFreqItems }
             in
-            ( { model | freqs = Success res.freqs, addConfirmationFreqSelect = acfs2 }, E.getCallsignsInfoShared callsigns )
+            ( { model
+                | freqs = Success res.freqs
+                , addConfirmationFreqSelect = acfs2
+                , keyCreateFreqSelect = keyCreateFreqSelect
+                , keyEditFreqSelect = keyEditFreqSelect
+              }
+            , E.getCallsignsInfoShared callsigns
+            )
 
         FreqKindSelectMsg imsg ->
             let
@@ -1174,15 +1197,7 @@ freqEditSidebarContent shared model user freqId updateReq =
                     Nothing
 
         isEncryptionKeyEditable =
-            encryptionKeyId /= Nothing && encryptionKeyMaxLength /= Nothing
-
-        clampEncryptionKey encryptionKey =
-            case encryptionKeyMaxLength of
-                Just maxLen ->
-                    String.left maxLen encryptionKey
-
-                Nothing ->
-                    encryptionKey
+            False
 
         encryptionKeyAttrs =
             [ class "w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
@@ -1266,15 +1281,10 @@ freqEditSidebarContent shared model user freqId updateReq =
                 , div [ class "space-y-2" ]
                     [ label [ class "text-sm font-medium text-foreground" ] [ text "Ключ шифрування" ]
                     , input
-                        (encryptionKeyAttrs
-                            ++ [ onInput <|
-                                    UpdateFreqEditSidebar
-                                        << (\encryptionKey ->
-                                                { updateReq | encryptionKey = Just (clampEncryptionKey encryptionKey) }
-                                           )
-                               ]
-                        )
+                        encryptionKeyAttrs
                         []
+                    , p [ class "text-xs text-muted-foreground" ]
+                        [ text "Редагування ключів доступне в таблиці ключів." ]
                     ]
                 , div [ class "space-y-2" ]
                     [ label [ class "text-sm font-medium text-foreground" ] [ text "Активна з" ]
@@ -1451,23 +1461,13 @@ freqCreateSidebarContent shared model user =
                 , input
                     [ type_ "text"
                     , class "w-full p-2 border border-border rounded"
-                    , placeholder "Введіть ключ шифрування"
+                    , placeholder "Ключ додається в таблиці ключів"
                     , value <| Maybe.withDefault "" model.freqCreateState.encryptionKey
-                    , onInput <|
-                        \encryptionKey ->
-                            UpdateFreqCreateField
-                                (\state ->
-                                    { state
-                                        | encryptionKey =
-                                            if String.trim encryptionKey == "" then
-                                                Nothing
-
-                                            else
-                                                Just encryptionKey
-                                    }
-                                )
+                    , disabled True
                     ]
                     []
+                , p [ class "text-xs text-muted-foreground mt-1" ]
+                    [ text "Редагування ключів доступне в таблиці ключів." ]
                 ]
             , div []
                 [ label [ class "block text-sm font-medium mb-1" ] [ text "Обґрунтування прив'язки" ]
