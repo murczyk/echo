@@ -72,6 +72,7 @@ pub use super::sigint_network_callsign::Entity as SigintNetworkCallsign;
 pub use super::sigint_network_callsign_changelog::Entity as SigintNetworkCallsignChangelog;
 pub use super::sigint_network_changelog::Entity as SigintNetworkChangelog;
 pub use super::sigint_network_description::Entity as SigintNetworkDescription;
+pub use super::sigint_network_encryption_key::Entity as SigintNetworkEncryptionKey;
 pub use super::sigint_network_freq::Entity as SigintNetworkFreq;
 pub use super::sigint_network_freq_changelog::Entity as SigintNetworkFreqChangelog;
 pub use super::sigint_network_post::Entity as SigintNetworkPost;

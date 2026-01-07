@@ -34,7 +34,7 @@ pub async fn load_coordinates_from_file(
         .unwrap_or(crate::config::DEFAULT_STORE_PALITRA_IN_S3)
     {
         let file_s3_id = crate::messenger::media::store_asset(
-            &env,
+            env,
             &data,
             Some(&safe_file_name),
             Some(crate::config::KMZ_CONTENT_TYPE),

@@ -130,6 +130,7 @@ pub async fn load_freqs(
     groups: &Vec<String>,
     network_id: i64,
     filter: Option<&NetworkFreqFilter>,
+    user_login: &str,
 ) -> Result<Vec<NetworkFreqsRes>, AppError> {
     trace!("> load freqs for network: {network_id:?}");
 
@@ -322,6 +323,7 @@ pub async fn load_freqs(
     //     combined_query.to_string(PostgresQueryBuilder)
     // );
 
+    let mut freq_ids = vec![];
     let network_active_freqs: Result<Vec<NetworkFreqsRes>, AppError> = db
         .query_all(Statement::from_string(
             DatabaseBackend::Postgres,
@@ -349,13 +351,17 @@ pub async fn load_freqs(
             let active_to = active_to.map(|dt| dt.and_utc().timestamp_millis());
             let active_from = active_from.and_utc().timestamp_millis();
 
+            let network_freq_id = row.try_get("", "network_freq_id");
+            if let Ok(id) = network_freq_id {
+                freq_ids.push(id);
+            }
             Ok(NetworkFreqsRes {
-                network_freq_id: row
-                    .try_get("", "network_freq_id")
-                    .unwrap_or_default(),
+                network_freq_id: network_freq_id.unwrap_or_default(),
                 freq: row.try_get("", "freq").unwrap_or_default(),
                 modulation_id: row.try_get("", "modulation_id").ok(),
                 modulation: row.try_get("", "modulation_name").ok(),
+                encryption_key_id: None,
+                encryption_key: None,
                 message_count: row.try_get("", "message_count").unwrap_or(0),
                 callsigns: row_callsigns,
                 last_datetime: row
@@ -372,7 +378,24 @@ pub async fn load_freqs(
         })
         .collect();
 
-    network_active_freqs
+    let mut keys = crate::sigint::key::load_freq_keys(db, user_login, freq_ids)
+        .await
+        .c(h!())?;
+    match network_active_freqs {
+        Ok(mut networks) => {
+            for network in networks.iter_mut() {
+                let key = keys.remove(&network.network_freq_id);
+                let (id, key) = match key {
+                    None => (None, None),
+                    Some(k) => (k.id, Some(k.key)),
+                };
+                network.encryption_key = key;
+                network.encryption_key_id = id;
+            }
+            Ok(networks)
+        }
+        _err => _err,
+    }
 }
 
 fn flatten_and_dedup(input: Vec<Vec<String>>) -> Vec<String> {

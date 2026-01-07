@@ -51,6 +51,7 @@ import Time.Extra
 import Url.Builder
 import Utils.Api.ErrorHandling
 import Utils.NetworksUtils as NetworksUtils
+import Utils.Modulations as Modulations
 import Utils.RemoteData as RD exposing (RemoteData(..))
 import Utils.Select
 import Utils.Time
@@ -1121,6 +1122,7 @@ update shared msg model =
                             { freq = freq
                             , kind = NetworksUtils.networkKindToString model.addExistingKindSelect.selected
                             , modulationId = model.addExistingModulationSelect.selected
+                            , encryptionKey = Nothing
                             , activeFrom = model.addExistingActiveFrom
                             , activeTo = model.addExistingActiveTo
                             , description =
@@ -1249,21 +1251,39 @@ update shared msg model =
                     { addModulationSelect
                         | items =
                             modulations
-                                |> List.map (\modulation -> Select.basicMenuItem { item = modulation.id, label = modulation.name })
+                                |> List.map
+                                    (\modulation ->
+                                        Select.basicMenuItem
+                                            { item = modulation.id
+                                            , label = Modulations.displayModulationName modulation.name
+                                            }
+                                    )
                     }
 
                 aems =
                     { addExistingModulationSelect
                         | items =
                             modulations
-                                |> List.map (\modulation -> Select.basicMenuItem { item = modulation.id, label = modulation.name })
+                                |> List.map
+                                    (\modulation ->
+                                        Select.basicMenuItem
+                                            { item = modulation.id
+                                            , label = Modulations.displayModulationName modulation.name
+                                            }
+                                    )
                     }
 
                 ems =
                     { editModulationSelect
                         | items =
                             modulations
-                                |> List.map (\modulation -> Select.basicMenuItem { item = modulation.id, label = modulation.name })
+                                |> List.map
+                                    (\modulation ->
+                                        Select.basicMenuItem
+                                            { item = modulation.id
+                                            , label = Modulations.displayModulationName modulation.name
+                                            }
+                                    )
                     }
             in
             ( { model
@@ -1290,6 +1310,8 @@ update shared msg model =
                 , freq = freq
                 , kind = NetworksUtils.networkKindToString model.editKindSelect.selected
                 , modulationId = model.editModulationSelect.selected
+                , encryptionKeyId = Nothing
+                , encryptionKey = Nothing
                 , activeFrom = 0
                 , activeTo = Nothing
                 }

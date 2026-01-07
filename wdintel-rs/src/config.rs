@@ -111,6 +111,7 @@ pub const TAG_SUGGEST_WORKER_REGEX_CONFIDENCE: f64 = 0.8;
 pub const MAX_FIX_WHATSAPP_SENDERS_MESSAGE_DAYS: i64 = 30;
 pub const DEFAULT_STORE_PALITRA_IN_S3: bool = true;
 pub const KMZ_CONTENT_TYPE: &str = "application/vnd.google-earth.kmz";
+pub const ENCRYPTION_KEY_PLACEHOLDER: &str = "🔑";
 
 /// Dynamic config that's different on different deployments
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
