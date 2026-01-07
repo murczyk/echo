@@ -48,10 +48,10 @@ pub async fn restart_echo(
     let req = req.into_inner();
     let mut args = Vec::new();
     if req.restart_postgres.unwrap_or(false) {
-        args.push("--restart-postgres");
+        args.push("--restart-postgres=true");
     }
     if req.restart_outdated_sources.unwrap_or(false) {
-        args.push("--restart-messengers");
+        args.push("--restart-messengers=true");
     }
     let sh = Shell::new().c(h!())?;
     cmd!(
