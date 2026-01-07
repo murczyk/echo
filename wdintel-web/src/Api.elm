@@ -1198,6 +1198,18 @@ sigint_list_sources toMsg _ =
         }
 
 
+sigint_list_keys :
+    (Result ApiError ListKeysRsp -> msg)
+    -> ListKeysReq
+    -> Cmd msg
+sigint_list_keys toMsg req =
+    Http.post
+        { url = "/api/sigint/keys"
+        , body = Http.jsonBody (listKeysReqEncoder req)
+        , expect = leExpectJson toMsg listKeysRspDecoder
+        }
+
+
 sigint_callsign_unit_stats :
     (Result ApiError CallsignUnitStatsRsp -> msg)
     -> ()

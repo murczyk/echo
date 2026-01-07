@@ -89,6 +89,10 @@ type
     | Frequencies FrequenciesMsg
     | ModulationsReturnedByApi (Result ApiError (List B.ModulationRec))
       -- =============================================================================
+      -- KEYS
+      -- =============================================================================
+    | Keys KeysMsg
+      -- =============================================================================
       -- DESCRIPTIONS
       -- =============================================================================
     | Descriptions DescriptionsMsg
@@ -209,3 +213,8 @@ type FrequenciesMsg
     | CallsignsPopupOpenedByUser String
     | CallsignsPopupClosedByUser
     | NetworkFreqsActivityReturnedByApi (Result ApiError (Dict String (Dict String Int)))
+
+
+type KeysMsg
+    = KeysReturnedByApi (Result ApiError B.ListKeysRsp)
+    | SetKeysTableState Table.State

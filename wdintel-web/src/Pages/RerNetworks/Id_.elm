@@ -22,6 +22,7 @@ import Page exposing (Page)
 import Pages_.RerNetworks.Id_.CallsignsTables as CallsignsTables exposing (getDevelopingCallsigns, getRegularCallsigns)
 import Pages_.RerNetworks.Id_.Descriptions as Descriptions
 import Pages_.RerNetworks.Id_.FrequenciesTable as FrequenciesTable
+import Pages_.RerNetworks.Id_.KeysTable as KeysTable
 import Pages_.RerNetworks.Id_.Model as Types exposing (CallsignCreateMode(..), CallsignTableRow, FreqActivityFilter(..), Mode(..), ShowAllPopupFor(..))
 import Pages_.RerNetworks.Id_.Msg as Msgs exposing (Msg(..))
 import Pages_.RerNetworks.Id_.NetworkInfo as NetworkInfo
@@ -92,12 +93,25 @@ toLayout user model =
 
 init : Route { id : String } -> Shared.Model -> () -> ( Model, Effect Msg )
 init route shared () =
+    let
+        networkId =
+            String.toInt route.params.id
+
+        initialKeys =
+            case networkId of
+                Just _ ->
+                    Loading
+
+                Nothing ->
+                    NotAsked
+    in
     ( { network = Loading
       , callsigns = NotAsked
       , mapPoints = NotAsked
       , groupsActivity = NotAsked
       , networkFreqsActivity = NotAsked
       , freqs = NotAsked
+      , networkKeys = initialKeys
       , freqsEditingState = Readonly
       , callsignsEditingState = Readonly
       , callsignsOpenedPopupId = Nothing
@@ -147,6 +161,7 @@ init route shared () =
       , reportToDate = Shared.Components.DateTime.init ()
       , freqsActivityFilter = AllFreqs
       , freqsTableState = Table.initialSort "Частота"
+      , keysTableState = Table.initialSort "Частота"
       , callsignsTableState = Table.initialSort "Позивний"
       , freqEditSidebar = Nothing
       , freqDetailPopup = Nothing
@@ -270,13 +285,14 @@ init route shared () =
       -- Delete confirmation dialog initialization
       , deleteDescriptionConfirmation = Nothing
       }
-    , case String.toInt route.params.id of
+    , case networkId of
         Just id ->
             E.batch
                 [ E.getSingleNetwork NetworkReturnedByApi id
                 , E.getModulations ModulationsReturnedByApi
                 , E.sendCmd (Api.aor_list AorListReturnedByApi { sortBy = Nothing })
                 , E.map Callsigns CallsignsTables.initLoad
+                , E.map Keys (KeysTable.initLoad id)
                 ]
 
         Nothing ->
@@ -313,8 +329,22 @@ update shared msg model =
 
                         _ ->
                             E.none
+
+                loadKeys =
+                    case ( freqsMsg, m1.network ) of
+                        ( Msgs.FreqUpdatedByApi (Ok _), Success network ) ->
+                            E.map Keys <| KeysTable.initLoad network.id
+
+                        ( Msgs.FreqAddedToNetwork (Ok _), Success network ) ->
+                            E.map Keys <| KeysTable.initLoad network.id
+
+                        ( Msgs.DeleteFreqReturnedByApi _ (Ok _), Success network ) ->
+                            E.map Keys <| KeysTable.initLoad network.id
+
+                        _ ->
+                            E.none
             in
-            ( m1, E.batch [ E.map Frequencies freqsEff, loadCatalogCallsigns ] )
+            ( m1, E.batch [ E.map Frequencies freqsEff, loadCatalogCallsigns, loadKeys ] )
 
         Callsigns callsMsg ->
             let
@@ -322,6 +352,13 @@ update shared msg model =
                     CallsignsTables.update shared callsMsg model
             in
             ( m1, E.map Callsigns callsEff )
+
+        Keys keysMsg ->
+            let
+                ( m1, keysEff ) =
+                    KeysTable.update shared keysMsg model
+            in
+            ( m1, E.map Keys keysEff )
 
         NetworkReturnedByApi (Err e) ->
             ( { model | network = Failure e }
@@ -931,6 +968,7 @@ contentBlock user shared network model =
             ]
         ]
     , Html.map Frequencies <| FrequenciesTable.view model user shared
+    , Html.map Keys <| KeysTable.view model
     , Html.map Callsigns <| CallsignsTables.view model user shared
     ]
 

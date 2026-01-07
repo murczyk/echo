@@ -93,6 +93,7 @@ type alias Model =
     , groupsActivity : RemoteData ApiError GroupsByDate
     , networkFreqsActivity : RemoteData ApiError (Dict String (Dict String Int))
     , freqs : RemoteData ApiError (List B.NetworkFreqsRes)
+    , networkKeys : RemoteData ApiError (List B.EncryptionKeyData)
     , freqsEditingState : Mode (Dict String B.UpdateNetworkFreqReq)
     , callsignsEditingState : Mode (Dict String Bool)
     , callsignsOpenedPopupId : Maybe String
@@ -114,6 +115,7 @@ type alias Model =
     , reportToDate : Shared.Components.DateTime.Model
     , freqsActivityFilter : FreqActivityFilter
     , freqsTableState : Table.State
+    , keysTableState : Table.State
     , callsignsTableState : Table.State
     , freqEditSidebar : Maybe ( String, B.UpdateNetworkFreqReq )
     , freqDetailPopup : Maybe String
