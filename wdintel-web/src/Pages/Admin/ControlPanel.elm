@@ -145,17 +145,21 @@ renderControlPanel isDark model =
     div [ class "bg-[var(--bs-body-bg)] rounded-lg border p-6 space-y-4" ]
         [ div [ class "space-y-4" ]
             [ h3 [ class "text-lg font-semibold" ] [ text "Натисність щоби перезапустити Ехо Сервер" ]
-            , div [ class "space-y-2" ]
-                [ Checkbox.new { isChecked = restartEchoForm.restartPostgres, onToggle = ToggleRestartPostgres }
-                    |> Checkbox.withContent
-                        [ span [ class descriptionClass ] [ text "Перезапустити PostgreSQL (база даних)" ]
-                        ]
-                    |> Checkbox.view
-                , Checkbox.new { isChecked = restartEchoForm.restartOutdatedSources, onToggle = ToggleRestartOutdatedSources }
-                    |> Checkbox.withContent
-                        [ span [ class descriptionClass ] [ text "Перезапустити месенджери що відстали" ]
-                        ]
-                    |> Checkbox.view
+            , ul [ class "space-y-2 list-disc list-inside" ]
+                [ li []
+                    [ Checkbox.new { isChecked = restartEchoForm.restartPostgres, onToggle = ToggleRestartPostgres }
+                        |> Checkbox.withContent
+                            [ span [ class descriptionClass ] [ text "Перезапустити PostgreSQL (база даних)" ]
+                            ]
+                        |> Checkbox.view
+                    ]
+                , li []
+                    [ Checkbox.new { isChecked = restartEchoForm.restartOutdatedSources, onToggle = ToggleRestartOutdatedSources }
+                        |> Checkbox.withContent
+                            [ span [ class descriptionClass ] [ text "Перезапустити месенджери що відстали" ]
+                            ]
+                        |> Checkbox.view
+                    ]
                 ]
             , div [ class "flex items-center gap-2" ]
                 [ Button.new { label = "Перезапустити", onClick = RestartEcho }
