@@ -83,6 +83,12 @@ type alias OrphanGroupEditDialog =
     , error : Maybe String
     }
 
+type alias RestartEchoForm =
+    { restartPostgres : Bool
+    , restartOutdatedSources : Bool
+    , isRestarting : Bool
+    }
+
 
 type alias Model =
     { formErrors : Dict String String
@@ -128,6 +134,8 @@ type alias Model =
     , areaOfResponsibilityFilter : Maybe Int
     , areaOfResponsibilityFilterSelectState : Select.State
     , fullNoteModal : Maybe { groupKey : String, note : String }
+    , adminActiveTab : Int
+    , restartEchoForm : RestartEchoForm
     }
 
 
@@ -375,6 +383,12 @@ init _ =
         , areaOfResponsibilityFilter = Nothing
         , areaOfResponsibilityFilterSelectState = Select.initState (Select.selectIdentifier "area-filter")
         , fullNoteModal = Nothing
+        , adminActiveTab = adminTabZonesId
+        , restartEchoForm =
+            { restartPostgres = False
+            , restartOutdatedSources = False
+            , isRestarting = False
+            }
       }
     , E.sendCmd <|
         Cmd.batch
@@ -383,6 +397,22 @@ init _ =
             , Api.aor_list AreasOfResponsibilityLoaded { sortBy = Nothing }
             ]
     )
+
+adminTabZonesId : Int
+adminTabZonesId =
+    1
+
+
+adminTabControlPanelId : Int
+adminTabControlPanelId =
+    2
+
+
+adminTabs : List { id : Int, label : String }
+adminTabs =
+    [ { id = adminTabZonesId, label = "Напрямки" }
+    , { id = adminTabControlPanelId, label = "Панель Керування" }
+    ]
 
 
 type Msg
@@ -449,6 +479,11 @@ type Msg
     | UpdateGroupAreaOfResponsibility (Maybe Int)
     | UpdateAreaOfResponsibilityFilter (Maybe Int)
     | AreaOfResponsibilityFilterMsg (Select.Msg Int)
+    | AdminTabChanged Int
+    | ToggleRestartPostgres Bool
+    | ToggleRestartOutdatedSources Bool
+    | RestartEcho
+    | RestartEchoDone (Result ApiError Bool)
 
 
 page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
@@ -2169,6 +2204,62 @@ update msg model =
             , E.sendCmd <| Cmd.map AreaOfResponsibilityFilterMsg icmd
             )
 
+        AdminTabChanged tabId ->
+            ( { model | adminActiveTab = tabId }
+            , E.none
+            )
+
+        ToggleRestartPostgres isChecked ->
+            let
+                restartEchoForm =
+                    model.restartEchoForm
+            in
+            ( { model | restartEchoForm = { restartEchoForm | restartPostgres = isChecked } }
+            , E.none
+            )
+
+        ToggleRestartOutdatedSources isChecked ->
+            let
+                restartEchoForm =
+                    model.restartEchoForm
+            in
+            ( { model | restartEchoForm = { restartEchoForm | restartOutdatedSources = isChecked } }
+            , E.none
+            )
+
+        RestartEcho ->
+            let
+                restartEchoForm =
+                    model.restartEchoForm
+
+                req : B.RestartEchoRequest
+                req =
+                    { restartPostgres = Just restartEchoForm.restartPostgres
+                    , restartOutdatedSources = Just restartEchoForm.restartOutdatedSources
+                    }
+            in
+            ( { model | restartEchoForm = { restartEchoForm | isRestarting = True } }
+            , E.sendCmd <| Api.admin_restart_echo RestartEchoDone req
+            )
+
+        RestartEchoDone (Ok _) ->
+            let
+                restartEchoForm =
+                    model.restartEchoForm
+            in
+            ( { model | restartEchoForm = { restartEchoForm | isRestarting = False } }
+            , E.none
+            )
+
+        RestartEchoDone (Err err) ->
+            let
+                restartEchoForm =
+                    model.restartEchoForm
+            in
+            ( { model | restartEchoForm = { restartEchoForm | isRestarting = False } }
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка перезапуску" err
+            )
+
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
@@ -3726,6 +3817,65 @@ zoneCard2 isDark model user ( zoneId, zone ) =
         ]
 
 
+adminTabsView : Int -> Html Msg
+adminTabsView activeTab =
+    div [ class "mb-6" ]
+        [ Tabs.view adminTabs activeTab AdminTabChanged ]
+
+
+renderControlPanel : Bool -> Model -> Html Msg
+renderControlPanel isDark model =
+    let
+        restartEchoForm =
+            model.restartEchoForm
+
+        descriptionClass =
+            if isDark then
+                "text-gray-300"
+
+            else
+                "text-gray-600"
+    in
+    div [ class "bg-[var(--bs-body-bg)] rounded-lg border p-6 space-y-4" ]
+        [ h2 [ class "text-xl font-semibold" ] [ text "Панель Керування" ]
+        , div [ class "space-y-4" ]
+            [ h3 [ class "text-lg font-semibold" ] [ text "Натисність щоби перезапустити Ехо Сервер" ]
+            , div [ class "space-y-2" ]
+                [ Checkbox.new { isChecked = restartEchoForm.restartPostgres, onToggle = ToggleRestartPostgres }
+                    |> Checkbox.withContent
+                        [ span [ class descriptionClass ] [ text "Перезапустити PostgreSQL (база даних)" ]
+                        ]
+                    |> Checkbox.view
+                , Checkbox.new { isChecked = restartEchoForm.restartOutdatedSources, onToggle = ToggleRestartOutdatedSources }
+                    |> Checkbox.withContent
+                        [ span [ class descriptionClass ] [ text "Перезапустити застарілі джерела (процеси, що відстали)" ]
+                        ]
+                    |> Checkbox.view
+                ]
+            , div [ class "flex items-center gap-2" ]
+                [ Button.new { label = "Перезапустити", onClick = RestartEcho }
+                    |> Button.withStyleDanger
+                    |> Button.withDisabled restartEchoForm.isRestarting
+                    |> Button.view
+                , if restartEchoForm.isRestarting then
+                    span [ class "ml-1" ] [ Shared.Components.Spinner.loadingSpinner2Sm ]
+
+                  else
+                    text ""
+                ]
+            ]
+        ]
+
+
+adminTabContent : Bool -> Shared.Model -> B.User -> Model -> Html Msg
+adminTabContent isDark shared user model =
+    if model.adminActiveTab == adminTabControlPanelId then
+        renderControlPanel isDark model
+
+    else
+        mainBlock isDark model user shared
+
+
 mainBlock : Bool -> Model -> B.User -> Shared.Model -> Html Msg
 mainBlock isDark model user shared =
     div [ class "space-y-6" ]
@@ -3838,7 +3988,14 @@ mainBlock isDark model user shared =
 
 body : Bool -> Shared.Model -> B.User -> Model -> List (Html Msg)
 body dark shared user model =
-    [ div [ class "mt-2 w-5/6 mx-auto" ] [ mainBlock dark model user shared ]
+    let
+        mainContent =
+            adminTabContent dark shared user model
+    in
+    [ div [ class "mt-2 w-5/6 mx-auto" ]
+        [ adminTabsView model.adminActiveTab
+        , mainContent
+        ]
     ]
         ++ (case model.userSelectorDialog of
                 Just dialog ->
@@ -3934,6 +4091,6 @@ body dark shared user model =
 
 view : Bool -> Shared.Model -> B.User -> Model -> View Msg
 view dark shared user model =
-    { title = "Адмін: напрямки"
+    { title = "Адмін"
     , body = body dark shared user model
     }

@@ -1,9 +1,37 @@
 use crate::error::AppError;
-use crate::h;
 use crate::types::{Mode, ShortContext};
+use crate::{h, new_pg_pool_from_mode};
+use anyhow::Context;
 use log::info;
 use milgeo_rs::coordinates::usk2000::usk2000_to_wgs84;
 use milgeo_rs::coordinates::Usk2000;
+use xshell::{cmd, Shell};
+
+pub async fn oneoff_restart_echo(
+    mode: Mode,
+    ps: &crate::OneoffRestartEchoPs,
+) -> Result<(), AppError> {
+    if ps.restart_postgres.unwrap_or(false) {
+        restart_process("postgresql")?;
+    }
+    if ps.restart_messengers.unwrap_or(false) {
+        let db = new_pg_pool_from_mode(mode).await.c(h!())?;
+        echo_im::restart_live_messengers_that_fall_behind(540, &db)
+            .await
+            .context(h!())?
+    }
+    restart_process("wdintel-rs")?;
+
+    Ok(())
+}
+
+fn restart_process(process_name: &str) -> anyhow::Result<()> {
+    let sh = Shell::new().c(h!())?;
+    cmd!(sh, "sudo -S systemctl restart {process_name}")
+        .run()
+        .context(h!())?;
+    Ok(())
+}
 
 pub fn oneoff_batch_usk_to_wgs(
     _mode: Mode,

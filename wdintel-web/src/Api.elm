@@ -880,6 +880,17 @@ admin_update_tag toMsg tagId req =
         , tracker = Nothing
         }
 
+admin_restart_echo :
+    (Result ApiError Bool -> msg)
+    -> RestartEchoRequest
+    -> Cmd msg
+admin_restart_echo toMsg req =
+    Http.post
+        { url = "/api/admin/restart-echo"
+        , body = Http.jsonBody (restartEchoRequestEncoder req)
+        , expect = leExpectJson toMsg Decode.bool
+        }
+
 
 tag_keywords_add :
     (Result ApiError (List TagKeyword) -> msg)
