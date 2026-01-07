@@ -143,8 +143,7 @@ renderControlPanel isDark model =
                 "text-gray-600"
     in
     div [ class "bg-[var(--bs-body-bg)] rounded-lg border p-6 space-y-4" ]
-        [ h2 [ class "text-xl font-semibold" ] [ text "Панель Керування" ]
-        , div [ class "space-y-4" ]
+        [ div [ class "space-y-4" ]
             [ h3 [ class "text-lg font-semibold" ] [ text "Натисність щоби перезапустити Ехо Сервер" ]
             , div [ class "space-y-2" ]
                 [ Checkbox.new { isChecked = restartEchoForm.restartPostgres, onToggle = ToggleRestartPostgres }
@@ -154,7 +153,7 @@ renderControlPanel isDark model =
                     |> Checkbox.view
                 , Checkbox.new { isChecked = restartEchoForm.restartOutdatedSources, onToggle = ToggleRestartOutdatedSources }
                     |> Checkbox.withContent
-                        [ span [ class descriptionClass ] [ text "Перезапустити застарілі джерела (процеси, що відстали)" ]
+                        [ span [ class descriptionClass ] [ text "Перезапустити месенджери що відстали" ]
                         ]
                     |> Checkbox.view
                 ]
