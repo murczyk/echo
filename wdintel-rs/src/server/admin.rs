@@ -54,9 +54,10 @@ pub async fn restart_echo(
         args.push("--restart-messengers=true");
     }
     let sh = Shell::new().c(h!())?;
+    let mode = env.mode.to_string().to_lowercase();
     cmd!(
         sh,
-        "sudo wdintel-rs --mode live oneoff-restart-echo {args...}"
+        "sudo wdintel-rs --mode {mode} oneoff-restart-echo {args...}"
     )
     .run()
     .context(h!())?;
