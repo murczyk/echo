@@ -903,21 +903,11 @@ update shared msg model =
         ModulationsReturnedByApi (Ok res) ->
             let
                 keyModulationNames =
-                    [ "NFM"
-                    , "AM"
-                    , "АМ"
-                    , "DMR"
-                    , "DMR (ARC40)"
+                    [ "DMR (ARC40)"
                     , "DMR (AES256)"
-                    , "HYTERA"
                     , "HYTERA (256 bit)"
-                    , "TYT"
                     , "TYT (16 bit)"
                     , "TYT (128 bit)"
-                    , "TETRA"
-                    , "Гранит"
-                    , "GSM"
-                    , "Умовна"
                     ]
 
                 keyModulations =

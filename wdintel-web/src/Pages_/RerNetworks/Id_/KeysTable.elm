@@ -758,10 +758,6 @@ keyEditSidebarContent shared model updateReq =
                                 ++ " символів"
                         ]
 
-                  else if isModulationSelected && not keyAllowed then
-                    div [ class "text-sm text-muted-foreground mt-1" ]
-                        [ text "Ключ недоступний для обраної модуляції" ]
-
                   else
                     text ""
                 ]
@@ -919,10 +915,6 @@ keyCreateSidebarContent shared model =
                                    )
                                 ++ " символів"
                         ]
-
-                  else if isModulationSelected && not keyAllowed then
-                    div [ class "text-sm text-muted-foreground mt-1" ]
-                        [ text "Ключ недоступний для обраної модуляції" ]
 
                   else
                     text ""
