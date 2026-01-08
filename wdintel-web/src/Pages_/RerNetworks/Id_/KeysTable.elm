@@ -222,10 +222,10 @@ update _ msg networkModel =
                         keyLen =
                             String.length (String.trim keyValue)
 
-                        keyTooLong =
-                            case keyRules.maxLen of
-                                Just maxLen ->
-                                    keyAllowed && keyLen > maxLen
+                        keyWrongLength =
+                            case keyRules.requiredLen of
+                                Just requiredLen ->
+                                    keyAllowed && keyLen /= requiredLen
 
                                 Nothing ->
                                     False
@@ -234,7 +234,7 @@ update _ msg networkModel =
                             isModulationSelected && keyAllowed
 
                         keyInvalid =
-                            (keyRequired && String.trim keyValue == "") || keyTooLong
+                            (keyRequired && String.trim keyValue == "") || keyWrongLength
                     in
                     if not isModulationSelected then
                         ( networkModel, E.none )
@@ -474,10 +474,10 @@ update _ msg networkModel =
                         keyLen =
                             String.length (String.trim keyValue)
 
-                        keyTooLong =
-                            case keyRules.maxLen of
-                                Just maxLen ->
-                                    keyAllowed && keyLen > maxLen
+                        keyWrongLength =
+                            case keyRules.requiredLen of
+                                Just requiredLen ->
+                                    keyAllowed && keyLen /= requiredLen
 
                                 Nothing ->
                                     False
@@ -486,7 +486,7 @@ update _ msg networkModel =
                             isModulationSelected && keyAllowed
 
                         keyInvalid =
-                            (keyRequired && String.trim keyValue == "") || keyTooLong
+                            (keyRequired && String.trim keyValue == "") || keyWrongLength
                     in
                     if not isModulationSelected then
                         ( networkModel, E.none )
@@ -670,10 +670,10 @@ keyEditSidebarContent shared model updateReq =
         keyLen =
             String.length (String.trim keyValue)
 
-        keyTooLong =
-            case keyRules.maxLen of
-                Just maxLen ->
-                    keyAllowed && keyLen > maxLen
+        keyWrongLength =
+            case keyRules.requiredLen of
+                Just requiredLen ->
+                    keyAllowed && keyLen /= requiredLen
 
                 Nothing ->
                     False
@@ -694,7 +694,7 @@ keyEditSidebarContent shared model updateReq =
             isModulationSelected && keyAllowed
 
         keyInvalid =
-            (keyRequired && keyIsEmpty) || keyTooLong
+            (keyRequired && keyIsEmpty) || keyWrongLength
     in
     [ div [ class "flex flex-col h-full" ]
         [ div [ class "p-6 border-b border-border" ]
@@ -735,9 +735,9 @@ keyEditSidebarContent shared model updateReq =
                      , onInput KeyEditKeyChanged
                      , disabled (not keyInputEnabled)
                      ]
-                        ++ (case keyRules.maxLen of
-                                Just maxLen ->
-                                    [ maxlength maxLen ]
+                        ++ (case keyRules.requiredLen of
+                                Just requiredLen ->
+                                    [ maxlength requiredLen ]
 
                                 Nothing ->
                                     []
@@ -747,15 +747,15 @@ keyEditSidebarContent shared model updateReq =
                 , if keyRequired && keyIsEmpty then
                     div [ class "text-sm text-red-600 mt-1" ] [ text "Це поле обов'язкове" ]
 
-                  else if keyTooLong then
+                  else if keyWrongLength then
                     div [ class "text-sm text-red-600 mt-1" ]
                         [ text <|
-                            "Максимальна довжина ключа — "
-                                ++ (keyRules.maxLen
+                            "Довжина ключа має бути "
+                                ++ (keyRules.requiredLen
                                         |> Maybe.map String.fromInt
                                         |> Maybe.withDefault ""
                                    )
-                                ++ " символів"
+                                ++ " символи"
                         ]
 
                   else
@@ -828,10 +828,10 @@ keyCreateSidebarContent shared model =
         keyLen =
             String.length (String.trim keyValue)
 
-        keyTooLong =
-            case keyRules.maxLen of
-                Just maxLen ->
-                    keyAllowed && keyLen > maxLen
+        keyWrongLength =
+            case keyRules.requiredLen of
+                Just requiredLen ->
+                    keyAllowed && keyLen /= requiredLen
 
                 Nothing ->
                     False
@@ -852,7 +852,7 @@ keyCreateSidebarContent shared model =
             isModulationSelected && keyAllowed
 
         keyInvalid =
-            (keyRequired && keyIsEmpty) || keyTooLong
+            (keyRequired && keyIsEmpty) || keyWrongLength
     in
     [ div [ class "flex flex-col h-full" ]
         [ div [ class "p-6 border-b border-border" ]
@@ -893,9 +893,9 @@ keyCreateSidebarContent shared model =
                      , onInput KeyCreateKeyChanged
                      , disabled (not keyInputEnabled)
                      ]
-                        ++ (case keyRules.maxLen of
-                                Just maxLen ->
-                                    [ maxlength maxLen ]
+                        ++ (case keyRules.requiredLen of
+                                Just requiredLen ->
+                                    [ maxlength requiredLen ]
 
                                 Nothing ->
                                     []
@@ -905,15 +905,15 @@ keyCreateSidebarContent shared model =
                 , if keyRequired && keyIsEmpty then
                     div [ class "text-sm text-red-600 mt-1" ] [ text "Це поле обов'язкове" ]
 
-                  else if keyTooLong then
+                  else if keyWrongLength then
                     div [ class "text-sm text-red-600 mt-1" ]
                         [ text <|
-                            "Максимальна довжина ключа — "
-                                ++ (keyRules.maxLen
+                            "Довжина ключа має бути "
+                                ++ (keyRules.requiredLen
                                         |> Maybe.map String.fromInt
                                         |> Maybe.withDefault ""
                                    )
-                                ++ " символів"
+                                ++ " символи"
                         ]
 
                   else
@@ -1157,7 +1157,7 @@ modulationLabelById model modulationId =
 
 type alias KeyRules =
     { keyAllowed : Bool
-    , maxLen : Maybe Int
+    , requiredLen : Maybe Int
     }
 
 
@@ -1185,49 +1185,49 @@ keyRulesFromModulationName : Maybe String -> KeyRules
 keyRulesFromModulationName modulationName =
     case modulationName of
         Just "DMR (ARC40)" ->
-            { keyAllowed = True, maxLen = Just 4 }
+            { keyAllowed = True, requiredLen = Just 4 }
 
         Just "DMR (AES256)" ->
-            { keyAllowed = True, maxLen = Just 64 }
+            { keyAllowed = True, requiredLen = Just 64 }
 
         Just "HYTERA (256 bit)" ->
-            { keyAllowed = True, maxLen = Just 64 }
+            { keyAllowed = True, requiredLen = Just 64 }
 
         Just "TYT (16 bit)" ->
-            { keyAllowed = True, maxLen = Just 4 }
+            { keyAllowed = True, requiredLen = Just 4 }
 
         Just "TYT (128 bit)" ->
-            { keyAllowed = True, maxLen = Just 32 }
+            { keyAllowed = True, requiredLen = Just 32 }
 
         Just "NFM" ->
-            { keyAllowed = False, maxLen = Nothing }
+            { keyAllowed = False, requiredLen = Nothing }
 
         Just "AM" ->
-            { keyAllowed = False, maxLen = Nothing }
+            { keyAllowed = False, requiredLen = Nothing }
 
         Just "АМ" ->
-            { keyAllowed = False, maxLen = Nothing }
+            { keyAllowed = False, requiredLen = Nothing }
 
         Just "DMR" ->
-            { keyAllowed = False, maxLen = Nothing }
+            { keyAllowed = False, requiredLen = Nothing }
 
         Just "HYTERA" ->
-            { keyAllowed = False, maxLen = Nothing }
+            { keyAllowed = False, requiredLen = Nothing }
 
         Just "TYT" ->
-            { keyAllowed = False, maxLen = Nothing }
+            { keyAllowed = False, requiredLen = Nothing }
 
         Just "TETRA" ->
-            { keyAllowed = False, maxLen = Nothing }
+            { keyAllowed = False, requiredLen = Nothing }
 
         Just "Гранит" ->
-            { keyAllowed = False, maxLen = Nothing }
+            { keyAllowed = False, requiredLen = Nothing }
 
         Just "GSM" ->
-            { keyAllowed = False, maxLen = Nothing }
+            { keyAllowed = False, requiredLen = Nothing }
 
         Just "Умовна" ->
-            { keyAllowed = False, maxLen = Nothing }
+            { keyAllowed = False, requiredLen = Nothing }
 
         _ ->
-            { keyAllowed = True, maxLen = Nothing }
+            { keyAllowed = True, requiredLen = Nothing }
