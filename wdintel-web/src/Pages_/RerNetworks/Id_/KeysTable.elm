@@ -15,7 +15,7 @@ import Core.Types exposing (ApiError)
 import Effect as E exposing (Effect)
 import Html exposing (..)
 import Html.Attributes exposing (..)
-import Html.Events exposing (onInput)
+import Html.Events exposing (onClick, onInput)
 import Html.Styled as Styled
 import List.Extra as ListX
 import Pages_.RerNetworks.Id_.Model exposing (Model)
