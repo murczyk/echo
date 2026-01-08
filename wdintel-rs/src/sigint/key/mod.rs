@@ -111,32 +111,7 @@ pub async fn create_key(
         .context(h!())?;
 
     let user_id = user.id().c(h!())?;
-    let organism_id = login::Entity::find_by_id(user_id.to_string())
-        .select_only()
-        .column(login::Column::OrganismId)
-        .into_tuple::<i64>()
-        .one(&env.dbx)
-        .await
-        .c(h!())?
-        .ok_or_else(|| AppError::BL {
-            msg: "User has no organism assigned".to_string(),
-        })?;
-
-    if let Some(freq_id) = req.sigint_network_freq_id {
-        let freq_exists = sigint_network_freq::Entity::find()
-            .filter(sigint_network_freq::Column::Id.eq(freq_id))
-            .filter(
-                sigint_network_freq::Column::NetworkId
-                    .eq(req.sigint_network_id),
-            )
-            .filter(sigint_network_freq::Column::Deleted.eq(false))
-            .one(&env.dbx)
-            .await
-            .c(h!())?;
-        if freq_exists.is_none() {
-            return Err(AppError::NotFound);
-        }
-    }
+    let organism_id = load_organism_id(&user_id, &env.dbx).await.c(h!())?;
 
     let txn = env.dbx.begin().await.c(h!())?;
     let key = insert_new_key(
@@ -169,16 +144,7 @@ pub async fn update_key(
         .context(h!())?;
 
     let user_id = user.id().c(h!())?;
-    let organism_id = login::Entity::find_by_id(user_id.to_string())
-        .select_only()
-        .column(login::Column::OrganismId)
-        .into_tuple::<i64>()
-        .one(&env.dbx)
-        .await
-        .c(h!())?
-        .ok_or_else(|| AppError::BL {
-            msg: "User has no organism assigned".to_string(),
-        })?;
+    let organism_id = load_organism_id(&user_id, &env.dbx).await.c(h!())?;
 
     if let Some(freq_id) = req.sigint_network_freq_id {
         let freq_exists = sigint_network_freq::Entity::find()
@@ -224,16 +190,7 @@ pub async fn delete_key(
         .context(h!())?;
 
     let user_id = user.id().c(h!())?;
-    let organism_id = login::Entity::find_by_id(user_id.to_string())
-        .select_only()
-        .column(login::Column::OrganismId)
-        .into_tuple::<i64>()
-        .one(&env.dbx)
-        .await
-        .c(h!())?
-        .ok_or_else(|| AppError::BL {
-            msg: "User has no organism assigned".to_string(),
-        })?;
+    let organism_id = load_organism_id(&user_id, &env.dbx).await.c(h!())?;
 
     let key = sigint_network_encryption_key::Entity::find_by_id(req.id)
         .filter(sigint_network_encryption_key::Column::Deleted.eq(false))
@@ -274,14 +231,7 @@ async fn load_keys_list<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
-    let organism_id = login::Entity::find_by_id(user_login.to_string())
-        .select_only()
-        .column(login::Column::OrganismId)
-        .into_tuple::<i64>()
-        .one(db)
-        .await
-        .c(h!())?;
-    let Some(organism_id) = organism_id else {
+    let Ok(organism_id) = load_organism_id(user_login, db).await else {
         return Ok(vec![]);
     };
     Ok(sigint_network_encryption_key::Entity::find()
@@ -463,4 +413,23 @@ pub async fn insert_new_key(
     .await
     .context(h!())?;
     Ok(key)
+}
+
+async fn load_organism_id<'a, 'async_trait, C>(
+    user_login: &str,
+    db: &'a C,
+) -> Result<i64, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    login::Entity::find_by_id(user_login.to_string())
+        .select_only()
+        .column(login::Column::OrganismId)
+        .into_tuple::<i64>()
+        .one(db)
+        .await
+        .c(h!())?
+        .ok_or_else(|| AppError::BL {
+            msg: "User has no organism assigned".to_string(),
+        })
 }
