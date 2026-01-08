@@ -14,6 +14,7 @@ import Core.Types exposing (ApiError)
 import Effect as E exposing (Effect)
 import Html exposing (..)
 import Html.Attributes exposing (..)
+import Html.Events exposing (onInput)
 import Html.Styled as Styled
 import List.Extra as ListX
 import Pages_.RerNetworks.Id_.Model exposing (Model)
@@ -407,7 +408,7 @@ keyEditSidebarContent : Shared.Model -> Model -> B.UpdateEncryptionKeyReq -> Lis
 keyEditSidebarContent shared model updateReq =
     let
         selectedItem =
-            findSelectItem model.keyEditFreqSelect.selected model.keyEditFreqSelect.items
+            findSelectItem model model.keyEditFreqSelect.selected
 
         defaultOptions =
             Utils.Select.defaultOptions (isDarkMode shared.themeMode)
@@ -491,7 +492,7 @@ keyCreateSidebarContent : Shared.Model -> Model -> List (Html KeysMsg)
 keyCreateSidebarContent shared model =
     let
         selectedItem =
-            findSelectItem model.keyCreateFreqSelect.selected model.keyCreateFreqSelect.items
+            findSelectItem model model.keyCreateFreqSelect.selected
 
         defaultOptions =
             Utils.Select.defaultOptions (isDarkMode shared.themeMode)
@@ -571,15 +572,22 @@ keyCreateSidebarContent shared model =
     ]
 
 
-findSelectItem : Maybe Int -> List (Select.MenuItem Int) -> Maybe (Select.MenuItem Int)
-findSelectItem selected items =
-    selected
-        |> Maybe.andThen
-            (\selectedId ->
-                items
-                    |> List.filter (\item -> item.item == selectedId)
-                    |> List.head
-            )
+findSelectItem : Model -> Maybe Int -> Maybe (Select.MenuItem Int)
+findSelectItem model selectedId =
+    case ( model.freqs, selectedId ) of
+        ( Success freqs, Just freqId ) ->
+            freqs
+                |> ListX.find (\freq -> freq.networkFreqId == freqId)
+                |> Maybe.map
+                    (\freq ->
+                        Select.basicMenuItem
+                            { item = freq.networkFreqId
+                            , label = freq.freq
+                            }
+                    )
+
+        _ ->
+            Nothing
 
 emptyKeysPlaceholder : Html msg
 emptyKeysPlaceholder =
