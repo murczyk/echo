@@ -192,6 +192,8 @@ init route shared () =
             , selected = Nothing
             }
       , keyEditSaving = False
+      , deleteKeyConfirmation = Nothing
+      , deleteKeyLoading = False
       , freqEditSidebar = Nothing
       , freqDetailPopup = Nothing
       , modulations = NotAsked
@@ -394,6 +396,10 @@ update shared msg model =
                                 E.getSingleNetworkFreqs Msgs.FreqsReturnedByApi { networkId = network.id }
 
                         ( Msgs.KeyUpdated (Ok _), Success network ) ->
+                            E.map Frequencies <|
+                                E.getSingleNetworkFreqs Msgs.FreqsReturnedByApi { networkId = network.id }
+
+                        ( Msgs.DeleteKeyReturnedByApi (Ok _), Success network ) ->
                             E.map Frequencies <|
                                 E.getSingleNetworkFreqs Msgs.FreqsReturnedByApi { networkId = network.id }
 
@@ -1139,6 +1145,7 @@ view user shared model =
                 , Html.map Frequencies <| FrequenciesTable.createSidebar model user shared
                 , Html.map Frequencies <| FrequenciesTable.deleteFreqConfirmationModal model
                 , Html.map Frequencies <| FrequenciesTable.freqActivityChartDetailed model shared
+                , Html.map Keys <| KeysTable.deleteKeyConfirmationModal model
                 , Html.map Descriptions <| Descriptions.viewDeleteConfirmation model
                 ]
             ]

@@ -1234,6 +1234,18 @@ sigint_update_key toMsg req =
         }
 
 
+sigint_delete_key :
+    (Result ApiError EncryptionKeyData -> msg)
+    -> DeleteEncryptionKeyReq
+    -> Cmd msg
+sigint_delete_key toMsg req =
+    Http.post
+        { url = "/api/sigint/keys/delete"
+        , body = Http.jsonBody (deleteEncryptionKeyReqEncoder req)
+        , expect = leExpectJson toMsg encryptionKeyDataDecoder
+        }
+
+
 sigint_callsign_unit_stats :
     (Result ApiError CallsignUnitStatsRsp -> msg)
     -> ()

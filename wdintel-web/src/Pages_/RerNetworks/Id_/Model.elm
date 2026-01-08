@@ -130,6 +130,8 @@ type alias Model =
     , keyEditFreqSelect : Utils.Select.SelectTypeSingle Int
     , keyEditModulationSelect : Utils.Select.SelectTypeSingle Int
     , keyEditSaving : Bool
+    , deleteKeyConfirmation : Maybe ( Int, String )
+    , deleteKeyLoading : Bool
     , freqEditSidebar : Maybe ( String, B.UpdateNetworkFreqReq )
     , freqDetailPopup : Maybe String
     , modulations : RemoteData ApiError (List B.ModulationRec)

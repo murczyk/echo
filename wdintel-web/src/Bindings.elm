@@ -3645,6 +3645,18 @@ updateEncryptionKeyReqEncoder struct =
         ]
 
 
+type alias DeleteEncryptionKeyReq =
+    { id : Int
+    }
+
+
+deleteEncryptionKeyReqEncoder : DeleteEncryptionKeyReq -> Json.Encode.Value
+deleteEncryptionKeyReqEncoder struct =
+    Json.Encode.object
+        [ ( "id", Json.Encode.int struct.id )
+        ]
+
+
 type alias Tag =
     { label : String
     , extra : Maybe Bool
@@ -8560,6 +8572,12 @@ updateEncryptionKeyReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_network_freq_id" (Json.Decode.nullable Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "key" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "description" (Json.Decode.nullable Json.Decode.string)))
+
+
+deleteEncryptionKeyReqDecoder : Json.Decode.Decoder DeleteEncryptionKeyReq
+deleteEncryptionKeyReqDecoder =
+    Json.Decode.succeed DeleteEncryptionKeyReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.int))
 
 
 tagDecoder : Json.Decode.Decoder Tag

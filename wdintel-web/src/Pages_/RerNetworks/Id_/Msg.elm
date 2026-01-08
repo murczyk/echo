@@ -234,3 +234,7 @@ type KeysMsg
     | KeyEditModulationSelMsg (Select.Msg Int)
     | SaveKeyEditClicked
     | KeyUpdated (Result ApiError B.EncryptionKeyData)
+    | DeleteKeyClickedByUser Int String
+    | DeleteKeyConfirmedByUser
+    | DeleteKeyCanceledByUser
+    | DeleteKeyReturnedByApi (Result ApiError B.EncryptionKeyData)

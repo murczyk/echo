@@ -1,5 +1,6 @@
 module Pages_.RerNetworks.Id_.KeysTable exposing
     ( createSidebar
+    , deleteKeyConfirmationModal
     , editSidebar
     , initLoad
     , update
@@ -22,6 +23,7 @@ import Pages_.RerNetworks.Id_.Msg as Msgs exposing (KeysMsg(..))
 import Select
 import Shared
 import Shared.Components.Button as Button
+import Shared.Components.ModalDialog as ModalDialog
 import Shared.Components.Sidebar as Sidebar
 import Shared.Components.Spinner
 import Shared.Components.Table as Table
@@ -449,6 +451,45 @@ update _ msg networkModel =
                 _ ->
                     ( { networkModel | keyEditSaving = False }, E.none )
 
+        DeleteKeyClickedByUser keyId keyValue ->
+            ( { networkModel | deleteKeyConfirmation = Just ( keyId, keyValue ) }
+            , E.none
+            )
+
+        DeleteKeyCanceledByUser ->
+            ( { networkModel | deleteKeyConfirmation = Nothing }
+            , E.none
+            )
+
+        DeleteKeyConfirmedByUser ->
+            case ( networkModel.network, networkModel.deleteKeyConfirmation ) of
+                ( Success _, Just ( keyId, _ ) ) ->
+                    ( { networkModel
+                        | deleteKeyLoading = True
+                        , deleteKeyConfirmation = Nothing
+                      }
+                    , E.sendCmd <|
+                        Api.sigint_delete_key DeleteKeyReturnedByApi { id = keyId }
+                    )
+
+                _ ->
+                    ( networkModel, E.none )
+
+        DeleteKeyReturnedByApi (Err e) ->
+            ( { networkModel | deleteKeyLoading = False }
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення ключа" e
+            )
+
+        DeleteKeyReturnedByApi (Ok _) ->
+            case networkModel.network of
+                Success network ->
+                    ( { networkModel | deleteKeyLoading = False }
+                    , initLoad network.id
+                    )
+
+                _ ->
+                    ( { networkModel | deleteKeyLoading = False }, E.none )
+
 
 view : Model -> Auth.User -> Html KeysMsg
 view networkModel user =
@@ -476,6 +517,44 @@ view networkModel user =
             _ ->
                 Shared.Components.Spinner.loadingSpinnerSm
         ]
+
+
+deleteKeyConfirmationModal : Model -> Html KeysMsg
+deleteKeyConfirmationModal model =
+    let
+        keyValue =
+            case model.deleteKeyConfirmation of
+                Just ( _, value ) ->
+                    keyLabel value
+
+                Nothing ->
+                    "-"
+
+        deleteKeyDialogContent =
+            [ div [ class "flex flex-col justify-between gap-4 p-2 w-[400px]" ]
+                [ div [ class "pb-12" ]
+                    [ h2 [] [ text "Видалити ключ" ]
+                    , p [] [ text <| "Ви впевнені, що хочете видалити ключ \"" ++ keyValue ++ "\"?" ]
+                    ]
+                , div [ class "flex justify-between" ]
+                    [ Button.new { label = "Скасувати", onClick = DeleteKeyCanceledByUser }
+                        |> Button.withStyleSecondary
+                        |> Button.view
+                    , Button.new { label = "Видалити", onClick = DeleteKeyConfirmedByUser }
+                        |> Button.withStyleDanger
+                        |> (if model.deleteKeyLoading then
+                                Button.withIcon
+                                    [ Shared.Components.Spinner.loadingSpinner2Sm ]
+
+                            else
+                                identity
+                           )
+                        |> Button.view
+                    ]
+                ]
+            ]
+    in
+    ModalDialog.modalDialog (model.deleteKeyConfirmation /= Nothing) DeleteKeyCanceledByUser [] deleteKeyDialogContent
 
 
 editSidebar : Model -> Auth.User -> Shared.Model -> Html KeysMsg
@@ -958,15 +1037,31 @@ keysTableConfig user networkModel =
                             { name = "Дії"
                             , viewData =
                                 \key ->
-                                    { attributes = [ style "width" "120px" ]
+                                    { attributes = [ class "col-narrow" ]
                                     , children =
                                         [ if key.key == "🔑" then
                                             span [ class "text-muted-foreground text-sm" ] [ text "-" ]
 
                                           else
-                                            Button.new { label = "Редагувати", onClick = OpenKeyEditSidebar key }
-                                                |> Button.withStyleSecondary
-                                                |> Button.view
+                                            case key.id of
+                                                Just keyId ->
+                                                    div [ class "flex gap-[4px] text-sm" ]
+                                                        [ button
+                                                            [ title "Редагувати"
+                                                            , class "icon-btn icon-btn-primary"
+                                                            , onClick (OpenKeyEditSidebar key)
+                                                            ]
+                                                            [ i [ class "bi bi-pencil-square" ] [] ]
+                                                        , button
+                                                            [ title "Видалити ключ"
+                                                            , class "icon-btn icon-btn-danger"
+                                                            , onClick (DeleteKeyClickedByUser keyId (keyLabel key.key))
+                                                            ]
+                                                            [ i [ class "bi bi-trash" ] [] ]
+                                                        ]
+
+                                                Nothing ->
+                                                    span [ class "text-muted-foreground text-sm" ] [ text "-" ]
                                         ]
                                     }
                             , sorter = Table.unsortable

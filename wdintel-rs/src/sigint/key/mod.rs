@@ -56,6 +56,13 @@ pub struct UpdateEncryptionKeyReq {
     pub description: Option<String>,
 }
 
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct DeleteEncryptionKeyReq {
+    pub id: i64,
+}
+
 #[post("/api/sigint/keys")]
 pub async fn list_keys(
     user: actix_identity::Identity,
@@ -216,6 +223,48 @@ pub async fn update_key(
     txn.commit().await.c(h!())?;
 
     Ok(Json(key))
+}
+
+#[post("/api/sigint/keys/delete")]
+pub async fn delete_key(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<DeleteEncryptionKeyReq>,
+) -> Result<Json<EncryptionKeyData>, AppError> {
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .context(h!())?;
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "UnitsEditor")
+        .await
+        .context(h!())?;
+
+    let user_id = user.id().c(h!())?;
+    let organism_id = login::Entity::find_by_id(user_id.to_string())
+        .select_only()
+        .column(login::Column::OrganismId)
+        .into_tuple::<i64>()
+        .one(&env.dbx)
+        .await
+        .c(h!())?
+        .ok_or_else(|| AppError::BL {
+            msg: "User has no organism assigned".to_string(),
+        })?;
+
+    let key = sigint_network_encryption_key::Entity::find_by_id(req.id)
+        .filter(sigint_network_encryption_key::Column::Deleted.eq(false))
+        .filter(
+            sigint_network_encryption_key::Column::OrganismId.eq(organism_id),
+        )
+        .one(&env.dbx)
+        .await
+        .c(h!())?
+        .ok_or(AppError::NotFound)?;
+
+    let mut key_am = key.into_active_model();
+    key_am.deleted = Set(true);
+    let key = key_am.update(&env.dbx).await.c(h!())?;
+
+    Ok(Json(map_key_for_list(&organism_id, key)))
 }
 
 pub async fn load_freq_keys<'a, 'async_trait, C>(

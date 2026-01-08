@@ -489,6 +489,7 @@ pub async fn main_server(
             .service(crate::sigint::key::list_keys)
             .service(crate::sigint::key::create_key)
             .service(crate::sigint::key::update_key)
+            .service(crate::sigint::key::delete_key)
             .service(crate::sigint::freq::freq_exists)
             .service(crate::sigint::freq::list_freqs)
             .service(crate::sigint::freq::list_freqs_v2)
