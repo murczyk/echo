@@ -4212,6 +4212,25 @@ listCallsignsSortByEncoder enum =
             Json.Encode.string "CallsignUnitDesc"
 
 
+type DevelopingFilter
+    = OnlyDeveloping
+    | OnlyNonDeveloping
+    | All
+
+
+developingFilterEncoder : DevelopingFilter -> Json.Encode.Value
+developingFilterEncoder enum =
+    case enum of
+        OnlyDeveloping ->
+            Json.Encode.string "OnlyDeveloping"
+
+        OnlyNonDeveloping ->
+            Json.Encode.string "OnlyNonDeveloping"
+
+        All ->
+            Json.Encode.string "All"
+
+
 type alias ListCallsignsReq =
     { afterId : Maybe Int
     , beforeId : Maybe Int
@@ -4219,6 +4238,7 @@ type alias ListCallsignsReq =
     , filterPosition : Maybe String
     , filterComment : Maybe String
     , filterUnit : Maybe String
+    , filterDeveloping : Maybe DevelopingFilter
     , sinceDateInclusiveMs : Maybe Int
     , tillDateInclusiveMs : Maybe Int
     , limit : Maybe Int
@@ -4235,6 +4255,7 @@ listCallsignsReqEncoder struct =
         , ( "filter_position", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterPosition )
         , ( "filter_comment", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterComment )
         , ( "filter_unit", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterUnit )
+        , ( "filter_developing", (Maybe.withDefault Json.Encode.null << Maybe.map developingFilterEncoder) struct.filterDeveloping )
         , ( "since_date_inclusive_ms", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.sinceDateInclusiveMs )
         , ( "till_date_inclusive_ms", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.tillDateInclusiveMs )
         , ( "limit", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.limit )
@@ -8924,6 +8945,7 @@ listCallsignsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_position" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_comment" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_developing" (Json.Decode.nullable developingFilterDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "since_date_inclusive_ms" (Json.Decode.nullable Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "till_date_inclusive_ms" (Json.Decode.nullable Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "limit" (Json.Decode.nullable Json.Decode.int)))
@@ -8976,6 +8998,42 @@ listNetworkCallsignsSortByDecoder =
                     case x of
                         "NetworkCallsignCreatedAtDesc" ->
                             Json.Decode.succeed NetworkCallsignCreatedAtDesc
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
+
+
+developingFilterDecoder : Json.Decode.Decoder DevelopingFilter
+developingFilterDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "OnlyDeveloping" ->
+                            Json.Decode.succeed OnlyDeveloping
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "OnlyNonDeveloping" ->
+                            Json.Decode.succeed OnlyNonDeveloping
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "All" ->
+                            Json.Decode.succeed All
 
                         unexpected ->
                             Json.Decode.fail <| "Unexpected variant " ++ unexpected

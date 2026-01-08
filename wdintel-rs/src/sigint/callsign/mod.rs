@@ -214,6 +214,18 @@ async fn list_callsigns_impl(
         }
     }
 
+    let filter_developing = req
+        .filter_developing
+        .clone()
+        .unwrap_or(DevelopingFilter::OnlyNonDeveloping);
+    callsigns = match filter_developing {
+        DevelopingFilter::OnlyDeveloping => callsigns
+            .filter(sigint_callsign::Column::Developing.eq(true)),
+        DevelopingFilter::OnlyNonDeveloping => callsigns
+            .filter(sigint_callsign::Column::Developing.eq(false)),
+        DevelopingFilter::All => callsigns,
+    };
+
     if let Some(since_date_inclusive_ms) = req.since_date_inclusive_ms {
         callsigns = callsigns.filter(
             sigint_callsign::Column::CreatedAt

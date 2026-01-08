@@ -82,6 +82,7 @@ type alias Model =
     , filterPosition : String
     , filterComment : String
     , filterUnit : String
+    , filterDeveloping : B.DevelopingFilter
     , filterCallsignDebounce : Debounce String
     , filterPositionDebounce : Debounce String
     , filterCommentDebounce : Debounce String
@@ -148,6 +149,7 @@ init req _ =
             , filterPosition = ""
             , filterComment = ""
             , filterUnit = ""
+            , filterDeveloping = B.OnlyNonDeveloping
             , filterCallsignDebounce = Debounce.init
             , filterPositionDebounce = Debounce.init
             , filterCommentDebounce = Debounce.init
@@ -208,6 +210,7 @@ type Msg
     | FilterPositionMsg String
     | FilterCommentMsg String
     | FilterUnitMsg String
+    | FilterDevelopingMsg B.DevelopingFilter
     | FilterCallsignDebounceMsg Debounce.Msg
     | FilterPositionDebounceMsg Debounce.Msg
     | FilterCommentDebounceMsg Debounce.Msg
@@ -295,6 +298,35 @@ sortingOrderToBackendSort order =
             []
 
 
+developingFilterToValue : B.DevelopingFilter -> String
+developingFilterToValue developingFilter =
+    case developingFilter of
+        B.OnlyDeveloping ->
+            "only-developing"
+
+        B.OnlyNonDeveloping ->
+            "only-non-developing"
+
+        B.All ->
+            "all"
+
+
+parseDevelopingFilter : String -> B.DevelopingFilter
+parseDevelopingFilter value =
+    case value of
+        "only-developing" ->
+            B.OnlyDeveloping
+
+        "only-non-developing" ->
+            B.OnlyNonDeveloping
+
+        "all" ->
+            B.All
+
+        _ ->
+            B.OnlyDeveloping
+
+
 
 -- Use backend default
 
@@ -330,6 +362,7 @@ buildListCallsignsReq model params =
     , filterPosition = Just model.filterPosition
     , filterComment = Just model.filterComment
     , filterUnit = Just model.filterUnit
+    , filterDeveloping = Just model.filterDeveloping
     , sinceDateInclusiveMs =
         if model.isIgnoringDateFilter then
             Nothing
@@ -875,6 +908,13 @@ update req shared msg model =
             , E.sendCmd cmd
             )
 
+        FilterDevelopingMsg developingFilter ->
+            let
+                m2 =
+                    { model | filterDeveloping = developingFilter, loading = True }
+            in
+            ( m2, loadCallsigns m2 )
+
         FilterCallsignDebounceMsg imsg ->
             let
                 ( debounce, debounceCmd ) =
@@ -1126,7 +1166,17 @@ update req shared msg model =
             )
 
         ClearFilters ->
-            ( { model | filterCallsign = "", filterPosition = "", filterComment = "", filterUnit = "" }, loadCallsigns model )
+            let
+                m2 =
+                    { model
+                        | filterCallsign = ""
+                        , filterPosition = ""
+                        , filterComment = ""
+                        , filterUnit = ""
+                        , filterDeveloping = B.OnlyDeveloping
+                    }
+            in
+            ( m2, loadCallsigns m2 )
 
         ToggleSidebar ->
             ( { model | showSidebar = not model.showSidebar }, E.none )
@@ -1903,6 +1953,7 @@ contentBlock shared model user =
             , model.filterPosition /= ""
             , model.filterComment /= ""
             , model.filterUnit /= ""
+            , model.filterDeveloping /= B.OnlyNonDeveloping
             ]
                 |> List.filter identity
                 |> List.length
@@ -1976,6 +2027,15 @@ contentBlock shared model user =
                                 , onInput FilterUnitMsg
                                 ]
                                 []
+                            , select
+                                [ class "form-input min-w-[200px]"
+                                , value (developingFilterToValue model.filterDeveloping)
+                                , onInput (parseDevelopingFilter >> FilterDevelopingMsg)
+                                ]
+                                [ option [ value "only-developing" ] [ text "В дорозвідці" ]
+                                , option [ value "only-non-developing" ] [ text "Відомі" ]
+                                , option [ value "all" ] [ text "Усі" ]
+                                ]
                             ]
                                 ++ [ button
                                         [ class "px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-700"
