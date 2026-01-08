@@ -1173,7 +1173,7 @@ update req shared msg model =
                         , filterPosition = ""
                         , filterComment = ""
                         , filterUnit = ""
-                        , filterDeveloping = B.OnlyDeveloping
+                        , filterDeveloping = B.OnlyNonDeveloping
                     }
             in
             ( m2, loadCallsigns m2 )
@@ -2032,8 +2032,8 @@ contentBlock shared model user =
                                 , value (developingFilterToValue model.filterDeveloping)
                                 , onInput (parseDevelopingFilter >> FilterDevelopingMsg)
                                 ]
-                                [ option [ value "only-developing" ] [ text "В дорозвідці" ]
-                                , option [ value "only-non-developing" ] [ text "Відомі" ]
+                                [ option [ value "only-non-developing" ] [ text "Відомі" ]
+                                , option [ value "only-developing" ] [ text "В дорозвідці" ]
                                 , option [ value "all" ] [ text "Усі" ]
                                 ]
                             ]
