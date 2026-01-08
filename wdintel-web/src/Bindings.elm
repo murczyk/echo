@@ -3568,7 +3568,9 @@ zoneDatasourceGroupUpdateReqEncoder struct =
 type alias EncryptionKeyData =
     { id : Maybe Int
     , sigintNetworkFreqId : Maybe Int
+    , sigintNetworkId : Maybe Int
     , key : String
+    , description : Maybe String
     }
 
 
@@ -3577,7 +3579,9 @@ encryptionKeyDataEncoder struct =
     Json.Encode.object
         [ ( "id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.id )
         , ( "sigint_network_freq_id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.sigintNetworkFreqId )
+        , ( "sigint_network_id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.sigintNetworkId )
         , ( "key", Json.Encode.string struct.key )
+        , ( "description", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.description )
         ]
 
 
@@ -3602,6 +3606,42 @@ listKeysRspEncoder : ListKeysRsp -> Json.Encode.Value
 listKeysRspEncoder struct =
     Json.Encode.object
         [ ( "keys", Json.Encode.list encryptionKeyDataEncoder struct.keys )
+        ]
+
+
+type alias CreateEncryptionKeyReq =
+    { sigintNetworkId : Int
+    , sigintNetworkFreqId : Maybe Int
+    , key : String
+    , description : Maybe String
+    }
+
+
+createEncryptionKeyReqEncoder : CreateEncryptionKeyReq -> Json.Encode.Value
+createEncryptionKeyReqEncoder struct =
+    Json.Encode.object
+        [ ( "sigint_network_id", Json.Encode.int struct.sigintNetworkId )
+        , ( "sigint_network_freq_id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.sigintNetworkFreqId )
+        , ( "key", Json.Encode.string struct.key )
+        , ( "description", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.description )
+        ]
+
+
+type alias UpdateEncryptionKeyReq =
+    { id : Int
+    , sigintNetworkFreqId : Maybe Int
+    , key : String
+    , description : Maybe String
+    }
+
+
+updateEncryptionKeyReqEncoder : UpdateEncryptionKeyReq -> Json.Encode.Value
+updateEncryptionKeyReqEncoder struct =
+    Json.Encode.object
+        [ ( "id", Json.Encode.int struct.id )
+        , ( "sigint_network_freq_id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.sigintNetworkFreqId )
+        , ( "key", Json.Encode.string struct.key )
+        , ( "description", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.description )
         ]
 
 
@@ -8487,7 +8527,9 @@ encryptionKeyDataDecoder =
     Json.Decode.succeed EncryptionKeyData
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.nullable Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_network_freq_id" (Json.Decode.nullable Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_network_id" (Json.Decode.nullable Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "key" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "description" (Json.Decode.nullable Json.Decode.string)))
 
 
 listKeysReqDecoder : Json.Decode.Decoder ListKeysReq
@@ -8500,6 +8542,24 @@ listKeysRspDecoder : Json.Decode.Decoder ListKeysRsp
 listKeysRspDecoder =
     Json.Decode.succeed ListKeysRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "keys" (Json.Decode.list encryptionKeyDataDecoder)))
+
+
+createEncryptionKeyReqDecoder : Json.Decode.Decoder CreateEncryptionKeyReq
+createEncryptionKeyReqDecoder =
+    Json.Decode.succeed CreateEncryptionKeyReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_network_id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_network_freq_id" (Json.Decode.nullable Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "key" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "description" (Json.Decode.nullable Json.Decode.string)))
+
+
+updateEncryptionKeyReqDecoder : Json.Decode.Decoder UpdateEncryptionKeyReq
+updateEncryptionKeyReqDecoder =
+    Json.Decode.succeed UpdateEncryptionKeyReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_network_freq_id" (Json.Decode.nullable Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "key" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "description" (Json.Decode.nullable Json.Decode.string)))
 
 
 tagDecoder : Json.Decode.Decoder Tag

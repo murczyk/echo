@@ -21,6 +21,9 @@ impl MigrationTrait for Migration {
 
             create index sigint_network_encryption_key_sigint_network_id_idx
                 on sigint_network_encryption_key(sigint_network_id);
+
+            create index sigint_network_encryption_key_sigint_network_freq_id_idx
+                on sigint_network_encryption_key(sigint_network_freq_id);
             ",
         )
         .await?;
@@ -31,6 +34,7 @@ impl MigrationTrait for Migration {
         let db = manager.get_connection();
         db.execute_unprepared(
             "
+            drop index if exists sigint_network_encryption_key_sigint_network_freq_id_idx;
             drop index if exists sigint_network_encryption_key_sigint_network_id_idx;
             alter table sigint_network_encryption_key
                 drop column if exists sigint_network_id,

@@ -57,6 +57,14 @@ update _ msg networkModel =
             )
 
         OpenKeyCreateSidebar ->
+            let
+                keyCreateFreqSelect =
+                    let
+                        select =
+                            networkModel.keyCreateFreqSelect
+                    in
+                    { select | selected = Nothing }
+            in
             ( { networkModel
                 | keyCreateSidebar = True
                 , keyCreateSaving = False
@@ -65,13 +73,20 @@ update _ msg networkModel =
                     , description = ""
                     , sigintNetworkFreqId = Nothing
                     }
-                , keyCreateFreqSelect =
-                    { networkModel.keyCreateFreqSelect | selected = Nothing }
+                , keyCreateFreqSelect = keyCreateFreqSelect
               }
             , E.none
             )
 
         CloseKeyCreateSidebar ->
+            let
+                keyCreateFreqSelect =
+                    let
+                        select =
+                            networkModel.keyCreateFreqSelect
+                    in
+                    { select | selected = Nothing }
+            in
             ( { networkModel
                 | keyCreateSidebar = False
                 , keyCreateSaving = False
@@ -80,24 +95,31 @@ update _ msg networkModel =
                     , description = ""
                     , sigintNetworkFreqId = Nothing
                     }
-                , keyCreateFreqSelect =
-                    { networkModel.keyCreateFreqSelect | selected = Nothing }
+                , keyCreateFreqSelect = keyCreateFreqSelect
               }
             , E.none
             )
 
         KeyCreateKeyChanged value ->
+            let
+                keyCreateState =
+                    networkModel.keyCreateState
+            in
             ( { networkModel
                 | keyCreateState =
-                    { networkModel.keyCreateState | key = value }
+                    { keyCreateState | key = value }
               }
             , E.none
             )
 
         KeyCreateDescriptionChanged value ->
+            let
+                keyCreateState =
+                    networkModel.keyCreateState
+            in
             ( { networkModel
                 | keyCreateState =
-                    { networkModel.keyCreateState | description = value }
+                    { keyCreateState | description = value }
               }
             , E.none
             )
@@ -111,17 +133,25 @@ update _ msg networkModel =
                     Utils.Select.singleUpd mAct networkModel.keyCreateFreqSelect.selected
 
                 keyCreateFreqSelect =
-                    { networkModel.keyCreateFreqSelect
+                    let
+                        select =
+                            networkModel.keyCreateFreqSelect
+                    in
+                    { select
                         | state = imodel
                         , selected = updatedSelected
                     }
+
+                keyCreateState =
+                    let
+                        state =
+                            networkModel.keyCreateState
+                    in
+                    { state | sigintNetworkFreqId = updatedSelected }
             in
             ( { networkModel
                 | keyCreateFreqSelect = keyCreateFreqSelect
-                , keyCreateState =
-                    { networkModel.keyCreateState
-                        | sigintNetworkFreqId = updatedSelected
-                    }
+                , keyCreateState = keyCreateState
               }
             , E.sendCmd <| Cmd.map KeyCreateFreqSelMsg icmd
             )
@@ -174,7 +204,11 @@ update _ msg networkModel =
                             , sigintNetworkFreqId = Nothing
                             }
                         , keyCreateFreqSelect =
-                            { networkModel.keyCreateFreqSelect | selected = Nothing }
+                            let
+                                select =
+                                    networkModel.keyCreateFreqSelect
+                            in
+                            { select | selected = Nothing }
                       }
                     , initLoad network.id
                     )
@@ -194,7 +228,11 @@ update _ msg networkModel =
                             }
 
                         keyEditFreqSelect =
-                            { networkModel.keyEditFreqSelect
+                            let
+                                select =
+                                    networkModel.keyEditFreqSelect
+                            in
+                            { select
                                 | selected = keyData.sigintNetworkFreqId
                             }
                     in
@@ -210,11 +248,18 @@ update _ msg networkModel =
                     ( networkModel, E.none )
 
         CloseKeyEditSidebar ->
+            let
+                keyEditFreqSelect =
+                    let
+                        select =
+                            networkModel.keyEditFreqSelect
+                    in
+                    { select | selected = Nothing }
+            in
             ( { networkModel
                 | keyEditSidebar = Nothing
                 , keyEditSaving = False
-                , keyEditFreqSelect =
-                    { networkModel.keyEditFreqSelect | selected = Nothing }
+                , keyEditFreqSelect = keyEditFreqSelect
               }
             , E.none
             )
@@ -254,7 +299,11 @@ update _ msg networkModel =
                     Utils.Select.singleUpd mAct networkModel.keyEditFreqSelect.selected
 
                 keyEditFreqSelect =
-                    { networkModel.keyEditFreqSelect
+                    let
+                        select =
+                            networkModel.keyEditFreqSelect
+                    in
+                    { select
                         | state = imodel
                         , selected = updatedSelected
                     }

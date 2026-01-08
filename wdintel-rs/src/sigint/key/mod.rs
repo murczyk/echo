@@ -11,7 +11,6 @@ use elm_rs::{Elm, ElmDecode, ElmEncode};
 use sea_orm::*;
 use std::collections::HashMap;
 
-
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
@@ -57,7 +56,6 @@ pub struct UpdateEncryptionKeyReq {
     pub description: Option<String>,
 }
 
-
 #[post("/api/sigint/keys")]
 pub async fn list_keys(
     user: actix_identity::Identity,
@@ -72,19 +70,18 @@ pub async fn list_keys(
     let freq_query = Query::select()
         .column(sigint_network_freq::Column::Id)
         .from(sigint_network_freq::Entity)
-        .and_where(sigint_network_freq::Column::NetworkId.eq(
-            req.sigint_network_id as i64,
-        ))
+        .and_where(
+            sigint_network_freq::Column::NetworkId
+                .eq(req.sigint_network_id as i64),
+        )
         .and_where(sigint_network_freq::Column::Deleted.eq(false))
         .to_owned();
 
     let filter_expr: SimpleExpr =
         sigint_network_encryption_key::Column::SigintNetworkId
             .eq(req.sigint_network_id as i64)
-            .or(
-                sigint_network_encryption_key::Column::SigintNetworkFreqId
-                    .in_subquery(freq_query),
-            );
+            .or(sigint_network_encryption_key::Column::SigintNetworkFreqId
+                .in_subquery(freq_query));
 
     let keys = load_keys_list(&env.dbx, &user_login, filter_expr)
         .await
@@ -303,8 +300,7 @@ where
         .c(h!())?;
 
     for key in keys {
-        if let Some((freq_id, key_data)) = map_key_for_freq(&organism_id, key)
-        {
+        if let Some((freq_id, key_data)) = map_key_for_freq(&organism_id, key) {
             by_freq.entry(freq_id).or_insert(key_data);
         }
     }

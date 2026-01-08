@@ -302,10 +302,18 @@ update shared msg model =
                             )
 
                 keyCreateFreqSelect =
-                    { model.keyCreateFreqSelect | items = keyFreqItems }
+                    let
+                        select =
+                            model.keyCreateFreqSelect
+                    in
+                    { select | items = keyFreqItems }
 
                 keyEditFreqSelect =
-                    { model.keyEditFreqSelect | items = keyFreqItems }
+                    let
+                        select =
+                            model.keyEditFreqSelect
+                    in
+                    { select | items = keyFreqItems }
             in
             ( { model
                 | freqs = Success res.freqs
