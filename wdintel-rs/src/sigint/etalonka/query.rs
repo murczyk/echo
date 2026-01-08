@@ -380,7 +380,7 @@ pub async fn load_freqs(
         .collect();
 
     let mut keys_by_freq =
-        crate::sigint::key::load_freq_keys_list(db, user_login, freq_ids)
+        crate::sigint::key::load_freq_keys(db, user_login, freq_ids)
             .await
             .c(h!())?;
     match network_active_freqs {

@@ -174,10 +174,20 @@ init route shared () =
             , items = []
             , selected = Nothing
             }
+      , keyCreateModulationSelect =
+            { state = Select.initState (Select.selectIdentifier "key-create-modulation-state")
+            , items = []
+            , selected = Nothing
+            }
       , keyCreateSaving = False
       , keyEditSidebar = Nothing
       , keyEditFreqSelect =
             { state = Select.initState (Select.selectIdentifier "key-edit-freq-state")
+            , items = []
+            , selected = Nothing
+            }
+      , keyEditModulationSelect =
+            { state = Select.initState (Select.selectIdentifier "key-edit-modulation-state")
             , items = []
             , selected = Nothing
             }
@@ -886,27 +896,29 @@ update shared msg model =
 
         ModulationsReturnedByApi (Ok res) ->
             let
-                undefinedItem =
+                modulationItems =
+                    List.map
+                        (\mod ->
+                            Select.basicMenuItem
+                                { item = mod.id
+                                , label = Modulations.displayModulationName mod.name
+                                }
+                        )
+                        res
+
+                keyModulationItems =
                     Select.basicMenuItem
                         { item = Modulations.undefinedModulationId
                         , label = Modulations.undefinedModulationLabel
                         }
+                        :: modulationItems
 
                 modulationSelect =
                     model.freqEditModulationSelect
 
                 updatedModulationSelect =
                     { modulationSelect
-                        | items =
-                            undefinedItem
-                                :: List.map
-                                    (\mod ->
-                                        Select.basicMenuItem
-                                            { item = mod.id
-                                            , label = Modulations.displayModulationName mod.name
-                                            }
-                                    )
-                                    res
+                        | items = modulationItems
                     }
 
                 freqCreateModulationSelect =
@@ -914,22 +926,31 @@ update shared msg model =
 
                 updatedFreqCreateModulationSelect =
                     { freqCreateModulationSelect
-                        | items =
-                            undefinedItem
-                                :: List.map
-                                    (\mod ->
-                                        Select.basicMenuItem
-                                            { item = mod.id
-                                            , label = Modulations.displayModulationName mod.name
-                                            }
-                                    )
-                                    res
+                        | items = modulationItems
+                    }
+
+                keyCreateModulationSelect =
+                    model.keyCreateModulationSelect
+
+                updatedKeyCreateModulationSelect =
+                    { keyCreateModulationSelect
+                        | items = keyModulationItems
+                    }
+
+                keyEditModulationSelect =
+                    model.keyEditModulationSelect
+
+                updatedKeyEditModulationSelect =
+                    { keyEditModulationSelect
+                        | items = keyModulationItems
                     }
             in
             ( { model
                 | modulations = Success res
                 , freqEditModulationSelect = updatedModulationSelect
                 , freqCreateModulationSelect = updatedFreqCreateModulationSelect
+                , keyCreateModulationSelect = updatedKeyCreateModulationSelect
+                , keyEditModulationSelect = updatedKeyEditModulationSelect
               }
             , E.none
             )

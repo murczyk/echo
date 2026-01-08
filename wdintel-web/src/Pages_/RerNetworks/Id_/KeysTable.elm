@@ -28,6 +28,7 @@ import Shared.Components.Table as Table
 import Shared.Components.Table.Column as TableColumn
 import Shared.Components.Table.Config as TableConfig
 import Shared.Model exposing (isDarkMode)
+import Utils.Modulations as Modulations
 import Utils.Select
 import String
 import Utils.Api.ErrorHandling
@@ -65,6 +66,13 @@ update _ msg networkModel =
                             networkModel.keyCreateFreqSelect
                     in
                     { select | selected = Nothing }
+
+                keyCreateModulationSelect =
+                    let
+                        select =
+                            networkModel.keyCreateModulationSelect
+                    in
+                    { select | selected = Nothing }
             in
             ( { networkModel
                 | keyCreateSidebar = True
@@ -75,6 +83,7 @@ update _ msg networkModel =
                     , sigintNetworkFreqId = Nothing
                     }
                 , keyCreateFreqSelect = keyCreateFreqSelect
+                , keyCreateModulationSelect = keyCreateModulationSelect
               }
             , E.none
             )
@@ -87,6 +96,13 @@ update _ msg networkModel =
                             networkModel.keyCreateFreqSelect
                     in
                     { select | selected = Nothing }
+
+                keyCreateModulationSelect =
+                    let
+                        select =
+                            networkModel.keyCreateModulationSelect
+                    in
+                    { select | selected = Nothing }
             in
             ( { networkModel
                 | keyCreateSidebar = False
@@ -97,6 +113,7 @@ update _ msg networkModel =
                     , sigintNetworkFreqId = Nothing
                     }
                 , keyCreateFreqSelect = keyCreateFreqSelect
+                , keyCreateModulationSelect = keyCreateModulationSelect
               }
             , E.none
             )
@@ -157,10 +174,37 @@ update _ msg networkModel =
             , E.sendCmd <| Cmd.map KeyCreateFreqSelMsg icmd
             )
 
+        KeyCreateModulationSelMsg imsg ->
+            let
+                ( mAct, imodel, icmd ) =
+                    Select.update imsg networkModel.keyCreateModulationSelect.state
+
+                updatedSelected =
+                    Utils.Select.singleUpd mAct networkModel.keyCreateModulationSelect.selected
+
+                keyCreateModulationSelect =
+                    let
+                        select =
+                            networkModel.keyCreateModulationSelect
+                    in
+                    { select
+                        | state = imodel
+                        , selected = updatedSelected
+                    }
+            in
+            ( { networkModel
+                | keyCreateModulationSelect = keyCreateModulationSelect
+              }
+            , E.sendCmd <| Cmd.map KeyCreateModulationSelMsg icmd
+            )
+
         CreateKeyClicked ->
             case networkModel.network of
                 Success network ->
-                    if String.trim networkModel.keyCreateState.key == "" then
+                    if networkModel.keyCreateModulationSelect.selected == Nothing then
+                        ( networkModel, E.none )
+
+                    else if String.trim networkModel.keyCreateState.key == "" then
                         ( networkModel, E.none )
 
                     else
@@ -236,11 +280,29 @@ update _ msg networkModel =
                             { select
                                 | selected = keyData.sigintNetworkFreqId
                             }
+
+                        keyEditModulationSelect =
+                            let
+                                selectedModulation =
+                                    case ( networkModel.freqs, keyData.sigintNetworkFreqId ) of
+                                        ( Success freqs, Just freqId ) ->
+                                            freqs
+                                                |> ListX.find (\freq -> freq.networkFreqId == freqId)
+                                                |> Maybe.andThen .modulationId
+
+                                        _ ->
+                                            Nothing
+
+                                select =
+                                    networkModel.keyEditModulationSelect
+                            in
+                            { select | selected = selectedModulation }
                     in
                     ( { networkModel
                         | keyEditSidebar = Just updateReq
                         , keyEditSaving = False
                         , keyEditFreqSelect = keyEditFreqSelect
+                        , keyEditModulationSelect = keyEditModulationSelect
                       }
                     , E.none
                     )
@@ -256,11 +318,19 @@ update _ msg networkModel =
                             networkModel.keyEditFreqSelect
                     in
                     { select | selected = Nothing }
+
+                keyEditModulationSelect =
+                    let
+                        select =
+                            networkModel.keyEditModulationSelect
+                    in
+                    { select | selected = Nothing }
             in
             ( { networkModel
                 | keyEditSidebar = Nothing
                 , keyEditSaving = False
                 , keyEditFreqSelect = keyEditFreqSelect
+                , keyEditModulationSelect = keyEditModulationSelect
               }
             , E.none
             )
@@ -323,10 +393,37 @@ update _ msg networkModel =
             , E.sendCmd <| Cmd.map KeyEditFreqSelMsg icmd
             )
 
+        KeyEditModulationSelMsg imsg ->
+            let
+                ( mAct, imodel, icmd ) =
+                    Select.update imsg networkModel.keyEditModulationSelect.state
+
+                updatedSelected =
+                    Utils.Select.singleUpd mAct networkModel.keyEditModulationSelect.selected
+
+                keyEditModulationSelect =
+                    let
+                        select =
+                            networkModel.keyEditModulationSelect
+                    in
+                    { select
+                        | state = imodel
+                        , selected = updatedSelected
+                    }
+            in
+            ( { networkModel
+                | keyEditModulationSelect = keyEditModulationSelect
+              }
+            , E.sendCmd <| Cmd.map KeyEditModulationSelMsg icmd
+            )
+
         SaveKeyEditClicked ->
             case networkModel.keyEditSidebar of
                 Just req ->
-                    if String.trim req.key == "" then
+                    if networkModel.keyEditModulationSelect.selected == Nothing then
+                        ( networkModel, E.none )
+
+                    else if String.trim req.key == "" then
                         ( networkModel, E.none )
 
                     else
@@ -407,6 +504,73 @@ createSidebar model user shared =
 keyEditSidebarContent : Shared.Model -> Model -> B.UpdateEncryptionKeyReq -> List (Html KeysMsg)
 keyEditSidebarContent shared model updateReq =
     let
+        isModulationSelected =
+            model.keyEditModulationSelect.selected /= Nothing
+
+        selectedModulationName =
+            case ( model.modulations, model.keyEditModulationSelect.selected ) of
+                ( Success modulations, Just modulationId ) ->
+                    if modulationId == Modulations.undefinedModulationId then
+                        Nothing
+
+                    else
+                        modulations
+                            |> ListX.find (\modulation -> modulation.id == modulationId)
+                            |> Maybe.map .name
+
+                _ ->
+                    Nothing
+
+        keyMaxLength =
+            case selectedModulationName of
+                Just "DMR (ARC40)" ->
+                    Just 4
+
+                Just "DMR (AES256)" ->
+                    Just 64
+
+                Just "HYTERA (256 bit)" ->
+                    Just 64
+
+                Just "TYT (16 bit)" ->
+                    Just 4
+
+                Just "TYT (128 bit)" ->
+                    Just 32
+
+                Just "NFM" ->
+                    Nothing
+
+                Just "AM" ->
+                    Nothing
+
+                Just "АМ" ->
+                    Nothing
+
+                Just "DMR" ->
+                    Nothing
+
+                Just "HYTERA" ->
+                    Nothing
+
+                Just "TYT" ->
+                    Nothing
+
+                Just "TETRA" ->
+                    Nothing
+
+                Just "Гранит" ->
+                    Nothing
+
+                Just "GSM" ->
+                    Nothing
+
+                Just "Умовна" ->
+                    Nothing
+
+                _ ->
+                    Nothing
+
         selectedItem =
             findSelectItem model model.keyEditFreqSelect.selected
 
@@ -415,6 +579,9 @@ keyEditSidebarContent shared model updateReq =
 
         keyIsEmpty =
             String.trim updateReq.key == ""
+
+        modulationIsEmpty =
+            not isModulationSelected
     in
     [ div [ class "flex flex-col h-full" ]
         [ div [ class "p-6 border-b border-border" ]
@@ -423,23 +590,48 @@ keyEditSidebarContent shared model updateReq =
             ]
         , div [ class "flex-1 overflow-y-auto p-6 space-y-4" ]
             [ div []
+                [ label [ class "block text-sm font-medium mb-1" ] [ text "Модуляція*" ]
+                , Html.map KeyEditModulationSelMsg <|
+                    Styled.toUnstyled <|
+                        Utils.Select.renderSelectSingle
+                            (Maybe.map (\item -> Select.basicMenuItem { item = item, label = modulationLabelById model item }) model.keyEditModulationSelect.selected)
+                            model.keyEditModulationSelect.state
+                            model.keyEditModulationSelect.items
+                            "Оберіть модуляцію"
+                            defaultOptions
+                , if modulationIsEmpty then
+                    div [ class "text-sm text-red-600 mt-1" ] [ text "Це поле обов'язкове" ]
+
+                  else
+                    text ""
+                ]
+            , div []
                 [ label [ class "block text-sm font-medium mb-1" ] [ text "Ключ*" ]
                 , input
-                    [ class <|
+                    ([ class <|
                         "w-full p-2 border rounded "
-                            ++ (if keyIsEmpty then
+                            ++ (if keyIsEmpty && isModulationSelected then
                                     "border-red-500"
 
                                 else
                                     "border-border"
                                )
-                    , type_ "text"
-                    , placeholder "Введіть ключ"
-                    , value updateReq.key
-                    , onInput KeyEditKeyChanged
-                    ]
+                     , type_ "text"
+                     , placeholder "Введіть ключ"
+                     , value updateReq.key
+                     , onInput KeyEditKeyChanged
+                     , disabled (not isModulationSelected)
+                     ]
+                        ++ (case keyMaxLength of
+                                Just maxLen ->
+                                    [ maxlength maxLen ]
+
+                                Nothing ->
+                                    []
+                           )
+                    )
                     []
-                , if keyIsEmpty then
+                , if keyIsEmpty && isModulationSelected then
                     div [ class "text-sm text-red-600 mt-1" ] [ text "Це поле обов'язкове" ]
 
                   else
@@ -480,7 +672,7 @@ keyEditSidebarContent shared model updateReq =
 
                   else
                     Button.new { label = "Зберегти", onClick = SaveKeyEditClicked }
-                        |> Button.withDisabled keyIsEmpty
+                        |> Button.withDisabled (modulationIsEmpty || keyIsEmpty)
                         |> Button.view
                 ]
             ]
@@ -491,6 +683,73 @@ keyEditSidebarContent shared model updateReq =
 keyCreateSidebarContent : Shared.Model -> Model -> List (Html KeysMsg)
 keyCreateSidebarContent shared model =
     let
+        isModulationSelected =
+            model.keyCreateModulationSelect.selected /= Nothing
+
+        selectedModulationName =
+            case ( model.modulations, model.keyCreateModulationSelect.selected ) of
+                ( Success modulations, Just modulationId ) ->
+                    if modulationId == Modulations.undefinedModulationId then
+                        Nothing
+
+                    else
+                        modulations
+                            |> ListX.find (\modulation -> modulation.id == modulationId)
+                            |> Maybe.map .name
+
+                _ ->
+                    Nothing
+
+        keyMaxLength =
+            case selectedModulationName of
+                Just "DMR (ARC40)" ->
+                    Just 4
+
+                Just "DMR (AES256)" ->
+                    Just 64
+
+                Just "HYTERA (256 bit)" ->
+                    Just 64
+
+                Just "TYT (16 bit)" ->
+                    Just 4
+
+                Just "TYT (128 bit)" ->
+                    Just 32
+
+                Just "NFM" ->
+                    Nothing
+
+                Just "AM" ->
+                    Nothing
+
+                Just "АМ" ->
+                    Nothing
+
+                Just "DMR" ->
+                    Nothing
+
+                Just "HYTERA" ->
+                    Nothing
+
+                Just "TYT" ->
+                    Nothing
+
+                Just "TETRA" ->
+                    Nothing
+
+                Just "Гранит" ->
+                    Nothing
+
+                Just "GSM" ->
+                    Nothing
+
+                Just "Умовна" ->
+                    Nothing
+
+                _ ->
+                    Nothing
+
         selectedItem =
             findSelectItem model model.keyCreateFreqSelect.selected
 
@@ -499,6 +758,9 @@ keyCreateSidebarContent shared model =
 
         keyIsEmpty =
             String.trim model.keyCreateState.key == ""
+
+        modulationIsEmpty =
+            not isModulationSelected
     in
     [ div [ class "flex flex-col h-full" ]
         [ div [ class "p-6 border-b border-border" ]
@@ -507,23 +769,48 @@ keyCreateSidebarContent shared model =
             ]
         , div [ class "flex-1 overflow-y-auto p-6 space-y-4" ]
             [ div []
+                [ label [ class "block text-sm font-medium mb-1" ] [ text "Модуляція*" ]
+                , Html.map KeyCreateModulationSelMsg <|
+                    Styled.toUnstyled <|
+                        Utils.Select.renderSelectSingle
+                            (Maybe.map (\item -> Select.basicMenuItem { item = item, label = modulationLabelById model item }) model.keyCreateModulationSelect.selected)
+                            model.keyCreateModulationSelect.state
+                            model.keyCreateModulationSelect.items
+                            "Оберіть модуляцію"
+                            defaultOptions
+                , if modulationIsEmpty then
+                    div [ class "text-sm text-red-600 mt-1" ] [ text "Це поле обов'язкове" ]
+
+                  else
+                    text ""
+                ]
+            , div []
                 [ label [ class "block text-sm font-medium mb-1" ] [ text "Ключ*" ]
                 , input
-                    [ class <|
+                    ([ class <|
                         "w-full p-2 border rounded "
-                            ++ (if keyIsEmpty then
+                            ++ (if keyIsEmpty && isModulationSelected then
                                     "border-red-500"
 
                                 else
                                     "border-border"
                                )
-                    , type_ "text"
-                    , placeholder "Введіть ключ"
-                    , value model.keyCreateState.key
-                    , onInput KeyCreateKeyChanged
-                    ]
+                     , type_ "text"
+                     , placeholder "Введіть ключ"
+                     , value model.keyCreateState.key
+                     , onInput KeyCreateKeyChanged
+                     , disabled (not isModulationSelected)
+                     ]
+                        ++ (case keyMaxLength of
+                                Just maxLen ->
+                                    [ maxlength maxLen ]
+
+                                Nothing ->
+                                    []
+                           )
+                    )
                     []
-                , if keyIsEmpty then
+                , if keyIsEmpty && isModulationSelected then
                     div [ class "text-sm text-red-600 mt-1" ] [ text "Це поле обов'язкове" ]
 
                   else
@@ -564,7 +851,7 @@ keyCreateSidebarContent shared model =
 
                   else
                     Button.new { label = "Додати", onClick = CreateKeyClicked }
-                        |> Button.withDisabled keyIsEmpty
+                        |> Button.withDisabled (modulationIsEmpty || keyIsEmpty)
                         |> Button.view
                 ]
             ]
@@ -730,3 +1017,20 @@ keyLabel value =
 
     else
         value
+
+
+modulationLabelById : Model -> Int -> String
+modulationLabelById model modulationId =
+    case model.modulations of
+        Success modulations ->
+            if modulationId == Modulations.undefinedModulationId then
+                Modulations.undefinedModulationLabel
+
+            else
+                modulations
+                    |> ListX.find (\modulation -> modulation.id == modulationId)
+                    |> Maybe.map (.name >> Modulations.displayModulationName)
+                    |> Maybe.withDefault Modulations.undefinedModulationLabel
+
+        _ ->
+            Modulations.undefinedModulationLabel

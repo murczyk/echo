@@ -222,7 +222,7 @@ pub async fn load_freq_keys<'a, 'async_trait, C>(
     db: &'a C,
     user_login: &str,
     freq_ids: Vec<i64>,
-) -> Result<HashMap<i64, EncryptionKeyData>, AppError>
+) -> Result<HashMap<i64, Vec<EncryptionKeyData>>, AppError>
 where
     C: ConnectionTrait + 'async_trait,
 {
@@ -230,33 +230,6 @@ where
         sigint_network_encryption_key::Column::SigintNetworkFreqId
             .is_in(freq_ids);
     load_latest_keys_by_freq(db, user_login, filter_expr).await
-}
-
-pub async fn load_freq_keys_list<'a, 'async_trait, C>(
-    db: &'a C,
-    user_login: &str,
-    freq_ids: Vec<i64>,
-) -> Result<HashMap<i64, Vec<EncryptionKeyData>>, AppError>
-where
-    C: ConnectionTrait + 'async_trait,
-{
-    if freq_ids.is_empty() {
-        return Ok(HashMap::new());
-    }
-
-    let filter_expr: SimpleExpr =
-        sigint_network_encryption_key::Column::SigintNetworkFreqId
-            .is_in(freq_ids);
-    let keys = load_keys_list(db, user_login, filter_expr).await.c(h!())?;
-
-    let mut by_freq: HashMap<i64, Vec<EncryptionKeyData>> = HashMap::new();
-    for key in keys {
-        if let Some(freq_id) = key.sigint_network_freq_id {
-            by_freq.entry(freq_id).or_default().push(key);
-        }
-    }
-
-    Ok(by_freq)
 }
 
 async fn load_keys_list<'a, 'async_trait, C>(
@@ -293,7 +266,7 @@ async fn load_latest_keys_by_freq<'a, 'async_trait, C>(
     db: &'a C,
     user_login: &str,
     filter_expr: SimpleExpr,
-) -> Result<HashMap<i64, EncryptionKeyData>, AppError>
+) -> Result<HashMap<i64, Vec<EncryptionKeyData>>, AppError>
 where
     C: ConnectionTrait + 'async_trait,
 {
@@ -307,7 +280,6 @@ where
     let Some(organism_id) = organism_id else {
         return Ok(HashMap::new());
     };
-    let mut by_freq = HashMap::new();
     let keys = sigint_network_encryption_key::Entity::find()
         .filter(sigint_network_encryption_key::Column::Deleted.eq(false))
         .filter(filter_expr)
@@ -316,9 +288,10 @@ where
         .await
         .c(h!())?;
 
+    let mut by_freq: HashMap<i64, Vec<EncryptionKeyData>> = HashMap::new();
     for key in keys {
         if let Some((freq_id, key_data)) = map_key_for_freq(&organism_id, key) {
-            by_freq.entry(freq_id).or_insert(key_data);
+            by_freq.entry(freq_id).or_default().push(key_data);
         }
     }
 

@@ -41,6 +41,7 @@ import Shared.Components.Table.Column as TableColumn
 import Shared.Components.Table.Config as TableConfig
 import Shared.Components.Table.Sorter as TableSorter
 import Shared.Model exposing (isDarkMode)
+import String
 import Time
 import Time.Extra
 import Url.Builder

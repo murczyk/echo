@@ -223,6 +223,7 @@ type KeysMsg
     | KeyCreateKeyChanged String
     | KeyCreateDescriptionChanged String
     | KeyCreateFreqSelMsg (Select.Msg Int)
+    | KeyCreateModulationSelMsg (Select.Msg Int)
     | CreateKeyClicked
     | KeyCreated (Result ApiError B.EncryptionKeyData)
     | OpenKeyEditSidebar B.EncryptionKeyData
@@ -230,5 +231,6 @@ type KeysMsg
     | KeyEditKeyChanged String
     | KeyEditDescriptionChanged String
     | KeyEditFreqSelMsg (Select.Msg Int)
+    | KeyEditModulationSelMsg (Select.Msg Int)
     | SaveKeyEditClicked
     | KeyUpdated (Result ApiError B.EncryptionKeyData)

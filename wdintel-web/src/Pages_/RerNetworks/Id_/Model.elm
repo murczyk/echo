@@ -124,9 +124,11 @@ type alias Model =
         , sigintNetworkFreqId : Maybe Int
         }
     , keyCreateFreqSelect : Utils.Select.SelectTypeSingle Int
+    , keyCreateModulationSelect : Utils.Select.SelectTypeSingle Int
     , keyCreateSaving : Bool
     , keyEditSidebar : Maybe B.UpdateEncryptionKeyReq
     , keyEditFreqSelect : Utils.Select.SelectTypeSingle Int
+    , keyEditModulationSelect : Utils.Select.SelectTypeSingle Int
     , keyEditSaving : Bool
     , freqEditSidebar : Maybe ( String, B.UpdateNetworkFreqReq )
     , freqDetailPopup : Maybe String
