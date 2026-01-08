@@ -121,13 +121,13 @@ type alias Model =
     , keyCreateState :
         { key : String
         , description : String
-        , sigintNetworkFreqId : Maybe Int
+        , sigintNetworkFreqIds : List Int
         }
-    , keyCreateFreqSelect : Utils.Select.SelectTypeSingle Int
+    , keyCreateFreqSelect : Utils.Select.SelectType Int
     , keyCreateModulationSelect : Utils.Select.SelectTypeSingle Int
     , keyCreateSaving : Bool
     , keyEditSidebar : Maybe B.UpdateEncryptionKeyReq
-    , keyEditFreqSelect : Utils.Select.SelectTypeSingle Int
+    , keyEditFreqSelect : Utils.Select.SelectType Int
     , keyEditModulationSelect : Utils.Select.SelectTypeSingle Int
     , keyEditSaving : Bool
     , deleteKeyConfirmation : Maybe ( Int, String )
@@ -137,6 +137,7 @@ type alias Model =
     , modulations : RemoteData ApiError (List B.ModulationRec)
     , freqEditKindSelect : Utils.Select.SelectTypeSingleNotEmpty NetworksUtils.NetworkKind
     , freqEditModulationSelect : Utils.Select.SelectTypeSingle Int
+    , freqEditKeySelect : Utils.Select.SelectType Int
     , freqEditSaving : Bool
     , freqEditShowActiveTo : Bool
     , deleteNetworkConfirmation : Maybe Int
@@ -149,6 +150,7 @@ type alias Model =
     , freqCreateState : B.AddNetworkFreq
     , freqCreateKindSelect : Utils.Select.SelectTypeSingleNotEmpty NetworksUtils.NetworkKind
     , freqCreateModulationSelect : Utils.Select.SelectTypeSingle Int
+    , freqCreateKeySelect : Utils.Select.SelectType Int
     , freqCreateDescriptionInp : String
     , freqCreateFormatError : Maybe String
     , freqCreateShowActiveTo : Bool

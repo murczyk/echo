@@ -67,7 +67,7 @@ update _ msg networkModel =
                         select =
                             networkModel.keyCreateFreqSelect
                     in
-                    { select | selected = Nothing }
+                    { select | selected = [] }
 
                 keyCreateModulationSelect =
                     let
@@ -82,7 +82,7 @@ update _ msg networkModel =
                 , keyCreateState =
                     { key = ""
                     , description = ""
-                    , sigintNetworkFreqId = Nothing
+                    , sigintNetworkFreqIds = []
                     }
                 , keyCreateFreqSelect = keyCreateFreqSelect
                 , keyCreateModulationSelect = keyCreateModulationSelect
@@ -97,7 +97,7 @@ update _ msg networkModel =
                         select =
                             networkModel.keyCreateFreqSelect
                     in
-                    { select | selected = Nothing }
+                    { select | selected = [] }
 
                 keyCreateModulationSelect =
                     let
@@ -112,7 +112,7 @@ update _ msg networkModel =
                 , keyCreateState =
                     { key = ""
                     , description = ""
-                    , sigintNetworkFreqId = Nothing
+                    , sigintNetworkFreqIds = []
                     }
                 , keyCreateFreqSelect = keyCreateFreqSelect
                 , keyCreateModulationSelect = keyCreateModulationSelect
@@ -149,8 +149,8 @@ update _ msg networkModel =
                 ( mAct, imodel, icmd ) =
                     Select.update imsg networkModel.keyCreateFreqSelect.state
 
-                updatedSelected =
-                    Utils.Select.singleUpd mAct networkModel.keyCreateFreqSelect.selected
+                ( updatedSelected, updatedState ) =
+                    Utils.Select.multiUpdMenuOpen mAct networkModel.keyCreateFreqSelect.selected imodel
 
                 keyCreateFreqSelect =
                     let
@@ -158,7 +158,7 @@ update _ msg networkModel =
                             networkModel.keyCreateFreqSelect
                     in
                     { select
-                        | state = imodel
+                        | state = updatedState
                         , selected = updatedSelected
                     }
 
@@ -167,7 +167,7 @@ update _ msg networkModel =
                         state =
                             networkModel.keyCreateState
                     in
-                    { state | sigintNetworkFreqId = updatedSelected }
+                    { state | sigintNetworkFreqIds = updatedSelected }
             in
             ( { networkModel
                 | keyCreateFreqSelect = keyCreateFreqSelect
@@ -253,10 +253,13 @@ update _ msg networkModel =
 
                             req =
                                 { sigintNetworkId = network.id
-                                , sigintNetworkFreqId =
-                                    networkModel.keyCreateState.sigintNetworkFreqId
+                                , sigintNetworkFreqIds =
+                                    networkModel.keyCreateState.sigintNetworkFreqIds
                                 , key = keyValue
                                 , description = description
+                                , modulationId =
+                                    normalizeModulationId
+                                        networkModel.keyCreateModulationSelect.selected
                                 }
                         in
                         ( { networkModel | keyCreateSaving = True }
@@ -281,14 +284,14 @@ update _ msg networkModel =
                         , keyCreateState =
                             { key = ""
                             , description = ""
-                            , sigintNetworkFreqId = Nothing
+                            , sigintNetworkFreqIds = []
                             }
                         , keyCreateFreqSelect =
                             let
                                 select =
                                     networkModel.keyCreateFreqSelect
                             in
-                            { select | selected = Nothing }
+                            { select | selected = [] }
                       }
                     , initLoad network.id
                     )
@@ -302,9 +305,10 @@ update _ msg networkModel =
                     let
                         updateReq =
                             { id = keyId
-                            , sigintNetworkFreqId = keyData.sigintNetworkFreqId
+                            , sigintNetworkFreqIds = keyData.sigintNetworkFreqIds
                             , key = keyData.key
                             , description = keyData.description
+                            , modulationId = keyData.modulationId
                             }
 
                         keyEditFreqSelect =
@@ -313,20 +317,13 @@ update _ msg networkModel =
                                     networkModel.keyEditFreqSelect
                             in
                             { select
-                                | selected = keyData.sigintNetworkFreqId
+                                | selected = keyData.sigintNetworkFreqIds
                             }
 
                         keyEditModulationSelect =
                             let
                                 selectedModulation =
-                                    case ( networkModel.freqs, keyData.sigintNetworkFreqId ) of
-                                        ( Success freqs, Just freqId ) ->
-                                            freqs
-                                                |> ListX.find (\freq -> freq.networkFreqId == freqId)
-                                                |> Maybe.andThen .modulationId
-
-                                        _ ->
-                                            Nothing
+                                    keyData.modulationId
 
                                 select =
                                     networkModel.keyEditModulationSelect
@@ -352,7 +349,7 @@ update _ msg networkModel =
                         select =
                             networkModel.keyEditFreqSelect
                     in
-                    { select | selected = Nothing }
+                    { select | selected = [] }
 
                 keyEditModulationSelect =
                     let
@@ -401,8 +398,8 @@ update _ msg networkModel =
                 ( mAct, imodel, icmd ) =
                     Select.update imsg networkModel.keyEditFreqSelect.state
 
-                updatedSelected =
-                    Utils.Select.singleUpd mAct networkModel.keyEditFreqSelect.selected
+                ( updatedSelected, updatedState ) =
+                    Utils.Select.multiUpdMenuOpen mAct networkModel.keyEditFreqSelect.selected imodel
 
                 keyEditFreqSelect =
                     let
@@ -410,7 +407,7 @@ update _ msg networkModel =
                             networkModel.keyEditFreqSelect
                     in
                     { select
-                        | state = imodel
+                        | state = updatedState
                         , selected = updatedSelected
                     }
             in
@@ -421,7 +418,7 @@ update _ msg networkModel =
                         |> Maybe.map
                             (\req ->
                                 { req
-                                    | sigintNetworkFreqId = updatedSelected
+                                    | sigintNetworkFreqIds = updatedSelected
                                 }
                             )
               }
@@ -487,6 +484,11 @@ update _ msg networkModel =
 
                         keyInvalid =
                             (keyRequired && String.trim keyValue == "") || keyWrongLength
+
+                        updatedReq =
+                            { req
+                                | modulationId = normalizeModulationId modulationId
+                            }
                     in
                     if not isModulationSelected then
                         ( networkModel, E.none )
@@ -496,7 +498,7 @@ update _ msg networkModel =
 
                     else
                         ( { networkModel | keyEditSaving = True }
-                        , E.sendCmd <| Api.sigint_update_key KeyUpdated req
+                        , E.sendCmd <| Api.sigint_update_key KeyUpdated updatedReq
                         )
 
                 Nothing ->
@@ -678,8 +680,8 @@ keyEditSidebarContent shared model updateReq =
                 Nothing ->
                     False
 
-        selectedItem =
-            findSelectItem model model.keyEditFreqSelect.selected
+        selectedItems =
+            findSelectItems model model.keyEditFreqSelect.selected
 
         defaultOptions =
             Utils.Select.defaultOptions (isDarkMode shared.themeMode)
@@ -773,11 +775,11 @@ keyEditSidebarContent shared model updateReq =
                     []
                 ]
             , div []
-                [ label [ class "block text-sm font-medium mb-1" ] [ text "Частота (необов'язково)" ]
+                [ label [ class "block text-sm font-medium mb-1" ] [ text "Частоти (необов'язково)" ]
                 , Html.map KeyEditFreqSelMsg <|
                     Styled.toUnstyled <|
-                        Utils.Select.renderSelectSingle
-                            selectedItem
+                        Utils.Select.renderSelect
+                            selectedItems
                             model.keyEditFreqSelect.state
                             model.keyEditFreqSelect.items
                             "Без частоти"
@@ -836,8 +838,8 @@ keyCreateSidebarContent shared model =
                 Nothing ->
                     False
 
-        selectedItem =
-            findSelectItem model model.keyCreateFreqSelect.selected
+        selectedItems =
+            findSelectItems model model.keyCreateFreqSelect.selected
 
         defaultOptions =
             Utils.Select.defaultOptions (isDarkMode shared.themeMode)
@@ -931,11 +933,11 @@ keyCreateSidebarContent shared model =
                     []
                 ]
             , div []
-                [ label [ class "block text-sm font-medium mb-1" ] [ text "Частота (необов'язково)" ]
+                [ label [ class "block text-sm font-medium mb-1" ] [ text "Частоти (необов'язково)" ]
                 , Html.map KeyCreateFreqSelMsg <|
                     Styled.toUnstyled <|
-                        Utils.Select.renderSelectSingle
-                            selectedItem
+                        Utils.Select.renderSelect
+                            selectedItems
                             model.keyCreateFreqSelect.state
                             model.keyCreateFreqSelect.items
                             "Без частоти"
@@ -962,22 +964,26 @@ keyCreateSidebarContent shared model =
     ]
 
 
-findSelectItem : Model -> Maybe Int -> Maybe (Select.MenuItem Int)
-findSelectItem model selectedId =
-    case ( model.freqs, selectedId ) of
-        ( Success freqs, Just freqId ) ->
-            freqs
-                |> ListX.find (\freq -> freq.networkFreqId == freqId)
-                |> Maybe.map
-                    (\freq ->
-                        Select.basicMenuItem
-                            { item = freq.networkFreqId
-                            , label = freq.freq
-                            }
+findSelectItems : Model -> List Int -> List (Select.MenuItem Int)
+findSelectItems model selectedIds =
+    case model.freqs of
+        Success freqs ->
+            selectedIds
+                |> List.filterMap
+                    (\freqId ->
+                        freqs
+                            |> ListX.find (\freq -> freq.networkFreqId == freqId)
+                            |> Maybe.map
+                                (\freq ->
+                                    Select.basicMenuItem
+                                        { item = freq.networkFreqId
+                                        , label = freq.freq
+                                        }
+                                )
                     )
 
         _ ->
-            Nothing
+            []
 
 emptyKeysPlaceholder : Html msg
 emptyKeysPlaceholder =
@@ -1052,7 +1058,7 @@ keysTableConfig user networkModel =
         { toId = keyRowId
         , toMsg = SetKeysTableState
         , columns =
-            [ TableColumn.stringColumn "Частота" (\key -> freqLabelById networkModel key.sigintNetworkFreqId)
+            [ TableColumn.stringColumn "Частота" (\key -> freqLabelsByIds networkModel key.sigintNetworkFreqIds)
             , TableColumn.stringColumn "Ключ" (\key -> keyLabel key.key)
             , TableColumn.stringColumn "Опис" (\key -> Maybe.withDefault "-" key.description)
             ]
@@ -1107,8 +1113,13 @@ keyRowId key =
 
         Nothing ->
             String.join "|"
-                [ Maybe.map String.fromInt key.sigintNetworkFreqId
-                    |> Maybe.withDefault "no-freq"
+                [ if List.isEmpty key.sigintNetworkFreqIds then
+                    "no-freq"
+
+                  else
+                    key.sigintNetworkFreqIds
+                        |> List.map String.fromInt
+                        |> String.join "-"
                 , Maybe.map String.fromInt key.sigintNetworkId
                     |> Maybe.withDefault "no-network"
                 , key.key
@@ -1116,14 +1127,24 @@ keyRowId key =
                 ]
 
 
-freqLabelById : Model -> Maybe Int -> String
-freqLabelById networkModel freqId =
-    case ( networkModel.freqs, freqId ) of
-        ( Success freqs, Just id ) ->
-            freqs
-                |> ListX.find (\freq -> freq.networkFreqId == id)
-                |> Maybe.map .freq
-                |> Maybe.withDefault "-"
+freqLabelsByIds : Model -> List Int -> String
+freqLabelsByIds networkModel freqIds =
+    case networkModel.freqs of
+        Success freqs ->
+            freqIds
+                |> List.filterMap
+                    (\id ->
+                        freqs
+                            |> ListX.find (\freq -> freq.networkFreqId == id)
+                            |> Maybe.map .freq
+                    )
+                |> (\labels ->
+                        if List.isEmpty labels then
+                            "-"
+
+                        else
+                            String.join ", " labels
+                   )
 
         _ ->
             "-"
@@ -1153,6 +1174,20 @@ modulationLabelById model modulationId =
 
         _ ->
             Modulations.undefinedModulationLabel
+
+
+normalizeModulationId : Maybe Int -> Maybe Int
+normalizeModulationId selectedId =
+    case selectedId of
+        Just modulationId ->
+            if modulationId == Modulations.undefinedModulationId then
+                Nothing
+
+            else
+                Just modulationId
+
+        Nothing ->
+            Nothing
 
 
 type alias KeyRules =

@@ -167,12 +167,12 @@ init route shared () =
       , keyCreateState =
             { key = ""
             , description = ""
-            , sigintNetworkFreqId = Nothing
+            , sigintNetworkFreqIds = []
             }
       , keyCreateFreqSelect =
             { state = Select.initState (Select.selectIdentifier "key-create-freq-state")
             , items = []
-            , selected = Nothing
+            , selected = []
             }
       , keyCreateModulationSelect =
             { state = Select.initState (Select.selectIdentifier "key-create-modulation-state")
@@ -184,7 +184,7 @@ init route shared () =
       , keyEditFreqSelect =
             { state = Select.initState (Select.selectIdentifier "key-edit-freq-state")
             , items = []
-            , selected = Nothing
+            , selected = []
             }
       , keyEditModulationSelect =
             { state = Select.initState (Select.selectIdentifier "key-edit-modulation-state")
@@ -215,6 +215,11 @@ init route shared () =
             , items = []
             , selected = Nothing
             }
+      , freqEditKeySelect =
+            { state = Select.initState (Select.selectIdentifier "edit-network-key-state")
+            , items = []
+            , selected = []
+            }
       , freqEditSaving = False
       , freqEditShowActiveTo = False
       , deleteNetworkConfirmation = Nothing
@@ -228,7 +233,7 @@ init route shared () =
             { freq = ""
             , kind = NetworksUtils.networkKindToString NetworksUtils.VHF
             , modulationId = Nothing
-            , encryptionKey = Nothing
+            , encryptionKeyIds = []
             , description = Nothing
             , activeFrom = Nothing
             , activeTo = Nothing
@@ -250,6 +255,11 @@ init route shared () =
             { state = Select.initState (Select.selectIdentifier "add-freq-modulation-state")
             , items = []
             , selected = Nothing
+            }
+      , freqCreateKeySelect =
+            { state = Select.initState (Select.selectIdentifier "add-freq-key-state")
+            , items = []
+            , selected = []
             }
       , freqCreateDescriptionInp = ""
       , freqCreateFormatError = Nothing
@@ -389,8 +399,52 @@ update shared msg model =
                 ( m1, keysEff ) =
                     KeysTable.update shared keysMsg model
 
+                m2 =
+                    case ( keysMsg, m1.networkKeys ) of
+                        ( Msgs.KeysReturnedByApi (Ok _), Success keys ) ->
+                            let
+                                keyItems =
+                                    keys
+                                        |> List.filterMap
+                                            (\key ->
+                                                case key.id of
+                                                    Just keyId ->
+                                                        if key.key == "🔑" then
+                                                            Nothing
+
+                                                        else
+                                                            Just <|
+                                                                Select.basicMenuItem
+                                                                    { item = keyId
+                                                                    , label = key.key
+                                                                    }
+
+                                                    Nothing ->
+                                                        Nothing
+                                            )
+
+                                freqEditKeySelect =
+                                    m1.freqEditKeySelect
+
+                                updatedFreqEditKeySelect =
+                                    { freqEditKeySelect | items = keyItems }
+
+                                freqCreateKeySelect =
+                                    m1.freqCreateKeySelect
+
+                                updatedFreqCreateKeySelect =
+                                    { freqCreateKeySelect | items = keyItems }
+                            in
+                            { m1
+                                | freqEditKeySelect = updatedFreqEditKeySelect
+                                , freqCreateKeySelect = updatedFreqCreateKeySelect
+                            }
+
+                        _ ->
+                            m1
+
                 reloadFreqs =
-                    case ( keysMsg, m1.network ) of
+                    case ( keysMsg, m2.network ) of
                         ( Msgs.KeyCreated (Ok _), Success network ) ->
                             E.map Frequencies <|
                                 E.getSingleNetworkFreqs Msgs.FreqsReturnedByApi { networkId = network.id }
@@ -406,7 +460,7 @@ update shared msg model =
                         _ ->
                             E.none
             in
-            ( m1, E.batch [ E.map Keys keysEff, reloadFreqs ] )
+            ( m2, E.batch [ E.map Keys keysEff, reloadFreqs ] )
 
         NetworkReturnedByApi (Err e) ->
             ( { model | network = Failure e }

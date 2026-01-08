@@ -360,8 +360,7 @@ pub async fn load_freqs(
                 freq: row.try_get("", "freq").unwrap_or_default(),
                 modulation_id: row.try_get("", "modulation_id").ok(),
                 modulation: row.try_get("", "modulation_name").ok(),
-                encryption_key_id: None,
-                encryption_key: None,
+                encryption_key_ids: vec![],
                 encryption_keys: vec![],
                 message_count: row.try_get("", "message_count").unwrap_or(0),
                 callsigns: row_callsigns,
@@ -389,14 +388,10 @@ pub async fn load_freqs(
                 let keys = keys_by_freq
                     .remove(&network.network_freq_id)
                     .unwrap_or_default();
-                let (id, key) = match keys.first() {
-                    None => (None, None),
-                    Some(k) => (k.id, Some(k.key.clone())),
-                };
+                network.encryption_key_ids =
+                    keys.iter().filter_map(|key| key.id).collect();
                 network.encryption_keys =
                     keys.into_iter().map(|k| k.key).collect();
-                network.encryption_key = key;
-                network.encryption_key_id = id;
             }
             Ok(networks)
         }

@@ -6,7 +6,6 @@ use crate::types::{Deserialize, Env, Serialize, ShortContext};
 use actix_web::post;
 use actix_web::web::Json;
 use anyhow::Context;
-use echo_migration::{Query, SimpleExpr};
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 use sea_orm::*;
 use std::collections::HashMap;
@@ -16,10 +15,11 @@ use std::collections::HashMap;
 )]
 pub struct EncryptionKeyData {
     pub id: Option<i64>,
-    pub sigint_network_freq_id: Option<i64>,
+    pub sigint_network_freq_ids: Vec<i64>,
     pub sigint_network_id: Option<i64>,
     pub key: String,
     pub description: Option<String>,
+    pub modulation_id: Option<i64>,
 }
 
 #[derive(
@@ -41,9 +41,10 @@ pub struct ListKeysRsp {
 )]
 pub struct CreateEncryptionKeyReq {
     pub sigint_network_id: i64,
-    pub sigint_network_freq_id: Option<i64>,
+    pub sigint_network_freq_ids: Vec<i64>,
     pub key: String,
     pub description: Option<String>,
+    pub modulation_id: Option<i64>,
 }
 
 #[derive(
@@ -51,9 +52,10 @@ pub struct CreateEncryptionKeyReq {
 )]
 pub struct UpdateEncryptionKeyReq {
     pub id: i64,
-    pub sigint_network_freq_id: Option<i64>,
+    pub sigint_network_freq_ids: Vec<i64>,
     pub key: String,
     pub description: Option<String>,
+    pub modulation_id: Option<i64>,
 }
 
 #[derive(
@@ -74,23 +76,7 @@ pub async fn list_keys(
         .await
         .c(h!())?;
 
-    let freq_query = Query::select()
-        .column(sigint_network_freq::Column::Id)
-        .from(sigint_network_freq::Entity)
-        .and_where(
-            sigint_network_freq::Column::NetworkId
-                .eq(req.sigint_network_id as i64),
-        )
-        .and_where(sigint_network_freq::Column::Deleted.eq(false))
-        .to_owned();
-
-    let filter_expr: SimpleExpr =
-        sigint_network_encryption_key::Column::SigintNetworkId
-            .eq(req.sigint_network_id as i64)
-            .or(sigint_network_encryption_key::Column::SigintNetworkFreqId
-                .in_subquery(freq_query));
-
-    let keys = load_keys_list(&env.dbx, &user_login, filter_expr)
+    let keys = load_keys_list(&env.dbx, &user_login, req.sigint_network_id)
         .await
         .c(h!())?;
 
@@ -113,13 +99,22 @@ pub async fn create_key(
     let user_id = user.id().c(h!())?;
     let organism_id = load_organism_id(&user_id, &env.dbx).await.c(h!())?;
 
+    validate_key_freqs(
+        &env.dbx,
+        req.sigint_network_id,
+        &req.sigint_network_freq_ids,
+    )
+    .await
+    .c(h!())?;
+
     let txn = env.dbx.begin().await.c(h!())?;
     let key = insert_new_key(
         &txn,
         req.sigint_network_id,
-        req.sigint_network_freq_id,
+        req.sigint_network_freq_ids.clone(),
         req.key.clone(),
         req.description.clone(),
+        normalize_modulation_id(req.modulation_id),
         organism_id,
     )
     .await
@@ -127,7 +122,11 @@ pub async fn create_key(
 
     txn.commit().await.c(h!())?;
 
-    Ok(Json(map_key_for_list(&organism_id, key)))
+    Ok(Json(map_key_for_list(
+        &organism_id,
+        key,
+        req.sigint_network_freq_ids.clone(),
+    )))
 }
 
 #[post("/api/sigint/keys/update")]
@@ -145,27 +144,29 @@ pub async fn update_key(
 
     let user_id = user.id().c(h!())?;
     let organism_id = load_organism_id(&user_id, &env.dbx).await.c(h!())?;
+    let key = sigint_network_encryption_key::Entity::find_by_id(req.id)
+        .filter(sigint_network_encryption_key::Column::Deleted.eq(false))
+        .filter(
+            sigint_network_encryption_key::Column::OrganismId.eq(organism_id),
+        )
+        .one(&env.dbx)
+        .await
+        .c(h!())?
+        .ok_or(AppError::NotFound)?;
 
-    if let Some(freq_id) = req.sigint_network_freq_id {
-        let freq_exists = sigint_network_freq::Entity::find()
-            .filter(sigint_network_freq::Column::Id.eq(freq_id))
-            .filter(sigint_network_freq::Column::Deleted.eq(false))
-            .one(&env.dbx)
-            .await
-            .c(h!())?;
-        if freq_exists.is_none() {
-            return Err(AppError::NotFound);
-        }
-    }
+    let network_id = key.sigint_network_id.ok_or(AppError::NotFound)?;
+    validate_key_freqs(&env.dbx, network_id, &req.sigint_network_freq_ids)
+        .await
+        .c(h!())?;
 
     let txn = env.dbx.begin().await.c(h!())?;
     let key = update_network_encryption_key(
         &txn,
-        req.sigint_network_freq_id,
-        None,
+        req.sigint_network_freq_ids.clone(),
         req.id,
         req.key.clone(),
         req.description.clone(),
+        normalize_modulation_id(req.modulation_id),
         organism_id,
     )
     .await
@@ -206,27 +207,29 @@ pub async fn delete_key(
     key_am.deleted = Set(true);
     let key = key_am.update(&env.dbx).await.c(h!())?;
 
-    Ok(Json(map_key_for_list(&organism_id, key)))
+    let freq_ids = load_key_freq_ids(&env.dbx, vec![key.id])
+        .await
+        .c(h!())?
+        .remove(&key.id)
+        .unwrap_or_default();
+    Ok(Json(map_key_for_list(&organism_id, key, freq_ids)))
 }
 
-pub async fn load_freq_keys<'a, 'async_trait, C>(
-    db: &'a C,
+pub async fn load_freq_keys<'async_trait, C>(
+    db: &C,
     user_login: &str,
     freq_ids: Vec<i64>,
 ) -> Result<HashMap<i64, Vec<EncryptionKeyData>>, AppError>
 where
     C: ConnectionTrait + 'async_trait,
 {
-    let filter_expr: SimpleExpr =
-        sigint_network_encryption_key::Column::SigintNetworkFreqId
-            .is_in(freq_ids);
-    load_latest_keys_by_freq(db, user_login, filter_expr).await
+    load_latest_keys_by_freq(db, user_login, freq_ids).await
 }
 
-async fn load_keys_list<'a, 'async_trait, C>(
-    db: &'a C,
+async fn load_keys_list<'async_trait, C>(
+    db: &C,
     user_login: &str,
-    filter_expr: SimpleExpr,
+    network_id: i32,
 ) -> Result<Vec<EncryptionKeyData>, AppError>
 where
     C: ConnectionTrait + 'async_trait,
@@ -234,22 +237,71 @@ where
     let Ok(organism_id) = load_organism_id(user_login, db).await else {
         return Ok(vec![]);
     };
-    Ok(sigint_network_encryption_key::Entity::find()
+
+    let freq_ids = sigint_network_freq::Entity::find()
+        .filter(sigint_network_freq::Column::NetworkId.eq(network_id as i64))
+        .filter(sigint_network_freq::Column::Deleted.eq(false))
+        .select_only()
+        .column(sigint_network_freq::Column::Id)
+        .into_tuple::<i64>()
+        .all(db)
+        .await
+        .c(h!())?;
+
+    let key_ids_from_freqs = if freq_ids.is_empty() {
+        vec![]
+    } else {
+        sigint_network_encryption_key_freq::Entity::find()
+            .filter(
+                sigint_network_encryption_key_freq::Column::SigintNetworkFreqId
+                    .is_in(freq_ids),
+            )
+            .select_only()
+            .column(
+                sigint_network_encryption_key_freq::Column::SigintNetworkEncryptionKeyId,
+            )
+            .into_tuple::<i64>()
+            .all(db)
+            .await
+            .c(h!())?
+    };
+
+    let mut condition = Condition::any().add(
+        sigint_network_encryption_key::Column::SigintNetworkId
+            .eq(network_id as i64),
+    );
+    if !key_ids_from_freqs.is_empty() {
+        condition = condition.add(
+            sigint_network_encryption_key::Column::Id.is_in(key_ids_from_freqs),
+        );
+    }
+
+    let keys = sigint_network_encryption_key::Entity::find()
         .filter(sigint_network_encryption_key::Column::Deleted.eq(false))
-        .filter(filter_expr)
+        .filter(condition)
         .order_by_desc(sigint_network_encryption_key::Column::CreatedAt)
         .all(db)
         .await
         .c(h!())?
         .into_iter()
-        .map(|e| map_key_for_list(&organism_id, e))
+        .collect::<Vec<_>>();
+
+    let key_ids = keys.iter().map(|key| key.id).collect::<Vec<_>>();
+    let mut key_freqs = load_key_freq_ids(db, key_ids).await.c(h!())?;
+
+    Ok(keys
+        .into_iter()
+        .map(|key| {
+            let freq_ids = key_freqs.remove(&key.id).unwrap_or_default();
+            map_key_for_list(&organism_id, key, freq_ids)
+        })
         .collect::<Vec<_>>())
 }
 
-async fn load_latest_keys_by_freq<'a, 'async_trait, C>(
-    db: &'a C,
+async fn load_latest_keys_by_freq<'async_trait, C>(
+    db: &C,
     user_login: &str,
-    filter_expr: SimpleExpr,
+    freq_ids: Vec<i64>,
 ) -> Result<HashMap<i64, Vec<EncryptionKeyData>>, AppError>
 where
     C: ConnectionTrait + 'async_trait,
@@ -264,80 +316,90 @@ where
     let Some(organism_id) = organism_id else {
         return Ok(HashMap::new());
     };
-    let keys = sigint_network_encryption_key::Entity::find()
-        .filter(sigint_network_encryption_key::Column::Deleted.eq(false))
-        .filter(filter_expr)
-        .order_by_desc(sigint_network_encryption_key::Column::CreatedAt)
+    if freq_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let links = sigint_network_encryption_key_freq::Entity::find()
+        .filter(
+            sigint_network_encryption_key_freq::Column::SigintNetworkFreqId
+                .is_in(freq_ids),
+        )
+        .find_also_related(sigint_network_encryption_key::Entity)
         .all(db)
         .await
         .c(h!())?;
 
-    let mut by_freq: HashMap<i64, Vec<EncryptionKeyData>> = HashMap::new();
-    for key in keys {
-        if let Some((freq_id, key_data)) = map_key_for_freq(&organism_id, key) {
-            by_freq.entry(freq_id).or_default().push(key_data);
+    let mut key_freqs: HashMap<i64, Vec<i64>> = HashMap::new();
+    let mut freq_key_ids: HashMap<i64, Vec<i64>> = HashMap::new();
+    let mut key_models: HashMap<i64, sigint_network_encryption_key::Model> =
+        HashMap::new();
+
+    for (link, key) in links {
+        let Some(key) = key else { continue };
+        if key.deleted {
+            continue;
         }
+        key_models.entry(key.id).or_insert(key);
+        key_freqs
+            .entry(link.sigint_network_encryption_key_id)
+            .or_default()
+            .push(link.sigint_network_freq_id);
+        freq_key_ids
+            .entry(link.sigint_network_freq_id)
+            .or_default()
+            .push(link.sigint_network_encryption_key_id);
+    }
+
+    let mut by_freq: HashMap<i64, Vec<EncryptionKeyData>> = HashMap::new();
+    for (freq_id, key_ids) in freq_key_ids {
+        let mut key_list = Vec::new();
+        for key_id in key_ids {
+            let Some(key) = key_models.get(&key_id).cloned() else {
+                continue;
+            };
+            let freq_list = key_freqs.get(&key_id).cloned().unwrap_or_default();
+            key_list.push(map_key_for_list(&organism_id, key, freq_list));
+        }
+        by_freq.insert(freq_id, key_list);
     }
 
     Ok(by_freq)
 }
 
-fn map_key_for_freq(
-    organism_id: &i64,
-    e: sigint_network_encryption_key::Model,
-) -> Option<(i64, EncryptionKeyData)> {
-    e.sigint_network_freq_id.map(|id| {
-        let data = if e.organism_id.eq(organism_id) {
-            EncryptionKeyData {
-                id: Some(e.id),
-                sigint_network_freq_id: e.sigint_network_freq_id,
-                sigint_network_id: e.sigint_network_id,
-                key: e.key,
-                description: e.description,
-            }
-        } else {
-            EncryptionKeyData {
-                id: None,
-                sigint_network_freq_id: e.sigint_network_freq_id,
-                sigint_network_id: e.sigint_network_id,
-                key: ENCRYPTION_KEY_PLACEHOLDER.to_string(),
-                description: None,
-            }
-        };
-        (id, data)
-    })
-}
-
 fn map_key_for_list(
     organism_id: &i64,
     e: sigint_network_encryption_key::Model,
+    freq_ids: Vec<i64>,
 ) -> EncryptionKeyData {
     if e.organism_id.eq(organism_id) {
         EncryptionKeyData {
             id: Some(e.id),
-            sigint_network_freq_id: e.sigint_network_freq_id,
+            sigint_network_freq_ids: freq_ids,
             sigint_network_id: e.sigint_network_id,
             key: e.key,
             description: e.description,
+            modulation_id: e.modulation_id,
         }
     } else {
         EncryptionKeyData {
             id: Some(e.id),
-            sigint_network_freq_id: e.sigint_network_freq_id,
+            sigint_network_freq_ids: vec![],
             sigint_network_id: e.sigint_network_id,
             key: ENCRYPTION_KEY_PLACEHOLDER.to_string(),
             description: None,
+            modulation_id: None,
         }
     }
 }
 
 pub async fn update_network_encryption_key(
     txn: &DatabaseTransaction,
-    network_freq_id: Option<i64>,
-    network_id: Option<i64>,
+    network_freq_ids: Vec<i64>,
     encryption_key_id: i64,
     encryption_key: String,
     description: Option<String>,
+    modulation_id: Option<i64>,
     organism_id: i64,
 ) -> Result<EncryptionKeyData, AppError> {
     let old_key =
@@ -354,20 +416,25 @@ pub async fn update_network_encryption_key(
     let old_key = old_key.ok_or(AppError::NotFound)?;
     let previous_description = old_key.description.clone();
     let updated_description = description.or(previous_description);
-    let resolved_network_id = network_id.or(old_key.sigint_network_id);
-
-    let Some(network_id) = resolved_network_id else {
+    let Some(network_id) = old_key.sigint_network_id else {
         return Err(AppError::BL {
             msg: "Ключ шифрування не прив'язаний до мережі".to_string(),
         });
     };
 
+    validate_key_freqs(txn, network_id, &network_freq_ids)
+        .await
+        .c(h!())?;
+
     if old_key.key.eq(&encryption_key) {
         let mut key_am = old_key.into_active_model();
-        key_am.sigint_network_freq_id = Set(network_freq_id);
         key_am.description = Set(updated_description);
+        key_am.modulation_id = Set(modulation_id);
         let key = key_am.update(txn).await.c(h!())?;
-        return Ok(map_key_for_list(&organism_id, key));
+        replace_key_freq_links(txn, key.id, &network_freq_ids)
+            .await
+            .c(h!())?;
+        return Ok(map_key_for_list(&organism_id, key, network_freq_ids));
     }
 
     let mut key_am = old_key.into_active_model();
@@ -377,10 +444,11 @@ pub async fn update_network_encryption_key(
     let key = sigint_network_encryption_key::ActiveModel {
         id: NotSet,
         key: Set(encryption_key),
-        sigint_network_freq_id: Set(network_freq_id),
+        sigint_network_freq_id: Set(None),
         sigint_network_id: Set(Some(network_id)),
         description: Set(updated_description),
         organism_id: Set(organism_id),
+        modulation_id: Set(modulation_id),
         deleted: NotSet,
         created_at: NotSet,
     }
@@ -388,36 +456,201 @@ pub async fn update_network_encryption_key(
     .await
     .context(h!())?;
 
-    Ok(map_key_for_list(&organism_id, key))
+    replace_key_freq_links(txn, key.id, &network_freq_ids)
+        .await
+        .c(h!())?;
+
+    Ok(map_key_for_list(&organism_id, key, network_freq_ids))
 }
 
 pub async fn insert_new_key(
     txn: &DatabaseTransaction,
     network_id: i64,
-    network_freq_id: Option<i64>,
+    network_freq_ids: Vec<i64>,
     encryption_key: String,
     description: Option<String>,
+    modulation_id: Option<i64>,
     organism_id: i64,
 ) -> anyhow::Result<sigint_network_encryption_key::Model> {
     let key = sigint_network_encryption_key::ActiveModel {
         id: NotSet,
         key: Set(encryption_key),
-        sigint_network_freq_id: Set(network_freq_id),
+        sigint_network_freq_id: Set(None),
         sigint_network_id: Set(Some(network_id)),
         description: Set(description),
         organism_id: Set(organism_id),
+        modulation_id: Set(modulation_id),
         deleted: NotSet,
         created_at: NotSet,
     }
     .insert(txn)
     .await
     .context(h!())?;
+    replace_key_freq_links(txn, key.id, &network_freq_ids)
+        .await
+        .c(h!())?;
     Ok(key)
 }
 
-async fn load_organism_id<'a, 'async_trait, C>(
+async fn validate_key_freqs<C>(
+    db: &C,
+    network_id: i64,
+    freq_ids: &[i64],
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    if freq_ids.is_empty() {
+        return Ok(());
+    }
+    let count = sigint_network_freq::Entity::find()
+        .filter(sigint_network_freq::Column::NetworkId.eq(network_id))
+        .filter(sigint_network_freq::Column::Id.is_in(freq_ids.to_vec()))
+        .filter(sigint_network_freq::Column::Deleted.eq(false))
+        .count(db)
+        .await
+        .c(h!())?;
+    if count as usize != freq_ids.len() {
+        return Err(AppError::NotFound);
+    }
+    Ok(())
+}
+
+async fn replace_key_freq_links<C>(
+    db: &C,
+    key_id: i64,
+    freq_ids: &[i64],
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    sigint_network_encryption_key_freq::Entity::delete_many()
+        .filter(
+            sigint_network_encryption_key_freq::Column::SigintNetworkEncryptionKeyId
+                .eq(key_id),
+        )
+        .exec(db)
+        .await
+        .c(h!())?;
+
+    if freq_ids.is_empty() {
+        return Ok(());
+    }
+
+    let models = freq_ids
+        .iter()
+        .map(|freq_id| sigint_network_encryption_key_freq::ActiveModel {
+            id: NotSet,
+            sigint_network_encryption_key_id: Set(key_id),
+            sigint_network_freq_id: Set(*freq_id),
+            created_at: NotSet,
+        })
+        .collect::<Vec<_>>();
+
+    sigint_network_encryption_key_freq::Entity::insert_many(models)
+        .exec(db)
+        .await
+        .c(h!())?;
+
+    Ok(())
+}
+
+pub async fn replace_freq_key_links(
+    txn: &DatabaseTransaction,
+    network_id: i64,
+    freq_id: i64,
+    key_ids: &[i64],
+    organism_id: i64,
+) -> Result<(), AppError> {
+    sigint_network_encryption_key_freq::Entity::delete_many()
+        .filter(
+            sigint_network_encryption_key_freq::Column::SigintNetworkFreqId
+                .eq(freq_id),
+        )
+        .exec(txn)
+        .await
+        .c(h!())?;
+
+    if key_ids.is_empty() {
+        return Ok(());
+    }
+
+    let unique_key_ids = {
+        let mut ids = key_ids.to_vec();
+        ids.sort();
+        ids.dedup();
+        ids
+    };
+
+    let count = sigint_network_encryption_key::Entity::find()
+        .filter(
+            sigint_network_encryption_key::Column::Id
+                .is_in(unique_key_ids.clone()),
+        )
+        .filter(sigint_network_encryption_key::Column::Deleted.eq(false))
+        .filter(
+            sigint_network_encryption_key::Column::OrganismId.eq(organism_id),
+        )
+        .filter(
+            sigint_network_encryption_key::Column::SigintNetworkId
+                .eq(network_id),
+        )
+        .count(txn)
+        .await
+        .c(h!())?;
+    if count as usize != unique_key_ids.len() {
+        return Err(AppError::NotFound);
+    }
+
+    let models = unique_key_ids
+        .into_iter()
+        .map(|key_id| sigint_network_encryption_key_freq::ActiveModel {
+            id: NotSet,
+            sigint_network_encryption_key_id: Set(key_id),
+            sigint_network_freq_id: Set(freq_id),
+            created_at: NotSet,
+        })
+        .collect::<Vec<_>>();
+
+    sigint_network_encryption_key_freq::Entity::insert_many(models)
+        .exec(txn)
+        .await
+        .c(h!())?;
+
+    Ok(())
+}
+
+async fn load_key_freq_ids<C>(
+    db: &C,
+    key_ids: Vec<i64>,
+) -> Result<HashMap<i64, Vec<i64>>, AppError>
+where
+    C: ConnectionTrait,
+{
+    if key_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let links = sigint_network_encryption_key_freq::Entity::find()
+        .filter(
+            sigint_network_encryption_key_freq::Column::SigintNetworkEncryptionKeyId
+                .is_in(key_ids),
+        )
+        .all(db)
+        .await
+        .c(h!())?;
+    let mut by_key: HashMap<i64, Vec<i64>> = HashMap::new();
+    for link in links {
+        by_key
+            .entry(link.sigint_network_encryption_key_id)
+            .or_default()
+            .push(link.sigint_network_freq_id);
+    }
+    Ok(by_key)
+}
+
+async fn load_organism_id<'async_trait, C>(
     user_login: &str,
-    db: &'a C,
+    db: &C,
 ) -> Result<i64, AppError>
 where
     C: ConnectionTrait + 'async_trait,
@@ -432,4 +665,11 @@ where
         .ok_or_else(|| AppError::BL {
             msg: "User has no organism assigned".to_string(),
         })
+}
+
+fn normalize_modulation_id(modulation_id: Option<i64>) -> Option<i64> {
+    match modulation_id {
+        Some(-1) => None,
+        _ => modulation_id,
+    }
 }

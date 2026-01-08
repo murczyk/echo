@@ -194,12 +194,14 @@ type FrequenciesMsg
     | SaveFreqEditSidebar
     | FreqKindSelectMsg (Select.Msg NetworksUtils.NetworkKind)
     | FreqModulationSelectMsg (Select.Msg Int)
+    | FreqKeySelectMsg (Select.Msg Int)
     | ToggleFreqEditShowActiveTo
     | OpenFreqCreateSidebar
     | CloseFreqCreateSidebar
     | UpdateFreqCreateField (B.AddNetworkFreq -> B.AddNetworkFreq)
     | FreqCreateKindSelectMsg (Select.Msg NetworksUtils.NetworkKind)
     | FreqCreateModulationSelectMsg (Select.Msg Int)
+    | FreqCreateKeySelectMsg (Select.Msg Int)
     | FreqCreateDescriptionInputChangedByUser String
     | ToggleFreqCreateShowActiveTo
     | AddFreqToNetwork

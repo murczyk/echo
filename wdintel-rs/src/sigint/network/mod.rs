@@ -1379,38 +1379,32 @@ pub async fn add_network_freq(
     network_model.updated_by = Set(Some(user_id.to_string()));
     network_model.update(&txn).await.context(h!())?;
 
+    let organism_id = login::Entity::find_by_id(user_id.to_string())
+        .select_only()
+        .column(login::Column::OrganismId)
+        .into_tuple::<i64>()
+        .one(&txn)
+        .await
+        .c(h!())?
+        .ok_or_else(|| AppError::BL {
+            msg: "User has no organism assigned".to_string(),
+        })?;
+
+    crate::sigint::key::replace_freq_key_links(
+        &txn,
+        network_freq.network_id,
+        network_freq.id,
+        &req.freq_rec.encryption_key_ids,
+        organism_id,
+    )
+    .await
+    .c(h!())?;
+
     // Now fetch the updated network with all frequencies to return
     let network_detail =
         bl_network_info_batch(vec![req.network_id], &txn, &user_id)
             .await
             .context(h!())?;
-
-    if let Some(encryption_key) = req.freq_rec.encryption_key.clone() {
-        let organism_id = login::Entity::find_by_id(user_id.to_string())
-            .select_only()
-            .column(login::Column::OrganismId)
-            .into_tuple::<i64>()
-            .one(&txn)
-            .await
-            .c(h!())?;
-        match organism_id {
-            Some(organism_id) => {
-                crate::sigint::key::insert_new_key(
-                    &txn,
-                    network_freq.network_id,
-                    Some(network_freq.id),
-                    encryption_key,
-                    None,
-                    organism_id,
-                )
-                .await
-                .c(h!())?;
-            }
-            None => {
-                error!("invalid user {user_id}: has no organism assigned");
-            }
-        };
-    }
 
     txn.commit().await.context(h!())?;
 
@@ -1527,33 +1521,26 @@ pub async fn update_network_freq(
         model.active_to = Set(active_to);
         model.update(&txn).await.context(h!())?;
 
-        if let Some(encryption_key_id) = req.encryption_key_id {
-            let organism_id = login::Entity::find_by_id(user_id.clone())
-                .select_only()
-                .column(login::Column::OrganismId)
-                .into_tuple::<i64>()
-                .one(&txn)
-                .await
-                .c(h!())?;
-            match organism_id {
-                Some(organism_id) => {
-                    crate::sigint::key::update_network_encryption_key(
-                        &txn,
-                        Some(network_freq_id),
-                        Some(req.network_id),
-                        encryption_key_id,
-                        req.encryption_key.clone().unwrap_or_default(),
-                        None,
-                        organism_id,
-                    )
-                    .await
-                    .c(h!())?;
-                }
-                None => {
-                    error!("invalid user {user_id}: has no organism assigned");
-                }
-            };
-        }
+        let organism_id = login::Entity::find_by_id(user_id.clone())
+            .select_only()
+            .column(login::Column::OrganismId)
+            .into_tuple::<i64>()
+            .one(&txn)
+            .await
+            .c(h!())?
+            .ok_or_else(|| AppError::BL {
+                msg: "User has no organism assigned".to_string(),
+            })?;
+
+        crate::sigint::key::replace_freq_key_links(
+            &txn,
+            req.network_id,
+            network_freq_id,
+            &req.encryption_key_ids,
+            organism_id,
+        )
+        .await
+        .c(h!())?;
     } else {
         debug!(
             "Frequency {} not found for network {}, no action needed",
