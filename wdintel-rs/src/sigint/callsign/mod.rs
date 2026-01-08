@@ -219,10 +219,12 @@ async fn list_callsigns_impl(
         .clone()
         .unwrap_or(DevelopingFilter::OnlyNonDeveloping);
     callsigns = match filter_developing {
-        DevelopingFilter::OnlyDeveloping => callsigns
-            .filter(sigint_callsign::Column::Developing.eq(true)),
-        DevelopingFilter::OnlyNonDeveloping => callsigns
-            .filter(sigint_callsign::Column::Developing.eq(false)),
+        DevelopingFilter::OnlyDeveloping => {
+            callsigns.filter(sigint_callsign::Column::Developing.eq(true))
+        }
+        DevelopingFilter::OnlyNonDeveloping => {
+            callsigns.filter(sigint_callsign::Column::Developing.eq(false))
+        }
         DevelopingFilter::All => callsigns,
     };
 

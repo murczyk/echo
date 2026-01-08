@@ -35,7 +35,7 @@ pub enum ListCallsignsSortBy {
 )]
 pub enum DevelopingFilter {
     OnlyDeveloping,
-    OnlyNonDeveloping,  
+    OnlyNonDeveloping,
     All,
 }
 
