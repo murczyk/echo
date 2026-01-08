@@ -50,6 +50,7 @@ import Shared.Components.Table.Column as TableColumn
 import Shared.Components.Table.Config as TableConfig
 import Shared.Components.Table.Sorter as TableSorter
 import Shared.Model exposing (isDarkMode)
+import String
 import Time
 import Time.Extra
 import Url.Builder
@@ -236,8 +237,16 @@ update shared msg model =
                 modulationSelect =
                     model.freqEditModulationSelect
 
+                selectedModulation =
+                    case updateReq.modulationId of
+                        Just modulationId ->
+                            Just modulationId
+
+                        Nothing ->
+                            Just Modulations.undefinedModulationId
+
                 updatedModulationSelect =
-                    { modulationSelect | selected = updateReq.modulationId }
+                    { modulationSelect | selected = selectedModulation }
 
                 -- Встановлюємо freqEditShowActiveTo на основі того, чи є activeTo
                 showActiveTo =
@@ -379,7 +388,13 @@ update shared msg model =
                 updatedSidebar =
                     case model.freqEditSidebar of
                         Just ( freqId, updateReq ) ->
-                            Just ( freqId, { updateReq | modulationId = updatedModulationId } )
+                            Just
+                                ( freqId
+                                , { updateReq
+                                    | modulationId =
+                                        modulationIdFromSelect updatedModulationId
+                                  }
+                                )
 
                         Nothing ->
                             model.freqEditSidebar
@@ -543,7 +558,9 @@ update shared msg model =
                     model.freqCreateState
 
                 newFreqState =
-                    { oldFreqState | modulationId = updatedModulation }
+                    { oldFreqState
+                        | modulationId = modulationIdFromSelect updatedModulation
+                    }
             in
             ( { model | freqCreateModulationSelect = newSelect, freqCreateState = newFreqState }
             , E.sendCmd <| Cmd.map FreqCreateModulationSelectMsg selectCmd
@@ -648,6 +665,25 @@ update shared msg model =
 
         CallsignsPopupClosedByUser ->
             ( { model | callsignsOpenedPopupId = Nothing }, E.none )
+
+
+modulationIdFromSelect : Maybe Int -> Maybe Int
+modulationIdFromSelect selected =
+    case selected of
+        Just modulationId ->
+            if modulationId == Modulations.undefinedModulationId then
+                Nothing
+
+            else
+                Just modulationId
+
+        Nothing ->
+            Nothing
+
+
+modulationSelectionRequired : Maybe Int -> Bool
+modulationSelectionRequired selected =
+    selected /= Nothing
 
 
 filterFreqsByActivity : FreqActivityFilter -> List B.NetworkFreqsRes -> List B.NetworkFreqsRes
@@ -855,14 +891,20 @@ freqsTableConfig shared model user =
                 , viewData =
                     \freq ->
                         let
-                            encryptionKey =
-                                Maybe.withDefault "" freq.encryptionKey
+                            encryptionKeys =
+                                if List.isEmpty freq.encryptionKeys then
+                                    freq.encryptionKey
+                                        |> Maybe.map List.singleton
+                                        |> Maybe.withDefault []
+
+                                else
+                                    freq.encryptionKeys
                         in
                         { attributes =
                             [ style "white-space" "pre-wrap"
                             , style "word-break" "break-all"
                             ]
-                        , children = [ text encryptionKey ]
+                        , children = [ text <| String.join "\n" encryptionKeys ]
                         }
                 , sorter = TableSorter.unsortable
                 }
@@ -1144,8 +1186,11 @@ freqEditSidebarContent shared model user freqId updateReq =
                 _ ->
                     Nothing
 
+        selectedModulationId =
+            modulationIdFromSelect model.freqEditModulationSelect.selected
+
         selectedModulationName =
-            case ( model.modulations, updateReq.modulationId ) of
+            case ( model.modulations, selectedModulationId ) of
                 ( Success modulations, Just modulationId ) ->
                     modulations
                         |> ListX.find (\modulation -> modulation.id == modulationId)
@@ -1204,6 +1249,9 @@ freqEditSidebarContent shared model user freqId updateReq =
                 _ ->
                     Nothing
 
+        isModulationSelected =
+            modulationSelectionRequired model.freqEditModulationSelect.selected
+
         isEncryptionKeyEditable =
             False
 
@@ -1212,7 +1260,8 @@ freqEditSidebarContent shared model user freqId updateReq =
             , type_ "text"
             , placeholder "Введіть ключ шифрування"
             , value <| Maybe.withDefault "" updateReq.encryptionKey
-            , disabled (not isEncryptionKeyEditable)
+            , readonly True
+            , disabled (not isModulationSelected || not isEncryptionKeyEditable)
             ]
                 ++ (case encryptionKeyMaxLength of
                         Just maxLen ->
@@ -1230,6 +1279,50 @@ freqEditSidebarContent shared model user freqId updateReq =
         , div [ class "flex-1 overflow-y-auto p-6" ]
             [ div [ class "space-y-6" ]
                 [ div [ class "space-y-2" ]
+                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Модуляція*" ]
+                    , let
+                        selectedItem =
+                            Maybe.map
+                                (\modulationId ->
+                                    Select.basicMenuItem
+                                        { item = modulationId
+                                        , label =
+                                            case model.modulations of
+                                                Success modulations ->
+                                                    if modulationId == Modulations.undefinedModulationId then
+                                                        Modulations.undefinedModulationLabel
+
+                                                    else
+                                                        modulations
+                                                            |> List.filter (\mod -> mod.id == modulationId)
+                                                            |> List.head
+                                                            |> Maybe.map (.name >> Modulations.displayModulationName)
+                                                            |> Maybe.withDefault ""
+
+                                                _ ->
+                                                    Modulations.undefinedModulationLabel
+                                        }
+                                )
+                                model.freqEditModulationSelect.selected
+
+                        defaultOptions =
+                            Utils.Select.defaultOptions (isDarkMode shared.themeMode)
+                      in
+                      Html.map FreqModulationSelectMsg <|
+                        Styled.toUnstyled <|
+                            Utils.Select.renderSelectSingle
+                                selectedItem
+                                model.freqEditModulationSelect.state
+                                model.freqEditModulationSelect.items
+                                "Оберіть модуляцію"
+                                defaultOptions
+                    , if isModulationSelected then
+                        text ""
+
+                      else
+                        div [ class "text-sm text-red-600" ] [ text "Це поле обов'язкове" ]
+                    ]
+                , div [ class "space-y-2" ]
                     [ label [ class "text-sm font-medium text-foreground" ] [ text "Тип" ]
                     , let
                         selectedItem =
@@ -1249,41 +1342,6 @@ freqEditSidebarContent shared model user freqId updateReq =
                                 model.freqEditKindSelect.state
                                 model.freqEditKindSelect.items
                                 "Виберіть тип"
-                                defaultOptions
-                    ]
-                , div [ class "space-y-2" ]
-                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Модуляція" ]
-                    , let
-                        selectedItem =
-                            Maybe.map
-                                (\modulationId ->
-                                    Select.basicMenuItem
-                                        { item = modulationId
-                                        , label =
-                                            case model.modulations of
-                                                Success modulations ->
-                                                    modulations
-                                                        |> List.filter (\mod -> mod.id == modulationId)
-                                                        |> List.head
-                                                        |> Maybe.map (.name >> Modulations.displayModulationName)
-                                                        |> Maybe.withDefault ""
-
-                                                _ ->
-                                                    ""
-                                        }
-                                )
-                                model.freqEditModulationSelect.selected
-
-                        defaultOptions =
-                            Utils.Select.defaultOptions (isDarkMode shared.themeMode)
-                      in
-                      Html.map FreqModulationSelectMsg <|
-                        Styled.toUnstyled <|
-                            Utils.Select.renderSelectSingle
-                                selectedItem
-                                model.freqEditModulationSelect.state
-                                model.freqEditModulationSelect.items
-                                "Не вибрано"
                                 defaultOptions
                     ]
                 , div [ class "space-y-2" ]
@@ -1361,6 +1419,7 @@ freqEditSidebarContent shared model user freqId updateReq =
 
                   else
                     Button.new { label = "Зберегти", onClick = SaveFreqEditSidebar }
+                        |> Button.withDisabled (not isModulationSelected)
                         |> Button.view
                 ]
             ]
@@ -1370,6 +1429,10 @@ freqEditSidebarContent shared model user freqId updateReq =
 
 freqCreateSidebarContent : Shared.Model -> Model -> Auth.User -> List (Html FrequenciesMsg)
 freqCreateSidebarContent shared model user =
+    let
+        isModulationSelected =
+            modulationSelectionRequired model.freqCreateModulationSelect.selected
+    in
     [ div [ class "flex flex-col h-full" ]
         [ div [ class "p-6 border-b border-border" ]
             [ h2 [ class "text-lg font-semibold mb-1" ] [ text "Додати частоту" ]
@@ -1377,6 +1440,50 @@ freqCreateSidebarContent shared model user =
             ]
         , div [ class "flex-1 overflow-y-auto p-6 space-y-4" ]
             [ div []
+                [ label [ class "block text-sm font-medium mb-1" ] [ text "Модуляція*" ]
+                , case model.modulations of
+                    Success modulations ->
+                        let
+                            selectedItem =
+                                Maybe.map
+                                    (\item ->
+                                        Select.basicMenuItem
+                                            { item = item
+                                            , label =
+                                                if item == Modulations.undefinedModulationId then
+                                                    Modulations.undefinedModulationLabel
+
+                                                else
+                                                    modulations
+                                                        |> List.filter (\mod -> mod.id == item)
+                                                        |> List.head
+                                                        |> Maybe.map (.name >> Modulations.displayModulationName)
+                                                        |> Maybe.withDefault ""
+                                            }
+                                    )
+                                    model.freqCreateModulationSelect.selected
+
+                            defaultOptions =
+                                Utils.Select.defaultOptions (isDarkMode shared.themeMode)
+                        in
+                        Html.map FreqCreateModulationSelectMsg <|
+                            Styled.toUnstyled <|
+                                Utils.Select.renderSelectSingle
+                                    selectedItem
+                                    model.freqCreateModulationSelect.state
+                                    model.freqCreateModulationSelect.items
+                                    "Оберіть модуляцію"
+                                    defaultOptions
+
+                    _ ->
+                        div [ class "text-sm text-muted-foreground" ] [ text "Завантаження модуляцій..." ]
+                , if isModulationSelected then
+                    text ""
+
+                  else
+                    div [ class "text-sm text-red-600 mt-1" ] [ text "Це поле обов'язкове" ]
+                ]
+            , div []
                 [ label [ class "block text-sm font-medium mb-1" ] [ text "Частота*" ]
                 , input
                     [ type_ "text"
@@ -1430,48 +1537,14 @@ freqCreateSidebarContent shared model user =
                             defaultOptions
                 ]
             , div []
-                [ label [ class "block text-sm font-medium mb-1" ] [ text "Модуляція" ]
-                , case model.modulations of
-                    Success modulations ->
-                        let
-                            selectedItem =
-                                Maybe.map
-                                    (\item ->
-                                        Select.basicMenuItem
-                                            { item = item
-                                            , label =
-                                                modulations
-                                                    |> List.filter (\mod -> mod.id == item)
-                                                    |> List.head
-                                                    |> Maybe.map (.name >> Modulations.displayModulationName)
-                                                    |> Maybe.withDefault ""
-                                            }
-                                    )
-                                    model.freqCreateModulationSelect.selected
-
-                            defaultOptions =
-                                Utils.Select.defaultOptions (isDarkMode shared.themeMode)
-                        in
-                        Html.map FreqCreateModulationSelectMsg <|
-                            Styled.toUnstyled <|
-                                Utils.Select.renderSelectSingle
-                                    selectedItem
-                                    model.freqCreateModulationSelect.state
-                                    model.freqCreateModulationSelect.items
-                                    "Не вибрано"
-                                    defaultOptions
-
-                    _ ->
-                        div [ class "text-sm text-muted-foreground" ] [ text "Завантаження модуляцій..." ]
-                ]
-            , div []
                 [ label [ class "block text-sm font-medium mb-1" ] [ text "Ключ шифрування" ]
                 , input
                     [ type_ "text"
                     , class "w-full p-2 border border-border rounded"
                     , placeholder "Ключ додається в таблиці ключів"
                     , value <| Maybe.withDefault "" model.freqCreateState.encryptionKey
-                    , disabled True
+                    , readonly True
+                    , disabled (not isModulationSelected)
                     ]
                     []
                 , p [ class "text-xs text-muted-foreground mt-1" ]
@@ -1569,7 +1642,10 @@ freqCreateSidebarContent shared model user =
                   else
                     Button.new { label = "Додати", onClick = AddFreqToNetwork }
                         |> Button.withDisabled
-                            (String.trim model.freqCreateState.freq == "" || model.freqCreateFormatError /= Nothing)
+                            (not isModulationSelected
+                                || String.trim model.freqCreateState.freq == ""
+                                || model.freqCreateFormatError /= Nothing
+                            )
                         |> Button.view
                 ]
             ]

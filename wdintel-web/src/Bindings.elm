@@ -4689,6 +4689,7 @@ type alias NetworkFreqsRes =
     , modulation : Maybe String
     , encryptionKeyId : Maybe Int
     , encryptionKey : Maybe String
+    , encryptionKeys : List String
     , messageCount : Int
     , callsigns : Maybe (List String)
     , lastDatetime : Maybe Int
@@ -4709,6 +4710,7 @@ networkFreqsResEncoder struct =
         , ( "modulation", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.modulation )
         , ( "encryption_key_id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.encryptionKeyId )
         , ( "encryption_key", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.encryptionKey )
+        , ( "encryption_keys", Json.Encode.list Json.Encode.string struct.encryptionKeys )
         , ( "message_count", Json.Encode.int struct.messageCount )
         , ( "callsigns", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.string)) struct.callsigns )
         , ( "last_datetime", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.lastDatetime )
@@ -9274,6 +9276,7 @@ networkFreqsResDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "modulation" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "encryption_key_id" (Json.Decode.nullable Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "encryption_key" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "encryption_keys" (Json.Decode.list Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message_count" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsigns" (Json.Decode.nullable (Json.Decode.list Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_datetime" (Json.Decode.nullable Json.Decode.int)))

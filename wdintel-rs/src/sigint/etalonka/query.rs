@@ -362,6 +362,7 @@ pub async fn load_freqs(
                 modulation: row.try_get("", "modulation_name").ok(),
                 encryption_key_id: None,
                 encryption_key: None,
+                encryption_keys: vec![],
                 message_count: row.try_get("", "message_count").unwrap_or(0),
                 callsigns: row_callsigns,
                 last_datetime: row
@@ -378,17 +379,22 @@ pub async fn load_freqs(
         })
         .collect();
 
-    let mut keys = crate::sigint::key::load_freq_keys(db, user_login, freq_ids)
-        .await
-        .c(h!())?;
+    let mut keys_by_freq =
+        crate::sigint::key::load_freq_keys_list(db, user_login, freq_ids)
+            .await
+            .c(h!())?;
     match network_active_freqs {
         Ok(mut networks) => {
             for network in networks.iter_mut() {
-                let key = keys.remove(&network.network_freq_id);
-                let (id, key) = match key {
+                let keys = keys_by_freq
+                    .remove(&network.network_freq_id)
+                    .unwrap_or_default();
+                let (id, key) = match keys.first() {
                     None => (None, None),
-                    Some(k) => (k.id, Some(k.key)),
+                    Some(k) => (k.id, Some(k.key.clone())),
                 };
+                network.encryption_keys =
+                    keys.into_iter().map(|k| k.key).collect();
                 network.encryption_key = key;
                 network.encryption_key_id = id;
             }

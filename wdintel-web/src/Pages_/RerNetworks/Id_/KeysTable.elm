@@ -368,7 +368,7 @@ view networkModel user =
             ]
         , case networkModel.networkKeys of
             Success keys ->
-                div [ class "table-responsive-modern" ]
+                div [ class "table-responsive-modern w-full" ]
                     [ if List.isEmpty keys then
                         emptyKeysPlaceholder
 
@@ -602,7 +602,63 @@ emptyKeysPlaceholder =
 
 keysTableConfig : Auth.User -> Model -> Table.Config B.EncryptionKeyData KeysMsg
 keysTableConfig user networkModel =
-    TableConfig.config
+    let
+        defaultCustomizations =
+            Table.defaultCustomizations
+
+        customTheadHelp : ( String, TableConfig.Status, Html.Attribute KeysMsg ) -> Html KeysMsg
+        customTheadHelp ( name, status, click ) =
+            let
+                sortIcon =
+                    case status of
+                        TableConfig.Unsortable ->
+                            text ""
+
+                        TableConfig.Sortable selected ->
+                            span
+                                [ style "color"
+                                    (if selected then
+                                        "var(--ochre-normal)"
+
+                                     else
+                                        "var(--color-text-muted)"
+                                    )
+                                ]
+                                [ text " ⇓" ]
+
+                        TableConfig.Reversible Nothing ->
+                            span [ style "color" "var(--color-text-muted)" ] [ text " ⇕" ]
+
+                        TableConfig.Reversible (Just isReversed) ->
+                            span [ style "color" "var(--ochre-normal)" ]
+                                [ text
+                                    (if isReversed then
+                                        " ⇑"
+
+                                     else
+                                        " ⇓"
+                                    )
+                                ]
+
+                headerContent =
+                    div [ class "table-header-content", title name ]
+                        [ span [] [ text name ]
+                        , sortIcon
+                        ]
+            in
+            Html.th [ click ] [ headerContent ]
+
+        customThead : List ( String, TableConfig.Status, Html.Attribute KeysMsg ) -> TableColumn.HtmlDetails KeysMsg
+        customThead headers =
+            TableColumn.HtmlDetails [] (List.map customTheadHelp headers)
+
+        customizations =
+            { defaultCustomizations
+                | tableAttrs = [ class "base-table" ]
+                , thead = customThead
+            }
+    in
+    Table.customConfig
         { toId = keyRowId
         , toMsg = SetKeysTableState
         , columns =
@@ -633,6 +689,7 @@ keysTableConfig user networkModel =
                     else
                         []
                    )
+        , customizations = customizations
         }
 
 

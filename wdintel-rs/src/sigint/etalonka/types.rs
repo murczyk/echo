@@ -114,6 +114,7 @@ pub struct NetworkFreqsRes {
     pub modulation: Option<String>,
     pub encryption_key_id: Option<i64>,
     pub encryption_key: Option<String>,
+    pub encryption_keys: Vec<String>,
     pub message_count: i64,
     pub callsigns: Option<Vec<String>>,
     pub last_datetime: Option<i64>,

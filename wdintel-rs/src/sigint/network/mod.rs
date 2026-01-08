@@ -1397,8 +1397,10 @@ pub async fn add_network_freq(
             Some(organism_id) => {
                 crate::sigint::key::insert_new_key(
                     &txn,
-                    network_freq,
+                    network_freq.network_id,
+                    Some(network_freq.id),
                     encryption_key,
+                    None,
                     organism_id,
                 )
                 .await
@@ -1537,10 +1539,11 @@ pub async fn update_network_freq(
                 Some(organism_id) => {
                     crate::sigint::key::update_network_encryption_key(
                         &txn,
-                        network_freq_id,
-                        req.network_id,
+                        Some(network_freq_id),
+                        Some(req.network_id),
                         encryption_key_id,
-                        req.encryption_key.clone().unwrap_or("".to_string()),
+                        req.encryption_key.clone().unwrap_or_default(),
+                        None,
                         organism_id,
                     )
                     .await

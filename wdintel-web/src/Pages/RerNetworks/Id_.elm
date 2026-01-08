@@ -376,8 +376,21 @@ update shared msg model =
             let
                 ( m1, keysEff ) =
                     KeysTable.update shared keysMsg model
+
+                reloadFreqs =
+                    case ( keysMsg, m1.network ) of
+                        ( Msgs.KeyCreated (Ok _), Success network ) ->
+                            E.map Frequencies <|
+                                E.getSingleNetworkFreqs Msgs.FreqsReturnedByApi { networkId = network.id }
+
+                        ( Msgs.KeyUpdated (Ok _), Success network ) ->
+                            E.map Frequencies <|
+                                E.getSingleNetworkFreqs Msgs.FreqsReturnedByApi { networkId = network.id }
+
+                        _ ->
+                            E.none
             in
-            ( m1, E.map Keys keysEff )
+            ( m1, E.batch [ E.map Keys keysEff, reloadFreqs ] )
 
         NetworkReturnedByApi (Err e) ->
             ( { model | network = Failure e }
@@ -873,20 +886,27 @@ update shared msg model =
 
         ModulationsReturnedByApi (Ok res) ->
             let
+                undefinedItem =
+                    Select.basicMenuItem
+                        { item = Modulations.undefinedModulationId
+                        , label = Modulations.undefinedModulationLabel
+                        }
+
                 modulationSelect =
                     model.freqEditModulationSelect
 
                 updatedModulationSelect =
                     { modulationSelect
                         | items =
-                            List.map
-                                (\mod ->
-                                    Select.basicMenuItem
-                                        { item = mod.id
-                                        , label = Modulations.displayModulationName mod.name
-                                        }
-                                )
-                                res
+                            undefinedItem
+                                :: List.map
+                                    (\mod ->
+                                        Select.basicMenuItem
+                                            { item = mod.id
+                                            , label = Modulations.displayModulationName mod.name
+                                            }
+                                    )
+                                    res
                     }
 
                 freqCreateModulationSelect =
@@ -895,14 +915,15 @@ update shared msg model =
                 updatedFreqCreateModulationSelect =
                     { freqCreateModulationSelect
                         | items =
-                            List.map
-                                (\mod ->
-                                    Select.basicMenuItem
-                                        { item = mod.id
-                                        , label = Modulations.displayModulationName mod.name
-                                        }
-                                )
-                                res
+                            undefinedItem
+                                :: List.map
+                                    (\mod ->
+                                        Select.basicMenuItem
+                                            { item = mod.id
+                                            , label = Modulations.displayModulationName mod.name
+                                            }
+                                    )
+                                    res
                     }
             in
             ( { model
