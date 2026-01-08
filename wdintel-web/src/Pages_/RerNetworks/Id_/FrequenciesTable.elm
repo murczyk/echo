@@ -1140,85 +1140,6 @@ freqActivityChartDetailed model shared =
 
 freqEditSidebarContent : Shared.Model -> Model -> Auth.User -> String -> B.UpdateNetworkFreqReq -> List (Html FrequenciesMsg)
 freqEditSidebarContent shared model user freqId updateReq =
-    let
-        selectedModulationName =
-            case ( model.modulations, updateReq.modulationId ) of
-                ( Success modulations, Just modulationId ) ->
-                    modulations
-                        |> ListX.find (\modulation -> modulation.id == modulationId)
-                        |> Maybe.map .name
-
-                _ ->
-                    Nothing
-
-        encryptionKeyMaxLength =
-            case selectedModulationName of
-                Just "DMR (ARC40)" ->
-                    Just 4
-
-                Just "DMR (AES256)" ->
-                    Just 64
-
-                Just "HYTERA (256 bit)" ->
-                    Just 64
-
-                Just "TYT (16 bit)" ->
-                    Just 4
-
-                Just "TYT (128 bit)" ->
-                    Just 32
-
-                Just "NFM" ->
-                    Nothing
-
-                Just "AM" ->
-                    Nothing
-
-                Just "АМ" ->
-                    Nothing
-
-                Just "DMR" ->
-                    Nothing
-
-                Just "HYTERA" ->
-                    Nothing
-
-                Just "TYT" ->
-                    Nothing
-
-                Just "TETRA" ->
-                    Nothing
-
-                Just "Гранит" ->
-                    Nothing
-
-                Just "GSM" ->
-                    Nothing
-
-                Just "Умовна" ->
-                    Nothing
-
-                _ ->
-                    Nothing
-
-        isEncryptionKeyEditable =
-            False
-
-        encryptionKeyAttrs =
-            [ class "w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
-            , type_ "text"
-            , placeholder "Введіть ключ шифрування"
-            , value <| Maybe.withDefault "" updateReq.encryptionKey
-            , disabled (not isEncryptionKeyEditable)
-            ]
-                ++ (case encryptionKeyMaxLength of
-                        Just maxLen ->
-                            [ maxlength maxLen ]
-
-                        Nothing ->
-                            []
-                   )
-    in
     [ div [ class "flex flex-col h-full" ]
         [ div [ class "p-6 border-b border-border" ]
             [ h2 [ class "text-lg font-semibold mb-1" ] [ text "Редагувати частоту" ]
@@ -1282,14 +1203,6 @@ freqEditSidebarContent shared model user freqId updateReq =
                                 model.freqEditModulationSelect.items
                                 "Не вибрано"
                                 defaultOptions
-                    ]
-                , div [ class "space-y-2" ]
-                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Ключ шифрування" ]
-                    , input
-                        encryptionKeyAttrs
-                        []
-                    , p [ class "text-xs text-muted-foreground" ]
-                        [ text "Редагування ключів доступне в таблиці ключів." ]
                     ]
                 , div [ class "space-y-2" ]
                     [ label [ class "text-sm font-medium text-foreground" ] [ text "Активна з" ]
@@ -1460,19 +1373,6 @@ freqCreateSidebarContent shared model user =
 
                     _ ->
                         div [ class "text-sm text-muted-foreground" ] [ text "Завантаження модуляцій..." ]
-                ]
-            , div []
-                [ label [ class "block text-sm font-medium mb-1" ] [ text "Ключ шифрування" ]
-                , input
-                    [ type_ "text"
-                    , class "w-full p-2 border border-border rounded"
-                    , placeholder "Ключ додається в таблиці ключів"
-                    , value <| Maybe.withDefault "" model.freqCreateState.encryptionKey
-                    , disabled True
-                    ]
-                    []
-                , p [ class "text-xs text-muted-foreground mt-1" ]
-                    [ text "Редагування ключів доступне в таблиці ключів." ]
                 ]
             , div []
                 [ label [ class "block text-sm font-medium mb-1" ] [ text "Обґрунтування прив'язки" ]

@@ -122,12 +122,6 @@ pub async fn create_key(
             msg: "User has no organism assigned".to_string(),
         })?;
 
-    if req.key.trim().is_empty() {
-        return Err(AppError::BL {
-            msg: "Ключ шифрування не може бути порожнім".to_string(),
-        });
-    }
-
     if let Some(freq_id) = req.sigint_network_freq_id {
         let freq_exists = sigint_network_freq::Entity::find()
             .filter(sigint_network_freq::Column::Id.eq(freq_id))
@@ -154,10 +148,7 @@ pub async fn create_key(
         organism_id,
     )
     .await
-    .context(h!())?
-    .ok_or_else(|| AppError::BL {
-        msg: "Ключ шифрування не може бути порожнім".to_string(),
-    })?;
+    .context(h!())?;
 
     txn.commit().await.c(h!())?;
 
@@ -188,12 +179,6 @@ pub async fn update_key(
         .ok_or_else(|| AppError::BL {
             msg: "User has no organism assigned".to_string(),
         })?;
-
-    if req.key.trim().is_empty() {
-        return Err(AppError::BL {
-            msg: "Ключ шифрування не може бути порожнім".to_string(),
-        });
-    }
 
     if let Some(freq_id) = req.sigint_network_freq_id {
         let freq_exists = sigint_network_freq::Entity::find()
@@ -463,10 +448,7 @@ pub async fn insert_new_key(
     encryption_key: String,
     description: Option<String>,
     organism_id: i64,
-) -> anyhow::Result<Option<sigint_network_encryption_key::Model>> {
-    if encryption_key.replace(" ", "").is_empty() {
-        return Ok(None);
-    }
+) -> anyhow::Result<sigint_network_encryption_key::Model> {
     let key = sigint_network_encryption_key::ActiveModel {
         id: NotSet,
         key: Set(encryption_key),
@@ -480,5 +462,5 @@ pub async fn insert_new_key(
     .insert(txn)
     .await
     .context(h!())?;
-    Ok(Some(key))
+    Ok(key)
 }

@@ -902,6 +902,28 @@ update shared msg model =
 
         ModulationsReturnedByApi (Ok res) ->
             let
+                keyModulationNames =
+                    [ "NFM"
+                    , "AM"
+                    , "АМ"
+                    , "DMR"
+                    , "DMR (ARC40)"
+                    , "DMR (AES256)"
+                    , "HYTERA"
+                    , "HYTERA (256 bit)"
+                    , "TYT"
+                    , "TYT (16 bit)"
+                    , "TYT (128 bit)"
+                    , "TETRA"
+                    , "Гранит"
+                    , "GSM"
+                    , "Умовна"
+                    ]
+
+                keyModulations =
+                    res
+                        |> List.filter (\mod -> List.member mod.name keyModulationNames)
+
                 modulationItems =
                     List.map
                         (\mod ->
@@ -917,7 +939,14 @@ update shared msg model =
                         { item = Modulations.undefinedModulationId
                         , label = Modulations.undefinedModulationLabel
                         }
-                        :: modulationItems
+                        :: List.map
+                            (\mod ->
+                                Select.basicMenuItem
+                                    { item = mod.id
+                                    , label = Modulations.displayModulationName mod.name
+                                    }
+                            )
+                            keyModulations
 
                 modulationSelect =
                     model.freqEditModulationSelect

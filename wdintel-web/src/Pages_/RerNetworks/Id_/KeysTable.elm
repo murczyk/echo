@@ -203,10 +203,43 @@ update _ msg networkModel =
         CreateKeyClicked ->
             case networkModel.network of
                 Success network ->
-                    if networkModel.keyCreateModulationSelect.selected == Nothing then
+                    let
+                        modulationId =
+                            networkModel.keyCreateModulationSelect.selected
+
+                        isModulationSelected =
+                            modulationId /= Nothing
+
+                        keyRules =
+                            keyRulesFromModulationId networkModel modulationId
+
+                        keyAllowed =
+                            keyRules.keyAllowed
+
+                        keyValue =
+                            networkModel.keyCreateState.key
+
+                        keyLen =
+                            String.length (String.trim keyValue)
+
+                        keyTooLong =
+                            case keyRules.maxLen of
+                                Just maxLen ->
+                                    keyAllowed && keyLen > maxLen
+
+                                Nothing ->
+                                    False
+
+                        keyRequired =
+                            isModulationSelected && keyAllowed
+
+                        keyInvalid =
+                            (keyRequired && String.trim keyValue == "") || keyTooLong
+                    in
+                    if not isModulationSelected then
                         ( networkModel, E.none )
 
-                    else if String.trim networkModel.keyCreateState.key == "" then
+                    else if keyInvalid then
                         ( networkModel, E.none )
 
                     else
@@ -222,7 +255,7 @@ update _ msg networkModel =
                                 { sigintNetworkId = network.id
                                 , sigintNetworkFreqId =
                                     networkModel.keyCreateState.sigintNetworkFreqId
-                                , key = networkModel.keyCreateState.key
+                                , key = keyValue
                                 , description = description
                                 }
                         in
@@ -422,10 +455,43 @@ update _ msg networkModel =
         SaveKeyEditClicked ->
             case networkModel.keyEditSidebar of
                 Just req ->
-                    if networkModel.keyEditModulationSelect.selected == Nothing then
+                    let
+                        modulationId =
+                            networkModel.keyEditModulationSelect.selected
+
+                        isModulationSelected =
+                            modulationId /= Nothing
+
+                        keyRules =
+                            keyRulesFromModulationId networkModel modulationId
+
+                        keyAllowed =
+                            keyRules.keyAllowed
+
+                        keyValue =
+                            req.key
+
+                        keyLen =
+                            String.length (String.trim keyValue)
+
+                        keyTooLong =
+                            case keyRules.maxLen of
+                                Just maxLen ->
+                                    keyAllowed && keyLen > maxLen
+
+                                Nothing ->
+                                    False
+
+                        keyRequired =
+                            isModulationSelected && keyAllowed
+
+                        keyInvalid =
+                            (keyRequired && String.trim keyValue == "") || keyTooLong
+                    in
+                    if not isModulationSelected then
                         ( networkModel, E.none )
 
-                    else if String.trim req.key == "" then
+                    else if keyInvalid then
                         ( networkModel, E.none )
 
                     else
@@ -583,72 +649,34 @@ createSidebar model user shared =
 keyEditSidebarContent : Shared.Model -> Model -> B.UpdateEncryptionKeyReq -> List (Html KeysMsg)
 keyEditSidebarContent shared model updateReq =
     let
+        modulationId =
+            model.keyEditModulationSelect.selected
+
         isModulationSelected =
-            model.keyEditModulationSelect.selected /= Nothing
+            modulationId /= Nothing
 
-        selectedModulationName =
-            case ( model.modulations, model.keyEditModulationSelect.selected ) of
-                ( Success modulations, Just modulationId ) ->
-                    if modulationId == Modulations.undefinedModulationId then
-                        Nothing
+        keyRules =
+            keyRulesFromModulationId model modulationId
 
-                    else
-                        modulations
-                            |> ListX.find (\modulation -> modulation.id == modulationId)
-                            |> Maybe.map .name
+        keyAllowed =
+            keyRules.keyAllowed
 
-                _ ->
-                    Nothing
+        keyInputEnabled =
+            isModulationSelected && keyAllowed
 
-        keyMaxLength =
-            case selectedModulationName of
-                Just "DMR (ARC40)" ->
-                    Just 4
+        keyValue =
+            updateReq.key
 
-                Just "DMR (AES256)" ->
-                    Just 64
+        keyLen =
+            String.length (String.trim keyValue)
 
-                Just "HYTERA (256 bit)" ->
-                    Just 64
+        keyTooLong =
+            case keyRules.maxLen of
+                Just maxLen ->
+                    keyAllowed && keyLen > maxLen
 
-                Just "TYT (16 bit)" ->
-                    Just 4
-
-                Just "TYT (128 bit)" ->
-                    Just 32
-
-                Just "NFM" ->
-                    Nothing
-
-                Just "AM" ->
-                    Nothing
-
-                Just "АМ" ->
-                    Nothing
-
-                Just "DMR" ->
-                    Nothing
-
-                Just "HYTERA" ->
-                    Nothing
-
-                Just "TYT" ->
-                    Nothing
-
-                Just "TETRA" ->
-                    Nothing
-
-                Just "Гранит" ->
-                    Nothing
-
-                Just "GSM" ->
-                    Nothing
-
-                Just "Умовна" ->
-                    Nothing
-
-                _ ->
-                    Nothing
+                Nothing ->
+                    False
 
         selectedItem =
             findSelectItem model model.keyEditFreqSelect.selected
@@ -657,10 +685,16 @@ keyEditSidebarContent shared model updateReq =
             Utils.Select.defaultOptions (isDarkMode shared.themeMode)
 
         keyIsEmpty =
-            String.trim updateReq.key == ""
+            String.trim keyValue == ""
 
         modulationIsEmpty =
             not isModulationSelected
+
+        keyRequired =
+            isModulationSelected && keyAllowed
+
+        keyInvalid =
+            (keyRequired && keyIsEmpty) || keyTooLong
     in
     [ div [ class "flex flex-col h-full" ]
         [ div [ class "p-6 border-b border-border" ]
@@ -689,7 +723,7 @@ keyEditSidebarContent shared model updateReq =
                 , input
                     ([ class <|
                         "w-full p-2 border rounded "
-                            ++ (if keyIsEmpty && isModulationSelected then
+                            ++ (if keyInvalid then
                                     "border-red-500"
 
                                 else
@@ -697,11 +731,11 @@ keyEditSidebarContent shared model updateReq =
                                )
                      , type_ "text"
                      , placeholder "Введіть ключ"
-                     , value updateReq.key
+                     , value keyValue
                      , onInput KeyEditKeyChanged
-                     , disabled (not isModulationSelected)
+                     , disabled (not keyInputEnabled)
                      ]
-                        ++ (case keyMaxLength of
+                        ++ (case keyRules.maxLen of
                                 Just maxLen ->
                                     [ maxlength maxLen ]
 
@@ -710,8 +744,23 @@ keyEditSidebarContent shared model updateReq =
                            )
                     )
                     []
-                , if keyIsEmpty && isModulationSelected then
+                , if keyRequired && keyIsEmpty then
                     div [ class "text-sm text-red-600 mt-1" ] [ text "Це поле обов'язкове" ]
+
+                  else if keyTooLong then
+                    div [ class "text-sm text-red-600 mt-1" ]
+                        [ text <|
+                            "Максимальна довжина ключа — "
+                                ++ (keyRules.maxLen
+                                        |> Maybe.map String.fromInt
+                                        |> Maybe.withDefault ""
+                                   )
+                                ++ " символів"
+                        ]
+
+                  else if isModulationSelected && not keyAllowed then
+                    div [ class "text-sm text-muted-foreground mt-1" ]
+                        [ text "Ключ недоступний для обраної модуляції" ]
 
                   else
                     text ""
@@ -751,7 +800,7 @@ keyEditSidebarContent shared model updateReq =
 
                   else
                     Button.new { label = "Зберегти", onClick = SaveKeyEditClicked }
-                        |> Button.withDisabled (modulationIsEmpty || keyIsEmpty)
+                        |> Button.withDisabled (modulationIsEmpty || keyInvalid)
                         |> Button.view
                 ]
             ]
@@ -762,72 +811,34 @@ keyEditSidebarContent shared model updateReq =
 keyCreateSidebarContent : Shared.Model -> Model -> List (Html KeysMsg)
 keyCreateSidebarContent shared model =
     let
+        modulationId =
+            model.keyCreateModulationSelect.selected
+
         isModulationSelected =
-            model.keyCreateModulationSelect.selected /= Nothing
+            modulationId /= Nothing
 
-        selectedModulationName =
-            case ( model.modulations, model.keyCreateModulationSelect.selected ) of
-                ( Success modulations, Just modulationId ) ->
-                    if modulationId == Modulations.undefinedModulationId then
-                        Nothing
+        keyRules =
+            keyRulesFromModulationId model modulationId
 
-                    else
-                        modulations
-                            |> ListX.find (\modulation -> modulation.id == modulationId)
-                            |> Maybe.map .name
+        keyAllowed =
+            keyRules.keyAllowed
 
-                _ ->
-                    Nothing
+        keyInputEnabled =
+            isModulationSelected && keyAllowed
 
-        keyMaxLength =
-            case selectedModulationName of
-                Just "DMR (ARC40)" ->
-                    Just 4
+        keyValue =
+            model.keyCreateState.key
 
-                Just "DMR (AES256)" ->
-                    Just 64
+        keyLen =
+            String.length (String.trim keyValue)
 
-                Just "HYTERA (256 bit)" ->
-                    Just 64
+        keyTooLong =
+            case keyRules.maxLen of
+                Just maxLen ->
+                    keyAllowed && keyLen > maxLen
 
-                Just "TYT (16 bit)" ->
-                    Just 4
-
-                Just "TYT (128 bit)" ->
-                    Just 32
-
-                Just "NFM" ->
-                    Nothing
-
-                Just "AM" ->
-                    Nothing
-
-                Just "АМ" ->
-                    Nothing
-
-                Just "DMR" ->
-                    Nothing
-
-                Just "HYTERA" ->
-                    Nothing
-
-                Just "TYT" ->
-                    Nothing
-
-                Just "TETRA" ->
-                    Nothing
-
-                Just "Гранит" ->
-                    Nothing
-
-                Just "GSM" ->
-                    Nothing
-
-                Just "Умовна" ->
-                    Nothing
-
-                _ ->
-                    Nothing
+                Nothing ->
+                    False
 
         selectedItem =
             findSelectItem model model.keyCreateFreqSelect.selected
@@ -836,10 +847,16 @@ keyCreateSidebarContent shared model =
             Utils.Select.defaultOptions (isDarkMode shared.themeMode)
 
         keyIsEmpty =
-            String.trim model.keyCreateState.key == ""
+            String.trim keyValue == ""
 
         modulationIsEmpty =
             not isModulationSelected
+
+        keyRequired =
+            isModulationSelected && keyAllowed
+
+        keyInvalid =
+            (keyRequired && keyIsEmpty) || keyTooLong
     in
     [ div [ class "flex flex-col h-full" ]
         [ div [ class "p-6 border-b border-border" ]
@@ -868,7 +885,7 @@ keyCreateSidebarContent shared model =
                 , input
                     ([ class <|
                         "w-full p-2 border rounded "
-                            ++ (if keyIsEmpty && isModulationSelected then
+                            ++ (if keyInvalid then
                                     "border-red-500"
 
                                 else
@@ -876,11 +893,11 @@ keyCreateSidebarContent shared model =
                                )
                      , type_ "text"
                      , placeholder "Введіть ключ"
-                     , value model.keyCreateState.key
+                     , value keyValue
                      , onInput KeyCreateKeyChanged
-                     , disabled (not isModulationSelected)
+                     , disabled (not keyInputEnabled)
                      ]
-                        ++ (case keyMaxLength of
+                        ++ (case keyRules.maxLen of
                                 Just maxLen ->
                                     [ maxlength maxLen ]
 
@@ -889,8 +906,23 @@ keyCreateSidebarContent shared model =
                            )
                     )
                     []
-                , if keyIsEmpty && isModulationSelected then
+                , if keyRequired && keyIsEmpty then
                     div [ class "text-sm text-red-600 mt-1" ] [ text "Це поле обов'язкове" ]
+
+                  else if keyTooLong then
+                    div [ class "text-sm text-red-600 mt-1" ]
+                        [ text <|
+                            "Максимальна довжина ключа — "
+                                ++ (keyRules.maxLen
+                                        |> Maybe.map String.fromInt
+                                        |> Maybe.withDefault ""
+                                   )
+                                ++ " символів"
+                        ]
+
+                  else if isModulationSelected && not keyAllowed then
+                    div [ class "text-sm text-muted-foreground mt-1" ]
+                        [ text "Ключ недоступний для обраної модуляції" ]
 
                   else
                     text ""
@@ -930,7 +962,7 @@ keyCreateSidebarContent shared model =
 
                   else
                     Button.new { label = "Додати", onClick = CreateKeyClicked }
-                        |> Button.withDisabled (modulationIsEmpty || keyIsEmpty)
+                        |> Button.withDisabled (modulationIsEmpty || keyInvalid)
                         |> Button.view
                 ]
             ]
@@ -1129,3 +1161,81 @@ modulationLabelById model modulationId =
 
         _ ->
             Modulations.undefinedModulationLabel
+
+
+type alias KeyRules =
+    { keyAllowed : Bool
+    , maxLen : Maybe Int
+    }
+
+
+keyRulesFromModulationId : Model -> Maybe Int -> KeyRules
+keyRulesFromModulationId model modulationId =
+    let
+        modulationName =
+            case ( model.modulations, modulationId ) of
+                ( Success modulations, Just selectedId ) ->
+                    if selectedId == Modulations.undefinedModulationId then
+                        Nothing
+
+                    else
+                        modulations
+                            |> ListX.find (\modulation -> modulation.id == selectedId)
+                            |> Maybe.map .name
+
+                _ ->
+                    Nothing
+    in
+    keyRulesFromModulationName modulationName
+
+
+keyRulesFromModulationName : Maybe String -> KeyRules
+keyRulesFromModulationName modulationName =
+    case modulationName of
+        Just "DMR (ARC40)" ->
+            { keyAllowed = True, maxLen = Just 4 }
+
+        Just "DMR (AES256)" ->
+            { keyAllowed = True, maxLen = Just 64 }
+
+        Just "HYTERA (256 bit)" ->
+            { keyAllowed = True, maxLen = Just 64 }
+
+        Just "TYT (16 bit)" ->
+            { keyAllowed = True, maxLen = Just 4 }
+
+        Just "TYT (128 bit)" ->
+            { keyAllowed = True, maxLen = Just 32 }
+
+        Just "NFM" ->
+            { keyAllowed = False, maxLen = Nothing }
+
+        Just "AM" ->
+            { keyAllowed = False, maxLen = Nothing }
+
+        Just "АМ" ->
+            { keyAllowed = False, maxLen = Nothing }
+
+        Just "DMR" ->
+            { keyAllowed = False, maxLen = Nothing }
+
+        Just "HYTERA" ->
+            { keyAllowed = False, maxLen = Nothing }
+
+        Just "TYT" ->
+            { keyAllowed = False, maxLen = Nothing }
+
+        Just "TETRA" ->
+            { keyAllowed = False, maxLen = Nothing }
+
+        Just "Гранит" ->
+            { keyAllowed = False, maxLen = Nothing }
+
+        Just "GSM" ->
+            { keyAllowed = False, maxLen = Nothing }
+
+        Just "Умовна" ->
+            { keyAllowed = False, maxLen = Nothing }
+
+        _ ->
+            { keyAllowed = True, maxLen = Nothing }
