@@ -663,6 +663,8 @@ type Msg
     | AorSelectMsg (Select.Msg Int)
     | ApiUserSelectMsg (Select.Msg String)
     | RefreshQrCode
+    | RestartDatasource Int
+    | RestartDatasourceDone (Result ApiError Bool) Int
 
 
 update : Msg -> Model -> ( Model, Effect Msg )
@@ -1214,6 +1216,19 @@ update msg model =
 
                 Nothing ->
                     ( model, E.none )
+
+        RestartDatasource datasourceId ->
+            ( model
+            , E.sendCmd <| Api.admin_restart_datasource (\result -> RestartDatasourceDone result datasourceId) datasourceId
+            )
+
+        RestartDatasourceDone (Ok _) _ ->
+            ( model, E.none )
+
+        RestartDatasourceDone (Err error) _ ->
+            ( model
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка перезапуску джерела" error
+            )
 
         ShowEditSidebar accountId ->
             case model.accounts of
@@ -2089,8 +2104,15 @@ messengerAccountsTableConfig isLoading aorList =
                                 div [ class "px-2 py-1 text-sm text-muted-foreground" ] [ text "..." ]
 
                               else if account.isLinked then
-                                div [ class "flex gap-1" ]
+                                div [ class "grid grid-cols-2 gap-1" ]
                                     [ button
+                                        [ class "table-action-btn"
+                                        , type_ "button"
+                                        , title "Перезапустити"
+                                        , onClick <| RestartDatasource account.id
+                                        ]
+                                        [ i [ class "bi bi-arrow-clockwise" ] [] ]
+                                    , button
                                         [ class "table-action-btn"
                                         , type_ "button"
                                         , title "Редагувати"
@@ -2124,8 +2146,15 @@ messengerAccountsTableConfig isLoading aorList =
                                     ]
 
                               else
-                                div [ class "flex gap-1" ]
+                                div [ class "grid grid-cols-2 gap-1" ]
                                     [ button
+                                        [ class "table-action-btn"
+                                        , type_ "button"
+                                        , title "Перезапустити"
+                                        , onClick <| RestartDatasource account.id
+                                        ]
+                                        [ i [ class "bi bi-arrow-clockwise" ] [] ]
+                                    , button
                                         [ class "table-action-btn"
                                         , type_ "button"
                                         , title "Редагувати"

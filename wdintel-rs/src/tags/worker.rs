@@ -9,7 +9,7 @@ use crate::utils::orm::ArrayColumnOps;
 use crate::utils::worker_watch;
 use echo_migration::OnConflict;
 use lazy_static::lazy_static;
-use log::{error, info, warn};
+use log::{info, warn};
 use regex::Regex;
 use sea_orm::prelude::*;
 use sea_orm::*;
@@ -41,46 +41,34 @@ pub async fn suggest_message_tags_worker(
     tag_keyword_regex_cache: &Arc<RwLock<TagKeywordRegexCache>>,
     cancel_token: CancellationToken,
 ) {
-    if let Ok(tags) = tag::Entity::find()
-        .filter(tag::Column::Enabled.eq(true))
-        .all(dbx)
-        .await
-    {
-        loop {
-            if cancel_token.is_cancelled() {
-                info!("cancel token received, stopping suggest_new_tags_worker...");
-                break;
-            }
-            let _loop_guard =
-                worker_watch::loop_guard("suggest_new_tags_worker");
+    loop {
+        if cancel_token.is_cancelled() {
+            info!("cancel token received, stopping suggest_new_tags_worker...");
+            break;
+        }
+        let _loop_guard = worker_watch::loop_guard("suggest_new_tags_worker");
 
-            let mut do_sleep = true;
-            match process_suggest_message_tags(
-                &tags,
-                rq,
-                dbx,
-                redis,
-                tag_keyword_regex_cache,
-            )
-            .await
-            {
-                Ok(processed_a_message) => {
-                    if processed_a_message {
-                        do_sleep = false;
-                    }
-                }
-                Err(e) => {
-                    println!("suggest_new_tags_worker error: {e:#?}");
+        let mut do_sleep = true;
+        match process_suggest_message_tags(
+            rq,
+            dbx,
+            redis,
+            tag_keyword_regex_cache,
+        )
+        .await
+        {
+            Ok(processed_a_message) => {
+                if processed_a_message {
+                    do_sleep = false;
                 }
             }
-            if do_sleep {
-                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            Err(e) => {
+                println!("suggest_new_tags_worker error: {e:#?}");
             }
         }
-    } else {
-        error!(
-            "loading enabled tags failed, stopping suggest_new_tags_worker..."
-        );
+        if do_sleep {
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        }
     }
 }
 
@@ -108,7 +96,6 @@ async fn get_messages(txn: &DatabaseTransaction) -> Result<Vec<i64>, AppError> {
 }
 
 async fn process_suggest_message_tags(
-    tags: &[tag::Model],
     rq: &reqwest::Client,
     dbx: &DatabaseConnection,
     redis: &mut redis::aio::ConnectionManager,
@@ -120,15 +107,10 @@ async fn process_suggest_message_tags(
     if message_ids.is_empty() {
         Ok(false)
     } else {
-        let result = process_messages(
-            message_ids,
-            tags,
-            rq,
-            &txn,
-            tag_keyword_regex_cache,
-        )
-        .await
-        .c(h!())?;
+        let result =
+            process_messages(message_ids, rq, &txn, tag_keyword_regex_cache)
+                .await
+                .c(h!())?;
         txn.commit().await.c(h!())?;
         if result.inserted_count > 0
             && !result.message_ids_for_events.is_empty()
@@ -145,13 +127,48 @@ async fn process_suggest_message_tags(
     }
 }
 
+async fn get_tags_to_predict<C: ConnectionTrait>(
+    dbx: &C,
+    tag_keyword_regex_cache: &Arc<RwLock<TagKeywordRegexCache>>,
+) -> Result<HashMap<String, i64>, AppError> {
+    {
+        let read_lock = tag_keyword_regex_cache.read().unwrap();
+        if !read_lock.tags_to_predict.is_empty() {
+            let tags_to_predict = read_lock.tags_to_predict.clone();
+            return Ok(tags_to_predict);
+        }
+    }
+
+    let tags_to_predict: HashMap<String, i64> = tag::Entity::find()
+        .select_only()
+        .column(tag::Column::Label)
+        .column(tag::Column::Id)
+        .filter(tag::Column::Enabled.eq(true))
+        .into_tuple::<(String, i64)>()
+        .all(dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .collect();
+
+    {
+        let mut write_lock = tag_keyword_regex_cache.write().unwrap();
+        write_lock.tags_to_predict = tags_to_predict.clone();
+    }
+
+    Ok(tags_to_predict)
+}
+
 pub async fn process_messages<C: ConnectionTrait>(
     message_ids: Vec<i64>,
-    tags: &[tag::Model],
     rq: &reqwest::Client,
     dbx: &C,
     tag_keyword_regex_cache: &Arc<RwLock<TagKeywordRegexCache>>,
 ) -> Result<ProcessMessagesResult, AppError> {
+    let tags_to_predict = get_tags_to_predict(dbx, tag_keyword_regex_cache)
+        .await
+        .c(h!())?;
+
     let inbox_items = sigint_inbox_item::Entity::find()
         .filter(sigint_inbox_item::Column::Id.eq_any(message_ids))
         .filter(sigint_inbox_item::Column::BodyNoheader.is_not_null())
@@ -174,15 +191,12 @@ pub async fn process_messages<C: ConnectionTrait>(
         texts.push(text);
     }
 
-    let mut regex_tags: HashSet<(i64, i64)> = HashSet::new();
+    let mut skip_nlp_tag_id_message_id: HashSet<(i64, i64)> = HashSet::new();
+
     let mut message_tags: Vec<sigint_inbox_item_tag::ActiveModel> = vec![];
     let mut message_ids_for_events: BTreeSet<i64> = BTreeSet::new();
 
-    let mut tags_to_predict: HashMap<String, i64> = HashMap::new();
-    for tag in tags.iter() {
-        let tag_id = tag.id;
-        tags_to_predict.insert(tag.label.clone(), tag_id);
-
+    for (_tag_label, &tag_id) in tags_to_predict.iter() {
         let cache_item =
             get_regex_sets_for_tag(tag_id, dbx, tag_keyword_regex_cache)
                 .await
@@ -190,11 +204,11 @@ pub async fn process_messages<C: ConnectionTrait>(
 
         for (index, text) in texts.iter().enumerate() {
             let message_id = inbox_items[index].id;
-            let tag_matches =
-                !cache_item.regex_set_negative.is_match(text.as_str())
-                    && cache_item.regex_set_positive.is_match(text.as_str());
-            if tag_matches {
-                regex_tags.insert((tag_id, message_id));
+
+            if cache_item.regex_set_negative.is_match(text.as_str()) {
+                skip_nlp_tag_id_message_id.insert((tag_id, message_id));
+            } else if cache_item.regex_set_positive.is_match(text.as_str()) {
+                skip_nlp_tag_id_message_id.insert((tag_id, message_id));
                 let login = Some(SYSTEM_LOGIN_NAME.to_string());
                 let model = Some(KEYWORDS_REGEX_MODEL_NAME.to_owned());
                 let model = sigint_inbox_item_tag::ActiveModel {
@@ -223,7 +237,7 @@ pub async fn process_messages<C: ConnectionTrait>(
         let message_id = inbox_items[index].id;
         for (key, value) in &result.0 {
             let tag_id = tags_to_predict[key];
-            if !regex_tags.contains(&(tag_id, message_id)) {
+            if !skip_nlp_tag_id_message_id.contains(&(tag_id, message_id)) {
                 let confidence: f64 = *value;
                 let login = Some(SYSTEM_LOGIN_NAME.to_string());
                 let model = Some(NLP_MODEL_NAME.to_owned());
@@ -291,7 +305,6 @@ async fn get_regex_sets_for_tag<C: ConnectionTrait>(
 
     let keywords = tag_keyword::Entity::find()
         .filter(tag_keyword::Column::TagId.eq(tag_id))
-        .order_by_asc(tag_keyword::Column::IsPositive)
         .all(dbx)
         .await
         .c(h!())?;
@@ -300,40 +313,36 @@ async fn get_regex_sets_for_tag<C: ConnectionTrait>(
     let mut patterns_negative = vec![];
     for model in keywords {
         let tag_keyword::Model {
-            is_positive,
             is_regex,
-            mut keyword,
             mut keyword_forms,
+            mut keyword_negative_forms,
             ..
         } = model;
 
-        let patterns = match is_positive {
-            true => &mut patterns_positive,
-            false => &mut patterns_negative,
-        };
-
-        if keyword_forms.is_empty() {
-            if !is_regex {
-                keyword = regex::escape(&keyword);
-            }
-            patterns.push(keyword);
-        } else if is_regex {
-            patterns.append(&mut keyword_forms);
+        if is_regex {
+            patterns_positive.append(&mut keyword_forms);
         } else {
             for literal in keyword_forms {
                 let escaped = regex::escape(&literal);
-                patterns.push(escaped);
+                patterns_positive.push(escaped);
+            }
+        }
+
+        if is_regex {
+            patterns_negative.append(&mut keyword_negative_forms);
+        } else {
+            for literal in keyword_negative_forms {
+                let escaped = regex::escape(&literal);
+                patterns_negative.push(escaped);
             }
         }
     }
 
     let item = TagKeywordRegexCacheItem {
         regex_set_positive: regex::RegexSetBuilder::new(patterns_positive)
-            .case_insensitive(true)
             .build()
             .c(h!())?,
         regex_set_negative: regex::RegexSetBuilder::new(patterns_negative)
-            .case_insensitive(true)
             .build()
             .c(h!())?,
     };

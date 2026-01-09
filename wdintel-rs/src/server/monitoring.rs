@@ -1,11 +1,9 @@
-use crate::entities::*;
 use crate::error::AppError;
 use crate::types::*;
 use actix_web::web::Json;
 use actix_web::{get, post, HttpResponse, Responder};
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 use fs2::available_space;
-use sea_orm::*;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -70,44 +68,16 @@ pub struct Monitoring {
 async fn monitoring(
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<Monitoring>, AppError> {
-    let datasources = datasource::Entity::find()
-        .filter(datasource::Column::Enabled.eq(true))
-        .all(&env.dbx)
-        .await
-        .c(h!())?;
-    let mut datasources_res = vec![];
-    let week_ago = chrono::Utc::now()
-        .checked_sub_signed(chrono::Duration::days(7))
-        .unwrap();
-    for datasource in datasources {
-        let latest_signal_message_created_at_ms =
-            signal_message::Entity::find()
-                .join(
-                    JoinType::InnerJoin,
-                    signal_message::Relation::SignalMessageGroup.def(),
-                )
-                .join(
-                    JoinType::InnerJoin,
-                    signal_message_group::Relation::DatasourceGroup.def(),
-                )
-                .filter(
-                    datasource_group::Column::DatasourceId.eq(datasource.id),
-                )
-                .filter(signal_message::Column::CreatedAt.gt(week_ago))
-                .filter(signal_message::Column::Deleted.eq(false))
-                .order_by_desc(signal_message::Column::CreatedAt)
-                .one(&env.dbx)
-                .await
-                .c(h!())?
-                .map(|x| x.created_at.and_utc().timestamp_millis())
-                .unwrap_or(week_ago.timestamp_millis());
-        datasources_res.push(MonitoringDatasource {
-            display_name: datasource.display_name,
-            latest_signal_message_created_at_ms,
+    let data = echo_im::collect_monitoring_data(&env.dbx).await.c(h!())?;
+    let mut datasources = vec![];
+    for d in data {
+        datasources.push(MonitoringDatasource {
+            display_name: d.display_name,
+            latest_signal_message_created_at_ms: d.last_sync_at_ms,
         });
     }
     Ok(Json(Monitoring {
-        datasources: datasources_res,
+        datasources,
         free_space_root_mb: root_free_space_mb(),
     }))
 }

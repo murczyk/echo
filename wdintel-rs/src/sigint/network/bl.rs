@@ -1,3 +1,4 @@
+use crate::entities::sigint_network;
 use crate::entities::*;
 use crate::error::AppError;
 use crate::rer_importer::types::{InboxMapItem, MapPointsFilter};
@@ -5,25 +6,18 @@ use crate::sigint::network::types::*;
 use crate::types::*;
 use crate::utils::orm::ArrayColumnOps;
 use crate::utils::*;
+use actix_web::web::Json;
 use chrono::*;
 use itertools::Itertools;
+use log::*;
 use sea_orm::sea_query::*;
 use sea_orm::*;
-use std::collections::{BTreeSet, HashMap};
-
-use actix_web::web::Json;
-use log::*;
-use sea_orm::{
-    ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QuerySelect,
-    Statement,
-};
-use sea_query::{
-    Alias, CommonTableExpression, Expr as SeaExpr, PostgresQueryBuilder, Query,
-};
+use sea_query::Expr as SeaExpr;
 
 pub async fn render_networks<'a, 'async_trait, C>(
     networks: Vec<sigint_network::Model>,
     txn: &'a C,
+    user_login: &str,
 ) -> Result<Vec<Network>, AppError>
 where
     C: ConnectionTrait + 'async_trait,
@@ -38,8 +32,9 @@ where
     let network_ids: Vec<i64> = networks.iter().map(|n| n.id).collect();
 
     // fetch all related data in bulk
-    let freqs_map =
-        get_networks_freqs(txn, &network_ids).await.context(h!())?;
+    let freqs_map = get_networks_freqs(txn, &network_ids, user_login)
+        .await
+        .context(h!())?;
     let units_map =
         get_networks_units(txn, &network_ids).await.context(h!())?;
     let posts_map =
@@ -93,6 +88,7 @@ where
 async fn get_networks_freqs<'a, 'async_trait, C>(
     txn: &'a C,
     network_ids: &[i64],
+    user_login: &str,
 ) -> Result<HashMap<i64, Vec<NetworkFreq>>, AppError>
 where
     C: ConnectionTrait + 'async_trait,
@@ -110,9 +106,17 @@ where
         .await
         .context(h!())?;
 
+    let freq_ids = freqs.iter().map(|x| x.id).collect::<Vec<_>>();
+
+    let mut keys =
+        crate::sigint::key::load_freq_keys(txn, user_login, freq_ids)
+            .await
+            .c(h!())?;
+
     let mut freq_map: HashMap<i64, Vec<NetworkFreq>> = HashMap::new();
 
     for freq in freqs {
+        let keys = keys.remove(&freq.id).unwrap_or_default();
         freq_map
             .entry(freq.network_id)
             .or_default()
@@ -128,6 +132,7 @@ where
                 created_at: freq.created_at.and_utc().timestamp_millis(),
                 kind: freq.kind.to_value(),
                 modulation_id: freq.modulation_id,
+                encryption_keys: keys,
             });
     }
 
@@ -294,6 +299,7 @@ where
 pub async fn bl_network_info_freqs(
     freqs: Vec<String>,
     txn: &DatabaseTransaction,
+    user_login: &str,
 ) -> Result<Vec<Network>, AppError> {
     let sel = sigint_network_freq::Entity::find()
         .filter(
@@ -318,12 +324,15 @@ pub async fn bl_network_info_freqs(
     // );
 
     let networks = networks.all(txn).await.context(h!())?;
-    Ok(render_networks(networks, txn).await.context(h!())?)
+    Ok(render_networks(networks, txn, user_login)
+        .await
+        .context(h!())?)
 }
 
 pub async fn bl_network_info_batch(
     network_ids: Vec<i64>,
     txn: &DatabaseTransaction,
+    user_login: &str,
 ) -> Result<Vec<Network>, AppError> {
     let networks = sigint_network::Entity::find()
         .filter(sigint_network::Column::Id.eq_any(network_ids));
@@ -335,7 +344,9 @@ pub async fn bl_network_info_batch(
     // );
 
     let networks = networks.all(txn).await.context(h!())?;
-    Ok(render_networks(networks, txn).await.context(h!())?)
+    Ok(render_networks(networks, txn, user_login)
+        .await
+        .context(h!())?)
 }
 
 pub async fn network_group_activity_bl(

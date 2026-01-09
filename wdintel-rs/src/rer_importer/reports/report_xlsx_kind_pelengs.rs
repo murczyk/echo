@@ -42,8 +42,8 @@ pub async fn get_inbox_messages_report(
     let read_db = env.replica();
 
     let mut q = SignalMessage::find()
-        .inner_join(sigint_inbox_item::Entity)
-        .inner_join(datasource_group::Entity)
+        .join(JoinType::InnerJoin, signal_message::Relation::SigintInboxItem.def())
+        .join(JoinType::InnerJoin, signal_message::Relation::DatasourceGroup.def())
         .select_only()
         .column(signal_message::Column::Id)
         .column(signal_message::Column::Body)
@@ -90,15 +90,7 @@ pub async fn get_inbox_messages_report(
             "unit",
         )
         .filter(signal_message::Column::Deleted.eq(false))
-        .filter(Condition::any()
-        .add(sigint_network::Column::Deleted.eq(false))
-        .add(sigint_network::Column::Id.is_null()))
-        .filter(Condition::any()
-        .add(sigint_network_freq::Column::Deleted.eq(false))
-        .add(sigint_network_freq::Column::Id.is_null()))
-        .filter(Condition::any()
-        .add(sigint_unit::Column::Deleted.eq(false))
-        .add(sigint_unit::Column::Id.is_null()))
+        // Allow missing network/freq/unit links for report rows.
         .filter(sigint_inbox_item::Column::Lng.is_not_null())
         .filter(sigint_inbox_item::Column::Lat.is_not_null())
         .join(
@@ -187,7 +179,7 @@ pub async fn get_inbox_messages_report(
     let q =
         filter_selected_networks(q, &req.selected_networks).context(h!())?;
 
-    trace!(
+    info!(
         "[get_inbox_messages_report] query: {}",
         &q.build(DbBackend::Postgres)
     );
@@ -205,21 +197,22 @@ pub async fn get_inbox_messages_report(
         item_ids.push(item.id);
         items_map.insert(item.id, item);
         if item_ids.len() > 1000 {
-            let pelengs = collect_inbox_pelengs(item_ids, &read_db)
+            collect_inbox_pelengs(item_ids, &read_db)
                 .await
-                .context(h!())?;
-            sigint_pelengs.push(pelengs);
+                .context(h!())?
+                .into_iter()
+                .for_each(|p| sigint_pelengs.push(p));
             item_ids = vec![];
         }
     }
-    sigint_pelengs.push(
-        collect_inbox_pelengs(item_ids, &read_db)
-            .await
-            .context(h!())?,
-    );
+    collect_inbox_pelengs(item_ids, &read_db)
+        .await
+        .context(h!())?
+        .into_iter()
+        .for_each(|p| sigint_pelengs.push(p));
 
     let mut pelengs_map = BTreeMap::<i64, Vec<sigint_peleng::Model>>::new();
-    for peleng in sigint_pelengs.into_iter().flat_map(|s| s.into_iter()) {
+    for peleng in sigint_pelengs {
         pelengs_map
             .entry(peleng.source_inbox_item_id)
             .or_default()
@@ -404,7 +397,11 @@ pub async fn report_xlsx_kind_pelengs1(
             &req.req,
         )
         .await.c(h!())?;
-    info!("[report_xlsx_kind_pelengs1] {}: query done", Utc::now());
+    info!(
+        "[report_xlsx_kind_pelengs1] {}: query done, found messages: {}",
+        Utc::now(),
+        messages.len()
+    );
 
     // Build sender display names map (uuid -> profile entry)
     let sender_uuids = messages
@@ -427,6 +424,7 @@ pub async fn report_xlsx_kind_pelengs1(
         if coords.is_empty() {
             continue;
         }
+        info!("[test] found coords: {coords}:?");
         let Some((lat, lng)) = *m_coords else {
             continue;
         };
@@ -440,6 +438,7 @@ pub async fn report_xlsx_kind_pelengs1(
         let Some(freq) = m.freq.as_ref() else {
             continue;
         };
+        info!("[test] processing coords...");
 
         i += 1;
 

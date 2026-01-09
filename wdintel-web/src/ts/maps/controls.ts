@@ -1,5 +1,6 @@
 
 import * as L from 'leaflet';
+import { Palitra, PalitraDetails } from './palitra-types';
 
 export interface TimeswitchControl extends L.Control {
   updateDates: (newDates: { startDate: number; endDate: number }) => void
@@ -20,27 +21,6 @@ export type FeatureToggleState = {
   palitrasEnabled: boolean;
   kmzEnabled: boolean;
   pelengsEnabled: boolean;
-};
-
-type Coords = { lat: number; lng: number };
-type Geometry = { 
-  center: Coords; 
-  perimeter_linear_ring: Coords[] 
-};
-type Palitra = {
-  id: number;
-  name: string;
-  color_hex: string;
-  geometry: Geometry | null;
-  source_file_name?: string;
-};
-type PalitraPoint = {
-  coords: Coords;
-  label: string | null;
-};
-type PalitraDetails = {
-  palitra: Palitra;
-  points: PalitraPoint[];
 };
 export function createLayerSwitchControl(
   tileLayers: { openStreetMap: L.TileLayer, googleHybrid: L.TileLayer },

@@ -41,10 +41,12 @@ import Shared.Components.Table.Column as TableColumn
 import Shared.Components.Table.Config as TableConfig
 import Shared.Components.Table.Sorter as TableSorter
 import Shared.Model exposing (isDarkMode)
+import String
 import Time
 import Time.Extra
 import Url.Builder
 import Utils.Api.ErrorHandling
+import Utils.Modulations as Modulations
 import Utils.NetworksUtils as NetworksUtils
 import Utils.RemoteData as RD exposing (RemoteData(..))
 import Utils.Select
@@ -98,6 +100,7 @@ update shared msg model =
                                       , freq = f.freq
                                       , kind = Maybe.withDefault "VHF" f.kind
                                       , modulationId = f.modulationId
+                                      , encryptionKeyIds = f.encryptionKeyIds
                                       , activeFrom = f.activeFrom
                                       , activeTo = f.activeTo
                                       }
@@ -124,6 +127,8 @@ update shared msg model =
                         == originalFreq.freq
                         && updateReq.activeFrom
                         == originalFreq.activeFrom
+                        && updateReq.encryptionKeyIds
+                        == originalFreq.encryptionKeyIds
                         && updateReq.activeTo
                         == originalFreq.activeTo
 
@@ -426,6 +431,7 @@ update shared msg model =
                     { freq = ""
                     , kind = NetworksUtils.networkKindToString NetworksUtils.VHF
                     , modulationId = Nothing
+                    , encryptionKeyIds = []
                     , description = Nothing
                     , activeFrom = Nothing
                     , activeTo = Nothing
@@ -554,6 +560,7 @@ update shared msg model =
                                 { freq = model.freqCreateState.freq
                                 , kind = model.freqCreateState.kind
                                 , modulationId = model.freqCreateState.modulationId
+                                , encryptionKeyIds = model.freqCreateState.encryptionKeyIds
                                 , description = description
                                 , activeFrom = model.freqCreateState.activeFrom
                                 , activeTo = model.freqCreateState.activeTo
@@ -585,6 +592,7 @@ update shared msg model =
                     { freq = ""
                     , kind = NetworksUtils.networkKindToString NetworksUtils.VHF
                     , modulationId = Nothing
+                    , encryptionKeyIds = []
                     , description = Nothing
                     , activeFrom = Nothing
                     , activeTo = Nothing
@@ -796,10 +804,26 @@ freqsTableConfig shared model user =
             [ Table.stringColumn "Частота" .freq |> Table.withColumnWidth "9%"
             , Table.customColumn
                 { name = "Модуляція"
-                , viewData = \freq -> Maybe.withDefault "" freq.modulation
+                , viewData =
+                    \freq ->
+                        Maybe.withDefault "" freq.modulation
+                            |> Modulations.displayModulationName
                 , sorter = TableSorter.unsortable
                 }
                 |> Table.withColumnWidth "10%"
+            , Table.veryCustomColumn
+                { name = "Ключ"
+                , viewData =
+                    \freq ->
+                        { attributes =
+                            [ style "white-space" "pre-wrap"
+                            , style "word-break" "break-all"
+                            ]
+                        , children = [ text <| String.join "\n" freq.encryptionKeys ]
+                        }
+                , sorter = TableSorter.unsortable
+                }
+                |> Table.withColumnWidth "16%"
             , Table.customColumn
                 { name = "Тип"
                 , viewData =
@@ -961,6 +985,7 @@ freqsTableConfig shared model user =
                                                                 , freq = freq.freq
                                                                 , kind = Maybe.withDefault "VHF" freq.kind
                                                                 , modulationId = freq.modulationId
+                                                                , encryptionKeyIds = freq.encryptionKeyIds
                                                                 , activeFrom = freq.activeFrom
                                                                 , activeTo = freq.activeTo
                                                                 }
@@ -1107,7 +1132,7 @@ freqEditSidebarContent shared model user freqId updateReq =
                                                     modulations
                                                         |> List.filter (\mod -> mod.id == modulationId)
                                                         |> List.head
-                                                        |> Maybe.map .name
+                                                        |> Maybe.map (.name >> Modulations.displayModulationName)
                                                         |> Maybe.withDefault ""
 
                                                 _ ->
@@ -1277,7 +1302,7 @@ freqCreateSidebarContent shared model user =
                                                 modulations
                                                     |> List.filter (\mod -> mod.id == item)
                                                     |> List.head
-                                                    |> Maybe.map .name
+                                                    |> Maybe.map (.name >> Modulations.displayModulationName)
                                                     |> Maybe.withDefault ""
                                             }
                                     )

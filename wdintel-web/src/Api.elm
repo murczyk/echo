@@ -880,6 +880,28 @@ admin_update_tag toMsg tagId req =
         , tracker = Nothing
         }
 
+admin_restart_echo :
+    (Result ApiError Bool -> msg)
+    -> RestartEchoRequest
+    -> Cmd msg
+admin_restart_echo toMsg req =
+    Http.post
+        { url = "/api/admin/restart-echo"
+        , body = Http.jsonBody (restartEchoRequestEncoder req)
+        , expect = leExpectJson toMsg Decode.bool
+        }
+
+admin_restart_datasource :
+    (Result ApiError Bool -> msg)
+    -> Int
+    -> Cmd msg
+admin_restart_datasource toMsg datasourceId =
+    Http.post
+        { url = "/api/admin/restart-datasource"
+        , body = Http.jsonBody (Encode.int datasourceId)
+        , expect = leExpectJson toMsg Decode.bool
+        }
+
 
 tag_keywords_add :
     (Result ApiError (List TagKeyword) -> msg)
@@ -1173,6 +1195,54 @@ sigint_list_sources toMsg _ =
         { url = "/api/sigint/sources"
         , body = Http.jsonBody Encode.null
         , expect = leExpectJson toMsg listSourcesRspDecoder
+        }
+
+
+sigint_list_keys :
+    (Result ApiError ListKeysRsp -> msg)
+    -> ListKeysReq
+    -> Cmd msg
+sigint_list_keys toMsg req =
+    Http.post
+        { url = "/api/sigint/keys"
+        , body = Http.jsonBody (listKeysReqEncoder req)
+        , expect = leExpectJson toMsg listKeysRspDecoder
+        }
+
+
+sigint_create_key :
+    (Result ApiError EncryptionKeyData -> msg)
+    -> CreateEncryptionKeyReq
+    -> Cmd msg
+sigint_create_key toMsg req =
+    Http.post
+        { url = "/api/sigint/keys/create"
+        , body = Http.jsonBody (createEncryptionKeyReqEncoder req)
+        , expect = leExpectJson toMsg encryptionKeyDataDecoder
+        }
+
+
+sigint_update_key :
+    (Result ApiError EncryptionKeyData -> msg)
+    -> UpdateEncryptionKeyReq
+    -> Cmd msg
+sigint_update_key toMsg req =
+    Http.post
+        { url = "/api/sigint/keys/update"
+        , body = Http.jsonBody (updateEncryptionKeyReqEncoder req)
+        , expect = leExpectJson toMsg encryptionKeyDataDecoder
+        }
+
+
+sigint_delete_key :
+    (Result ApiError EncryptionKeyData -> msg)
+    -> DeleteEncryptionKeyReq
+    -> Cmd msg
+sigint_delete_key toMsg req =
+    Http.post
+        { url = "/api/sigint/keys/delete"
+        , body = Http.jsonBody (deleteEncryptionKeyReqEncoder req)
+        , expect = leExpectJson toMsg encryptionKeyDataDecoder
         }
 
 
@@ -1708,6 +1778,15 @@ palitra_list_detailed toMsg =
         }
 
 
+palitra_points : (Result ApiError (List PalitraPoints) -> msg) -> PalitraPointsReq -> Cmd msg
+palitra_points toMsg req =
+    Http.post
+        { url = "/api/palitra/points"
+        , body = Http.jsonBody (palitraPointsReqEncoder req)
+        , expect = leExpectJson toMsg (Decode.list palitraPointsDecoder)
+        }
+
+
 palitra_delete : (Result ApiError () -> msg) -> Int -> Cmd msg
 palitra_delete toMsg palitraId =
     Http.post
@@ -1743,6 +1822,62 @@ palitra_upload_points toMsg palitraId file =
         , url = "/api/palitra/upload-points/" ++ String.fromInt palitraId
         , body = Http.multipartBody [ Http.filePart (File.name file) file ]
         , expect = leExpectJson toMsg (Decode.succeed ())
+        , timeout = Nothing
+        , tracker = Nothing
+        }
+
+
+palitra_analyze_kmz : (Result ApiError AnalyzeKmzResponse -> msg) -> File -> Cmd msg
+palitra_analyze_kmz toMsg file =
+    Http.request
+        { method = "POST"
+        , headers = []
+        , url = "/api/palitra/analyze-kmz"
+        , body = Http.multipartBody [ Http.filePart (File.name file) file ]
+        , expect = leExpectJson toMsg analyzeKmzResponseDecoder
+        , timeout = Nothing
+        , tracker = Nothing
+        }
+
+
+palitra_create_with_kmz : (Result ApiError Palitra -> msg) -> CreatePalitraReq -> File -> Cmd msg
+palitra_create_with_kmz toMsg req file =
+    let
+        accessType =
+            case req.access of
+                ByLogins _ ->
+                    "logins"
+
+                ByOrganisms _ ->
+                    "organisms"
+
+                ByAor _ ->
+                    "aor"
+
+        accessValues =
+            case req.access of
+                ByLogins { logins } ->
+                    String.join "," logins
+
+                ByOrganisms { organismIds } ->
+                    String.join "," (List.map String.fromInt organismIds)
+
+                ByAor { aorIds } ->
+                    String.join "," (List.map String.fromInt aorIds)
+    in
+    Http.request
+        { method = "POST"
+        , headers = []
+        , url = "/api/palitra/create-with-kmz"
+        , body =
+            Http.multipartBody
+                [ Http.stringPart "name" req.name
+                , Http.stringPart "color_hex" req.colorHex
+                , Http.stringPart "access_type" accessType
+                , Http.stringPart "access_values" accessValues
+                , Http.filePart "kmz" file
+                ]
+        , expect = leExpectJson toMsg palitraDecoder
         , timeout = Nothing
         , tracker = Nothing
         }

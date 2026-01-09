@@ -445,6 +445,8 @@ pub struct OneoffSuggestInboxMessageTagsPs {
     /// Start datetime (non-inclusive). Example: `2023-04-18T00:00:00`
     #[arg(long, value_enum)]
     pub end: String,
+    #[arg(long)]
+    pub batch_size: Option<usize>,
 }
 
 #[derive(clap::Parser, Debug)]
@@ -465,6 +467,14 @@ pub struct OneoffImportSignalsCallsignsCsvPs {
     pub dry_run: bool,
     #[arg(long)]
     pub unit_mapping: Option<String>,
+}
+
+#[derive(clap::Parser, Debug, Clone)]
+pub struct OneoffRestartEchoPs {
+    #[arg(long, action)]
+    pub restart_postgres: Option<bool>,
+    #[arg(long, action)]
+    pub restart_messengers: Option<bool>,
 }
 
 #[derive(clap::Subcommand, Debug)]
@@ -537,6 +547,8 @@ enum Cmd {
     OneoffFillSigintInboxItemTags,
     OneoffSuggestInboxMessageTags(OneoffSuggestInboxMessageTagsPs),
     OneoffImportSignalsCallsignsCsv(OneoffImportSignalsCallsignsCsvPs),
+    OneoffFixWhatsappSenders,
+    OneoffRestartEcho(OneoffRestartEchoPs),
 }
 
 #[derive(clap::Parser, Debug)]
@@ -788,6 +800,7 @@ async fn async_main(
         Cmd::OneoffRadioPerDayPerAbonent(ps) => {
             kml::oneoff_radio_per_day_per_abonent_main(mode, &ps, None, None)
                 .await
+                .map(|_| ())
         }
         Cmd::OneoffFixKmz(ps) => kml::oneoff_fix_kml_main(mode, &ps).await,
         Cmd::Migrate => migration::run_migration_1(mode).await,
@@ -963,6 +976,12 @@ async fn async_main(
                 mode, &ps,
             )
             .await
+        }
+        Cmd::OneoffFixWhatsappSenders => {
+            messenger::oneoff::oneoff_fix_whatsapp_senders(mode).await
+        }
+        Cmd::OneoffRestartEcho(ps) => {
+            oneoff::oneoff_restart_echo(mode, &ps).await
         }
     }
 }

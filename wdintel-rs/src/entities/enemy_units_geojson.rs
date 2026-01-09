@@ -14,6 +14,10 @@ pub struct Model {
     pub created_by: String,
     pub status: Option<StatusEnum>,
     pub created_at: DateTime,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub geojson_s3_id: Option<String>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub kml_s3_id: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

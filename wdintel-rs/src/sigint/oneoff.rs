@@ -1,5 +1,5 @@
 use crate::config::TAG_SUGGEST_WORKER_BATCH_SIZE;
-use crate::entities::{sigint_inbox_item, sigint_inbox_item_tag, tag};
+use crate::entities::{sigint_inbox_item, sigint_inbox_item_tag};
 use crate::error::AppError;
 use crate::types::{Mode, ShortContext};
 use crate::utils::parse_local_datetime;
@@ -31,7 +31,7 @@ pub async fn oneoff_fill_sigint_inbox_item_tags(
                 from
                     sigint_inbox_item i
                 where
-                    i.tags is not null  
+                    i.tags is not null
                     and not exists (
                         select 1 from sigint_inbox_item_tag it
                         where it.sigint_inbox_item_id = i.id
@@ -55,12 +55,6 @@ pub async fn oneoff_suggest_inbox_message_tags(
     let dbx = env.dbx.clone();
     let start = parse_local_datetime(&ps.start).c(h!())?;
     let end = parse_local_datetime(&ps.end).c(h!())?;
-
-    let tags = tag::Entity::find()
-        .filter(tag::Column::Enabled.eq(true))
-        .all(&dbx)
-        .await
-        .c(h!())?;
 
     let q = sigint_inbox_item_tag::Entity::find()
         .filter(
@@ -94,12 +88,15 @@ pub async fn oneoff_suggest_inbox_message_tags(
     info!("oneoff_suggest_inbox_message_tags, about to process {total_len} messages");
     let mut processed = 0;
     let mut suggested = 0;
-    for chunk in message_ids.chunks(TAG_SUGGEST_WORKER_BATCH_SIZE) {
+    let batch_size = ps
+        .batch_size
+        .filter(|sz| *sz > 0)
+        .unwrap_or(TAG_SUGGEST_WORKER_BATCH_SIZE);
+    for chunk in message_ids.chunks(batch_size) {
         let txn: DatabaseTransaction = dbx.begin().await.c(h!())?;
 
         let result = crate::tags::worker::process_messages(
             chunk.to_vec(),
-            &tags,
             &env.rq,
             &txn,
             &env.tag_keyword_regex_cache,

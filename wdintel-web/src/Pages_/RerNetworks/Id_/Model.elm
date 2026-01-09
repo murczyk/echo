@@ -93,6 +93,7 @@ type alias Model =
     , groupsActivity : RemoteData ApiError GroupsByDate
     , networkFreqsActivity : RemoteData ApiError (Dict String (Dict String Int))
     , freqs : RemoteData ApiError (List B.NetworkFreqsRes)
+    , networkKeys : RemoteData ApiError (List B.EncryptionKeyData)
     , freqsEditingState : Mode (Dict String B.UpdateNetworkFreqReq)
     , callsignsEditingState : Mode (Dict String Bool)
     , callsignsOpenedPopupId : Maybe String
@@ -114,12 +115,29 @@ type alias Model =
     , reportToDate : Shared.Components.DateTime.Model
     , freqsActivityFilter : FreqActivityFilter
     , freqsTableState : Table.State
+    , keysTableState : Table.State
     , callsignsTableState : Table.State
+    , keyCreateSidebar : Bool
+    , keyCreateState :
+        { key : String
+        , description : String
+        , sigintNetworkFreqIds : List Int
+        }
+    , keyCreateFreqSelect : Utils.Select.SelectType Int
+    , keyCreateModulationSelect : Utils.Select.SelectTypeSingle Int
+    , keyCreateSaving : Bool
+    , keyEditSidebar : Maybe B.UpdateEncryptionKeyReq
+    , keyEditFreqSelect : Utils.Select.SelectType Int
+    , keyEditModulationSelect : Utils.Select.SelectTypeSingle Int
+    , keyEditSaving : Bool
+    , deleteKeyConfirmation : Maybe ( Int, String )
+    , deleteKeyLoading : Bool
     , freqEditSidebar : Maybe ( String, B.UpdateNetworkFreqReq )
     , freqDetailPopup : Maybe String
     , modulations : RemoteData ApiError (List B.ModulationRec)
     , freqEditKindSelect : Utils.Select.SelectTypeSingleNotEmpty NetworksUtils.NetworkKind
     , freqEditModulationSelect : Utils.Select.SelectTypeSingle Int
+    , freqEditKeySelect : Utils.Select.SelectType Int
     , freqEditSaving : Bool
     , freqEditShowActiveTo : Bool
     , deleteNetworkConfirmation : Maybe Int
@@ -132,6 +150,7 @@ type alias Model =
     , freqCreateState : B.AddNetworkFreq
     , freqCreateKindSelect : Utils.Select.SelectTypeSingleNotEmpty NetworksUtils.NetworkKind
     , freqCreateModulationSelect : Utils.Select.SelectTypeSingle Int
+    , freqCreateKeySelect : Utils.Select.SelectType Int
     , freqCreateDescriptionInp : String
     , freqCreateFormatError : Maybe String
     , freqCreateShowActiveTo : Bool

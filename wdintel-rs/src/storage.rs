@@ -1,13 +1,79 @@
+use crate::config::get_assets_folder;
 use crate::config::S3_MEDIA_ROOT_PREFIX;
 use crate::entities::signal_message_media;
 use crate::error::AppError;
 use crate::h;
-use crate::types::ShortContext;
+use crate::types::{Env, ShortContext};
+use actix_files::NamedFile;
+use actix_web::{web, HttpRequest, HttpResponse, Responder};
+use log::error;
 use log::{info, warn};
 use opendal::Operator;
 use rand::Rng;
+use std::path::PathBuf;
+use std::str::FromStr;
 use std::time::Duration;
 use strong_box::{Key, StaticStrongBox, StrongBox};
+use uuid::Uuid;
+
+pub async fn serve_assets(
+    user: actix_identity::Identity,
+    req: HttpRequest,
+    env: web::Data<Env>,
+) -> Result<impl Responder, AppError> {
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Basic")
+        .await
+        .c(h!())?;
+
+    let filename = req.match_info().query("filename");
+    let path: PathBuf = match filename.parse() {
+        Ok(path) => path,
+        Err(e) => {
+            error!("bad filename {filename}: {e:#?}");
+            return Ok(HttpResponse::NotFound().body("Asset not found"));
+        }
+    };
+    let local_path = PathBuf::from(get_assets_folder(&env.config)).join(&path);
+
+    // 1. Attempt to serve from local storage
+    if local_path.exists() && local_path.is_file() {
+        if let Ok(named_file) = NamedFile::open(local_path) {
+            return Ok(named_file.into_response(&req));
+        }
+    }
+
+    // 2. Fallback: Attempt to read from S3
+    let file_id = PathBuf::from(filename)
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .and_then(|f| Uuid::from_str(f.as_str()).ok());
+    let id = match file_id {
+        Some(id) => {
+            let m_ext = PathBuf::from(filename)
+                .extension()
+                .map(|s| s.to_string_lossy().to_string());
+            let key = nested_object_key(&id);
+            match m_ext {
+                None => key,
+                Some(ext) => format!("{key}.{ext}"),
+            }
+        }
+        None => {
+            warn!("unexpected filename format: {filename}, expected UUID + '.' + extension");
+            filename.to_string()
+        }
+    };
+    match crate::messenger::media::fetch_media_bytes_by_key(&env, &id).await {
+        Ok(body) => Ok(HttpResponse::Ok()
+            .content_type("application/octet-stream")
+            .body(body)),
+        Err(e) => {
+            error!("failed to load asset from s3: {e:#?}");
+            Ok(HttpResponse::NotFound().body("Asset not found"))
+        }
+    }
+}
 
 /// S3 configuration parameters
 #[derive(Debug, Clone)]
@@ -174,7 +240,7 @@ pub fn object_url(config: &S3Config, key: &str) -> String {
 
 /// Build object key path using a 5-char prefix folder and the UUID-like filename.
 /// Returns a path relative to the configured S3 prefix.
-pub fn nested_object_key(id: &uuid::Uuid) -> String {
+pub fn nested_object_key(id: &Uuid) -> String {
     let prefix = id.to_string().chars().take(5).collect::<String>();
     format!("{prefix}/{id}")
 }

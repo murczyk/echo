@@ -220,10 +220,6 @@ init route _ =
             , editSidebar = Nothing
             , eventLastId = Nothing
             , palitras = NotAsked
-            , palitrasVisible = []
-            , palitrasEnabled = True
-            , kmzEnabled = True
-            , pelengsEnabled = True
             }
 
         m2 =
@@ -394,7 +390,7 @@ loadPalitrasIfNeeded model =
         case model.palitras of
             NotAsked ->
                 ( { model | palitras = Loading }
-                , E.sendCmd <| Api.palitra_list_detailed GotPalitras
+                , E.sendCmd <| Api.palitra_list GotPalitras
                 )
 
             _ ->
@@ -402,6 +398,13 @@ loadPalitrasIfNeeded model =
 
     else
         ( model, E.none )
+
+
+palitraToDetails : B.Palitra -> B.PalitraDetails
+palitraToDetails palitra =
+    { palitra = palitra
+    , points = []
+    }
 
 
 loadSumTableOnly : Model -> ( Model, Effect Msg )
@@ -1817,7 +1820,7 @@ update user shared route msg model =
             )
 
         GotPalitras (Ok palitras) ->
-            ( { model | palitras = Success palitras }
+            ( { model | palitras = Success (List.map palitraToDetails palitras) }
             , E.none
             )
 
@@ -1825,33 +1828,6 @@ update user shared route msg model =
             ( { model | palitras = Failure err }
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Не вдалося завантажити палітри" err
             )
-
-        TogglePalitraVisibility palitraId ->
-            let
-                newVisible =
-                    if List.member palitraId model.palitrasVisible then
-                        List.filter (\id -> id /= palitraId) model.palitrasVisible
-
-                    else
-                        palitraId :: model.palitrasVisible
-            in
-            ( { model | palitrasVisible = newVisible }
-            , E.none
-            )
-
-        FeatureToggled feature enabled ->
-            case feature of
-                "palitras" ->
-                    ( { model | palitrasEnabled = enabled }, E.none )
-
-                "kmz" ->
-                    ( { model | kmzEnabled = enabled }, E.none )
-
-                "pelengs" ->
-                    ( { model | pelengsEnabled = enabled }, E.none )
-
-                _ ->
-                    ( model, E.none )
 
         ToggleUnfoldLocationsFilter ->
             ( { model | unfoldLocationsFilter = not model.unfoldLocationsFilter }

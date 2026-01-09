@@ -1,8 +1,11 @@
+use crate::config::PALITRA_STORAGE_DIR_NAME;
 use crate::h;
 use crate::kml::types::*;
 use crate::palitra::types::*;
-use crate::types::ShortContext;
-use log::error;
+use crate::types::{Env, ShortContext};
+use chrono::Utc;
+use log::{error, info};
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{self};
 use std::path::Path;
@@ -15,22 +18,54 @@ use zip::ZipArchive;
 pub async fn load_coordinates_from_file(
     file_name: String,
     data: Vec<u8>,
-    storage_dir: &Path,
+    env: &Env,
 ) -> anyhow::Result<Vec<PalitraPoint>> {
-    let persistent_path = storage_dir.join(file_name.clone());
-    fs::write(persistent_path.as_path(), data.clone())
+    let storage_dir = std::env::temp_dir()
+        .join(PALITRA_STORAGE_DIR_NAME)
+        .join(format!("{}", Utc::now().naive_utc().date()));
+    tokio::fs::create_dir_all(storage_dir.as_path())
         .await
         .c(h!())?;
+    let safe_file_name = sanitize_upload_filename(&file_name);
+    // store original palitra file in s3. update in config in order to disable
+    if env
+        .config
+        .store_palitra_in_s3
+        .unwrap_or(crate::config::DEFAULT_STORE_PALITRA_IN_S3)
+    {
+        let file_s3_id = crate::messenger::media::store_asset(
+            env,
+            &data,
+            Some(&safe_file_name),
+            Some(crate::config::KMZ_CONTENT_TYPE),
+        )
+        .await
+        .c(h!())?;
+        info!("uploaded {safe_file_name} to b2, available at {file_s3_id}");
+    }
 
     let tmp_dir = tempdir()?;
-    let path = tmp_dir.path().join(&file_name);
+    let path = tmp_dir.path().join(&safe_file_name);
     fs::write(path.as_path(), data).await.c(h!())?;
-    let extension = path.extension().c(h!())?.to_string_lossy().to_string();
+    let extension = path
+        .extension()
+        .c(h!())?
+        .to_string_lossy()
+        .to_string()
+        .to_ascii_lowercase();
     match extension.as_str() {
         "kmz" => load_coordinates_from_kmz(path.as_path()).await,
         "kml" => load_coordinates_from_kml(path.as_path()).await,
         _ => anyhow::bail!("Unsupported coordinates extension: {extension}"),
     }
+}
+
+pub fn sanitize_upload_filename(filename: &str) -> String {
+    Path::new(filename)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .map(|name| name.to_string())
+        .unwrap_or_else(|| "file.kmz".to_string())
 }
 
 pub async fn load_coordinates_from_kmz(
@@ -144,6 +179,189 @@ fn m_add_coordinates(
             }
             Err(e) => {
                 error!("Failed to parse coordinates {c}: {e:?}");
+            }
+        }
+    }
+}
+
+/// Extracts colors from KML document and counts their usage
+/// Returns top 3 most frequent colors with their counts
+pub async fn extract_top_colors_from_kmz(
+    kmz_path: &Path,
+) -> anyhow::Result<Vec<KmzColorInfo>> {
+    let tmp_dir = tempdir()?;
+    let extract_to = tmp_dir.path().to_path_buf();
+    let walkdir = WalkDir::new(extract_to.as_path()).into_iter();
+    let file_path = kmz_path.to_path_buf();
+
+    task::spawn_blocking(move || {
+        let zip_file = File::open(file_path)?;
+        let mut archive = ZipArchive::new(zip_file)
+            .map_err(|e| io::Error::other(format!("Zip error: {e:?}")))?;
+        archive.extract(extract_to.as_path()).map_err(|e| {
+            io::Error::other(format!("Extraction error: {e:?}"))
+        })?;
+        anyhow::Ok(())
+    })
+    .await
+    .c(h!())?
+    .c(h!())?;
+
+    let mut color_counts: HashMap<String, i32> = HashMap::new();
+
+    for entry in walkdir.filter_map(|e| e.ok()) {
+        if entry.file_type().is_file() {
+            let path = entry.path();
+            if path.extension().and_then(|ext| ext.to_str()) == Some("kml") {
+                match extract_colors_from_kml(path).await {
+                    Ok(colors) => {
+                        for color in colors {
+                            *color_counts.entry(color).or_insert(0) += 1;
+                        }
+                    }
+                    Err(e) => {
+                        error!("Failed to extract colors from {path:?}: {e:?}");
+                        continue;
+                    }
+                }
+            }
+        }
+    }
+
+    // Sort by count descending and take top 3
+    let mut color_vec: Vec<(String, i32)> = color_counts.into_iter().collect();
+    color_vec.sort_by(|a, b| b.1.cmp(&a.1));
+
+    let top_colors = color_vec
+        .into_iter()
+        .take(3)
+        .map(|(color_hex, count)| KmzColorInfo { color_hex, count })
+        .collect();
+
+    Ok(top_colors)
+}
+
+/// Extracts top 3 colors from a single KML file
+pub async fn extract_top_colors_from_kml(
+    kml_path: &Path,
+) -> anyhow::Result<Vec<KmzColorInfo>> {
+    let mut color_counts: HashMap<String, i32> = HashMap::new();
+
+    match extract_colors_from_kml(kml_path).await {
+        Ok(colors) => {
+            for color in colors {
+                *color_counts.entry(color).or_insert(0) += 1;
+            }
+        }
+        Err(e) => {
+            error!("Failed to extract colors from {kml_path:?}: {e:?}");
+            return Err(e);
+        }
+    }
+
+    // Sort by count descending and take top 3
+    let mut color_vec: Vec<(String, i32)> = color_counts.into_iter().collect();
+    color_vec.sort_by(|a, b| b.1.cmp(&a.1));
+
+    let top_colors = color_vec
+        .into_iter()
+        .take(3)
+        .map(|(color_hex, count)| KmzColorInfo { color_hex, count })
+        .collect();
+
+    Ok(top_colors)
+}
+
+/// Extracts colors from a single KML file
+async fn extract_colors_from_kml(path: &Path) -> anyhow::Result<Vec<String>> {
+    let parent = path.parent().c(h!())?;
+    let doc = crate::kml::read_and_fix_kml(false, path, parent)
+        .await
+        .c(h!())?;
+
+    let mut colors = Vec::new();
+    let mut queue = doc.nodes;
+
+    loop {
+        let Some(node) = queue.pop() else {
+            break;
+        };
+
+        match node {
+            Node::Folder(n) => {
+                // Process styles from Folder
+                for style in &n.styles {
+                    extract_color_from_style(style, &mut colors);
+                }
+                // Process child nodes
+                for n in n.nodes {
+                    queue.push(n);
+                }
+            }
+            Node::Document(n) => {
+                // Process styles from Document
+                for style in &n.styles {
+                    extract_color_from_style(style, &mut colors);
+                }
+                // Process cascading styles from Document
+                for cs in &n.cascading_styles {
+                    if let Some(style) = &cs.style {
+                        extract_color_from_style(style, &mut colors);
+                    }
+                }
+                // Process child nodes
+                for n in n.nodes {
+                    queue.push(n);
+                }
+            }
+            Node::Placemark(p) => {
+                // Extract color from inline style
+                if let Some(style) = p.style {
+                    extract_color_from_style(&style, &mut colors);
+                }
+            }
+            Node::Style(s) => {
+                extract_color_from_style(&s, &mut colors);
+            }
+            Node::StyleMap(_) => {
+                // StyleMaps not yet processed for colors
+            }
+            Node::CascadingStyle(cs) => {
+                if let Some(style) = cs.style {
+                    extract_color_from_style(&style, &mut colors);
+                }
+            }
+            _ => continue,
+        }
+    }
+
+    Ok(colors)
+}
+
+fn extract_color_from_style(style: &Style, colors: &mut Vec<String>) {
+    // Extract from IconStyle
+    if let Some(icon_style) = &style.icon_style {
+        if let Some(color) = &icon_style.color {
+            if let Ok(hex_color) = kml_color_to_hex(&color.body) {
+                colors.push(hex_color);
+            }
+        }
+    }
+
+    // Extract from LineStyle
+    if let Some(line_style) = &style.line_style {
+        if let Some(color) = &line_style.color {
+            if let Ok(hex_color) = kml_color_to_hex(&color.body) {
+                colors.push(hex_color);
+            }
+        }
+    }
+
+    // Extract from PolyStyle
+    if let Some(poly_style) = &style.poly_style {
+        if let Some(color) = &poly_style.color {
+            if let Ok(hex_color) = kml_color_to_hex(&color.body) {
+                colors.push(hex_color);
             }
         }
     }

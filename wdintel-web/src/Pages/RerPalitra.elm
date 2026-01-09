@@ -65,6 +65,9 @@ type alias Model =
     , logins : RemoteData ApiError B.ListLoginsRsp
     , organisms : RemoteData ApiError (List B.Organism)
     , aorList : RemoteData ApiError (List B.AreaOfResponsibility)
+    , kmzAnalysis : RemoteData ApiError B.AnalyzeKmzResponse
+    , uploadedKmzFile : Maybe File
+    , selectedColorFromKmz : Maybe String
     }
 
 
@@ -121,6 +124,11 @@ type Msg
     | LoginsResp (Result ApiError B.ListLoginsRsp)
     | OrganismsResp (Result ApiError (List B.Organism))
     | AorListResp (Result ApiError (List B.AreaOfResponsibility))
+    | KmzUploadClicked
+    | KmzFileSelected File
+    | KmzAnalysisResponse (Result ApiError B.AnalyzeKmzResponse)
+    | SelectColorFromKmz String
+    | SubmitCreateWithKmz
 
 
 isAdmin : Auth.User -> Bool
@@ -182,6 +190,9 @@ init user _ =
 
             else
                 NotAsked
+      , kmzAnalysis = NotAsked
+      , uploadedKmzFile = Nothing
+      , selectedColorFromKmz = Nothing
       }
     , E.sendCmd <|
         Cmd.batch
@@ -464,6 +475,9 @@ update user msg model =
 
                     else
                         model.aorList
+                , kmzAnalysis = NotAsked
+                , uploadedKmzFile = Nothing
+                , selectedColorFromKmz = Nothing
               }
             , if List.isEmpty allCmds then
                 E.none
@@ -535,6 +549,9 @@ update user msg model =
                 , loginsSelect = { loginsSelect | selected = [] }
                 , organismsSelect = { organismsSelect | selected = [] }
                 , aorSelect = { aorSelect | selected = [] }
+                , kmzAnalysis = NotAsked
+                , uploadedKmzFile = Nothing
+                , selectedColorFromKmz = Nothing
               }
             , E.none
             )
@@ -581,6 +598,9 @@ update user msg model =
                 , loginsSelect = { loginsSelect | selected = [] }
                 , organismsSelect = { organismsSelect | selected = [] }
                 , aorSelect = { aorSelect | selected = [] }
+                , kmzAnalysis = NotAsked
+                , uploadedKmzFile = Nothing
+                , selectedColorFromKmz = Nothing
               }
             , E.none
             )
@@ -1029,6 +1049,85 @@ update user msg model =
             ( { model | editSubmitInFlight = False }
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Не вдалося оновити палітру" err
             )
+
+        KmzUploadClicked ->
+            ( model
+            , E.sendCmd <|
+                File.Select.file
+                    [ "application/vnd.google-earth.kmz"
+                    , "application/vnd.google-earth.kml+xml"
+                    , ".kmz"
+                    , ".kml"
+                    ]
+                    KmzFileSelected
+            )
+
+        KmzFileSelected file ->
+            ( { model
+                | uploadedKmzFile = Just file
+                , kmzAnalysis = Loading
+              }
+            , E.sendCmd <| Api.palitra_analyze_kmz KmzAnalysisResponse file
+            )
+
+        KmzAnalysisResponse (Ok analysis) ->
+            let
+                -- Автоматично вибираємо перший колір (найпоширеніший), або дефолтний, якщо кольори не знайдено
+                firstColor =
+                    if List.isEmpty analysis.topColors then
+                        Just "#00bcd4"
+
+                    else
+                        analysis.topColors
+                            |> List.head
+                            |> Maybe.map .colorHex
+
+                -- Передзаповнюємо назву з файлу
+                updatedForm =
+                    model.form
+
+                newForm =
+                    { updatedForm | name = analysis.filename }
+            in
+            ( { model
+                | kmzAnalysis = Success analysis
+                , selectedColorFromKmz = firstColor
+                , form = newForm
+              }
+            , E.none
+            )
+
+        KmzAnalysisResponse (Err err) ->
+            ( { model | kmzAnalysis = Failure err }
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Не вдалося проаналізувати KMZ файл" err
+            )
+
+        SelectColorFromKmz colorHex ->
+            ( { model | selectedColorFromKmz = Just colorHex }, E.none )
+
+        SubmitCreateWithKmz ->
+            case ( model.uploadedKmzFile, model.selectedColorFromKmz ) of
+                ( Just file, Just colorHex ) ->
+                    if isFormValid model.form then
+                        let
+                            updatedForm =
+                                model.form
+
+                            formWithColor =
+                                { updatedForm | colorHex = colorHex }
+
+                            req =
+                                buildCreateReq formWithColor
+                        in
+                        ( { model | submitInFlight = True }
+                        , E.sendCmd <| Api.palitra_create_with_kmz CreateResponse req file
+                        )
+
+                    else
+                        ( model, E.none )
+
+                _ ->
+                    ( model, E.none )
 
 
 view : Auth.User -> Shared.Model -> Model -> View Msg
@@ -1517,6 +1616,55 @@ isFormValid form =
                 not (List.isEmpty aorList)
 
 
+isCreateFormValid : Auth.User -> Model -> Bool
+isCreateFormValid user model =
+    let
+        nameValid =
+            not (String.isEmpty (String.trim model.form.name))
+
+        admin =
+            isAdmin user
+    in
+    if not nameValid then
+        False
+
+    else if admin then
+        -- Для адмінів використовуємо стандартну валідацію форми
+        isFormValid model.form
+
+    else
+        -- Для звичайних користувачів перевіряємо restricted поля через myScope
+        case model.form.access of
+            LoginsAccess _ ->
+                -- LoginsAccess завжди валідне для не-адмінів (автоматично підставляється user.name)
+                True
+
+            OrganismsAccess _ ->
+                -- Перевіряємо, що myScope завантажено і organism призначено
+                case model.myScope of
+                    Success scope ->
+                        case scope.organism of
+                            Just _ ->
+                                True
+
+                            Nothing ->
+                                False
+
+                    _ ->
+                        -- myScope ще не завантажено
+                        False
+
+            AorAccess _ ->
+                -- Перевіряємо, що myScope завантажено і є хоча б одна смуга
+                case model.myScope of
+                    Success scope ->
+                        not (List.isEmpty scope.aorIds)
+
+                    _ ->
+                        -- myScope ще не завантажено
+                        False
+
+
 createPalitraSidebarContent : Bool -> Auth.User -> Model -> List (Html Msg)
 createPalitraSidebarContent isDark user model =
     let
@@ -1799,76 +1947,191 @@ createPalitraSidebarContent isDark user model =
                     else
                         ChangeAccess accessForm
     in
-    [ div [ class "flex flex-col h-full" ]
-        [ div [ class "p-6 border-b border-border" ]
-            [ h2 [ class "text-lg font-semibold mb-1" ] [ text "Створити палітру" ]
-            ]
-        , div [ class "flex-1 overflow-y-auto p-6" ]
-            [ div [ class "space-y-6" ]
-                [ div [ class "space-y-2" ]
-                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Назва *" ]
-                    , input
-                        [ class "w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
-                        , type_ "text"
-                        , placeholder "Назва палітри"
-                        , value model.form.name
-                        , onInput (\v -> UpdateForm (\f -> { f | name = v }))
-                        ]
-                        []
+    case model.kmzAnalysis of
+        NotAsked ->
+            -- Крок 1: Завантаження KMZ
+            [ div [ class "flex flex-col h-full" ]
+                [ div [ class "p-6 border-b border-border" ]
+                    [ h2 [ class "text-lg font-semibold mb-1" ] [ text "Створити палітру" ]
+                    , p [ class "text-sm text-muted-foreground" ] [ text "Крок 1: Завантажте KMZ файл" ]
                     ]
-                , div [ class "flex flex-col gap-2" ]
-                    [ label
-                        [ class "text-sm font-medium text-foreground"
-                        , style "display" "block"
+                , div [ class "flex-1 overflow-y-auto p-6" ]
+                    [ div [ class "flex flex-col items-center justify-center h-full space-y-4" ]
+                        [ div [ class "text-center space-y-2" ]
+                            [ i [ class "bi bi-file-earmark-arrow-up text-6xl text-muted-foreground" ] []
+                            , div [ class "text-lg font-medium" ] [ text "Завантажте KMZ файл" ]
+                            , div [ class "text-sm text-muted-foreground" ] [ text "Ми витягнемо кольори та назву з файлу" ]
+                            ]
+                        , Button.new { label = "Обрати KMZ файл", onClick = KmzUploadClicked }
+                            |> Button.view
                         ]
-                        [ text "Колір" ]
-                    , input
-                        [ type_ "color"
-                        , class "w-16 h-10 border border-border rounded-md"
-                        , value model.form.colorHex
-                        , on "change" (Decode.map (\v -> UpdateForm (\f -> { f | colorHex = v })) targetValue)
-                        ]
-                        []
                     ]
-                , div [ class "space-y-2" ]
-                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Доступ" ]
-                    , div [ class "flex flex-wrap gap-2" ]
-                        [ SegmentedControl.new
-                            (normalizeAccessForm model.form.access)
-                            accessSegmentOnChange
-                            accessOptions
-                            |> SegmentedControl.view
+                , div [ class "p-6 border-t border-border bg-muted/30" ]
+                    [ div [ class "flex justify-end gap-3" ]
+                        [ Button.new { label = "Скасувати", onClick = CloseCreateSidebar }
+                            |> Button.withStyleSecondary
+                            |> Button.view
                         ]
-                    , case accessHint of
-                        Just hint ->
-                            div [ class "text-xs text-muted-foreground mt-1" ] [ text hint ]
-
-                        Nothing ->
-                            text ""
-                    , div [] accessFields
                     ]
                 ]
             ]
-        , div [ class "p-6 border-t border-border bg-muted/30" ]
-            [ div [ class "flex justify-end gap-3" ]
-                [ Button.new { label = "Скасувати", onClick = CloseCreateSidebar }
-                    |> Button.withStyleSecondary
-                    |> Button.view
-                , Button.new
-                    { label = "Створити"
-                    , onClick =
-                        if model.submitInFlight then
-                            NoOp
 
-                        else
-                            SubmitCreate
-                    }
-                    |> Button.withDisabled model.submitInFlight
-                    |> Button.view
+        Loading ->
+            -- Завантаження...
+            [ div [ class "flex flex-col h-full" ]
+                [ div [ class "p-6 border-b border-border" ]
+                    [ h2 [ class "text-lg font-semibold mb-1" ] [ text "Створити палітру" ]
+                    ]
+                , div [ class "flex-1 overflow-y-auto p-6" ]
+                    [ div [ class "flex flex-col items-center justify-center h-full space-y-4" ]
+                        [ Shared.Components.Spinner.loadingSpinner2Sm
+                        , div [ class "text-sm text-muted-foreground" ] [ text "Аналізуємо KMZ файл..." ]
+                        ]
+                    ]
                 ]
             ]
-        ]
-    ]
+
+        Failure _ ->
+            -- Помилка (вже показана через toast)
+            [ div [ class "flex flex-col h-full" ]
+                [ div [ class "p-6 border-b border-border" ]
+                    [ h2 [ class "text-lg font-semibold mb-1" ] [ text "Створити палітру" ]
+                    ]
+                , div [ class "flex-1 overflow-y-auto p-6" ]
+                    [ div [ class "flex flex-col items-center justify-center h-full space-y-4" ]
+                        [ i [ class "bi bi-exclamation-triangle text-6xl text-red-500" ] []
+                        , div [ class "text-lg font-medium text-red-600" ] [ text "Помилка аналізу файлу" ]
+                        , Button.new { label = "Спробувати ще раз", onClick = KmzUploadClicked }
+                            |> Button.view
+                        ]
+                    ]
+                , div [ class "p-6 border-t border-border bg-muted/30" ]
+                    [ div [ class "flex justify-end gap-3" ]
+                        [ Button.new { label = "Скасувати", onClick = CloseCreateSidebar }
+                            |> Button.withStyleSecondary
+                            |> Button.view
+                        ]
+                    ]
+                ]
+            ]
+
+        NeedsReload _ ->
+            -- Не повинно статися для kmzAnalysis
+            [ text "" ]
+
+        Success analysis ->
+            -- Крок 2: Вибір кольору + форма
+            [ div [ class "flex flex-col h-full" ]
+                [ div [ class "p-6 border-b border-border" ]
+                    [ h2 [ class "text-lg font-semibold mb-1" ] [ text "Створити палітру" ]
+                    , p [ class "text-sm text-muted-foreground" ] [ text "Крок 2: Виберіть колір та заповніть форму" ]
+                    ]
+                , div [ class "flex-1 overflow-y-auto p-6" ]
+                    [ div [ class "space-y-6" ]
+                        [ div [ class "space-y-2" ]
+                            [ label [ class "text-sm font-medium text-foreground" ] [ text "Оберіть колір з KMZ *" ]
+                            , if List.isEmpty analysis.topColors then
+                                -- Показуємо колор-пікер, якщо кольори не знайдено
+                                div [ class "flex flex-col gap-3" ]
+                                    [ div [ class "flex items-center gap-3" ]
+                                        [ input
+                                            [ type_ "color"
+                                            , class "w-20 h-12 border border-border rounded-md cursor-pointer"
+                                            , value (Maybe.withDefault "#00bcd4" model.selectedColorFromKmz)
+                                            , on "change" (Decode.map SelectColorFromKmz targetValue)
+                                            ]
+                                            []
+                                        , div [ class "flex flex-col" ]
+                                            [ div [ class "text-sm font-mono text-foreground" ]
+                                                [ text (Maybe.withDefault "#00bcd4" model.selectedColorFromKmz) ]
+                                            , div [ class "text-xs text-muted-foreground" ]
+                                                [ text "Кольори не знайдено в KMZ файлі" ]
+                                            ]
+                                        ]
+                                    ]
+
+                              else
+                                -- Показуємо кнопки з кольорами, якщо вони знайдені
+                                div [ class "flex gap-3" ]
+                                    (analysis.topColors
+                                        |> List.map
+                                            (\colorInfo ->
+                                                let
+                                                    isSelected =
+                                                        model.selectedColorFromKmz == Just colorInfo.colorHex
+                                                in
+                                                button
+                                                    [ class "flex flex-col items-center gap-2 p-4 border-2 rounded-lg transition-all cursor-pointer"
+                                                    , class
+                                                        (if isSelected then
+                                                            "border-primary bg-primary/10"
+
+                                                         else
+                                                            "border-border hover:border-primary/50"
+                                                        )
+                                                    , onClick (SelectColorFromKmz colorInfo.colorHex)
+                                                    ]
+                                                    [ div
+                                                        [ class "w-16 h-16 rounded-md border border-border"
+                                                        , style "background-color" colorInfo.colorHex
+                                                        ]
+                                                        []
+                                                    , div [ class "text-xs font-mono" ] [ text colorInfo.colorHex ]
+                                                    , div [ class "text-sm font-semibold" ] [ text (String.fromInt colorInfo.count ++ " точок") ]
+                                                    ]
+                                            )
+                                    )
+                            ]
+                        , div [ class "space-y-2" ]
+                            [ label [ class "text-sm font-medium text-foreground" ] [ text "Назва *" ]
+                            , input
+                                [ class "w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
+                                , type_ "text"
+                                , placeholder "Назва палітри"
+                                , value model.form.name
+                                , onInput (\v -> UpdateForm (\f -> { f | name = v }))
+                                ]
+                                []
+                            ]
+                        , div [ class "space-y-2" ]
+                            [ label [ class "text-sm font-medium text-foreground" ] [ text "Доступ" ]
+                            , div [ class "flex flex-wrap gap-2" ]
+                                [ SegmentedControl.new
+                                    (normalizeAccessForm model.form.access)
+                                    accessSegmentOnChange
+                                    accessOptions
+                                    |> SegmentedControl.view
+                                ]
+                            , case accessHint of
+                                Just hint ->
+                                    div [ class "text-xs text-muted-foreground mt-1" ] [ text hint ]
+
+                                Nothing ->
+                                    text ""
+                            , div [] accessFields
+                            ]
+                        ]
+                    ]
+                , div [ class "p-6 border-t border-border bg-muted/30" ]
+                    [ div [ class "flex justify-end gap-3" ]
+                        [ Button.new { label = "Скасувати", onClick = CloseCreateSidebar }
+                            |> Button.withStyleSecondary
+                            |> Button.view
+                        , Button.new
+                            { label = "Створити"
+                            , onClick =
+                                if model.submitInFlight then
+                                    NoOp
+
+                                else
+                                    SubmitCreateWithKmz
+                            }
+                            |> Button.withDisabled (model.submitInFlight || not (isCreateFormValid user model))
+                            |> Button.view
+                        ]
+                    ]
+                ]
+            ]
 
 
 buildCreateReq : Form -> B.CreatePalitraReq

@@ -89,6 +89,10 @@ type
     | Frequencies FrequenciesMsg
     | ModulationsReturnedByApi (Result ApiError (List B.ModulationRec))
       -- =============================================================================
+      -- KEYS
+      -- =============================================================================
+    | Keys KeysMsg
+      -- =============================================================================
       -- DESCRIPTIONS
       -- =============================================================================
     | Descriptions DescriptionsMsg
@@ -190,12 +194,14 @@ type FrequenciesMsg
     | SaveFreqEditSidebar
     | FreqKindSelectMsg (Select.Msg NetworksUtils.NetworkKind)
     | FreqModulationSelectMsg (Select.Msg Int)
+    | FreqKeySelectMsg (Select.Msg Int)
     | ToggleFreqEditShowActiveTo
     | OpenFreqCreateSidebar
     | CloseFreqCreateSidebar
     | UpdateFreqCreateField (B.AddNetworkFreq -> B.AddNetworkFreq)
     | FreqCreateKindSelectMsg (Select.Msg NetworksUtils.NetworkKind)
     | FreqCreateModulationSelectMsg (Select.Msg Int)
+    | FreqCreateKeySelectMsg (Select.Msg Int)
     | FreqCreateDescriptionInputChangedByUser String
     | ToggleFreqCreateShowActiveTo
     | AddFreqToNetwork
@@ -209,3 +215,28 @@ type FrequenciesMsg
     | CallsignsPopupOpenedByUser String
     | CallsignsPopupClosedByUser
     | NetworkFreqsActivityReturnedByApi (Result ApiError (Dict String (Dict String Int)))
+
+
+type KeysMsg
+    = KeysReturnedByApi (Result ApiError B.ListKeysRsp)
+    | SetKeysTableState Table.State
+    | OpenKeyCreateSidebar
+    | CloseKeyCreateSidebar
+    | KeyCreateKeyChanged String
+    | KeyCreateDescriptionChanged String
+    | KeyCreateFreqSelMsg (Select.Msg Int)
+    | KeyCreateModulationSelMsg (Select.Msg Int)
+    | CreateKeyClicked
+    | KeyCreated (Result ApiError B.EncryptionKeyData)
+    | OpenKeyEditSidebar B.EncryptionKeyData
+    | CloseKeyEditSidebar
+    | KeyEditKeyChanged String
+    | KeyEditDescriptionChanged String
+    | KeyEditFreqSelMsg (Select.Msg Int)
+    | KeyEditModulationSelMsg (Select.Msg Int)
+    | SaveKeyEditClicked
+    | KeyUpdated (Result ApiError B.EncryptionKeyData)
+    | DeleteKeyClickedByUser Int String
+    | DeleteKeyConfirmedByUser
+    | DeleteKeyCanceledByUser
+    | DeleteKeyReturnedByApi (Result ApiError B.EncryptionKeyData)

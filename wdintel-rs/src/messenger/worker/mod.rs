@@ -465,7 +465,11 @@ async fn write_to_signal_message_queue(
         external_id: Set(item.id),
         body: Set(item.text.clone()),
         sender_name: Set(item.sender.clone().and_then(|x| x.name)),
-        sender_id: Set(item.sender.clone().map(|x| x.uuid)),
+        sender_id: Set(item
+            .sender
+            .clone()
+            .map(|x| x.uuid)
+            .map(|id| clear_messenger_login_string(&id))),
         sender_phone_number: Set(item.sender.and_then(|x| x.phone_number)),
         group_id: Set(item.group_id.clone()),
         timestamp: Set(item.timestamp),
@@ -652,9 +656,12 @@ where
 
 async fn sync_senders(
     db: &DatabaseConnection,
-    senders: BTreeMap<String, echo_im::types::SenderF1>,
+    input_senders: BTreeMap<String, echo_im::types::SenderF1>,
 ) -> anyhow::Result<()> {
-    let mut senders = senders;
+    let mut senders = BTreeMap::new();
+    for (uuid, sender) in input_senders {
+        senders.insert(clear_messenger_login_string(&uuid), sender);
+    }
     let sender_ids = senders.keys().cloned().collect::<Vec<_>>();
     let existing_senders = signal_profile::Entity::find()
         .filter(signal_profile::Column::Uuid.eq_any(sender_ids))
@@ -663,7 +670,10 @@ async fn sync_senders(
         .into_tuple::<String>()
         .all(db)
         .await
-        .c(h!())?;
+        .c(h!())?
+        .into_iter()
+        .map(|id| clear_messenger_login_string(&id))
+        .collect::<Vec<_>>();
     for s in existing_senders {
         senders.remove(&s);
     }
@@ -679,4 +689,27 @@ async fn sync_senders(
         .c(h!())?;
     }
     Ok(())
+}
+
+pub fn clear_messenger_login_string(input: &str) -> String {
+    let is_whatsapp_id =
+        input.ends_with("@lid") || input.ends_with("@s.whatsapp.net");
+    if !is_whatsapp_id || !input.contains(":") {
+        return input.to_string();
+    }
+    // 1. Split by '@' to separate the ID/Semicolon part from the "lid" part
+    let parts: Vec<&str> = input.split('@').collect();
+
+    if parts.len() != 2 {
+        return input.to_string(); // Return original if format is unexpected
+    }
+
+    let id_section = parts[0];
+    let domain_section = parts[1];
+
+    // 2. Split the first section by ':' and take only the first part (the number)
+    let clean_id = id_section.split(':').next().unwrap_or(id_section);
+
+    // 3. Reconstruct the string
+    format!("{}@{}", clean_id, domain_section)
 }

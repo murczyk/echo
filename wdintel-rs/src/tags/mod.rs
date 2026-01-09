@@ -19,10 +19,10 @@ pub mod worker;
 fn map_tag_keyword(model: tag_keyword::Model) -> TagKeyword {
     TagKeyword {
         tag_keyword_id: model.tag_keyword_id,
-        is_positive: model.is_positive,
         is_regex: model.is_regex,
         keyword: model.keyword,
         keyword_forms: model.keyword_forms,
+        keyword_negative_forms: model.keyword_negative_forms,
     }
 }
 
@@ -122,6 +122,8 @@ async fn create_tag(
     .await
     .c(h!())?;
 
+    expire_tags_to_predict_cache(&env.tag_keyword_regex_cache);
+
     Ok(Json(map_tag_admin(tag, vec![])))
 }
 
@@ -152,6 +154,7 @@ async fn update_tag(
     tag.enabled = Set(req.enabled);
 
     let tag = tag.update(&env.dbx).await.c(h!())?;
+    expire_tags_to_predict_cache(&env.tag_keyword_regex_cache);
     let keywords = tag
         .find_related(tag_keyword::Entity)
         .all(&env.dbx)
@@ -183,35 +186,38 @@ async fn add_tag_keywords(
     let keywords_task = req.0.into_iter().map(
         async |r| -> anyhow::Result<tag_keyword::ActiveModel> {
             let TagKeywordAddReq {
-                is_positive,
                 is_regex,
                 keyword,
                 keyword_forms,
+                keyword_negative_forms,
             } = r;
-
-            if is_regex {
-                let _ = regex::Regex::new(&keyword).c(h!())?;
-            }
 
             let mut keyword_forms: Vec<String> =
                 keyword_forms.unwrap_or_default();
-            if keyword_forms.is_empty() {
+            let keyword_negative_forms =
+                keyword_negative_forms.unwrap_or_default();
+            if keyword_forms.is_empty() && keyword_negative_forms.is_empty() {
                 keyword_forms =
                     crate::nlp::token_lexemes(&env.rq.clone(), &keyword)
                         .await
                         .c(h!())?;
-            } else {
+            }
+
+            if is_regex {
                 for pattern in &keyword_forms {
+                    let _ = regex::Regex::new(pattern.as_str()).c(h!())?;
+                }
+                for pattern in &keyword_negative_forms {
                     let _ = regex::Regex::new(pattern.as_str()).c(h!())?;
                 }
             }
 
             let model = tag_keyword::ActiveModel {
                 tag_id: Set(tag_id),
-                is_positive: Set(is_positive),
                 is_regex: Set(is_regex),
                 keyword: Set(keyword),
                 keyword_forms: Set(keyword_forms),
+                keyword_negative_forms: Set(keyword_negative_forms),
                 ..Default::default()
             };
             Ok(model)
@@ -239,6 +245,13 @@ fn expire_tag_keyword_regex_cache(
 ) {
     let mut cache = tag_keyword_regex_cache.write().unwrap();
     cache.keywords_regex_per_tag.remove(&tag_id);
+}
+
+fn expire_tags_to_predict_cache(
+    tag_keyword_regex_cache: &Arc<RwLock<TagKeywordRegexCache>>,
+) {
+    let mut cache = tag_keyword_regex_cache.write().unwrap();
+    cache.tags_to_predict = Default::default();
 }
 
 #[delete("/api/tags/{tag_id}/keywords/{tag_keyword_id}")]
@@ -290,29 +303,32 @@ async fn update_tag_keyword(
 
     let mut tag_keyword = tag_keyword.into_active_model();
     let TagKeywordAddReq {
-        is_positive,
         is_regex,
         keyword,
         keyword_forms,
+        keyword_negative_forms,
     } = req.0;
-    if is_regex {
-        let _ = regex::Regex::new(keyword.as_str()).c(h!())?;
-    }
 
     let mut keyword_forms: Vec<String> = keyword_forms.unwrap_or_default();
-    if keyword_forms.is_empty() {
+    let keyword_negative_forms = keyword_negative_forms.unwrap_or_default();
+    if keyword_forms.is_empty() && keyword_negative_forms.is_empty() {
         keyword_forms = crate::nlp::token_lexemes(&env.rq.clone(), &keyword)
             .await
             .c(h!())?;
-    } else {
+    }
+    if is_regex {
         for pattern in &keyword_forms {
+            let _ = regex::Regex::new(pattern.as_str()).c(h!())?;
+        }
+        for pattern in &keyword_negative_forms {
             let _ = regex::Regex::new(pattern.as_str()).c(h!())?;
         }
     }
 
-    tag_keyword.is_positive = Set(is_positive);
+    tag_keyword.is_regex = Set(is_regex);
     tag_keyword.keyword = Set(keyword);
     tag_keyword.keyword_forms = Set(keyword_forms);
+    tag_keyword.keyword_negative_forms = Set(keyword_negative_forms);
 
     tag_keyword.update(&env.dbx).await.c(h!())?;
     expire_tag_keyword_regex_cache(tag_id, &env.tag_keyword_regex_cache);
@@ -368,6 +384,7 @@ async fn inbox_message_tags_add(
     }
 
     txn.commit().await.c(h!())?;
+
     let event = EventMsg::new(EventType::ETInboxChanged(inbox.id));
     fanout(&mut env.redis.clone(), event).await.c(h!())?;
     Ok(Json(()))

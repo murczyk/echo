@@ -271,6 +271,10 @@ mod tests {
     use super::*;
     use chrono_tz::Europe::Kyiv;
 
+    fn fixed_now(tz: chrono_tz::Tz) -> chrono::DateTime<chrono_tz::Tz> {
+        tz.with_ymd_and_hms(2025, 12, 30, 10, 15, 30).unwrap()
+    }
+
     #[test]
     fn extract_datetime_test01() {
         let input = r#"08.02.2023_21:00 F=455,5550(МГц)
@@ -279,7 +283,7 @@ mod tests {
 НВ (НВ)
 "Назвать его Ебаньком он начал атаковать своих, ему пизда, тебе пизда, как принял прием? Принял тебя Заря, ты где сейчас?""#;
         let tz = crate::config::get_tz();
-        let lnow = Local::now().with_timezone(&tz);
+        let lnow = fixed_now(tz);
         let res = extract_datetime(lnow, input).unwrap();
         let expected = Some(
             NaiveDate::from_ymd_opt(2023, 2, 8)
@@ -302,9 +306,9 @@ mod tests {
 2. Принял.
 1. Ты видишь меня на дороге?"#;
         let tz = crate::config::get_tz();
-        let lnow = Local::now().with_timezone(&tz);
+        let lnow = fixed_now(tz);
         let res = extract_datetime(lnow, input).unwrap();
-        let year = Local::now().year();
+        let year = lnow.year();
         let expected = Some(
             NaiveDate::from_ymd_opt(year, 11, 17)
                 .unwrap()
@@ -317,7 +321,7 @@ mod tests {
     #[test]
     fn extract_datetime_keeps_time() {
         let tz = crate::config::get_tz();
-        let lnow = Local::now().with_timezone(&tz);
+        let lnow = fixed_now(tz);
         let dt1: NaiveDateTime =
             extract_datetime(lnow, "16.02.2023_10:55").unwrap().unwrap();
         let dt2 = Kyiv.from_local_datetime(&dt1).unwrap();
@@ -334,7 +338,7 @@ mod tests {
 НВ (НВ)
 "Назвать его Ебаньком он начал атаковать своих, ему пизда, тебе пизда, как принял прием? Принял тебя Заря, ты где сейчас?""#;
         let tz = crate::config::get_tz();
-        let lnow = Local::now().with_timezone(&tz);
+        let lnow = fixed_now(tz);
         let res = extract_datetime(lnow, input).unwrap();
         let expected = Some(
             NaiveDate::from_ymd_opt(2023, 9, 4)
@@ -357,9 +361,9 @@ mod tests {
 1. Там всё, две фары. Один вот, шуровый, чо жалеть...
 "#;
         let tz = crate::config::get_tz();
-        let lnow = Local::now().with_timezone(&tz);
+        let lnow = fixed_now(tz);
         let res = extract_datetime(lnow, input).unwrap();
-        let year = Local::now().year();
+        let year = lnow.year();
         let expected = Some(
             NaiveDate::from_ymd_opt(year, 11, 17)
                 .unwrap()
@@ -380,9 +384,9 @@ mod tests {
 - 2 Ты им приборы дал?
 - 1 Да, всё дал, похавать дал"#;
         let tz = crate::config::get_tz();
-        let lnow = Local::now().with_timezone(&tz);
+        let lnow = fixed_now(tz);
         let res = extract_datetime(lnow, input).unwrap();
-        let year = Local::now().year();
+        let year = lnow.year();
         let expected = Some(
             NaiveDate::from_ymd_opt(year, 11, 19)
                 .unwrap()
@@ -400,11 +404,10 @@ mod tests {
 1. Дом, я Лесник, понаблюдайте, там наши соседи фонарики какие-то наблюдают где-то, посмотрите обтановочку и доложите
 "#;
         let tz = crate::config::get_tz();
-        let lnow = Local::now().with_timezone(&tz);
+        let lnow = fixed_now(tz);
         let res = extract_datetime(lnow, input).unwrap();
-        let tz = crate::config::get_tz();
-        let now = Local::now().with_timezone(&tz);
-        let dt = now;
+        let now = lnow;
+        let dt = lnow;
         let dt = if now.hour() <= 20 {
             if now.hour() == 20 && now.minute() > 9 {
                 dt
@@ -427,7 +430,7 @@ mod tests {
     fn extract_datetime_test07() {
         let input = r#"2023-11-06T05:14:54"#;
         let tz = crate::config::get_tz();
-        let lnow = Local::now().with_timezone(&tz);
+        let lnow = fixed_now(tz);
         let res = extract_datetime(lnow, input).unwrap();
         let expected = Some(
             NaiveDate::from_ymd_opt(2023, 11, 6)
@@ -458,9 +461,9 @@ mod tests {
 1 - Ти меня понял нет , это первая партия будет( . . .) выходить я хуй знает пойми короче , твоя задача встретить АЗГАРДА забрать и ЖОСТКОГО з собой , только тогда ти подходишь как меня понял прием
 2 - Да я принял тогда я один остаюсь остальных отправляю"#;
         let tz = crate::config::get_tz();
-        let lnow = Local::now().with_timezone(&tz);
+        let lnow = fixed_now(tz);
         let res = extract_datetime(lnow, input).unwrap();
-        let year = Local::now().year();
+        let year = lnow.year();
         let expected = Some(
             NaiveDate::from_ymd_opt(year, 12, 20)
                 .unwrap()
@@ -479,7 +482,7 @@ mod tests {
 
 — второй 076 Спасибо за прикрытие счастья здоровья"#;
         let tz = crate::config::get_tz();
-        let lnow = Local::now().with_timezone(&tz);
+        let lnow = fixed_now(tz);
         let res = extract_datetime(lnow, input).unwrap();
         let expected = Some(
             NaiveDate::from_ymd_opt(2025, 1, 13)
@@ -501,7 +504,7 @@ mod tests {
 — Депутат, Депутат Трактору.
 — Да, все живы, машине пизда."#;
         let tz = crate::config::get_tz();
-        let lnow = Local::now().with_timezone(&tz);
+        let lnow = fixed_now(tz);
         let res = extract_datetime(lnow, input).unwrap();
         let expected = Some(
             NaiveDate::from_ymd_opt(2025, 7, 24)
@@ -524,10 +527,10 @@ mod tests {
 
 — Первый раунд 4, Шапка 1."#;
         let tz = crate::config::get_tz();
-        let lnow = Local::now().with_timezone(&tz);
+        let lnow = fixed_now(tz);
         let res = extract_datetime(lnow, input).unwrap();
         let expected = Some(
-            NaiveDate::from_ymd_opt(2025, 11, 20)
+            NaiveDate::from_ymd_opt(lnow.year(), 11, 20)
                 .unwrap()
                 .and_hms_opt(12, 29, 18)
                 .unwrap(),
@@ -547,9 +550,9 @@ mod tests {
 
 Коментар: T2"#;
         let tz = crate::config::get_tz();
-        let lnow = Local::now().with_timezone(&tz);
+        let lnow = fixed_now(tz);
         let res = extract_datetime(lnow, input).unwrap();
-        let year = Local::now().year();
+        let year = lnow.year();
         let expected = Some(
             NaiveDate::from_ymd_opt(year, 11, 20)
                 .unwrap()
@@ -575,7 +578,7 @@ mod tests {
 1. ШУТ, РЯБА , как раз пока по тому дому, где пидары сидят, ебашит слоник, птицы ми разогнали лишние, если никого не слышите, гасите домой, гасите домой.
 1. Давай, все у вас видим, давайте, пацаны, быстрее, быстрее, там далеко наша птица, висит другая, давайте быстрее."#;
         let tz = crate::config::get_tz();
-        let lnow = Local::now().with_timezone(&tz);
+        let lnow = fixed_now(tz);
         let res = extract_datetime(lnow, input).unwrap();
         let expected = Some(
             NaiveDate::from_ymd_opt(2025, 11, 20)
@@ -594,7 +597,7 @@ mod tests {
 Напрямок: Пн. Дворічна
 Координати (MGRS): 37U DR 03349 25624"#;
         let tz = crate::config::get_tz();
-        let lnow = Local::now().with_timezone(&tz);
+        let lnow = fixed_now(tz);
         let res = extract_datetime(lnow, input).unwrap();
         let expected = Some(
             NaiveDate::from_ymd_opt(2025, 11, 29)
@@ -621,7 +624,7 @@ mod tests {
 .
 Коментар: ( запит на зв'язок );"#;
         let tz = crate::config::get_tz();
-        let lnow = Local::now().with_timezone(&tz);
+        let lnow = fixed_now(tz);
         let res = extract_datetime(lnow, input).unwrap();
         let expected = Some(
             NaiveDate::from_ymd_opt(2024, 2, 21)
@@ -730,7 +733,7 @@ mod tests {
 (Л)"#;
 
         let tz = crate::config::get_tz();
-        let lnow = Local::now().with_timezone(&tz);
+        let lnow = fixed_now(tz);
         let res = extract_datetime(lnow, body).unwrap();
 
         let dt = lnow;

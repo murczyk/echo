@@ -1983,12 +1983,12 @@ version = "0.1.1"
 
 [[package]]
 name = "echo-docs"
-version = "0.1.1-rc.202512201359"
+version = "0.1.1-rc.202601090831"
 
 [[package]]
 name = "echo-im"
-version = "0.1.1-rc.202512190929"
-source = "git+ssh://git@github.com/echoua/echo-im.git?rev=3bf06c922a585acc7e21e8437fe5eb496efacfaa#3bf06c922a585acc7e21e8437fe5eb496efacfaa"
+version = "0.1.1-rc.202601021000"
+source = "git+ssh://git@github.com/echoua/echo-im.git?rev=4f6860191dc685f96b495915419e9a6cf85438f6#4f6860191dc685f96b495915419e9a6cf85438f6"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -2013,7 +2013,7 @@ dependencies = [
 [[package]]
 name = "echo-im-migration"
 version = "0.1.0"
-source = "git+ssh://git@github.com/echoua/echo-im.git?rev=3bf06c922a585acc7e21e8437fe5eb496efacfaa#3bf06c922a585acc7e21e8437fe5eb496efacfaa"
+source = "git+ssh://git@github.com/echoua/echo-im.git?rev=4f6860191dc685f96b495915419e9a6cf85438f6#4f6860191dc685f96b495915419e9a6cf85438f6"
 dependencies = [
  "async-std",
  "clap",
@@ -2023,17 +2023,17 @@ dependencies = [
 
 [[package]]
 name = "echo-im-signal"
-version = "0.1.1-rc.202512190929"
-source = "git+ssh://git@github.com/echoua/echo-im.git?rev=3bf06c922a585acc7e21e8437fe5eb496efacfaa#3bf06c922a585acc7e21e8437fe5eb496efacfaa"
+version = "0.1.1-rc.202601021000"
+source = "git+ssh://git@github.com/echoua/echo-im.git?rev=4f6860191dc685f96b495915419e9a6cf85438f6#4f6860191dc685f96b495915419e9a6cf85438f6"
 
 [[package]]
 name = "echo-im-whatsapp"
-version = "0.1.1-rc.202512190929"
-source = "git+ssh://git@github.com/echoua/echo-im.git?rev=3bf06c922a585acc7e21e8437fe5eb496efacfaa#3bf06c922a585acc7e21e8437fe5eb496efacfaa"
+version = "0.1.1-rc.202601021000"
+source = "git+ssh://git@github.com/echoua/echo-im.git?rev=4f6860191dc685f96b495915419e9a6cf85438f6#4f6860191dc685f96b495915419e9a6cf85438f6"
 
 [[package]]
 name = "echo-install"
-version = "0.1.1-rc.202512201359"
+version = "0.1.1-rc.202601090831"
 dependencies = [
  "anyhow",
  "echo-install-utils",
@@ -6826,7 +6826,7 @@ dependencies = [
 
 [[package]]
 name = "wdintel-rs"
-version = "0.1.1-rc.202512201359"
+version = "0.1.1-rc.202601090831"
 dependencies = [
  "actix-files",
  "actix-identity",

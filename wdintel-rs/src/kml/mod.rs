@@ -23,9 +23,17 @@ use walkdir::WalkDir;
 pub mod types;
 pub mod views;
 
+pub struct RadioRenderOutputs {
+    pub csv_name: String,
+    pub csv_bytes: Vec<u8>,
+    pub kmz_per_date_name: String,
+    pub kmz_per_date_bytes: Vec<u8>,
+    pub kmz_per_radio_name: String,
+    pub kmz_per_radio_bytes: Vec<u8>,
+}
+
 pub fn main_test_kml(mode: Mode) -> Result<(), AppError> {
-    let config = crate::config::read_config(mode)?;
-    let kml_path = PathBuf::from(config.storage_dir).join("myplaces.kml");
+    let kml_path = crate::config::get_data_folder(mode)?.join("myplaces.kml");
     // let kml_path = Path::new("/Users/kon/Downloads/myplaces2.kml");
 
     let input: String = std::fs::read_to_string(kml_path)?;
@@ -36,9 +44,8 @@ pub fn main_test_kml(mode: Mode) -> Result<(), AppError> {
 }
 
 pub fn read_myplaces(mode: Mode) -> Result<Kml, AppError> {
-    let config = crate::config::read_config(mode)?;
     let kml_path: PathBuf =
-        PathBuf::from(config.storage_dir).join("myplaces.kml");
+        crate::config::get_data_folder(mode)?.join("myplaces.kml");
     // let reader = quick_xml::reader::Reader::from_file(kml_path)
     //     .map_err(|e| eyre!("xml error: {:?}", e))?;
     // let kml: Kml = quick_xml::de::from_reader(reader)
@@ -265,6 +272,7 @@ async fn operatyvka_download(
                 styles.push(Style {
                     id: Some(style_id.clone()),
                     icon_style: Some(IconStyle {
+                        color: None,
                         scale: Some(Scale {
                             body: "1.0".to_string(),
                         }),
@@ -394,9 +402,8 @@ pub fn oneoff_print_description_icon_title(mode: Mode) -> Result<(), AppError> {
         pub descrption: String,
     }
 
-    let config = crate::config::read_config(mode)?;
     let kml_path: PathBuf =
-        PathBuf::from(config.storage_dir).join("myplaces.kml");
+        crate::config::get_data_folder(mode)?.join("myplaces.kml");
     let input: String = std::fs::read_to_string(kml_path)?;
     let kml: Kml = quick_xml::de::from_str(&input).c(h!())?;
     let placemarks = gather_all_placemarks(&kml.nodes)?;
@@ -1163,17 +1170,17 @@ pub async fn oneoff_radio_per_day_per_abonent_main(
     ps: &crate::OneoffRadioPerDayPerAbonentPs,
     m_bgtask_id: Option<i64>,
     m_dbx: Option<&sea_orm::DatabaseConnection>,
-) -> Result<(), AppError> {
+) -> Result<RadioRenderOutputs, AppError> {
     let config = crate::config::read_config(mode)?;
     oneoff_radio_per_day_per_abonent(&config, ps, m_bgtask_id, m_dbx).await
 }
 
 pub async fn oneoff_radio_per_day_per_abonent(
-    config: &crate::config::Config,
+    _config: &crate::config::Config,
     ps: &crate::OneoffRadioPerDayPerAbonentPs,
     m_bgtask_id: Option<i64>,
     m_dbx: Option<&sea_orm::DatabaseConnection>,
-) -> Result<(), AppError> {
+) -> Result<RadioRenderOutputs, AppError> {
     bgtask_log2(
         m_bgtask_id,
         &format!("> oneoff_radio_per_day_per_abonent, ps: {ps:?}"),
@@ -1205,7 +1212,7 @@ pub async fn oneoff_radio_per_day_per_abonent(
         )
         .await
         .c(h!())?;
-        return Ok(());
+        return Err(AppError::NotFound);
     }
     std::fs::copy(kmz_path, &tmp_dir_kmz)?;
     bgtask_log2(m_bgtask_id, "> unzip", m_dbx).await.c(h!())?;
@@ -1288,19 +1295,30 @@ pub async fn oneoff_radio_per_day_per_abonent(
             .or_insert(new_btmap(date.clone(), vec![node.clone()]));
     }
 
-    let csv_path_out = if let Some(bgtask_id) = m_bgtask_id {
-        PathBuf::from(config.storage_dir.clone())
-            .join(format!("radios-{bgtask_id}-radio.csv"))
-    } else {
-        kmz_path.with_file_name(
-            kmz_path
+    let output_dir = TempDir::new()?;
+    let (csv_name, kmz_per_date_name, kmz_per_radio_name) =
+        if let Some(bgtask_id) = m_bgtask_id {
+            (
+                format!("radios-{bgtask_id}-radio.csv"),
+                format!("radios-{bgtask_id}-date.kmz"),
+                format!("radios-{bgtask_id}-radio.kmz"),
+            )
+        } else {
+            let stem = kmz_path
                 .file_name()
                 .ok_or("error 19283")?
                 .to_str()
                 .ok_or("error 27364")?
-                .replace(".kmz", ".csv"),
-        )
-    };
+                .trim_end_matches(".kmz")
+                .to_string();
+            (
+                format!("{stem}.csv"),
+                format!("{stem}-date.kmz"),
+                format!("{stem}-radio.kmz"),
+            )
+        };
+
+    let csv_path_out = output_dir.path().join(&csv_name);
     render_nodes_csv(
         &nodes_per_date_per_radio,
         &csv_path_out,
@@ -1310,56 +1328,39 @@ pub async fn oneoff_radio_per_day_per_abonent(
     .await
     .c(h!())?;
 
-    let kmz_path_out = if let Some(bgtask_id) = m_bgtask_id {
-        PathBuf::from(config.storage_dir.clone())
-            .join(format!("radios-{bgtask_id}-date.kmz"))
-    } else {
-        kmz_path.with_file_name(
-            kmz_path
-                .file_name()
-                .ok_or("error 82734")?
-                .to_str()
-                .ok_or("error 82192")?
-                .replace(".kmz", "-date.kmz"),
-        )
-    };
+    let kmz_path_out_date = output_dir.path().join(&kmz_per_date_name);
     render_nodes(
         &kml,
         kmz_path,
         &kml_path,
         &nodes_per_date_per_radio,
-        &kmz_path_out,
+        &kmz_path_out_date,
         m_bgtask_id,
         m_dbx,
     )
     .await
     .c(h!())?;
-    let kmz_path_out = if let Some(bgtask_id) = m_bgtask_id {
-        PathBuf::from(config.storage_dir.clone())
-            .join(format!("radios-{bgtask_id}-radio.kmz"))
-    } else {
-        kmz_path.with_file_name(
-            kmz_path
-                .file_name()
-                .ok_or("error 19283")?
-                .to_str()
-                .ok_or("error 27364")?
-                .replace(".kmz", "-radio.kmz"),
-        )
-    };
+    let kmz_path_out_radio = output_dir.path().join(&kmz_per_radio_name);
     render_nodes(
         &kml,
         kmz_path,
         &kml_path,
         &nodes_per_radio_per_date,
-        &kmz_path_out,
+        &kmz_path_out_radio,
         m_bgtask_id,
         m_dbx,
     )
     .await
     .c(h!())?;
 
-    Ok(())
+    Ok(RadioRenderOutputs {
+        csv_name,
+        csv_bytes: std::fs::read(&csv_path_out).c(h!())?,
+        kmz_per_date_name,
+        kmz_per_date_bytes: std::fs::read(&kmz_path_out_date).c(h!())?,
+        kmz_per_radio_name,
+        kmz_per_radio_bytes: std::fs::read(&kmz_path_out_radio).c(h!())?,
+    })
 }
 
 async fn render_nodes(
@@ -1604,6 +1605,7 @@ pub fn build_style_maps_per_app6d(
             Style {
                 id: Some(format!("normal-{}", sidc.clone())),
                 icon_style: Some(IconStyle {
+                    color: None,
                     scale: None,
                     icon: Some(Icon {
                         href: Some(Href {
@@ -1626,6 +1628,7 @@ pub fn build_style_maps_per_app6d(
             Style {
                 id: Some(format!("highlight-{}", sidc.clone())),
                 icon_style: Some(IconStyle {
+                    color: None,
                     scale: None,
                     icon: Some(Icon {
                         href: Some(Href {

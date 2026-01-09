@@ -4,10 +4,11 @@ use crate::palitra::types::*;
 use crate::types::*;
 use crate::utils::orm::ArrayColumnOps;
 use anyhow::Context;
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use itertools::{Either, Itertools};
 use sea_orm::prelude::*;
 use sea_orm::*;
+use std::collections::{HashMap, HashSet};
 
 enum PalitraUpdateAction {
     Insert,
@@ -100,6 +101,59 @@ pub async fn list_all_palitras_detailed(
     Ok(result)
 }
 
+pub async fn list_palitra_points_by_viewport_bounds(
+    login: String,
+    req: PalitraPointsReq,
+    dbx: &DatabaseConnection,
+) -> anyhow::Result<Vec<PalitraPoints>> {
+    let allowed_palitra_ids = collect_palitra_ids(login, dbx).await.c(h!())?;
+    let allowed_palitra_ids: HashSet<i64> =
+        allowed_palitra_ids.into_iter().collect();
+    let palitra_ids: Vec<i64> = req
+        .palitra_ids
+        .into_iter()
+        .filter(|id| allowed_palitra_ids.contains(id))
+        .collect();
+    if palitra_ids.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let viewport_bounds = normalize_viewport_bounds(req.viewport_bounds);
+    let points = palitra_point::Entity::find()
+        .filter(palitra_point::Column::PalitraId.eq_any(palitra_ids.clone()))
+        .filter(palitra_point::Column::Deleted.eq(false))
+        .filter(palitra_point::Column::Lat.gte(viewport_bounds.min_lat))
+        .filter(palitra_point::Column::Lat.lte(viewport_bounds.max_lat))
+        .filter(palitra_point::Column::Lng.gte(viewport_bounds.min_lng))
+        .filter(palitra_point::Column::Lng.lte(viewport_bounds.max_lng))
+        .all(dbx)
+        .await
+        .c(h!())?;
+
+    let mut points_by_id: HashMap<i64, Vec<PalitraPoint>> = HashMap::new();
+    for point in points {
+        points_by_id
+            .entry(point.palitra_id)
+            .or_default()
+            .push(PalitraPoint {
+                label: point.label,
+                coords: Coords {
+                    lat: point.lat,
+                    lng: point.lng,
+                },
+            });
+    }
+
+    let result = palitra_ids
+        .into_iter()
+        .map(|palitra_id| PalitraPoints {
+            palitra_id,
+            points: points_by_id.remove(&palitra_id).unwrap_or_default(),
+        })
+        .collect();
+    Ok(result)
+}
+
 pub async fn list_all_palitras(
     login: String,
     dbx: &DatabaseConnection,
@@ -178,6 +232,21 @@ where
         result.push(PalitraDetails { palitra, points });
     }
     Ok(result)
+}
+
+fn normalize_viewport_bounds(
+    viewport_bounds: ViewportBounds,
+) -> ViewportBounds {
+    let min_lat = viewport_bounds.min_lat.min(viewport_bounds.max_lat);
+    let max_lat = viewport_bounds.min_lat.max(viewport_bounds.max_lat);
+    let min_lng = viewport_bounds.min_lng.min(viewport_bounds.max_lng);
+    let max_lng = viewport_bounds.min_lng.max(viewport_bounds.max_lng);
+    ViewportBounds {
+        min_lat,
+        min_lng,
+        max_lat,
+        max_lng,
+    }
 }
 
 async fn recalculate_center<'a, 'async_trait, C>(
@@ -525,6 +594,30 @@ where
     let mut palitra = palitra_val;
     palitra.name = Set(req.name);
     palitra.hex = Set(req.color_hex);
+    let parse_uploaded_at = |ts| {
+        DateTime::from_timestamp_millis(ts)
+            .map(|dt| dt.naive_utc())
+            .ok_or_else(|| anyhow::anyhow!("Invalid timestamp: {ts}"))
+    };
+    match action {
+        PalitraUpdateAction::Update => {
+            if let Some(source_file_name) = req.source_file_name {
+                palitra.source_file_name = Set(Some(source_file_name));
+            }
+            if let Some(last_uploaded_at_ts) = req.last_uploaded_at_ts {
+                palitra.last_uploaded_at =
+                    Set(Some(parse_uploaded_at(last_uploaded_at_ts).c(h!())?));
+            }
+        }
+        PalitraUpdateAction::Insert => {
+            palitra.source_file_name = Set(req.source_file_name);
+            palitra.last_uploaded_at = Set(req
+                .last_uploaded_at_ts
+                .map(parse_uploaded_at)
+                .transpose()
+                .c(h!())?);
+        }
+    }
     let palitra = match action {
         PalitraUpdateAction::Update => palitra.update(txn).await.c(h!())?,
         PalitraUpdateAction::Insert => palitra.insert(txn).await.c(h!())?,

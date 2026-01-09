@@ -5,7 +5,7 @@ use crate::{mk_conn_string, new_redis, new_redisb, storage};
 use actix_identity::IdentityMiddleware;
 use actix_session::{storage::RedisSessionStore, SessionMiddleware};
 use actix_web::cookie::Key;
-use actix_web::{App, HttpServer};
+use actix_web::{web, App, HttpServer};
 
 use crate::types::Mode::Live;
 use milgeo_rs::MilGeo;
@@ -14,10 +14,12 @@ use tokio::signal::unix::{signal, SignalKind};
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 
+mod admin;
 pub mod discord;
 mod healthcheck;
 pub mod middleware;
 pub mod monitoring;
+pub use admin::RestartEchoRequest;
 
 pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
     let config = read_config(mode).c(h!())?;
@@ -329,6 +331,8 @@ pub async fn main_server(
             .service(self::monitoring::server_info)
             .service(self::monitoring::monitoring)
             // .service(api_logout)
+            .service(crate::server::admin::restart_echo)
+            .service(crate::server::admin::restart_datasource)
             .service(crate::kml::operatyvka)
             .service(crate::kml::operatyvka_download)
             .service(crate::kml::api_fix_kmz)
@@ -482,6 +486,10 @@ pub async fn main_server(
             .service(crate::sigint::callsign::network_callsign::list_network_callsigns)
             .service(crate::sigint::callsign::network_callsign::network_callsigns_activity)
             .service(crate::sigint::callsign::network_callsign::update_network_callsign)
+            .service(crate::sigint::key::list_keys)
+            .service(crate::sigint::key::create_key)
+            .service(crate::sigint::key::update_key)
+            .service(crate::sigint::key::delete_key)
             .service(crate::sigint::freq::freq_exists)
             .service(crate::sigint::freq::list_freqs)
             .service(crate::sigint::freq::list_freqs_v2)
@@ -563,11 +571,16 @@ pub async fn main_server(
             .service(crate::operator::message_submit)
             .service(crate::palitra::list_all_palitras)
             .service(crate::palitra::list_all_palitras_detailed)
+            .service(crate::palitra::list_palitra_points)
             .service(crate::palitra::create_palitra)
+            .service(crate::palitra::create_palitra_with_kmz)
             .service(crate::palitra::update_palitra)
             .service(crate::palitra::delete_palitra)
             .service(crate::palitra::upload_palitra_points)
-            .service(actix_files::Files::new(get_assets_url(), get_assets_folder(&config)).show_files_listing())
+            .service(crate::palitra::analyze_kmz)
+            .service(
+                web::scope(get_assets_url())
+                    .route("/{filename:.*}", web::get().to(crate::storage::serve_assets)))
     })
         .bind((bind_ip, bind_port))?
         .run();

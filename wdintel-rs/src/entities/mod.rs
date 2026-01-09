@@ -75,6 +75,8 @@ pub mod sigint_network_callsign;
 pub mod sigint_network_callsign_changelog;
 pub mod sigint_network_changelog;
 pub mod sigint_network_description;
+pub mod sigint_network_encryption_key;
+pub mod sigint_network_encryption_key_freq;
 pub mod sigint_network_freq;
 pub mod sigint_network_freq_changelog;
 pub mod sigint_network_post;

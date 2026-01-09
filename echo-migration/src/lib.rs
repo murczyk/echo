@@ -182,6 +182,13 @@ mod m20251206_234500_add_signal_message_indexes;
 mod m20251215_110739_tag_keywords_seed_data;
 mod m20251215_130030_sigint_inbox_tag_multilabel;
 mod m20251215_143321_drop_signal_group_notes;
+mod m20251223_131547_tag_keywords_negative_forms;
+mod m20251223_144906_seed_negative_keyword_forms;
+mod m20251227_093913_add_bgtask_res_url;
+mod m20251229_181328_enemy_units_geojson_s3_keys;
+mod m20260106_080738_add_freq_key;
+mod m20260108_005722_add_sigint_network_encryption_key_fields;
+mod m20260108_153000_add_key_modulation_and_freqs;
 
 pub struct Migrator;
 
@@ -368,9 +375,18 @@ impl MigratorTrait for Migrator {
             Box::new(m20251204_070600_tags_keywords::Migration),
             Box::new(m20251205_121716_tag_suggestion_worker_queue::Migration),
             Box::new(m20251206_234500_add_signal_message_indexes::Migration),
+            Box::new(m20251215_110739_tag_keywords_seed_data::Migration),
             Box::new(m20251215_130030_sigint_inbox_tag_multilabel::Migration),
             Box::new(m20251215_143321_drop_signal_group_notes::Migration),
-            Box::new(m20251215_110739_tag_keywords_seed_data::Migration),
+            Box::new(m20251223_131547_tag_keywords_negative_forms::Migration),
+            Box::new(m20251223_144906_seed_negative_keyword_forms::Migration),
+            Box::new(m20251227_093913_add_bgtask_res_url::Migration),
+            Box::new(m20251229_181328_enemy_units_geojson_s3_keys::Migration),
+            Box::new(m20260106_080738_add_freq_key::Migration),
+            Box::new(
+                m20260108_005722_add_sigint_network_encryption_key_fields::Migration,
+            ),
+            Box::new(m20260108_153000_add_key_modulation_and_freqs::Migration),
         ]
     }
 }

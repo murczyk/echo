@@ -865,7 +865,7 @@ fn avia_format_lines(lines: &Vec<String>) -> Result<usize, AppError> {
         )
         .unwrap();
         static ref RE_SEPARATOR: Regex =
-            Regex::new(r"^-{5,}$").unwrap();
+            Regex::new(r"^-{5,}\s*$").unwrap();
         static ref RE_DATE: Regex =
             Regex::new(r"^\s*\d{2}.\d{2}.\d{4},\s+\d{2}:\d{2}:\d{2}\s*$")
                 .unwrap();
@@ -3066,4 +3066,26 @@ async fn test_extract_callsigns_avia_format_catch_five_digits_single_quote_in_po
         vec!["САКСОФОН".to_string(), "47578".to_string()];
     let ress: Vec<String> = res.into_iter().take(2).map(|x| x.text).collect();
     assert_eq!(ress, expected);
+}
+
+#[tokio::test]
+async fn test_extract_callsigns_avia_format_spaces_in_separator() {
+    let body = r#"Отримано з поста "31_1"   
+--------------------------------------   
+23.12.2025, 10:57:24 
+128.5000   
+🟠 УКХ р/м Єдиної системи управління повітряним рухом ПКС зс рф (ПОВІТРЯНИЙ ПРОСТІР ЗС РФ)  
+06969 
+КРЕМНИЙ 
+
+- по обратному..."#;
+    let res = extract_avia_callsigns(body).unwrap();
+    let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
+    assert_eq!(
+        crate::utils::uniq_via_btreeset(&ress)
+            .into_iter()
+            .take(2)
+            .collect::<Vec<_>>(),
+        vec!["06969", "КРЕМНИЙ"]
+    )
 }

@@ -159,10 +159,6 @@ type alias Model =
     
     -- палітри
     , palitras : RemoteData ApiError (List B.PalitraDetails)
-    , palitrasVisible : List Int
-    , palitrasEnabled : Bool
-    , kmzEnabled : Bool
-    , pelengsEnabled : Bool
     }
 
 

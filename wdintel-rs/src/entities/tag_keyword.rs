@@ -11,11 +11,11 @@ pub struct Model {
     #[sea_orm(primary_key)]
     pub tag_keyword_id: i64,
     pub tag_id: i64,
-    pub is_positive: bool,
     #[sea_orm(column_type = "Text")]
     pub keyword: String,
     pub keyword_forms: Vec<String>,
     pub is_regex: bool,
+    pub keyword_negative_forms: Vec<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
