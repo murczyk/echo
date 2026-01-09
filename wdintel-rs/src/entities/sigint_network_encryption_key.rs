@@ -16,10 +16,22 @@ pub struct Model {
     pub organism_id: i64,
     pub deleted: bool,
     pub created_at: DateTime,
+    pub sigint_network_id: Option<i64>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub description: Option<String>,
+    pub modulation_id: Option<i64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
+    #[sea_orm(
+        belongs_to = "super::modulation::Entity",
+        from = "Column::ModulationId",
+        to = "super::modulation::Column::Id",
+        on_update = "NoAction",
+        on_delete = "NoAction"
+    )]
+    Modulation,
     #[sea_orm(
         belongs_to = "super::organism::Entity",
         from = "Column::OrganismId",
@@ -28,6 +40,16 @@ pub enum Relation {
         on_delete = "NoAction"
     )]
     Organism,
+    #[sea_orm(
+        belongs_to = "super::sigint_network::Entity",
+        from = "Column::SigintNetworkId",
+        to = "super::sigint_network::Column::Id",
+        on_update = "NoAction",
+        on_delete = "NoAction"
+    )]
+    SigintNetwork,
+    #[sea_orm(has_many = "super::sigint_network_encryption_key_freq::Entity")]
+    SigintNetworkEncryptionKeyFreq,
     #[sea_orm(
         belongs_to = "super::sigint_network_freq::Entity",
         from = "Column::SigintNetworkFreqId",
@@ -38,9 +60,27 @@ pub enum Relation {
     SigintNetworkFreq,
 }
 
+impl Related<super::modulation::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Modulation.def()
+    }
+}
+
 impl Related<super::organism::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Organism.def()
+    }
+}
+
+impl Related<super::sigint_network::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintNetwork.def()
+    }
+}
+
+impl Related<super::sigint_network_encryption_key_freq::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintNetworkEncryptionKeyFreq.def()
     }
 }
 

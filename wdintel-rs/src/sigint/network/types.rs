@@ -1,5 +1,6 @@
 use crate::entities::sea_orm_active_enums::*;
 use crate::sigint::etalonka::types::*;
+use crate::sigint::key::EncryptionKeyData;
 use chrono::NaiveDateTime;
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 use sea_orm::FromQueryResult;
@@ -413,8 +414,7 @@ pub struct NetworkFreq {
     pub created_at: i64,
     pub kind: String,
     pub modulation_id: Option<i32>,
-    pub encryption_key: Option<String>,
-    pub encryption_key_id: Option<i64>,
+    pub encryption_keys: Vec<EncryptionKeyData>,
 }
 
 #[derive(
@@ -424,7 +424,7 @@ pub struct AddNetworkFreq {
     pub freq: String,
     pub kind: String,
     pub modulation_id: Option<i32>,
-    pub encryption_key: Option<String>,
+    pub encryption_key_ids: Vec<i64>,
     pub description: Option<AddNetworkFrequencyDescription>,
     pub active_from: Option<i64>,
     pub active_to: Option<i64>,
@@ -438,8 +438,7 @@ pub struct UpdateNetworkFreqReq {
     pub freq: String,
     pub kind: String,
     pub modulation_id: Option<i32>,
-    pub encryption_key_id: Option<i64>,
-    pub encryption_key: Option<String>,
+    pub encryption_key_ids: Vec<i64>,
     pub active_from: i64,
     pub active_to: Option<i64>,
 }

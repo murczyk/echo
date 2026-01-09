@@ -22,6 +22,7 @@ import Page exposing (Page)
 import Pages_.RerNetworks.Id_.CallsignsTables as CallsignsTables exposing (getDevelopingCallsigns, getRegularCallsigns)
 import Pages_.RerNetworks.Id_.Descriptions as Descriptions
 import Pages_.RerNetworks.Id_.FrequenciesTable as FrequenciesTable
+import Pages_.RerNetworks.Id_.KeysTable as KeysTable
 import Pages_.RerNetworks.Id_.Model as Types exposing (CallsignCreateMode(..), CallsignTableRow, FreqActivityFilter(..), Mode(..), ShowAllPopupFor(..))
 import Pages_.RerNetworks.Id_.Msg as Msgs exposing (Msg(..))
 import Pages_.RerNetworks.Id_.NetworkInfo as NetworkInfo
@@ -92,12 +93,25 @@ toLayout user model =
 
 init : Route { id : String } -> Shared.Model -> () -> ( Model, Effect Msg )
 init route shared () =
+    let
+        networkId =
+            String.toInt route.params.id
+
+        initialKeys =
+            case networkId of
+                Just _ ->
+                    Loading
+
+                Nothing ->
+                    NotAsked
+    in
     ( { network = Loading
       , callsigns = NotAsked
       , mapPoints = NotAsked
       , groupsActivity = NotAsked
       , networkFreqsActivity = NotAsked
       , freqs = NotAsked
+      , networkKeys = initialKeys
       , freqsEditingState = Readonly
       , callsignsEditingState = Readonly
       , callsignsOpenedPopupId = Nothing
@@ -147,7 +161,39 @@ init route shared () =
       , reportToDate = Shared.Components.DateTime.init ()
       , freqsActivityFilter = AllFreqs
       , freqsTableState = Table.initialSort "Частота"
+      , keysTableState = Table.initialSort "Частота"
       , callsignsTableState = Table.initialSort "Позивний"
+      , keyCreateSidebar = False
+      , keyCreateState =
+            { key = ""
+            , description = ""
+            , sigintNetworkFreqIds = []
+            }
+      , keyCreateFreqSelect =
+            { state = Select.initState (Select.selectIdentifier "key-create-freq-state")
+            , items = []
+            , selected = []
+            }
+      , keyCreateModulationSelect =
+            { state = Select.initState (Select.selectIdentifier "key-create-modulation-state")
+            , items = []
+            , selected = Nothing
+            }
+      , keyCreateSaving = False
+      , keyEditSidebar = Nothing
+      , keyEditFreqSelect =
+            { state = Select.initState (Select.selectIdentifier "key-edit-freq-state")
+            , items = []
+            , selected = []
+            }
+      , keyEditModulationSelect =
+            { state = Select.initState (Select.selectIdentifier "key-edit-modulation-state")
+            , items = []
+            , selected = Nothing
+            }
+      , keyEditSaving = False
+      , deleteKeyConfirmation = Nothing
+      , deleteKeyLoading = False
       , freqEditSidebar = Nothing
       , freqDetailPopup = Nothing
       , modulations = NotAsked
@@ -169,6 +215,11 @@ init route shared () =
             , items = []
             , selected = Nothing
             }
+      , freqEditKeySelect =
+            { state = Select.initState (Select.selectIdentifier "edit-network-key-state")
+            , items = []
+            , selected = []
+            }
       , freqEditSaving = False
       , freqEditShowActiveTo = False
       , deleteNetworkConfirmation = Nothing
@@ -182,7 +233,7 @@ init route shared () =
             { freq = ""
             , kind = NetworksUtils.networkKindToString NetworksUtils.VHF
             , modulationId = Nothing
-            , encryptionKey = Nothing
+            , encryptionKeyIds = []
             , description = Nothing
             , activeFrom = Nothing
             , activeTo = Nothing
@@ -204,6 +255,11 @@ init route shared () =
             { state = Select.initState (Select.selectIdentifier "add-freq-modulation-state")
             , items = []
             , selected = Nothing
+            }
+      , freqCreateKeySelect =
+            { state = Select.initState (Select.selectIdentifier "add-freq-key-state")
+            , items = []
+            , selected = []
             }
       , freqCreateDescriptionInp = ""
       , freqCreateFormatError = Nothing
@@ -270,13 +326,14 @@ init route shared () =
       -- Delete confirmation dialog initialization
       , deleteDescriptionConfirmation = Nothing
       }
-    , case String.toInt route.params.id of
+    , case networkId of
         Just id ->
             E.batch
                 [ E.getSingleNetwork NetworkReturnedByApi id
                 , E.getModulations ModulationsReturnedByApi
                 , E.sendCmd (Api.aor_list AorListReturnedByApi { sortBy = Nothing })
                 , E.map Callsigns CallsignsTables.initLoad
+                , E.map Keys (KeysTable.initLoad id)
                 ]
 
         Nothing ->
@@ -313,8 +370,22 @@ update shared msg model =
 
                         _ ->
                             E.none
+
+                loadKeys =
+                    case ( freqsMsg, m1.network ) of
+                        ( Msgs.FreqUpdatedByApi (Ok _), Success network ) ->
+                            E.map Keys <| KeysTable.initLoad network.id
+
+                        ( Msgs.FreqAddedToNetwork (Ok _), Success network ) ->
+                            E.map Keys <| KeysTable.initLoad network.id
+
+                        ( Msgs.DeleteFreqReturnedByApi _ (Ok _), Success network ) ->
+                            E.map Keys <| KeysTable.initLoad network.id
+
+                        _ ->
+                            E.none
             in
-            ( m1, E.batch [ E.map Frequencies freqsEff, loadCatalogCallsigns ] )
+            ( m1, E.batch [ E.map Frequencies freqsEff, loadCatalogCallsigns, loadKeys ] )
 
         Callsigns callsMsg ->
             let
@@ -322,6 +393,74 @@ update shared msg model =
                     CallsignsTables.update shared callsMsg model
             in
             ( m1, E.map Callsigns callsEff )
+
+        Keys keysMsg ->
+            let
+                ( m1, keysEff ) =
+                    KeysTable.update shared keysMsg model
+
+                m2 =
+                    case ( keysMsg, m1.networkKeys ) of
+                        ( Msgs.KeysReturnedByApi (Ok _), Success keys ) ->
+                            let
+                                keyItems =
+                                    keys
+                                        |> List.filterMap
+                                            (\key ->
+                                                case key.id of
+                                                    Just keyId ->
+                                                        if key.key == "🔑" then
+                                                            Nothing
+
+                                                        else
+                                                            Just <|
+                                                                Select.basicMenuItem
+                                                                    { item = keyId
+                                                                    , label = key.key
+                                                                    }
+
+                                                    Nothing ->
+                                                        Nothing
+                                            )
+
+                                freqEditKeySelect =
+                                    m1.freqEditKeySelect
+
+                                updatedFreqEditKeySelect =
+                                    { freqEditKeySelect | items = keyItems }
+
+                                freqCreateKeySelect =
+                                    m1.freqCreateKeySelect
+
+                                updatedFreqCreateKeySelect =
+                                    { freqCreateKeySelect | items = keyItems }
+                            in
+                            { m1
+                                | freqEditKeySelect = updatedFreqEditKeySelect
+                                , freqCreateKeySelect = updatedFreqCreateKeySelect
+                            }
+
+                        _ ->
+                            m1
+
+                reloadFreqs =
+                    case ( keysMsg, m2.network ) of
+                        ( Msgs.KeyCreated (Ok _), Success network ) ->
+                            E.map Frequencies <|
+                                E.getSingleNetworkFreqs Msgs.FreqsReturnedByApi { networkId = network.id }
+
+                        ( Msgs.KeyUpdated (Ok _), Success network ) ->
+                            E.map Frequencies <|
+                                E.getSingleNetworkFreqs Msgs.FreqsReturnedByApi { networkId = network.id }
+
+                        ( Msgs.DeleteKeyReturnedByApi (Ok _), Success network ) ->
+                            E.map Frequencies <|
+                                E.getSingleNetworkFreqs Msgs.FreqsReturnedByApi { networkId = network.id }
+
+                        _ ->
+                            E.none
+            in
+            ( m2, E.batch [ E.map Keys keysEff, reloadFreqs ] )
 
         NetworkReturnedByApi (Err e) ->
             ( { model | network = Failure e }
@@ -817,20 +956,48 @@ update shared msg model =
 
         ModulationsReturnedByApi (Ok res) ->
             let
+                keyModulationNames =
+                    [ "DMR (ARC40)"
+                    , "DMR (AES256)"
+                    , "HYTERA (256 bit)"
+                    , "TYT (16 bit)"
+                    , "TYT (128 bit)"
+                    ]
+
+                keyModulations =
+                    res
+                        |> List.filter (\mod -> List.member mod.name keyModulationNames)
+
+                modulationItems =
+                    List.map
+                        (\mod ->
+                            Select.basicMenuItem
+                                { item = mod.id
+                                , label = Modulations.displayModulationName mod.name
+                                }
+                        )
+                        res
+
+                keyModulationItems =
+                    Select.basicMenuItem
+                        { item = Modulations.undefinedModulationId
+                        , label = Modulations.undefinedModulationLabel
+                        }
+                        :: List.map
+                            (\mod ->
+                                Select.basicMenuItem
+                                    { item = mod.id
+                                    , label = Modulations.displayModulationName mod.name
+                                    }
+                            )
+                            keyModulations
+
                 modulationSelect =
                     model.freqEditModulationSelect
 
                 updatedModulationSelect =
                     { modulationSelect
-                        | items =
-                            List.map
-                                (\mod ->
-                                    Select.basicMenuItem
-                                        { item = mod.id
-                                        , label = Modulations.displayModulationName mod.name
-                                        }
-                                )
-                                res
+                        | items = modulationItems
                     }
 
                 freqCreateModulationSelect =
@@ -838,21 +1005,31 @@ update shared msg model =
 
                 updatedFreqCreateModulationSelect =
                     { freqCreateModulationSelect
-                        | items =
-                            List.map
-                                (\mod ->
-                                    Select.basicMenuItem
-                                        { item = mod.id
-                                        , label = Modulations.displayModulationName mod.name
-                                        }
-                                )
-                                res
+                        | items = modulationItems
+                    }
+
+                keyCreateModulationSelect =
+                    model.keyCreateModulationSelect
+
+                updatedKeyCreateModulationSelect =
+                    { keyCreateModulationSelect
+                        | items = keyModulationItems
+                    }
+
+                keyEditModulationSelect =
+                    model.keyEditModulationSelect
+
+                updatedKeyEditModulationSelect =
+                    { keyEditModulationSelect
+                        | items = keyModulationItems
                     }
             in
             ( { model
                 | modulations = Success res
                 , freqEditModulationSelect = updatedModulationSelect
                 , freqCreateModulationSelect = updatedFreqCreateModulationSelect
+                , keyCreateModulationSelect = updatedKeyCreateModulationSelect
+                , keyEditModulationSelect = updatedKeyEditModulationSelect
               }
             , E.none
             )
@@ -931,6 +1108,7 @@ contentBlock user shared network model =
             ]
         ]
     , Html.map Frequencies <| FrequenciesTable.view model user shared
+    , Html.map Keys <| KeysTable.view model user
     , Html.map Callsigns <| CallsignsTables.view model user shared
     ]
 
@@ -982,6 +1160,8 @@ view user shared model =
                 , Html.map Callsigns <| CallsignsTables.createCallsignsSidebar model user shared
                 , Html.map Callsigns <| CallsignsTables.editCallsignsSidebar model user shared
                 , Html.map Callsigns <| CallsignsTables.deleteCallsignModal model
+                , Html.map Keys <| KeysTable.editSidebar model user shared
+                , Html.map Keys <| KeysTable.createSidebar model user shared
                 , let
                     reportFormConfig =
                         { onReportTypeChanged = ReportTypeChanged
@@ -1038,6 +1218,7 @@ view user shared model =
                 , Html.map Frequencies <| FrequenciesTable.createSidebar model user shared
                 , Html.map Frequencies <| FrequenciesTable.deleteFreqConfirmationModal model
                 , Html.map Frequencies <| FrequenciesTable.freqActivityChartDetailed model shared
+                , Html.map Keys <| KeysTable.deleteKeyConfirmationModal model
                 , Html.map Descriptions <| Descriptions.viewDeleteConfirmation model
                 ]
             ]

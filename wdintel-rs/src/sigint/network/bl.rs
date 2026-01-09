@@ -116,10 +116,7 @@ where
     let mut freq_map: HashMap<i64, Vec<NetworkFreq>> = HashMap::new();
 
     for freq in freqs {
-        let (key_id, key) = match keys.remove(&freq.id) {
-            None => (None, None),
-            Some(k) => (k.id, Some(k.key)),
-        };
+        let keys = keys.remove(&freq.id).unwrap_or_default();
         freq_map
             .entry(freq.network_id)
             .or_default()
@@ -135,8 +132,7 @@ where
                 created_at: freq.created_at.and_utc().timestamp_millis(),
                 kind: freq.kind.to_value(),
                 modulation_id: freq.modulation_id,
-                encryption_key: key,
-                encryption_key_id: key_id,
+                encryption_keys: keys,
             });
     }
 

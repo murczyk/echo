@@ -1198,6 +1198,54 @@ sigint_list_sources toMsg _ =
         }
 
 
+sigint_list_keys :
+    (Result ApiError ListKeysRsp -> msg)
+    -> ListKeysReq
+    -> Cmd msg
+sigint_list_keys toMsg req =
+    Http.post
+        { url = "/api/sigint/keys"
+        , body = Http.jsonBody (listKeysReqEncoder req)
+        , expect = leExpectJson toMsg listKeysRspDecoder
+        }
+
+
+sigint_create_key :
+    (Result ApiError EncryptionKeyData -> msg)
+    -> CreateEncryptionKeyReq
+    -> Cmd msg
+sigint_create_key toMsg req =
+    Http.post
+        { url = "/api/sigint/keys/create"
+        , body = Http.jsonBody (createEncryptionKeyReqEncoder req)
+        , expect = leExpectJson toMsg encryptionKeyDataDecoder
+        }
+
+
+sigint_update_key :
+    (Result ApiError EncryptionKeyData -> msg)
+    -> UpdateEncryptionKeyReq
+    -> Cmd msg
+sigint_update_key toMsg req =
+    Http.post
+        { url = "/api/sigint/keys/update"
+        , body = Http.jsonBody (updateEncryptionKeyReqEncoder req)
+        , expect = leExpectJson toMsg encryptionKeyDataDecoder
+        }
+
+
+sigint_delete_key :
+    (Result ApiError EncryptionKeyData -> msg)
+    -> DeleteEncryptionKeyReq
+    -> Cmd msg
+sigint_delete_key toMsg req =
+    Http.post
+        { url = "/api/sigint/keys/delete"
+        , body = Http.jsonBody (deleteEncryptionKeyReqEncoder req)
+        , expect = leExpectJson toMsg encryptionKeyDataDecoder
+        }
+
+
 sigint_callsign_unit_stats :
     (Result ApiError CallsignUnitStatsRsp -> msg)
     -> ()

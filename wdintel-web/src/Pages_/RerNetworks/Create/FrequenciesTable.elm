@@ -41,6 +41,7 @@ import Shared.Components.Table.Column as TableColumn
 import Shared.Components.Table.Config as TableConfig
 import Shared.Components.Table.Sorter as TableSorter
 import Shared.Model exposing (isDarkMode)
+import String
 import Time
 import Time.Extra
 import Url.Builder
@@ -99,8 +100,7 @@ update shared msg model =
                                       , freq = f.freq
                                       , kind = Maybe.withDefault "VHF" f.kind
                                       , modulationId = f.modulationId
-                                      , encryptionKeyId = f.encryptionKeyId
-                                      , encryptionKey = f.encryptionKey
+                                      , encryptionKeyIds = f.encryptionKeyIds
                                       , activeFrom = f.activeFrom
                                       , activeTo = f.activeTo
                                       }
@@ -127,10 +127,8 @@ update shared msg model =
                         == originalFreq.freq
                         && updateReq.activeFrom
                         == originalFreq.activeFrom
-                        && updateReq.encryptionKey
-                        == originalFreq.encryptionKey
-                        && updateReq.encryptionKeyId
-                        == originalFreq.encryptionKeyId
+                        && updateReq.encryptionKeyIds
+                        == originalFreq.encryptionKeyIds
                         && updateReq.activeTo
                         == originalFreq.activeTo
 
@@ -433,7 +431,7 @@ update shared msg model =
                     { freq = ""
                     , kind = NetworksUtils.networkKindToString NetworksUtils.VHF
                     , modulationId = Nothing
-                    , encryptionKey = Nothing
+                    , encryptionKeyIds = []
                     , description = Nothing
                     , activeFrom = Nothing
                     , activeTo = Nothing
@@ -562,7 +560,7 @@ update shared msg model =
                                 { freq = model.freqCreateState.freq
                                 , kind = model.freqCreateState.kind
                                 , modulationId = model.freqCreateState.modulationId
-                                , encryptionKey = model.freqCreateState.encryptionKey
+                                , encryptionKeyIds = model.freqCreateState.encryptionKeyIds
                                 , description = description
                                 , activeFrom = model.freqCreateState.activeFrom
                                 , activeTo = model.freqCreateState.activeTo
@@ -594,7 +592,7 @@ update shared msg model =
                     { freq = ""
                     , kind = NetworksUtils.networkKindToString NetworksUtils.VHF
                     , modulationId = Nothing
-                    , encryptionKey = Nothing
+                    , encryptionKeyIds = []
                     , description = Nothing
                     , activeFrom = Nothing
                     , activeTo = Nothing
@@ -817,15 +815,11 @@ freqsTableConfig shared model user =
                 { name = "Ключ"
                 , viewData =
                     \freq ->
-                        let
-                            encryptionKey =
-                                Maybe.withDefault "" freq.encryptionKey
-                        in
                         { attributes =
                             [ style "white-space" "pre-wrap"
                             , style "word-break" "break-all"
                             ]
-                        , children = [ text encryptionKey ]
+                        , children = [ text <| String.join "\n" freq.encryptionKeys ]
                         }
                 , sorter = TableSorter.unsortable
                 }
@@ -991,8 +985,7 @@ freqsTableConfig shared model user =
                                                                 , freq = freq.freq
                                                                 , kind = Maybe.withDefault "VHF" freq.kind
                                                                 , modulationId = freq.modulationId
-                                                                , encryptionKeyId = freq.encryptionKeyId
-                                                                , encryptionKey = freq.encryptionKey
+                                                                , encryptionKeyIds = freq.encryptionKeyIds
                                                                 , activeFrom = freq.activeFrom
                                                                 , activeTo = freq.activeTo
                                                                 }
@@ -1096,103 +1089,6 @@ freqActivityChartDetailed model shared =
 
 freqEditSidebarContent : Shared.Model -> Model -> Auth.User -> String -> B.UpdateNetworkFreqReq -> List (Html FrequenciesMsg)
 freqEditSidebarContent shared model user freqId updateReq =
-    let
-        encryptionKeyId =
-            case model.freqs of
-                Success freqs ->
-                    freqs
-                        |> ListX.find (\freq -> freq.freq == freqId)
-                        |> Maybe.andThen .encryptionKeyId
-
-                _ ->
-                    Nothing
-
-        selectedModulationName =
-            case ( model.modulations, updateReq.modulationId ) of
-                ( Success modulations, Just modulationId ) ->
-                    modulations
-                        |> ListX.find (\modulation -> modulation.id == modulationId)
-                        |> Maybe.map .name
-
-                _ ->
-                    Nothing
-
-        encryptionKeyMaxLength =
-            case selectedModulationName of
-                Just "DMR (ARC40)" ->
-                    Just 4
-
-                Just "DMR (AES256)" ->
-                    Just 64
-
-                Just "HYTERA (256 bit)" ->
-                    Just 64
-
-                Just "TYT (16 bit)" ->
-                    Just 4
-
-                Just "TYT (128 bit)" ->
-                    Just 32
-
-                Just "NFM" ->
-                    Nothing
-
-                Just "AM" ->
-                    Nothing
-
-                Just "АМ" ->
-                    Nothing
-
-                Just "DMR" ->
-                    Nothing
-
-                Just "HYTERA" ->
-                    Nothing
-
-                Just "TYT" ->
-                    Nothing
-
-                Just "TETRA" ->
-                    Nothing
-
-                Just "Гранит" ->
-                    Nothing
-
-                Just "GSM" ->
-                    Nothing
-
-                Just "Умовна" ->
-                    Nothing
-
-                _ ->
-                    Nothing
-
-        isEncryptionKeyEditable =
-            encryptionKeyId /= Nothing && encryptionKeyMaxLength /= Nothing
-
-        clampEncryptionKey encryptionKey =
-            case encryptionKeyMaxLength of
-                Just maxLen ->
-                    String.left maxLen encryptionKey
-
-                Nothing ->
-                    encryptionKey
-
-        encryptionKeyAttrs =
-            [ class "w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
-            , type_ "text"
-            , placeholder "Введіть ключ шифрування"
-            , value <| Maybe.withDefault "" updateReq.encryptionKey
-            , disabled (not isEncryptionKeyEditable)
-            ]
-                ++ (case encryptionKeyMaxLength of
-                        Just maxLen ->
-                            [ maxlength maxLen ]
-
-                        Nothing ->
-                            []
-                   )
-    in
     [ div [ class "flex flex-col h-full" ]
         [ div [ class "p-6 border-b border-border" ]
             [ h2 [ class "text-lg font-semibold mb-1" ] [ text "Редагувати частоту" ]
@@ -1256,19 +1152,6 @@ freqEditSidebarContent shared model user freqId updateReq =
                                 model.freqEditModulationSelect.items
                                 "Не вибрано"
                                 defaultOptions
-                    ]
-                , div [ class "space-y-2" ]
-                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Ключ шифрування" ]
-                    , input
-                        (encryptionKeyAttrs
-                            ++ [ onInput <|
-                                    UpdateFreqEditSidebar
-                                        << (\encryptionKey ->
-                                                { updateReq | encryptionKey = Just (clampEncryptionKey encryptionKey) }
-                                           )
-                               ]
-                        )
-                        []
                     ]
                 , div [ class "space-y-2" ]
                     [ label [ class "text-sm font-medium text-foreground" ] [ text "Активна з" ]

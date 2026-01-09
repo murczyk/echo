@@ -1,4 +1,8 @@
-module Utils.Modulations exposing (displayModulationName)
+module Utils.Modulations exposing
+    ( displayModulationName
+    , undefinedModulationId
+    , undefinedModulationLabel
+    )
 
 
 displayModulationName : String -> String
@@ -21,3 +25,13 @@ displayModulationName name =
 
         _ ->
             name
+
+
+undefinedModulationId : Int
+undefinedModulationId =
+    -1
+
+
+undefinedModulationLabel : String
+undefinedModulationLabel =
+    "Невизначено"
