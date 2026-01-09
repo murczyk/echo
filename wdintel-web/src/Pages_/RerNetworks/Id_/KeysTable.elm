@@ -860,6 +860,7 @@ keyCreateSidebarContent shared model =
         [ div [ class "p-6 border-b border-border" ]
             [ h2 [ class "text-lg font-semibold mb-1" ] [ text "Додати ключ" ]
             , p [ class "text-sm text-muted-foreground" ] [ text "Створіть новий ключ для мережі" ]
+            , p [ class "text-sm text-muted-foreground mt-1" ] [ text "Цей ключ буде видно лише вашому підрозділу" ]
             ]
         , div [ class "flex-1 overflow-y-auto p-6 space-y-4" ]
             [ div []
