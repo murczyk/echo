@@ -85,7 +85,6 @@ def _do_evaluate_model(
             "precision": precision,
             "threshold": threshold,
         }
-        mlflow.log_metrics(metrics)
         results[split] = {"metrics": metrics, "plot_data": plot_data}
 
         df = pd.DataFrame({"label": y_true, "y_pred": y_pred})
@@ -102,8 +101,10 @@ def _do_evaluate_model(
             targets="label",
             predictions="y_pred",
         )
+
         logged_model = LoggedModelInput(model_id=str(model.model_id))
         mlflow.log_input(dataset, context="testing", model=logged_model)
+        mlflow.log_metrics(metrics, dataset=dataset)
 
         mlflow.models.evaluate(
             data=dataset,

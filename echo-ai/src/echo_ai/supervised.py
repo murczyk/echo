@@ -4,7 +4,6 @@ from concurrent.futures import ThreadPoolExecutor
 
 import fasttext
 import mlflow
-import mlflow.models
 from datasets import Dataset, DatasetDict
 from mlflow.data.huggingface_dataset import HuggingFaceDataset
 from mlflow.data.pandas_dataset import PandasDataset, from_pandas
