@@ -217,7 +217,7 @@ async fn list_callsigns_impl(
     let filter_developing = req
         .filter_developing
         .clone()
-        .unwrap_or(DevelopingFilter::OnlyNonDeveloping);
+        .unwrap_or(DevelopingFilter::All);
     callsigns = match filter_developing {
         DevelopingFilter::OnlyDeveloping => {
             callsigns.filter(sigint_callsign::Column::Developing.eq(true))
