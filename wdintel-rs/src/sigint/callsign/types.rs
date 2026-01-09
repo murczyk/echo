@@ -33,6 +33,15 @@ pub enum ListCallsignsSortBy {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub enum DevelopingFilter {
+    OnlyDeveloping,
+    OnlyNonDeveloping,
+    All,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct ListCallsignsReq {
     pub after_id: Option<i64>,
     pub before_id: Option<i64>,
@@ -40,6 +49,7 @@ pub struct ListCallsignsReq {
     pub filter_position: Option<String>,
     pub filter_comment: Option<String>,
     pub filter_unit: Option<String>,
+    pub filter_developing: Option<DevelopingFilter>,
     pub since_date_inclusive_ms: Option<i64>,
     pub till_date_inclusive_ms: Option<i64>,
     pub limit: Option<u64>,
