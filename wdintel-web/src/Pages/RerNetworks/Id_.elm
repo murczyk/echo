@@ -222,6 +222,8 @@ init route shared () =
             }
       , freqEditSaving = False
       , freqEditShowActiveTo = False
+      , freqEditNewKeyInput = ""
+      , freqEditNewKeySaving = False
       , deleteNetworkConfirmation = Nothing
       , deleteNetworkLoading = False
       , deleteFreqConfirmation = Nothing
@@ -264,6 +266,8 @@ init route shared () =
       , freqCreateDescriptionInp = ""
       , freqCreateFormatError = Nothing
       , freqCreateShowActiveTo = False
+      , freqCreateNewKeyInput = ""
+      , freqCreateNewKeySaving = False
 
       -- Network callsigns (new table)
       , networkCallsigns = NotAsked
@@ -380,6 +384,12 @@ update shared msg model =
                             E.map Keys <| KeysTable.initLoad network.id
 
                         ( Msgs.DeleteFreqReturnedByApi _ (Ok _), Success network ) ->
+                            E.map Keys <| KeysTable.initLoad network.id
+
+                        ( Msgs.FreqCreateNewKeyCreated (Ok _), Success network ) ->
+                            E.map Keys <| KeysTable.initLoad network.id
+
+                        ( Msgs.FreqEditNewKeyCreated (Ok _), Success network ) ->
                             E.map Keys <| KeysTable.initLoad network.id
 
                         _ ->
