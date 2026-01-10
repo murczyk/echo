@@ -189,6 +189,7 @@ mod m20251229_181328_enemy_units_geojson_s3_keys;
 mod m20260106_080738_add_freq_key;
 mod m20260108_005722_add_sigint_network_encryption_key_fields;
 mod m20260108_153000_add_key_modulation_and_freqs;
+mod m20260110_123009_drop_tyt_veda;
 
 pub struct Migrator;
 
@@ -383,10 +384,9 @@ impl MigratorTrait for Migrator {
             Box::new(m20251227_093913_add_bgtask_res_url::Migration),
             Box::new(m20251229_181328_enemy_units_geojson_s3_keys::Migration),
             Box::new(m20260106_080738_add_freq_key::Migration),
-            Box::new(
-                m20260108_005722_add_sigint_network_encryption_key_fields::Migration,
-            ),
+            Box::new(m20260108_005722_add_sigint_network_encryption_key_fields::Migration),
             Box::new(m20260108_153000_add_key_modulation_and_freqs::Migration),
+            Box::new(m20260110_123009_drop_tyt_veda::Migration),
         ]
     }
 }
