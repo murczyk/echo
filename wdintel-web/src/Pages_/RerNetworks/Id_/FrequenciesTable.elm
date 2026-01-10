@@ -673,11 +673,20 @@ update shared msg model =
                             keyValue == "" || keyWrongLength
 
                         modulationId =
-                            if keyRules.keyAllowed then
-                                normalizeModulationId model.freqCreateModulationSelect.selected
+                            case model.freqCreateModulationSelect.selected of
+                                Just selectedId ->
+                                    if keyRules.keyAllowed then
+                                        if selectedId == Modulations.undefinedModulationId then
+                                            Just Modulations.undefinedModulationId
 
-                            else
-                                Nothing
+                                        else
+                                            Just selectedId
+
+                                    else
+                                        Just Modulations.undefinedModulationId
+
+                                Nothing ->
+                                    Just Modulations.undefinedModulationId
                     in
                     if keyInvalid then
                         ( model, E.none )
@@ -838,11 +847,20 @@ update shared msg model =
                             keyValue == "" || keyWrongLength
 
                         modulationId =
-                            if keyRules.keyAllowed then
-                                normalizeModulationId model.freqEditModulationSelect.selected
+                            case model.freqEditModulationSelect.selected of
+                                Just selectedId ->
+                                    if keyRules.keyAllowed then
+                                        if selectedId == Modulations.undefinedModulationId then
+                                            Just Modulations.undefinedModulationId
 
-                            else
-                                Nothing
+                                        else
+                                            Just selectedId
+
+                                    else
+                                        Just Modulations.undefinedModulationId
+
+                                Nothing ->
+                                    Just Modulations.undefinedModulationId
                     in
                     if keyInvalid then
                         ( model, E.none )
@@ -1466,6 +1484,7 @@ freqEditSidebarContent shared model user freqId updateReq =
                             []
                         , Button.new { label = "Додати новий", onClick = FreqEditNewKeyClicked }
                             |> Button.withStyleSecondary
+                            |> Button.withClasses "whitespace-nowrap"
                             |> Button.withDisabled (keyInvalid || model.freqEditNewKeySaving)
                             |> Button.view
                         ]
@@ -1706,6 +1725,7 @@ freqCreateSidebarContent shared model user =
                         []
                     , Button.new { label = "Додати новий", onClick = FreqCreateNewKeyClicked }
                         |> Button.withStyleSecondary
+                        |> Button.withClasses "whitespace-nowrap"
                         |> Button.withDisabled (keyInvalid || model.freqCreateNewKeySaving)
                         |> Button.view
                     ]
@@ -1985,20 +2005,6 @@ addKeyToNetworkKeys keyData remoteKeys =
 
         _ ->
             remoteKeys
-
-
-normalizeModulationId : Maybe Int -> Maybe Int
-normalizeModulationId selectedId =
-    case selectedId of
-        Just modulationId ->
-            if modulationId == Modulations.undefinedModulationId then
-                Nothing
-
-            else
-                Just modulationId
-
-        Nothing ->
-            Nothing
 
 
 keyRulesFromModulationId : Model -> Maybe Int -> KeyRules
