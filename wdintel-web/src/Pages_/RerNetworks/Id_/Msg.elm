@@ -203,6 +203,9 @@ type FrequenciesMsg
     | FreqCreateModulationSelectMsg (Select.Msg Int)
     | FreqCreateKeySelectMsg (Select.Msg Int)
     | FreqCreateDescriptionInputChangedByUser String
+    | FreqCreateNewKeyInputChanged String
+    | FreqCreateNewKeyClicked
+    | FreqCreateNewKeyCreated (Result ApiError B.EncryptionKeyData)
     | ToggleFreqCreateShowActiveTo
     | AddFreqToNetwork
     | DeleteFreqClickedByUser Int String
@@ -210,6 +213,9 @@ type FrequenciesMsg
     | DeleteFreqCanceledByUser
     | OpenFreqDetailPopup String
     | CloseFreqDetailPopup
+    | FreqEditNewKeyInputChanged String
+    | FreqEditNewKeyClicked
+    | FreqEditNewKeyCreated (Result ApiError B.EncryptionKeyData)
     | FreqsActivityFilterChangedByUser FreqActivityFilter
     | SetFreqsTableState Table.State
     | CallsignsPopupOpenedByUser String

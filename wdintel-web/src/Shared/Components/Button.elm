@@ -1,4 +1,4 @@
-module Shared.Components.Button exposing (new, view, withDisabled, withIcon, withPrimary, withSecondary, withStyleSecondary, withStyleDanger)
+module Shared.Components.Button exposing (new, view, withClasses, withDisabled, withIcon, withPrimary, withSecondary, withStyleSecondary, withStyleDanger)
 
 import Html exposing (..)
 import Html.Attributes exposing (..)
@@ -25,6 +25,7 @@ type Button msg
         , variant : Variant
         , iconLeft : List (Html msg)
         , state : State
+        , extraClasses : String
         }
 
 
@@ -38,6 +39,7 @@ new props =
         , variant = Primary
         , iconLeft = []
         , state = Active
+        , extraClasses = ""
         }
 
 
@@ -64,6 +66,11 @@ withDisabled isDisabled (Settings settings) =
 withIcon : List (Html msg) -> Button msg -> Button msg
 withIcon iconBlock (Settings settings) =
     Settings { settings | iconLeft = iconBlock }
+
+
+withClasses : String -> Button msg -> Button msg
+withClasses classes (Settings settings) =
+    Settings { settings | extraClasses = classes }
 
 
 -- Legacy support for existing API
@@ -117,7 +124,7 @@ view (Settings settings) =
         isDisabled = settings.state == Disabled
 
         allClasses =
-            baseClasses ++ " " ++ variantClasses settings.variant settings.state
+            baseClasses ++ " " ++ variantClasses settings.variant settings.state ++ " " ++ settings.extraClasses
     in
     button
         [ onClick settings.onClick
