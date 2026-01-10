@@ -51,46 +51,41 @@ pub async fn bl_create_network_callsign(
     user_id: &str,
     txn: &DatabaseTransaction,
 ) -> Result<i64, AppError> {
-    // If unit_developing is true, we should not link to any known sigint_callsign, just create a new network callsign
-    if req.unit_developing {
+    // If callsign status is developing or unit_developing or no unit_id provided for a callsign
+    // just create a new network callsign without linking to any known callsign
+    if req.unit_developing || req.developing || req.unit_id.is_none() {
         return create_network_callsign_not_linked(req, user_id, txn).await;
     }
 
     // Otherwise, if unit_id provided - create linked callsign, and add it as a known network callsign
-    let network_callsign_id = if let Some(unit_id) = req.unit_id {
-        let known_callsing_req = CreateCallsignReq {
-            callsign: req.callsign.clone(),
-            position: req.position.clone().unwrap_or_default(),
-            comment: req.comment.clone().unwrap_or_default(),
-            unit_id,
-            source_id: req.source_id.map(|v| v as i32),
-            radio_freq: req.radio_freq.clone(),
-            developing: req.developing,
-        };
+    let unit_id = req.unit_id.ok_or_else(|| AppError::BL {
+        msg: "unit_id is missing after validation".into(),
+    })?;
 
-        let known_callsing =
-            bl_callsign_create(&known_callsing_req, user_id, txn)
-                .await
-                .context(h!())?;
+    let known_callsign_req = CreateCallsignReq {
+        callsign: req.callsign.clone(),
+        position: req.position.clone().unwrap_or_default(),
+        comment: req.comment.clone().unwrap_or_default(),
+        unit_id,
+        source_id: req.source_id.map(|v| v as i32),
+        radio_freq: req.radio_freq.clone(),
+        developing: req.developing,
+    };
 
-        let network_callsign_id = create_network_callsign_linked(
-            req.network_id,
-            &req.callsign,
-            known_callsing.id,
-            req.main_radio_station,
-            user_id,
-            txn,
-        )
+    let known_callsign = bl_callsign_create(&known_callsign_req, user_id, txn)
         .await
         .context(h!())?;
 
-        network_callsign_id
-    } else {
-        // If no unit_id provided, just create a new network callsign without linking to any known callsign
-        create_network_callsign_not_linked(req, user_id, txn)
-            .await
-            .context(h!())?
-    };
+    let network_callsign_id = create_network_callsign_linked(
+        req.network_id,
+        &req.callsign,
+        known_callsign.id,
+        req.main_radio_station,
+        user_id,
+        txn,
+    )
+    .await
+    .context(h!())?;
 
     Ok(network_callsign_id)
 }
