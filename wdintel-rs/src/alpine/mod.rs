@@ -4,14 +4,14 @@ use crate::error::AppError;
 use crate::h;
 use crate::types::{Env, ShortContext};
 use actix_multipart::Multipart;
-use actix_web::web::Json;
 use actix_web::get;
+use actix_web::web::Json;
 use bytes::Bytes;
 use futures_util::StreamExt;
 use reqwest::header::CONTENT_TYPE;
 use reqwest::multipart::{Form, Part};
-use sea_orm::ActiveValue::{NotSet, Set};
 use sea_orm::ActiveModelTrait;
+use sea_orm::ActiveValue::{NotSet, Set};
 use std::path::Path;
 
 struct UploadData {
@@ -58,13 +58,9 @@ async fn convert_alpinequest_file(
     tokio::spawn(async move {
         let dbx = env_inner.dbx.clone();
         let res = async {
-            bgtask_log(
-                Some(bgtask_id),
-                "> starting alpine conversion",
-                &dbx,
-            )
-            .await
-            .c(h!())?;
+            bgtask_log(Some(bgtask_id), "> starting alpine conversion", &dbx)
+                .await
+                .c(h!())?;
             let result = call_converter(&env_inner, &converter_url, &upload)
                 .await
                 .map_err(|e| AppError::AnyhowError { source: e })?;
@@ -75,7 +71,7 @@ async fn convert_alpinequest_file(
             )
             .await
             .c(h!())?;
-            let res_url = crate::messenger::media::store_kmz_file(
+            let res_s3_id = crate::messenger::media::store_asset(
                 &env_inner,
                 &result.body,
                 result.name.as_deref(),
@@ -85,7 +81,7 @@ async fn convert_alpinequest_file(
             .c(h!())?;
             bgtask_log(
                 Some(bgtask_id),
-                &format!("> uploaded result: {res_url}"),
+                &format!("> uploaded result: {res_s3_id}"),
                 &dbx,
             )
             .await
@@ -94,7 +90,7 @@ async fn convert_alpinequest_file(
                 id: Set(bgtask_id),
                 res_json: Set(None),
                 res_bytes: Set(None),
-                res_url: Set(Some(res_url)),
+                res_s3_id: Set(Some(res_s3_id)),
             };
             res_row.insert(&dbx).await.c(h!())?;
             bgtask_log(Some(bgtask_id), "> saved bgtask result", &dbx)

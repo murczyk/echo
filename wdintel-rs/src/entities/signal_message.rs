@@ -16,13 +16,13 @@ pub struct Model {
     pub timestamp: Option<DateTime>,
     #[sea_orm(column_type = "Text", nullable)]
     pub sender: Option<String>,
+    pub duplicate_of: Option<i64>,
     pub format: Option<i64>,
     pub deleted: bool,
     pub external_id: Option<i64>,
     #[sea_orm(column_type = "Text", nullable)]
     pub message_uid: Option<String>,
     pub datasource_group_id: Option<i64>,
-    pub duplicate_of: Option<i64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -43,14 +43,6 @@ pub enum Relation {
     SigintImportant,
     #[sea_orm(has_one = "super::sigint_inbox_item::Entity")]
     SigintInboxItem,
-    #[sea_orm(
-        belongs_to = "Entity",
-        from = "Column::DuplicateOf",
-        to = "Column::Id",
-        on_update = "NoAction",
-        on_delete = "NoAction"
-    )]
-    SelfRef,
     #[sea_orm(has_many = "super::signal_message_group::Entity")]
     SignalMessageGroup,
     #[sea_orm(has_many = "super::signal_message_media::Entity")]
