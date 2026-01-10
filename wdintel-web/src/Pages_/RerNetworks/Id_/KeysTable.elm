@@ -1073,7 +1073,7 @@ keysTableConfig user networkModel =
                                     { attributes = [ class "col-narrow" ]
                                     , children =
                                         [ if key.key == "🔑" then
-                                            span [ class "text-muted-foreground text-sm" ] [ text "-" ]
+                                            span [ class "text-muted-foreground text-sm" ] [ text "" ]
 
                                           else
                                             case key.id of
@@ -1094,7 +1094,7 @@ keysTableConfig user networkModel =
                                                         ]
 
                                                 Nothing ->
-                                                    span [ class "text-muted-foreground text-sm" ] [ text "-" ]
+                                                    span [ class "text-muted-foreground text-sm" ] [ text "" ]
                                         ]
                                     }
                             , sorter = Table.unsortable

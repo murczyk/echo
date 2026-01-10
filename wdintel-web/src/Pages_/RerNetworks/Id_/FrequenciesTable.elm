@@ -1471,9 +1471,13 @@ freqEditSidebarContent shared model user freqId updateReq =
                         keyValue == "" || keyWrongLength
                   in
                   div [ class "space-y-2" ]
-                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Новий ключ" ]
-                    , div [ class "flex gap-2" ]
-                        [ input
+                    [ div [ class "flex gap-2" ]
+                        [ Button.new { label = "Додати новий", onClick = FreqEditNewKeyClicked }
+                            |> Button.withStyleSecondary
+                            |> Button.withClasses "whitespace-nowrap"
+                            |> Button.withDisabled (keyInvalid || model.freqEditNewKeySaving)
+                            |> Button.view
+                        , input
                             [ class "w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
                             , type_ "text"
                             , placeholder "Введіть новий ключ"
@@ -1482,11 +1486,6 @@ freqEditSidebarContent shared model user freqId updateReq =
                             , disabled model.freqEditNewKeySaving
                             ]
                             []
-                        , Button.new { label = "Додати новий", onClick = FreqEditNewKeyClicked }
-                            |> Button.withStyleSecondary
-                            |> Button.withClasses "whitespace-nowrap"
-                            |> Button.withDisabled (keyInvalid || model.freqEditNewKeySaving)
-                            |> Button.view
                         ]
                     , if keyWrongLength then
                         div [ class "text-sm text-red-600" ]
@@ -1712,9 +1711,13 @@ freqCreateSidebarContent shared model user =
                     keyValue == "" || keyWrongLength
               in
               div [ class "space-y-2" ]
-                [ label [ class "block text-sm font-medium mb-1" ] [ text "Новий ключ" ]
-                , div [ class "flex gap-2" ]
-                    [ input
+                [ div [ class "flex gap-2" ]
+                    [ Button.new { label = "Додати новий", onClick = FreqCreateNewKeyClicked }
+                        |> Button.withStyleSecondary
+                        |> Button.withClasses "whitespace-nowrap"
+                        |> Button.withDisabled (keyInvalid || model.freqCreateNewKeySaving)
+                        |> Button.view
+                    , input
                         [ class "w-full p-2 border border-border rounded"
                         , type_ "text"
                         , placeholder "Введіть новий ключ"
@@ -1723,11 +1726,6 @@ freqCreateSidebarContent shared model user =
                         , disabled model.freqCreateNewKeySaving
                         ]
                         []
-                    , Button.new { label = "Додати новий", onClick = FreqCreateNewKeyClicked }
-                        |> Button.withStyleSecondary
-                        |> Button.withClasses "whitespace-nowrap"
-                        |> Button.withDisabled (keyInvalid || model.freqCreateNewKeySaving)
-                        |> Button.view
                     ]
                 , if keyWrongLength then
                     div [ class "text-sm text-red-600" ]
