@@ -243,77 +243,147 @@ pub async fn bl_update_network_callsign(
         .context(h!())?
         .ok_or(AppError::NotFound)?;
 
+    // If developing/unit_developing flipped to true and unit_id provided, create (or reuse) known callsign and link
+    let flipped_to_developing = (req.developing
+        && !network_callsign.developing)
+        || (req.unit_developing && !network_callsign.unit_developing);
+
+    if flipped_to_developing {
+        if let Some(unit_id) = req.unit_id {
+            let callsign_value = req.callsign.clone().trim().to_lowercase();
+
+            let existing_known_callsign = sigint_callsign::Entity::find()
+                .filter(sigint_callsign::Column::UnitId.eq(unit_id))
+                .filter(
+                    sigint_callsign::Column::Callsign
+                        .eq(callsign_value.clone()),
+                )
+                .filter(sigint_callsign::Column::Deleted.eq(false))
+                .one(txn)
+                .await
+                .context(h!())?;
+
+            let known_callsign = if let Some(known) = existing_known_callsign {
+                known
+            } else {
+                let known_callsign_req = CreateCallsignReq {
+                    callsign: req.callsign.clone(),
+                    position: req.position.clone().unwrap_or_default(),
+                    comment: req.comment.clone().unwrap_or_default(),
+                    unit_id,
+                    source_id: req.source_id.map(|v| v as i32),
+                    radio_freq: req.radio_freq.clone(),
+                    developing: req.developing,
+                };
+
+                bl_callsign_create(&known_callsign_req, user_id, txn)
+                    .await
+                    .context(h!())?
+            };
+
+            return update_network_callsign_linked(
+                req,
+                user_id,
+                txn,
+                network_callsign,
+                known_callsign,
+                true,
+            )
+            .await;
+        }
+    }
+
     // If unit_developing is true, we should not link to any known sigint_callsign, just update a network callsign
     if req.unit_developing {
         return update_network_callsign_not_linked(req, user_id, txn).await;
     }
 
-    let network_callsign_id = if let Some(sigint_callsign_id) =
-        network_callsign.sigint_callsign_id
-    {
-        // Network callsign is linked to known callsign, update the known callsign instead
-        let known_callsign =
-            find_callsign(txn, sigint_callsign_id).await.context(h!())?;
+    let network_callsign_id =
+        if let Some(sigint_callsign_id) = network_callsign.sigint_callsign_id {
+            // Network callsign is linked to known callsign, update the known callsign instead
+            let known_callsign =
+                find_callsign(txn, sigint_callsign_id).await.context(h!())?;
 
-        let known_callsing_req = Callsign {
-            id: known_callsign.id,
-            callsign: req.callsign.clone(),
-            position: req.position.clone().unwrap_or_default(),
-            comment: req.comment.clone().unwrap_or_default(),
-            unit_id: req.unit_id.unwrap_or(known_callsign.unit_id),
-            active: known_callsign.deleted,
-            source_id: req.source_id.map(|v| v as i32),
-            created_at: known_callsign.created_at.and_utc().timestamp_millis(),
-            developing: req.developing,
-            radio_freq: req.radio_freq.clone(),
+            update_network_callsign_linked(
+                req,
+                user_id,
+                txn,
+                network_callsign,
+                known_callsign,
+                false,
+            )
+            .await?
+        } else
+        // If no known callsign assigned, update the network callsign itself
+        {
+            update_network_callsign_not_linked(req, user_id, txn)
+                .await
+                .c(h!())?
         };
 
-        let known_callsign =
-            bl_callsign_update(&known_callsing_req, user_id, txn)
-                .await
-                .context(h!())?;
+    Ok(network_callsign_id)
+}
 
-        let network_callsign_json_old =
-            get_network_callsign_rec_json(req.id, txn)
-                .await
-                .context(h!())?;
+async fn update_network_callsign_linked(
+    req: &UpdateNetworkCallsignReq,
+    user_id: &str,
+    txn: &DatabaseTransaction,
+    network_callsign: sigint_network_callsign::Model,
+    known_callsign: sigint_callsign::Model,
+    clear_position_comment: bool,
+) -> Result<i64, AppError> {
+    let known_callsing_req = Callsign {
+        id: known_callsign.id,
+        callsign: req.callsign.clone(),
+        position: req.position.clone().unwrap_or_default(),
+        comment: req.comment.clone().unwrap_or_default(),
+        unit_id: req.unit_id.unwrap_or(known_callsign.unit_id),
+        active: known_callsign.deleted,
+        source_id: req.source_id.map(|v| v as i32),
+        created_at: known_callsign.created_at.and_utc().timestamp_millis(),
+        developing: req.developing,
+        radio_freq: req.radio_freq.clone(),
+    };
 
-        // Also update the network callsign's callsign string to keep in sync
-        let mut network_callsign_record = network_callsign.into_active_model();
-        network_callsign_record.sigint_callsign =
-            Set(known_callsign.callsign.clone());
-        network_callsign_record.main_radio_station =
-            Set(req.main_radio_station);
-        network_callsign_record.unit_developing = Set(req.unit_developing);
-        let network_callsign =
-            network_callsign_record.update(txn).await.context(h!())?;
-
-        let network_callsign_json_new =
-            get_network_callsign_rec_json(req.id, txn)
-                .await
-                .context(h!())?;
-        create_network_callsign_changelog(
-            req.id,
-            user_id,
-            ChangelogActionEnum::Update,
-            Some(network_callsign_json_old),
-            Some(network_callsign_json_new),
-            Some(serde_json::to_value(req).context(h!())?),
-            txn,
-        )
+    let known_callsign = bl_callsign_update(&known_callsing_req, user_id, txn)
         .await
         .context(h!())?;
 
-        network_callsign.id
-    } else
-    // If no known callsign assigned, update the network callsign itself
-    {
-        update_network_callsign_not_linked(req, user_id, txn)
-            .await
-            .c(h!())?
-    };
+    let network_callsign_json_old = get_network_callsign_rec_json(req.id, txn)
+        .await
+        .context(h!())?;
 
-    Ok(network_callsign_id)
+    // Keep network callsign in sync with known callsign
+    let mut network_callsign_record = network_callsign.into_active_model();
+    network_callsign_record.sigint_callsign =
+        Set(known_callsign.callsign.clone());
+    network_callsign_record.sigint_callsign_id = Set(Some(known_callsign.id));
+    network_callsign_record.main_radio_station = Set(req.main_radio_station);
+    network_callsign_record.unit_developing = Set(req.unit_developing);
+    network_callsign_record.developing = Set(req.developing);
+    if clear_position_comment {
+        network_callsign_record.position = Set(None);
+        network_callsign_record.comment = Set(None);
+    }
+    let network_callsign =
+        network_callsign_record.update(txn).await.context(h!())?;
+
+    let network_callsign_json_new = get_network_callsign_rec_json(req.id, txn)
+        .await
+        .context(h!())?;
+    create_network_callsign_changelog(
+        req.id,
+        user_id,
+        ChangelogActionEnum::Update,
+        Some(network_callsign_json_old),
+        Some(network_callsign_json_new),
+        Some(serde_json::to_value(req).context(h!())?),
+        txn,
+    )
+    .await
+    .context(h!())?;
+
+    Ok(network_callsign.id)
 }
 
 async fn update_network_callsign_not_linked(
