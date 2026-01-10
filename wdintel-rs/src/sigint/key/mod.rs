@@ -1,4 +1,6 @@
-use crate::config::ENCRYPTION_KEY_PLACEHOLDER;
+use crate::config::{
+    ENCRYPTION_KEY_DESCRIPTION_PLACEHOLDER, ENCRYPTION_KEY_PLACEHOLDER,
+};
 use crate::entities::*;
 use crate::error::AppError;
 use crate::h;
@@ -372,6 +374,7 @@ fn map_key_for_list(
     e: sigint_network_encryption_key::Model,
     freq_ids: Vec<i64>,
 ) -> EncryptionKeyData {
+    let has_description = e.description.is_some();
     if e.organism_id.eq(organism_id) {
         EncryptionKeyData {
             id: Some(e.id),
@@ -387,7 +390,11 @@ fn map_key_for_list(
             sigint_network_freq_ids: vec![],
             sigint_network_id: e.sigint_network_id,
             key: ENCRYPTION_KEY_PLACEHOLDER.to_string(),
-            description: None,
+            description: if has_description {
+                Some(ENCRYPTION_KEY_DESCRIPTION_PLACEHOLDER.to_string())
+            } else {
+                None
+            },
             modulation_id: None,
         }
     }
