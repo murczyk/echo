@@ -39,40 +39,39 @@ pub async fn bl_babak_report(
     };
     let date_from_dt = dt_from_millis(since_date_inclusive_ms)?;
     let date_to_dt = dt_from_millis(till_date_inclusive_ms)?;
-    let read_db = env.replica();
-    let logins =
-        crate::users::get_organism_logins_by_login(&read_db, user_login)
-            .await
-            .c(h!())?;
 
-    let units =
-        get_inbox_messages_report_unit(user_login, &logins, env, &req.req)
-            .await
-            .c(h!())?;
+    let mut inbox_req = req.req.clone();
+    inbox_req.report_tags_only_this_unit = req.report_tags_only_this_unit;
+
+    let units = get_inbox_messages_report_unit(user_login, env, &inbox_req)
+        .await
+        .c(h!())?;
 
     let new_callsing_req = AnalysisStatsReq {
-        since_date_inclusive_ms: req.req.since_date_inclusive_ms.unwrap_or(0),
-        till_date_noninclusive_ms: req.req.till_date_inclusive_ms.unwrap_or(0),
-        selected_groups: req.req.selected_groups.clone(),
-        selected_senders: req.req.selected_senders.clone(),
-        selected_freqs: req.req.selected_freqs.clone(),
-        selected_posts: req.req.selected_posts.clone(),
-        selected_callsigns: req.req.selected_callsigns.clone(),
-        selected_units: req.req.selected_units.clone(),
-        selected_locations: req.req.selected_locations.clone(),
-        or_with_extended_form: req.req.or_with_extended_form,
-        or_bookmarked: req.req.or_bookmarked,
-        or_important: req.req.or_important,
-        or_with_coords: req.req.or_with_coords,
-        search: req.req.search.clone(),
-        selected_tags: req.req.selected_tags.clone(),
-        selected_networks: req.req.selected_networks.clone(),
-        include_peleng_locations: req.req.include_peleng_locations,
-        units_exact_match_only: req.req.units_exact_match_only,
-        filter_tags_option: req.req.filter_tags_option,
-        selected_aors: req.req.selected_aors.clone(),
-        without_model_tags: req.req.without_model_tags,
-        report_tags_only_this_unit: req.report_tags_only_this_unit,
+        since_date_inclusive_ms: inbox_req.since_date_inclusive_ms.unwrap_or(0),
+        till_date_noninclusive_ms: inbox_req
+            .till_date_inclusive_ms
+            .unwrap_or(0),
+        selected_groups: inbox_req.selected_groups,
+        selected_senders: inbox_req.selected_senders,
+        selected_freqs: inbox_req.selected_freqs,
+        selected_posts: inbox_req.selected_posts,
+        selected_callsigns: inbox_req.selected_callsigns,
+        selected_units: inbox_req.selected_units,
+        selected_locations: inbox_req.selected_locations,
+        or_with_extended_form: inbox_req.or_with_extended_form,
+        or_bookmarked: inbox_req.or_bookmarked,
+        or_important: inbox_req.or_important,
+        or_with_coords: inbox_req.or_with_coords,
+        search: inbox_req.search,
+        selected_tags: inbox_req.selected_tags,
+        selected_networks: inbox_req.selected_networks,
+        include_peleng_locations: inbox_req.include_peleng_locations,
+        units_exact_match_only: inbox_req.units_exact_match_only,
+        filter_tags_option: inbox_req.filter_tags_option,
+        selected_aors: inbox_req.selected_aors,
+        without_model_tags: inbox_req.without_model_tags,
+        report_tags_only_this_unit: inbox_req.report_tags_only_this_unit,
     };
     let new_callsigns_res =
         bi_new_callsigns(user_login, env, &new_callsing_req)
@@ -592,14 +591,15 @@ fn dedup_babak_comment_values(
 
 pub async fn get_inbox_messages_report_unit(
     login: &str,
-    logins: &[String],
     env: &Env,
     req: &InboxMessagesReq,
 ) -> Result<Vec<StatsPerUnitReport>, AppError> {
     let read_db = env.replica();
-    let logins = logins.to_vec();
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
+    let logins = crate::users::get_organism_logins_by_login(&read_db, login)
+        .await
+        .context(h!())?;
     let mut q = signal_message::Entity::find()
         .select_only()
         // creare a unique id for each message, using either duplicate_of or sigint_inbox_item.id to filter out duplicates
@@ -712,10 +712,14 @@ pub async fn get_inbox_messages_report_unit(
         signal_message::Relation::SigintComment.def(),
     );
 
-    let mut only_tags_by_logins = None;
     if req.report_tags_only_this_unit == Some(true) {
         q = q.filter(sigint_comment::Column::Login.eq_any(logins.clone()));
-        only_tags_by_logins = Some(logins.clone());
+        q = q.filter(
+            sigint_inbox_item_tag::Column::Login.eq_any(logins.clone()),
+        );
+    }
+    if req.without_model_tags == Some(true) {
+        q = q.filter(sigint_inbox_item_tag::Column::Model.is_null());
     }
 
     // let q = q.filter(signal_message::Column::DuplicateOf.is_null());
@@ -745,7 +749,6 @@ pub async fn get_inbox_messages_report_unit(
         &req.filter_tags_option,
         &req.without_model_tags,
         login,
-        only_tags_by_logins,
         req.report_tags_only_this_unit.unwrap_or(false),
     )?;
     if let Some(since_date_inclusive_ms) = req.since_date_inclusive_ms {

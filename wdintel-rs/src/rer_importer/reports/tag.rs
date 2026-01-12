@@ -22,14 +22,19 @@ pub async fn report_docx_kind_tag(
 ) -> Result<(), AppError> {
     let read_db = env.replica();
     let txn = read_db.begin().await.context(h!())?;
-
+    let mut current_req = req.req.clone();
+    current_req.report_tags_only_this_unit = req.report_tags_only_this_unit;
     let login = user.id().c(h!())?;
     let logins = crate::users::get_organism_logins(&txn, user)
         .await
         .c(h!())?;
     let mut messages =
         crate::rer_importer::inbox::get_inbox_messages_with_conn(
-            &read_db, &login, &logins, env, &req.req,
+            &read_db,
+            &login,
+            &logins,
+            env,
+            &current_req,
         )
         .await
         .context(h!())?;
@@ -52,10 +57,12 @@ pub async fn report_docx_kind_tag(
         (a_freq, a_datetime_str).cmp(&(b_freq, b_datetime_str))
     });
 
-    let Some(since_date_inclusive_ms) = req.req.since_date_inclusive_ms else {
+    let Some(since_date_inclusive_ms) = current_req.since_date_inclusive_ms
+    else {
         return Err("Since date must be specified".into());
     };
-    let Some(till_date_inclusive_ms) = req.req.till_date_inclusive_ms else {
+    let Some(till_date_inclusive_ms) = current_req.till_date_inclusive_ms
+    else {
         return Err("Until date must be specified".into());
     };
     let date_from_dt =
@@ -162,7 +169,7 @@ pub async fn report_docx_kind_tag(
 
     let mut rows: Vec<Paragraph> = vec![];
     for (message_id, message) in messages.iter() {
-        if req.req.report_tags_only_this_unit == Some(true)
+        if current_req.report_tags_only_this_unit == Some(true)
             && message.extended_form.is_none()
         {
             continue;
@@ -193,7 +200,7 @@ pub async fn report_docx_kind_tag(
         };
         let m_comment = sigint_comment::Entity::find()
             .filter(sigint_comment::Column::SignalMessageId.eq(message_id))
-            .apply_if(req.req.report_tags_only_this_unit, |q, _| {
+            .apply_if(current_req.report_tags_only_this_unit, |q, _| {
                 q.filter(sigint_comment::Column::Login.eq_any(logins.clone()))
             })
             .one(&txn)

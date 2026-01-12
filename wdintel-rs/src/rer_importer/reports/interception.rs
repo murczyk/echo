@@ -66,10 +66,10 @@ async fn get_inbox_messages_report(
                 COALESCE(
                     array_to_string(
                         NULLIF(
-                            array_agg(DISTINCT 
+                            array_agg(DISTINCT
                                 sigint_network_freq.kind || ' р/м ' || sigint_network.name || ' ' || sigint_unit.name || ' (' || UPPER(sigint_network.location) || ')'
-                            ) 
-                            FILTER 
+                            )
+                            FILTER
                             (WHERE sigint_unit.name IS NOT NULL),
                         '{}'),
                         ', '
@@ -147,8 +147,15 @@ async fn get_inbox_messages_report(
         ));
 
     if req.report_tags_only_this_unit == Some(true) {
-        q = q.filter(sigint_comment::Column::Login.eq_any(logins));
+        q = q.filter(sigint_comment::Column::Login.eq_any(logins.clone()));
+        q = q.filter(
+            sigint_inbox_item_tag::Column::Login.eq_any(logins.clone()),
+        );
     }
+    if req.without_model_tags == Some(true) {
+        q = q.filter(sigint_inbox_item_tag::Column::Model.is_null());
+    }
+
     q = crate::rer_importer::inbox::query::get_pagination_filters(
         env,
         req,
@@ -186,7 +193,6 @@ async fn get_inbox_messages_report(
         &req.filter_tags_option,
         &req.without_model_tags,
         &login,
-        None,
         req.report_tags_only_this_unit.unwrap_or(false),
     )?;
     let q = filter_selected_locations(
@@ -284,7 +290,9 @@ pub async fn report_xlsx_kind_interception(
     let mut workbook = Workbook::new(); // Use rust_xlsxwriter
     let sheet1 = workbook.add_worksheet().set_name("Пеленги").context(h!())?; // Use rust_xlsxwriter
     let date_format = Format::new().set_num_format("dd.mm.yyyy");
-    let without_model_tags = req.req.without_model_tags.unwrap_or(false);
+    let mut inbox_req = req.req.clone();
+    inbox_req.report_tags_only_this_unit = req.report_tags_only_this_unit;
+    let without_model_tags = inbox_req.without_model_tags.unwrap_or(false);
     // Define formats using rust_xlsxwriter
     let coltitle_base = Format::new()
         .set_bold()
@@ -423,7 +431,7 @@ pub async fn report_xlsx_kind_interception(
     };
 
     let mut i = 1;
-    for m in get_inbox_messages_report(user, env, &req.req)
+    for m in get_inbox_messages_report(user, env, &inbox_req)
         .await
         .context(h!())?
     {

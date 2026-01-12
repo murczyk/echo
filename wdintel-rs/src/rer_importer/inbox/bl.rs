@@ -58,11 +58,10 @@ pub struct InboxMessageDesc {
 
 pub async fn get_inbox_map_items(
     login: &str,
-    logins: &Vec<String>,
     env: &Env,
     req: &InboxMessagesReq,
 ) -> Result<Vec<InboxMapItem>, AppError> {
-    let q = build_inbox_query(login, logins, env, req).await.c(h!())?;
+    let q = build_inbox_query(login, env, req).await.c(h!())?;
     let q = format!(
         r#"SELECT id, message_uid, "freq" as freq, "coords" as coords from ({q}) q"#
     );

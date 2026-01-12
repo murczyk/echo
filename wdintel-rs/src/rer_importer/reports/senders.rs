@@ -50,12 +50,7 @@ pub async fn report_xlsx_kind_senders(
     let Some(till_date_inclusive_ms) = req.till_date_inclusive_ms else {
         return Err("Until date must be specified".into());
     };
-    let logins = crate::users::get_organism_logins(&read_db, user)
-        .await
-        .c(h!())?;
-    let q = build_inbox_query(&login, &logins, env, &req)
-        .await
-        .c(h!())?;
+    let q = build_inbox_query(&login, env, &req).await.c(h!())?;
 
     let q = format!(
         r#"SELECT count(*) as quantity, "post_name" as post, "sender" as sender, to_char(("datetime" AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Kyiv')::date, 'DD.MM.YYYY') as ts_dt from ({q}) q group by "post_name", "sender", ("datetime" AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Kyiv')::date"#

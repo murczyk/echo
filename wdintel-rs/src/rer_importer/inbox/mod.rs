@@ -41,9 +41,6 @@ async fn get_inbox_map(
         .await
         .c(h!())?;
     let login = user.id().c(h!())?;
-    let logins = crate::users::get_organism_logins(&env.dbx, user)
-        .await
-        .context(h!())?;
 
     let mut filter = req.inbox_items_filter.clone();
     filter.nolimit = Some(true); // fetch all points
@@ -58,7 +55,7 @@ async fn get_inbox_map(
         filter.selected_freqs = Some(freq_whitelist);
     }
 
-    let inbox_items = get_inbox_map_items(&login, &logins, &env, &filter)
+    let inbox_items = get_inbox_map_items(&login, &env, &filter)
         .await
         .context(h!())?;
     info!("messages found: {}", inbox_items.len());
@@ -383,13 +380,8 @@ async fn inbox_messages_count(
         .await
         .c(h!())?;
     let login = user_id;
-    let logins = crate::users::get_organism_logins(&env.dbx, user)
-        .await
-        .context(h!())?;
 
-    let q = build_inbox_query(&login, &logins, &env, &req)
-        .await
-        .context(h!())?;
+    let q = build_inbox_query(&login, &env, &req).await.context(h!())?;
     let q = format!(
         "SELECT COUNT(*) AS count, MIN(q.\"timestamp\") AS first_element_ts from ({q}) q");
 
@@ -685,7 +677,7 @@ pub async fn get_inbox_messages_with_conn(
     env: &Env,
     req: &InboxMessagesReq,
 ) -> Result<Vec<(i64, InboxMessage)>, AppError> {
-    let q = build_inbox_query(login, logins, env, req).await.c(h!())?;
+    let q = build_inbox_query(login, env, req).await.c(h!())?;
 
     let results = dbx
         .query_all(Statement::from_string(DatabaseBackend::Postgres, q))
@@ -735,11 +727,8 @@ async fn get_freq_pelengs_summary(
         .await
         .c(h!())?;
     let login = user.id().c(h!())?;
-    let logins = crate::users::get_organism_logins(&env.dbx, user)
-        .await
-        .context(h!())?;
 
-    let q = build_inbox_query(&login, &logins, &env, &req.into_inner())
+    let q = build_inbox_query(&login, &env, &req.into_inner())
         .await
         .context(h!())?;
 
