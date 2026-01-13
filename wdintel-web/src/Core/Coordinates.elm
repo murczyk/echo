@@ -134,7 +134,7 @@ normalizeMgrsChar c =
             'X'
 
         'У' ->
-            'U'
+            'Y'
 
         'З' ->
             'Z'

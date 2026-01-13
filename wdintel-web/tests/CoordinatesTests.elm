@@ -225,6 +225,16 @@ Y=6678024"""
                 (C.extractCoordinates content)
                 [ C.MGRS "37TBN7730360895"
                 ]
+    , test "C.extractCoordinates MGRS Cyrillic Y" <|
+        \_ ->
+            let
+                content =
+                    """37TУN 12345 67890"""
+            in
+            Expect.equal
+                (C.extractCoordinates content)
+                [ C.MGRS "37TYN1234567890"
+                ]
     , test "newline parseXYPart 01" <|
         \_ ->
             let
