@@ -32,8 +32,9 @@ pub async fn report_docx_kind_naushnom(
 ) -> Result<(), AppError> {
     let file = std::fs::File::create(outpath)?;
     let width_unit = 100;
-
-    let network_map = get_inbox_messages_report_network(user, env, &req.req)
+    let mut inbox_req = req.req.clone();
+    inbox_req.report_tags_only_this_unit = req.report_tags_only_this_unit;
+    let network_map = get_inbox_messages_report_network(user, env, &inbox_req)
         .await
         .c(h!())?;
 
@@ -319,7 +320,6 @@ pub async fn get_inbox_messages_report_network(
         &req.filter_tags_option,
         &req.without_model_tags,
         &login,
-        None,
         req.report_tags_only_this_unit.unwrap_or(false),
     )?;
     if let Some(since_date_inclusive_ms) = req.since_date_inclusive_ms {

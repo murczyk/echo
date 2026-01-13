@@ -90,6 +90,7 @@ pub async fn report_docx_kind_digest(
         .await
         .context(h!())?;
     let mut request = req.req.clone();
+    request.report_tags_only_this_unit = req.report_tags_only_this_unit;
     request.or_with_extended_form = Some(true); // with comments only
     let messages: Vec<(i64, InboxMessage)> =
         crate::rer_importer::inbox::get_inbox_messages_with_conn(

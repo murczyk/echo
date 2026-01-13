@@ -41,16 +41,19 @@ pub async fn report_docx_kind_mouse(
         .await
         .c(h!())?;
     let width_unit = 1870;
+    let mut inbox_req = req.req.clone();
+    inbox_req.report_tags_only_this_unit = req.report_tags_only_this_unit;
     let messages: Vec<(i64, InboxMessage)> =
         crate::rer_importer::inbox::get_inbox_messages_with_conn(
-            &read_db, &login, &logins, env, &req.req,
+            &read_db, &login, &logins, env, &inbox_req,
         )
         .await
         .c(h!())?;
-    let Some(since_date_inclusive_ms) = req.req.since_date_inclusive_ms else {
+    let Some(since_date_inclusive_ms) = inbox_req.since_date_inclusive_ms
+    else {
         return Err("Since date must be specified".into());
     };
-    let Some(till_date_inclusive_ms) = req.req.till_date_inclusive_ms else {
+    let Some(till_date_inclusive_ms) = inbox_req.till_date_inclusive_ms else {
         return Err("Until date must be specified".into());
     };
     let date_from_dt = dt_zoned_from_millis(since_date_inclusive_ms)?;
@@ -60,7 +63,7 @@ pub async fn report_docx_kind_mouse(
         .to_string();
 
     let file = std::fs::File::create(outpath)?;
-    let without_model_tags = req.req.without_model_tags.unwrap_or(false);
+    let without_model_tags = inbox_req.without_model_tags.unwrap_or(false);
 
     let message_tags_map: BTreeMap<i64, Vec<InboxMessageTag>> = messages
         .iter()
@@ -1097,9 +1100,11 @@ pub async fn report_xlsx_kind_pelengs(
     let logins = crate::users::get_organism_logins(&read_db, user)
         .await
         .c(h!())?;
+    let mut inbox_req = req.req.clone();
+    inbox_req.report_tags_only_this_unit = req.report_tags_only_this_unit;
     let messages: Vec<(i64, InboxMessage)> =
         crate::rer_importer::inbox::get_inbox_messages_with_conn(
-            &read_db, &login, &logins, env, &req.req,
+            &read_db, &login, &logins, env, &inbox_req,
         )
         .await
         .c(h!())?;
