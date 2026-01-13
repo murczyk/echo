@@ -87,6 +87,62 @@ renderDMS dms =
     String.fromInt dms.deg ++ "°" ++ String.fromInt dms.min ++ "'" ++ String.fromFloat dms.sec
 
 
+normalizeMgrsInput : String -> String
+normalizeMgrsInput s =
+    s
+        |> String.toUpper
+        |> String.map normalizeMgrsChar
+
+
+normalizeMgrsChar : Char -> Char
+normalizeMgrsChar c =
+    case c of
+        'А' ->
+            'A'
+
+        'В' ->
+            'B'
+
+        'С' ->
+            'C'
+
+        'Е' ->
+            'E'
+
+        'Н' ->
+            'H'
+
+        'І' ->
+            'I'
+
+        'К' ->
+            'K'
+
+        'М' ->
+            'M'
+
+        'О' ->
+            'O'
+
+        'Р' ->
+            'P'
+
+        'Т' ->
+            'T'
+
+        'Х' ->
+            'X'
+
+        'У' ->
+            'U'
+
+        'З' ->
+            'Z'
+
+        _ ->
+            c
+
+
 extractCoordinates : String -> List Coordinates
 extractCoordinates s =
     let
@@ -233,8 +289,11 @@ extractCoordinates1AndLeftover sOrig =
             Maybe.withDefault Regex.never <|
                 Regex.fromStringWith ro """(\\d\\d[A-Z] ?[A-Z][A-Z] ?\\d\\d\\d\\d\\d? ?\\d? ?\\d? ?\\d? ?\\d\\d\\d\\d\\d? ?\\d? ?\\d? ?\\d?)"""
 
+        sMgrs =
+            normalizeMgrsInput s
+
         matchesMgrs =
-            Regex.find regMgrs s
+            Regex.find regMgrs sMgrs
 
         mgrsMap m =
             case m.submatches of
