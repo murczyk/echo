@@ -104,7 +104,7 @@ async fn long_poll(
     };
     let mut redis_con = env
         .redisb
-        .get_multiplexed_tokio_connection()
+        .get_multiplexed_async_connection()
         .await
         .c(h!())?;
     // Start a window to accumulate events for a minimum time
@@ -113,7 +113,7 @@ async fn long_poll(
 
     // First read: keep existing long block to capture new events if none exist
     {
-        let srr: StreamReadReply = redis_con
+        let srr: Option<StreamReadReply> = redis_con
             .xread_options(
                 std::slice::from_ref(&srr_key),
                 &[last_stream_id.clone()],
@@ -124,21 +124,25 @@ async fn long_poll(
             .await
             .c(h!())?;
 
-        for StreamKey { key, ids } in srr.keys {
-            if key == srr_key {
-                for StreamId { id, map } in ids {
-                    last_stream_id = id.to_string();
-                    if let Some(v) = map.get("v") {
-                        if let redis::Value::BulkString(bytes) = v {
-                            let mut event =
-                                serde_json::from_slice::<EventMsg>(&bytes[..])
+        if let Some(srr) = srr {
+            for StreamKey { key, ids } in srr.keys {
+                if key == srr_key {
+                    for StreamId { id, map, .. } in ids {
+                        last_stream_id = id.to_string();
+                        if let Some(v) = map.get("v") {
+                            if let redis::Value::BulkString(bytes) = v {
+                                let mut event =
+                                    serde_json::from_slice::<EventMsg>(
+                                        &bytes[..],
+                                    )
                                     .c(h!())?;
-                            event.id = id.clone();
-                            res.push(event);
-                        } else {
-                            warn!(
-                                "Error: Impossible! Error: Weird non-byte data"
-                            );
+                                event.id = id.clone();
+                                res.push(event);
+                            } else {
+                                warn!(
+                                    "Error: Impossible! Error: Weird non-byte data"
+                                );
+                            }
                         }
                     }
                 }
@@ -157,7 +161,7 @@ async fn long_poll(
         // Block only up to the remaining window (but never exceed our max block)
         let block_ms = remaining.clamp(1, REDIS_READ_STREAM_BLOCK_MS);
 
-        let srr: StreamReadReply = redis_con
+        let srr: Option<StreamReadReply> = redis_con
             .xread_options(
                 std::slice::from_ref(&srr_key),
                 &[last_stream_id.clone()],
@@ -168,21 +172,25 @@ async fn long_poll(
             .await
             .c(h!())?;
 
-        for StreamKey { key, ids } in srr.keys {
-            if key == srr_key {
-                for StreamId { id, map } in ids {
-                    last_stream_id = id.to_string();
-                    if let Some(v) = map.get("v") {
-                        if let redis::Value::BulkString(bytes) = v {
-                            let mut event =
-                                serde_json::from_slice::<EventMsg>(&bytes[..])
+        if let Some(srr) = srr {
+            for StreamKey { key, ids } in srr.keys {
+                if key == srr_key {
+                    for StreamId { id, map, .. } in ids {
+                        last_stream_id = id.to_string();
+                        if let Some(v) = map.get("v") {
+                            if let redis::Value::BulkString(bytes) = v {
+                                let mut event =
+                                    serde_json::from_slice::<EventMsg>(
+                                        &bytes[..],
+                                    )
                                     .c(h!())?;
-                            event.id = id.clone();
-                            res.push(event);
-                        } else {
-                            warn!(
-                                "Error: Impossible! Error: Weird non-byte data"
-                            );
+                                event.id = id.clone();
+                                res.push(event);
+                            } else {
+                                warn!(
+                                    "Error: Impossible! Error: Weird non-byte data"
+                                );
+                            }
                         }
                     }
                 }
