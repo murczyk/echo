@@ -8,12 +8,14 @@ use actix_web::post;
 use actix_web::web::Json;
 use bytes::Bytes;
 use futures_util::StreamExt;
+use log::info;
 use reqwest::header::CONTENT_TYPE;
 use reqwest::multipart::{Form, Part};
 use sea_orm::ActiveModelTrait;
 use sea_orm::ActiveValue::{NotSet, Set};
 use std::path::Path;
 
+#[derive(Debug)]
 struct UploadData {
     hide_titles: bool,
     file_bytes: Vec<u8>,
@@ -34,6 +36,7 @@ async fn convert_alpinequest_file(
     env: actix_web::web::Data<Env>,
     mut payload: Multipart,
 ) -> Result<Json<i64>, AppError> {
+    info!("convert_alpinequest_file started");
     let login = user.id().c(h!())?;
     crate::users::has_role(&env.dbx, &login, "Rer")
         .await
@@ -41,6 +44,7 @@ async fn convert_alpinequest_file(
     let converter_url = env.config.alpine_converter_url.clone().c(h!())?;
     let upload = read_payload(&mut payload).await.c(h!())?;
 
+    info!("convert_alpinequest_file uploading data: {upload:?}");
     let loglines: Vec<String> = vec![];
     let bgtask = bgtask::ActiveModel {
         id: NotSet,
@@ -55,6 +59,7 @@ async fn convert_alpinequest_file(
 
     let bgtask_id = bgtask.id;
     let env_inner = env.get_ref().clone();
+    info!("convert_alpinequest_file starting alpine conversion");
     tokio::spawn(async move {
         let dbx = env_inner.dbx.clone();
         let res = async {
