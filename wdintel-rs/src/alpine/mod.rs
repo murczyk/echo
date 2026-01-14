@@ -2,7 +2,7 @@ use crate::delta::{bgtask_log, finish_bgtask};
 use crate::entities::{bgtask, bgtask_res};
 use crate::error::AppError;
 use crate::h;
-use crate::types::{Env, ShortContext};
+use crate::types::{Deserialize, Env, Serialize, ShortContext};
 use actix_multipart::Multipart;
 use actix_web::post;
 use actix_web::web::Json;
@@ -13,7 +13,7 @@ use reqwest::header::CONTENT_TYPE;
 use reqwest::multipart::{Form, Part};
 use sea_orm::ActiveModelTrait;
 use sea_orm::ActiveValue::{NotSet, Set};
-use std::path::Path;
+use std::time::Duration;
 
 #[derive(Debug)]
 struct UploadData {
@@ -29,6 +29,25 @@ struct ConversionResult {
     body: Bytes,
     content_type: Option<String>,
     name: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TaskStatusRsp {
+    pub statuses: Vec<TaskStatus>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TaskStatus {
+    pub receipt: String,
+    pub started: bool,
+    pub completed: bool,
+    pub is_ok: Option<bool>,
+    pub geolocation_description: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TaskStatusReq {
+    pub receipts: Vec<String>,
 }
 
 #[post("/api/alpine/convert")]
@@ -67,7 +86,7 @@ async fn convert_alpinequest_file(
             bgtask_log(Some(bgtask_id), "> starting alpine conversion", &dbx)
                 .await
                 .c(h!())?;
-            let result = call_converter(&env_inner, &converter_url, &upload)
+            let result = convert_file(&env_inner, &converter_url, &upload)
                 .await
                 .map_err(|e| AppError::AnyhowError { source: e })?;
             bgtask_log(
@@ -175,7 +194,7 @@ async fn read_payload(payload: &mut Multipart) -> Result<UploadData, AppError> {
     Ok(data)
 }
 
-async fn call_converter(
+async fn convert_file(
     env: &Env,
     converter_url: &str,
     upload: &UploadData,
@@ -202,65 +221,112 @@ async fn call_converter(
         .text("output_format", upload.output_format.clone())
         .part("src_file".to_string(), part);
     let host = converter_url.trim_end_matches('/');
-    let url = format!("{host}/api/upload-task");
-    let resp = env.rq.post(&url).multipart(form).send().await.c(h!())?;
+    let resp = env
+        .rq
+        .post(format!("{host}/api/upload-task"))
+        .multipart(form)
+        .send()
+        .await
+        .c(h!())?;
     let status = resp.status();
     if !status.is_success() {
         anyhow::bail!("converter error: status {status}");
     }
-    let content_type = resp
+    let response_text = resp.text().await.c(h!())?;
+    info!("✅ Conversion successful, status: {status}");
+    let receipt = response_text.replace('"', "");
+
+    wait_for_completion(env, &receipt, host).await.c(h!())?;
+    download_file(env, &receipt, host).await
+}
+
+async fn wait_for_completion(
+    env: &Env,
+    receipt: &str,
+    host: &str,
+) -> anyhow::Result<()> {
+    loop {
+        if let Ok(is_ok) = check_completion_status(env, receipt, host).await {
+            if is_ok {
+                return Ok(());
+            } else {
+                anyhow::bail!("failed to convert to KMZ")
+            }
+        };
+        tokio::time::sleep(Duration::from_secs(10)).await;
+    }
+}
+
+async fn check_completion_status(
+    env: &Env,
+    receipt: &str,
+    host: &str,
+) -> anyhow::Result<bool> {
+    let body = TaskStatusReq {
+        receipts: vec![receipt.to_string()],
+    };
+    let response = env
+        .rq
+        .post(format!("{host}/api/task-status-batch"))
+        .json(&body)
+        .send()
+        .await
+        .c(h!())?;
+    if !response.status().is_success() {
+        anyhow::bail!("Request failed with status: {}", response.status());
+    }
+    let rsp = response
+        .json::<TaskStatusRsp>()
+        .await
+        .c(h!())?
+        .statuses
+        .into_iter()
+        .next()
+        .c(h!())?;
+
+    if !rsp.completed {
+        anyhow::bail!("Task {receipt} is not converted yet");
+    }
+
+    Ok(rsp.is_ok.unwrap_or_default())
+}
+
+async fn download_file(
+    env: &Env,
+    receipt: &str,
+    host: &str,
+) -> anyhow::Result<ConversionResult> {
+    let response = env
+        .rq
+        .get(format!("{host}/api/download-task/{receipt}"))
+        .send()
+        .await
+        .c(h!())?;
+    if !response.status().is_success() {
+        anyhow::bail!("Request failed with status: {}", response.status());
+    }
+    let disposition_header = response
+        .headers()
+        .get(reqwest::header::CONTENT_DISPOSITION)
+        .c("Content-Disposition header missing")?
+        .to_str()?;
+    let disposition =
+        content_disposition::parse_content_disposition(disposition_header);
+    let filename = disposition
+        .filename()
+        .map(|(stem, _)| format!("{stem}.kmz"))
+        .unwrap_or_else(|| format!("{receipt}.kmz")); // Provide a default
+
+    let download_ct = response
         .headers()
         .get(CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
         .map(|v| v.to_string());
-    let body = resp.bytes().await.c(h!())?;
+    let file_bytes = response.bytes().await.c(h!())?;
 
-    if content_type
-        .as_deref()
-        .is_some_and(|ct| ct.starts_with("application/json"))
-    {
-        let download_path: String =
-            serde_json::from_slice(&body).map_err(|e| AppError::BL {
-                msg: format!("invalid converter response: {e}"),
-            })?;
-        let download_url = if download_path.starts_with("http") {
-            download_path.clone()
-        } else {
-            format!(
-                "{}/{}",
-                converter_url.trim_end_matches('/'),
-                download_path.trim_start_matches('/')
-            )
-        };
-        let download_resp = env.rq.get(&download_url).send().await.c(h!())?;
-        if !download_resp.status().is_success() {
-            anyhow::bail!(
-                "failed to download converted file: {}",
-                download_resp.status()
-            );
-        }
-        let download_ct = download_resp
-            .headers()
-            .get(CONTENT_TYPE)
-            .and_then(|v| v.to_str().ok())
-            .map(|v| v.to_string());
-        let download_body = download_resp.bytes().await.c(h!())?;
-        let download_name = Path::new(&download_url)
-            .file_name()
-            .and_then(|v| v.to_str())
-            .map(|v| v.to_string())
-            .or_else(|| upload.file_name.clone());
-        return Ok(ConversionResult {
-            body: download_body,
-            content_type: download_ct,
-            name: download_name,
-        });
-    }
-
-    let name = upload.file_name.clone();
     Ok(ConversionResult {
-        body,
-        content_type,
-        name,
+        body: file_bytes,
+        content_type: download_ct,
+        name: Some(filename),
     })
 }
