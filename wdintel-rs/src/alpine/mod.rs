@@ -4,7 +4,7 @@ use crate::error::AppError;
 use crate::h;
 use crate::types::{Env, ShortContext};
 use actix_multipart::Multipart;
-use actix_web::get;
+use actix_web::post;
 use actix_web::web::Json;
 use bytes::Bytes;
 use futures_util::StreamExt;
