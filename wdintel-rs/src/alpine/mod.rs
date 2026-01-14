@@ -28,7 +28,7 @@ struct ConversionResult {
     name: Option<String>,
 }
 
-#[get("/api/alpine/convert")]
+#[post("/api/alpine/convert")]
 async fn convert_alpinequest_file(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
