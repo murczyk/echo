@@ -22,6 +22,7 @@ struct UploadData {
     field_name: Option<String>,
     file_name: Option<String>,
     content_type: Option<String>,
+    output_format: String,
 }
 
 struct ConversionResult {
@@ -120,6 +121,7 @@ async fn read_payload(payload: &mut Multipart) -> Result<UploadData, AppError> {
         field_name: None,
         file_name: None,
         content_type: None,
+        output_format: "kmz".to_string(),
     };
 
     while let Some(item) = payload.next().await {
