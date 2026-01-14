@@ -323,7 +323,7 @@ async fn download_file(
         .and_then(|v| v.to_str().ok())
         .map(|v| v.to_string());
     let file_bytes = response.bytes().await.c(h!())?;
-    info!("result of converting #{receipt}: filename={filename} file_bytes={file_bytes}");
+    info!("result of converting #{receipt}: filename={filename} file_bytes={file_bytes:?}");
 
     Ok(ConversionResult {
         body: file_bytes,
