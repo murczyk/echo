@@ -233,11 +233,13 @@ async fn convert_file(
         anyhow::bail!("converter error: status {status}");
     }
     let response_text = resp.text().await.c(h!())?;
-    info!("✅ Conversion successful, status: {status}");
     let receipt = response_text.replace('"', "");
+    info!("✅ Upload successful, status: {status}, receipt: {receipt}. Waiting for conversion...");
 
     wait_for_completion(env, &receipt, host).await.c(h!())?;
-    download_file(env, &receipt, host).await
+    let result = download_file(env, &receipt, host).await.c(h!())?;
+    info!("✅ Conversion successful, receipt: {receipt}");
+    Ok(result)
 }
 
 async fn wait_for_completion(
