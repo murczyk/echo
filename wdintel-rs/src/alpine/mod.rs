@@ -180,10 +180,6 @@ async fn call_converter(
     converter_url: &str,
     upload: &UploadData,
 ) -> anyhow::Result<ConversionResult> {
-    let field_name = upload
-        .field_name
-        .clone()
-        .unwrap_or_else(|| "file".to_string());
     let mut part = Part::bytes(upload.file_bytes.clone());
     if let Some(fname) = upload.file_name.clone() {
         part = part.file_name(fname);
@@ -204,7 +200,7 @@ async fn call_converter(
             },
         )
         .text("output_format", upload.output_format.clone())
-        .part(field_name, part);
+        .part("src_file".to_string(), part);
     let host = converter_url.trim_end_matches('/');
     let url = format!("{host}/api/upload-task");
     let resp = env.rq.post(&url).multipart(form).send().await.c(h!())?;
