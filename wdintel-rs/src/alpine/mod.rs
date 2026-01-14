@@ -203,6 +203,7 @@ async fn call_converter(
                 "0".to_string()
             },
         )
+        .text("output_format", upload.output_format.clone())
         .part(field_name, part);
     let host = converter_url.trim_end_matches('/');
     let url = format!("{host}/api/upload-task");
