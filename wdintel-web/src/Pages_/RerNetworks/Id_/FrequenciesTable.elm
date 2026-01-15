@@ -1510,9 +1510,6 @@ freqEditSidebarContent shared model user freqId updateReq =
                                     ++ " символи"
                             ]
 
-                      else if keyValue == "" then
-                        div [ class "text-sm text-red-600" ] [ text "Це поле обов'язкове" ]
-
                       else
                         text ""
                     ]
@@ -1751,9 +1748,6 @@ freqCreateSidebarContent shared model user =
                                    )
                                 ++ " символи"
                         ]
-
-                  else if keyValue == "" then
-                    div [ class "text-sm text-red-600" ] [ text "Це поле обов'язкове" ]
 
                   else
                     text ""
