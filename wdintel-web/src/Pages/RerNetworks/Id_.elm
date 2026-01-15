@@ -225,7 +225,6 @@ init route shared () =
       , freqEditSaving = False
       , freqEditShowActiveTo = False
       , freqEditNewKeyInput = ""
-      , freqEditNewKeyHashInput = ""
       , freqEditNewKeySaving = False
       , deleteNetworkConfirmation = Nothing
       , deleteNetworkLoading = False
@@ -270,7 +269,6 @@ init route shared () =
       , freqCreateFormatError = Nothing
       , freqCreateShowActiveTo = False
       , freqCreateNewKeyInput = ""
-      , freqCreateNewKeyHashInput = ""
       , freqCreateNewKeySaving = False
 
       -- Network callsigns (new table)

@@ -204,7 +204,6 @@ type FrequenciesMsg
     | FreqCreateKeySelectMsg (Select.Msg Int)
     | FreqCreateDescriptionInputChangedByUser String
     | FreqCreateNewKeyInputChanged String
-    | FreqCreateNewKeyHashInputChanged String
     | FreqCreateNewKeyClicked
     | FreqCreateNewKeyCreated (Result ApiError B.EncryptionKeyData)
     | ToggleFreqCreateShowActiveTo
@@ -215,7 +214,6 @@ type FrequenciesMsg
     | OpenFreqDetailPopup String
     | CloseFreqDetailPopup
     | FreqEditNewKeyInputChanged String
-    | FreqEditNewKeyHashInputChanged String
     | FreqEditNewKeyClicked
     | FreqEditNewKeyCreated (Result ApiError B.EncryptionKeyData)
     | FreqsActivityFilterChangedByUser FreqActivityFilter

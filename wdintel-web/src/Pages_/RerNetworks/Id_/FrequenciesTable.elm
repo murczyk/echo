@@ -648,18 +648,12 @@ update shared msg model =
         FreqCreateNewKeyInputChanged inp ->
             ( { model | freqCreateNewKeyInput = inp }, E.none )
 
-        FreqCreateNewKeyHashInputChanged inp ->
-            ( { model | freqCreateNewKeyHashInput = inp }, E.none )
-
         FreqCreateNewKeyClicked ->
             case model.network of
                 Success network ->
                     let
                         keyValue =
                             String.trim model.freqCreateNewKeyInput
-
-                        hashValue =
-                            String.trim model.freqCreateNewKeyHashInput
 
                         keyRules =
                             keyRulesFromModulationId model model.freqCreateModulationSelect.selected
@@ -676,7 +670,7 @@ update shared msg model =
                                     False
 
                         keyInvalid =
-                            (keyValue == "" && hashValue == "") || keyWrongLength
+                            keyValue == "" || keyWrongLength
 
                         modulationId =
                             case model.freqCreateModulationSelect.selected of
@@ -709,12 +703,7 @@ update shared msg model =
 
                                     else
                                         Just keyValue
-                                , keyHash =
-                                    if hashValue == "" then
-                                        Nothing
-
-                                    else
-                                        Just hashValue
+                                , keyHash = Nothing
                                 , description = Nothing
                                 , modulationId = modulationId
                                 }
@@ -839,18 +828,12 @@ update shared msg model =
         FreqEditNewKeyInputChanged inp ->
             ( { model | freqEditNewKeyInput = inp }, E.none )
 
-        FreqEditNewKeyHashInputChanged inp ->
-            ( { model | freqEditNewKeyHashInput = inp }, E.none )
-
         FreqEditNewKeyClicked ->
             case model.network of
                 Success network ->
                     let
                         keyValue =
                             String.trim model.freqEditNewKeyInput
-
-                        hashValue =
-                            String.trim model.freqEditNewKeyHashInput
 
                         keyRules =
                             keyRulesFromModulationId model model.freqEditModulationSelect.selected
@@ -867,7 +850,7 @@ update shared msg model =
                                     False
 
                         keyInvalid =
-                            (keyValue == "" && hashValue == "") || keyWrongLength
+                            keyValue == "" || keyWrongLength
 
                         modulationId =
                             case model.freqEditModulationSelect.selected of
@@ -900,12 +883,7 @@ update shared msg model =
 
                                     else
                                         Just keyValue
-                                , keyHash =
-                                    if hashValue == "" then
-                                        Nothing
-
-                                    else
-                                        Just hashValue
+                                , keyHash = Nothing
                                 , description = Nothing
                                 , modulationId = modulationId
                                 }
@@ -1490,9 +1468,6 @@ freqEditSidebarContent shared model user freqId updateReq =
                     keyValue =
                         String.trim model.freqEditNewKeyInput
 
-                    hashValue =
-                        String.trim model.freqEditNewKeyHashInput
-
                     keyLen =
                         String.length keyValue
 
@@ -1505,7 +1480,7 @@ freqEditSidebarContent shared model user freqId updateReq =
                                 False
 
                     keyInvalid =
-                        (keyValue == "" && hashValue == "") || keyWrongLength
+                        keyValue == "" || keyWrongLength
                   in
                   div [ class "space-y-2" ]
                     [ div [ class "flex gap-2" ]
@@ -1524,15 +1499,6 @@ freqEditSidebarContent shared model user freqId updateReq =
                             ]
                             []
                         ]
-                    , input
-                        [ class "w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
-                        , type_ "text"
-                        , placeholder "Введіть хеш ключа"
-                        , value model.freqEditNewKeyHashInput
-                        , onInput FreqEditNewKeyHashInputChanged
-                        , disabled model.freqEditNewKeySaving
-                        ]
-                        []
                     , if keyWrongLength then
                         div [ class "text-sm text-red-600" ]
                             [ text <|
@@ -1544,7 +1510,7 @@ freqEditSidebarContent shared model user freqId updateReq =
                                     ++ " символи"
                             ]
 
-                      else if keyValue == "" && hashValue == "" then
+                      else if keyValue == "" then
                         div [ class "text-sm text-red-600" ] [ text "Це поле обов'язкове" ]
 
                       else
@@ -1745,9 +1711,6 @@ freqCreateSidebarContent shared model user =
                 keyValue =
                     String.trim model.freqCreateNewKeyInput
 
-                hashValue =
-                    String.trim model.freqCreateNewKeyHashInput
-
                 keyLen =
                     String.length keyValue
 
@@ -1759,7 +1722,7 @@ freqCreateSidebarContent shared model user =
                             False
 
                 keyInvalid =
-                    (keyValue == "" && hashValue == "") || keyWrongLength
+                    keyValue == "" || keyWrongLength
               in
               div [ class "space-y-2" ]
                 [ div [ class "flex gap-2" ]
@@ -1778,15 +1741,6 @@ freqCreateSidebarContent shared model user =
                         ]
                         []
                     ]
-                , input
-                    [ class "w-full p-2 border border-border rounded"
-                    , type_ "text"
-                    , placeholder "Введіть хеш ключа"
-                    , value model.freqCreateNewKeyHashInput
-                    , onInput FreqCreateNewKeyHashInputChanged
-                    , disabled model.freqCreateNewKeySaving
-                    ]
-                    []
                 , if keyWrongLength then
                     div [ class "text-sm text-red-600" ]
                         [ text <|
@@ -1798,7 +1752,7 @@ freqCreateSidebarContent shared model user =
                                 ++ " символи"
                         ]
 
-                  else if keyValue == "" && hashValue == "" then
+                  else if keyValue == "" then
                     div [ class "text-sm text-red-600" ] [ text "Це поле обов'язкове" ]
 
                   else
@@ -1953,7 +1907,6 @@ addKeyToFreqCreateForm model keyData =
         clearedModel =
             { model
                 | freqCreateNewKeyInput = ""
-                , freqCreateNewKeyHashInput = ""
                 , freqCreateNewKeySaving = False
             }
     in
@@ -2001,7 +1954,6 @@ addKeyToFreqEditForm model keyData =
         clearedModel =
             { model
                 | freqEditNewKeyInput = ""
-                , freqEditNewKeyHashInput = ""
                 , freqEditNewKeySaving = False
             }
     in
