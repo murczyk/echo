@@ -390,8 +390,16 @@ pub async fn load_freqs(
                     .unwrap_or_default();
                 network.encryption_key_ids =
                     keys.iter().filter_map(|key| key.id).collect();
-                network.encryption_keys =
-                    keys.into_iter().map(|k| k.key).collect();
+                network.encryption_keys = keys
+                    .into_iter()
+                    .map(|k| {
+                        format!(
+                            "{}/{}",
+                            k.key.unwrap_or("".to_string()),
+                            k.key_hash.unwrap_or("".to_string())
+                        )
+                    })
+                    .collect();
             }
             Ok(networks)
         }
