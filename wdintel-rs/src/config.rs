@@ -168,6 +168,7 @@ pub struct Config {
     pub feature_delete_uploaded_attachment: Option<bool>,
     pub s3_config: Option<S3Config>,
     pub store_palitra_in_s3: Option<bool>,
+    pub alpine_converter_url: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]

@@ -18,6 +18,8 @@
 - [#1792](https://github.com/echoua/echo/issues/1792) ✅ Парсинг, Покращили розпізнавання позивних
 - [#1675](https://github.com/echoua/echo/issues/1675) ✅ Адмін: панель керування, ручний рестарт джерел
 - [#1797](https://github.com/echoua/echo/issues/1797) ✅ Частоти: зберігати ключ шифрування
+- [#1698](https://github.com/echoua/echo/issues/1698) 🚨 KMZ зберігаємо в b2
+- [#1769](https://github.com/echoua/echo/issues/1769) ✅ Інше: AlpineQuest конвертер інтегровано в Ехо
 - [#1646](https://github.com/echoua/echo/issues/1646) ✅ Звіт Еталонка. Форматування та сортування розділів.
 - [#1782](https://github.com/echoua/echo/issues/1782) 🐞 Прибраний зайвий чекбокс при генерації звітів, який впливав на
   загальні фільтри
@@ -36,7 +38,6 @@
 
 ## 2025-12-15
 
-- [#1698](https://github.com/echoua/echo/issues/1698) 🚨 KMZ зберігаємо в b2
 - [#1740](https://github.com/echoua/echo/issues/1740) ✅ Додано можливість експорту в csv файли таблиць з урахуванням фільтрів в позивних, сигналів управління
 - [#1733](https://github.com/echoua/echo/issues/1733) 🐞 Виправлено помилку при підказці позивного
 - [#1733](https://github.com/echoua/echo/issues/1733) 🚨 Оптимізовано завантаження сторінки аналізу, список важливих та закладок тепер не грузиться

@@ -898,6 +898,18 @@ radiosDownloadResultReqEncoder struct =
         ]
 
 
+type alias AlpineDownloadResultReq =
+    { bgtaskId : Int
+    }
+
+
+alpineDownloadResultReqEncoder : AlpineDownloadResultReq -> Json.Encode.Value
+alpineDownloadResultReqEncoder struct =
+    Json.Encode.object
+        [ ( "bgtask_id", Json.Encode.int struct.bgtaskId )
+        ]
+
+
 type alias AreaOfResponsibilityEntry =
     { id : Int
     , name : String
@@ -9079,6 +9091,42 @@ listCallsignsSortByDecoder =
         ]
 
 
+developingFilterDecoder : Json.Decode.Decoder DevelopingFilter
+developingFilterDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "OnlyDeveloping" ->
+                            Json.Decode.succeed OnlyDeveloping
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "OnlyNonDeveloping" ->
+                            Json.Decode.succeed OnlyNonDeveloping
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "All" ->
+                            Json.Decode.succeed All
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
+
+
 listCallsignsReqDecoder : Json.Decode.Decoder ListCallsignsReq
 listCallsignsReqDecoder =
     Json.Decode.succeed ListCallsignsReq
@@ -9141,42 +9189,6 @@ listNetworkCallsignsSortByDecoder =
                     case x of
                         "NetworkCallsignCreatedAtDesc" ->
                             Json.Decode.succeed NetworkCallsignCreatedAtDesc
-
-                        unexpected ->
-                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
-                )
-        ]
-
-
-developingFilterDecoder : Json.Decode.Decoder DevelopingFilter
-developingFilterDecoder =
-    Json.Decode.oneOf
-        [ Json.Decode.string
-            |> Json.Decode.andThen
-                (\x ->
-                    case x of
-                        "OnlyDeveloping" ->
-                            Json.Decode.succeed OnlyDeveloping
-
-                        unexpected ->
-                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
-                )
-        , Json.Decode.string
-            |> Json.Decode.andThen
-                (\x ->
-                    case x of
-                        "OnlyNonDeveloping" ->
-                            Json.Decode.succeed OnlyNonDeveloping
-
-                        unexpected ->
-                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
-                )
-        , Json.Decode.string
-            |> Json.Decode.andThen
-                (\x ->
-                    case x of
-                        "All" ->
-                            Json.Decode.succeed All
 
                         unexpected ->
                             Json.Decode.fail <| "Unexpected variant " ++ unexpected
