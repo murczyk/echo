@@ -38,6 +38,7 @@ import Shared
 import Shared.CallsignsPopup as CallsignsPopup exposing (PopupCallerOrigin(..))
 import Shared.Components.Button as Button
 import Shared.Components.Checkbox as Checkbox
+import String
 import Shared.Components.DateTime
 import Shared.Components.DropdownBadge as DropdownBadge exposing (DropdownAction(..))
 import Shared.Components.ModalDialog as ModalDialog
@@ -166,6 +167,7 @@ init route shared () =
       , keyCreateSidebar = False
       , keyCreateState =
             { key = ""
+            , keyHash = ""
             , description = ""
             , sigintNetworkFreqIds = []
             }
@@ -223,6 +225,7 @@ init route shared () =
       , freqEditSaving = False
       , freqEditShowActiveTo = False
       , freqEditNewKeyInput = ""
+      , freqEditNewKeyHashInput = ""
       , freqEditNewKeySaving = False
       , deleteNetworkConfirmation = Nothing
       , deleteNetworkLoading = False
@@ -267,6 +270,7 @@ init route shared () =
       , freqCreateFormatError = Nothing
       , freqCreateShowActiveTo = False
       , freqCreateNewKeyInput = ""
+      , freqCreateNewKeyHashInput = ""
       , freqCreateNewKeySaving = False
 
       -- Network callsigns (new table)
@@ -419,14 +423,14 @@ update shared msg model =
                                             (\key ->
                                                 case key.id of
                                                     Just keyId ->
-                                                        if key.key == "🔑" then
+                                                        if key.key == Just "🔑" then
                                                             Nothing
 
                                                         else
                                                             Just <|
                                                                 Select.basicMenuItem
                                                                     { item = keyId
-                                                                    , label = key.key
+                                                                    , label = keyDisplay key.key key.keyHash
                                                                     }
 
                                                     Nothing ->
@@ -1087,6 +1091,40 @@ update shared msg model =
 subscriptions : Model -> Sub Msg
 subscriptions model =
     Sub.none
+
+
+keyDisplay : Maybe String -> Maybe String -> String
+keyDisplay key hash =
+    let
+        keyValue =
+            key
+                |> Maybe.withDefault ""
+                |> String.trim
+
+        hashValue =
+            hash
+                |> Maybe.withDefault ""
+                |> String.trim
+
+        displayKey =
+            if keyValue == "" then
+                "-"
+
+            else
+                keyValue
+
+        displayHash =
+            if hashValue == "" then
+                "-"
+
+            else
+                hashValue
+    in
+    if keyValue == "" && hashValue == "" then
+        "-"
+
+    else
+        displayKey ++ "/" ++ displayHash
 
 
 

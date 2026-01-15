@@ -648,12 +648,18 @@ update shared msg model =
         FreqCreateNewKeyInputChanged inp ->
             ( { model | freqCreateNewKeyInput = inp }, E.none )
 
+        FreqCreateNewKeyHashInputChanged inp ->
+            ( { model | freqCreateNewKeyHashInput = inp }, E.none )
+
         FreqCreateNewKeyClicked ->
             case model.network of
                 Success network ->
                     let
                         keyValue =
                             String.trim model.freqCreateNewKeyInput
+
+                        hashValue =
+                            String.trim model.freqCreateNewKeyHashInput
 
                         keyRules =
                             keyRulesFromModulationId model model.freqCreateModulationSelect.selected
@@ -664,13 +670,13 @@ update shared msg model =
                         keyWrongLength =
                             case keyRules.requiredLen of
                                 Just requiredLen ->
-                                    keyRules.keyAllowed && keyLen /= requiredLen
+                                    keyRules.keyAllowed && keyValue /= "" && keyLen /= requiredLen
 
                                 Nothing ->
                                     False
 
                         keyInvalid =
-                            keyValue == "" || keyWrongLength
+                            (keyValue == "" && hashValue == "") || keyWrongLength
 
                         modulationId =
                             case model.freqCreateModulationSelect.selected of
@@ -697,7 +703,18 @@ update shared msg model =
                             Api.sigint_create_key FreqCreateNewKeyCreated
                                 { sigintNetworkId = network.id
                                 , sigintNetworkFreqIds = []
-                                , key = keyValue
+                                , key =
+                                    if keyValue == "" then
+                                        Nothing
+
+                                    else
+                                        Just keyValue
+                                , keyHash =
+                                    if hashValue == "" then
+                                        Nothing
+
+                                    else
+                                        Just hashValue
                                 , description = Nothing
                                 , modulationId = modulationId
                                 }
@@ -822,12 +839,18 @@ update shared msg model =
         FreqEditNewKeyInputChanged inp ->
             ( { model | freqEditNewKeyInput = inp }, E.none )
 
+        FreqEditNewKeyHashInputChanged inp ->
+            ( { model | freqEditNewKeyHashInput = inp }, E.none )
+
         FreqEditNewKeyClicked ->
             case model.network of
                 Success network ->
                     let
                         keyValue =
                             String.trim model.freqEditNewKeyInput
+
+                        hashValue =
+                            String.trim model.freqEditNewKeyHashInput
 
                         keyRules =
                             keyRulesFromModulationId model model.freqEditModulationSelect.selected
@@ -838,13 +861,13 @@ update shared msg model =
                         keyWrongLength =
                             case keyRules.requiredLen of
                                 Just requiredLen ->
-                                    keyRules.keyAllowed && keyLen /= requiredLen
+                                    keyRules.keyAllowed && keyValue /= "" && keyLen /= requiredLen
 
                                 Nothing ->
                                     False
 
                         keyInvalid =
-                            keyValue == "" || keyWrongLength
+                            (keyValue == "" && hashValue == "") || keyWrongLength
 
                         modulationId =
                             case model.freqEditModulationSelect.selected of
@@ -871,7 +894,18 @@ update shared msg model =
                             Api.sigint_create_key FreqEditNewKeyCreated
                                 { sigintNetworkId = network.id
                                 , sigintNetworkFreqIds = []
-                                , key = keyValue
+                                , key =
+                                    if keyValue == "" then
+                                        Nothing
+
+                                    else
+                                        Just keyValue
+                                , keyHash =
+                                    if hashValue == "" then
+                                        Nothing
+
+                                    else
+                                        Just hashValue
                                 , description = Nothing
                                 , modulationId = modulationId
                                 }
@@ -1456,6 +1490,9 @@ freqEditSidebarContent shared model user freqId updateReq =
                     keyValue =
                         String.trim model.freqEditNewKeyInput
 
+                    hashValue =
+                        String.trim model.freqEditNewKeyHashInput
+
                     keyLen =
                         String.length keyValue
 
@@ -1468,7 +1505,7 @@ freqEditSidebarContent shared model user freqId updateReq =
                                 False
 
                     keyInvalid =
-                        keyValue == "" || keyWrongLength
+                        (keyValue == "" && hashValue == "") || keyWrongLength
                   in
                   div [ class "space-y-2" ]
                     [ div [ class "flex gap-2" ]
@@ -1487,6 +1524,15 @@ freqEditSidebarContent shared model user freqId updateReq =
                             ]
                             []
                         ]
+                    , input
+                        [ class "w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
+                        , type_ "text"
+                        , placeholder "Введіть хеш ключа"
+                        , value model.freqEditNewKeyHashInput
+                        , onInput FreqEditNewKeyHashInputChanged
+                        , disabled model.freqEditNewKeySaving
+                        ]
+                        []
                     , if keyWrongLength then
                         div [ class "text-sm text-red-600" ]
                             [ text <|
@@ -1497,6 +1543,9 @@ freqEditSidebarContent shared model user freqId updateReq =
                                        )
                                     ++ " символи"
                             ]
+
+                      else if keyValue == "" && hashValue == "" then
+                        div [ class "text-sm text-red-600" ] [ text "Це поле обов'язкове" ]
 
                       else
                         text ""
@@ -1696,6 +1745,9 @@ freqCreateSidebarContent shared model user =
                 keyValue =
                     String.trim model.freqCreateNewKeyInput
 
+                hashValue =
+                    String.trim model.freqCreateNewKeyHashInput
+
                 keyLen =
                     String.length keyValue
 
@@ -1703,12 +1755,11 @@ freqCreateSidebarContent shared model user =
                     case keyRules.requiredLen of
                         Just requiredLen ->
                             keyRules.keyAllowed && keyValue /= "" && keyLen /= requiredLen
-
                         Nothing ->
                             False
 
                 keyInvalid =
-                    keyValue == "" || keyWrongLength
+                    (keyValue == "" && hashValue == "") || keyWrongLength
               in
               div [ class "space-y-2" ]
                 [ div [ class "flex gap-2" ]
@@ -1727,6 +1778,15 @@ freqCreateSidebarContent shared model user =
                         ]
                         []
                     ]
+                , input
+                    [ class "w-full p-2 border border-border rounded"
+                    , type_ "text"
+                    , placeholder "Введіть хеш ключа"
+                    , value model.freqCreateNewKeyHashInput
+                    , onInput FreqCreateNewKeyHashInputChanged
+                    , disabled model.freqCreateNewKeySaving
+                    ]
+                    []
                 , if keyWrongLength then
                     div [ class "text-sm text-red-600" ]
                         [ text <|
@@ -1737,6 +1797,9 @@ freqCreateSidebarContent shared model user =
                                    )
                                 ++ " символи"
                         ]
+
+                  else if keyValue == "" && hashValue == "" then
+                    div [ class "text-sm text-red-600" ] [ text "Це поле обов'язкове" ]
 
                   else
                     text ""
@@ -1854,7 +1917,7 @@ findSelectItemsById model selectedIds =
                                 (\key ->
                                     Select.basicMenuItem
                                         { item = keyId
-                                        , label = key.key
+                                        , label = keyDisplay key.key key.keyHash
                                         }
                                 )
                     )
@@ -1888,7 +1951,11 @@ addKeyToFreqCreateForm : Model -> B.EncryptionKeyData -> Model
 addKeyToFreqCreateForm model keyData =
     let
         clearedModel =
-            { model | freqCreateNewKeyInput = "", freqCreateNewKeySaving = False }
+            { model
+                | freqCreateNewKeyInput = ""
+                , freqCreateNewKeyHashInput = ""
+                , freqCreateNewKeySaving = False
+            }
     in
     case keyData.id of
         Just keyId ->
@@ -1900,7 +1967,7 @@ addKeyToFreqCreateForm model keyData =
                     clearedModel.freqEditKeySelect
 
                 updatedItems =
-                    addKeyToSelectItems keyId keyData.key freqCreateSelect.items
+                    addKeyToSelectItems keyId keyData freqCreateSelect.items
 
                 updatedSelected =
                     addKeyId keyId freqCreateSelect.selected
@@ -1932,7 +1999,11 @@ addKeyToFreqEditForm : Model -> B.EncryptionKeyData -> Model
 addKeyToFreqEditForm model keyData =
     let
         clearedModel =
-            { model | freqEditNewKeyInput = "", freqEditNewKeySaving = False }
+            { model
+                | freqEditNewKeyInput = ""
+                , freqEditNewKeyHashInput = ""
+                , freqEditNewKeySaving = False
+            }
     in
     case keyData.id of
         Just keyId ->
@@ -1944,7 +2015,7 @@ addKeyToFreqEditForm model keyData =
                     clearedModel.freqEditKeySelect
 
                 updatedItems =
-                    addKeyToSelectItems keyId keyData.key freqEditSelect.items
+                    addKeyToSelectItems keyId keyData freqEditSelect.items
 
                 updatedSelected =
                     addKeyId keyId freqEditSelect.selected
@@ -1983,9 +2054,9 @@ addKeyId keyId selected =
         selected ++ [ keyId ]
 
 
-addKeyToSelectItems : Int -> String -> List (Select.MenuItem Int) -> List (Select.MenuItem Int)
-addKeyToSelectItems keyId keyValue items =
-    items ++ [ Select.basicMenuItem { item = keyId, label = keyValue } ]
+addKeyToSelectItems : Int -> B.EncryptionKeyData -> List (Select.MenuItem Int) -> List (Select.MenuItem Int)
+addKeyToSelectItems keyId keyData items =
+    items ++ [ Select.basicMenuItem { item = keyId, label = keyDisplay keyData.key keyData.keyHash } ]
 
 
 addKeyToNetworkKeys :
@@ -2003,6 +2074,40 @@ addKeyToNetworkKeys keyData remoteKeys =
 
         _ ->
             remoteKeys
+
+
+keyDisplay : Maybe String -> Maybe String -> String
+keyDisplay key hash =
+    let
+        keyValue =
+            key
+                |> Maybe.withDefault ""
+                |> String.trim
+
+        hashValue =
+            hash
+                |> Maybe.withDefault ""
+                |> String.trim
+
+        displayKey =
+            if keyValue == "" then
+                "-"
+
+            else
+                keyValue
+
+        displayHash =
+            if hashValue == "" then
+                "-"
+
+            else
+                hashValue
+    in
+    if keyValue == "" && hashValue == "" then
+        "-"
+
+    else
+        displayKey ++ "/" ++ displayHash
 
 
 keyRulesFromModulationId : Model -> Maybe Int -> KeyRules

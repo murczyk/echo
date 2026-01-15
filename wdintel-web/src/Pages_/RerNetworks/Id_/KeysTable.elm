@@ -81,6 +81,7 @@ update _ msg networkModel =
                 , keyCreateSaving = False
                 , keyCreateState =
                     { key = ""
+                    , keyHash = ""
                     , description = ""
                     , sigintNetworkFreqIds = []
                     }
@@ -111,6 +112,7 @@ update _ msg networkModel =
                 , keyCreateSaving = False
                 , keyCreateState =
                     { key = ""
+                    , keyHash = ""
                     , description = ""
                     , sigintNetworkFreqIds = []
                     }
@@ -128,6 +130,18 @@ update _ msg networkModel =
             ( { networkModel
                 | keyCreateState =
                     { keyCreateState | key = value }
+              }
+            , E.none
+            )
+
+        KeyCreateHashChanged value ->
+            let
+                keyCreateState =
+                    networkModel.keyCreateState
+            in
+            ( { networkModel
+                | keyCreateState =
+                    { keyCreateState | keyHash = value }
               }
             , E.none
             )
@@ -217,24 +231,30 @@ update _ msg networkModel =
                             keyRules.keyAllowed
 
                         keyValue =
-                            networkModel.keyCreateState.key
+                            String.trim networkModel.keyCreateState.key
+
+                        hashValue =
+                            String.trim networkModel.keyCreateState.keyHash
 
                         keyLen =
-                            String.length (String.trim keyValue)
+                            String.length keyValue
 
                         keyWrongLength =
                             case keyRules.requiredLen of
                                 Just requiredLen ->
-                                    keyAllowed && keyLen /= requiredLen
+                                    keyAllowed && keyValue /= "" && keyLen /= requiredLen
 
                                 Nothing ->
                                     False
 
-                        keyRequired =
-                            isModulationSelected && keyAllowed
+                        keyIsEmpty =
+                            keyValue == ""
+
+                        hashIsEmpty =
+                            hashValue == ""
 
                         keyInvalid =
-                            (keyRequired && String.trim keyValue == "") || keyWrongLength
+                            (keyIsEmpty && hashIsEmpty) || keyWrongLength
                     in
                     if not isModulationSelected then
                         ( networkModel, E.none )
@@ -255,7 +275,18 @@ update _ msg networkModel =
                                 { sigintNetworkId = network.id
                                 , sigintNetworkFreqIds =
                                     networkModel.keyCreateState.sigintNetworkFreqIds
-                                , key = keyValue
+                                , key =
+                                    if keyValue == "" then
+                                        Nothing
+
+                                    else
+                                        Just keyValue
+                                , keyHash =
+                                    if hashValue == "" then
+                                        Nothing
+
+                                    else
+                                        Just hashValue
                                 , description = description
                                 , modulationId =
                                     normalizeModulationId
@@ -283,6 +314,7 @@ update _ msg networkModel =
                         , keyCreateSidebar = False
                         , keyCreateState =
                             { key = ""
+                            , keyHash = ""
                             , description = ""
                             , sigintNetworkFreqIds = []
                             }
@@ -307,6 +339,7 @@ update _ msg networkModel =
                             { id = keyId
                             , sigintNetworkFreqIds = keyData.sigintNetworkFreqIds
                             , key = keyData.key
+                            , keyHash = keyData.keyHash
                             , description = keyData.description
                             , modulationId = keyData.modulationId
                             }
@@ -371,7 +404,36 @@ update _ msg networkModel =
             ( { networkModel
                 | keyEditSidebar =
                     networkModel.keyEditSidebar
-                        |> Maybe.map (\req -> { req | key = value })
+                        |> Maybe.map
+                            (\req ->
+                                { req
+                                    | key =
+                                        if String.trim value == "" then
+                                            Nothing
+
+                                        else
+                                            Just value
+                                }
+                            )
+              }
+            , E.none
+            )
+
+        KeyEditHashChanged value ->
+            ( { networkModel
+                | keyEditSidebar =
+                    networkModel.keyEditSidebar
+                        |> Maybe.map
+                            (\req ->
+                                { req
+                                    | keyHash =
+                                        if String.trim value == "" then
+                                            Nothing
+
+                                        else
+                                            Just value
+                                }
+                            )
               }
             , E.none
             )
@@ -467,27 +529,49 @@ update _ msg networkModel =
 
                         keyValue =
                             req.key
+                                |> Maybe.withDefault ""
+                                |> String.trim
+
+                        hashValue =
+                            req.keyHash
+                                |> Maybe.withDefault ""
+                                |> String.trim
 
                         keyLen =
-                            String.length (String.trim keyValue)
+                            String.length keyValue
 
                         keyWrongLength =
                             case keyRules.requiredLen of
                                 Just requiredLen ->
-                                    keyAllowed && keyLen /= requiredLen
+                                    keyAllowed && keyValue /= "" && keyLen /= requiredLen
 
                                 Nothing ->
                                     False
 
-                        keyRequired =
-                            isModulationSelected && keyAllowed
+                        keyIsEmpty =
+                            keyValue == ""
+
+                        hashIsEmpty =
+                            hashValue == ""
 
                         keyInvalid =
-                            (keyRequired && String.trim keyValue == "") || keyWrongLength
+                            (keyIsEmpty && hashIsEmpty) || keyWrongLength
 
                         updatedReq =
                             { req
-                                | modulationId = normalizeModulationId modulationId
+                                | key =
+                                    if keyValue == "" then
+                                        Nothing
+
+                                    else
+                                        Just keyValue
+                                , keyHash =
+                                    if hashValue == "" then
+                                        Nothing
+
+                                    else
+                                        Just hashValue
+                                , modulationId = normalizeModulationId modulationId
                             }
                     in
                     if not isModulationSelected then
@@ -593,7 +677,7 @@ deleteKeyConfirmationModal model =
         keyValue =
             case model.deleteKeyConfirmation of
                 Just ( _, value ) ->
-                    keyLabel value
+                    value
 
                 Nothing ->
                     "-"
@@ -668,14 +752,19 @@ keyEditSidebarContent shared model updateReq =
 
         keyValue =
             updateReq.key
+                |> Maybe.withDefault ""
 
         keyLen =
             String.length (String.trim keyValue)
 
+        hashValue =
+            updateReq.keyHash
+                |> Maybe.withDefault ""
+
         keyWrongLength =
             case keyRules.requiredLen of
                 Just requiredLen ->
-                    keyAllowed && keyLen /= requiredLen
+                    keyAllowed && String.trim keyValue /= "" && keyLen /= requiredLen
 
                 Nothing ->
                     False
@@ -689,14 +778,14 @@ keyEditSidebarContent shared model updateReq =
         keyIsEmpty =
             String.trim keyValue == ""
 
+        hashIsEmpty =
+            String.trim hashValue == ""
+
         modulationIsEmpty =
             not isModulationSelected
 
-        keyRequired =
-            isModulationSelected && keyAllowed
-
         keyInvalid =
-            (keyRequired && keyIsEmpty) || keyWrongLength
+            (keyIsEmpty && hashIsEmpty) || keyWrongLength
     in
     [ div [ class "flex flex-col h-full" ]
         [ div [ class "p-6 border-b border-border" ]
@@ -721,11 +810,11 @@ keyEditSidebarContent shared model updateReq =
                     text ""
                 ]
             , div []
-                [ label [ class "block text-sm font-medium mb-1" ] [ text "Ключ*" ]
+                [ label [ class "block text-sm font-medium mb-1" ] [ text "Ключ" ]
                 , input
                     ([ class <|
                         "w-full p-2 border rounded "
-                            ++ (if keyInvalid then
+                            ++ (if keyWrongLength then
                                     "border-red-500"
 
                                 else
@@ -746,10 +835,7 @@ keyEditSidebarContent shared model updateReq =
                            )
                     )
                     []
-                , if keyRequired && keyIsEmpty then
-                    div [ class "text-sm text-red-600 mt-1" ] [ text "Це поле обов'язкове" ]
-
-                  else if keyWrongLength then
+                , if keyWrongLength then
                     div [ class "text-sm text-red-600 mt-1" ]
                         [ text <|
                             "Довжина ключа має бути "
@@ -759,6 +845,29 @@ keyEditSidebarContent shared model updateReq =
                                    )
                                 ++ " символи"
                         ]
+
+                  else
+                    text ""
+                ]
+            , div []
+                [ label [ class "block text-sm font-medium mb-1" ] [ text "Хеш ключа" ]
+                , input
+                    [ class <|
+                        "w-full p-2 border rounded "
+                            ++ (if keyIsEmpty && hashIsEmpty then
+                                    "border-red-500"
+
+                                else
+                                    "border-border"
+                               )
+                    , type_ "text"
+                    , placeholder "Введіть хеш ключа"
+                    , value hashValue
+                    , onInput KeyEditHashChanged
+                    ]
+                    []
+                , if keyIsEmpty && hashIsEmpty then
+                    div [ class "text-sm text-red-600 mt-1" ] [ text "Це поле обов'язкове" ]
 
                   else
                     text ""
@@ -830,10 +939,13 @@ keyCreateSidebarContent shared model =
         keyLen =
             String.length (String.trim keyValue)
 
+        hashValue =
+            model.keyCreateState.keyHash
+
         keyWrongLength =
             case keyRules.requiredLen of
                 Just requiredLen ->
-                    keyAllowed && keyLen /= requiredLen
+                    keyAllowed && String.trim keyValue /= "" && keyLen /= requiredLen
 
                 Nothing ->
                     False
@@ -847,14 +959,14 @@ keyCreateSidebarContent shared model =
         keyIsEmpty =
             String.trim keyValue == ""
 
+        hashIsEmpty =
+            String.trim hashValue == ""
+
         modulationIsEmpty =
             not isModulationSelected
 
-        keyRequired =
-            isModulationSelected && keyAllowed
-
         keyInvalid =
-            (keyRequired && keyIsEmpty) || keyWrongLength
+            (keyIsEmpty && hashIsEmpty) || keyWrongLength
     in
     [ div [ class "flex flex-col h-full" ]
         [ div [ class "p-6 border-b border-border" ]
@@ -882,11 +994,11 @@ keyCreateSidebarContent shared model =
                     text ""
                 ]
             , div []
-                [ label [ class "block text-sm font-medium mb-1" ] [ text "Ключ*" ]
+                [ label [ class "block text-sm font-medium mb-1" ] [ text "Ключ" ]
                 , input
                     ([ class <|
                         "w-full p-2 border rounded "
-                            ++ (if keyInvalid then
+                            ++ (if keyWrongLength then
                                     "border-red-500"
 
                                 else
@@ -907,10 +1019,7 @@ keyCreateSidebarContent shared model =
                            )
                     )
                     []
-                , if keyRequired && keyIsEmpty then
-                    div [ class "text-sm text-red-600 mt-1" ] [ text "Це поле обов'язкове" ]
-
-                  else if keyWrongLength then
+                , if keyWrongLength then
                     div [ class "text-sm text-red-600 mt-1" ]
                         [ text <|
                             "Довжина ключа має бути "
@@ -920,6 +1029,29 @@ keyCreateSidebarContent shared model =
                                    )
                                 ++ " символи"
                         ]
+
+                  else
+                    text ""
+                ]
+            , div []
+                [ label [ class "block text-sm font-medium mb-1" ] [ text "Хеш ключа" ]
+                , input
+                    [ class <|
+                        "w-full p-2 border rounded "
+                            ++ (if keyIsEmpty && hashIsEmpty then
+                                    "border-red-500"
+
+                                else
+                                    "border-border"
+                               )
+                    , type_ "text"
+                    , placeholder "Введіть хеш ключа"
+                    , value hashValue
+                    , onInput KeyCreateHashChanged
+                    ]
+                    []
+                , if keyIsEmpty && hashIsEmpty then
+                    div [ class "text-sm text-red-600 mt-1" ] [ text "Це поле обов'язкове" ]
 
                   else
                     text ""
@@ -1062,7 +1194,7 @@ keysTableConfig user networkModel =
         , toMsg = SetKeysTableState
         , columns =
             [ TableColumn.stringColumn "Частота" (\key -> freqLabelsByIds networkModel key.sigintNetworkFreqIds)
-            , TableColumn.stringColumn "Ключ" (\key -> keyLabel key.key)
+            , TableColumn.stringColumn "Ключ" (\key -> keyDisplay key.key key.keyHash)
             , TableColumn.stringColumn "Опис" (\key -> Maybe.withDefault "-" key.description)
             ]
                 ++ (if Core.Auth.hasRole "UnitsEditor" user then
@@ -1072,7 +1204,7 @@ keysTableConfig user networkModel =
                                 \key ->
                                     { attributes = [ class "col-narrow" ]
                                     , children =
-                                        [ if key.key == "🔑" then
+                                        [ if key.key == Just "🔑" then
                                             span [ class "text-muted-foreground text-sm" ] [ text "" ]
 
                                           else
@@ -1088,7 +1220,7 @@ keysTableConfig user networkModel =
                                                         , button
                                                             [ title "Видалити ключ"
                                                             , class "icon-btn icon-btn-danger"
-                                                            , onClick (DeleteKeyClickedByUser keyId (keyLabel key.key))
+                                                            , onClick (DeleteKeyClickedByUser keyId (keyDisplay key.key key.keyHash))
                                                             ]
                                                             [ i [ class "bi bi-trash" ] [] ]
                                                         ]
@@ -1125,7 +1257,8 @@ keyRowId key =
                         |> String.join "-"
                 , Maybe.map String.fromInt key.sigintNetworkId
                     |> Maybe.withDefault "no-network"
-                , key.key
+                , key.key |> Maybe.withDefault ""
+                , key.keyHash |> Maybe.withDefault ""
                 , Maybe.withDefault "" key.description
                 ]
 
@@ -1153,13 +1286,38 @@ freqLabelsByIds networkModel freqIds =
             "-"
 
 
-keyLabel : String -> String
-keyLabel value =
-    if String.trim value == "" then
+keyDisplay : Maybe String -> Maybe String -> String
+keyDisplay key hash =
+    let
+        keyValue =
+            key
+                |> Maybe.withDefault ""
+                |> String.trim
+
+        hashValue =
+            hash
+                |> Maybe.withDefault ""
+                |> String.trim
+
+        displayKey =
+            if keyValue == "" then
+                "-"
+
+            else
+                keyValue
+
+        displayHash =
+            if hashValue == "" then
+                "-"
+
+            else
+                hashValue
+    in
+    if keyValue == "" && hashValue == "" then
         "-"
 
     else
-        value
+        displayKey ++ "/" ++ displayHash
 
 
 modulationLabelById : Model -> Int -> String

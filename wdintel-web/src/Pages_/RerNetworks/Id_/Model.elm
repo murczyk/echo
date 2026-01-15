@@ -120,6 +120,7 @@ type alias Model =
     , keyCreateSidebar : Bool
     , keyCreateState :
         { key : String
+        , keyHash : String
         , description : String
         , sigintNetworkFreqIds : List Int
         }
@@ -141,6 +142,7 @@ type alias Model =
     , freqEditSaving : Bool
     , freqEditShowActiveTo : Bool
     , freqEditNewKeyInput : String
+    , freqEditNewKeyHashInput : String
     , freqEditNewKeySaving : Bool
     , deleteNetworkConfirmation : Maybe Int
     , deleteNetworkLoading : Bool
@@ -157,6 +159,7 @@ type alias Model =
     , freqCreateFormatError : Maybe String
     , freqCreateShowActiveTo : Bool
     , freqCreateNewKeyInput : String
+    , freqCreateNewKeyHashInput : String
     , freqCreateNewKeySaving : Bool
 
     -- Network callsigns (new table)
