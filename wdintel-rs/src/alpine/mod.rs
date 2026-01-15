@@ -4,15 +4,19 @@ use crate::error::AppError;
 use crate::h;
 use crate::types::{Deserialize, Env, Serialize, ShortContext};
 use actix_multipart::Multipart;
+use actix_web::http::header;
 use actix_web::post;
 use actix_web::web::Json;
+use actix_web::HttpResponse;
 use bytes::Bytes;
+use elm_rs::{Elm, ElmDecode, ElmEncode};
 use futures_util::StreamExt;
 use log::info;
 use reqwest::header::CONTENT_TYPE;
 use reqwest::multipart::{Form, Part};
 use sea_orm::ActiveModelTrait;
 use sea_orm::ActiveValue::{NotSet, Set};
+use sea_orm::EntityTrait;
 use std::time::Duration;
 
 #[derive(Debug)]
@@ -48,6 +52,13 @@ pub struct TaskStatus {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TaskStatusReq {
     pub receipts: Vec<String>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct AlpineDownloadResultReq {
+    pub bgtask_id: i64,
 }
 
 #[post("/api/alpine/convert")]
@@ -131,6 +142,47 @@ async fn convert_alpinequest_file(
     });
 
     Ok(Json(bgtask_id))
+}
+
+#[post("/api/alpine/download-result")]
+async fn download_alpine_result(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<AlpineDownloadResultReq>,
+) -> Result<HttpResponse, AppError> {
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .c(h!())?;
+    let res = bgtask_res::Entity::find_by_id(req.bgtask_id)
+        .one(&env.dbx)
+        .await
+        .c(h!())?
+        .ok_or(format!("Result not found for task id: {}", req.bgtask_id))?;
+    let res_s3_id = res.res_s3_id.clone().ok_or(format!(
+        "res_s3_id must be non empty for task id: {}",
+        req.bgtask_id
+    ))?;
+    let res_bytes = crate::messenger::media::fetch_media_bytes_by_key(
+        env.as_ref(),
+        &res_s3_id,
+    )
+    .await
+    .c(h!())?;
+    let filename = format!("alpinequest-{}.kmz", req.bgtask_id);
+    let cd = header::ContentDisposition {
+        disposition: header::DispositionType::Attachment,
+        parameters: vec![header::DispositionParam::FilenameExt(
+            header::ExtendedValue {
+                charset: header::Charset::Ext("UTF-8".into()),
+                language_tag: None,
+                value: filename.into_bytes(),
+            },
+        )],
+    };
+    Ok(HttpResponse::Ok()
+        .insert_header((header::CONTENT_TYPE, crate::config::KMZ_CONTENT_TYPE))
+        .insert_header(cd)
+        .body(res_bytes))
 }
 
 async fn read_payload(payload: &mut Multipart) -> Result<UploadData, AppError> {

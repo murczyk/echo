@@ -12,14 +12,16 @@ import File.Download as Download
 import File.Select
 import Html exposing (..)
 import Html.Attributes exposing (..)
-import Html.Events exposing (..)
 import Layouts
 import Page exposing (Page)
+import Process
 import Route exposing (Route)
 import Shared
 import Shared.Components.Button as Button
+import Shared.Components.Console
 import Shared.Model exposing (isDarkMode)
 import String
+import Task
 import Utils.Api.ErrorHandling
 import View exposing (View)
 
@@ -45,6 +47,9 @@ toLayout user model =
 
 type alias Model =
     { formErrors : Dict String String
+    , console : Shared.Components.Console.Model
+    , file : Maybe File
+    , taskId : Maybe Int
     , convertInProgress : Bool
     }
 
@@ -52,6 +57,9 @@ type alias Model =
 init : () -> ( Model, Effect Msg )
 init _ =
     ( { formErrors = Dict.empty
+      , console = Shared.Components.Console.init
+      , file = Nothing
+      , taskId = Nothing
       , convertInProgress = False
       }
     , E.none
@@ -61,7 +69,21 @@ init _ =
 type Msg
     = UploadAlpinequestFile
     | UploadAlpinequestFileSelected File
-    | UploadAlpinequestFileDone File (Result ApiError Bytes)
+    | UploadAlpinequestFileDone File (Result ApiError Int)
+    | DownloadAlpinequestResultDone File (Result ApiError Bytes)
+    | ConsoleMsg (Shared.Components.Console.Msg Msg)
+
+
+finalizer : Model -> Effect Msg
+finalizer model =
+    case ( model.file, model.taskId ) of
+        ( Just file, Just taskId ) ->
+            E.sendCmd <|
+                Api.alpine_download_result (DownloadAlpinequestResultDone file)
+                    { bgtaskId = taskId }
+
+        _ ->
+            E.none
 
 
 update : Msg -> Model -> ( Model, Effect Msg )
@@ -76,21 +98,46 @@ update msg model =
             )
 
         UploadAlpinequestFileSelected file ->
-            ( { model | convertInProgress = True }
+            ( { model
+                | convertInProgress = True
+                , file = Just file
+              }
             , E.sendCmd <| Api.alpine_convert (UploadAlpinequestFileDone file) file
             )
 
         UploadAlpinequestFileDone _ (Err e) ->
-            ( { model | convertInProgress = False }, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка конвертації AlpineQuest" e )
-
-        UploadAlpinequestFileDone file (Ok bs) ->
             ( { model | convertInProgress = False }
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка конвертації AlpineQuest" e
+            )
+
+        UploadAlpinequestFileDone _ (Ok taskId) ->
+            ( { model | convertInProgress = False, taskId = Just taskId }
+            , E.sendCmd <|
+                Task.perform
+                    (always (ConsoleMsg (Shared.Components.Console.TaskLaunched taskId)))
+                    (Process.sleep 0)
+            )
+
+        DownloadAlpinequestResultDone _ (Err e) ->
+            ( model, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження результату" e )
+
+        DownloadAlpinequestResultDone file (Ok bs) ->
+            ( model
             , E.sendCmd <|
                 Download.bytes
                     (ensureKmzName (File.name file))
                     "application/vnd.google-earth.kmz"
                     bs
             )
+
+        ConsoleMsg imsg ->
+            Shared.Components.Console.update
+                { msg = imsg
+                , model = model.console
+                , toModel = \console -> { model | console = console }
+                , toMsg = ConsoleMsg
+                , finalizer = finalizer model
+                }
 
 
 ensureKmzName : String -> String
@@ -110,8 +157,12 @@ subscriptions model =
 pageBlock : Model -> Html Msg
 pageBlock model =
     let
+        showSpinner =
+            model.convertInProgress
+                || Shared.Components.Console.isInProgress model.console
+
         buttonIcon =
-            if not model.convertInProgress then
+            if not showSpinner then
                 i [ class "bi bi-file-earmark-arrow-up" ] []
 
             else
@@ -127,6 +178,7 @@ pageBlock model =
         , Button.new { label = " додати файл", onClick = UploadAlpinequestFile }
             |> Button.withIcon [ buttonIcon ]
             |> Button.view
+        , Shared.Components.Console.view model.console
         ]
 
 
