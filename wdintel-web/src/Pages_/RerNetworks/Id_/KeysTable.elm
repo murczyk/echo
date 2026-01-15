@@ -1194,7 +1194,8 @@ keysTableConfig user networkModel =
         , toMsg = SetKeysTableState
         , columns =
             [ TableColumn.stringColumn "Частота" (\key -> freqLabelsByIds networkModel key.sigintNetworkFreqIds)
-            , TableColumn.stringColumn "Ключ" (\key -> keyDisplay key.key key.keyHash)
+            , TableColumn.stringColumn "Ключ" (\key -> keyValueDisplay key.key)
+            , TableColumn.stringColumn "Хеш" (\key -> hashValueDisplay key.keyHash)
             , TableColumn.stringColumn "Опис" (\key -> Maybe.withDefault "-" key.description)
             ]
                 ++ (if Core.Auth.hasRole "UnitsEditor" user then
@@ -1286,34 +1287,46 @@ freqLabelsByIds networkModel freqIds =
             "-"
 
 
-keyDisplay : Maybe String -> Maybe String -> String
-keyDisplay key hash =
+keyValueDisplay : Maybe String -> String
+keyValueDisplay key =
     let
         keyValue =
             key
                 |> Maybe.withDefault ""
                 |> String.trim
+    in
+    if keyValue == "" then
+        "-"
 
+    else
+        keyValue
+
+
+hashValueDisplay : Maybe String -> String
+hashValueDisplay hash =
+    let
         hashValue =
             hash
                 |> Maybe.withDefault ""
                 |> String.trim
+    in
+    if hashValue == "" then
+        "-"
 
+    else
+        hashValue
+
+
+keyDisplay : Maybe String -> Maybe String -> String
+keyDisplay key hash =
+    let
         displayKey =
-            if keyValue == "" then
-                "-"
-
-            else
-                keyValue
+            keyValueDisplay key
 
         displayHash =
-            if hashValue == "" then
-                "-"
-
-            else
-                hashValue
+            hashValueDisplay hash
     in
-    if keyValue == "" && hashValue == "" then
+    if displayKey == "-" && displayHash == "-" then
         "-"
 
     else

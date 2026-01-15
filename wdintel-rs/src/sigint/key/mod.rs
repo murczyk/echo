@@ -444,6 +444,7 @@ pub async fn update_network_encryption_key(
     if old_key.key.eq(&encryption_key) {
         let mut key_am = old_key.into_active_model();
         key_am.description = Set(updated_description);
+        key_am.key_hash = Set(encryption_key_hash);
         key_am.modulation_id = Set(modulation_id);
         let key = key_am.update(txn).await.c(h!())?;
         replace_key_freq_links(txn, key.id, &network_freq_ids)
