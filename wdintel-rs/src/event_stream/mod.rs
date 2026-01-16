@@ -102,9 +102,11 @@ async fn long_poll(
     if let Some(last_event_id) = m_last_event_id {
         last_stream_id = last_event_id.to_string();
     };
+    let redis_con_config =
+        redis::AsyncConnectionConfig::new().set_response_timeout(None);
     let mut redis_con = env
         .redisb
-        .get_multiplexed_async_connection()
+        .get_multiplexed_async_connection_with_config(&redis_con_config)
         .await
         .c(h!())?;
     // Start a window to accumulate events for a minimum time
