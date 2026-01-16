@@ -132,6 +132,16 @@ def train_supervised(
         mlflow.set_experiment(experiment_name)
         with mlflow.start_run() as run:
             print(f"starting training for {label_name}")
+
+            if fasttext_kwargs["autotuneMetric"]:
+                fasttext_kwargs["autotuneValidationFile"] = test_path
+            else:
+                fasttext_kwargs.pop("autotuneValidationFile", None)
+                fasttext_kwargs.pop("autotuneDuration", None)
+                fasttext_kwargs.pop("autotunePredictions", None)
+                fasttext_kwargs.pop("autotuneDuration", None)
+                fasttext_kwargs.pop("autotuneModelSize", None)
+
             print(f"fasttext arguments: {fasttext_kwargs}")
             fasttext_model = fasttext.train_supervised(
                 input=train_path, **fasttext_kwargs

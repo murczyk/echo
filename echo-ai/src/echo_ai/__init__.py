@@ -26,6 +26,7 @@ def main() -> None:
     parser.add_argument("--corpus", type=str, default="corpus.txt")
     parser.add_argument("--pretrainedVectors", type=str, default="pretrained.vec")
     parser.add_argument("--autotuneDuration", type=int)
+    parser.add_argument("--autotunePredictions", type=int)
     parser.add_argument("--autotuneModelSize", type=str)
     parser.add_argument("--minCountLabel", type=int)
     parser.add_argument("--minn", type=int)

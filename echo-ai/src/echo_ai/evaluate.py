@@ -120,7 +120,7 @@ def _do_evaluate_model(
 
 
 def plot_precision_recall(labels: list[str], split: str, results: list[dict]):
-    fig = plt.figure(figsize=(12, 10))
+    fig = plt.figure(figsize=(10, 6))
     for values, label_name in zip(results, labels):
         metrics = values["metrics"]
         plot_data = values["plot_data"]
@@ -142,7 +142,7 @@ def plot_precision_recall(labels: list[str], split: str, results: list[dict]):
 
 
 def plot_threshold_recall(labels: list[str], split: str, results: list[dict]):
-    fig = plt.figure(figsize=(12, 10))
+    fig = plt.figure(figsize=(10, 6))
     for values, label_name in zip(results, labels):
         metrics = values["metrics"]
         plot_data = values["plot_data"]
