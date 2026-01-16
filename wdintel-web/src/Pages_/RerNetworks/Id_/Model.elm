@@ -120,6 +120,7 @@ type alias Model =
     , keyCreateSidebar : Bool
     , keyCreateState :
         { key : String
+        , keyHash : String
         , description : String
         , sigintNetworkFreqIds : List Int
         }

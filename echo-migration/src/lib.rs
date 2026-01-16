@@ -190,6 +190,7 @@ mod m20260106_080738_add_freq_key;
 mod m20260108_005722_add_sigint_network_encryption_key_fields;
 mod m20260108_153000_add_key_modulation_and_freqs;
 mod m20260110_123009_drop_tyt_veda;
+mod m20260115_135733_add_enc_key_hash;
 
 pub struct Migrator;
 
@@ -387,6 +388,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260108_005722_add_sigint_network_encryption_key_fields::Migration),
             Box::new(m20260108_153000_add_key_modulation_and_freqs::Migration),
             Box::new(m20260110_123009_drop_tyt_veda::Migration),
+            Box::new(m20260115_135733_add_enc_key_hash::Migration),
         ]
     }
 }

@@ -229,6 +229,7 @@ type KeysMsg
     | OpenKeyCreateSidebar
     | CloseKeyCreateSidebar
     | KeyCreateKeyChanged String
+    | KeyCreateHashChanged String
     | KeyCreateDescriptionChanged String
     | KeyCreateFreqSelMsg (Select.Msg Int)
     | KeyCreateModulationSelMsg (Select.Msg Int)
@@ -237,6 +238,7 @@ type KeysMsg
     | OpenKeyEditSidebar B.EncryptionKeyData
     | CloseKeyEditSidebar
     | KeyEditKeyChanged String
+    | KeyEditHashChanged String
     | KeyEditDescriptionChanged String
     | KeyEditFreqSelMsg (Select.Msg Int)
     | KeyEditModulationSelMsg (Select.Msg Int)

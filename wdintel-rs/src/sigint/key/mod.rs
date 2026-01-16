@@ -19,7 +19,8 @@ pub struct EncryptionKeyData {
     pub id: Option<i64>,
     pub sigint_network_freq_ids: Vec<i64>,
     pub sigint_network_id: Option<i64>,
-    pub key: String,
+    pub key: Option<String>,
+    pub key_hash: Option<String>,
     pub description: Option<String>,
     pub modulation_id: Option<i64>,
 }
@@ -44,7 +45,8 @@ pub struct ListKeysRsp {
 pub struct CreateEncryptionKeyReq {
     pub sigint_network_id: i64,
     pub sigint_network_freq_ids: Vec<i64>,
-    pub key: String,
+    pub key: Option<String>,
+    pub key_hash: Option<String>,
     pub description: Option<String>,
     pub modulation_id: Option<i64>,
 }
@@ -55,7 +57,8 @@ pub struct CreateEncryptionKeyReq {
 pub struct UpdateEncryptionKeyReq {
     pub id: i64,
     pub sigint_network_freq_ids: Vec<i64>,
-    pub key: String,
+    pub key: Option<String>,
+    pub key_hash: Option<String>,
     pub description: Option<String>,
     pub modulation_id: Option<i64>,
 }
@@ -115,6 +118,7 @@ pub async fn create_key(
         req.sigint_network_id,
         req.sigint_network_freq_ids.clone(),
         req.key.clone(),
+        req.key_hash.clone(),
         req.description.clone(),
         normalize_modulation_id(req.modulation_id),
         organism_id,
@@ -167,6 +171,7 @@ pub async fn update_key(
         req.sigint_network_freq_ids.clone(),
         req.id,
         req.key.clone(),
+        req.key_hash.clone(),
         req.description.clone(),
         normalize_modulation_id(req.modulation_id),
         organism_id,
@@ -381,6 +386,7 @@ fn map_key_for_list(
             sigint_network_freq_ids: freq_ids,
             sigint_network_id: e.sigint_network_id,
             key: e.key,
+            key_hash: e.key_hash,
             description: e.description,
             modulation_id: e.modulation_id,
         }
@@ -389,7 +395,8 @@ fn map_key_for_list(
             id: Some(e.id),
             sigint_network_freq_ids: vec![],
             sigint_network_id: e.sigint_network_id,
-            key: ENCRYPTION_KEY_PLACEHOLDER.to_string(),
+            key: Some(ENCRYPTION_KEY_PLACEHOLDER.to_string()),
+            key_hash: Some(ENCRYPTION_KEY_PLACEHOLDER.to_string()),
             description: if has_description {
                 Some(ENCRYPTION_KEY_DESCRIPTION_PLACEHOLDER.to_string())
             } else {
@@ -404,7 +411,8 @@ pub async fn update_network_encryption_key(
     txn: &DatabaseTransaction,
     network_freq_ids: Vec<i64>,
     encryption_key_id: i64,
-    encryption_key: String,
+    encryption_key: Option<String>,
+    encryption_key_hash: Option<String>,
     description: Option<String>,
     modulation_id: Option<i64>,
     organism_id: i64,
@@ -436,6 +444,7 @@ pub async fn update_network_encryption_key(
     if old_key.key.eq(&encryption_key) {
         let mut key_am = old_key.into_active_model();
         key_am.description = Set(updated_description);
+        key_am.key_hash = Set(encryption_key_hash);
         key_am.modulation_id = Set(modulation_id);
         let key = key_am.update(txn).await.c(h!())?;
         replace_key_freq_links(txn, key.id, &network_freq_ids)
@@ -451,6 +460,7 @@ pub async fn update_network_encryption_key(
     let key = sigint_network_encryption_key::ActiveModel {
         id: NotSet,
         key: Set(encryption_key),
+        key_hash: Set(encryption_key_hash),
         sigint_network_freq_id: Set(None),
         sigint_network_id: Set(Some(network_id)),
         description: Set(updated_description),
@@ -474,13 +484,15 @@ pub async fn insert_new_key(
     txn: &DatabaseTransaction,
     network_id: i64,
     network_freq_ids: Vec<i64>,
-    encryption_key: String,
+    encryption_key: Option<String>,
+    encryption_key_hash: Option<String>,
     description: Option<String>,
     modulation_id: Option<i64>,
     organism_id: i64,
 ) -> anyhow::Result<sigint_network_encryption_key::Model> {
     let key = sigint_network_encryption_key::ActiveModel {
         id: NotSet,
+        key_hash: Set(encryption_key_hash),
         key: Set(encryption_key),
         sigint_network_freq_id: Set(None),
         sigint_network_id: Set(Some(network_id)),

@@ -664,7 +664,7 @@ update shared msg model =
                         keyWrongLength =
                             case keyRules.requiredLen of
                                 Just requiredLen ->
-                                    keyRules.keyAllowed && keyLen /= requiredLen
+                                    keyRules.keyAllowed && keyValue /= "" && keyLen /= requiredLen
 
                                 Nothing ->
                                     False
@@ -697,7 +697,13 @@ update shared msg model =
                             Api.sigint_create_key FreqCreateNewKeyCreated
                                 { sigintNetworkId = network.id
                                 , sigintNetworkFreqIds = []
-                                , key = keyValue
+                                , key =
+                                    if keyValue == "" then
+                                        Nothing
+
+                                    else
+                                        Just keyValue
+                                , keyHash = Nothing
                                 , description = Nothing
                                 , modulationId = modulationId
                                 }
@@ -838,7 +844,7 @@ update shared msg model =
                         keyWrongLength =
                             case keyRules.requiredLen of
                                 Just requiredLen ->
-                                    keyRules.keyAllowed && keyLen /= requiredLen
+                                    keyRules.keyAllowed && keyValue /= "" && keyLen /= requiredLen
 
                                 Nothing ->
                                     False
@@ -871,7 +877,13 @@ update shared msg model =
                             Api.sigint_create_key FreqEditNewKeyCreated
                                 { sigintNetworkId = network.id
                                 , sigintNetworkFreqIds = []
-                                , key = keyValue
+                                , key =
+                                    if keyValue == "" then
+                                        Nothing
+
+                                    else
+                                        Just keyValue
+                                , keyHash = Nothing
                                 , description = Nothing
                                 , modulationId = modulationId
                                 }
@@ -1090,11 +1102,12 @@ freqsTableConfig shared model user =
                 }
                 |> Table.withColumnWidth "10%"
             , Table.veryCustomColumn
-                { name = "Ключ"
+                { name = "Ключ / Хеш"
                 , viewData =
                     \freq ->
                         { attributes =
-                            [ style "white-space" "pre-wrap"
+                            [ class "font-mono"
+                            , style "white-space" "pre-wrap"
                             , style "word-break" "break-all"
                             ]
                         , children = [ text <| String.join "\n" freq.encryptionKeys ]
@@ -1440,14 +1453,16 @@ freqEditSidebarContent shared model user freqId updateReq =
                         defaultOptions =
                             Utils.Select.defaultOptions (isDarkMode shared.themeMode)
                       in
-                      Html.map FreqKeySelectMsg <|
-                        Styled.toUnstyled <|
-                            Utils.Select.renderSelect
-                                selectedItems
-                                model.freqEditKeySelect.state
-                                model.freqEditKeySelect.items
-                                "Без ключів"
-                                defaultOptions
+                      div [ class "font-mono" ]
+                        [ Html.map FreqKeySelectMsg <|
+                            Styled.toUnstyled <|
+                                Utils.Select.renderSelect
+                                    selectedItems
+                                    model.freqEditKeySelect.state
+                                    model.freqEditKeySelect.items
+                                    "Без ключів"
+                                    defaultOptions
+                        ]
                     ]
                 , let
                     keyRules =
@@ -1478,7 +1493,7 @@ freqEditSidebarContent shared model user freqId updateReq =
                             |> Button.withDisabled (keyInvalid || model.freqEditNewKeySaving)
                             |> Button.view
                         , input
-                            [ class "w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
+                            [ class "w-full px-3 py-2 border border-border rounded-md bg-background text-foreground font-mono"
                             , type_ "text"
                             , placeholder "Введіть новий ключ"
                             , value model.freqEditNewKeyInput
@@ -1680,35 +1695,37 @@ freqCreateSidebarContent shared model user =
                     defaultOptions =
                         Utils.Select.defaultOptions (isDarkMode shared.themeMode)
                   in
-                  Html.map FreqCreateKeySelectMsg <|
-                    Styled.toUnstyled <|
-                        Utils.Select.renderSelect
-                            selectedItems
-                            model.freqCreateKeySelect.state
-                            model.freqCreateKeySelect.items
-                            "Без ключів"
-                            defaultOptions
+                  div [ class "font-mono" ]
+                    [ Html.map FreqCreateKeySelectMsg <|
+                        Styled.toUnstyled <|
+                            Utils.Select.renderSelect
+                                selectedItems
+                                model.freqCreateKeySelect.state
+                                model.freqCreateKeySelect.items
+                                "Без ключів"
+                                defaultOptions
+                    ]
                 ]
-            , let
-                keyRules =
-                    keyRulesFromModulationId model model.freqCreateModulationSelect.selected
+                , let
+                    keyRules =
+                        keyRulesFromModulationId model model.freqCreateModulationSelect.selected
 
-                keyValue =
-                    String.trim model.freqCreateNewKeyInput
+                    keyValue =
+                        String.trim model.freqCreateNewKeyInput
 
-                keyLen =
-                    String.length keyValue
+                    keyLen =
+                        String.length keyValue
 
-                keyWrongLength =
-                    case keyRules.requiredLen of
-                        Just requiredLen ->
-                            keyRules.keyAllowed && keyValue /= "" && keyLen /= requiredLen
+                    keyWrongLength =
+                        case keyRules.requiredLen of
+                            Just requiredLen ->
+                                keyRules.keyAllowed && keyValue /= "" && keyLen /= requiredLen
 
-                        Nothing ->
-                            False
+                            Nothing ->
+                                False
 
-                keyInvalid =
-                    keyValue == "" || keyWrongLength
+                    keyInvalid =
+                        keyValue == "" || keyWrongLength
               in
               div [ class "space-y-2" ]
                 [ div [ class "flex gap-2" ]
@@ -1718,7 +1735,7 @@ freqCreateSidebarContent shared model user =
                         |> Button.withDisabled (keyInvalid || model.freqCreateNewKeySaving)
                         |> Button.view
                     , input
-                        [ class "w-full p-2 border border-border rounded"
+                        [ class "w-full p-2 border border-border rounded font-mono"
                         , type_ "text"
                         , placeholder "Введіть новий ключ"
                         , value model.freqCreateNewKeyInput
@@ -1854,7 +1871,7 @@ findSelectItemsById model selectedIds =
                                 (\key ->
                                     Select.basicMenuItem
                                         { item = keyId
-                                        , label = key.key
+                                        , label = keyDisplay key.key key.keyHash
                                         }
                                 )
                     )
@@ -1888,7 +1905,10 @@ addKeyToFreqCreateForm : Model -> B.EncryptionKeyData -> Model
 addKeyToFreqCreateForm model keyData =
     let
         clearedModel =
-            { model | freqCreateNewKeyInput = "", freqCreateNewKeySaving = False }
+            { model
+                | freqCreateNewKeyInput = ""
+                , freqCreateNewKeySaving = False
+            }
     in
     case keyData.id of
         Just keyId ->
@@ -1900,7 +1920,7 @@ addKeyToFreqCreateForm model keyData =
                     clearedModel.freqEditKeySelect
 
                 updatedItems =
-                    addKeyToSelectItems keyId keyData.key freqCreateSelect.items
+                    addKeyToSelectItems keyId keyData freqCreateSelect.items
 
                 updatedSelected =
                     addKeyId keyId freqCreateSelect.selected
@@ -1932,7 +1952,10 @@ addKeyToFreqEditForm : Model -> B.EncryptionKeyData -> Model
 addKeyToFreqEditForm model keyData =
     let
         clearedModel =
-            { model | freqEditNewKeyInput = "", freqEditNewKeySaving = False }
+            { model
+                | freqEditNewKeyInput = ""
+                , freqEditNewKeySaving = False
+            }
     in
     case keyData.id of
         Just keyId ->
@@ -1944,7 +1967,7 @@ addKeyToFreqEditForm model keyData =
                     clearedModel.freqEditKeySelect
 
                 updatedItems =
-                    addKeyToSelectItems keyId keyData.key freqEditSelect.items
+                    addKeyToSelectItems keyId keyData freqEditSelect.items
 
                 updatedSelected =
                     addKeyId keyId freqEditSelect.selected
@@ -1983,9 +2006,9 @@ addKeyId keyId selected =
         selected ++ [ keyId ]
 
 
-addKeyToSelectItems : Int -> String -> List (Select.MenuItem Int) -> List (Select.MenuItem Int)
-addKeyToSelectItems keyId keyValue items =
-    items ++ [ Select.basicMenuItem { item = keyId, label = keyValue } ]
+addKeyToSelectItems : Int -> B.EncryptionKeyData -> List (Select.MenuItem Int) -> List (Select.MenuItem Int)
+addKeyToSelectItems keyId keyData items =
+    items ++ [ Select.basicMenuItem { item = keyId, label = keyDisplay keyData.key keyData.keyHash } ]
 
 
 addKeyToNetworkKeys :
@@ -2003,6 +2026,43 @@ addKeyToNetworkKeys keyData remoteKeys =
 
         _ ->
             remoteKeys
+
+
+keyDisplay : Maybe String -> Maybe String -> String
+keyDisplay key hash =
+    let
+        keyValue =
+            key
+                |> Maybe.withDefault ""
+                |> String.trim
+
+        hashValue =
+            hash
+                |> Maybe.withDefault ""
+                |> String.trim
+
+        displayKey =
+            if keyValue == "" then
+                "-"
+
+            else
+                keyValue
+
+        displayHash =
+            if hashValue == "" then
+                "-"
+
+            else
+                hashValue
+
+        separator =
+            "\u{00A0}/\u{00A0}"
+    in
+    if keyValue == "" && hashValue == "" then
+        "-"
+
+    else
+        displayKey ++ separator ++ displayHash
 
 
 keyRulesFromModulationId : Model -> Maybe Int -> KeyRules
