@@ -173,8 +173,7 @@ pub async fn report_docx(
             &user.id().c(h!())?,
             vec!["UnitsEditor", "CallsignsEditor", "Admin"],
         )
-        .await
-        .c(h!())?;
+        .await?;
         self::revo::report_docx_kind_revo(user, &env, &req, &outpath)
             .await
             .c(h!())?;
@@ -184,8 +183,7 @@ pub async fn report_docx(
             &user.id().c(h!())?,
             vec!["UnitsEditor", "CallsignsEditor", "Admin"],
         )
-        .await
-        .c(h!())?;
+        .await?;
         self::digest::report_docx_kind_digest(user, &env, &req, &outpath)
             .await
             .c(h!())?;

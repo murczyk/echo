@@ -2401,8 +2401,7 @@ async fn freq_stats(
         &user.id().c(h!())?,
         vec!["Rer", "Api"],
     )
-    .await
-    .c(h!())?;
+    .await?;
 
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
@@ -2791,9 +2790,7 @@ async fn freq_stats_count(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<i64>, AppError> {
     let login = user.id().c(h!())?;
-    crate::users::has_any_role(&env.dbx, &login, vec!["Rer", "Api"])
-        .await
-        .c(h!())?;
+    crate::users::has_any_role(&env.dbx, &login, vec!["Rer", "Api"]).await?;
 
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)

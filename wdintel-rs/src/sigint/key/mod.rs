@@ -78,8 +78,7 @@ pub async fn list_keys(
 ) -> Result<Json<ListKeysRsp>, AppError> {
     let user_login = user.id().c(h!())?;
     crate::users::has_any_role(&env.dbx, &user_login, vec!["Rer", "Api"])
-        .await
-        .c(h!())?;
+        .await?;
 
     let keys = load_keys_list(&env.dbx, &user_login, req.sigint_network_id)
         .await

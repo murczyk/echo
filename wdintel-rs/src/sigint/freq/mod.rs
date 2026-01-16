@@ -466,8 +466,7 @@ pub async fn list_freqs(
         &user.id().c(h!())?,
         vec!["Rer", "Api"],
     )
-    .await
-    .c(h!())?;
+    .await?;
     let login = user.id().c(h!())?;
     const LIMIT: usize = 30;
     /// Period designating how many days are considered that freq is inactive
@@ -830,8 +829,7 @@ pub async fn list_freqs_v2(
         &user.id().c(h!())?,
         vec!["Rer", "Api"],
     )
-    .await
-    .c(h!())?;
+    .await?;
     let login = user.id().c(h!())?;
     const LIMIT: usize = 30;
     /// Period designating how many days are considered that freq is inactive
@@ -1498,8 +1496,7 @@ pub async fn list_freqs_for_period(
         &user.id().c(h!())?,
         vec!["Rer", "Api"],
     )
-    .await
-    .c(h!())?;
+    .await?;
     let login = user.id().c(h!())?;
 
     let master_keys =

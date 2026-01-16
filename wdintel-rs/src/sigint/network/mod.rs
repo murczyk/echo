@@ -66,8 +66,7 @@ pub async fn network_list(
         &user.id().c(h!())?,
         vec!["Rer", "Api"],
     )
-    .await
-    .context(h!())?;
+    .await?;
 
     let mut networks = sigint_network::Entity::find()
         .join_as(
@@ -197,9 +196,7 @@ pub async fn restore_network(
     req: Json<RestoreNetworkReq>,
 ) -> Result<Json<Network>, AppError> {
     let user_id = user.id().c(h!())?;
-    crate::users::has_any_role(&env.dbx, &user_id, vec!["Rer", "Api"])
-        .await
-        .context(h!())?;
+    crate::users::has_any_role(&env.dbx, &user_id, vec!["Rer", "Api"]).await?;
     let txn = env.dbx.begin().await.context(h!())?;
     let network_id = req.into_inner().network_id;
     let network = find_network(&txn, network_id).await.context(h!())?;
@@ -240,8 +237,7 @@ pub async fn network_info_batch_freq(
         &user.id().c(h!())?,
         vec!["Rer", "Api"],
     )
-    .await
-    .context(h!())?;
+    .await?;
     let txn = env.dbx.begin().await.context(h!())?;
     let res = bl_network_info_freqs(req.into_inner(), &txn, &user_id)
         .await
@@ -262,8 +258,7 @@ pub async fn network_info_batch_id(
         &user.id().c(h!())?,
         vec!["Rer", "Api"],
     )
-    .await
-    .context(h!())?;
+    .await?;
     let txn = env.dbx.begin().await.context(h!())?;
     let res = bl_network_info_batch(req.clone(), &txn, &user_id)
         .await
@@ -284,8 +279,7 @@ pub async fn network_info_one(
         &user.id().c(h!())?,
         vec!["Rer", "Api"],
     )
-    .await
-    .context(h!())?;
+    .await?;
     let txn = env.dbx.begin().await.context(h!())?;
     let res = bl_network_info_batch(vec![req.0], &txn, &user_id)
         .await
@@ -1916,8 +1910,7 @@ pub async fn network_callsigns_list(
         &user.id().c(h!())?,
         vec!["Rer", "Api"],
     )
-    .await
-    .context(h!())?;
+    .await?;
 
     let _network =
         find_network(&env.dbx, req.network_id).await.context(h!())?;
@@ -1969,9 +1962,7 @@ pub async fn network_freqs_list(
     req: Json<SingleNetworkFreqsReq>,
 ) -> Result<Json<SingleNetworkFreqsListRsp>, AppError> {
     let user_id = user.id().c(h!())?;
-    crate::users::has_any_role(&env.dbx, &user_id, vec!["Rer", "Api"])
-        .await
-        .context(h!())?;
+    crate::users::has_any_role(&env.dbx, &user_id, vec!["Rer", "Api"]).await?;
 
     let _network =
         find_network(&env.dbx, req.network_id).await.context(h!())?;
@@ -2003,8 +1994,7 @@ pub async fn modulations_list(
         &user.id().c(h!())?,
         vec!["Rer", "Api"],
     )
-    .await
-    .context(h!())?;
+    .await?;
     let modulations = modulation::Entity::find()
         .all(&env.dbx)
         .await
@@ -2033,8 +2023,7 @@ pub async fn network_signals_list(
         &user.id().c(h!())?,
         vec!["Rer", "Api"],
     )
-    .await
-    .context(h!())?;
+    .await?;
 
     let signals = load_signals_per_network(&env.dbx, req.network_id)
         .await

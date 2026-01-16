@@ -64,8 +64,7 @@ pub async fn list_units(
         &user.id().c(h!())?,
         vec!["Rer", "Api"],
     )
-    .await
-    .c(h!())?;
+    .await?;
     const LIMIT: u64 = 100000;
     let mut units = sigint_unit::Entity::find()
         .filter(sigint_unit::Column::Deleted.eq(false));
@@ -165,8 +164,7 @@ pub async fn list_units_by_id(
         &user.id().c(h!())?,
         vec!["Rer", "Api"],
     )
-    .await
-    .c(h!())?;
+    .await?;
     let mut units = sigint_unit::Entity::find()
         .filter(sigint_unit::Column::Deleted.eq(false));
     if let Some(ids) = &req.ids {
@@ -692,8 +690,7 @@ pub async fn units_search(
     req: Json<UnitSearchReq>,
 ) -> Result<Json<ListUnitsByIdRsp>, AppError> {
     crate::users::has_any_role(&env.dbx, &user.id().c(h!())?, vec!["Rer"])
-        .await
-        .c(h!())?;
+        .await?;
 
     let search_phrase = req.search.trim();
     if search_phrase.is_empty() {

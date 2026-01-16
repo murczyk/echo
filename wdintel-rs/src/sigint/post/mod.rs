@@ -83,8 +83,7 @@ pub async fn post_list(
         &user.id().c(h!())?,
         vec!["Rer", "Api"],
     )
-    .await
-    .context(h!())?;
+    .await?;
 
     let posts = sigint_post::Entity::find()
         .filter(sigint_post::Column::Deleted.eq(false))
