@@ -810,10 +810,10 @@ keyEditSidebarContent shared model updateReq =
                     text ""
                 ]
             , div []
-                [ label [ class "block text-sm font-medium mb-1" ] [ text "Ключ" ]
+                [ label [ class "block text-sm font-medium mb-1 font-mono" ] [ text "Ключ" ]
                 , input
                     ([ class <|
-                        "w-full p-2 border rounded "
+                        "w-full p-2 border rounded font-mono "
                             ++ (if keyWrongLength then
                                     "border-red-500"
 
@@ -850,10 +850,10 @@ keyEditSidebarContent shared model updateReq =
                     text ""
                 ]
             , div []
-                [ label [ class "block text-sm font-medium mb-1" ] [ text "Хеш ключа" ]
+                [ label [ class "block text-sm font-medium mb-1 font-mono" ] [ text "Хеш ключа" ]
                 , input
                     [ class <|
-                        "w-full p-2 border rounded "
+                        "w-full p-2 border rounded font-mono "
                             ++ (if keyIsEmpty && hashIsEmpty then
                                     "border-red-500"
 
@@ -994,10 +994,10 @@ keyCreateSidebarContent shared model =
                     text ""
                 ]
             , div []
-                [ label [ class "block text-sm font-medium mb-1" ] [ text "Ключ" ]
+                [ label [ class "block text-sm font-medium mb-1 font-mono" ] [ text "Ключ" ]
                 , input
                     ([ class <|
-                        "w-full p-2 border rounded "
+                        "w-full p-2 border rounded font-mono "
                             ++ (if keyWrongLength then
                                     "border-red-500"
 
@@ -1034,10 +1034,10 @@ keyCreateSidebarContent shared model =
                     text ""
                 ]
             , div []
-                [ label [ class "block text-sm font-medium mb-1" ] [ text "Хеш ключа" ]
+                [ label [ class "block text-sm font-medium mb-1 font-mono" ] [ text "Хеш ключа" ]
                 , input
                     [ class <|
-                        "w-full p-2 border rounded "
+                        "w-full p-2 border rounded font-mono "
                             ++ (if keyIsEmpty && hashIsEmpty then
                                     "border-red-500"
 
@@ -1194,8 +1194,24 @@ keysTableConfig user networkModel =
         , toMsg = SetKeysTableState
         , columns =
             [ TableColumn.stringColumn "Частота" (\key -> freqLabelsByIds networkModel key.sigintNetworkFreqIds)
-            , TableColumn.stringColumn "Ключ" (\key -> keyValueDisplay key.key)
-            , TableColumn.stringColumn "Хеш" (\key -> hashValueDisplay key.keyHash)
+            , TableColumn.veryCustomColumn
+                { name = "Ключ"
+                , viewData =
+                    \key ->
+                        { attributes = [ class "font-mono" ]
+                        , children = [ text <| keyValueDisplay key.key ]
+                        }
+                , sorter = Table.unsortable
+                }
+            , TableColumn.veryCustomColumn
+                { name = "Хеш"
+                , viewData =
+                    \key ->
+                        { attributes = [ class "font-mono" ]
+                        , children = [ text <| hashValueDisplay key.keyHash ]
+                        }
+                , sorter = Table.unsortable
+                }
             , TableColumn.stringColumn "Опис" (\key -> Maybe.withDefault "-" key.description)
             ]
                 ++ (if Core.Auth.hasRole "UnitsEditor" user then
@@ -1325,12 +1341,15 @@ keyDisplay key hash =
 
         displayHash =
             hashValueDisplay hash
+
+        separator =
+            "\u{00A0}/\u{00A0}"
     in
     if displayKey == "-" && displayHash == "-" then
         "-"
 
     else
-        displayKey ++ "/" ++ displayHash
+        displayKey ++ separator ++ displayHash
 
 
 modulationLabelById : Model -> Int -> String

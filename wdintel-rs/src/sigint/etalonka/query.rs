@@ -438,7 +438,10 @@ fn format_encryption_key_display(
     } else {
         let display_key = if key_trim.is_empty() { "-" } else { key_trim };
         let display_hash = if hash_trim.is_empty() { "-" } else { hash_trim };
-        format!("{}/{}", display_key, display_hash)
+        format!(
+            "{}\u{00A0}/\u{00A0}{}",
+            display_key, display_hash
+        )
     }
 }
 

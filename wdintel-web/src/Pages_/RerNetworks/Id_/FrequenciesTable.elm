@@ -1102,11 +1102,12 @@ freqsTableConfig shared model user =
                 }
                 |> Table.withColumnWidth "10%"
             , Table.veryCustomColumn
-                { name = "Ключ"
+                { name = "Ключ / Хеш"
                 , viewData =
                     \freq ->
                         { attributes =
-                            [ style "white-space" "pre-wrap"
+                            [ class "font-mono"
+                            , style "white-space" "pre-wrap"
                             , style "word-break" "break-all"
                             ]
                         , children = [ text <| String.join "\n" freq.encryptionKeys ]
@@ -1452,14 +1453,16 @@ freqEditSidebarContent shared model user freqId updateReq =
                         defaultOptions =
                             Utils.Select.defaultOptions (isDarkMode shared.themeMode)
                       in
-                      Html.map FreqKeySelectMsg <|
-                        Styled.toUnstyled <|
-                            Utils.Select.renderSelect
-                                selectedItems
-                                model.freqEditKeySelect.state
-                                model.freqEditKeySelect.items
-                                "Без ключів"
-                                defaultOptions
+                      div [ class "font-mono" ]
+                        [ Html.map FreqKeySelectMsg <|
+                            Styled.toUnstyled <|
+                                Utils.Select.renderSelect
+                                    selectedItems
+                                    model.freqEditKeySelect.state
+                                    model.freqEditKeySelect.items
+                                    "Без ключів"
+                                    defaultOptions
+                        ]
                     ]
                 , let
                     keyRules =
@@ -1490,7 +1493,7 @@ freqEditSidebarContent shared model user freqId updateReq =
                             |> Button.withDisabled (keyInvalid || model.freqEditNewKeySaving)
                             |> Button.view
                         , input
-                            [ class "w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
+                            [ class "w-full px-3 py-2 border border-border rounded-md bg-background text-foreground font-mono"
                             , type_ "text"
                             , placeholder "Введіть новий ключ"
                             , value model.freqEditNewKeyInput
@@ -1692,34 +1695,37 @@ freqCreateSidebarContent shared model user =
                     defaultOptions =
                         Utils.Select.defaultOptions (isDarkMode shared.themeMode)
                   in
-                  Html.map FreqCreateKeySelectMsg <|
-                    Styled.toUnstyled <|
-                        Utils.Select.renderSelect
-                            selectedItems
-                            model.freqCreateKeySelect.state
-                            model.freqCreateKeySelect.items
-                            "Без ключів"
-                            defaultOptions
+                  div [ class "font-mono" ]
+                    [ Html.map FreqCreateKeySelectMsg <|
+                        Styled.toUnstyled <|
+                            Utils.Select.renderSelect
+                                selectedItems
+                                model.freqCreateKeySelect.state
+                                model.freqCreateKeySelect.items
+                                "Без ключів"
+                                defaultOptions
+                    ]
                 ]
-            , let
-                keyRules =
-                    keyRulesFromModulationId model model.freqCreateModulationSelect.selected
+                , let
+                    keyRules =
+                        keyRulesFromModulationId model model.freqCreateModulationSelect.selected
 
-                keyValue =
-                    String.trim model.freqCreateNewKeyInput
+                    keyValue =
+                        String.trim model.freqCreateNewKeyInput
 
-                keyLen =
-                    String.length keyValue
+                    keyLen =
+                        String.length keyValue
 
-                keyWrongLength =
-                    case keyRules.requiredLen of
-                        Just requiredLen ->
-                            keyRules.keyAllowed && keyValue /= "" && keyLen /= requiredLen
-                        Nothing ->
-                            False
+                    keyWrongLength =
+                        case keyRules.requiredLen of
+                            Just requiredLen ->
+                                keyRules.keyAllowed && keyValue /= "" && keyLen /= requiredLen
 
-                keyInvalid =
-                    keyValue == "" || keyWrongLength
+                            Nothing ->
+                                False
+
+                    keyInvalid =
+                        keyValue == "" || keyWrongLength
               in
               div [ class "space-y-2" ]
                 [ div [ class "flex gap-2" ]
@@ -1729,7 +1735,7 @@ freqCreateSidebarContent shared model user =
                         |> Button.withDisabled (keyInvalid || model.freqCreateNewKeySaving)
                         |> Button.view
                     , input
-                        [ class "w-full p-2 border border-border rounded"
+                        [ class "w-full p-2 border border-border rounded font-mono"
                         , type_ "text"
                         , placeholder "Введіть новий ключ"
                         , value model.freqCreateNewKeyInput
@@ -2048,12 +2054,15 @@ keyDisplay key hash =
 
             else
                 hashValue
+
+        separator =
+            "\u{00A0}/\u{00A0}"
     in
     if keyValue == "" && hashValue == "" then
         "-"
 
     else
-        displayKey ++ "/" ++ displayHash
+        displayKey ++ separator ++ displayHash
 
 
 keyRulesFromModulationId : Model -> Maybe Int -> KeyRules
