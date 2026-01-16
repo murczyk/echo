@@ -40,6 +40,38 @@ async fn get_inbox_messages_report(
     let logins = crate::users::get_organism_logins(&read_db, user)
         .await
         .context(h!())?;
+    let report_tags_only_this_unit =
+        req.report_tags_only_this_unit == Some(true);
+    let logins2 = logins.clone();
+    let comment_join = if report_tags_only_this_unit {
+        signal_message::Relation::SigintComment.def().on_condition(
+            move |_left, right| {
+                Expr::col((right, sigint_comment::Column::Login))
+                    .is_in(logins2.clone())
+                    .into_condition()
+            },
+        )
+    } else {
+        signal_message::Relation::SigintComment.def()
+    };
+    let tags_join = sigint_inbox_item_tag::Relation::SigintInboxItem
+        .def()
+        .rev()
+        .on_condition(move |_left, right| {
+            let mut condition = Expr::col((
+                right.clone(),
+                sigint_inbox_item_tag::Column::Confidence,
+            ))
+            .gte(TAG_MINIMUM_CONFIDENCE)
+            .into_condition();
+            if report_tags_only_this_unit {
+                condition = condition.add(
+                    Expr::col((right, sigint_inbox_item_tag::Column::Login))
+                        .is_in(logins.clone()),
+                );
+            }
+            condition
+        });
     let mut q = SignalMessage::find()
         .inner_join(sigint_inbox_item::Entity)
         .column(sigint_inbox_item::Column::Datetime)
@@ -113,18 +145,11 @@ async fn get_inbox_messages_report(
         )
         .join(
             JoinType::LeftJoin,
-            signal_message::Relation::SigintComment.def(),
+            comment_join,
         )
         .join(
             JoinType::LeftJoin,
-            sigint_inbox_item_tag::Relation::SigintInboxItem
-                .def()
-                .rev()
-                .on_condition(|_left, right| {
-                    Expr::col((right, sigint_inbox_item_tag::Column::Confidence))
-                        .gte(TAG_MINIMUM_CONFIDENCE)
-                        .into_condition()
-                }),
+            tags_join,
         )
         .join(
             JoinType::LeftJoin,
@@ -146,12 +171,6 @@ async fn get_inbox_messages_report(
                 .c(h!())?,
         ));
 
-    if req.report_tags_only_this_unit == Some(true) {
-        q = q.filter(sigint_comment::Column::Login.eq_any(logins.clone()));
-        q = q.filter(
-            sigint_inbox_item_tag::Column::Login.eq_any(logins.clone()),
-        );
-    }
     if req.without_model_tags == Some(true) {
         q = q.filter(sigint_inbox_item_tag::Column::Model.is_null());
     }
