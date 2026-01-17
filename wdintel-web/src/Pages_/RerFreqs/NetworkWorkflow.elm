@@ -29,6 +29,7 @@ import Shared.Model exposing (isDarkMode)
 import Time exposing (Posix)
 import Time.Extra
 import Url.Parser exposing (query)
+import Utils.RemoteData exposing (RemoteData(..))
 import Utils.NetworksUtils as NetworksUtils
 import Utils.Select
 import Utils.Time
@@ -140,8 +141,8 @@ viewSelectingNetwork freq selectedNetworkId model shared networks =
                     |> Maybe.withDefault []
 
             -- Filter out networks that are already connected to this frequency
-            filterOutAlreadyConnected networks =
-                List.filter (\n -> not (List.member n.id alreadyConnectedNetworkIds)) networks
+            filterOutAlreadyConnected networkList =
+                List.filter (\n -> not (List.member n.id alreadyConnectedNetworkIds)) networkList
 
             networksToShow =
                 if model.showNetworksWithoutUnit then

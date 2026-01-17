@@ -1019,11 +1019,8 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
     let
         callsignTag ( j, callsign ) =
             let
-                messageForHints =
-                    { message | freq = Nothing }
-
                 hintResult =
-                    Core.Callsigns.HintStrategy.getCallsignHints Core.Callsigns.HintStrategy.MessageContext messageForHints vps callsign
+                    Core.Callsigns.HintStrategy.getCallsignHints Core.Callsigns.HintStrategy.MessageContext message vps callsign
 
                 result =
                     if List.length hintResult.prioritizedCallsigns > 0 then
