@@ -224,7 +224,7 @@ sumTableBlock2 model shared route sumTable =
                                     let
                                         -- Створюємо message для частоти
                                         message =
-                                            { freq = Just row.freq, networkIds = Nothing }
+                                            { freq = Nothing, networkIds = Nothing }
 
                                         -- Створюємо контекст для HintStrategy
                                         context =
