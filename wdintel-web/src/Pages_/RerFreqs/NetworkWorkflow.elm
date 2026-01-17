@@ -30,25 +30,24 @@ import Time exposing (Posix)
 import Time.Extra
 import Url.Parser exposing (query)
 import Utils.NetworksUtils as NetworksUtils
-import Utils.RemoteData as RD exposing (RemoteData(..))
 import Utils.Select
 import Utils.Time
 import Utils.Utils exposing (..)
 import View exposing (View)
 
 
-view : Model -> Shared.Model -> List (Html Msg)
-view model shared =
+view : Model -> Shared.Model -> Dict Int B.Network -> List (Html Msg)
+view model shared networks =
     case model.networkWorkflowStatus of
         NotStarted ->
             []
 
         _ ->
-            renderNetworkSidebar model shared
+            renderNetworkSidebar model shared networks
 
 
-renderNetworkSidebar : Model -> Shared.Model -> List (Html Msg)
-renderNetworkSidebar model shared =
+renderNetworkSidebar : Model -> Shared.Model -> Dict Int B.Network -> List (Html Msg)
+renderNetworkSidebar model shared networks =
     [ div [ class "p-4 w-full flex flex-col overflow-y-auto min-h-[80vh] max-h-screen" ]
         (case model.networkWorkflowStatus of
             SelectingNetwork freq searchState ->
@@ -65,16 +64,16 @@ renderNetworkSidebar model shared =
                 , div [ class "border-b border-gray-200" ]
                     [ nav [ class "-mb-px flex space-x-8" ]
                         [ tabButton Pages_.RerFreqs.Model.Search "Пошук та прив'язка"
-                        , tabButton Pages_.RerFreqs.Model.Manage ("Уже прив'язані (" ++ String.fromInt (List.length (getLinkedNetworks freq model shared)) ++ ")")
+                        , tabButton Pages_.RerFreqs.Model.Manage ("Уже прив'язані (" ++ String.fromInt (List.length (getLinkedNetworks freq model networks)) ++ ")")
                         ]
                     ]
                 ]
                     ++ (case model.networkWorkflowTab of
                             Pages_.RerFreqs.Model.Search ->
-                                viewSelectingNetwork freq searchState model shared
+                                viewSelectingNetwork freq searchState model shared networks
 
                             Pages_.RerFreqs.Model.Manage ->
-                                viewManagingLinks freq model shared
+                                viewManagingLinks freq model shared networks
                        )
 
             NotStarted ->
@@ -83,19 +82,19 @@ renderNetworkSidebar model shared =
     ]
 
 
-getLinkedNetworks : String -> Model -> Shared.Model -> List B.Network
-getLinkedNetworks freq model shared =
+getLinkedNetworks : String -> Model -> Dict Int B.Network -> List B.Network
+getLinkedNetworks freq model networks =
     ListX.find (\f -> f.freq == freq) model.freqs
         |> Maybe.map .networkIds
-        |> Maybe.map (List.filterMap (\id -> Dict.get id (RD.withDefault Dict.empty shared.networks)))
+        |> Maybe.map (List.filterMap (\id -> Dict.get id networks))
         |> Maybe.withDefault []
 
 
-viewManagingLinks : String -> Model -> Shared.Model -> List (Html Msg)
-viewManagingLinks freq model shared =
+viewManagingLinks : String -> Model -> Shared.Model -> Dict Int B.Network -> List (Html Msg)
+viewManagingLinks freq model shared networks =
     let
         linkedNetworks =
-            getLinkedNetworks freq model shared
+            getLinkedNetworks freq model networks
     in
     [ div [ class "py-4" ]
         [ p [ class "text-sm text-gray-600 mb-4" ] [ text "Ця частота прив'язана до наступних мереж. Натисніть на олівець, щоб перейти до редагування мережі." ]
@@ -127,8 +126,8 @@ viewManagingLinks freq model shared =
     ]
 
 
-viewSelectingNetwork : String -> Maybe Int -> Model -> Shared.Model -> List (Html Msg)
-viewSelectingNetwork freq selectedNetworkId model shared =
+viewSelectingNetwork : String -> Maybe Int -> Model -> Shared.Model -> Dict Int B.Network -> List (Html Msg)
+viewSelectingNetwork freq selectedNetworkId model shared networks =
     [ div [ class "flex flex-col grow relative" ]
         [ HtmlX.viewIf model.networkAddLoading <|
             span [ class "absolute top-[50%] left-[50%] -translate-1/2" ] [ Shared.Components.Spinner.loadingSpinner ]
@@ -145,27 +144,22 @@ viewSelectingNetwork freq selectedNetworkId model shared =
                 List.filter (\n -> not (List.member n.id alreadyConnectedNetworkIds)) networks
 
             networksToShow =
-                case shared.networks of
-                    Success networks ->
-                        if model.showNetworksWithoutUnit then
-                            -- Show ONLY networks without units when checkbox is checked
+                if model.showNetworksWithoutUnit then
+                    -- Show ONLY networks without units when checkbox is checked
+                    Dict.values networks
+                        |> List.filter (\n -> Maybe.withDefault [] n.unitIds == [])
+                        |> filterOutAlreadyConnected
+
+                else
+                    -- Show only networks with selected unit when checkbox is unchecked
+                    case model.networkDialogUnitSelect.selected of
+                        Just unitId ->
                             Dict.values networks
-                                |> List.filter (\n -> Maybe.withDefault [] n.unitIds == [])
+                                |> List.filter (\n -> List.member unitId (Maybe.withDefault [] n.unitIds))
                                 |> filterOutAlreadyConnected
 
-                        else
-                            -- Show only networks with selected unit when checkbox is unchecked
-                            case model.networkDialogUnitSelect.selected of
-                                Just unitId ->
-                                    Dict.values networks
-                                        |> List.filter (\n -> List.member unitId (Maybe.withDefault [] n.unitIds))
-                                        |> filterOutAlreadyConnected
-
-                                Nothing ->
-                                    []
-
-                    _ ->
-                        []
+                        Nothing ->
+                            []
           in
           div [ class "min-h-[200px] flex flex-col" ]
             [ let

@@ -2205,7 +2205,7 @@ view dark shared user model =
                       div []
                         [ Sidebar.view networkAddSidebarOpen
                             CloseAddNetworkSidebar
-                            (NetworkWorkflow.view model shared)
+                            (NetworkWorkflow.view model shared (networksForView shared model))
                         , div
                             [ class "border mb-4 p-2"
                             ]
