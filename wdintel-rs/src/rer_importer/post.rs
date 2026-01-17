@@ -15,7 +15,10 @@ pub fn extract_post(inp: &str) -> Result<Option<String>, AppError> {
     // Extract transit_post_name if message has Отримано з постів ... header.
     // Take the last post name, but continue scan to find a more specific original post.
     '_if: {
-        let Some(line) = scan_inp.lines().find(|line| line.contains("Отримано з постів")) else {
+        let Some(line) = scan_inp
+            .lines()
+            .find(|line| line.contains("Отримано з постів"))
+        else {
             break '_if;
         };
         let Some(post) = extract_last_post_from_posts_header(line) else {
@@ -144,10 +147,9 @@ pub fn extract_post(inp: &str) -> Result<Option<String>, AppError> {
 
 fn extract_last_post_from_posts_header(line: &str) -> Option<String> {
     lazy_static! {
-        static ref RE_QUOTED_POST: Regex = Regex::new(
-            r#""(?P<post>[a-zA-Zа-яіїА-ЯІЇ0-9)(_/ \.\-\*']+)""#
-        )
-        .unwrap();
+        static ref RE_QUOTED_POST: Regex =
+            Regex::new(r#""(?P<post>[a-zA-Zа-яіїА-ЯІЇ0-9)(_/ \.\-\*']+)""#)
+                .unwrap();
     }
     let last_quoted = RE_QUOTED_POST
         .captures_iter(line)
@@ -160,7 +162,7 @@ fn extract_last_post_from_posts_header(line: &str) -> Option<String> {
 
     let start = line.find("Отримано з постів")?;
     let rest = &line[start + "Отримано з постів".len()..];
-    let last = rest.split(',').last()?.trim();
+    let last = rest.split(',').next_back()?.trim();
     if last.is_empty() {
         return None;
     }
