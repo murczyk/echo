@@ -29,6 +29,7 @@ import Shared.Model exposing (isDarkMode)
 import Time exposing (Posix)
 import Time.Extra
 import Url.Parser exposing (query)
+import Utils.RemoteData as RemoteData exposing (RemoteData)
 import Utils.NetworksUtils as NetworksUtils
 import Utils.Select
 import Utils.Time
@@ -109,7 +110,7 @@ viewManagingLinks freq model shared networks =
                             [ class "w-full p-2  border border-border rounded-sm text-text flex justify-between items-center"
                             ]
                             [ case shared.masterUnits of
-                                Success units ->
+                                RemoteData.Success units ->
                                     NetworksUtils.renderNetwork network_ units
 
                                 _ ->
@@ -140,8 +141,8 @@ viewSelectingNetwork freq selectedNetworkId model shared networks =
                     |> Maybe.withDefault []
 
             -- Filter out networks that are already connected to this frequency
-            filterOutAlreadyConnected networks =
-                List.filter (\n -> not (List.member n.id alreadyConnectedNetworkIds)) networks
+            filterOutAlreadyConnected networksList =
+                List.filter (\n -> not (List.member n.id alreadyConnectedNetworkIds)) networksList
 
             networksToShow =
                 if model.showNetworksWithoutUnit then
@@ -171,7 +172,7 @@ viewSelectingNetwork freq selectedNetworkId model shared networks =
                                     { item = unitId
                                     , label =
                                         case shared.masterUnits of
-                                            Success units ->
+                                            RemoteData.Success units ->
                                                 Unit.unitName units unitId
 
                                             _ ->
@@ -218,7 +219,7 @@ viewSelectingNetwork freq selectedNetworkId model shared networks =
                     [ span [ class "text-[var(--neutral-600)]" ] [ text <| String.fromInt (List.length networksToShow) ++ " мереж знайдено" ]
                     , div [ class "flex flex-col gap-[4px] mt-2" ]
                         (case shared.masterUnits of
-                            Success units ->
+                            RemoteData.Success units ->
                                 List.map (\network -> renderNetworkSelectionItem network selectedNetworkId units) networksToShow
 
                             _ ->
