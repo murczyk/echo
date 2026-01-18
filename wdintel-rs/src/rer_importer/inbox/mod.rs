@@ -572,7 +572,9 @@ async fn comment_save(
         .map(EventType::ETInboxChanged)
         .map(EventMsg::new)
         .collect();
-    fanout_mult(&mut env.redis.clone(), events).await.c(h!())?;
+    if let Err(e) = fanout_mult(&mut env.redis.clone(), events).await {
+        warn!("failed to send to redis: {e:#?}");
+    }
     Ok(Json(()))
 }
 

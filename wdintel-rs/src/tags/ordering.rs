@@ -4,7 +4,7 @@ use crate::h;
 use crate::types::{Mode, ShortContext};
 use chrono::Utc;
 use itertools::Itertools;
-use log::info;
+use log::*;
 use rand::Rng;
 use sea_orm::*;
 use std::collections::BTreeMap;
@@ -161,6 +161,10 @@ fn arrange_tags(
     tags: &BTreeMap<i64, tag::Model>,
     known_seeds: Vec<String>,
 ) -> anyhow::Result<(OrderingData, String)> {
+    if tags.is_empty() {
+        error!("unexected error: tags are empty");
+        return Ok((OrderingData::default(), "0".to_string()));
+    }
     let mut fuel = 10;
     let mut result_ordering = OrderingData::default();
     let mut result_seed = String::default();
