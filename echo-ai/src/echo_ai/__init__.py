@@ -4,6 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import mlflow
 
+from .embedding import train_embedding
 from .loader import LABEL_DICT, load_dataset, to_pandas_arrow
 from .supervised import train_supervised
 from .unsupervised import train_unsupervised
@@ -12,6 +13,7 @@ from .unsupervised import train_unsupervised
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--unsupervised", action="store_true", default=False)
+    parser.add_argument("--embedding", action="store_true", default=False)
     parser.add_argument("--thread", type=int, default=multiprocessing.cpu_count())
     parser.add_argument("--dim", type=int, default=100)
     parser.add_argument("--seed", type=int, default=4313)
@@ -39,7 +41,7 @@ def main() -> None:
     parser.add_argument("data_file", type=str)
     args = vars(parser.parse_args())
 
-    dataset = load_dataset(LABEL_DICT, args["data_file"])
+    dataset = load_dataset(LABEL_DICT, args["data_file"], embedding=args["embedding"])
     df = to_pandas_arrow(dataset.ds)
     print(df.head())
 
@@ -60,6 +62,12 @@ def main() -> None:
         else:
             label_dict = LABEL_DICT.copy()
         label_list = list(label_dict.values())
-        print(f"starting train_supervised for labels: {label_list}")
-        with ThreadPoolExecutor(max_workers=multiprocessing.cpu_count()) as executor:
-            train_supervised(label_dict, executor, dataset, **args)
+
+        print(f"starting training for labels: {label_list}")
+        if args["embedding"]:
+            train_embedding(label_dict, dataset, df, args)
+        else:
+            with ThreadPoolExecutor(
+                max_workers=multiprocessing.cpu_count()
+            ) as executor:
+                train_supervised(label_dict, executor, dataset, **args)

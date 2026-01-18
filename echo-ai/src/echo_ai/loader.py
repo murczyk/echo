@@ -5,7 +5,7 @@ from pathlib import Path
 import datasets
 import pandas as pd
 import pyarrow as pa
-from datasets import ClassLabel, Dataset, Features, Value
+from datasets import ClassLabel, Dataset, Features, Sequence, Value
 from mlflow.data.huggingface_dataset import HuggingFaceDataset, from_huggingface
 
 LABEL_DICT = {
@@ -85,20 +85,24 @@ def filter_empty(t: pa.Table):
 
 
 def load_dataset(
-    label_dict: dict[int, str], data_file: str, data_dir: str | None = None
+    label_dict: dict[int, str],
+    data_file: str,
+    data_dir: str | None = None,
+    embedding: bool = False,
 ) -> HuggingFaceDataset:
-    dataset_dict = datasets.load_dataset(
-        "parquet", data_files=data_file, data_dir=data_dir
-    )
-
     features = {
         "text": Value("string"),
         "__source": Value("string"),
-        "__id": Value("string"),
-        "__datetime": Value("string"),
+        "__id": Value("int64"),
+        "__datetime": Value("timestamp[s, tz=UTC]"),
     }
     for label_index in label_dict.keys():
         features[f"label_{label_index}"] = ClassLabel(num_classes=2)  # pyright: ignore
+    if embedding:
+        features["embedding"] = Sequence(Value("float32"))  # pyright: ignore
+    dataset_dict = datasets.load_dataset(
+        "parquet", data_files=data_file, data_dir=data_dir, features=Features(features)
+    )
 
     hf_dataset = dataset_dict["train"].map(
         preprocess_batched,
@@ -106,7 +110,6 @@ def load_dataset(
         batched=True,
         num_proc=multiprocessing.cpu_count(),
         remove_columns="text",
-        features=Features(features),
     )
     hf_dataset = hf_dataset.with_format("arrow").filter(filter_empty, batched=True)
 

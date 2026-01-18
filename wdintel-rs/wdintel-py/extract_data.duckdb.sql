@@ -73,7 +73,7 @@ select c.id as "__id"
     , c.labels_binary[3] as label_2
     , c.labels_binary[4] as label_3
     , c.labels_binary[5] as label_4
-    , c.labels_binary[6] as label_5``
+    , c.labels_binary[6] as label_5
     , c.labels_binary[7] as label_6
     , c.labels_binary[8] as label_7
     , c.labels_binary[9] as label_8
