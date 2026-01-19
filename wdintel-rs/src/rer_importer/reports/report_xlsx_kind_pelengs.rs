@@ -9,6 +9,7 @@ use crate::utils::orm::ArrayColumnOps;
 use actix_identity::Identity;
 use anyhow::bail;
 use chrono::prelude::*;
+use echo_migration::IntoCondition;
 use itertools::Itertools;
 use sea_orm::{prelude::Expr, sea_query::SimpleExpr, *};
 use std::collections::BTreeMap;
@@ -95,11 +96,21 @@ pub async fn get_inbox_messages_report(
         .filter(sigint_inbox_item::Column::Lat.is_not_null())
         .join(
             JoinType::LeftJoin,
-            sigint_inbox_item::Relation::SigintNetworkFreq.def(),
+            sigint_inbox_item::Relation::SigintNetworkFreq.def()
+                .on_condition(|_left, right| {
+                    Expr::col((right, sigint_network_freq::Column::Deleted))
+                        .eq(false)
+                        .into_condition()
+                }),
         )
         .join(
             JoinType::LeftJoin,
-            sigint_network_freq::Relation::SigintNetwork.def(),
+            sigint_network_freq::Relation::SigintNetwork.def()
+                .on_condition(|_left, right| {
+                    Expr::col((right, sigint_network::Column::Deleted))
+                        .eq(false)
+                        .into_condition()
+                }),
         )
         .join(
             JoinType::LeftJoin,
@@ -107,11 +118,21 @@ pub async fn get_inbox_messages_report(
         )
         .join(
             JoinType::LeftJoin,
-            sigint_network_unit::Relation::SigintUnit.def(),
+            sigint_network_unit::Relation::SigintUnit.def()
+                .on_condition(|_left, right| {
+                    Expr::col((right, sigint_unit::Column::Deleted))
+                        .eq(false)
+                        .into_condition()
+                }),
         )
         .join(
             JoinType::LeftJoin,
-            sigint_inbox_item::Relation::SigintPost.def(),
+            sigint_inbox_item::Relation::SigintPost.def()
+                .on_condition(|_left, right| {
+                    Expr::col((right, sigint_post::Column::Deleted))
+                        .eq(false)
+                        .into_condition()
+                }),
         )
         .group_by(signal_message::Column::Id)
         .group_by(sigint_inbox_item::Column::Id)
