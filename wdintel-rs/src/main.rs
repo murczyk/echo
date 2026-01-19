@@ -545,7 +545,6 @@ enum Cmd {
     OneoffPopulateSignalMessageGroupIds,
     OneoffFixEchoimGroups(OneoffFixEchoimGroupsPs),
     OneoffUnlinkReserveGroupDupes,
-    OneoffCalculateSignalMessageGroups,
     OneoffCalculateStats(OneoffCalculateStatsPs),
     /// Calculates all group stats for last year (no recalculation).
     OneoffCalculateHistoricStats(OneoffCalculateHistoricStatsPs),
@@ -951,12 +950,6 @@ async fn async_main(
         Cmd::OneoffUnlinkReserveGroupDupes => {
             messenger::group::oneoff::oneoff_unlink_reserve_group_dupes(mode)
                 .await
-        }
-        Cmd::OneoffCalculateSignalMessageGroups => {
-            messenger::group::oneoff::oneoff_calculate_signal_message_groups(
-                mode,
-            )
-            .await
         }
         Cmd::OneoffCalculateStats(ps) => {
             stats::oneoff_calculate_stats(mode, &ps).await

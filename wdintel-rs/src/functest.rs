@@ -1042,9 +1042,6 @@ pub mod tests {
             out.sender =
                 Set(Some(random_word::get(random_word::Lang::En).to_string()));
         }
-        if out.duplicate_of == NotSet {
-            out.duplicate_of = Set(None);
-        }
         if out.format == NotSet {
             out.format = Set(None);
         }

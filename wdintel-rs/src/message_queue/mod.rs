@@ -56,7 +56,6 @@ pub async fn process_signal_message_queue_item(
         deleted: Set(true), // unstaged message
         external_id: NotSet,
         message_uid: NotSet,
-        duplicate_of: NotSet,
     }
     .insert(txn)
     .await

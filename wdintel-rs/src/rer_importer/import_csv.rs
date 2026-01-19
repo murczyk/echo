@@ -145,7 +145,6 @@ pub async fn oneoff_rer_csv_import_1(
             deleted: Set(false),
             external_id: NotSet,
             message_uid: NotSet,
-            duplicate_of: NotSet,
             datasource_group_id: Set(Some(datasource_group_id)),
         }
         .insert(&dbx)
@@ -443,7 +442,6 @@ pub async fn rer_delta_csv_import_go(
             external_id: NotSet,
             message_uid: NotSet,
             datasource_group_id: Set(Some(datasource_group_id)),
-            duplicate_of: NotSet,
         }
         .insert(dbx)
         .await
