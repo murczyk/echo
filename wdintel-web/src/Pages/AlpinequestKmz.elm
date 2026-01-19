@@ -174,7 +174,18 @@ pageBlock model =
     in
     div []
         [ p [ class "mb-3 text-sm text-[var(--color-subtle-text)]" ]
-            [ text "Конвертуйте експортовані файли AlpineQuest у KMZ для подальшої роботи." ]
+            [ text "Конвертуйте AlpineQuest файли у формат .kmz, в дружній до Delta формі." ]
+        , let
+              extensions =
+                  [ ".ldk", ".trk", ".are", ".rte", ".wpt", ".set", ".kml", ".kmz", ".geojson", ".gpx" ]
+
+              renderExtension ext =
+                  code [ class "font-mono font-semibold" ] [ text ext ]
+          in
+          p [ class "mb-3 text-sm text-[var(--color-subtle-text)]" ]
+              ([ text "Конвертує файли у форматі " ]
+                  ++ List.intersperse (text " ") (List.map renderExtension extensions)
+              )
         , Button.new { label = " додати файл", onClick = UploadAlpinequestFile }
             |> Button.withIcon [ buttonIcon ]
             |> Button.view

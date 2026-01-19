@@ -66,10 +66,12 @@ async fn get_inbox_map(
     .await
     .context(h!())?;
     info!("points found: {}", points.len());
+    let active_range = get_inbox_filter_active_range(&filter).c(h!())?;
     let units = crate::sigint::network::bl::collect_network_units(
         &inbox_items,
         &env.dbx,
         req.map_filter,
+        active_range,
     )
     .await
     .context(h!())?;
@@ -80,6 +82,32 @@ async fn get_inbox_map(
         network_units,
         points,
     }))
+}
+
+fn get_inbox_filter_active_range(
+    filter: &InboxMessagesReq,
+) -> Result<Option<(NaiveDateTime, NaiveDateTime)>, AppError> {
+    let has_date_filter = filter.since_date_inclusive_ms.is_some()
+        || filter.till_date_inclusive_ms.is_some();
+    if has_date_filter {
+        let dt_since = match filter.since_date_inclusive_ms {
+            Some(ms) => crate::utils::dt_from_millis(ms)?,
+            None => Utc::now().naive_utc() - Duration::days(RER_DUTY_MAX_DAYS),
+        };
+        let dt_till = match filter.till_date_inclusive_ms {
+            Some(ms) => crate::utils::dt_from_millis(ms)?,
+            None => Utc::now().naive_utc(),
+        };
+        return Ok(Some((dt_since, dt_till)));
+    }
+
+    if filter.since_id_noninclusive.is_none() {
+        let dt_since =
+            Utc::now().naive_utc() - Duration::days(RER_DUTY_MAX_DAYS);
+        return Ok(Some((dt_since, Utc::now().naive_utc())));
+    }
+
+    Ok(None)
 }
 
 #[post("/api/rer-importer/messages-by-id")]

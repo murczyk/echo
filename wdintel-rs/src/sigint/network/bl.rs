@@ -458,6 +458,7 @@ pub async fn collect_network_units(
     inbox_items: &Vec<InboxMapItem>,
     dbx: &DatabaseConnection,
     map_filter: Option<MapPointsFilter>,
+    active_range: Option<(NaiveDateTime, NaiveDateTime)>,
 ) -> anyhow::Result<BTreeMap<String, Vec<sigint_unit::Model>>> {
     let freqs = inbox_items
         .iter()
@@ -465,14 +466,48 @@ pub async fn collect_network_units(
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect_vec();
-    let freq_networks = sigint_network::Entity::find()
+    let now = Utc::now().naive_utc();
+    let mut freq_networks = sigint_network::Entity::find()
         .join(
             JoinType::InnerJoin,
             sigint_network::Relation::SigintNetworkFreq.def(),
         )
         .filter(sigint_network_freq::Column::Freq.eq_any(freqs))
-        .filter(sigint_network_freq::Column::ActiveTo.is_null())
         .filter(sigint_network_freq::Column::Deleted.eq(false))
+        .filter(sigint_network::Column::Deleted.eq(false));
+    let freq_active_now = sigint_network_freq::Column::ActiveTo
+        .is_null()
+        .or(sigint_network_freq::Column::ActiveTo.gte(now))
+        .and(
+            sigint_network_freq::Column::ActiveFrom
+                .is_null()
+                .or(sigint_network_freq::Column::ActiveFrom.lte(now)),
+        );
+    let network_active_now = sigint_network::Column::ActiveTo
+        .is_null()
+        .or(sigint_network::Column::ActiveTo.gte(now))
+        .and(
+            sigint_network::Column::ActiveFrom
+                .is_null()
+                .or(sigint_network::Column::ActiveFrom.lte(now)),
+        );
+    freq_networks = freq_networks
+        .filter(freq_active_now)
+        .filter(network_active_now);
+    if let Some((dt_since, dt_till)) = active_range {
+        let freq_active_filter =
+            crate::sigint::freq::util::filter_by_active_ts(dt_since, dt_till);
+        let network_active_to_ok = sigint_network::Column::ActiveTo
+            .is_null()
+            .or(sigint_network::Column::ActiveTo.gte(dt_since));
+        let network_active_from_ok = sigint_network::Column::ActiveFrom
+            .is_null()
+            .or(sigint_network::Column::ActiveFrom.lte(dt_till));
+        freq_networks = freq_networks
+            .filter(freq_active_filter)
+            .filter(network_active_to_ok.and(network_active_from_ok));
+    }
+    let freq_networks = freq_networks
         .select_only()
         .column(sigint_network::Column::Id) //
         .column(sigint_network_freq::Column::Freq) // Select sn::Column
