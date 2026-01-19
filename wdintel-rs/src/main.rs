@@ -478,6 +478,13 @@ pub struct OneoffRestartEchoPs {
     pub restart_messengers: Option<bool>,
 }
 
+#[derive(clap::Args, Debug, Clone)]
+pub struct BackupPs {
+    /// Skip the configured sleep_before_backup_mins delay.
+    #[arg(long, action)]
+    pub nowait: bool,
+}
+
 #[derive(clap::Subcommand, Debug)]
 #[command(author, version, about, long_about = None)]
 enum Cmd {
@@ -488,7 +495,7 @@ enum Cmd {
     ExportUnit(ExportUnitPs),
     ImportUnit(ImportUnitPs),
     RenewTailscaleCert(RenewTailscaleCertPs),
-    Backup,
+    Backup(BackupPs),
     /// Restarts all active echo-im whatsapp units.
     RestartWhatsappUnits,
     OneoffSigintImportMouse(OneoffSigintImportMousePs),
@@ -808,7 +815,7 @@ async fn async_main(
         Cmd::RenewTailscaleCert(ps) => {
             renew_tailscale_cert(mode, ps.force).await
         }
-        Cmd::Backup => backup::backup(mode).await,
+        Cmd::Backup(ps) => backup::backup(mode, ps.nowait).await,
         Cmd::RestartWhatsappUnits => {
             messenger::ops::restart_whatsapp_units(mode).await
         }

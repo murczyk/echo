@@ -1,11 +1,14 @@
+use crate::config::Config;
 use crate::error::AppError;
 use crate::types::*;
 use chrono::prelude::*;
 use log::*;
 use xshell::{cmd, Shell};
 
-pub async fn backup(mode: Mode) -> Result<(), AppError> {
-    let config = crate::config::read_config(mode)?;
+async fn sleep_before_backup(config: &Config, nowait: bool) {
+    if nowait {
+        return;
+    }
     if let Some(sleep_before_backup_mins) = config.sleep_before_backup_mins {
         if sleep_before_backup_mins > 0 {
             info!(
@@ -17,6 +20,11 @@ pub async fn backup(mode: Mode) -> Result<(), AppError> {
             .await;
         }
     }
+}
+
+pub async fn backup(mode: Mode, nowait: bool) -> Result<(), AppError> {
+    let config = crate::config::read_config(mode)?;
+    sleep_before_backup(&config, nowait).await;
     // only launch this command for tailscale domains
     if !config.public_host.ends_with(".ts.net") {
         return Ok(());
@@ -71,17 +79,7 @@ pub async fn backup(mode: Mode) -> Result<(), AppError> {
 #[allow(dead_code)]
 pub async fn backup_to_b2(mode: Mode) -> Result<(), AppError> {
     let config = crate::config::read_config(mode)?;
-    if let Some(sleep_before_backup_mins) = config.sleep_before_backup_mins {
-        if sleep_before_backup_mins > 0 {
-            info!(
-                "sleeping for {sleep_before_backup_mins} minutes before backup"
-            );
-            tokio::time::sleep(tokio::time::Duration::from_secs(
-                sleep_before_backup_mins * 60,
-            ))
-            .await;
-        }
-    }
+    sleep_before_backup(&config, false).await;
     // only launch this command for tailscale domains
     if !config.public_host.ends_with(".ts.net") {
         return Ok(());
