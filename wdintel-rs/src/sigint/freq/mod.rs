@@ -16,7 +16,9 @@ use sea_orm::{sea_query::PostgresQueryBuilder, *};
 use sea_orm::{
     ColumnTrait, Condition, EntityTrait, QueryFilter, QuerySelect, Statement,
 };
-use sea_query::{Alias, CommonTableExpression, Expr, Order, Query, SimpleExpr};
+use sea_query::{
+    Alias, CommonTableExpression, Expr, IntoCondition, Order, Query, SimpleExpr,
+};
 use std::collections::{BTreeSet, HashMap};
 
 use self::bl::*;
@@ -1209,12 +1211,24 @@ where
         q = q
             .join_as(
                 JoinType::InnerJoin,
-                sigint_inbox_item::Relation::SigintNetworkFreq.def(),
+                sigint_inbox_item::Relation::SigintNetworkFreq
+                    .def()
+                    .on_condition(|_left, right| {
+                        Expr::col((right, sigint_network_freq::Column::Deleted))
+                            .eq(false)
+                            .into_condition()
+                    }),
                 Alias::new("sigint_network_freq"),
             )
             .join_as(
                 JoinType::InnerJoin,
-                sigint_network_freq::Relation::SigintNetwork.def(),
+                sigint_network_freq::Relation::SigintNetwork
+                    .def()
+                    .on_condition(|_left, right| {
+                        Expr::col((right, sigint_network::Column::Deleted))
+                            .eq(false)
+                            .into_condition()
+                    }),
                 Alias::new("sigint_network"),
             )
             .join_as(
@@ -1224,7 +1238,13 @@ where
             )
             .join_as(
                 JoinType::LeftJoin,
-                sigint_network_unit::Relation::SigintUnit.def(),
+                sigint_network_unit::Relation::SigintUnit
+                    .def()
+                    .on_condition(|_left, right| {
+                        Expr::col((right, sigint_unit::Column::Deleted))
+                            .eq(false)
+                            .into_condition()
+                    }),
                 Alias::new("sigint_unit"),
             )
     }
