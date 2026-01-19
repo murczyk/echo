@@ -93,7 +93,7 @@ update msg model =
             ( model
             , E.sendCmd <|
                 File.Select.file
-                    [ "application/zip", "application/octet-stream", "application/vnd.google-earth.kmz" ]
+                    []
                     UploadAlpinequestFileSelected
             )
 
