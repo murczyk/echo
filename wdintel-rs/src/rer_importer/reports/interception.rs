@@ -125,11 +125,21 @@ async fn get_inbox_messages_report(
         )
         .join(
             JoinType::LeftJoin,
-            sigint_inbox_item::Relation::SigintNetworkFreq.def(),
+            sigint_inbox_item::Relation::SigintNetworkFreq.def()
+                .on_condition(|_left, right| {
+                    Expr::col((right, sigint_network_freq::Column::Deleted))
+                        .eq(false)
+                        .into_condition()
+                }),
         )
         .join(
             JoinType::LeftJoin,
-            sigint_network_freq::Relation::SigintNetwork.def(),
+            sigint_network_freq::Relation::SigintNetwork.def()
+                .on_condition(|_left, right| {
+                    Expr::col((right, sigint_network::Column::Deleted))
+                        .eq(false)
+                        .into_condition()
+                }),
         )
         .join(
             JoinType::LeftJoin,
@@ -137,11 +147,21 @@ async fn get_inbox_messages_report(
         )
         .join(
             JoinType::LeftJoin,
-            sigint_network_unit::Relation::SigintUnit.def(),
+            sigint_network_unit::Relation::SigintUnit.def()
+                .on_condition(|_left, right| {
+                    Expr::col((right, sigint_unit::Column::Deleted))
+                        .eq(false)
+                        .into_condition()
+                }),
         )
         .join(
             JoinType::LeftJoin,
-            sigint_inbox_item::Relation::SigintPost.def(),
+            sigint_inbox_item::Relation::SigintPost.def()
+                .on_condition(|_left, right| {
+                    Expr::col((right, sigint_post::Column::Deleted))
+                        .eq(false)
+                        .into_condition()
+                }),
         )
         .join(
             JoinType::LeftJoin,
