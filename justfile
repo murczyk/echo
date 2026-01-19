@@ -1,3 +1,5 @@
+set positional-arguments
+
 dt1 := `date -u +%Y-%m-%d-%H-%M-%S`
 pgdb := "wd"
 pgpwd := "fee_-_-_-FnoeKFBeebu87bf"
@@ -739,6 +741,10 @@ deploy-echo-ai:
     rsync -t --progress target/debian/echo-ai_0.1.1-1_amd64.deb {{ server }}:/var/tmp/
     ssh {{ server }} 'sudo apt-get -y install /var/tmp/echo-ai_0.1.1-1_amd64.deb && sudo systemctl restart wdintel-py'
 
+# [positional-arguments]
+[arg('builder', long='builder')]
+[arg('server', long='server')]
+[arg('branch', long='branch')]
 ziggy-echo-build-local builder="echo-build-local" server="echo-staging" branch="main":
     #!/bin/bash
     set -euxo pipefail
