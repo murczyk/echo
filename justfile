@@ -635,13 +635,13 @@ copy-db-local:
     echo 'this command requires sudo access'
     sudo ls
     ssh -t {{ server }} '(cd ~/Downloads && PGPASSWORD="{{ pgpwd }}" pg_dump --user wd -Fc wd > wd-{{ dt1 }}.pgrestore && ls -lah wd-{{ dt1 }}.pgrestore)'
-    ssh -t {{ server }} 'gzip -c ~/Downloads/wd-{{ dt1 }}.pgrestore > /tmp/wd-{{ dt1 }}.pgrestore.gz'
-    scp {{ server }}:/tmp/wd-{{ dt1 }}.pgrestore.gz ~/Downloads/
-    ssh -t {{ server }} '(rm ~/Downloads/wd-{{ dt1 }}.pgrestore && rm /tmp/wd-{{ dt1 }}.pgrestore.gz) | echo "ok"'
+    ssh -t {{ server }} 'mv ~/Downloads/wd-{{ dt1 }}.pgrestore > /var/tmp/wd-{{ dt1 }}.pgrestore'
+    scp {{ server }}:/var/tmp/wd-{{ dt1 }}.pgrestore ~/Downloads/
+    ssh -t {{ server }} '(rm ~/Downloads/wd-{{ dt1 }}.pgrestore) | echo "ok"'
     mv ~/Downloads/wd-{{ dt1 }}.pgrestore.gz /var/tmp/
-    (cd /var/tmp && gunzip wd-{{ dt1 }}.pgrestore.gz)
     just dt1={{ dt1 }} pgdb={{ pgdb }} restore-db-local
     sudo rm /var/tmp/wd-{{ dt1 }}.pgrestore
+    ssh -t {{ server }} '(rm /var/tmp/wd-{{ dt1 }}.pgrestore) | echo "ok"'
 
 restore-db-local:
     sudo -u postgres psql -c 'drop database {{ pgdb }} with (FORCE)' | echo 'ok'
