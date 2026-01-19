@@ -119,42 +119,44 @@ fn is_header(lnow: DateTime<Tz>, row: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::TimeZone;
 
-    // #[cfg_attr(debug_assertions, ignore)]
-    // #[tokio::test]
-    // async fn test_multi_message() {
-    //     let tz = crate::config::get_tz();
-    //     let lnow = Local::now().with_timezone(&tz);
-    //     let messages50 =
-    //         std::fs::read_to_string("data/test_multi_message.txt").unwrap();
-    //     let messages = slice_message(lnow, &messages50);
-    //     assert_eq!(messages.len(), 50);
-    //     assert!(should_try_split_message(&messages50));
-    //     for m in messages {
-    //         assert!(check_message_length_is_valid(&m));
-    //     }
-    // }
-    //
-    // #[cfg_attr(debug_assertions, ignore)]
-    // #[tokio::test]
-    // async fn test_multi_message2() {
-    //     let tz = crate::config::get_tz();
-    //     let lnow = Local::now().with_timezone(&tz);
-    //     let messages_real =
-    //         std::fs::read_to_string("data/test_multi_message2.txt").unwrap();
-    //     assert!(should_try_split_message(&messages_real));
-    //     let messages = slice_message(lnow, &messages_real);
-    //     assert_eq!(messages.len(), 84);
-    //     for m in messages {
-    //         assert!(check_message_length_is_valid(&m));
-    //     }
-    // }
+    fn fixed_now(tz: Tz) -> DateTime<Tz> {
+        tz.with_ymd_and_hms(2025, 4, 10, 12, 0, 0).unwrap()
+    }
 
-    #[cfg_attr(debug_assertions, ignore)]
+    #[tokio::test]
+    async fn test_multi_message() {
+        let tz = crate::config::get_tz();
+        let lnow = fixed_now(tz);
+        let messages50 =
+            std::fs::read_to_string("data/test_multi_message.txt").unwrap();
+        let messages = slice_message(lnow, &messages50);
+        assert_eq!(messages.len(), 50);
+        assert!(should_try_split_message(&messages50));
+        for m in messages {
+            assert!(check_message_length_is_valid(&m));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_multi_message2() {
+        let tz = crate::config::get_tz();
+        let lnow = fixed_now(tz);
+        let messages_real =
+            std::fs::read_to_string("data/test_multi_message2.txt").unwrap();
+        assert!(should_try_split_message(&messages_real));
+        let messages = slice_message(lnow, &messages_real);
+        assert_eq!(messages.len(), 84);
+        for m in messages {
+            assert!(check_message_length_is_valid(&m));
+        }
+    }
+
     #[tokio::test]
     async fn test_multi_message3() {
         let tz = crate::config::get_tz();
-        let lnow = Local::now().with_timezone(&tz);
+        let lnow = fixed_now(tz);
         let text = r#"Отримано з поста "Khartiia"
 --------------------------------------
 03.04, 05:45:53
