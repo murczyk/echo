@@ -102,7 +102,7 @@ select * from (
 ) as x;
 
 copy (
-    select * from echo_wd_all
+    select distinct on (text, labels) * from echo_wd_all
     order by __created_at, __source
 )
 to 'echo-wd-all.parquet' (format parquet, compression 'zstd');
