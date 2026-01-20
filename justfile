@@ -406,6 +406,8 @@ copy-db:
         just server={{ server }} _copy-db; \
     elif [[ "{{ server }}" == "echo-kupiansk" ]]; then \
         just server={{ server }} _copy-db; \
+    elif [[ "{{ server }}" == "echo-zp2" ]]; then \
+        just server={{ server }} _copy-db; \
     else \
         just _print-servers; exit 1; \
     fi
