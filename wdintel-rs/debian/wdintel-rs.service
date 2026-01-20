@@ -11,6 +11,7 @@ RestartSec=5s
 # MemoryLimit=8G
 Environment=LD_LIBRARY_PATH=/usr/local/lib:/usr/lib
 Environment=RUST_LOG=info,wdintel_rs=debug
+LimitNOFILE=524288
 
 [Install]
 WantedBy=multi-user.target

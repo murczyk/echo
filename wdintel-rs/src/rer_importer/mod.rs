@@ -420,8 +420,7 @@ pub async fn signal_group_info_batch(
         &user.id().c(h!())?,
         vec!["Rer", "Api"],
     )
-    .await
-    .c(h!())?;
+    .await?;
     let is_admin =
         crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
             .await

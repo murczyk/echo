@@ -1160,8 +1160,15 @@ view user shared model =
                     div []
                         [ div []
                             [ h1 [ class "py-4 text-2xl font-bold text-foreground" ] [ text "Палітри" ]
-                            , div [ class "mb-4 flex justify-end" ]
-                                [ Button.new { label = "Додати палітру", onClick = ShowCreateSidebar }
+                            , div [ class "mb-4 flex justify-end gap-2" ]
+                                [ a
+                                    [ Attr.href "/alpinequest-kmz"
+                                    , Attr.target "_blank"
+                                    , Attr.rel "noopener noreferrer"
+                                    , class "px-4 py-2 rounded font-medium text-xs flex gap-[4px] items-center justify-center transition-colors duration-200 bg-[var(--color-card)] text-[var(--color-action)] border border-[var(--color-action)] hover:bg-[var(--color-bg-muted)] focus:bg-[var(--color-bg-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--color-action)] focus:ring-offset-2 active:bg-[var(--color-bg-muted)]"
+                                    ]
+                                    [ text "Перейти до AlpineQuest конвертера" ]
+                                , Button.new { label = "Додати палітру", onClick = ShowCreateSidebar }
                                     |> Button.view
                                 ]
                             , div [ class "table-responsive-modern" ] [ renderTable user model pal ]

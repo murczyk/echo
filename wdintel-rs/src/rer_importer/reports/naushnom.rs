@@ -10,6 +10,7 @@ use chrono::{NaiveDateTime, TimeZone};
 use docx_rs::*;
 use itertools::Itertools;
 use sea_orm::*;
+use sea_query::{Expr, IntoCondition};
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
@@ -32,8 +33,9 @@ pub async fn report_docx_kind_naushnom(
 ) -> Result<(), AppError> {
     let file = std::fs::File::create(outpath)?;
     let width_unit = 100;
-
-    let network_map = get_inbox_messages_report_network(user, env, &req.req)
+    let mut inbox_req = req.req.clone();
+    inbox_req.report_tags_only_this_unit = req.report_tags_only_this_unit;
+    let network_map = get_inbox_messages_report_network(user, env, &inbox_req)
         .await
         .c(h!())?;
 
@@ -258,11 +260,23 @@ pub async fn get_inbox_messages_report_network(
         )
         .join(
             JoinType::InnerJoin,
-            sigint_inbox_item::Relation::SigintNetworkFreq.def(),
+            sigint_inbox_item::Relation::SigintNetworkFreq
+                .def()
+                .on_condition(|_left, right| {
+                    Expr::col((right, sigint_network_freq::Column::Deleted))
+                        .eq(false)
+                        .into_condition()
+                }),
         )
         .join(
             JoinType::InnerJoin,
-            sigint_network_freq::Relation::SigintNetwork.def(),
+            sigint_network_freq::Relation::SigintNetwork
+                .def()
+                .on_condition(|_left, right| {
+                    Expr::col((right, sigint_network::Column::Deleted))
+                        .eq(false)
+                        .into_condition()
+                }),
         )
         .join(
             JoinType::LeftJoin,
@@ -270,11 +284,23 @@ pub async fn get_inbox_messages_report_network(
         )
         .join(
             JoinType::LeftJoin,
-            sigint_network_unit::Relation::SigintUnit.def(),
+            sigint_network_unit::Relation::SigintUnit
+                .def()
+                .on_condition(|_left, right| {
+                    Expr::col((right, sigint_unit::Column::Deleted))
+                        .eq(false)
+                        .into_condition()
+                }),
         )
         .join(
             JoinType::LeftJoin,
-            sigint_inbox_item::Relation::SigintPost.def(),
+            sigint_inbox_item::Relation::SigintPost.def().on_condition(
+                |_left, right| {
+                    Expr::col((right, sigint_post::Column::Deleted))
+                        .eq(false)
+                        .into_condition()
+                },
+            ),
         )
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(
@@ -319,7 +345,6 @@ pub async fn get_inbox_messages_report_network(
         &req.filter_tags_option,
         &req.without_model_tags,
         &login,
-        None,
         req.report_tags_only_this_unit.unwrap_or(false),
     )?;
     if let Some(since_date_inclusive_ms) = req.since_date_inclusive_ms {

@@ -40,6 +40,38 @@ async fn get_inbox_messages_report(
     let logins = crate::users::get_organism_logins(&read_db, user)
         .await
         .context(h!())?;
+    let report_tags_only_this_unit =
+        req.report_tags_only_this_unit == Some(true);
+    let logins2 = logins.clone();
+    let comment_join = if report_tags_only_this_unit {
+        signal_message::Relation::SigintComment.def().on_condition(
+            move |_left, right| {
+                Expr::col((right, sigint_comment::Column::Login))
+                    .is_in(logins2.clone())
+                    .into_condition()
+            },
+        )
+    } else {
+        signal_message::Relation::SigintComment.def()
+    };
+    let tags_join = sigint_inbox_item_tag::Relation::SigintInboxItem
+        .def()
+        .rev()
+        .on_condition(move |_left, right| {
+            let mut condition = Expr::col((
+                right.clone(),
+                sigint_inbox_item_tag::Column::Confidence,
+            ))
+            .gte(TAG_MINIMUM_CONFIDENCE)
+            .into_condition();
+            if report_tags_only_this_unit {
+                condition = condition.add(
+                    Expr::col((right, sigint_inbox_item_tag::Column::Login))
+                        .is_in(logins.clone()),
+                );
+            }
+            condition
+        });
     let mut q = SignalMessage::find()
         .inner_join(sigint_inbox_item::Entity)
         .column(sigint_inbox_item::Column::Datetime)
@@ -66,10 +98,10 @@ async fn get_inbox_messages_report(
                 COALESCE(
                     array_to_string(
                         NULLIF(
-                            array_agg(DISTINCT 
+                            array_agg(DISTINCT
                                 sigint_network_freq.kind || ' р/м ' || sigint_network.name || ' ' || sigint_unit.name || ' (' || UPPER(sigint_network.location) || ')'
-                            ) 
-                            FILTER 
+                            )
+                            FILTER
                             (WHERE sigint_unit.name IS NOT NULL),
                         '{}'),
                         ', '
@@ -93,11 +125,21 @@ async fn get_inbox_messages_report(
         )
         .join(
             JoinType::LeftJoin,
-            sigint_inbox_item::Relation::SigintNetworkFreq.def(),
+            sigint_inbox_item::Relation::SigintNetworkFreq.def()
+                .on_condition(|_left, right| {
+                    Expr::col((right, sigint_network_freq::Column::Deleted))
+                        .eq(false)
+                        .into_condition()
+                }),
         )
         .join(
             JoinType::LeftJoin,
-            sigint_network_freq::Relation::SigintNetwork.def(),
+            sigint_network_freq::Relation::SigintNetwork.def()
+                .on_condition(|_left, right| {
+                    Expr::col((right, sigint_network::Column::Deleted))
+                        .eq(false)
+                        .into_condition()
+                }),
         )
         .join(
             JoinType::LeftJoin,
@@ -105,26 +147,29 @@ async fn get_inbox_messages_report(
         )
         .join(
             JoinType::LeftJoin,
-            sigint_network_unit::Relation::SigintUnit.def(),
-        )
-        .join(
-            JoinType::LeftJoin,
-            sigint_inbox_item::Relation::SigintPost.def(),
-        )
-        .join(
-            JoinType::LeftJoin,
-            signal_message::Relation::SigintComment.def(),
-        )
-        .join(
-            JoinType::LeftJoin,
-            sigint_inbox_item_tag::Relation::SigintInboxItem
-                .def()
-                .rev()
+            sigint_network_unit::Relation::SigintUnit.def()
                 .on_condition(|_left, right| {
-                    Expr::col((right, sigint_inbox_item_tag::Column::Confidence))
-                        .gte(TAG_MINIMUM_CONFIDENCE)
+                    Expr::col((right, sigint_unit::Column::Deleted))
+                        .eq(false)
                         .into_condition()
                 }),
+        )
+        .join(
+            JoinType::LeftJoin,
+            sigint_inbox_item::Relation::SigintPost.def()
+                .on_condition(|_left, right| {
+                    Expr::col((right, sigint_post::Column::Deleted))
+                        .eq(false)
+                        .into_condition()
+                }),
+        )
+        .join(
+            JoinType::LeftJoin,
+            comment_join,
+        )
+        .join(
+            JoinType::LeftJoin,
+            tags_join,
         )
         .join(
             JoinType::LeftJoin,
@@ -146,9 +191,10 @@ async fn get_inbox_messages_report(
                 .c(h!())?,
         ));
 
-    if req.report_tags_only_this_unit == Some(true) {
-        q = q.filter(sigint_comment::Column::Login.eq_any(logins));
+    if req.without_model_tags == Some(true) {
+        q = q.filter(sigint_inbox_item_tag::Column::Model.is_null());
     }
+
     q = crate::rer_importer::inbox::query::get_pagination_filters(
         env,
         req,
@@ -186,7 +232,6 @@ async fn get_inbox_messages_report(
         &req.filter_tags_option,
         &req.without_model_tags,
         &login,
-        None,
         req.report_tags_only_this_unit.unwrap_or(false),
     )?;
     let q = filter_selected_locations(
@@ -284,7 +329,9 @@ pub async fn report_xlsx_kind_interception(
     let mut workbook = Workbook::new(); // Use rust_xlsxwriter
     let sheet1 = workbook.add_worksheet().set_name("Пеленги").context(h!())?; // Use rust_xlsxwriter
     let date_format = Format::new().set_num_format("dd.mm.yyyy");
-    let without_model_tags = req.req.without_model_tags.unwrap_or(false);
+    let mut inbox_req = req.req.clone();
+    inbox_req.report_tags_only_this_unit = req.report_tags_only_this_unit;
+    let without_model_tags = inbox_req.without_model_tags.unwrap_or(false);
     // Define formats using rust_xlsxwriter
     let coltitle_base = Format::new()
         .set_bold()
@@ -423,7 +470,7 @@ pub async fn report_xlsx_kind_interception(
     };
 
     let mut i = 1;
-    for m in get_inbox_messages_report(user, env, &req.req)
+    for m in get_inbox_messages_report(user, env, &inbox_req)
         .await
         .context(h!())?
     {

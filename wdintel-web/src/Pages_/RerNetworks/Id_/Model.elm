@@ -120,6 +120,7 @@ type alias Model =
     , keyCreateSidebar : Bool
     , keyCreateState :
         { key : String
+        , keyHash : String
         , description : String
         , sigintNetworkFreqIds : List Int
         }
@@ -140,6 +141,8 @@ type alias Model =
     , freqEditKeySelect : Utils.Select.SelectType Int
     , freqEditSaving : Bool
     , freqEditShowActiveTo : Bool
+    , freqEditNewKeyInput : String
+    , freqEditNewKeySaving : Bool
     , deleteNetworkConfirmation : Maybe Int
     , deleteNetworkLoading : Bool
     , deleteFreqConfirmation : Maybe ( Int, String )
@@ -154,6 +157,8 @@ type alias Model =
     , freqCreateDescriptionInp : String
     , freqCreateFormatError : Maybe String
     , freqCreateShowActiveTo : Bool
+    , freqCreateNewKeyInput : String
+    , freqCreateNewKeySaving : Bool
 
     -- Network callsigns (new table)
     , networkCallsigns : RemoteData ApiError (List B.NetworkCallsign)

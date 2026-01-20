@@ -94,6 +94,7 @@ init _ =
             , openMapRowId = Nothing
             , callsignsByFreq = Dict.empty
             , callsignsInfo = Dict.empty
+            , networksExtra = Dict.empty
             , callsigns = []
             , sortingOrder = B.MessageCountDesc
             , altUnitsByFreq = Dict.empty
@@ -316,6 +317,36 @@ callsignsForFilterParams dtFromPosix dtToPosix model =
     }
 
 
+networksForView : Shared.Model -> Model -> Dict Int B.Network
+networksForView shared model =
+    Dict.union model.networksExtra (RD.withDefault Dict.empty shared.networks)
+
+
+missingNetworkIdsForFreqs : Shared.Model -> Model -> List B.Freq -> List Int
+missingNetworkIdsForFreqs shared model freqs =
+    let
+        knownNetworks =
+            networksForView shared model
+    in
+    freqs
+        |> List.concatMap .networkIds
+        |> List.filter (\networkId -> not (Dict.member networkId knownNetworks))
+        |> ListX.unique
+
+
+loadNetworksForFreqs : Shared.Model -> Model -> List B.Freq -> Effect Msg
+loadNetworksForFreqs shared model freqs =
+    let
+        missingIds =
+            missingNetworkIdsForFreqs shared model freqs
+    in
+    if List.isEmpty missingIds then
+        E.none
+
+    else
+        E.getNetworksInfoByIds NetworksInfoLoaded missingIds
+
+
 reloadFreqsIfSelectedChanged : Maybe (Select.Action String) -> List String -> Model -> ( Model, Effect Msg, Bool )
 reloadFreqsIfSelectedChanged mAction selectedItems model =
     case mAction of
@@ -373,10 +404,6 @@ update shared msg model =
             )
 
         GotFreqs paginating (Ok rsp) ->
-            let
-                networkIds =
-                    rsp.freqs |> List.concatMap .networkIds
-            in
             ( { model
                 | freqs =
                     if paginating then
@@ -390,42 +417,44 @@ update shared msg model =
                 , noMoreToLoad = not rsp.showLoadMore
               }
             , E.batch
-                (case ( model.from.datePosix, model.to.datePosix ) of
-                    ( Just dtFromPosix, Just dtToPosix ) ->
-                        let
-                            freqsAsString =
-                                rsp.freqs |> List.map .freq
+                (loadNetworksForFreqs shared model rsp.freqs
+                    :: (case ( model.from.datePosix, model.to.datePosix ) of
+                            ( Just dtFromPosix, Just dtToPosix ) ->
+                                let
+                                    freqsAsString =
+                                        rsp.freqs |> List.map .freq
 
-                            timeFrom =
-                                Time.posixToMillis dtFromPosix
+                                    timeFrom =
+                                        Time.posixToMillis dtFromPosix
 
-                            timeTo =
-                                Time.posixToMillis dtToPosix
-                        in
-                        [ E.getGroupsActivityStats GroupsMessageCountByDayReturnedByApi
-                            { freqs = freqsAsString
-                            , sinceDateInclusiveMs = timeFrom
-                            , tillDateNoninclusiveMs = timeTo
-                            }
-                        , E.sendCmd <|
-                            Api.list_callsigns_by_freq CallsignsByFreqsReturnedByApi
-                                { freqs = freqsAsString
-                                , sinceDateInclusiveMs = timeFrom
-                                , tillDateNoninclusiveMs = timeTo
-                                }
-                        , E.sendCmd <|
-                            Api.list_alt_units_by_freqs AltUnitsByFreqReturnedByApi
-                                { freqs = freqsAsString
-                                , sinceDateInclusiveMs = timeFrom
-                                , tillDateNoninclusiveMs = timeTo
-                                , filterGroupMasterKeys = Nothing
-                                , filterSenderProfileIds = Nothing
-                                }
-                        ]
+                                    timeTo =
+                                        Time.posixToMillis dtToPosix
+                                in
+                                [ E.getGroupsActivityStats GroupsMessageCountByDayReturnedByApi
+                                    { freqs = freqsAsString
+                                    , sinceDateInclusiveMs = timeFrom
+                                    , tillDateNoninclusiveMs = timeTo
+                                    }
+                                , E.sendCmd <|
+                                    Api.list_callsigns_by_freq CallsignsByFreqsReturnedByApi
+                                        { freqs = freqsAsString
+                                        , sinceDateInclusiveMs = timeFrom
+                                        , tillDateNoninclusiveMs = timeTo
+                                        }
+                                , E.sendCmd <|
+                                    Api.list_alt_units_by_freqs AltUnitsByFreqReturnedByApi
+                                        { freqs = freqsAsString
+                                        , sinceDateInclusiveMs = timeFrom
+                                        , tillDateNoninclusiveMs = timeTo
+                                        , filterGroupMasterKeys = Nothing
+                                        , filterSenderProfileIds = Nothing
+                                        }
+                                ]
 
-                    _ ->
-                        []
-                )
+                            _ ->
+                                []
+                       )
+                    )
             )
 
         GroupsMessageCountByDayReturnedByApi (Ok r) ->
@@ -535,10 +564,13 @@ update shared msg model =
 
                         Just (Select.Select i) ->
                             let
+                                networksDict =
+                                    networksForView shared model
+
                                 a =
-                                    case ( shared.masterUnits, shared.networks ) of
-                                        ( Success units, Success networks ) ->
-                                            Utils.findConnectedNetworks (Just i) networks units
+                                    case shared.masterUnits of
+                                        Success units ->
+                                            Utils.findConnectedNetworks (Just i) networksDict units
 
                                         _ ->
                                             []
@@ -902,6 +934,20 @@ update shared msg model =
             in
             ( { model | callsignsInfo = updatedCallsignsInfo }, E.none )
 
+        NetworksInfoLoaded (Err err) ->
+            ( model
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка дозавантаження мереж" err
+            )
+
+        NetworksInfoLoaded (Ok networks) ->
+            let
+                newNetworks =
+                    networks
+                        |> List.map (\network -> ( network.id, network ))
+                        |> Dict.fromList
+            in
+            ( { model | networksExtra = Dict.union newNetworks model.networksExtra }, E.none )
+
         SortByMessageNumber ->
             let
                 newSortOrder =
@@ -1113,8 +1159,8 @@ update shared msg model =
             )
 
         FreqAddToExistingNetwork freq id ->
-            case ( shared.networks, Dict.get id (RD.withDefault Dict.empty shared.networks) ) of
-                ( Success _, Just network ) ->
+            case Dict.get id (networksForView shared model) of
+                Just network ->
                     ( { model | networkAddLoading = True }
                     , E.addFreqToNetwork (FreqAddedToNetwork freq)
                         { networkId = network.id
@@ -1140,7 +1186,7 @@ update shared msg model =
                         }
                     )
 
-                _ ->
+                Nothing ->
                     ( model, E.none )
 
         FreqAddedToNetwork _ (Err e) ->
@@ -1684,7 +1730,7 @@ freqsTableConfig shared model user =
                                         }
                                         (FreqsPage
                                             freq.freq
-                                            (RD.withDefault Dict.empty shared.networks)
+                                            (networksForView shared model)
                                         )
 
                                 _ ->
@@ -1948,7 +1994,7 @@ viewFreqBlock mUser shared model freq =
             [ div [] <|
                 for_ freq.networkIds <|
                     \networkId ->
-                        case Dict.get networkId (RD.withDefault Dict.empty shared.networks) of
+                        case Dict.get networkId (networksForView shared model) of
                             Just network ->
                                 span [ class "inline-flex items-center gap-1" ]
                                     [ case shared.masterUnits of
@@ -2159,7 +2205,7 @@ view dark shared user model =
                       div []
                         [ Sidebar.view networkAddSidebarOpen
                             CloseAddNetworkSidebar
-                            (NetworkWorkflow.view model shared)
+                            (NetworkWorkflow.view model shared (networksForView shared model))
                         , div
                             [ class "border mb-4 p-2"
                             ]

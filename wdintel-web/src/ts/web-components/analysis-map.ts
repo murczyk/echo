@@ -13,7 +13,19 @@ import { PalitraManager } from '../maps/palitra-manager';
 import { PalitraDetails } from '../maps/palitra-types';
 
 type NetworkUnit = { frequencies: string[]; name: string }
-type Message = [number, { message_uid: string; freq: string; coords: number[], text: string, date: number, time: number, unit: string }]
+type Message = [
+  number,
+  {
+    message_uid?: string;
+    freq?: string;
+    coords?: number[];
+    text: string;
+    date?: string;
+    time?: string;
+    unit?: string | null;
+    network_ids?: number[] | null;
+  }
+]
 
 export class DataCircleMarker extends L.CircleMarker {
   data: { messageId: number };
@@ -48,7 +60,6 @@ function getTileLayers() {
 }
 
 const liTemplate = (message_: Message, networkUnitName_: string | undefined, selectedUnits: string[]) => {
-
   const unitName = networkUnitName_ ?? message_[1].unit ?? 'Не визначено'
   const unitBlock = `
             <div>
@@ -75,7 +86,12 @@ const liTemplate = (message_: Message, networkUnitName_: string | undefined, sel
 function getPointPopupTemplate(sortedMessages: Message[], networkUnits: NetworkUnit[], selectedUnits: string[]) {
   const b =
     sortedMessages.map((message) => {
-      const networkUnitName = networkUnits.find(unit => unit.frequencies.includes(message[1].freq))?.name
+      const freq = message[1].freq
+      const networkIds = message[1].network_ids
+      const shouldUseNetworkUnits = Array.isArray(networkIds) && networkIds.length > 0 && !!freq
+      const networkUnitName = shouldUseNetworkUnits
+        ? networkUnits.find(unit => unit.frequencies.includes(freq!))?.name
+        : undefined
       return liTemplate(message, networkUnitName, selectedUnits)
     }).join('')
   return `

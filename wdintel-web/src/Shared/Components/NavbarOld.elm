@@ -76,6 +76,7 @@ navBar user shared activeName props =
         otherSubs =
             [ Menu (Internal Route.Path.Importer) "importer" "імпортер"
             , Menu (Internal Route.Path.Delta) "kmz2geojson" "kmz в geojson"
+            , Menu (Internal Route.Path.AlpinequestKmz) "alpinequest-kmz" "alpinequest в kmz"
             , Menu (Internal Route.Path.DeltaCsv2kmz) "csv2kmz" "delta csv в kmz"
             , Menu (Internal Route.Path.DeltaFixkmz) "fixkmz" "очисник kmz"
             , Menu (Internal Route.Path.CoordsConverter) "coords-converter" "конвертер координат"

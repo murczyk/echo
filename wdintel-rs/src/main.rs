@@ -16,6 +16,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::runtime::Handle;
 use tokio_util::sync::CancellationToken;
 
+mod alpine;
 pub mod atak;
 pub mod aws;
 pub mod backup;
@@ -477,6 +478,13 @@ pub struct OneoffRestartEchoPs {
     pub restart_messengers: Option<bool>,
 }
 
+#[derive(clap::Args, Debug, Clone)]
+pub struct BackupPs {
+    /// Skip the configured sleep_before_backup_mins delay.
+    #[arg(long, action)]
+    pub nowait: bool,
+}
+
 #[derive(clap::Subcommand, Debug)]
 #[command(author, version, about, long_about = None)]
 enum Cmd {
@@ -487,7 +495,7 @@ enum Cmd {
     ExportUnit(ExportUnitPs),
     ImportUnit(ImportUnitPs),
     RenewTailscaleCert(RenewTailscaleCertPs),
-    Backup,
+    Backup(BackupPs),
     /// Restarts all active echo-im whatsapp units.
     RestartWhatsappUnits,
     OneoffSigintImportMouse(OneoffSigintImportMousePs),
@@ -537,7 +545,6 @@ enum Cmd {
     OneoffPopulateSignalMessageGroupIds,
     OneoffFixEchoimGroups(OneoffFixEchoimGroupsPs),
     OneoffUnlinkReserveGroupDupes,
-    OneoffCalculateSignalMessageGroups,
     OneoffCalculateStats(OneoffCalculateStatsPs),
     /// Calculates all group stats for last year (no recalculation).
     OneoffCalculateHistoricStats(OneoffCalculateHistoricStatsPs),
@@ -807,7 +814,7 @@ async fn async_main(
         Cmd::RenewTailscaleCert(ps) => {
             renew_tailscale_cert(mode, ps.force).await
         }
-        Cmd::Backup => backup::backup(mode).await,
+        Cmd::Backup(ps) => backup::backup(mode, ps.nowait).await,
         Cmd::RestartWhatsappUnits => {
             messenger::ops::restart_whatsapp_units(mode).await
         }
@@ -943,12 +950,6 @@ async fn async_main(
         Cmd::OneoffUnlinkReserveGroupDupes => {
             messenger::group::oneoff::oneoff_unlink_reserve_group_dupes(mode)
                 .await
-        }
-        Cmd::OneoffCalculateSignalMessageGroups => {
-            messenger::group::oneoff::oneoff_calculate_signal_message_groups(
-                mode,
-            )
-            .await
         }
         Cmd::OneoffCalculateStats(ps) => {
             stats::oneoff_calculate_stats(mode, &ps).await

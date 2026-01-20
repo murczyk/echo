@@ -57,8 +57,7 @@ env_logger = "0.11.8"
 substring = "~1.4.5"
 unicode-segmentation = "1.12.0"
 indicatif = "0.18.0"
-redis = { version = "0.32.5", features = ["tokio-comp", "connection-manager"] }
-redis-macros = "0.5.6"
+redis = { version = "1.0.2", features = ["tokio-comp", "connection-manager"] }
 rust-argon2 = "^3.0.0"
 bytes = "1.10.1"
 docx-rs = "^0.4.18"
@@ -95,6 +94,7 @@ demoji = "0.0.3"
 dialoguer = "0.11.0"
 tracing-subscriber = { version = "0.3.19", features = ["tracing-log"] }
 unicode-normalization = "0.1.24"
+content_disposition = "0.4.0"
 
 [dev-dependencies]
 random_word = { version = "0.5.0", features = ["en"] }
@@ -106,7 +106,7 @@ rev = "bb5c826c880050a371c8479aadf3e3a979880aca"
 
 [dependencies.echo-im]
 git = "ssh://git@github.com/echoua/echo-im.git"
-rev = "4f6860191dc685f96b495915419e9a6cf85438f6"
+rev = "e284644427c54688e9559c92b3944f9ca641f7ba"
 
 [dependencies.milgeo-rs]
 git = "ssh://git@github.com/echoua/milgeo-rs.git"

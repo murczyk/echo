@@ -22,8 +22,7 @@ pub async fn aor_list(
         &user.id().c(h!())?,
         vec!["Admin", "UnitsEditor"],
     )
-    .await
-    .c(h!())?;
+    .await?;
 
     let aors = area_of_responsibility::Entity::find()
         .filter(area_of_responsibility::Column::Deleted.eq(false))

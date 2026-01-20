@@ -374,7 +374,6 @@ where
 fn get_related_tag_items_filter(
     unique_tags: BTreeSet<i64>,
     tag_filter_option: TagFilterOption,
-    only_tags_by_logins: Option<Vec<String>>,
     without_model_tags: bool,
     report_tags_only_this_unit: bool,
     user_id: &str,
@@ -427,12 +426,6 @@ fn get_related_tag_items_filter(
             query.to_string(PostgresQueryBuilder)
         );
         q = q.filter(sigint_inbox_item_tag::Column::Login.in_subquery(query));
-    }
-
-    if let Some(logins) = only_tags_by_logins {
-        if !logins.is_empty() {
-            q = q.filter(sigint_inbox_item_tag::Column::Login.eq_any(logins));
-        }
     }
 
     match tag_filter_option {
@@ -496,7 +489,6 @@ pub fn filter_selected_tags<Q>(
     filter_tags_option: &Option<TagFilterOption>,
     without_model_tags: &Option<bool>,
     user_id: &str,
-    only_tags_by_logins: Option<Vec<String>>,
     report_tags_only_this_unit: bool,
 ) -> Result<Q, AppError>
 where
@@ -514,7 +506,6 @@ where
             m_inner_expr = Some(get_related_tag_items_filter(
                 unique_tags,
                 tag_filter_option,
-                only_tags_by_logins,
                 without_model_tags,
                 report_tags_only_this_unit,
                 user_id,
@@ -1085,7 +1076,6 @@ pub async fn summary_table_freq_1(
         &req.filter_tags_option,
         &req.without_model_tags,
         &user.id().c(h!())?,
-        None,
         req.report_tags_only_this_unit.unwrap_or(false),
     )?;
     let dedup_subquery =
@@ -1679,7 +1669,6 @@ pub async fn edit_freq_unit_name(
         &req.filter_tags_option,
         &reqan.without_model_tags,
         &user.id().c(h!())?,
-        None,
         req.report_tags_only_this_unit.unwrap_or(false),
     )?;
     let rows_res = filter_selected_networks(rows_res, &reqan.selected_networks)
@@ -2048,7 +2037,6 @@ pub async fn bi_new_callsigns(
         &req.filter_tags_option,
         &req.without_model_tags,
         user_id,
-        None,
         req.report_tags_only_this_unit.unwrap_or(false),
     )?;
     let rows_res =
@@ -2128,7 +2116,6 @@ pub async fn bi_new_callsigns(
         &req.filter_tags_option,
         &req.without_model_tags,
         user_id,
-        None,
         req.report_tags_only_this_unit.unwrap_or(false),
     )?;
     let rows_res = filter_selected_networks(rows_res, &req.selected_networks)
@@ -2414,8 +2401,7 @@ async fn freq_stats(
         &user.id().c(h!())?,
         vec!["Rer", "Api"],
     )
-    .await
-    .c(h!())?;
+    .await?;
 
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
@@ -2804,9 +2790,7 @@ async fn freq_stats_count(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<i64>, AppError> {
     let login = user.id().c(h!())?;
-    crate::users::has_any_role(&env.dbx, &login, vec!["Rer", "Api"])
-        .await
-        .c(h!())?;
+    crate::users::has_any_role(&env.dbx, &login, vec!["Rer", "Api"]).await?;
 
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)

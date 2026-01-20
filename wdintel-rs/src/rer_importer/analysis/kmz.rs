@@ -79,7 +79,6 @@ pub async fn rer_analysis_download_kmz(
         &req.filter_tags_option,
         &req.without_model_tags,
         &user.id().c(h!())?,
-        None,
         req.report_tags_only_this_unit.unwrap_or(false),
     )?;
     let items =

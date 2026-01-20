@@ -1,3 +1,4 @@
+use crate::config::ENCRYPTION_KEY_PLACEHOLDER;
 use crate::entities::*;
 use crate::error::AppError;
 use crate::rer_importer::analysis::{
@@ -390,8 +391,12 @@ pub async fn load_freqs(
                     .unwrap_or_default();
                 network.encryption_key_ids =
                     keys.iter().filter_map(|key| key.id).collect();
-                network.encryption_keys =
-                    keys.into_iter().map(|k| k.key).collect();
+                network.encryption_keys = keys
+                    .into_iter()
+                    .map(|key| {
+                        format_encryption_key_display(key.key, key.key_hash)
+                    })
+                    .collect();
             }
             Ok(networks)
         }
@@ -413,6 +418,28 @@ fn flatten_and_dedup(input: Vec<Vec<String>>) -> Vec<String> {
     let mut result: Vec<String> = unique.into_iter().collect();
     result.sort();
     result
+}
+
+fn format_encryption_key_display(
+    key: Option<String>,
+    key_hash: Option<String>,
+) -> String {
+    let key_value = key.unwrap_or_default();
+    let hash_value = key_hash.unwrap_or_default();
+    let key_trim = key_value.trim();
+    let hash_trim = hash_value.trim();
+
+    if key_trim.is_empty() && hash_trim.is_empty() {
+        "-".to_string()
+    } else if key_trim == ENCRYPTION_KEY_PLACEHOLDER
+        && hash_trim == ENCRYPTION_KEY_PLACEHOLDER
+    {
+        ENCRYPTION_KEY_PLACEHOLDER.to_string()
+    } else {
+        let display_key = if key_trim.is_empty() { "-" } else { key_trim };
+        let display_hash = if hash_trim.is_empty() { "-" } else { hash_trim };
+        format!("{}\u{00A0}/\u{00A0}{}", display_key, display_hash)
+    }
 }
 
 pub async fn find_all_known_callsigns(

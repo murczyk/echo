@@ -97,9 +97,15 @@ pub async fn report_docx_kind_revo(
     info!("get_organism_logins took: {:?}", start.elapsed());
 
     let start = Instant::now();
+    let mut current_req = req.req.clone();
+    current_req.report_tags_only_this_unit = req.report_tags_only_this_unit;
     let messages: Vec<(i64, InboxMessage)> =
         crate::rer_importer::inbox::get_inbox_messages_with_conn(
-            &read_db, &login, &logins, env, &req.req,
+            &read_db,
+            &login,
+            &logins,
+            env,
+            &current_req,
         )
         .await
         .context(h!())?;

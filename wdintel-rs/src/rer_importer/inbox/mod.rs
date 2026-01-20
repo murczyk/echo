@@ -41,9 +41,6 @@ async fn get_inbox_map(
         .await
         .c(h!())?;
     let login = user.id().c(h!())?;
-    let logins = crate::users::get_organism_logins(&env.dbx, user)
-        .await
-        .context(h!())?;
 
     let mut filter = req.inbox_items_filter.clone();
     filter.nolimit = Some(true); // fetch all points
@@ -58,7 +55,7 @@ async fn get_inbox_map(
         filter.selected_freqs = Some(freq_whitelist);
     }
 
-    let inbox_items = get_inbox_map_items(&login, &logins, &env, &filter)
+    let inbox_items = get_inbox_map_items(&login, &env, &filter)
         .await
         .context(h!())?;
     info!("messages found: {}", inbox_items.len());
@@ -69,10 +66,12 @@ async fn get_inbox_map(
     .await
     .context(h!())?;
     info!("points found: {}", points.len());
+    let active_range = get_inbox_filter_active_range(&filter).c(h!())?;
     let units = crate::sigint::network::bl::collect_network_units(
         &inbox_items,
         &env.dbx,
         req.map_filter,
+        active_range,
     )
     .await
     .context(h!())?;
@@ -83,6 +82,32 @@ async fn get_inbox_map(
         network_units,
         points,
     }))
+}
+
+fn get_inbox_filter_active_range(
+    filter: &InboxMessagesReq,
+) -> Result<Option<(NaiveDateTime, NaiveDateTime)>, AppError> {
+    let has_date_filter = filter.since_date_inclusive_ms.is_some()
+        || filter.till_date_inclusive_ms.is_some();
+    if has_date_filter {
+        let dt_since = match filter.since_date_inclusive_ms {
+            Some(ms) => crate::utils::dt_from_millis(ms)?,
+            None => Utc::now().naive_utc() - Duration::days(RER_DUTY_MAX_DAYS),
+        };
+        let dt_till = match filter.till_date_inclusive_ms {
+            Some(ms) => crate::utils::dt_from_millis(ms)?,
+            None => Utc::now().naive_utc(),
+        };
+        return Ok(Some((dt_since, dt_till)));
+    }
+
+    if filter.since_id_noninclusive.is_none() {
+        let dt_since =
+            Utc::now().naive_utc() - Duration::days(RER_DUTY_MAX_DAYS);
+        return Ok(Some((dt_since, Utc::now().naive_utc())));
+    }
+
+    Ok(None)
 }
 
 #[post("/api/rer-importer/messages-by-id")]
@@ -383,13 +408,8 @@ async fn inbox_messages_count(
         .await
         .c(h!())?;
     let login = user_id;
-    let logins = crate::users::get_organism_logins(&env.dbx, user)
-        .await
-        .context(h!())?;
 
-    let q = build_inbox_query(&login, &logins, &env, &req)
-        .await
-        .context(h!())?;
+    let q = build_inbox_query(&login, &env, &req).await.context(h!())?;
     let q = format!(
         "SELECT COUNT(*) AS count, MIN(q.\"timestamp\") AS first_element_ts from ({q}) q");
 
@@ -580,7 +600,9 @@ async fn comment_save(
         .map(EventType::ETInboxChanged)
         .map(EventMsg::new)
         .collect();
-    fanout_mult(&mut env.redis.clone(), events).await.c(h!())?;
+    if let Err(e) = fanout_mult(&mut env.redis.clone(), events).await {
+        warn!("failed to send to redis: {e:#?}");
+    }
     Ok(Json(()))
 }
 
@@ -685,7 +707,7 @@ pub async fn get_inbox_messages_with_conn(
     env: &Env,
     req: &InboxMessagesReq,
 ) -> Result<Vec<(i64, InboxMessage)>, AppError> {
-    let q = build_inbox_query(login, logins, env, req).await.c(h!())?;
+    let q = build_inbox_query(login, env, req).await.c(h!())?;
 
     let results = dbx
         .query_all(Statement::from_string(DatabaseBackend::Postgres, q))
@@ -735,11 +757,8 @@ async fn get_freq_pelengs_summary(
         .await
         .c(h!())?;
     let login = user.id().c(h!())?;
-    let logins = crate::users::get_organism_logins(&env.dbx, user)
-        .await
-        .context(h!())?;
 
-    let q = build_inbox_query(&login, &logins, &env, &req.into_inner())
+    let q = build_inbox_query(&login, &env, &req.into_inner())
         .await
         .context(h!())?;
 

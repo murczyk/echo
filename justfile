@@ -1,3 +1,5 @@
+set positional-arguments := true
+
 dt1 := `date -u +%Y-%m-%d-%H-%M-%S`
 pgdb := "wd"
 pgpwd := "fee_-_-_-FnoeKFBeebu87bf"
@@ -325,23 +327,6 @@ deploy:
       -d "{\"content\":\"✅ Deployed {{ server }} (version $VERSION) via apt-get\"}" \
       '{{ discord_webhook }}' || true
 
-deploy-old:
-    #!/bin/bash
-    set -euxo pipefail
-    if [[ "{{ server }}" == "" ]]; then
-     just _print-servers; exit 1;
-    fi
-    # Notify Discord at the start of legacy deployment including local hostname
-    curl -sS -X POST \
-      -H 'Content-Type: application/json' \
-      -d "{\"content\":\"legacy deploy-old {{ server }} from $(hostname)\"}" \
-      '{{ discord_webhook }}' || true
-    if [[ "{{ server }}" == "jvln" ]]; then
-        just _jvln-deploy;
-    else
-        just builder={{ builder }} server={{ server }} _echo-generic-deploy-old;
-    fi
-
 collect-ip-loop:
     #!/bin/bash
     set -euxo pipefail
@@ -486,90 +471,12 @@ ai-sync-to-cloud:
     remote_directory="${BUCKET_PREFIX}/"
     s5cmd --endpoint-url "$ENDPOINT_URL" sync "$local_directory" "$remote_directory"
 
-# run like `just server=echo-zp2 copy-db-backup`
-copy-db-backup:
+# run like `just copy-db-backup echo-zp2`
+[arg('server', long='server')]
+copy-db-backup server:
     #!/bin/bash
     set -euo pipefail
-    server="{{ server }}"
-
-    if [[ -z "${AWS_ACCESS_KEY_ID:-}" || -z "${AWS_SECRET_ACCESS_KEY:-}" ]]; then
-        echo "❌ Please export AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY for Backblaze S3 access"
-        exit 1
-    fi
-
-    if [[ -z "$server" ]]; then
-        echo "❌ server parameter is required, e.g. server=volyn2"
-        exit 1
-    fi
-
-    if ! command -v s5cmd >/dev/null 2>&1; then
-        echo "❌ s5cmd is required to fetch backups (https://github.com/peak/s5cmd)"
-        exit 1
-    fi
-
-    if ! command -v gpg >/dev/null 2>&1; then
-        echo "❌ gpg is required to decrypt the backup"
-        exit 1
-    fi
-
-    ENDPOINT_URL="https://s3.eu-central-003.backblazeb2.com"
-    BUCKET_PREFIX="s3://echouabackup/backup/echo"
-
-    echo "🔎 Looking up latest backup directory in ${BUCKET_PREFIX}/ ..."
-    latest_date=$(
-        s5cmd --endpoint-url "$ENDPOINT_URL" ls "${BUCKET_PREFIX}/" \
-        | awk '/DIR/ {gsub(/\/$/,"",$NF); print $NF}' \
-        | sort \
-        | tail -n 1
-    )
-
-    if [[ -z "$latest_date" ]]; then
-        echo "❌ No backup directories found in ${BUCKET_PREFIX}/"
-        exit 1
-    fi
-
-    remote_dir="${BUCKET_PREFIX}/${latest_date}/"
-    echo "📂 Latest backup date: ${latest_date}"
-
-    listing=$(s5cmd --endpoint-url "$ENDPOINT_URL" ls "$remote_dir")
-    match=$(
-        printf "%s\n" "$listing" \
-        | awk -v srv="$server" -v srv_norm="${server#echo-}" '
-            $0 ~ ("wd-" srv "\\.") \
-            || $0 ~ ("wd-" srv_norm "\\.") {print $NF}' \
-        | sort \
-        | tail -n 1
-    )
-
-    if [[ -z "$match" ]]; then
-        echo "❌ No backup found for server '$server' under $remote_dir"
-        exit 1
-    fi
-
-    remote_file="${remote_dir}${match}"
-    local_encrypted="/var/tmp/${match}"
-    local_plain="${local_encrypted%.gpg}"
-    local_plain_basename=$(basename "$local_plain")
-
-    echo "⬇️  Downloading $remote_file to $local_encrypted"
-    s5cmd --endpoint-url "$ENDPOINT_URL" cp --show-progress "$remote_file" "$local_encrypted"
-
-    echo "🔓 Decrypting to $local_plain"
-    gpg --output "$local_plain" --decrypt "$local_encrypted"
-
-    set +x
-    echo
-    echo "📥 Restore locally:"
-    echo "sudo -u postgres dropdb --force wd"
-    echo "sudo -u postgres psql postgres -c \"CREATE DATABASE wd\""
-    echo "sudo -u postgres pg_restore -d wd $local_plain"
-    echo
-    echo "💻 Restore on dev machine:"
-    echo "scp $local_plain DEV_HOST:/var/tmp/"
-    echo "ssh DEV_HOST \"sudo -u postgres dropdb --force wd && sudo -u postgres psql postgres -c \\\"CREATE DATABASE wd\\\" && sudo -u postgres pg_restore -d wd /var/tmp/${local_plain_basename}\""
-    echo
-    echo "⭐ You can disable messengers by running: cargo run -p wdintel-rs -- --mode=debug oneoff-disable-im"
-    set -x
+    scripts/copy-db-backup.sh "{{ server }}"
 
 copy-db-gpu:
     #!/bin/bash
@@ -633,13 +540,13 @@ copy-db-local:
     echo 'this command requires sudo access'
     sudo ls
     ssh -t {{ server }} '(cd ~/Downloads && PGPASSWORD="{{ pgpwd }}" pg_dump --user wd -Fc wd > wd-{{ dt1 }}.pgrestore && ls -lah wd-{{ dt1 }}.pgrestore)'
-    ssh -t {{ server }} 'gzip -c ~/Downloads/wd-{{ dt1 }}.pgrestore > /tmp/wd-{{ dt1 }}.pgrestore.gz'
-    scp {{ server }}:/tmp/wd-{{ dt1 }}.pgrestore.gz ~/Downloads/
-    ssh -t {{ server }} '(rm ~/Downloads/wd-{{ dt1 }}.pgrestore && rm /tmp/wd-{{ dt1 }}.pgrestore.gz) | echo "ok"'
+    ssh -t {{ server }} 'mv ~/Downloads/wd-{{ dt1 }}.pgrestore > /var/tmp/wd-{{ dt1 }}.pgrestore'
+    scp {{ server }}:/var/tmp/wd-{{ dt1 }}.pgrestore ~/Downloads/
+    ssh -t {{ server }} '(rm ~/Downloads/wd-{{ dt1 }}.pgrestore) | echo "ok"'
     mv ~/Downloads/wd-{{ dt1 }}.pgrestore.gz /var/tmp/
-    (cd /var/tmp && gunzip wd-{{ dt1 }}.pgrestore.gz)
     just dt1={{ dt1 }} pgdb={{ pgdb }} restore-db-local
     sudo rm /var/tmp/wd-{{ dt1 }}.pgrestore
+    ssh -t {{ server }} '(rm /var/tmp/wd-{{ dt1 }}.pgrestore) | echo "ok"'
 
 restore-db-local:
     sudo -u postgres psql -c 'drop database {{ pgdb }} with (FORCE)' | echo 'ok'
@@ -669,21 +576,6 @@ _echo-generic-deploy:
     fi
     ssh {{ server }} 'sudo apt-get update'
     ssh {{ server }} 'sudo DEBIAN_FRONTEND=noninteractive apt-get install -y echo-install wdintel-rs'
-
-# todo delete
-_echo-generic-deploy-old:
-    #!/bin/bash
-    set -euxo pipefail
-    set +x | echo 'skipping set +x, probably ubuntu build'
-    if [[ "{{ server }}" == "" ]]; then
-        just _print-servers; exit 1;
-    fi
-    if [[ "{{ builder }}" == "" ]]; then
-        echo "❌ Builder parameter not recognized. Value: {{ builder }}"; exit 1;
-    fi
-    set -x
-    just builder={{ builder }} _echo-generic-deploy-front
-    just builder={{ builder }} server={{ server }} _echo-generic-deploy-back
 
 _echo-generic-deploy-front:
     ssh {{ builder }} '(cd workspace/echo && git fetch origin && git clean -df && git checkout {{ branch }} && git pull)'
@@ -763,6 +655,22 @@ deploy-echo-ai:
     rsync -t --progress target/debian/echo-ai_0.1.1-1_amd64.deb {{ server }}:/var/tmp/
     ssh {{ server }} 'sudo apt-get -y install /var/tmp/echo-ai_0.1.1-1_amd64.deb && sudo systemctl restart wdintel-py'
 
+# setup echo-ai-train environment on server, putting essential scripts that make the container ready to run nightly jobs
+[arg('server', long='server')]
+setup-echo-ai-train server='echo-ai-train':
+    #!/bin/bash
+    set -euxo pipefail
+    . deploy/utils.sh
+    ensure_nonempty "server" "{{ server }}"
+    ssh {{ server }} 'sudo mkdir -p /usr/local/echo-ai-train/'
+    echo-install-utils ssh-sync-file scripts/copy-db-backup.sh {{ server }}:/usr/local/echo-ai-train/
+    echo-install-utils ssh-sync-file scripts/train-download-backups.sh {{ server }}:/usr/local/echo-ai-train/
+    echo-install-utils bw-sync "{{ server }}" "echo-ai-train-{{ server }}-dotenv" "/usr/local/echo-ai-train/.env" --no-restart
+
+# [positional-arguments]
+[arg('branch', long='branch')]
+[arg('builder', long='builder')]
+[arg('server', long='server')]
 ziggy-echo-build-local builder="echo-build-local" server="echo-staging" branch="main":
     #!/bin/bash
     set -euxo pipefail

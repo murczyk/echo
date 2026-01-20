@@ -23,8 +23,7 @@ pub async fn zones_list(
         &user.id().c(h!())?,
         vec!["Rer", "Api"],
     )
-    .await
-    .c(h!())?;
+    .await?;
     let zones = sigint_zone::Entity::find()
         .filter(sigint_zone::Column::Deleted.eq(false))
         .all(&env.dbx)
@@ -54,8 +53,7 @@ pub async fn zones_datasources_list(
         &user.id().c(h!())?,
         vec!["Rer", "Api"],
     )
-    .await
-    .c(h!())?;
+    .await?;
     let zone_id: i64 = req.into_inner();
     let xs = sigint_zone_datasource::Entity::find()
         .filter(sigint_zone_datasource::Column::SigintZoneId.eq(zone_id))

@@ -253,12 +253,21 @@ update shared msg model =
                 , freqEditModulationSelect = updatedModulationSelect
                 , freqEditKeySelect = updatedKeySelect
                 , freqEditShowActiveTo = showActiveTo
+                , freqEditNewKeyInput = ""
+                , freqEditNewKeySaving = False
               }
             , E.none
             )
 
         CloseFreqEditSidebar ->
-            ( { model | freqEditSidebar = Nothing, freqEditShowActiveTo = False }, E.none )
+            ( { model
+                | freqEditSidebar = Nothing
+                , freqEditShowActiveTo = False
+                , freqEditNewKeyInput = ""
+                , freqEditNewKeySaving = False
+              }
+            , E.none
+            )
 
         UpdateFreqEditSidebar updateReq ->
             ( { model | freqEditSidebar = Maybe.map (\( freqId, _ ) -> ( freqId, updateReq )) model.freqEditSidebar }, E.none )
@@ -506,6 +515,8 @@ update shared msg model =
                             model.freqCreateKeySelect
                     in
                     { select | selected = [] }
+                , freqCreateNewKeyInput = ""
+                , freqCreateNewKeySaving = False
               }
             , E.none
             )
@@ -516,6 +527,8 @@ update shared msg model =
                 , freqCreateDescriptionInp = ""
                 , freqCreateFormatError = Nothing
                 , freqCreateShowActiveTo = False
+                , freqCreateNewKeyInput = ""
+                , freqCreateNewKeySaving = False
                 , freqCreateState =
                     { freq = ""
                     , kind = NetworksUtils.networkKindToString NetworksUtils.VHF
@@ -632,6 +645,81 @@ update shared msg model =
         FreqCreateDescriptionInputChangedByUser inp ->
             ( { model | freqCreateDescriptionInp = inp }, E.none )
 
+        FreqCreateNewKeyInputChanged inp ->
+            ( { model | freqCreateNewKeyInput = inp }, E.none )
+
+        FreqCreateNewKeyClicked ->
+            case model.network of
+                Success network ->
+                    let
+                        keyValue =
+                            String.trim model.freqCreateNewKeyInput
+
+                        keyRules =
+                            keyRulesFromModulationId model model.freqCreateModulationSelect.selected
+
+                        keyLen =
+                            String.length keyValue
+
+                        keyWrongLength =
+                            case keyRules.requiredLen of
+                                Just requiredLen ->
+                                    keyRules.keyAllowed && keyValue /= "" && keyLen /= requiredLen
+
+                                Nothing ->
+                                    False
+
+                        keyInvalid =
+                            keyValue == "" || keyWrongLength
+
+                        modulationId =
+                            case model.freqCreateModulationSelect.selected of
+                                Just selectedId ->
+                                    if keyRules.keyAllowed then
+                                        if selectedId == Modulations.undefinedModulationId then
+                                            Just Modulations.undefinedModulationId
+
+                                        else
+                                            Just selectedId
+
+                                    else
+                                        Just Modulations.undefinedModulationId
+
+                                Nothing ->
+                                    Just Modulations.undefinedModulationId
+                    in
+                    if keyInvalid then
+                        ( model, E.none )
+
+                    else
+                        ( { model | freqCreateNewKeySaving = True }
+                        , E.sendCmd <|
+                            Api.sigint_create_key FreqCreateNewKeyCreated
+                                { sigintNetworkId = network.id
+                                , sigintNetworkFreqIds = []
+                                , key =
+                                    if keyValue == "" then
+                                        Nothing
+
+                                    else
+                                        Just keyValue
+                                , keyHash = Nothing
+                                , description = Nothing
+                                , modulationId = modulationId
+                                }
+                        )
+
+                _ ->
+                    ( model, E.none )
+
+        FreqCreateNewKeyCreated (Err e) ->
+            ( { model | freqCreateNewKeySaving = False }
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка додавання ключа" e
+            )
+
+        FreqCreateNewKeyCreated (Ok keyData) ->
+            ( addKeyToFreqCreateForm model keyData, E.none )
+
         ToggleFreqCreateShowActiveTo ->
             let
                 newShowActiveTo =
@@ -707,6 +795,8 @@ update shared msg model =
                 , freqCreateDescriptionInp = ""
                 , freqCreateFormatError = Nothing
                 , freqCreateShowActiveTo = False
+                , freqCreateNewKeyInput = ""
+                , freqCreateNewKeySaving = False
                 , freqCreateState =
                     { freq = ""
                     , kind = NetworksUtils.networkKindToString NetworksUtils.VHF
@@ -734,6 +824,81 @@ update shared msg model =
 
         CallsignsPopupClosedByUser ->
             ( { model | callsignsOpenedPopupId = Nothing }, E.none )
+
+        FreqEditNewKeyInputChanged inp ->
+            ( { model | freqEditNewKeyInput = inp }, E.none )
+
+        FreqEditNewKeyClicked ->
+            case model.network of
+                Success network ->
+                    let
+                        keyValue =
+                            String.trim model.freqEditNewKeyInput
+
+                        keyRules =
+                            keyRulesFromModulationId model model.freqEditModulationSelect.selected
+
+                        keyLen =
+                            String.length keyValue
+
+                        keyWrongLength =
+                            case keyRules.requiredLen of
+                                Just requiredLen ->
+                                    keyRules.keyAllowed && keyValue /= "" && keyLen /= requiredLen
+
+                                Nothing ->
+                                    False
+
+                        keyInvalid =
+                            keyValue == "" || keyWrongLength
+
+                        modulationId =
+                            case model.freqEditModulationSelect.selected of
+                                Just selectedId ->
+                                    if keyRules.keyAllowed then
+                                        if selectedId == Modulations.undefinedModulationId then
+                                            Just Modulations.undefinedModulationId
+
+                                        else
+                                            Just selectedId
+
+                                    else
+                                        Just Modulations.undefinedModulationId
+
+                                Nothing ->
+                                    Just Modulations.undefinedModulationId
+                    in
+                    if keyInvalid then
+                        ( model, E.none )
+
+                    else
+                        ( { model | freqEditNewKeySaving = True }
+                        , E.sendCmd <|
+                            Api.sigint_create_key FreqEditNewKeyCreated
+                                { sigintNetworkId = network.id
+                                , sigintNetworkFreqIds = []
+                                , key =
+                                    if keyValue == "" then
+                                        Nothing
+
+                                    else
+                                        Just keyValue
+                                , keyHash = Nothing
+                                , description = Nothing
+                                , modulationId = modulationId
+                                }
+                        )
+
+                _ ->
+                    ( model, E.none )
+
+        FreqEditNewKeyCreated (Err e) ->
+            ( { model | freqEditNewKeySaving = False }
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка додавання ключа" e
+            )
+
+        FreqEditNewKeyCreated (Ok keyData) ->
+            ( addKeyToFreqEditForm model keyData, E.none )
 
 
 filterFreqsByActivity : FreqActivityFilter -> List B.NetworkFreqsRes -> List B.NetworkFreqsRes
@@ -937,11 +1102,12 @@ freqsTableConfig shared model user =
                 }
                 |> Table.withColumnWidth "10%"
             , Table.veryCustomColumn
-                { name = "Ключ"
+                { name = "Ключ / Хеш"
                 , viewData =
                     \freq ->
                         { attributes =
-                            [ style "white-space" "pre-wrap"
+                            [ class "font-mono"
+                            , style "white-space" "pre-wrap"
                             , style "word-break" "break-all"
                             ]
                         , children = [ text <| String.join "\n" freq.encryptionKeys ]
@@ -1287,14 +1453,68 @@ freqEditSidebarContent shared model user freqId updateReq =
                         defaultOptions =
                             Utils.Select.defaultOptions (isDarkMode shared.themeMode)
                       in
-                      Html.map FreqKeySelectMsg <|
-                        Styled.toUnstyled <|
-                            Utils.Select.renderSelect
-                                selectedItems
-                                model.freqEditKeySelect.state
-                                model.freqEditKeySelect.items
-                                "Без ключів"
-                                defaultOptions
+                      div [ class "font-mono" ]
+                        [ Html.map FreqKeySelectMsg <|
+                            Styled.toUnstyled <|
+                                Utils.Select.renderSelect
+                                    selectedItems
+                                    model.freqEditKeySelect.state
+                                    model.freqEditKeySelect.items
+                                    "Без ключів"
+                                    defaultOptions
+                        ]
+                    ]
+                , let
+                    keyRules =
+                        keyRulesFromModulationId model model.freqEditModulationSelect.selected
+
+                    keyValue =
+                        String.trim model.freqEditNewKeyInput
+
+                    keyLen =
+                        String.length keyValue
+
+                    keyWrongLength =
+                        case keyRules.requiredLen of
+                            Just requiredLen ->
+                                keyRules.keyAllowed && keyValue /= "" && keyLen /= requiredLen
+
+                            Nothing ->
+                                False
+
+                    keyInvalid =
+                        keyValue == "" || keyWrongLength
+                  in
+                  div [ class "space-y-2" ]
+                    [ div [ class "flex gap-2" ]
+                        [ Button.new { label = "Додати новий", onClick = FreqEditNewKeyClicked }
+                            |> Button.withStyleSecondary
+                            |> Button.withClasses "whitespace-nowrap"
+                            |> Button.withDisabled (keyInvalid || model.freqEditNewKeySaving)
+                            |> Button.view
+                        , input
+                            [ class "w-full px-3 py-2 border border-border rounded-md bg-background text-foreground font-mono"
+                            , type_ "text"
+                            , placeholder "Введіть новий ключ"
+                            , value model.freqEditNewKeyInput
+                            , onInput FreqEditNewKeyInputChanged
+                            , disabled model.freqEditNewKeySaving
+                            ]
+                            []
+                        ]
+                    , if keyWrongLength then
+                        div [ class "text-sm text-red-600" ]
+                            [ text <|
+                                "Довжина ключа має бути "
+                                    ++ (keyRules.requiredLen
+                                            |> Maybe.map String.fromInt
+                                            |> Maybe.withDefault ""
+                                       )
+                                    ++ " символи"
+                            ]
+
+                      else
+                        text ""
                     ]
                 , div [ class "space-y-2" ]
                     [ label [ class "text-sm font-medium text-foreground" ] [ text "Активна з" ]
@@ -1475,14 +1695,68 @@ freqCreateSidebarContent shared model user =
                     defaultOptions =
                         Utils.Select.defaultOptions (isDarkMode shared.themeMode)
                   in
-                  Html.map FreqCreateKeySelectMsg <|
-                    Styled.toUnstyled <|
-                        Utils.Select.renderSelect
-                            selectedItems
-                            model.freqCreateKeySelect.state
-                            model.freqCreateKeySelect.items
-                            "Без ключів"
-                            defaultOptions
+                  div [ class "font-mono" ]
+                    [ Html.map FreqCreateKeySelectMsg <|
+                        Styled.toUnstyled <|
+                            Utils.Select.renderSelect
+                                selectedItems
+                                model.freqCreateKeySelect.state
+                                model.freqCreateKeySelect.items
+                                "Без ключів"
+                                defaultOptions
+                    ]
+                ]
+                , let
+                    keyRules =
+                        keyRulesFromModulationId model model.freqCreateModulationSelect.selected
+
+                    keyValue =
+                        String.trim model.freqCreateNewKeyInput
+
+                    keyLen =
+                        String.length keyValue
+
+                    keyWrongLength =
+                        case keyRules.requiredLen of
+                            Just requiredLen ->
+                                keyRules.keyAllowed && keyValue /= "" && keyLen /= requiredLen
+
+                            Nothing ->
+                                False
+
+                    keyInvalid =
+                        keyValue == "" || keyWrongLength
+              in
+              div [ class "space-y-2" ]
+                [ div [ class "flex gap-2" ]
+                    [ Button.new { label = "Додати новий", onClick = FreqCreateNewKeyClicked }
+                        |> Button.withStyleSecondary
+                        |> Button.withClasses "whitespace-nowrap"
+                        |> Button.withDisabled (keyInvalid || model.freqCreateNewKeySaving)
+                        |> Button.view
+                    , input
+                        [ class "w-full p-2 border border-border rounded font-mono"
+                        , type_ "text"
+                        , placeholder "Введіть новий ключ"
+                        , value model.freqCreateNewKeyInput
+                        , onInput FreqCreateNewKeyInputChanged
+                        , disabled model.freqCreateNewKeySaving
+                        ]
+                        []
+                    ]
+                , if keyWrongLength then
+                    div [ class "text-sm text-red-600" ]
+                        [ text <|
+                            "Довжина ключа має бути "
+                                ++ (keyRules.requiredLen
+                                        |> Maybe.map String.fromInt
+                                        |> Maybe.withDefault ""
+                                   )
+                                ++ " символи"
+                        ]
+
+                  else
+                    text ""
                 ]
             , div []
                 [ label [ class "block text-sm font-medium mb-1" ] [ text "Обґрунтування прив'язки" ]
@@ -1597,7 +1871,7 @@ findSelectItemsById model selectedIds =
                                 (\key ->
                                     Select.basicMenuItem
                                         { item = keyId
-                                        , label = key.key
+                                        , label = keyDisplay key.key key.keyHash
                                         }
                                 )
                     )
@@ -1619,3 +1893,245 @@ updateActiveToFromInput input timeZone currentValue =
             Time.Extra.partsToPosix timeZone parts
                 |> Time.posixToMillis
                 |> Just
+
+
+type alias KeyRules =
+    { keyAllowed : Bool
+    , requiredLen : Maybe Int
+    }
+
+
+addKeyToFreqCreateForm : Model -> B.EncryptionKeyData -> Model
+addKeyToFreqCreateForm model keyData =
+    let
+        clearedModel =
+            { model
+                | freqCreateNewKeyInput = ""
+                , freqCreateNewKeySaving = False
+            }
+    in
+    case keyData.id of
+        Just keyId ->
+            let
+                freqCreateSelect =
+                    clearedModel.freqCreateKeySelect
+
+                freqEditSelect =
+                    clearedModel.freqEditKeySelect
+
+                updatedItems =
+                    addKeyToSelectItems keyId keyData freqCreateSelect.items
+
+                updatedSelected =
+                    addKeyId keyId freqCreateSelect.selected
+
+                updatedCreateSelect =
+                    { freqCreateSelect | items = updatedItems, selected = updatedSelected }
+
+                updatedEditSelect =
+                    { freqEditSelect | items = updatedItems }
+
+                freqCreateState =
+                    clearedModel.freqCreateState
+
+                updatedFreqCreateState =
+                    { freqCreateState | encryptionKeyIds = updatedSelected }
+            in
+            { clearedModel
+                | networkKeys = addKeyToNetworkKeys keyData clearedModel.networkKeys
+                , freqCreateKeySelect = updatedCreateSelect
+                , freqEditKeySelect = updatedEditSelect
+                , freqCreateState = updatedFreqCreateState
+            }
+
+        Nothing ->
+            clearedModel
+
+
+addKeyToFreqEditForm : Model -> B.EncryptionKeyData -> Model
+addKeyToFreqEditForm model keyData =
+    let
+        clearedModel =
+            { model
+                | freqEditNewKeyInput = ""
+                , freqEditNewKeySaving = False
+            }
+    in
+    case keyData.id of
+        Just keyId ->
+            let
+                freqCreateSelect =
+                    clearedModel.freqCreateKeySelect
+
+                freqEditSelect =
+                    clearedModel.freqEditKeySelect
+
+                updatedItems =
+                    addKeyToSelectItems keyId keyData freqEditSelect.items
+
+                updatedSelected =
+                    addKeyId keyId freqEditSelect.selected
+
+                updatedEditSelect =
+                    { freqEditSelect | items = updatedItems, selected = updatedSelected }
+
+                updatedCreateSelect =
+                    { freqCreateSelect | items = updatedItems }
+
+                updatedSidebar =
+                    case clearedModel.freqEditSidebar of
+                        Just ( freqId, updateReq ) ->
+                            Just ( freqId, { updateReq | encryptionKeyIds = updatedSelected } )
+
+                        Nothing ->
+                            clearedModel.freqEditSidebar
+            in
+            { clearedModel
+                | networkKeys = addKeyToNetworkKeys keyData clearedModel.networkKeys
+                , freqCreateKeySelect = updatedCreateSelect
+                , freqEditKeySelect = updatedEditSelect
+                , freqEditSidebar = updatedSidebar
+            }
+
+        Nothing ->
+            clearedModel
+
+
+addKeyId : Int -> List Int -> List Int
+addKeyId keyId selected =
+    if List.member keyId selected then
+        selected
+
+    else
+        selected ++ [ keyId ]
+
+
+addKeyToSelectItems : Int -> B.EncryptionKeyData -> List (Select.MenuItem Int) -> List (Select.MenuItem Int)
+addKeyToSelectItems keyId keyData items =
+    items ++ [ Select.basicMenuItem { item = keyId, label = keyDisplay keyData.key keyData.keyHash } ]
+
+
+addKeyToNetworkKeys :
+    B.EncryptionKeyData
+    -> RemoteData ApiError (List B.EncryptionKeyData)
+    -> RemoteData ApiError (List B.EncryptionKeyData)
+addKeyToNetworkKeys keyData remoteKeys =
+    case ( keyData.id, remoteKeys ) of
+        ( Just keyId, Success keys ) ->
+            if List.any (\key -> key.id == Just keyId) keys then
+                Success keys
+
+            else
+                Success (keys ++ [ keyData ])
+
+        _ ->
+            remoteKeys
+
+
+keyDisplay : Maybe String -> Maybe String -> String
+keyDisplay key hash =
+    let
+        keyValue =
+            key
+                |> Maybe.withDefault ""
+                |> String.trim
+
+        hashValue =
+            hash
+                |> Maybe.withDefault ""
+                |> String.trim
+
+        displayKey =
+            if keyValue == "" then
+                "-"
+
+            else
+                keyValue
+
+        displayHash =
+            if hashValue == "" then
+                "-"
+
+            else
+                hashValue
+
+        separator =
+            "\u{00A0}/\u{00A0}"
+    in
+    if keyValue == "" && hashValue == "" then
+        "-"
+
+    else
+        displayKey ++ separator ++ displayHash
+
+
+keyRulesFromModulationId : Model -> Maybe Int -> KeyRules
+keyRulesFromModulationId model modulationId =
+    let
+        modulationName =
+            case ( model.modulations, modulationId ) of
+                ( Success modulations, Just selectedId ) ->
+                    if selectedId == Modulations.undefinedModulationId then
+                        Nothing
+
+                    else
+                        modulations
+                            |> ListX.find (\modulation -> modulation.id == selectedId)
+                            |> Maybe.map .name
+
+                _ ->
+                    Nothing
+    in
+    keyRulesFromModulationName modulationName
+
+
+keyRulesFromModulationName : Maybe String -> KeyRules
+keyRulesFromModulationName modulationName =
+    case modulationName of
+        Just "DMR (ARC40)" ->
+            { keyAllowed = True, requiredLen = Just 4 }
+
+        Just "DMR (AES256)" ->
+            { keyAllowed = True, requiredLen = Just 64 }
+
+        Just "HYTERA (256 bit)" ->
+            { keyAllowed = True, requiredLen = Just 64 }
+
+        Just "TYT (16 bit)" ->
+            { keyAllowed = True, requiredLen = Just 4 }
+
+        Just "TYT (128 bit)" ->
+            { keyAllowed = True, requiredLen = Just 32 }
+
+        Just "NFM" ->
+            { keyAllowed = False, requiredLen = Nothing }
+
+        Just "AM" ->
+            { keyAllowed = False, requiredLen = Nothing }
+
+        Just "АМ" ->
+            { keyAllowed = False, requiredLen = Nothing }
+
+        Just "DMR" ->
+            { keyAllowed = False, requiredLen = Nothing }
+
+        Just "HYTERA" ->
+            { keyAllowed = False, requiredLen = Nothing }
+
+        Just "TYT" ->
+            { keyAllowed = False, requiredLen = Nothing }
+
+        Just "TETRA" ->
+            { keyAllowed = False, requiredLen = Nothing }
+
+        Just "Гранит" ->
+            { keyAllowed = False, requiredLen = Nothing }
+
+        Just "GSM" ->
+            { keyAllowed = False, requiredLen = Nothing }
+
+        Just "Умовна" ->
+            { keyAllowed = False, requiredLen = Nothing }
+
+        _ ->
+            { keyAllowed = True, requiredLen = Nothing }

@@ -14,7 +14,6 @@ use sea_query::{Expr, Query, SelectStatement, SimpleExpr};
 
 pub(crate) async fn build_inbox_query(
     login: &str,
-    logins: &Vec<String>,
     env: &Env,
     req: &InboxMessagesReq,
 ) -> Result<String, AppError> {
@@ -58,11 +57,6 @@ pub(crate) async fn build_inbox_query(
         q = q.filter(signal_group::Column::IgnoreOperativny.eq(Some(false)));
     }
 
-    let mut only_tags_by_logins = None;
-    if req.report_tags_only_this_unit == Some(true) {
-        only_tags_by_logins = Some(logins.clone());
-    }
-
     if req.only_show_unprocessed == Some(true) {
         q = q.filter(sigint_inbox_item::Column::Reviewed.ne(Some(true)));
     }
@@ -93,7 +87,6 @@ pub(crate) async fn build_inbox_query(
         &req.filter_tags_option,
         &req.without_model_tags,
         login,
-        only_tags_by_logins,
         req.report_tags_only_this_unit.unwrap_or(false),
     )?;
     let q = filter_selected_aors(q, &req.selected_aors).context(h!())?;
@@ -218,7 +211,7 @@ pub(crate) async fn build_inbox_query(
     Ok(sql)
 }
 
-/// Build pagination filters.  
+/// Build pagination filters.
 pub async fn get_pagination_filters<Q>(
     env: &Env,
     req: &InboxMessagesReq,

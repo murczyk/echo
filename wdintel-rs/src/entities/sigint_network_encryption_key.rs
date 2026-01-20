@@ -10,8 +10,8 @@ use serde::{Deserialize, Serialize};
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
-    #[sea_orm(column_type = "Text")]
-    pub key: String,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub key: Option<String>,
     pub sigint_network_freq_id: Option<i64>,
     pub organism_id: i64,
     pub deleted: bool,
@@ -20,6 +20,8 @@ pub struct Model {
     #[sea_orm(column_type = "Text", nullable)]
     pub description: Option<String>,
     pub modulation_id: Option<i64>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub key_hash: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

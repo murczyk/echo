@@ -42,7 +42,7 @@ pub async fn has_any_role(
     let login_obj = validate_login(dbx, user_id).await.c(h!())?;
     if let Some(e) = login_obj.validation_error {
         return Err(e);
-    };
+    }
     let login_obj = login_obj.login_model.c(h!())?;
     let roles: Vec<String> = serde_json::from_value(login_obj.roles).c(h!())?;
     let mut is_any_good = false;
@@ -816,9 +816,7 @@ pub async fn user_sigint_groups_detailed(
 ) -> Result<Json<Vec<SignalGroupEntryF2>>, AppError> {
     // let res = get_identity_sigint_groups_since(&env.dbx, &user, req.since_date_inclusive_ms).await.c(h!())?;
     let login = user.id().c(h!())?;
-    has_any_role(&env.dbx, &login, vec!["Rer", "Admin", "Api"])
-        .await
-        .c(h!())?;
+    has_any_role(&env.dbx, &login, vec!["Rer", "Admin", "Api"]).await?;
     let mut keys =
         get_identity_sigint_groups(&env.dbx, &login).await.c(h!())?;
     if let Some(since_ts) = &req.since_date_inclusive_ms {

@@ -29,8 +29,7 @@ pub async fn list_messengers(
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<AccountsRsp>, AppError> {
     crate::users::has_any_role(&env.dbx, &user.id().c(h!())?, vec!["Admin"])
-        .await
-        .cae(h!())?;
+        .await?;
     let txn = env.dbx.begin().await.c(h!())?;
     let accounts = bl::list_echo_accounts(None, &txn).await.c(h!())?;
     txn.commit().await.c(h!())?;
@@ -44,9 +43,7 @@ pub async fn get_qr(
     req: Json<QrCodeReq>,
 ) -> Result<Json<QrCodeRsp>, AppError> {
     let login = user.id().c(h!())?;
-    crate::users::has_any_role(&env.dbx, &login, vec!["Admin"])
-        .await
-        .cae(h!())?;
+    crate::users::has_any_role(&env.dbx, &login, vec!["Admin"]).await?;
     let qr_code_base64 = bl::get_qr_code(req.account_id, &env.dbx, &login)
         .await
         .cae(h!())?;
@@ -60,8 +57,7 @@ pub async fn is_linked(
     req: Json<IsAccountLinkedReq>,
 ) -> Result<Json<IsAccountLinkedRsp>, AppError> {
     crate::users::has_any_role(&env.dbx, &user.id().c(h!())?, vec!["Admin"])
-        .await
-        .cae(h!())?;
+        .await?;
     let txn = env.dbx.begin().await.cae(h!())?;
     let is_account_linked = bl::is_account_linked(req.account_id, &txn).await;
     txn.commit().await.c(h!())?;
@@ -81,9 +77,7 @@ pub async fn edit(
     req: Json<AccountStatusReq>,
 ) -> Result<Json<EchoAccountF1>, AppError> {
     let login = user.id().c(h!())?;
-    crate::users::has_any_role(&env.dbx, &login, vec!["Admin"])
-        .await
-        .cae(h!())?;
+    crate::users::has_any_role(&env.dbx, &login, vec!["Admin"]).await?;
     let id = req.account_id;
     bl::edit_account(
         id,
@@ -139,9 +133,7 @@ pub async fn unlink(
     req: Json<DeleteAccountReq>,
 ) -> Result<Json<()>, AppError> {
     let login = user.id().c(h!())?;
-    crate::users::has_any_role(&env.dbx, &login, vec!["Admin"])
-        .await
-        .cae(h!())?;
+    crate::users::has_any_role(&env.dbx, &login, vec!["Admin"]).await?;
     let txn = env.dbx.begin().await.cae(h!())?;
     bl::deactivate_account(req.account_id, &txn, Some(login.clone()), true)
         .await
@@ -157,9 +149,7 @@ pub async fn link(
     req: Json<LinkAccountReq>,
 ) -> Result<Json<LinkAccountRsp>, AppError> {
     let login = user.id().c(h!())?;
-    crate::users::has_any_role(&env.dbx, &login, vec!["Admin"])
-        .await
-        .cae(h!())?;
+    crate::users::has_any_role(&env.dbx, &login, vec!["Admin"]).await?;
     let txn = env.dbx.begin().await.cae(h!())?;
     only_alphanumeric_and_hyphen(&req.system_service_name)?;
     valid_phone_number(&req.phone)?;
@@ -188,9 +178,7 @@ pub async fn link_operator(
     req: Json<LinkEchoOperatorReq>,
 ) -> Result<Json<LinkAccountRsp>, AppError> {
     let login = user.id().c(h!())?;
-    crate::users::has_any_role(&env.dbx, &login, vec!["Admin"])
-        .await
-        .cae(h!())?;
+    crate::users::has_any_role(&env.dbx, &login, vec!["Admin"]).await?;
     let txn = env.dbx.begin().await.cae(h!())?;
     let aor_id = load_default_aor(&txn).await.c(h!())?.id;
     let new_datasource_id = datasource::ActiveModel {

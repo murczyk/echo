@@ -167,7 +167,6 @@ fn build_groups_query(
         &req.filter_tags_option,
         &req.without_model_tags,
         user.id().c(h!())?.as_str(),
-        None,
         req.report_tags_only_this_unit.unwrap_or(false),
     )
     .context(h!())?;
@@ -309,7 +308,6 @@ fn build_senders_query(
         &req.filter_tags_option,
         &req.without_model_tags,
         &user.id().context(h!())?,
-        None,
         req.report_tags_only_this_unit.unwrap_or(false),
     )
     .context(h!())?;
@@ -450,7 +448,6 @@ fn build_posts_query(
         &req.filter_tags_option,
         &req.without_model_tags,
         &user.id().context(h!())?,
-        None,
         req.report_tags_only_this_unit.unwrap_or(false),
     )
     .context(h!())?;
@@ -643,7 +640,6 @@ fn build_freqs_query(
         &req.filter_tags_option,
         &req.without_model_tags,
         &user.id().context(h!())?,
-        None,
         req.report_tags_only_this_unit.unwrap_or(false),
     )
     .context(h!())?;
@@ -1044,7 +1040,6 @@ fn build_units_query(
         &req.filter_tags_option,
         &req.without_model_tags,
         &user.id().context(h!())?,
-        None,
         req.report_tags_only_this_unit.unwrap_or(false),
     )
     .context(h!())?;
@@ -1190,7 +1185,6 @@ fn build_locations_query(
         &req.filter_tags_option,
         &req.without_model_tags,
         &user.id().context(h!())?,
-        None,
         req.report_tags_only_this_unit.unwrap_or(false),
     )
     .context(h!())?;
@@ -1347,7 +1341,6 @@ fn build_aors_query(
         &req.filter_tags_option,
         &req.without_model_tags,
         &user.id().context(h!())?,
-        None,
         req.report_tags_only_this_unit.unwrap_or(false),
     )
     .context(h!())?;
@@ -1557,7 +1550,6 @@ fn build_networks_query(
         &req.filter_tags_option,
         &req.without_model_tags,
         user.id().c(h!())?.as_str(),
-        None,
         req.report_tags_only_this_unit.unwrap_or(false),
     )
     .context(h!())?;
@@ -1783,7 +1775,6 @@ async fn fetch_counts_for_login_with_conn(
         &req.filter_tags_option,
         &req.without_model_tags,
         login_str,
-        None,
         req.report_tags_only_this_unit.unwrap_or(false),
     )
     .context(h!())?;

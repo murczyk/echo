@@ -1,4 +1,3 @@
-use crate::config::*;
 use crate::entities::*;
 use crate::error::AppError;
 use crate::types::*;
@@ -9,104 +8,9 @@ use chrono::*;
 use dialoguer::theme::ColorfulTheme;
 use dialoguer::Confirm;
 use echo_migration::Expr;
-use indicatif::ProgressBar;
 use log::*;
 use sea_orm::*;
 use std::collections::*;
-use tokio::time::sleep;
-
-pub async fn oneoff_calculate_signal_message_groups(
-    mode: Mode,
-) -> Result<(), AppError> {
-    info!("oneoff_calculate_signal_message_groups started");
-    let config = config::read_config(mode).context(h!())?;
-    let dbx = crate::new_pg_pool_from_config(&config)
-        .await
-        .context(h!())?;
-
-    let total_records_to_process = signal_message::Entity::find()
-        .join(
-            JoinType::LeftJoin,
-            signal_message::Relation::SignalMessageGroup.def(),
-        )
-        .filter(signal_message::Column::Deleted.eq(false))
-        .filter(signal_message_group::Column::Id.is_null())
-        .count(&dbx)
-        .await
-        .context(h!())?;
-
-    if total_records_to_process < 1 {
-        info!("Nothing to do");
-        return Ok(());
-    }
-
-    let datasource_group_keys = datasource_group::Entity::find()
-        .select_only()
-        .column(datasource_group::Column::Id)
-        .column(datasource_group::Column::GroupMasterKey)
-        .into_tuple::<(i64, String)>()
-        .all(&dbx)
-        .await
-        .context(h!())?
-        .into_iter()
-        .collect::<HashMap<_, _>>();
-
-    let pb = ProgressBar::new(total_records_to_process);
-    let mut offset = 0;
-
-    let mut message_ids = HashSet::new();
-
-    loop {
-        info!("oneoff_calculate_signal_message_groups work in progress: {}/{total_records_to_process}", message_ids.len());
-        sleep(std::time::Duration::from_secs(
-            ONEOFF_CALCULATE_SIGNAL_MESSAGE_GROUPS_SLEEP_SEC,
-        ))
-        .await;
-        let new_messages = signal_message::Entity::find()
-            .join(
-                JoinType::LeftJoin,
-                signal_message::Relation::SignalMessageGroup.def(),
-            )
-            .filter(signal_message_group::Column::Id.is_null())
-            .filter(signal_message::Column::Deleted.eq(false))
-            .limit(ONEOFF_CALCULATE_SIGNAL_MESSAGR_GROUPS_BATCH_SIZE)
-            .offset(offset)
-            .all(&dbx)
-            .await
-            .context(h!())?;
-        if new_messages.is_empty() {
-            break;
-        }
-        offset += new_messages.len() as u64;
-        for message in new_messages {
-            let id = message.duplicate_of.unwrap_or(message.id);
-            message_ids.insert(id);
-            let group_master_key = message
-                .datasource_group_id
-                .and_then(|id| datasource_group_keys.get(&id).cloned());
-            let new_model = signal_message_group::ActiveModel {
-                id: NotSet,
-                signal_message_id: Set(id),
-                group_master_key: Set(group_master_key),
-                sender: Set(message.sender.clone()),
-                message_uid: Set(message.message_uid.clone()),
-                datasource_group_id: Set(message.datasource_group_id),
-                created_at: Set(message.created_at),
-            };
-            let insert_result = new_model.insert(&dbx).await;
-            if let Err(e) = insert_result {
-                warn!("Failed to insert new message: {e:#?}");
-            }
-            if message.duplicate_of.is_some() {
-                let mut rec = message.into_active_model();
-                rec.deleted = Set(true);
-                rec.update(&dbx).await.context(h!())?;
-            }
-            pb.inc(1);
-        }
-    }
-    Ok(())
-}
 
 pub async fn oneoff_unlink_reserve_group_dupes(
     mode: Mode,

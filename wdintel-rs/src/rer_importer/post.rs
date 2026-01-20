@@ -12,6 +12,21 @@ pub fn extract_post(inp: &str) -> Result<Option<String>, AppError> {
         .collect::<Vec<_>>()
         .join("\n");
 
+    // Extract transit_post_name if message has Отримано з постів ... header.
+    // Take the last post name, but continue scan to find a more specific original post.
+    '_if: {
+        let Some(line) = scan_inp
+            .lines()
+            .find(|line| line.contains("Отримано з постів"))
+        else {
+            break '_if;
+        };
+        let Some(post) = extract_last_post_from_posts_header(line) else {
+            break '_if;
+        };
+        transit_post = Some(post);
+    }
+
     // Extract transit_post_name if message has Отримано з поста "transit_post_name" substring.
     // But continue scan to find original post name
     // Return transit_post_name only if nothing else found
@@ -128,6 +143,30 @@ pub fn extract_post(inp: &str) -> Result<Option<String>, AppError> {
     }
 
     Ok(transit_post)
+}
+
+fn extract_last_post_from_posts_header(line: &str) -> Option<String> {
+    lazy_static! {
+        static ref RE_QUOTED_POST: Regex =
+            Regex::new(r#""(?P<post>[a-zA-Zа-яіїА-ЯІЇ0-9)(_/ \.\-\*']+)""#)
+                .unwrap();
+    }
+    let last_quoted = RE_QUOTED_POST
+        .captures_iter(line)
+        .filter_map(|capts| m_cap_s(&capts, "post"))
+        .map(|post| post.trim().to_string())
+        .last();
+    if last_quoted.is_some() {
+        return last_quoted;
+    }
+
+    let start = line.find("Отримано з постів")?;
+    let rest = &line[start + "Отримано з постів".len()..];
+    let last = rest.split(',').next_back()?.trim();
+    if last.is_empty() {
+        return None;
+    }
+    Some(last.to_string())
 }
 
 #[cfg(test)]
@@ -354,6 +393,24 @@ Kupol80
     }
 
     #[test]
+    fn extract_post_otrymano_only_2_mult() {
+        let body = r#"
+Kupol80
+Отримано з постів "Кактус", "Сфінкс"
+--------------------------------------
+28.11, 18:44:32
+407.7375
+УКХ р/м 1196 МСП 49 ЗА F=407.7350
+ДИНАМО
+НВ
+
+— Победа, Победа, Динамо, прием.
+"#;
+        let res = extract_post(body).unwrap();
+        assert_eq!(res.unwrap(), "Сфінкс".to_string())
+    }
+
+    #[test]
     fn extract_post_otrymano_only_3() {
         let body = r#"
 Отримано з поста "Argo I. ЦФП_162"
@@ -424,6 +481,22 @@ Kupol80
     fn extract_post_otrymano_unquoted_numeric_underscore() {
         let body = r#"4333_1
 Отримано з поста 4333_1
+--------------------------------------
+15.08.2025, 16:44:40
+161.2000
+УКХ р/м НВ підрозділу 161.200 МГц
+ПЕСОК
+НВ
+
+— Песок, расход 10, 10-ка ушла на восток, по северу."#;
+        let res = extract_post(body).unwrap();
+        assert_eq!(res.unwrap(), "4333_1".to_string())
+    }
+
+    #[test]
+    fn extract_post_otrymano_unquoted_numeric_underscore_mult() {
+        let body = r#"4333_1
+Отримано з постів 4333_0, 4333_1
 --------------------------------------
 15.08.2025, 16:44:40
 161.2000
@@ -518,8 +591,43 @@ Kupol80
     }
 
     #[test]
+    fn extract_post_with_asterisk_mult() {
+        let body = r#"Отримано з постів "**66", "**33"
+--------------------------------------
+18.11.2025, 07:39:45
+124.325
+
+⚫ УКХ р/м управління повітряним рухом в зоні відповідальності ае “Центральний” (Ростов-на-Дону) ПКС зс рф
+
+46579
+ФИНАЛ
+-Финал 46579
+-Привет
+-46579, доброе утро экипажам ...одиночных площадок, следую к вам, прошел ... Александровка вошел вашу зону, подход ..."#;
+        let res = extract_post(body).unwrap();
+        assert_eq!(res.unwrap(), "**33".to_string())
+    }
+
+    #[test]
     fn extract_post_complex() {
         let body = r#"Отримано з поста " '31/1' Курсант"
+-------------------------------
+25.11.2025, 10:14:47
+128.5000
+🟠р/м Єдиної системи управління повітряним рухом ПКС зс рф
+
+САКСОФОН
+47578
+
+— Саксофон контроль 47578 с Балтимором ... на ЭШ 190 не возражает
+— ... 190 занял ... Инбал"#;
+        let res = extract_post(body).unwrap();
+        assert_eq!(res.unwrap(), "'31/1' Курсант".to_string())
+    }
+
+    #[test]
+    fn extract_post_complex_mult() {
+        let body = r#"Отримано з постів "'36/4' Курсант", "'31/1' Курсант"
 -------------------------------
 25.11.2025, 10:14:47
 128.5000

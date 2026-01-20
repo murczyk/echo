@@ -112,6 +112,7 @@ pub const MAX_FIX_WHATSAPP_SENDERS_MESSAGE_DAYS: i64 = 30;
 pub const DEFAULT_STORE_PALITRA_IN_S3: bool = true;
 pub const KMZ_CONTENT_TYPE: &str = "application/vnd.google-earth.kmz";
 pub const ENCRYPTION_KEY_PLACEHOLDER: &str = "🔑";
+pub const ENCRYPTION_KEY_DESCRIPTION_PLACEHOLDER: &str = "...";
 
 /// Dynamic config that's different on different deployments
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
@@ -167,6 +168,7 @@ pub struct Config {
     pub feature_delete_uploaded_attachment: Option<bool>,
     pub s3_config: Option<S3Config>,
     pub store_palitra_in_s3: Option<bool>,
+    pub alpine_converter_url: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]

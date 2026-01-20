@@ -58,11 +58,10 @@ pub struct InboxMessageDesc {
 
 pub async fn get_inbox_map_items(
     login: &str,
-    logins: &Vec<String>,
     env: &Env,
     req: &InboxMessagesReq,
 ) -> Result<Vec<InboxMapItem>, AppError> {
-    let q = build_inbox_query(login, logins, env, req).await.c(h!())?;
+    let q = build_inbox_query(login, env, req).await.c(h!())?;
     let q = format!(
         r#"SELECT id, message_uid, "freq" as freq, "coords" as coords from ({q}) q"#
     );
@@ -380,6 +379,16 @@ pub async fn fill_callsigns(
     Ok(())
 }
 
+#[derive(Debug, FromQueryResult)]
+struct NetworkFreqResult {
+    pub network_id: i64,
+    pub freq: String,
+    pub freq_active_from: Option<NaiveDateTime>,
+    pub freq_active_to: Option<NaiveDateTime>,
+    pub network_active_from: Option<NaiveDateTime>,
+    pub network_active_to: Option<NaiveDateTime>,
+}
+
 pub async fn load_messages_networks(
     messages: &Vec<InboxMessageDesc>,
     groups_map: &HashMap<
@@ -388,12 +397,6 @@ pub async fn load_messages_networks(
     >,
     dbx: &DatabaseConnection,
 ) -> Result<HashMap<i64, Vec<i64>>, AppError> {
-    #[derive(Debug, FromQueryResult)]
-    pub struct NetworkFreqResult {
-        pub network_id: i64,
-        pub freq: String,
-    }
-
     // Step 1: Collect group_ids and freqs from messages
     let mut group_master_keys = HashSet::new();
     let mut freqs = HashSet::new();
@@ -438,41 +441,30 @@ pub async fn load_messages_networks(
         .select_only()
         .column(sigint_network_freq::Column::NetworkId)
         .column(sigint_network_freq::Column::Freq)
+        .column_as(sigint_network_freq::Column::ActiveFrom, "freq_active_from")
+        .column_as(sigint_network_freq::Column::ActiveTo, "freq_active_to")
+        .column_as(sigint_network::Column::ActiveFrom, "network_active_from")
+        .column_as(sigint_network::Column::ActiveTo, "network_active_to")
         .filter(
             sigint_network_freq::Column::Freq
                 .eq_any(freqs.into_iter().collect()),
         )
-        .filter(
-            Condition::any()
-                .add(sigint_network_freq::Column::ActiveTo.is_null())
-                .add(
-                    sigint_network_freq::Column::ActiveTo
-                        .gte(Utc::now().naive_utc()),
-                ),
-        )
         .filter(sigint_network_freq::Column::Deleted.eq(false))
         .filter(sigint_network::Column::Deleted.eq(false))
-        .filter(
-            Condition::any()
-                .add(sigint_network::Column::ActiveTo.is_null())
-                .add(
-                    sigint_network::Column::ActiveTo
-                        .gte(Utc::now().naive_utc()),
-                ),
-        )
         .into_model::<NetworkFreqResult>()
         .all(dbx)
         .await
         .context(h!())?;
 
     let mut network_ids = HashSet::new();
-    let mut freq_networks_map: HashMap<String, HashSet<i64>> = HashMap::new();
+    let mut freq_networks_map: HashMap<String, Vec<NetworkFreqResult>> =
+        HashMap::new();
     for nf in networks_freqs {
         network_ids.insert(nf.network_id);
         freq_networks_map
-            .entry(nf.freq)
+            .entry(nf.freq.clone())
             .or_default()
-            .insert(nf.network_id);
+            .push(nf);
     }
 
     // Step 5: Load AORs for networks
@@ -518,9 +510,19 @@ fn match_network_ids_for_messages(
     >,
     group_bounds_map: &HashMap<String, Vec<(f64, f64)>>,
     network_bounds_map: &HashMap<i64, Vec<(f64, f64)>>,
-    freq_networks_map: &HashMap<String, HashSet<i64>>,
+    freq_networks_map: &HashMap<String, Vec<NetworkFreqResult>>,
 ) -> Result<HashMap<i64, Vec<i64>>, AppError> {
     let mut result = HashMap::new();
+
+    fn is_active_at(
+        dt: NaiveDateTime,
+        active_from: Option<NaiveDateTime>,
+        active_to: Option<NaiveDateTime>,
+    ) -> bool {
+        let from_ok = active_from.map(|from| from <= dt).unwrap_or(true);
+        let to_ok = active_to.map(|to| to >= dt).unwrap_or(true);
+        from_ok && to_ok
+    }
 
     for msg in messages {
         let Some(entries) = groups_map.get(&msg.id) else {
@@ -543,10 +545,26 @@ fn match_network_ids_for_messages(
             continue;
         };
 
+        let msg_dt = msg.timestamp.unwrap_or_else(|| Utc::now().naive_utc());
         let mut matched = HashSet::new();
 
-        for network_id in candidate_networks {
-            if let Some(net_bounds) = network_bounds_map.get(network_id) {
+        for candidate in candidate_networks {
+            let network_id = candidate.network_id;
+            if !is_active_at(
+                msg_dt,
+                candidate.network_active_from,
+                candidate.network_active_to,
+            ) {
+                continue;
+            }
+            if !is_active_at(
+                msg_dt,
+                candidate.freq_active_from,
+                candidate.freq_active_to,
+            ) {
+                continue;
+            }
+            if let Some(net_bounds) = network_bounds_map.get(&network_id) {
                 for (gl, gr) in group_bounds {
                     for (nl, nr) in net_bounds {
                         // 1. Group starts inside network
@@ -566,7 +584,7 @@ fn match_network_ids_for_messages(
                             || (gl <= nl && gr >= nr)
                         // group fully covers network
                         {
-                            matched.insert(*network_id);
+                            matched.insert(network_id);
                             break;
                         }
                     }

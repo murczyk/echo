@@ -44,15 +44,17 @@ pub async fn report_docx_kind_posts(
     let logins = crate::users::get_organism_logins(&read_db, user)
         .await
         .c(h!())?;
-
-    let Some(since_date_inclusive_ms) = req.req.since_date_inclusive_ms else {
+    let mut current_req = req.req.clone();
+    current_req.report_tags_only_this_unit = req.report_tags_only_this_unit;
+    let Some(since_date_inclusive_ms) = current_req.since_date_inclusive_ms
+    else {
         return Err("Since date must be specified".into());
     };
-    let Some(till_date_inclusive_ms) = req.req.till_date_inclusive_ms else {
+    let Some(till_date_inclusive_ms) = current_req.till_date_inclusive_ms
+    else {
         return Err("Until date must be specified".into());
     };
 
-    let mut current_req = req.req.clone();
     current_req.return_duplicates = Some(false);
 
     let current_messages = get_inbox_messages_with_conn(

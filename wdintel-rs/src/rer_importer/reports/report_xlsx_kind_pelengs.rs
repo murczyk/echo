@@ -9,6 +9,7 @@ use crate::utils::orm::ArrayColumnOps;
 use actix_identity::Identity;
 use anyhow::bail;
 use chrono::prelude::*;
+use echo_migration::IntoCondition;
 use itertools::Itertools;
 use sea_orm::{prelude::Expr, sea_query::SimpleExpr, *};
 use std::collections::BTreeMap;
@@ -95,11 +96,21 @@ pub async fn get_inbox_messages_report(
         .filter(sigint_inbox_item::Column::Lat.is_not_null())
         .join(
             JoinType::LeftJoin,
-            sigint_inbox_item::Relation::SigintNetworkFreq.def(),
+            sigint_inbox_item::Relation::SigintNetworkFreq.def()
+                .on_condition(|_left, right| {
+                    Expr::col((right, sigint_network_freq::Column::Deleted))
+                        .eq(false)
+                        .into_condition()
+                }),
         )
         .join(
             JoinType::LeftJoin,
-            sigint_network_freq::Relation::SigintNetwork.def(),
+            sigint_network_freq::Relation::SigintNetwork.def()
+                .on_condition(|_left, right| {
+                    Expr::col((right, sigint_network::Column::Deleted))
+                        .eq(false)
+                        .into_condition()
+                }),
         )
         .join(
             JoinType::LeftJoin,
@@ -107,11 +118,21 @@ pub async fn get_inbox_messages_report(
         )
         .join(
             JoinType::LeftJoin,
-            sigint_network_unit::Relation::SigintUnit.def(),
+            sigint_network_unit::Relation::SigintUnit.def()
+                .on_condition(|_left, right| {
+                    Expr::col((right, sigint_unit::Column::Deleted))
+                        .eq(false)
+                        .into_condition()
+                }),
         )
         .join(
             JoinType::LeftJoin,
-            sigint_inbox_item::Relation::SigintPost.def(),
+            sigint_inbox_item::Relation::SigintPost.def()
+                .on_condition(|_left, right| {
+                    Expr::col((right, sigint_post::Column::Deleted))
+                        .eq(false)
+                        .into_condition()
+                }),
         )
         .group_by(signal_message::Column::Id)
         .group_by(sigint_inbox_item::Column::Id)
@@ -167,7 +188,6 @@ pub async fn get_inbox_messages_report(
         &req.filter_tags_option,
         &req.without_model_tags,
         &user.id().c(h!())?,
-        None,
         req.report_tags_only_this_unit.unwrap_or(false),
     )?;
     let q = filter_selected_locations(
@@ -318,13 +338,14 @@ pub async fn report_xlsx_kind_pelengs1(
     let mut workbook = rust_xlsxwriter::Workbook::new();
     let sheet1 = workbook.add_worksheet().set_name("Пеленги").context(h!())?;
     let coltitle = xls_title();
-
+    let mut current_req = req.req.clone();
+    current_req.report_tags_only_this_unit = req.report_tags_only_this_unit;
     let till: DateTime<Utc> = chrono::Utc
-        .timestamp_millis_opt(req.req.till_date_inclusive_ms.unwrap_or(0))
+        .timestamp_millis_opt(current_req.till_date_inclusive_ms.unwrap_or(0))
         .single()
         .unwrap();
     let since: DateTime<Utc> = chrono::Utc
-        .timestamp_millis_opt(req.req.since_date_inclusive_ms.unwrap_or(0))
+        .timestamp_millis_opt(current_req.since_date_inclusive_ms.unwrap_or(0))
         .single()
         .unwrap();
 
@@ -394,7 +415,7 @@ pub async fn report_xlsx_kind_pelengs1(
         crate::rer_importer::reports::report_xlsx_kind_pelengs::get_inbox_messages_report(
             &user,
             env,
-            &req.req,
+            &current_req,
         )
         .await.c(h!())?;
     info!(
