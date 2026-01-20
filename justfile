@@ -327,23 +327,6 @@ deploy:
       -d "{\"content\":\"✅ Deployed {{ server }} (version $VERSION) via apt-get\"}" \
       '{{ discord_webhook }}' || true
 
-deploy-old:
-    #!/bin/bash
-    set -euxo pipefail
-    if [[ "{{ server }}" == "" ]]; then
-     just _print-servers; exit 1;
-    fi
-    # Notify Discord at the start of legacy deployment including local hostname
-    curl -sS -X POST \
-      -H 'Content-Type: application/json' \
-      -d "{\"content\":\"legacy deploy-old {{ server }} from $(hostname)\"}" \
-      '{{ discord_webhook }}' || true
-    if [[ "{{ server }}" == "jvln" ]]; then
-        just _jvln-deploy;
-    else
-        just builder={{ builder }} server={{ server }} _echo-generic-deploy-old;
-    fi
-
 collect-ip-loop:
     #!/bin/bash
     set -euxo pipefail
@@ -594,21 +577,6 @@ _echo-generic-deploy:
     ssh {{ server }} 'sudo apt-get update'
     ssh {{ server }} 'sudo DEBIAN_FRONTEND=noninteractive apt-get install -y echo-install wdintel-rs'
 
-# todo delete
-_echo-generic-deploy-old:
-    #!/bin/bash
-    set -euxo pipefail
-    set +x | echo 'skipping set +x, probably ubuntu build'
-    if [[ "{{ server }}" == "" ]]; then
-        just _print-servers; exit 1;
-    fi
-    if [[ "{{ builder }}" == "" ]]; then
-        echo "❌ Builder parameter not recognized. Value: {{ builder }}"; exit 1;
-    fi
-    set -x
-    just builder={{ builder }} _echo-generic-deploy-front
-    just builder={{ builder }} server={{ server }} _echo-generic-deploy-back
-
 _echo-generic-deploy-front:
     ssh {{ builder }} '(cd workspace/echo && git fetch origin && git clean -df && git checkout {{ branch }} && git pull)'
     ssh {{ builder }} '(cd workspace/echo/wdintel-web && . ~/.nvm/nvm.sh && npx npm ci && npx elm-land build)'
@@ -662,6 +630,18 @@ deploy-echo-ai:
     [ -f target/debian/echo-ai_0.1.1-1_amd64.deb ] || cargo deb -p echo-ai --no-build
     rsync -t --progress target/debian/echo-ai_0.1.1-1_amd64.deb {{ server }}:/var/tmp/
     ssh {{ server }} 'sudo apt-get -y install /var/tmp/echo-ai_0.1.1-1_amd64.deb && sudo systemctl restart wdintel-py'
+
+# setup echo-ai-train environment on server, putting essential scripts that make the container ready to run nightly jobs
+[arg('server', long='server')]
+setup-echo-ai-train server='echo-ai-train':
+    #!/bin/bash
+    set -euxo pipefail
+    . deploy/utils.sh
+    ensure_nonempty "server" "{{ server }}"
+    ssh {{ server }} 'sudo mkdir -p /usr/local/echo-ai-train/'
+    echo-install-utils ssh-sync-file scripts/copy-db-backup.sh {{ server }}:/usr/local/echo-ai-train/
+    echo-install-utils ssh-sync-file scripts/train-download-backups.sh {{ server }}:/usr/local/echo-ai-train/
+    echo-install-utils bw-sync "{{ server }}" "echo-ai-train-{{ server }}-dotenv" "/usr/local/echo-ai-train/.env" --no-restart
 
 # [positional-arguments]
 [arg('branch', long='branch')]
