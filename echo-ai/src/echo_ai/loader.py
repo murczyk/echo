@@ -5,7 +5,8 @@ from pathlib import Path
 import datasets
 import pandas as pd
 import pyarrow as pa
-from datasets import ClassLabel, Dataset, Features, Sequence, Value
+import pyarrow.compute as pc
+from datasets import ClassLabel, Dataset, Features, List, Value
 from mlflow.data.huggingface_dataset import HuggingFaceDataset, from_huggingface
 
 LABEL_DICT = {
@@ -24,12 +25,28 @@ pat_alnum_apostrophe = re.compile(r"[\w'`\u2019\u02BC]+", re.UNICODE)
 
 
 def preprocess_text(text: str) -> str:
-    words = pat_alnum_apostrophe.findall(text)
+    words = pat_alnum_apostrophe.findall(text.lower())
     return " ".join(words)
 
 
 def preprocess_batched(texts: list[str]):
     return {"text": [text for text in map(preprocess_text, texts)]}
+
+
+def text_not_empty(t: pa.Table, unsupervised: bool):
+    s = to_pd_series_arrow(t["text"])
+
+    mask = s != ""
+    if not unsupervised:
+        l_count = pc.list_value_length(t["labels"])  # pyright: ignore
+        l_count_series = to_pd_series_arrow(l_count)
+        mask = mask & (l_count_series > 0)
+
+    return pa.array(mask)
+
+
+def to_pd_dataframe_arrow(pa_table: pa.Table) -> pd.DataFrame:
+    return pa_table.to_pandas(types_mapper=pd.ArrowDtype)
 
 
 def to_pd_series_arrow(pa_array: pa.Array, **kwargs) -> pd.Series:
@@ -59,7 +76,6 @@ def slice_for_label(ds: Dataset, label_column_name: str):
     ds = ds.map(
         prepend_labels,
         batched=True,
-        batch_size=100000,
         num_proc=multiprocessing.cpu_count(),
         remove_columns=["text", "label"],
     )
@@ -74,14 +90,7 @@ def to_pandas_arrow(dataset: Dataset | pa.Table) -> pd.DataFrame:
     else:
         arrow_table = dataset.with_format("arrow")[:]  # pyright: ignore
 
-    df = arrow_table.to_pandas(types_mapper=pd.ArrowDtype)  # pyright: ignore
-    return df
-
-
-def filter_empty(t: pa.Table):
-    s = to_pd_series_arrow(t["text"])
-    mask = s != ""
-    return pa.array(mask)
+    return to_pd_dataframe_arrow(arrow_table)
 
 
 def load_dataset(
@@ -89,29 +98,39 @@ def load_dataset(
     data_file: str,
     data_dir: str | None = None,
     embedding: bool = False,
+    unsupervised: bool = False,
 ) -> HuggingFaceDataset:
     features = {
-        "text": Value("string"),
         "__source": Value("string"),
         "__id": Value("int64"),
-        "__datetime": Value("timestamp[s, tz=UTC]"),
+        "__created_at": Value("timestamp[us, tz=UTC]"),
+        "__datetime": Value("timestamp[us, tz=UTC]"),
+        "__tags": List(Value("int64")),
+        "labels": List(
+            ClassLabel(num_classes=len(label_dict), names=list(label_dict.values()))
+        ),
+        "text": Value("string"),
     }
     for label_index in label_dict.keys():
-        features[f"label_{label_index}"] = ClassLabel(num_classes=2)  # pyright: ignore
+        features[f"label_{label_index}"] = ClassLabel(num_classes=2)
     if embedding:
-        features["embedding"] = Sequence(Value("float32"))  # pyright: ignore
+        features["embedding"] = List(Value("float32"))  # pyright: ignore
     dataset_dict = datasets.load_dataset(
         "parquet", data_files=data_file, data_dir=data_dir, features=Features(features)
     )
 
-    hf_dataset = dataset_dict["train"].map(
+    hf_dataset = dataset_dict["train"]
+
+    hf_dataset = hf_dataset.with_format(None).map(
         preprocess_batched,
         input_columns=["text"],
         batched=True,
         num_proc=multiprocessing.cpu_count(),
         remove_columns="text",
     )
-    hf_dataset = hf_dataset.with_format("arrow").filter(filter_empty, batched=True)
+    hf_dataset = hf_dataset.with_format("arrow").filter(
+        lambda t: text_not_empty(t, unsupervised), batched=True
+    )
 
     dataset = from_huggingface(
         hf_dataset,

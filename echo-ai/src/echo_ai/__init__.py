@@ -41,9 +41,12 @@ def main() -> None:
     parser.add_argument("data_file", type=str)
     args = vars(parser.parse_args())
 
-    dataset = load_dataset(LABEL_DICT, args["data_file"], embedding=args["embedding"])
-    df = to_pandas_arrow(dataset.ds)
-    print(df.head())
+    dataset = load_dataset(
+        LABEL_DICT,
+        args["data_file"],
+        embedding=args["embedding"],
+        unsupervised=args["unsupervised"],
+    )
 
     if args["unsupervised"]:
         mlflow.set_experiment("ECHO AI Unsupervised")
@@ -65,7 +68,7 @@ def main() -> None:
 
         print(f"starting training for labels: {label_list}")
         if args["embedding"]:
-            train_embedding(label_dict, dataset, df, args)
+            train_embedding(label_dict, dataset, args)
         else:
             with ThreadPoolExecutor(
                 max_workers=multiprocessing.cpu_count()

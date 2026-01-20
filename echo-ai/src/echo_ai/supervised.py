@@ -133,7 +133,7 @@ def train_supervised(
         with mlflow.start_run() as run:
             print(f"starting training for {label_name}")
 
-            if fasttext_kwargs["autotuneMetric"]:
+            if fasttext_kwargs.get("autotuneMetric"):
                 fasttext_kwargs["autotuneValidationFile"] = test_path
             else:
                 fasttext_kwargs.pop("autotuneValidationFile", None)

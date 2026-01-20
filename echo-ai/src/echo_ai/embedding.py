@@ -12,7 +12,6 @@ from sklearn.linear_model import LogisticRegression
 def train_embedding(
     label_dict: dict[int, str],
     dataset: HuggingFaceDataset,
-    df: DataFrame,
     args: dict[str, Any],
 ):
     ds = dataset.ds

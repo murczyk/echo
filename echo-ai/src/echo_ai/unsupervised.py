@@ -1,4 +1,3 @@
-import multiprocessing
 import os
 
 import fasttext
@@ -15,13 +14,10 @@ from .fasttext_model import (
 
 
 def train_unsupervised(dataset: HuggingFaceDataset, **kwargs):
-    num_proc = kwargs.get("thread", multiprocessing.cpu_count())
-
     corpus = f"corpus.{dataset.digest}.txt"
     if not os.path.isfile(corpus):
         dataset.ds.to_csv(
             corpus,
-            num_proc=num_proc,
             columns=["text"],
             index=False,
             header=False,

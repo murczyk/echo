@@ -7,7 +7,16 @@ CREATE OR REPLACE TEMPORARY SECRET postgres_local (
     USER 'wd',
     PASSWORD 'fee_-_-_-FnoeKFBeebu87bf'
 );
-ATTACH OR REPLACE 'dbname=wd' AS wd (TYPE postgres, SECRET postgres_local);
+SET memory_limit = '8GB';
+SET preserve_insertion_order = false;
+ATTACH OR REPLACE 'dbname=wd' AS wd_pivnich (TYPE postgres, SECRET postgres_local);
+ATTACH OR REPLACE 'dbname=wd_kharkiv' AS wd_kharkiv (TYPE postgres, SECRET postgres_local);
+ATTACH OR REPLACE 'dbname=wd_kherson' AS wd_kherson (TYPE postgres, SECRET postgres_local);
+ATTACH OR REPLACE 'dbname=wd_luhansk' AS wd_luhansk (TYPE postgres, SECRET postgres_local);
+ATTACH OR REPLACE 'dbname=wd_siversk' AS wd_siversk (TYPE postgres, SECRET postgres_local);
+ATTACH OR REPLACE 'dbname=wd_skhid' AS wd_skhid (TYPE postgres, SECRET postgres_local);
+ATTACH OR REPLACE 'dbname=wd_volyn' AS wd_volyn (TYPE postgres, SECRET postgres_local);
+ATTACH OR REPLACE 'dbname=wd_zp2' AS wd_zp2 (TYPE postgres, SECRET postgres_local);
 
 set variable pg_inbox_query = $$
 with label_tags as materialized (
@@ -38,8 +47,8 @@ with label_tags as materialized (
         , x."datetime"
         , x.tags
         , coalesce(l.labels, array[]::int[]) as labels
+        , coalesce(l.labels_binary, array[]::bool[]) as labels_binary
         , coalesce(nullif(regexp_replace(x.body, '^[^—]*—\s*', ''), ''), x.body) as text
-        , l.labels_binary
     from (
         select  i.id
             , m.created_at
@@ -52,8 +61,6 @@ with label_tags as materialized (
         ) as t on true
         join signal_message m on m.id = i.id
         where i.body_noheader is not null
-          and i.tags is not null
-          and jsonb_array_length(i.tags) > 0
         ) as x
     left join lateral (
         select array_agg(lt.label_tags && x.tags order by lt.label_id) as labels_binary
@@ -67,7 +74,8 @@ select c.id as "__id"
     , c.created_at AT TIME ZONE 'UTC' as "__created_at"
     , c."datetime" AT TIME ZONE 'UTC' as "__datetime"
     , c.tags as "__tags"
-    , c.labels as "__labels"
+    , c.labels
+    , c."text"
     , c.labels_binary[1] as label_0
     , c.labels_binary[2] as label_1
     , c.labels_binary[3] as label_2
@@ -78,11 +86,23 @@ select c.id as "__id"
     , c.labels_binary[8] as label_7
     , c.labels_binary[9] as label_8
     , c.labels_binary[10] as label_9
-    , lower(c.text collate "ru-x-icu") as "text"
 from cte c
 $$;
 
+create temporary table echo_wd_all as
+select * from (
+    select 'wd_pivnich' as "__source", * from postgres_query('wd_pivnich', getvariable('pg_inbox_query'))
+    union all select 'wd_kharkiv' as "__source", * from postgres_query('wd_kharkiv', getvariable('pg_inbox_query'))
+    union all select 'wd_kherson' as "__source", * from postgres_query('wd_kherson', getvariable('pg_inbox_query'))
+    union all select 'wd_luhansk' as "__source", * from postgres_query('wd_luhansk', getvariable('pg_inbox_query'))
+    union all select 'wd_siversk' as "__source", * from postgres_query('wd_siversk', getvariable('pg_inbox_query'))
+    union all select 'wd_skhid' as "__source", * from postgres_query('wd_skhid', getvariable('pg_inbox_query'))
+    union all select 'wd_volyn' as "__source", * from postgres_query('wd_volyn', getvariable('pg_inbox_query'))
+    union all select 'wd_zp2' as "__source", * from postgres_query('wd_zp2', getvariable('pg_inbox_query'))
+) as x;
+
 copy (
-    select 'wd' as "__source", * from postgres_query('wd', getvariable('pg_inbox_query'))
+    select * from echo_wd_all
+    order by __created_at, __source
 )
-to 'echo-wd.parquet' (compression 'zstd');
+to 'echo-wd-all.parquet' (format parquet, compression 'zstd');
