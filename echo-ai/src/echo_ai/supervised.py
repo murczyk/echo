@@ -9,6 +9,7 @@ from mlflow.data.huggingface_dataset import HuggingFaceDataset
 from mlflow.data.pandas_dataset import PandasDataset, from_pandas
 from mlflow.entities.logged_model_input import LoggedModelInput
 
+from echo_ai import utils
 from echo_ai.evaluate import (
     plot_precision_recall,
     plot_threshold_recall,
@@ -21,7 +22,7 @@ from .fasttext_model import (
     get_training_args,
     log_model,
 )
-from .loader import slice_for_label, to_pandas_arrow
+from .loader import slice_for_label
 
 
 def to_csv(ds: Dataset, pd: PandasDataset) -> str:
@@ -117,11 +118,11 @@ def train_supervised(
             dataset_dict = job["dataset_dict_future"].result()
 
         ds_train = dataset_dict["train"]
-        df_train = to_pandas_arrow(ds_train)
+        df_train = utils.to_pandas_df(ds_train)
         pd_train = from_pandas(df_train, name=f"{label_name}.train", targets="label")
 
         ds_test = dataset_dict["test"]
-        df_test = to_pandas_arrow(ds_test)
+        df_test = utils.to_pandas_df(ds_test)
         pd_test = from_pandas(df_test, name=f"{label_name}.test", targets="label")
 
         train_path = to_csv(ds_train, pd_train)

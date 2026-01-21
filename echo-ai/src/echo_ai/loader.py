@@ -3,11 +3,12 @@ import re
 from pathlib import Path
 
 import datasets
-import pandas as pd
 import pyarrow as pa
 import pyarrow.compute as pc
 from datasets import ClassLabel, Dataset, Features, List, Value
 from mlflow.data.huggingface_dataset import HuggingFaceDataset, from_huggingface
+
+from echo_ai import utils
 
 LABEL_DICT = {
     0: "переміщення",
@@ -34,27 +35,19 @@ def preprocess_batched(texts: list[str]):
 
 
 def text_not_empty(t: pa.Table, unsupervised: bool):
-    s = to_pd_series_arrow(t["text"])
+    s = utils.to_pandas_series(t["text"])
 
     mask = s != ""
     if not unsupervised:
         l_count = pc.list_value_length(t["labels"])  # pyright: ignore
-        l_count_series = to_pd_series_arrow(l_count)
+        l_count_series = utils.to_pandas_series(l_count)
         mask = mask & (l_count_series > 0)
 
     return pa.array(mask)
 
 
-def to_pd_dataframe_arrow(pa_table: pa.Table) -> pd.DataFrame:
-    return pa_table.to_pandas(types_mapper=pd.ArrowDtype)
-
-
-def to_pd_series_arrow(pa_array: pa.Array, **kwargs) -> pd.Series:
-    return pd.Series(pd.arrays.ArrowExtensionArray(pa_array), **kwargs)
-
-
 def prepend_labels(t: pa.Table):
-    df = to_pandas_arrow(t)
+    df = utils.to_pandas_df(t)
     df.dropna(subset=["label"], inplace=True)
 
     label = df["label"]
@@ -84,20 +77,11 @@ def slice_for_label(ds: Dataset, label_column_name: str):
     return ds
 
 
-def to_pandas_arrow(dataset: Dataset | pa.Table) -> pd.DataFrame:
-    if isinstance(dataset, pa.Table):
-        arrow_table = dataset
-    else:
-        arrow_table = dataset.with_format("arrow")[:]  # pyright: ignore
-
-    return to_pd_dataframe_arrow(arrow_table)
-
-
 def load_dataset(
     label_dict: dict[int, str],
     data_file: str,
     data_dir: str | None = None,
-    embedding: bool = False,
+    embeddings: bool = False,
     unsupervised: bool = False,
 ) -> HuggingFaceDataset:
     features = {
@@ -107,14 +91,14 @@ def load_dataset(
         "__datetime": Value("timestamp[us, tz=UTC]"),
         "__tags": List(Value("int64")),
         "labels": List(
-            ClassLabel(num_classes=len(label_dict), names=list(label_dict.values()))
+            ClassLabel(num_classes=len(LABEL_DICT), names=list(LABEL_DICT.values()))
         ),
         "text": Value("string"),
     }
     for label_index in label_dict.keys():
         features[f"label_{label_index}"] = ClassLabel(num_classes=2)
-    if embedding:
-        features["embedding"] = List(Value("float32"))  # pyright: ignore
+    if embeddings:
+        features["embeddings"] = List(Value("float32"))  # pyright: ignore
     dataset_dict = datasets.load_dataset(
         "parquet", data_files=data_file, data_dir=data_dir, features=Features(features)
     )
