@@ -192,6 +192,7 @@ mod m20260108_153000_add_key_modulation_and_freqs;
 mod m20260110_123009_drop_tyt_veda;
 mod m20260115_135733_add_enc_key_hash;
 mod m20260119_134955_drop_signal_message_duplicate_of;
+mod m20260122_133442_add_sigint_key_share_policy;
 
 pub struct Migrator;
 
@@ -391,6 +392,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260110_123009_drop_tyt_veda::Migration),
             Box::new(m20260115_135733_add_enc_key_hash::Migration),
             Box::new(m20260119_134955_drop_signal_message_duplicate_of::Migration),
+            Box::new(m20260122_133442_add_sigint_key_share_policy::Migration),
         ]
     }
 }
