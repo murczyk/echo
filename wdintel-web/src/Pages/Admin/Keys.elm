@@ -205,7 +205,7 @@ update msg model =
 
         GrantFromSelectMsg selectMsg ->
             let
-                ( selectState, mAction ) =
+                ( mAction, selectState, selectCmd ) =
                     Select.update selectMsg model.grantFromSelect.state
 
                 selected =
@@ -226,12 +226,12 @@ update msg model =
                 , createForm = updatedCreateForm
                 , formErrors = Dict.remove "grantFromId" model.formErrors
               }
-            , E.none
+            , E.sendCmd <| Cmd.map GrantFromSelectMsg selectCmd
             )
 
         GrantToSelectMsg selectMsg ->
             let
-                ( selectState, mAction ) =
+                ( mAction, selectState, selectCmd ) =
                     Select.update selectMsg model.grantToSelect.state
 
                 selected =
@@ -252,7 +252,7 @@ update msg model =
                 , createForm = updatedCreateForm
                 , formErrors = Dict.remove "grantToId" model.formErrors
               }
-            , E.none
+            , E.sendCmd <| Cmd.map GrantToSelectMsg selectCmd
             )
 
         SubmitCreateForm ->
@@ -619,9 +619,16 @@ createPolicySidebarContent isDark model =
         selectOptions =
             { defaultOptions | loading = RD.isLoading model.organisms }
 
-        selectedItem mSelected items =
-            mSelected
-                |> Maybe.andThen (\selected -> List.filter (\item -> item.item == selected) items |> List.head)
+        selectedItem mSelected =
+            case ( mSelected, model.organisms ) of
+                ( Just selectedId, RD.Success organisms ) ->
+                    organisms
+                        |> List.filter (\org -> org.id == selectedId)
+                        |> List.head
+                        |> Maybe.map (\org -> Select.basicMenuItem { item = org.id, label = org.name })
+
+                _ ->
+                    Nothing
     in
     [ div [ class "flex flex-col h-full" ]
         [ div [ class "p-6 border-b border-border" ]
@@ -634,7 +641,7 @@ createPolicySidebarContent isDark model =
                     , Html.map GrantFromSelectMsg <|
                         Styled.toUnstyled <|
                             Utils.Select.renderSelectSingle
-                                (selectedItem model.grantFromSelect.selected model.grantFromSelect.items)
+                                (selectedItem model.grantFromSelect.selected)
                                 model.grantFromSelect.state
                                 model.grantFromSelect.items
                                 "Оберіть організацію"
@@ -651,7 +658,7 @@ createPolicySidebarContent isDark model =
                     , Html.map GrantToSelectMsg <|
                         Styled.toUnstyled <|
                             Utils.Select.renderSelectSingle
-                                (selectedItem model.grantToSelect.selected model.grantToSelect.items)
+                                (selectedItem model.grantToSelect.selected)
                                 model.grantToSelect.state
                                 model.grantToSelect.items
                                 "Оберіть організацію"
