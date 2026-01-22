@@ -4,4 +4,6 @@ python_env: python_env.yaml
 
 entry_points:
   main:
-    command: "python src/echo_ai"
+    parameters:
+      data_file: path
+    command: "python src/main.py {data_file}"
