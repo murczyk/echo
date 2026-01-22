@@ -8,7 +8,7 @@ build_dependencies:
 
 # Runtime dependencies
 dependencies:
-  - datasets>=4.4.2"
+  - datasets>=4.4.2
   - fasttext==0.9.2
   - matplotlib>=3.10.8
   - mlflow>=3.8.1
