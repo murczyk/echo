@@ -71,7 +71,7 @@ def real_main(args):
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(fromfile_prefix_chars="@")
     parser.add_argument("--thread", type=int, default=multiprocessing.cpu_count())
     parser.add_argument("--dim", type=int, default=100)
     parser.add_argument("--seed", type=int, default=4313)
