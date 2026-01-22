@@ -1,7 +1,5 @@
 [Unit]
 Description=MLflow garbage collection
-After=mlflow.service
-Requires=mlflow.service
 
 [Service]
 Type=oneshot

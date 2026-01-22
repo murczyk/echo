@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 import mlflow
 
 from .embeddings import train_embeddings
-from .loader import LABEL_DICT, load_dataset
+from .loader import LABEL_DICT, load_parquet
 from .supervised import train_supervised
 from .unsupervised import train_unsupervised
 
@@ -41,7 +41,15 @@ def main() -> None:
     parser.add_argument("data_file", type=str)
     args = vars(parser.parse_args())
 
-    dataset = load_dataset(
+    if mlflow.active_run():
+        real_main(args)
+    else:
+        with mlflow.start_run():
+            real_main(args)
+
+
+def real_main(args):
+    dataset = load_parquet(
         LABEL_DICT,
         args["data_file"],
         embeddings=args["embeddings"],
@@ -49,8 +57,8 @@ def main() -> None:
     )
 
     if args["unsupervised"]:
-        mlflow.set_experiment("ECHO AI Unsupervised")
-        with mlflow.start_run() as run:
+        tags = {"model": "unsupervised"}
+        with mlflow.start_run(nested=True, tags=tags) as run:
             print(f"starting training for unsupervised model: {run.info.run_id}")
             model, model_info = train_unsupervised(dataset, **args)
     else:

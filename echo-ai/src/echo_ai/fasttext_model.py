@@ -59,7 +59,6 @@ UNSUPERVISED_ARGS = [
     "t",
     "label",
     "verbose",
-    "pretrainedVectors",
 ]
 SUPERVISED_ARGS = [
     "lr",
@@ -130,7 +129,7 @@ def save_model(
     model.add_flavor(
         FLAVOR_NAME,
         binary_model=model_data_subpath,
-        fasttext_version=version("fasttext"),
+        fasttext_version=version("fasttext-wheel"),
         pretrained_vectors=pretrained_vectors,
         serialization_format="fasttext-binary",
     )
@@ -248,7 +247,7 @@ class FastTextPythonModel(PythonModel):
         return self.wrapper.fasttext_model
 
     def predict(
-        self, model_input, params: dict[str, Any] | None = None
+        self, model_input: pd.DataFrame, params: dict[str, Any] | None = None
     ) -> pd.DataFrame | pd.Series | np.ndarray:
         return self.wrapper.predict(self.context, model_input, params)
 

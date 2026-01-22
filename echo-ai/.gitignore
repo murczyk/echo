@@ -1,7 +1,7 @@
 fasttext-models
 mlruns/
 mlflow.db
-*.corpus.txt
+corpus.*.txt
 *.vec
 *.train.*.txt
 *.test.*.txt

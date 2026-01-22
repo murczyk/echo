@@ -3,7 +3,8 @@ name: ECHO AI
 python_env: python_env.yaml
 
 entry_points:
-  main:
+  unsupervised:
     parameters:
       data_file: path
-    command: "python src/main.py {data_file}"
+      args: {type: path, default: "unsupervised.args"}
+    command: "python src/unsupervised.py {data_file} @{args}"

@@ -39,7 +39,11 @@ def train_embeddings(
             print(label_train.head())
 
             m = LogisticRegression(class_weight="balanced")
-            run_tags = {"label": label_name, "estimator": type(m).__name__}
+            run_tags = {
+                "label": label_name,
+                "model": "embeddings",
+                "estimator": type(m).__name__,
+            }
             with mlflow.start_run(nested=True, tags=run_tags):
                 y_train = ds_train[key].to_numpy()
                 m.fit(x_train, y_train)

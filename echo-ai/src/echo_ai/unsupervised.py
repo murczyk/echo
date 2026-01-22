@@ -15,16 +15,21 @@ from .fasttext_model import (
 
 def train_unsupervised(dataset: HuggingFaceDataset, **kwargs):
     corpus = f"corpus.{dataset.digest}.txt"
-    if not os.path.isfile(corpus):
+
+    if os.path.isfile(corpus):
+        print(f"found existing corpus file: '{corpus}', reusing")
+    else:
+        print(f"creating new corpus file: '{corpus}'")
         dataset.ds.to_csv(
             corpus,
             columns=["text"],
             index=False,
+            quoting=None,
+            lineterminator="\n",
             header=False,
         )
 
     pretrained_vectors = kwargs.get("pretrainedVectors", "pretrained.vec")
-    del kwargs["pretrainedVectors"]
 
     fasttext_kwargs = get_training_args(UNSUPERVISED_ARGS, **kwargs)
 
@@ -32,6 +37,7 @@ def train_unsupervised(dataset: HuggingFaceDataset, **kwargs):
     model = fasttext.train_unsupervised(input=corpus, **fasttext_kwargs)
 
     model_params = get_model_params(model)
+
     print(f"params: {model_params}")
     mlflow.log_params(model_params)
 

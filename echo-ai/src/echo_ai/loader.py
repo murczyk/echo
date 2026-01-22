@@ -7,6 +7,7 @@ import pyarrow as pa
 import pyarrow.compute as pc
 from datasets import ClassLabel, Dataset, Features, List, Value
 from mlflow.data.huggingface_dataset import HuggingFaceDataset, from_huggingface
+from mlflow.data.sources import LocalArtifactDatasetSource
 
 from echo_ai import utils
 
@@ -77,10 +78,9 @@ def slice_for_label(ds: Dataset, label_column_name: str):
     return ds
 
 
-def load_dataset(
+def load_parquet(
     label_dict: dict[int, str],
     data_file: str,
-    data_dir: str | None = None,
     embeddings: bool = False,
     unsupervised: bool = False,
 ) -> HuggingFaceDataset:
@@ -100,7 +100,9 @@ def load_dataset(
     if embeddings:
         features["embeddings"] = List(Value("float32"))  # pyright: ignore
     dataset_dict = datasets.load_dataset(
-        "parquet", data_files=data_file, data_dir=data_dir, features=Features(features)
+        "parquet",
+        data_files=data_file,
+        features=Features(features),
     )
 
     hf_dataset = dataset_dict["train"]
@@ -118,11 +120,8 @@ def load_dataset(
 
     dataset = from_huggingface(
         hf_dataset,
-        "parquet",
-        name=Path(data_file).stem,
         data_files=data_file,
-        data_dir=data_dir,
-        source=data_file,
+        name=Path(data_file).stem,
+        source=LocalArtifactDatasetSource(data_file),
     )
-
     return dataset

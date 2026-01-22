@@ -635,6 +635,14 @@ ai-mlflow-train data_file *flags:
     . .venv/bin/activate
     uv run -- echo-ai {{ flags }} "{{ data_file }}"
 
+ai-mlflow-unsupervised data_file *flags:
+    #!/bin/bash
+    cd echo-ai
+    set -a && . .env && set +a
+    [[ -d .venv ]] || uv venv --relocatable
+    . .venv/bin/activate
+    uv run -- src/unsupervised.py {{ flags }} "{{ data_file }}"
+
 ai-mlflow-gc:
     #!/bin/bash
     cd echo-ai
