@@ -354,7 +354,7 @@ validateCreateForm form =
         withGrantFrom =
             case form.grantFromId of
                 Nothing ->
-                    addError "grantFromId" "Оберіть організацію для надання" Dict.empty
+                    addError "grantFromId" "Оберіть організм для надання" Dict.empty
 
                 Just _ ->
                     Dict.empty
@@ -362,7 +362,7 @@ validateCreateForm form =
         withGrantTo =
             case form.grantToId of
                 Nothing ->
-                    addError "grantToId" "Оберіть організацію для отримання" withGrantFrom
+                    addError "grantToId" "Оберіть організм для отримання" withGrantFrom
 
                 Just _ ->
                     withGrantFrom
@@ -456,9 +456,9 @@ policyTableConfig organismNames timeZone =
         { toId = \policy -> String.fromInt policy.id
         , toMsg = SetTableState
         , columns =
-            [ Table.stringColumn "Надати від" (\policy -> organismName policy.grantFrom)
+            [ Table.stringColumn "Власник ключів шифрування" (\policy -> organismName policy.grantFrom)
                 |> Table.withColumnWidth "22%"
-            , Table.stringColumn "Надати до" (\policy -> organismName policy.grantTo)
+            , Table.stringColumn "Отримувач прав на перегляд ключів шифрування" (\policy -> organismName policy.grantTo)
                 |> Table.withColumnWidth "22%"
             , Table.stringColumn "Автор" .author
                 |> Table.withColumnWidth "18%"
@@ -496,7 +496,7 @@ policyTableConfig organismNames timeZone =
 
 view : Bool -> Shared.Model -> Model -> View Msg
 view isDark shared model =
-    { title = "Політики доступу до ключів"
+    { title = "Політики доступу до ключів шифрування радіомереж"
     , body = body isDark shared model
     }
 
@@ -601,6 +601,14 @@ mainBlock shared model =
     in
     [ div []
         [ h1 [ class "py-4 text-2xl font-bold text-foreground" ] [ text "Політики доступу до ключів" ]
+        , Html.br [] []
+        , Html.br [] []
+        , p
+            [ class "text-sm text-muted-foreground whitespace-pre-line" ]
+            [ text "Додайте нову політику щоби користувачі з організму що є отримувачем прав на перегляд мали доступ бачити усі ключі шифрування які створили користувачі з організму - Власника ключів. \n Ця політика надає достіп до ключів в односторонньому порядку, і лише тих ключів якими володіє організм; для надання прав до ключів якимим поділилися із Власником інші організми створіть окремі політики."
+            ]
+        , Html.br [] []
+        , Html.br [] []
         , div [ class "mb-4 flex justify-end" ]
             [ Button.new { label = "Додати політику", onClick = ShowCreateSidebar }
                 |> Button.view
@@ -637,14 +645,14 @@ createPolicySidebarContent isDark model =
         , div [ class "flex-1 overflow-y-auto p-6" ]
             [ div [ class "space-y-6" ]
                 [ div [ class "space-y-2" ]
-                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Надати від *" ]
+                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Власник ключів *" ]
                     , Html.map GrantFromSelectMsg <|
                         Styled.toUnstyled <|
                             Utils.Select.renderSelectSingle
                                 (selectedItem model.grantFromSelect.selected)
                                 model.grantFromSelect.state
                                 model.grantFromSelect.items
-                                "Оберіть організацію"
+                                "Оберіть організм"
                                 selectOptions
                     , case Dict.get "grantFromId" model.formErrors of
                         Just error ->
@@ -654,14 +662,14 @@ createPolicySidebarContent isDark model =
                             text ""
                     ]
                 , div [ class "space-y-2" ]
-                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Надати до *" ]
+                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Отримувач прав на перегляд ключів *" ]
                     , Html.map GrantToSelectMsg <|
                         Styled.toUnstyled <|
                             Utils.Select.renderSelectSingle
                                 (selectedItem model.grantToSelect.selected)
                                 model.grantToSelect.state
                                 model.grantToSelect.items
-                                "Оберіть організацію"
+                                "Оберіть організм"
                                 selectOptions
                     , case Dict.get "grantToId" model.formErrors of
                         Just error ->
