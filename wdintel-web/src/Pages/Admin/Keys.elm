@@ -143,11 +143,23 @@ update msg model =
                     organisms
                         |> List.sortBy .name
                         |> List.map (\org -> Select.basicMenuItem { item = org.id, label = org.name })
+
+                currentGrantFromSelect =
+                    model.grantFromSelect
+
+                currentGrantToSelect =
+                    model.grantToSelect
+
+                updatedGrantFromSelect =
+                    { currentGrantFromSelect | items = menuItems }
+
+                updatedGrantToSelect =
+                    { currentGrantToSelect | items = menuItems }
             in
             ( { model
                 | organisms = RD.Success organisms
-                , grantFromSelect = { model.grantFromSelect | items = menuItems }
-                , grantToSelect = { model.grantToSelect | items = menuItems }
+                , grantFromSelect = updatedGrantFromSelect
+                , grantToSelect = updatedGrantToSelect
               }
             , E.none
             )
@@ -156,23 +168,37 @@ update msg model =
             ( { model | tableState = newTableState }, E.none )
 
         ShowCreateSidebar ->
+            let
+                currentGrantFromSelect =
+                    model.grantFromSelect
+
+                currentGrantToSelect =
+                    model.grantToSelect
+            in
             ( { model
                 | showCreateSidebar = True
                 , createForm = emptyCreateForm
                 , formErrors = Dict.empty
-                , grantFromSelect = { model.grantFromSelect | selected = Nothing }
-                , grantToSelect = { model.grantToSelect | selected = Nothing }
+                , grantFromSelect = { currentGrantFromSelect | selected = Nothing }
+                , grantToSelect = { currentGrantToSelect | selected = Nothing }
               }
             , E.none
             )
 
         CloseCreateSidebar ->
+            let
+                currentGrantFromSelect =
+                    model.grantFromSelect
+
+                currentGrantToSelect =
+                    model.grantToSelect
+            in
             ( { model
                 | showCreateSidebar = False
                 , createForm = emptyCreateForm
                 , formErrors = Dict.empty
-                , grantFromSelect = { model.grantFromSelect | selected = Nothing }
-                , grantToSelect = { model.grantToSelect | selected = Nothing }
+                , grantFromSelect = { currentGrantFromSelect | selected = Nothing }
+                , grantToSelect = { currentGrantToSelect | selected = Nothing }
               }
             , E.none
             )
@@ -184,11 +210,20 @@ update msg model =
 
                 selected =
                     Utils.Select.singleUpd mAction model.grantFromSelect.selected
+
+                currentGrantFromSelect =
+                    model.grantFromSelect
+
+                currentCreateForm =
+                    model.createForm
+
+                updatedCreateForm =
+                    { currentCreateForm | grantFromId = selected }
             in
             ( { model
                 | grantFromSelect =
-                    { model.grantFromSelect | state = selectState, selected = selected }
-                , createForm = { model.createForm | grantFromId = selected }
+                    { currentGrantFromSelect | state = selectState, selected = selected }
+                , createForm = updatedCreateForm
                 , formErrors = Dict.remove "grantFromId" model.formErrors
               }
             , E.none
@@ -201,11 +236,20 @@ update msg model =
 
                 selected =
                     Utils.Select.singleUpd mAction model.grantToSelect.selected
+
+                currentGrantToSelect =
+                    model.grantToSelect
+
+                currentCreateForm =
+                    model.createForm
+
+                updatedCreateForm =
+                    { currentCreateForm | grantToId = selected }
             in
             ( { model
                 | grantToSelect =
-                    { model.grantToSelect | state = selectState, selected = selected }
-                , createForm = { model.createForm | grantToId = selected }
+                    { currentGrantToSelect | state = selectState, selected = selected }
+                , createForm = updatedCreateForm
                 , formErrors = Dict.remove "grantToId" model.formErrors
               }
             , E.none
@@ -246,14 +290,20 @@ update msg model =
 
                         _ ->
                             [ policy ]
+
+                currentGrantFromSelect =
+                    model.grantFromSelect
+
+                currentGrantToSelect =
+                    model.grantToSelect
             in
             ( { model
                 | policies = RD.Success nextPolicies
                 , showCreateSidebar = False
                 , createForm = emptyCreateForm
                 , formErrors = Dict.empty
-                , grantFromSelect = { model.grantFromSelect | selected = Nothing }
-                , grantToSelect = { model.grantToSelect | selected = Nothing }
+                , grantFromSelect = { currentGrantFromSelect | selected = Nothing }
+                , grantToSelect = { currentGrantToSelect | selected = Nothing }
               }
             , E.none
             )
@@ -563,8 +613,11 @@ mainBlock shared model =
 createPolicySidebarContent : Bool -> Model -> List (Html Msg)
 createPolicySidebarContent isDark model =
     let
+        defaultOptions =
+            Utils.Select.defaultOptions isDark
+
         selectOptions =
-            { (Utils.Select.defaultOptions isDark) | loading = RD.isLoading model.organisms }
+            { defaultOptions | loading = RD.isLoading model.organisms }
 
         selectedItem mSelected items =
             mSelected
