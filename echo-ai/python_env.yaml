@@ -1,15 +1,10 @@
 # python_env.yaml
 python: "3.10.12"
 
-# Optional: build dependencies
-build_dependencies:
-  - pybind11
-  - uv_build>=0.9.15,<0.10.0
-
 # Runtime dependencies
 dependencies:
   - datasets>=4.4.2
-  - fasttext==0.9.2
+  - fasttext-wheel==0.9.2
   - matplotlib>=3.10.8
   - mlflow>=3.8.1
   - pandas>=2.3.3
