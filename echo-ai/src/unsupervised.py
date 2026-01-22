@@ -15,8 +15,7 @@ def real_main(args):
         embeddings=False,
         unsupervised=True,
     )
-    model, model_info = train_unsupervised(dataset, **args)
-    print(model_info)
+    train_unsupervised(dataset, **args)
 
 
 def main():
@@ -44,7 +43,7 @@ def main():
     parser.add_argument("data_file", type=str)
     args = vars(parser.parse_args())
 
-    tags = {"label": "unsupervised"}
+    tags = {"label": "unsupervised", "model": "unsupervised"}
     print("starting training for unsupervised model")
     with mlflow.start_run(tags=tags) as run:
         print(f"run {run.info.run_name}, id: {run.info.run_id}")

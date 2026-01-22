@@ -3,6 +3,10 @@ name: ECHO AI
 python_env: python_env.yaml
 
 entry_points:
+  embeddings:
+    parameters:
+      data_file: path
+    command: "python src/embeddings.py {data_file}"
   unsupervised:
     parameters:
       data_file: path

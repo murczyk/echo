@@ -4,16 +4,12 @@ from concurrent.futures import ThreadPoolExecutor
 
 import mlflow
 
-from .embeddings import train_embeddings
 from .loader import LABEL_DICT, load_parquet
 from .supervised import train_supervised
-from .unsupervised import train_unsupervised
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--unsupervised", action="store_true", default=False)
-    parser.add_argument("--embeddings", action="store_true", default=False)
     parser.add_argument("--thread", type=int, default=multiprocessing.cpu_count())
     parser.add_argument("--dim", type=int, default=100)
     parser.add_argument("--seed", type=int, default=4313)
@@ -52,33 +48,22 @@ def real_main(args):
     dataset = load_parquet(
         LABEL_DICT,
         args["data_file"],
-        embeddings=args["embeddings"],
-        unsupervised=args["unsupervised"],
+        embeddings=False,
+        unsupervised=False,
     )
 
-    if args["unsupervised"]:
-        tags = {"model": "unsupervised"}
-        with mlflow.start_run(nested=True, tags=tags) as run:
-            print(f"starting training for unsupervised model: {run.info.run_id}")
-            model, model_info = train_unsupervised(dataset, **args)
+    label_list = args["labels"]
+    label_dict = {}
+    if label_list:
+        label_dict = {
+            key: value
+            for key, value in LABEL_DICT.items()
+            if value in label_list or str(key) in label_list
+        }
     else:
-        label_list = args["labels"]
-        label_dict = {}
-        if label_list:
-            label_dict = {
-                key: value
-                for key, value in LABEL_DICT.items()
-                if value in label_list or str(key) in label_list
-            }
-        else:
-            label_dict = LABEL_DICT.copy()
-        label_list = list(label_dict.values())
+        label_dict = LABEL_DICT.copy()
+    label_list = list(label_dict.values())
 
-        print(f"starting training for labels: {label_list}")
-        if args["embeddings"]:
-            train_embeddings(label_dict, dataset, args)
-        else:
-            with ThreadPoolExecutor(
-                max_workers=multiprocessing.cpu_count()
-            ) as executor:
-                train_supervised(label_dict, executor, dataset, **args)
+    print(f"starting training for labels: {label_list}")
+    with ThreadPoolExecutor(max_workers=multiprocessing.cpu_count()) as executor:
+        train_supervised(label_dict, executor, dataset, **args)
