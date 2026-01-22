@@ -148,15 +148,15 @@ pub async fn update_key(
         .context(h!())?;
 
     let user_id = user.id().c(h!())?;
-    let available_organism_ids =
-        load_available_organism_ids(&user_id, &env.dbx)
+    let organism_id =
+        load_organism_id(&user_id, &env.dbx)
             .await
             .c(h!())?;
     let key = sigint_network_encryption_key::Entity::find_by_id(req.id)
         .filter(sigint_network_encryption_key::Column::Deleted.eq(false))
         .filter(
             sigint_network_encryption_key::Column::OrganismId
-                .is_in(available_organism_ids),
+                .eq(organism_id),
         )
         .one(&env.dbx)
         .await
