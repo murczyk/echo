@@ -3681,6 +3681,52 @@ deleteEncryptionKeyReqEncoder struct =
         ]
 
 
+type alias SigintKeySharePolicy =
+    { id : Int
+    , grantFrom : Int
+    , grantTo : Int
+    , author : String
+    , createdAt : Int
+    }
+
+
+sigintKeySharePolicyEncoder : SigintKeySharePolicy -> Json.Encode.Value
+sigintKeySharePolicyEncoder struct =
+    Json.Encode.object
+        [ ( "id", Json.Encode.int struct.id )
+        , ( "grant_from", Json.Encode.int struct.grantFrom )
+        , ( "grant_to", Json.Encode.int struct.grantTo )
+        , ( "author", Json.Encode.string struct.author )
+        , ( "created_at", Json.Encode.int struct.createdAt )
+        ]
+
+
+type alias CreateSigintKeySharePolicyReq =
+    { grantFrom : Int
+    , grantTo : Int
+    }
+
+
+createSigintKeySharePolicyReqEncoder : CreateSigintKeySharePolicyReq -> Json.Encode.Value
+createSigintKeySharePolicyReqEncoder struct =
+    Json.Encode.object
+        [ ( "grant_from", Json.Encode.int struct.grantFrom )
+        , ( "grant_to", Json.Encode.int struct.grantTo )
+        ]
+
+
+type alias DeleteSigintKeySharePolicyReq =
+    { id : Int
+    }
+
+
+deleteSigintKeySharePolicyReqEncoder : DeleteSigintKeySharePolicyReq -> Json.Encode.Value
+deleteSigintKeySharePolicyReqEncoder struct =
+    Json.Encode.object
+        [ ( "id", Json.Encode.int struct.id )
+        ]
+
+
 type alias Tag =
     { label : String
     , extra : Maybe Bool
