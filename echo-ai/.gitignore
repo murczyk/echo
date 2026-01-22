@@ -1,7 +1,9 @@
 fasttext-models
-mlruns
+mlruns/
 mlflow.db
 *.corpus.txt
 *.vec
 *.train.*.txt
 *.test.*.txt
+__pycache__/
+.venv/

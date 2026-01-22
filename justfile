@@ -419,6 +419,15 @@ copy-db:
 #     sudo -u postgres psql -c "CREATE DATABASE wd" postgres
 #     sudo -u postgres pg_restore -d wd /tmp/wd-{{ dt1 }}.pgrestore
 
+deploy-ai-train server='echo-ai-train':
+    #!/bin/bash
+    set -euxo pipefail
+
+    SERVER="{{ server }}"
+
+    rsync --delete -rlpt -i -c -h --info=progress2 --filter=':- echo-ai/.gitignore' echo-ai/ "$SERVER:echo-ai/"
+    ssh -t "$SERVER" echo-ai/deploy.sh
+
 _copy-db:
     #!/bin/bash
     set -euxo pipefail
@@ -621,15 +630,15 @@ setup-py:
 ai-mlflow-train data_file *flags:
     #!/bin/bash
     cd echo-ai
-    . .env
+    set -a && . .env && set +a
     [[ -d .venv ]] || uv venv --relocatable
     . .venv/bin/activate
-    uv run -- echo-ai {{flags}} "{{data_file}}"
+    uv run -- echo-ai {{ flags }} "{{ data_file }}"
 
 ai-mlflow-gc:
     #!/bin/bash
     cd echo-ai
-    . .env
+    set -a && . .env && set +a
     [[ -d .venv ]] || uv venv --relocatable
     . .venv/bin/activate
     uv run mlflow gc --backend-store-uri="$MLFLOW_BACKEND_STORE_URI" --artifacts-destination="$MLFLOW_DEFAULT_ARTIFACT_ROOT"
@@ -637,7 +646,7 @@ ai-mlflow-gc:
 ai-mlflow-server:
     #!/bin/bash
     cd echo-ai
-    . .env
+    set -a && . .env && set +a
     [[ -d .venv ]] || uv venv --relocatable
     . .venv/bin/activate
     uv run mlflow server

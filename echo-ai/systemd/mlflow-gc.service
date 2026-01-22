@@ -1,0 +1,12 @@
+[Unit]
+Description=MLflow garbage collection
+After=mlflow.service
+Requires=mlflow.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=%h/echo-ai/.env
+ExecStart=%h/.local/bin/mlflow gc \
+    --backend-store-uri=${MLFLOW_BACKEND_STORE_URI} \
+    --artifacts-destination=${MLFLOW_DEFAULT_ARTIFACT_ROOT}
+WorkingDirectory=%h/echo-ai
