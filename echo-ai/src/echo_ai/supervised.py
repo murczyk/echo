@@ -1,6 +1,5 @@
 import multiprocessing
 import os
-from concurrent.futures import ThreadPoolExecutor
 
 import fasttext
 import mlflow
@@ -27,12 +26,17 @@ from .loader import slice_for_label
 
 def to_csv(ds: Dataset, pd: PandasDataset) -> str:
     path = f"{pd.name}.{pd.digest}.txt"
-    if not os.path.isfile(path):
+    if os.path.isfile(path):
+        print(f"reusing existing file '{path}'")
+    else:
+        print(f"creating file '{path}'")
         ds.to_csv(
             path,
             columns=["text"],
             index=False,
             header=False,
+            quoting=None,
+            lineterminator="\n",
         )
 
     return path
@@ -40,7 +44,6 @@ def to_csv(ds: Dataset, pd: PandasDataset) -> str:
 
 def train_supervised(
     label_dict: dict[int, str],
-    executor: ThreadPoolExecutor,
     dataset: HuggingFaceDataset,
     **kwargs,
 ):
@@ -49,61 +52,31 @@ def train_supervised(
     jobs = []
 
     seed = kwargs.get("seed")
-    stratify = kwargs.get("stratify", True)
-    train_size = kwargs.get("train_size", 0.8)
     shuffle = kwargs.get("shuffle", True)
 
-    if stratify:
-        for label_index, label_name in label_dict.items():
-            label_column_name = f"label_{label_index}"
+    print("preparing split for all labels")
+    ds_dict = dataset.ds.train_test_split(train_size=0.97, seed=seed, shuffle=shuffle)
+    for label_index, label_name in label_dict.items():
+        label_column_name = f"label_{label_index}"
 
-            print(f"preparing train and test slices for label {label_name}")
-            ds = slice_for_label(dataset.ds, label_column_name)
+        print(f"preparing train split for label {label_name}")
+        ds_train = slice_for_label(ds_dict["train"], label_column_name)
 
-            print(f"scheduled train and test split for label {label_name}")
-            dataset_dict_future = executor.submit(
-                lambda: ds.train_test_split(
-                    train_size=train_size,
-                    seed=seed,
-                    shuffle=True,
-                    stratify_by_column="label",
-                )
-            )
-
-            jobs.append(
-                {
-                    "label_index": label_index,
-                    "label_name": label_name,
-                    "dataset_dict_future": dataset_dict_future,
-                }
-            )
-
-    else:
-        print("preparing split for all labels")
-        ds_dict = dataset.ds.train_test_split(
-            train_size=train_size, seed=seed, shuffle=shuffle
+        print(f"preparing test split for label {label_name}")
+        ds_test = slice_for_label(ds_dict["test"], label_column_name)
+        dataset_dict = DatasetDict(
+            {
+                "train": ds_train,
+                "test": ds_test,
+            }
         )
-        for label_index, label_name in label_dict.items():
-            label_column_name = f"label_{label_index}"
-
-            print(f"preparing train split for label {label_name}")
-            ds_train = slice_for_label(ds_dict["train"], label_column_name)
-
-            print(f"preparing test split for label {label_name}")
-            ds_test = slice_for_label(ds_dict["test"], label_column_name)
-            dataset_dict = DatasetDict(
-                {
-                    "train": ds_train,
-                    "test": ds_test,
-                }
-            )
-            jobs.append(
-                {
-                    "label_index": label_index,
-                    "label_name": label_name,
-                    "dataset_dict": dataset_dict,
-                }
-            )
+        jobs.append(
+            {
+                "label_index": label_index,
+                "label_name": label_name,
+                "dataset_dict": dataset_dict,
+            }
+        )
 
     eval_jobs = []
 
@@ -128,10 +101,8 @@ def train_supervised(
         train_path = to_csv(ds_train, pd_train)
         test_path = to_csv(ds_test, pd_test)
 
-        experiment_name = f"ECHO AI Supervised for '{label_name}'"
-        print(f"starting experiment {experiment_name}")
-        mlflow.set_experiment(experiment_name)
-        with mlflow.start_run() as run:
+        tags = {"label": label_name, "model": "supervised"}
+        with mlflow.start_run(nested=True, tags=tags) as run:
             print(f"starting training for {label_name}")
 
             if fasttext_kwargs.get("autotuneMetric"):
@@ -173,13 +144,11 @@ def train_supervised(
         results_test = [item["test"] for item in results_per_split]
         results_train = [item["train"] for item in results_per_split]
 
-        mlflow.set_experiment("ECHO AI Supervised")
-        with mlflow.start_run():
-            labels = list(label_dict.values())
-            plot_precision_recall(labels, "test", results_test)
-            plot_threshold_recall(labels, "test", results_test)
-            plot_precision_recall(labels, "train", results_train)
-            plot_threshold_recall(labels, "train", results_train)
+        labels = list(label_dict.values())
+        plot_precision_recall(labels, "test", results_test)
+        plot_threshold_recall(labels, "test", results_test)
+        plot_precision_recall(labels, "train", results_train)
+        plot_threshold_recall(labels, "train", results_train)
 
 
 def process_evalute_job(job):

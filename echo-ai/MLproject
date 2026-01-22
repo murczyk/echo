@@ -7,6 +7,11 @@ entry_points:
     parameters:
       data_file: path
     command: "python src/embeddings.py {data_file}"
+  supervised:
+    parameters:
+      data_file: path
+      args: {type: path, default: "supervised.args"}
+    command: "python src/supervised.py {data_file} @{args}"
   unsupervised:
     parameters:
       data_file: path
