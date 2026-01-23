@@ -1,5 +1,4 @@
 import { postJson } from './client';
-
 export type RestartEchoPayload = {
   restartPostgres: boolean;
   restartOutdatedSources: boolean;

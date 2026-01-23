@@ -720,7 +720,6 @@ fn is_valid_identifier(tag: &str) -> bool {
     }
     chars.all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '$')
 }
-
 #[derive(Copy, Clone)]
 enum TypeFormat {
     Inline,

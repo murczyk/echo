@@ -1392,7 +1392,6 @@ export type CreateSigintKeySharePolicyReq = {
 export type DeleteSigintKeySharePolicyReq = {
   id: number;
 };
-
 export type Tag = {
   label: string;
   extra: boolean | null;
@@ -2533,4 +2532,3 @@ export type ListAreasOfResponsibilitySortBy =
 export type ListAreasOfResponsibilityReq = {
   sortBy: ListAreasOfResponsibilitySortBy | null;
 };
-
