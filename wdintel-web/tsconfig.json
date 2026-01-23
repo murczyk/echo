@@ -16,6 +16,7 @@
     "noEmit": true,
     "experimentalDecorators": true,
     "useDefineForClassFields": false,
+    "jsx": "react-jsx",
   },
   "include": [
     "src/interop.ts",                             // Include all TypeScript files in the src directory

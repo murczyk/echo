@@ -55,6 +55,7 @@ pub mod storage;
 pub mod tags;
 pub mod terminal;
 pub mod tests;
+pub mod ts;
 pub mod types;
 pub mod unit;
 pub mod users;
@@ -490,6 +491,7 @@ pub struct BackupPs {
 enum Cmd {
     Server(ServerPs),
     GenElm,
+    GenTs,
     #[command(visible_alias = "migration")]
     Migrate,
     ExportUnit(ExportUnitPs),
@@ -791,6 +793,7 @@ async fn async_main(
         Cmd::OneoffTestKml => kml::main_test_kml(mode),
         Cmd::OneoffTestXmlLib => atak::main_test_xml_lib(mode),
         Cmd::GenElm => elm::main_gen_elm(),
+        Cmd::GenTs => ts::main_gen_ts(),
         Cmd::OneoffPrintDescriptionIconTitle => {
             kml::oneoff_print_description_icon_title(mode)
         }

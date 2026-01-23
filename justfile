@@ -116,11 +116,14 @@ gen-seaorm:
     python3 deploy/patch_seaorm.py
     just fmt
 
-gen-front: gen-elm
+gen-front: gen-elm gen-ts
 
 gen-elm:
     (cd wdintel-rs && cargo run -- --mode=debug gen-elm)
     elm-format --yes wdintel-web/src/Bindings.elm
+
+gen-ts:
+    (cd wdintel-rs && cargo run -- --mode=debug gen-ts)
 
 test-fe:
     #!/bin/bash
