@@ -22,6 +22,8 @@ import './ts/web-components/modal-dialog.ts'
 import './ts/web-components/bar-chart-2.ts'
 import './ts/web-components/small-map.ts'
 import './ts/web-components/floating-popup.ts'
+import './ts/react/aor-neo-element'
+import './ts/react/aor-neo-form-element'
 import './ts/react/control-panel-neo-element'
 import './ts/react/messanger-neo-element'
 import { saveRerAnalysisQueryState } from "./ts/rer-analysis-query-state"
