@@ -1,3 +1,5 @@
+import { postJson } from './client';
+
 export type RestartEchoPayload = {
   restartPostgres: boolean;
   restartOutdatedSources: boolean;
@@ -15,43 +17,10 @@ function toRestartEchoRequestBody(payload: RestartEchoPayload): RestartEchoReque
   };
 }
 
-async function parseErrorMessage(response: Response): Promise<string> {
-  const contentType = response.headers.get('content-type') || '';
-
-  if (contentType.includes('application/json')) {
-    try {
-      const data = await response.json();
-      if (typeof data === 'string') return data;
-      if (data && typeof data === 'object') {
-        const knownMessage = data.error || data.message || data.detail;
-        if (typeof knownMessage === 'string' && knownMessage.trim().length > 0) return knownMessage;
-        return JSON.stringify(data);
-      }
-    } catch (_) {
-      // fall through to text
-    }
-  }
-
-  const text = await response.text();
-  if (text.trim().length > 0) return text;
-
-  return response.statusText || `HTTP ${response.status}`;
+export async function restartEcho(payload: RestartEchoPayload): Promise<boolean> {
+  return postJson<boolean>('/api/admin/restart-echo', toRestartEchoRequestBody(payload));
 }
 
-export async function restartEcho(payload: RestartEchoPayload): Promise<boolean> {
-  const response = await fetch('/api/admin/restart-echo', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    credentials: 'include',
-    body: JSON.stringify(toRestartEchoRequestBody(payload)),
-  });
-
-  if (!response.ok) {
-    const message = await parseErrorMessage(response);
-    throw new Error(message);
-  }
-
-  return (await response.json()) as boolean;
+export async function restartDatasource(datasourceId: number): Promise<boolean> {
+  return postJson<boolean>('/api/admin/restart-datasource', datasourceId);
 }

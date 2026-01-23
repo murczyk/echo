@@ -179,15 +179,15 @@ export type NetworkLink = {
 };
 
 export type Node =
-  | { NFolder: Folder }
-  | { NDocument: Document }
-  | { NPlacemark: Placemark }
-  | { NNetworkLink: NetworkLink }
-  | { NStyle: Style }
-  | { NStyleMap: StyleMap }
-  | { NAuthor: Author }
-  | { AtomLink: AtomLinkData }
-  | { NCascadingStyle: CascadingStyle }
+  | { Folder: Folder }
+  | { Document: Document }
+  | { Placemark: Placemark }
+  | { NetworkLink: NetworkLink }
+  | { Style: Style }
+  | { StyleMap: StyleMap }
+  | { author: Author }
+  | { link: AtomLinkData }
+  | { CascadingStyle: CascadingStyle }
 ;
 
 export type Kml = {
@@ -374,8 +374,8 @@ export type InboxMessageTag = {
 };
 
 export type InboxMessagesSortBy =
-  | 'ImsDatetime'
-  | 'ImsTimestamp'
+  | 'IMSDatetime'
+  | 'IMSTimestamp'
 ;
 
 export type TagFilterOption =
@@ -1105,11 +1105,11 @@ export type CnHighlight = {
 };
 
 export type ContentNode =
-  | { CnTextC: CnText }
-  | 'CnNewlineC'
-  | { CnCallsignC: CnCallsign }
-  | { CnHighlightC: CnHighlight }
-  | { CnSignalC: CnSignal }
+  | { CNTextC: CnText }
+  | 'CNNewlineC'
+  | { CNCallsignC: CnCallsign }
+  | { CNHighlightC: CnHighlight }
+  | { CNSignalC: CnSignal }
 ;
 
 export type CnSignal = {
@@ -2346,12 +2346,12 @@ export type ZoneDatasourceGroupAddRsp = {
 };
 
 export type EventType =
-  | 'EtGeneric'
-  | 'EtNetworkChanged'
-  | 'EtCallsignChanged'
-  | 'EtSignalChanged'
-  | 'EtUnitChanged'
-  | { EtInboxChanged: number }
+  | 'ETGeneric'
+  | 'ETNetworkChanged'
+  | 'ETCallsignChanged'
+  | 'ETSignalChanged'
+  | 'ETUnitChanged'
+  | { ETInboxChanged: number }
 ;
 
 export type EventMsg = {

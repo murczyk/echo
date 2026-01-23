@@ -9,9 +9,11 @@ const packagesToPatch = [
   '@mui/system',
   '@mui/utils',
   '@mui/icons-material',
+  '@mui/x-date-pickers',
   '@mui/private-theming',
   '@mui/styled-engine',
   '@mui/styled-engine-sc',
+  'material-react-table',
 ];
 
 const directiveVariants = new Set(["'use client';", '"use client";']);

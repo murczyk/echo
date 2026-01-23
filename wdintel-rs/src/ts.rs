@@ -1,4 +1,5 @@
 use crate::types::*;
+use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
 enum TypeDef {
@@ -15,6 +16,7 @@ enum TypeDef {
 #[derive(Debug, Clone)]
 struct Variant {
     name: String,
+    tag: String,
     args: Vec<TypeExpr>,
 }
 
@@ -120,6 +122,7 @@ fn parse_bindings(contents: &str) -> anyhow::Result<Vec<TypeDef>> {
         index += 1;
     }
 
+    apply_union_tags(&lines, &mut defs);
     Ok(defs)
 }
 
@@ -239,7 +242,8 @@ fn parse_union_type(
             .map(|part| parse_type_expr_from_str(&part))
             .collect::<anyhow::Result<Vec<_>>>()?;
         variants.push(Variant {
-            name: variant_name,
+            name: variant_name.clone(),
+            tag: variant_name,
             args,
         });
 
@@ -374,6 +378,202 @@ fn parse_atom(stream: &mut TokenStream) -> anyhow::Result<TypeExpr> {
     }
 }
 
+fn apply_union_tags(lines: &[&str], defs: &mut [TypeDef]) {
+    for def in defs.iter_mut() {
+        let (name, variants) = match def {
+            TypeDef::Union { name, variants } => (name.as_str(), variants),
+            _ => continue,
+        };
+        let tag_map = parse_union_encoder_tags(lines, name);
+        if tag_map.is_empty() {
+            continue;
+        }
+        for variant in variants.iter_mut() {
+            if let Some(tag) = tag_map.get(&variant.name) {
+                variant.tag = tag.to_string();
+            }
+        }
+    }
+}
+
+fn parse_union_encoder_tags(
+    lines: &[&str],
+    union_name: &str,
+) -> HashMap<String, String> {
+    let encoder_name = format!("{}Encoder", lower_first(union_name));
+    let signature =
+        format!("{encoder_name} : {union_name} -> Json.Encode.Value");
+    let signature_index =
+        match lines.iter().position(|line| line.trim() == signature) {
+            Some(index) => index,
+            None => return HashMap::new(),
+        };
+    let definition_index = match find_encoder_definition_index(
+        lines,
+        signature_index + 1,
+        &encoder_name,
+    ) {
+        Some(index) => index,
+        None => return HashMap::new(),
+    };
+    let case_index = match find_case_index(lines, definition_index + 1) {
+        Some(index) => index,
+        None => return HashMap::new(),
+    };
+    parse_case_variant_tags(lines, case_index + 1)
+}
+
+fn lower_first(value: &str) -> String {
+    let mut chars = value.chars();
+    match chars.next() {
+        Some(first) => {
+            first.to_lowercase().collect::<String>() + chars.as_str()
+        }
+        None => String::new(),
+    }
+}
+
+fn find_encoder_definition_index(
+    lines: &[&str],
+    start: usize,
+    encoder_name: &str,
+) -> Option<usize> {
+    let needle = format!("{encoder_name} ");
+    for (offset, line) in lines.iter().enumerate().skip(start) {
+        let trimmed = line.trim();
+        if trimmed.starts_with(&needle) {
+            return Some(offset);
+        }
+        if trimmed.starts_with("type ") || trimmed.starts_with("type alias ") {
+            break;
+        }
+    }
+    None
+}
+
+fn find_case_index(lines: &[&str], start: usize) -> Option<usize> {
+    for (offset, line) in lines.iter().enumerate().skip(start) {
+        let trimmed = line.trim();
+        if trimmed.starts_with("case ") && trimmed.ends_with(" of") {
+            return Some(offset);
+        }
+        if trimmed.starts_with("type ") || trimmed.starts_with("type alias ") {
+            break;
+        }
+    }
+    None
+}
+
+fn parse_case_variant_tags(
+    lines: &[&str],
+    start: usize,
+) -> HashMap<String, String> {
+    let mut index = start;
+    let mut tag_map = HashMap::new();
+
+    while index < lines.len() {
+        let line = lines[index];
+        if line.trim().is_empty() {
+            index += 1;
+            continue;
+        }
+        if leading_spaces(line) < 8 {
+            break;
+        }
+        if let Some((variant_name, remainder)) = parse_variant_line(line) {
+            let mut block_lines = Vec::new();
+            if !remainder.is_empty() {
+                block_lines.push(remainder);
+            }
+            index += 1;
+            while index < lines.len() {
+                let next_line = lines[index];
+                if next_line.trim().is_empty() {
+                    block_lines.push(String::new());
+                    index += 1;
+                    continue;
+                }
+                if leading_spaces(next_line) < 8 {
+                    break;
+                }
+                if parse_variant_line(next_line).is_some() {
+                    break;
+                }
+                block_lines.push(next_line.trim().to_string());
+                index += 1;
+            }
+            if let Some(tag) = extract_tag_from_block(&block_lines) {
+                tag_map.insert(variant_name, tag);
+            }
+            continue;
+        }
+        index += 1;
+    }
+
+    tag_map
+}
+
+fn parse_variant_line(line: &str) -> Option<(String, String)> {
+    let trimmed = line.trim();
+    if !trimmed.contains("->") {
+        return None;
+    }
+    let mut parts = trimmed.splitn(2, "->");
+    let left = parts.next()?.trim();
+    let right = parts.next().unwrap_or("").trim();
+    let variant_name = left.split_whitespace().next()?;
+    Some((variant_name.to_string(), right.to_string()))
+}
+
+fn leading_spaces(line: &str) -> usize {
+    line.chars().take_while(|ch| *ch == ' ').count()
+}
+
+fn extract_tag_from_block(lines: &[String]) -> Option<String> {
+    for line in lines {
+        if let Some(tag) = extract_tag_from_string_encoder(line) {
+            return Some(tag);
+        }
+    }
+    for line in lines {
+        if let Some(tag) = extract_string_literal(line) {
+            return Some(tag);
+        }
+    }
+    None
+}
+
+fn extract_tag_from_string_encoder(line: &str) -> Option<String> {
+    let marker = "Json.Encode.string";
+    let pos = line.find(marker)?;
+    extract_string_literal(&line[pos + marker.len()..])
+}
+
+fn extract_string_literal(line: &str) -> Option<String> {
+    let mut chars = line.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch != '"' {
+            continue;
+        }
+        let mut value = String::new();
+        while let Some(next) = chars.next() {
+            if next == '"' {
+                return Some(value);
+            }
+            if next == '\\' {
+                if let Some(escaped) = chars.next() {
+                    value.push(escaped);
+                } else {
+                    break;
+                }
+            } else {
+                value.push(next);
+            }
+        }
+    }
+    None
+}
+
 fn parse_paren_expr(stream: &mut TokenStream) -> anyhow::Result<TypeExpr> {
     stream.expect_token(Token::LParen)?;
     let mut items = Vec::new();
@@ -483,11 +683,13 @@ fn render_union(name: &str, variants: &[Variant]) -> String {
 }
 
 fn render_variant(variant: &Variant) -> String {
+    let tag = variant.tag.as_str();
     if variant.args.is_empty() {
-        format!("'{}'", variant.name)
+        format!("'{}'", tag)
     } else if variant.args.len() == 1 {
         let arg = format_type(&variant.args[0], 0, TypeFormat::Inline);
-        format!("{{ {}: {} }}", variant.name, arg)
+        let key = render_object_key(tag);
+        format!("{{ {}: {} }}", key, arg)
     } else {
         let args = variant
             .args
@@ -495,8 +697,28 @@ fn render_variant(variant: &Variant) -> String {
             .map(|arg| format_type(arg, 0, TypeFormat::Inline))
             .collect::<Vec<_>>()
             .join(", ");
-        format!("{{ {}: [{}] }}", variant.name, args)
+        let key = render_object_key(tag);
+        format!("{{ {}: [{}] }}", key, args)
     }
+}
+
+fn render_object_key(tag: &str) -> String {
+    if is_valid_identifier(tag) {
+        tag.to_string()
+    } else {
+        format!("\"{}\"", tag)
+    }
+}
+
+fn is_valid_identifier(tag: &str) -> bool {
+    let mut chars = tag.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    if !(first.is_ascii_alphabetic() || first == '_' || first == '$') {
+        return false;
+    }
+    chars.all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '$')
 }
 
 #[derive(Copy, Clone)]
