@@ -346,15 +346,11 @@ fn tokenize(value: &str) -> Vec<Token> {
 fn parse_type_expr(stream: &mut TokenStream) -> anyhow::Result<TypeExpr> {
     let mut atoms = Vec::new();
 
-    loop {
-        match stream.peek() {
-            Some(Token::Ident(_))
-            | Some(Token::LParen)
-            | Some(Token::LBrace) => {
-                atoms.push(parse_atom(stream)?);
-            }
-            _ => break,
-        }
+    while let Some(Token::Ident(_))
+    | Some(Token::LParen)
+    | Some(Token::LBrace) = stream.peek()
+    {
+        atoms.push(parse_atom(stream)?);
     }
 
     if atoms.is_empty() {
