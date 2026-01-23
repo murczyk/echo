@@ -2,7 +2,6 @@ import argparse
 import multiprocessing
 import os
 import sys
-from concurrent.futures import ThreadPoolExecutor
 
 import mlflow
 

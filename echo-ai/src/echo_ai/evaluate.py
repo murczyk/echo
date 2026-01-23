@@ -1,4 +1,3 @@
-import os
 from typing import Any
 
 import matplotlib.pyplot as plt
@@ -36,6 +35,8 @@ def evaluate_model(label_name: str, model_uri: str, split_csv: dict[str, str]):
     results = _do_evaluate_model(label_name, model, fasttext_model, split_csv)
     labels = [label_name]
     plot_precision_recall(labels, "test", [results["test"]])
+    plot_precision_recall(labels, "train", [results["train"]])
+    plot_threshold_recall(labels, "test", [results["test"]])
     plot_threshold_recall(labels, "train", [results["train"]])
     return results
 
