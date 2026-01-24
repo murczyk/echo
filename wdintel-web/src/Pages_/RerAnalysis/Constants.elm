@@ -51,3 +51,6 @@ reportTemplateToString x =
 
         RTDigest ->
             "digest"
+
+        RTRerReport ->
+            "rer_report"

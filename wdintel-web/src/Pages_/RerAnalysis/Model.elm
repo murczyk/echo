@@ -1,5 +1,6 @@
 module Pages_.RerAnalysis.Model exposing (FilterName(..), GroupsActivityPeriod(..), MenuTab(..), Model, ReportTemplate(..), SendersType(..))
 
+
 import Bindings as B
 import Core.Types exposing (ApiError, GroupsActivityPerDayRsp)
 import Dict exposing (Dict)
@@ -183,6 +184,7 @@ type ReportTemplate
     | RTSenders SendersType
     | RTReo
     | RTDigest
+    | RTRerReport
 
 
 type FilterName

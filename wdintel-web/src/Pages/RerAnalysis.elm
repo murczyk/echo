@@ -3101,6 +3101,9 @@ update user shared route msg model =
                         RTDigest ->
                             "docx"
 
+                        RTRerReport ->
+                            "docx"
+
                 -- filename like "report_2023-07-17-12-00_2023-07-18-12-00"
                 fname =
                     "report_"
@@ -3520,6 +3523,9 @@ reportTemplateToApiType model template =
 
         RTDigest ->
             Just B.Digest
+
+        RTRerReport ->
+            Nothing
 
 
 

@@ -26,6 +26,7 @@ mod senders;
 pub mod tag;
 pub mod types;
 mod util;
+mod rer_report;
 
 pub(crate) async fn cleanup_old_reports_nofail(
     dbx: &DatabaseConnection,
@@ -189,6 +190,16 @@ pub async fn report_docx(
             .c(h!())?;
     } else if req.kind == "posts_docx" {
         self::posts::report_docx_kind_posts(user, &env, &req, &outpath)
+            .await
+            .c(h!())?;
+    } else if req.kind == "rer_report" {
+        crate::users::has_any_role(
+            &env.dbx,
+            &user.id().c(h!())?,
+            vec!["UnitsEditor", "CallsignsEditor", "Admin"],
+        )
+            .await?;
+        self::rer_report::report_docx_kind_rer_report(user, &env, &req, &outpath)
             .await
             .c(h!())?;
     } else {

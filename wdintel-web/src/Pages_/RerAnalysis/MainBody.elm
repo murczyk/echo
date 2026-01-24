@@ -557,6 +557,11 @@ view user model shared route =
                     (ReportTemplateSelect RTDigest)
                     "Дайджест"
                     "Для генерування потрібні права редактора чи адміна"
+                , templateCard
+                    (model.reportTemplate == RTRerReport)
+                    (ReportTemplateSelect RTRerReport)
+                    "РЕР репорт"
+                    "Для генерування потрібні права редактора чи адміна"
                 ]
             -- Add adjacent-freqs range selector when RTReo is chosen
             , HtmlX.viewIf (model.reportTemplate == RTReo) <|
