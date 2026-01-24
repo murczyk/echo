@@ -23,7 +23,7 @@ entry_points:
       autotuneMetric: { type: string, default: "precisionAtRecall:80:__label__1" }
       pretrainedVectors: { type: string, default: "pretrained.vec" }
       autotunePredictions: { type: int, default: 2 }
-      autotuneDuration: { type: int, default: 600 }
+      autotuneDuration: { type: int, default: 1800 }
       autotuneModelSize: { type: string, default: "128M" }
     command: >-
       python src/supervised.py {data_file} --dim {dim} --epoch {epoch} --wordNgrams {wordNgrams} --pretrainedVectors {pretrainedVectors}
