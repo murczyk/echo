@@ -807,6 +807,7 @@ def main(
     stat_only_dirs = ["/etc", "/usr"]
     candidate_dirs = [
         "/etc/ssh",
+        "/etc/echo",
         "/etc/nginx",
         "/etc/letsencrypt",
         "/var/lib/letsencrypt",
