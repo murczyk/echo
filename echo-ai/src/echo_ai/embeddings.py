@@ -34,13 +34,15 @@ def train_embeddings(
         m = LogisticRegression(class_weight="balanced")
         run_tags = {
             "label": label_name,
-            "model": "embeddings",
+            "task": "embeddings",
             "estimator": type(m).__name__,
         }
         with mlflow.start_run(nested=True, tags=run_tags):
             y_train = ds_train[key].to_numpy()
             m.fit(x_train, y_train)
-            mlflow.log_params(m.get_params(deep=True))
+            params = m.get_params(deep=True)
+            params["label_name"] = label_name
+            mlflow.log_params(params)
             model_info = sklearn.log_model(m, name=f"embeddings-{label_name}")
             y_test = ds_test[key].to_numpy()
 

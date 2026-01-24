@@ -151,7 +151,7 @@ def train_supervised(
         train_path = to_csv(temp_dir, rel_train, pd_train)
         test_path = to_csv(temp_dir, rel_test, pd_test)
 
-        tags = {"label": label_name, "model": "supervised"}
+        tags = {"label": label_name, "task": "supervised"}
         with mlflow.start_run(nested=True, tags=tags) as run:
             print(f"starting training for {label_name}")
 
@@ -171,6 +171,7 @@ def train_supervised(
 
             model_params = get_model_params(fasttext_model)
             print(f"params: {model_params}")
+            model_params["label_name"] = label_name
             mlflow.log_params(model_params)
 
             name = f"supervised-{label_name}"

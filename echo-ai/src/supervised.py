@@ -96,7 +96,7 @@ def main() -> None:
     if pretrained_vectors:
         resolve_pretrain(pretrained_vectors, args)
 
-    tags = {"label": "supervised", "model": "supervised"}
+    tags = {"task": "supervised"}
     print("starting training for supervised model")
     with mlflow.start_run(tags=tags) as run:
         print(f"run {run.info.run_name}, id: {run.info.run_id}")

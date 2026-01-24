@@ -35,7 +35,7 @@ def main():
     parser.add_argument("data_file", type=str)
     args = vars(parser.parse_args())
 
-    tags = {"label": "embeddings", "model": "embeddings"}
+    tags = {"task": "embeddings"}
     print("starting training for embeddings model")
     with mlflow.start_run(tags=tags) as run:
         print(f"run {run.info.run_name}, id: {run.info.run_id}")

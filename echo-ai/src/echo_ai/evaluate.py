@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 from fasttext.FastText import _FastText
 from mlflow.data.pandas_dataset import from_pandas
+from mlflow.data.sources import LocalArtifactDatasetSource
 from mlflow.entities.logged_model_input import LoggedModelInput
 from mlflow.pyfunc import PyFuncModel
 from sklearn.metrics import average_precision_score, precision_recall_curve
@@ -32,8 +33,7 @@ def run_evaluate_model(
 def evaluate_model(label_name: str, model_uri: str, split_csv: dict[str, str]):
     model = mlflow.pyfunc.load_model(model_uri)
     mlflow.set_active_model(model_id=model.model_id)
-    fasttext_model = model.get_raw_model()
-    results = _do_evaluate_model(label_name, model, fasttext_model, split_csv)
+    results = _do_evaluate_model(label_name, model, split_csv)
     labels = [label_name]
     plot_precision_recall(labels, "test", [results["test"]])
     plot_precision_recall(labels, "train", [results["train"]])
@@ -45,11 +45,11 @@ def evaluate_model(label_name: str, model_uri: str, split_csv: dict[str, str]):
 def _do_evaluate_model(
     label_name: str,
     model: PyFuncModel,
-    fasttext_model: _FastText,
     split_csv: dict[str, str],
     target_recall=0.8,
 ) -> dict[str, Any]:
     results = {}
+    fasttext_model = model.get_raw_model()
     for split, dataset_path in split_csv.items():
         print(
             f"evaluating model for label {label_name} split {split} on with '{dataset_path}'"
@@ -71,7 +71,7 @@ def _do_evaluate_model(
 
         mask = np.argwhere(recall >= target_recall)
         pred_threshold = np.max(threshold[mask])
-        y_pred = np.where(y_score > pred_threshold, 1, 0)
+        y_pred = np.where(y_score > pred_threshold, 1.0, 0.0)
 
         metrics = {
             "ap": ap,
@@ -80,16 +80,22 @@ def _do_evaluate_model(
             "threshold_at_recall": pred_threshold,
         }
         plot_data = {
-            # "y_true": y_true,
-            # "y_score": y_score,
-            # "y_pred": y_pred,
             "recall": recall,
             "precision": precision,
             "threshold": threshold,
         }
         results[split] = {"metrics": metrics, "plot_data": plot_data}
+        if split == "train":
+            continue
 
-        df = pd.DataFrame({"label": y_true, "y_pred": y_pred})
+        df = pd.DataFrame(
+            {
+                "y_true": pd.Categorical(y_true, categories=[0.0, 1.0], copy=False),
+                "y_pred": pd.Categorical(y_pred, categories=[0.0, 1.0], copy=False),
+            },
+            copy=False,
+        )
+        df.info(verbose=True)
         dataset_name = f"{label_name}.{split}"
         dataset_digest = (
             Path(dataset_path).stem.replace(f"{dataset_name}.", "").replace(".txt", "")
@@ -98,9 +104,9 @@ def _do_evaluate_model(
         dataset = from_pandas(
             df,
             name=dataset_name,
-            source=dataset_path,
+            source=LocalArtifactDatasetSource(dataset_path),
             digest=dataset_digest,
-            targets="label",
+            targets="y_true",
             predictions="y_pred",
         )
 

@@ -25,6 +25,8 @@ def _patched_extract_predict_fns(model: PyFuncModel | None):
     if model and predict_proba_fn is None:
         model_predict_fn = model._predict_fn
         signature = model_predict_fn.__func__
+        print(f"model: {model}")
+        print(f"signature: {signature}")
 
         if signature is FastTextPythonModel.predict:
 
