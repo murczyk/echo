@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Any
 
 import matplotlib.pyplot as plt
@@ -90,8 +91,8 @@ def _do_evaluate_model(
 
         df = pd.DataFrame({"label": y_true, "y_pred": y_pred})
         dataset_name = f"{label_name}.{split}"
-        dataset_digest = dataset_path.replace(f"{dataset_name}.", "").replace(
-            ".txt", ""
+        dataset_digest = (
+            Path(dataset_path).stem.replace(f"{dataset_name}.", "").replace(".txt", "")
         )
 
         dataset = from_pandas(

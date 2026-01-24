@@ -629,11 +629,12 @@ setup-py:
 
 ai-mlflow-train task data_file *flags:
     #!/bin/bash
-    cd echo-ai
+    pushd echo-ai > /dev/null
     set -a && . .env && set +a
     [[ -d .venv ]] || uv venv --relocatable
     . .venv/bin/activate
-    uv run -- "src/{{ task }}.py" {{ flags }} "{{ data_file }}"
+    popd > /dev/null
+    uv run --project echo-ai -- "echo-ai/src/{{ task }}.py" {{ flags }} "{{ data_file }}"
 
 ai-mlflow-gc:
     #!/bin/bash

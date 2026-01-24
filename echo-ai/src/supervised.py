@@ -2,10 +2,12 @@ import argparse
 import multiprocessing
 import os
 import sys
+import tempfile
 
+import duckdb
 import mlflow
 
-from echo_ai.loader import LABEL_DICT, load_parquet
+from echo_ai.loader import LABEL_DICT
 from echo_ai.supervised import train_supervised
 
 
@@ -42,13 +44,7 @@ def resolve_pretrain(pretrained_vectors, args):
 
 
 def real_main(args):
-    dataset = load_parquet(
-        LABEL_DICT,
-        args["data_file"],
-        embeddings=False,
-        unsupervised=False,
-    )
-
+    data_file = args["data_file"]
     label_list = args["labels"]
     label_dict = {}
     if label_list:
@@ -62,11 +58,10 @@ def real_main(args):
     label_list = list(label_dict.values())
 
     print(f"starting training for labels: {label_list}")
-    pretrained_vectors = args.get("pretrainedVectors")
-    if pretrained_vectors:
-        resolve_pretrain(pretrained_vectors, args)
 
-    train_supervised(label_dict, dataset, **args)
+    with tempfile.TemporaryDirectory() as temp_dir:
+        with duckdb.connect() as con:
+            train_supervised(temp_dir, label_dict, data_file, con, args)
 
 
 def main() -> None:
@@ -96,6 +91,10 @@ def main() -> None:
     parser.add_argument("-l", "--labels", action="extend", nargs=1, required=False)
     parser.add_argument("data_file", type=str)
     args = vars(parser.parse_args())
+
+    pretrained_vectors = args.get("pretrainedVectors")
+    if pretrained_vectors:
+        resolve_pretrain(pretrained_vectors, args)
 
     tags = {"label": "supervised", "model": "supervised"}
     print("starting training for supervised model")

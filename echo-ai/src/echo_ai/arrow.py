@@ -2,17 +2,26 @@ from typing import cast
 
 import numpy as np
 import pandas as pd
+import pandas.util
 import pyarrow as pa
 from datasets import Dataset
+from mlflow.data.pandas_dataset import compute_pandas_digest
 
 
 def to_pandas_df(dataset: Dataset | pa.Table) -> pd.DataFrame:
-    if isinstance(dataset, pa.Table):
-        arrow_table = cast(pa.Table, dataset)
-    else:
+    if isinstance(dataset, Dataset):
         arrow_table = cast(pa.Table, dataset.with_format("arrow")[:])  # pyright: ignore
+    else:
+        arrow_table = cast(pa.Table, dataset)
 
     return arrow_table.to_pandas(types_mapper=pd.ArrowDtype)
+
+
+def digest(df: pd.DataFrame) -> str:
+    slice = df.head(10000)
+    hash = pandas.util.hash_pandas_object(slice)
+    input = pd.DataFrame({"hash": hash}, copy=False)
+    return compute_pandas_digest(input)
 
 
 def to_numpy_matrix(s: pd.Series, zero_copy_only=True) -> np.ndarray:

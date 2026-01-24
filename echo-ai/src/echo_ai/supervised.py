@@ -1,14 +1,16 @@
+import datetime
 import multiprocessing
-import os
+import sys
+from typing import cast
 
 import fasttext
 import mlflow
-from datasets import Dataset, DatasetDict
-from mlflow.data.huggingface_dataset import HuggingFaceDataset
-from mlflow.data.pandas_dataset import PandasDataset, from_pandas
+from duckdb import DuckDBPyConnection, DuckDBPyRelation
+from mlflow.data.dataset import Dataset
+from mlflow.data.pandas_dataset import from_pandas
 from mlflow.entities.logged_model_input import LoggedModelInput
 
-from echo_ai import utils
+from echo_ai import arrow, quack
 from echo_ai.evaluate import (
     plot_precision_recall,
     plot_threshold_recall,
@@ -21,60 +23,102 @@ from .fasttext_model import (
     get_training_args,
     log_model,
 )
-from .loader import slice_for_label
 
 
-def to_csv(ds: Dataset, pd: PandasDataset) -> str:
-    path = f"{pd.name}.{pd.digest}.txt"
-    if os.path.isfile(path):
-        print(f"reusing existing file '{path}'")
-    else:
-        print(f"creating file '{path}'")
-        ds.to_csv(
-            path,
-            columns=["text"],
-            index=False,
-            header=False,
-            quoting=None,
-            lineterminator="\n",
-        )
+def to_csv(temp_dir: str, rel: DuckDBPyRelation, dataset: Dataset) -> str:
+    path = f"{temp_dir}/{dataset.name}.{dataset.digest}.txt"
+    print(f"creating file '{path}'")
+    rel.select("text").to_csv(
+        path,
+        header=False,
+        quoting=None,
+    )
 
     return path
 
 
-def train_supervised(
-    label_dict: dict[int, str],
-    dataset: HuggingFaceDataset,
-    **kwargs,
+def define_train_test_split(
+    con: DuckDBPyConnection, file: str, seed: int, shuffle: bool
 ):
-    fasttext_kwargs = get_training_args(SUPERVISED_ARGS, **kwargs)
+    result = con.query(f"select max(__created_at) from {file}").fetchone()
+    if not result:
+        print("input file is empty")
+        sys.exit(1)
+
+    (created_at_max,) = result
+    last_week = cast(datetime.datetime, created_at_max) - datetime.timedelta(weeks=1)
+    print(f"splitting train and test at '{last_week}'")
+
+    if shuffle:
+        quack.define_sql_view(
+            con,
+            "train",
+            f"select * exclude(file_row_number) from {file} where __created_at < '{last_week}' order by hash(__id + {seed})",
+        )
+        quack.define_sql_view(
+            con,
+            "test",
+            f"select * exclude(file_row_number) from {file} where __created_at >= '{last_week}' order by hash(__id + {seed})",
+        )
+    else:
+        quack.define_sql_view(
+            con,
+            "train",
+            f"select * exclude(file_row_number) from {file} where __created_at < '{last_week}'",
+        )
+        quack.define_sql_view(
+            con,
+            "test",
+            f"select * exclude(file_row_number) from {file} where __created_at >= '{last_week}'",
+        )
+
+
+def define_slice_for_label(con: DuckDBPyConnection, split: str, label_column_name: str):
+    regex = r"[\pL\pN'’ʼ]+"
+    return quack.define_sql_view(
+        con,
+        f"split_{split}_{label_column_name}",
+        f"""
+    SELECT
+        '__label__' || {label_column_name}::int || ' ' || array_to_string(regexp_extract_all(lower(text), $${regex}$$), ' ') AS text,
+        {label_column_name} AS label
+    FROM {split}
+    WHERE
+        {label_column_name} IS NOT NULL
+    """,
+    )
+
+
+def train_supervised(
+    temp_dir: str,
+    label_dict: dict[int, str],
+    data_file: str,
+    con: DuckDBPyConnection,
+    args,
+):
+    fasttext_kwargs = get_training_args(SUPERVISED_ARGS, **args)
+
+    file = con.from_parquet(data_file, file_row_number=True)
 
     jobs = []
 
-    seed = kwargs.get("seed")
-    shuffle = kwargs.get("shuffle", True)
+    seed = args.get("seed", 4507)
+    shuffle = args.get("shuffle", True)
 
     print("preparing split for all labels")
-    ds_dict = dataset.ds.train_test_split(train_size=0.97, seed=seed, shuffle=shuffle)
+    define_train_test_split(
+        con, quack.define_rel_view(file, "file"), seed=seed, shuffle=shuffle
+    )
     for label_index, label_name in label_dict.items():
         label_column_name = f"label_{label_index}"
-
-        print(f"preparing train split for label {label_name}")
-        ds_train = slice_for_label(ds_dict["train"], label_column_name)
-
-        print(f"preparing test split for label {label_name}")
-        ds_test = slice_for_label(ds_dict["test"], label_column_name)
-        dataset_dict = DatasetDict(
-            {
-                "train": ds_train,
-                "test": ds_test,
-            }
-        )
+        ds_train = define_slice_for_label(con, "train", label_column_name)
+        ds_test = define_slice_for_label(con, "test", label_column_name)
         jobs.append(
             {
                 "label_index": label_index,
                 "label_name": label_name,
-                "dataset_dict": dataset_dict,
+                "train": ds_train,
+                "test": ds_test,
             }
         )
 
@@ -84,22 +128,28 @@ def train_supervised(
         label_index = job["label_index"]
         label_name = job["label_name"]
 
-        if "dataset_dict" in job:
-            dataset_dict = job["dataset_dict"]
-        else:
-            print(f"waiting for train and test split for label {label_name}")
-            dataset_dict = job["dataset_dict_future"].result()
+        rel_train = con.view(job["train"])
+        df_train = quack.to_df_arrow(rel_train)
+        df_train.info(verbose=True)
+        pd_train = from_pandas(
+            df_train,
+            name=f"{label_name}.train",
+            digest=arrow.digest(df_train),
+            targets="label",
+        )
 
-        ds_train = dataset_dict["train"]
-        df_train = utils.to_pandas_df(ds_train)
-        pd_train = from_pandas(df_train, name=f"{label_name}.train", targets="label")
+        rel_test = con.view(job["test"])
+        df_test = quack.to_df_arrow(rel_test)
+        df_test.info(verbose=True)
+        pd_test = from_pandas(
+            df_test,
+            name=f"{label_name}.test",
+            digest=arrow.digest(df_test),
+            targets="label",
+        )
 
-        ds_test = dataset_dict["test"]
-        df_test = utils.to_pandas_df(ds_test)
-        pd_test = from_pandas(df_test, name=f"{label_name}.test", targets="label")
-
-        train_path = to_csv(ds_train, pd_train)
-        test_path = to_csv(ds_test, pd_test)
+        train_path = to_csv(temp_dir, rel_train, pd_train)
+        test_path = to_csv(temp_dir, rel_test, pd_test)
 
         tags = {"label": label_name, "model": "supervised"}
         with mlflow.start_run(nested=True, tags=tags) as run:

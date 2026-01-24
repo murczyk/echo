@@ -6,7 +6,7 @@ from mlflow import models, sklearn
 from mlflow.data.huggingface_dataset import HuggingFaceDataset
 from sklearn.linear_model import LogisticRegression
 
-from echo_ai import utils
+from echo_ai import arrow
 
 
 def train_embeddings(
@@ -16,16 +16,16 @@ def train_embeddings(
     ds = dataset.ds
 
     ds = ds.train_test_split(train_size=0.8)
-    ds_train = utils.to_pandas_df(ds["train"])
-    ds_test = utils.to_pandas_df(ds["test"])
+    ds_train = arrow.to_pandas_df(ds["train"])
+    ds_test = arrow.to_pandas_df(ds["test"])
 
     ds_train = ds_train.dropna()
     ds_test = ds_test.dropna()
 
     x_train = cast(pd.Series, ds_train["embeddings"])
-    x_train = utils.to_numpy_matrix(x_train)
+    x_train = arrow.to_numpy_matrix(x_train)
     x_test = cast(pd.Series, ds_test["embeddings"])
-    x_test = utils.to_numpy_matrix(x_test)
+    x_test = arrow.to_numpy_matrix(x_test)
 
     for label_index, label_name in label_dict.items():
         key = f"label_{label_index}"

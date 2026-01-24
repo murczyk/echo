@@ -9,7 +9,7 @@ from datasets import ClassLabel, Dataset, Features, List, Value
 from mlflow.data.huggingface_dataset import HuggingFaceDataset, from_huggingface
 from mlflow.data.sources import LocalArtifactDatasetSource
 
-from echo_ai import utils
+from echo_ai import arrow
 
 LABEL_DICT = {
     0: "переміщення",
@@ -36,19 +36,19 @@ def preprocess_batched(texts: list[str]):
 
 
 def text_not_empty(t: pa.Table, unsupervised: bool):
-    s = utils.to_pandas_series(t["text"])
+    s = arrow.to_pandas_series(t["text"])
 
     mask = s != ""
     if not unsupervised:
         l_count = pc.list_value_length(t["labels"])  # pyright: ignore
-        l_count_series = utils.to_pandas_series(l_count)
+        l_count_series = arrow.to_pandas_series(l_count)
         mask = mask & (l_count_series > 0)
 
     return pa.array(mask)
 
 
 def prepend_labels(t: pa.Table):
-    df = utils.to_pandas_df(t)
+    df = arrow.to_pandas_df(t)
     df.dropna(subset=["label"], inplace=True)
 
     label = df["label"]
