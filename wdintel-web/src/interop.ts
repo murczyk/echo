@@ -26,6 +26,9 @@ import './ts/react/aor-neo-element'
 import './ts/react/aor-neo-form-element'
 import './ts/react/control-panel-neo-element'
 import './ts/react/messanger-neo-element'
+import './ts/react/tags-neo-element'
+import './ts/react/tags-neo-edit-element'
+import './ts/react/tags-neo-keyword-edit-element'
 import { saveRerAnalysisQueryState } from "./ts/rer-analysis-query-state"
 import { setupCommentDraftTracker } from "./ts/comment-draft-tracker"
 

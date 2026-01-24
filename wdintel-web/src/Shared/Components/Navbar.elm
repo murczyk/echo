@@ -49,12 +49,13 @@ navBar user shared activeName props =
             [ Menu (Internal Route.Path.Admin) "zones" "напрямки"
             , Menu (Internal Route.Path.Admin_Users) "users" "користувачі"
             , Menu (Internal Route.Path.Admin_Organisms) "organisms" "організми"
-            , Menu (Internal Route.Path.Admin_Tags) "tags" "теги"
+            , Menu (Internal Route.Path.Admin_TagsNeo) "tags-neo" "теги"
             , Menu (Internal Route.Path.Admin_AorNeo) "aor-neo" "смуги"
-            , Menu (Internal Route.Path.AreasOfResponsibility) "areasOfResponsibility" "смуги (стара)"
             , Menu (Internal Route.Path.Admin_MessangerNeo) "messanger-neo" "месенджери"
-            , Menu (Internal Route.Path.Admin_Messanger) "messanger" "месенджери (стара)"
             , Menu (Internal Route.Path.Admin_ControlPanelNeo) "control-panel-neo" "панель керування"
+            , Menu (Internal Route.Path.Admin_Tags) "tags" "теги (стара)"
+            , Menu (Internal Route.Path.AreasOfResponsibility) "areasOfResponsibility" "смуги (стара)"
+            , Menu (Internal Route.Path.Admin_Messanger) "messanger" "месенджери (стара)"
             , Menu (Internal Route.Path.Admin_ControlPanel) "control-panel" "панель керування (стара)"
             ]
 
