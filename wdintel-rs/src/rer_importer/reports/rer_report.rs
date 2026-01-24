@@ -67,8 +67,8 @@ pub async fn report_docx_kind_rer_report(
             continue;
         };
         docx = docx.add_paragraph(Paragraph::new().add_run(
-            Run::new().bold().add_text(format!(
-                "\tВ смузі оборони {}, є такі р/м",
+            Run::new().bold().add_tab().add_text(format!(
+                "В смузі оборони {}, є такі р/м",
                 aof.name
             )),
         ));
@@ -101,7 +101,8 @@ pub async fn report_docx_kind_rer_report(
                     Paragraph::new().add_run(
                         Run::new()
                             .bold()
-                            .add_text(format!("\tМережа - {}", network_key)),
+                            .add_tab()
+                            .add_text(format!("Мережа - {}:", network_key)),
                     ),
                 );
 
