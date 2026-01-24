@@ -546,11 +546,11 @@ def stream_copy_path_local(vm_conf: SSHConfig, ct_conf: SSHConfig, path: str) ->
     rel_path = path.lstrip("/")
     src_cmd = build_ssh_command(
         vm_conf,
-        f"sudo -n tar --numeric-owner -cpf - -C / {shlex.quote(rel_path)}",
+        f"sudo -n tar -cpf - -C / {shlex.quote(rel_path)}",
     )
     dst_cmd = build_ssh_command(
         ct_conf,
-        "sudo -n tar --numeric-owner -xpf - -C /",
+        "sudo -n tar -xpf - -C /",
     )
     src = subprocess.Popen(src_cmd, stdout=subprocess.PIPE)
     if src.stdout is None:
@@ -588,11 +588,9 @@ def stream_copy_path_remote(
 ) -> None:
     rel_path = path.lstrip("/")
     inner_args = build_inner_ssh_args(ct_conf, use_jump)
-    inner_cmd = "sudo -n tar --numeric-owner -xpf - -C /"
+    inner_cmd = "sudo -n tar -xpf - -C /"
     inner = " ".join(shlex.quote(part) for part in inner_args + [inner_cmd])
-    remote_cmd = (
-        f"sudo -n tar --numeric-owner -cpf - -C / {shlex.quote(rel_path)} | {inner}"
-    )
+    remote_cmd = f"sudo -n tar -cpf - -C / {shlex.quote(rel_path)} | {inner}"
     result = run_ssh_result(vm_conf, remote_cmd)
     if result.returncode != 0:
         raise CommandError(
