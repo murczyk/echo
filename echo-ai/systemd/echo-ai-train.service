@@ -1,0 +1,14 @@
+[Unit]
+Description=echo-ai scheduled training job
+
+[Service]
+Type=oneshot
+EnvironmentFile=%h/echo-ai/.env
+ExecStart=%h/.local/bin/mlflow run \
+    --env-manager uv \
+    --entry-point scheduled \
+    -P databases="${SCHEDULED_TRAIN_DATABASES}" \
+    -P restore_databases="${SCHEDULED_RESTORE_DATABASES}" \
+    $SCHEDULED_EXTRA_MLFLOW_RUN_PARAMS \
+    %h/echo-ai
+WorkingDirectory=%h/echo-ai

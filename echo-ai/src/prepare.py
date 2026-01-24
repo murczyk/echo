@@ -1,5 +1,7 @@
 import argparse
 
+import mlflow
+
 from echo_ai.prepare import fetch_from_postgres
 
 
@@ -20,7 +22,11 @@ def main():
     )
     parser.add_argument("databases", type=str, nargs="+")
     args = vars(parser.parse_args())
-    real_main(args)
+    tags = {"task": "prepare"}
+    print("starting data file preparation")
+    with mlflow.start_run(tags=tags):
+        mlflow.log_params(args)
+        real_main(args)
 
 
 if __name__ == "__main__":

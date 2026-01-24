@@ -23,7 +23,7 @@ LABEL_DICT = {
     8: "мораль",
     9: "зіткнення",
 }
-pat_alnum_apostrophe = re.compile(r"[\w'`\u2019\u02BC]+", re.UNICODE)
+pat_alnum_apostrophe = re.compile(r"[\w`'’ʼ]+", re.UNICODE)
 
 
 def preprocess_text(text: str) -> str:

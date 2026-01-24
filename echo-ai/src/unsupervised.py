@@ -19,7 +19,7 @@ def real_main(args):
 
 
 def main():
-    parser = argparse.ArgumentParser(fromfile_prefix_chars="@")
+    parser = argparse.ArgumentParser()
     parser.add_argument("--model", type=str, default="skipgram")
     parser.add_argument("--lr", type=float)
     parser.add_argument("--dim", type=int, default=100)
@@ -44,7 +44,7 @@ def main():
     args = vars(parser.parse_args())
 
     tags = {"task": "unsupervised"}
-    print("starting training for unsupervised model")
+    print(f"starting training for unsupervised model, parameters: {args}")
     with mlflow.start_run(tags=tags) as run:
         print(f"run {run.info.run_name}, id: {run.info.run_id}")
         real_main(args)

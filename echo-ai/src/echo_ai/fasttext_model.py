@@ -1,7 +1,7 @@
 import os
 import sys
 from importlib.metadata import version
-from typing import Any, cast
+from typing import Any, Optional, cast
 
 import fasttext
 import numpy as np
@@ -248,8 +248,8 @@ class FastTextPythonModel(PythonModel):
     def get_raw_model(self) -> _FastText:
         return self.wrapper.fasttext_model
 
-    def predict(
-        self, model_input: pd.DataFrame, params: dict[str, Any] | None = None
+    def predict(  # type: ignore
+        self, model_input: pd.DataFrame, params: Optional[dict[str, Any]] = None
     ) -> pd.DataFrame | pd.Series | np.ndarray:
         return self.wrapper.predict(self.context, model_input, params)
 
@@ -331,7 +331,7 @@ def convert_loss_name(loss):
 
 
 def write_word_vectors(model: _FastText, path: str):
-    words = model.words
+    words = cast(list[str], model.words)
     num_words = len(words)
     dim = model.get_dimension()
 

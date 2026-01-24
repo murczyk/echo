@@ -74,7 +74,7 @@ def define_train_test_split(
 
 
 def define_slice_for_label(con: DuckDBPyConnection, split: str, label_column_name: str):
-    regex = r"[\pL\pN'’ʼ]+"
+    regex = r"[\pL\pN_`'’ʼ]+"
     return quack.define_sql_view(
         con,
         f"split_{split}_{label_column_name}",

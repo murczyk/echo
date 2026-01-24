@@ -3,6 +3,13 @@ name: ECHO AI
 python_env: python_env.yaml
 
 entry_points:
+  scheduled:
+    parameters:
+      # restore: {type: string, default: "false"}
+      # unsupervised: {type: string, default: "false"}
+      # restore_databases: {type: string, default: ""}
+      databases: { type: string }
+    command: "python src/scheduled.py --databases {databases}"
   embeddings:
     parameters:
       data_file: path
@@ -10,10 +17,22 @@ entry_points:
   supervised:
     parameters:
       data_file: path
-      args: {type: path, default: "supervised.args"}
-    command: "python src/supervised.py {data_file} @{args}"
+      dim: { type: int, default: 100 }
+      epoch: { type: int, default: 15 }
+      wordNgrams: { type: int, default: 3 }
+      autotuneMetric: { type: string, default: "precisionAtRecall:80:__label__1" }
+      pretrainedVectors: { type: string, default: "pretrained.vec" }
+      autotunePredictions: { type: int, default: 2 }
+      autotuneDuration: { type: int, default: 600 }
+      autotuneModelSize: { type: string, default: "128M" }
+    command: >-
+      python src/supervised.py {data_file} --dim {dim} --epoch {epoch} --wordNgrams {wordNgrams} --pretrainedVectors {pretrainedVectors}
+      --autotuneMetric {autotuneMetric} --autotuneDuration {autotuneDuration} --autotuneModelSize {autotuneModelSize} --autotunePredictions {autotunePredictions}
   unsupervised:
     parameters:
       data_file: path
-      args: {type: path, default: "unsupervised.args"}
-    command: "python src/unsupervised.py {data_file} @{args}"
+      dim: { type: int, default: 100 }
+      epoch: { type: int, default: 20 }
+      wordNgrams: { type: int, default: 3 }
+    command: >-
+      python src/unsupervised.py {data_file} --dim {dim} --epoch {epoch} --wordNgrams {wordNgrams}

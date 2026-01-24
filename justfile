@@ -627,14 +627,14 @@ setup-py:
     ensure_nonempty "server" "{{ server }}"
     ssh {{ server }} 'sudo python3 -m pip install -U -r /usr/share/wdintel-py/requirements.txt'
 
-ai-mlflow-train task data_file *flags:
+ai-mlflow-train task *flags:
     #!/bin/bash
     pushd echo-ai > /dev/null
     set -a && . .env && set +a
     [[ -d .venv ]] || uv venv --relocatable
     . .venv/bin/activate
     popd > /dev/null
-    uv run --project echo-ai -- "echo-ai/src/{{ task }}.py" {{ flags }} "{{ data_file }}"
+    uv run --project echo-ai -- "echo-ai/src/{{ task }}.py" {{ flags }}
 
 ai-mlflow-gc:
     #!/bin/bash
