@@ -621,6 +621,7 @@ setup-py:
     . deploy/utils.sh
     ensure_nonempty "server" "{{ server }}"
     ssh {{ server }} 'sudo python3 -m pip install -U -r /usr/share/wdintel-py/requirements.txt'
+    ssh {{ server }} 'if ! python3 -c "import spacy; spacy.load(\"ru_core_news_md\")" 2>/dev/null; then sudo python3 -m spacy download ru_core_news_md; else echo "Spacy model already downloaded, skipping"; fi'
 
 deploy-echo-ai:
     #!/bin/bash
