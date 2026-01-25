@@ -5,7 +5,9 @@ use crate::entities::{
 };
 use crate::error::AppError;
 use crate::h;
-use crate::rer_importer::reports::types::{ActiveNetworksReportSettings, ReportPreviewReq, ReportType};
+use crate::rer_importer::reports::types::{
+    ActiveNetworksReportSettings, ReportPreviewReq, ReportType,
+};
 use crate::types::Env;
 use crate::utils::dt_from_millis;
 use anyhow::Context;
@@ -14,8 +16,8 @@ use docx_rs::{
 };
 use log::info;
 use sea_orm::{
-    ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder,
-    QuerySelect, RelationTrait,
+    prelude::Expr, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
+    QueryOrder, QuerySelect, RelationTrait,
 };
 use std::collections::HashSet;
 use std::path::Path;
@@ -38,7 +40,7 @@ pub async fn report_docx_kind_active_networks(
         _ => vec![],
     };
 
-    let aor_data = get_aor_network_comments(&read_db, aor_ids).await?;
+    let aor_data = get_aor_network_comments(&read_db, aor_ids, req).await?;
 
     let mut processed_networks = HashSet::new();
     let mut docx = Docx::new()
@@ -75,27 +77,32 @@ pub async fn report_docx_kind_active_networks(
                 continue;
             }
             processed_networks.insert(network.id);
-            if comments.is_empty() {
+
+            let unit_names: Vec<String> = units
+                .iter()
+                .filter(|u| !u.name.is_empty())
+                .map(|u| u.name.clone())
+                .collect();
+
+            let network_line = if unit_names.is_empty() {
+                format!("\tр/м {} невизначеного підрозділу", network.name)
+            } else {
+                format!("\tр/м {} {}", network.name, unit_names.join(", "))
+            };
+
+            if network_set.contains(&network_line) {
                 continue;
+            } else {
+                network_set.insert(network_line.clone());
             }
 
-            for unit in units {
-                let network_line = if unit.name.is_empty() {
-                    format!("\tр/м {} невизначеного підрозділу ", network.name)
-                } else {
-                    format!("\tр/м {} {}", network.name, unit.name)
-                };
-
-                if network_set.contains(&network_line) {
-                    continue;
-                } else {
-                    network_set.insert(network_line.clone());
-                }
-
-                docx = docx.add_paragraph(
-                    Paragraph::new().add_run(Run::new().add_text(network_line)),
-                );
-                for comment in comments.clone() {
+            docx = docx.add_paragraph(
+                Paragraph::new().add_run(Run::new().add_text(network_line)),
+            );
+            for comment in &comments {
+                let comment_lines: Vec<&str> =
+                    comment.comment.lines().collect();
+                if comment_lines.len() <= 1 {
                     docx = docx.add_paragraph(Paragraph::new().add_run(
                         Run::new().add_text(format!(
                             "\t- {} - {}",
@@ -103,6 +110,19 @@ pub async fn report_docx_kind_active_networks(
                             comment.comment
                         )),
                     ));
+                } else {
+                    docx = docx.add_paragraph(Paragraph::new().add_run(
+                        Run::new().add_text(format!(
+                            "\t- {} - {}",
+                            comment.created_at.format("%Y-%m-%d %H:%M"),
+                            comment_lines[0]
+                        )),
+                    ));
+                    for line in &comment_lines[1..] {
+                        docx = docx.add_paragraph(Paragraph::new().add_run(
+                            Run::new().add_text(format!("\t\t{}", line)),
+                        ));
+                    }
                 }
             }
         }
@@ -126,6 +146,7 @@ pub async fn report_docx_kind_active_networks(
 pub async fn get_aor_network_comments(
     db: &DatabaseConnection,
     aor_ids: Vec<i64>,
+    req: &ReportPreviewReq,
 ) -> Result<
     Vec<(
         area_of_responsibility::Model,
@@ -137,6 +158,21 @@ pub async fn get_aor_network_comments(
     )>,
     AppError,
 > {
+    let since_dt = req
+        .req
+        .since_date_inclusive_ms
+        .map(dt_from_millis)
+        .transpose()
+        .context(h!())?
+        .unwrap_or_default();
+    let till_dt = req
+        .req
+        .till_date_inclusive_ms
+        .map(dt_from_millis)
+        .transpose()
+        .context(h!())?
+        .unwrap_or_default();
+
     let mut aors_select = area_of_responsibility::Entity::find()
         .filter(area_of_responsibility::Column::Deleted.eq(false))
         .filter(area_of_responsibility::Column::IsTopLevel.eq(true));
@@ -158,7 +194,7 @@ pub async fn get_aor_network_comments(
             )
             .filter(sigint_network_aor::Column::AorId.eq(aor.id))
             .filter(sigint_network::Column::Deleted.eq(false))
-            .order_by_asc(sigint_network::Column::CreatedAt)
+            .order_by_asc(sigint_network::Column::ActiveFrom)
             .distinct()
             .all(db)
             .await
@@ -190,16 +226,43 @@ pub async fn get_aor_network_comments(
                     sea_orm::JoinType::InnerJoin,
                     sigint_inbox_item::Relation::SigintNetworkFreq.def(),
                 )
-                .filter(sigint_network_freq::Column::NetworkId.eq(network.id))
-                .filter(signal_message::Column::Deleted.eq(false))
-                .order_by_asc(sigint_comment::Column::CreatedAt)
+                .filter(
+                    Expr::col((
+                        sigint_network_freq::Entity,
+                        sigint_network_freq::Column::NetworkId,
+                    ))
+                    .eq(network.id),
+                )
+                .filter(
+                    Expr::col((
+                        signal_message::Entity,
+                        signal_message::Column::Deleted,
+                    ))
+                    .eq(false),
+                )
+                .filter(
+                    Expr::col((
+                        signal_message::Entity,
+                        signal_message::Column::CreatedAt,
+                    ))
+                    .gte(since_dt),
+                )
+                .filter(
+                    Expr::col((
+                        signal_message::Entity,
+                        signal_message::Column::CreatedAt,
+                    ))
+                    .lte(till_dt),
+                )
+                .order_by_asc(Expr::col((
+                    sigint_comment::Entity,
+                    sigint_comment::Column::CreatedAt,
+                )))
                 .all(db)
                 .await
                 .context(h!())?;
 
-            if !comments.is_empty() {
-                network_with_comments.push((network, units, comments));
-            }
+            network_with_comments.push((network, units, comments));
         }
         result.push((aor, network_with_comments));
     }
