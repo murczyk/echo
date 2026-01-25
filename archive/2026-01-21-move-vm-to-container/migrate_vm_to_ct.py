@@ -527,7 +527,7 @@ def build_plan_text(
     lines.append("")
     lines.append("Execution plan:")
     if precopy_items and precopy_enabled:
-        lines.append("1) Pre-copy PostgreSQL data directory while services are running")
+        lines.append("1) Pre-copy large directories while services are running")
         lines.append(
             "2) Stop services: tailscaled/postgresql on VM, tailscaled/postgresql/nginx on CT"
         )
@@ -1007,8 +1007,17 @@ def main(
     precopy_method: Optional[str] = None
     precopy_reason: Optional[str] = None
     postgres_precopy_path = postgres_data_dir or "/var/lib/postgresql"
+    precopy_candidates: List[str] = []
     if postgres_precopy_path in copy_items:
-        precopy_items = [postgres_precopy_path]
+        precopy_candidates.append(postgres_precopy_path)
+    if "/root" in copy_items:
+        precopy_candidates.append("/root")
+    for user in vm_regular:
+        home = user.get("home")
+        if home and home in copy_items:
+            precopy_candidates.append(home)
+    if precopy_candidates:
+        precopy_items = dedupe_preserve_order(precopy_candidates)
         if transfer_mode != "remote":
             precopy_reason = "transfer mode is local"
         elif remote_jump_decision is None:
@@ -1020,7 +1029,7 @@ def main(
             precopy_method = "rsync"
     if precopy_items and not precopy_enabled and precopy_reason:
         warnings.append(
-            f"PostgreSQL pre-copy disabled ({precopy_reason}); will do full copy after stop."
+            f"Pre-copy disabled ({precopy_reason}); will do full copy after stop."
         )
 
     major_mismatch_sample = [
@@ -1098,7 +1107,7 @@ def main(
             raise typer.Exit(code=0)
 
     if precopy_items and precopy_enabled:
-        typer.echo("Pre-copying PostgreSQL data directory before stopping services...")
+        typer.echo("Pre-copying large directories before stopping services...")
         for path in precopy_items:
             ensure_dir_exists(ct_conf, path)
             typer.echo(f"- Pre-copying {path}")
@@ -1109,7 +1118,7 @@ def main(
                 ct_conf,
                 path,
                 remote_jump_decision,
-                chown="postgres:postgres",
+                chown="postgres:postgres" if path == postgres_precopy_path else None,
             )
 
     typer.echo("Stopping services...")
@@ -1132,9 +1141,10 @@ def main(
                 ct_conf,
                 path,
                 remote_jump_decision,
-                chown="postgres:postgres",
+                chown="postgres:postgres" if path == postgres_precopy_path else None,
             )
-            fix_postgres_ownership(ct_conf, path)
+            if path == postgres_precopy_path:
+                fix_postgres_ownership(ct_conf, path)
             continue
         typer.echo(f"- Copying {path}")
         if transfer_mode == "remote":
