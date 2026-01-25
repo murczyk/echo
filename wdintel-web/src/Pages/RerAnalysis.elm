@@ -175,6 +175,11 @@ init route _ =
                 }
 
             -- , reportIframeUrl = Nothing
+            , reportActiveNetworksAorsSelect =
+                { state = Select.initState (Select.selectIdentifier "selectReportActiveNetworksAors")
+                , items = []
+                , selected = []
+                }
             , reportDownloadInProgress = False
             , noMoreToLoad = False
             , newCallsignsLoading = False
@@ -1254,11 +1259,25 @@ update user shared route msg model =
                                     , label = findAorName aor.aorId ++ " (" ++ String.fromInt aor.count ++ ")"
                                     }
                             )
+
+                reportActiveNetworksAorsSelect =
+                    model.reportActiveNetworksAorsSelect
+
+                reportAorItems =
+                    rsp.aorNames
+                        |> List.map
+                            (\entry ->
+                                Select.basicMenuItem
+                                    { item = entry.id
+                                    , label = entry.name
+                                    }
+                            )
             in
             ( { model
                 | aors = Success rsp.aors
                 , selAorMenu = menuItems
                 , aorNames = rsp.aorNames
+                , reportActiveNetworksAorsSelect = { reportActiveNetworksAorsSelect | items = reportAorItems }
               }
             , E.none
             )
@@ -3421,6 +3440,42 @@ update user shared route msg model =
             in
             ( { model | reportAdjacentFreqsRangeSelect = a2 }, E.none )
 
+        SelectReportActiveNetworksAors imsg ->
+            let
+                ( mAction, imodel2, icmd ) =
+                    Select.update imsg model.reportActiveNetworksAorsSelect.state
+
+                reportActiveNetworksAorsSelect =
+                    model.reportActiveNetworksAorsSelect
+
+                selected =
+                    case mAction of
+                        Just (Select.Select i) ->
+                            if List.member i reportActiveNetworksAorsSelect.selected then
+                                List.filter (\x -> x /= i) reportActiveNetworksAorsSelect.selected
+
+                            else
+                                reportActiveNetworksAorsSelect.selected ++ [ i ]
+
+                        Just (Select.Deselect items) ->
+                            List.filter (\x -> not (List.member x items)) reportActiveNetworksAorsSelect.selected
+
+                        Just Select.Clear ->
+                            []
+
+                        _ ->
+                            reportActiveNetworksAorsSelect.selected
+
+                a2 =
+                    { reportActiveNetworksAorsSelect
+                        | state = imodel2
+                        , selected = selected
+                    }
+            in
+            ( { model | reportActiveNetworksAorsSelect = a2 }
+            , E.sendCmd <| Cmd.map SelectReportActiveNetworksAors icmd
+            )
+
         GroupsActivityPeriodChanged period ->
             case ( model.from.datePosix, model.to.datePosix, List.head model.freqsSelected ) of
                 ( Just dtFromPosix, Just dtToPosix, Just freq ) ->
@@ -3525,7 +3580,7 @@ reportTemplateToApiType model template =
             Just B.Digest
 
         ActiveNetworks ->
-            Nothing
+            Just (B.ActiveNetworks { aorIds = model.reportActiveNetworksAorsSelect.selected })
 
 
 

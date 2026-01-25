@@ -113,7 +113,12 @@ type alias Model =
         { state : Select.State
         , items : List (Select.MenuItem Float)
         , selected : Float
-        }    
+        }
+    , reportActiveNetworksAorsSelect :
+        { state : Select.State
+        , items : List (Select.MenuItem Int)
+        , selected : List Int
+        }
 
     -- , reportIframeUrl : Maybe String
     , reportDownloadInProgress : Bool

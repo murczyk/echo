@@ -24,7 +24,7 @@ pub enum ReportType {
     Naushnom,
     Reo(ReoReportSettings),
     Digest,
-    ActiveNetworks
+    ActiveNetworks(ActiveNetworksReportSettings),
 }
 
 #[derive(
@@ -50,4 +50,10 @@ pub struct ReoReportSettings {
 )]
 pub struct SenderReportSettings {
     pub aggregation: ReportAggregation,
+}
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct ActiveNetworksReportSettings {
+    pub aor_ids: Vec<i64>,
 }

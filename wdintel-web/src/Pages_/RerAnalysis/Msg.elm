@@ -146,6 +146,7 @@ type Msg
     | SetUnitFilterFromMap String
     | SelectFilterAdjacentFreqsRange (Select.Msg Float)
     | SelectReportAdjacentFreqsRange (Select.Msg Float)
+    | SelectReportActiveNetworksAors (Select.Msg Int)
     | GroupsActivityPeriodChanged GroupsActivityPeriod
     | FilterTagsOptionChanged Bool
     | UnitsExactMatchOnlyChanged Bool

@@ -14,6 +14,7 @@ use futures_util::TryStreamExt;
 use indicatif::ProgressBar;
 use sea_orm::*;
 
+mod active_networks;
 pub mod babak;
 mod digest;
 pub mod interception;
@@ -26,7 +27,6 @@ mod senders;
 pub mod tag;
 pub mod types;
 mod util;
-mod active_networks;
 
 pub(crate) async fn cleanup_old_reports_nofail(
     dbx: &DatabaseConnection,
@@ -198,10 +198,12 @@ pub async fn report_docx(
             &user.id().c(h!())?,
             vec!["UnitsEditor", "CallsignsEditor", "Admin"],
         )
-            .await?;
-        self::active_networks::report_docx_kind_active_networks(&env, &req, &outpath)
-            .await
-            .c(h!())?;
+        .await?;
+        self::active_networks::report_docx_kind_active_networks(
+            &env, &req, &outpath,
+        )
+        .await
+        .c(h!())?;
     } else {
         return Err(format!("Unknown report kind {}", req.kind).into());
     }

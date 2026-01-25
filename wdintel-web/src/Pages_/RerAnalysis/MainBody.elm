@@ -10,7 +10,7 @@ import Html.Extra as HtmlX exposing (viewIf, viewMaybe)
 import Html.Styled
 import Json.Decode as Decode
 import Json.Encode as Encode
-import List.Extra exposing (frequencies)
+import List.Extra as ListX exposing (frequencies)
 import Pages_.RerAnalysis.Constants exposing (..)
 import Pages_.RerAnalysis.Date
 import Pages_.RerAnalysis.Filters
@@ -602,7 +602,50 @@ view user model shared route =
                                 "не обрано"
                                 options2
                         )
-                    ]                
+                    ]
+
+            , HtmlX.viewIf (model.reportTemplate == ActiveNetworks) <|
+                let
+                    isDark =
+                        isDarkMode shared.themeMode
+
+                    selDescription =
+                        p
+                            [ class "text-sm leading-relaxed"
+                            , classList
+                                [ ( "text-gray-600", not (isDarkMode shared.themeMode) )
+                                , ( "text-gray-400", isDarkMode shared.themeMode )
+                                ]
+                            ]
+                            [ text "Обрати смуги відповідальності (якщо не обрано жодної - будуть всі)" ]
+
+                    selectedItems =
+                        model.reportActiveNetworksAorsSelect.selected
+                            |> List.filterMap
+                                (\id ->
+                                    model.aorNames
+                                        |> ListX.find (\entry -> entry.id == id)
+                                        |> Maybe.map (\entry -> Select.basicMenuItem { item = entry.id, label = entry.name })
+                                )
+
+                    options =
+                        Utils.Select.defaultOptions isDark
+
+                    options2 =
+                        options
+                in
+                div [ class "p-3 bg-gray-100 text-gray-900 mb-4" ]
+                    [ selDescription
+                    , Html.map SelectReportActiveNetworksAors
+                        (Html.Styled.toUnstyled <|
+                            Utils.Select.renderSelect
+                                selectedItems
+                                model.reportActiveNetworksAorsSelect.state
+                                model.reportActiveNetworksAorsSelect.items
+                                "обрати смуги..."
+                                options2
+                        )
+                    ]
             , HtmlX.viewIf (List.member model.reportTemplate [ RTTags, RTBabak, RTInterception ]) <|
                 div [ class "p-3 bg-gray-100 text-gray-900 mb-4" ]
                     [ div [ class "form-check" ]

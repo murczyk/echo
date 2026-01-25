@@ -3845,6 +3845,18 @@ reoReportSettingsEncoder struct =
         ]
 
 
+type alias ActiveNetworksReportSettings =
+    { aorIds : List Int
+    }
+
+
+activeNetworksReportSettingsEncoder : ActiveNetworksReportSettings -> Json.Encode.Value
+activeNetworksReportSettingsEncoder struct =
+    Json.Encode.object
+        [ ( "aor_ids", Json.Encode.list Json.Encode.int struct.aorIds )
+        ]
+
+
 type ReportAggregation
     = ByProfile
     | ByPost
@@ -3888,6 +3900,7 @@ type ReportType
     | Naushnom
     | Reo ReoReportSettings
     | Digest
+    | ActiveNetworks ActiveNetworksReportSettings
 
 
 reportTypeEncoder : ReportType -> Json.Encode.Value
@@ -3919,6 +3932,9 @@ reportTypeEncoder enum =
 
         Digest ->
             Json.Encode.string "Digest"
+
+        ActiveNetworks inner ->
+            Json.Encode.object [ ( "ActiveNetworks", activeNetworksReportSettingsEncoder inner ) ]
 
 
 type alias SenderReportSettings =
@@ -8695,6 +8711,12 @@ reoReportSettingsDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "adjacent_freqs_distance" Json.Decode.float))
 
 
+activeNetworksReportSettingsDecoder : Json.Decode.Decoder ActiveNetworksReportSettings
+activeNetworksReportSettingsDecoder =
+    Json.Decode.succeed ActiveNetworksReportSettings
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aor_ids" (Json.Decode.list Json.Decode.int)))
+
+
 reportAggregationDecoder : Json.Decode.Decoder ReportAggregation
 reportAggregationDecoder =
     Json.Decode.oneOf
@@ -8805,6 +8827,7 @@ reportTypeDecoder =
                         unexpected ->
                             Json.Decode.fail <| "Unexpected variant " ++ unexpected
                 )
+        , Json.Decode.map ActiveNetworks (Json.Decode.field "ActiveNetworks" activeNetworksReportSettingsDecoder)
         ]
 
 

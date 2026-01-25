@@ -1,17 +1,25 @@
-use crate::entities::{area_of_responsibility, sigint_comment, sigint_inbox_item, sigint_network, sigint_network_aor, sigint_network_freq, sigint_network_unit, sigint_unit, signal_message};
+use crate::entities::{
+    area_of_responsibility, sigint_comment, sigint_inbox_item, sigint_network,
+    sigint_network_aor, sigint_network_freq, sigint_network_unit, sigint_unit,
+    signal_message,
+};
 use crate::error::AppError;
 use crate::h;
+use crate::rer_importer::reports::types::{ActiveNetworksReportSettings, ReportPreviewReq, ReportType};
 use crate::types::Env;
-use anyhow::Context;
-use docx_rs::{AlignmentType, Docx, PageMargin, PageOrientationType, Paragraph, Run};
-use log::info;
-use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, QuerySelect, RelationTrait};
-use std::path::Path;
-use std::collections::HashSet;
-use std::time::Instant;
-use crate::rer_importer::reports::types::ReportPreviewReq;
-use crate::sigint::etalonka::util::format_datetime_field;
 use crate::utils::dt_from_millis;
+use anyhow::Context;
+use docx_rs::{
+    AlignmentType, Docx, PageMargin, PageOrientationType, Paragraph, Run,
+};
+use log::info;
+use sea_orm::{
+    ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder,
+    QuerySelect, RelationTrait,
+};
+use std::collections::HashSet;
+use std::path::Path;
+use std::time::Instant;
 
 pub async fn report_docx_kind_active_networks(
     env: &Env,
@@ -23,7 +31,14 @@ pub async fn report_docx_kind_active_networks(
 
     let read_db = env.dbx.clone();
 
-    let aor_data = get_aor_network_comments(&read_db).await?;
+    let aor_ids = match req.report_type.clone() {
+        Some(ReportType::ActiveNetworks(ActiveNetworksReportSettings {
+            aor_ids,
+        })) => aor_ids,
+        _ => vec![],
+    };
+
+    let aor_data = get_aor_network_comments(&read_db, aor_ids).await?;
 
     let mut processed_networks = HashSet::new();
     let mut docx = Docx::new()
@@ -42,16 +57,17 @@ pub async fn report_docx_kind_active_networks(
                     ))).align(AlignmentType::Center)
         );
 
-
     for (aor, networks) in aor_data {
         if networks.is_empty() {
-            continue
+            continue;
         }
 
-        docx = docx.add_paragraph(
-            Paragraph::new()
-                .add_run(Run::new().bold().add_text(format!("\tВ смузі оборони {}", aor.name.to_uppercase())))
-        );
+        docx = docx.add_paragraph(Paragraph::new().add_run(
+            Run::new().bold().add_text(format!(
+                "\tВ смузі оборони {}",
+                aor.name.to_uppercase()
+            )),
+        ));
 
         let mut network_set = HashSet::new();
         for (network, units, comments) in networks {
@@ -64,7 +80,6 @@ pub async fn report_docx_kind_active_networks(
             }
 
             for unit in units {
-
                 let network_line = if unit.name.is_empty() {
                     format!("\tр/м {} невизначеного підрозділу ", network.name)
                 } else {
@@ -72,17 +87,22 @@ pub async fn report_docx_kind_active_networks(
                 };
 
                 if network_set.contains(&network_line) {
-                    continue
+                    continue;
                 } else {
                     network_set.insert(network_line.clone());
                 }
 
-                docx = docx.add_paragraph(Paragraph::new().add_run(Run::new().add_text(network_line)));
+                docx = docx.add_paragraph(
+                    Paragraph::new().add_run(Run::new().add_text(network_line)),
+                );
                 for comment in comments.clone() {
-                    docx = docx.add_paragraph(
-                        Paragraph::new()
-                            .add_run(Run::new().add_text(format!("\t- {} - {}", comment.created_at.format("%Y-%m-%d %H:%M"), comment.comment)))
-                    );
+                    docx = docx.add_paragraph(Paragraph::new().add_run(
+                        Run::new().add_text(format!(
+                            "\t- {} - {}",
+                            comment.created_at.format("%Y-%m-%d %H:%M"),
+                            comment.comment
+                        )),
+                    ));
                 }
             }
         }
@@ -103,9 +123,9 @@ pub async fn report_docx_kind_active_networks(
     Ok(())
 }
 
-
 pub async fn get_aor_network_comments(
     db: &DatabaseConnection,
+    aor_ids: Vec<i64>,
 ) -> Result<
     Vec<(
         area_of_responsibility::Model,
@@ -117,12 +137,16 @@ pub async fn get_aor_network_comments(
     )>,
     AppError,
 > {
-    let aors = area_of_responsibility::Entity::find()
+    let mut aors_select = area_of_responsibility::Entity::find()
         .filter(area_of_responsibility::Column::Deleted.eq(false))
-        .filter(area_of_responsibility::Column::IsTopLevel.eq(true))
-        .all(db)
-        .await
-        .context(h!())?;
+        .filter(area_of_responsibility::Column::IsTopLevel.eq(true));
+
+    if !aor_ids.is_empty() {
+        aors_select = aors_select
+            .filter(area_of_responsibility::Column::Id.is_in(aor_ids));
+    }
+
+    let aors = aors_select.all(db).await.context(h!())?;
 
     let mut result = Vec::new();
 
