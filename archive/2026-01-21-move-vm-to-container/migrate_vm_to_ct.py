@@ -600,6 +600,8 @@ def build_inner_ssh_args(ct_conf: SSHConfig, use_jump: bool) -> List[str]:
         "-o",
         "GlobalKnownHostsFile=/dev/null",
     ]
+    if ct_conf.agent:
+        args.append("-A")
     if use_jump and ct_conf.jump:
         args.extend(["-J", ct_conf.jump])
     args.append(ct_conf.target)
@@ -650,9 +652,15 @@ def rsync_copy_path_remote(
     flags = ["-a", "--numeric-ids"]
     if delete:
         flags.append("--delete")
+    sudo_prefix = "sudo -n"
+    if ct_conf.agent:
+        sudo_prefix = "sudo -n env SSH_AUTH_SOCK=$SSH_AUTH_SOCK"
     cmd_parts = [
-        "sudo -n rsync",
+        sudo_prefix,
+        "rsync",
         *flags,
+        "--rsync-path",
+        shlex.quote("sudo -n rsync"),
         "-e",
         shlex.quote(ssh_cmd),
         shlex.quote(src_path),
