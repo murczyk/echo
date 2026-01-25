@@ -666,11 +666,16 @@ def rsync_copy_path_remote(
     path: str,
     use_jump: bool,
     delete: bool = True,
+    chown: Optional[str] = None,
 ) -> None:
     src_path = path.rstrip("/") + "/"
     dst_path = path.rstrip("/") + "/"
     ssh_cmd = build_rsync_ssh_command(ct_conf, use_jump)
-    flags = ["-a", "--numeric-ids"]
+    flags = ["-a"]
+    if chown:
+        flags.append(f"--chown={chown}")
+    else:
+        flags.append("--numeric-ids")
     if delete:
         flags.append("--delete")
     sudo_prefix = "sudo -n"
@@ -696,6 +701,14 @@ def rsync_copy_path_remote(
             result.stdout,
             result.stderr,
         )
+
+
+def fix_postgres_ownership(ct_conf: SSHConfig, path: str) -> None:
+    run_ssh(
+        ct_conf,
+        f"sudo -n chown -R postgres:postgres {shlex.quote(path)}",
+        check=False,
+    )
 
 
 def probe_remote_transfer(vm_conf: SSHConfig, ct_conf: SSHConfig) -> Optional[bool]:
@@ -1091,7 +1104,13 @@ def main(
             typer.echo(f"- Pre-copying {path}")
             if transfer_mode != "remote" or remote_jump_decision is None:
                 raise typer.Exit(code=1)
-            rsync_copy_path_remote(vm_conf, ct_conf, path, remote_jump_decision)
+            rsync_copy_path_remote(
+                vm_conf,
+                ct_conf,
+                path,
+                remote_jump_decision,
+                chown="postgres:postgres",
+            )
 
     typer.echo("Stopping services...")
     for service in ["tailscaled", "postgresql"]:
@@ -1108,7 +1127,14 @@ def main(
             typer.echo(f"- Syncing diff for {path}")
             if transfer_mode != "remote" or remote_jump_decision is None:
                 raise typer.Exit(code=1)
-            rsync_copy_path_remote(vm_conf, ct_conf, path, remote_jump_decision)
+            rsync_copy_path_remote(
+                vm_conf,
+                ct_conf,
+                path,
+                remote_jump_decision,
+                chown="postgres:postgres",
+            )
+            fix_postgres_ownership(ct_conf, path)
             continue
         typer.echo(f"- Copying {path}")
         if transfer_mode == "remote":
@@ -1117,6 +1143,8 @@ def main(
             stream_copy_path_remote(vm_conf, ct_conf, path, remote_jump_decision)
         else:
             stream_copy_path_local(vm_conf, ct_conf, path)
+        if path == postgres_precopy_path:
+            fix_postgres_ownership(ct_conf, path)
 
     typer.echo("Starting services...")
     if service_status["postgresql"]["vm"] != "unknown":
