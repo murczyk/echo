@@ -195,6 +195,7 @@ init route _ =
 
             --
             , aors = NotAsked
+            , allAors = []
             , aorNames = []
             , groups = NotAsked
             , senders = NotAsked
@@ -259,6 +260,7 @@ init route _ =
         , E.map RowsMsg Shared.Components.RerMessage.init
         , Core.EventHelpers.subscribeToInboxChanges route.path
         , E.sendCmd <| Ports.rer_analysis_saveQueryState (B.rerAnalysisQueryStateEncoder initialQueryState)
+        , E.sendCmd <| Api.aor_list GotAllAors { sortBy = Nothing }
         , palitrasEff
         , pollEvents Nothing
         ]
@@ -1237,6 +1239,31 @@ update user shared route msg model =
             , E.none
             )
 
+        GotAllAors (Err e) ->
+            ( model, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження списку смуг" e )
+
+        GotAllAors (Ok vs) ->
+            let
+                reportActiveNetworksAorsSelect =
+                    model.reportActiveNetworksAorsSelect
+
+                reportAorItems =
+                    vs
+                        |> List.map
+                            (\aor ->
+                                Select.basicMenuItem
+                                    { item = aor.id
+                                    , label = aor.name
+                                    }
+                            )
+            in
+            ( { model
+                | allAors = vs
+                , reportActiveNetworksAorsSelect = { reportActiveNetworksAorsSelect | items = reportAorItems }
+              }
+            , E.none
+            )
+
         GotStatsAors (Err e) ->
             ( model
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження смуг" e
@@ -1259,25 +1286,11 @@ update user shared route msg model =
                                     , label = findAorName aor.aorId ++ " (" ++ String.fromInt aor.count ++ ")"
                                     }
                             )
-
-                reportActiveNetworksAorsSelect =
-                    model.reportActiveNetworksAorsSelect
-
-                reportAorItems =
-                    rsp.aorNames
-                        |> List.map
-                            (\entry ->
-                                Select.basicMenuItem
-                                    { item = entry.id
-                                    , label = entry.name
-                                    }
-                            )
             in
             ( { model
                 | aors = Success rsp.aors
                 , selAorMenu = menuItems
                 , aorNames = rsp.aorNames
-                , reportActiveNetworksAorsSelect = { reportActiveNetworksAorsSelect | items = reportAorItems }
               }
             , E.none
             )

@@ -623,7 +623,7 @@ view user model shared route =
                         model.reportActiveNetworksAorsSelect.selected
                             |> List.filterMap
                                 (\id ->
-                                    model.aorNames
+                                    model.allAors
                                         |> ListX.find (\entry -> entry.id == id)
                                         |> Maybe.map (\entry -> Select.basicMenuItem { item = entry.id, label = entry.name })
                                 )

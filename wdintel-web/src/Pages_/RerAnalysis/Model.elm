@@ -136,6 +136,7 @@ type alias Model =
 
     -- stats
     , aors : RemoteData ApiError (List B.AnalysisStatsAor)
+    , allAors : List B.AreaOfResponsibility
     , aorNames : List B.AreaOfResponsibilityEntry
     , posts : RemoteData ApiError (List B.AnalysisStatsPost)
     , locations : RemoteData ApiError (List B.AnalysisStatsLocation)

@@ -155,3 +155,4 @@ type Msg
     | EditSidebarUpdate Int (B.InboxMessage -> B.InboxMessage)
     | EditSidebarSaveDone Int (Result ApiError ())
     | GotPalitras (Result ApiError (List B.Palitra))
+    | GotAllAors (Result ApiError (List B.AreaOfResponsibility))
