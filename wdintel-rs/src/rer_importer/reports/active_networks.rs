@@ -3,15 +3,19 @@ use crate::error::AppError;
 use crate::h;
 use crate::types::Env;
 use anyhow::Context;
-use docx_rs::{Docx, PageMargin, PageOrientationType, Paragraph, Run};
+use docx_rs::{AlignmentType, Docx, PageMargin, PageOrientationType, Paragraph, Run};
 use log::info;
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, QuerySelect, RelationTrait};
 use std::path::Path;
 use std::collections::HashSet;
 use std::time::Instant;
+use crate::rer_importer::reports::types::ReportPreviewReq;
+use crate::sigint::etalonka::util::format_datetime_field;
+use crate::utils::dt_from_millis;
 
 pub async fn report_docx_kind_active_networks(
     env: &Env,
+    req: &ReportPreviewReq,
     outpath: &Path,
 ) -> Result<(), AppError> {
     let start_total = Instant::now();
@@ -26,7 +30,18 @@ pub async fn report_docx_kind_active_networks(
         .page_orient(PageOrientationType::Landscape)
         .page_size(11906 * 2, 16838)
         .default_size(28)
-        .page_margin(PageMargin::new().left(600).right(300).top(1200));
+        .page_margin(PageMargin::new().left(600).right(300).top(1200))
+        .add_paragraph(
+            Paragraph::new()
+                .add_run(Run::new()
+                    .bold()
+                    .add_text(format!("Підтверджено функціонування радіомереж за період з {:?} по {:?}",
+                                      format_datetime_ms(req.req.since_date_inclusive_ms),
+                                      format_datetime_ms(req.req.till_date_inclusive_ms)
+
+                    ))).align(AlignmentType::Center)
+        );
+
 
     for (aor, networks) in aor_data {
         if networks.is_empty() {
@@ -168,3 +183,9 @@ pub async fn get_aor_network_comments(
     Ok(result)
 }
 
+pub fn format_datetime_ms(dt_millis: Option<i64>) -> String {
+    dt_millis
+        .and_then(|millis| dt_from_millis(millis).ok())
+        .map(|dt| dt.format("%Y.%m.%d %H:%M").to_string())
+        .unwrap_or_default()
+}

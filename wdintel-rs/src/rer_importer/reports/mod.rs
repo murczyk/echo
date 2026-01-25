@@ -199,7 +199,7 @@ pub async fn report_docx(
             vec!["UnitsEditor", "CallsignsEditor", "Admin"],
         )
             .await?;
-        self::active_networks::report_docx_kind_active_networks(&env, &outpath)
+        self::active_networks::report_docx_kind_active_networks(&env, &req, &outpath)
             .await
             .c(h!())?;
     } else {
