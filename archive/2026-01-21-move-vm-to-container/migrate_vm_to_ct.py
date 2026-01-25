@@ -97,6 +97,11 @@ def command_exists(conf: SSHConfig, command: str) -> bool:
     return result.returncode == 0
 
 
+def remote_path_exists(conf: SSHConfig, path: str) -> bool:
+    result = run_ssh_result(conf, f"sudo -n test -e {shlex.quote(path)}")
+    return result.returncode == 0
+
+
 def prepare_known_hosts(path: Path, refresh: bool) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     if refresh and path.exists():
@@ -420,6 +425,8 @@ def build_plan_text(
     precopy_items: List[str],
     precopy_enabled: bool,
     precopy_method: Optional[str],
+    tailscale_backup_path: Optional[Path],
+    tailscale_backup_exists: bool,
 ) -> str:
     lines: List[str] = []
     lines.append("Migration plan")
@@ -510,6 +517,12 @@ def build_plan_text(
     lines.append("Planned copy items (in order):")
     for path in copy_items:
         lines.append(f"- {path}")
+    lines.append("")
+    lines.append("Tailscale backup:")
+    if tailscale_backup_path and tailscale_backup_exists:
+        lines.append(f"- local tar: {tailscale_backup_path}")
+    else:
+        lines.append("- local tar: skipped (state dir not found)")
     if precopy_items:
         lines.append("")
         lines.append("Pre-copy items:")
@@ -531,18 +544,20 @@ def build_plan_text(
         lines.append(
             "2) Stop services: tailscaled/postgresql on VM, tailscaled/postgresql/nginx on CT"
         )
+        lines.append("3) Back up /var/lib/tailscale from VM to local tar")
         lines.append(
-            "3) Sync PostgreSQL diff, then stream-copy remaining directories from VM to CT"
+            "4) Sync PostgreSQL diff, then stream-copy remaining directories from VM to CT"
         )
-        lines.append(f"4) Start services (tailscaled only on {tailscale_owner})")
-        lines.append("5) Compare directory sizes (size-only)")
+        lines.append(f"5) Start services (tailscaled only on {tailscale_owner})")
+        lines.append("6) Compare directory sizes (size-only)")
     else:
         lines.append(
             "1) Stop services: tailscaled/postgresql on VM, tailscaled/postgresql/nginx on CT"
         )
-        lines.append("2) Stream-copy planned directories from VM to CT")
-        lines.append(f"3) Start services (tailscaled only on {tailscale_owner})")
-        lines.append("4) Compare directory sizes (size-only)")
+        lines.append("2) Back up /var/lib/tailscale from VM to local tar")
+        lines.append("3) Stream-copy planned directories from VM to CT")
+        lines.append(f"4) Start services (tailscaled only on {tailscale_owner})")
+        lines.append("5) Compare directory sizes (size-only)")
     lines.append("")
     return "\n".join(lines)
 
@@ -701,6 +716,31 @@ def rsync_copy_path_remote(
             result.stdout,
             result.stderr,
         )
+
+
+def backup_tailscale_state(
+    vm_conf: SSHConfig, workdir: Path, timestamp: str
+) -> Optional[Path]:
+    if not remote_path_exists(vm_conf, "/var/lib/tailscale"):
+        return None
+    backup_path = workdir / f"tailscale_state_{timestamp}.tar"
+    remote_cmd = "sudo -n tar -cpf - -C / var/lib/tailscale"
+    cmd = build_ssh_command(vm_conf, remote_cmd)
+    try:
+        with backup_path.open("wb") as handle:
+            result = subprocess.run(cmd, stdout=handle, stderr=subprocess.PIPE)
+        if result.returncode != 0:
+            raise CommandError(
+                cmd,
+                result.returncode,
+                "",
+                result.stderr.decode().strip(),
+            )
+    except Exception:
+        if backup_path.exists():
+            backup_path.unlink()
+        raise
+    return backup_path
 
 
 def fix_postgres_ownership(ct_conf: SSHConfig, path: str) -> None:
@@ -945,6 +985,9 @@ def main(
     warnings.append(
         f"tailscaled will only be started on {tailscale_owner} to avoid duplicate keys."
     )
+    tailscale_backup_exists = remote_path_exists(vm_conf, "/var/lib/tailscale")
+    if not tailscale_backup_exists:
+        warnings.append("Tailscale state directory not found on VM; backup tar will be skipped.")
 
     remote_jump_decision: Optional[bool] = None
     if transfer_mode in {"auto", "remote"}:
@@ -1055,6 +1098,9 @@ def main(
     }
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    tailscale_backup_path = (
+        workdir / f"tailscale_state_{timestamp}.tar" if tailscale_backup_exists else None
+    )
     plan_text = build_plan_text(
         timestamp=timestamp,
         vm_conf=vm_conf,
@@ -1073,6 +1119,8 @@ def main(
         precopy_items=precopy_items,
         precopy_enabled=precopy_enabled,
         precopy_method=precopy_method,
+        tailscale_backup_path=tailscale_backup_path,
+        tailscale_backup_exists=tailscale_backup_exists,
     )
 
     details = {
@@ -1088,6 +1136,10 @@ def main(
         "tailscale_owner": tailscale_owner,
         "transfer_mode": transfer_mode,
         "nginx_permissions": nginx_reports,
+        "tailscale_backup": {
+            "exists": tailscale_backup_exists,
+            "path": str(tailscale_backup_path) if tailscale_backup_path else None,
+        },
         "precopy": {
             "items": precopy_items,
             "enabled": precopy_enabled,
@@ -1128,6 +1180,13 @@ def main(
     for service in ["tailscaled", "postgresql", "nginx"]:
         if service_status[service]["ct"] != "unknown":
             stop_service(ct_conf, service)
+
+    typer.echo("Backing up tailscale state...")
+    backup_path = backup_tailscale_state(vm_conf, workdir, timestamp)
+    if backup_path:
+        typer.echo(f"Tailscale backup saved to {backup_path}")
+    else:
+        typer.echo("Tailscale state directory not found on VM; backup skipped.")
 
     typer.echo(f"Copying data (mode: {transfer_mode})...")
     for path in copy_items:
