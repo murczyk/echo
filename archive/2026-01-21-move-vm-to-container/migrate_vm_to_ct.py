@@ -608,6 +608,27 @@ def build_inner_ssh_args(ct_conf: SSHConfig, use_jump: bool) -> List[str]:
     return args
 
 
+def build_rsync_ssh_args(ct_conf: SSHConfig, use_jump: bool) -> List[str]:
+    args = [
+        "ssh",
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        "ConnectTimeout=10",
+        "-o",
+        "StrictHostKeyChecking=no",
+        "-o",
+        "UserKnownHostsFile=/dev/null",
+        "-o",
+        "GlobalKnownHostsFile=/dev/null",
+    ]
+    if ct_conf.agent:
+        args.append("-A")
+    if use_jump and ct_conf.jump:
+        args.extend(["-J", ct_conf.jump])
+    return args
+
+
 def stream_copy_path_remote(
     vm_conf: SSHConfig, ct_conf: SSHConfig, path: str, use_jump: bool
 ) -> None:
@@ -627,7 +648,7 @@ def stream_copy_path_remote(
 
 
 def build_rsync_ssh_command(ct_conf: SSHConfig, use_jump: bool) -> str:
-    args = build_inner_ssh_args(ct_conf, use_jump)
+    args = build_rsync_ssh_args(ct_conf, use_jump)
     return " ".join(shlex.quote(part) for part in args)
 
 
