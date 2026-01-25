@@ -24,7 +24,7 @@ pub enum ReportType {
     Naushnom,
     Reo(ReoReportSettings),
     Digest,
-    RerReport
+    ActiveNetworks
 }
 
 #[derive(

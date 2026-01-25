@@ -26,7 +26,7 @@ mod senders;
 pub mod tag;
 pub mod types;
 mod util;
-mod rer_report;
+mod active_networks;
 
 pub(crate) async fn cleanup_old_reports_nofail(
     dbx: &DatabaseConnection,
@@ -192,14 +192,14 @@ pub async fn report_docx(
         self::posts::report_docx_kind_posts(user, &env, &req, &outpath)
             .await
             .c(h!())?;
-    } else if req.kind == "rer_report" {
+    } else if req.kind == "active_networks" {
         crate::users::has_any_role(
             &env.dbx,
             &user.id().c(h!())?,
             vec!["UnitsEditor", "CallsignsEditor", "Admin"],
         )
             .await?;
-        self::rer_report::report_docx_kind_rer_report(&env, &outpath)
+        self::active_networks::report_docx_kind_active_networks(&env, &outpath)
             .await
             .c(h!())?;
     } else {

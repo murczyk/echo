@@ -184,7 +184,7 @@ type ReportTemplate
     | RTSenders SendersType
     | RTReo
     | RTDigest
-    | RTRerReport
+    | ActiveNetworks
 
 
 type FilterName

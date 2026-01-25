@@ -10,7 +10,7 @@ use std::path::Path;
 use std::collections::HashSet;
 use std::time::Instant;
 
-pub async fn report_docx_kind_rer_report(
+pub async fn report_docx_kind_active_networks(
     env: &Env,
     outpath: &Path,
 ) -> Result<(), AppError> {

@@ -558,9 +558,9 @@ view user model shared route =
                     "Дайджест"
                     "Для генерування потрібні права редактора чи адміна"
                 , templateCard
-                    (model.reportTemplate == RTRerReport)
-                    (ReportTemplateSelect RTRerReport)
-                    "РЕР репорт"
+                    (model.reportTemplate == ActiveNetworks)
+                    (ReportTemplateSelect ActiveNetworks)
+                    "Активні радіомережі"
                     "Для генерування потрібні права редактора чи адміна"
                 ]
             -- Add adjacent-freqs range selector when RTReo is chosen
