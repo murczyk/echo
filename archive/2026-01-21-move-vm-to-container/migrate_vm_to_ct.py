@@ -417,6 +417,9 @@ def build_plan_text(
     tailscale_owner: str,
     transfer_mode: str,
     nginx_reports: Dict[str, Dict[str, object]],
+    precopy_items: List[str],
+    precopy_enabled: bool,
+    precopy_method: Optional[str],
 ) -> str:
     lines: List[str] = []
     lines.append("Migration plan")
@@ -507,6 +510,13 @@ def build_plan_text(
     lines.append("Planned copy items (in order):")
     for path in copy_items:
         lines.append(f"- {path}")
+    if precopy_items:
+        lines.append("")
+        lines.append("Pre-copy items:")
+        for path in precopy_items:
+            lines.append(f"- {path}")
+        if precopy_enabled and precopy_method:
+            lines.append(f"- method: {precopy_method}")
     if warnings:
         lines.append("")
         lines.append("Warnings:")
@@ -516,10 +526,23 @@ def build_plan_text(
     lines.append(f"Transfer mode: {transfer_mode}")
     lines.append("")
     lines.append("Execution plan:")
-    lines.append("1) Stop services: tailscaled/postgresql on VM, tailscaled/postgresql/nginx on CT")
-    lines.append("2) Stream-copy planned directories from VM to CT")
-    lines.append(f"3) Start services (tailscaled only on {tailscale_owner})")
-    lines.append("4) Compare directory sizes (size-only)")
+    if precopy_items and precopy_enabled:
+        lines.append("1) Pre-copy PostgreSQL data directory while services are running")
+        lines.append(
+            "2) Stop services: tailscaled/postgresql on VM, tailscaled/postgresql/nginx on CT"
+        )
+        lines.append(
+            "3) Sync PostgreSQL diff, then stream-copy remaining directories from VM to CT"
+        )
+        lines.append(f"4) Start services (tailscaled only on {tailscale_owner})")
+        lines.append("5) Compare directory sizes (size-only)")
+    else:
+        lines.append(
+            "1) Stop services: tailscaled/postgresql on VM, tailscaled/postgresql/nginx on CT"
+        )
+        lines.append("2) Stream-copy planned directories from VM to CT")
+        lines.append(f"3) Start services (tailscaled only on {tailscale_owner})")
+        lines.append("4) Compare directory sizes (size-only)")
     lines.append("")
     return "\n".join(lines)
 
@@ -591,6 +614,51 @@ def stream_copy_path_remote(
     inner_cmd = "sudo -n tar -xpf - -C /"
     inner = " ".join(shlex.quote(part) for part in inner_args + [inner_cmd])
     remote_cmd = f"sudo -n tar -cpf - -C / {shlex.quote(rel_path)} | {inner}"
+    result = run_ssh_result(vm_conf, remote_cmd)
+    if result.returncode != 0:
+        raise CommandError(
+            build_ssh_command(vm_conf, remote_cmd),
+            result.returncode,
+            result.stdout,
+            result.stderr,
+        )
+
+
+def build_rsync_ssh_command(ct_conf: SSHConfig, use_jump: bool) -> str:
+    args = build_inner_ssh_args(ct_conf, use_jump)
+    return " ".join(shlex.quote(part) for part in args)
+
+
+def rsync_available(vm_conf: SSHConfig, ct_conf: SSHConfig) -> bool:
+    if not command_exists(vm_conf, "rsync"):
+        return False
+    if not command_exists(ct_conf, "rsync"):
+        return False
+    return True
+
+
+def rsync_copy_path_remote(
+    vm_conf: SSHConfig,
+    ct_conf: SSHConfig,
+    path: str,
+    use_jump: bool,
+    delete: bool = True,
+) -> None:
+    src_path = path.rstrip("/") + "/"
+    dst_path = path.rstrip("/") + "/"
+    ssh_cmd = build_rsync_ssh_command(ct_conf, use_jump)
+    flags = ["-a", "--numeric-ids"]
+    if delete:
+        flags.append("--delete")
+    cmd_parts = [
+        "sudo -n rsync",
+        *flags,
+        "-e",
+        shlex.quote(ssh_cmd),
+        shlex.quote(src_path),
+        shlex.quote(f"{ct_conf.target}:{dst_path}"),
+    ]
+    remote_cmd = " ".join(cmd_parts)
     result = run_ssh_result(vm_conf, remote_cmd)
     if result.returncode != 0:
         raise CommandError(
@@ -892,6 +960,27 @@ def main(
 
     copy_items = dedupe_preserve_order(copy_items)
 
+    precopy_items: List[str] = []
+    precopy_enabled = False
+    precopy_method: Optional[str] = None
+    precopy_reason: Optional[str] = None
+    postgres_precopy_path = postgres_data_dir or "/var/lib/postgresql"
+    if postgres_precopy_path in copy_items:
+        precopy_items = [postgres_precopy_path]
+        if transfer_mode != "remote":
+            precopy_reason = "transfer mode is local"
+        elif remote_jump_decision is None:
+            precopy_reason = "VM cannot reach CT for remote sync"
+        elif not rsync_available(vm_conf, ct_conf):
+            precopy_reason = "rsync not available on VM or CT"
+        else:
+            precopy_enabled = True
+            precopy_method = "rsync"
+    if precopy_items and not precopy_enabled and precopy_reason:
+        warnings.append(
+            f"PostgreSQL pre-copy disabled ({precopy_reason}); will do full copy after stop."
+        )
+
     major_mismatch_sample = [
         f"{pkg} ({vm_packages[pkg]} vs {ct_packages[pkg]})"
         for pkg in major_mismatch[:25]
@@ -930,6 +1019,9 @@ def main(
         tailscale_owner=tailscale_owner,
         transfer_mode=transfer_mode,
         nginx_reports=nginx_reports,
+        precopy_items=precopy_items,
+        precopy_enabled=precopy_enabled,
+        precopy_method=precopy_method,
     )
 
     details = {
@@ -945,6 +1037,12 @@ def main(
         "tailscale_owner": tailscale_owner,
         "transfer_mode": transfer_mode,
         "nginx_permissions": nginx_reports,
+        "precopy": {
+            "items": precopy_items,
+            "enabled": precopy_enabled,
+            "method": precopy_method,
+            "reason": precopy_reason,
+        },
     }
 
     plan_path, details_path = write_plan_files(workdir, timestamp, plan_text, details)
@@ -957,6 +1055,15 @@ def main(
             typer.echo("No changes made.")
             raise typer.Exit(code=0)
 
+    if precopy_items and precopy_enabled:
+        typer.echo("Pre-copying PostgreSQL data directory before stopping services...")
+        for path in precopy_items:
+            ensure_dir_exists(ct_conf, path)
+            typer.echo(f"- Pre-copying {path}")
+            if transfer_mode != "remote" or remote_jump_decision is None:
+                raise typer.Exit(code=1)
+            rsync_copy_path_remote(vm_conf, ct_conf, path, remote_jump_decision)
+
     typer.echo("Stopping services...")
     for service in ["tailscaled", "postgresql"]:
         if service_status[service]["vm"] != "unknown":
@@ -968,6 +1075,12 @@ def main(
     typer.echo(f"Copying data (mode: {transfer_mode})...")
     for path in copy_items:
         ensure_dir_exists(ct_conf, path)
+        if precopy_items and precopy_enabled and path in precopy_items:
+            typer.echo(f"- Syncing diff for {path}")
+            if transfer_mode != "remote" or remote_jump_decision is None:
+                raise typer.Exit(code=1)
+            rsync_copy_path_remote(vm_conf, ct_conf, path, remote_jump_decision)
+            continue
         typer.echo(f"- Copying {path}")
         if transfer_mode == "remote":
             if remote_jump_decision is None:
