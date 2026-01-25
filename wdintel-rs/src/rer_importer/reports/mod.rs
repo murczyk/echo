@@ -199,7 +199,7 @@ pub async fn report_docx(
             vec!["UnitsEditor", "CallsignsEditor", "Admin"],
         )
             .await?;
-        self::rer_report::report_docx_kind_rer_report(user, &env, &req, &outpath)
+        self::rer_report::report_docx_kind_rer_report(&env, &outpath)
             .await
             .c(h!())?;
     } else {
