@@ -682,6 +682,7 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::sigint::aor::types::DeleteAreaOfResponsibilityReq,
             crate::sigint::aor::types::ListAreasOfResponsibilitySortBy,
             crate::sigint::aor::types::ListAreasOfResponsibilityReq,
+            crate::sigint::key::admin::SigintKeySharePolicy,
             crate::delta::login::DeltaLoginUrl,
             crate::sigint::types::ZoneDatasourceGroupAddRsp,
             crate::event_stream::types::EventType,

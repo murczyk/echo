@@ -7169,16 +7169,6 @@ radiosDownloadResultReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "csv_page" (Json.Decode.nullable Json.Decode.int)))
 
 
-sigintKeySharePolicyDecoder : Json.Decode.Decoder SigintKeySharePolicy
-sigintKeySharePolicyDecoder =
-    Json.Decode.succeed SigintKeySharePolicy
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.int))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "grant_from" Json.Decode.int))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "grant_to" Json.Decode.int))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "author" Json.Decode.string))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" Json.Decode.int))
-
-
 areaOfResponsibilityEntryDecoder : Json.Decode.Decoder AreaOfResponsibilityEntry
 areaOfResponsibilityEntryDecoder =
     Json.Decode.succeed AreaOfResponsibilityEntry
@@ -10338,6 +10328,16 @@ listAreasOfResponsibilityReqDecoder : Json.Decode.Decoder ListAreasOfResponsibil
 listAreasOfResponsibilityReqDecoder =
     Json.Decode.succeed ListAreasOfResponsibilityReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sort_by" (Json.Decode.nullable listAreasOfResponsibilitySortByDecoder)))
+
+
+sigintKeySharePolicyDecoder : Json.Decode.Decoder SigintKeySharePolicy
+sigintKeySharePolicyDecoder =
+    Json.Decode.succeed SigintKeySharePolicy
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "grant_from" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "grant_to" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "author" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" Json.Decode.int))
 
 
 deltaLoginUrlDecoder : Json.Decode.Decoder DeltaLoginUrl
