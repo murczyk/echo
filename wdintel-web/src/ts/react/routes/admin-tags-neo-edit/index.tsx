@@ -101,11 +101,21 @@ function getBackToPath(): string {
   }
 }
 
+function normalizeBackTo(backTo: string | null): string | null {
+  if (!backTo) return null;
+  try {
+    return decodeURIComponent(backTo);
+  } catch (_) {
+    return backTo;
+  }
+}
+
 function buildEditPath(tagId: number, backTo: string | null): string {
   const params = new URLSearchParams();
   params.set('id', String(tagId));
-  if (backTo) {
-    params.set('backTo', backTo);
+  const normalizedBackTo = normalizeBackTo(backTo);
+  if (normalizedBackTo) {
+    params.set('backTo', normalizedBackTo);
   }
   return `/admin/tags-neo/edit?${params.toString()}`;
 }
@@ -113,8 +123,9 @@ function buildEditPath(tagId: number, backTo: string | null): string {
 function buildKeywordCreatePath(tagId: number, backTo: string | null): string {
   const params = new URLSearchParams();
   params.set('tagId', String(tagId));
-  if (backTo) {
-    params.set('backTo', backTo);
+  const normalizedBackTo = normalizeBackTo(backTo);
+  if (normalizedBackTo) {
+    params.set('backTo', normalizedBackTo);
   }
   return `/admin/tags-neo/keyword-edit?${params.toString()}`;
 }
@@ -123,8 +134,9 @@ function buildKeywordEditPath(tagId: number, keywordId: number, backTo: string |
   const params = new URLSearchParams();
   params.set('tagId', String(tagId));
   params.set('keywordId', String(keywordId));
-  if (backTo) {
-    params.set('backTo', backTo);
+  const normalizedBackTo = normalizeBackTo(backTo);
+  if (normalizedBackTo) {
+    params.set('backTo', normalizedBackTo);
   }
   return `/admin/tags-neo/keyword-edit?${params.toString()}`;
 }
