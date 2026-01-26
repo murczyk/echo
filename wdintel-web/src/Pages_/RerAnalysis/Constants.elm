@@ -51,3 +51,6 @@ reportTemplateToString x =
 
         RTDigest ->
             "digest"
+
+        ActiveNetworks ->
+            "active_networks"

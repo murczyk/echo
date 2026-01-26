@@ -1,5 +1,6 @@
 module Pages_.RerAnalysis.Model exposing (FilterName(..), GroupsActivityPeriod(..), MenuTab(..), Model, ReportTemplate(..), SendersType(..))
 
+
 import Bindings as B
 import Core.Types exposing (ApiError, GroupsActivityPerDayRsp)
 import Dict exposing (Dict)
@@ -112,7 +113,12 @@ type alias Model =
         { state : Select.State
         , items : List (Select.MenuItem Float)
         , selected : Float
-        }    
+        }
+    , reportActiveNetworksAorsSelect :
+        { state : Select.State
+        , items : List (Select.MenuItem Int)
+        , selected : List Int
+        }
 
     -- , reportIframeUrl : Maybe String
     , reportDownloadInProgress : Bool
@@ -130,6 +136,7 @@ type alias Model =
 
     -- stats
     , aors : RemoteData ApiError (List B.AnalysisStatsAor)
+    , allAors : List B.AreaOfResponsibility
     , aorNames : List B.AreaOfResponsibilityEntry
     , posts : RemoteData ApiError (List B.AnalysisStatsPost)
     , locations : RemoteData ApiError (List B.AnalysisStatsLocation)
@@ -183,6 +190,7 @@ type ReportTemplate
     | RTSenders SendersType
     | RTReo
     | RTDigest
+    | ActiveNetworks
 
 
 type FilterName

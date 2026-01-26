@@ -14,6 +14,7 @@ use futures_util::TryStreamExt;
 use indicatif::ProgressBar;
 use sea_orm::*;
 
+mod active_networks;
 pub mod babak;
 mod digest;
 pub mod interception;
@@ -191,6 +192,18 @@ pub async fn report_docx(
         self::posts::report_docx_kind_posts(user, &env, &req, &outpath)
             .await
             .c(h!())?;
+    } else if req.kind == "active_networks" {
+        crate::users::has_any_role(
+            &env.dbx,
+            &user.id().c(h!())?,
+            vec!["UnitsEditor", "CallsignsEditor", "Admin"],
+        )
+        .await?;
+        self::active_networks::report_docx_kind_active_networks(
+            &env, &req, &outpath,
+        )
+        .await
+        .c(h!())?;
     } else {
         return Err(format!("Unknown report kind {}", req.kind).into());
     }

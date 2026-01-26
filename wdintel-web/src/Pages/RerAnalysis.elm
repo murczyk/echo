@@ -175,6 +175,11 @@ init route _ =
                 }
 
             -- , reportIframeUrl = Nothing
+            , reportActiveNetworksAorsSelect =
+                { state = Select.initState (Select.selectIdentifier "selectReportActiveNetworksAors")
+                , items = []
+                , selected = []
+                }
             , reportDownloadInProgress = False
             , noMoreToLoad = False
             , newCallsignsLoading = False
@@ -190,6 +195,7 @@ init route _ =
 
             --
             , aors = NotAsked
+            , allAors = []
             , aorNames = []
             , groups = NotAsked
             , senders = NotAsked
@@ -254,6 +260,7 @@ init route _ =
         , E.map RowsMsg Shared.Components.RerMessage.init
         , Core.EventHelpers.subscribeToInboxChanges route.path
         , E.sendCmd <| Ports.rer_analysis_saveQueryState (B.rerAnalysisQueryStateEncoder initialQueryState)
+        , E.sendCmd <| Api.aor_list GotAllAors { sortBy = Nothing }
         , palitrasEff
         , pollEvents Nothing
         ]
@@ -1228,6 +1235,34 @@ update user shared route msg model =
                                             ++ ")"
                                     }
                             )
+              }
+            , E.none
+            )
+
+        GotAllAors (Err e) ->
+            ( model, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження списку смуг" e )
+
+        GotAllAors (Ok vs) ->
+            let
+                reportActiveNetworksAorsSelect =
+                    model.reportActiveNetworksAorsSelect
+
+                topLevelAors =
+                    vs |> List.filter .isTopLevel
+
+                reportAorItems =
+                    topLevelAors
+                        |> List.map
+                            (\aor ->
+                                Select.basicMenuItem
+                                    { item = aor.id
+                                    , label = aor.name
+                                    }
+                            )
+            in
+            ( { model
+                | allAors = topLevelAors
+                , reportActiveNetworksAorsSelect = { reportActiveNetworksAorsSelect | items = reportAorItems }
               }
             , E.none
             )
@@ -3101,6 +3136,9 @@ update user shared route msg model =
                         RTDigest ->
                             "docx"
 
+                        ActiveNetworks ->
+                            "docx"
+
                 -- filename like "report_2023-07-17-12-00_2023-07-18-12-00"
                 fname =
                     "report_"
@@ -3418,6 +3456,42 @@ update user shared route msg model =
             in
             ( { model | reportAdjacentFreqsRangeSelect = a2 }, E.none )
 
+        SelectReportActiveNetworksAors imsg ->
+            let
+                ( mAction, imodel2, icmd ) =
+                    Select.update imsg model.reportActiveNetworksAorsSelect.state
+
+                reportActiveNetworksAorsSelect =
+                    model.reportActiveNetworksAorsSelect
+
+                selected =
+                    case mAction of
+                        Just (Select.Select i) ->
+                            if List.member i reportActiveNetworksAorsSelect.selected then
+                                List.filter (\x -> x /= i) reportActiveNetworksAorsSelect.selected
+
+                            else
+                                reportActiveNetworksAorsSelect.selected ++ [ i ]
+
+                        Just (Select.Deselect items) ->
+                            List.filter (\x -> not (List.member x items)) reportActiveNetworksAorsSelect.selected
+
+                        Just Select.Clear ->
+                            []
+
+                        _ ->
+                            reportActiveNetworksAorsSelect.selected
+
+                a2 =
+                    { reportActiveNetworksAorsSelect
+                        | state = imodel2
+                        , selected = selected
+                    }
+            in
+            ( { model | reportActiveNetworksAorsSelect = a2 }
+            , E.sendCmd <| Cmd.map SelectReportActiveNetworksAors icmd
+            )
+
         GroupsActivityPeriodChanged period ->
             case ( model.from.datePosix, model.to.datePosix, List.head model.freqsSelected ) of
                 ( Just dtFromPosix, Just dtToPosix, Just freq ) ->
@@ -3520,6 +3594,9 @@ reportTemplateToApiType model template =
 
         RTDigest ->
             Just B.Digest
+
+        ActiveNetworks ->
+            Just (B.ActiveNetworks { aorIds = model.reportActiveNetworksAorsSelect.selected })
 
 
 
