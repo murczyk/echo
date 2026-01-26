@@ -244,13 +244,6 @@ pub async fn get_aor_network_comments(
                 )
                 .filter(
                     Expr::col((
-                        sigint_network_freq::Entity,
-                        sigint_network_freq::Column::Deleted,
-                    ))
-                    .eq(false),
-                )
-                .filter(
-                    Expr::col((
                         signal_message::Entity,
                         signal_message::Column::Deleted,
                     ))
