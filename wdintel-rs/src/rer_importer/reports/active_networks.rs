@@ -7,7 +7,9 @@ use crate::entities::{
 use crate::error::AppError;
 use crate::h;
 use crate::rer_importer::reports::types::{
-    ActiveNetworksReportSettings, ReportPreviewReq, ReportType,
+    ActiveNetworksReportSettings, AreaOfResponsibility,
+    AreaOfResponsibilityNetworkComments, NetworkUnit, NetworkUnitComments,
+    ReportPreviewReq, ReportType, SigintComment, SigintNetwork,
 };
 use crate::types::Env;
 use crate::utils::{dt_from_millis, dt_zoned_from_millis};
@@ -19,8 +21,8 @@ use docx_rs::{
 use echo_migration::{IntoCondition, JoinType};
 use log::info;
 use sea_orm::{
-    prelude::Expr, ColumnTrait, DatabaseConnection, EntityTrait,
-    FromQueryResult, QueryFilter, QueryOrder, QuerySelect, RelationTrait,
+    prelude::Expr, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
+    QueryOrder, QuerySelect, RelationTrait,
 };
 use std::path::Path;
 use std::time::Instant;
@@ -383,39 +385,4 @@ pub fn format_to_native_date(
         .transpose()
         .context(h!())?
         .unwrap_or_default())
-}
-
-pub struct AreaOfResponsibilityNetworkComments {
-    pub area_of_responsibility: AreaOfResponsibility,
-    pub network_unit_comments: Vec<NetworkUnitComments>,
-}
-
-pub struct NetworkUnitComments {
-    pub network: SigintNetwork,
-    pub units: Vec<NetworkUnit>,
-    pub comments: Vec<SigintComment>,
-}
-
-#[derive(Debug, Clone, FromQueryResult)]
-pub struct AreaOfResponsibility {
-    pub id: i64,
-    pub name: String,
-}
-
-#[derive(Debug, FromQueryResult)]
-pub struct SigintNetwork {
-    pub id: i64,
-    pub name: String,
-    pub active_from: NaiveDateTime,
-}
-
-#[derive(Debug, Clone, FromQueryResult)]
-pub struct NetworkUnit {
-    pub name: String,
-}
-
-#[derive(Debug, Clone, FromQueryResult)]
-pub struct SigintComment {
-    pub comment: String,
-    pub created_at: NaiveDateTime,
 }
