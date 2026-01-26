@@ -42,7 +42,6 @@ pub async fn report_docx_kind_active_networks(
 
     let aor_data = get_aor_network_comments(&read_db, aor_ids, req).await?;
 
-    let mut processed_networks = HashSet::new();
     let mut docx = Docx::new()
         .page_orient(PageOrientationType::Landscape)
         .page_size(11906 * 2, 16838)
@@ -73,10 +72,6 @@ pub async fn report_docx_kind_active_networks(
 
         let mut network_set = HashSet::new();
         for (network, units, comments) in networks {
-            if processed_networks.contains(&network.id) {
-                continue;
-            }
-            processed_networks.insert(network.id);
 
             let unit_names: Vec<String> = units
                 .iter()
