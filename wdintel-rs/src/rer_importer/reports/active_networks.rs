@@ -59,8 +59,6 @@ pub async fn report_docx_kind_active_networks(
         );
 
     for (aor, networks) in aor_data {
-
-
         docx = docx.add_paragraph(Paragraph::new().add_run(
             Run::new().bold().add_text(format!(
                 "\tВ смузі оборони {}",
@@ -70,14 +68,15 @@ pub async fn report_docx_kind_active_networks(
 
         if networks.is_empty() {
             docx = docx.add_paragraph(Paragraph::new().add_run(
-                Run::new().add_text("\tАктивних радіомереж за обраний період не виявлено"),
+                Run::new().add_text(
+                    "\tАктивних радіомереж за обраний період не виявлено",
+                ),
             ));
             continue;
         }
 
         let mut network_set = HashSet::new();
         for (network, units, comments) in networks {
-
             let unit_names: Vec<String> = units
                 .iter()
                 .filter(|u| !u.name.is_empty())
