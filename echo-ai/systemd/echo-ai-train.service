@@ -1,5 +1,7 @@
 [Unit]
 Description=echo-ai scheduled training job
+After=mlflow.service
+Requires=mlflow.service
 
 [Service]
 Type=oneshot

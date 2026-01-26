@@ -6,7 +6,7 @@ source .env
 set +a
 
 databases="$1"
-if [ -z "${databases}" ];
+if [ -z "${databases}" ]; then
     databases="echo-kherson2 echo-volyn2 echo-kharkiv2 echo-luhansk echo-zp2 echo-siversk echo-kupiansk echo-donetsk2 echo-pivnich echo-skhid"
 fi
 

@@ -1,3 +1,4 @@
+import hashlib
 from typing import cast
 
 import numpy as np
@@ -17,9 +18,11 @@ def to_pandas_df(dataset: Dataset | pa.Table) -> pd.DataFrame:
     return arrow_table.to_pandas(types_mapper=pd.ArrowDtype)
 
 
-def digest(df: pd.DataFrame) -> str:
-    slice = df.head(10000)
-    hash = pandas.util.hash_pandas_object(slice)
+def digest(df: pd.DataFrame, hash_key: str) -> str:
+    digest = hashlib.blake2b(digest_size=8)
+    digest.update(hash_key.encode())
+    hash_key = digest.hexdigest()
+    hash = pandas.util.hash_pandas_object(df, hash_key=hash_key)
     input = pd.DataFrame({"hash": hash}, copy=False)
     return compute_pandas_digest(input)
 

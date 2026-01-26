@@ -60,7 +60,8 @@ def real_main(args):
     print(f"starting training for labels: {label_list}")
 
     with tempfile.TemporaryDirectory() as temp_dir:
-        with duckdb.connect() as con:
+        config = {"max_memory": "4GB"}
+        with duckdb.connect(config=config) as con:  # pyright: ignore
             train_supervised(temp_dir, label_dict, data_file, con, args)
 
 

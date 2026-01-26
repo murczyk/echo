@@ -1,5 +1,4 @@
 import datetime
-import multiprocessing
 import sys
 from typing import cast
 
@@ -12,9 +11,9 @@ from mlflow.entities.logged_model_input import LoggedModelInput
 
 from echo_ai import arrow, quack
 from echo_ai.evaluate import (
+    evaluate_model,
     plot_precision_recall,
     plot_threshold_recall,
-    run_evaluate_model,
 )
 
 from .fasttext_model import (
@@ -25,8 +24,8 @@ from .fasttext_model import (
 )
 
 
-def to_csv(temp_dir: str, rel: DuckDBPyRelation, dataset: Dataset) -> str:
-    path = f"{temp_dir}/{dataset.name}.{dataset.digest}.txt"
+def to_csv(temp_dir: str, rel: DuckDBPyRelation, ml_dataset: Dataset) -> str:
+    path = f"{temp_dir}/{ml_dataset.name}.{ml_dataset.digest}.txt"
     print(f"creating file '{path}'")
     rel.select("text").to_csv(
         path,
@@ -100,8 +99,6 @@ def train_supervised(
 
     file = con.from_parquet(data_file, file_row_number=True)
 
-    jobs = []
-
     seed = args.get("seed", 4507)
     shuffle = args.get("shuffle", True)
 
@@ -109,50 +106,36 @@ def train_supervised(
     define_train_test_split(
         con, quack.define_rel_view(file, "file"), seed=seed, shuffle=shuffle
     )
+    results_per_split = []
     for label_index, label_name in label_dict.items():
         label_column_name = f"label_{label_index}"
         ds_train = define_slice_for_label(con, "train", label_column_name)
         ds_test = define_slice_for_label(con, "test", label_column_name)
-        jobs.append(
-            {
-                "label_index": label_index,
-                "label_name": label_name,
-                "train": ds_train,
-                "test": ds_test,
-            }
-        )
 
-    eval_jobs = []
-
-    for job in jobs:
-        label_index = job["label_index"]
-        label_name = job["label_name"]
-
-        rel_train = con.view(job["train"])
-        df_train = quack.to_df_arrow(rel_train)
-        df_train.info(verbose=True)
+        rel_train = con.view(ds_train)
+        df_train = quack.to_df_arrow(rel_train.limit(1000))
+        (len_train,) = rel_train.count("*").fetchone()  # pyright: ignore
         pd_train = from_pandas(
             df_train,
             name=f"{label_name}.train",
-            digest=arrow.digest(df_train),
+            digest=arrow.digest(df_train, str(len_train)),
             targets="label",
         )
+        train_path = to_csv(temp_dir, rel_train, pd_train)
 
-        rel_test = con.view(job["test"])
-        df_test = quack.to_df_arrow(rel_test)
-        df_test.info(verbose=True)
+        rel_test = con.view(ds_test)
+        df_test = quack.to_df_arrow(rel_test.limit(1000))
+        (len_test,) = rel_test.count("*").fetchone()  # pyright: ignore
         pd_test = from_pandas(
             df_test,
             name=f"{label_name}.test",
-            digest=arrow.digest(df_test),
+            digest=arrow.digest(df_test, str(len_test)),
             targets="label",
         )
-
-        train_path = to_csv(temp_dir, rel_train, pd_train)
         test_path = to_csv(temp_dir, rel_test, pd_test)
 
         tags = {"label": label_name, "task": "supervised"}
-        with mlflow.start_run(nested=True, tags=tags) as run:
+        with mlflow.start_run(nested=True, tags=tags):
             print(f"starting training for {label_name}")
 
             if fasttext_kwargs.get("autotuneMetric"):
@@ -187,23 +170,13 @@ def train_supervised(
                 "train": train_path,
                 "test": test_path,
             }
-            experiment_id = run.info.experiment_id
-            eval_jobs.append([experiment_id, label_name, model_info, split_csv])
+            eval_results = evaluate_model(label_name, model_info.model_uri, split_csv)
+            results_per_split.append(eval_results)
 
-    with multiprocessing.Pool() as pool:
-        results_per_split = pool.map(process_evalute_job, eval_jobs)
-        results_test = [item["test"] for item in results_per_split]
-        results_train = [item["train"] for item in results_per_split]
-
-        labels = list(label_dict.values())
-        plot_precision_recall(labels, "test", results_test)
-        plot_threshold_recall(labels, "test", results_test)
-        plot_precision_recall(labels, "train", results_train)
-        plot_threshold_recall(labels, "train", results_train)
-
-
-def process_evalute_job(job):
-    experiment_id, label_name, model_info, split_csv = job
-    return run_evaluate_model(
-        experiment_id, model_info.run_id, label_name, model_info.model_uri, split_csv
-    )
+    results_test = [item["test"] for item in results_per_split]
+    results_train = [item["train"] for item in results_per_split]
+    labels = list(label_dict.values())
+    plot_precision_recall(labels, "test", results_test)
+    plot_threshold_recall(labels, "test", results_test)
+    plot_precision_recall(labels, "train", results_train)
+    plot_threshold_recall(labels, "train", results_train)

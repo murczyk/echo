@@ -169,7 +169,7 @@ local_plain="${local_encrypted%.gpg}"
 local_plain_basename=$(basename "$local_plain")
 
 printf 'Downloading %s to %s\n' "$remote_file" "$local_encrypted"
-s5cmd --endpoint-url "$endpoint_url" cp --show-progress "$remote_file" "$local_encrypted"
+s5cmd --endpoint-url "$endpoint_url" cp --show-progress --if-size-differ --if-source-newer "$remote_file" "$local_encrypted"
 
 printf 'Decrypting to %s\n' "$local_plain"
 if [[ "$gpg_use_loopback" -eq 1 ]]; then
