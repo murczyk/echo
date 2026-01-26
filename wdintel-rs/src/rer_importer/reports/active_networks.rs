@@ -35,14 +35,15 @@ pub async fn report_docx_kind_active_networks(
 
     let read_db = env.dbx.clone();
 
-    let aor_data: Vec<(
-        AreaOfResponsibility,
-        Vec<(SigintNetwork, Vec<NetworkUnit>, Vec<SigintComment>)>,
-    )> = get_aor_network_comments(&read_db, req).await?;
+    let aor_data: Vec<AreaOfResponsibilityNetworkComments> = get_aor_network_comments(&read_db, req).await?;
 
     let mut docx = get_docx_document(req);
 
-    for (aor, networks) in aor_data {
+
+    for aor_network_comments in aor_data {
+        let aor: AreaOfResponsibility = aor_network_comments.area_of_responsibility;
+        let networks: Vec<NetworkUnitComments> = aor_network_comments.network_unit_comments;
+
         docx = add_aor_paragraph(docx, aor);
 
         if networks.is_empty() {
@@ -50,9 +51,9 @@ pub async fn report_docx_kind_active_networks(
             continue;
         }
 
-        for (network, units, comments) in networks {
+        for network_unit_comments in networks {
             docx = handle_comments_with_units_and_network(
-                network, units, comments, docx,
+                network_unit_comments, docx,
             );
         }
         docx = docx.add_paragraph(Paragraph::new());
@@ -76,32 +77,22 @@ pub async fn get_aor_network_comments(
     db: &DatabaseConnection,
     req: &ReportPreviewReq,
 ) -> Result<
-    Vec<(
-        AreaOfResponsibility,
-        Vec<(SigintNetwork, Vec<NetworkUnit>, Vec<SigintComment>)>,
-    )>,
+    Vec<AreaOfResponsibilityNetworkComments>,
     AppError,
 > {
     let aor_ids = get_request_aor_ids(req);
 
-    let mut result: Vec<(
-        AreaOfResponsibility,
-        Vec<(SigintNetwork, Vec<NetworkUnit>, Vec<SigintComment>)>,
-    )> = Vec::new();
+    let mut result: Vec<AreaOfResponsibilityNetworkComments> = Vec::new();
 
     let since_dt = format_to_native_date(req.req.since_date_inclusive_ms)?;
     let till_dt = format_to_native_date(req.req.till_date_inclusive_ms)?;
 
     let aors = get_areas_of_responsibility(db, aor_ids).await?;
 
-    for aor in aors {
-        let mut network_with_comments: Vec<(
-            SigintNetwork,
-            Vec<NetworkUnit>,
-            Vec<SigintComment>,
-        )> = Vec::new();
+    for area_of_responsibility in aors {
+        let mut network_unit_comments: Vec<NetworkUnitComments> = Vec::new();
 
-        let mut networks = get_aor_networks(db, aor.id).await?;
+        let mut networks = get_aor_networks(db, area_of_responsibility.id).await?;
         networks.sort_by_key(|a| a.active_from);
 
         for network in networks {
@@ -110,9 +101,12 @@ pub async fn get_aor_network_comments(
                 get_signal_message_comments(db, network.id, since_dt, till_dt)
                     .await?;
 
-            network_with_comments.push((network, units, comments));
+            network_unit_comments.push(NetworkUnitComments {network, units, comments});
         }
-        result.push((aor, network_with_comments));
+        result.push(AreaOfResponsibilityNetworkComments {
+            area_of_responsibility,
+            network_unit_comments
+        });
     }
 
     Ok(result)
@@ -159,27 +153,25 @@ fn handle_empty_network_for_docx(mut docx: Docx) -> Docx {
 }
 
 fn handle_comments_with_units_and_network(
-    network: SigintNetwork,
-    units: Vec<NetworkUnit>,
-    comments: Vec<SigintComment>,
+    network_unit_comments: NetworkUnitComments,
     mut docx: Docx,
 ) -> Docx {
-    let unit_names: Vec<String> = units
+    let unit_names: Vec<String> = network_unit_comments.units
         .iter()
         .filter(|u| !u.name.is_empty())
         .map(|u| u.name.clone())
         .collect();
 
     let network_line = if unit_names.is_empty() {
-        format!("\tр/м {} невизначеного підрозділу", network.name)
+        format!("\tр/м {} невизначеного підрозділу", network_unit_comments.network.name)
     } else {
-        format!("\tр/м {} {}", network.name, unit_names.join(", "))
+        format!("\tр/м {} {}", network_unit_comments.network.name, unit_names.join(", "))
     };
 
     docx = docx.add_paragraph(
         Paragraph::new().add_run(Run::new().add_text(network_line)),
     );
-    for comment in &comments {
+    for comment in &network_unit_comments.comments {
         docx = add_comment_to_docx(comment, docx);
     }
     docx
@@ -333,15 +325,15 @@ async fn get_signal_message_comments(
         )
         .filter(
             Expr::col((
-                signal_message::Entity,
-                signal_message::Column::CreatedAt,
+                sigint_inbox_item::Entity,
+                sigint_inbox_item::Column::Datetime,
             ))
             .gte(since_dt),
         )
         .filter(
             Expr::col((
-                signal_message::Entity,
-                signal_message::Column::CreatedAt,
+                sigint_inbox_item::Entity,
+                sigint_inbox_item::Column::Datetime,
             ))
             .lte(till_dt),
         )
@@ -378,6 +370,18 @@ pub fn format_to_native_date(
         .transpose()
         .context(h!())?
         .unwrap_or_default())
+}
+
+
+pub struct AreaOfResponsibilityNetworkComments {
+    pub area_of_responsibility: AreaOfResponsibility,
+    pub network_unit_comments: Vec<NetworkUnitComments>,
+}
+
+pub struct NetworkUnitComments{
+    pub network: SigintNetwork,
+    pub units: Vec<NetworkUnit>,
+    pub comments: Vec<SigintComment>
 }
 
 #[derive(Debug, Clone, FromQueryResult)]
