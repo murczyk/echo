@@ -675,6 +675,17 @@ def rsync_available(vm_conf: SSHConfig, ct_conf: SSHConfig) -> bool:
     return True
 
 
+def rsync_vanished_warning(result: subprocess.CompletedProcess) -> bool:
+    if result.returncode != 24:
+        return False
+    stderr = (result.stderr or "").lower()
+    return (
+        "file has vanished" in stderr
+        or "some files vanished before they could be transferred" in stderr
+        or "files vanished before they could be transferred" in stderr
+    )
+
+
 def rsync_copy_path_remote(
     vm_conf: SSHConfig,
     ct_conf: SSHConfig,
@@ -710,6 +721,8 @@ def rsync_copy_path_remote(
     remote_cmd = " ".join(cmd_parts)
     result = run_ssh_result(vm_conf, remote_cmd)
     if result.returncode != 0:
+        if rsync_vanished_warning(result):
+            return
         raise CommandError(
             build_ssh_command(vm_conf, remote_cmd),
             result.returncode,
@@ -1172,6 +1185,13 @@ def main(
                 remote_jump_decision,
                 chown="postgres:postgres" if path == postgres_precopy_path else None,
             )
+        if not yes:
+            response = input(
+                "Pre-copy complete. Type 'yes' to continue with stopping services and final sync: "
+            ).strip()
+            if response.lower() != "yes":
+                typer.echo("No changes made.")
+                raise typer.Exit(code=0)
 
     typer.echo("Stopping services...")
     for service in ["tailscaled", "postgresql"]:
