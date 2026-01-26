@@ -34,7 +34,6 @@ type LoginLike = {
 type ListLoginsRspLike = {
   users?: LoginLike[] | null;
 };
-
 function toListLoginsReqBody(req: ListLoginsReq): ListLoginsReqBody {
   return { sort_by: req.sortBy, filter_by_roles: req.filterByRoles };
 }

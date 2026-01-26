@@ -119,7 +119,6 @@ type GroupEntryF1Like = {
     created_at?: number;
   }[] | null;
 };
-
 function toQrCodeReqBody(req: QrCodeReq): QrCodeReqBody {
   return { account_id: req.accountId };
 }
