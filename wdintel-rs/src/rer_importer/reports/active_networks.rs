@@ -14,6 +14,7 @@ use anyhow::Context;
 use docx_rs::{
     AlignmentType, Docx, PageMargin, PageOrientationType, Paragraph, Run,
 };
+use echo_migration::{IntoCondition, JoinType};
 use log::info;
 use sea_orm::{
     prelude::Expr, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
@@ -222,8 +223,17 @@ pub async fn get_aor_network_comments(
                     sigint_inbox_item::Relation::SignalMessage.def().rev(),
                 )
                 .join(
-                    sea_orm::JoinType::InnerJoin,
-                    sigint_inbox_item::Relation::SigintNetworkFreq.def(),
+                    JoinType::InnerJoin,
+                    sigint_inbox_item::Relation::SigintNetworkFreq
+                        .def()
+                        .on_condition(|_left, right| {
+                            Expr::col((
+                                right,
+                                sigint_network_freq::Column::Deleted,
+                            ))
+                            .eq(false)
+                            .into_condition()
+                        }),
                 )
                 .filter(
                     Expr::col((
@@ -231,6 +241,13 @@ pub async fn get_aor_network_comments(
                         sigint_network_freq::Column::NetworkId,
                     ))
                     .eq(network.id),
+                )
+                .filter(
+                    Expr::col((
+                        sigint_network_freq::Entity,
+                        sigint_network_freq::Column::Deleted,
+                    ))
+                    .eq(false),
                 )
                 .filter(
                     Expr::col((
