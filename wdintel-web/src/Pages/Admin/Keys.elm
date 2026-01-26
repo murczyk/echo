@@ -226,9 +226,7 @@ update msg model =
                 , createForm = updatedCreateForm
                 , formErrors = Dict.remove "grantFromId" model.formErrors
               }
-            , E.batch
-                [ E.sendCmd <| Cmd.map GrantFromSelectMsg selectCmd
-                ]
+            , E.sendCmd <| Cmd.map GrantFromSelectMsg selectCmd
             )
 
         GrantToSelectMsg selectMsg ->
@@ -254,9 +252,7 @@ update msg model =
                 , createForm = updatedCreateForm
                 , formErrors = Dict.remove "grantToId" model.formErrors
               }
-            , E.batch
-                [ E.sendCmd <| Cmd.map GrantToSelectMsg selectCmd
-                ]
+            , E.sendCmd <| Cmd.map GrantToSelectMsg selectCmd
             )
 
         SubmitCreateForm ->
@@ -629,12 +625,11 @@ createPolicySidebarContent isDark model =
         selectOptions =
             { defaultOptions | loading = RD.isLoading model.organisms }
 
-        selectedItem : Maybe Int -> Maybe (Select.MenuItem Int)
         selectedItem mSelected =
             case ( mSelected, model.organisms ) of
-                ( Just selected, RD.Success organisms ) ->
+                ( Just selectedId, RD.Success organisms ) ->
                     organisms
-                        |> List.filter (\org -> org.id == selected)
+                        |> List.filter (\org -> org.id == selectedId)
                         |> List.head
                         |> Maybe.map (\org -> Select.basicMenuItem { item = org.id, label = org.name })
 
