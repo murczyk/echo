@@ -34,7 +34,8 @@ sudo tailscale up
 <details>
 
 ```
-sudo apt-get install -y nginx python3-pip gdal-data libopencv-dev libproj22 libprotobuf23 poppler-data proj-bin proj-data redis-server libxkbcommon-x11-0
+# sudo apt-get install -y nginx python3-pip gdal-data libopencv-dev libproj22 libprotobuf23 poppler-data proj-bin proj-data redis-server libxkbcommon-x11-0
+sudo apt-get install -y nginx python3-pip gdal-data redis-server sqlite3
 ```
 
 </details>
@@ -44,7 +45,8 @@ sudo apt-get install -y nginx python3-pip gdal-data libopencv-dev libproj22 libp
 <details>
 
 ```
-sudo apt-get install -y llvm libclang-dev clang poppler-utils ffmpeg libssl-dev pkgconf cmake libopencv-dev libproj-dev sqlite3
+# sudo apt-get install -y llvm libclang-dev clang poppler-utils ffmpeg libssl-dev pkgconf cmake libopencv-dev libproj-dev sqlite3
+sudo apt-get install -y llvm libclang-dev clang ffmpeg libssl-dev pkgconf cmake libopencv-dev libproj-dev sqlite3
 wget https://github.com/pdf2htmlEX/pdf2htmlEX/releases/download/v0.18.8.rc1/pdf2htmlEX-0.18.8.rc1-master-20200630-Ubuntu-focal-x86_64.deb
 sudo apt install ./pdf2htmlEX-0.18.8.rc1-master-20200630-Ubuntu-focal-x86_64.deb
 ```
@@ -76,16 +78,11 @@ sudo timedatectl set-timezone UTC
 
 <details>
 
-> use this tutorial in case postgres14 is not available: https://www.atlantic.net/dedicated-server-hosting/how-to-install-and-configure-postgres-14-on-ubuntu/
-
 ```
-sudo apt install -y postgresql-14 postgresql-14-postgis-3
-sudo -u postgres psql
-postgres=# create database wd;
-postgres=# CREATE USER wd WITH SUPERUSER PASSWORD 'fee_-_-_-FnoeKFBeebu87bf';
+sudo echo-install-utils setup-postgresql --db-name wd --db-user wd --password 'fee_-_-_-FnoeKFBeebu87bf' --install-pg-uuidv7 --install-pg-repack --install-postgis --setup-slowlog
 ```
 
-Edit `/etc/postgresql/14/main/pg_hba.conf` (`sudo nano`), change:
+`sudo nano /etc/postgresql/14/main/pg_hba.conf` change (if not already):
 
 ```
 local   all             all                                     peer
@@ -97,9 +94,6 @@ to
 local   all             all                                     md5
 ```
 
-- `sudo systemctl restart postgresql`
-- `sudo -u postgres psql wd`
-  - `create extension postgis;`
 - load (scp) `deploy/wd-2024-06-21-13-00-59.pgrestore` it into the
   server (command displayed at the end of gen-db-skeleton)
   - For context, it was generated via this:
@@ -145,36 +139,13 @@ just builder=echo-gpu server=<server> deploy
 just server=$server deploy-echo-ai
 ```
 
-## Signal
+## ECHO-IM
 
-- after deploy, scan QR code
-- To **link new device**:
+- TODO: install echo im binaries
 
-<details>
+## MILGEO-RS
 
-1. Run ssh tunnel like this:
-
-```
-ssh -nNT -L 8083:localhost:8083 {{server}}
-```
-2. Open http://localhost:8083/v1/qrcodelink?device_name=echo
-
-</details>
-
-## Whatsapp
-
-- if you indent to use WhatsApp transport, put its phone value in toml file. then:
-
-<details>
-
-```
-ssh <server>
-journalctl -u echo-whatsapp.service -f
-```
-
-- See QR code and scan to link new device.
-
-</details>
+- proj database (see justfile)
 
 ## Nginx
 

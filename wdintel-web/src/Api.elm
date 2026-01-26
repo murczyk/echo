@@ -1272,6 +1272,40 @@ sigint_delete_key toMsg req =
         , expect = leExpectJson toMsg encryptionKeyDataDecoder
         }
 
+sigint_key_share_policy_list :
+    (Result ApiError (List SigintKeySharePolicy) -> msg)
+    -> Cmd msg
+sigint_key_share_policy_list toMsg =
+    Http.post
+        { url = "/api/sigint/key-share-policy/list"
+        , body = Http.jsonBody Encode.null
+        , expect = leExpectJson toMsg (Decode.list sigintKeySharePolicyDecoder)
+        }
+
+
+sigint_key_share_policy_create :
+    (Result ApiError SigintKeySharePolicy -> msg)
+    -> CreateSigintKeySharePolicyReq
+    -> Cmd msg
+sigint_key_share_policy_create toMsg req =
+    Http.post
+        { url = "/api/sigint/key-share-policy/create"
+        , body = Http.jsonBody (createSigintKeySharePolicyReqEncoder req)
+        , expect = leExpectJson toMsg sigintKeySharePolicyDecoder
+        }
+
+
+sigint_key_share_policy_delete :
+    (Result ApiError () -> msg)
+    -> DeleteSigintKeySharePolicyReq
+    -> Cmd msg
+sigint_key_share_policy_delete toMsg req =
+    Http.post
+        { url = "/api/sigint/key-share-policy/delete"
+        , body = Http.jsonBody (deleteSigintKeySharePolicyReqEncoder req)
+        , expect = leExpectJson toMsg (Decode.succeed ())
+        }
+
 
 sigint_callsign_unit_stats :
     (Result ApiError CallsignUnitStatsRsp -> msg)

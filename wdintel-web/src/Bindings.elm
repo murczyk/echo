@@ -3681,6 +3681,32 @@ deleteEncryptionKeyReqEncoder struct =
         ]
 
 
+type alias CreateSigintKeySharePolicyReq =
+    { grantFrom : Int
+    , grantTo : Int
+    }
+
+
+createSigintKeySharePolicyReqEncoder : CreateSigintKeySharePolicyReq -> Json.Encode.Value
+createSigintKeySharePolicyReqEncoder struct =
+    Json.Encode.object
+        [ ( "grant_from", Json.Encode.int struct.grantFrom )
+        , ( "grant_to", Json.Encode.int struct.grantTo )
+        ]
+
+
+type alias DeleteSigintKeySharePolicyReq =
+    { id : Int
+    }
+
+
+deleteSigintKeySharePolicyReqEncoder : DeleteSigintKeySharePolicyReq -> Json.Encode.Value
+deleteSigintKeySharePolicyReqEncoder struct =
+    Json.Encode.object
+        [ ( "id", Json.Encode.int struct.id )
+        ]
+
+
 type alias Tag =
     { label : String
     , extra : Maybe Bool
@@ -6708,6 +6734,26 @@ listAreasOfResponsibilityReqEncoder : ListAreasOfResponsibilityReq -> Json.Encod
 listAreasOfResponsibilityReqEncoder struct =
     Json.Encode.object
         [ ( "sort_by", (Maybe.withDefault Json.Encode.null << Maybe.map listAreasOfResponsibilitySortByEncoder) struct.sortBy )
+        ]
+
+
+type alias SigintKeySharePolicy =
+    { id : Int
+    , grantFrom : Int
+    , grantTo : Int
+    , author : String
+    , createdAt : Int
+    }
+
+
+sigintKeySharePolicyEncoder : SigintKeySharePolicy -> Json.Encode.Value
+sigintKeySharePolicyEncoder struct =
+    Json.Encode.object
+        [ ( "id", Json.Encode.int struct.id )
+        , ( "grant_from", Json.Encode.int struct.grantFrom )
+        , ( "grant_to", Json.Encode.int struct.grantTo )
+        , ( "author", Json.Encode.string struct.author )
+        , ( "created_at", Json.Encode.int struct.createdAt )
         ]
 
 
@@ -10305,6 +10351,16 @@ listAreasOfResponsibilityReqDecoder : Json.Decode.Decoder ListAreasOfResponsibil
 listAreasOfResponsibilityReqDecoder =
     Json.Decode.succeed ListAreasOfResponsibilityReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sort_by" (Json.Decode.nullable listAreasOfResponsibilitySortByDecoder)))
+
+
+sigintKeySharePolicyDecoder : Json.Decode.Decoder SigintKeySharePolicy
+sigintKeySharePolicyDecoder =
+    Json.Decode.succeed SigintKeySharePolicy
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "grant_from" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "grant_to" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "author" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" Json.Decode.int))
 
 
 deltaLoginUrlDecoder : Json.Decode.Decoder DeltaLoginUrl
