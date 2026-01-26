@@ -1247,8 +1247,11 @@ update user shared route msg model =
                 reportActiveNetworksAorsSelect =
                     model.reportActiveNetworksAorsSelect
 
+                topLevelAors =
+                    vs |> List.filter .isTopLevel
+
                 reportAorItems =
-                    vs
+                    topLevelAors
                         |> List.map
                             (\aor ->
                                 Select.basicMenuItem
@@ -1258,7 +1261,7 @@ update user shared route msg model =
                             )
             in
             ( { model
-                | allAors = vs
+                | allAors = topLevelAors
                 , reportActiveNetworksAorsSelect = { reportActiveNetworksAorsSelect | items = reportAorItems }
               }
             , E.none
