@@ -184,7 +184,6 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::sigint::key::CreateEncryptionKeyReq,
             crate::sigint::key::UpdateEncryptionKeyReq,
             crate::sigint::key::DeleteEncryptionKeyReq,
-            crate::sigint::key::admin::SigintKeySharePolicy,
             crate::sigint::key::admin::CreateSigintKeySharePolicyReq,
             crate::sigint::key::admin::DeleteSigintKeySharePolicyReq,
             crate::tags::types::Tag,
@@ -356,6 +355,7 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::sigint::aor::types::DeleteAreaOfResponsibilityReq,
             crate::sigint::aor::types::ListAreasOfResponsibilitySortBy,
             crate::sigint::aor::types::ListAreasOfResponsibilityReq,
+            crate::sigint::key::admin::SigintKeySharePolicy,
         ],
         decoders: [
             Name, Open, Visibility, Snippet, Tessellate, Coordinates,
