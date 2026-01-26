@@ -6,11 +6,7 @@ use crate::entities::{
 };
 use crate::error::AppError;
 use crate::h;
-use crate::rer_importer::reports::types::{
-    ActiveNetworksReportSettings, AreaOfResponsibility,
-    AreaOfResponsibilityNetworkComments, NetworkUnit, NetworkUnitComments,
-    ReportPreviewReq, ReportType, SigintComment, SigintNetwork,
-};
+use crate::rer_importer::reports::types::*;
 use crate::types::Env;
 use crate::utils::{dt_from_millis, dt_zoned_from_millis};
 use anyhow::Context;
@@ -20,10 +16,8 @@ use docx_rs::{
 };
 use echo_migration::{IntoCondition, JoinType};
 use log::info;
-use sea_orm::{
-    prelude::Expr, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
-    QueryOrder, QuerySelect, RelationTrait,
-};
+use sea_orm::prelude::Expr;
+use sea_orm::*;
 use std::path::Path;
 use std::time::Instant;
 
