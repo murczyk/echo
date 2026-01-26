@@ -22,6 +22,18 @@ import './ts/web-components/modal-dialog.ts'
 import './ts/web-components/bar-chart-2.ts'
 import './ts/web-components/small-map.ts'
 import './ts/web-components/floating-popup.ts'
+import './ts/react/aor-neo-element'
+import './ts/react/admin-neo-element'
+import './ts/react/aor-neo-form-element'
+import './ts/react/control-panel-neo-element'
+import './ts/react/keys-neo-element'
+import './ts/react/messanger-neo-element'
+import './ts/react/organisms-neo-element'
+import './ts/react/organisms-neo-edit-element'
+import './ts/react/tags-neo-element'
+import './ts/react/tags-neo-edit-element'
+import './ts/react/tags-neo-keyword-edit-element'
+import './ts/react/users-neo-element'
 import { saveRerAnalysisQueryState } from "./ts/rer-analysis-query-state"
 import { setupCommentDraftTracker } from "./ts/comment-draft-tracker"
 

@@ -372,6 +372,7 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::delta::BgtaskStatusAndLogsQuery,
             crate::delta::DownloadLayerResultReq,
             crate::delta::RadiosDownloadResultReq,
+            crate::sigint::key::admin::SigintKeySharePolicy,
             crate::rer_importer::types::AreaOfResponsibilityEntry,
             crate::rer_importer::types::AreaOfResponsibilityStatsRsp,
             crate::rer_importer::types::InboxMessage,
