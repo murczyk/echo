@@ -1,10 +1,36 @@
-import { DeactivationReasonType, ListLoginsReq, ListLoginsRsp, Login } from '../../../../Bindings';
+import {
+  CreateLoginReq,
+  DeactivationReasonType,
+  ListLoginsReq,
+  ListLoginsRsp,
+  Login,
+  UpdateLoginReq,
+} from '../../../../Bindings';
 
 import { postJson } from './client';
 
 type ListLoginsReqBody = {
   sort_by: ListLoginsReq['sortBy'];
   filter_by_roles: ListLoginsReq['filterByRoles'];
+};
+
+type CreateLoginReqBody = {
+  login: string;
+  password: string;
+  roles: string[];
+  sigint_zone_id: number | null;
+  organism_id: number | null;
+};
+
+type UpdateLoginReqBody = {
+  login: string;
+  roles: string[] | null;
+  sigint_zone_id: number | null;
+  organism_id: number | null;
+  deleted: boolean | null;
+  password: string | null;
+  delta_login: string | null;
+  deactivation_reason: DeactivationReasonType | null;
 };
 
 type LoginLike = {
@@ -38,6 +64,29 @@ function toListLoginsReqBody(req: ListLoginsReq): ListLoginsReqBody {
   return { sort_by: req.sortBy, filter_by_roles: req.filterByRoles };
 }
 
+function toCreateLoginReqBody(req: CreateLoginReq): CreateLoginReqBody {
+  return {
+    login: req.login,
+    password: req.password,
+    roles: req.roles,
+    sigint_zone_id: req.sigintZoneId,
+    organism_id: req.organismId,
+  };
+}
+
+function toUpdateLoginReqBody(req: UpdateLoginReq): UpdateLoginReqBody {
+  return {
+    login: req.login,
+    roles: req.roles,
+    sigint_zone_id: req.sigintZoneId,
+    organism_id: req.organismId,
+    deleted: req.deleted,
+    password: req.password,
+    delta_login: req.deltaLogin,
+    deactivation_reason: req.deactivationReason,
+  };
+}
+
 function normalizeLogin(raw: LoginLike): Login {
   return {
     login: raw.login ?? '',
@@ -60,4 +109,19 @@ export async function listLogins(req: ListLoginsReq): Promise<ListLoginsRsp> {
   return {
     users: (data?.users ?? []).map(normalizeLogin),
   };
+}
+
+export async function createLogin(req: CreateLoginReq): Promise<Login> {
+  const data = await postJson<LoginLike>('/api/login/create', toCreateLoginReqBody(req));
+  return normalizeLogin(data ?? {});
+}
+
+export async function createLoginDelta(req: CreateLoginReq): Promise<Login> {
+  const data = await postJson<LoginLike>('/api/login/create-delta', toCreateLoginReqBody(req));
+  return normalizeLogin(data ?? {});
+}
+
+export async function updateLogin(req: UpdateLoginReq): Promise<Login> {
+  const data = await postJson<LoginLike>('/api/login/update', toUpdateLoginReqBody(req));
+  return normalizeLogin(data ?? {});
 }

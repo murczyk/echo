@@ -1,7 +1,7 @@
 type JsonValue = string | number | boolean | null | JsonObject | JsonValue[];
 type JsonObject = { [key: string]: JsonValue };
 
-type HttpMethod = 'POST' | 'PUT' | 'DELETE';
+type HttpMethod = 'POST' | 'PUT' | 'DELETE' | 'GET';
 async function parseErrorMessage(response: Response): Promise<string> {
   const contentType = response.headers.get('content-type') || '';
 
@@ -26,14 +26,19 @@ async function parseErrorMessage(response: Response): Promise<string> {
 }
 
 async function requestJson<T>(method: HttpMethod, url: string, body?: JsonValue | JsonObject) {
-  const response = await fetch(url, {
+  const init: RequestInit = {
     method,
     headers: {
       'Content-Type': 'application/json',
     },
     credentials: 'include',
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
+  };
+
+  if (method !== 'GET') {
+    init.body = body === undefined ? undefined : JSON.stringify(body);
+  }
+
+  const response = await fetch(url, init);
 
   if (!response.ok) {
     const message = await parseErrorMessage(response);
@@ -54,6 +59,10 @@ async function requestJson<T>(method: HttpMethod, url: string, body?: JsonValue 
 
 export async function postJson<T>(url: string, body?: JsonValue | JsonObject) {
   return requestJson<T>('POST', url, body);
+}
+
+export async function getJson<T>(url: string) {
+  return requestJson<T>('GET', url);
 }
 
 export async function postVoid(url: string, body?: JsonValue | JsonObject) {
