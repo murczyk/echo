@@ -7,3 +7,5 @@ migration_plan_*.md
 migration_plan_*.json
 migration_results_*.md
 .migration_known_hosts
+*.tar
+
