@@ -35,14 +35,16 @@ pub async fn report_docx_kind_active_networks(
 
     let read_db = env.dbx.clone();
 
-    let aor_data: Vec<AreaOfResponsibilityNetworkComments> = get_aor_network_comments(&read_db, req).await?;
+    let aor_data: Vec<AreaOfResponsibilityNetworkComments> =
+        get_aor_network_comments(&read_db, req).await?;
 
     let mut docx = get_docx_document(req);
 
-
     for aor_network_comments in aor_data {
-        let aor: AreaOfResponsibility = aor_network_comments.area_of_responsibility;
-        let networks: Vec<NetworkUnitComments> = aor_network_comments.network_unit_comments;
+        let aor: AreaOfResponsibility =
+            aor_network_comments.area_of_responsibility;
+        let networks: Vec<NetworkUnitComments> =
+            aor_network_comments.network_unit_comments;
 
         docx = add_aor_paragraph(docx, aor);
 
@@ -53,7 +55,8 @@ pub async fn report_docx_kind_active_networks(
 
         for network_unit_comments in networks {
             docx = handle_comments_with_units_and_network(
-                network_unit_comments, docx,
+                network_unit_comments,
+                docx,
             );
         }
         docx = docx.add_paragraph(Paragraph::new());
@@ -76,10 +79,7 @@ pub async fn report_docx_kind_active_networks(
 pub async fn get_aor_network_comments(
     db: &DatabaseConnection,
     req: &ReportPreviewReq,
-) -> Result<
-    Vec<AreaOfResponsibilityNetworkComments>,
-    AppError,
-> {
+) -> Result<Vec<AreaOfResponsibilityNetworkComments>, AppError> {
     let aor_ids = get_request_aor_ids(req);
 
     let mut result: Vec<AreaOfResponsibilityNetworkComments> = Vec::new();
@@ -92,7 +92,8 @@ pub async fn get_aor_network_comments(
     for area_of_responsibility in aors {
         let mut network_unit_comments: Vec<NetworkUnitComments> = Vec::new();
 
-        let mut networks = get_aor_networks(db, area_of_responsibility.id).await?;
+        let mut networks =
+            get_aor_networks(db, area_of_responsibility.id).await?;
         networks.sort_by_key(|a| a.active_from);
 
         for network in networks {
@@ -101,11 +102,15 @@ pub async fn get_aor_network_comments(
                 get_signal_message_comments(db, network.id, since_dt, till_dt)
                     .await?;
 
-            network_unit_comments.push(NetworkUnitComments {network, units, comments});
+            network_unit_comments.push(NetworkUnitComments {
+                network,
+                units,
+                comments,
+            });
         }
         result.push(AreaOfResponsibilityNetworkComments {
             area_of_responsibility,
-            network_unit_comments
+            network_unit_comments,
         });
     }
 
@@ -156,16 +161,24 @@ fn handle_comments_with_units_and_network(
     network_unit_comments: NetworkUnitComments,
     mut docx: Docx,
 ) -> Docx {
-    let unit_names: Vec<String> = network_unit_comments.units
+    let unit_names: Vec<String> = network_unit_comments
+        .units
         .iter()
         .filter(|u| !u.name.is_empty())
         .map(|u| u.name.clone())
         .collect();
 
     let network_line = if unit_names.is_empty() {
-        format!("\tр/м {} невизначеного підрозділу", network_unit_comments.network.name)
+        format!(
+            "\tр/м {} невизначеного підрозділу",
+            network_unit_comments.network.name
+        )
     } else {
-        format!("\tр/м {} {}", network_unit_comments.network.name, unit_names.join(", "))
+        format!(
+            "\tр/м {} {}",
+            network_unit_comments.network.name,
+            unit_names.join(", ")
+        )
     };
 
     docx = docx.add_paragraph(
@@ -372,16 +385,15 @@ pub fn format_to_native_date(
         .unwrap_or_default())
 }
 
-
 pub struct AreaOfResponsibilityNetworkComments {
     pub area_of_responsibility: AreaOfResponsibility,
     pub network_unit_comments: Vec<NetworkUnitComments>,
 }
 
-pub struct NetworkUnitComments{
+pub struct NetworkUnitComments {
     pub network: SigintNetwork,
     pub units: Vec<NetworkUnit>,
-    pub comments: Vec<SigintComment>
+    pub comments: Vec<SigintComment>,
 }
 
 #[derive(Debug, Clone, FromQueryResult)]
