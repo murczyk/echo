@@ -59,6 +59,8 @@ pub enum Relation {
     SigintComment,
     #[sea_orm(has_many = "super::sigint_inbox_item_tag::Entity")]
     SigintInboxItemTag,
+    #[sea_orm(has_many = "super::sigint_key_share_policy::Entity")]
+    SigintKeySharePolicy,
     #[sea_orm(has_many = "super::sigint_network::Entity")]
     SigintNetwork,
     #[sea_orm(has_many = "super::sigint_network_description::Entity")]
@@ -138,6 +140,12 @@ impl Related<super::sigint_comment::Entity> for Entity {
 impl Related<super::sigint_inbox_item_tag::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SigintInboxItemTag.def()
+    }
+}
+
+impl Related<super::sigint_key_share_policy::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintKeySharePolicy.def()
     }
 }
 

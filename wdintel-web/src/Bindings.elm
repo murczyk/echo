@@ -3681,6 +3681,52 @@ deleteEncryptionKeyReqEncoder struct =
         ]
 
 
+type alias SigintKeySharePolicy =
+    { id : Int
+    , grantFrom : Int
+    , grantTo : Int
+    , author : String
+    , createdAt : Int
+    }
+
+
+sigintKeySharePolicyEncoder : SigintKeySharePolicy -> Json.Encode.Value
+sigintKeySharePolicyEncoder struct =
+    Json.Encode.object
+        [ ( "id", Json.Encode.int struct.id )
+        , ( "grant_from", Json.Encode.int struct.grantFrom )
+        , ( "grant_to", Json.Encode.int struct.grantTo )
+        , ( "author", Json.Encode.string struct.author )
+        , ( "created_at", Json.Encode.int struct.createdAt )
+        ]
+
+
+type alias CreateSigintKeySharePolicyReq =
+    { grantFrom : Int
+    , grantTo : Int
+    }
+
+
+createSigintKeySharePolicyReqEncoder : CreateSigintKeySharePolicyReq -> Json.Encode.Value
+createSigintKeySharePolicyReqEncoder struct =
+    Json.Encode.object
+        [ ( "grant_from", Json.Encode.int struct.grantFrom )
+        , ( "grant_to", Json.Encode.int struct.grantTo )
+        ]
+
+
+type alias DeleteSigintKeySharePolicyReq =
+    { id : Int
+    }
+
+
+deleteSigintKeySharePolicyReqEncoder : DeleteSigintKeySharePolicyReq -> Json.Encode.Value
+deleteSigintKeySharePolicyReqEncoder struct =
+    Json.Encode.object
+        [ ( "id", Json.Encode.int struct.id )
+        ]
+
+
 type alias Tag =
     { label : String
     , extra : Maybe Bool
@@ -7121,6 +7167,16 @@ radiosDownloadResultReqDecoder =
     Json.Decode.succeed RadiosDownloadResultReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "bgtask_id" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "csv_page" (Json.Decode.nullable Json.Decode.int)))
+
+
+sigintKeySharePolicyDecoder : Json.Decode.Decoder SigintKeySharePolicy
+sigintKeySharePolicyDecoder =
+    Json.Decode.succeed SigintKeySharePolicy
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "grant_from" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "grant_to" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "author" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" Json.Decode.int))
 
 
 areaOfResponsibilityEntryDecoder : Json.Decode.Decoder AreaOfResponsibilityEntry
