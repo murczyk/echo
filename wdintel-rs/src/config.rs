@@ -95,6 +95,7 @@ pub const STATS_READ_FROM_TABLE_MINIMUM_MIN: i64 = 15;
 pub const STATS_5MIN_MAX_NUM_DAYS: i64 = 2000; // FIXME change to 2
 pub const FEATURE_GROUP_STATS_AGGREGATED_DEFAULT: bool = true;
 pub const FEATURE_DELETE_UPLOADED_ATTACHMENT_DEFAULT: bool = true;
+pub const FEATURE_ACCESS_LOG_DEFAULT: bool = false;
 pub const ONEOFF_COUNT_BATCHES_SLEEP_MS: u64 = 200;
 pub const ONEOFF_COUNT_BATCHES_SIZE: u64 = 10000;
 pub const PALITRA_STORAGE_DIR_NAME: &str = "palitra_assets";
@@ -142,6 +143,7 @@ pub struct Config {
     pub cluster_radius: Option<f64>,
     pub feature_delta: Option<bool>,
     pub feature_analysis_map: Option<bool>,
+    pub feature_access_log: Option<bool>,
     pub settlements_sources: Option<String>,
     secret_config: Option<SecretConfig>,
     pub sleep_before_backup_mins: Option<u64>,
