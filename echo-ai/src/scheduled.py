@@ -1,48 +1,46 @@
 import argparse
 import os
-import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
 import mlflow
 
-from echo_ai.prepare import fetch_from_postgres
-
 
 def real_main(
     unsupervised: bool, restore: bool, restore_databases: str, databases: str
 ):
+    src = Path(__file__).parent
+    project = str(src.parent)
+
     databases_list = databases.split(None)
     if restore or restore_databases:
         tags = {"task": "download-backups"}
         with mlflow.start_run(nested=True, tags=tags):
-            print(f"downloading and restoring databases {restore_databases}")
-            restore_status = subprocess.run(
-                ["./train-download-backups.sh", restore_databases],
-                cwd="/usr/local/echo-ai-train",
+            mlflow.run(
+                project,
+                entry_point="restore",
+                env_manager="uv",
+                parameters={"restore_databases": databases},
             )
-            restore_status.check_returncode()
 
     if len(databases_list) == 1 and os.path.isfile(databases_list[0]):
         data_file = databases_list[0]
-        process_file(data_file, unsupervised)
+        process_file(project, data_file, unsupervised)
     else:
-        with tempfile.NamedTemporaryFile(suffix=".parquet") as temp_file:
+        with tempfile.NamedTemporaryFile() as temp_file:
             data_file = temp_file.name
-            with mlflow.start_run(nested=True, tags={"task": "prepare"}):
-                print(
-                    f"preparing data file '{data_file}' for databases: {databases_list}"
-                )
-                fetch_from_postgres(databases_list, data_file)
-                process_file(data_file, unsupervised)
+            mlflow.run(
+                project,
+                entry_point="prepare",
+                env_manager="uv",
+                parameters={"data_file": data_file, "prepare_databases": databases},
+            )
+            process_file(project, data_file, unsupervised)
 
 
-def process_file(data_file: str, unsupervised: bool):
+def process_file(project: str, data_file: str, unsupervised: bool):
     parameters = {"data_file": data_file}
-
-    src = Path(__file__).parent
-    project = str(src.parent)
 
     if unsupervised:
         mlflow.run(

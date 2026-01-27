@@ -1,4 +1,3 @@
-import duckdb
 from duckdb import DuckDBPyConnection
 
 POSTGRES_INBOX_QUERY = r"""
@@ -75,7 +74,7 @@ from cte c
 """
 
 
-def _fetch_from_postgres(con: DuckDBPyConnection, databases: list[str], file_name: str):
+def fetch_from_postgres(con: DuckDBPyConnection, databases: list[str], file_name: str):
     con.execute("SET VARIABLE postgres_inbox_query = ?", [POSTGRES_INBOX_QUERY])
 
     queries = []
@@ -85,16 +84,15 @@ def _fetch_from_postgres(con: DuckDBPyConnection, databases: list[str], file_nam
         queries.append(query)
 
     combined = "\nUNION ALL\n".join(queries)
-    query = con.sql(f"""
+    con.execute(f"""
+    CREATE TEMPORARY TABLE combined AS
     WITH cte AS (
         {combined}
     )
-    SELECT DISTINCT on (text, labels) * FROM cte
-    ORDER BY __created_at, __source
+    SELECT DISTINCT on (text, labels)
+        *
+    FROM cte
     """)
-    query.write_parquet(file_name, compression="zstd")
 
-
-def fetch_from_postgres(databases: list[str], file_name: str):
-    with duckdb.connect() as con:
-        _fetch_from_postgres(con, databases, file_name)
+    query = con.table("combined")
+    query.write_parquet(file_name, row_group_size=100000)

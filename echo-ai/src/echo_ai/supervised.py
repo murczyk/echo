@@ -63,12 +63,12 @@ def define_train_test_split(
         quack.define_sql_view(
             con,
             "train",
-            f"select * exclude(file_row_number) from {file} where __created_at < '{last_week}'",
+            f"select * exclude(file_row_number) from {file} where __created_at < '{last_week}' order by file_row_number",
         )
         quack.define_sql_view(
             con,
             "test",
-            f"select * exclude(file_row_number) from {file} where __created_at >= '{last_week}'",
+            f"select * exclude(file_row_number) from {file} where __created_at >= '{last_week}' order by file_row_number",
         )
 
 

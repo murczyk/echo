@@ -3,6 +3,15 @@ name: ECHO AI
 python_env: python_env.yaml
 
 entry_points:
+  restore:
+    parameters:
+      restore_databases: string
+    command: "cd /usr/local/echo-ai-train && ./train-download-backups.sh {restore_databases}"
+  prepare:
+    parameters:
+      data_file: path
+      prepare_databases: string
+    command: "python src/prepare.py -o {data_file} {prepare_databases}"
   scheduled:
     parameters:
       # restore: {type: string, default: "false"}

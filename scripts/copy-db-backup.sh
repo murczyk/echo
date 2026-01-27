@@ -187,7 +187,7 @@ if [[ "$do_restore" -eq 1 ]]; then
     printf 'Restoring database: %s\n' "$restore_db"
     sudo -u postgres dropdb --if-exists --force "$restore_db"
     sudo -u postgres psql postgres -c "CREATE DATABASE ${restore_db}"
-    sudo -u postgres pg_restore -d "$restore_db" "$local_plain"
+    sudo -u postgres pg_restore -j $(nproc) -d "$restore_db" "$local_plain"
 fi
 cat <<EOF
 
