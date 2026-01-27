@@ -29,14 +29,14 @@ entry_points:
       dim: { type: int, default: 100 }
       epoch: { type: int, default: 15 }
       wordNgrams: { type: int, default: 3 }
-      autotuneMetric: { type: string, default: "precisionAtRecall:80:__label__1" }
-      pretrainedVectors: { type: string, default: "pretrained.vec" }
-      autotunePredictions: { type: int, default: 2 }
-      autotuneDuration: { type: int, default: 1800 }
       autotuneModelSize: { type: string, default: "128M" }
+      pretrainedVectors: { type: string, default: "pretrained.vec" }
+      # autotuneMetric: { type: string, default: "precisionAtRecall:80:__label__1" } # --autotuneMetric {autotuneMetric}
+      # autotunePredictions: { type: int, default: 2 } # --autotunePredictions {autotunePredictions}
+      # autotuneDuration: { type: int, default: 1800 } # --autotuneDuration {autotuneDuration}
     command: >-
       python src/supervised.py {data_file} --dim {dim} --epoch {epoch} --wordNgrams {wordNgrams} --pretrainedVectors {pretrainedVectors}
-      --autotuneMetric {autotuneMetric} --autotuneDuration {autotuneDuration} --autotuneModelSize {autotuneModelSize} --autotunePredictions {autotunePredictions}
+      --autotuneModelSize {autotuneModelSize}
   unsupervised:
     parameters:
       data_file: path

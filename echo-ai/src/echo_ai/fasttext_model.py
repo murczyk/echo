@@ -317,6 +317,33 @@ def convert_model_name(model):
         raise ValueError("Unrecognized model name")
 
 
+K_CUTOFF_LIMIT = 256
+
+
+# https://github.com/facebookresearch/fastText/blob/1142dc4c4ecbc19cc16eee5cdd28472e689267e6/src/autotune.cc#L321
+def get_cutoff_for_file_size(model: _FastText, qout: bool, qnorm: bool, file_size: int):
+    output = model.get_output_matrix()
+    (out_m, out_n) = output.shape
+    if qout:
+        output_pq_size = 16 + 4 * (out_n * (1 << 8))
+        out_model_size = (
+            21
+            + (out_m * ((out_n + 2 - 1) // 2))
+            + output_pq_size
+            + (out_m if qnorm else 0)
+        )
+    else:
+        out_model_size = 16 + 4 * (out_m * out_n)
+
+    args = model.f.getArgs()
+    dim = args.dim
+    dsub = args.dsub
+    target = file_size - (107) - 4 * (1 << 8) * dim - out_model_size
+    cutoff = target // ((dim + dsub - 1) / dsub + (1 if qnorm else 0) + 10)
+    result = max(cutoff, K_CUTOFF_LIMIT)
+    return int(result)
+
+
 def convert_loss_name(loss):
     if loss == loss_name.ns:
         return "ns"

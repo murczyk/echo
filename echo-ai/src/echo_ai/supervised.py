@@ -3,6 +3,7 @@ import sys
 from typing import cast
 
 import fasttext
+import humanfriendly
 import mlflow
 from duckdb import DuckDBPyConnection, DuckDBPyRelation
 from mlflow.data.dataset import Dataset
@@ -18,6 +19,7 @@ from echo_ai.evaluate import (
 
 from .fasttext_model import (
     SUPERVISED_ARGS,
+    get_cutoff_for_file_size,
     get_model_params,
     get_training_args,
     log_model,
@@ -48,28 +50,15 @@ def define_train_test_split(
     last_week = cast(datetime.datetime, created_at_max) - datetime.timedelta(weeks=1)
     print(f"splitting train and test at '{last_week}'")
 
-    if shuffle:
-        quack.define_sql_view(
-            con,
-            "train",
-            f"select * exclude(file_row_number) from {file} where __created_at < '{last_week}' order by hash(__id + {seed})",
-        )
-        quack.define_sql_view(
-            con,
-            "test",
-            f"select * exclude(file_row_number) from {file} where __created_at >= '{last_week}' order by hash(__id + {seed})",
-        )
-    else:
-        quack.define_sql_view(
-            con,
-            "train",
-            f"select * exclude(file_row_number) from {file} where __created_at < '{last_week}' order by file_row_number",
-        )
-        quack.define_sql_view(
-            con,
-            "test",
-            f"select * exclude(file_row_number) from {file} where __created_at >= '{last_week}' order by file_row_number",
-        )
+    base_query = (
+        f"select * exclude(file_row_number) from {file} where length(labels) > 0 "
+    )
+    train_query = base_query + f"AND __created_at < '{last_week}' order by "
+    test_query = base_query + f"AND __created_at >= '{last_week}' order by "
+    order = f"hash(__id + {seed})" if shuffle else "file_row_number"
+
+    quack.define_sql_view(con, "train", train_query + order)
+    quack.define_sql_view(con, "test", test_query + order)
 
 
 def define_slice_for_label(con: DuckDBPyConnection, split: str, label_column_name: str):
@@ -138,7 +127,10 @@ def train_supervised(
         with mlflow.start_run(nested=True, tags=tags):
             print(f"starting training for {label_name}")
 
-            if fasttext_kwargs.get("autotuneMetric"):
+            autotuneMetric = args.get("autotuneMetric")
+            autotuneModelSize = args.get("autotuneModelSize")
+
+            if autotuneMetric:
                 fasttext_kwargs["autotuneValidationFile"] = test_path
             else:
                 fasttext_kwargs.pop("autotuneValidationFile", None)
@@ -151,6 +143,31 @@ def train_supervised(
             fasttext_model = fasttext.train_supervised(
                 input=train_path, **fasttext_kwargs
             )
+
+            if autotuneModelSize and not autotuneMetric:
+                qnorm = False
+                qout = False
+                retrain = True
+                file_size = humanfriendly.parse_size(autotuneModelSize, binary=True)
+                cutoff = get_cutoff_for_file_size(
+                    fasttext_model, qnorm=qnorm, qout=qout, file_size=file_size
+                )
+                mlflow.log_params(
+                    {
+                        "qnorm": qnorm,
+                        "qout": qout,
+                        "file_size": file_size,
+                        "cutoff": cutoff,
+                        "retrain": retrain,
+                    }
+                )
+                fasttext_model.quantize(
+                    input=train_path,
+                    retrain=retrain,
+                    cutoff=cutoff,
+                    qnorm=qnorm,
+                    qout=qout,
+                )
 
             model_params = get_model_params(fasttext_model)
             print(f"params: {model_params}")

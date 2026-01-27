@@ -2,7 +2,7 @@
 Description=MLflow tracking server
 
 [Service]
-ExecStart=%h/.local/bin/mlflow server \
+ExecStart=/bin/bash -c 'PATH="%h/.local/bin:${PATH}" mlflow "$@"' -- server \
     --host "" --port 5000 \
     --allowed-hosts %H.*.ts.net:5000,localhost:5000 \
     --cors-allowed-origins http://%H.*.ts.net:5000,http://localhost:5000
