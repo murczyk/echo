@@ -55,6 +55,15 @@ pub enum SigintInboxItem {
 }
 
 #[derive(Iden)]
+pub enum SigintInboxItemNetwork {
+    Table,
+    Id,
+    SigintInboxItemId,
+    SigintNetworkId,
+    CreatedAt,
+}
+
+#[derive(Iden)]
 pub enum SigintNetwork {
     Table,
     Id,
@@ -163,6 +172,14 @@ pub async fn load_freqs(
         DatasourceGroup::Table,
         Expr::col((SignalMessage::Table, SignalMessage::DatasourceGroupId))
             .equals((DatasourceGroup::Table, DatasourceGroup::Id)),
+    )
+    .join(
+        JoinType::InnerJoin,
+        SigintInboxItemNetwork::Table,
+        Expr::col((SigintInboxItem::Table, SigintInboxItem::Id)).equals((
+            SigintInboxItemNetwork::Table,
+            SigintInboxItemNetwork::SigintInboxItemId,
+        )),
     )
     .join_as(
         JoinType::InnerJoin,
@@ -705,6 +722,14 @@ pub fn build_callsigns_queries(
             Expr::col((SignalMessage::Table, SignalMessage::DatasourceGroupId))
                 .equals((DatasourceGroup::Table, DatasourceGroup::Id)),
         )
+        .join(
+            JoinType::InnerJoin,
+            SigintInboxItemNetwork::Table,
+            Expr::col((SigintInboxItem::Table, SigintInboxItem::Id)).equals((
+                SigintInboxItemNetwork::Table,
+                SigintInboxItemNetwork::SigintInboxItemId,
+            )),
+        )
         .join(JoinType::InnerJoin, nf.clone(), join_condition)
         .and_where(
             datasource_group::Column::GroupMasterKey.eq_any(groups.clone()),
@@ -830,9 +855,11 @@ pub fn build_callsigns_queries(
     Ok((base_with, callsigns_select))
 }
 
-/// Helper to build join condition for sigint_inbox_item adn sigint_network_freqs based on the filter.
+/// Helper to build join condition for sigint_inbox_item_network and sigint_network_freqs based on the filter.
 ///
-/// sigint_inbox_item.freq = network_freqs.freq
+/// sigint_inbox_item.id = sigint_inbox_item_network.sigint_inbox_item_id
+/// AND sigint_inbox_item_network.sigint_network_id = network_freqs.network_id
+/// AND sigint_inbox_item.freq = network_freqs.freq
 /// AND sigint_inbox_item.datetime >= GREATEST(since_date_inclusive, network_freqs.active_from)
 /// AND sigint_inbox_item.datetime <= LEAST(till_date_inclusive, COALESCE(network_freqs.active_to, now()))
 pub fn build_network_freq_join_condition(
@@ -869,8 +896,25 @@ pub fn build_network_freq_join_condition(
     };
 
     let join_condition =
-        Expr::col((SigintInboxItem::Table, SigintInboxItem::Freq))
-            .equals((Alias::new("network_freqs"), Alias::new("freq")))
+        Expr::col((SigintInboxItem::Table, SigintInboxItem::Id))
+            .equals((
+                SigintInboxItemNetwork::Table,
+                SigintInboxItemNetwork::SigintInboxItemId,
+            ))
+            .and(
+                Expr::col((
+                    SigintInboxItemNetwork::Table,
+                    SigintInboxItemNetwork::SigintNetworkId,
+                ))
+                .equals((
+                    Alias::new("network_freqs"),
+                    Alias::new("network_id"),
+                )),
+            )
+            .and(
+                Expr::col((SigintInboxItem::Table, SigintInboxItem::Freq))
+                    .equals((Alias::new("network_freqs"), Alias::new("freq"))),
+            )
             .and(
                 Expr::col((SigintInboxItem::Table, SigintInboxItem::Datetime))
                     .gte(lower_bound),
@@ -1231,6 +1275,10 @@ pub async fn bl_get_network_points(
             JoinType::InnerJoin,
             sigint_inbox_item::Relation::SigintPeleng.def(),
         )
+        .join(
+            JoinType::InnerJoin,
+            sigint_inbox_item::Relation::SigintInboxItemNetwork.def(),
+        )
         .join_as(
             JoinType::InnerJoin,
             sigint_inbox_item::Relation::SigintNetworkFreq.def(),
@@ -1249,6 +1297,9 @@ pub async fn bl_get_network_points(
         .column_as(sigint_peleng::Column::Lng, "lng")
         .column_as(signal_message::Column::Body, "body")
         .filter(datasource_group::Column::GroupMasterKey.eq_any(groups.clone()))
+        .filter(
+            sigint_inbox_item_network::Column::SigintNetworkId.eq(network_id),
+        )
         .filter(sigint_network::Column::Id.eq(network_id))
         .filter(sigint_inbox_item::Column::Coords.is_not_null())
         .filter(signal_message::Column::Deleted.eq(false))
