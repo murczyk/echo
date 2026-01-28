@@ -212,6 +212,22 @@ pub struct OneoffImportSigintCommentsPs {
 }
 
 #[derive(clap::Parser, Debug)]
+pub struct OneoffTagMessagesReportPs {
+    /// Start date (inclusive). Format: `YYYY-MM-DD`.
+    #[arg(long)]
+    pub start: String,
+    /// End date (inclusive). Format: `YYYY-MM-DD`.
+    #[arg(long)]
+    pub end: String,
+    /// Tag label to report on.
+    #[arg(long)]
+    pub tag: String,
+    /// Output CSV file path.
+    #[arg(long)]
+    pub output: String,
+}
+
+#[derive(clap::Parser, Debug)]
 #[command(
     name = "OneoffReprocessSearchIndex",
     about = "Updates the full-text search index"
@@ -517,6 +533,7 @@ enum Cmd {
     OneoffReprocessCallsignTokens(OneoffReprocessCallsignTokensPs),
     OneoffExportSigintComments(OneoffExportSigintCommentsPs),
     OneoffImportSigintComments(OneoffImportSigintCommentsPs),
+    OneoffTagMessagesReport(OneoffTagMessagesReportPs),
     OneoffGenDatasetCallsigns,
     OneoffReprocessCoords(OneoffReprocessCoordsPs),
     OneoffReprocessUnitNames,
@@ -849,6 +866,9 @@ async fn async_main(
         }
         Cmd::OneoffImportSigintComments(ps) => {
             sigint::comments::oneoff_import_sigint_comments(mode, &ps).await
+        }
+        Cmd::OneoffTagMessagesReport(ps) => {
+            sigint::oneoff::oneoff_tag_messages_report(mode, &ps).await
         }
         Cmd::OneoffGenDatasetCallsigns => {
             ml::oneoff_gen_dataset_callsigns(mode).await
