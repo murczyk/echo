@@ -219,9 +219,6 @@ pub struct OneoffTagMessagesReportPs {
     /// End date (inclusive). Format: `YYYY-MM-DD`.
     #[arg(long)]
     pub end: String,
-    /// Tag label to report on.
-    #[arg(long)]
-    pub tag: String,
     /// Output CSV file path.
     #[arg(long)]
     pub output: String,

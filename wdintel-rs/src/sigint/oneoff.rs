@@ -1,5 +1,5 @@
 use crate::config::{get_tz, TAG_SUGGEST_WORKER_BATCH_SIZE};
-use crate::entities::{sigint_inbox_item, sigint_inbox_item_tag, tag};
+use crate::entities::{sigint_inbox_item, sigint_inbox_item_tag};
 use crate::error::AppError;
 use crate::types::{Mode, ShortContext};
 use crate::utils::parse_local_datetime;
@@ -131,15 +131,6 @@ pub async fn oneoff_tag_messages_report(
     info!("starting oneoff_tag_messages_report...");
     let db = crate::new_pg_pool_from_mode(mode).await.c(h!())?;
 
-    let tag_row = tag::Entity::find()
-        .filter(tag::Column::Label.eq(ps.tag.clone()))
-        .one(&db)
-        .await
-        .c(h!())?
-        .ok_or(AppError::BL {
-            msg: format!("tag not found: {}", ps.tag),
-        })?;
-
     let start_date = parse_local_date(&ps.start).c(h!())?;
     let end_date = parse_local_date(&ps.end).c(h!())?;
     if end_date < start_date {
@@ -159,8 +150,7 @@ pub async fn oneoff_tag_messages_report(
     let total_counts =
         load_total_message_counts(&db, start_utc, end_utc, &tz).await?;
     let tag_counts =
-        load_tagged_message_counts(&db, start_utc, end_utc, tag_row.id, &tz)
-            .await?;
+        load_tagged_message_counts(&db, start_utc, end_utc, &tz).await?;
 
     let days = collect_days(start_date, end_date).c(h!())?;
     write_report_csv(&ps.output, &days, &total_counts, &tag_counts).c(h!())?;
@@ -245,7 +235,6 @@ async fn load_tagged_message_counts(
     db: &DatabaseConnection,
     start_utc: NaiveDateTime,
     end_utc: NaiveDateTime,
-    tag_id: i64,
     tz: &str,
 ) -> Result<BTreeMap<NaiveDate, (u64, u64)>, AppError> {
     let sql = format!(
@@ -257,7 +246,7 @@ async fn load_tagged_message_counts(
         FROM sigint_inbox_item i
         INNER JOIN sigint_inbox_item_tag t
             ON t.sigint_inbox_item_id = i.id
-        WHERE i.datetime >= $1 AND i.datetime < $2 AND t.tag_id = $3
+        WHERE i.datetime >= $1 AND i.datetime < $2
         GROUP BY day
         ORDER BY day
         "#
@@ -267,7 +256,7 @@ async fn load_tagged_message_counts(
         .query_all(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             sql,
-            [start_utc.into(), end_utc.into(), tag_id.into()],
+            [start_utc.into(), end_utc.into()],
         ))
         .await
         .c(h!())?;
