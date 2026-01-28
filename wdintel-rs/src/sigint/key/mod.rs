@@ -701,6 +701,7 @@ where
             .select_only()
             .column(sigint_key_share_policy::Column::GrantFrom)
             .filter(sigint_key_share_policy::Column::GrantTo.eq(primary_id))
+            .filter(sigint_key_share_policy::Column::Deleted.eq(false))
             .into_tuple::<i64>()
             .all(db)
             .await

@@ -181,9 +181,15 @@ pub async fn fix_group_areas_of_responsibility(
         .c(h!())?;
     for g in groups {
         if let Err(e) = insert_group_aor(db, &g).await {
-            error!("failed to insert group's area of responsibility: {e:?}")
+            error!("failed to insert group's area of responsibility: {e:?}");
         } else {
-            info!("added  ")
+            info!("added {}", g.master_key);
+            if let Err(e) =
+                crate::sigint::inbox::invalidate_network_inbox_for_group(db, &g)
+                    .await
+            {
+                error!("invalidate_network_inbox_for_group failed: {e:#?}")
+            }
         }
     }
     Ok(())
@@ -239,12 +245,21 @@ where
         return Ok(None);
     };
     let model = signal_group_aor::ActiveModel {
-        master_key: Set(master_key),
+        master_key: Set(master_key.clone()),
         aor_id: Set(aor.id),
         created_at: NotSet,
         id: NotSet,
     };
     model.insert(dbx).await.context(h!())?;
+    if let Err(e) =
+        crate::sigint::inbox::invalidate_network_inbox_for_group_with_key(
+            dbx,
+            &master_key,
+        )
+        .await
+    {
+        error!("invalidate_network_inbox_for_group failed: {e:#?}")
+    }
     Ok(Some(aor))
 }
 

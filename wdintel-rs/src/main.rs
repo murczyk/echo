@@ -181,6 +181,16 @@ pub struct OneoffReprocessCallsignsPs {
 }
 
 #[derive(clap::Parser, Debug)]
+pub struct OneoffBackfillInboxNetworksPs {
+    /// Start datetime (inclusive). Example: `2023-04-17T00:00:00`
+    #[arg(long, value_enum)]
+    pub start: Option<String>,
+    /// Start datetime (non-inclusive). Example: `2023-04-18T00:00:00`
+    #[arg(long, value_enum)]
+    pub end: Option<String>,
+}
+
+#[derive(clap::Parser, Debug)]
 pub struct OneoffRadioPerDayPerAbonentPs {
     pub input: String,
 }
@@ -507,6 +517,7 @@ enum Cmd {
     GenTs,
     #[command(visible_alias = "migration")]
     Migrate,
+    NetworkInvalidationTui,
     ExportUnit(ExportUnitPs),
     ImportUnit(ImportUnitPs),
     RenewTailscaleCert(RenewTailscaleCertPs),
@@ -571,6 +582,7 @@ enum Cmd {
     OneoffSuggestInboxMessageTags(OneoffSuggestInboxMessageTagsPs),
     OneoffImportSignalsCallsignsCsv(OneoffImportSignalsCallsignsCsvPs),
     OneoffFixWhatsappSenders,
+    OneoffBackfillInboxNetworks(OneoffBackfillInboxNetworksPs),
     OneoffRestartEcho(OneoffRestartEchoPs),
 }
 
@@ -1000,6 +1012,13 @@ async fn async_main(
         }
         Cmd::OneoffFixWhatsappSenders => {
             messenger::oneoff::oneoff_fix_whatsapp_senders(mode).await
+        }
+        Cmd::OneoffBackfillInboxNetworks(ps) => {
+            sigint::inbox::oneoff::oneoff_backfill_inbox_networks(mode, ps)
+                .await
+        }
+        Cmd::NetworkInvalidationTui => {
+            sigint::inbox::tui::run_network_invalidation_tui(mode).await
         }
         Cmd::OneoffRestartEcho(ps) => {
             oneoff::oneoff_restart_echo(mode, &ps).await

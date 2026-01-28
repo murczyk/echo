@@ -111,6 +111,11 @@ pub async fn group_update(
     let res = bl::bl_group_update(&req, &txn).await.c(h!())?;
 
     txn.commit().await.c(h!())?;
+    crate::sigint::inbox::invalidate_network_inbox_for_group(
+        &env.dbx, &res.group,
+    )
+    .await
+    .c(h!())?;
     Ok(Json(GroupEntryF1 {
         master_key: res.group.master_key.clone(),
         name: res.group.name.clone().unwrap_or("".to_string()),

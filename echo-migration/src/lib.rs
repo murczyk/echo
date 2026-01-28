@@ -192,7 +192,12 @@ mod m20260108_153000_add_key_modulation_and_freqs;
 mod m20260110_123009_drop_tyt_veda;
 mod m20260115_135733_add_enc_key_hash;
 mod m20260119_134955_drop_signal_message_duplicate_of;
+mod m20260121_090000_add_sigint_inbox_item_network;
+mod m20260121_150103_add_network_invalidation_task_col;
 mod m20260122_133442_add_sigint_key_share_policy;
+mod m20260123_082757_add_stale_task;
+mod m20260124_161520_add_sigint_inbox_item_network_indexes;
+mod m20260126_083712_add_network_invalidation_task_aor;
 
 pub struct Migrator;
 
@@ -392,7 +397,12 @@ impl MigratorTrait for Migrator {
             Box::new(m20260110_123009_drop_tyt_veda::Migration),
             Box::new(m20260115_135733_add_enc_key_hash::Migration),
             Box::new(m20260119_134955_drop_signal_message_duplicate_of::Migration),
+            Box::new(m20260121_090000_add_sigint_inbox_item_network::Migration),
+            Box::new(m20260121_150103_add_network_invalidation_task_col::Migration),
             Box::new(m20260122_133442_add_sigint_key_share_policy::Migration),
+            Box::new(m20260123_082757_add_stale_task::Migration),
+            Box::new(m20260124_161520_add_sigint_inbox_item_network_indexes::Migration),
+            Box::new(m20260126_083712_add_network_invalidation_task_aor::Migration),
         ]
     }
 }

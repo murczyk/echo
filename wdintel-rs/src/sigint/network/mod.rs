@@ -199,9 +199,9 @@ pub async fn restore_network(
     crate::users::has_any_role(&env.dbx, &user_id, vec!["Rer", "Api"]).await?;
     let txn = env.dbx.begin().await.context(h!())?;
     let network_id = req.into_inner().network_id;
-    let network = find_network(&txn, network_id).await.context(h!())?;
+    let mut network = find_network(&txn, network_id).await.context(h!())?;
     if network.deleted && network.active_to.is_some() {
-        bl_restore_network(&txn, network).await.context(h!())?;
+        network = bl_restore_network(&txn, network).await.context(h!())?;
     } else {
         error!("user {user_id} attempted to re-activate already active network, skipping...");
     }
@@ -211,6 +211,9 @@ pub async fn restore_network(
         .context(h!())?;
     txn.commit().await.context(h!())?;
     let res = res.into_iter().next().context(h!())?;
+    sigint::inbox::invalidate_network_inbox(network, vec![], &env.dbx)
+        .await
+        .c(h!())?;
     Ok(Json(res))
 }
 
@@ -476,6 +479,10 @@ pub async fn create_network(
     let event = EventMsg::new(EventType::ETNetworkChanged);
     fanout(&mut env.redis.clone(), event).await.context(h!())?;
 
+    sigint::inbox::invalidate_network_inbox(network.clone(), vec![], &env.dbx)
+        .await
+        .c(h!())?;
+
     let res = render_networks(vec![network], &env.dbx, &user_id)
         .await
         .context(h!())?
@@ -575,6 +582,10 @@ pub async fn update_network(
 
     txn.commit().await.context(h!())?;
 
+    sigint::inbox::invalidate_network_inbox(network.clone(), vec![], &env.dbx)
+        .await
+        .c(h!())?;
+
     let res = render_networks(vec![network], &env.dbx, &user_id)
         .await
         .context(h!())?
@@ -648,6 +659,10 @@ pub async fn delete_network(
 
     let event = EventMsg::new(EventType::ETNetworkChanged);
     fanout(&mut env.redis.clone(), event).await.context(h!())?;
+
+    sigint::inbox::invalidate_network_inbox(network.clone(), vec![], &env.dbx)
+        .await
+        .c(h!())?;
 
     let res = render_networks(vec![network], &env.dbx, &user_id)
         .await
@@ -1268,6 +1283,16 @@ pub async fn update_freq_networks(
 
     txn.commit().await.context(h!())?;
 
+    for network in networks {
+        sigint::inbox::invalidate_network_inbox(
+            network,
+            vec![req.freq.clone()],
+            &env.dbx,
+        )
+        .await
+        .c(h!())?;
+    }
+
     let event = EventMsg::new(EventType::ETNetworkChanged);
     fanout(&mut env.redis.clone(), event).await.context(h!())?;
 
@@ -1401,6 +1426,15 @@ pub async fn add_network_freq(
             .context(h!())?;
 
     txn.commit().await.context(h!())?;
+
+    crate::sigint::inbox::invalidate_network_inbox_for_freq(
+        &req.freq_rec.freq,
+        network_active_from,
+        network_active_to,
+        &env.dbx,
+    )
+    .await
+    .c(h!())?;
 
     let event = EventMsg::new(EventType::ETNetworkChanged);
     fanout(&mut env.redis.clone(), event).await.context(h!())?;
@@ -1563,6 +1597,15 @@ pub async fn update_network_freq(
 
     txn.commit().await.context(h!())?;
 
+    crate::sigint::inbox::invalidate_network_inbox_for_freq(
+        &req.freq,
+        network_active_from,
+        network_active_to,
+        &env.dbx,
+    )
+    .await
+    .c(h!())?;
+
     if network_detail.is_empty() {
         return Err(AppError::NotFound);
     }
@@ -1646,17 +1689,31 @@ pub async fn delete_network_freq(
                 Set(Some(user.id().c(h!())?.to_string()));
             network_model.active_from = Set(network_active_from);
             network_model.active_to = Set(network_active_to);
-            network_model.update(&txn).await.context(h!())?;
+            let network = network_model.update(&txn).await.context(h!())?;
 
             network_detail = Some(
                 bl_network_info_batch(vec![network_id], &txn, &user_id)
                     .await
                     .context(h!())?,
             );
+
+            let freqs = match req.freq.clone() {
+                None => vec![],
+                Some(freq) => vec![freq],
+            };
+
+            if let Err(e) = sigint::inbox::invalidate_network_inbox(
+                network, freqs, &env.dbx,
+            )
+            .await
+            {
+                error!("invalidate_network_inbox failed: {e:#?}");
+            }
         }
     }
 
     txn.commit().await.context(h!())?;
+
     let network_details = network_detail.clone().context(h!())?;
     let first_network_detail = network_details.first().context(h!())?;
     Ok(Json(first_network_detail.clone()))
@@ -1666,8 +1723,7 @@ pub async fn cleanup_networks_worker(dbx: &DatabaseConnection) {
     debug!("Starting cleanup_networks_worker");
 
     loop {
-        let _loop_guard =
-            crate::utils::worker_watch::loop_guard("cleanup_networks_worker");
+        let _loop_guard = worker_watch::loop_guard("cleanup_networks_worker");
         if let Err(e) = cleanup_networks_worker_1(dbx).await {
             error!("error in cleanup_networks_worker_1: {e:?}");
         }
@@ -1767,7 +1823,16 @@ async fn cleanup_networks_worker_1(
             if is_deleted {
                 let mut model = network_freq.into_active_model();
                 model.active_to = Set(Some(Utc::now().naive_utc()));
-                model.update(dbx).await.context(h!())?;
+                let network_freq = model.update(dbx).await.context(h!())?;
+                if let Err(e) = sigint::inbox::invalidate_network_inbox(
+                    network.clone(),
+                    vec![network_freq.freq],
+                    dbx,
+                )
+                .await
+                {
+                    error!("invalidate_network_inbox failed: {e:#?}");
+                }
             }
         }
 
@@ -1780,7 +1845,16 @@ async fn cleanup_networks_worker_1(
         let mut network = network.into_active_model();
         network.active_from = Set(network_active_from);
         network.active_to = Set(network_active_to);
-        network.update(dbx).await.context(h!())?;
+        let network = network.update(dbx).await.context(h!())?;
+        if let Err(e) = sigint::inbox::invalidate_network_inbox(
+            network.clone(),
+            vec![],
+            dbx,
+        )
+        .await
+        {
+            error!("invalidate_network_inbox failed: {e:#?}");
+        }
     }
 
     for sigint_network_freq in networks_freqs_to_remove {
@@ -1889,12 +1963,36 @@ pub async fn merge_network(
     let network = find_network(&env.dbx, req.network_id_to)
         .await
         .context(h!())?;
-    let res = render_networks(vec![network], &env.dbx, &user_id)
+    let res = render_networks(vec![network.clone()], &env.dbx, &user_id)
         .await
         .context(h!())?
         .into_iter()
         .next()
         .context(h!())?;
+
+    sigint::inbox::invalidate_network_inbox(
+        sigint_network::Entity::find_by_id(req.network_id_from)
+            .one(&env.dbx)
+            .await
+            .c(h!())?
+            .c(h!())?,
+        vec![],
+        &env.dbx,
+    )
+    .await
+    .context(h!())?;
+
+    sigint::inbox::invalidate_network_inbox(
+        sigint_network::Entity::find_by_id(req.network_id_to)
+            .one(&env.dbx)
+            .await
+            .c(h!())?
+            .c(h!())?,
+        vec![],
+        &env.dbx,
+    )
+    .await
+    .context(h!())?;
 
     Ok(Json(res))
 }
@@ -2060,7 +2158,7 @@ pub async fn update_network_posts(
     let txn = env.dbx.begin().await.context(h!())?;
 
     // 1. Check if network exists
-    let network = find_network(&txn, req.network_id).await.context(h!())?;
+    let mut network = find_network(&txn, req.network_id).await.context(h!())?;
 
     // 2. Fetch current non-deleted post_ids for the network
     let existing_posts = sigint_network_post::Entity::find()
@@ -2118,7 +2216,7 @@ pub async fn update_network_posts(
         let mut network_model = network.into_active_model();
         network_model.updated_at = Set(Utc::now().naive_utc());
         network_model.updated_by = Set(Some(user.id().c(h!())?.to_string()));
-        network_model.update(&txn).await.context(h!())?;
+        network = network_model.update(&txn).await.context(h!())?;
     }
 
     // Now fetch the updated network with all posts to return
@@ -2128,6 +2226,10 @@ pub async fn update_network_posts(
             .context(h!())?;
 
     txn.commit().await.context(h!())?;
+
+    sigint::inbox::invalidate_network_inbox(network.clone(), vec![], &env.dbx)
+        .await
+        .context(h!())?;
 
     if network_detail.is_empty() {
         return Err(AppError::NotFound);
@@ -2175,7 +2277,7 @@ pub async fn update_network_units(
     let txn = env.dbx.begin().await.context(h!())?;
 
     // 1. Check if network exists
-    let network = find_network(&txn, req.network_id).await.context(h!())?;
+    let mut network = find_network(&txn, req.network_id).await.context(h!())?;
 
     // 2. Fetch current non-deleted unit_ids for the network
     let existing_units = sigint_network_unit::Entity::find()
@@ -2235,7 +2337,7 @@ pub async fn update_network_units(
         let mut network_model = network.into_active_model();
         network_model.updated_at = Set(Utc::now().naive_utc());
         network_model.updated_by = Set(Some(user.id().c(h!())?.to_string()));
-        network_model.update(&txn).await.context(h!())?;
+        network = network_model.update(&txn).await.context(h!())?;
     }
 
     // Now fetch the updated network with all units to return
@@ -2245,6 +2347,10 @@ pub async fn update_network_units(
             .context(h!())?;
 
     txn.commit().await.context(h!())?;
+
+    sigint::inbox::invalidate_network_inbox(network, vec![], &env.dbx)
+        .await
+        .context(h!())?;
 
     if network_detail.is_empty() {
         return Err(AppError::NotFound);
@@ -2569,9 +2675,13 @@ pub async fn fix_network_areas_of_responsibility(
     let networks = networks.all(db).await.context(h!())?;
     for n in networks {
         if let Err(e) = insert_network_aor(db, &n, None).await {
-            error!("failed to insert group's area of responsibility: {e:?}")
+            error!("failed to insert network's area of responsibility: {e:?}");
         } else {
-            info!("added default aor to network {}", n.id)
+            info!("added default aor to network {}", n.id);
+
+            sigint::inbox::invalidate_network_inbox(n, vec![], db)
+                .await
+                .c(h!())?;
         }
     }
     Ok(())
