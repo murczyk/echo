@@ -25,7 +25,7 @@ pub async fn oneoff_restart_echo(
     Ok(())
 }
 
-fn restart_process(process_name: &str) -> anyhow::Result<()> {
+pub fn restart_process(process_name: &str) -> anyhow::Result<()> {
     let sh = Shell::new().c(h!())?;
     cmd!(sh, "sudo -S systemctl restart {process_name}")
         .run()

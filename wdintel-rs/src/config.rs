@@ -169,6 +169,7 @@ pub struct Config {
     pub s3_config: Option<S3Config>,
     pub store_palitra_in_s3: Option<bool>,
     pub alpine_converter_url: Option<String>,
+    pub models_config: Option<ModelsConfig>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
@@ -251,6 +252,12 @@ pub struct VaultConfig {
     pub server: String,
     pub login: String,
     pub password: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct ModelsConfig {
+    pub s3_config: S3Config,
+    pub prefix: String,
 }
 
 pub fn mk_s3(config: &Config) -> Result<Option<Operator>> {

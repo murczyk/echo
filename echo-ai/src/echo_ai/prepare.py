@@ -85,14 +85,13 @@ def fetch_from_postgres(con: DuckDBPyConnection, databases: list[str], file_name
 
     combined = "\nUNION ALL\n".join(queries)
     con.execute(f"""
-    CREATE TEMPORARY TABLE combined AS
+    CREATE TEMPORARY TABLE temp_combined AS
     WITH cte AS (
         {combined}
     )
-    SELECT DISTINCT on (text, labels)
-        *
+    SELECT *
     FROM cte
     """)
 
-    query = con.table("combined")
+    query = con.query("SELECT DISTINCT on (text, labels) * FROM temp_combined")
     query.write_parquet(file_name, row_group_size=100000)

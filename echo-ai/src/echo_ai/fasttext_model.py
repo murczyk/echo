@@ -16,7 +16,7 @@ from mlflow.pyfunc import PyFuncModel
 from mlflow.pyfunc.model import PythonModel, PythonModelContext
 from mlflow.utils.environment import _CONDA_ENV_FILE_NAME, _PYTHON_ENV_FILE_NAME
 
-original_extract_predict_fns = classifier._extract_predict_fn_and_prodict_proba_fn  # pyright: ignore
+original_extract_predict_fns = classifier._extract_predict_fn_and_predict_proba_fn  # pyright: ignore
 
 
 def _patched_extract_predict_fns(model: PyFuncModel | None):
@@ -39,7 +39,7 @@ def _patched_extract_predict_fns(model: PyFuncModel | None):
     return predict_fn, predict_proba_fn
 
 
-classifier._extract_predict_fn_and_prodict_proba_fn = _patched_extract_predict_fns  # pyright: ignore
+classifier._extract_predict_fn_and_predict_proba_fn = _patched_extract_predict_fns  # pyright: ignore
 
 FLAVOR_NAME = "fasttext"
 UNSUPERVISED_ARGS = [

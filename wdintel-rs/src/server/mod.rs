@@ -246,6 +246,19 @@ pub async fn main_server(
                 crate::stats::worker::group_stats::worker_calculate_group_stats(mode).await;
             },
         );
+        if let Some(model_config) = env.config.models_config.clone() {
+            let token = cancel_token.clone();
+            let storage_dir = env.config.storage_dir.clone();
+            spawn_named_worker("refresh_models_worker", bg_set, async move {
+                crate::tags::worker::refresh_models_worker_nofail(
+                    storage_dir,
+                    model_config,
+                    token,
+                )
+                .await;
+            });
+        }
+
         let rq2 = env.rq.clone();
         let tag_keyword_regex_cache = env.tag_keyword_regex_cache.clone();
         let token_2 = cancel_token.clone();

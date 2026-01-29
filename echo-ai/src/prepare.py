@@ -13,6 +13,7 @@ def real_main(args):
 
     with tempfile.TemporaryDirectory() as temp_dir:
         config = {
+            "memory_limit": "8GB",
             "preserve_insertion_order": False,
             "temp_directory": temp_dir,
         }

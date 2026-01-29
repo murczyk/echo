@@ -31,7 +31,7 @@ regex = { version = "1.11.1", features = ["pattern"] }
 tempfile = "3.20.0"
 walkdir = "^2.5.0"
 zip = "4.3.0"
-opendal = { version = "0.54", features = ["services-s3"] }
+opendal = { version = "0.54", features = ["services-s3", "services-fs"] }
 tokio = { workspace = true }
 tokio-util = { version = "0.7.16", features = ["io"] }
 nipper = "0.1"

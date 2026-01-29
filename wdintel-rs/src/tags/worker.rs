@@ -1,15 +1,21 @@
+use crate::config::ModelsConfig;
 use crate::config::*;
 use crate::entities::*;
 use crate::error::AppError;
 use crate::event_stream::fanout_mult;
 use crate::event_stream::types::{EventMsg, EventType};
 use crate::rer_importer::body_noheader::NoHeadersBody;
+use crate::storage;
+use crate::storage::S3Config;
 use crate::types::*;
 use crate::utils::orm::ArrayColumnOps;
 use crate::utils::worker_watch;
+use chrono::{DateTime, Utc};
 use echo_migration::OnConflict;
+use futures_util::StreamExt;
 use lazy_static::lazy_static;
 use log::{info, warn};
+use opendal::{EntryMode, ErrorKind};
 use regex::Regex;
 use sea_orm::prelude::*;
 use sea_orm::*;
@@ -356,4 +362,125 @@ async fn get_regex_sets_for_tag<C: ConnectionTrait>(
     let num_negative_patterns = item.regex_set_negative.len();
     info!("created regex sets for tag_id {tag_id}, num_positive_patterns {num_positive_patterns}, num_negative_patterns {num_negative_patterns}");
     Ok(item)
+}
+
+pub async fn refresh_models_worker_nofail(
+    storage_dir: String,
+    config: ModelsConfig,
+    cancel_token: CancellationToken,
+) {
+    let s3_config = S3Config::with_prefix(&config.s3_config, config.prefix);
+
+    loop {
+        if cancel_token.is_cancelled() {
+            info!("cancel token received, stopping refresh_models_worker...");
+            break;
+        }
+        let _loop_guard = worker_watch::loop_guard("refresh_models_worker");
+
+        if let Err(e) = do_refresh_models(&s3_config, &storage_dir).await {
+            error!("failed to refresh models: {:#}", e);
+        }
+
+        tokio::time::sleep(std::time::Duration::from_mins(30)).await;
+    }
+}
+
+async fn do_refresh_models(
+    s3_config: &storage::S3Config,
+    storage_dir: &str,
+) -> Result<(), anyhow::Error> {
+    let mut destination_path = PathBuf::from(storage_dir);
+    destination_path.push("echo-ai-models");
+    let destination = destination_path.to_str().unwrap();
+
+    let mut temp_path = PathBuf::from(storage_dir);
+    temp_path.push("tmp-echo-ai-models");
+    let temp_dir = temp_path.to_str().unwrap();
+
+    let remote_operator = storage::build_s3_operator(&s3_config).c(h!())?;
+    let fs_builder = opendal::services::Fs::default()
+        .root(destination)
+        .atomic_write_dir(temp_dir);
+
+    let local_operator = opendal::Operator::new(fs_builder)?.finish();
+
+    let items = remote_operator.list(&s3_config.prefix).await.c(h!())?;
+    let mut updated = false;
+    for item in items {
+        if item.metadata().mode() == EntryMode::FILE {
+            let remote_name = item.name();
+            let mut if_modified_since: Option<DateTime<Utc>> = None;
+            if let Ok(local_metadata) = local_operator.stat(remote_name).await {
+                if_modified_since = local_metadata.last_modified()
+            }
+
+            let reader = if let Some(if_modified_since) = if_modified_since {
+                let reader_result = remote_operator
+                    .reader_with(item.path())
+                    .if_modified_since(if_modified_since)
+                    .await;
+
+                match reader_result {
+                    Ok(reader) => reader,
+                    Err(e) if e.kind() == ErrorKind::ConditionNotMatch => {
+                        info!(
+                            "model file '{}' unchanged, skipping...",
+                            remote_name
+                        );
+                        continue;
+                    }
+                    Err(e) => return Err(e.into()),
+                }
+            } else {
+                remote_operator.reader(item.path()).await.c(h!())?
+            };
+            info!("downloading model file '{}'...", remote_name);
+
+            let mut writer: Option<opendal::Writer> = None;
+
+            let mut stream = reader.into_bytes_stream(..).await.c(h!())?;
+
+            while let Some(chunk) = stream.next().await {
+                match chunk {
+                    Ok(chunk) => {
+                        if let Some(w) = &mut writer {
+                            w.write(chunk).await.c(h!())?;
+                        } else {
+                            let mut w = local_operator
+                                .writer(remote_name)
+                                .await
+                                .c(h!())?;
+                            w.write(chunk).await.c(h!())?;
+                            writer = Some(w);
+                        }
+                    }
+                    Err(e) => match e.downcast::<opendal::Error>() {
+                        Ok(not_match_error)
+                            if not_match_error.kind()
+                                == ErrorKind::ConditionNotMatch =>
+                        {
+                            info!(
+                                "model file '{}' unchanged, skipping...",
+                                remote_name
+                            );
+                            continue;
+                        }
+                        Ok(opendal_error) => return Err(opendal_error.into()),
+                        Err(e) => return Err(e.into()),
+                    },
+                }
+            }
+            if let Some(w) = &mut writer {
+                w.close().await.c(h!())?;
+                updated = true;
+            }
+        }
+    }
+
+    if updated {
+        crate::oneoff::restart_process("wdintel-py").c(h!())?;
+    }
+
+    Ok(())
 }
