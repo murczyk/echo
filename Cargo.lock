@@ -2061,7 +2061,7 @@ version = "0.1.1"
 
 [[package]]
 name = "echo-docs"
-version = "0.1.1-rc.202601291410"
+version = "0.1.1-rc.202601291552"
 
 [[package]]
 name = "echo-im"
@@ -2112,7 +2112,7 @@ source = "git+ssh://git@github.com/echoua/echo-im.git?rev=345bc1b171aaf334ae8412
 
 [[package]]
 name = "echo-install"
-version = "0.1.1-rc.202601291410"
+version = "0.1.1-rc.202601291552"
 dependencies = [
  "anyhow",
  "echo-install-utils",
@@ -7019,7 +7019,7 @@ dependencies = [
 
 [[package]]
 name = "wdintel-rs"
-version = "0.1.1-rc.202601291410"
+version = "0.1.1-rc.202601291552"
 dependencies = [
  "actix-files",
  "actix-identity",
