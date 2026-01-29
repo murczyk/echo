@@ -1,6 +1,6 @@
 use self::types::*;
 use crate::entities::*;
-use crate::sigint::inbox::invalidate_network_inbox_for_aor;
+use crate::sigint::network::etalon_calc::invalidate_network_inbox_for_aor;
 use crate::types::*;
 use actix_web::post;
 use actix_web::web::{Data, Json};

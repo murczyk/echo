@@ -16,94 +16,11 @@ use std::time::{Duration, Instant};
 
 // No-fail worker loop: keep reconnecting, then run tasks every hour.
 pub async fn run_recent_inbox_network_worker_nofail(mode: Mode) {
-    let db;
     loop {
-        if let Ok(dbx) = new_pg_pool_from_mode(mode).await {
-            db = dbx;
-            break;
-        } else {
-            warn!("[run_recent_inbox_network_worker_nofail] failed to establish db connection");
-            tokio::time::sleep(Duration::from_secs(3)).await;
-            continue;
-        }
-    }
-
-    loop {
-        if let Ok(config) = read_config(mode) {
-            if !config
-                .feature_calculate_sigint_inbox_item_networks
-                .unwrap_or(true)
-            {
-                info!("run_recent_inbox_network_worker_nofail disabled, sleeping...");
-                tokio::time::sleep(Duration::from_secs(
-                    NETWORK_INBOX_WORKER_DEFAULT_SLEEP,
-                ))
-                .await;
-            }
-        } else {
-            warn!("[run_recent_inbox_network_worker_nofail] failed to read config");
-            tokio::time::sleep(Duration::from_secs(3)).await;
-            continue;
-        }
-        let next_run_ts = Utc::now().naive_utc() + Duration::from_hours(1);
         let _loop_guard =
             worker_watch::loop_guard("run_recent_inbox_network_worker_nofail");
-        info!("run_recent_inbox_network_worker_once started");
-        if let Err(e) = run_inbox_network_worker_once(&db, false).await {
-            error!("run_recent_inbox_network_worker_once failed: {e:#?}");
-            tokio::time::sleep(Duration::from_secs(
-                NETWORK_INBOX_WORKER_DEFAULT_SLEEP,
-            ))
-            .await;
-        } else {
-            info!(
-                "run_recent_inbox_network_worker_once completed, sleeping..."
-            );
-            while Utc::now().naive_utc() < next_run_ts {
-                tokio::time::sleep(Duration::from_secs(
-                    NETWORK_INBOX_WORKER_DEFAULT_SLEEP,
-                ))
-                .await;
-            }
-        }
-    }
-}
-
-// Old worker: only handles tasks marked as is_for_old_worker and workers at worker hours (in config.rs).
-pub async fn run_old_inbox_network_worker_nofail(mode: Mode) {
-    let db;
-    loop {
-        if let Ok(dbx) = new_pg_pool_from_mode(mode).await {
-            db = dbx;
-            break;
-        } else {
-            warn!("[run_old_inbox_network_worker_nofail] failed to establish db connection");
-            tokio::time::sleep(Duration::from_secs(3)).await;
-            continue;
-        }
-    }
-
-    loop {
-        wait_until_worker_shift_start().await;
-        if let Ok(config) = read_config(mode) {
-            if !config
-                .feature_calculate_sigint_inbox_item_networks
-                .unwrap_or(true)
-            {
-                info!(
-                    "run_old_inbox_network_worker_nofail disabled, sleeping..."
-                );
-                tokio::time::sleep(Duration::from_secs(
-                    NETWORK_INBOX_WORKER_DEFAULT_SLEEP,
-                ))
-                .await;
-            }
-        }
-        let _loop_guard =
-            worker_watch::loop_guard("run_old_inbox_network_worker_nofail");
-        info!("run_old_inbox_network_worker_once started");
-        if let Err(e) = run_inbox_network_worker_once(&db, true).await {
-            error!("run_old_inbox_network_worker_once failed: {e:#?}");
+        if let Err(e) = run_recent_inbox_network_worker_inner(mode).await {
+            error!("run_recent_inbox_network_worker_nofail failed: {e:#?}");
         }
         tokio::time::sleep(Duration::from_secs(
             NETWORK_INBOX_WORKER_DEFAULT_SLEEP,
@@ -112,62 +29,112 @@ pub async fn run_old_inbox_network_worker_nofail(mode: Mode) {
     }
 }
 
-// Daily checker: compare calculated networks to stored ones for today's messages.
-pub async fn run_inbox_network_daily_consistency_worker_nofail(mode: Mode) {
-    let db;
+async fn run_recent_inbox_network_worker_inner(
+    mode: Mode,
+) -> anyhow::Result<()> {
+    let config = read_config(mode).c(h!())?;
+    if !config
+        .feature_calculate_sigint_inbox_item_networks
+        .unwrap_or(true)
+    {
+        info!("run_recent_inbox_network_worker_nofail disabled, sleeping...");
+        return Ok(());
+    }
+    let db = new_pg_pool_from_mode(mode).await.c(h!())?;
+    info!("run_inbox_network_worker_once started");
+    if let Err(e) = run_inbox_network_worker_once(&db, false).await {
+        error!("run_inbox_network_worker_once failed: {e:#?}");
+    } else {
+        info!("run_inbox_network_worker_once completed");
+    }
+    Ok(())
+}
+
+// Old worker: only handles tasks marked as is_for_old_worker and workers at worker hours (in config.rs).
+pub async fn run_old_inbox_network_worker_nofail(mode: Mode) {
     loop {
-        if let Ok(dbx) = new_pg_pool_from_mode(mode).await {
-            db = dbx;
-            break;
-        } else {
-            warn!("[run_inbox_network_daily_consistency_worker_nofail] failed to establish db connection");
-            tokio::time::sleep(Duration::from_secs(3)).await;
-            continue;
+        let _loop_guard =
+            worker_watch::loop_guard("run_old_inbox_network_worker_nofail");
+        if let Err(e) = run_old_inbox_network_worker_inner(mode).await {
+            error!("run_old_inbox_network_worker_nofail failed: {e:#?}");
         }
+        tokio::time::sleep(Duration::from_secs(
+            NETWORK_INBOX_WORKER_DEFAULT_SLEEP,
+        ))
+        .await;
+    }
+}
+
+async fn run_old_inbox_network_worker_inner(mode: Mode) -> anyhow::Result<()> {
+    let config = read_config(mode).c(h!())?;
+    if !config
+        .feature_calculate_sigint_inbox_item_networks
+        .unwrap_or(true)
+    {
+        info!(
+            "run_inbox_network_daily_consistency_worker_nofail disabled, sleeping..."
+        );
+
+        return Ok(());
     }
 
-    loop {
-        if let Ok(config) = read_config(mode) {
-            if !config
-                .feature_calculate_sigint_inbox_item_networks
-                .unwrap_or(true)
-            {
-                info!(
-                    "run_inbox_network_daily_consistency_worker_nofail disabled, sleeping..."
-                );
-                tokio::time::sleep(Duration::from_secs(
-                    SIGINT_INBOX_NETWORK_CHECK_SLEEP_SECS,
-                ))
-                .await;
-                continue;
-            }
-        } else {
-            warn!("[run_inbox_network_daily_consistency_worker_nofail] failed to read config");
-            tokio::time::sleep(Duration::from_secs(3)).await;
-            continue;
-        }
+    let db = new_pg_pool_from_mode(mode).await.c(h!())?;
+    wait_until_worker_shift_start().await;
+    info!("run_old_inbox_network_worker_once started");
+    if let Err(e) = run_inbox_network_worker_once(&db, true).await {
+        error!("run_old_inbox_network_worker_once failed: {e:#?}");
+    } else {
+        info!("run_old_inbox_network_worker_once completed");
+    }
+    Ok(())
+}
 
+// Daily checker: compare calculated networks to stored ones for today's messages.
+pub async fn run_inbox_network_daily_consistency_worker_nofail(mode: Mode) {
+    loop {
         let _loop_guard = worker_watch::loop_guard(
             "run_inbox_network_daily_consistency_worker_nofail",
         );
-        info!("run_inbox_network_daily_consistency_worker_once started");
         if let Err(e) =
-            super::consistency::run_inbox_network_daily_consistency_worker_once(
-                &db,
-            )
-            .await
+            run_inbox_network_daily_consistency_worker_inner(mode).await
         {
-            error!(
-                "run_inbox_network_daily_consistency_worker_once failed: {e:#?}"
-            );
-        } else {
-            info!("run_inbox_network_daily_consistency_worker_once completed");
+            error!("run_inbox_network_daily_consistency_worker_inner failed: {e:#?}");
         }
         tokio::time::sleep(Duration::from_secs(
             SIGINT_INBOX_NETWORK_CHECK_SLEEP_SECS,
         ))
         .await;
     }
+}
+
+async fn run_inbox_network_daily_consistency_worker_inner(
+    mode: Mode,
+) -> anyhow::Result<()> {
+    let config = read_config(mode).c(h!())?;
+    if !config
+        .feature_calculate_sigint_inbox_item_networks
+        .unwrap_or(true)
+    {
+        info!(
+            "run_inbox_network_daily_consistency_worker_nofail disabled, sleeping..."
+        );
+
+        return Ok(());
+    }
+
+    let db = new_pg_pool_from_mode(mode).await.c(h!())?;
+    info!("run_inbox_network_daily_consistency_worker_once started");
+    if let Err(e) =
+        super::consistency::run_inbox_network_daily_consistency_worker_once(&db)
+            .await
+    {
+        error!(
+            "run_inbox_network_daily_consistency_worker_once failed: {e:#?}"
+        );
+    } else {
+        info!("run_inbox_network_daily_consistency_worker_once completed");
+    }
+    Ok(())
 }
 
 // Single worker pass: fetch pending tasks, triage, execute, then sleep to the next run.
@@ -575,12 +542,12 @@ async fn process_invalidation_filter(
             new_processed_items.insert(item.id);
             items_to_process.push(item);
         }
-        crate::sigint::inbox::calculate_sigint_inbox_item_networks(
+        crate::sigint::network::etalon_calc::calculate_sigint_inbox_item_networks(
             items_to_process,
             &txn,
         )
-        .await
-        .c(h!())?;
+            .await
+            .c(h!())?;
         txn.commit().await.c(h!())?;
         for i in new_processed_items {
             processed_items.insert(i);

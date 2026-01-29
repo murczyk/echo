@@ -185,7 +185,7 @@ pub async fn fix_group_areas_of_responsibility(
         } else {
             info!("added {}", g.master_key);
             if let Err(e) =
-                crate::sigint::inbox::invalidate_network_inbox_for_group(db, &g)
+                crate::sigint::network::etalon_calc::invalidate_network_inbox_for_group(db, &g)
                     .await
             {
                 error!("invalidate_network_inbox_for_group failed: {e:#?}")
@@ -252,7 +252,7 @@ where
     };
     model.insert(dbx).await.context(h!())?;
     if let Err(e) =
-        crate::sigint::inbox::invalidate_network_inbox_for_group_with_key(
+        crate::sigint::network::etalon_calc::invalidate_network_inbox_for_group_with_key(
             dbx,
             &master_key,
         )

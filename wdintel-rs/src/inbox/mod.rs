@@ -271,7 +271,7 @@ where
     let event = EventMsg::new(EventType::ETInboxChanged(result.id));
     fanout(redis, event).await.c(h!())?;
 
-    crate::sigint::inbox::calculate_sigint_inbox_item_networks(
+    crate::sigint::network::etalon_calc::calculate_sigint_inbox_item_networks(
         vec![result],
         txn,
     )

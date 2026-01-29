@@ -240,10 +240,10 @@ pub async fn main_server(
             crate::messenger::worker::cleanup::run_cleanup_worker(mode).await;
         });
         spawn_named_worker("recent_inbox_network_worker", bg_set, async move {
-            crate::sigint::inbox::worker::run_recent_inbox_network_worker_nofail(mode).await;
+            crate::sigint::network::etalon_calc::worker::run_recent_inbox_network_worker_nofail(mode).await;
         });
         spawn_named_worker("old_inbox_network_worker", bg_set, async move {
-            crate::sigint::inbox::worker::run_old_inbox_network_worker_nofail(
+            crate::sigint::network::etalon_calc::worker::run_old_inbox_network_worker_nofail(
                 mode,
             )
             .await;
@@ -252,7 +252,7 @@ pub async fn main_server(
             "inbox_network_daily_consistency_worker",
             bg_set,
             async move {
-                crate::sigint::inbox::worker::run_inbox_network_daily_consistency_worker_nofail(mode).await;
+                crate::sigint::network::etalon_calc::worker::run_inbox_network_daily_consistency_worker_nofail(mode).await;
             },
         );
         spawn_named_worker(

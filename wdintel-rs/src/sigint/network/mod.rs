@@ -33,6 +33,7 @@ use std::collections::{BTreeSet, HashMap};
 use time::{Duration as TimeDuration, PrimitiveDateTime};
 
 pub mod bl;
+pub mod etalon_calc;
 pub mod goi;
 pub mod merge;
 pub mod oneoff;
@@ -211,9 +212,13 @@ pub async fn restore_network(
         .context(h!())?;
     txn.commit().await.context(h!())?;
     let res = res.into_iter().next().context(h!())?;
-    sigint::inbox::invalidate_network_inbox(network, vec![], &env.dbx)
-        .await
-        .c(h!())?;
+    sigint::network::etalon_calc::invalidate_network_inbox(
+        network,
+        vec![],
+        &env.dbx,
+    )
+    .await
+    .c(h!())?;
     Ok(Json(res))
 }
 
@@ -479,9 +484,13 @@ pub async fn create_network(
     let event = EventMsg::new(EventType::ETNetworkChanged);
     fanout(&mut env.redis.clone(), event).await.context(h!())?;
 
-    sigint::inbox::invalidate_network_inbox(network.clone(), vec![], &env.dbx)
-        .await
-        .c(h!())?;
+    sigint::network::etalon_calc::invalidate_network_inbox(
+        network.clone(),
+        vec![],
+        &env.dbx,
+    )
+    .await
+    .c(h!())?;
 
     let res = render_networks(vec![network], &env.dbx, &user_id)
         .await
@@ -582,9 +591,13 @@ pub async fn update_network(
 
     txn.commit().await.context(h!())?;
 
-    sigint::inbox::invalidate_network_inbox(network.clone(), vec![], &env.dbx)
-        .await
-        .c(h!())?;
+    sigint::network::etalon_calc::invalidate_network_inbox(
+        network.clone(),
+        vec![],
+        &env.dbx,
+    )
+    .await
+    .c(h!())?;
 
     let res = render_networks(vec![network], &env.dbx, &user_id)
         .await
@@ -660,9 +673,13 @@ pub async fn delete_network(
     let event = EventMsg::new(EventType::ETNetworkChanged);
     fanout(&mut env.redis.clone(), event).await.context(h!())?;
 
-    sigint::inbox::invalidate_network_inbox(network.clone(), vec![], &env.dbx)
-        .await
-        .c(h!())?;
+    sigint::network::etalon_calc::invalidate_network_inbox(
+        network.clone(),
+        vec![],
+        &env.dbx,
+    )
+    .await
+    .c(h!())?;
 
     let res = render_networks(vec![network], &env.dbx, &user_id)
         .await
@@ -1284,7 +1301,7 @@ pub async fn update_freq_networks(
     txn.commit().await.context(h!())?;
 
     for network in networks {
-        sigint::inbox::invalidate_network_inbox(
+        sigint::network::etalon_calc::invalidate_network_inbox(
             network,
             vec![req.freq.clone()],
             &env.dbx,
@@ -1427,7 +1444,7 @@ pub async fn add_network_freq(
 
     txn.commit().await.context(h!())?;
 
-    crate::sigint::inbox::invalidate_network_inbox_for_freq(
+    crate::sigint::network::etalon_calc::invalidate_network_inbox_for_freq(
         &req.freq_rec.freq,
         network_active_from,
         network_active_to,
@@ -1597,7 +1614,7 @@ pub async fn update_network_freq(
 
     txn.commit().await.context(h!())?;
 
-    crate::sigint::inbox::invalidate_network_inbox_for_freq(
+    crate::sigint::network::etalon_calc::invalidate_network_inbox_for_freq(
         &req.freq,
         network_active_from,
         network_active_to,
@@ -1702,10 +1719,11 @@ pub async fn delete_network_freq(
                 Some(freq) => vec![freq],
             };
 
-            if let Err(e) = sigint::inbox::invalidate_network_inbox(
-                network, freqs, &env.dbx,
-            )
-            .await
+            if let Err(e) =
+                sigint::network::etalon_calc::invalidate_network_inbox(
+                    network, freqs, &env.dbx,
+                )
+                .await
             {
                 error!("invalidate_network_inbox failed: {e:#?}");
             }
@@ -1824,12 +1842,13 @@ async fn cleanup_networks_worker_1(
                 let mut model = network_freq.into_active_model();
                 model.active_to = Set(Some(Utc::now().naive_utc()));
                 let network_freq = model.update(dbx).await.context(h!())?;
-                if let Err(e) = sigint::inbox::invalidate_network_inbox(
-                    network.clone(),
-                    vec![network_freq.freq],
-                    dbx,
-                )
-                .await
+                if let Err(e) =
+                    sigint::network::etalon_calc::invalidate_network_inbox(
+                        network.clone(),
+                        vec![network_freq.freq],
+                        dbx,
+                    )
+                    .await
                 {
                     error!("invalidate_network_inbox failed: {e:#?}");
                 }
@@ -1846,7 +1865,7 @@ async fn cleanup_networks_worker_1(
         network.active_from = Set(network_active_from);
         network.active_to = Set(network_active_to);
         let network = network.update(dbx).await.context(h!())?;
-        if let Err(e) = sigint::inbox::invalidate_network_inbox(
+        if let Err(e) = sigint::network::etalon_calc::invalidate_network_inbox(
             network.clone(),
             vec![],
             dbx,
@@ -1970,7 +1989,7 @@ pub async fn merge_network(
         .next()
         .context(h!())?;
 
-    sigint::inbox::invalidate_network_inbox(
+    sigint::network::etalon_calc::invalidate_network_inbox(
         sigint_network::Entity::find_by_id(req.network_id_from)
             .one(&env.dbx)
             .await
@@ -1982,7 +2001,7 @@ pub async fn merge_network(
     .await
     .context(h!())?;
 
-    sigint::inbox::invalidate_network_inbox(
+    sigint::network::etalon_calc::invalidate_network_inbox(
         sigint_network::Entity::find_by_id(req.network_id_to)
             .one(&env.dbx)
             .await
@@ -2227,9 +2246,13 @@ pub async fn update_network_posts(
 
     txn.commit().await.context(h!())?;
 
-    sigint::inbox::invalidate_network_inbox(network.clone(), vec![], &env.dbx)
-        .await
-        .context(h!())?;
+    sigint::network::etalon_calc::invalidate_network_inbox(
+        network.clone(),
+        vec![],
+        &env.dbx,
+    )
+    .await
+    .context(h!())?;
 
     if network_detail.is_empty() {
         return Err(AppError::NotFound);
@@ -2348,9 +2371,13 @@ pub async fn update_network_units(
 
     txn.commit().await.context(h!())?;
 
-    sigint::inbox::invalidate_network_inbox(network, vec![], &env.dbx)
-        .await
-        .context(h!())?;
+    sigint::network::etalon_calc::invalidate_network_inbox(
+        network,
+        vec![],
+        &env.dbx,
+    )
+    .await
+    .context(h!())?;
 
     if network_detail.is_empty() {
         return Err(AppError::NotFound);
@@ -2679,9 +2706,13 @@ pub async fn fix_network_areas_of_responsibility(
         } else {
             info!("added default aor to network {}", n.id);
 
-            sigint::inbox::invalidate_network_inbox(n, vec![], db)
-                .await
-                .c(h!())?;
+            sigint::network::etalon_calc::invalidate_network_inbox(
+                n,
+                vec![],
+                db,
+            )
+            .await
+            .c(h!())?;
         }
     }
     Ok(())

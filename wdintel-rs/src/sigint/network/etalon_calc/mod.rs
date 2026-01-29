@@ -1,5 +1,5 @@
 use crate::entities::*;
-use crate::sigint::inbox::consistency::InboxItem;
+use crate::sigint::network::etalon_calc::consistency::InboxItem;
 use crate::types::ShortContext;
 use crate::{config, h};
 use chrono::{Duration, NaiveDateTime, Utc};

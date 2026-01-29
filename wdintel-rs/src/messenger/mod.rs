@@ -111,7 +111,7 @@ pub async fn group_update(
     let res = bl::bl_group_update(&req, &txn).await.c(h!())?;
 
     txn.commit().await.c(h!())?;
-    crate::sigint::inbox::invalidate_network_inbox_for_group(
+    crate::sigint::network::etalon_calc::invalidate_network_inbox_for_group(
         &env.dbx, &res.group,
     )
     .await

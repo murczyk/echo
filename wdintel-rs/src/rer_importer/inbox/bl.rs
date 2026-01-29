@@ -947,7 +947,7 @@ pub async fn submit_upsert_inbox_item(
         .await
         .c(h!())?
         .c(h!())?;
-    crate::sigint::inbox::calculate_sigint_inbox_item_networks(
+    crate::sigint::network::etalon_calc::calculate_sigint_inbox_item_networks(
         vec![new_item],
         txn,
     )
