@@ -149,6 +149,8 @@ const DEFAULT_ZONE_COLUMN_ORDER = [
   'notes',
 ];
 
+const ORPHAN_GROUPS_TABLE_MAX_HEIGHT = 500;
+
 const orphanDefaultMRTOptions = getDefaultMRTOptions<OrphanSignalGroupEntry>();
 const zoneDefaultMRTOptions = getDefaultMRTOptions<ZoneGroupRow>();
 
@@ -363,9 +365,9 @@ function OrphanGroupsTable(props: {
         minWidth: 0,
         maxWidth: '100%',
         width: '100%',
-        maxHeight: 'none',
+        maxHeight: ORPHAN_GROUPS_TABLE_MAX_HEIGHT,
         overflowX: 'auto',
-        overflowY: 'visible',
+        overflowY: 'auto',
       },
     },
     state,
