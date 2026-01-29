@@ -10,7 +10,7 @@ RestartSec=5s
 # WorkingDirectory=/home/zptzr/www/wd/dist
 # MemoryLimit=8G
 Environment=LD_LIBRARY_PATH=/usr/local/lib:/usr/lib
-Environment=RUST_LOG=info,wdintel_rs=debug
+Environment=RUST_LOG=info,wdintel_rs=debug,actix_session=warn
 LimitNOFILE=524288
 
 [Install]
