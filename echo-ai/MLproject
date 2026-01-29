@@ -3,6 +3,12 @@ name: ECHO AI
 python_env: python_env.yaml
 
 entry_points:
+  upload:
+    parameters:
+      run_id: string
+      bucket: { type: string, default: "echouastorage" }
+      prefix: { type: string, default: "lfs/echo-ai/models/" }
+    command: "python src/upload.py {run_id} {bucket} {prefix}"
   restore:
     parameters:
       restore_databases: string

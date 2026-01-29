@@ -675,7 +675,8 @@ setup-echo-ai-train server='echo-ai-train':
     ssh {{ server }} 'sudo mkdir -p /usr/local/echo-ai-train/'
     echo-install-utils ssh-sync-file scripts/copy-db-backup.sh {{ server }}:/usr/local/echo-ai-train/
     echo-install-utils ssh-sync-file scripts/train-download-backups.sh {{ server }}:/usr/local/echo-ai-train/
-    echo-install-utils bw-sync "{{ server }}" "echo-ai-train-{{ server }}-dotenv" "/usr/local/echo-ai-train/.env" --no-restart
+    echo-install-utils bw-sync "{{ server }}" "echo-ai-{{ server }}-backups-dotenv" "/usr/local/echo-ai-train/.env" --no-restart
+    echo-install-utils bw-sync "{{ server }}" "echo-ai-{{ server }}-models-dotenv" "/usr/local/echo-ai-train/.env.train" --no-restart
 
 # [positional-arguments]
 [arg('branch', long='branch')]

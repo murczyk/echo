@@ -21,7 +21,7 @@ def real_main(
                 project,
                 entry_point="restore",
                 env_manager="uv",
-                parameters={"restore_databases": databases},
+                parameters={"restore_databases": restore_databases},
             )
 
     if len(databases_list) == 1 and os.path.isfile(databases_list[0]):
@@ -49,9 +49,17 @@ def process_file(project: str, data_file: str, unsupervised: bool):
             env_manager="uv",
             parameters=parameters,
         )
-    mlflow.run(
+    run_id = mlflow.run(
         project, entry_point="supervised", env_manager="uv", parameters=parameters
     )
+
+    if os.environ.get("AWS_ACCESS_KEY_ID") and os.environ.get("AWS_SECRET_ACCESS_KEY"):
+        mlflow.run(
+            project,
+            entry_point="upload",
+            env_manager="uv",
+            parameters={"run_id": run_id},
+        )
 
 
 def main():
