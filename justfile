@@ -60,7 +60,7 @@ dev-back-noproj:
     (cd wdintel-rs && {{ rust_log }}cargo watch -- cargo run --no-default-features -- --mode=debug server {{ dev_back_args }})
 
 dev-back-sudo:
-    (cd wdintel-rs && cargo build && {{ rust_log }}sudo ./target/debug/wdintel-rs --mode=debug server {{ dev_back_args }})
+    (cd wdintel-rs && cargo build && cd .. && {{ rust_log }}sudo ./target/debug/wdintel-rs --mode=debug server {{ dev_back_args }})
 
 # mkdir -p ~/Downloads/storage
 
@@ -546,11 +546,9 @@ copy-db-local:
     fi
     echo 'this command requires sudo access'
     sudo ls
-    ssh -t {{ server }} '(cd ~/Downloads && PGPASSWORD="{{ pgpwd }}" pg_dump --user wd -Fc wd > wd-{{ dt1 }}.pgrestore && ls -lah wd-{{ dt1 }}.pgrestore)'
-    ssh -t {{ server }} 'mv ~/Downloads/wd-{{ dt1 }}.pgrestore > /var/tmp/wd-{{ dt1 }}.pgrestore'
-    scp {{ server }}:/var/tmp/wd-{{ dt1 }}.pgrestore ~/Downloads/
+    ssh -t {{ server }} '(cd /var/tmp && PGPASSWORD="{{ pgpwd }}" pg_dump --user wd -Fc wd > wd-{{ dt1 }}.pgrestore && ls -lah wd-{{ dt1 }}.pgrestore)'
+    scp {{ server }}:/var/tmp/wd-{{ dt1 }}.pgrestore /var/tmp/
     ssh -t {{ server }} '(rm ~/Downloads/wd-{{ dt1 }}.pgrestore) | echo "ok"'
-    mv ~/Downloads/wd-{{ dt1 }}.pgrestore.gz /var/tmp/
     just dt1={{ dt1 }} pgdb={{ pgdb }} restore-db-local
     sudo rm /var/tmp/wd-{{ dt1 }}.pgrestore
     ssh -t {{ server }} '(rm /var/tmp/wd-{{ dt1 }}.pgrestore) | echo "ok"'

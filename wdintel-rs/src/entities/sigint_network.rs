@@ -46,6 +46,10 @@ pub enum Relation {
         on_delete = "NoAction"
     )]
     Login,
+    #[sea_orm(has_many = "super::network_invalidation_task::Entity")]
+    NetworkInvalidationTask,
+    #[sea_orm(has_many = "super::sigint_inbox_item_network::Entity")]
+    SigintInboxItemNetwork,
     #[sea_orm(has_many = "super::sigint_network_aor::Entity")]
     SigintNetworkAor,
     #[sea_orm(has_many = "super::sigint_network_callsign::Entity")]
@@ -75,6 +79,18 @@ pub enum Relation {
 impl Related<super::login::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Login.def()
+    }
+}
+
+impl Related<super::network_invalidation_task::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::NetworkInvalidationTask.def()
+    }
+}
+
+impl Related<super::sigint_inbox_item_network::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintInboxItemNetwork.def()
     }
 }
 
