@@ -30,11 +30,10 @@ pub async fn sync_groups(
     }
     let unsorted_groups =
         echo_im::list_groups(client_name, txn).await.c(h!())?;
-    let group_names = unsorted_groups
+    let group_statuses = unsorted_groups
         .iter()
-        .map(|g| (g.id.clone(), g.name.clone()))
-        .filter(|(_id, name)| !name.is_empty())
-        .collect::<HashMap<String, String>>();
+        .map(|g| (g.id.clone(), g.name.clone(), g.deleted_by_messenger))
+        .collect_vec();
     let datasource_groups =
         datasource_group::Entity::find().all(txn).await.c(h!())?;
     let messenger_profiles = echo_client_lock::Entity::find()
@@ -270,19 +269,37 @@ pub async fn sync_groups(
             }
         }
     }
-    // now correct anonymous groups
+    // now correct deleted and anonymous groups
     let deleted_noname_signal_groups = signal_group::Entity::find()
-        .filter(signal_group::Column::Deleted.eq(true))
-        .filter(signal_group::Column::Name.eq("".to_string()))
+        .filter(
+            signal_group::Column::Deleted
+                .eq(true)
+                .or(signal_group::Column::Name.eq("".to_string())),
+        )
         .all(txn)
         .await
         .c(h!())?;
     for g in deleted_noname_signal_groups {
-        if let Some(name) = group_names.get(&g.master_key) {
-            let mut rec = g.into_active_model();
-            rec.name = Set(Some(name.clone()));
-            rec.update(txn).await.c(h!())?;
+        let Some((name, deleted)) = group_statuses
+            .iter()
+            .filter(|(id, _name, _deleted)| g.master_key.eq(id))
+            .map(|(_id, name, deleted)| (name.clone(), *deleted))
+            .reduce(|(a_name, a_deleted), (b_name, b_deleted)| {
+                (
+                    Some(a_name).filter(|s| !s.is_empty()).unwrap_or(b_name),
+                    a_deleted && b_deleted,
+                )
+            })
+        else {
+            continue;
+        };
+        if g.name.eq(&Some(name.clone())) && g.deleted == deleted {
+            continue;
         }
+        let mut rec = g.into_active_model();
+        rec.name = Set(Some(name));
+        rec.deleted = Set(deleted);
+        rec.update(txn).await.c(h!())?;
     }
     Ok(())
 }
