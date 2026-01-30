@@ -81,7 +81,7 @@ pub struct AreaOfResponsibility {
 pub struct SigintNetwork {
     pub id: i64,
     pub name: String,
-    pub active_from: NaiveDateTime,
+    pub active_from: Option<NaiveDateTime>,
 }
 
 #[derive(Debug, Clone, FromQueryResult)]
