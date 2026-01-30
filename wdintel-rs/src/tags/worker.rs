@@ -398,7 +398,7 @@ async fn do_refresh_models(
     temp_path.push("tmp-echo-ai-models");
     let temp_dir = temp_path.to_str().unwrap();
 
-    let remote_operator = storage::build_s3_operator(&s3_config).c(h!())?;
+    let remote_operator = storage::build_s3_operator(s3_config).c(h!())?;
     let fs_builder = opendal::services::Fs::default()
         .root(destination)
         .atomic_write_dir(temp_dir);

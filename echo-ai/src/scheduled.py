@@ -49,7 +49,7 @@ def process_file(project: str, data_file: str, unsupervised: bool):
             env_manager="uv",
             parameters=parameters,
         )
-    run_id = mlflow.run(
+    run = mlflow.run(
         project, entry_point="supervised", env_manager="uv", parameters=parameters
     )
 
@@ -58,7 +58,7 @@ def process_file(project: str, data_file: str, unsupervised: bool):
             project,
             entry_point="upload",
             env_manager="uv",
-            parameters={"run_id": run_id},
+            parameters={"run_id": run.run_id},
         )
 
 
