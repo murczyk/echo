@@ -142,6 +142,12 @@ async fn run_inbox_network_worker_once(
     db: &DatabaseConnection,
     is_for_old_worker: bool,
 ) -> anyhow::Result<()> {
+    let since_ts = if is_for_old_worker {
+        Utc::now().naive_utc()
+            - chrono::Duration::days(NETWORK_INBOX_FRESH_WORKER_CUTOFF_DAYS)
+    } else {
+        Utc::now().naive_utc()
+    };
     let cutoff_days = if is_for_old_worker {
         NETWORK_INBOX_OLD_WORKER_CUTOFF_DAYS
     } else {
@@ -150,7 +156,7 @@ async fn run_inbox_network_worker_once(
     let cutoff = Utc::now().naive_utc() - chrono::Duration::days(cutoff_days);
     let pending_tasks = network_invalidation_task::Entity::find()
         .filter(network_invalidation_task::Column::CompletedAt.is_null())
-        .filter(network_invalidation_task::Column::TillTs.gte(cutoff))
+        .filter(network_invalidation_task::Column::TillTs.lte(since_ts))
         .all(db)
         .await
         .c(h!())?;
