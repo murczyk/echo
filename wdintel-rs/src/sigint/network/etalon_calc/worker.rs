@@ -151,10 +151,6 @@ async fn run_inbox_network_worker_once(
     let pending_tasks = network_invalidation_task::Entity::find()
         .filter(network_invalidation_task::Column::CompletedAt.is_null())
         .filter(network_invalidation_task::Column::TillTs.gte(cutoff))
-        .filter(
-            network_invalidation_task::Column::IsForOldWorker
-                .eq(is_for_old_worker),
-        )
         .all(db)
         .await
         .c(h!())?;
