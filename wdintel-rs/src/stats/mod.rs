@@ -13,7 +13,7 @@ use echo_migration::{Expr, IntoCondition};
 use itertools::Itertools;
 use log::*;
 use sea_orm::*;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use tokio::time::sleep;
 
 pub mod worker;
@@ -409,7 +409,12 @@ pub async fn read_sender_stats_aggregated(
     };
     let mut result = vec![];
     for (uuid, count) in stats {
-        result.push(AnalysisStatsSender { uuid, count });
+        result.push(AnalysisStatsSender {
+            uuid,
+            count,
+            freq_breakdown: vec![],
+            per_day: BTreeMap::new(),
+        });
     }
     Ok(result)
 }

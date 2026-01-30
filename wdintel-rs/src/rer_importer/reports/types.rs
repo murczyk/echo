@@ -52,6 +52,7 @@ pub struct ReoReportSettings {
 )]
 pub struct SenderReportSettings {
     pub aggregation: ReportAggregation,
+    pub advanced_freqs: bool,
 }
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
