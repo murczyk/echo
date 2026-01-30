@@ -1,3 +1,4 @@
+use crate::rer_importer::types::SenderFrequencyBreakdown;
 use crate::sigint::sender::preferred_sender_expr;
 use crate::types::ShortContext;
 use actix_identity::Identity;
@@ -7,10 +8,11 @@ use echo_migration::{Expr, JoinType};
 use log::{debug, warn};
 use sea_orm::FromQueryResult;
 use sea_orm::*;
+use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error as StdError;
 
 use crate::entities::{
-    sigint_inbox_item, signal_message, signal_message_group,
+    sigint_inbox_item, sigint_post, signal_message, signal_message_group,
 };
 use crate::error::AppError;
 use crate::h;
@@ -38,7 +40,6 @@ pub async fn fetch_groups(
         .c(h!())?;
         return Ok(result);
     }
-
     let instant = std::time::Instant::now();
     trace!("get identity master keys op took: {:?}", instant.elapsed());
     #[derive(FromQueryResult)]
@@ -68,6 +69,61 @@ pub async fn fetch_groups(
     }
     debug!("groups op took: {:?}", instant.elapsed());
     Ok(groups)
+}
+
+fn apply_sender_filters<E>(
+    query: Select<E>,
+    req: &Json<AnalysisStatsReq>,
+    user: &Identity,
+    master_keys: Vec<String>,
+) -> Result<Select<E>, AppError>
+where
+    E: EntityTrait,
+{
+    let include_peleng_locations =
+        req.include_peleng_locations.unwrap_or(false);
+    let query =
+        filter_selected_groups(query, &req.selected_groups).context(h!())?;
+    let query =
+        filter_selected_freqs(query, &req.selected_freqs).context(h!())?;
+    let query =
+        filter_selected_posts(query, &req.selected_posts).context(h!())?;
+    let query = filter_selected_units(
+        query,
+        &req.selected_units,
+        &req.units_exact_match_only,
+    )
+    .context(h!())?;
+    let query = filter_selected_locations(
+        query,
+        &req.selected_locations,
+        include_peleng_locations,
+    )
+    .context(h!())?;
+    let query = filter_selected_callsigns(query, &req.selected_callsigns)
+        .context(h!())?;
+    let query = filter_selected_tags(
+        query,
+        &req.selected_tags,
+        &req.or_bookmarked,
+        &req.or_important,
+        &req.or_with_coords,
+        &req.or_with_extended_form,
+        &req.filter_tags_option,
+        &req.without_model_tags,
+        user.id().context(h!())?.as_str(),
+        req.report_tags_only_this_unit.unwrap_or(false),
+    )
+    .context(h!())?;
+    let query = filter_selected_networks(query, &req.selected_networks)
+        .context(h!())?;
+    let query = filter_search(query, &req.search).context(h!())?;
+    let query =
+        filter_selected_aors(query, &req.selected_aors).context(h!())?;
+    if !master_keys.is_empty() {
+        return Ok(query.filter(message_in_groups_exists(master_keys)));
+    }
+    Ok(query)
 }
 
 pub async fn count_groups(
@@ -198,9 +254,27 @@ pub async fn fetch_senders(
         uuid: Option<String>,
         count: i64,
     }
+    #[derive(FromQueryResult)]
+    struct SenderFreqRes {
+        uuid: Option<String>,
+        freq: Option<String>,
+        post_id: Option<i64>,
+        count: i64,
+    }
+    #[derive(FromQueryResult)]
+    struct SenderPerDayRes {
+        uuid: Option<String>,
+        date: String,
+        count: i64,
+    }
     let instant = std::time::Instant::now();
-    let senders_res =
-        build_senders_query(&req, &user, dt_since, dt_till, master_keys)?;
+    let senders_query = build_senders_query(
+        &req,
+        &user,
+        dt_since,
+        dt_till,
+        master_keys.clone(),
+    )?;
     // println!(
     //     "> senders_res: {}",
     //     senders_res.build(DbBackend::Postgres).to_string()
@@ -209,17 +283,116 @@ pub async fn fetch_senders(
     //     "> senders_res: {}",
     //     senders_res.build(DbBackend::Postgres).to_string()
     // );
-    let senders_res: Vec<SendersRes> = senders_res
+    let senders_res: Vec<SendersRes> = senders_query
         .into_model::<SendersRes>()
         .all(&env.dbx)
         .await
         .context(h!())?;
+
+    let freq_query = sigint_inbox_item::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            sigint_inbox_item::Relation::SignalMessage.def(),
+        )
+        .select_only()
+        .column_as(preferred_sender_expr(None), "uuid")
+        .column(sigint_inbox_item::Column::Freq)
+        .column(sigint_inbox_item::Column::PostId)
+        .column_as(Expr::cust("COUNT(*)"), "count")
+        .filter(message_in_groups_exists(master_keys.clone()))
+        .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
+        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
+        .group_by(preferred_sender_expr(None))
+        .group_by(sigint_inbox_item::Column::Freq)
+        .group_by(sigint_inbox_item::Column::PostId);
+    let freq_query =
+        apply_sender_filters(freq_query, req, user, master_keys.clone())?;
+    let freq_rows: Vec<SenderFreqRes> = freq_query
+        .into_model::<SenderFreqRes>()
+        .all(&env.dbx)
+        .await
+        .context(h!())?;
+
+    let per_day_expr = Expr::cust_with_exprs(
+        "to_char(($1 AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Kyiv')::date, 'DD.MM.YYYY')",
+        [Expr::col(sigint_inbox_item::Column::Datetime).into_simple_expr()],
+    );
+    let per_day_query = sigint_inbox_item::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            sigint_inbox_item::Relation::SignalMessage.def(),
+        )
+        .select_only()
+        .column_as(preferred_sender_expr(None), "uuid")
+        .column_as(per_day_expr.clone(), "date")
+        .column_as(Expr::cust("COUNT(*)"), "count")
+        .filter(message_in_groups_exists(master_keys.clone()))
+        .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
+        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
+        .group_by(preferred_sender_expr(None))
+        .group_by(per_day_expr);
+    let per_day_query =
+        apply_sender_filters(per_day_query, req, user, master_keys)?;
+    let per_day_rows: Vec<SenderPerDayRes> = per_day_query
+        .into_model::<SenderPerDayRes>()
+        .all(&env.dbx)
+        .await
+        .context(h!())?;
+
+    let post_ids = freq_rows
+        .iter()
+        .filter_map(|row| row.post_id)
+        .collect::<BTreeSet<_>>();
+    let post_ids = post_ids.into_iter().collect::<Vec<_>>();
+    let post_names = if post_ids.is_empty() {
+        BTreeMap::new()
+    } else {
+        sigint_post::Entity::find()
+            .filter(sigint_post::Column::Id.eq_any(post_ids))
+            .all(&env.dbx)
+            .await
+            .context(h!())?
+            .into_iter()
+            .map(|post| (post.id, post.name))
+            .collect::<BTreeMap<_, _>>()
+    };
+    let mut freq_map: BTreeMap<String, Vec<SenderFrequencyBreakdown>> =
+        BTreeMap::new();
+    for row in freq_rows {
+        let Some(uuid) = row.uuid else { continue };
+        let post = row.post_id.and_then(|id| post_names.get(&id).cloned());
+        freq_map
+            .entry(uuid)
+            .or_default()
+            .push(SenderFrequencyBreakdown {
+                freq: row.freq,
+                post,
+                count: row.count,
+            });
+    }
+
+    let mut per_day_map: BTreeMap<String, BTreeMap<String, i64>> =
+        BTreeMap::new();
+    for row in per_day_rows {
+        let Some(uuid) = row.uuid else { continue };
+        per_day_map
+            .entry(uuid)
+            .or_default()
+            .entry(row.date)
+            .and_modify(|c| *c += row.count)
+            .or_insert(row.count);
+    }
+
     let mut senders = vec![];
     for x in senders_res {
         let Some(uuid) = x.uuid else { continue };
+        let freq_breakdown = freq_map.get(&uuid).cloned().unwrap_or_default();
+        let per_day = per_day_map.get(&uuid).cloned().unwrap_or_default();
         senders.push(AnalysisStatsSender {
             uuid,
             count: x.count,
+            freq_breakdown,
+            per_day,
         });
     }
     debug!("senders op took: {:?}", instant.elapsed());
