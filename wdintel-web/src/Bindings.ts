@@ -571,9 +571,17 @@ export type AnalysisStatsAor = {
   count: number;
 };
 
+export type SenderFrequencyBreakdown = {
+  freq: string | null;
+  post: string | null;
+  count: number;
+};
+
 export type AnalysisStatsSender = {
   uuid: string;
   count: number;
+  freqBreakdown: Array<SenderFrequencyBreakdown>;
+  perDay: Record<string, number>;
 };
 
 export type AnalysisStatsReq = {
@@ -1376,14 +1384,6 @@ export type DeleteEncryptionKeyReq = {
   id: number;
 };
 
-export type SigintKeySharePolicy = {
-  id: number;
-  grantFrom: number;
-  grantTo: number;
-  author: string;
-  createdAt: number;
-};
-
 export type CreateSigintKeySharePolicyReq = {
   grantFrom: number;
   grantTo: number;
@@ -1392,6 +1392,7 @@ export type CreateSigintKeySharePolicyReq = {
 export type DeleteSigintKeySharePolicyReq = {
   id: number;
 };
+
 export type Tag = {
   label: string;
   extra: boolean | null;
@@ -1454,6 +1455,10 @@ export type ReoReportSettings = {
   adjacentFreqsDistance: number;
 };
 
+export type ActiveNetworksReportSettings = {
+  aorIds: Array<number>;
+};
+
 export type ReportAggregation =
   | 'ByProfile'
   | 'ByPost'
@@ -1476,10 +1481,12 @@ export type ReportType =
   | 'Naushnom'
   | { Reo: ReoReportSettings }
   | 'Digest'
+  | { ActiveNetworks: ActiveNetworksReportSettings }
 ;
 
 export type SenderReportSettings = {
   aggregation: ReportAggregation;
+  advancedFreqs: boolean;
 };
 
 export type ListUnitsSortBy =
@@ -2532,3 +2539,12 @@ export type ListAreasOfResponsibilitySortBy =
 export type ListAreasOfResponsibilityReq = {
   sortBy: ListAreasOfResponsibilitySortBy | null;
 };
+
+export type SigintKeySharePolicy = {
+  id: number;
+  grantFrom: number;
+  grantTo: number;
+  author: string;
+  createdAt: number;
+};
+
