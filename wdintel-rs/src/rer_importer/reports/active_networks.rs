@@ -200,7 +200,7 @@ fn add_comment_to_docx(comment: &SigintComment, mut docx: Docx) -> Docx {
     if comment_lines.len() <= 1 {
         docx = docx.add_paragraph(Paragraph::new().add_run(
             Run::new().add_text(format!(
-                "\t- {} - {}",
+                "\t\t- {} - {}",
                 comment.created_at.format("%Y-%m-%d %H:%M"),
                 comment.comment
             )),
