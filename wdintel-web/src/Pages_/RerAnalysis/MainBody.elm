@@ -693,6 +693,28 @@ view user model shared route =
                                 [ text "шукати по постах"
                                 ]
                             ]
+                        , div [ class "form-check mt-2" ]
+                            [ input
+                                [ class "form-check-input"
+                                , type_ "checkbox"
+                                , checked model.reportAdvancedSenders
+                                , id "senders-advanced-checkbox"
+                                , onClick ReportAdvancedSendersToggle
+                                ]
+                                []
+                            , label
+                                [ class "form-check-label"
+                                , for "senders-advanced-checkbox"
+                                ]
+                                [ text
+                                    (if x == Posts then
+                                        "розширений звіт (пости)"
+
+                                     else
+                                        "розширений звіт (профілі)"
+                                    )
+                                ]
+                            ]
                         ]
 
                 _ ->
