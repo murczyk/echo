@@ -24,7 +24,7 @@ pub enum ReportType {
     Pelengs,
     Senders(SenderReportSettings),
     Naushnom,
-    Reo(ReoReportSettings),
+    Reo(ReoReportSettings, ReoReportFileType),
     Digest,
     ActiveNetworks(ActiveNetworksReportSettings),
 }
@@ -45,6 +45,14 @@ pub struct ReportPreviewReq {
 )]
 pub struct ReoReportSettings {
     pub adjacent_freqs_distance: f64,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub enum ReoReportFileType {
+    Docx,
+    Xlsx,
 }
 
 #[derive(
