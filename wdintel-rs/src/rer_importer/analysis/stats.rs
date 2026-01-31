@@ -268,19 +268,7 @@ pub async fn fetch_senders(
         date: String,
         count: i64,
     }
-    #[derive(FromQueryResult)]
-    struct SenderFreqRes {
-        uuid: Option<String>,
-        freq: Option<String>,
-        post_id: Option<i64>,
-        count: i64,
-    }
-    #[derive(FromQueryResult)]
-    struct SenderPerDayRes {
-        uuid: Option<String>,
-        date: String,
-        count: i64,
-    }
+
     let instant = std::time::Instant::now();
     let senders_query = build_senders_query(
         &req,
