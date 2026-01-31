@@ -11,6 +11,7 @@ use sea_orm::*;
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error as StdError;
 
+use crate::entities::sigint_inbox_item::Entity;
 use crate::entities::{
     sigint_inbox_item, sigint_post, signal_message, signal_message_group,
 };
@@ -289,11 +290,7 @@ pub async fn fetch_senders(
         .await
         .context(h!())?;
 
-    let freq_query = sigint_inbox_item::Entity::find()
-        .join(
-            JoinType::InnerJoin,
-            sigint_inbox_item::Relation::SignalMessage.def(),
-        )
+    let freq_query = build_join_for_sigint_inbox_item()
         .select_only()
         .column_as(preferred_sender_expr(None), "uuid")
         .column(sigint_inbox_item::Column::Freq)
@@ -317,11 +314,7 @@ pub async fn fetch_senders(
         "to_char(($1 AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Kyiv')::date, 'DD.MM.YYYY')",
         [Expr::col(sigint_inbox_item::Column::Datetime).into_simple_expr()],
     );
-    let per_day_query = sigint_inbox_item::Entity::find()
-        .join(
-            JoinType::InnerJoin,
-            sigint_inbox_item::Relation::SignalMessage.def(),
-        )
+    let per_day_query = build_join_for_sigint_inbox_item()
         .select_only()
         .column_as(preferred_sender_expr(None), "uuid")
         .column_as(per_day_expr.clone(), "date")
@@ -427,15 +420,7 @@ fn build_senders_query(
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
-    let senders_res = sigint_inbox_item::Entity::find()
-        .join(
-            JoinType::InnerJoin,
-            sigint_inbox_item::Relation::SignalMessage.def(),
-        )
-        .join(
-            JoinType::LeftJoin,
-            sigint_inbox_item::Relation::SigintPost.def(),
-        )
+    let senders_res = build_join_for_sigint_inbox_item()
         .select_only()
         .column_as(preferred_sender_expr(None), "uuid")
         // .column_as(SimpleExpr::Custom("(SELECT signal_profile.given_name FROM signal_profile WHERE signal_profile.uuid = signal_message.sender)".to_string()), "uuid")
@@ -2047,4 +2032,16 @@ fn is_replica_conflict_error(err: &AppError) -> bool {
         source = err.source();
     }
     false
+}
+
+fn build_join_for_sigint_inbox_item() -> Select<Entity> {
+    sigint_inbox_item::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            sigint_inbox_item::Relation::SignalMessage.def(),
+        )
+        .join(
+            JoinType::LeftJoin,
+            sigint_inbox_item::Relation::SigintPost.def(),
+        )
 }
