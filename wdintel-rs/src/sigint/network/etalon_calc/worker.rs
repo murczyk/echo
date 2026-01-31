@@ -1,5 +1,4 @@
 use crate::config::*;
-use crate::entities::network_invalidation_task;
 use crate::entities::*;
 use crate::types::{Mode, ShortContext};
 use crate::utils::worker_watch;
@@ -269,33 +268,23 @@ async fn triage_tasks(
     let mut recent_tasks = Vec::new();
     let mut old_worker_ids = BTreeSet::new();
     for task in input_tasks {
-        if task.since_ts >= cutoff || task.till_ts <= cutoff {
-            recent_tasks.push(task.clone());
-            existing_tasks.push(task);
-            continue;
+        if task.since_ts < cutoff && task.till_ts > cutoff {
+            split_task_by_cutoff(
+                cutoff,
+                db,
+                &mut existing_tasks,
+                &mut recent_tasks,
+                &mut old_worker_ids,
+                task,
+            )
+            .await
+            .c(h!())?;
+        } else if task.till_ts <= cutoff {
+            old_worker_ids.insert(task.id);
+        } else {
+            existing_tasks.push(task.clone());
+            recent_tasks.push(task);
         }
-        let mut task1 = task.clone().into_active_model();
-        let mut task2 = task.clone().into_active_model();
-        let txn = db.begin().await.c(h!())?;
-        task1.till_ts = Set(cutoff);
-        task1.is_for_old_worker = Set(true);
-        task1.id = NotSet;
-        task1.created_at = NotSet;
-
-        task2.since_ts = Set(cutoff);
-        task2.is_for_old_worker = Set(false);
-        task2.id = NotSet;
-        task2.created_at = NotSet;
-
-        task.delete(&txn).await.c(h!())?;
-        let old_task = task1.insert(&txn).await.c(h!())?;
-        let new_task = task2.insert(&txn).await.c(h!())?;
-
-        recent_tasks.push(new_task.clone());
-        old_worker_ids.insert(old_task.id);
-        existing_tasks.push(old_task);
-        existing_tasks.push(new_task);
-        txn.commit().await.c(h!())?;
     }
 
     let all_tasks = recent_tasks
@@ -316,6 +305,39 @@ async fn triage_tasks(
         .collect::<Vec<_>>();
     result.reverse();
     Ok(result)
+}
+
+async fn split_task_by_cutoff(
+    cutoff: NaiveDateTime,
+    db: &DatabaseTransaction,
+    existing_tasks: &mut Vec<network_invalidation_task::Model>,
+    recent_tasks: &mut Vec<network_invalidation_task::Model>,
+    old_worker_ids: &mut BTreeSet<i64>,
+    task: network_invalidation_task::Model,
+) -> anyhow::Result<()> {
+    let mut task1 = task.clone().into_active_model();
+    let mut task2 = task.clone().into_active_model();
+    let txn = db.begin().await.c(h!())?;
+    task1.till_ts = Set(cutoff);
+    task1.is_for_old_worker = Set(true);
+    task1.id = NotSet;
+    task1.created_at = NotSet;
+
+    task2.since_ts = Set(cutoff);
+    task2.is_for_old_worker = Set(false);
+    task2.id = NotSet;
+    task2.created_at = NotSet;
+
+    task.delete(&txn).await.c(h!())?;
+    let old_task = task1.insert(&txn).await.c(h!())?;
+    let new_task = task2.insert(&txn).await.c(h!())?;
+
+    recent_tasks.push(new_task.clone());
+    old_worker_ids.insert(old_task.id);
+    existing_tasks.push(old_task);
+    existing_tasks.push(new_task);
+    txn.commit().await.c(h!())?;
+    Ok(())
 }
 
 // Old worker triage: split into 1-hour windows, drop redundant tasks, merge overlaps,
@@ -545,11 +567,11 @@ async fn process_invalidation_filter(
             items_to_process.push(item);
         }
         crate::sigint::network::etalon_calc::calculate_sigint_inbox_item_networks(
-            items_to_process,
-            &txn,
-        )
-            .await
-            .c(h!())?;
+                items_to_process,
+                &txn,
+            )
+                .await
+                .c(h!())?;
         txn.commit().await.c(h!())?;
         for i in new_processed_items {
             processed_items.insert(i);
