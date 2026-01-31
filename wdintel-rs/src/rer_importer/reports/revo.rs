@@ -11,6 +11,9 @@ use actix_identity::Identity;
 use anyhow::Context;
 use chrono::prelude::*;
 use docx_rs::*;
+use rust_xlsxwriter::{
+    ColNum, Format, FormatAlign, RowNum, Workbook, Worksheet,
+};
 use sea_orm::*;
 use std::path::Path;
 use std::time::Instant;
@@ -116,9 +119,12 @@ pub async fn report_docx_kind_revo(
     );
 
     let range_khz = match req.report_type {
-        Some(ReportType::Reo(ReoReportSettings {
-            adjacent_freqs_distance,
-        })) => adjacent_freqs_distance * 1000.0,
+        Some(ReportType::Reo(
+            ReoReportSettings {
+                adjacent_freqs_distance,
+            },
+            _,
+        )) => adjacent_freqs_distance * 1000.0,
         _ => 0.0,
     };
 
@@ -147,6 +153,257 @@ pub async fn report_docx_kind_revo(
                 report.summary.unidentified_qty
         );
 
+    let result = match req.report_type {
+        Some(ReportType::Reo(_, ReoReportFileType::Xlsx)) => {
+            generate_xlsx_kind_revo(report, network_summary, outpath)
+        }
+        _ => generate_docx_kind_revo(report, network_summary, outpath),
+    };
+
+    info!(
+        "report_docx_kind_revo completed in total: {:?}",
+        start_total.elapsed()
+    );
+
+    result
+}
+
+fn generate_xlsx_kind_revo(
+    report: Report,
+    network_summary: String,
+    outpath: &Path,
+) -> Result<(), AppError> {
+    let mut workbook = Workbook::new();
+    let sheet = workbook
+        .add_worksheet()
+        .set_name("РЕО")
+        .context(h!())?
+        .set_column_width(0, 40)
+        .context(h!())?;
+
+    let coltitle = Format::new()
+        .set_align(FormatAlign::Center)
+        .set_font_size(12.0)
+        .set_text_wrap();
+
+    let headers: Vec<(&str, i32)> = vec![
+        ("Назва радіомережі", 40),
+        ("Місто/Населений пункт", 30),
+        ("Частоти", 12),
+        ("Час початку роботи радіомережі", 20),
+        ("Час закінчення роботи радіомережі", 20),
+        ("Сеанси", 8),
+        ("Склад кореспондентів радіомережі та приналежність", 30),
+        ("Характер радіообміну", 30),
+        ("Особливості функціонування радіомереж", 30),
+        ("Що було виявлено", 40),
+    ];
+
+    let mut row_num: RowNum = 0;
+    let max_col_num = (headers.len() as u32) as ColNum;
+
+    sheet
+        .merge_range(
+            0,
+            0,
+            0,
+            max_col_num - 1,
+            network_summary.as_str(),
+            &coltitle,
+        )
+        .context(h!())?;
+    row_num += 1;
+
+    for (col_num, (header_name, header_with)) in headers.into_iter().enumerate()
+    {
+        sheet
+            .write_string_with_format(
+                row_num,
+                col_num as ColNum,
+                header_name,
+                &coltitle,
+            )
+            .context(h!())?
+            .set_column_width(col_num as ColNum, header_with)
+            .context(h!())?;
+    }
+    row_num += 1;
+
+    sheet
+        .merge_range(
+            row_num,
+            0,
+            row_num,
+            max_col_num - 1,
+            "Російська Федерація",
+            &coltitle,
+        )
+        .context(h!())?;
+    row_num += 1;
+
+    for hostile_network in report.hostile_networks {
+        generate_networks_sheet(sheet, row_num, &coltitle, hostile_network)?;
+        row_num += 1;
+    }
+
+    sheet
+        .merge_range(
+            row_num,
+            0,
+            row_num,
+            max_col_num - 1,
+            "Невизначені",
+            &coltitle,
+        )
+        .context(h!())?;
+    row_num += 1;
+
+    for undefined_network in report.undefined_networks {
+        generate_networks_sheet(sheet, row_num, &coltitle, undefined_network)?;
+        row_num += 1;
+    }
+    let start = Instant::now();
+    workbook.save(outpath).context(h!())?; // Save the workbook
+    info!("writing xlsx to file took: {:?}", start.elapsed());
+
+    Ok(())
+}
+
+fn generate_networks_sheet<'a>(
+    sheet: &'a mut Worksheet,
+    row_num: RowNum,
+    cell_format: &Format,
+    network_row: NetworkRow,
+) -> Result<&'a mut Worksheet, AppError> {
+    let mut col_num = 0;
+
+    sheet
+        .write_string_with_format(
+            row_num,
+            col_num,
+            network_row.name,
+            cell_format,
+        )
+        .context(h!())?
+        .set_column_width(col_num, 40)
+        .context(h!())?;
+    col_num += 1;
+
+    if let Some(location) = network_row.location {
+        sheet
+            .write_string_with_format(row_num, col_num, location, cell_format)
+            .context(h!())?
+            .set_column_width(col_num, 30)
+            .context(h!())?;
+    }
+    col_num += 1;
+
+    sheet
+        .write_string_with_format(
+            row_num,
+            col_num,
+            network_row.freqs.join("\n"),
+            cell_format,
+        )
+        .context(h!())?
+        .set_column_width(col_num, 12)
+        .context(h!())?;
+    col_num += 1;
+
+    let since = network_row
+        .activity
+        .since
+        .format("%d.%m.%y %H:%M")
+        .to_string();
+    sheet
+        .write_string_with_format(row_num, col_num, since, cell_format)
+        .context(h!())?
+        .set_column_width(col_num, 20)
+        .context(h!())?;
+    col_num += 1;
+
+    let till = network_row
+        .activity
+        .till
+        .format("%d.%m.%y %H:%M")
+        .to_string();
+    sheet
+        .write_string_with_format(row_num, col_num, till, cell_format)
+        .context(h!())?
+        .set_column_width(col_num, 20)
+        .context(h!())?;
+    col_num += 1;
+
+    let sessions = network_row.activity.seances_qty.to_string();
+    sheet
+        .write_string_with_format(row_num, col_num, sessions, cell_format)
+        .context(h!())?
+        .set_column_width(col_num, 8)
+        .context(h!())?;
+    col_num += 1;
+
+    let correspondences =
+        get_processed_correspondence(network_row.correspondents).join(", ");
+
+    sheet
+        .write_string_with_format(
+            row_num,
+            col_num,
+            correspondences,
+            cell_format,
+        )
+        .context(h!())?
+        .set_column_width(col_num, 30)
+        .context(h!())?;
+    col_num += 1;
+
+    if let Some(communication_kind) = network_row.communication_kind {
+        sheet
+            .write_string_with_format(
+                row_num,
+                col_num,
+                communication_kind,
+                cell_format,
+            )
+            .context(h!())?
+            .set_column_width(col_num, 30)
+            .context(h!())?;
+    }
+    col_num += 1;
+
+    let functionality_details = network_row.functionality_details;
+    sheet
+        .write_string_with_format(
+            row_num,
+            col_num,
+            functionality_details,
+            cell_format,
+        )
+        .context(h!())?
+        .set_column_width(col_num, 50)
+        .context(h!())?;
+    col_num += 1;
+
+    let identified_details = network_row.identified_details.join("\n");
+    sheet
+        .write_string_with_format(
+            row_num,
+            col_num,
+            identified_details,
+            cell_format,
+        )
+        .context(h!())?
+        .set_column_width(col_num, 40)
+        .context(h!())?;
+
+    Ok(sheet)
+}
+
+fn generate_docx_kind_revo(
+    report: Report,
+    network_summary: String,
+    outpath: &Path,
+) -> Result<(), AppError> {
     let start = Instant::now();
     let config = DocxConfig {
         columns_count: 6,
@@ -212,10 +469,6 @@ pub async fn report_docx_kind_revo(
     docx.build().pack(file).context(h!())?;
     info!("writing docx to file took: {:?}", start.elapsed());
 
-    info!(
-        "report_docx_kind_revo completed in total: {:?}",
-        start_total.elapsed()
-    );
     Ok(())
 }
 
@@ -260,18 +513,7 @@ fn render_network_row(row: NetworkRow, config: &DocxConfig) -> TableRow {
         config,
     ));
 
-    let mut correspondents = vec![];
-    let mut other_correspondents = vec![];
-    for c in row.correspondents {
-        let callsign = c.callsign.to_uppercase();
-        match c.position {
-            Some(unit_name) => {
-                correspondents.push(format!("{callsign} - {unit_name}"));
-            }
-            None => other_correspondents.push(callsign),
-        }
-    }
-    correspondents.push(other_correspondents.join(", "));
+    let correspondents = get_processed_correspondence(row.correspondents);
     let correspondents_cell = mk_multiline_text_cell(
         correspondents,
         util::ParagraphStyle::Default,
@@ -299,6 +541,24 @@ fn render_network_row(row: NetworkRow, config: &DocxConfig) -> TableRow {
         functionality_details_cell,
         identified_details_cell,
     ])
+}
+
+fn get_processed_correspondence(
+    correspondents: Vec<NetworkCorrespondent>,
+) -> Vec<String> {
+    let mut result_correspondents = vec![];
+    let mut other_correspondents = vec![];
+    for c in correspondents {
+        let callsign = c.callsign.to_uppercase();
+        match c.position {
+            Some(unit_name) => {
+                result_correspondents.push(format!("{callsign} - {unit_name}"));
+            }
+            None => other_correspondents.push(callsign),
+        }
+    }
+    result_correspondents.push(other_correspondents.join(", "));
+    result_correspondents
 }
 
 async fn collect_report(
