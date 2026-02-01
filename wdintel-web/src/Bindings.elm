@@ -3871,6 +3871,21 @@ reoReportSettingsEncoder struct =
         ]
 
 
+type ReoReportFileType
+    = Docx
+    | Xlsx
+
+
+reoReportFileTypeEncoder : ReoReportFileType -> Json.Encode.Value
+reoReportFileTypeEncoder enum =
+    case enum of
+        Docx ->
+            Json.Encode.string "Docx"
+
+        Xlsx ->
+            Json.Encode.string "Xlsx"
+
+
 type alias ActiveNetworksReportSettings =
     { aorIds : List Int
     }
@@ -3924,7 +3939,7 @@ type ReportType
     | Pelengs
     | Senders SenderReportSettings
     | Naushnom
-    | Reo ReoReportSettings
+    | Reo ReoReportSettings ReoReportFileType
     | Digest
     | ActiveNetworks ActiveNetworksReportSettings
 
@@ -3953,8 +3968,8 @@ reportTypeEncoder enum =
         Naushnom ->
             Json.Encode.string "Naushnom"
 
-        Reo inner ->
-            Json.Encode.object [ ( "Reo", reoReportSettingsEncoder inner ) ]
+        Reo t0 t1 ->
+            Json.Encode.object [ ( "Reo", Json.Encode.list identity [ reoReportSettingsEncoder t0, reoReportFileTypeEncoder t1 ] ) ]
 
         Digest ->
             Json.Encode.string "Digest"
@@ -7185,6 +7200,16 @@ radiosDownloadResultReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "csv_page" (Json.Decode.nullable Json.Decode.int)))
 
 
+sigintKeySharePolicyDecoder : Json.Decode.Decoder SigintKeySharePolicy
+sigintKeySharePolicyDecoder =
+    Json.Decode.succeed SigintKeySharePolicy
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "grant_from" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "grant_to" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "author" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" Json.Decode.int))
+
+
 areaOfResponsibilityEntryDecoder : Json.Decode.Decoder AreaOfResponsibilityEntry
 areaOfResponsibilityEntryDecoder =
     Json.Decode.succeed AreaOfResponsibilityEntry
@@ -8862,7 +8887,7 @@ reportTypeDecoder =
                         unexpected ->
                             Json.Decode.fail <| "Unexpected variant " ++ unexpected
                 )
-        , Json.Decode.map Reo (Json.Decode.field "Reo" reoReportSettingsDecoder)
+        , Json.Decode.field "Reo" (Json.Decode.succeed Reo |> Json.Decode.andThen (\x -> Json.Decode.index 0 reoReportSettingsDecoder |> Json.Decode.map x) |> Json.Decode.andThen (\x -> Json.Decode.index 1 reoReportFileTypeDecoder |> Json.Decode.map x))
         , Json.Decode.string
             |> Json.Decode.andThen
                 (\x ->
@@ -10321,6 +10346,32 @@ deleteAreaOfResponsibilityReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.int))
 
 
+reoReportFileTypeDecoder : Json.Decode.Decoder ReoReportFileType
+reoReportFileTypeDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Docx" ->
+                            Json.Decode.succeed Docx
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Xlsx" ->
+                            Json.Decode.succeed Xlsx
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
+
+
 listAreasOfResponsibilitySortByDecoder : Json.Decode.Decoder ListAreasOfResponsibilitySortBy
 listAreasOfResponsibilitySortByDecoder =
     Json.Decode.oneOf
@@ -10351,16 +10402,6 @@ listAreasOfResponsibilityReqDecoder : Json.Decode.Decoder ListAreasOfResponsibil
 listAreasOfResponsibilityReqDecoder =
     Json.Decode.succeed ListAreasOfResponsibilityReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sort_by" (Json.Decode.nullable listAreasOfResponsibilitySortByDecoder)))
-
-
-sigintKeySharePolicyDecoder : Json.Decode.Decoder SigintKeySharePolicy
-sigintKeySharePolicyDecoder =
-    Json.Decode.succeed SigintKeySharePolicy
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.int))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "grant_from" Json.Decode.int))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "grant_to" Json.Decode.int))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "author" Json.Decode.string))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" Json.Decode.int))
 
 
 deltaLoginUrlDecoder : Json.Decode.Decoder DeltaLoginUrl
