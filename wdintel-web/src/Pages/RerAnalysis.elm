@@ -173,6 +173,14 @@ init route _ =
                 , items = Config.adjacentFreqsRangeOptions |> List.map (\x -> Select.basicMenuItem { item = x, label = String.fromFloat (x * 1000) ++ " кГц" })
                 , selected = 0
                 }
+            , reportReoFileTypeSelect =
+                { state = Select.initState (Select.selectIdentifier "selectReportReoFileType")
+                , items =
+                    [ Select.basicMenuItem { item = B.Docx, label = "docx" }
+                    , Select.basicMenuItem { item = B.Xlsx, label = "xlsx" }
+                    ]
+                , selected = B.Docx
+                }
 
             -- , reportIframeUrl = Nothing
             , reportActiveNetworksAorsSelect =
@@ -3104,40 +3112,45 @@ update user shared route msg model =
                 m2 =
                     { model | reportDownloadInProgress = False }
 
-                extension =
+                ( extension, mimeType ) =
                     case model.reportTemplate of
                         RTTags ->
-                            "docx"
+                            ( "docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document" )
 
                         RTMouse ->
-                            "docx"
+                            ( "docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document" )
 
                         RTPelengs ->
-                            "xlsx"
+                            ( "xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" )
 
                         RTBabak ->
-                            "docx"
+                            ( "docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document" )
 
                         RTInterception ->
-                            "xlsx"
+                            ( "xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" )
 
                         RTPostsDocx ->
-                            "docx"
+                            ( "docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document" )
 
                         RTSenders _ ->
-                            "xlsx"
+                            ( "xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" )
 
                         RTNaUshnom ->
-                            "docx"
+                            ( "docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document" )
 
                         RTReo ->
-                            "docx"
+                            case model.reportReoFileTypeSelect.selected of
+                                B.Xlsx ->
+                                    ( "xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" )
+
+                                B.Docx ->
+                                    ( "docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document" )
 
                         RTDigest ->
-                            "docx"
+                            ( "docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document" )
 
                         ActiveNetworks ->
-                            "docx"
+                            ( "docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document" )
 
                 -- filename like "report_2023-07-17-12-00_2023-07-18-12-00"
                 fname =
@@ -3155,7 +3168,7 @@ update user shared route msg model =
                         ++ extension
             in
             ( m2
-            , E.downloadFile fname "application/vnd.openxmlformats-officedocument.wordprocessingml.document" bytes
+            , E.downloadFile fname mimeType bytes
             )
 
         ScrollMessagesToTop ->
@@ -3456,6 +3469,28 @@ update user shared route msg model =
             in
             ( { model | reportAdjacentFreqsRangeSelect = a2 }, E.none )
 
+        SelectReportReoFileType imsg ->
+            let
+                ( mAction, imodel2, _ ) =
+                    Select.update imsg model.reportReoFileTypeSelect.state
+
+                reportReoFileTypeSelect =
+                    model.reportReoFileTypeSelect
+
+                a2 =
+                    { reportReoFileTypeSelect
+                        | state = imodel2
+                        , selected =
+                            case mAction of
+                                Just (Select.Select i) ->
+                                    i
+
+                                _ ->
+                                    reportReoFileTypeSelect.selected
+                    }
+            in
+            ( { model | reportReoFileTypeSelect = a2 }, E.none )
+
         SelectReportActiveNetworksAors imsg ->
             let
                 ( mAction, imodel2, icmd ) =
@@ -3590,7 +3625,11 @@ reportTemplateToApiType model template =
             Just B.Naushnom
 
         RTReo ->
-            Just (B.Reo { adjacentFreqsDistance = model.reportAdjacentFreqsRangeSelect.selected })
+            Just
+                (B.Reo
+                    { adjacentFreqsDistance = model.reportAdjacentFreqsRangeSelect.selected }
+                    model.reportReoFileTypeSelect.selected
+                )
 
         RTDigest ->
             Just B.Digest

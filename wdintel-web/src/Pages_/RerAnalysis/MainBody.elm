@@ -603,6 +603,53 @@ view user model shared route =
                                 options2
                         )
                     ]
+            , HtmlX.viewIf (model.reportTemplate == RTReo) <|
+                let
+                    isDark =
+                        isDarkMode shared.themeMode
+
+                    selDescription =
+                        p
+                            [ class "text-sm leading-relaxed"
+                            , classList
+                                [ ( "text-gray-600", not (isDarkMode shared.themeMode) )
+                                , ( "text-gray-400", isDarkMode shared.themeMode )
+                                ]
+                            ]
+                            [ text "Формат файлу" ]
+
+                    selItem =
+                        Just
+                            (Select.basicMenuItem
+                                { item = model.reportReoFileTypeSelect.selected
+                                , label =
+                                    case model.reportReoFileTypeSelect.selected of
+                                        B.Docx ->
+                                            "docx"
+
+                                        B.Xlsx ->
+                                            "xlsx"
+                                }
+                            )
+
+                    options =
+                        Utils.Select.defaultOptions isDark
+
+                    options2 =
+                        { options | clearable = False }
+                in
+                div [ class "p-3 bg-gray-100 text-gray-900 mb-4" ]
+                    [ selDescription
+                    , Html.map SelectReportReoFileType
+                        (Html.Styled.toUnstyled <|
+                            Utils.Select.renderSelectSingle
+                                selItem
+                                model.reportReoFileTypeSelect.state
+                                model.reportReoFileTypeSelect.items
+                                "не обрано"
+                                options2
+                        )
+                    ]
 
             , HtmlX.viewIf (model.reportTemplate == ActiveNetworks) <|
                 let
