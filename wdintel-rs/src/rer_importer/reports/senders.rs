@@ -210,13 +210,21 @@ fn write_report_to_file(
     let tz = crate::config::get_tz();
     let since_tz = since.with_timezone(&tz);
     let till_tz = till.with_timezone(&tz);
+    let last_col = match aggregation_kind {
+        ReportAggregation::ByProfile => {
+            dates_with_data.len() as u16 + if advanced_freqs { 5 } else { 2 }
+        }
+        ReportAggregation::ByPost => {
+            dates_with_data.len() as u16 + if advanced_freqs { 4 } else { 2 }
+        }
+    };
 
     sheet1
         .merge_range(
             0,
             0,
             0,
-            2 + dates_with_data.len() as u16,
+            last_col,
             &format!(
                 "Доповідь по відправниках перехоплень за період {} - {}",
                 since_tz.format("%d.%m.%y %H:%M"),
