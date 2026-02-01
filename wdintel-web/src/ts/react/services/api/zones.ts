@@ -364,7 +364,7 @@ export async function listDatasources(): Promise<DatasourcePair[]> {
 }
 
 export async function listSigintZones(): Promise<ZonePair[]> {
-  const data = await postJson<unknown[]>('/api/sigint/zones/list');
+  const data = await postJson<unknown[]>('/api/sigint/zones/list', {});
   return (data || []).map(normalizeZonePair).filter(Boolean) as ZonePair[];
 }
 
