@@ -693,7 +693,15 @@ view user model shared route =
                                 options2
                         )
                     ]
-            , HtmlX.viewIf (List.member model.reportTemplate [ RTTags, RTBabak, RTInterception ]) <|
+            , HtmlX.viewIf (List.member model.reportTemplate [
+            RTTags,
+            RTPelengs,
+            RTBabak,
+            RTInterception,
+            RTPostsDocx,
+            RTMouse,
+            RTReo
+             ]) <|
                 div [ class "p-3 bg-gray-100 text-gray-900 mb-4" ]
                     [ div [ class "form-check" ]
                         [ input
