@@ -12,7 +12,7 @@ use anyhow::Context;
 use chrono::prelude::*;
 use docx_rs::*;
 use rust_xlsxwriter::{
-    ColNum, Format, FormatAlign, RowNum, Workbook, Worksheet,
+    ColNum, ExcelDateTime, Format, FormatAlign, RowNum, Workbook, Worksheet,
 };
 use sea_orm::*;
 use std::path::Path;
@@ -276,6 +276,7 @@ fn generate_networks_sheet<'a>(
     network_row: NetworkRow,
 ) -> Result<&'a mut Worksheet, AppError> {
     let mut col_num = 0;
+    let date_cell_format = cell_format.clone().set_num_format("dd.mm.yy hh:mm");
 
     sheet
         .write_string_with_format(
@@ -310,25 +311,23 @@ fn generate_networks_sheet<'a>(
         .context(h!())?;
     col_num += 1;
 
-    let since = network_row
-        .activity
-        .since
-        .format("%d.%m.%y %H:%M")
-        .to_string();
+    let since = ExcelDateTime::from_timestamp(
+        network_row.activity.since.and_utc().timestamp(),
+    )
+    .context(h!())?;
     sheet
-        .write_string_with_format(row_num, col_num, since, cell_format)
+        .write_datetime_with_format(row_num, col_num, &since, &date_cell_format)
         .context(h!())?
         .set_column_width(col_num, 20)
         .context(h!())?;
     col_num += 1;
 
-    let till = network_row
-        .activity
-        .till
-        .format("%d.%m.%y %H:%M")
-        .to_string();
+    let till = ExcelDateTime::from_timestamp(
+        network_row.activity.till.and_utc().timestamp(),
+    )
+    .context(h!())?;
     sheet
-        .write_string_with_format(row_num, col_num, till, cell_format)
+        .write_datetime_with_format(row_num, col_num, till, &date_cell_format)
         .context(h!())?
         .set_column_width(col_num, 20)
         .context(h!())?;
