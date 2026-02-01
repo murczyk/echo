@@ -52,6 +52,7 @@ pub struct ReoReportSettings {
 )]
 pub struct SenderReportSettings {
     pub aggregation: ReportAggregation,
+    #[serde(default)]
     pub advanced_freqs: bool,
 }
 #[derive(
