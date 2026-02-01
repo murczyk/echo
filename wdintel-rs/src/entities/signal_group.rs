@@ -33,6 +33,8 @@ pub enum Relation {
     DatasourceGroup,
     #[sea_orm(has_many = "super::group_admin_data::Entity")]
     GroupAdminData,
+    #[sea_orm(has_many = "super::network_invalidation_task::Entity")]
+    NetworkInvalidationTask,
     #[sea_orm(has_many = "super::organism_group::Entity")]
     OrganismGroup,
     #[sea_orm(has_many = "super::secret_group_user::Entity")]
@@ -60,6 +62,12 @@ impl Related<super::datasource_group::Entity> for Entity {
 impl Related<super::group_admin_data::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::GroupAdminData.def()
+    }
+}
+
+impl Related<super::network_invalidation_task::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::NetworkInvalidationTask.def()
     }
 }
 

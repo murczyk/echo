@@ -1040,81 +1040,8 @@ pub async fn recalculate_group_stats(
         .collect::<HashMap<String, i64>>();
 
     if recalculate_5min_stats {
-        let since_filter_1 = sigint_inbox_item::Column::Datetime
-            .is_null()
-            .and(signal_message::Column::CreatedAt.gte(since_ts));
-        let since_filter_2 = sigint_inbox_item::Column::Datetime
-            .is_not_null()
-            .and(sigint_inbox_item::Column::Datetime.gte(since_ts));
-
-        let till_filter_1 = sigint_inbox_item::Column::Datetime
-            .is_null()
-            .and(signal_message::Column::CreatedAt.lt(till_ts));
-        let till_filter_2 = sigint_inbox_item::Column::Datetime
-            .is_not_null()
-            .and(sigint_inbox_item::Column::Datetime.lt(till_ts));
-
-        let generic_stats = signal_message::Entity::find()
-            .join(
-                JoinType::InnerJoin,
-                signal_message::Relation::SigintInboxItem.def(),
-            )
-            .join(
-                JoinType::InnerJoin,
-                signal_message::Relation::SignalMessageGroup.def(),
-            )
-            .join(
-                JoinType::InnerJoin,
-                signal_message_group::Relation::SignalGroup.def(),
-            )
-            .join(
-                JoinType::InnerJoin,
-                signal_group::Relation::SignalGroupAor.def(),
-            )
-            .join(
-                JoinType::LeftJoin,
-                sigint_inbox_item_tag::Relation::SigintInboxItem
-                    .def()
-                    .rev()
-                    .on_condition(|_left, right| {
-                        Expr::col((
-                            right,
-                            sigint_inbox_item_tag::Column::Confidence,
-                        ))
-                        .gte(TAG_MINIMUM_CONFIDENCE)
-                        .into_condition()
-                    }),
-            )
-            .select_only()
-            .column(signal_message::Column::Id)
-            .column(signal_message::Column::CreatedAt)
-            .column(sigint_inbox_item::Column::Datetime)
-            .column(signal_message_group::Column::GroupMasterKey)
-            .column(sigint_inbox_item::Column::Freq)
-            .column(sigint_inbox_item::Column::Callsigns)
-            .column(sigint_inbox_item::Column::LocationV2)
-            .column(sigint_inbox_item::Column::UnitV2)
-            .column(sigint_inbox_item::Column::PostId)
-            .column(signal_message::Column::Sender)
-            .column(signal_group_aor::Column::AorId)
-            .expr_as(
-                Expr::cust_with_expr(
-                    "array_agg($1) filter (where $1 is not null)",
-                    Expr::col(sigint_inbox_item_tag::Column::TagId),
-                ),
-                "tags",
-            )
-            .filter(since_filter_1.or(since_filter_2))
-            .filter(till_filter_1.or(till_filter_2))
-            .filter(signal_message::Column::Deleted.eq(false))
-            .group_by(signal_message::Column::Id)
-            .group_by(sigint_inbox_item::Column::Id)
-            .group_by(signal_message_group::Column::GroupMasterKey)
-            .group_by(signal_group_aor::Column::Id)
-            .into_model::<StatsRow>()
-            .all(dbx)
-            .await
-            .c(h!())?;
+        let generic_stats =
+            load_generic_stats(dbx, since_ts, till_ts).await.c(h!())?;
 
         let group_stats = generic_stats
             .clone()
@@ -1400,6 +1327,111 @@ pub async fn recalculate_group_stats(
         txn.commit().await.c(h!())?;
     }
     Ok(())
+}
+
+async fn load_generic_stats(
+    dbx: &DatabaseConnection,
+    since_ts: NaiveDateTime,
+    till_ts: NaiveDateTime,
+) -> Result<Vec<StatsRow>, AppError> {
+    let stats_by_datetime =
+        generic_stats_by_datetime(dbx, since_ts, till_ts).await?;
+    let stats_by_created_at =
+        generic_stats_by_created_at(dbx, since_ts, till_ts).await?;
+    Ok(stats_by_datetime
+        .into_iter()
+        .chain(stats_by_created_at)
+        .collect_vec())
+}
+
+async fn generic_stats_by_datetime(
+    dbx: &DatabaseConnection,
+    since_ts: NaiveDateTime,
+    till_ts: NaiveDateTime,
+) -> Result<Vec<StatsRow>, AppError> {
+    let stats = generic_stats_base_select()
+        .filter(sigint_inbox_item::Column::Datetime.is_not_null())
+        .filter(sigint_inbox_item::Column::Datetime.gte(since_ts))
+        .filter(sigint_inbox_item::Column::Datetime.lt(till_ts))
+        .into_model::<StatsRow>()
+        .all(dbx)
+        .await
+        .c(h!())?;
+    Ok(stats)
+}
+
+async fn generic_stats_by_created_at(
+    dbx: &DatabaseConnection,
+    since_ts: NaiveDateTime,
+    till_ts: NaiveDateTime,
+) -> Result<Vec<StatsRow>, AppError> {
+    let stats = generic_stats_base_select()
+        .filter(sigint_inbox_item::Column::Datetime.is_null())
+        .filter(signal_message::Column::CreatedAt.gte(since_ts))
+        .filter(signal_message::Column::CreatedAt.lt(till_ts))
+        .into_model::<StatsRow>()
+        .all(dbx)
+        .await
+        .c(h!())?;
+    Ok(stats)
+}
+
+fn generic_stats_base_select() -> Select<signal_message::Entity> {
+    signal_message::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::SigintInboxItem.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::SignalMessageGroup.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            signal_message_group::Relation::SignalGroup.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            signal_group::Relation::SignalGroupAor.def(),
+        )
+        .join(
+            JoinType::LeftJoin,
+            sigint_inbox_item_tag::Relation::SigintInboxItem
+                .def()
+                .rev()
+                .on_condition(|_left, right| {
+                    Expr::col((
+                        right,
+                        sigint_inbox_item_tag::Column::Confidence,
+                    ))
+                    .gte(TAG_MINIMUM_CONFIDENCE)
+                    .into_condition()
+                }),
+        )
+        .select_only()
+        .column(signal_message::Column::Id)
+        .column(signal_message::Column::CreatedAt)
+        .column(sigint_inbox_item::Column::Datetime)
+        .column(signal_message_group::Column::GroupMasterKey)
+        .column(sigint_inbox_item::Column::Freq)
+        .column(sigint_inbox_item::Column::Callsigns)
+        .column(sigint_inbox_item::Column::LocationV2)
+        .column(sigint_inbox_item::Column::UnitV2)
+        .column(sigint_inbox_item::Column::PostId)
+        .column(signal_message::Column::Sender)
+        .column(signal_group_aor::Column::AorId)
+        .expr_as(
+            Expr::cust_with_expr(
+                "array_agg($1) filter (where $1 is not null)",
+                Expr::col(sigint_inbox_item_tag::Column::TagId),
+            ),
+            "tags",
+        )
+        .filter(signal_message::Column::Deleted.eq(false))
+        .group_by(signal_message::Column::Id)
+        .group_by(sigint_inbox_item::Column::Id)
+        .group_by(signal_message_group::Column::GroupMasterKey)
+        .group_by(signal_group_aor::Column::Id)
 }
 
 async fn update_5min_stats_group(

@@ -13,6 +13,7 @@ use anyhow::Context;
 use chrono::NaiveDateTime;
 use docx_rs::{
     AlignmentType, Docx, PageMargin, PageOrientationType, Paragraph, Run,
+    SpecialIndentType,
 };
 use echo_migration::{IntoCondition, JoinType};
 use log::info;
@@ -178,7 +179,9 @@ fn handle_comments_with_units_and_network(
     };
 
     docx = docx.add_paragraph(
-        Paragraph::new().add_run(Run::new().add_text(network_line)),
+        Paragraph::new()
+            .outline_lvl(0)
+            .add_run(Run::new().add_text(network_line)),
     );
     for comment in &network_unit_comments.comments {
         docx = add_comment_to_docx(comment, docx);
@@ -198,25 +201,48 @@ fn get_request_aor_ids(req: &ReportPreviewReq) -> Vec<i64> {
 fn add_comment_to_docx(comment: &SigintComment, mut docx: Docx) -> Docx {
     let comment_lines: Vec<&str> = comment.comment.lines().collect();
     if comment_lines.len() <= 1 {
-        docx = docx.add_paragraph(Paragraph::new().add_run(
-            Run::new().add_text(format!(
-                "\t- {} - {}",
-                comment.created_at.format("%Y-%m-%d %H:%M"),
-                comment.comment
-            )),
-        ));
+        docx = docx.add_paragraph(
+            Paragraph::new()
+                .indent(
+                    Some(720),
+                    Some(SpecialIndentType::FirstLine(720)),
+                    Some(100),
+                    Some(10),
+                )
+                .outline_lvl(1)
+                .add_run(Run::new().add_text(format!(
+                    "- {} - {}",
+                    comment.created_at.format("%Y-%m-%d %H:%M"),
+                    comment.comment
+                ))),
+        );
     } else {
-        docx = docx.add_paragraph(Paragraph::new().add_run(
-            Run::new().add_text(format!(
-                "\t- {} - {}",
-                comment.created_at.format("%Y-%m-%d %H:%M"),
-                comment_lines[0]
-            )),
-        ));
+        docx = docx.add_paragraph(
+            Paragraph::new()
+                .indent(
+                    Some(720),
+                    Some(SpecialIndentType::FirstLine(720)),
+                    Some(100),
+                    Some(10),
+                )
+                .outline_lvl(1)
+                .add_run(Run::new().add_text(format!(
+                    "- {} - {}",
+                    comment.created_at.format("%Y-%m-%d %H:%M"),
+                    comment_lines[0]
+                ))),
+        );
         for line in &comment_lines[1..] {
             docx = docx.add_paragraph(
                 Paragraph::new()
-                    .add_run(Run::new().add_text(format!("\t\t{}", line))),
+                    .indent(
+                        Some(720),
+                        Some(SpecialIndentType::FirstLine(720)),
+                        Some(100),
+                        Some(10),
+                    )
+                    .outline_lvl(1)
+                    .add_run(Run::new().add_text(ToString::to_string(&line))),
             );
         }
     }

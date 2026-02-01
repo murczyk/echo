@@ -1,7 +1,9 @@
 use crate::storage;
 use crate::types::*;
 use anyhow::Result;
+use chrono::Timelike;
 use opendal::Operator;
+use std::time::Duration;
 
 pub const DEFAULT_PG_HOST: &str = "localhost";
 pub const DEFAULT_PG_PORT: u16 = 5432;
@@ -61,6 +63,8 @@ pub const MESSENGER_WORKER_BATCH_SIZE: u64 = 100;
 pub const MESSENGER_CLEANUP_OK_SLEEP_SEC: u64 = 600;
 pub const MESSENGER_CLEANUP_ERR_SLEEP_SEC: u64 = 15;
 pub const LONG_POLL_SLEEP_MS: u64 = 5000;
+pub const NETWORK_INVALIDATION_BATCH_SIZE: u64 = 100; // actual limit in pg is around 25k, but it's better to do it in smaller batches
+pub const NETWORK_INVALIDATION_TASKS_FILTER_CHUNK: usize = 200;
 
 pub const ONEOFF_CALCULATE_SIGNAL_MESSAGE_GROUPS_SLEEP_SEC: u64 = 10;
 pub const ONEOFF_CALCULATE_SIGNAL_MESSAGR_GROUPS_BATCH_SIZE: u64 = 10000;
@@ -110,6 +114,19 @@ pub const TAG_SUGGEST_WORKER_BATCH_SIZE: usize = 100;
 pub const TAG_SUGGEST_WORKER_REGEX_CONFIDENCE: f64 = 0.8;
 
 pub const MAX_FIX_WHATSAPP_SENDERS_MESSAGE_DAYS: i64 = 30;
+pub const NETWORK_INBOX_WORKER_DEFAULT_SLEEP: u64 = 30;
+pub const NETWORK_INBOX_FRESH_WORKER_CUTOFF_DAYS: i64 = 40; // to ensure month reports are valid at all times
+pub const NETWORK_INBOX_OLD_WORKER_CUTOFF_DAYS: i64 = 365;
+pub const SIGINT_INBOX_NETWORK_CHECK_SLEEP_SECS: u64 = 2 * 60 * 60;
+pub const WORKER_NIGHT_SHIFT_START_HOUR: u32 = 21;
+pub const WORKER_NIGHT_SHIFT_END_HOUR: u32 = 7;
+pub const WORKER_NIGHT_SHIFT_WAIT_BEFORE_START_SECS: u64 = 60;
+pub const NETWORK_INBOX_OLD_WORKER_ACTIVE_WINDOW_SECS: u64 = 15;
+pub const NETWORK_INBOX_OLD_WORKER_ACTIVE_REST_SECS: u64 = 2;
+pub const SIGINT_INBOX_TUI_REFRESH_MS: u64 = 500;
+pub const SIGINT_INBOX_TUI_EVENT_POLL_MS: u64 = 250;
+pub const SIGINT_INBOX_TUI_CHUNK_COUNT: usize = 10;
+pub const SIGINT_INBOX_TUI_BUCKET_GAP: usize = 2;
 pub const DEFAULT_STORE_PALITRA_IN_S3: bool = true;
 pub const KMZ_CONTENT_TYPE: &str = "application/vnd.google-earth.kmz";
 pub const ENCRYPTION_KEY_PLACEHOLDER: &str = "🔑";
@@ -168,6 +185,7 @@ pub struct Config {
     pub messenger_worker_pool_capacity: Option<usize>,
     pub feature_group_stats_aggregated: Option<bool>,
     pub feature_delete_uploaded_attachment: Option<bool>,
+    pub feature_calculate_sigint_inbox_item_networks: Option<bool>,
     pub s3_config: Option<S3Config>,
     pub store_palitra_in_s3: Option<bool>,
     pub alpine_converter_url: Option<String>,
@@ -396,4 +414,22 @@ pub fn get_tz() -> chrono_tz::Tz {
 
 pub fn get_cleanup_networks_worker_sleep_duration() -> std::time::Duration {
     std::time::Duration::from_secs(3600)
+}
+
+pub async fn wait_until_worker_shift_start() {
+    loop {
+        if check_is_worker_night_shift() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_secs(
+            WORKER_NIGHT_SHIFT_WAIT_BEFORE_START_SECS,
+        ))
+        .await;
+    }
+}
+
+pub fn check_is_worker_night_shift() -> bool {
+    let now = Utc::now().with_timezone(&get_tz());
+    !(WORKER_NIGHT_SHIFT_END_HOUR..WORKER_NIGHT_SHIFT_START_HOUR)
+        .contains(&now.hour())
 }

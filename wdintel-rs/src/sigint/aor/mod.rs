@@ -1,5 +1,6 @@
 use self::types::*;
 use crate::entities::*;
+use crate::sigint::network::etalon_calc::invalidate_network_inbox_for_aor;
 use crate::types::*;
 use actix_web::post;
 use actix_web::web::{Data, Json};
@@ -20,7 +21,7 @@ pub async fn aor_list(
     crate::users::has_any_role(
         &env.dbx,
         &user.id().c(h!())?,
-        vec!["Admin", "UnitsEditor"],
+        vec!["Admin", "UnitsEditor", "Rer"],
     )
     .await?;
 
@@ -73,6 +74,9 @@ pub async fn update_aor(
 
     let model = map_insert(&env, &req.insert, Set(req.id)).await.c(h!())?;
     let aor = model.update(&env.dbx).await.c(h!())?;
+    invalidate_network_inbox_for_aor(&env.dbx, &aor)
+        .await
+        .c(h!())?;
     Ok(Json(render_aor(aor)))
 }
 
@@ -95,7 +99,10 @@ pub async fn delete_aor(
 
     let mut aor_model = aor_obj.into_active_model();
     aor_model.deleted = Set(true);
-    aor_model.update(&env.dbx).await.c(h!())?;
+    let aor = aor_model.update(&env.dbx).await.c(h!())?;
+    invalidate_network_inbox_for_aor(&env.dbx, &aor)
+        .await
+        .c(h!())?;
     Ok(Json(()))
 }
 

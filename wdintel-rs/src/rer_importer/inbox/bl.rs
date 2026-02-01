@@ -942,5 +942,16 @@ pub async fn submit_upsert_inbox_item(
     )
     .await
     .c(h!())?;
+    let new_item = sigint_inbox_item::Entity::find_by_id(inbox_id)
+        .one(txn)
+        .await
+        .c(h!())?
+        .c(h!())?;
+    crate::sigint::network::etalon_calc::calculate_sigint_inbox_item_networks(
+        vec![new_item],
+        txn,
+    )
+    .await
+    .c(h!())?;
     Ok(inbox_id)
 }
