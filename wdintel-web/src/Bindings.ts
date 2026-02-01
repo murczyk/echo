@@ -1376,6 +1376,14 @@ export type DeleteEncryptionKeyReq = {
   id: number;
 };
 
+export type SigintKeySharePolicy = {
+  id: number;
+  grantFrom: number;
+  grantTo: number;
+  author: string;
+  createdAt: number;
+};
+
 export type CreateSigintKeySharePolicyReq = {
   grantFrom: number;
   grantTo: number;
@@ -1384,7 +1392,6 @@ export type CreateSigintKeySharePolicyReq = {
 export type DeleteSigintKeySharePolicyReq = {
   id: number;
 };
-
 export type Tag = {
   label: string;
   extra: boolean | null;
@@ -2535,12 +2542,3 @@ export type ListAreasOfResponsibilitySortBy =
 export type ListAreasOfResponsibilityReq = {
   sortBy: ListAreasOfResponsibilitySortBy | null;
 };
-
-export type SigintKeySharePolicy = {
-  id: number;
-  grantFrom: number;
-  grantTo: number;
-  author: string;
-  createdAt: number;
-};
-
