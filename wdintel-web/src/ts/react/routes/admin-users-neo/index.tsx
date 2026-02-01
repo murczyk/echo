@@ -1,6 +1,7 @@
 import EditIcon from '@mui/icons-material/Edit';
 import {
   Alert,
+  Autocomplete,
   Checkbox,
   CircularProgress,
   Dialog,
@@ -28,7 +29,6 @@ import {
 import { TableStateProvider, useTableStateContext } from '../../components/mui-customized/table/table-state-provider';
 import { createLogin, createLoginDelta, listLogins, updateLogin } from '../../services/api/logins';
 import { listOrganisms } from '../../services/api/organisms';
-import { fetchServerInfo } from '../../services/api/server-info';
 import { listSigintZones } from '../../services/api/zones';
 
 type LoadingStatus = 'idle' | 'loading' | 'success' | 'error';
@@ -93,7 +93,6 @@ type UserLookups = {
   organisms: Organism[];
   organismsStatus: LoadingStatus;
   organismsError: string | null;
-  featureDelta: boolean;
 };
 
 type AddUserForm = {
@@ -130,11 +129,23 @@ type EditUserErrors = {
 const EMPTY_ADD_FORM: AddUserForm = {
   login: '',
   password: '',
-  roles: [],
+  roles: ['Rer'],
   sigintZoneId: null,
   organismId: null,
-  useDelta: false,
+  useDelta: true,
 };
+
+const DEBUG_USERS_NEO =
+  typeof window !== 'undefined' && window.localStorage.getItem('debugUsersNeo') === '1';
+
+function debugLog(message: string, details?: unknown) {
+  if (!DEBUG_USERS_NEO) return;
+  if (details === undefined) {
+    console.info('[users-neo]', message);
+    return;
+  }
+  console.info('[users-neo]', message, details);
+}
 
 function formatErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
@@ -387,23 +398,43 @@ function AddUserDialog(props: {
   const organismsLoading = lookups.organismsStatus === 'loading';
   const canSubmit = zonesReady && !isSubmitting;
 
-  const zoneOptions = lookups.zones.map(([zoneId, zone]) => (
-    <MenuItem key={zoneId} value={zoneId}>
-      {zone.name || `ID ${zoneId}`}
-    </MenuItem>
-  ));
+  const zoneAutocompleteOptions = lookups.zones.map(([zoneId, zone]) => ({
+    id: zoneId,
+    label: zone.name || `ID ${zoneId}`,
+  }));
 
-  const organismOptions = lookups.organisms.map((organism) => (
-    <MenuItem key={organism.id} value={organism.id}>
-      {organism.name || `ID ${organism.id}`}
-    </MenuItem>
-  ));
+  const organismAutocompleteOptions = lookups.organisms.map((organism) => ({
+    id: organism.id,
+    label: organism.name || `ID ${organism.id}`,
+  }));
 
   React.useEffect(() => {
     if (lookups.zones.length === 0) return;
     const [zoneId] = lookups.zones[0];
     setForm((prev) => (prev.sigintZoneId === null ? { ...prev, sigintZoneId: zoneId } : prev));
   }, [lookups.zones]);
+
+  React.useEffect(() => {
+    if (!open || !DEBUG_USERS_NEO) return;
+    debugLog('add:options', {
+      zonesStatus: lookups.zonesStatus,
+      zonesCount: lookups.zones.length,
+      zoneIds: lookups.zones.slice(0, 5).map(([zoneId]) => zoneId),
+      sigintZoneId: form.sigintZoneId,
+      organismsStatus: lookups.organismsStatus,
+      organismsCount: lookups.organisms.length,
+      organismIds: lookups.organisms.slice(0, 5).map((organism) => organism.id),
+      organismId: form.organismId,
+    });
+  }, [
+    open,
+    form.sigintZoneId,
+    form.organismId,
+    lookups.zonesStatus,
+    lookups.zones,
+    lookups.organismsStatus,
+    lookups.organisms,
+  ]);
 
   React.useEffect(() => {
     if (open) return;
@@ -444,20 +475,19 @@ function AddUserDialog(props: {
     <Dialog open={open} onClose={handleClose} maxWidth="lg" fullWidth>
       <DialogTitle>Додати користувача</DialogTitle>
       <DialogContent className="space-y-4">
-        {lookups.featureDelta ? (
-          <FormControlLabel
-            control={
-              <Checkbox
-                checked={form.useDelta}
-                onChange={(event) => {
-                  setForm((prev) => ({ ...prev, useDelta: event.target.checked }));
-                  setErrors((prev) => ({ ...prev, password: undefined }));
-                }}
-              />
-            }
-            label="Delta логін"
-          />
-        ) : null}
+        <FormControlLabel
+          control={
+            <Checkbox
+              checked={form.useDelta}
+              onChange={(event) => {
+                debugLog('add:delta toggle', event.target.checked);
+                setForm((prev) => ({ ...prev, useDelta: event.target.checked, password: '' }));
+                setErrors((prev) => ({ ...prev, password: undefined }));
+              }}
+            />
+          }
+          label="Delta логін"
+        />
 
         {lookups.zonesError ? (
           <Alert severity="error">{`Не вдалося завантажити зони: ${lookups.zonesError}`}</Alert>
@@ -521,52 +551,50 @@ function AddUserDialog(props: {
             ))}
           </TextField>
 
-          <TextField
-            select
-            label="Зона"
-            value={form.sigintZoneId ?? ''}
-            onChange={(event) => {
-              const value = event.target.value ? Number(event.target.value) : null;
+          <Autocomplete
+            options={zoneAutocompleteOptions}
+            value={zoneAutocompleteOptions.find((opt) => opt.id === form.sigintZoneId) || null}
+            onChange={(_, newValue) => {
+              const value = newValue?.id ?? null;
+              debugLog('add:zone change', { newValue, parsed: value });
               setForm((prev) => ({ ...prev, sigintZoneId: value }));
               setErrors((prev) => ({ ...prev, zone: undefined }));
             }}
-            fullWidth
-            error={Boolean(errors.zone)}
-            helperText={errors.zone || ' '}
-            disabled={isSubmitting || !zonesReady}
+            loading={zonesLoading}
+            disabled={isSubmitting}
+            isOptionEqualToValue={(option, value) => option.id === value.id}
+            getOptionLabel={(option) => option.label}
             className="xl:col-span-2"
-          >
-            {zonesLoading ? (
-              <MenuItem value="">Завантаження...</MenuItem>
-            ) : (
-              <>
-                <MenuItem value="">—</MenuItem>
-                {zoneOptions}
-              </>
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                label="Зона"
+                error={Boolean(errors.zone)}
+                helperText={errors.zone || ' '}
+              />
             )}
-          </TextField>
+          />
 
-          <TextField
-            select
-            label="Організм"
-            value={form.organismId ?? ''}
-            onChange={(event) => {
-              const value = event.target.value ? Number(event.target.value) : null;
+          <Autocomplete
+            options={organismAutocompleteOptions}
+            value={organismAutocompleteOptions.find((opt) => opt.id === form.organismId) || null}
+            onChange={(_, newValue) => {
+              const value = newValue?.id ?? null;
+              debugLog('add:organism change', { newValue, parsed: value });
               setForm((prev) => ({ ...prev, organismId: value }));
             }}
-            fullWidth
-            disabled={isSubmitting || !organismsReady}
+            loading={organismsLoading}
+            disabled={isSubmitting}
+            isOptionEqualToValue={(option, value) => option.id === value.id}
+            getOptionLabel={(option) => option.label}
             className="xl:col-span-2"
-          >
-            {organismsLoading ? (
-              <MenuItem value="">Завантаження...</MenuItem>
-            ) : (
-              <>
-                <MenuItem value="">—</MenuItem>
-                {organismOptions}
-              </>
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                label="Організм"
+              />
             )}
-          </TextField>
+          />
         </div>
       </DialogContent>
       <DialogActions>
@@ -599,17 +627,15 @@ function EditUserDialog(props: {
   const organismsReady = lookups.organismsStatus === 'success';
   const organismsLoading = lookups.organismsStatus === 'loading';
 
-  const zoneOptions = lookups.zones.map(([zoneId, zone]) => (
-    <MenuItem key={zoneId} value={zoneId}>
-      {zone.name || `ID ${zoneId}`}
-    </MenuItem>
-  ));
+  const zoneAutocompleteOptions = lookups.zones.map(([zoneId, zone]) => ({
+    id: zoneId,
+    label: zone.name || `ID ${zoneId}`,
+  }));
 
-  const organismOptions = lookups.organisms.map((organism) => (
-    <MenuItem key={organism.id} value={organism.id}>
-      {organism.name || `ID ${organism.id}`}
-    </MenuItem>
-  ));
+  const organismAutocompleteOptions = lookups.organisms.map((organism) => ({
+    id: organism.id,
+    label: organism.name || `ID ${organism.id}`,
+  }));
 
   React.useEffect(() => {
     if (!open || !login) {
@@ -633,6 +659,29 @@ function EditUserDialog(props: {
     setSubmitError(null);
     setIsSubmitting(false);
   }, [open, login]);
+
+  React.useEffect(() => {
+    if (!open || !DEBUG_USERS_NEO || !form) return;
+    debugLog('edit:options', {
+      zonesStatus: lookups.zonesStatus,
+      zonesCount: lookups.zones.length,
+      zoneIds: lookups.zones.slice(0, 5).map(([zoneId]) => zoneId),
+      sigintZoneId: form.sigintZoneId,
+      organismsStatus: lookups.organismsStatus,
+      organismsCount: lookups.organisms.length,
+      organismIds: lookups.organisms.slice(0, 5).map((organism) => organism.id),
+      organismId: form.organismId,
+    });
+  }, [
+    open,
+    form,
+    form?.sigintZoneId,
+    form?.organismId,
+    lookups.zonesStatus,
+    lookups.zones,
+    lookups.organismsStatus,
+    lookups.organisms,
+  ]);
 
   function handleClose() {
     if (isSubmitting) return;
@@ -719,65 +768,61 @@ function EditUserDialog(props: {
               ))}
             </TextField>
 
-            <TextField
-              select
-              label="Зона"
-              value={form.sigintZoneId ?? ''}
-              onChange={(event) => {
-                const value = event.target.value ? Number(event.target.value) : null;
+            <Autocomplete
+              options={zoneAutocompleteOptions}
+              value={zoneAutocompleteOptions.find((opt) => opt.id === form.sigintZoneId) || null}
+              onChange={(_, newValue) => {
+                const value = newValue?.id ?? null;
+                debugLog('edit:zone change', { newValue, parsed: value });
                 setForm((prev) => (prev ? { ...prev, sigintZoneId: value } : prev));
                 setErrors((prev) => ({ ...prev, zone: undefined }));
               }}
-              fullWidth
-              error={Boolean(errors.zone)}
-              helperText={errors.zone || ' '}
-              disabled={isSubmitting || !zonesReady}
+              loading={zonesLoading}
+              disabled={isSubmitting}
+              isOptionEqualToValue={(option, value) => option.id === value.id}
+              getOptionLabel={(option) => option.label}
               className="xl:col-span-2"
-            >
-              {zonesLoading ? (
-                <MenuItem value="">Завантаження...</MenuItem>
-              ) : (
-                <>
-                  <MenuItem value="">—</MenuItem>
-                  {zoneOptions}
-                </>
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="Зона"
+                  error={Boolean(errors.zone)}
+                  helperText={errors.zone || ' '}
+                />
               )}
-            </TextField>
+            />
 
-            <TextField
-              select
-              label="Організм"
-              value={form.organismId ?? ''}
-              onChange={(event) => {
-                const value = event.target.value ? Number(event.target.value) : null;
+            <Autocomplete
+              options={organismAutocompleteOptions}
+              value={organismAutocompleteOptions.find((opt) => opt.id === form.organismId) || null}
+              onChange={(_, newValue) => {
+                const value = newValue?.id ?? null;
+                debugLog('edit:organism change', { newValue, parsed: value });
                 setForm((prev) => (prev ? { ...prev, organismId: value } : prev));
               }}
-              fullWidth
-              disabled={isSubmitting || !organismsReady}
+              loading={organismsLoading}
+              disabled={isSubmitting}
+              isOptionEqualToValue={(option, value) => option.id === value.id}
+              getOptionLabel={(option) => option.label}
               className="xl:col-span-2"
-            >
-              {organismsLoading ? (
-                <MenuItem value="">Завантаження...</MenuItem>
-              ) : (
-                <>
-                  <MenuItem value="">—</MenuItem>
-                  {organismOptions}
-                </>
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="Організм"
+                />
               )}
-            </TextField>
+            />
 
-            {lookups.featureDelta ? (
-              <TextField
-                label="Delta логін"
-                value={form.deltaLogin}
-                onChange={(event) => {
-                  setForm((prev) => (prev ? { ...prev, deltaLogin: event.target.value } : prev));
-                }}
-                fullWidth
-                disabled={isSubmitting}
-                className="xl:col-span-2"
-              />
-            ) : null}
+            <TextField
+              label="Delta логін"
+              value={form.deltaLogin}
+              onChange={(event) => {
+                setForm((prev) => (prev ? { ...prev, deltaLogin: event.target.value } : prev));
+              }}
+              fullWidth
+              disabled={isSubmitting}
+              className="xl:col-span-2"
+            />
 
             <div className="flex items-center xl:col-span-2">
               <FormControlLabel
@@ -924,53 +969,52 @@ function AdminUsersNeoPageBody() {
   const [zonesError, setZonesError] = React.useState<string | null>(null);
   const [organismsStatus, setOrganismsStatus] = React.useState<LoadingStatus>('idle');
   const [organismsError, setOrganismsError] = React.useState<string | null>(null);
-  const [featureDelta, setFeatureDelta] = React.useState(false);
 
   async function loadLogins() {
+    debugLog('loadLogins:start');
     setStatus('loading');
     setError(null);
     try {
       const rsp = await listLogins({ sortBy: 'LoginCreatedAtDesc', filterByRoles: null });
+      debugLog('loadLogins:success', { count: rsp.users?.length ?? 0 });
       setLogins(rsp.users ?? []);
       setStatus('success');
     } catch (err) {
+      debugLog('loadLogins:error', err);
       setStatus('error');
       setError(formatErrorMessage(err));
     }
   }
 
   async function loadZones() {
+    debugLog('loadZones:start');
     setZonesStatus('loading');
     setZonesError(null);
     try {
       const zoneList = await listSigintZones();
+      debugLog('loadZones:success', { count: zoneList.length, sample: zoneList.slice(0, 3) });
       setZones(zoneList);
       setZonesStatus('success');
     } catch (err) {
+      debugLog('loadZones:error', err);
       setZonesStatus('error');
       setZonesError(formatErrorMessage(err));
     }
   }
 
   async function loadOrganisms() {
+    debugLog('loadOrganisms:start');
     setOrganismsStatus('loading');
     setOrganismsError(null);
     try {
       const organismList = await listOrganisms({ sortBy: null });
+      debugLog('loadOrganisms:success', { count: organismList.length, sample: organismList.slice(0, 3) });
       setOrganisms(organismList);
       setOrganismsStatus('success');
     } catch (err) {
+      debugLog('loadOrganisms:error', err);
       setOrganismsStatus('error');
       setOrganismsError(formatErrorMessage(err));
-    }
-  }
-
-  async function loadServerInfo() {
-    try {
-      const info = await fetchServerInfo();
-      setFeatureDelta(Boolean(info.featureDelta));
-    } catch (_) {
-      setFeatureDelta(false);
     }
   }
 
@@ -978,7 +1022,6 @@ function AdminUsersNeoPageBody() {
     loadLogins();
     void loadZones();
     void loadOrganisms();
-    void loadServerInfo();
   }, []);
 
   const lookups: UserLookups = {
@@ -988,7 +1031,6 @@ function AdminUsersNeoPageBody() {
     organisms,
     organismsStatus,
     organismsError,
-    featureDelta,
   };
 
   const renderTable = () => {

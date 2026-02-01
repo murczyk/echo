@@ -21,7 +21,7 @@ pub async fn zones_list(
     crate::users::has_any_role(
         &env.dbx,
         &user.id().c(h!())?,
-        vec!["Rer", "Api"],
+        vec!["Rer", "Api", "Admin"],
     )
     .await?;
     let zones = sigint_zone::Entity::find()
