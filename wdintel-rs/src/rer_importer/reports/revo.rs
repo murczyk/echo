@@ -277,6 +277,7 @@ fn generate_networks_sheet<'a>(
 ) -> Result<&'a mut Worksheet, AppError> {
     let mut col_num = 0;
     let date_cell_format = cell_format.clone().set_num_format("dd.mm.yy hh:mm");
+    let number_cell_format = cell_format.clone().set_num_format("0");
 
     sheet
         .write_string_with_format(
@@ -333,9 +334,14 @@ fn generate_networks_sheet<'a>(
         .context(h!())?;
     col_num += 1;
 
-    let sessions = network_row.activity.seances_qty.to_string();
+    let sessions = network_row.activity.seances_qty as f64;
     sheet
-        .write_string_with_format(row_num, col_num, sessions, cell_format)
+        .write_number_with_format(
+            row_num,
+            col_num,
+            sessions,
+            &number_cell_format,
+        )
         .context(h!())?
         .set_column_width(col_num, 8)
         .context(h!())?;
