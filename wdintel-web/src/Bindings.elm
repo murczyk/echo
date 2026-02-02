@@ -1554,9 +1554,27 @@ analysisStatsAorEncoder struct =
         ]
 
 
+type alias SenderFrequencyBreakdown =
+    { freq : Maybe String
+    , post : Maybe String
+    , count : Int
+    }
+
+
+senderFrequencyBreakdownEncoder : SenderFrequencyBreakdown -> Json.Encode.Value
+senderFrequencyBreakdownEncoder struct =
+    Json.Encode.object
+        [ ( "freq", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.freq )
+        , ( "post", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.post )
+        , ( "count", Json.Encode.int struct.count )
+        ]
+
+
 type alias AnalysisStatsSender =
     { uuid : String
     , count : Int
+    , freqBreakdown : List SenderFrequencyBreakdown
+    , perDay : Dict String Int
     }
 
 
@@ -1565,6 +1583,8 @@ analysisStatsSenderEncoder struct =
     Json.Encode.object
         [ ( "uuid", Json.Encode.string struct.uuid )
         , ( "count", Json.Encode.int struct.count )
+        , ( "freq_breakdown", Json.Encode.list senderFrequencyBreakdownEncoder struct.freqBreakdown )
+        , ( "per_day", Json.Encode.dict identity Json.Encode.int struct.perDay )
         ]
 
 
@@ -3980,6 +4000,7 @@ reportTypeEncoder enum =
 
 type alias SenderReportSettings =
     { aggregation : ReportAggregation
+    , advancedFreqs : Bool
     }
 
 
@@ -3987,6 +4008,7 @@ senderReportSettingsEncoder : SenderReportSettings -> Json.Encode.Value
 senderReportSettingsEncoder struct =
     Json.Encode.object
         [ ( "aggregation", reportAggregationEncoder struct.aggregation )
+        , ( "advanced_freqs", Json.Encode.bool struct.advancedFreqs )
         ]
 
 
@@ -7489,11 +7511,21 @@ analysisStatsAorDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "count" Json.Decode.int))
 
 
+senderFrequencyBreakdownDecoder : Json.Decode.Decoder SenderFrequencyBreakdown
+senderFrequencyBreakdownDecoder =
+    Json.Decode.succeed SenderFrequencyBreakdown
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freq" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "post" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "count" Json.Decode.int))
+
+
 analysisStatsSenderDecoder : Json.Decode.Decoder AnalysisStatsSender
 analysisStatsSenderDecoder =
     Json.Decode.succeed AnalysisStatsSender
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "uuid" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "count" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freq_breakdown" (Json.Decode.list senderFrequencyBreakdownDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "per_day" (Json.Decode.dict Json.Decode.int)))
 
 
 analysisStatsReqDecoder : Json.Decode.Decoder AnalysisStatsReq
@@ -8896,6 +8928,7 @@ senderReportSettingsDecoder : Json.Decode.Decoder SenderReportSettings
 senderReportSettingsDecoder =
     Json.Decode.succeed SenderReportSettings
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aggregation" reportAggregationDecoder))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "advanced_freqs" Json.Decode.bool))
 
 
 listUnitsSortByDecoder : Json.Decode.Decoder ListUnitsSortBy

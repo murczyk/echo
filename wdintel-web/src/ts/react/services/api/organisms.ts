@@ -12,33 +12,33 @@ import {
 import { postJson, postVoid } from './client';
 
 type OrganismLike = {
-  id?: number;
-  parentId?: number | null;
-  parent_id?: number | null;
+  id?: number | string;
+  parentId?: number | string | null;
+  parent_id?: number | string | null;
   name?: string;
-  createdAt?: number;
-  created_at?: number;
+  createdAt?: number | string;
+  created_at?: number | string;
   roles?: string[] | null;
   enabled?: boolean;
-  aorIds?: number[] | null;
-  aor_ids?: number[] | null;
-  loginsCount?: number;
-  logins_count?: number;
+  aorIds?: Array<number | string> | null;
+  aor_ids?: Array<number | string> | null;
+  loginsCount?: number | string;
+  logins_count?: number | string;
 };
 
 type SignalGroupFullLike = {
   name?: string;
   masterKey?: string;
   master_key?: string;
-  originDatasourceId?: number;
-  origin_datasource_id?: number;
+  originDatasourceId?: number | string;
+  origin_datasource_id?: number | string;
 };
 
 type OrganismGroupLike = {
   masterKey?: string;
   master_key?: string;
-  organismId?: number;
-  organism_id?: number;
+  organismId?: number | string;
+  organism_id?: number | string;
 };
 
 type ListOrganismsReqBody = {
@@ -109,16 +109,42 @@ function toRemoveGroupReqBody(req: RemoveGroupFromOrganismReq): RemoveGroupFromO
   };
 }
 
+function normalizeNumber(value: number | string | null | undefined): number {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
+}
+
+function normalizeOptionalNumber(value: number | string | null | undefined): number | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function normalizeNumberArray(values: Array<number | string> | null | undefined): number[] {
+  if (!Array.isArray(values)) return [];
+  return values
+    .map((value) => normalizeOptionalNumber(value))
+    .filter((value): value is number => value !== null);
+}
+
 function normalizeOrganism(raw: OrganismLike): Organism {
   return {
-    id: raw.id ?? 0,
-    parentId: raw.parentId ?? raw.parent_id ?? null,
+    id: normalizeNumber(raw.id),
+    parentId: normalizeOptionalNumber(raw.parentId ?? raw.parent_id),
     name: raw.name ?? '',
-    createdAt: raw.createdAt ?? raw.created_at ?? 0,
+    createdAt: normalizeNumber(raw.createdAt ?? raw.created_at),
     roles: raw.roles ?? [],
     enabled: raw.enabled ?? false,
-    aorIds: raw.aorIds ?? raw.aor_ids ?? [],
-    loginsCount: raw.loginsCount ?? raw.logins_count ?? 0,
+    aorIds: normalizeNumberArray(raw.aorIds ?? raw.aor_ids),
+    loginsCount: normalizeNumber(raw.loginsCount ?? raw.logins_count),
   };
 }
 
@@ -126,14 +152,14 @@ function normalizeSignalGroup(raw: SignalGroupFullLike): SignalGroupFull {
   return {
     name: raw.name ?? '',
     masterKey: raw.masterKey ?? raw.master_key ?? '',
-    originDatasourceId: raw.originDatasourceId ?? raw.origin_datasource_id ?? 0,
+    originDatasourceId: normalizeNumber(raw.originDatasourceId ?? raw.origin_datasource_id),
   };
 }
 
 function normalizeOrganismGroup(raw: OrganismGroupLike): OrganismGroup {
   return {
     masterKey: raw.masterKey ?? raw.master_key ?? '',
-    organismId: raw.organismId ?? raw.organism_id ?? 0,
+    organismId: normalizeNumber(raw.organismId ?? raw.organism_id),
   };
 }
 

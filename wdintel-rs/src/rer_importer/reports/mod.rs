@@ -157,19 +157,23 @@ pub async fn report_docx(
         )
         .await
         .c(h!())?;
-    } else if req.kind == "senders" {
+    } else if req.kind == "senders" || req.kind == "posts" {
+        let (aggregation, advanced_freqs) = match &req.report_type {
+            Some(types::ReportType::Senders(settings)) => {
+                (settings.aggregation.clone(), settings.advanced_freqs)
+            }
+            _ => (
+                if req.kind == "posts" {
+                    types::ReportAggregation::ByPost
+                } else {
+                    types::ReportAggregation::ByProfile
+                },
+                false,
+            ),
+        };
         self::senders::report_xlsx_kind_senders(
-            types::ReportAggregation::ByProfile,
-            user,
-            &env,
-            &req.req,
-            &outpath,
-        )
-        .await
-        .c(h!())?;
-    } else if req.kind == "posts" {
-        self::senders::report_xlsx_kind_senders(
-            types::ReportAggregation::ByPost,
+            aggregation,
+            advanced_freqs,
             user,
             &env,
             &req.req,
