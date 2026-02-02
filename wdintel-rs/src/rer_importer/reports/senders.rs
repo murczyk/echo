@@ -13,6 +13,7 @@ use itertools::Itertools;
 use log::info;
 use rust_xlsxwriter::{Color, Format, FormatAlign, FormatBorder, Workbook};
 use sea_orm::*;
+use std::cmp::max;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
@@ -22,6 +23,7 @@ const FMT_DATE: &str = "%d.%m.%Y";
 struct SenderStats {
     overall: u64,
     per_day: BTreeMap<String, u64>,
+    freq_breakdown: BTreeMap<(Option<String>, Option<String>), u64>,
 }
 
 #[derive(Clone, Debug)]
@@ -30,10 +32,12 @@ struct MessageStatRecord {
     date: NaiveDate,
     sender: Option<String>,
     post: Option<String>,
+    freq: Option<String>,
 }
 
 pub async fn report_xlsx_kind_senders(
     aggregation_kind: ReportAggregation,
+    advanced_freqs: bool,
     user: actix_identity::Identity,
     env: &Env,
     req: &InboxMessagesReq,
@@ -53,7 +57,7 @@ pub async fn report_xlsx_kind_senders(
     let q = build_inbox_query(&login, env, &req).await.c(h!())?;
 
     let q = format!(
-        r#"SELECT count(*) as quantity, "post_name" as post, "sender" as sender, to_char(("datetime" AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Kyiv')::date, 'DD.MM.YYYY') as ts_dt from ({q}) q group by "post_name", "sender", ("datetime" AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Kyiv')::date"#
+        r#"SELECT count(*) as quantity, "post_name" as post, "sender" as sender, "freq" as freq, to_char(("datetime" AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Kyiv')::date, 'DD.MM.YYYY') as ts_dt from ({q}) q group by "post_name", "sender", "freq", ("datetime" AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Kyiv')::date"#
     );
     let query_res: Vec<QueryResult> = read_db
         .query_all(Statement::from_string(DatabaseBackend::Postgres, q))
@@ -65,12 +69,14 @@ pub async fn report_xlsx_kind_senders(
         let quantity: u64 = query_res.try_get::<i64>("", "quantity")? as u64;
         let sender: Option<String> = query_res.try_get("", "sender")?;
         let post: Option<String> = query_res.try_get("", "post")?;
+        let freq: Option<String> = query_res.try_get("", "freq")?;
         let date = NaiveDate::parse_from_str(&date, FMT_DATE).context(h!())?;
         messages.push(MessageStatRecord {
             quantity,
             date,
             sender,
             post,
+            freq,
         });
     }
 
@@ -92,6 +98,12 @@ pub async fn report_xlsx_kind_senders(
         let date_counter = stats.per_day.get(&date_txt).cloned().unwrap_or(0);
         dates_with_data.insert(date_txt.clone(), date);
         stats.per_day.insert(date_txt, date_counter + msg.quantity);
+        let freq_key = (msg.freq.clone(), msg.post.clone());
+        stats
+            .freq_breakdown
+            .entry(freq_key)
+            .and_modify(|count| *count += msg.quantity)
+            .or_insert(msg.quantity);
         sender_stats.insert(sender_name, stats);
     }
 
@@ -108,6 +120,7 @@ pub async fn report_xlsx_kind_senders(
         sender_stats,
         dates_with_data,
         aggregation_kind,
+        advanced_freqs,
     )?;
 
     Ok(())
@@ -173,6 +186,7 @@ fn write_report_to_file(
     sender_stats: BTreeMap<String, SenderStats>,
     dates_with_data: Vec<String>,
     aggregation_kind: ReportAggregation,
+    advanced_freqs: bool,
 ) -> Result<(), AppError> {
     let since = dt_zoned_from_millis(since_date_inclusive_ms)?;
     let till = dt_zoned_from_millis(till_date_inclusive_ms)?;
@@ -191,16 +205,26 @@ fn write_report_to_file(
         .set_font_size(12.0)
         .set_background_color(Color::RGB(0x5b9bd5)); // Example color
 
+    let text_multiline = Format::new().set_text_wrap();
+
     let tz = crate::config::get_tz();
     let since_tz = since.with_timezone(&tz);
     let till_tz = till.with_timezone(&tz);
+    let last_col = match aggregation_kind {
+        ReportAggregation::ByProfile => {
+            dates_with_data.len() as u16 + if advanced_freqs { 5 } else { 2 }
+        }
+        ReportAggregation::ByPost => {
+            dates_with_data.len() as u16 + if advanced_freqs { 4 } else { 2 }
+        }
+    };
 
     sheet1
         .merge_range(
             0,
             0,
             0,
-            2 + dates_with_data.len() as u16,
+            last_col,
             &format!(
                 "Доповідь по відправниках перехоплень за період {} - {}",
                 since_tz.format("%d.%m.%y %H:%M"),
@@ -240,6 +264,28 @@ fn write_report_to_file(
     sheet1.set_column_width(row_counter, 40.0).context(h!())?;
     row_counter += 1;
 
+    if advanced_freqs {
+        sheet1
+            .write_string_with_format(1, row_counter, "Частоти", &coltitle)
+            .context(h!())?;
+        sheet1.set_column_width(row_counter, 35.0).context(h!())?;
+        row_counter += 1;
+
+        if aggregation_kind == ReportAggregation::ByProfile {
+            sheet1
+                .write_string_with_format(1, row_counter, "Пост", &coltitle)
+                .context(h!())?;
+            sheet1.set_column_width(row_counter, 35.0).context(h!())?;
+            row_counter += 1;
+        }
+
+        sheet1
+            .write_string_with_format(1, row_counter, "Кількість", &coltitle)
+            .context(h!())?;
+        sheet1.set_column_width(row_counter, 20.0).context(h!())?;
+        row_counter += 1;
+    }
+
     for date in &dates_with_data {
         sheet1
             .write_string_with_format(1, row_counter, date, &coltitle)
@@ -248,8 +294,10 @@ fn write_report_to_file(
         row_counter += 1;
     }
     let mut row_counter = 1;
+    let mut date_row_counter;
     for (sender, stats) in sender_stats {
         row_counter += 1;
+        date_row_counter = row_counter;
         let mut col_counter = 0;
         sheet1
             .write_number(row_counter, col_counter, (row_counter - 1) as f64)
@@ -266,10 +314,81 @@ fn write_report_to_file(
             .context(h!())?;
         col_counter += 1;
 
+        if advanced_freqs {
+            let mut freq_entries = stats.freq_breakdown.iter().collect_vec();
+            freq_entries.sort_by(|a, b| b.1.cmp(a.1));
+            let freq_lines = freq_entries
+                .iter()
+                .map(|((freq, _), _)| {
+                    freq.clone().unwrap_or_else(|| "невідомо".to_string())
+                })
+                .collect_vec();
+            let post_lines = freq_entries
+                .iter()
+                .map(|((_, post), _)| {
+                    post.clone().unwrap_or_else(|| "".to_string())
+                })
+                .collect_vec();
+            let count_lines = freq_entries
+                .iter()
+                .map(|(_, count)| count.to_string())
+                .collect_vec();
+
+            let mut freq_row_counter = row_counter;
+            for freq_line in freq_lines {
+                sheet1
+                    .write_string_with_format(
+                        freq_row_counter,
+                        col_counter,
+                        &freq_line,
+                        &text_multiline,
+                    )
+                    .context(h!())?;
+                freq_row_counter += 1;
+            }
+            col_counter += 1;
+
+            let mut post_row_counter = row_counter;
+            if aggregation_kind == ReportAggregation::ByProfile {
+                for post_line in post_lines {
+                    sheet1
+                        .write_string_with_format(
+                            post_row_counter,
+                            col_counter,
+                            &post_line,
+                            &text_multiline,
+                        )
+                        .context(h!())?;
+                    post_row_counter += 1;
+                }
+                col_counter += 1;
+            }
+
+            let mut count_line_row_counter = row_counter;
+            for count_line in count_lines {
+                sheet1
+                    .write_string_with_format(
+                        count_line_row_counter,
+                        col_counter,
+                        &count_line,
+                        &text_multiline,
+                    )
+                    .context(h!())?;
+                count_line_row_counter += 1;
+            }
+
+            row_counter = max(
+                max(freq_row_counter, post_row_counter),
+                count_line_row_counter,
+            );
+
+            col_counter += 1;
+        }
+
         for date in &dates_with_data {
             let value = stats.per_day.get(date).cloned().unwrap_or(0);
             sheet1
-                .write_number(row_counter, col_counter, value as f64)
+                .write_number(date_row_counter, col_counter, value as f64)
                 .context(h!())?;
             col_counter += 1;
         }

@@ -168,6 +168,7 @@ init route _ =
             , reportTemplate = RTTags
             , reportTagsOnlyThisUnit = False
             , reportTagsOnlyThisUnitForReport = False
+            , reportAdvancedSenders = False
             , reportAdjacentFreqsRangeSelect =
                 { state = Select.initState (Select.selectIdentifier "selectReportAdjacentFreqsRange")
                 , items = Config.adjacentFreqsRangeOptions |> List.map (\x -> Select.basicMenuItem { item = x, label = String.fromFloat (x * 1000) ++ " кГц" })
@@ -3047,7 +3048,24 @@ update user shared route msg model =
             )
 
         ReportTemplateSelect template ->
-            ( { model | reportTemplate = template }
+            let
+                isAdvanced =
+                    case template of
+                        RTSenders _ ->
+                            True
+
+                        _ ->
+                            False
+            in
+            ( { model
+                | reportTemplate = template
+                , reportAdvancedSenders =
+                    if isAdvanced then
+                        model.reportAdvancedSenders
+
+                    else
+                        False
+              }
             , E.none
             )
 
@@ -3081,6 +3099,11 @@ update user shared route msg model =
 
         ReportTagsOnlyThisUnitForReportToggle ->
             ( { model | reportTagsOnlyThisUnitForReport = not model.reportTagsOnlyThisUnitForReport }
+            , E.none
+            )
+
+        ReportAdvancedSendersToggle ->
+            ( { model | reportAdvancedSenders = not model.reportAdvancedSenders }
             , E.none
             )
 
@@ -3581,10 +3604,10 @@ reportTemplateToApiType model template =
 
         RTSenders y ->
             if y == Senders then
-                Just (B.Senders { aggregation = B.ByProfile })
+                Just (B.Senders { aggregation = B.ByProfile, advancedFreqs = model.reportAdvancedSenders })
 
             else
-                Just (B.Senders { aggregation = B.ByPost })
+                Just (B.Senders { aggregation = B.ByPost, advancedFreqs = model.reportAdvancedSenders })
 
         RTNaUshnom ->
             Just B.Naushnom
