@@ -9,6 +9,8 @@
 
 ## NEXT
 
+- [#1881](https://github.com/echoua/echo/issues/1881) Додатковий захист фільтру груп
+
 ## 2026-02-02
 
 - [#1579](https://github.com/echoua/echo/issues/1579) ✅ Аналіз: Конструктор звітів: Звіт РЕО з вибором xlsx формату
