@@ -236,6 +236,10 @@ pub async fn get_inbox_messages_report_network(
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
 
+    let sigint_groups =
+        crate::messenger::group::get_identity_sigint_groups(&read_db, &login)
+            .await
+            .c(h!())?;
     let mut q = signal_message::Entity::find()
         .select_only()
         .column_as(signal_message::Column::Body, "body")
@@ -304,13 +308,8 @@ pub async fn get_inbox_messages_report_network(
         )
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(
-            datasource_group::Column::GroupMasterKey.eq_any(
-                crate::messenger::group::get_identity_sigint_groups(
-                    &read_db, &login,
-                )
-                .await
-                .c(h!())?,
-            ),
+            datasource_group::Column::GroupMasterKey
+                .eq_any(sigint_groups.clone()),
         )
         .filter(sigint_comment::Column::Comment.eq("").not());
 
@@ -320,7 +319,11 @@ pub async fn get_inbox_messages_report_network(
     if req.checked_only == Some(true) {
         q = q.filter(sigint_inbox_item::Column::Checked.eq(Some(true)));
     }
-    let q = filter_selected_groups(q, &req.selected_groups)?;
+    let q = filter_selected_groups_with_access(
+        q,
+        &req.selected_groups,
+        &sigint_groups,
+    )?;
     let q = filter_selected_senders(q, &req.selected_senders)?;
     let q = filter_denied_senders(q, &req.denied_senders)?;
     let q = filter_selected_freqs(q, &req.selected_freqs)?;

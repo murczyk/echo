@@ -160,6 +160,18 @@ pub mod tests {
             .exec(&env.dbx)
             .await
             .context(h!())?;
+        stats_group_5min::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
+        stats_group_day::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
+        signal_group_batch::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
         signal_group_aor::Entity::delete_many()
             .exec(&env.dbx)
             .await

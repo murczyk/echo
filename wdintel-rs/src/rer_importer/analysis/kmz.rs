@@ -26,6 +26,10 @@ pub async fn rer_analysis_download_kmz(
         lng: Option<f64>,
         body: Option<String>,
     }
+    let sigint_groups =
+        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
+            .await
+            .c(h!())?;
     let items = signal_message::Entity::find()
         .join(
             JoinType::InnerJoin,
@@ -46,13 +50,8 @@ pub async fn rer_analysis_download_kmz(
         .column_as(Expr::col(sigint_inbox_item::Column::Lat), "lat")
         .column_as(Expr::col(sigint_inbox_item::Column::Lng), "lng")
         .filter(
-            datasource_group::Column::GroupMasterKey.eq_any(
-                crate::messenger::group::get_identity_sigint_groups(
-                    &env.dbx, &login,
-                )
-                .await
-                .c(h!())?,
-            ),
+            datasource_group::Column::GroupMasterKey
+                .eq_any(sigint_groups.clone()),
         )
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
@@ -61,7 +60,11 @@ pub async fn rer_analysis_download_kmz(
         .filter(sigint_inbox_item::Column::Lng.is_not_null());
     let items = filter_selected_freqs(items, &req.selected_freqs)?;
     let items = filter_selected_posts(items, &req.selected_posts)?;
-    let items = filter_selected_groups(items, &req.selected_groups)?;
+    let items = filter_selected_groups_with_access(
+        items,
+        &req.selected_groups,
+        &sigint_groups,
+    )?;
     let items = filter_selected_senders(items, &req.selected_senders)?;
     let items = filter_selected_units(
         items,

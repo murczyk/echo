@@ -50,6 +50,30 @@ where
     Ok(q)
 }
 
+pub fn filter_selected_groups_with_access<Q>(
+    q: Q,
+    selected_groups: &Option<Vec<String>>,
+    allowed_groups: &[String],
+) -> Result<Q, AppError>
+where
+    Q: QueryFilter,
+{
+    if let Some(selected_groups) = selected_groups.as_ref() {
+        if !selected_groups.is_empty() {
+            let allowed: HashSet<&String> =
+                allowed_groups.iter().collect::<HashSet<_>>();
+            let filtered = selected_groups
+                .iter()
+                .filter(|key| allowed.contains(key))
+                .cloned()
+                .collect::<Vec<_>>();
+            let exists_expr = message_in_groups_exists(filtered);
+            return Ok(q.filter(exists_expr));
+        }
+    }
+    Ok(q)
+}
+
 pub fn message_in_groups_exists(keys: Vec<String>) -> SimpleExpr {
     if keys.is_empty() {
         return Expr::cust("FALSE");
@@ -1038,7 +1062,10 @@ pub async fn summary_table_freq_1(
             "dedup_key",
         )
         .distinct_on([dedup_key_alias.clone()])
-        .filter(datasource_group::Column::GroupMasterKey.eq_any(master_keys))
+        .filter(
+            datasource_group::Column::GroupMasterKey
+                .eq_any(master_keys.clone()),
+        )
         .filter(signal_message::Column::Deleted.eq(false))
         // .filter(signal_message::Column::DuplicateOf.is_null())
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
@@ -1050,8 +1077,11 @@ pub async fn summary_table_freq_1(
         filter_selected_freqs(dedup_subquery, &req.selected_freqs)?;
     let dedup_subquery =
         filter_selected_posts(dedup_subquery, &req.selected_posts)?;
-    let dedup_subquery =
-        filter_selected_groups(dedup_subquery, &req.selected_groups)?;
+    let dedup_subquery = filter_selected_groups_with_access(
+        dedup_subquery,
+        &req.selected_groups,
+        &master_keys,
+    )?;
     let dedup_subquery =
         filter_selected_senders(dedup_subquery, &req.selected_senders)?;
     let dedup_subquery = filter_selected_units(
@@ -1618,6 +1648,10 @@ pub async fn edit_freq_unit_name(
     struct Row {
         id: i64,
     }
+    let sigint_groups =
+        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
+            .await
+            .c(h!())?;
     let rows_res = signal_message::Entity::find()
         .join(
             JoinType::InnerJoin,
@@ -1635,13 +1669,8 @@ pub async fn edit_freq_unit_name(
         .column_as(Expr::cust("signal_message.id"), "id")
         // .column_as(Expr::col(signal_message::Column::Id), "id")
         .filter(
-            datasource_group::Column::GroupMasterKey.eq_any(
-                crate::messenger::group::get_identity_sigint_groups(
-                    &env.dbx, &login,
-                )
-                .await
-                .c(h!())?,
-            ),
+            datasource_group::Column::GroupMasterKey
+                .eq_any(sigint_groups.clone()),
         )
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
@@ -1650,7 +1679,11 @@ pub async fn edit_freq_unit_name(
         .filter(sigint_inbox_item::Column::UnitV2.eq(req.unit.clone()));
     let rows_res = filter_selected_freqs(rows_res, &reqan.selected_freqs)?;
     let rows_res = filter_selected_posts(rows_res, &reqan.selected_posts)?;
-    let rows_res = filter_selected_groups(rows_res, &reqan.selected_groups)?;
+    let rows_res = filter_selected_groups_with_access(
+        rows_res,
+        &reqan.selected_groups,
+        &sigint_groups,
+    )?;
     let rows_res = filter_selected_senders(rows_res, &reqan.selected_senders)?;
     let rows_res = filter_selected_units(
         rows_res,

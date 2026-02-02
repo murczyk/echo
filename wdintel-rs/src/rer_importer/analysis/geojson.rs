@@ -33,6 +33,10 @@ pub async fn rer_analysis_download_geojson(
         datetime: NaiveDateTime,
         group_name: String,
     }
+    let sigint_groups =
+        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
+            .await
+            .c(h!())?;
     let items = signal_message::Entity::find()
         .join(
             JoinType::InnerJoin,
@@ -59,13 +63,8 @@ pub async fn rer_analysis_download_geojson(
         .column_as(sigint_inbox_item::Column::Datetime, "datetime")
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(
-            datasource_group::Column::GroupMasterKey.eq_any(
-                crate::messenger::group::get_identity_sigint_groups(
-                    &env.dbx, &login,
-                )
-                .await
-                .c(h!())?,
-            ),
+            datasource_group::Column::GroupMasterKey
+                .eq_any(sigint_groups.clone()),
         )
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
@@ -73,7 +72,11 @@ pub async fn rer_analysis_download_geojson(
         .filter(sigint_inbox_item::Column::Lng.is_not_null());
     let items = filter_selected_freqs(items, &req.selected_freqs)?;
     let items = filter_selected_posts(items, &req.selected_posts)?;
-    let items = filter_selected_groups(items, &req.selected_groups)?;
+    let items = filter_selected_groups_with_access(
+        items,
+        &req.selected_groups,
+        &sigint_groups,
+    )?;
     let items = filter_selected_senders(items, &req.selected_senders)?;
     let items = filter_selected_units(
         items,
