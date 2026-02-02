@@ -125,10 +125,19 @@ pub async fn aggregate_to_inbox_messages(
         .map(|bm| bm.signal_message_id)
         .collect::<HashSet<_>>();
 
-    let mut group_query = signal_message_group::Entity::find().filter(
-        signal_message_group::Column::SignalMessageId
-            .eq_any(message_ids.clone()),
-    );
+    let sigint_groups =
+        crate::messenger::group::get_identity_sigint_groups(&env.dbx, login)
+            .await
+            .c(h!())?;
+    let mut group_query = signal_message_group::Entity::find()
+        .filter(
+            signal_message_group::Column::SignalMessageId
+                .eq_any(message_ids.clone()),
+        )
+        .filter(
+            signal_message_group::Column::GroupMasterKey
+                .eq_any(sigint_groups.clone()),
+        );
     if let Some(selected_groups) = req.selected_groups.as_ref() {
         if !selected_groups.is_empty() {
             group_query = group_query.filter(
