@@ -3891,6 +3891,21 @@ reoReportSettingsEncoder struct =
         ]
 
 
+type ReoReportFileType
+    = Docx
+    | Xlsx
+
+
+reoReportFileTypeEncoder : ReoReportFileType -> Json.Encode.Value
+reoReportFileTypeEncoder enum =
+    case enum of
+        Docx ->
+            Json.Encode.string "Docx"
+
+        Xlsx ->
+            Json.Encode.string "Xlsx"
+
+
 type alias ActiveNetworksReportSettings =
     { aorIds : List Int
     }
@@ -3944,7 +3959,7 @@ type ReportType
     | Pelengs
     | Senders SenderReportSettings
     | Naushnom
-    | Reo ReoReportSettings
+    | Reo ReoReportSettings ReoReportFileType
     | Digest
     | ActiveNetworks ActiveNetworksReportSettings
 
@@ -3973,8 +3988,8 @@ reportTypeEncoder enum =
         Naushnom ->
             Json.Encode.string "Naushnom"
 
-        Reo inner ->
-            Json.Encode.object [ ( "Reo", reoReportSettingsEncoder inner ) ]
+        Reo t0 t1 ->
+            Json.Encode.object [ ( "Reo", Json.Encode.list identity [ reoReportSettingsEncoder t0, reoReportFileTypeEncoder t1 ] ) ]
 
         Digest ->
             Json.Encode.string "Digest"
@@ -8894,7 +8909,7 @@ reportTypeDecoder =
                         unexpected ->
                             Json.Decode.fail <| "Unexpected variant " ++ unexpected
                 )
-        , Json.Decode.map Reo (Json.Decode.field "Reo" reoReportSettingsDecoder)
+        , Json.Decode.field "Reo" (Json.Decode.succeed Reo |> Json.Decode.andThen (\x -> Json.Decode.index 0 reoReportSettingsDecoder |> Json.Decode.map x) |> Json.Decode.andThen (\x -> Json.Decode.index 1 reoReportFileTypeDecoder |> Json.Decode.map x))
         , Json.Decode.string
             |> Json.Decode.andThen
                 (\x ->
@@ -10352,6 +10367,32 @@ deleteAreaOfResponsibilityReqDecoder : Json.Decode.Decoder DeleteAreaOfResponsib
 deleteAreaOfResponsibilityReqDecoder =
     Json.Decode.succeed DeleteAreaOfResponsibilityReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.int))
+
+
+reoReportFileTypeDecoder : Json.Decode.Decoder ReoReportFileType
+reoReportFileTypeDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Docx" ->
+                            Json.Decode.succeed Docx
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Xlsx" ->
+                            Json.Decode.succeed Xlsx
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
 
 
 listAreasOfResponsibilitySortByDecoder : Json.Decode.Decoder ListAreasOfResponsibilitySortBy

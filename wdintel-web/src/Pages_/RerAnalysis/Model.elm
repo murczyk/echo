@@ -115,6 +115,11 @@ type alias Model =
         , items : List (Select.MenuItem Float)
         , selected : Float
         }
+    , reportReoFileTypeSelect :
+        { state : Select.State
+        , items : List (Select.MenuItem B.ReoReportFileType)
+        , selected : B.ReoReportFileType
+        }
     , reportActiveNetworksAorsSelect :
         { state : Select.State
         , items : List (Select.MenuItem Int)

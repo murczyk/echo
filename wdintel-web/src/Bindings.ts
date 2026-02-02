@@ -1455,6 +1455,11 @@ export type ReoReportSettings = {
   adjacentFreqsDistance: number;
 };
 
+export type ReoReportFileType =
+  | 'Docx'
+  | 'Xlsx'
+;
+
 export type ActiveNetworksReportSettings = {
   aorIds: Array<number>;
 };
@@ -1479,7 +1484,7 @@ export type ReportType =
   | 'Pelengs'
   | { Senders: SenderReportSettings }
   | 'Naushnom'
-  | { Reo: ReoReportSettings }
+  | { Reo: [ReoReportSettings, ReoReportFileType] }
   | 'Digest'
   | { ActiveNetworks: ActiveNetworksReportSettings }
 ;

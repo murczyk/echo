@@ -147,6 +147,7 @@ type Msg
     | SetUnitFilterFromMap String
     | SelectFilterAdjacentFreqsRange (Select.Msg Float)
     | SelectReportAdjacentFreqsRange (Select.Msg Float)
+    | SelectReportReoFileType (Select.Msg B.ReoReportFileType)
     | SelectReportActiveNetworksAors (Select.Msg Int)
     | GroupsActivityPeriodChanged GroupsActivityPeriod
     | FilterTagsOptionChanged Bool
