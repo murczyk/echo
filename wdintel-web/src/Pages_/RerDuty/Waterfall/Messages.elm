@@ -3,6 +3,8 @@ module Pages_.RerDuty.Waterfall.Messages exposing (Messages, appendList, filterM
 import Bindings as B
 import Pages_.RerDuty.Waterfall.Message as Message
 import Config exposing (waterfallMessageLimit)
+import Set exposing (Set)
+import String
 
 
 type Messages
@@ -28,6 +30,58 @@ extractModels ( i, ( _, model ) ) =
     model
 
 
+dedupKey : ( Int, B.InboxMessage ) -> String
+dedupKey ( id, message_ ) =
+    case message_.messageUid of
+        Just uid ->
+            if String.isEmpty uid then
+                "id:" ++ String.fromInt id
+
+            else
+                "uid:" ++ uid
+
+        Nothing ->
+            "id:" ++ String.fromInt id
+
+
+dedupListWithSeen :
+    Set String
+    -> List ( Int, B.InboxMessage )
+    -> ( Set String, List ( Int, B.InboxMessage ) )
+dedupListWithSeen seen messageList =
+    let
+        step message ( seenAcc, acc ) =
+            let
+                key =
+                    dedupKey message
+            in
+            if Set.member key seenAcc then
+                ( seenAcc, acc )
+
+            else
+                ( Set.insert key seenAcc, message :: acc )
+
+        ( seenFinal, accRev ) =
+            List.foldl step ( seen, [] ) messageList
+    in
+    ( seenFinal, List.reverse accRev )
+
+
+dedupAgainstExisting :
+    Messages
+    -> List ( Int, B.InboxMessage )
+    -> List ( Int, B.InboxMessage )
+dedupAgainstExisting (Messages messageList) newMessages =
+    let
+        seen =
+            messageList
+                |> List.map extractMessages
+                |> List.map dedupKey
+                |> Set.fromList
+    in
+    dedupListWithSeen seen newMessages |> Tuple.second
+
+
 
 --
 
@@ -35,12 +89,15 @@ extractModels ( i, ( _, model ) ) =
 fromList : List ( Int, B.InboxMessage ) -> Messages
 fromList messageList =
     let
+        deduped =
+            dedupListWithSeen Set.empty messageList |> Tuple.second
+
         messages =
-            if List.length messageList > waterfallMessageLimit then
-                messageList |> List.reverse |> List.take waterfallMessageLimit
+            if List.length deduped > waterfallMessageLimit then
+                deduped |> List.reverse |> List.take waterfallMessageLimit
 
             else
-                messageList
+                deduped
 
         models =
             messages
@@ -59,8 +116,11 @@ fromList messageList =
 prependList : Messages -> List ( Int, B.InboxMessage ) -> Messages
 prependList (Messages messageList) newMessages =
     let
+        dedupedNewMessages =
+            dedupAgainstExisting (Messages messageList) newMessages
+
         (Messages newMsgs) =
-            fromList newMessages
+            fromList dedupedNewMessages
 
         result =
             newMsgs ++ messageList
@@ -75,8 +135,11 @@ prependList (Messages messageList) newMessages =
 appendList : Messages -> List ( Int, B.InboxMessage ) -> Messages
 appendList (Messages messageList) newMessages =
     let
+        dedupedNewMessages =
+            dedupAgainstExisting (Messages messageList) newMessages
+
         (Messages newMsgs) =
-            fromList newMessages
+            fromList dedupedNewMessages
 
         result =
             messageList ++ newMsgs

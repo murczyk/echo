@@ -44,6 +44,11 @@ messageStub =
     }
 
 
+messageStubWithUid : String -> B.InboxMessage
+messageStubWithUid uid =
+    { messageStub | messageUid = Just uid }
+
+
 
 -- Test cases
 
@@ -75,6 +80,24 @@ tests =
                             Messages.toMessageList result |> List.reverse |> List.head
                     in
                     Expect.equal last (Just ( initialLastId + 2, messageStub ))
+            , test "Appending skips duplicate message_uid" <|
+                \_ ->
+                    let
+                        initialMessages =
+                            Messages.fromList [ ( 1, messageStubWithUid "uid-1" ) ]
+
+                        newMessages =
+                            [ ( 2, messageStubWithUid "uid-1" )
+                            , ( 3, messageStubWithUid "uid-2" )
+                            ]
+
+                        result =
+                            Messages.appendList initialMessages newMessages
+
+                        ids =
+                            Messages.toMessageList result |> List.map Tuple.first
+                    in
+                    Expect.equal ids [ 1, 3 ]
             , test "Appending messages exceeding limit" <|
                 \_ ->
                     let
