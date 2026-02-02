@@ -272,6 +272,7 @@ pub async fn read_group_stats_aggregated(
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
 ) -> anyhow::Result<Vec<AnalysisStatsGroup>> {
+    let allowed_keys = master_keys.iter().cloned().collect::<HashSet<_>>();
     let (intervals_5min, days) =
         collect_time_intervals_for_stats(dt_since, dt_till).c(h!())?;
 
@@ -303,9 +304,10 @@ pub async fn read_group_stats_aggregated(
         .c(h!())?
         .into_iter()
         .flat_map(|m| {
-            collect_group_keys_for_batch(
+            collect_group_keys_for_batch_filtered(
                 m.signal_group_batch_id,
                 &batches_map,
+                &allowed_keys,
                 m,
             )
         })
@@ -331,9 +333,10 @@ pub async fn read_group_stats_aggregated(
             .c(h!())?
             .into_iter()
             .flat_map(|m| {
-                collect_group_keys_for_batch(
+                collect_group_keys_for_batch_filtered(
                     m.signal_group_batch_id,
                     &batches_map,
+                    &allowed_keys,
                     m,
                 )
             })
@@ -2625,15 +2628,18 @@ fn all_to_batch_key(keys: HashSet<String>) -> String {
     to_batch_key(&text)
 }
 
-fn collect_group_keys_for_batch<T: Clone>(
+fn collect_group_keys_for_batch_filtered<T: Clone>(
     batch_id: i64,
     batches: &HashMap<i64, Vec<String>>,
+    allowed_keys: &HashSet<String>,
     m: T,
 ) -> Vec<(T, String)> {
     let keys = batches.get(&batch_id).cloned().unwrap_or_default();
     let mut result = vec![];
     for key in keys {
-        result.push((m.clone(), key));
+        if allowed_keys.contains(&key) {
+            result.push((m.clone(), key));
+        }
     }
     result
 }
@@ -2671,6 +2677,9 @@ fn batch_key_to_group_keys(batch_key: String) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::functest::tests::*;
+    use sea_orm::ActiveValue::Set;
+    use serial_test::serial;
     #[test]
     fn test_get_local_date() {
         let utc_date = NaiveDate::from_ymd_opt(2025, 6, 6).unwrap();
@@ -2783,6 +2792,81 @@ mod tests {
         //     NaiveDate::from_ymd_opt(2025, 10, 15).unwrap(),
         // ];
         // assert_eq!(_days, expected_days, "Days vector should contain all dates from the day after dt_since to the day of dt_till.");
+    }
+
+    #[test]
+    fn test_collect_group_keys_for_batch_filtered() {
+        let mut batches = HashMap::new();
+        batches.insert(1, vec!["a".to_string(), "b".to_string()]);
+        let allowed = HashSet::from(["a".to_string()]);
+        let res =
+            collect_group_keys_for_batch_filtered(1, &batches, &allowed, 10);
+        assert_eq!(res, vec![(10, "a".to_string())]);
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_read_group_stats_aggregated_filters_orphan_keys() {
+        let env = cleanup().await.unwrap();
+
+        let allowed_group = mk_signal_group(
+            &env.dbx,
+            signal_group::ActiveModel {
+                master_key: Set("allowed-group".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let orphan_group = mk_signal_group(
+            &env.dbx,
+            signal_group::ActiveModel {
+                master_key: Set("orphan-group".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let batch_key = all_to_batch_key(HashSet::from([
+            allowed_group.master_key.clone(),
+            orphan_group.master_key.clone(),
+        ]));
+        let batch = signal_group_batch::ActiveModel {
+            group_master_keys: Set(batch_key),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        let now = Utc::now().naive_utc();
+        stats_group_5min::ActiveModel {
+            dt: Set(now),
+            quantity: Set(3),
+            signal_group_batch_id: Set(batch.id),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        let dt_since = now - Duration::minutes(10);
+        let dt_till = now + Duration::minutes(10);
+        let stats = read_group_stats_aggregated(
+            &env.dbx,
+            vec![allowed_group.master_key.clone()],
+            dt_since,
+            dt_till,
+        )
+        .await
+        .unwrap();
+
+        let keys = stats
+            .into_iter()
+            .map(|entry| entry.master_key)
+            .collect::<HashSet<_>>();
+        assert_eq!(keys, HashSet::from([allowed_group.master_key]));
     }
 
     fn ndt(

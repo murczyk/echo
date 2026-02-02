@@ -63,7 +63,11 @@ pub(crate) async fn build_inbox_query(
     if req.checked_only == Some(true) {
         q = q.filter(sigint_inbox_item::Column::Checked.eq(Some(true)));
     }
-    let q = filter_selected_groups(q, &req.selected_groups)?;
+    let q = filter_selected_groups_with_access(
+        q,
+        &req.selected_groups,
+        &sigint_groups,
+    )?;
     let q = filter_selected_senders(q, &req.selected_senders)?;
     let q = filter_denied_senders(q, &req.denied_senders)?;
     let q = filter_selected_freqs(q, &req.selected_freqs)?;

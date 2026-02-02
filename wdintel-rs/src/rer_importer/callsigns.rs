@@ -1249,6 +1249,10 @@ pub async fn callsigns_graph(
         freq: Option<String>,
         callsigns: Option<serde_json::Value>,
     }
+    let sigint_groups =
+        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
+            .await
+            .c(h!())?;
     let q = signal_message::Entity::find()
         .join(
             JoinType::InnerJoin,
@@ -1259,13 +1263,8 @@ pub async fn callsigns_graph(
         .column_as(sigint_inbox_item::Column::Callsigns, "callsigns")
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(
-            datasource_group::Column::GroupMasterKey.eq_any(
-                crate::messenger::group::get_identity_sigint_groups(
-                    &env.dbx, &login,
-                )
-                .await
-                .c(h!())?,
-            ),
+            datasource_group::Column::GroupMasterKey
+                .eq_any(sigint_groups.clone()),
         )
         .join(
             JoinType::InnerJoin,
@@ -1279,7 +1278,11 @@ pub async fn callsigns_graph(
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
     // .filter(sigint_inbox_item::Column::Checked.eq(Some(true)));
-    let q = filter_selected_groups(q, &req.selected_groups)?;
+    let q = filter_selected_groups_with_access(
+        q,
+        &req.selected_groups,
+        &sigint_groups,
+    )?;
     let q = filter_selected_senders(q, &req.selected_senders)?;
     let q = filter_selected_freqs(q, &req.selected_freqs)?;
     let q = filter_selected_posts(q, &req.selected_posts)?;

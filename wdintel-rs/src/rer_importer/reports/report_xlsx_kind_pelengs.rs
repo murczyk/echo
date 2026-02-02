@@ -42,6 +42,10 @@ pub async fn get_inbox_messages_report(
         req.include_peleng_locations.unwrap_or(false);
     let read_db = env.replica();
 
+    let sigint_groups =
+        crate::messenger::group::get_identity_sigint_groups(&read_db, &login)
+            .await
+            .c(h!())?;
     let mut q = SignalMessage::find()
         .join(JoinType::InnerJoin, signal_message::Relation::SigintInboxItem.def())
         .join(JoinType::InnerJoin, signal_message::Relation::DatasourceGroup.def())
@@ -141,9 +145,10 @@ pub async fn get_inbox_messages_report(
         .group_by(sigint_network_unit::Column::Id)
         .group_by(sigint_post::Column::Id)
         .group_by(datasource_group::Column::Id)
-        .filter(datasource_group::Column::GroupMasterKey.eq_any(
-            crate::messenger::group::get_identity_sigint_groups(&read_db, &login).await.c(h!())?,
-        ));
+        .filter(
+            datasource_group::Column::GroupMasterKey
+                .eq_any(sigint_groups.clone()),
+        );
 
     q = crate::rer_importer::inbox::query::get_pagination_filters(
         env,
@@ -165,7 +170,11 @@ pub async fn get_inbox_messages_report(
     if req.checked_only == Some(true) {
         q = q.filter(sigint_inbox_item::Column::Checked.eq(Some(true)));
     }
-    let q = filter_selected_groups(q, &req.selected_groups)?;
+    let q = filter_selected_groups_with_access(
+        q,
+        &req.selected_groups,
+        &sigint_groups,
+    )?;
     let q = filter_selected_senders(q, &req.selected_senders)?;
     let q = filter_denied_senders(q, &req.denied_senders)?;
     let q = filter_selected_freqs(q, &req.selected_freqs)?;
