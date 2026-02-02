@@ -134,6 +134,7 @@ pub const DEFAULT_STORE_PALITRA_IN_S3: bool = true;
 pub const KMZ_CONTENT_TYPE: &str = "application/vnd.google-earth.kmz";
 pub const ENCRYPTION_KEY_PLACEHOLDER: &str = "🔑";
 pub const ENCRYPTION_KEY_DESCRIPTION_PLACEHOLDER: &str = "...";
+pub const NETWORKS_IMPORT_TUI_ROWS_NUM_PAGE_SIZE: usize = 10;
 
 /// Dynamic config that's different on different deployments
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]

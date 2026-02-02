@@ -17,6 +17,7 @@ use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 mod query;
+pub mod tui;
 pub mod types;
 
 pub async fn oneoff_export_etalon_data(
