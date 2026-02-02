@@ -26,13 +26,13 @@ trap 'kill "$DEV_PID" 2>/dev/null || true' EXIT
 
 # Wait for the service to be ready
 echo "Waiting for Python service to start..."
-for i in {1..120}; do
+for i in {1..180}; do
     if curl -s http://127.0.0.1:5000/ > /dev/null 2>&1; then
         echo "Python service is ready!"
         break
     fi
-    if [ $i -eq 120 ]; then
-        echo "Python service failed to start within 120 seconds"
+    if [ $i -eq 180 ]; then
+        echo "Python service failed to start within 180 seconds"
         exit 1
     fi
     sleep 1
