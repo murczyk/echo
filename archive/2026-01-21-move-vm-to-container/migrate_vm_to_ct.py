@@ -425,6 +425,7 @@ def build_plan_text(
     precopy_items: List[str],
     precopy_enabled: bool,
     precopy_method: Optional[str],
+    precopy_reason: Optional[str],
     tailscale_backup_path: Optional[Path],
     tailscale_backup_exists: bool,
 ) -> str:
@@ -523,13 +524,17 @@ def build_plan_text(
         lines.append(f"- local tar: {tailscale_backup_path}")
     else:
         lines.append("- local tar: skipped (state dir not found)")
+    lines.append("")
+    lines.append("Pre-copy summary:")
     if precopy_items:
-        lines.append("")
-        lines.append("Pre-copy items:")
-        for path in precopy_items:
-            lines.append(f"- {path}")
+        lines.append(f"- enabled: {'yes' if precopy_enabled else 'no'}")
+        lines.append(f"- items: {', '.join(precopy_items)}")
         if precopy_enabled and precopy_method:
             lines.append(f"- method: {precopy_method}")
+        if not precopy_enabled and precopy_reason:
+            lines.append(f"- note: {precopy_reason}")
+    else:
+        lines.append("- enabled: no (no pre-copy candidates detected)")
     if warnings:
         lines.append("")
         lines.append("Warnings:")
@@ -578,27 +583,6 @@ def write_plan_files(
 def ensure_dir_exists(conf: SSHConfig, path: str) -> None:
     quoted = shlex.quote(path)
     run_ssh(conf, f"sudo -n mkdir -p {quoted}")
-
-
-def stream_copy_path_local(vm_conf: SSHConfig, ct_conf: SSHConfig, path: str) -> None:
-    rel_path = path.lstrip("/")
-    src_cmd = build_ssh_command(
-        vm_conf,
-        f"sudo -n tar -cpf - -C / {shlex.quote(rel_path)}",
-    )
-    dst_cmd = build_ssh_command(
-        ct_conf,
-        "sudo -n tar -xpf - -C /",
-    )
-    src = subprocess.Popen(src_cmd, stdout=subprocess.PIPE)
-    if src.stdout is None:
-        raise RuntimeError("Failed to open source stream")
-    dst = subprocess.Popen(dst_cmd, stdin=src.stdout)
-    src.stdout.close()
-    src_rc = src.wait()
-    dst_rc = dst.wait()
-    if src_rc != 0 or dst_rc != 0:
-        raise RuntimeError(f"Stream copy failed for {path} (src={src_rc}, dst={dst_rc})")
 
 
 def build_inner_ssh_args(ct_conf: SSHConfig, use_jump: bool) -> List[str]:
@@ -841,7 +825,7 @@ def main(
     transfer_mode: str = typer.Option(
         "auto",
         "--transfer-mode",
-        help="Transfer mode: auto, remote, or local",
+        help="Transfer mode: auto or remote (no local fallback)",
     ),
     include_dir: List[str] = typer.Option(
         [], "--include-dir", help="Extra directory to copy from VM to CT (directory)"
@@ -888,8 +872,8 @@ def main(
         typer.echo("Invalid --tailscale-owner value. Use 'vm' or 'ct'.")
         raise typer.Exit(code=1)
     transfer_mode = transfer_mode.strip().lower()
-    if transfer_mode not in {"auto", "remote", "local"}:
-        typer.echo("Invalid --transfer-mode value. Use auto, remote, or local.")
+    if transfer_mode not in {"auto", "remote"}:
+        typer.echo("Invalid --transfer-mode value. Use auto or remote.")
         raise typer.Exit(code=1)
 
     prepare_known_hosts(known_hosts, refresh_known_hosts)
@@ -1006,13 +990,13 @@ def main(
     if transfer_mode in {"auto", "remote"}:
         remote_jump_decision = probe_remote_transfer(vm_conf, ct_conf)
         if remote_jump_decision is None:
-            if transfer_mode == "remote":
-                typer.echo("Remote transfer probe failed; cannot reach CT from VM.")
-                raise typer.Exit(code=1)
-            warnings.append("Remote transfer probe failed; will use local streaming.")
-            transfer_mode = "local"
-        else:
-            transfer_mode = "remote"
+            typer.echo("Remote transfer probe failed; cannot reach CT from VM.")
+            raise typer.Exit(code=1)
+        transfer_mode = "remote"
+
+    if not rsync_available(vm_conf, ct_conf):
+        typer.echo("rsync is required on both VM and CT; install it and retry.")
+        raise typer.Exit(code=1)
 
     vm_nginx_config = get_nginx_config(vm_conf)
     ct_nginx_config = get_nginx_config(ct_conf)
@@ -1074,19 +1058,8 @@ def main(
             precopy_candidates.append(home)
     if precopy_candidates:
         precopy_items = dedupe_preserve_order(precopy_candidates)
-        if transfer_mode != "remote":
-            precopy_reason = "transfer mode is local"
-        elif remote_jump_decision is None:
-            precopy_reason = "VM cannot reach CT for remote sync"
-        elif not rsync_available(vm_conf, ct_conf):
-            precopy_reason = "rsync not available on VM or CT"
-        else:
-            precopy_enabled = True
-            precopy_method = "rsync"
-    if precopy_items and not precopy_enabled and precopy_reason:
-        warnings.append(
-            f"Pre-copy disabled ({precopy_reason}); will do full copy after stop."
-        )
+        precopy_enabled = True
+        precopy_method = "rsync"
 
     major_mismatch_sample = [
         f"{pkg} ({vm_packages[pkg]} vs {ct_packages[pkg]})"
@@ -1132,6 +1105,7 @@ def main(
         precopy_items=precopy_items,
         precopy_enabled=precopy_enabled,
         precopy_method=precopy_method,
+        precopy_reason=precopy_reason,
         tailscale_backup_path=tailscale_backup_path,
         tailscale_backup_exists=tailscale_backup_exists,
     )
@@ -1166,13 +1140,23 @@ def main(
     typer.echo(f"Details written to {details_path}")
 
     if not yes:
-        response = input("Proceed with migration copy? Type 'yes' to continue: ").strip()
+        if precopy_items and precopy_enabled:
+            prompt = (
+                "Proceed with migration copy? Pre-copy (rsync) will run before stopping services. "
+                "Type 'yes' to continue: "
+            )
+        else:
+            prompt = (
+                "Proceed with migration copy? No pre-copy candidates; services will be stopped before full copy. "
+                "Type 'yes' to continue: "
+            )
+        response = input(prompt).strip()
         if response.lower() != "yes":
             typer.echo("No changes made.")
             raise typer.Exit(code=0)
 
     if precopy_items and precopy_enabled:
-        typer.echo("Pre-copying large directories before stopping services...")
+        typer.echo("Pre-copying large directories (rsync) before stopping services...")
         for path in precopy_items:
             ensure_dir_exists(ct_conf, path)
             typer.echo(f"- Pre-copying {path}")
@@ -1213,7 +1197,7 @@ def main(
         ensure_dir_exists(ct_conf, path)
         if precopy_items and precopy_enabled and path in precopy_items:
             typer.echo(f"- Syncing diff for {path}")
-            if transfer_mode != "remote" or remote_jump_decision is None:
+            if remote_jump_decision is None:
                 raise typer.Exit(code=1)
             rsync_copy_path_remote(
                 vm_conf,
@@ -1226,12 +1210,9 @@ def main(
                 fix_postgres_ownership(ct_conf, path)
             continue
         typer.echo(f"- Copying {path}")
-        if transfer_mode == "remote":
-            if remote_jump_decision is None:
-                raise typer.Exit(code=1)
-            stream_copy_path_remote(vm_conf, ct_conf, path, remote_jump_decision)
-        else:
-            stream_copy_path_local(vm_conf, ct_conf, path)
+        if remote_jump_decision is None:
+            raise typer.Exit(code=1)
+        stream_copy_path_remote(vm_conf, ct_conf, path, remote_jump_decision)
         if path == postgres_precopy_path:
             fix_postgres_ownership(ct_conf, path)
 
