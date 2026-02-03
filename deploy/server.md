@@ -167,6 +167,14 @@ $ scp deploy/nginx/<server> <server>: && ssh <server> 'sudo mv <server> /etc/ngi
 
 Once also enable services in systemd: `sudo systemctl enable wdintel-rs echo-whatsapp echo-signal-cli`
 
+If you want socket activation (reduced downtime during quick restarts), enable the socket
+and disable the direct service autostart:
+
+```
+sudo systemctl enable --now wdintel-rs.socket
+sudo systemctl disable wdintel-rs
+```
+
 ## SSL/Letsencrypt Tailscale
 
 ```

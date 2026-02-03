@@ -9,6 +9,8 @@ use actix_web::{web, App, HttpServer};
 
 use crate::types::Mode::Live;
 use milgeo_rs::MilGeo;
+use std::net::TcpListener;
+use std::os::unix::io::FromRawFd;
 use tokio::runtime::Handle;
 use tokio::signal::unix::{signal, SignalKind};
 use tokio::task::JoinSet;
@@ -20,6 +22,31 @@ mod healthcheck;
 pub mod middleware;
 pub mod monitoring;
 pub use admin::RestartEchoRequest;
+
+fn systemd_listener() -> Result<Option<TcpListener>, AppError> {
+    let listen_fds: i32 = match std::env::var("LISTEN_FDS") {
+        Ok(value) => value.parse().unwrap_or(0),
+        Err(_) => 0,
+    };
+    if listen_fds == 0 {
+        return Ok(None);
+    }
+    let listen_pid: u32 = match std::env::var("LISTEN_PID") {
+        Ok(value) => value.parse().unwrap_or(0),
+        Err(_) => 0,
+    };
+    if listen_pid != std::process::id() {
+        return Ok(None);
+    }
+    if listen_fds != 1 {
+        warn!("LISTEN_FDS={listen_fds}, using first socket only");
+    }
+    let listener = unsafe { TcpListener::from_raw_fd(3) };
+    listener.set_nonblocking(true).c(h!())?;
+    std::env::remove_var("LISTEN_FDS");
+    std::env::remove_var("LISTEN_PID");
+    Ok(Some(listener))
+}
 
 pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
     let config = read_config(mode).c(h!())?;
@@ -315,10 +342,9 @@ pub async fn main_server(
         info!("starting echo server on default 8081 port. override it with ECHO_SERVER_PORT variable.");
         8081
     };
-    info!("Starting server on {bind_ip}:{bind_port}");
 
     let env_for_server = env.clone();
-    let server = HttpServer::new(move || {
+    let server_builder = HttpServer::new(move || {
         let env = env_for_server.clone();
         let cookie_secret = env.config.cookie_session_secret.clone();
         let redis_for_middleware = env.redis.clone();
@@ -610,9 +636,16 @@ pub async fn main_server(
             .service(
                 web::scope(get_assets_url())
                     .route("/{filename:.*}", web::get().to(crate::storage::serve_assets)))
-    })
-        .bind((bind_ip, bind_port))?
-        .run();
+    });
+
+    let server = if let Some(listener) = systemd_listener()? {
+        info!("Starting server with systemd socket activation");
+        server_builder.listen(listener)?
+    } else {
+        info!("Starting server on {bind_ip}:{bind_port}");
+        server_builder.bind((bind_ip, bind_port))?
+    }
+    .run();
 
     let task_completion_future = async move {
         while background_tasks.join_next().await.is_some() {
@@ -632,10 +665,12 @@ pub async fn main_server(
             _ = sigint.recv() => {
                 println!("\n[SIGINT / CTRL+C] detected. Signaling shutdown.");
                 cancel_token.cancel();
+                server_handle.stop(true).await;
             },
             _ = sigterm.recv() => {
                 println!("\n[SIGTERM / KILL] detected. Signaling shutdown.");
                 cancel_token.cancel();
+                server_handle.stop(true).await;
             },
             _ = tokio::signal::ctrl_c() => {
                 info!("\n[CTRL+C] detected. Starting graceful shutdown...");
