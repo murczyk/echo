@@ -535,6 +535,7 @@ export type SignalProfileEntry = {
 
 export type BatchSignalGroupReq = {
   groups: Array<SignalGroupReq>;
+  skipGroupStats: boolean | null;
 };
 
 export type SignalGroupsRsp = {

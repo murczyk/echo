@@ -383,6 +383,7 @@ pub struct SignalGroupReq {
 )]
 pub struct BatchSignalGroupReq {
     pub groups: Vec<SignalGroupReq>,
+    pub skip_group_stats: Option<bool>,
 }
 
 #[derive(

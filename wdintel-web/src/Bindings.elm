@@ -1448,6 +1448,7 @@ signalProfileEntryEncoder struct =
 
 type alias BatchSignalGroupReq =
     { groups : List SignalGroupReq
+    , skipGroupStats : Maybe Bool
     }
 
 
@@ -1455,6 +1456,7 @@ batchSignalGroupReqEncoder : BatchSignalGroupReq -> Json.Encode.Value
 batchSignalGroupReqEncoder struct =
     Json.Encode.object
         [ ( "groups", Json.Encode.list signalGroupReqEncoder struct.groups )
+        , ( "skip_group_stats", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.skipGroupStats )
         ]
 
 
@@ -7852,6 +7854,7 @@ batchSignalGroupReqDecoder : Json.Decode.Decoder BatchSignalGroupReq
 batchSignalGroupReqDecoder =
     Json.Decode.succeed BatchSignalGroupReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "groups" (Json.Decode.list signalGroupReqDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "skip_group_stats" (Json.Decode.nullable Json.Decode.bool)))
 
 
 signalGroupsRspDecoder : Json.Decode.Decoder SignalGroupsRsp

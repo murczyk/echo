@@ -169,6 +169,7 @@ type ZoneDatasourceGroupsReqBody = {
 
 type BatchSignalGroupReqBody = {
   groups: { master_key: string }[];
+  skip_group_stats: boolean | null;
 };
 
 function normalizeNumber(value: number | string | null | undefined): number {
@@ -336,6 +337,7 @@ function toZoneDatasourceGroupUpdateReqBody(req: ZoneDatasourceGroupUpdateReq): 
 function toBatchSignalGroupReqBody(req: BatchSignalGroupReq): BatchSignalGroupReqBody {
   return {
     groups: req.groups.map((group) => ({ master_key: group.masterKey })),
+    skip_group_stats: req.skipGroupStats ?? null,
   };
 }
 
@@ -411,7 +413,10 @@ export async function listOrphanSignalGroups(): Promise<OrphanSignalGroupEntry[]
 
 export async function fetchSignalGroupInfoBatch(keys: string[]): Promise<SignalGroupEntry[]> {
   if (keys.length === 0) return [];
-  const req: BatchSignalGroupReq = { groups: keys.map((masterKey) => ({ masterKey })) };
+  const req: BatchSignalGroupReq = {
+    groups: keys.map((masterKey) => ({ masterKey })),
+    skipGroupStats: null,
+  };
   const data = await postJson<SignalGroupsRspLike>('/api/rer-importer/signal-group-batch', toBatchSignalGroupReqBody(req));
   return normalizeSignalGroupsRsp(data ?? {});
 }
