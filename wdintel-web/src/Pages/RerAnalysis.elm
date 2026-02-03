@@ -325,12 +325,7 @@ getInboxReq model =
         model.networksSelected
             |> List.filterMap String.toInt
             |> emptyToNothing
-    , withoutModelTags =
-        if model.withoutModelTags then
-            Just True
-
-        else
-            Nothing
+    , withoutModelTags = Just model.withoutModelTags
     }
 
 
@@ -3112,6 +3107,14 @@ update user shared route msg model =
 
         ReportAdvancedSendersToggle ->
             ( { model | reportAdvancedSenders = not model.reportAdvancedSenders }
+            , E.none
+            )
+
+        ReportTagsWithoutBotTagsToggle ->
+            ( if model.withoutModelTags then
+                { model | withoutModelTags = False }
+              else
+                { model | withoutModelTags = True }
             , E.none
             )
 
