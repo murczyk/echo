@@ -10,6 +10,7 @@ use actix_web::web::Json;
 use actix_web::{post, HttpRequest, HttpResponse};
 use chrono::prelude::*;
 use docx_rs::*;
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use log::*;
 
 use crate::config::Config;
@@ -39,6 +40,54 @@ const TABLE_HEADER_STYLE_NAME: &str = "Table Header";
 pub mod query;
 pub mod types;
 pub mod util;
+
+pub(crate) struct EtalonkaProgress {
+    units: ProgressBar,
+    networks: ProgressBar,
+}
+
+impl EtalonkaProgress {
+    pub fn new(multi: &MultiProgress, units_total: usize) -> Self {
+        let style = etalonka_progress_style();
+        let units = multi.add(ProgressBar::new(units_total as u64));
+        units.set_style(style.clone());
+        units.set_message("units overall");
+        let networks = multi.add(ProgressBar::new(0));
+        networks.set_style(style);
+        networks.set_message("networks");
+        Self { units, networks }
+    }
+
+    pub fn start_unit(&self, unit_name: &str, networks_total: usize) {
+        self.units
+            .set_message(format!("units (current: {unit_name})"));
+        self.networks.set_length(networks_total as u64);
+        self.networks.set_position(0);
+        self.networks
+            .set_message(format!("networks for {unit_name}"));
+    }
+
+    pub fn inc_network(&self) {
+        self.networks.inc(1);
+    }
+
+    pub fn finish_unit(&self) {
+        self.units.inc(1);
+    }
+
+    pub fn finish(&self) {
+        self.networks.finish();
+        self.units.finish();
+    }
+}
+
+fn etalonka_progress_style() -> ProgressStyle {
+    ProgressStyle::with_template(
+        "{msg} [{elapsed_precise}] {bar:40.cyan/blue} {pos}/{len} ({percent}%) ETA {eta}",
+    )
+    .expect("progress style template")
+    .progress_chars("=>-")
+}
 
 pub enum CallsignTableType {
     MainRadioStations,
@@ -276,6 +325,27 @@ pub async fn collect_etalonka_data(
     report_type: &EtalonkaReportType,
     trace_id: Uuid,
 ) -> Result<EtalonkaData, AppError> {
+    collect_etalonka_data_with_progress(
+        dbx,
+        user_id,
+        groups,
+        networks_data,
+        report_type,
+        trace_id,
+        None,
+    )
+    .await
+}
+
+pub(crate) async fn collect_etalonka_data_with_progress(
+    dbx: &DatabaseConnection,
+    user_id: &str,
+    groups: Vec<String>,
+    networks_data: BTreeMap<NetworkEtalonkaUnitKey, Vec<NetworkEtalonkaResult>>,
+    report_type: &EtalonkaReportType,
+    trace_id: Uuid,
+    progress: Option<&EtalonkaProgress>,
+) -> Result<EtalonkaData, AppError> {
     let mut data = EtalonkaData {
         groups,
         networks_data,
@@ -326,16 +396,23 @@ pub async fn collect_etalonka_data(
             .collect();
     }
 
+    let show_logs = progress.is_none();
     let mut units_remaining = data.networks_data.len();
     for (unit_key, unit_networks) in data.networks_data.iter() {
         let unit_name = &unit_key.unit_name;
-        units_remaining -= 1;
-        info!("[trace_id={trace_id}] collecting report data for unit '{unit_name}', {units_remaining} left");
+        if show_logs {
+            units_remaining -= 1;
+            info!("[trace_id={trace_id}] collecting report data for unit '{unit_name}', {units_remaining} left");
+        } else if let Some(progress) = progress {
+            progress.start_unit(unit_name, unit_networks.len());
+        }
         let mut network_remaining = unit_networks.len();
         for network in unit_networks.iter() {
-            network_remaining -= 1;
             let network_id = network.id;
-            info!("[trace_id={trace_id}] collecting report data for network id={network_id}, {network_remaining} left");
+            if show_logs {
+                network_remaining -= 1;
+                info!("[trace_id={trace_id}] collecting report data for network id={network_id}, {network_remaining} left");
+            }
             let key = EtalonkaEntryKey {
                 unit_name: unit_name.to_string(),
                 network_id,
@@ -439,7 +516,16 @@ pub async fn collect_etalonka_data(
             };
             entry.pelengs_map = pelengs_map;
             data.entries.insert(key, entry);
+            if let Some(progress) = progress {
+                progress.inc_network();
+            }
         }
+        if let Some(progress) = progress {
+            progress.finish_unit();
+        }
+    }
+    if let Some(progress) = progress {
+        progress.finish();
     }
     Ok(data)
 }

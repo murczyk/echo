@@ -10,7 +10,7 @@ use crate::utils::parse_local_datetime;
 use crate::{h, OneoffSuggestInboxMessageTagsPs};
 use chrono::{Duration, NaiveDate, NaiveDateTime, Utc};
 use csv::Writer;
-use indicatif::ProgressBar;
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use log::{info, warn};
 use sea_orm::prelude::*;
 use sea_orm::*;
@@ -173,7 +173,9 @@ pub async fn oneoff_etalonka_report_networks_from_rer_analysis(
     let (start_date, end_date, start_ms, end_ms) =
         parse_date_range_to_millis(&ps.start, &ps.end).c(h!())?;
 
-    let pb = ProgressBar::new(4);
+    let multi = MultiProgress::new();
+    let pb = multi.add(ProgressBar::new(4));
+    pb.set_style(oneoff_progress_style());
     pb.set_message("resolving aors");
     let selected_aors = resolve_aor_ids(&db, &ps.only_aor).await?;
     pb.inc(1);
@@ -212,16 +214,22 @@ pub async fn oneoff_etalonka_report_networks_from_rer_analysis(
             .await
             .c(h!())?;
     let trace_id = uuid::Uuid::new_v4();
-    let etalonka_data = crate::sigint::etalonka::collect_etalonka_data(
-        &db,
-        &ps.login,
-        groups,
-        networks_data,
-        &report_req.etalonka_type,
-        trace_id,
-    )
-    .await
-    .c(h!())?;
+    let etalonka_progress = crate::sigint::etalonka::EtalonkaProgress::new(
+        &multi,
+        networks_data.len(),
+    );
+    let etalonka_data =
+        crate::sigint::etalonka::collect_etalonka_data_with_progress(
+            &db,
+            &ps.login,
+            groups,
+            networks_data,
+            &report_req.etalonka_type,
+            trace_id,
+            Some(&etalonka_progress),
+        )
+        .await
+        .c(h!())?;
 
     std::fs::create_dir_all(ONEOFF_ETALONKA_REPORT_OUTPUT_DIR).c(h!())?;
     let outpath = build_etalonka_output_path(start_date, end_date);
@@ -237,6 +245,14 @@ pub async fn oneoff_etalonka_report_networks_from_rer_analysis(
     pb.finish_with_message(format!("saved {}", outpath.display()));
     println!("> report saved to {}", outpath.display());
     Ok(())
+}
+
+fn oneoff_progress_style() -> ProgressStyle {
+    ProgressStyle::with_template(
+        "{msg} [{elapsed_precise}] {bar:40.cyan/blue} {pos}/{len} ({percent}%) ETA {eta}",
+    )
+    .expect("progress style template")
+    .progress_chars("=>-")
 }
 
 fn parse_local_date(val: &str) -> Result<NaiveDate, AppError> {

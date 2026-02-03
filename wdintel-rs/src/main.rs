@@ -646,7 +646,7 @@ async fn new_pg_pool_from_conn_string(
         .sqlx_logging(true)
         .sqlx_logging_level(LevelFilter::Debug)
         .sqlx_slow_statements_logging_settings(
-            LevelFilter::Warn,
+            LevelFilter::Off,
             core::time::Duration::from_millis(PG_SLOW_STATEMENT_THRESHOLD_MS),
         );
 
