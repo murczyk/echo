@@ -595,16 +595,47 @@ def build_inner_ssh_args(ct_conf: SSHConfig, use_jump: bool) -> List[str]:
         "-o",
         "ConnectTimeout=10",
         "-o",
+        "CheckHostIP=no",
+        "-o",
         "StrictHostKeyChecking=no",
         "-o",
         "UserKnownHostsFile=/dev/null",
         "-o",
         "GlobalKnownHostsFile=/dev/null",
+        "-o",
+        "KnownHostsCommand=/bin/true",
+        "-o",
+        "VerifyHostKeyDNS=no",
     ]
     if ct_conf.agent:
         args.append("-A")
     if use_jump and ct_conf.jump:
-        args.extend(["-J", ct_conf.jump])
+        proxy_args = [
+            "ssh",
+            "-F",
+            "/dev/null",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "ConnectTimeout=10",
+            "-o",
+            "CheckHostIP=no",
+            "-o",
+            "StrictHostKeyChecking=no",
+            "-o",
+            "UserKnownHostsFile=/dev/null",
+            "-o",
+            "GlobalKnownHostsFile=/dev/null",
+            "-o",
+            "KnownHostsCommand=/bin/true",
+            "-o",
+            "VerifyHostKeyDNS=no",
+        ]
+        if ct_conf.agent:
+            proxy_args.append("-A")
+        proxy_args.extend(["-W", "%h:%p", ct_conf.jump])
+        proxy_cmd = " ".join(shlex.quote(part) for part in proxy_args)
+        args.extend(["-o", f"ProxyCommand={proxy_cmd}"])
     args.append(ct_conf.target)
     return args
 
@@ -619,16 +650,47 @@ def build_rsync_ssh_args(ct_conf: SSHConfig, use_jump: bool) -> List[str]:
         "-o",
         "ConnectTimeout=10",
         "-o",
+        "CheckHostIP=no",
+        "-o",
         "StrictHostKeyChecking=no",
         "-o",
         "UserKnownHostsFile=/dev/null",
         "-o",
         "GlobalKnownHostsFile=/dev/null",
+        "-o",
+        "KnownHostsCommand=/bin/true",
+        "-o",
+        "VerifyHostKeyDNS=no",
     ]
     if ct_conf.agent:
         args.append("-A")
     if use_jump and ct_conf.jump:
-        args.extend(["-J", ct_conf.jump])
+        proxy_args = [
+            "ssh",
+            "-F",
+            "/dev/null",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "ConnectTimeout=10",
+            "-o",
+            "CheckHostIP=no",
+            "-o",
+            "StrictHostKeyChecking=no",
+            "-o",
+            "UserKnownHostsFile=/dev/null",
+            "-o",
+            "GlobalKnownHostsFile=/dev/null",
+            "-o",
+            "KnownHostsCommand=/bin/true",
+            "-o",
+            "VerifyHostKeyDNS=no",
+        ]
+        if ct_conf.agent:
+            proxy_args.append("-A")
+        proxy_args.extend(["-W", "%h:%p", ct_conf.jump])
+        proxy_cmd = " ".join(shlex.quote(part) for part in proxy_args)
+        args.extend(["-o", f"ProxyCommand={proxy_cmd}"])
     return args
 
 
