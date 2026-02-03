@@ -694,6 +694,27 @@ view user model shared route =
                         )
                     ]
             , HtmlX.viewIf (List.member model.reportTemplate [
+            RTBabak,
+            RTInterception
+            ]) <|
+                div [ class "p-3 bg-gray-100 text-gray-900 mb-4" ]
+                    [ div [ class "form-check" ]
+                        [ input
+                            [ class "form-check-input"
+                            , type_ "checkbox"
+                            , checked model.withoutModelTags
+                            , id "report-without-model-tags"
+                            , onClick ReportTagsWithoutBotTagsToggle
+                            ]
+                            []
+                        , label
+                            [ class "form-check-label"
+                            , for "report-without-model-tags"
+                            ]
+                            [ text "без автоматичних тегів" ]
+                        ]
+                    ]
+            , HtmlX.viewIf (List.member model.reportTemplate [
             RTTags,
             RTPelengs,
             RTBabak,

@@ -122,6 +122,7 @@ type Msg
     | GotUserInfo String (Result ApiError B.User)
     | ReportTagsOnlyThisUnitToggle
     | ReportTagsOnlyThisUnitForReportToggle
+    | ReportTagsWithoutBotTagsToggle
     | ReportAdvancedSendersToggle
     | DeleteMessageConfirm
     | DeleteMessageCancel
