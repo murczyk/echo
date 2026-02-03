@@ -26,68 +26,8 @@ use std::io::Stdout;
 use std::time::Duration;
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
-
-struct UnitData {
-    data: HashMap<Tab, Vec<UnitRow>>,
-}
-
-#[derive(Clone)]
-struct UnitRow {
-    recording: UnitRec,
-    target: Option<UnitRec>,
-    target_candidates: Vec<UnitRec>,
-    model: sigint_unit::Model,
-}
-
-#[derive(Clone, Debug)]
-struct UnitRec {
-    id: i64,
-    full_name: String,
-    // company: String,
-    // battalion: String,
-    // regiment: String,
-    // division: String,
-    // army: String,
-}
-
-impl UnitRec {
-    fn render(&self) -> String {
-        format!(" [{}] {}", self.id, self.full_name)
-    }
-}
-
-#[derive(
-    EnumIter, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash,
-)]
-enum Tab {
-    New,
-    Matched,
-    Ignore,
-}
-
-enum Action {
-    ScrollUp,
-    ScrollDown,
-    ScrollLeft,
-    ScrollRight,
-    PageUp,
-    PageDown,
-}
-
-impl Tab {
-    fn next_tab(tab: Tab, is_fwd: bool) -> Tab {
-        let tabs: Vec<_> = Tab::iter().collect();
-        let idx = tabs.iter().position(|&t| t == tab).unwrap_or(0);
-        let tabs_quantity = tabs.len();
-        let new_idx = if is_fwd {
-            idx + 1
-        } else {
-            idx + tabs_quantity - 1
-        };
-        tabs[new_idx % tabs_quantity]
-    }
-}
-
+use types::*;
+pub mod types;
 pub async fn run_import_unit_tui(
     mode: Mode,
     ps: ImportTuiPs,
@@ -101,12 +41,39 @@ pub async fn run_import_unit_tui(
     let etalon_full: EtalonData =
         serde_json::from_str(&etalon_txt).context(h!())?;
     let units = etalon_full.sigint_unit;
+    let data_to_import = load_unit_data(&db, units).await.c(h!())?;
 
     let mut terminal = setup_terminal().c(h!())?;
-    let data_to_import = run_loop(&db, &mut terminal, units).await;
+    let res_data = run_import_loop(&db, &mut terminal, &data_to_import.data).await;
     restore_terminal(&mut terminal).c(h!())?;
-    if let Some(data) = data_to_import.c(h!())? {
-        import_data(data, &db).await.c(h!())?;
+    if let Some(data) = res_data.c(h!())? {
+        import_data(data, data_to_import, &db).await.c(h!())?;
+    }
+    Ok(())
+}
+pub async fn run_import_network_tui(
+    mode: Mode,
+    ps: ImportTuiPs,
+) -> Result<(), AppError> {
+    info!("loading data from {}...", ps.path);
+    let db = new_pg_pool_from_mode(mode).await.c(h!())?;
+    let mut file_read = File::open(ps.path).await.context(h!())?;
+    let mut buffer = Vec::new();
+    file_read.read_to_end(&mut buffer).await.context(h!())?;
+    let etalon_txt = String::from_utf8_lossy(&buffer).to_string();
+    let etalon_full: EtalonData =
+        serde_json::from_str(&etalon_txt).context(h!())?;
+    let units = etalon_full.sigint_unit;
+    let unit_data = load_unit_data(&db, units).await.c(h!())?;
+    let network_units: Vec<sigint_network_unit::Model> = etalon_full.sigint_network_unit;
+    let networks: Vec<sigint_network::Model> = etalon_full.sigint_network;
+    let network_data = load_network_data(db, unit_data, network_units, networks).await.c(h!())?;
+
+    let mut terminal = setup_terminal().c(h!())?;
+    let network_data_to_import = run_import_loop(&db, &mut terminal, network_data.data).await;
+    restore_terminal(&mut terminal).c(h!())?;
+    if let Some(data) = network_data_to_import.c(h!())? {
+        import_network_data(data, network_data, &db).await.c(h!())?;
     }
     Ok(())
 }
@@ -127,17 +94,16 @@ fn restore_terminal(
     terminal.show_cursor()
 }
 
-async fn run_loop(
+async fn run_import_loop(
     db: &DatabaseConnection,
     terminal: &mut Terminal<CrosstermBackend<Stdout>>,
-    units: Vec<sigint_unit::Model>,
+    unit_data: &HashMap<Tab, Vec<UnitRow>>,
 ) -> Result<Option<Vec<UnitRow>>, AppError> {
     let poll = Duration::from_millis(SIGINT_INBOX_TUI_EVENT_POLL_MS);
-    let unit_data = load_unit_data(db, units).await.c(h!())?;
     let mut current_tab = Tab::New;
     let mut line_num = 0;
     terminal
-        .draw(|frame| draw_ui(frame, &unit_data, &current_tab, line_num))
+        .draw(|frame| draw_ui(frame, unit_data, &current_tab, line_num))
         .c(h!())?;
     loop {
         if !event::poll(poll).c(h!())? {
@@ -152,7 +118,6 @@ async fn run_loop(
         }
         let mut redraw = false;
         let tab_len = unit_data
-            .data
             .get(&current_tab)
             .map(|rows| rows.len())
             .unwrap_or(0);
@@ -242,13 +207,13 @@ async fn import_data(
     Ok(())
 }
 
-fn draw_ui(frame: &mut Frame, data: &UnitData, tab: &Tab, line_num: usize) {
+fn draw_ui(frame: &mut Frame, data: &HashMap<Tab, Vec<UnitRow>>, tab: &Tab, line_num: usize) {
     let tab_meta = data
         .data
         .iter()
         .map(|(k, v)| (*k, v.len()))
         .collect::<HashMap<_, _>>();
-    let data = data.data.get(tab).cloned().unwrap_or(vec![]);
+    let data = data.get(tab).cloned().unwrap_or(vec![]);
     let displayed_data = if data.len() == 0 {
         vec![]
     } else {
@@ -621,10 +586,6 @@ fn matches_quit(event: &Event) -> bool {
 
 fn matches_confirm(event: &Event) -> bool {
     matches_keycode(event, KeyCode::Enter)
-}
-
-fn matches_key(event: &Event, c: char) -> bool {
-    matches_keycode(event, KeyCode::Char(c))
 }
 
 fn matches_keycode(event: &Event, k: KeyCode) -> bool {
