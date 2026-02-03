@@ -2399,6 +2399,29 @@ export type LongPollRsp = {
   lastEventId: string | null;
 };
 
+export type EchoAccountBE = {
+  id: number;
+  area_of_responsibility: AreaOfResponsibility | null;
+  status: string;
+  created_at: number;
+  client_id: number | null;
+  display_name: string;
+  system_service_name: string | null;
+  description: string | null;
+  messenger: string;
+  phone_number: string;
+  api_login: string | null;
+  api_endpoint: string | null;
+  is_linked: boolean;
+  is_imported: boolean;
+  signal_port: string | null;
+  process_name: string | null;
+  attachments_path: string | null;
+  echo_client_id: string | null;
+  echo_account_id: string | null;
+  echo_client_lock_id: string | null;
+};
+
 export type EchoAccountF1 = {
   id: number;
   areaOfResponsibility: AreaOfResponsibility | null;
@@ -2431,7 +2454,7 @@ export type QrCodeRsp = {
 };
 
 export type AccountsRsp = {
-  accounts: Array<EchoAccountF1>;
+  accounts: Array<EchoAccountBE>;
 };
 
 export type IsAccountLinkedReq = {

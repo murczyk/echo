@@ -71,7 +71,7 @@ view : Model -> View Msg
 view _ =
     { title = "Адмін: організми (neo)"
     , body =
-        [ div [ class "w-full h-[calc(100vh-50px)] overflow-hidden" ]
+        [ div [ class "mt-4 px-4 w-full h-[calc(100vh-50px)] overflow-hidden" ]
             [ node "organisms-neo" [] [] ]
         ]
     }
