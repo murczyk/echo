@@ -588,6 +588,8 @@ def ensure_dir_exists(conf: SSHConfig, path: str) -> None:
 def build_inner_ssh_args(ct_conf: SSHConfig, use_jump: bool) -> List[str]:
     args = [
         "ssh",
+        "-F",
+        "/dev/null",
         "-o",
         "BatchMode=yes",
         "-o",
@@ -610,6 +612,8 @@ def build_inner_ssh_args(ct_conf: SSHConfig, use_jump: bool) -> List[str]:
 def build_rsync_ssh_args(ct_conf: SSHConfig, use_jump: bool) -> List[str]:
     args = [
         "ssh",
+        "-F",
+        "/dev/null",
         "-o",
         "BatchMode=yes",
         "-o",
