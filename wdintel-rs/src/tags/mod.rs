@@ -461,7 +461,6 @@ async fn get_inbox_message_model_errors(
                         .into_condition()
                 }),
         )
-        .filter(signal_message::Column::Deleted.eq(false))
         .join(
             JoinType::LeftJoin,
             sigint_inbox_item::Relation::SigintPost.def().on_condition(
