@@ -61,7 +61,7 @@ view : Shared.Model -> Model -> View Msg
 view _ _ =
     { title = "Адмін: панель керування (neo)"
     , body =
-        [ div [ class "mt-2 w-5/6 mx-auto" ]
+        [ div [ class "mt-4 px-4 w-5/6 mx-auto" ]
             [ node "control-panel-neo" [] [] ]
         ]
     }
