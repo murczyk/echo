@@ -86,3 +86,14 @@ Yes, all allowed, downtime is ok
 
 - srv-ci to ct-ci-neo migration: `uv run python migrate_vm_to_ct.py --vm-target=echo@10.190.254.45 --ct-target=echo@10.190.254.46 --vm-jump=ziggy@echo-mothership-02 --ct-jump=ziggy@echo-mothership-02 --ssh-agent`
 
+## ADDITIONAL: RSYNC ONLY POSTGRESQL
+
+As a shortcut, if you've finished migration but want to sync db data, use this:
+
+```
+ssh -A -J ziggy@echo-mothership-02 echo@10.190.254.19 \
+    'sudo -n env SSH_AUTH_SOCK=$SSH_AUTH_SOCK rsync -a --delete --chown=postgres:postgres \
+       --rsync-path "sudo -n rsync" \
+       -e "ssh -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o GlobalKnownHostsFile=/dev/null -A -J ziggy@echo-mothership-02" \
+       /var/lib/postgresql/14/main/ "echo@10.190.254.43:/var/lib/postgresql/14/main/"'
+```
