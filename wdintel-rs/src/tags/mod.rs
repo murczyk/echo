@@ -7,9 +7,10 @@ use crate::event_stream::types::{EventMsg, EventType};
 use crate::types::Env;
 use crate::types::*;
 use actix_web::web::Json;
-use actix_web::{delete, post, put};
+use actix_web::{delete, get, post, put};
 use futures::future::try_join_all;
 use sea_orm::*;
+use sea_query::{Expr, IntoCondition};
 
 pub mod modify;
 pub mod ordering;
@@ -433,6 +434,89 @@ async fn inbox_message_tags_rm(
 
     txn.commit().await.c(h!())?;
     Ok(Json(()))
+}
+
+#[get("/api/tags/{tag_id}/model-errors")]
+async fn get_inbox_message_model_errors(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    path: actix_web::web::Path<(i64,)>,
+) -> Result<Json<Vec<TagModelError>>, AppError> {
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Admin")
+        .await
+        .c(h!())?;
+
+    let tag_id = path.0;
+    let query = sigint_inbox_tag_model_error::Entity::find()
+        .filter(sigint_inbox_tag_model_error::Column::TagId.eq(tag_id))
+        .inner_join(sigint_inbox_item::Entity)
+        .join(
+            JoinType::InnerJoin,
+            sigint_inbox_item::Relation::SignalMessage
+                .def()
+                .on_condition(|_left, right| {
+                    Expr::col((right, signal_message::Column::Deleted))
+                        .eq(false)
+                        .into_condition()
+                }),
+        )
+        .filter(signal_message::Column::Deleted.eq(false))
+        .join(
+            JoinType::LeftJoin,
+            sigint_inbox_item::Relation::SigintPost.def().on_condition(
+                |_left, right| {
+                    Expr::col((right, sigint_post::Column::Deleted))
+                        .eq(false)
+                        .into_condition()
+                },
+            ),
+        );
+
+    let txn: DatabaseTransaction = env.dbx.begin().await.c(h!())?;
+
+    let errors = query
+        .select_only()
+        .column(sigint_inbox_tag_model_error::Column::SigintInboxItemId)
+        .column(sigint_inbox_tag_model_error::Column::Model)
+        .column(sigint_inbox_tag_model_error::Column::ModelLogin)
+        .column(sigint_inbox_tag_model_error::Column::Confidence)
+        .column(sigint_inbox_tag_model_error::Column::RemovedByLogin)
+        .column(sigint_inbox_tag_model_error::Column::RemovedAt)
+        .column(signal_message::Column::Body)
+        .column(signal_message::Column::Timestamp)
+        .column(sigint_inbox_item::Column::Freq)
+        .column(sigint_inbox_item::Column::Coords)
+        .column(sigint_inbox_item::Column::PostId)
+        .column(sigint_inbox_item::Column::Datetime)
+        .column_as(sigint_inbox_item::Column::LocationV2, "location_v2")
+        .column_as(sigint_post::Column::Name, "post_name")
+        .into_model::<TagModelErrorQueryDesc>()
+        .all(&txn)
+        .await
+        .c(h!())?;
+
+    let models: Vec<_> = errors
+        .into_iter()
+        .map(|item| TagModelError {
+            sigint_inbox_item_id: item.sigint_inbox_item_id,
+            model: item.model,
+            model_login: item.model_login,
+            confidence: item.confidence,
+            removed_by_login: item.removed_by_login,
+            removed_at: item.removed_at.timestamp_millis(),
+            body: item.body,
+            timestamp: item.timestamp.map(|ts| ts.and_utc().timestamp_millis()),
+            coords: item.coords,
+            freq: item.freq,
+            post_id: item.post_id,
+            datetime: item.datetime.map(|ts| ts.and_utc().timestamp_millis()),
+            location_v2: item.location_v2,
+            post_name: item.post_name,
+        })
+        .collect();
+
+    Ok(Json(models))
 }
 
 #[post("/api/tags/tag-model-error")]
