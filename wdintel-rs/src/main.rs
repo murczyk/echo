@@ -786,7 +786,8 @@ fn main() -> Result<(), AppError> {
         .expect("failed to install default rustls ring provider");
 
     env_logger::try_init_from_env(
-        env_logger::Env::new().default_filter_or("info,wdintel_rs=debug"),
+        env_logger::Env::new()
+            .default_filter_or("info,wdintel_rs=debug,sqlx::query=off"),
     )
     .ok();
 
