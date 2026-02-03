@@ -20,6 +20,7 @@ use crate::sigint::etalonka::query::*;
 use crate::sigint::etalonka::types::*;
 use crate::sigint::etalonka::util::*;
 use sea_orm::DatabaseConnection;
+use std::path::Path;
 use std::str::FromStr;
 
 const OLD_CALLSIGNS_COLOR: &str = "696969";
@@ -212,7 +213,22 @@ pub async fn generate_networks_docx_report(
     let _ = std::fs::create_dir_all(&outfolder);
 
     let outpath = outfolder.join(filename);
-    let file = std::fs::File::create(outpath.clone())?;
+    generate_networks_docx_report_to_path(
+        &outpath,
+        etalonka_type,
+        etalonka_data,
+    )
+    .await
+    .context(h!())?;
+    Ok(outpath)
+}
+
+pub async fn generate_networks_docx_report_to_path(
+    outpath: &Path,
+    etalonka_type: &EtalonkaReportType,
+    etalonka_data: EtalonkaData,
+) -> Result<(), AppError> {
+    let file = std::fs::File::create(outpath)?;
 
     let doc = match etalonka_type {
         EtalonkaReportType::AccordingToTheForm(settings) => {
@@ -224,7 +240,7 @@ pub async fn generate_networks_docx_report(
     };
 
     doc.build().pack(file).context(h!())?;
-    Ok(outpath)
+    Ok(())
 }
 
 pub struct EtalonkaData {
