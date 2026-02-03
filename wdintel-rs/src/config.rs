@@ -65,6 +65,7 @@ pub const MESSENGER_CLEANUP_ERR_SLEEP_SEC: u64 = 15;
 pub const LONG_POLL_SLEEP_MS: u64 = 5000;
 pub const NETWORK_INVALIDATION_BATCH_SIZE: u64 = 100; // actual limit in pg is around 25k, but it's better to do it in smaller batches
 pub const NETWORK_INVALIDATION_TASKS_FILTER_CHUNK: usize = 200;
+pub const NETWORK_INVALIDATION_QUERY_MAX_PARAMS: usize = 60_000; // keep under PG 65_535 parameter cap
 
 pub const ONEOFF_CALCULATE_SIGNAL_MESSAGE_GROUPS_SLEEP_SEC: u64 = 10;
 pub const ONEOFF_CALCULATE_SIGNAL_MESSAGR_GROUPS_BATCH_SIZE: u64 = 10000;
