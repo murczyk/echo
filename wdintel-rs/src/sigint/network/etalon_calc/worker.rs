@@ -434,11 +434,15 @@ async fn delete_original_tasks(
     if ids_to_delete.is_empty() {
         return Ok(());
     }
-    network_invalidation_task::Entity::delete_many()
-        .filter(network_invalidation_task::Column::Id.is_in(ids_to_delete))
-        .exec(db)
-        .await
-        .c(h!())?;
+    for id_chunk in ids_to_delete.chunks(NETWORK_INVALIDATION_DELETE_MAX_IDS) {
+        network_invalidation_task::Entity::delete_many()
+            .filter(
+                network_invalidation_task::Column::Id.is_in(id_chunk.to_vec()),
+            )
+            .exec(db)
+            .await
+            .c(h!())?;
+    }
     Ok(())
 }
 
