@@ -70,6 +70,8 @@ enum Action {
     ScrollDown,
     ScrollLeft,
     ScrollRight,
+    PageUp,
+    PageDown,
 }
 
 impl Tab {
@@ -130,7 +132,6 @@ async fn run_loop(
     terminal: &mut Terminal<CrosstermBackend<Stdout>>,
     units: Vec<sigint_unit::Model>,
 ) -> Result<Option<Vec<UnitRow>>, AppError> {
-    let units_len = units.len();
     let poll = Duration::from_millis(SIGINT_INBOX_TUI_EVENT_POLL_MS);
     let unit_data = load_unit_data(db, units).await.c(h!())?;
     let mut current_tab = Tab::New;
@@ -150,6 +151,12 @@ async fn run_loop(
             break;
         }
         let mut redraw = false;
+        let tab_len = unit_data
+            .data
+            .get(&current_tab)
+            .map(|rows| rows.len())
+            .unwrap_or(0);
+        let (first_visible, last_visible) = visible_range(tab_len, line_num);
         if let Some(new_action) = matches_action(&ev) {
             redraw = true;
             match new_action {
@@ -161,7 +168,7 @@ async fn run_loop(
                     }
                 }
                 Action::ScrollDown => {
-                    if line_num >= units_len {
+                    if tab_len == 0 || line_num >= tab_len - 1 {
                         redraw = false;
                     } else {
                         line_num += 1;
@@ -174,6 +181,22 @@ async fn run_loop(
                 Action::ScrollRight => {
                     current_tab = Tab::next_tab(current_tab, true);
                     line_num = 0;
+                }
+                Action::PageUp => {
+                    if tab_len == 0 || first_visible == 0 {
+                        redraw = false;
+                    } else {
+                        line_num = first_visible.saturating_sub(
+                            NETWORKS_IMPORT_TUI_ROWS_NUM_PAGE_SIZE,
+                        );
+                    }
+                }
+                Action::PageDown => {
+                    if tab_len == 0 || last_visible >= tab_len - 1 {
+                        redraw = false;
+                    } else {
+                        line_num = last_visible + 1;
+                    }
                 }
             }
         }
@@ -229,18 +252,25 @@ fn draw_ui(frame: &mut Frame, data: &UnitData, tab: &Tab, line_num: usize) {
     let displayed_data = if data.len() == 0 {
         vec![]
     } else {
-        let max_idx = data.len() - 1;
-        let since_idx = line_num.min(max_idx);
-        if max_idx < since_idx + NETWORKS_IMPORT_TUI_ROWS_NUM_PAGE_SIZE {
-            data[since_idx..].to_vec()
-        } else {
-            let till_idx_max =
-                since_idx + NETWORKS_IMPORT_TUI_ROWS_NUM_PAGE_SIZE;
-            let till_idx = till_idx_max.min(max_idx);
-            data[since_idx..=till_idx].to_vec()
-        }
+        let (since_idx, till_idx) = visible_range(data.len(), line_num);
+        data[since_idx..=till_idx].to_vec()
     };
     draw_rows(frame, displayed_data, tab_meta, tab);
+}
+
+fn visible_range(data_len: usize, line_num: usize) -> (usize, usize) {
+    if data_len == 0 {
+        return (0, 0);
+    }
+    let max_idx = data_len - 1;
+    let since_idx = line_num.min(max_idx);
+    let till_idx =
+        if max_idx < since_idx + NETWORKS_IMPORT_TUI_ROWS_NUM_PAGE_SIZE {
+            max_idx
+        } else {
+            since_idx + NETWORKS_IMPORT_TUI_ROWS_NUM_PAGE_SIZE
+        };
+    (since_idx, till_idx)
 }
 
 fn draw_rows(
@@ -576,6 +606,10 @@ fn matches_action(event: &Event) -> Option<Action> {
         Some(Action::ScrollLeft)
     } else if matches_keycode(event, KeyCode::Right) {
         Some(Action::ScrollRight)
+    } else if matches_keycode(event, KeyCode::PageUp) {
+        Some(Action::PageUp)
+    } else if matches_keycode(event, KeyCode::PageDown) {
+        Some(Action::PageDown)
     } else {
         None
     }
