@@ -6,12 +6,14 @@ use crate::sigint::unit::render_unit;
 use crate::sigint::unit::types::Unit;
 use crate::types::*;
 use crate::{h, new_pg_pool_from_mode, ImportTuiPs};
+use anyhow::Context;
 use crossterm::event::{self, Event, KeyCode};
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen,
     LeaveAlternateScreen,
 };
 use crossterm::{cursor, execute};
+use dialoguer::{theme::ColorfulTheme, Confirm};
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Style};
@@ -50,7 +52,7 @@ struct UnitRec {
 
 impl UnitRec {
     fn render(&self) -> String {
-        format!("{}] {}", self.id, self.full_name)
+        format!(" [{}] {}", self.id, self.full_name)
     }
 }
 
@@ -99,9 +101,12 @@ pub async fn run_import_unit_tui(
     let units = etalon_full.sigint_unit;
 
     let mut terminal = setup_terminal().c(h!())?;
-    let res = run_loop(&db, &mut terminal, units).await;
+    let data_to_import = run_loop(&db, &mut terminal, units).await;
     restore_terminal(&mut terminal).c(h!())?;
-    res
+    if let Some(data) = data_to_import.c(h!())? {
+        import_data(data, &db).await.c(h!())?;
+    }
+    Ok(())
 }
 
 fn setup_terminal() -> io::Result<Terminal<CrosstermBackend<Stdout>>> {
@@ -124,7 +129,7 @@ async fn run_loop(
     db: &DatabaseConnection,
     terminal: &mut Terminal<CrosstermBackend<Stdout>>,
     units: Vec<sigint_unit::Model>,
-) -> Result<(), AppError> {
+) -> Result<Option<Vec<UnitRow>>, AppError> {
     let units_len = units.len();
     let poll = Duration::from_millis(SIGINT_INBOX_TUI_EVENT_POLL_MS);
     let unit_data = load_unit_data(db, units).await.c(h!())?;
@@ -139,7 +144,7 @@ async fn run_loop(
         }
         let ev = event::read().c(h!())?;
         if matches_quit(&ev) {
-            return Ok(());
+            return Ok(None);
         }
         if matches_confirm(&ev) {
             break;
@@ -172,13 +177,6 @@ async fn run_loop(
                 }
             }
         }
-        if let Some(new_tab) = matches_tab(&ev) {
-            if !current_tab.eq(&new_tab) {
-                current_tab = new_tab;
-                redraw = true;
-                line_num = 0;
-            }
-        }
         if redraw {
             terminal
                 .draw(|frame| {
@@ -187,10 +185,9 @@ async fn run_loop(
                 .c(h!())?;
         }
     }
-    import_data(unit_data.data.get(&Tab::New).cloned().unwrap_or(vec![]), db)
-        .await
-        .c(h!())?;
-    Ok(())
+    Ok(Some(
+        unit_data.data.get(&Tab::New).cloned().unwrap_or_default(),
+    ))
 }
 
 async fn import_data(
@@ -199,6 +196,18 @@ async fn import_data(
 ) -> anyhow::Result<()> {
     if data.is_empty() {
         warn!("nothing to import!");
+        return Ok(());
+    }
+    let import_confirmed = Confirm::with_theme(&ColorfulTheme::default())
+        .with_prompt(format!(
+            "Are you sure you want to import {} records?",
+            data.len()
+        ))
+        .default(true)
+        .interact()
+        .context(h!())?;
+    if !import_confirmed {
+        info!("Import aborted.");
         return Ok(());
     }
     for rec in data {
@@ -225,7 +234,8 @@ fn draw_ui(frame: &mut Frame, data: &UnitData, tab: &Tab, line_num: usize) {
         if max_idx < since_idx + NETWORKS_IMPORT_TUI_ROWS_NUM_PAGE_SIZE {
             data[since_idx..].to_vec()
         } else {
-            let till_idx_max = since_idx + NETWORKS_IMPORT_TUI_ROWS_NUM_PAGE_SIZE;
+            let till_idx_max =
+                since_idx + NETWORKS_IMPORT_TUI_ROWS_NUM_PAGE_SIZE;
             let till_idx = till_idx_max.min(max_idx);
             data[since_idx..=till_idx].to_vec()
         }
@@ -248,19 +258,20 @@ fn draw_rows(
         ])
         .split(frame.size());
 
-    let header =
-        Paragraph::new(Line::from("Review mode. Press ENTER to confirm"));
+    let header = Paragraph::new(Line::from(
+        "UNITS: Review mode. Press ENTER to confirm or ESCAPE to quit",
+    ));
     frame.render_widget(header, root[0]);
 
     let green = Style::default().fg(Color::Green);
     let tab_labels = [
-        format!("New ({})", tab_meta.get(&Tab::New).copied().unwrap_or(0),),
+        format!("new ({})", tab_meta.get(&Tab::New).copied().unwrap_or(0),),
         format!(
-            "Matched ({})",
+            "matched ({})",
             tab_meta.get(&Tab::Matched).copied().unwrap_or(0),
         ),
         format!(
-            "Ignore ({})",
+            "ignore ({})",
             tab_meta.get(&Tab::Ignore).copied().unwrap_or(0),
         ),
     ];
@@ -556,18 +567,6 @@ fn from_unit(model: sigint_unit::Model, unit: Unit) -> UnitRec {
     }
 }
 
-fn matches_tab(event: &Event) -> Option<Tab> {
-    if matches_key(event, 'n') {
-        Some(Tab::New)
-    } else if matches_key(event, 'm') {
-        Some(Tab::Matched)
-    } else if matches_key(event, 'i') {
-        Some(Tab::Ignore)
-    } else {
-        None
-    }
-}
-
 fn matches_action(event: &Event) -> Option<Action> {
     if matches_keycode(event, KeyCode::Up) {
         Some(Action::ScrollUp)
@@ -583,11 +582,11 @@ fn matches_action(event: &Event) -> Option<Action> {
 }
 
 fn matches_quit(event: &Event) -> bool {
-    matches_key(event, 'c') || matches_keycode(event, KeyCode::Esc)
+    matches_keycode(event, KeyCode::Esc)
 }
 
 fn matches_confirm(event: &Event) -> bool {
-    matches_key(event, 'c') || matches_keycode(event, KeyCode::Enter)
+    matches_keycode(event, KeyCode::Enter)
 }
 
 fn matches_key(event: &Event, c: char) -> bool {

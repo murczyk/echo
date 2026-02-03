@@ -299,6 +299,10 @@ pub fn mk_s3_config(config: &Config) -> Result<Option<storage::S3Config>> {
 }
 
 pub fn read_config(mode: Mode) -> Result<Config, AppError> {
+    if let Ok(path) = std::env::var("ECHO_CONFIG_PATH") {
+        info!("reading config from {path}...");
+        return read_from_path(PathBuf::from(path));
+    }
     let folder = get_deploy_folder(mode).context(h!())?;
     let path = match mode {
         Mode::Live => folder.join("config.toml"),
