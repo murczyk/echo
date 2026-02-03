@@ -1555,24 +1555,43 @@ pub async fn fetch_networks(
     env: &actix_web::web::Data<Env>,
     master_keys: Vec<String>,
 ) -> Result<Vec<AnalysisStatsNetwork>, AppError> {
+    let login_value = user.id().c(h!())?;
+    fetch_networks_for_login(
+        &req.0,
+        login_value.as_str(),
+        &env.dbx,
+        master_keys,
+    )
+    .await
+}
+
+pub async fn fetch_networks_for_login(
+    req: &AnalysisStatsReq,
+    login_str: &str,
+    db: &DatabaseConnection,
+    master_keys: Vec<String>,
+) -> Result<Vec<AnalysisStatsNetwork>, AppError> {
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
 
     let instant = std::time::Instant::now();
 
-    let networks_query =
-        build_networks_query(&req, user, dt_since, dt_till, master_keys)?;
+    let networks_query = build_networks_query_for_login(
+        req,
+        login_str,
+        dt_since,
+        dt_till,
+        master_keys,
+    )?;
 
     let stmt = Statement::from_string(
         DbBackend::Postgres,
         networks_query.to_string(PostgresQueryBuilder),
     );
 
-    let networks_res: Vec<NetworksRes> = NetworksRes::find_by_statement(stmt)
-        .all(&env.dbx)
-        .await
-        .c(h!())?;
+    let networks_res: Vec<NetworksRes> =
+        NetworksRes::find_by_statement(stmt).all(db).await.c(h!())?;
 
     let mut networks = vec![];
     for x in networks_res {
@@ -1600,7 +1619,7 @@ pub async fn count_networks(
     let read_db = env.replica();
 
     let networks_query =
-        build_networks_query(&req, user, dt_since, dt_till, master_keys)?;
+        build_networks_query(&req.0, user, dt_since, dt_till, master_keys)?;
 
     // println!(
     //     "> network count res sql: {}",
@@ -1623,8 +1642,25 @@ pub async fn count_networks(
 }
 
 fn build_networks_query(
-    req: &&Json<AnalysisStatsReq>,
+    req: &AnalysisStatsReq,
     user: &Identity,
+    dt_since: NaiveDateTime,
+    dt_till: NaiveDateTime,
+    master_keys: Vec<String>,
+) -> Result<WithQuery, AppError> {
+    let login_value = user.id().c(h!())?;
+    build_networks_query_for_login(
+        req,
+        login_value.as_str(),
+        dt_since,
+        dt_till,
+        master_keys,
+    )
+}
+
+fn build_networks_query_for_login(
+    req: &AnalysisStatsReq,
+    login_str: &str,
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
     master_keys: Vec<String>,
@@ -1742,7 +1778,7 @@ fn build_networks_query(
         &req.or_with_extended_form,
         &req.filter_tags_option,
         &req.without_model_tags,
-        user.id().c(h!())?.as_str(),
+        login_str,
         req.report_tags_only_this_unit.unwrap_or(false),
     )
     .context(h!())?;

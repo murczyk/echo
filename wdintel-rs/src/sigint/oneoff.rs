@@ -1,15 +1,20 @@
-use crate::config::{get_tz, TAG_SUGGEST_WORKER_BATCH_SIZE};
-use crate::entities::{sigint_inbox_item, sigint_inbox_item_tag};
+use crate::config::{
+    get_tz, ONEOFF_ETALONKA_REPORT_OUTPUT_DIR, TAG_SUGGEST_WORKER_BATCH_SIZE,
+};
+use crate::entities::{
+    area_of_responsibility, sigint_inbox_item, sigint_inbox_item_tag,
+};
 use crate::error::AppError;
 use crate::types::{Mode, ShortContext};
 use crate::utils::parse_local_datetime;
 use crate::{h, OneoffSuggestInboxMessageTagsPs};
-use chrono::{Duration, NaiveDate, NaiveDateTime};
+use chrono::{Duration, NaiveDate, NaiveDateTime, Utc};
 use csv::Writer;
+use indicatif::ProgressBar;
 use log::{info, warn};
 use sea_orm::prelude::*;
 use sea_orm::*;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 pub async fn oneoff_fill_sigint_inbox_item_tags(
     mode: Mode,
@@ -158,8 +163,221 @@ pub async fn oneoff_tag_messages_report(
     Ok(())
 }
 
+pub async fn oneoff_etalonka_report_networks_from_rer_analysis(
+    mode: Mode,
+    ps: &crate::OneoffEtalonkaReportNetworksFromRerAnalysisPs,
+) -> Result<(), AppError> {
+    info!("starting oneoff_etalonka_report_networks_from_rer_analysis...");
+    let db = crate::new_pg_pool_from_mode(mode).await.c(h!())?;
+
+    let (start_date, end_date, start_ms, end_ms) =
+        parse_date_range_to_millis(&ps.start, &ps.end).c(h!())?;
+
+    let pb = ProgressBar::new(4);
+    pb.set_message("resolving aors");
+    let selected_aors = resolve_aor_ids(&db, &ps.only_aor).await?;
+    pb.inc(1);
+
+    pb.set_message("resolving groups");
+    let groups =
+        crate::messenger::group::get_identity_sigint_groups(&db, &ps.login)
+            .await
+            .c(h!())?;
+    pb.inc(1);
+
+    pb.set_message("selecting networks");
+    let analysis_req =
+        build_analysis_stats_req(start_ms, end_ms, selected_aors);
+    let networks =
+        crate::rer_importer::analysis::stats::fetch_networks_for_login(
+            &analysis_req,
+            &ps.login,
+            &db,
+            groups.clone(),
+        )
+        .await
+        .c(h!())?;
+    let network_ids = collect_network_ids(&networks);
+    if network_ids.is_empty() {
+        return Err(AppError::BL {
+            msg: "no networks matched for the provided filters".to_string(),
+        });
+    }
+    pb.inc(1);
+
+    pb.set_message("building report");
+    let report_req = build_etalonka_report_request(network_ids);
+    let networks_data =
+        crate::sigint::etalonka::query::load_networks_by_id(&db, &report_req)
+            .await
+            .c(h!())?;
+    let trace_id = uuid::Uuid::new_v4();
+    let etalonka_data = crate::sigint::etalonka::collect_etalonka_data(
+        &db,
+        &ps.login,
+        groups,
+        networks_data,
+        &report_req.etalonka_type,
+        trace_id,
+    )
+    .await
+    .c(h!())?;
+
+    std::fs::create_dir_all(ONEOFF_ETALONKA_REPORT_OUTPUT_DIR).c(h!())?;
+    let outpath = build_etalonka_output_path(start_date, end_date);
+    crate::sigint::etalonka::generate_networks_docx_report_to_path(
+        &outpath,
+        &report_req.etalonka_type,
+        etalonka_data,
+    )
+    .await
+    .c(h!())?;
+
+    pb.inc(1);
+    pb.finish_with_message(format!("saved {}", outpath.display()));
+    println!("> report saved to {}", outpath.display());
+    Ok(())
+}
+
 fn parse_local_date(val: &str) -> Result<NaiveDate, AppError> {
     Ok(NaiveDate::parse_from_str(val, "%Y-%m-%d").c(h!())?)
+}
+
+fn parse_date_range_to_millis(
+    start: &str,
+    end: &str,
+) -> Result<(NaiveDate, NaiveDate, i64, i64), AppError> {
+    let start_date = parse_local_date(start).c(h!())?;
+    let end_date = parse_local_date(end).c(h!())?;
+    if end_date <= start_date {
+        return Err(AppError::BL {
+            msg: format!(
+                "end date {} must be after start date {} (non-inclusive)",
+                end, start
+            ),
+        });
+    }
+
+    let start_utc = local_midnight_to_utc(start_date).c(h!())?;
+    let end_utc = local_midnight_to_utc(end_date).c(h!())?;
+    let start_ms = start_utc.and_utc().timestamp_millis();
+    let end_ms = end_utc.and_utc().timestamp_millis();
+    Ok((start_date, end_date, start_ms, end_ms))
+}
+
+async fn resolve_aor_ids(
+    db: &DatabaseConnection,
+    only_aor: &[String],
+) -> Result<Option<Vec<i64>>, AppError> {
+    if only_aor.is_empty() {
+        return Ok(None);
+    }
+
+    let unique_names: BTreeSet<String> = only_aor.iter().cloned().collect();
+
+    let aors = area_of_responsibility::Entity::find()
+        .filter(area_of_responsibility::Column::Deleted.eq(false))
+        .filter(
+            area_of_responsibility::Column::Name
+                .is_in(unique_names.iter().cloned()),
+        )
+        .all(db)
+        .await
+        .c(h!())?;
+
+    let found_names: HashSet<String> =
+        aors.iter().map(|a| a.name.clone()).collect();
+    let missing: Vec<String> = unique_names
+        .iter()
+        .filter(|name| !found_names.contains(*name))
+        .cloned()
+        .collect();
+    if !missing.is_empty() {
+        return Err(AppError::BL {
+            msg: format!("unknown aor names: {}", missing.join(", ")),
+        });
+    }
+
+    let ids: Vec<i64> = aors
+        .into_iter()
+        .map(|aor| aor.id)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    Ok(Some(ids))
+}
+
+fn build_analysis_stats_req(
+    start_ms: i64,
+    end_ms: i64,
+    selected_aors: Option<Vec<i64>>,
+) -> crate::rer_importer::types::AnalysisStatsReq {
+    crate::rer_importer::types::AnalysisStatsReq {
+        since_date_inclusive_ms: start_ms,
+        till_date_noninclusive_ms: end_ms,
+        selected_groups: None,
+        selected_senders: None,
+        selected_freqs: None,
+        selected_posts: None,
+        selected_callsigns: None,
+        selected_units: None,
+        selected_locations: None,
+        selected_aors,
+        or_with_extended_form: None,
+        or_bookmarked: None,
+        or_important: None,
+        or_with_coords: None,
+        search: None,
+        selected_tags: None,
+        selected_networks: None,
+        include_peleng_locations: None,
+        units_exact_match_only: None,
+        filter_tags_option: None,
+        without_model_tags: None,
+        report_tags_only_this_unit: None,
+    }
+}
+
+fn collect_network_ids(
+    networks: &[crate::rer_importer::types::AnalysisStatsNetwork],
+) -> Vec<i64> {
+    networks
+        .iter()
+        .map(|network| network.network_id)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+fn build_etalonka_report_request(
+    network_ids: Vec<i64>,
+) -> crate::sigint::etalonka::types::EtalonkaNetworkBatchReq {
+    crate::sigint::etalonka::types::EtalonkaNetworkBatchReq {
+        network_ids,
+        sort_by: None,
+        etalonka_type:
+            crate::sigint::etalonka::types::EtalonkaReportType::AccordingToTheForm(
+                crate::sigint::etalonka::types::EtalonkaSettings {
+                    active_freqs_only: true,
+                    include_sigint_signs: false,
+                    include_confirmation: false,
+                },
+            ),
+    }
+}
+
+fn build_etalonka_output_path(
+    start_date: NaiveDate,
+    end_date: NaiveDate,
+) -> std::path::PathBuf {
+    let timestamp = Utc::now().format("%Y-%m-%d-%H-%M-%S-%3f");
+    let filename = format!(
+        "etalonka_report_{}_to_{}_{}.docx",
+        start_date.format("%Y-%m-%d"),
+        end_date.format("%Y-%m-%d"),
+        timestamp
+    );
+    std::path::PathBuf::from(ONEOFF_ETALONKA_REPORT_OUTPUT_DIR).join(filename)
 }
 
 fn next_date(date: NaiveDate) -> Result<NaiveDate, AppError> {
