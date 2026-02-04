@@ -519,11 +519,17 @@ pub async fn read_aor_stats_aggregated(
     let batch_ids = batches.iter().map(|b| b.id).collect::<Vec<i64>>();
 
     let mut stats: HashMap<i64, i64> = stats_group_aor_id_5min::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            stats_group_aor_id_5min::Relation::AreaOfResponsibility.def(),
+        )
         .filter(interval_5mins_filter)
         .filter(
             stats_group_aor_id_5min::Column::SignalGroupBatchId
                 .eq_any(batch_ids.clone()),
         )
+        .filter(area_of_responsibility::Column::Deleted.eq(false))
+        .filter(area_of_responsibility::Column::IsTopLevel.eq(true))
         .all(&env.dbx)
         .await
         .c(h!())?
@@ -540,11 +546,17 @@ pub async fn read_aor_stats_aggregated(
             interval_day_filter = interval_day_filter.add(filter);
         }
         stats_group_aor_id_day::Entity::find()
+            .join(
+                JoinType::InnerJoin,
+                stats_group_aor_id_day::Relation::AreaOfResponsibility.def(),
+            )
             .filter(interval_day_filter)
             .filter(
                 stats_group_aor_id_day::Column::SignalGroupBatchId
                     .eq_any(batch_ids.clone()),
             )
+            .filter(area_of_responsibility::Column::Deleted.eq(false))
+            .filter(area_of_responsibility::Column::IsTopLevel.eq(true))
             .all(&env.dbx)
             .await
             .c(h!())?
