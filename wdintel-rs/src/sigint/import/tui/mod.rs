@@ -139,7 +139,7 @@ async fn run_import_loop(
             redraw = true;
             match new_action {
                 Action::ScrollUp => {
-                    if line_num <= 0 {
+                    if line_num == 0 {
                         redraw = false;
                     } else {
                         line_num -= 1;
@@ -181,7 +181,7 @@ async fn run_import_loop(
         if redraw {
             terminal
                 .draw(|frame| {
-                    draw_ui(title, frame, &tabs_data, &current_tab, line_num)
+                    draw_ui(title, frame, tabs_data, &current_tab, line_num)
                 })
                 .c(h!())?;
         }
@@ -212,15 +212,7 @@ async fn import_network_data(
     }
     let txn = db.begin().await.c(h!())?;
     for row in data {
-        let Some(rec) = row
-            .target
-            .clone()
-            .map(|t| network.models.get(&t.id))
-            .flatten()
-            .cloned()
-        else {
-            continue;
-        };
+        let rec = network.models.get(&row.recording.id).cloned().c(h!())?;
         let unit_id = network
             .model_to_unit_id
             .get(&row.recording.id)
@@ -243,6 +235,7 @@ async fn import_network_data(
         .c(h!())?;
     }
     txn.commit().await.c(h!())?;
+    info!("Import completed.");
     Ok(())
 }
 
@@ -267,20 +260,16 @@ async fn import_data(
         info!("Import aborted.");
         return Ok(());
     }
+    let txn = db.begin().await.c(h!())?;
     for row in data {
-        let Some(rec) = row
-            .target
-            .map(|t| units.models.get(&t.id))
-            .flatten()
-            .cloned()
-        else {
-            continue;
-        };
+        let rec = units.models.get(&row.recording.id).cloned().c(h!())?;
         let mut rec = rec.into_active_model();
         rec.id = NotSet;
         rec.created_at = NotSet;
-        rec.insert(db).await.c(h!())?;
+        rec.insert(&txn).await.c(h!())?;
     }
+    txn.commit().await.c(h!())?;
+    info!("Import completed.");
     Ok(())
 }
 
@@ -296,7 +285,7 @@ fn draw_ui(
         .map(|(k, v)| (*k, v.len()))
         .collect::<HashMap<_, _>>();
     let data = data.get(tab).cloned().unwrap_or(vec![]);
-    let displayed_data = if data.len() == 0 {
+    let displayed_data = if data.is_empty() {
         vec![]
     } else {
         let (since_idx, till_idx) = visible_range(data.len(), line_num);
@@ -372,7 +361,7 @@ fn draw_rows(
             '-'
         };
         underline.push_str(
-            &std::iter::repeat(ch).take(label.len()).collect::<String>(),
+            &std::iter::repeat_n(ch, label.len()).collect::<String>(),
         );
     }
     let tabs_lines = vec![
@@ -490,6 +479,23 @@ async fn load_network_data(
     let mut data = HashMap::new();
     let mut model_to_unit_id = HashMap::new();
 
+    let local_networks = sigint_network::Entity::find()
+        .find_with_related(sigint_network_unit::Entity)
+        .filter(sigint_network::Column::Deleted.eq(false))
+        .all(db)
+        .await
+        .c(h!())?;
+
+    let mut local_unit_networks = HashMap::new();
+    for (local_network, local_network_units) in local_networks {
+        for local_network_unit in local_network_units {
+            local_unit_networks
+                .entry(local_network_unit.unit_id)
+                .or_insert_with(Vec::new)
+                .push(local_network.clone());
+        }
+    }
+
     let mut local_unit_dictionary = HashMap::new();
     let mut imported_unit_id_to_local_unit_id_map = HashMap::new();
     let mut imported_unit_id_to_ignored_local_unit_ids_map = HashMap::new();
@@ -498,7 +504,7 @@ async fn load_network_data(
         for ignored_local_unit in unit.target_candidates {
             imported_unit_id_to_ignored_local_unit_ids_map
                 .entry(source_unit_id)
-                .or_insert_with(|| vec![])
+                .or_insert_with(Vec::new)
                 .push(ignored_local_unit);
         }
         let Some(target) = unit.target else {
@@ -514,29 +520,15 @@ async fn load_network_data(
         for ignored_local_unit in unit.target_candidates {
             imported_unit_id_to_ignored_local_unit_ids_map
                 .entry(source_unit_id)
-                .or_insert_with(|| vec![])
+                .or_insert_with(Vec::new)
                 .push(ignored_local_unit);
         }
     }
 
-    let local_networks = sigint_network::Entity::find()
-        .find_with_related(sigint_network_unit::Entity)
-        .filter(sigint_network::Column::Deleted.eq(false))
-        .all(db)
-        .await
-        .c(h!())?;
-
-    let mut local_unit_networks = HashMap::new();
-    for (local_network, local_network_units) in local_networks {
-        for local_network_unit in local_network_units {
-            local_unit_networks
-                .entry(local_network_unit.unit_id)
-                .or_insert_with(|| vec![])
-                .push(local_network.clone());
-        }
-    }
-
     for imported_network in imported_networks {
+        if imported_network.deleted {
+            continue;
+        }
         let mut network_row = DataRow {
             recording: from_network(imported_network.clone(), None),
             target: None,
@@ -563,7 +555,7 @@ async fn load_network_data(
                 network_row.recording.full_name
             );
             data.entry(Tab::Ignore)
-                .or_insert_with(|| vec![])
+                .or_insert_with(Vec::new)
                 .push(network_row);
             continue;
         }
@@ -577,7 +569,7 @@ async fn load_network_data(
             })
             .unwrap_or_default();
         let ignored_matches = collect_matching_unit_networks(
-            &mut local_unit_networks,
+            &local_unit_networks,
             ignored_local_units,
         );
         network_row.target_candidates = ignored_matches;
@@ -595,19 +587,19 @@ async fn load_network_data(
             .and_then(|id| local_unit_dictionary.get(&id).cloned());
         let Some(local_unit) = local_unit else {
             data.entry(Tab::Ignore)
-                .or_insert_with(|| vec![])
+                .or_insert_with(Vec::new)
                 .push(network_row);
             continue;
         };
         model_to_unit_id.insert(network_row.recording.id, local_unit.id);
         let matches = collect_matching_unit_networks(
-            &mut local_unit_networks,
+            &local_unit_networks,
             vec![local_unit],
         );
         let tab = if matches.len() == 1 {
             network_row.target = matches.into_iter().next();
             Tab::Matched
-        } else if matches.len() == 0 {
+        } else if matches.is_empty() {
             network_row.target = None;
             Tab::New
         } else {
@@ -617,7 +609,7 @@ async fn load_network_data(
             }
             Tab::Ignore
         };
-        data.entry(tab).or_insert_with(|| vec![]).push(network_row);
+        data.entry(tab).or_insert_with(Vec::new).push(network_row);
     }
     Ok(NetworkData {
         data,
@@ -640,7 +632,7 @@ fn collect_matching_unit_networks(
             continue;
         };
         local_unit_networks
-            .into_iter()
+            .iter()
             .map(|network| from_network(network.clone(), Some(unit.clone())))
             .for_each(|m| matches.push(m));
     }
@@ -677,7 +669,7 @@ async fn load_unit_data(
         let mut fuzzy_matches = vec![];
         for l in &local_units {
             let (_, lu) = l;
-            let n2 = crate::sigint::unit::unit_name(&lu).trim().to_lowercase();
+            let n2 = crate::sigint::unit::unit_name(lu).trim().to_lowercase();
             if n2.is_empty() {
                 continue;
             }
@@ -696,7 +688,7 @@ async fn load_unit_data(
                 }
             }
         }
-        if perfect_matches.len() > 0 {
+        if !perfect_matches.is_empty() {
             for m in matches {
                 fuzzy_matches.push(m);
             }
@@ -737,7 +729,7 @@ async fn load_unit_data(
                 .collect();
             unit_row.target = Some(fuzzy_target);
             Tab::Matched
-        } else if matches.len() == 0 {
+        } else if matches.is_empty() {
             unit_row.target = None;
             unit_row.target_candidates = fuzzy_matches;
             Tab::New
@@ -746,7 +738,7 @@ async fn load_unit_data(
             unit_row.target_candidates = [matches, fuzzy_matches].concat();
             Tab::Ignore
         };
-        data.entry(tab).or_insert_with(|| vec![]).push(unit_row);
+        data.entry(tab).or_insert_with(Vec::new).push(unit_row);
     }
     Ok(UnitData { data, models })
 }
