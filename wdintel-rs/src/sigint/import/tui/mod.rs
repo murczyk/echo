@@ -68,13 +68,18 @@ pub async fn run_import_network_tui(
         serde_json::from_str(&etalon_txt).context(h!())?;
     let units = etalon_full.sigint_unit;
     let unit_data = load_unit_data(&db, units, false).await.c(h!())?;
-    let network_units: Vec<sigint_network_unit::Model> =
+    let imported_network_units: Vec<sigint_network_unit::Model> =
         etalon_full.sigint_network_unit;
-    let networks: Vec<sigint_network::Model> = etalon_full.sigint_network;
-    let network_data =
-        load_network_data(&db, unit_data, network_units, networks)
-            .await
-            .c(h!())?;
+    let imported_networks: Vec<sigint_network::Model> =
+        etalon_full.sigint_network;
+    let network_data = load_network_data(
+        &db,
+        unit_data,
+        imported_network_units,
+        imported_networks,
+    )
+    .await
+    .c(h!())?;
 
     let mut terminal = setup_terminal().c(h!())?;
     let res_data =
@@ -205,33 +210,39 @@ async fn import_network_data(
         info!("Import aborted.");
         return Ok(());
     }
+    let txn = db.begin().await.c(h!())?;
     for row in data {
-        let Some((rec, unit_ids)) = row
+        let Some(rec) = row
             .target
-            .map(|t| network.models_to_unit_ids.get(&t.id))
+            .clone()
+            .map(|t| network.models.get(&t.id))
             .flatten()
             .cloned()
         else {
             continue;
         };
+        let unit_id = network
+            .model_to_unit_id
+            .get(&row.recording.id)
+            .cloned()
+            .c(h!())?;
         let mut rec = rec.into_active_model();
         rec.id = NotSet;
         rec.created_at = NotSet;
-        let new_network = rec.insert(db).await.c(h!())?;
-        for unit_id in unit_ids {
-            sigint_network_unit::ActiveModel {
-                id: NotSet,
-                network_id: Set(new_network.id),
-                unit_id: Set(unit_id),
-                created_at: NotSet,
-                sigint_origin_id: NotSet,
-                original_id: NotSet,
-            }
-            .insert(db)
-            .await
-            .c(h!())?;
+        let new_network = rec.insert(&txn).await.c(h!())?;
+        sigint_network_unit::ActiveModel {
+            id: NotSet,
+            network_id: Set(new_network.id),
+            unit_id: Set(unit_id),
+            created_at: NotSet,
+            sigint_origin_id: NotSet,
+            original_id: NotSet,
         }
+        .insert(&txn)
+        .await
+        .c(h!())?;
     }
+    txn.commit().await.c(h!())?;
     Ok(())
 }
 
@@ -468,126 +479,172 @@ fn render_column(
 async fn load_network_data(
     db: &DatabaseConnection,
     mut unit_data: UnitData,
-    network_units: Vec<sigint_network_unit::Model>,
-    networks: Vec<sigint_network::Model>,
+    all_imported_network_units: Vec<sigint_network_unit::Model>,
+    imported_networks: Vec<sigint_network::Model>,
 ) -> anyhow::Result<NetworkData> {
-    let mut data = HashMap::<Tab, Vec<DataRow>>::new();
-    let mut models_to_unit_ids = HashMap::new();
-    let local_networks = sigint_network::Entity::find()
-        .find_with_related(sigint_network_unit::Entity)
-        .filter(sigint_unit::Column::Deleted.eq(false))
-        .all(db)
-        .await
-        .c(h!())?;
-    let mut local_units_map = HashMap::new();
+    let models = imported_networks
+        .clone()
+        .into_iter()
+        .map(|x| (x.id, x))
+        .collect();
+    let mut data = HashMap::new();
+    let mut model_to_unit_id = HashMap::new();
+
+    let mut local_unit_dictionary = HashMap::new();
+    let mut imported_unit_id_to_local_unit_id_map = HashMap::new();
+    let mut imported_unit_id_to_ignored_local_unit_ids_map = HashMap::new();
     for unit in unit_data.data.remove(&Tab::Matched).unwrap_or_default() {
+        let source_unit_id = unit.recording.id;
+        for ignored_local_unit in unit.target_candidates {
+            imported_unit_id_to_ignored_local_unit_ids_map
+                .entry(source_unit_id)
+                .or_insert_with(|| vec![])
+                .push(ignored_local_unit);
+        }
         let Some(target) = unit.target else {
             continue;
         };
-        let source_unit_id = unit.recording.id;
         let target_unit_id = target.id;
-        local_units_map.insert(target_unit_id, (source_unit_id, target));
+        local_unit_dictionary.insert(target_unit_id, target);
+        imported_unit_id_to_local_unit_id_map
+            .insert(source_unit_id, target_unit_id);
+    }
+    for unit in unit_data.data.remove(&Tab::Ignore).unwrap_or_default() {
+        let source_unit_id = unit.recording.id;
+        for ignored_local_unit in unit.target_candidates {
+            imported_unit_id_to_ignored_local_unit_ids_map
+                .entry(source_unit_id)
+                .or_insert_with(|| vec![])
+                .push(ignored_local_unit);
+        }
     }
 
-    let mut local_unit_networks_map = HashMap::new();
+    let local_networks = sigint_network::Entity::find()
+        .find_with_related(sigint_network_unit::Entity)
+        .filter(sigint_network::Column::Deleted.eq(false))
+        .all(db)
+        .await
+        .c(h!())?;
+
+    let mut local_unit_networks = HashMap::new();
     for (local_network, local_network_units) in local_networks {
         for local_network_unit in local_network_units {
-            if let Some((source_unit_id, unit)) =
-                local_units_map.get(&local_network_unit.unit_id)
-            {
-                local_unit_networks_map
-                    .entry(source_unit_id)
-                    .or_insert_with(|| vec![])
-                    .push((local_network.clone(), unit.clone()));
-            }
+            local_unit_networks
+                .entry(local_network_unit.unit_id)
+                .or_insert_with(|| vec![])
+                .push(local_network.clone());
         }
     }
-    for imported_network in networks {
-        let mut matches = vec![];
-        let mut matches_by_unit = vec![];
-        let imported_network_units = network_units
-            .iter()
-            .filter(|u| u.network_id.eq(&imported_network.id))
-            .collect_vec();
-        let network_unit = if imported_network_units.len() == 1 {
-            imported_network_units
-                .clone()
-                .into_iter()
-                .next()
-                .and_then(|u| local_units_map.get(&u.id).cloned())
-                .map(|(_, rec)| rec)
-        } else {
-            None
-        };
-        for imported_network_unit in imported_network_units {
-            let local_network_to_units = local_unit_networks_map
-                .get(&imported_network_unit.unit_id)
-                .cloned()
-                .unwrap_or_default();
-            let local_unit_ids = local_network_to_units
-                .iter()
-                .map(|(_, unit)| unit.id)
-                .collect_vec();
-            models_to_unit_ids.insert(
-                imported_network.id,
-                (imported_network.clone(), local_unit_ids),
-            );
-            for (local_network, unit) in local_network_to_units {
-                if local_network
-                    .name
-                    .trim()
-                    .to_lowercase()
-                    .eq(&imported_network.name.trim().to_lowercase())
-                {
-                    matches.push((local_network, unit));
-                } else {
-                    matches_by_unit.push((local_network, unit));
-                }
-            }
-        }
+
+    for imported_network in imported_networks {
         let mut network_row = DataRow {
-            recording: from_network(imported_network, network_unit),
+            recording: from_network(imported_network.clone(), None),
             target: None,
             target_candidates: vec![],
         };
+
+        let imported_network_units = all_imported_network_units
+            .iter()
+            .filter(|u| u.network_id.eq(&imported_network.id))
+            .collect_vec();
+        if imported_network_units.len() > 1 {
+            let units = imported_network_units
+                .iter()
+                .map(|u| {
+                    unit_data
+                        .models
+                        .get(&u.unit_id)
+                        .map(|u| u.name.clone())
+                        .unwrap_or("НВ".to_string())
+                })
+                .join(", ");
+            network_row.recording.full_name = format!(
+                "!! {} MAPPED TO MULTIPLE UNITS: {units}",
+                network_row.recording.full_name
+            );
+            data.entry(Tab::Ignore)
+                .or_insert_with(|| vec![])
+                .push(network_row);
+            continue;
+        }
+        let imported_unit_id =
+            imported_network_units.into_iter().next().map(|x| x.unit_id);
+        let ignored_local_units = imported_unit_id
+            .and_then(|id| {
+                imported_unit_id_to_ignored_local_unit_ids_map
+                    .get(&id)
+                    .cloned()
+            })
+            .unwrap_or_default();
+        let ignored_matches = collect_matching_unit_networks(
+            &mut local_unit_networks,
+            ignored_local_units,
+        );
+        network_row.target_candidates = ignored_matches;
+        let imported_unit = imported_unit_id
+            .and_then(|unit_id| unit_data.models.get(&unit_id))
+            .and_then(|u| {
+                render_unit(u).ok().map(|u2| from_unit(u.clone(), u2))
+            });
+        network_row.recording =
+            from_network(imported_network.clone(), imported_unit);
+        let local_unit = imported_unit_id
+            .and_then(|unit_id| {
+                imported_unit_id_to_local_unit_id_map.get(&unit_id).cloned()
+            })
+            .and_then(|id| local_unit_dictionary.get(&id).cloned());
+        let Some(local_unit) = local_unit else {
+            data.entry(Tab::Ignore)
+                .or_insert_with(|| vec![])
+                .push(network_row);
+            continue;
+        };
+        model_to_unit_id.insert(network_row.recording.id, local_unit.id);
+        let matches = collect_matching_unit_networks(
+            &mut local_unit_networks,
+            vec![local_unit],
+        );
         let tab = if matches.len() == 1 {
-            network_row.target = from_m_network(matches.into_iter().next());
-            network_row.target_candidates = from_network_vec(matches_by_unit);
+            network_row.target = matches.into_iter().next();
             Tab::Matched
         } else if matches.len() == 0 {
             network_row.target = None;
-            network_row.target_candidates = from_network_vec(matches_by_unit);
             Tab::New
         } else {
             network_row.target = None;
-            network_row.target_candidates =
-                from_network_vec([matches, matches_by_unit].concat());
+            for m in matches {
+                network_row.target_candidates.push(m);
+            }
             Tab::Ignore
         };
         data.entry(tab).or_insert_with(|| vec![]).push(network_row);
     }
     Ok(NetworkData {
         data,
-        models_to_unit_ids,
+        models,
+        model_to_unit_id,
     })
 }
 
-fn from_m_network(
-    m_network: Option<(sigint_network::Model, DataRec)>,
-) -> Option<DataRec> {
-    let Some((network, unit)) = m_network else {
-        return None;
-    };
-    Some(from_network(network, Some(unit)))
-}
-
-fn from_network_vec(
-    networks: Vec<(sigint_network::Model, DataRec)>,
+fn collect_matching_unit_networks(
+    local_unit_networks: &HashMap<i64, Vec<sigint_network::Model>>,
+    local_units: Vec<DataRec>,
 ) -> Vec<DataRec> {
-    networks
+    let mut matches = vec![];
+    let units_dictionary = local_units
         .into_iter()
-        .map(|(network, unit)| from_network(network, Some(unit)))
-        .collect()
+        .map(|x| (x.id, x))
+        .collect::<HashMap<_, _>>();
+    for (unit_id, local_unit_networks) in local_unit_networks {
+        let Some(unit) = units_dictionary.get(unit_id).cloned() else {
+            continue;
+        };
+        local_unit_networks
+            .into_iter()
+            .map(|network| from_network(network.clone(), Some(unit.clone())))
+            .for_each(|m| matches.push(m));
+    }
+    matches
 }
 
 async fn load_unit_data(
@@ -777,13 +834,9 @@ fn from_network(
     network: sigint_network::Model,
     unit: Option<DataRec>,
 ) -> DataRec {
-    let unit_name = unit.map(|unit| unit.full_name);
+    let unit_name = unit.map(|unit| unit.full_name).unwrap_or("нв".to_string());
     let network_name = network.name.trim();
-    let full_name = match unit_name {
-        None => network_name.to_string(),
-        Some(unit_name) => format!("{network_name} ({unit_name})"),
-    };
-
+    let full_name = format!("{network_name} {unit_name}");
     DataRec {
         id: network.id,
         full_name,

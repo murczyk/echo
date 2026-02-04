@@ -9,7 +9,8 @@ pub struct UnitData {
 
 pub struct NetworkData {
     pub data: HashMap<Tab, Vec<DataRow>>,
-    pub models_to_unit_ids: HashMap<i64, (sigint_network::Model, Vec<i64>)>,
+    pub models: HashMap<i64, sigint_network::Model>,
+    pub model_to_unit_id: HashMap<i64, i64>,
 }
 
 #[derive(Clone)]
