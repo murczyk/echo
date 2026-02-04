@@ -84,6 +84,7 @@ pub struct InboxMessageTagModelErrorReq {
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub struct TagModelError {
+    pub id: i64,
     pub sigint_inbox_item_id: i64,
     pub model: String,
     pub model_login: Option<String>,
@@ -102,6 +103,7 @@ pub struct TagModelError {
 
 #[derive(FromQueryResult)]
 pub struct TagModelErrorQueryDesc {
+    pub id: i64,
     pub sigint_inbox_item_id: i64,
     pub model: String,
     pub model_login: Option<String>,

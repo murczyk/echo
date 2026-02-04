@@ -476,6 +476,7 @@ async fn get_inbox_message_model_errors(
 
     let errors = query
         .select_only()
+        .column(sigint_inbox_tag_model_error::Column::Id)
         .column(sigint_inbox_tag_model_error::Column::SigintInboxItemId)
         .column(sigint_inbox_tag_model_error::Column::Model)
         .column(sigint_inbox_tag_model_error::Column::ModelLogin)
@@ -498,6 +499,7 @@ async fn get_inbox_message_model_errors(
     let models: Vec<_> = errors
         .into_iter()
         .map(|item| TagModelError {
+            id: item.id,
             sigint_inbox_item_id: item.sigint_inbox_item_id,
             model: item.model,
             model_login: item.model_login,
