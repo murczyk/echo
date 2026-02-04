@@ -27,7 +27,9 @@ use std::time::Duration;
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
 use types::*;
+
 pub mod types;
+
 pub async fn run_import_unit_tui(
     mode: Mode,
     ps: ImportTuiPs,
@@ -41,10 +43,11 @@ pub async fn run_import_unit_tui(
     let etalon_full: EtalonData =
         serde_json::from_str(&etalon_txt).context(h!())?;
     let units = etalon_full.sigint_unit;
-    let data_to_import = load_unit_data(&db, units).await.c(h!())?;
+    let data_to_import = load_unit_data(&db, units, true).await.c(h!())?;
 
     let mut terminal = setup_terminal().c(h!())?;
-    let res_data = run_import_loop(&db, &mut terminal, &data_to_import.data).await;
+    let res_data =
+        run_import_loop("UNITS", &mut terminal, &data_to_import.data).await;
     restore_terminal(&mut terminal).c(h!())?;
     if let Some(data) = res_data.c(h!())? {
         import_data(data, data_to_import, &db).await.c(h!())?;
@@ -64,15 +67,20 @@ pub async fn run_import_network_tui(
     let etalon_full: EtalonData =
         serde_json::from_str(&etalon_txt).context(h!())?;
     let units = etalon_full.sigint_unit;
-    let unit_data = load_unit_data(&db, units).await.c(h!())?;
-    let network_units: Vec<sigint_network_unit::Model> = etalon_full.sigint_network_unit;
+    let unit_data = load_unit_data(&db, units, false).await.c(h!())?;
+    let network_units: Vec<sigint_network_unit::Model> =
+        etalon_full.sigint_network_unit;
     let networks: Vec<sigint_network::Model> = etalon_full.sigint_network;
-    let network_data = load_network_data(db, unit_data, network_units, networks).await.c(h!())?;
+    let network_data =
+        load_network_data(&db, unit_data, network_units, networks)
+            .await
+            .c(h!())?;
 
     let mut terminal = setup_terminal().c(h!())?;
-    let network_data_to_import = run_import_loop(&db, &mut terminal, network_data.data).await;
+    let res_data =
+        run_import_loop("NETWORKS", &mut terminal, &network_data.data).await;
     restore_terminal(&mut terminal).c(h!())?;
-    if let Some(data) = network_data_to_import.c(h!())? {
+    if let Some(data) = res_data.c(h!())? {
         import_network_data(data, network_data, &db).await.c(h!())?;
     }
     Ok(())
@@ -95,15 +103,15 @@ fn restore_terminal(
 }
 
 async fn run_import_loop(
-    db: &DatabaseConnection,
+    title: &str,
     terminal: &mut Terminal<CrosstermBackend<Stdout>>,
-    unit_data: &HashMap<Tab, Vec<UnitRow>>,
-) -> Result<Option<Vec<UnitRow>>, AppError> {
+    tabs_data: &HashMap<Tab, Vec<DataRow>>,
+) -> Result<Option<Vec<DataRow>>, AppError> {
     let poll = Duration::from_millis(SIGINT_INBOX_TUI_EVENT_POLL_MS);
     let mut current_tab = Tab::New;
     let mut line_num = 0;
     terminal
-        .draw(|frame| draw_ui(frame, unit_data, &current_tab, line_num))
+        .draw(|frame| draw_ui(title, frame, tabs_data, &current_tab, line_num))
         .c(h!())?;
     loop {
         if !event::poll(poll).c(h!())? {
@@ -117,7 +125,7 @@ async fn run_import_loop(
             break;
         }
         let mut redraw = false;
-        let tab_len = unit_data
+        let tab_len = tabs_data
             .get(&current_tab)
             .map(|rows| rows.len())
             .unwrap_or(0);
@@ -168,18 +176,17 @@ async fn run_import_loop(
         if redraw {
             terminal
                 .draw(|frame| {
-                    draw_ui(frame, &unit_data, &current_tab, line_num)
+                    draw_ui(title, frame, &tabs_data, &current_tab, line_num)
                 })
                 .c(h!())?;
         }
     }
-    Ok(Some(
-        unit_data.data.get(&Tab::New).cloned().unwrap_or_default(),
-    ))
+    Ok(Some(tabs_data.get(&Tab::New).cloned().unwrap_or_default()))
 }
 
-async fn import_data(
-    data: Vec<UnitRow>,
+async fn import_network_data(
+    data: Vec<DataRow>,
+    network: NetworkData,
     db: &DatabaseConnection,
 ) -> anyhow::Result<()> {
     if data.is_empty() {
@@ -188,7 +195,7 @@ async fn import_data(
     }
     let import_confirmed = Confirm::with_theme(&ColorfulTheme::default())
         .with_prompt(format!(
-            "Are you sure you want to import {} records?",
+            "Are you sure you want to import {} networks?",
             data.len()
         ))
         .default(true)
@@ -198,8 +205,67 @@ async fn import_data(
         info!("Import aborted.");
         return Ok(());
     }
-    for rec in data {
-        let mut rec = rec.model.into_active_model();
+    for row in data {
+        let Some((rec, unit_ids)) = row
+            .target
+            .map(|t| network.models_to_unit_ids.get(&t.id))
+            .flatten()
+            .cloned()
+        else {
+            continue;
+        };
+        let mut rec = rec.into_active_model();
+        rec.id = NotSet;
+        rec.created_at = NotSet;
+        let new_network = rec.insert(db).await.c(h!())?;
+        for unit_id in unit_ids {
+            sigint_network_unit::ActiveModel {
+                id: NotSet,
+                network_id: Set(new_network.id),
+                unit_id: Set(unit_id),
+                created_at: NotSet,
+                sigint_origin_id: NotSet,
+                original_id: NotSet,
+            }
+            .insert(db)
+            .await
+            .c(h!())?;
+        }
+    }
+    Ok(())
+}
+
+async fn import_data(
+    data: Vec<DataRow>,
+    units: UnitData,
+    db: &DatabaseConnection,
+) -> anyhow::Result<()> {
+    if data.is_empty() {
+        warn!("nothing to import!");
+        return Ok(());
+    }
+    let import_confirmed = Confirm::with_theme(&ColorfulTheme::default())
+        .with_prompt(format!(
+            "Are you sure you want to import {} units?",
+            data.len()
+        ))
+        .default(true)
+        .interact()
+        .context(h!())?;
+    if !import_confirmed {
+        info!("Import aborted.");
+        return Ok(());
+    }
+    for row in data {
+        let Some(rec) = row
+            .target
+            .map(|t| units.models.get(&t.id))
+            .flatten()
+            .cloned()
+        else {
+            continue;
+        };
+        let mut rec = rec.into_active_model();
         rec.id = NotSet;
         rec.created_at = NotSet;
         rec.insert(db).await.c(h!())?;
@@ -207,9 +273,14 @@ async fn import_data(
     Ok(())
 }
 
-fn draw_ui(frame: &mut Frame, data: &HashMap<Tab, Vec<UnitRow>>, tab: &Tab, line_num: usize) {
+fn draw_ui(
+    title: &str,
+    frame: &mut Frame,
+    data: &HashMap<Tab, Vec<DataRow>>,
+    tab: &Tab,
+    line_num: usize,
+) {
     let tab_meta = data
-        .data
         .iter()
         .map(|(k, v)| (*k, v.len()))
         .collect::<HashMap<_, _>>();
@@ -220,7 +291,7 @@ fn draw_ui(frame: &mut Frame, data: &HashMap<Tab, Vec<UnitRow>>, tab: &Tab, line
         let (since_idx, till_idx) = visible_range(data.len(), line_num);
         data[since_idx..=till_idx].to_vec()
     };
-    draw_rows(frame, displayed_data, tab_meta, tab);
+    draw_rows(title, frame, displayed_data, tab_meta, tab);
 }
 
 fn visible_range(data_len: usize, line_num: usize) -> (usize, usize) {
@@ -239,8 +310,9 @@ fn visible_range(data_len: usize, line_num: usize) -> (usize, usize) {
 }
 
 fn draw_rows(
+    title: &str,
     frame: &mut Frame,
-    rows: Vec<UnitRow>,
+    rows: Vec<DataRow>,
     tab_meta: HashMap<Tab, usize>,
     current_tab: &Tab,
 ) {
@@ -253,9 +325,9 @@ fn draw_rows(
         ])
         .split(frame.size());
 
-    let header = Paragraph::new(Line::from(
-        "UNITS: Review mode. Press ENTER to confirm or ESCAPE to quit",
-    ));
+    let header = Paragraph::new(Line::from(format!(
+        "{title}: Review mode. Press ENTER to confirm or ESCAPE to quit"
+    )));
     frame.render_widget(header, root[0]);
 
     let green = Style::default().fg(Color::Green);
@@ -312,7 +384,7 @@ fn draw_rows(
         .split(root[2]);
 
     render_column(frame, cols[0], "Imported data", imported_lines);
-    render_column(frame, cols[1], "Matched row(s)", matched_lines);
+    render_column(frame, cols[1], "Matched row", matched_lines);
     render_column(frame, cols[2], "Other matches", other_lines);
 }
 
@@ -322,7 +394,7 @@ enum ColumnLine {
 }
 
 fn build_row_lines(
-    rows: &[UnitRow],
+    rows: &[DataRow],
 ) -> (Vec<ColumnLine>, Vec<ColumnLine>, Vec<ColumnLine>) {
     let mut imported_lines = Vec::new();
     let mut matched_lines = Vec::new();
@@ -331,11 +403,11 @@ fn build_row_lines(
     for (idx, row) in rows.iter().enumerate() {
         let imported = row.recording.render();
         let matched =
-            row.target.as_ref().map(UnitRec::render).unwrap_or_default();
+            row.target.as_ref().map(DataRec::render).unwrap_or_default();
         let other = row
             .target_candidates
             .iter()
-            .map(UnitRec::render)
+            .map(DataRec::render)
             .collect::<Vec<_>>();
 
         let other_count = other.len().max(1);
@@ -393,11 +465,137 @@ fn render_column(
     );
 }
 
+async fn load_network_data(
+    db: &DatabaseConnection,
+    mut unit_data: UnitData,
+    network_units: Vec<sigint_network_unit::Model>,
+    networks: Vec<sigint_network::Model>,
+) -> anyhow::Result<NetworkData> {
+    let mut data = HashMap::<Tab, Vec<DataRow>>::new();
+    let mut models_to_unit_ids = HashMap::new();
+    let local_networks = sigint_network::Entity::find()
+        .find_with_related(sigint_network_unit::Entity)
+        .filter(sigint_unit::Column::Deleted.eq(false))
+        .all(db)
+        .await
+        .c(h!())?;
+    let mut local_units_map = HashMap::new();
+    for unit in unit_data.data.remove(&Tab::Matched).unwrap_or_default() {
+        let Some(target) = unit.target else {
+            continue;
+        };
+        let source_unit_id = unit.recording.id;
+        let target_unit_id = target.id;
+        local_units_map.insert(target_unit_id, (source_unit_id, target));
+    }
+
+    let mut local_unit_networks_map = HashMap::new();
+    for (local_network, local_network_units) in local_networks {
+        for local_network_unit in local_network_units {
+            if let Some((source_unit_id, unit)) =
+                local_units_map.get(&local_network_unit.unit_id)
+            {
+                local_unit_networks_map
+                    .entry(source_unit_id)
+                    .or_insert_with(|| vec![])
+                    .push((local_network.clone(), unit.clone()));
+            }
+        }
+    }
+    for imported_network in networks {
+        let mut matches = vec![];
+        let mut matches_by_unit = vec![];
+        let imported_network_units = network_units
+            .iter()
+            .filter(|u| u.network_id.eq(&imported_network.id))
+            .collect_vec();
+        let network_unit = if imported_network_units.len() == 1 {
+            imported_network_units
+                .clone()
+                .into_iter()
+                .next()
+                .and_then(|u| local_units_map.get(&u.id).cloned())
+                .map(|(_, rec)| rec)
+        } else {
+            None
+        };
+        for imported_network_unit in imported_network_units {
+            let local_network_to_units = local_unit_networks_map
+                .get(&imported_network_unit.unit_id)
+                .cloned()
+                .unwrap_or_default();
+            let local_unit_ids = local_network_to_units
+                .iter()
+                .map(|(_, unit)| unit.id)
+                .collect_vec();
+            models_to_unit_ids.insert(
+                imported_network.id,
+                (imported_network.clone(), local_unit_ids),
+            );
+            for (local_network, unit) in local_network_to_units {
+                if local_network
+                    .name
+                    .trim()
+                    .to_lowercase()
+                    .eq(&imported_network.name.trim().to_lowercase())
+                {
+                    matches.push((local_network, unit));
+                } else {
+                    matches_by_unit.push((local_network, unit));
+                }
+            }
+        }
+        let mut network_row = DataRow {
+            recording: from_network(imported_network, network_unit),
+            target: None,
+            target_candidates: vec![],
+        };
+        let tab = if matches.len() == 1 {
+            network_row.target = from_m_network(matches.into_iter().next());
+            network_row.target_candidates = from_network_vec(matches_by_unit);
+            Tab::Matched
+        } else if matches.len() == 0 {
+            network_row.target = None;
+            network_row.target_candidates = from_network_vec(matches_by_unit);
+            Tab::New
+        } else {
+            network_row.target = None;
+            network_row.target_candidates =
+                from_network_vec([matches, matches_by_unit].concat());
+            Tab::Ignore
+        };
+        data.entry(tab).or_insert_with(|| vec![]).push(network_row);
+    }
+    Ok(NetworkData {
+        data,
+        models_to_unit_ids,
+    })
+}
+
+fn from_m_network(
+    m_network: Option<(sigint_network::Model, DataRec)>,
+) -> Option<DataRec> {
+    let Some((network, unit)) = m_network else {
+        return None;
+    };
+    Some(from_network(network, Some(unit)))
+}
+
+fn from_network_vec(
+    networks: Vec<(sigint_network::Model, DataRec)>,
+) -> Vec<DataRec> {
+    networks
+        .into_iter()
+        .map(|(network, unit)| from_network(network, Some(unit)))
+        .collect()
+}
+
 async fn load_unit_data(
     db: &DatabaseConnection,
     units: Vec<sigint_unit::Model>,
+    exact_match: bool,
 ) -> anyhow::Result<UnitData> {
-    let mut data = HashMap::<Tab, Vec<UnitRow>>::new();
+    let mut data = HashMap::<Tab, Vec<DataRow>>::new();
     let local_units = sigint_unit::Entity::find()
         .filter(sigint_unit::Column::Deleted.eq(false))
         .all(db)
@@ -406,6 +604,7 @@ async fn load_unit_data(
         .into_iter()
         .filter_map(|u| render_unit(&u).ok().map(|u1| (u, u1)))
         .collect::<Vec<_>>();
+    let mut models = HashMap::new();
     for unit in units {
         if unit.deleted {
             continue;
@@ -446,8 +645,17 @@ async fn load_unit_data(
             }
             matches = perfect_matches;
         }
-        let mut unit_row = UnitRow {
-            model: unit.clone(),
+        let fuzzy_target = if matches.len() > 1 {
+            matches
+                .iter()
+                .reduce(|a, b| if a.0.id < b.0.id { a } else { b })
+                .cloned()
+                .map(|(m, u)| from_unit(m, u))
+        } else {
+            None
+        };
+        models.insert(unit.id, unit.clone());
+        let mut unit_row = DataRow {
             recording: from_unit(unit, dto),
             target: None,
             target_candidates: vec![],
@@ -464,6 +672,14 @@ async fn load_unit_data(
             unit_row.target = matches.into_iter().next();
             unit_row.target_candidates = fuzzy_matches;
             Tab::Matched
+        } else if !exact_match && fuzzy_target.is_some() {
+            let fuzzy_target = fuzzy_target.c(h!())?;
+            unit_row.target_candidates = matches
+                .into_iter()
+                .filter(|r| r.id != fuzzy_target.id)
+                .collect();
+            unit_row.target = Some(fuzzy_target);
+            Tab::Matched
         } else if matches.len() == 0 {
             unit_row.target = None;
             unit_row.target_candidates = fuzzy_matches;
@@ -475,7 +691,7 @@ async fn load_unit_data(
         };
         data.entry(tab).or_insert_with(|| vec![]).push(unit_row);
     }
-    Ok(UnitData { data })
+    Ok(UnitData { data, models })
 }
 
 fn names_match(u1: &Unit, u2: &Unit) -> bool {
@@ -545,20 +761,32 @@ fn names_match(u1: &Unit, u2: &Unit) -> bool {
     matches
 }
 
-fn from_unit(model: sigint_unit::Model, unit: Unit) -> UnitRec {
+fn from_unit(model: sigint_unit::Model, unit: Unit) -> DataRec {
     let mut full_name = crate::sigint::unit::unit_name(&unit);
     let comment = model.comment.trim();
     if !comment.is_empty() {
         full_name = format!("{full_name} ({comment})");
     }
-    UnitRec {
+    DataRec {
         id: unit.id,
         full_name,
-        // company: unit.company,
-        // battalion: unit.battalion,
-        // regiment: unit.regiment,
-        // division: unit.division,
-        // army: unit.army,
+    }
+}
+
+fn from_network(
+    network: sigint_network::Model,
+    unit: Option<DataRec>,
+) -> DataRec {
+    let unit_name = unit.map(|unit| unit.full_name);
+    let network_name = network.name.trim();
+    let full_name = match unit_name {
+        None => network_name.to_string(),
+        Some(unit_name) => format!("{network_name} ({unit_name})"),
+    };
+
+    DataRec {
+        id: network.id,
+        full_name,
     }
 }
 

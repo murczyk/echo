@@ -3,29 +3,29 @@ use crate::types::*;
 use sea_orm::*;
 
 pub struct UnitData {
-    pub data: HashMap<Tab, Vec<UnitRow>>,
-    pub models: HashMap<i32, sigint_unit::Model>,
+    pub data: HashMap<Tab, Vec<DataRow>>,
+    pub models: HashMap<i64, sigint_unit::Model>,
 }
 
 pub struct NetworkData {
-    pub data: HashMap<Tab, Vec<UnitRow>>,
-    pub models: HashMap<i32, (sigint_unit::Model, Vec<sigint_network_unit::Model>)>,
+    pub data: HashMap<Tab, Vec<DataRow>>,
+    pub models_to_unit_ids: HashMap<i64, (sigint_network::Model, Vec<i64>)>,
 }
 
 #[derive(Clone)]
-pub struct UnitRow {
-    pub recording: UnitRec,
-    pub target: Option<UnitRec>,
-    pub target_candidates: Vec<UnitRec>,
+pub struct DataRow {
+    pub recording: DataRec,
+    pub target: Option<DataRec>,
+    pub target_candidates: Vec<DataRec>,
 }
 
 #[derive(Clone, Debug)]
-pub struct UnitRec {
+pub struct DataRec {
     pub id: i64,
     pub full_name: String,
 }
 
-impl UnitRec {
+impl DataRec {
     pub fn render(&self) -> String {
         format!(" [{}] {}", self.id, self.full_name)
     }
