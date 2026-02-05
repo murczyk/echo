@@ -1315,7 +1315,7 @@ async fn merge_all(
                     DataKind::Units => {
                         crate::sigint::unit::merge_units(
                             "system".to_string(),
-                            &db,
+                            db,
                             id_2,
                             id_1,
                         )
@@ -1343,7 +1343,7 @@ fn cleanup_ids(records_to_merge: Vec<Vec<i64>>) -> Vec<Vec<i64>> {
     let groups = records_to_merge
         .into_iter()
         .filter(|x| x.len() > 1)
-        .sorted_by_key(|a| -1 * (a.len() as i32))
+        .sorted_by_key(|a| -(a.len() as i32))
         .collect_vec();
     let mut values = HashSet::new();
     let mut result = vec![];
@@ -1368,9 +1368,7 @@ fn add_network_model(
     row: DataRow,
 ) -> Option<DataRecDetailed> {
     let recording = row.recording;
-    let Some(model) = models.get(&recording.id) else {
-        return None;
-    };
+    let model = models.get(&recording.id)?;
     let mut details = HashMap::new();
     let unit_id = sigint_network_units
         .get(&recording.id)
@@ -1378,65 +1376,66 @@ fn add_network_model(
         .unwrap_or("-".to_string());
     details.insert("unit_id".to_string(), unit_id);
     details.insert("deleted".to_string(), format!("{}", model.deleted));
-    details.insert("location".to_string(), format!("{}", model.location));
+    details.insert("location".to_string(), model.location.to_string());
     details.insert(
         "purpose".to_string(),
-        format!("{}", model.purpose.clone().unwrap_or("-".to_string())),
+        model.purpose.clone().unwrap_or("-".to_string()).to_string(),
     );
     details.insert(
         "radio_station".to_string(),
-        format!("{}", model.radio_station.clone().unwrap_or("-".to_string())),
+        model
+            .radio_station
+            .clone()
+            .unwrap_or("-".to_string())
+            .to_string(),
     );
     details.insert(
         "operation_mode".to_string(),
-        format!(
-            "{}",
-            model.operation_mode.clone().unwrap_or("-".to_string())
-        ),
+        model
+            .operation_mode
+            .clone()
+            .unwrap_or("-".to_string())
+            .to_string(),
     );
     details.insert(
         "operation_type".to_string(),
-        format!(
-            "{}",
-            model.operation_type.clone().unwrap_or("-".to_string())
-        ),
+        model
+            .operation_type
+            .clone()
+            .unwrap_or("-".to_string())
+            .to_string(),
     );
     details.insert(
         "operation_period".to_string(),
-        format!(
-            "{}",
-            model.operation_period.clone().unwrap_or("-".to_string())
-        ),
+        model
+            .operation_period
+            .clone()
+            .unwrap_or("-".to_string())
+            .to_string(),
     );
     details.insert(
         "merged_to".to_string(),
-        format!(
-            "{}",
-            model
-                .merged_to
-                .map(|n| format!("{n}"))
-                .unwrap_or("-".to_string())
-        ),
+        model
+            .merged_to
+            .map(|n| format!("{n}"))
+            .unwrap_or("-".to_string())
+            .to_string(),
     );
     details.insert(
         "active_from".to_string(),
-        format!(
-            "{}",
-            model
-                .active_from
-                .map(|n| format!("{n}"))
-                .unwrap_or("-".to_string())
-        ),
+        model
+            .active_from
+            .map(|n| format!("{n}"))
+            .unwrap_or("-".to_string())
+            .to_string(),
     );
     details.insert(
         "active_to".to_string(),
-        format!(
-            "{}",
-            model
-                .active_to
-                .map(|n| format!("{n}"))
-                .unwrap_or("-".to_string())
-        ),
+        model
+            .active_to
+            .map(|n| format!("{n}"))
+            .unwrap_or("-".to_string())
+            .to_string(),
     );
 
     Some(DataRecDetailed {
