@@ -559,10 +559,8 @@ pub async fn load_callsigns(
     res = filter_callsigns(res);
 
     // Step 2. Get communication info for callsigns with known_callsigns
-    let res_known_callsigns: Vec<String> = res
-        .iter()
-        .map(|c| c.callsign.clone())
-        .collect();
+    let res_known_callsigns: Vec<String> =
+        res.iter().map(|c| c.callsign.clone()).collect();
 
     let known_callsigns_comm_info = get_communication_info_for_callsigns(
         db,
