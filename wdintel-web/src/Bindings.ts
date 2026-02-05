@@ -1822,7 +1822,6 @@ export type CallsignRes = {
   callsign: string;
   knownCallsigns: Array<KnownCallsignShortRes> | null;
   messageCount: number;
-  seances: number;
   lastDatetime: number | null;
   freqs: Array<string> | null;
   networkNames: Array<string> | null;
@@ -2196,7 +2195,6 @@ export type NetworkCallsignRes = {
   callsign: string;
   knownCallsigns: Array<KnownCallsignShortRes> | null;
   messageCount: number;
-  seances: number;
   lastDatetime: number | null;
   freqs: Array<string> | null;
   networkNames: Array<string> | null;

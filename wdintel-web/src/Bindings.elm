@@ -4862,7 +4862,6 @@ type alias CallsignRes =
     { callsign : String
     , knownCallsigns : Maybe (List KnownCallsignShortRes)
     , messageCount : Int
-    , seances : Int
     , lastDatetime : Maybe Int
     , freqs : Maybe (List String)
     , networkNames : Maybe (List String)
@@ -4876,7 +4875,6 @@ callsignResEncoder struct =
         [ ( "callsign", Json.Encode.string struct.callsign )
         , ( "known_callsigns", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list knownCallsignShortResEncoder)) struct.knownCallsigns )
         , ( "message_count", Json.Encode.int struct.messageCount )
-        , ( "seances", Json.Encode.int struct.seances )
         , ( "last_datetime", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.lastDatetime )
         , ( "freqs", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.string)) struct.freqs )
         , ( "network_names", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.string)) struct.networkNames )
@@ -5844,7 +5842,6 @@ type alias NetworkCallsignRes =
     { callsign : String
     , knownCallsigns : Maybe (List KnownCallsignShortRes)
     , messageCount : Int
-    , seances : Int
     , lastDatetime : Maybe Int
     , freqs : Maybe (List String)
     , networkNames : Maybe (List String)
@@ -5859,7 +5856,6 @@ networkCallsignResEncoder struct =
         [ ( "callsign", Json.Encode.string struct.callsign )
         , ( "known_callsigns", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list knownCallsignShortResEncoder)) struct.knownCallsigns )
         , ( "message_count", Json.Encode.int struct.messageCount )
-        , ( "seances", Json.Encode.int struct.seances )
         , ( "last_datetime", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.lastDatetime )
         , ( "freqs", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.string)) struct.freqs )
         , ( "network_names", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.string)) struct.networkNames )
@@ -9516,7 +9512,6 @@ callsignResDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsign" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "known_callsigns" (Json.Decode.nullable (Json.Decode.list knownCallsignShortResDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message_count" Json.Decode.int))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "seances" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_datetime" (Json.Decode.nullable Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freqs" (Json.Decode.nullable (Json.Decode.list Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_names" (Json.Decode.nullable (Json.Decode.list Json.Decode.string))))
@@ -10086,7 +10081,6 @@ networkCallsignResDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsign" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "known_callsigns" (Json.Decode.nullable (Json.Decode.list knownCallsignShortResDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message_count" Json.Decode.int))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "seances" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_datetime" (Json.Decode.nullable Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freqs" (Json.Decode.nullable (Json.Decode.list Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_names" (Json.Decode.nullable (Json.Decode.list Json.Decode.string))))

@@ -269,7 +269,6 @@ pub struct NetworkCallsignRes {
     pub callsign: String,
     pub known_callsigns: Option<Vec<KnownCallsignShortRes>>,
     pub message_count: i64,
-    pub seances: i64,
     pub last_datetime: Option<i64>,
     pub freqs: Option<Vec<String>>,
     pub network_names: Option<Vec<String>>,
