@@ -112,12 +112,7 @@ analysisStatsParams dtFromPosix dtToPosix model =
             |> emptyToNothing
     , filterTagsOption = Nothing
     , unitsExactMatchOnly = Just model.unitsExactMatchOnly
-    , withoutModelTags =
-        if model.withoutModelTags then
-            Just True
-
-        else
-            Nothing
+    , withoutModelTags = Just model.withoutModelTags
     , reportTagsOnlyThisUnit = Just model.reportTagsOnlyThisUnit
     }
 

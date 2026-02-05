@@ -199,6 +199,8 @@ type alias Model =
 
     -- Unknown callsigns dropdown
     , unknownCallsignDropdown : Maybe String -- Позивний з відкритим dropdown
+    , unknownCallsignsShowMessages : Bool
+    , unknownCallsignsSortByMessages : Bool
 
     -- Row show all popup status for comments
     , rowShowAllPopupStatus : Maybe ( Int, ShowAllPopupFor )

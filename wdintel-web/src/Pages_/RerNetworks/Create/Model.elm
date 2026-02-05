@@ -115,6 +115,8 @@ type alias Model =
     , callsignsTableState : Table.State
     , developingCallsignDropdown : Maybe Int -- ID позивного з відкритим dropdown
     , unknownCallsignDropdown : Maybe String -- Позивний з відкритим dropdown
+    , unknownCallsignsShowMessages : Bool
+    , unknownCallsignsSortByMessages : Bool
     , deleteCallsignConfirmation : Maybe Int -- ID позивного для видалення
     , deleteCallsignLoading : Bool -- Стан завантаження видалення
     , networkCallsigns : RemoteData ApiError (List B.NetworkCallsign)
