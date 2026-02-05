@@ -62,6 +62,7 @@ type alias CallsignTableRow =
     { id : Int
     , callsign : String
     , messageCount : Int
+    , seances : Int
     , lastDatetime : Maybe Int
     , position : String
     , unitName : String
@@ -115,6 +116,8 @@ type alias Model =
     , callsignsTableState : Table.State
     , developingCallsignDropdown : Maybe Int -- ID позивного з відкритим dropdown
     , unknownCallsignDropdown : Maybe String -- Позивний з відкритим dropdown
+    , unknownCallsignsShowSeances : Bool
+    , unknownCallsignsSortBySeances : Bool
     , deleteCallsignConfirmation : Maybe Int -- ID позивного для видалення
     , deleteCallsignLoading : Bool -- Стан завантаження видалення
     , networkCallsigns : RemoteData ApiError (List B.NetworkCallsign)

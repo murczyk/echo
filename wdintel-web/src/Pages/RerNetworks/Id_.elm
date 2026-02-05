@@ -310,6 +310,8 @@ init route shared () =
 
       -- Unknown callsigns dropdown initialization
       , unknownCallsignDropdown = Nothing
+      , unknownCallsignsShowSeances = False
+      , unknownCallsignsSortBySeances = False
 
       -- Row show all popup status initialization
       , rowShowAllPopupStatus = Nothing

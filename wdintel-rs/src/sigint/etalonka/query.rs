@@ -501,6 +501,7 @@ pub async fn find_all_known_callsigns(
 #[derive(Debug, Clone)]
 pub struct CallsignCommunicationInfo {
     pub message_count: i64,
+    pub seances: i64,
     pub last_datetime: Option<i64>,
     pub freqs: Option<Vec<String>>,
     pub network_names: Option<Vec<String>>,
@@ -548,6 +549,7 @@ pub async fn load_callsigns(
                 callsign: callsign.clone(),
                 known_callsigns: short_known_callsigns,
                 message_count: 0,
+                seances: 0,
                 last_datetime: None,
                 freqs: None,
                 network_names: None,
@@ -561,7 +563,7 @@ pub async fn load_callsigns(
     // Step 2. Get communication info for callsigns with known_callsigns
     let res_known_callsigns: Vec<String> = res
         .iter()
-        .filter(|c| c.known_callsigns.is_some())
+        // .filter(|c| c.known_callsigns.is_some())
         .map(|c| c.callsign.clone())
         .collect();
 
@@ -578,6 +580,7 @@ pub async fn load_callsigns(
     for c in &mut res {
         if let Some(comm_info) = known_callsigns_comm_info.get(&c.callsign) {
             c.message_count = comm_info.message_count;
+            c.seances = comm_info.seances;
             c.last_datetime = comm_info.last_datetime;
             c.freqs = comm_info.freqs.clone();
             c.network_names = comm_info.network_names.clone();
@@ -998,6 +1001,7 @@ where
     let q = Query::select()
         .expr_as(Expr::cust("callsign"), Alias::new("callsign"))
         .expr_as(Expr::cust("COUNT(*)"), Alias::new("message_count"))
+        .expr_as(Expr::cust("COUNT(datetime)"), Alias::new("seances"))
         .expr_as(Expr::cust("MAX(datetime)"), Alias::new("last_datetime"))
         .expr_as(
             Expr::cust("STRING_AGG(DISTINCT freq, ', ')"),
@@ -1030,6 +1034,7 @@ where
     for row in rows {
         let callsign: String = row.try_get("", "callsign").unwrap_or_default();
         let message_count: i64 = row.try_get("", "message_count").unwrap_or(0);
+        let seances: i64 = row.try_get("", "seances").unwrap_or(0);
         let last_datetime: Option<i64> = row
             .try_get::<NaiveDateTime>("", "last_datetime")
             .ok()
@@ -1041,6 +1046,7 @@ where
             callsign.clone(),
             CallsignCommunicationInfo {
                 message_count,
+                seances,
                 last_datetime,
                 freqs: freqs
                     .as_ref()

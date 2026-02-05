@@ -77,6 +77,7 @@ type alias CallsignTableRow =
     { id : Int
     , callsign : String
     , messageCount : Int
+    , seances : Int
     , lastDatetime : Maybe Int
     , position : String
     , unitName : String
@@ -199,6 +200,8 @@ type alias Model =
 
     -- Unknown callsigns dropdown
     , unknownCallsignDropdown : Maybe String -- Позивний з відкритим dropdown
+    , unknownCallsignsShowSeances : Bool
+    , unknownCallsignsSortBySeances : Bool
 
     -- Row show all popup status for comments
     , rowShowAllPopupStatus : Maybe ( Int, ShowAllPopupFor )

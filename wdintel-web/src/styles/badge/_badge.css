@@ -17,6 +17,29 @@
     transition: all 0.15s ease;
 }
 
+/* Badge for seances count on callsign chips */
+.badge-seances {
+    position: absolute;
+    top: -0.45rem;
+    right: -0.3rem;
+    background-color: var(--ochre-normal);
+    color: #fff;
+    border: 1px solid var(--ochre-dark);
+    font-size: 0.55rem;
+    font-weight: 500;
+    border-radius: 9999px;
+    padding: 0.15rem 0.35rem;
+    line-height: 1;
+    min-width: 1.3rem;
+    text-align: center;
+}
+
+html[data-bs-theme="dark"] .badge-seances {
+    background-color: var(--ochre-dark);
+    border-color: var(--ochre-light);
+    color: var(--ochre-light);
+}
+
 /* Ochre light variant - for general purpose badges like organism groups */
 .badge--ochre-light {
     background-color: var(--ochre-light);

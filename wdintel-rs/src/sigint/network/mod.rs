@@ -2062,6 +2062,7 @@ pub async fn network_callsigns_list(
             callsign: callsign.callsign,
             known_callsigns: callsign.known_callsigns,
             message_count: callsign.message_count,
+            seances: callsign.seances,
             last_datetime: callsign.last_datetime,
             freqs: callsign.freqs,
             network_names: callsign.network_names,
