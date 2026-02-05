@@ -122,15 +122,15 @@ pub async fn run_merge_network_tui(mode: Mode) -> Result<(), AppError> {
         .await
         .c(h!())?
         .into_iter()
-        .map(|m| (m.id, m.unit_id))
+        .map(|m| (m.network_id, m.unit_id))
         .collect::<HashMap<_, _>>();
     let mut models = HashMap::new();
     let records_to_merge = result.perfect_matches;
-    for (_, rows) in result.data {
-        for row in rows {
-            let id = row.recording.id;
+    for (_, network_rows) in result.data {
+        for network_row in network_rows {
+            let id = network_row.recording.id;
             let rec =
-                add_network_model(&result.models, &sigint_network_units, row);
+                add_network_model(&result.models, &sigint_network_units, network_row);
             if let Some(rec) = rec {
                 models.insert(id, rec);
             }
@@ -1365,13 +1365,13 @@ fn cleanup_ids(records_to_merge: Vec<Vec<i64>>) -> Vec<Vec<i64>> {
 fn add_network_model(
     models: &HashMap<i64, sigint_network::Model>,
     sigint_network_units: &HashMap<i64, i64>,
-    row: DataRow,
+    network_row: DataRow,
 ) -> Option<DataRecDetailed> {
-    let recording = row.recording;
-    let model = models.get(&recording.id)?;
+    let network_recording = network_row.recording;
+    let model = models.get(&network_recording.id)?;
     let mut details = HashMap::new();
     let unit_id = sigint_network_units
-        .get(&recording.id)
+        .get(&network_recording.id)
         .map(|id| format!("{id}"))
         .unwrap_or("-".to_string());
     details.insert("unit_id".to_string(), unit_id);
@@ -1439,8 +1439,8 @@ fn add_network_model(
     );
 
     Some(DataRecDetailed {
-        id: recording.id,
-        full_name: recording.full_name,
+        id: network_recording.id,
+        full_name: network_recording.full_name,
         details,
     })
 }
