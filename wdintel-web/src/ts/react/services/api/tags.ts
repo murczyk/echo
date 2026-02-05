@@ -1,6 +1,6 @@
 import { TagAdmin, TagKeyword, TagKeywordAddReq, TagUpsertReq } from '../../../../Bindings';
 
-import { deleteVoid, postJson, putJson, putVoid } from './client';
+import { deleteVoid, getJson, postJson, putJson, putVoid } from './client';
 
 type TagKeywordLike = {
   tagKeywordId?: number;
@@ -64,6 +64,11 @@ function toTagKeywordAddReqBody(req: TagKeywordAddReq): TagKeywordAddReqBody {
 export async function listTags(): Promise<TagAdmin[]> {
   const data = await postJson<TagAdminLike[]>('/api/admin/tags/list');
   return (data || []).map(normalizeTagAdmin);
+}
+
+export async function getTagKeywordErrors(tagId: number): Promise<any> {
+  const data = await getJson(`/api/tags/${tagId}/model-errors`);
+  return data;
 }
 
 export async function createTag(req: TagUpsertReq): Promise<TagAdmin> {
