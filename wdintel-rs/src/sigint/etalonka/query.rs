@@ -561,7 +561,6 @@ pub async fn load_callsigns(
     // Step 2. Get communication info for callsigns with known_callsigns
     let res_known_callsigns: Vec<String> = res
         .iter()
-        .filter(|c| c.known_callsigns.is_some())
         .map(|c| c.callsign.clone())
         .collect();
 
