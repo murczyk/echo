@@ -2,7 +2,7 @@ use crate::config::*;
 use crate::entities::*;
 use crate::error::AppError;
 use crate::sigint::import::types::EtalonData;
-use crate::sigint::unit::render_unit;
+use crate::sigint::unit::{render_unit, unit_name};
 use crate::sigint::unit::types::Unit;
 use crate::types::*;
 use crate::{h, new_pg_pool_from_mode, ImportTuiPs};
@@ -24,11 +24,86 @@ use sea_orm::*;
 use std::io;
 use std::io::Stdout;
 use std::time::Duration;
+use tempfile::TempDir;
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
 use types::*;
 
 pub mod types;
+
+pub async fn run_merge_unit_tui(mode: Mode) -> Result<(), AppError> {
+    let tmp_dir = TempDir::new()?;
+    let now = Utc::now().naive_utc();
+    let path = tmp_dir
+        .path()
+        .join(format!("merge_unit_{now}.json"))
+        .as_os_str()
+        .to_string_lossy()
+        .to_string();
+    crate::sigint::import::oneoff_export_etalon_data(mode, path)
+        .await
+        .c(h!())?;
+    let db = new_pg_pool_from_mode(mode).await.c(h!())?;
+    let mut file_read = File::open(path).await.context(h!())?;
+    let mut buffer = Vec::new();
+    file_read.read_to_end(&mut buffer).await.context(h!())?;
+    let etalon_txt = String::from_utf8_lossy(&buffer).to_string();
+    let etalon_full: EtalonData =
+        serde_json::from_str(&etalon_txt).context(h!())?;
+    let units = etalon_full.sigint_unit;
+    let result = load_unit_data(&db, units, true).await.c(h!())?;
+    let records_to_merge = result.perfect_matches;
+    let models = sigint_unit::Entity::find()
+        .filter(sigint_unit::Column::Deleted.eq(false))
+        .all(&db)
+        .await
+        .c(h!())?
+        .into_iter()
+        .filter_map(|u| render_unit(&u).ok().map(|u1| (u.id, (u, u1))))
+        .collect::<HashMap<_, _>>();
+
+    let mut terminal = setup_terminal().c(h!())?;
+    for mut ids in records_to_merge {
+        let id_1 = ids.remove(0);
+        let count = ids.len();
+        let mut counter = 0;
+        for id_2 in ids {
+            counter += 1;
+            let rec_1 = models.get(&id_1).cloned().c(h!())?;
+            let rec_2 = models.get(&id_2).cloned().c(h!())?;
+            let should_merge: bool =
+                run_merge_once("UNITS", &mut terminal, unit_details(rec_1.1), unit_details(rec_2.1), id_1, count, counter).await.c(h!())?;
+            if should_merge {
+                crate::sigint::unit::merge_units(
+                    "system".to_string(),
+                    &db,
+                    id_2,
+                    id_1,
+                )
+                .await
+                .c(h!())?;
+            }
+        }
+    }
+    restore_terminal(&mut terminal).c(h!())?;
+    Ok(())
+}
+
+fn unit_details(unit:Unit) -> DataRecDetailed {
+    let full_name = unit_name(&unit);
+    let mut details = HashMap::new();
+    details.insert("company".to_string(), unit.company);
+    details.insert("battalion".to_string(), unit.battalion);
+    details.insert("regiment".to_string(), unit.regiment);
+    details.insert("division".to_string(), unit.division);
+    details.insert("army".to_string(), unit.army);
+    details.insert("comment".to_string(), unit.comment);
+    DataRecDetailed{
+        id: unit.id,
+        full_name,
+        details,
+    }
+}
 
 pub async fn run_import_unit_tui(
     mode: Mode,
@@ -54,6 +129,7 @@ pub async fn run_import_unit_tui(
     }
     Ok(())
 }
+
 pub async fn run_import_network_tui(
     mode: Mode,
     ps: ImportTuiPs,
@@ -105,6 +181,47 @@ fn restore_terminal(
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen, cursor::Show)?;
     terminal.show_cursor()
+}
+
+async fn run_merge_once(
+    title: &str,
+    terminal: &mut Terminal<CrosstermBackend<Stdout>>,
+    left_item: DataRecDetailed,
+    right_item: DataRecDetailed,
+    item_id: i64,
+    count: usize,
+    counter: usize,
+) -> anyhow::Result<bool> {
+    let text = format!("{counter}/{count}: Merge {title} duplicates of #{item_id}? Y/n");
+    let poll = Duration::from_millis(SIGINT_INBOX_TUI_EVENT_POLL_MS);
+    terminal
+        .draw(|frame| draw_merge_ui(frame, &text, left_item, right_item))
+        .c(h!())?;
+    loop {
+        if !event::poll(poll).c(h!())? {
+            continue;
+        }
+        let ev = event::read().c(h!())?;
+        if matches_quit(&ev) {
+            anyhow::bail!("Quitting...");
+        }
+        if matches_key(&ev, 'y') {
+            return Ok(true);
+        }
+        if matches_key(&ev, 'n') {
+            return Ok(false);
+        }
+        if matches_key(&ev, 'Y') {
+            return Ok(true);
+        }
+        if matches_key(&ev, 'N') {
+            return Ok(false);
+        }
+    }
+}
+
+fn draw_merge_ui(frame: &mut Frame, title: &str, rec1: DataRecDetailed, rec2: DataRecDetailed) {
+    todo!()
 }
 
 async fn run_import_loop(
@@ -471,6 +588,7 @@ async fn load_network_data(
     all_imported_network_units: Vec<sigint_network_unit::Model>,
     imported_networks: Vec<sigint_network::Model>,
 ) -> anyhow::Result<NetworkData> {
+    let mut perfect_matches = vec![];
     let models = imported_networks
         .clone()
         .into_iter()
@@ -604,6 +722,8 @@ async fn load_network_data(
             Tab::New
         } else {
             network_row.target = None;
+            perfect_matches
+                .push(matches.clone().into_iter().map(|x| x.id).collect());
             for m in matches {
                 network_row.target_candidates.push(m);
             }
@@ -615,6 +735,7 @@ async fn load_network_data(
         data,
         models,
         model_to_unit_id,
+        perfect_matches,
     })
 }
 
@@ -644,6 +765,7 @@ async fn load_unit_data(
     units: Vec<sigint_unit::Model>,
     exact_match: bool,
 ) -> anyhow::Result<UnitData> {
+    let mut global_perfect_matches = vec![];
     let mut data = HashMap::<Tab, Vec<DataRow>>::new();
     let local_units = sigint_unit::Entity::find()
         .filter(sigint_unit::Column::Deleted.eq(false))
@@ -689,6 +811,13 @@ async fn load_unit_data(
             }
         }
         if !perfect_matches.is_empty() {
+            global_perfect_matches.push(
+                perfect_matches
+                    .clone()
+                    .into_iter()
+                    .map(|(x, _)| x.id)
+                    .collect(),
+            );
             for m in matches {
                 fuzzy_matches.push(m);
             }
@@ -738,9 +867,13 @@ async fn load_unit_data(
             unit_row.target_candidates = [matches, fuzzy_matches].concat();
             Tab::Ignore
         };
-        data.entry(tab).or_insert_with(Vec::new).push(unit_row);
+        data.entry(tab).or_default().push(unit_row);
     }
-    Ok(UnitData { data, models })
+    Ok(UnitData {
+        data,
+        models,
+        perfect_matches: global_perfect_matches,
+    })
 }
 
 fn names_match(u1: &Unit, u2: &Unit) -> bool {
@@ -855,6 +988,10 @@ fn matches_action(event: &Event) -> Option<Action> {
 
 fn matches_quit(event: &Event) -> bool {
     matches_keycode(event, KeyCode::Esc)
+}
+
+fn matches_key(event: &Event, c: char) -> bool {
+    matches_keycode(event, KeyCode::Char(c))
 }
 
 fn matches_confirm(event: &Event) -> bool {

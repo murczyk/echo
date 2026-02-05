@@ -1,16 +1,19 @@
 use crate::entities::*;
+use crate::sigint::unit::types::Unit;
 use crate::types::*;
 use sea_orm::*;
 
 pub struct UnitData {
     pub data: HashMap<Tab, Vec<DataRow>>,
     pub models: HashMap<i64, sigint_unit::Model>,
+    pub perfect_matches: Vec<Vec<i64>>,
 }
 
 pub struct NetworkData {
     pub data: HashMap<Tab, Vec<DataRow>>,
     pub models: HashMap<i64, sigint_network::Model>,
     pub model_to_unit_id: HashMap<i64, i64>,
+    pub perfect_matches: Vec<Vec<i64>>,
 }
 
 #[derive(Clone)]
@@ -24,6 +27,13 @@ pub struct DataRow {
 pub struct DataRec {
     pub id: i64,
     pub full_name: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct DataRecDetailed {
+    pub id: i64,
+    pub full_name: String,
+    pub details: HashMap<String, String>,
 }
 
 impl DataRec {

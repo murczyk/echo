@@ -64,7 +64,8 @@ pub async fn list_units(
         &user.id().c(h!())?,
         vec!["Rer", "Api"],
     )
-    .await?;
+    .await
+    .c(h!())?;
     const LIMIT: u64 = 100000;
     let mut units = sigint_unit::Entity::find()
         .filter(sigint_unit::Column::Deleted.eq(false));
@@ -164,7 +165,8 @@ pub async fn list_units_by_id(
         &user.id().c(h!())?,
         vec!["Rer", "Api"],
     )
-    .await?;
+    .await
+    .c(h!())?;
     let mut units = sigint_unit::Entity::find()
         .filter(sigint_unit::Column::Deleted.eq(false));
     if let Some(ids) = &req.ids {
@@ -355,51 +357,64 @@ pub async fn delete_unit_duplicate(
     req: Json<DeleteUnitDuplicateReq>,
 ) -> Result<Json<Unit>, AppError> {
     let login = user.id().c(h!())?.to_string();
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+    let dbx = &env.dbx;
+    crate::users::has_role(dbx, &user.id().c(h!())?, "Rer")
         .await
         .c(h!())?;
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "UnitsEditor")
+    crate::users::has_role(dbx, &user.id().c(h!())?, "UnitsEditor")
         .await
         .c(h!())?;
     let req: DeleteUnitDuplicateReq = req.into_inner();
-    let unit_to_delete = find_unit(&env.dbx, req.clone_to_delete_id)
+    let unit_to_delete_id = req.clone_to_delete_id;
+    let original_id = req.original_id;
+
+    let unit = merge_units(login, dbx, unit_to_delete_id, original_id)
         .await
-        .context(h!())?;
-    let unit_original =
-        find_unit(&env.dbx, req.original_id).await.context(h!())?;
-    update_original_unit(unit_original, &unit_to_delete, &env.dbx)
+        .c(h!())?;
+
+    let event = EventMsg::new(EventType::ETUnitChanged);
+    fanout(&mut env.redis.clone(), event).await.context(h!())?;
+
+    Ok(Json(render_unit(&unit)?))
+}
+
+pub async fn merge_units(
+    login: String,
+    dbx: &DatabaseConnection,
+    unit_to_delete_id: i64,
+    original_id: i64,
+) -> Result<sigint_unit::Model, AppError> {
+    let unit_to_delete =
+        find_unit(dbx, unit_to_delete_id).await.context(h!())?;
+    let unit_original = find_unit(dbx, original_id).await.context(h!())?;
+    update_original_unit(unit_original, &unit_to_delete, dbx)
         .await
         .context(h!())?;
 
-    swap_units(
-        req.clone_to_delete_id,
-        req.original_id,
-        login.clone(),
-        &env.dbx,
-    )
-    .await
-    .context(h!())?;
+    swap_units(unit_to_delete_id, original_id, login.clone(), dbx)
+        .await
+        .context(h!())?;
 
-    let unit_json_old = sigint_unit::Entity::find_by_id(req.clone_to_delete_id)
+    let unit_json_old = sigint_unit::Entity::find_by_id(unit_to_delete_id)
         .into_json()
-        .one(&env.dbx)
+        .one(dbx)
         .await
         .context(h!())?
         .ok_or(AppError::NotFound)?;
-    let unit_json_new = sigint_unit::Entity::find_by_id(req.original_id)
+    let unit_json_new = sigint_unit::Entity::find_by_id(original_id)
         .into_json()
-        .one(&env.dbx)
+        .one(dbx)
         .await
         .context(h!())?
         .ok_or(AppError::NotFound)?;
 
     let mut unit = unit_to_delete.into_active_model();
     unit.deleted = Set(true);
-    let unit = unit.update(&env.dbx).await.context(h!())?;
+    let unit = unit.update(dbx).await.context(h!())?;
 
     let _changelog = sigint_unit_changelog::ActiveModel {
         id: NotSet,
-        sigint_unit_id: Set(req.clone_to_delete_id),
+        sigint_unit_id: Set(unit_to_delete_id),
         login: Set(login),
         action: Set("delete_duplicate".to_string()),
         created_at: NotSet,
@@ -407,14 +422,10 @@ pub async fn delete_unit_duplicate(
         old_value: Set(Some(unit_json_old)),
         req: Set(None),
     }
-    .insert(&env.dbx)
+    .insert(dbx)
     .await
     .context(h!())?;
-
-    let event = EventMsg::new(EventType::ETUnitChanged);
-    fanout(&mut env.redis.clone(), event).await.context(h!())?;
-
-    Ok(Json(render_unit(&unit)?))
+    Ok(unit)
 }
 
 pub async fn find_unit(
@@ -690,7 +701,8 @@ pub async fn units_search(
     req: Json<UnitSearchReq>,
 ) -> Result<Json<ListUnitsByIdRsp>, AppError> {
     crate::users::has_any_role(&env.dbx, &user.id().c(h!())?, vec!["Rer"])
-        .await?;
+        .await
+        .c(h!())?;
 
     let search_phrase = req.search.trim();
     if search_phrase.is_empty() {
