@@ -431,7 +431,9 @@ pub async fn signal_group_info_batch(
         keys,
         &env.dbx,
         is_admin,
-        crate::messenger::group::CollectGroupsOpts::default(),
+        crate::messenger::group::CollectGroupsOpts {
+            skip_group_stats: req.skip_group_stats.unwrap_or(false),
+        },
     )
     .await
     .c(h!())?;

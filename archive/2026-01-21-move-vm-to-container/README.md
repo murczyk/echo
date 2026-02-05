@@ -86,3 +86,43 @@ Yes, all allowed, downtime is ok
 
 - srv-ci to ct-ci-neo migration: `uv run python migrate_vm_to_ct.py --vm-target=echo@10.190.254.45 --ct-target=echo@10.190.254.46 --vm-jump=ziggy@echo-mothership-02 --ct-jump=ziggy@echo-mothership-02 --ssh-agent`
 
+## ADDITIONAL: RSYNC ONLY POSTGRESQL
+
+As a shortcut, if you've finished migration but want to sync db data, use this:
+
+```
+ssh -A -J ziggy@echo-mothership-02 echo@10.190.254.19 \
+    'sudo -n env SSH_AUTH_SOCK=$SSH_AUTH_SOCK rsync -a --delete --chown=postgres:postgres \
+       --rsync-path "sudo -n rsync" \
+       -e "ssh -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o GlobalKnownHostsFile=/dev/null -A -J ziggy@echo-mothership-02" \
+       /var/lib/postgresql/14/main/ "echo@10.190.254.43:/var/lib/postgresql/14/main/"'
+```
+
+## INTER-DC JUMP
+
+pre-flight check notes:
+
+```
+from:
+pve-2 195.162.89.105
+vm 10.190.254.18
+
+to:
+pve-1 194.1.195.15
+ct 10.190.255.21
+
+check:
+ssh -A -J ziggy@195.162.89.105 echo@10.190.254.18     'ssh -A -J ziggy@194.1.195.15 echo@10.190.255.21 true'
+```
+
+skhid migration
+
+```
+ziggy@pve-2:/var/tmp/2026-01-21-move-vm-to-container$ uv run python migrate_vm_to_ct.py --vm-target=echo@10.190.254.18 --ct-target=echo@10.190.255.21 --vm-jump=ziggy@195.162.89.105 --ct-jump=ziggy@194.1.195.15 --ssh-agent
+Collecting VM/CT data...
+The authenticity of host '194.1.195.15 (194.1.195.15)' can't be established.
+ED25519 key fingerprint is SHA256:pbGlYhcgs2JQuRhUPA42KzY59UUXK3XdZ1GxZpwFLbQ.
+This key is not known by any other names.
+Are you sure you want to continue connecting (yes/no/[fingerprint])? yes
+```
+

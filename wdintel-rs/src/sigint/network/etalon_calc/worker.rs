@@ -434,11 +434,15 @@ async fn delete_original_tasks(
     if ids_to_delete.is_empty() {
         return Ok(());
     }
-    network_invalidation_task::Entity::delete_many()
-        .filter(network_invalidation_task::Column::Id.is_in(ids_to_delete))
-        .exec(db)
-        .await
-        .c(h!())?;
+    for id_chunk in ids_to_delete.chunks(NETWORK_INVALIDATION_DELETE_MAX_IDS) {
+        network_invalidation_task::Entity::delete_many()
+            .filter(
+                network_invalidation_task::Column::Id.is_in(id_chunk.to_vec()),
+            )
+            .exec(db)
+            .await
+            .c(h!())?;
+    }
     Ok(())
 }
 
@@ -456,19 +460,12 @@ async fn run_network_invalidation_tasks(
         }
         let task = mark_task_started(&task, dbx).await.c(h!())?;
         started_tasks.push(task.clone());
-        let task_filter = build_task_filter(&task, signal_group_aors);
-        task_filters.push(task_filter);
+        task_filters.extend(build_task_filters(&task, signal_group_aors));
     }
 
-    for chunk in task_filters.chunks(NETWORK_INVALIDATION_TASKS_FILTER_CHUNK) {
-        let mut main_filter = Condition::any();
-        for task_filter in chunk {
-            main_filter = main_filter.add(task_filter.clone());
-        }
-        process_invalidation_filter(main_filter, processed_items, dbx)
-            .await
-            .c(h!())?;
-    }
+    process_task_filters(task_filters, processed_items, dbx)
+        .await
+        .c(h!())?;
     let completed_at = Some(Utc::now().naive_utc());
     mark_tasks_completed(started_tasks, completed_at, dbx)
         .await
@@ -486,9 +483,27 @@ async fn mark_task_started(
     Ok(task)
 }
 
-fn build_task_filter(
+struct TaskFilter {
+    condition: Condition,
+    param_count: usize,
+}
+
+fn base_task_param_count(task: &network_invalidation_task::Model) -> usize {
+    let mut count = 2; // since_ts + till_ts
+    if task.frequency.is_some() {
+        count += 1;
+    }
+    if task.sigint_network_id.is_some() {
+        count += 1;
+    }
+    if task.group_master_key.is_some() {
+        count += 1;
+    }
+    count
+}
+
+fn build_base_task_filter(
     task: &network_invalidation_task::Model,
-    signal_group_aors: &HashMap<i64, Vec<String>>,
 ) -> Condition {
     let mut task_filter = Condition::all()
         .add(sigint_inbox_item::Column::Datetime.gte(task.since_ts))
@@ -504,20 +519,103 @@ fn build_task_filter(
         task_filter = task_filter
             .add(signal_message_group::Column::GroupMasterKey.eq(master_key))
     }
-    if let Some(aor_id) = &task.aor_id {
-        let master_keys =
-            signal_group_aors.get(aor_id).cloned().unwrap_or_default();
-        if !master_keys.is_empty() {
-            let mut key_filter = Condition::any();
-            for master_key in master_keys {
-                key_filter = key_filter.add(
-                    signal_message_group::Column::GroupMasterKey.eq(master_key),
-                );
-            }
-            task_filter = task_filter.add(key_filter)
-        }
-    }
     task_filter
+}
+
+fn build_task_filters(
+    task: &network_invalidation_task::Model,
+    signal_group_aors: &HashMap<i64, Vec<String>>,
+) -> Vec<TaskFilter> {
+    let base_params = base_task_param_count(task);
+    let max_keys_per_filter = NETWORK_INVALIDATION_QUERY_MAX_PARAMS
+        .saturating_sub(base_params)
+        .max(1);
+    let Some(aor_id) = &task.aor_id else {
+        return vec![TaskFilter {
+            condition: build_base_task_filter(task),
+            param_count: base_params,
+        }];
+    };
+    let Some(master_keys) = signal_group_aors.get(aor_id) else {
+        return vec![TaskFilter {
+            condition: build_base_task_filter(task),
+            param_count: base_params,
+        }];
+    };
+    if master_keys.is_empty() {
+        return vec![TaskFilter {
+            condition: build_base_task_filter(task),
+            param_count: base_params,
+        }];
+    }
+
+    let mut filters = Vec::new();
+    for master_key_chunk in master_keys.chunks(max_keys_per_filter) {
+        let mut task_filter = build_base_task_filter(task);
+        let mut key_filter = Condition::any();
+        for master_key in master_key_chunk {
+            key_filter = key_filter.add(
+                signal_message_group::Column::GroupMasterKey
+                    .eq(master_key.clone()),
+            );
+        }
+        task_filter = task_filter.add(key_filter);
+        filters.push(TaskFilter {
+            condition: task_filter,
+            param_count: base_params + master_key_chunk.len(),
+        });
+    }
+    filters
+}
+
+async fn process_task_filters(
+    task_filters: Vec<TaskFilter>,
+    processed_items: &mut HashSet<i64>,
+    dbx: &DatabaseConnection,
+) -> anyhow::Result<()> {
+    let mut chunk_filters = Vec::new();
+    let mut chunk_params = 0usize;
+    for task_filter in task_filters {
+        let would_exceed_params = chunk_params + task_filter.param_count
+            > NETWORK_INVALIDATION_QUERY_MAX_PARAMS;
+        let would_exceed_count =
+            chunk_filters.len() >= NETWORK_INVALIDATION_TASKS_FILTER_CHUNK;
+        if (would_exceed_params || would_exceed_count)
+            && !chunk_filters.is_empty()
+        {
+            process_task_filter_chunk(
+                std::mem::take(&mut chunk_filters),
+                processed_items,
+                dbx,
+            )
+            .await
+            .c(h!())?;
+            chunk_params = 0;
+        }
+        chunk_params += task_filter.param_count;
+        chunk_filters.push(task_filter.condition);
+    }
+    if !chunk_filters.is_empty() {
+        process_task_filter_chunk(chunk_filters, processed_items, dbx)
+            .await
+            .c(h!())?;
+    }
+    Ok(())
+}
+
+async fn process_task_filter_chunk(
+    filters: Vec<Condition>,
+    processed_items: &mut HashSet<i64>,
+    dbx: &DatabaseConnection,
+) -> anyhow::Result<()> {
+    let mut main_filter = Condition::any();
+    for task_filter in filters {
+        main_filter = main_filter.add(task_filter);
+    }
+    process_invalidation_filter(main_filter, processed_items, dbx)
+        .await
+        .c(h!())?;
+    Ok(())
 }
 
 async fn process_invalidation_filter(

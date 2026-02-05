@@ -663,7 +663,9 @@ update msg model =
             , E.sendCmd <|
                 Api.rer_importer_signal_group_info_batch
                     GotGroupInfos
-                    { groups = groupKeysNew |> List.map (\key -> { masterKey = key }) }
+                    { groups = groupKeysNew |> List.map (\key -> { masterKey = key })
+                    , skipGroupStats = Nothing
+                    }
             )
 
         GotZoneDatasourceGroups _ _ (Err e) ->
@@ -690,7 +692,9 @@ update msg model =
                 signalGroupEff =
                     Api.rer_importer_signal_group_info_batch
                         GotGroupInfos
-                        { groups = res.zoneDatasourceGroups |> List.map (\group -> { masterKey = group.groupMasterKey }) }
+                        { groups = res.zoneDatasourceGroups |> List.map (\group -> { masterKey = group.groupMasterKey })
+                        , skipGroupStats = Nothing
+                        }
             in
             ( m3
             , E.sendCmd signalGroupEff
@@ -965,7 +969,11 @@ update msg model =
                 eff : Cmd Msg
                 eff =
                     if needInfo then
-                        Api.rer_importer_signal_group_info_batch GotGroupInfos { groups = [ { masterKey = updatedGroup.groupMasterKey } ] }
+                        Api.rer_importer_signal_group_info_batch
+                            GotGroupInfos
+                            { groups = [ { masterKey = updatedGroup.groupMasterKey } ]
+                            , skipGroupStats = Nothing
+                            }
 
                     else
                         Cmd.none

@@ -235,6 +235,22 @@ pub struct OneoffTagMessagesReportPs {
 }
 
 #[derive(clap::Parser, Debug)]
+pub struct OneoffEtalonkaReportNetworksFromRerAnalysisPs {
+    /// Start date (inclusive). Format: `YYYY-MM-DD`.
+    #[arg(long)]
+    pub start: String,
+    /// End date (non-inclusive). Format: `YYYY-MM-DD`.
+    #[arg(long)]
+    pub end: String,
+    /// Filter by AOR names (repeat the flag for multiple).
+    #[arg(long = "only-aor")]
+    pub only_aor: Vec<String>,
+    /// Login used for access and filters.
+    #[arg(long, default_value = SYSTEM_LOGIN_NAME)]
+    pub login: String,
+}
+
+#[derive(clap::Parser, Debug)]
 #[command(
     name = "OneoffReprocessSearchIndex",
     about = "Updates the full-text search index"
@@ -542,6 +558,9 @@ enum Cmd {
     OneoffExportSigintComments(OneoffExportSigintCommentsPs),
     OneoffImportSigintComments(OneoffImportSigintCommentsPs),
     OneoffTagMessagesReport(OneoffTagMessagesReportPs),
+    OneoffEtalonkaReportNetworksFromRerAnalysis(
+        OneoffEtalonkaReportNetworksFromRerAnalysisPs,
+    ),
     OneoffGenDatasetCallsigns,
     OneoffReprocessCoords(OneoffReprocessCoordsPs),
     OneoffReprocessUnitNames,
@@ -627,7 +646,7 @@ async fn new_pg_pool_from_conn_string(
         .sqlx_logging(true)
         .sqlx_logging_level(LevelFilter::Debug)
         .sqlx_slow_statements_logging_settings(
-            LevelFilter::Warn,
+            LevelFilter::Off,
             core::time::Duration::from_millis(PG_SLOW_STATEMENT_THRESHOLD_MS),
         );
 
@@ -767,7 +786,8 @@ fn main() -> Result<(), AppError> {
         .expect("failed to install default rustls ring provider");
 
     env_logger::try_init_from_env(
-        env_logger::Env::new().default_filter_or("info,wdintel_rs=debug"),
+        env_logger::Env::new()
+            .default_filter_or("info,wdintel_rs=debug,sqlx::query=off"),
     )
     .ok();
 
@@ -878,6 +898,12 @@ async fn async_main(
         }
         Cmd::OneoffTagMessagesReport(ps) => {
             sigint::oneoff::oneoff_tag_messages_report(mode, &ps).await
+        }
+        Cmd::OneoffEtalonkaReportNetworksFromRerAnalysis(ps) => {
+            sigint::oneoff::oneoff_etalonka_report_networks_from_rer_analysis(
+                mode, &ps,
+            )
+            .await
         }
         Cmd::OneoffGenDatasetCallsigns => {
             ml::oneoff_gen_dataset_callsigns(mode).await
