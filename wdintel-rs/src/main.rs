@@ -542,6 +542,7 @@ enum Cmd {
     NetworkInvalidationTui,
     TuiImportUnit(ImportTuiPs),
     TuiImportNetwork(ImportTuiPs),
+    TuiMergeUnit,
     ExportUnit(ExportUnitPs),
     ImportUnit(ImportUnitPs),
     RenewTailscaleCert(RenewTailscaleCertPs),
@@ -1062,6 +1063,9 @@ async fn async_main(
         }
         Cmd::TuiImportNetwork(ps) => {
             sigint::import::tui::run_import_network_tui(mode, ps).await
+        }
+        Cmd::TuiMergeUnit => {
+            sigint::import::tui::run_merge_unit_tui(mode).await
         }
     }
 }

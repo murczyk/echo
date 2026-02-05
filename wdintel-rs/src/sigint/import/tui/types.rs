@@ -1,5 +1,4 @@
 use crate::entities::*;
-use crate::sigint::unit::types::Unit;
 use crate::types::*;
 use sea_orm::*;
 

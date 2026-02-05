@@ -2,8 +2,8 @@ use crate::config::*;
 use crate::entities::*;
 use crate::error::AppError;
 use crate::sigint::import::types::EtalonData;
-use crate::sigint::unit::{render_unit, unit_name};
 use crate::sigint::unit::types::Unit;
+use crate::sigint::unit::{render_unit, unit_name};
 use crate::types::*;
 use crate::{h, new_pg_pool_from_mode, ImportTuiPs};
 use anyhow::Context;
@@ -40,7 +40,7 @@ pub async fn run_merge_unit_tui(mode: Mode) -> Result<(), AppError> {
         .as_os_str()
         .to_string_lossy()
         .to_string();
-    crate::sigint::import::oneoff_export_etalon_data(mode, path)
+    crate::sigint::import::oneoff_export_etalon_data(mode, path.clone())
         .await
         .c(h!())?;
     let db = new_pg_pool_from_mode(mode).await.c(h!())?;
@@ -63,46 +63,13 @@ pub async fn run_merge_unit_tui(mode: Mode) -> Result<(), AppError> {
         .collect::<HashMap<_, _>>();
 
     let mut terminal = setup_terminal().c(h!())?;
-    for mut ids in records_to_merge {
-        let id_1 = ids.remove(0);
-        let count = ids.len();
-        let mut counter = 0;
-        for id_2 in ids {
-            counter += 1;
-            let rec_1 = models.get(&id_1).cloned().c(h!())?;
-            let rec_2 = models.get(&id_2).cloned().c(h!())?;
-            let should_merge: bool =
-                run_merge_once("UNITS", &mut terminal, unit_details(rec_1.1), unit_details(rec_2.1), id_1, count, counter).await.c(h!())?;
-            if should_merge {
-                crate::sigint::unit::merge_units(
-                    "system".to_string(),
-                    &db,
-                    id_2,
-                    id_1,
-                )
-                .await
-                .c(h!())?;
-            }
-        }
+    if let Err(e) =
+        merge_all(&db, records_to_merge, models, &mut terminal).await
+    {
+        error!("{e:#?}");
     }
     restore_terminal(&mut terminal).c(h!())?;
     Ok(())
-}
-
-fn unit_details(unit:Unit) -> DataRecDetailed {
-    let full_name = unit_name(&unit);
-    let mut details = HashMap::new();
-    details.insert("company".to_string(), unit.company);
-    details.insert("battalion".to_string(), unit.battalion);
-    details.insert("regiment".to_string(), unit.regiment);
-    details.insert("division".to_string(), unit.division);
-    details.insert("army".to_string(), unit.army);
-    details.insert("comment".to_string(), unit.comment);
-    DataRecDetailed{
-        id: unit.id,
-        full_name,
-        details,
-    }
 }
 
 pub async fn run_import_unit_tui(
@@ -191,8 +158,17 @@ async fn run_merge_once(
     item_id: i64,
     count: usize,
     counter: usize,
+    total_count: usize,
+    total_counter: usize,
 ) -> anyhow::Result<bool> {
-    let text = format!("{counter}/{count}: Merge {title} duplicates of #{item_id}? Y/n");
+    let dupes_counter = if count == 1 {
+        "".to_string()
+    } else {
+        format!(" ({counter}/{count})")
+    };
+    let text = format!(
+        "{total_counter}/{total_count}: Merge {title} duplicates of #{item_id}{dupes_counter}? Y/n"
+    );
     let poll = Duration::from_millis(SIGINT_INBOX_TUI_EVENT_POLL_MS);
     terminal
         .draw(|frame| draw_merge_ui(frame, &text, left_item, right_item))
@@ -220,8 +196,259 @@ async fn run_merge_once(
     }
 }
 
-fn draw_merge_ui(frame: &mut Frame, title: &str, rec1: DataRecDetailed, rec2: DataRecDetailed) {
-    todo!()
+fn draw_merge_ui(
+    frame: &mut Frame,
+    title: &str,
+    rec1: DataRecDetailed,
+    rec2: DataRecDetailed,
+) {
+    let root = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(1), Constraint::Min(1)])
+        .split(frame.size());
+
+    let header = Paragraph::new(Line::from(title));
+    frame.render_widget(header, root[0]);
+
+    let rows = build_merge_rows(rec1, rec2);
+
+    let table_block = Block::default().borders(Borders::ALL).title("Diff");
+    let table_inner = table_block.inner(root[1]);
+    frame.render_widget(table_block, root[1]);
+
+    let columns = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(20),
+            Constraint::Percentage(40),
+            Constraint::Percentage(40),
+        ])
+        .split(table_inner);
+
+    let left_block = Block::default().borders(Borders::RIGHT);
+    let middle_block = Block::default().borders(Borders::LEFT | Borders::RIGHT);
+    let right_block = Block::default().borders(Borders::LEFT);
+
+    let left_inner = left_block.inner(columns[0]);
+    let middle_inner = middle_block.inner(columns[1]);
+    let right_inner = right_block.inner(columns[2]);
+
+    frame.render_widget(left_block, columns[0]);
+    frame.render_widget(middle_block, columns[1]);
+    frame.render_widget(right_block, columns[2]);
+
+    let (left_lines, middle_lines, right_lines) = build_merge_lines(
+        &rows,
+        left_inner.width as usize,
+        middle_inner.width as usize,
+        right_inner.width as usize,
+    );
+
+    frame.render_widget(
+        Paragraph::new(left_lines).wrap(Wrap { trim: false }),
+        left_inner,
+    );
+    frame.render_widget(
+        Paragraph::new(middle_lines).wrap(Wrap { trim: false }),
+        middle_inner,
+    );
+    frame.render_widget(
+        Paragraph::new(right_lines).wrap(Wrap { trim: false }),
+        right_inner,
+    );
+}
+
+struct MergeRow {
+    field: String,
+    left: String,
+    right: String,
+    style: Style,
+}
+
+fn build_merge_rows(
+    rec1: DataRecDetailed,
+    rec2: DataRecDetailed,
+) -> Vec<MergeRow> {
+    let green = Style::default().fg(Color::Green);
+    let yellow = Style::default().fg(Color::Yellow);
+    let red = Style::default().fg(Color::Red);
+    let header = Style::default().fg(Color::Cyan);
+
+    let mut keys: Vec<String> = rec1
+        .details
+        .keys()
+        .chain(rec2.details.keys())
+        .cloned()
+        .collect();
+    keys.sort();
+    keys.dedup();
+
+    let mut rows = Vec::new();
+    rows.push(MergeRow {
+        field: "Field".to_string(),
+        left: "Left".to_string(),
+        right: "Right".to_string(),
+        style: header,
+    });
+
+    let id_left = rec1.id.to_string();
+    let id_right = rec2.id.to_string();
+    rows.push(build_merge_row(
+        "id",
+        Some(&id_left),
+        Some(&id_right),
+        green,
+        yellow,
+        red,
+    ));
+    rows.push(build_merge_row(
+        "full_name",
+        Some(rec1.full_name.as_str()),
+        Some(rec2.full_name.as_str()),
+        green,
+        yellow,
+        red,
+    ));
+
+    for key in keys {
+        let left = rec1.details.get(&key).map(|v| v.as_str());
+        let right = rec2.details.get(&key).map(|v| v.as_str());
+        rows.push(build_merge_row(&key, left, right, green, yellow, red));
+    }
+
+    rows
+}
+
+fn build_merge_row(
+    label: &str,
+    left: Option<&str>,
+    right: Option<&str>,
+    green: Style,
+    yellow: Style,
+    red: Style,
+) -> MergeRow {
+    let (left_text, right_text, style) = match (left, right) {
+        (Some(l), Some(r)) if l == r => (l.to_string(), r.to_string(), green),
+        (Some(l), Some(r)) => (l.to_string(), r.to_string(), yellow),
+        (Some(l), None) => (l.to_string(), "-".to_string(), red),
+        (None, Some(r)) => ("-".to_string(), r.to_string(), red),
+        (None, None) => ("-".to_string(), "-".to_string(), red),
+    };
+
+    MergeRow {
+        field: label.to_string(),
+        left: left_text,
+        right: right_text,
+        style,
+    }
+}
+
+fn build_merge_lines(
+    rows: &[MergeRow],
+    field_width: usize,
+    left_width: usize,
+    right_width: usize,
+) -> (Vec<Line<'_>>, Vec<Line<'_>>, Vec<Line<'_>>) {
+    let mut field_lines = Vec::new();
+    let mut left_lines = Vec::new();
+    let mut right_lines = Vec::new();
+
+    for row in rows {
+        let field_wrapped = wrap_text_to_width(&row.field, field_width);
+        let left_wrapped = wrap_text_to_width(&row.left, left_width);
+        let right_wrapped = wrap_text_to_width(&row.right, right_width);
+        let max_len = field_wrapped
+            .len()
+            .max(left_wrapped.len())
+            .max(right_wrapped.len());
+
+        for idx in 0..max_len {
+            field_lines.push(Line::from(Span::raw(
+                field_wrapped.get(idx).cloned().unwrap_or_default(),
+            )));
+            left_lines.push(Line::from(Span::styled(
+                left_wrapped.get(idx).cloned().unwrap_or_default(),
+                row.style,
+            )));
+            right_lines.push(Line::from(Span::styled(
+                right_wrapped.get(idx).cloned().unwrap_or_default(),
+                row.style,
+            )));
+        }
+    }
+
+    (field_lines, left_lines, right_lines)
+}
+
+fn wrap_text_to_width(text: &str, width: usize) -> Vec<String> {
+    if width == 0 {
+        return vec![String::new()];
+    }
+
+    let mut lines = Vec::new();
+    for raw_line in text.split('\n') {
+        if raw_line.is_empty() {
+            lines.push(String::new());
+            continue;
+        }
+
+        let mut current = String::new();
+        for word in raw_line.split_whitespace() {
+            let word_len = word.chars().count();
+            if current.is_empty() {
+                if word_len > width {
+                    for chunk in split_long_word(word, width) {
+                        lines.push(chunk);
+                    }
+                } else {
+                    current.push_str(word);
+                }
+                continue;
+            }
+
+            let candidate_len = current.chars().count() + 1 + word_len;
+            if candidate_len <= width {
+                current.push(' ');
+                current.push_str(word);
+            } else {
+                lines.push(current);
+                current = String::new();
+                if word_len > width {
+                    for chunk in split_long_word(word, width) {
+                        lines.push(chunk);
+                    }
+                } else {
+                    current.push_str(word);
+                }
+            }
+        }
+
+        if !current.is_empty() {
+            lines.push(current);
+        }
+    }
+
+    if lines.is_empty() {
+        lines.push(String::new());
+    }
+
+    lines
+}
+
+fn split_long_word(word: &str, width: usize) -> Vec<String> {
+    let mut chunks = Vec::new();
+    let mut current = String::new();
+    for ch in word.chars() {
+        if current.chars().count() >= width {
+            chunks.push(current);
+            current = String::new();
+        }
+        current.push(ch);
+    }
+    if !current.is_empty() {
+        chunks.push(current);
+    }
+    chunks
 }
 
 async fn run_import_loop(
@@ -952,6 +1179,69 @@ fn from_unit(model: sigint_unit::Model, unit: Unit) -> DataRec {
     DataRec {
         id: unit.id,
         full_name,
+    }
+}
+
+async fn merge_all(
+    db: &DatabaseConnection,
+    records_to_merge: Vec<Vec<i64>>,
+    models: HashMap<i64, (sigint_unit::Model, Unit)>,
+    mut terminal: &mut Terminal<CrosstermBackend<Stdout>>,
+) -> Result<(), AppError> {
+    let records_to_merge = records_to_merge.into_iter().filter(|x| x.len() > 1).collect_vec();
+    let total_count = records_to_merge.len();
+    let mut total_counter = 0;
+    for mut ids in records_to_merge {
+        let id_1 = ids.remove(0);
+        let count = ids.len();
+        let mut counter = 0;
+        for id_2 in ids {
+            counter += 1;
+            total_counter += 1;
+            let rec_1 = models.get(&id_1).cloned().c(h!())?;
+            let rec_2 = models.get(&id_2).cloned().c(h!())?;
+            let should_merge: bool = run_merge_once(
+                "UNITS",
+                &mut terminal,
+                unit_details(rec_1.1, rec_1.0.deleted),
+                unit_details(rec_2.1, rec_2.0.deleted),
+                id_1,
+                count,
+                counter,
+                total_count,
+                total_counter,
+            )
+            .await
+            .c(h!())?;
+            if should_merge {
+                crate::sigint::unit::merge_units(
+                    "system".to_string(),
+                    &db,
+                    id_2,
+                    id_1,
+                )
+                .await
+                .c(h!())?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn unit_details(unit: Unit, deleted: bool) -> DataRecDetailed {
+    let full_name = unit_name(&unit);
+    let mut details = HashMap::new();
+    details.insert("company".to_string(), unit.company);
+    details.insert("battalion".to_string(), unit.battalion);
+    details.insert("regiment".to_string(), unit.regiment);
+    details.insert("division".to_string(), unit.division);
+    details.insert("army".to_string(), unit.army);
+    details.insert("comment".to_string(), unit.comment);
+    details.insert("deleted".to_string(), format!("{deleted}"));
+    DataRecDetailed {
+        id: unit.id,
+        full_name,
+        details,
     }
 }
 
