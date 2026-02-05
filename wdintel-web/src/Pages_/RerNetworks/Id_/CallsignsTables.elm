@@ -961,10 +961,10 @@ viewCallsigns callsigns model user shared =
                         , Button.new
                             { label =
                                 if model.unknownCallsignsShowMessages then
-                                    "Сховати повідомлення"
+                                    "Сховати сеанси"
 
                                 else
-                                    "Показати повідомлення"
+                                    "Показати сеанси"
                             , onClick = ToggleUnknownCallsignsMessages
                             }
                             |> Button.withStyleSecondary
@@ -976,7 +976,7 @@ viewCallsigns callsigns model user shared =
                                         "Сортувати по імені"
 
                                     else
-                                        "Сортувати по повідомленням"
+                                        "Сортувати по сеансам"
                                 , onClick = ToggleUnknownCallsignsSortByMessages
                                 }
                                 |> Button.withStyleSecondary
