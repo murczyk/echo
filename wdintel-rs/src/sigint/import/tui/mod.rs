@@ -31,6 +31,18 @@ use types::*;
 
 pub mod types;
 
+enum DataKind {
+    Units,
+    Networks,
+}
+
+#[derive(PartialEq)]
+enum MergeKind {
+    Skip,
+    MergeAToB,
+    MergeBToA,
+}
+
 pub async fn run_merge_unit_tui(mode: Mode) -> Result<(), AppError> {
     let tmp_dir = TempDir::new()?;
     let now = Utc::now().naive_utc();
@@ -60,15 +72,76 @@ pub async fn run_merge_unit_tui(mode: Mode) -> Result<(), AppError> {
         .c(h!())?
         .into_iter()
         .filter_map(|u| render_unit(&u).ok().map(|u1| (u.id, (u, u1))))
+        .map(|(id, (u1, u2))| (id, unit_details(u2, u1.deleted)))
         .collect::<HashMap<_, _>>();
 
-    let mut terminal = setup_terminal().c(h!())?;
     if let Err(e) =
-        merge_all(&db, records_to_merge, models, &mut terminal).await
+        merge_all(&db, records_to_merge, models, DataKind::Units).await
     {
         error!("{e:#?}");
     }
-    restore_terminal(&mut terminal).c(h!())?;
+    Ok(())
+}
+
+pub async fn run_merge_network_tui(mode: Mode) -> Result<(), AppError> {
+    let tmp_dir = TempDir::new()?;
+    let now = Utc::now().naive_utc();
+    let path = tmp_dir
+        .path()
+        .join(format!("merge_network_{now}.json"))
+        .as_os_str()
+        .to_string_lossy()
+        .to_string();
+    crate::sigint::import::oneoff_export_etalon_data(mode, path.clone())
+        .await
+        .c(h!())?;
+    let db = new_pg_pool_from_mode(mode).await.c(h!())?;
+    let mut file_read = File::open(path).await.context(h!())?;
+    let mut buffer = Vec::new();
+    file_read.read_to_end(&mut buffer).await.context(h!())?;
+    let etalon_txt = String::from_utf8_lossy(&buffer).to_string();
+    let etalon_full: EtalonData =
+        serde_json::from_str(&etalon_txt).context(h!())?;
+    let units = etalon_full.sigint_unit;
+    let unit_data = load_unit_data(&db, units, false).await.c(h!())?;
+    let imported_network_units: Vec<sigint_network_unit::Model> =
+        etalon_full.sigint_network_unit;
+    let imported_networks: Vec<sigint_network::Model> =
+        etalon_full.sigint_network;
+    let result = load_network_data(
+        &db,
+        unit_data,
+        imported_network_units,
+        imported_networks,
+    )
+    .await
+    .c(h!())?;
+
+    let sigint_network_units = sigint_network_unit::Entity::find()
+        .all(&db)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|m| (m.id, m.unit_id))
+        .collect::<HashMap<_, _>>();
+    let mut models = HashMap::new();
+    let records_to_merge = result.perfect_matches;
+    for (_, rows) in result.data {
+        for row in rows {
+            let id = row.recording.id;
+            let rec =
+                add_network_model(&result.models, &sigint_network_units, row);
+            if let Some(rec) = rec {
+                models.insert(id, rec);
+            }
+        }
+    }
+
+    if let Err(e) =
+        merge_all(&db, records_to_merge, models, DataKind::Networks).await
+    {
+        error!("{e:#?}");
+    }
     Ok(())
 }
 
@@ -160,14 +233,14 @@ async fn run_merge_once(
     counter: usize,
     total_count: usize,
     total_counter: usize,
-) -> anyhow::Result<bool> {
+) -> anyhow::Result<MergeKind> {
     let dupes_counter = if count == 1 {
         "".to_string()
     } else {
         format!(" ({counter}/{count})")
     };
     let text = format!(
-        "{total_counter}/{total_count}: Merge {title} duplicates of #{item_id}{dupes_counter}? Y/n"
+        "{total_counter}/{total_count}: Merge {title} duplicates of #{item_id}{dupes_counter}? \n - a: Keep A, merge B into A\n - b: Keep B, merge A into B\n - n: skip"
     );
     let poll = Duration::from_millis(SIGINT_INBOX_TUI_EVENT_POLL_MS);
     terminal
@@ -181,17 +254,23 @@ async fn run_merge_once(
         if matches_quit(&ev) {
             anyhow::bail!("Quitting...");
         }
-        if matches_key(&ev, 'y') {
-            return Ok(true);
+        if matches_key(&ev, 'a') {
+            return Ok(MergeKind::MergeBToA);
+        }
+        if matches_key(&ev, 'b') {
+            return Ok(MergeKind::MergeAToB);
         }
         if matches_key(&ev, 'n') {
-            return Ok(false);
+            return Ok(MergeKind::Skip);
         }
-        if matches_key(&ev, 'Y') {
-            return Ok(true);
+        if matches_key(&ev, 'A') {
+            return Ok(MergeKind::MergeBToA);
+        }
+        if matches_key(&ev, 'B') {
+            return Ok(MergeKind::MergeAToB);
         }
         if matches_key(&ev, 'N') {
-            return Ok(false);
+            return Ok(MergeKind::Skip);
         }
     }
 }
@@ -202,12 +281,17 @@ fn draw_merge_ui(
     rec1: DataRecDetailed,
     rec2: DataRecDetailed,
 ) {
+    let title_lines = title
+        .split('\n')
+        .map(|line| Line::from(line.to_string()))
+        .collect::<Vec<_>>();
+    let title_height = title_lines.len().max(1) as u16;
     let root = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(1), Constraint::Min(1)])
+        .constraints([Constraint::Length(title_height), Constraint::Min(1)])
         .split(frame.size());
 
-    let header = Paragraph::new(Line::from(title));
+    let header = Paragraph::new(title_lines);
     frame.render_widget(header, root[0]);
 
     let rows = build_merge_rows(rec1, rec2);
@@ -286,8 +370,8 @@ fn build_merge_rows(
     let mut rows = Vec::new();
     rows.push(MergeRow {
         field: "Field".to_string(),
-        left: "Left".to_string(),
-        right: "Right".to_string(),
+        left: "A".to_string(),
+        right: "B".to_string(),
         style: header,
     });
 
@@ -1185,26 +1269,31 @@ fn from_unit(model: sigint_unit::Model, unit: Unit) -> DataRec {
 async fn merge_all(
     db: &DatabaseConnection,
     records_to_merge: Vec<Vec<i64>>,
-    models: HashMap<i64, (sigint_unit::Model, Unit)>,
-    mut terminal: &mut Terminal<CrosstermBackend<Stdout>>,
+    details: HashMap<i64, DataRecDetailed>,
+    kind: DataKind,
 ) -> Result<(), AppError> {
-    let records_to_merge = records_to_merge.into_iter().filter(|x| x.len() > 1).collect_vec();
+    let title = match kind {
+        DataKind::Units => "UNITS",
+        DataKind::Networks => "NETWORKS",
+    };
+    let records_to_merge = cleanup_ids(records_to_merge);
     let total_count = records_to_merge.len();
     let mut total_counter = 0;
     for mut ids in records_to_merge {
-        let id_1 = ids.remove(0);
+        let mut id_1 = ids.remove(0);
         let count = ids.len();
         let mut counter = 0;
-        for id_2 in ids {
+        for mut id_2 in ids {
+            let mut terminal = setup_terminal().c(h!())?;
             counter += 1;
             total_counter += 1;
-            let rec_1 = models.get(&id_1).cloned().c(h!())?;
-            let rec_2 = models.get(&id_2).cloned().c(h!())?;
-            let should_merge: bool = run_merge_once(
-                "UNITS",
+            let rec_1 = details.get(&id_1).cloned().c(h!())?;
+            let rec_2 = details.get(&id_2).cloned().c(h!())?;
+            let Ok(should_merge) = run_merge_once(
+                title,
                 &mut terminal,
-                unit_details(rec_1.1, rec_1.0.deleted),
-                unit_details(rec_2.1, rec_2.0.deleted),
+                rec_1,
+                rec_2,
                 id_1,
                 count,
                 counter,
@@ -1212,20 +1301,149 @@ async fn merge_all(
                 total_counter,
             )
             .await
-            .c(h!())?;
-            if should_merge {
-                crate::sigint::unit::merge_units(
-                    "system".to_string(),
-                    &db,
-                    id_2,
-                    id_1,
-                )
-                .await
-                .c(h!())?;
+            else {
+                restore_terminal(&mut terminal).c(h!())?;
+                return Ok(());
+            };
+            if should_merge != MergeKind::Skip {
+                (id_1, id_2) = if should_merge == MergeKind::MergeAToB {
+                    (id_2, id_1)
+                } else {
+                    (id_1, id_2)
+                };
+                match kind {
+                    DataKind::Units => {
+                        crate::sigint::unit::merge_units(
+                            "system".to_string(),
+                            &db,
+                            id_2,
+                            id_1,
+                        )
+                        .await
+                        .c(h!())?;
+                    }
+                    DataKind::Networks => {
+                        let txn = db.begin().await.c(h!())?;
+                        crate::sigint::network::merge::merge_two_networks(
+                            &txn, "system", false, id_2, id_1,
+                        )
+                        .await
+                        .c(h!())?;
+                        txn.commit().await.c(h!())?;
+                    }
+                };
             }
+            restore_terminal(&mut terminal).c(h!())?;
         }
     }
     Ok(())
+}
+
+fn cleanup_ids(records_to_merge: Vec<Vec<i64>>) -> Vec<Vec<i64>> {
+    let groups = records_to_merge
+        .into_iter()
+        .filter(|x| x.len() > 1)
+        .sorted_by_key(|a| -1 * (a.len() as i32))
+        .collect_vec();
+    let mut values = HashSet::new();
+    let mut result = vec![];
+    for arr in groups {
+        let mut add = true;
+        for x in &arr {
+            if values.contains(x) {
+                add = false;
+            }
+            values.insert(*x);
+        }
+        if add {
+            result.push(arr);
+        }
+    }
+    result
+}
+
+fn add_network_model(
+    models: &HashMap<i64, sigint_network::Model>,
+    sigint_network_units: &HashMap<i64, i64>,
+    row: DataRow,
+) -> Option<DataRecDetailed> {
+    let recording = row.recording;
+    let Some(model) = models.get(&recording.id) else {
+        return None;
+    };
+    let mut details = HashMap::new();
+    let unit_id = sigint_network_units
+        .get(&recording.id)
+        .map(|id| format!("{id}"))
+        .unwrap_or("-".to_string());
+    details.insert("unit_id".to_string(), unit_id);
+    details.insert("deleted".to_string(), format!("{}", model.deleted));
+    details.insert("location".to_string(), format!("{}", model.location));
+    details.insert(
+        "purpose".to_string(),
+        format!("{}", model.purpose.clone().unwrap_or("-".to_string())),
+    );
+    details.insert(
+        "radio_station".to_string(),
+        format!("{}", model.radio_station.clone().unwrap_or("-".to_string())),
+    );
+    details.insert(
+        "operation_mode".to_string(),
+        format!(
+            "{}",
+            model.operation_mode.clone().unwrap_or("-".to_string())
+        ),
+    );
+    details.insert(
+        "operation_type".to_string(),
+        format!(
+            "{}",
+            model.operation_type.clone().unwrap_or("-".to_string())
+        ),
+    );
+    details.insert(
+        "operation_period".to_string(),
+        format!(
+            "{}",
+            model.operation_period.clone().unwrap_or("-".to_string())
+        ),
+    );
+    details.insert(
+        "merged_to".to_string(),
+        format!(
+            "{}",
+            model
+                .merged_to
+                .map(|n| format!("{n}"))
+                .unwrap_or("-".to_string())
+        ),
+    );
+    details.insert(
+        "active_from".to_string(),
+        format!(
+            "{}",
+            model
+                .active_from
+                .map(|n| format!("{n}"))
+                .unwrap_or("-".to_string())
+        ),
+    );
+    details.insert(
+        "active_to".to_string(),
+        format!(
+            "{}",
+            model
+                .active_to
+                .map(|n| format!("{n}"))
+                .unwrap_or("-".to_string())
+        ),
+    );
+
+    Some(DataRecDetailed {
+        id: recording.id,
+        full_name: recording.full_name,
+        details,
+    })
 }
 
 fn unit_details(unit: Unit, deleted: bool) -> DataRecDetailed {
