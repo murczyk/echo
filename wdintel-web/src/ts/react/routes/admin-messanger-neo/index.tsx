@@ -1,10 +1,10 @@
-import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
-import EditIcon from "@mui/icons-material/Edit";
-import LinkIcon from "@mui/icons-material/Link";
-import PauseCircleOutlineIcon from "@mui/icons-material/PauseCircleOutline";
-import PlayCircleOutlineIcon from "@mui/icons-material/PlayCircleOutline";
-import RefreshIcon from "@mui/icons-material/Refresh";
-import RestartAltIcon from "@mui/icons-material/RestartAlt";
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import EditIcon from '@mui/icons-material/Edit';
+import LinkIcon from '@mui/icons-material/Link';
+import PauseCircleOutlineIcon from '@mui/icons-material/PauseCircleOutline';
+import PlayCircleOutlineIcon from '@mui/icons-material/PlayCircleOutline';
+import RefreshIcon from '@mui/icons-material/Refresh';
+import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import {
   Alert,
   Box,
@@ -18,41 +18,41 @@ import {
   TextField,
   Tooltip,
   Typography,
-} from "@mui/material";
+} from '@mui/material';
 import {
   MRT_ColumnDef,
   MaterialReactTable,
   useMaterialReactTable,
-} from "material-react-table";
-import React from "react";
+} from 'material-react-table';
+import React from 'react';
 
 import {
   AccountStatusReq,
   AreaOfResponsibility,
   EchoAccountF1,
-  EchoAccountBE,
+  EchoAccount,
   LinkAccountReq,
   LinkEchoOperatorReq,
   Login,
-} from "../../../../Bindings";
-import { Info } from "../../components/info";
-import { Button } from "../../components/mui-customized/button";
-import { IconButton } from "../../components/mui-customized/icon-button";
+} from '../../../../Bindings';
+import { Info } from '../../components/info';
+import { Button } from '../../components/mui-customized/button';
+import { IconButton } from '../../components/mui-customized/icon-button';
 import {
   CUSTOM_CELL_STYLES,
   CUSTOM_STYLES,
-} from "../../components/mui-customized/table/custom-styles";
+} from '../../components/mui-customized/table/custom-styles';
 import {
   getDefaultMRTOptions,
   renderColumnActionsMenuItems,
-} from "../../components/mui-customized/table/get-default-table-options";
-import { TableTopToolbar } from "../../components/mui-customized/table/components/table-top-toolbar";
+} from '../../components/mui-customized/table/get-default-table-options';
+import { TableTopToolbar } from '../../components/mui-customized/table/components/table-top-toolbar';
 import {
   TableStateProvider,
   useTableStateContext,
-} from "../../components/mui-customized/table/table-state-provider";
-import { listAors } from "../../services/api/aor";
-import { restartDatasource } from "../../services/api/admin";
+} from '../../components/mui-customized/table/table-state-provider';
+import { listAors } from '../../services/api/aor';
+import { restartDatasource } from '../../services/api/admin';
 import {
   editAccount,
   getQrCode,
@@ -61,10 +61,10 @@ import {
   linkOperator,
   listAccounts,
   unlinkAccount,
-} from "../../services/api/messenger";
-import { listLogins } from "../../services/api/logins";
+} from '../../services/api/messenger';
+import { listLogins } from '../../services/api/logins';
 
-type LoadingStatus = "idle" | "loading" | "success" | "error";
+type LoadingStatus = 'idle' | 'loading' | 'success' | 'error';
 
 type PhoneForm = {
   messengerType: string;
@@ -89,8 +89,8 @@ type EditForm = {
   aorId: number | null;
 };
 
-type LinkStep = "form" | "qr" | "success";
-type LinkMode = "phone" | "api";
+type LinkStep = 'form' | 'qr' | 'success';
+type LinkMode = 'phone' | 'api';
 
 type QrData = {
   accountId: number;
@@ -99,7 +99,7 @@ type QrData = {
 };
 
 type StatusMessage = {
-  kind: "success" | "error";
+  kind: 'success' | 'error';
   message: string;
 } | null;
 
@@ -115,38 +115,38 @@ const DEFAULT_COLUMNS_VISIBILITY = {
 };
 
 const DEFAULT_COLUMN_ORDER = [
-  "mrt-row-numbers",
-  "mrt-row-actions",
-  "displayName",
-  "systemServiceName",
-  "phoneOrApi",
-  "messenger",
-  "debugInfo",
-  "description",
-  "aor",
-  "status",
+  'mrt-row-numbers',
+  'mrt-row-actions',
+  'displayName',
+  'systemServiceName',
+  'phoneOrApi',
+  'messenger',
+  'debugInfo',
+  'description',
+  'aor',
+  'status',
 ];
 
 const defaultPhoneForm: PhoneForm = {
-  messengerType: "signal",
-  phoneNumber: "",
-  name: "",
-  description: "",
+  messengerType: 'signal',
+  phoneNumber: '',
+  name: '',
+  description: '',
   aorId: null,
 };
 
 const defaultApiForm: ApiForm = {
-  apiEndpoint: "",
+  apiEndpoint: '',
   apiLogin: null,
-  name: "",
-  description: "",
+  name: '',
+  description: '',
   aorId: null,
 };
 
 function formatErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message.trim().length > 0)
     return error.message;
-  return "Невідома помилка. Спробуйте ще раз.";
+  return 'Невідома помилка. Спробуйте ще раз.';
 }
 
 function normalizeDescription(description: string): string | null {
@@ -156,56 +156,56 @@ function normalizeDescription(description: string): string | null {
 
 function normalizeToSystemName(displayName: string): string {
   const lower = displayName.toLowerCase();
-  const withHyphens = lower.replace(/\s+/g, "-");
+  const withHyphens = lower.replace(/\s+/g, '-');
 
   const mapping: Record<string, string> = {
-    а: "a",
-    б: "b",
-    в: "v",
-    г: "h",
-    ґ: "g",
-    д: "d",
-    е: "e",
-    є: "ye",
-    ж: "zh",
-    з: "z",
-    и: "y",
-    і: "i",
-    ї: "yi",
-    й: "y",
-    к: "k",
-    л: "l",
-    м: "m",
-    н: "n",
-    о: "o",
-    п: "p",
-    р: "r",
-    с: "s",
-    т: "t",
-    у: "u",
-    ф: "f",
-    х: "kh",
-    ц: "ts",
-    ч: "ch",
-    ш: "sh",
-    щ: "shch",
-    ь: "",
-    ю: "yu",
-    я: "ya",
+    а: 'a',
+    б: 'b',
+    в: 'v',
+    г: 'h',
+    ґ: 'g',
+    д: 'd',
+    е: 'e',
+    є: 'ye',
+    ж: 'zh',
+    з: 'z',
+    и: 'y',
+    і: 'i',
+    ї: 'yi',
+    й: 'y',
+    к: 'k',
+    л: 'l',
+    м: 'm',
+    н: 'n',
+    о: 'o',
+    п: 'p',
+    р: 'r',
+    с: 's',
+    т: 't',
+    у: 'u',
+    ф: 'f',
+    х: 'kh',
+    ц: 'ts',
+    ч: 'ch',
+    ш: 'sh',
+    щ: 'shch',
+    ь: '',
+    ю: 'yu',
+    я: 'ya',
   };
 
   const mapped = Array.from(withHyphens)
     .map((char) => mapping[char] ?? char)
-    .join("");
+    .join('');
 
-  const filtered = mapped.replace(/[^a-z0-9_-]/gi, "");
+  const filtered = mapped.replace(/[^a-z0-9_-]/gi, '');
   const collapsed = filtered
-    .replace(/-+/g, "-")
-    .replace(/^-+/, "")
-    .replace(/-+$/, "");
+    .replace(/-+/g, '-')
+    .replace(/^-+/, '')
+    .replace(/-+$/, '');
 
   if (collapsed.length < 4) {
-    if (collapsed.length === 0) return "account";
+    if (collapsed.length === 0) return 'account';
     return `${collapsed}-${(collapsed.length + 1) % 1000}`;
   }
 
@@ -215,81 +215,81 @@ function normalizeToSystemName(displayName: string): string {
 }
 
 function validateDisplayName(name: string): string | null {
-  if (name.trim().length < 2) return "Назва акаунту має бути мінімум 2 символи";
+  if (name.trim().length < 2) return 'Назва акаунту має бути мінімум 2 символи';
   if (name.trim().length > 50)
-    return "Назва акаунту має бути максимум 50 символів";
+    return 'Назва акаунту має бути максимум 50 символів';
   return null;
 }
 
 function validateAorId(aorId: number | null): string | null {
-  if (aorId === null) return "Потрібно вибрати смугу відповідальності";
+  if (aorId === null) return 'Потрібно вибрати смугу відповідальності';
   return null;
 }
 
 function validateApiEndpoint(endpoint: string): string | null {
-  if (!endpoint.trim()) return "API посилання не може бути порожнім";
-  if (!endpoint.startsWith("https"))
-    return "API посиланян має бути валідним URL (починається з https://)";
-  if (endpoint.trim().length < 10) return "API посилання занадто короткe";
+  if (!endpoint.trim()) return 'API посилання не може бути порожнім';
+  if (!endpoint.startsWith('https'))
+    return 'API посиланян має бути валідним URL (починається з https://)';
+  if (endpoint.trim().length < 10) return 'API посилання занадто короткe';
   return null;
 }
 
 function validateApiUser(apiLogin: string | null): string | null {
-  if (!apiLogin) return "Потрібно вибрати API користувача";
+  if (!apiLogin) return 'Потрібно вибрати API користувача';
   if (apiLogin.length < 3)
-    return "API користувач занадто короткий (мінімум 3 символи)";
+    return 'API користувач занадто короткий (мінімум 3 символи)';
   return null;
 }
 
 function getStatusText(account: EchoAccountF1): string {
   if (account.isLinked) {
-    if (account.status === "active") return "Активний";
-    if (account.status === "paused") return "Призупинено";
-    if (account.status === "ready") return "Готовий";
+    if (account.status === 'active') return 'Активний';
+    if (account.status === 'paused') return 'Призупинено';
+    if (account.status === 'ready') return 'Готовий';
     return account.status;
   }
 
-  if (account.status === "ready") {
-    return account.isImported ? "Імпортовано" : "Очікує підключення";
+  if (account.status === 'ready') {
+    return account.isImported ? 'Імпортовано' : 'Очікує підключення';
   }
 
-  return "Не підключено";
+  return 'Не підключено';
 }
 
 function getStatusColorClass(account: EchoAccountF1): string {
   if (account.isLinked) {
-    if (account.status === "active") return "text-green-600";
-    if (account.status === "paused") return "text-yellow-600";
-    if (account.status === "ready") return "text-blue-600";
-    return "text-gray-600";
+    if (account.status === 'active') return 'text-green-600';
+    if (account.status === 'paused') return 'text-yellow-600';
+    if (account.status === 'ready') return 'text-blue-600';
+    return 'text-gray-600';
   }
 
-  if (account.status === "ready") {
-    return account.isImported ? "text-purple-600" : "text-orange-600";
+  if (account.status === 'ready') {
+    return account.isImported ? 'text-purple-600' : 'text-orange-600';
   }
 
-  return "text-orange-600";
+  return 'text-orange-600';
 }
 
 function buildDebugDetails(account: EchoAccountF1) {
   return [
-    { label: "echo_client_config.process_name", value: account.processName },
-    { label: "echo_client_config.signal_port", value: account.signalPort },
+    { label: 'echo_client_config.process_name', value: account.processName },
+    { label: 'echo_client_config.signal_port', value: account.signalPort },
     {
-      label: "echo_client_config.signal_api_attachment_path",
+      label: 'echo_client_config.signal_api_attachment_path',
       value: account.attachmentsPath,
     },
-    { label: "echo_client.id", value: account.echoClientId },
-    { label: "echo_account.id", value: account.echoAccountId },
-    { label: "echo_client_lock.id", value: account.echoClientLockId },
+    { label: 'echo_client.id', value: account.echoClientId },
+    { label: 'echo_account.id', value: account.echoAccountId },
+    { label: 'echo_client_lock.id', value: account.echoClientLockId },
   ].filter((item) => item.value);
 }
 
 function buildEditRequest(
   editForm: EditForm,
-  account: EchoAccountF1,
+  account: EchoAccountF1
 ): AccountStatusReq {
-  const currentIsActive = account.status === "active";
+  const currentIsActive = account.status === 'active';
 
   return {
     accountId: editForm.id,
@@ -305,26 +305,26 @@ function buildEditRequest(
 function updateAccountInList(
   accounts: EchoAccountF1[],
   accountId: number,
-  updater: (account: EchoAccountF1) => EchoAccountF1,
+  updater: (account: EchoAccountF1) => EchoAccountF1
 ) {
   return accounts.map((account) =>
-    account.id === accountId ? updater(account) : account,
+    account.id === accountId ? updater(account) : account
   );
 }
 
 function getMessengerLabel(messenger: string) {
-  if (messenger === "signal") return "Signal";
-  if (messenger === "whatsapp") return "WhatsApp";
-  if (messenger === "echo_operator") return "ЕХО Оператор";
+  if (messenger === 'signal') return 'Signal';
+  if (messenger === 'whatsapp') return 'WhatsApp';
+  if (messenger === 'echo_operator') return 'ЕХО Оператор';
   return messenger;
 }
 
 function MessengerIcon({ messenger }: { messenger: string }) {
-  if (messenger === "signal")
+  if (messenger === 'signal')
     return <i className="bi bi-signal text-blue-500" title="Signal" />;
-  if (messenger === "whatsapp")
+  if (messenger === 'whatsapp')
     return <i className="bi bi-whatsapp text-green-500" title="WhatsApp" />;
-  if (messenger === "echo_operator")
+  if (messenger === 'echo_operator')
     return <i className="bi bi-link text-red-500" title="ЕХО Оператор" />;
   return <i className="bi bi-chat-fill text-gray-500" title={messenger} />;
 }
@@ -333,29 +333,29 @@ function useMessengerColumns(): MRT_ColumnDef<EchoAccountF1>[] {
   return React.useMemo(
     () => [
       {
-        header: "Назва акаунту",
-        accessorKey: "displayName",
+        header: 'Назва акаунту',
+        accessorKey: 'displayName',
         size: 180,
       },
       {
-        header: "Системний сервіс",
-        accessorKey: "systemServiceName",
+        header: 'Системний сервіс',
+        accessorKey: 'systemServiceName',
         Cell: ({ cell }) => (
           <span className="text-sm">
-            {(cell.getValue<string>() || "").trim() || "—"}
+            {(cell.getValue<string>() || '').trim() || '—'}
           </span>
         ),
         size: 160,
       },
       {
-        header: "Номер/API Користувач",
-        accessorKey: "phoneOrApi",
+        header: 'Номер/API Користувач',
+        accessorKey: 'phoneOrApi',
         accessorFn: (row) =>
-          row.messenger === "echo_operator"
-            ? `API: ${row.apiLogin || ""}`
+          row.messenger === 'echo_operator'
+            ? `API: ${row.apiLogin || ''}`
             : row.phoneNumber,
         Cell: ({ row }) =>
-          row.original.messenger === "echo_operator" ? (
+          row.original.messenger === 'echo_operator' ? (
             row.original.apiLogin ? (
               <span>API: {row.original.apiLogin}</span>
             ) : (
@@ -367,19 +367,19 @@ function useMessengerColumns(): MRT_ColumnDef<EchoAccountF1>[] {
         size: 160,
       },
       {
-        header: "Месенджер",
-        accessorKey: "messenger",
+        header: 'Месенджер',
+        accessorKey: 'messenger',
         Cell: ({ row }) => <MessengerIcon messenger={row.original.messenger} />,
         size: 80,
       },
       {
-        header: "Інформація для дебагу",
-        accessorKey: "debugInfo",
+        header: 'Інформація для дебагу',
+        accessorKey: 'debugInfo',
         accessorFn: (row) =>
           buildDebugDetails(row)
             .map((item) => item.value)
             .filter(Boolean)
-            .join(" | "),
+            .join(' | '),
         Cell: ({ row }) => {
           const details = buildDebugDetails(row.original);
           if (details.length === 0)
@@ -398,12 +398,12 @@ function useMessengerColumns(): MRT_ColumnDef<EchoAccountF1>[] {
         size: 240,
       },
       {
-        header: "Опис",
-        accessorKey: "description",
+        header: 'Опис',
+        accessorKey: 'description',
         Cell: ({ row }) => {
           const description = row.original.description;
           const endpoint = row.original.apiEndpoint;
-          const trimmedDescription = description?.trim() || "";
+          const trimmedDescription = description?.trim() || '';
           const displayDescription =
             trimmedDescription.length > 50
               ? `${trimmedDescription.slice(0, 50)}...`
@@ -416,9 +416,9 @@ function useMessengerColumns(): MRT_ColumnDef<EchoAccountF1>[] {
               ) : (
                 <span className="text-muted-foreground">—</span>
               )}
-              {row.original.messenger === "echo_operator" && endpoint ? (
+              {row.original.messenger === 'echo_operator' && endpoint ? (
                 <div className="text-xs text-gray-500" title={endpoint}>
-                  Endpoint:{" "}
+                  Endpoint:{' '}
                   {endpoint.length > 30
                     ? `${endpoint.slice(0, 30)}...`
                     : endpoint}
@@ -430,17 +430,17 @@ function useMessengerColumns(): MRT_ColumnDef<EchoAccountF1>[] {
         size: 200,
       },
       {
-        header: "Смуга відповідальності",
-        accessorKey: "aor",
-        accessorFn: (row) => row.areaOfResponsibility?.name || "—",
+        header: 'Смуга відповідальності',
+        accessorKey: 'aor',
+        accessorFn: (row) => row.areaOfResponsibility?.name || '—',
         Cell: ({ row }) => (
-          <span>{row.original.areaOfResponsibility?.name || "—"}</span>
+          <span>{row.original.areaOfResponsibility?.name || '—'}</span>
         ),
         size: 160,
       },
       {
-        header: "Статус",
-        accessorKey: "status",
+        header: 'Статус',
+        accessorKey: 'status',
         accessorFn: (row) => getStatusText(row),
         Cell: ({ row }) => (
           <span className={getStatusColorClass(row.original)}>
@@ -450,7 +450,7 @@ function useMessengerColumns(): MRT_ColumnDef<EchoAccountF1>[] {
         size: 140,
       },
     ],
-    [],
+    []
   );
 }
 
@@ -495,7 +495,7 @@ function TableRowActions(props: TableActionsProps) {
       </Tooltip>
       {account.isLinked ? (
         <Tooltip
-          title={account.status === "active" ? "Відвʼязати" : "Активувати"}
+          title={account.status === 'active' ? 'Відвʼязати' : 'Активувати'}
         >
           <span>
             <IconButton
@@ -504,7 +504,7 @@ function TableRowActions(props: TableActionsProps) {
               onClick={() => props.onToggleStatus(account.id)}
               className="table-action-btn"
             >
-              {account.status === "active" ? (
+              {account.status === 'active' ? (
                 <PauseCircleOutlineIcon />
               ) : (
                 <PlayCircleOutlineIcon />
@@ -580,8 +580,8 @@ function MessangerAccountsTable(props: MessangerAccountsTableProps) {
     enableFacetedValues: true,
     enableColumnOrdering: tableStateContext.enableColumnOrdering,
     enableColumnResizing: tableStateContext.enableColumnResizing,
-    columnFilterDisplayMode: "popover",
-    globalFilterFn: "contains",
+    columnFilterDisplayMode: 'popover',
+    globalFilterFn: 'contains',
     onColumnVisibilityChange: tableStateContext.onColumnVisibilityChange,
     onColumnFiltersChange: tableStateContext.onColumnFiltersChange,
     onColumnOrderChange: tableStateContext.onColumnOrderChange,
@@ -607,15 +607,15 @@ function MessangerAccountsTable(props: MessangerAccountsTableProps) {
     },
     displayColumnDefOptions: {
       ...CUSTOM_STYLES.displayColumnDefOptions,
-      "mrt-row-actions": {
-        ...CUSTOM_STYLES.displayColumnDefOptions["mrt-row-actions"],
+      'mrt-row-actions': {
+        ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-actions'],
         size: 90,
       },
-      "mrt-row-numbers": {
-        ...CUSTOM_STYLES.displayColumnDefOptions["mrt-row-numbers"],
+      'mrt-row-numbers': {
+        ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-numbers'],
         muiTableBodyCellProps: () => ({
           sx: {
-            justifyContent: "center",
+            justifyContent: 'center',
             ...CUSTOM_CELL_STYLES,
           },
         }),
@@ -634,20 +634,20 @@ function MessangerAccountsTable(props: MessangerAccountsTableProps) {
 function AdminMessangerNeoPageBody() {
   const [accounts, setAccounts] = React.useState<EchoAccountF1[]>([]);
   const [accountsStatus, setAccountsStatus] =
-    React.useState<LoadingStatus>("idle");
+    React.useState<LoadingStatus>('idle');
   const [accountsError, setAccountsError] = React.useState<string | null>(null);
   const [aors, setAors] = React.useState<AreaOfResponsibility[]>([]);
-  const [aorsStatus, setAorsStatus] = React.useState<LoadingStatus>("idle");
+  const [aorsStatus, setAorsStatus] = React.useState<LoadingStatus>('idle');
   const [apiUsers, setApiUsers] = React.useState<Login[]>([]);
   const [apiUsersStatus, setApiUsersStatus] =
-    React.useState<LoadingStatus>("idle");
-  const [linkMode, setLinkMode] = React.useState<LinkMode>("phone");
-  const [linkStep, setLinkStep] = React.useState<LinkStep>("form");
+    React.useState<LoadingStatus>('idle');
+  const [linkMode, setLinkMode] = React.useState<LinkMode>('phone');
+  const [linkStep, setLinkStep] = React.useState<LinkStep>('form');
   const [linkSidebarOpen, setLinkSidebarOpen] = React.useState(false);
   const [phoneForm, setPhoneForm] = React.useState<PhoneForm>(defaultPhoneForm);
   const [apiForm, setApiForm] = React.useState<ApiForm>(defaultApiForm);
   const [formErrors, setFormErrors] = React.useState<Record<string, string>>(
-    {},
+    {}
   );
   const [qrData, setQrData] = React.useState<QrData | null>(null);
   const [linkSuccessAccount, setLinkSuccessAccount] =
@@ -656,28 +656,28 @@ function AdminMessangerNeoPageBody() {
   const [editSidebarOpen, setEditSidebarOpen] = React.useState(false);
   const [editForm, setEditForm] = React.useState<EditForm | null>(null);
   const [editErrors, setEditErrors] = React.useState<Record<string, string>>(
-    {},
+    {}
   );
   const [deleteAccountId, setDeleteAccountId] = React.useState<number | null>(
-    null,
+    null
   );
   const [actionStatus, setActionStatus] = React.useState<StatusMessage>(null);
   const [isMutating, setIsMutating] = React.useState(false);
 
   async function loadAccounts() {
-    setAccountsStatus("loading");
+    setAccountsStatus('loading');
     setAccountsError(null);
     try {
       const rsp = await listAccounts();
       setAccounts(transformAccounts(rsp.accounts));
-      setAccountsStatus("success");
+      setAccountsStatus('success');
     } catch (error) {
-      setAccountsStatus("error");
+      setAccountsStatus('error');
       setAccountsError(formatErrorMessage(error));
     }
   }
 
-  function transformAccounts(accounts: EchoAccountBE[]): EchoAccountF1[] {
+  function transformAccounts(accounts: EchoAccount[]): EchoAccountF1[] {
     // transform objects from BE model to FE model
     return accounts.map((account) => ({
       id: account.id,
@@ -704,32 +704,34 @@ function AdminMessangerNeoPageBody() {
   }
 
   async function loadAors() {
-    setAorsStatus("loading");
+    setAorsStatus('loading');
     try {
       const list = await listAors({ sortBy: null });
       setAors(list);
-      setAorsStatus("success");
+      setAorsStatus('success');
     } catch (error) {
-      setAorsStatus("error");
+      setAorsStatus('error');
       setActionStatus({
-        kind: "error",
+        kind: 'error',
         message: `Помилка завантаження смуг: ${formatErrorMessage(error)}`,
       });
     }
   }
 
   async function loadApiUsers() {
-    if (apiUsersStatus === "loading" || apiUsersStatus === "success") return;
-    setApiUsersStatus("loading");
+    if (apiUsersStatus === 'loading' || apiUsersStatus === 'success') return;
+    setApiUsersStatus('loading');
     try {
-      const rsp = await listLogins({ sortBy: null, filterByRoles: ["Api"] });
+      const rsp = await listLogins({ sortBy: null, filterByRoles: ['Api'] });
       setApiUsers(rsp.users);
-      setApiUsersStatus("success");
+      setApiUsersStatus('success');
     } catch (error) {
-      setApiUsersStatus("error");
+      setApiUsersStatus('error');
       setActionStatus({
-        kind: "error",
-        message: `Помилка завантаження API користувачів: ${formatErrorMessage(error)}`,
+        kind: 'error',
+        message: `Помилка завантаження API користувачів: ${formatErrorMessage(
+          error
+        )}`,
       });
     }
   }
@@ -740,7 +742,7 @@ function AdminMessangerNeoPageBody() {
   }, []);
 
   React.useEffect(() => {
-    if (linkStep !== "qr" || !qrData) return;
+    if (linkStep !== 'qr' || !qrData) return;
 
     const intervalId = window.setInterval(async () => {
       try {
@@ -750,10 +752,10 @@ function AdminMessangerNeoPageBody() {
             updateAccountInList(prev, qrData.accountId, (account) => ({
               ...account,
               isLinked: true,
-            })),
+            }))
           );
           setLinkSuccessAccount(qrData.account);
-          setLinkStep("success");
+          setLinkStep('success');
         }
       } catch (_) {
         // silent polling failure
@@ -764,8 +766,8 @@ function AdminMessangerNeoPageBody() {
   }, [linkStep, qrData?.accountId]);
 
   function resetLinkFlow() {
-    setLinkMode("phone");
-    setLinkStep("form");
+    setLinkMode('phone');
+    setLinkStep('form');
     setLinkSidebarOpen(false);
     setPhoneForm(defaultPhoneForm);
     setApiForm(defaultApiForm);
@@ -777,7 +779,7 @@ function AdminMessangerNeoPageBody() {
 
   function openLinkSidebar() {
     setLinkSidebarOpen(true);
-    setLinkStep("form");
+    setLinkStep('form');
     setLinkStatus(null);
     setLinkSuccessAccount(null);
     setQrData(null);
@@ -789,15 +791,15 @@ function AdminMessangerNeoPageBody() {
 
   function switchLinkMode(nextMode: LinkMode) {
     setLinkMode(nextMode);
-    setLinkStep("form");
+    setLinkStep('form');
     setFormErrors({});
     setLinkStatus(null);
-    if (nextMode === "phone") {
+    if (nextMode === 'phone') {
       setPhoneForm(defaultPhoneForm);
     } else {
       setApiForm(defaultApiForm);
     }
-    if (nextMode === "api") {
+    if (nextMode === 'api') {
       loadApiUsers();
     }
   }
@@ -806,11 +808,11 @@ function AdminMessangerNeoPageBody() {
     try {
       const qrRsp = await getQrCode({ accountId });
       setQrData((prev) =>
-        prev ? { ...prev, qrCode: qrRsp.qrCodeBase64 } : prev,
+        prev ? { ...prev, qrCode: qrRsp.qrCodeBase64 } : prev
       );
     } catch (error) {
       setLinkStatus({
-        kind: "error",
+        kind: 'error',
         message: `Помилка отримання QR коду: ${formatErrorMessage(error)}`,
       });
     }
@@ -819,7 +821,7 @@ function AdminMessangerNeoPageBody() {
   async function submitLinkForm() {
     const errors: Record<string, string> = {};
 
-    if (linkMode === "phone") {
+    if (linkMode === 'phone') {
       const nameError = validateDisplayName(phoneForm.name);
       if (nameError) errors.displayName = nameError;
 
@@ -832,7 +834,7 @@ function AdminMessangerNeoPageBody() {
       }
 
       if (phoneForm.aorId === null) {
-        setFormErrors({ aorId: "Потрібно вибрати смугу відповідальності" });
+        setFormErrors({ aorId: 'Потрібно вибрати смугу відповідальності' });
         return;
       }
 
@@ -853,15 +855,17 @@ function AdminMessangerNeoPageBody() {
         setAccounts((prev) => [rsp.account, ...prev]);
         setQrData({
           accountId: rsp.account.id,
-          qrCode: "",
+          qrCode: '',
           account: rsp.account,
         });
-        setLinkStep("qr");
+        setLinkStep('qr');
         await fetchQrCode(rsp.account.id);
       } catch (error) {
         setLinkStatus({
-          kind: "error",
-          message: `Помилка прив'язування акаунту: ${formatErrorMessage(error)}`,
+          kind: 'error',
+          message: `Помилка прив'язування акаунту: ${formatErrorMessage(
+            error
+          )}`,
         });
       } finally {
         setIsMutating(false);
@@ -888,8 +892,8 @@ function AdminMessangerNeoPageBody() {
 
     if (!apiForm.apiLogin || apiForm.aorId === null) {
       setFormErrors({
-        apiUser: "Потрібно вибрати API користувача",
-        aorId: "Потрібно вибрати смугу відповідальності",
+        apiUser: 'Потрібно вибрати API користувача',
+        aorId: 'Потрібно вибрати смугу відповідальності',
       });
       return;
     }
@@ -911,7 +915,7 @@ function AdminMessangerNeoPageBody() {
       resetLinkFlow();
     } catch (error) {
       setLinkStatus({
-        kind: "error",
+        kind: 'error',
         message: `Помилка прив'язування акаунту: ${formatErrorMessage(error)}`,
       });
     } finally {
@@ -926,7 +930,7 @@ function AdminMessangerNeoPageBody() {
     setEditForm({
       id: account.id,
       displayName: account.displayName,
-      description: account.description || "",
+      description: account.description || '',
       aorId: account.areaOfResponsibility?.id ?? null,
     });
     setEditErrors({});
@@ -966,12 +970,12 @@ function AdminMessangerNeoPageBody() {
           displayName: editForm.displayName,
           description: normalizeDescription(editForm.description),
           areaOfResponsibility: updatedAor,
-        })),
+        }))
       );
       closeEditSidebar();
     } catch (error) {
       setActionStatus({
-        kind: "error",
+        kind: 'error',
         message: `Помилка редагування акаунту: ${formatErrorMessage(error)}`,
       });
     } finally {
@@ -985,12 +989,12 @@ function AdminMessangerNeoPageBody() {
     try {
       await unlinkAccount({ accountId: deleteAccountId });
       setAccounts((prev) =>
-        prev.filter((account) => account.id !== deleteAccountId),
+        prev.filter((account) => account.id !== deleteAccountId)
       );
       setDeleteAccountId(null);
     } catch (error) {
       setActionStatus({
-        kind: "error",
+        kind: 'error',
         message: `Помилка видалення акаунту: ${formatErrorMessage(error)}`,
       });
       setDeleteAccountId(null);
@@ -1006,7 +1010,7 @@ function AdminMessangerNeoPageBody() {
     const request: AccountStatusReq = {
       accountId: account.id,
       aorId: account.areaOfResponsibility?.id ?? null,
-      isActive: account.status !== "active",
+      isActive: account.status !== 'active',
       displayName: account.displayName,
       description: account.description,
       apiLogin: account.apiLogin,
@@ -1019,12 +1023,12 @@ function AdminMessangerNeoPageBody() {
       setAccounts((prev) =>
         updateAccountInList(prev, accountId, (current) => ({
           ...current,
-          status: current.status === "active" ? "paused" : "active",
-        })),
+          status: current.status === 'active' ? 'paused' : 'active',
+        }))
       );
     } catch (error) {
       setActionStatus({
-        kind: "error",
+        kind: 'error',
         message: `Помилка зміни статусу акаунту: ${formatErrorMessage(error)}`,
       });
     } finally {
@@ -1037,12 +1041,12 @@ function AdminMessangerNeoPageBody() {
     try {
       await restartDatasource(accountId);
       setActionStatus({
-        kind: "success",
-        message: "Запит на перезапуск надіслано.",
+        kind: 'success',
+        message: 'Запит на перезапуск надіслано.',
       });
     } catch (error) {
       setActionStatus({
-        kind: "error",
+        kind: 'error',
         message: `Помилка перезапуску джерела: ${formatErrorMessage(error)}`,
       });
     } finally {
@@ -1054,9 +1058,9 @@ function AdminMessangerNeoPageBody() {
     const account = accounts.find((item) => item.id === accountId);
     if (!account) return;
     setLinkSidebarOpen(true);
-    setLinkMode("phone");
-    setLinkStep("qr");
-    setQrData({ accountId, qrCode: "", account });
+    setLinkMode('phone');
+    setLinkStep('qr');
+    setQrData({ accountId, qrCode: '', account });
     setLinkStatus(null);
     setLinkSuccessAccount(null);
     await fetchQrCode(accountId);
@@ -1075,21 +1079,21 @@ function AdminMessangerNeoPageBody() {
   ));
 
   const renderAccountsTable = () => {
-    if (accountsStatus === "loading") {
+    if (accountsStatus === 'loading') {
       return (
         <div className="flex items-center justify-center py-12">
           <CircularProgress size={28} />
         </div>
       );
     }
-    if (accountsStatus === "error") {
+    if (accountsStatus === 'error') {
       return (
         <div className="text-center py-8 text-red-600">
-          {accountsError || "Помилка завантаження"}
+          {accountsError || 'Помилка завантаження'}
         </div>
       );
     }
-    if (accountsStatus === "success") {
+    if (accountsStatus === 'success') {
       return (
         <div className="table-responsive-modern">
           <MessangerAccountsTable
@@ -1139,7 +1143,7 @@ function AdminMessangerNeoPageBody() {
       anchor="right"
       open={linkSidebarOpen}
       onClose={closeLinkSidebar}
-      PaperProps={{ sx: { width: { xs: "100%", sm: 420 } } }}
+      PaperProps={{ sx: { width: { xs: '100%', sm: 420 } } }}
     >
       <Box className="flex flex-col h-full">
         <Box className="p-6 border-b border-border">
@@ -1151,24 +1155,24 @@ function AdminMessangerNeoPageBody() {
           </Typography>
         </Box>
 
-        {linkStep === "form" ? (
+        {linkStep === 'form' ? (
           <Box className="flex-1 overflow-y-auto p-6 space-y-5">
             <Box className="flex gap-2">
               <Button
-                variant={linkMode === "phone" ? "contained" : "outlined"}
-                onClick={() => switchLinkMode("phone")}
+                variant={linkMode === 'phone' ? 'contained' : 'outlined'}
+                onClick={() => switchLinkMode('phone')}
               >
                 Телефон
               </Button>
               <Button
-                variant={linkMode === "api" ? "contained" : "outlined"}
-                onClick={() => switchLinkMode("api")}
+                variant={linkMode === 'api' ? 'contained' : 'outlined'}
+                onClick={() => switchLinkMode('api')}
               >
                 API
               </Button>
             </Box>
 
-            {linkMode === "phone" ? (
+            {linkMode === 'phone' ? (
               <div className="space-y-4">
                 <TextField
                   select
@@ -1209,7 +1213,7 @@ function AdminMessangerNeoPageBody() {
                       ...prev,
                       apiEndpoint: event.target.value,
                     }));
-                    setFormErrors((prev) => ({ ...prev, apiEndpoint: "" }));
+                    setFormErrors((prev) => ({ ...prev, apiEndpoint: '' }));
                   }}
                   placeholder="https://api.example.com/webhook"
                   error={Boolean(formErrors.apiEndpoint)}
@@ -1219,20 +1223,20 @@ function AdminMessangerNeoPageBody() {
                 <TextField
                   select
                   label="API Користувач"
-                  value={apiForm.apiLogin || ""}
+                  value={apiForm.apiLogin || ''}
                   onChange={(event) => {
                     setApiForm((prev) => ({
                       ...prev,
                       apiLogin: event.target.value || null,
                     }));
-                    setFormErrors((prev) => ({ ...prev, apiUser: "" }));
+                    setFormErrors((prev) => ({ ...prev, apiUser: '' }));
                   }}
                   fullWidth
-                  disabled={apiUsersStatus === "loading"}
+                  disabled={apiUsersStatus === 'loading'}
                   error={Boolean(formErrors.apiUser)}
                   helperText={formErrors.apiUser}
                 >
-                  {apiUsersStatus === "loading" ? (
+                  {apiUsersStatus === 'loading' ? (
                     <MenuItem value="">Завантаження...</MenuItem>
                   ) : (
                     apiUserOptions
@@ -1243,9 +1247,9 @@ function AdminMessangerNeoPageBody() {
 
             <TextField
               label="Назва акаунту"
-              value={linkMode === "phone" ? phoneForm.name : apiForm.name}
+              value={linkMode === 'phone' ? phoneForm.name : apiForm.name}
               onChange={(event) => {
-                if (linkMode === "phone") {
+                if (linkMode === 'phone') {
                   setPhoneForm((prev) => ({
                     ...prev,
                     name: event.target.value,
@@ -1253,7 +1257,7 @@ function AdminMessangerNeoPageBody() {
                 } else {
                   setApiForm((prev) => ({ ...prev, name: event.target.value }));
                 }
-                setFormErrors((prev) => ({ ...prev, displayName: "" }));
+                setFormErrors((prev) => ({ ...prev, displayName: '' }));
               }}
               error={Boolean(formErrors.displayName)}
               helperText={formErrors.displayName}
@@ -1264,27 +1268,27 @@ function AdminMessangerNeoPageBody() {
               select
               label="Смуга відповідальності"
               value={
-                linkMode === "phone"
-                  ? (phoneForm.aorId ?? "")
-                  : (apiForm.aorId ?? "")
+                linkMode === 'phone'
+                  ? phoneForm.aorId ?? ''
+                  : apiForm.aorId ?? ''
               }
               onChange={(event) => {
                 const value = event.target.value
                   ? Number(event.target.value)
                   : null;
-                if (linkMode === "phone") {
+                if (linkMode === 'phone') {
                   setPhoneForm((prev) => ({ ...prev, aorId: value }));
                 } else {
                   setApiForm((prev) => ({ ...prev, aorId: value }));
                 }
-                setFormErrors((prev) => ({ ...prev, aorId: "" }));
+                setFormErrors((prev) => ({ ...prev, aorId: '' }));
               }}
               fullWidth
               error={Boolean(formErrors.aorId)}
               helperText={formErrors.aorId}
-              disabled={aorsStatus === "loading"}
+              disabled={aorsStatus === 'loading'}
             >
-              {aorsStatus === "loading" ? (
+              {aorsStatus === 'loading' ? (
                 <MenuItem value="">Завантаження...</MenuItem>
               ) : (
                 aorOptions
@@ -1294,12 +1298,12 @@ function AdminMessangerNeoPageBody() {
             <TextField
               label="Опис (необов'язково)"
               value={
-                linkMode === "phone"
+                linkMode === 'phone'
                   ? phoneForm.description
                   : apiForm.description
               }
               onChange={(event) => {
-                if (linkMode === "phone") {
+                if (linkMode === 'phone') {
                   setPhoneForm((prev) => ({
                     ...prev,
                     description: event.target.value,
@@ -1316,16 +1320,16 @@ function AdminMessangerNeoPageBody() {
               fullWidth
             />
 
-            {linkStatus?.kind === "error" ? (
+            {linkStatus?.kind === 'error' ? (
               <Info text={linkStatus.message} color="error" />
             ) : null}
           </Box>
         ) : null}
 
-        {linkStep === "qr" && qrData ? (
+        {linkStep === 'qr' && qrData ? (
           <Box className="flex-1 overflow-y-auto p-6 text-center space-y-4">
             <Typography variant="subtitle1" className="!font-semibold">
-              {getMessengerLabel(qrData.account.messenger)}:{" "}
+              {getMessengerLabel(qrData.account.messenger)}:{' '}
               {qrData.account.phoneNumber}
             </Typography>
             {qrData.qrCode ? (
@@ -1343,7 +1347,7 @@ function AdminMessangerNeoPageBody() {
                 Очікування підключення...
               </span>
             </div>
-            {linkStatus?.kind === "error" ? (
+            {linkStatus?.kind === 'error' ? (
               <Info text={linkStatus.message} color="error" />
             ) : null}
             <div className="flex items-center justify-center gap-2">
@@ -1361,14 +1365,14 @@ function AdminMessangerNeoPageBody() {
           </Box>
         ) : null}
 
-        {linkStep === "success" && linkSuccessAccount ? (
+        {linkStep === 'success' && linkSuccessAccount ? (
           <Box className="flex-1 overflow-y-auto p-6 text-center space-y-4">
             <Typography variant="h6" className="!font-semibold">
               Акаунт успішно прив'язано!
             </Typography>
             <div className="text-green-600 text-6xl">✅</div>
             <Typography variant="body2" className="text-muted-foreground">
-              {getMessengerLabel(linkSuccessAccount.messenger)}:{" "}
+              {getMessengerLabel(linkSuccessAccount.messenger)}:{' '}
               {linkSuccessAccount.phoneNumber}
             </Typography>
             <Button variant="contained" onClick={closeLinkSidebar}>
@@ -1377,7 +1381,7 @@ function AdminMessangerNeoPageBody() {
           </Box>
         ) : null}
 
-        {linkStep === "form" ? (
+        {linkStep === 'form' ? (
           <Box className="p-6 border-t border-border flex gap-3">
             <Button variant="outlined" onClick={closeLinkSidebar}>
               Скасувати
@@ -1400,7 +1404,7 @@ function AdminMessangerNeoPageBody() {
       anchor="right"
       open={editSidebarOpen}
       onClose={closeEditSidebar}
-      PaperProps={{ sx: { width: { xs: "100%", sm: 420 } } }}
+      PaperProps={{ sx: { width: { xs: '100%', sm: 420 } } }}
     >
       <Box className="flex flex-col h-full">
         <Box className="p-6 border-b border-border">
@@ -1418,9 +1422,9 @@ function AdminMessangerNeoPageBody() {
               value={editForm.displayName}
               onChange={(event) => {
                 setEditForm((prev) =>
-                  prev ? { ...prev, displayName: event.target.value } : prev,
+                  prev ? { ...prev, displayName: event.target.value } : prev
                 );
-                setEditErrors((prev) => ({ ...prev, displayName: "" }));
+                setEditErrors((prev) => ({ ...prev, displayName: '' }));
               }}
               error={Boolean(editErrors.displayName)}
               helperText={editErrors.displayName}
@@ -1429,22 +1433,22 @@ function AdminMessangerNeoPageBody() {
             <TextField
               select
               label="Смуга відповідальності"
-              value={editForm.aorId ?? ""}
+              value={editForm.aorId ?? ''}
               onChange={(event) => {
                 const value = event.target.value
                   ? Number(event.target.value)
                   : null;
                 setEditForm((prev) =>
-                  prev ? { ...prev, aorId: value } : prev,
+                  prev ? { ...prev, aorId: value } : prev
                 );
-                setEditErrors((prev) => ({ ...prev, aorId: "" }));
+                setEditErrors((prev) => ({ ...prev, aorId: '' }));
               }}
               fullWidth
               error={Boolean(editErrors.aorId)}
               helperText={editErrors.aorId}
-              disabled={aorsStatus === "loading"}
+              disabled={aorsStatus === 'loading'}
             >
-              {aorsStatus === "loading" ? (
+              {aorsStatus === 'loading' ? (
                 <MenuItem value="">Завантаження...</MenuItem>
               ) : (
                 aorOptions
@@ -1455,7 +1459,7 @@ function AdminMessangerNeoPageBody() {
               value={editForm.description}
               onChange={(event) =>
                 setEditForm((prev) =>
-                  prev ? { ...prev, description: event.target.value } : prev,
+                  prev ? { ...prev, description: event.target.value } : prev
                 )
               }
               multiline
@@ -1488,10 +1492,10 @@ function AdminMessangerNeoPageBody() {
         </Typography>
       </div>
 
-      {actionStatus?.kind === "error" ? (
+      {actionStatus?.kind === 'error' ? (
         <Info text={actionStatus.message} color="error" />
       ) : null}
-      {actionStatus?.kind === "success" ? (
+      {actionStatus?.kind === 'success' ? (
         <Alert severity="success" onClose={() => setActionStatus(null)}>
           {actionStatus.message}
         </Alert>

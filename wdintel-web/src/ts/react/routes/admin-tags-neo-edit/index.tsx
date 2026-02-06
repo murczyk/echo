@@ -14,13 +14,18 @@ import {
 } from '@mui/material';
 import React from 'react';
 
-import { TagAdmin, TagKeyword, TagUpsertReq } from '../../../../Bindings';
+import {
+  TagAdmin,
+  TagKeyword,
+  TagModelErrorFE,
+  TagUpsertReq,
+} from '../../../../Bindings';
 import { Info } from '../../components/info';
 import { Button } from '../../components/mui-customized/button';
 import {
   createTag,
   deleteTagKeyword,
-  getTagKeywordErrors,
+  getTagModelErrors,
   listTags,
   updateTag,
 } from '../../services/api/tags';
@@ -348,7 +353,9 @@ type AdminTagsNeoEditPageProps = {
 function AdminTagsNeoEditPageBody(props: AdminTagsNeoEditPageProps) {
   const [form, setForm] = React.useState<TagFormState>(emptyForm);
   const [keywords, setKeywords] = React.useState<TagKeyword[]>([]);
-  const [keywordErrors, setKeywordErrors] = React.useState<any[]>([]);
+  const [keywordErrors, setKeywordErrors] = React.useState<TagModelErrorFE[]>(
+    []
+  );
   const [deletingIds, setDeletingIds] = React.useState<Set<number>>(new Set());
   const [status, setStatus] = React.useState<LoadingStatus>('idle');
   const [loadError, setLoadError] = React.useState<string | null>(null);
@@ -408,14 +415,13 @@ function AdminTagsNeoEditPageBody(props: AdminTagsNeoEditPageProps) {
     }
 
     loadTag(parsedId);
-    loadKeywordErrors(parsedId);
+    loadTagModelErrors(parsedId);
   }, [props.tagId]);
 
-  async function loadKeywordErrors(parsedId) {
+  async function loadTagModelErrors(parsedId: number) {
     try {
-      const errors = await getTagKeywordErrors(parsedId);
+      const errors = await getTagModelErrors(parsedId);
       setKeywordErrors(errors);
-      console.log(errors);
     } catch (err) {
       setKeywordErrors([]);
       setLoadError(formatErrorMessage(err));
@@ -569,7 +575,7 @@ function AdminTagsNeoEditPageBody(props: AdminTagsNeoEditPageProps) {
         />
 
         <div className="space-y-3">
-          <div className="flex justify-between mb-3">
+          <div className="flex justify-between">
             <Typography variant="h6" className="!font-semibold">
               Ключові слова та відмітки
             </Typography>
@@ -625,16 +631,18 @@ function AdminTagsNeoEditPageBody(props: AdminTagsNeoEditPageProps) {
             hidden={tabIndex !== 1}
           >
             {tabIndex === 1 &&
-              keywordErrors.map((error) => (
-                <div
-                  key={error.id}
-                  className="p-2 border border-gray-200 rounded-md mb-3"
-                >
-                  <p
+              (keywordErrors.length > 0 ? (
+                keywordErrors.map((error) => (
+                  <div
+                    key={error.id}
+                    className="p-3 border border-gray-200 rounded-md mb-3 еext-muted-foreground whitespace-pre-wrap"
                     dangerouslySetInnerHTML={{ __html: error.body }}
-                    className="text-muted-foreground whitespace-pre-wrap"
                   />
-                </div>
+                ))
+              ) : (
+                <p className="text-muted-foreground text-sm">
+                  Немає відміток помилок
+                </p>
               ))}
           </div>
         </div>
