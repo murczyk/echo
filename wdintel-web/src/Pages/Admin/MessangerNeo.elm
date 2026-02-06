@@ -61,7 +61,7 @@ view : Shared.Model -> Model -> View Msg
 view _ _ =
     { title = "Адмін: месенджери (neo)"
     , body =
-        [ div [ class "mt-2 w-full" ]
+        [ div [ class "mt-4 w-full px-4" ]
             [ node "messanger-neo" [] [] ]
         ]
     }

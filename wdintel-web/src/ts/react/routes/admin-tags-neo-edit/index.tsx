@@ -7,16 +7,19 @@ import {
   DialogTitle,
   FormControlLabel,
   Checkbox as MuiCheckbox,
+  Tab,
+  Tabs,
   TextField,
   Typography,
 } from '@mui/material';
 import React from 'react';
 
-import { TagAdmin, TagKeyword, TagUpsertReq } from '../../../../Bindings';
+import { TagAdmin, TagKeyword, TagModelErrorFE, TagUpsertReq } from '../../../../Bindings';
 import { Info } from '../../components/info';
 import { Button } from '../../components/mui-customized/button';
-import { createTag, deleteTagKeyword, listTags, updateTag } from '../../services/api/tags';
+import { createTag, deleteTagKeyword, getTagModelErrors, listTags, updateTag } from '../../services/api/tags';
 import { navigateWithinSpa } from '../../utils/browser';
+import { formatDate } from '../../utils/misc';
 
 type LoadingStatus = 'idle' | 'loading' | 'success' | 'error';
 
@@ -53,7 +56,10 @@ function parseOrdValue(value: string): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function buildUpsertRequest(form: TagFormState): { errors: Record<string, string>; req: TagUpsertReq | null } {
+function buildUpsertRequest(form: TagFormState): {
+  errors: Record<string, string>;
+  req: TagUpsertReq | null;
+} {
   const errors: Record<string, string> = {};
   const label = form.label.trim();
   if (!label) {
@@ -270,12 +276,7 @@ function KeywordsTable(props: {
   );
 }
 
-function TagActions(props: {
-  isNew: boolean;
-  saving: boolean;
-  onSave: () => void;
-  onBack: () => void;
-}) {
+function TagActions(props: { isNew: boolean; saving: boolean; onSave: () => void; onBack: () => void }) {
   return (
     <div className="flex gap-3">
       <Button variant="outlined" onClick={props.onBack} disabled={props.saving}>
@@ -312,6 +313,8 @@ type AdminTagsNeoEditPageProps = {
 function AdminTagsNeoEditPageBody(props: AdminTagsNeoEditPageProps) {
   const [form, setForm] = React.useState<TagFormState>(emptyForm);
   const [keywords, setKeywords] = React.useState<TagKeyword[]>([]);
+  const [tagModelErrors, setTagModelErrors] = React.useState<TagModelErrorFE[]>([]);
+  const [modelErrorsLoadError, setModelErrorsLoadError] = React.useState<string | null>(null);
   const [deletingIds, setDeletingIds] = React.useState<Set<number>>(new Set());
   const [status, setStatus] = React.useState<LoadingStatus>('idle');
   const [loadError, setLoadError] = React.useState<string | null>(null);
@@ -320,6 +323,7 @@ function AdminTagsNeoEditPageBody(props: AdminTagsNeoEditPageProps) {
   const [formErrors, setFormErrors] = React.useState<Record<string, string>>({});
   const [actionStatus, setActionStatus] = React.useState<StatusMessage>(null);
   const [deleteKeywordId, setDeleteKeywordId] = React.useState<number | null>(null);
+  const [tabIndex, setTabIndex] = React.useState(0);
 
   const backTo = React.useMemo(() => {
     const params = new URLSearchParams(window.location.search);
@@ -355,6 +359,7 @@ function AdminTagsNeoEditPageBody(props: AdminTagsNeoEditPageProps) {
       setForm(emptyForm);
       setKeywords([]);
       setTagId(null);
+      setModelErrorsLoadError(null);
       return;
     }
 
@@ -366,7 +371,19 @@ function AdminTagsNeoEditPageBody(props: AdminTagsNeoEditPageProps) {
     }
 
     loadTag(parsedId);
+    loadTagModelErrors(parsedId);
   }, [props.tagId]);
+
+  async function loadTagModelErrors(parsedId: number) {
+    setModelErrorsLoadError(null);
+    try {
+      const errors = await getTagModelErrors(parsedId);
+      setTagModelErrors(errors);
+    } catch (err) {
+      setTagModelErrors([]);
+      setModelErrorsLoadError(formatErrorMessage(err));
+    }
+  }
 
   function navigateBack() {
     navigateWithinSpa(getBackToPath());
@@ -393,7 +410,10 @@ function AdminTagsNeoEditPageBody(props: AdminTagsNeoEditPageProps) {
         setTagId(updated.tagId);
       }
     } catch (err) {
-      setActionStatus({ kind: 'error', message: `Не вдалося зберегти тег: ${formatErrorMessage(err)}` });
+      setActionStatus({
+        kind: 'error',
+        message: `Не вдалося зберегти тег: ${formatErrorMessage(err)}`,
+      });
     } finally {
       setSaving(false);
     }
@@ -422,7 +442,10 @@ function AdminTagsNeoEditPageBody(props: AdminTagsNeoEditPageProps) {
       await deleteTagKeyword(tagId, deleteKeywordId);
       setKeywords((prev) => prev.filter((kw) => kw.tagKeywordId !== deleteKeywordId));
     } catch (err) {
-      setActionStatus({ kind: 'error', message: `Не вдалося видалити ключове слово: ${formatErrorMessage(err)}` });
+      setActionStatus({
+        kind: 'error',
+        message: `Не вдалося видалити ключове слово: ${formatErrorMessage(err)}`,
+      });
     } finally {
       setDeletingIds((prev) => {
         const next = new Set(prev);
@@ -474,16 +497,71 @@ function AdminTagsNeoEditPageBody(props: AdminTagsNeoEditPageProps) {
         <TagActions isNew={isNew} saving={saving} onSave={handleSave} onBack={navigateBack} />
 
         <div className="space-y-3">
-          <div className="flex items-center justify-between">
+          <div className="flex justify-between">
             <Typography variant="h6" className="!font-semibold">
-              Ключові слова
+              Ключові слова та відмітки
             </Typography>
             <Button variant="contained" size="small" onClick={navigateToKeywordCreate} disabled={saving}>
               Створити ключове слово
             </Button>
           </div>
 
-          <KeywordsTable keywords={keywords} deletingIds={deletingIds} onEdit={navigateToKeywordEdit} onDelete={setDeleteKeywordId} />
+          <Tabs
+            value={tabIndex}
+            onChange={(_, value) => setTabIndex(value)}
+            aria-label="Ключові слова та відмітки помилок"
+          >
+            <Tab label="Ключові слова" id="keywords-tab" aria-controls="keywords-pane" />
+            <Tab label="Відмітки помилок" id="errors-tab" aria-controls="errors-pane" />
+          </Tabs>
+
+          <div id="keywords-pane" role="tabpanel" aria-labelledby="keywords-tab" hidden={tabIndex !== 0}>
+            {tabIndex === 0 && (
+              <>
+                <KeywordsTable
+                  keywords={keywords}
+                  deletingIds={deletingIds}
+                  onEdit={navigateToKeywordEdit}
+                  onDelete={setDeleteKeywordId}
+                />
+              </>
+            )}
+          </div>
+
+          <div id="errors-pane" role="tabpanel" aria-labelledby="errors-tab" hidden={tabIndex !== 1}>
+            {tabIndex === 1 &&
+              (modelErrorsLoadError ? (
+                <Info text={modelErrorsLoadError} color="error" className="text-sm mb-4" />
+              ) : tagModelErrors.length > 0 ? (
+                tagModelErrors.map((error) => (
+                  <div
+                    key={error.id}
+                    className="p-3 border border-gray-200 rounded-md mb-3 еext-muted-foreground flex justify-between"
+                  >
+                    <div
+                      className="text-muted-foreground whitespace-pre-wrap"
+                      dangerouslySetInnerHTML={{ __html: error.body }}
+                    />
+                    <div className="">
+                      <div className="text-muted-foreground text-sm">
+                        <i className="bi bi-calendar-event text-icons mr-2"></i>
+                        {formatDate(error.removedAt, {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          second: '2-digit',
+                        })}
+                      </div>
+                      <div className="text-muted-foreground text-sm">
+                        <i className="bi bi-person text-icons mr-2"></i>
+                        {error.removedByLogin}
+                      </div>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p className="text-muted-foreground text-sm">Немає відміток помилок</p>
+              ))}
+          </div>
         </div>
 
         {actionStatus?.kind === 'error' ? <Info text={actionStatus.message} color="error" /> : null}

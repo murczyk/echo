@@ -16,7 +16,11 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
-import { MRT_ColumnDef, MaterialReactTable, useMaterialReactTable } from 'material-react-table';
+import {
+  MRT_ColumnDef,
+  MaterialReactTable,
+  useMaterialReactTable,
+} from 'material-react-table';
 import React from 'react';
 
 import {
@@ -37,7 +41,10 @@ import {
   getDefaultMRTOptions,
   renderColumnActionsMenuItems,
 } from '../../components/mui-customized/table/get-default-table-options';
-import { TableStateProvider, useTableStateContext } from '../../components/mui-customized/table/table-state-provider';
+import {
+  TableStateProvider,
+  useTableStateContext,
+} from '../../components/mui-customized/table/table-state-provider';
 import { listAors } from '../../services/api/aor';
 import { listLogins } from '../../services/api/logins';
 import { editGroup } from '../../services/api/messenger';
@@ -52,7 +59,7 @@ import {
   listZoneDatasources,
   updateZoneDatasourceGroup,
 } from '../../services/api/zones';
-
+import { formatDate } from '../../utils/misc';
 
 type LoadingStatus = 'idle' | 'loading' | 'success' | 'error';
 
@@ -164,13 +171,6 @@ function formatErrorMessage(error: unknown): string {
   }
 }
 
-function formatDate(value: number | null | undefined): string {
-  if (!value) return '—';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '—';
-  return date.toLocaleDateString('uk-UA');
-}
-
 function formatOptionalText(value: string | null | undefined): string {
   if (!value || !value.trim()) return '—';
   return value;
@@ -180,20 +180,29 @@ function buildGroupKey(zoneId: number, datasourceId: number): string {
   return `${zoneId}:${datasourceId}`;
 }
 
-function getGroupName(groupKey: string, fallbackName: string | null | undefined, groupInfos: Map<string, SignalGroupEntry>) {
+function getGroupName(
+  groupKey: string,
+  fallbackName: string | null | undefined,
+  groupInfos: Map<string, SignalGroupEntry>
+) {
   const info = groupInfos.get(groupKey);
   if (info && info.name.trim()) return info.name;
   if (fallbackName && fallbackName.trim()) return fallbackName;
   return groupKey.slice(-5);
 }
 
-function getDatasourceLabel(datasourceId: number | null, datasourceById: Map<number, Datasource>) {
+function getDatasourceLabel(
+  datasourceId: number | null,
+  datasourceById: Map<number, Datasource>
+) {
   if (datasourceId === null) return '—';
   const datasource = datasourceById.get(datasourceId);
   return datasource?.displayName || `#${datasourceId}`;
 }
 
-function buildAorLabels(aors: AreaOfResponsibility[] | null | undefined): string {
+function buildAorLabels(
+  aors: AreaOfResponsibility[] | null | undefined
+): string {
   if (!aors || aors.length === 0) return '—';
   return aors.map((aor) => aor.name).join(', ');
 }
@@ -211,9 +220,13 @@ function OrphanGroupsTable(props: {
       {
         header: 'Група',
         id: 'group',
-        accessorFn: (row) => (row.name && row.name.trim() ? row.name : row.masterKey.slice(-5)),
+        accessorFn: (row) =>
+          row.name && row.name.trim() ? row.name : row.masterKey.slice(-5),
         Cell: ({ row }) => {
-          const name = row.original.name && row.original.name.trim() ? row.original.name : row.original.masterKey.slice(-5);
+          const name =
+            row.original.name && row.original.name.trim()
+              ? row.original.name
+              : row.original.masterKey.slice(-5);
           return (
             <Tooltip title={name}>
               <span>{name}</span>
@@ -225,21 +238,26 @@ function OrphanGroupsTable(props: {
       {
         header: 'Джерело',
         id: 'datasource',
-        accessorFn: (row) => getDatasourceLabel(row.datasourceId, props.datasourceById),
+        accessorFn: (row) =>
+          getDatasourceLabel(row.datasourceId, props.datasourceById),
         size: 180,
       },
       {
         header: 'Активність (день)',
         id: 'activityDay',
         accessorFn: (row) => row.groupStats.activityLastDay,
-        Cell: ({ row }) => <span>{row.original.groupStats.activityLastDay}</span>,
+        Cell: ({ row }) => (
+          <span>{row.original.groupStats.activityLastDay}</span>
+        ),
         size: 140,
       },
       {
         header: 'Активність (тиждень)',
         id: 'activityWeek',
         accessorFn: (row) => row.groupStats.activityLastWeek,
-        Cell: ({ row }) => <span>{row.original.groupStats.activityLastWeek}</span>,
+        Cell: ({ row }) => (
+          <span>{row.original.groupStats.activityLastWeek}</span>
+        ),
         size: 140,
       },
       {
@@ -262,16 +280,26 @@ function OrphanGroupsTable(props: {
         accessorFn: (row) => {
           const shortNote = row.groupAdminData?.shortNote ?? '';
           const longNote = row.groupAdminData?.longNote ?? '';
-          return `${shortNote}${longNote ? ` / ${longNote}` : ''}`.trim() || '—';
+          return (
+            `${shortNote}${longNote ? ` / ${longNote}` : ''}`.trim() || '—'
+          );
         },
         Cell: ({ row }) => {
-          const shortNote = formatOptionalText(row.original.groupAdminData?.shortNote ?? null);
-          const longNote = formatOptionalText(row.original.groupAdminData?.longNote ?? null);
+          const shortNote = formatOptionalText(
+            row.original.groupAdminData?.shortNote ?? null
+          );
+          const longNote = formatOptionalText(
+            row.original.groupAdminData?.longNote ?? null
+          );
           if (shortNote === '—' && longNote === '—') return <span>—</span>;
           return (
             <div className="flex flex-col">
               {shortNote !== '—' ? <span>{shortNote}</span> : null}
-              {longNote !== '—' ? <span className="text-muted-foreground text-xs">{longNote}</span> : null}
+              {longNote !== '—' ? (
+                <span className="text-muted-foreground text-xs">
+                  {longNote}
+                </span>
+              ) : null}
             </div>
           );
         },
@@ -285,11 +313,14 @@ function OrphanGroupsTable(props: {
         size: 140,
       },
     ],
-    [props.datasourceById],
+    [props.datasourceById]
   );
 
   const basePaperProps = CUSTOM_STYLES.muiTablePaperProps;
-  const resolvedPaperProps = typeof basePaperProps === 'function' ? basePaperProps : () => basePaperProps || {};
+  const resolvedPaperProps =
+    typeof basePaperProps === 'function'
+      ? basePaperProps
+      : () => basePaperProps || {};
 
   const state = {
     showAlertBanner: false,
@@ -384,8 +415,16 @@ function ZoneGroupsTable(props: {
   rows: ZoneGroupRow[];
   datasourceById: Map<number, Datasource>;
   groupInfos: Map<string, SignalGroupEntry>;
-  onEdit: (zoneId: number, datasourceId: number, group: ZoneDatasourceGroup) => void;
-  onDelete: (zoneId: number, datasourceId: number, group: ZoneDatasourceGroup) => void;
+  onEdit: (
+    zoneId: number,
+    datasourceId: number,
+    group: ZoneDatasourceGroup
+  ) => void;
+  onDelete: (
+    zoneId: number,
+    datasourceId: number,
+    group: ZoneDatasourceGroup
+  ) => void;
 }) {
   const tableStateContext = useTableStateContext();
 
@@ -394,16 +433,23 @@ function ZoneGroupsTable(props: {
       {
         header: 'Група',
         id: 'group',
-        accessorFn: (row) => getGroupName(row.group.groupMasterKey, null, props.groupInfos),
+        accessorFn: (row) =>
+          getGroupName(row.group.groupMasterKey, null, props.groupInfos),
         Cell: ({ row }) => {
-          const groupName = getGroupName(row.original.group.groupMasterKey, null, props.groupInfos);
+          const groupName = getGroupName(
+            row.original.group.groupMasterKey,
+            null,
+            props.groupInfos
+          );
           return (
             <div className="flex flex-col gap-1">
               <div className="flex flex-wrap items-center gap-2">
                 <Tooltip title={groupName}>
                   <span>{groupName}</span>
                 </Tooltip>
-                {row.original.group.isGroupSecret ? <Chip size="small" color="warning" label="прихована" /> : null}
+                {row.original.group.isGroupSecret ? (
+                  <Chip size="small" color="warning" label="прихована" />
+                ) : null}
               </div>
             </div>
           );
@@ -413,18 +459,23 @@ function ZoneGroupsTable(props: {
       {
         header: 'Джерело',
         id: 'datasource',
-        accessorFn: (row) => getDatasourceLabel(row.datasourceId, props.datasourceById),
+        accessorFn: (row) =>
+          getDatasourceLabel(row.datasourceId, props.datasourceById),
         size: 200,
       },
       {
         header: 'Активність (день)',
         id: 'activityDay',
         accessorFn: (row) => {
-          const stats = props.groupInfos.get(row.group.groupMasterKey)?.groupStats;
+          const stats = props.groupInfos.get(
+            row.group.groupMasterKey
+          )?.groupStats;
           return stats ? stats.activityLastDay : null;
         },
         Cell: ({ row }) => {
-          const stats = props.groupInfos.get(row.original.group.groupMasterKey)?.groupStats;
+          const stats = props.groupInfos.get(
+            row.original.group.groupMasterKey
+          )?.groupStats;
           if (!stats) return <span>—</span>;
           return <span>{stats.activityLastDay}</span>;
         },
@@ -434,11 +485,15 @@ function ZoneGroupsTable(props: {
         header: 'Активність (тиждень)',
         id: 'activityWeek',
         accessorFn: (row) => {
-          const stats = props.groupInfos.get(row.group.groupMasterKey)?.groupStats;
+          const stats = props.groupInfos.get(
+            row.group.groupMasterKey
+          )?.groupStats;
           return stats ? stats.activityLastWeek : null;
         },
         Cell: ({ row }) => {
-          const stats = props.groupInfos.get(row.original.group.groupMasterKey)?.groupStats;
+          const stats = props.groupInfos.get(
+            row.original.group.groupMasterKey
+          )?.groupStats;
           if (!stats) return <span>—</span>;
           return <span>{stats.activityLastWeek}</span>;
         },
@@ -448,7 +503,9 @@ function ZoneGroupsTable(props: {
         header: 'Доступ',
         id: 'access',
         accessorFn: (row) =>
-          row.group.allowedUsers.length > 0 ? row.group.allowedUsers.join(', ') : 'без обмежень',
+          row.group.allowedUsers.length > 0
+            ? row.group.allowedUsers.join(', ')
+            : 'без обмежень',
         Cell: ({ row }) => {
           const label =
             row.original.group.allowedUsers.length > 0
@@ -467,7 +524,9 @@ function ZoneGroupsTable(props: {
         id: 'aors',
         accessorFn: (row) => buildAorLabels(row.group.areasOfResponsibility),
         Cell: ({ row }) => {
-          const label = buildAorLabels(row.original.group.areasOfResponsibility);
+          const label = buildAorLabels(
+            row.original.group.areasOfResponsibility
+          );
           return (
             <Tooltip title={label}>
               <span>{label}</span>
@@ -488,20 +547,28 @@ function ZoneGroupsTable(props: {
           return `${shortNote} / ${longNote}`;
         },
         Cell: ({ row }) => {
-          const shortNote = formatOptionalText(row.original.group.shortNote ?? null);
-          const longNote = formatOptionalText(row.original.group.longNote ?? null);
+          const shortNote = formatOptionalText(
+            row.original.group.shortNote ?? null
+          );
+          const longNote = formatOptionalText(
+            row.original.group.longNote ?? null
+          );
           if (shortNote === '—' && longNote === '—') return <span>—</span>;
           const tooltipLabel =
             shortNote === '—'
               ? longNote
               : longNote === '—'
-                ? shortNote
-                : `${shortNote} / ${longNote}`;
+              ? shortNote
+              : `${shortNote} / ${longNote}`;
           return (
             <Tooltip title={tooltipLabel}>
               <div className="flex flex-col">
                 {shortNote !== '—' ? <span>{shortNote}</span> : null}
-                {longNote !== '—' ? <span className="text-muted-foreground text-xs">{longNote}</span> : null}
+                {longNote !== '—' ? (
+                  <span className="text-muted-foreground text-xs">
+                    {longNote}
+                  </span>
+                ) : null}
               </div>
             </Tooltip>
           );
@@ -509,11 +576,14 @@ function ZoneGroupsTable(props: {
         size: 260,
       },
     ],
-    [props.datasourceById, props.groupInfos],
+    [props.datasourceById, props.groupInfos]
   );
 
   const basePaperProps = CUSTOM_STYLES.muiTablePaperProps;
-  const resolvedPaperProps = typeof basePaperProps === 'function' ? basePaperProps : () => basePaperProps || {};
+  const resolvedPaperProps =
+    typeof basePaperProps === 'function'
+      ? basePaperProps
+      : () => basePaperProps || {};
 
   const state = {
     showAlertBanner: false,
@@ -555,7 +625,13 @@ function ZoneGroupsTable(props: {
         <Tooltip title="Редагувати">
           <IconButton
             size="small"
-            onClick={() => props.onEdit(row.original.zoneId, row.original.datasourceId, row.original.group)}
+            onClick={() =>
+              props.onEdit(
+                row.original.zoneId,
+                row.original.datasourceId,
+                row.original.group
+              )
+            }
           >
             <EditIcon fontSize="small" />
           </IconButton>
@@ -563,7 +639,13 @@ function ZoneGroupsTable(props: {
         <Tooltip title="Видалити">
           <IconButton
             size="small"
-            onClick={() => props.onDelete(row.original.zoneId, row.original.datasourceId, row.original.group)}
+            onClick={() =>
+              props.onDelete(
+                row.original.zoneId,
+                row.original.datasourceId,
+                row.original.group
+              )
+            }
           >
             <DeleteOutlineIcon fontSize="small" />
           </IconButton>
@@ -639,8 +721,16 @@ function ZoneGroupsSection(props: {
   rows: ZoneGroupRow[];
   datasourceById: Map<number, Datasource>;
   groupInfos: Map<string, SignalGroupEntry>;
-  onEdit: (zoneId: number, datasourceId: number, group: ZoneDatasourceGroup) => void;
-  onDelete: (zoneId: number, datasourceId: number, group: ZoneDatasourceGroup) => void;
+  onEdit: (
+    zoneId: number,
+    datasourceId: number,
+    group: ZoneDatasourceGroup
+  ) => void;
+  onDelete: (
+    zoneId: number,
+    datasourceId: number,
+    group: ZoneDatasourceGroup
+  ) => void;
 }) {
   return (
     <TableStateProvider
@@ -666,21 +756,38 @@ function AdminNeoPageBody() {
   const [error, setError] = React.useState<string | null>(null);
   const [datasources, setDatasources] = React.useState<DatasourceEntry[]>([]);
   const [zones, setZones] = React.useState<ZoneEntry[]>([]);
-  const [zoneDatasourceIds, setZoneDatasourceIds] = React.useState<Map<number, number[]>>(new Map());
-  const [zoneGroups, setZoneGroups] = React.useState<Map<string, ZoneDatasourceGroup[]>>(new Map());
-  const [groupInfos, setGroupInfos] = React.useState<Map<string, SignalGroupEntry>>(new Map());
-  const [orphanGroups, setOrphanGroups] = React.useState<OrphanSignalGroupEntry[]>([]);
+  const [zoneDatasourceIds, setZoneDatasourceIds] = React.useState<
+    Map<number, number[]>
+  >(new Map());
+  const [zoneGroups, setZoneGroups] = React.useState<
+    Map<string, ZoneDatasourceGroup[]>
+  >(new Map());
+  const [groupInfos, setGroupInfos] = React.useState<
+    Map<string, SignalGroupEntry>
+  >(new Map());
+  const [orphanGroups, setOrphanGroups] = React.useState<
+    OrphanSignalGroupEntry[]
+  >([]);
   const [aors, setAors] = React.useState<AreaOfResponsibility[]>([]);
 
-  const [editDialog, setEditDialog] = React.useState<GroupEditState | null>(null);
-  const [orphanEditDialog, setOrphanEditDialog] = React.useState<OrphanEditState | null>(null);
-  const [assignDialog, setAssignDialog] = React.useState<OrphanAssignState | null>(null);
-  const [deleteDialog, setDeleteDialog] = React.useState<DeleteState | null>(null);
+  const [editDialog, setEditDialog] = React.useState<GroupEditState | null>(
+    null
+  );
+  const [orphanEditDialog, setOrphanEditDialog] =
+    React.useState<OrphanEditState | null>(null);
+  const [assignDialog, setAssignDialog] =
+    React.useState<OrphanAssignState | null>(null);
+  const [deleteDialog, setDeleteDialog] = React.useState<DeleteState | null>(
+    null
+  );
 
   const [logins, setLogins] = React.useState<string[]>([]);
   const [loginsStatus, setLoginsStatus] = React.useState<LoadingStatus>('idle');
 
-  const datasourceById = React.useMemo(() => new Map(datasources), [datasources]);
+  const datasourceById = React.useMemo(
+    () => new Map(datasources),
+    [datasources]
+  );
   const aorOptions = React.useMemo(() => aors, [aors]);
 
   async function ensureLoginsLoaded() {
@@ -699,12 +806,14 @@ function AdminNeoPageBody() {
     setStatus('loading');
     setError(null);
     try {
-      const [datasourceList, zoneList, orphanList, aorList] = await Promise.all([
-        listDatasources(),
-        listSigintZones(),
-        listOrphanSignalGroups(),
-        listAors({ sortBy: null }),
-      ]);
+      const [datasourceList, zoneList, orphanList, aorList] = await Promise.all(
+        [
+          listDatasources(),
+          listSigintZones(),
+          listOrphanSignalGroups(),
+          listAors({ sortBy: null }),
+        ]
+      );
 
       setDatasources(datasourceList);
       setZones(zoneList);
@@ -712,7 +821,10 @@ function AdminNeoPageBody() {
       setAors(aorList);
 
       const zoneDatasourceEntries = await Promise.all(
-        zoneList.map(async ([zoneId]) => [zoneId, await listZoneDatasources(zoneId)] as const),
+        zoneList.map(
+          async ([zoneId]) =>
+            [zoneId, await listZoneDatasources(zoneId)] as const
+        )
       );
 
       const zoneDatasourceMap = new Map<number, number[]>();
@@ -727,8 +839,8 @@ function AdminNeoPageBody() {
             zoneId,
             datasourceId,
             groups: await listZoneDatasourceGroups({ zoneId, datasourceId }),
-          })),
-        ),
+          }))
+        )
       );
 
       const groupMap = new Map<string, ZoneDatasourceGroup[]>();
@@ -768,7 +880,11 @@ function AdminNeoPageBody() {
     loadData();
   }, []);
 
-  function openEditDialog(zoneId: number, datasourceId: number, group: ZoneDatasourceGroup) {
+  function openEditDialog(
+    zoneId: number,
+    datasourceId: number,
+    group: ZoneDatasourceGroup
+  ) {
     const groupName = getGroupName(group.groupMasterKey, null, groupInfos);
     setEditDialog({
       zoneId,
@@ -787,7 +903,8 @@ function AdminNeoPageBody() {
   }
 
   function openOrphanEditDialog(group: OrphanSignalGroupEntry) {
-    const groupName = group.name && group.name.trim() ? group.name : group.masterKey.slice(-5);
+    const groupName =
+      group.name && group.name.trim() ? group.name : group.masterKey.slice(-5);
     setOrphanEditDialog({
       group,
       groupName,
@@ -811,9 +928,20 @@ function AdminNeoPageBody() {
     void ensureLoginsLoaded();
   }
 
-  function openDeleteDialog(zoneId: number, datasourceId: number, group: ZoneDatasourceGroup) {
+  function openDeleteDialog(
+    zoneId: number,
+    datasourceId: number,
+    group: ZoneDatasourceGroup
+  ) {
     const groupName = getGroupName(group.groupMasterKey, null, groupInfos);
-    setDeleteDialog({ zoneId, datasourceId, group, groupName, isDeleting: false, error: null });
+    setDeleteDialog({
+      zoneId,
+      datasourceId,
+      group,
+      groupName,
+      isDeleting: false,
+      error: null,
+    });
   }
 
   async function handleSaveGroupEdit() {
@@ -825,10 +953,13 @@ function AdminNeoPageBody() {
       id: editDialog.group.sigintZoneDatasourceId,
       isSecret: editDialog.isSecret,
       userLogins: selectedUsers,
-      shortNote: editDialog.shortNote.trim() ? editDialog.shortNote.trim() : null,
+      shortNote: editDialog.shortNote.trim()
+        ? editDialog.shortNote.trim()
+        : null,
       longNote: editDialog.longNote.trim() ? editDialog.longNote.trim() : null,
       areaOfResponsibilityId: null,
-      areaOfResponsibilityIds: editDialog.selectedAorIds.length > 0 ? editDialog.selectedAorIds : null,
+      areaOfResponsibilityIds:
+        editDialog.selectedAorIds.length > 0 ? editDialog.selectedAorIds : null,
     };
 
     try {
@@ -840,14 +971,20 @@ function AdminNeoPageBody() {
         next.set(
           key,
           groups.map((item) =>
-            item.sigintZoneDatasourceId === updatedGroup.sigintZoneDatasourceId ? updatedGroup : item,
-          ),
+            item.sigintZoneDatasourceId === updatedGroup.sigintZoneDatasourceId
+              ? updatedGroup
+              : item
+          )
         );
         return next;
       });
       setEditDialog(null);
     } catch (err) {
-      setEditDialog({ ...editDialog, isSaving: false, error: 'Не вдалося зберегти групу' });
+      setEditDialog({
+        ...editDialog,
+        isSaving: false,
+        error: 'Не вдалося зберегти групу',
+      });
     }
   }
 
@@ -858,10 +995,17 @@ function AdminNeoPageBody() {
     try {
       const updated = await editGroup({
         masterKey: orphanEditDialog.group.masterKey,
-        shortNote: orphanEditDialog.shortNote.trim() ? orphanEditDialog.shortNote.trim() : null,
-        longNote: orphanEditDialog.longNote.trim() ? orphanEditDialog.longNote.trim() : null,
+        shortNote: orphanEditDialog.shortNote.trim()
+          ? orphanEditDialog.shortNote.trim()
+          : null,
+        longNote: orphanEditDialog.longNote.trim()
+          ? orphanEditDialog.longNote.trim()
+          : null,
         areaOfResponsibilityId: null,
-        areaOfResponsibilityIds: orphanEditDialog.selectedAorIds.length > 0 ? orphanEditDialog.selectedAorIds : null,
+        areaOfResponsibilityIds:
+          orphanEditDialog.selectedAorIds.length > 0
+            ? orphanEditDialog.selectedAorIds
+            : null,
       });
 
       setOrphanGroups((prev) =>
@@ -871,47 +1015,67 @@ function AdminNeoPageBody() {
             ...group,
             groupAdminData:
               updated.shortNote || updated.longNote
-                ? { shortNote: updated.shortNote ?? null, longNote: updated.longNote ?? null }
+                ? {
+                    shortNote: updated.shortNote ?? null,
+                    longNote: updated.longNote ?? null,
+                  }
                 : null,
             areasOfResponsibility: updated.areasOfResponsibility ?? null,
           };
-        }),
+        })
       );
 
       setOrphanEditDialog(null);
     } catch (err) {
-      setOrphanEditDialog({ ...orphanEditDialog, isSaving: false, error: 'Не вдалося зберегти зміни' });
+      setOrphanEditDialog({
+        ...orphanEditDialog,
+        isSaving: false,
+        error: 'Не вдалося зберегти зміни',
+      });
     }
   }
 
   async function handleAssignOrphanGroup() {
     if (!assignDialog) return;
-    const hasAor = assignDialog.group.areasOfResponsibility && assignDialog.group.areasOfResponsibility.length > 0;
+    const hasAor =
+      assignDialog.group.areasOfResponsibility &&
+      assignDialog.group.areasOfResponsibility.length > 0;
     if (!hasAor) {
-      setAssignDialog({ ...assignDialog, error: 'Спочатку призначте смугу відповідальності для групи' });
+      setAssignDialog({
+        ...assignDialog,
+        error: 'Спочатку призначте смугу відповідальності для групи',
+      });
       return;
     }
     if (!assignDialog.group.datasourceId) {
-      setAssignDialog({ ...assignDialog, error: 'У групи немає привʼязаного датасорса' });
+      setAssignDialog({
+        ...assignDialog,
+        error: 'У групи немає привʼязаного датасорса',
+      });
       return;
     }
 
     setAssignDialog({ ...assignDialog, isSaving: true, error: null });
 
     const datasourceId = assignDialog.group.datasourceId;
-    const selectedUsers = assignDialog.isSecret ? assignDialog.selectedUsers : [];
-    const requests: ZoneDatasourceGroupAddReq[] = assignDialog.selectedZones.map(([zoneId]) => ({
-      zoneId,
-      datasourceId,
-      masterKey: assignDialog.group.masterKey,
-      isSecret: assignDialog.isSecret,
-      userLogins: selectedUsers,
-      shortNote: assignDialog.group.groupAdminData?.shortNote ?? null,
-      longNote: assignDialog.group.groupAdminData?.longNote ?? null,
-    }));
+    const selectedUsers = assignDialog.isSecret
+      ? assignDialog.selectedUsers
+      : [];
+    const requests: ZoneDatasourceGroupAddReq[] =
+      assignDialog.selectedZones.map(([zoneId]) => ({
+        zoneId,
+        datasourceId,
+        masterKey: assignDialog.group.masterKey,
+        isSecret: assignDialog.isSecret,
+        userLogins: selectedUsers,
+        shortNote: assignDialog.group.groupAdminData?.shortNote ?? null,
+        longNote: assignDialog.group.groupAdminData?.longNote ?? null,
+      }));
 
     try {
-      const responses = await Promise.all(requests.map((req) => addZoneDatasourceGroup(req)));
+      const responses = await Promise.all(
+        requests.map((req) => addZoneDatasourceGroup(req))
+      );
 
       setZoneGroups((prev) => {
         const next = new Map(prev);
@@ -952,10 +1116,16 @@ function AdminNeoPageBody() {
         return next;
       });
 
-      setOrphanGroups((prev) => prev.filter((group) => group.masterKey !== assignDialog.group.masterKey));
+      setOrphanGroups((prev) =>
+        prev.filter((group) => group.masterKey !== assignDialog.group.masterKey)
+      );
       setAssignDialog(null);
     } catch (err) {
-      setAssignDialog({ ...assignDialog, isSaving: false, error: 'Не вдалося призначити групу' });
+      setAssignDialog({
+        ...assignDialog,
+        isSaving: false,
+        error: 'Не вдалося призначити групу',
+      });
     }
   }
 
@@ -963,26 +1133,43 @@ function AdminNeoPageBody() {
     if (!deleteDialog) return;
     setDeleteDialog({ ...deleteDialog, isDeleting: true, error: null });
     try {
-      await deleteZoneDatasourceGroup(deleteDialog.group.sigintZoneDatasourceId);
+      await deleteZoneDatasourceGroup(
+        deleteDialog.group.sigintZoneDatasourceId
+      );
       setZoneGroups((prev) => {
         const next = new Map(prev);
-        const key = buildGroupKey(deleteDialog.zoneId, deleteDialog.datasourceId);
+        const key = buildGroupKey(
+          deleteDialog.zoneId,
+          deleteDialog.datasourceId
+        );
         const groups = next.get(key) ?? [];
         next.set(
           key,
-          groups.filter((group) => group.sigintZoneDatasourceId !== deleteDialog.group.sigintZoneDatasourceId),
+          groups.filter(
+            (group) =>
+              group.sigintZoneDatasourceId !==
+              deleteDialog.group.sigintZoneDatasourceId
+          )
         );
         return next;
       });
       setDeleteDialog(null);
     } catch (err) {
-      setDeleteDialog({ ...deleteDialog, isDeleting: false, error: 'Не вдалося видалити групу' });
+      setDeleteDialog({
+        ...deleteDialog,
+        isDeleting: false,
+        error: 'Не вдалося видалити групу',
+      });
     }
   }
 
   const renderOrphanGroups = () => {
     if (orphanGroups.length === 0) {
-      return <div className="text-sm text-muted-foreground">Орфан групи відсутні</div>;
+      return (
+        <div className="text-sm text-muted-foreground">
+          Орфан групи відсутні
+        </div>
+      );
     }
     return (
       <OrphanGroupsSection
@@ -1010,26 +1197,35 @@ function AdminNeoPageBody() {
     });
 
     const filteredRows = zoneRows.sort((a, b) => {
-        const nameA = getGroupName(a.group.groupMasterKey, null, groupInfos);
-        const nameB = getGroupName(b.group.groupMasterKey, null, groupInfos);
-        if (nameA !== nameB) return nameA.localeCompare(nameB, 'uk-UA');
-        const datasourceA = getDatasourceLabel(a.datasourceId, datasourceById);
-        const datasourceB = getDatasourceLabel(b.datasourceId, datasourceById);
-        return datasourceA.localeCompare(datasourceB, 'uk-UA');
-      });
+      const nameA = getGroupName(a.group.groupMasterKey, null, groupInfos);
+      const nameB = getGroupName(b.group.groupMasterKey, null, groupInfos);
+      if (nameA !== nameB) return nameA.localeCompare(nameB, 'uk-UA');
+      const datasourceA = getDatasourceLabel(a.datasourceId, datasourceById);
+      const datasourceB = getDatasourceLabel(b.datasourceId, datasourceById);
+      return datasourceA.localeCompare(datasourceB, 'uk-UA');
+    });
 
     return (
-      <div key={zoneId} className="bg-[var(--bs-body-bg)] rounded-lg border p-4">
+      <div
+        key={zoneId}
+        className="bg-[var(--bs-body-bg)] rounded-lg border p-4"
+      >
         <div className="flex flex-wrap items-center justify-between gap-2">
           <Typography variant="h6" className="!font-semibold">
             Напрямок: {zone.name}
           </Typography>
-          <span className="text-sm text-muted-foreground">{filteredRows.length} груп</span>
+          <span className="text-sm text-muted-foreground">
+            {filteredRows.length} груп
+          </span>
         </div>
         {datasourceIds.length === 0 ? (
-          <div className="mt-3 text-sm text-muted-foreground">Немає джерел даних</div>
+          <div className="mt-3 text-sm text-muted-foreground">
+            Немає джерел даних
+          </div>
         ) : filteredRows.length === 0 ? (
-          <div className="mt-3 text-sm text-muted-foreground">Немає груп для цього напрямку</div>
+          <div className="mt-3 text-sm text-muted-foreground">
+            Немає груп для цього напрямку
+          </div>
         ) : (
           <div className="mt-4">
             <ZoneGroupsSection
@@ -1055,7 +1251,11 @@ function AdminNeoPageBody() {
   }
 
   if (status === 'error') {
-    return <div className="text-center py-8 text-red-600">{error || 'Помилка завантаження'}</div>;
+    return (
+      <div className="text-center py-8 text-red-600">
+        {error || 'Помилка завантаження'}
+      </div>
+    );
   }
 
   return (
@@ -1092,16 +1292,31 @@ function AdminNeoPageBody() {
         {zones.map((zoneEntry) => renderZoneSection(zoneEntry))}
       </div>
 
-      <Dialog open={Boolean(editDialog)} onClose={() => setEditDialog(null)} maxWidth="md" fullWidth>
+      <Dialog
+        open={Boolean(editDialog)}
+        onClose={() => setEditDialog(null)}
+        maxWidth="md"
+        fullWidth
+      >
         <DialogTitle>Редагувати групу</DialogTitle>
         <DialogContent className="space-y-4">
-          {editDialog?.error ? <Alert severity="error">{editDialog.error}</Alert> : null}
-          <div className="text-sm text-muted-foreground">Група: {editDialog?.groupName}</div>
+          {editDialog?.error ? (
+            <Alert severity="error">{editDialog.error}</Alert>
+          ) : null}
+          <div className="text-sm text-muted-foreground">
+            Група: {editDialog?.groupName}
+          </div>
           <FormControlLabel
             control={
               <Switch
                 checked={editDialog?.isSecret ?? false}
-                onChange={(event) => editDialog && setEditDialog({ ...editDialog, isSecret: event.target.checked })}
+                onChange={(event) =>
+                  editDialog &&
+                  setEditDialog({
+                    ...editDialog,
+                    isSecret: event.target.checked,
+                  })
+                }
               />
             }
             label="Прихована група"
@@ -1111,21 +1326,34 @@ function AdminNeoPageBody() {
               multiple
               options={logins}
               value={editDialog?.selectedUsers ?? []}
-              onChange={(_, value) => editDialog && setEditDialog({ ...editDialog, selectedUsers: value })}
-              renderInput={(params) => <TextField {...params} label="Користувачі" />}
+              onChange={(_, value) =>
+                editDialog &&
+                setEditDialog({ ...editDialog, selectedUsers: value })
+              }
+              renderInput={(params) => (
+                <TextField {...params} label="Користувачі" />
+              )}
             />
           ) : null}
           <Autocomplete
             multiple
             options={aorOptions}
             getOptionLabel={(option) => option.name}
-            value={(editDialog?.selectedAorIds ?? [])
-              .map((id) => aorOptions.find((aor) => aor.id === id))
-              .filter(Boolean) as AreaOfResponsibility[]}
-            onChange={(_, value) =>
-              editDialog && setEditDialog({ ...editDialog, selectedAorIds: value.map((aor) => aor.id) })
+            value={
+              (editDialog?.selectedAorIds ?? [])
+                .map((id) => aorOptions.find((aor) => aor.id === id))
+                .filter(Boolean) as AreaOfResponsibility[]
             }
-            renderInput={(params) => <TextField {...params} label="Смуги відповідальності" />}
+            onChange={(_, value) =>
+              editDialog &&
+              setEditDialog({
+                ...editDialog,
+                selectedAorIds: value.map((aor) => aor.id),
+              })
+            }
+            renderInput={(params) => (
+              <TextField {...params} label="Смуги відповідальності" />
+            )}
             isOptionEqualToValue={(option, value) => option.id === value.id}
           />
           <TextField
@@ -1133,42 +1361,73 @@ function AdminNeoPageBody() {
             multiline
             minRows={2}
             value={editDialog?.shortNote ?? ''}
-            onChange={(event) => editDialog && setEditDialog({ ...editDialog, shortNote: event.target.value })}
+            onChange={(event) =>
+              editDialog &&
+              setEditDialog({ ...editDialog, shortNote: event.target.value })
+            }
           />
           <TextField
             label="Довга нотатка"
             multiline
             minRows={3}
             value={editDialog?.longNote ?? ''}
-            onChange={(event) => editDialog && setEditDialog({ ...editDialog, longNote: event.target.value })}
+            onChange={(event) =>
+              editDialog &&
+              setEditDialog({ ...editDialog, longNote: event.target.value })
+            }
           />
         </DialogContent>
         <DialogActions>
-          <Button variant="outlined" onClick={() => setEditDialog(null)} disabled={editDialog?.isSaving}>
+          <Button
+            variant="outlined"
+            onClick={() => setEditDialog(null)}
+            disabled={editDialog?.isSaving}
+          >
             Скасувати
           </Button>
-          <Button variant="contained" onClick={handleSaveGroupEdit} disabled={editDialog?.isSaving}>
+          <Button
+            variant="contained"
+            onClick={handleSaveGroupEdit}
+            disabled={editDialog?.isSaving}
+          >
             Зберегти
           </Button>
         </DialogActions>
       </Dialog>
 
-      <Dialog open={Boolean(orphanEditDialog)} onClose={() => setOrphanEditDialog(null)} maxWidth="md" fullWidth>
+      <Dialog
+        open={Boolean(orphanEditDialog)}
+        onClose={() => setOrphanEditDialog(null)}
+        maxWidth="md"
+        fullWidth
+      >
         <DialogTitle>Редагувати орфан групу</DialogTitle>
         <DialogContent className="space-y-4">
-          {orphanEditDialog?.error ? <Alert severity="error">{orphanEditDialog.error}</Alert> : null}
-          <div className="text-sm text-muted-foreground">Група: {orphanEditDialog?.groupName}</div>
+          {orphanEditDialog?.error ? (
+            <Alert severity="error">{orphanEditDialog.error}</Alert>
+          ) : null}
+          <div className="text-sm text-muted-foreground">
+            Група: {orphanEditDialog?.groupName}
+          </div>
           <Autocomplete
             multiple
             options={aorOptions}
             getOptionLabel={(option) => option.name}
-            value={(orphanEditDialog?.selectedAorIds ?? [])
-              .map((id) => aorOptions.find((aor) => aor.id === id))
-              .filter(Boolean) as AreaOfResponsibility[]}
-            onChange={(_, value) =>
-              orphanEditDialog && setOrphanEditDialog({ ...orphanEditDialog, selectedAorIds: value.map((aor) => aor.id) })
+            value={
+              (orphanEditDialog?.selectedAorIds ?? [])
+                .map((id) => aorOptions.find((aor) => aor.id === id))
+                .filter(Boolean) as AreaOfResponsibility[]
             }
-            renderInput={(params) => <TextField {...params} label="Смуги відповідальності" />}
+            onChange={(_, value) =>
+              orphanEditDialog &&
+              setOrphanEditDialog({
+                ...orphanEditDialog,
+                selectedAorIds: value.map((aor) => aor.id),
+              })
+            }
+            renderInput={(params) => (
+              <TextField {...params} label="Смуги відповідальності" />
+            )}
             isOptionEqualToValue={(option, value) => option.id === value.id}
           />
           <TextField
@@ -1176,39 +1435,71 @@ function AdminNeoPageBody() {
             multiline
             minRows={2}
             value={orphanEditDialog?.shortNote ?? ''}
-            onChange={(event) => orphanEditDialog && setOrphanEditDialog({ ...orphanEditDialog, shortNote: event.target.value })}
+            onChange={(event) =>
+              orphanEditDialog &&
+              setOrphanEditDialog({
+                ...orphanEditDialog,
+                shortNote: event.target.value,
+              })
+            }
           />
           <TextField
             label="Довга нотатка"
             multiline
             minRows={3}
             value={orphanEditDialog?.longNote ?? ''}
-            onChange={(event) => orphanEditDialog && setOrphanEditDialog({ ...orphanEditDialog, longNote: event.target.value })}
+            onChange={(event) =>
+              orphanEditDialog &&
+              setOrphanEditDialog({
+                ...orphanEditDialog,
+                longNote: event.target.value,
+              })
+            }
           />
         </DialogContent>
         <DialogActions>
-          <Button variant="outlined" onClick={() => setOrphanEditDialog(null)} disabled={orphanEditDialog?.isSaving}>
+          <Button
+            variant="outlined"
+            onClick={() => setOrphanEditDialog(null)}
+            disabled={orphanEditDialog?.isSaving}
+          >
             Скасувати
           </Button>
-          <Button variant="contained" onClick={handleSaveOrphanEdit} disabled={orphanEditDialog?.isSaving}>
+          <Button
+            variant="contained"
+            onClick={handleSaveOrphanEdit}
+            disabled={orphanEditDialog?.isSaving}
+          >
             Зберегти
           </Button>
         </DialogActions>
       </Dialog>
 
-      <Dialog open={Boolean(assignDialog)} onClose={() => setAssignDialog(null)} maxWidth="md" fullWidth>
+      <Dialog
+        open={Boolean(assignDialog)}
+        onClose={() => setAssignDialog(null)}
+        maxWidth="md"
+        fullWidth
+      >
         <DialogTitle>Додати орфан групу до напрямків</DialogTitle>
         <DialogContent className="space-y-4">
-          {assignDialog?.error ? <Alert severity="error">{assignDialog.error}</Alert> : null}
+          {assignDialog?.error ? (
+            <Alert severity="error">{assignDialog.error}</Alert>
+          ) : null}
           <div className="text-sm text-muted-foreground">
-            Група: {assignDialog?.group.name || assignDialog?.group.masterKey.slice(-5)}
+            Група:{' '}
+            {assignDialog?.group.name ||
+              assignDialog?.group.masterKey.slice(-5)}
           </div>
           <Autocomplete
             multiple
             options={zones}
             getOptionLabel={(option) => option[1].name}
             value={assignDialog?.selectedZones ?? []}
-            onChange={(_, value) => assignDialog && setAssignDialog({ ...assignDialog, selectedZones: value })}
+            onChange={(_, value) =>
+              assignDialog &&
+              setAssignDialog({ ...assignDialog, selectedZones: value })
+            }
             renderInput={(params) => <TextField {...params} label="Напрямки" />}
             isOptionEqualToValue={(option, value) => option[0] === value[0]}
           />
@@ -1216,7 +1507,13 @@ function AdminNeoPageBody() {
             control={
               <Switch
                 checked={assignDialog?.isSecret ?? false}
-                onChange={(event) => assignDialog && setAssignDialog({ ...assignDialog, isSecret: event.target.checked })}
+                onChange={(event) =>
+                  assignDialog &&
+                  setAssignDialog({
+                    ...assignDialog,
+                    isSecret: event.target.checked,
+                  })
+                }
               />
             }
             label="Прихована група"
@@ -1226,34 +1523,63 @@ function AdminNeoPageBody() {
               multiple
               options={logins}
               value={assignDialog?.selectedUsers ?? []}
-              onChange={(_, value) => assignDialog && setAssignDialog({ ...assignDialog, selectedUsers: value })}
-              renderInput={(params) => <TextField {...params} label="Користувачі" />}
+              onChange={(_, value) =>
+                assignDialog &&
+                setAssignDialog({ ...assignDialog, selectedUsers: value })
+              }
+              renderInput={(params) => (
+                <TextField {...params} label="Користувачі" />
+              )}
             />
           ) : null}
         </DialogContent>
         <DialogActions>
-          <Button variant="outlined" onClick={() => setAssignDialog(null)} disabled={assignDialog?.isSaving}>
+          <Button
+            variant="outlined"
+            onClick={() => setAssignDialog(null)}
+            disabled={assignDialog?.isSaving}
+          >
             Скасувати
           </Button>
-          <Button variant="contained" onClick={handleAssignOrphanGroup} disabled={assignDialog?.isSaving}>
+          <Button
+            variant="contained"
+            onClick={handleAssignOrphanGroup}
+            disabled={assignDialog?.isSaving}
+          >
             Додати
           </Button>
         </DialogActions>
       </Dialog>
 
-      <Dialog open={Boolean(deleteDialog)} onClose={() => setDeleteDialog(null)} maxWidth="sm" fullWidth>
+      <Dialog
+        open={Boolean(deleteDialog)}
+        onClose={() => setDeleteDialog(null)}
+        maxWidth="sm"
+        fullWidth
+      >
         <DialogTitle>Підтвердження видалення</DialogTitle>
         <DialogContent className="space-y-3">
-          {deleteDialog?.error ? <Alert severity="error">{deleteDialog.error}</Alert> : null}
+          {deleteDialog?.error ? (
+            <Alert severity="error">{deleteDialog.error}</Alert>
+          ) : null}
           <Typography variant="body2" className="text-muted-foreground">
             Ви впевнені, що хочете видалити групу {deleteDialog?.groupName}?
           </Typography>
         </DialogContent>
         <DialogActions>
-          <Button variant="outlined" onClick={() => setDeleteDialog(null)} disabled={deleteDialog?.isDeleting}>
+          <Button
+            variant="outlined"
+            onClick={() => setDeleteDialog(null)}
+            disabled={deleteDialog?.isDeleting}
+          >
             Скасувати
           </Button>
-          <Button variant="contained" color="error" onClick={handleDeleteGroup} disabled={deleteDialog?.isDeleting}>
+          <Button
+            variant="contained"
+            color="error"
+            onClick={handleDeleteGroup}
+            disabled={deleteDialog?.isDeleting}
+          >
             Видалити
           </Button>
         </DialogActions>

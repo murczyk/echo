@@ -79,7 +79,7 @@ view : Model -> View Msg
 view _ =
     { title = "Адмін: напрямки (neo)"
     , body =
-        [ div [ class "mt-2 w-full" ]
+        [ div [ class "mt-4 px-3 w-full" ]
             [ node "admin-neo" [] [] ]
         ]
     }

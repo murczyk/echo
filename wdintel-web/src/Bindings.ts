@@ -2399,6 +2399,85 @@ export type LongPollRsp = {
   lastEventId: string | null;
 };
 
+export type TagModelError = {
+  id: number;
+  sigint_inbox_item_id: number;
+  model: string;
+  model_login: string | null;
+  confidence: number;
+  removed_by_login: string;
+  removed_at: number;
+  body: string;
+  timestamp: number | null;
+  coords: string | null;
+  freq: string | null;
+  post_id: string | null;
+  datetime: number | null;
+  location_v2: string | null;
+  post_name: string | null;
+};
+
+export type TagModelErrorFE = {
+  id: number;
+  sigintInboxItemId: number;
+  model: string;
+  modelLogin: string | null;
+  confidence: number;
+  removedByLogin: string;
+  removedAt: number;
+  body: string;
+  timestamp: number | null;
+  coords: string | null;
+  freq: string | null;
+  postId: string | null;
+  datetime: number | null;
+  locationV2: string | null;
+  postName: string | null;
+}
+
+export function toTagModelErrorFE(error: TagModelError): TagModelErrorFE {
+  return {
+    id: error.id,
+    sigintInboxItemId: error.sigint_inbox_item_id,
+    model: error.model,
+    modelLogin: error.model_login,
+    confidence: error.confidence,
+    removedByLogin: error.removed_by_login,
+    removedAt: error.removed_at,
+    body: error.body,
+    timestamp: error.timestamp,
+    coords: error.coords, 
+    freq: error.freq,
+    postId: error.post_id,
+    datetime: error.datetime,
+    locationV2: error.location_v2,
+    postName: error.post_name,
+  };
+}
+
+export type EchoAccount = {
+  id: number;
+  area_of_responsibility: AreaOfResponsibility | null;
+  status: string;
+  created_at: number;
+  client_id: number | null;
+  display_name: string;
+  system_service_name: string | null;
+  description: string | null;
+  messenger: string;
+  phone_number: string;
+  api_login: string | null;
+  api_endpoint: string | null;
+  is_linked: boolean;
+  is_imported: boolean;
+  signal_port: string | null;
+  process_name: string | null;
+  attachments_path: string | null;
+  echo_client_id: string | null;
+  echo_account_id: string | null;
+  echo_client_lock_id: string | null;
+};
+
 export type EchoAccountF1 = {
   id: number;
   areaOfResponsibility: AreaOfResponsibility | null;
@@ -2431,7 +2510,7 @@ export type QrCodeRsp = {
 };
 
 export type AccountsRsp = {
-  accounts: Array<EchoAccountF1>;
+  accounts: Array<EchoAccount>;
 };
 
 export type IsAccountLinkedReq = {
