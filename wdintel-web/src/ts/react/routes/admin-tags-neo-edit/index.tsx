@@ -14,22 +14,12 @@ import {
 } from '@mui/material';
 import React from 'react';
 
-import {
-  TagAdmin,
-  TagKeyword,
-  TagModelErrorFE,
-  TagUpsertReq,
-} from '../../../../Bindings';
+import { TagAdmin, TagKeyword, TagModelErrorFE, TagUpsertReq } from '../../../../Bindings';
 import { Info } from '../../components/info';
 import { Button } from '../../components/mui-customized/button';
-import {
-  createTag,
-  deleteTagKeyword,
-  getTagModelErrors,
-  listTags,
-  updateTag,
-} from '../../services/api/tags';
+import { createTag, deleteTagKeyword, getTagModelErrors, listTags, updateTag } from '../../services/api/tags';
 import { navigateWithinSpa } from '../../utils/browser';
+import { formatDate } from '../../utils/misc';
 
 type LoadingStatus = 'idle' | 'loading' | 'success' | 'error';
 
@@ -146,11 +136,7 @@ function buildKeywordCreatePath(tagId: number, backTo: string | null): string {
   return `/admin/tags-neo/keyword-edit?${params.toString()}`;
 }
 
-function buildKeywordEditPath(
-  tagId: number,
-  keywordId: number,
-  backTo: string | null
-): string {
+function buildKeywordEditPath(tagId: number, keywordId: number, backTo: string | null): string {
   const params = new URLSearchParams();
   params.set('tagId', String(tagId));
   params.set('keywordId', String(keywordId));
@@ -191,8 +177,7 @@ function TagForm(props: {
   disabled: boolean;
   onChange: (next: TagFormState) => void;
 }) {
-  const update = (patch: Partial<TagFormState>) =>
-    props.onChange({ ...props.form, ...patch });
+  const update = (patch: Partial<TagFormState>) => props.onChange({ ...props.form, ...patch });
 
   return (
     <div className="space-y-4">
@@ -242,9 +227,7 @@ function KeywordsTable(props: {
   onDelete: (keywordId: number) => void;
 }) {
   if (props.keywords.length === 0) {
-    return (
-      <div className="text-muted-foreground text-sm">Немає ключових слів</div>
-    );
+    return <div className="text-muted-foreground text-sm">Немає ключових слів</div>;
   }
 
   return (
@@ -270,11 +253,7 @@ function KeywordsTable(props: {
                 <td>{keyword.keywordNegativeForms.join(', ')}</td>
                 <td className="text-end">
                   <div className="flex gap-2 justify-end">
-                    <Button
-                      variant="outlined"
-                      size="small"
-                      onClick={() => props.onEdit(keyword.tagKeywordId)}
-                    >
+                    <Button variant="outlined" size="small" onClick={() => props.onEdit(keyword.tagKeywordId)}>
                       Редагувати
                     </Button>
                     <Button
@@ -297,34 +276,20 @@ function KeywordsTable(props: {
   );
 }
 
-function TagActions(props: {
-  isNew: boolean;
-  saving: boolean;
-  onSave: () => void;
-  onBack: () => void;
-}) {
+function TagActions(props: { isNew: boolean; saving: boolean; onSave: () => void; onBack: () => void }) {
   return (
     <div className="flex gap-3">
       <Button variant="outlined" onClick={props.onBack} disabled={props.saving}>
         Повернутись
       </Button>
-      <Button
-        variant="contained"
-        onClick={props.onSave}
-        disabled={props.saving}
-      >
+      <Button variant="contained" onClick={props.onSave} disabled={props.saving}>
         {props.isNew ? 'Створити' : 'Зберегти'}
       </Button>
     </div>
   );
 }
 
-function KeywordDeleteDialog(props: {
-  open: boolean;
-  onClose: () => void;
-  onConfirm: () => void;
-  disabled: boolean;
-}) {
+function KeywordDeleteDialog(props: { open: boolean; onClose: () => void; onConfirm: () => void; disabled: boolean }) {
   return (
     <Dialog open={props.open} onClose={props.onClose}>
       <DialogTitle>Підтвердження видалення</DialogTitle>
@@ -333,12 +298,7 @@ function KeywordDeleteDialog(props: {
         <Button variant="outlined" onClick={props.onClose}>
           Скасувати
         </Button>
-        <Button
-          variant="contained"
-          color="error"
-          onClick={props.onConfirm}
-          disabled={props.disabled}
-        >
+        <Button variant="contained" color="error" onClick={props.onConfirm} disabled={props.disabled}>
           Видалити
         </Button>
       </DialogActions>
@@ -353,21 +313,16 @@ type AdminTagsNeoEditPageProps = {
 function AdminTagsNeoEditPageBody(props: AdminTagsNeoEditPageProps) {
   const [form, setForm] = React.useState<TagFormState>(emptyForm);
   const [keywords, setKeywords] = React.useState<TagKeyword[]>([]);
-  const [keywordErrors, setKeywordErrors] = React.useState<TagModelErrorFE[]>(
-    []
-  );
+  const [tagModelErrors, setTagModelErrors] = React.useState<TagModelErrorFE[]>([]);
+  const [modelErrorsLoadError, setModelErrorsLoadError] = React.useState<string | null>(null);
   const [deletingIds, setDeletingIds] = React.useState<Set<number>>(new Set());
   const [status, setStatus] = React.useState<LoadingStatus>('idle');
   const [loadError, setLoadError] = React.useState<string | null>(null);
   const [saving, setSaving] = React.useState(false);
   const [tagId, setTagId] = React.useState<number | null>(null);
-  const [formErrors, setFormErrors] = React.useState<Record<string, string>>(
-    {}
-  );
+  const [formErrors, setFormErrors] = React.useState<Record<string, string>>({});
   const [actionStatus, setActionStatus] = React.useState<StatusMessage>(null);
-  const [deleteKeywordId, setDeleteKeywordId] = React.useState<number | null>(
-    null
-  );
+  const [deleteKeywordId, setDeleteKeywordId] = React.useState<number | null>(null);
   const [tabIndex, setTabIndex] = React.useState(0);
 
   const backTo = React.useMemo(() => {
@@ -404,6 +359,7 @@ function AdminTagsNeoEditPageBody(props: AdminTagsNeoEditPageProps) {
       setForm(emptyForm);
       setKeywords([]);
       setTagId(null);
+      setModelErrorsLoadError(null);
       return;
     }
 
@@ -419,12 +375,13 @@ function AdminTagsNeoEditPageBody(props: AdminTagsNeoEditPageProps) {
   }, [props.tagId]);
 
   async function loadTagModelErrors(parsedId: number) {
+    setModelErrorsLoadError(null);
     try {
       const errors = await getTagModelErrors(parsedId);
-      setKeywordErrors(errors);
+      setTagModelErrors(errors);
     } catch (err) {
-      setKeywordErrors([]);
-      setLoadError(formatErrorMessage(err));
+      setTagModelErrors([]);
+      setModelErrorsLoadError(formatErrorMessage(err));
     }
   }
 
@@ -467,12 +424,7 @@ function AdminTagsNeoEditPageBody(props: AdminTagsNeoEditPageProps) {
       setActionStatus({ kind: 'error', message: 'Спочатку збережіть тег' });
       return;
     }
-    navigateWithinSpa(
-      buildKeywordCreatePath(
-        tagId,
-        window.location.href.replace(window.location.origin, '')
-      )
-    );
+    navigateWithinSpa(buildKeywordCreatePath(tagId, window.location.href.replace(window.location.origin, '')));
   }
 
   function navigateToKeywordEdit(keywordId: number) {
@@ -480,13 +432,7 @@ function AdminTagsNeoEditPageBody(props: AdminTagsNeoEditPageProps) {
       setActionStatus({ kind: 'error', message: 'Спочатку збережіть тег' });
       return;
     }
-    navigateWithinSpa(
-      buildKeywordEditPath(
-        tagId,
-        keywordId,
-        window.location.href.replace(window.location.origin, '')
-      )
-    );
+    navigateWithinSpa(buildKeywordEditPath(tagId, keywordId, window.location.href.replace(window.location.origin, '')));
   }
 
   async function handleDeleteKeyword() {
@@ -494,15 +440,11 @@ function AdminTagsNeoEditPageBody(props: AdminTagsNeoEditPageProps) {
     setDeletingIds((prev) => new Set(prev).add(deleteKeywordId));
     try {
       await deleteTagKeyword(tagId, deleteKeywordId);
-      setKeywords((prev) =>
-        prev.filter((kw) => kw.tagKeywordId !== deleteKeywordId)
-      );
+      setKeywords((prev) => prev.filter((kw) => kw.tagKeywordId !== deleteKeywordId));
     } catch (err) {
       setActionStatus({
         kind: 'error',
-        message: `Не вдалося видалити ключове слово: ${formatErrorMessage(
-          err
-        )}`,
+        message: `Не вдалося видалити ключове слово: ${formatErrorMessage(err)}`,
       });
     } finally {
       setDeletingIds((prev) => {
@@ -525,16 +467,10 @@ function AdminTagsNeoEditPageBody(props: AdminTagsNeoEditPageProps) {
   if (status === 'error') {
     return (
       <div className="space-y-4">
-        <Button
-          variant="outlined"
-          startIcon={<ArrowBackIcon />}
-          onClick={navigateBack}
-        >
+        <Button variant="outlined" startIcon={<ArrowBackIcon />} onClick={navigateBack}>
           Назад
         </Button>
-        <div className="text-red-600">
-          {loadError || 'Помилка завантаження'}
-        </div>
+        <div className="text-red-600">{loadError || 'Помилка завантаження'}</div>
       </div>
     );
   }
@@ -551,40 +487,21 @@ function AdminTagsNeoEditPageBody(props: AdminTagsNeoEditPageProps) {
               {isNew ? 'Додайте новий тег' : 'Оновіть параметри тегу'}
             </Typography>
           </div>
-          <Button
-            variant="outlined"
-            startIcon={<ArrowBackIcon />}
-            onClick={navigateBack}
-          >
+          <Button variant="outlined" startIcon={<ArrowBackIcon />} onClick={navigateBack}>
             Назад
           </Button>
         </div>
 
-        <TagForm
-          form={form}
-          errors={formErrors}
-          disabled={saving}
-          onChange={setForm}
-        />
+        <TagForm form={form} errors={formErrors} disabled={saving} onChange={setForm} />
 
-        <TagActions
-          isNew={isNew}
-          saving={saving}
-          onSave={handleSave}
-          onBack={navigateBack}
-        />
+        <TagActions isNew={isNew} saving={saving} onSave={handleSave} onBack={navigateBack} />
 
         <div className="space-y-3">
           <div className="flex justify-between">
             <Typography variant="h6" className="!font-semibold">
               Ключові слова та відмітки
             </Typography>
-            <Button
-              variant="contained"
-              size="small"
-              onClick={navigateToKeywordCreate}
-              disabled={saving}
-            >
+            <Button variant="contained" size="small" onClick={navigateToKeywordCreate} disabled={saving}>
               Створити ключове слово
             </Button>
           </div>
@@ -594,24 +511,11 @@ function AdminTagsNeoEditPageBody(props: AdminTagsNeoEditPageProps) {
             onChange={(_, value) => setTabIndex(value)}
             aria-label="Ключові слова та відмітки помилок"
           >
-            <Tab
-              label="Ключові слова"
-              id="keywords-tab"
-              aria-controls="keywords-pane"
-            />
-            <Tab
-              label="Відмітки помилок"
-              id="errors-tab"
-              aria-controls="errors-pane"
-            />
+            <Tab label="Ключові слова" id="keywords-tab" aria-controls="keywords-pane" />
+            <Tab label="Відмітки помилок" id="errors-tab" aria-controls="errors-pane" />
           </Tabs>
 
-          <div
-            id="keywords-pane"
-            role="tabpanel"
-            aria-labelledby="keywords-tab"
-            hidden={tabIndex !== 0}
-          >
+          <div id="keywords-pane" role="tabpanel" aria-labelledby="keywords-tab" hidden={tabIndex !== 0}>
             {tabIndex === 0 && (
               <>
                 <KeywordsTable
@@ -624,32 +528,43 @@ function AdminTagsNeoEditPageBody(props: AdminTagsNeoEditPageProps) {
             )}
           </div>
 
-          <div
-            id="errors-pane"
-            role="tabpanel"
-            aria-labelledby="errors-tab"
-            hidden={tabIndex !== 1}
-          >
+          <div id="errors-pane" role="tabpanel" aria-labelledby="errors-tab" hidden={tabIndex !== 1}>
             {tabIndex === 1 &&
-              (keywordErrors.length > 0 ? (
-                keywordErrors.map((error) => (
+              (modelErrorsLoadError ? (
+                <Info text={modelErrorsLoadError} color="error" className="text-sm mb-4" />
+              ) : tagModelErrors.length > 0 ? (
+                tagModelErrors.map((error) => (
                   <div
                     key={error.id}
-                    className="p-3 border border-gray-200 rounded-md mb-3 еext-muted-foreground whitespace-pre-wrap"
-                    dangerouslySetInnerHTML={{ __html: error.body }}
-                  />
+                    className="p-3 border border-gray-200 rounded-md mb-3 еext-muted-foreground flex justify-between"
+                  >
+                    <div
+                      className="text-muted-foreground whitespace-pre-wrap"
+                      dangerouslySetInnerHTML={{ __html: error.body }}
+                    />
+                    <div className="">
+                      <div className="text-muted-foreground text-sm">
+                        <i className="bi bi-calendar-event text-icons mr-2"></i>
+                        {formatDate(error.removedAt, {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          second: '2-digit',
+                        })}
+                      </div>
+                      <div className="text-muted-foreground text-sm">
+                        <i className="bi bi-person text-icons mr-2"></i>
+                        {error.removedByLogin}
+                      </div>
+                    </div>
+                  </div>
                 ))
               ) : (
-                <p className="text-muted-foreground text-sm">
-                  Немає відміток помилок
-                </p>
+                <p className="text-muted-foreground text-sm">Немає відміток помилок</p>
               ))}
           </div>
         </div>
 
-        {actionStatus?.kind === 'error' ? (
-          <Info text={actionStatus.message} color="error" />
-        ) : null}
+        {actionStatus?.kind === 'error' ? <Info text={actionStatus.message} color="error" /> : null}
       </div>
 
       <KeywordDeleteDialog

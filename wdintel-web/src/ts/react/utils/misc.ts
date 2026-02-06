@@ -16,3 +16,10 @@ export function objectsEqual(obj1: { [key: string]: any }, obj2: { [key: string]
 
   return keys1.every((key) => obj1[key] === obj2[key]);
 }
+
+export function formatDate(value: number | null | undefined, timeFormat?: Intl.DateTimeFormatOptions): string {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  return date.toLocaleDateString('uk-UA', timeFormat)
+}
