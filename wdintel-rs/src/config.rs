@@ -134,6 +134,7 @@ pub const DEFAULT_STORE_PALITRA_IN_S3: bool = true;
 pub const KMZ_CONTENT_TYPE: &str = "application/vnd.google-earth.kmz";
 pub const ENCRYPTION_KEY_PLACEHOLDER: &str = "🔑";
 pub const ENCRYPTION_KEY_DESCRIPTION_PLACEHOLDER: &str = "...";
+pub const NETWORKS_IMPORT_TUI_ROWS_NUM_PAGE_SIZE: usize = 10;
 
 /// Dynamic config that's different on different deployments
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
@@ -298,6 +299,10 @@ pub fn mk_s3_config(config: &Config) -> Result<Option<storage::S3Config>> {
 }
 
 pub fn read_config(mode: Mode) -> Result<Config, AppError> {
+    if let Ok(path) = std::env::var("ECHO_CONFIG_PATH") {
+        info!("reading config from {path}...");
+        return read_from_path(PathBuf::from(path));
+    }
     let folder = get_deploy_folder(mode).context(h!())?;
     let path = match mode {
         Mode::Live => folder.join("config.toml"),

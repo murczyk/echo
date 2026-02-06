@@ -525,6 +525,12 @@ pub struct BackupPs {
     pub nowait: bool,
 }
 
+#[derive(clap::Parser, Debug)]
+pub struct ImportTuiPs {
+    #[arg(long, value_enum)]
+    pub path: String,
+}
+
 #[derive(clap::Subcommand, Debug)]
 #[command(author, version, about, long_about = None)]
 enum Cmd {
@@ -534,6 +540,10 @@ enum Cmd {
     #[command(visible_alias = "migration")]
     Migrate,
     NetworkInvalidationTui,
+    TuiImportUnit(ImportTuiPs),
+    TuiImportNetwork(ImportTuiPs),
+    TuiMergeUnit,
+    TuiMergeNetwork,
     ExportUnit(ExportUnitPs),
     ImportUnit(ImportUnitPs),
     RenewTailscaleCert(RenewTailscaleCertPs),
@@ -1048,6 +1058,18 @@ async fn async_main(
         }
         Cmd::OneoffRestartEcho(ps) => {
             oneoff::oneoff_restart_echo(mode, &ps).await
+        }
+        Cmd::TuiImportUnit(ps) => {
+            sigint::import::tui::run_import_unit_tui(mode, ps).await
+        }
+        Cmd::TuiImportNetwork(ps) => {
+            sigint::import::tui::run_import_network_tui(mode, ps).await
+        }
+        Cmd::TuiMergeUnit => {
+            sigint::import::tui::run_merge_unit_tui(mode).await
+        }
+        Cmd::TuiMergeNetwork => {
+            sigint::import::tui::run_merge_network_tui(mode).await
         }
     }
 }
