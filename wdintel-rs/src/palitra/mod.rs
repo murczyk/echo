@@ -521,6 +521,25 @@ pub async fn list_palitra_points(
     Ok(Json(points))
 }
 
+#[post("/api/palitra/points/search")]
+pub async fn search_palitra_points(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<PalitraSearchPointsReq>,
+) -> Result<Json<Vec<PalitraPoints>>, AppError> {
+    println!("search_palitra_points");
+    dbg!("{:?}", &req);
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
+        .await
+        .context(h!())?;
+    let req = req.into_inner();
+    let points = bl::search_palitra_points_by_labels(login, req, &env.dbx)
+        .await
+        .context(h!())?;
+    Ok(Json(points))
+}
+
 #[post("/api/palitra/create")]
 pub async fn create_palitra(
     user: actix_identity::Identity,
