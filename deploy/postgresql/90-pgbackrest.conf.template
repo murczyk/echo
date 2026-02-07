@@ -1,9 +1,9 @@
 # pgBackRest WAL archiving
 #
 # This file is deployed by `just setup-pgbackrest <server>`.
-# The stanza placeholder is substituted from /etc/pgbackrest/pgbackrest.conf.
+# Placeholders:
+# - @STANZA@ is substituted from /etc/pgbackrest/conf.d/pgbackrest-@STANZA@.conf
 archive_mode = on
 archive_command = '/usr/bin/pgbackrest --stanza=@STANZA@ archive-push %p'
 # Optional, helps ensure regular WAL archive traffic
 archive_timeout = 60
-

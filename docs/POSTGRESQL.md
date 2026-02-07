@@ -35,7 +35,12 @@ sudo chmod 750 /var/lib/pgbackrest
 sudo chown postgres:postgres /var/lib/pgbackrest
 ```
 
-Put /etc/pgbackrest/pgbackrest.conf like:
+pgBackRest config layout:
+
+- Base config: `/etc/pgbackrest/pgbackrest.conf` (can be empty)
+- Stanza config(s): `/etc/pgbackrest/conf.d/pgbackrest-<STANZA>.conf`
+
+Put stanza config (for example, `/etc/pgbackrest/conf.d/pgbackrest-wd-staging.conf`) like:
 
 ```
 [wd-staging]
@@ -109,13 +114,12 @@ sudo -u postgres pgbackrest --stanza=wd-staging --log-level-console=info check
 
 ```
 STANZA=wd-staging
-PGDATA=/var/lib/postgresql/14/main
 sudo systemctl stop postgresql
 
 sudo -u postgres pgbackrest \
-  --config=/etc/pgbackrest/pgbackrest-staging.conf \
+  --config=/etc/pgbackrest/pgbackrest.conf \
+  --config-include-path=/etc/pgbackrest/conf.d \
   --stanza="$STANZA" \
-  --pg1-path="$PGDATA" \
   --delta \
   --log-level-console=info \
   restore
@@ -128,18 +132,18 @@ sudo systemctl start postgresql
 
 ```
 STANZA=wd-staging
-PGDATA=/var/lib/postgresql/14/main
 sudo systemctl stop postgresql
 
+PGDATA=/var/lib/postgresql/14/main
 sudo mv "$PGDATA" "${PGDATA}.bak.$(date +%Y%m%d_%H%M%S)"
 sudo mkdir -p "$PGDATA"
 sudo chown -R postgres:postgres "$PGDATA"
 sudo chmod 700 "$PGDATA"
 
 sudo -u postgres pgbackrest \
-  --config=/home/ziggy/Syncthing/conf/echo/pgbackrest-staging.conf \
+  --config=/etc/pgbackrest/pgbackrest.conf \
+  --config-include-path=/etc/pgbackrest/conf.d \
   --stanza="$STANZA" \
-  --pg1-path="$PGDATA" \
   restore
 
 sudo systemctl start postgresql
