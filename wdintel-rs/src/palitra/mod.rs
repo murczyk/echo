@@ -1,6 +1,10 @@
 use crate::entities::*;
 use crate::error::AppError;
 use crate::h;
+use crate::palitra::bl::{
+    palitra_search_cache_key, palitra_suggest_cache_key, read_cached_json,
+    write_cached_json,
+};
 use crate::palitra::types::*;
 use crate::types::*;
 use crate::utils::multipart;
@@ -521,22 +525,67 @@ pub async fn list_palitra_points(
     Ok(Json(points))
 }
 
+#[post("/api/palitra/points/label-suggest")]
+pub async fn suggest_palitra_point_labels(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<PalitraPointLabelSuggestReq>,
+) -> Result<Json<Vec<PalitraPointLabelSuggestRsp>>, AppError> {
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
+        .await
+        .context(h!())?;
+    let req = req.into_inner();
+    let cache_key = palitra_suggest_cache_key(&login, &req);
+    let mut redis = env.redis.clone();
+    if let Some(labels) =
+        read_cached_json(&mut redis, &cache_key).await.c(h!())?
+    {
+        return Ok(Json(labels));
+    }
+    let labels = bl::suggest_palitra_point_labels(login, req, &env.dbx)
+        .await
+        .context(h!())?;
+    write_cached_json(
+        &mut redis,
+        &cache_key,
+        crate::config::PALITRA_POINT_LABEL_SUGGEST_CACHE_TTL_SEC,
+        &labels,
+    )
+    .await
+    .c(h!())?;
+    Ok(Json(labels))
+}
+
 #[post("/api/palitra/points/search")]
 pub async fn search_palitra_points(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
     req: Json<PalitraSearchPointsReq>,
 ) -> Result<Json<Vec<PalitraPoints>>, AppError> {
-    println!("search_palitra_points");
-    dbg!("{:?}", &req);
     let login = user.id().c(h!())?;
     crate::users::has_role(&env.dbx, &login, "Rer")
         .await
         .context(h!())?;
     let req = req.into_inner();
+    let cache_key = palitra_search_cache_key(&login, &req);
+    let mut redis = env.redis.clone();
+    if let Some(points) =
+        read_cached_json(&mut redis, &cache_key).await.c(h!())?
+    {
+        return Ok(Json(points));
+    }
     let points = bl::search_palitra_points_by_labels(login, req, &env.dbx)
         .await
         .context(h!())?;
+    write_cached_json(
+        &mut redis,
+        &cache_key,
+        crate::config::PALITRA_POINT_SEARCH_CACHE_TTL_SEC,
+        &points,
+    )
+    .await
+    .c(h!())?;
     Ok(Json(points))
 }
 

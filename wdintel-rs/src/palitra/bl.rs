@@ -6,8 +6,10 @@ use crate::utils::orm::ArrayColumnOps;
 use anyhow::Context;
 use chrono::{DateTime, Utc};
 use itertools::{Either, Itertools};
+use redis::AsyncCommands;
 use sea_orm::prelude::*;
 use sea_orm::*;
+use serde::de::DeserializeOwned;
 use std::collections::{HashMap, HashSet};
 
 enum PalitraUpdateAction {
@@ -119,24 +121,27 @@ pub async fn search_palitra_points_by_labels(
     }
 
     let points = palitra_point::Entity::find()
+        .select_only()
+        .column(palitra_point::Column::PalitraId)
+        .column(palitra_point::Column::Lat)
+        .column(palitra_point::Column::Lng)
+        .column(palitra_point::Column::Label)
         .filter(palitra_point::Column::PalitraId.eq_any(palitra_ids.clone()))
         .filter(palitra_point::Column::Deleted.eq(false))
         .filter(palitra_point::Column::Label.eq_any(req.point_labels.clone()))
+        .into_tuple::<(i64, f64, f64, Option<String>)>()
         .all(dbx)
         .await
         .c(h!())?;
 
     let mut points_by_id: HashMap<i64, Vec<PalitraPoint>> = HashMap::new();
-    for point in points {
+    for (palitra_id, lat, lng, label) in points {
         points_by_id
-            .entry(point.palitra_id)
+            .entry(palitra_id)
             .or_default()
             .push(PalitraPoint {
-                label: point.label,
-                coords: Coords {
-                    lat: point.lat,
-                    lng: point.lng,
-                },
+                label,
+                coords: Coords { lat, lng },
             });
     }
 
@@ -148,6 +153,117 @@ pub async fn search_palitra_points_by_labels(
         })
         .collect();
     Ok(result)
+}
+
+pub async fn suggest_palitra_point_labels(
+    login: String,
+    req: PalitraPointLabelSuggestReq,
+    dbx: &DatabaseConnection,
+) -> anyhow::Result<Vec<PalitraPointLabelSuggestRsp>> {
+    let allowed_palitra_ids = collect_palitra_ids(login, dbx).await.c(h!())?;
+    let allowed_palitra_ids: HashSet<i64> =
+        allowed_palitra_ids.into_iter().collect();
+    let palitra_ids: Vec<i64> = req
+        .palitra_ids
+        .into_iter()
+        .filter(|id| allowed_palitra_ids.contains(id))
+        .collect();
+    if palitra_ids.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let pattern = format!("{}%", &req.prefix);
+    let labels = palitra_point::Entity::find()
+        .select_only()
+        .column(palitra_point::Column::PalitraId)
+        .column(palitra_point::Column::Label)
+        .filter(palitra_point::Column::PalitraId.eq_any(palitra_ids))
+        .filter(palitra_point::Column::Deleted.eq(false))
+        .filter(palitra_point::Column::Label.is_not_null())
+        .filter(palitra_point::Column::Label.like(pattern))
+        .order_by_asc(palitra_point::Column::Label)
+        .distinct()
+        .into_tuple::<(i64, Option<String>)>()
+        .all(dbx)
+        .await
+        .c(h!())?;
+
+    let labels = labels
+        .into_iter()
+        .map(|(palitra_id, label)| PalitraPointLabelSuggestRsp {
+            palitra_id,
+            label: label.unwrap_or_default(),
+        })
+        .collect();
+
+    Ok(labels)
+}
+
+fn normalize_label_cache(label: &str) -> Option<String> {
+    let trimmed = label.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_lowercase())
+    }
+}
+
+pub(crate) fn palitra_search_cache_key(
+    login: &str,
+    req: &PalitraSearchPointsReq,
+) -> String {
+    let mut palitra_ids = req.palitra_ids.clone();
+    palitra_ids.sort_unstable();
+    palitra_ids.dedup();
+    let mut labels: Vec<String> = req
+        .point_labels
+        .iter()
+        .filter_map(|label| normalize_label_cache(label))
+        .collect();
+    labels.sort();
+    labels.dedup();
+    format!(
+        "palitra:points:search:{login}:{}:{}",
+        palitra_ids.iter().join(","),
+        labels.join(",")
+    )
+}
+
+pub(crate) fn palitra_suggest_cache_key(
+    login: &str,
+    req: &PalitraPointLabelSuggestReq,
+) -> String {
+    let mut palitra_ids = req.palitra_ids.clone();
+    palitra_ids.sort_unstable();
+    palitra_ids.dedup();
+    let prefix = normalize_label_cache(&req.prefix).unwrap_or_default();
+    format!(
+        "palitra:points:label-suggest:{login}:{}:{prefix}",
+        palitra_ids.iter().join(",")
+    )
+}
+
+pub(crate) async fn read_cached_json<T: DeserializeOwned>(
+    redis: &mut redis::aio::ConnectionManager,
+    key: &str,
+) -> anyhow::Result<Option<T>> {
+    let raw: Option<String> = redis.get(key).await.c(h!())?;
+    match raw {
+        Some(raw) => Ok(Some(serde_json::from_str(&raw).c(h!())?)),
+        None => Ok(None),
+    }
+}
+
+pub(crate) async fn write_cached_json<T: Serialize>(
+    redis: &mut redis::aio::ConnectionManager,
+    key: &str,
+    ttl_sec: u64,
+    value: &T,
+) -> anyhow::Result<()> {
+    let raw = serde_json::to_string(value).c(h!())?;
+    let _: () = redis.set(key, raw).await.c(h!())?;
+    let _: () = redis.expire(key, ttl_sec as i64).await.c(h!())?;
+    Ok(())
 }
 
 pub async fn list_palitra_points_by_viewport_bounds(

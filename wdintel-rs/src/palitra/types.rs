@@ -99,6 +99,23 @@ pub struct PalitraSearchPointsReq {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub struct PalitraPointLabelSuggestReq {
+    pub palitra_ids: Vec<i64>,
+    pub prefix: String,
+    pub limit: Option<u64>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct PalitraPointLabelSuggestRsp {
+    pub palitra_id: i64,
+    pub label: String,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct PalitraPoints {
     pub palitra_id: i64,
     pub points: Vec<PalitraPoint>,
