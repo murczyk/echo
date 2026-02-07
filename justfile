@@ -36,6 +36,12 @@ wd_fasttext_models := justfile_directory() + "/echo-ai/fasttext-models"
 default:
     @just --list
 
+[arg('server', long='server')]
+setup-pgbackrest server:
+    #!/bin/bash
+    set -euo pipefail
+    bash deploy/setup-pgbackrest.sh --server "{{ server }}"
+
 _print-servers:
     @echo "❌ Server parameter not recognized. Can be one of: echo-zaporizhzha, echo-kherson, echo-donetsk, echo-soledar. Value: {{ server }}"
 
