@@ -36,6 +36,12 @@ wd_fasttext_models := justfile_directory() + "/echo-ai/fasttext-models"
 default:
     @just --list
 
+[arg('server', long='server')]
+setup-pgbackrest server:
+    #!/bin/bash
+    set -euo pipefail
+    bash deploy/setup-pgbackrest.sh --server "{{ server }}"
+
 _print-servers:
     @echo "❌ Server parameter not recognized. Can be one of: echo-zaporizhzha, echo-kherson, echo-donetsk, echo-soledar. Value: {{ server }}"
 
@@ -538,6 +544,94 @@ copy-db-to-target:
     ssh -t {{ target }} "sudo -u postgres pg_restore -d {{ pgdb }} /var/tmp/wd-{{ dt1 }}.pgrestore && sudo rm /var/tmp/wd-{{ dt1 }}.pgrestore"
     rm /var/tmp/wd-{{ dt1 }}.pgrestore.gz | echo "ok"
 
+[arg('target', long='target')]
+[arg('server', long='server')]
+copy-db-pgbackrest target server="":
+    #!/bin/bash
+    set -euxo pipefail
+    if [[ "{{ target }}" == "" ]]; then
+        echo "❌ `target` parameter not recognized. Value: {{ target }}"; exit 1;
+    fi
+    TARGET="{{ target }}"
+    ssh "$TARGET" 'sudo echo-install-utils install-pgbackrest'
+    SERVER_KEY="{{ server }}"
+    ssh "$TARGET" "sudo SERVER_KEY='${SERVER_KEY}' bash -s" <<'REMOTE'
+        set -euo pipefail
+
+        if [[ -n "${SERVER_KEY}" ]]; then
+          conf_candidates=(
+            "/etc/pgbackrest/conf.d/pgbackrest-${SERVER_KEY}.conf"
+            "/etc/pgbackrest/conf.d/pgbackrest-wd-${SERVER_KEY}.conf"
+          )
+          CONF_FILE=""
+          for c in "${conf_candidates[@]}"; do
+            if [[ -f "${c}" ]]; then
+              CONF_FILE="${c}"
+              break
+            fi
+          done
+          if [[ -z "${CONF_FILE}" ]]; then
+            echo "" >&2
+            echo "############################################################" >&2
+            echo "# Missing pgBackRest config on target" >&2
+            echo "# tried:" >&2
+            printf '# - %s\n' "${conf_candidates[@]}" >&2
+            echo "# target: {{ target }}" >&2
+            echo "# action: run: just setup-pgbackrest --server {{ target }}" >&2
+            echo "############################################################" >&2
+            echo "" >&2
+            exit 1
+          fi
+        else
+          shopt -s nullglob
+          files=(/etc/pgbackrest/conf.d/pgbackrest-*.conf)
+          if [[ "${#files[@]}" -eq 0 ]]; then
+            echo "" >&2
+            echo "############################################################" >&2
+            echo "# Missing pgBackRest config on target" >&2
+            echo "# dir: /etc/pgbackrest/conf.d" >&2
+            echo "# target: {{ target }}" >&2
+            echo "# action: run: just setup-pgbackrest --server {{ target }}" >&2
+            echo "############################################################" >&2
+            echo "" >&2
+            exit 1
+          fi
+          if [[ "${#files[@]}" -ne 1 ]]; then
+            echo "" >&2
+            echo "############################################################" >&2
+            echo "# Multiple pgBackRest configs found on target, specify --server" >&2
+            echo "# dir: /etc/pgbackrest/conf.d" >&2
+            echo "# target: {{ target }}" >&2
+            echo "############################################################" >&2
+            ls -lah /etc/pgbackrest/conf.d >&2 || true
+            echo "" >&2
+            exit 1
+          fi
+          CONF_FILE="${files[0]}"
+        fi
+
+        STANZA="$(
+          sed -nE 's/^[[:space:]]*\[([^]]+)\][[:space:]]*$/\1/p' "${CONF_FILE}" \
+            | grep -vE '^global(:|$)' \
+            | head -n 1 || true
+        )"
+        if [[ -z "${STANZA}" ]]; then
+          echo "failed to detect stanza from ${CONF_FILE}" >&2
+          exit 1
+        fi
+        echo "stanza=${STANZA}"
+
+        CONF=/etc/pgbackrest/pgbackrest.conf
+        if [[ ! -f "${CONF}" ]]; then
+          echo "missing ${CONF} on target; run setup-pgbackrest first" >&2
+          exit 1
+        fi
+
+        sudo pg_ctlcluster 14 main stop
+        sudo -u postgres pgbackrest --config="${CONF}" --config-include-path=/etc/pgbackrest/conf.d --stanza="${STANZA}" --delta --log-level-console=info restore
+        sudo pg_ctlcluster 14 main start
+    REMOTE
+
 copy-db-local:
     #!/bin/bash
     set -euxo pipefail
@@ -564,13 +658,76 @@ setup-b2:
 # before running, make sure to read/setup "Backups" section in server.md
 
 # also run just setup-b2
-backup:
+[arg('server', long='server')]
+backup-legacy server:
     ssh -t {{ server }} '(cd ~/Downloads && PGPASSWORD="{{ pgpwd }}" pg_dump --user wd -Fc wd > wd-{{ server }}-{{ dt1 }}.pgrestore && ls -lah wd-{{ server }}-{{ dt1 }}.pgrestore)'
     ssh -t {{ server }} '(cd ~/Downloads && sudo gpg --encrypt --recipient 'Echo' wd-{{ server }}-{{ dt1 }}.pgrestore && ls -lah wd-{{ server }}-{{ dt1 }}.pgrestore.gpg)'
     ssh -t {{ server }} 'sudo chown $USER:$USER ~/Downloads/wd-{{ server }}-{{ dt1 }}.pgrestore.gpg'
     ssh -t {{ server }} '(cd ~/Downloads && B2_APPLICATION_KEY_ID={{ backup_key_id }} B2_APPLICATION_KEY={{ backup_key }} b2 upload-file echouabackup ./wd-{{ server }}-{{ dt1 }}.pgrestore.gpg backup/wd-{{ server }}-{{ dt1 }}.pgrestore.gpg)'
     ssh -t {{ server }} 'rm ~/Downloads/wd-{{ server }}-{{ dt1 }}.pgrestore.gpg'
     ssh -t {{ server }} 'rm ~/Downloads/wd-{{ server }}-{{ dt1 }}.pgrestore'
+
+[arg('server', long='server')]
+backup server:
+    #!/bin/bash
+    set -euxo pipefail
+    if [[ "{{ server }}" == "" ]]; then
+        just _print-servers; exit 1;
+    fi
+    ssh {{ server }} 'sudo echo-install-utils install-pgbackrest'
+    ssh {{ server }} 'sudo bash -s' <<'REMOTE'
+        set -euo pipefail
+
+        CONF="/etc/pgbackrest/pgbackrest.conf"
+        if [[ ! -f "${CONF}" ]]; then
+          echo "" >&2
+          echo "############################################################" >&2
+          echo "# Missing pgBackRest config on server" >&2
+          echo "# file: ${CONF}" >&2
+          echo "# action: run: just setup-pgbackrest --server {{ server }}" >&2
+          echo "############################################################" >&2
+          echo "" >&2
+          exit 1
+        fi
+
+        shopt -s nullglob
+        files=(/etc/pgbackrest/conf.d/pgbackrest-*.conf)
+        if [[ "${#files[@]}" -eq 0 ]]; then
+          echo "" >&2
+          echo "############################################################" >&2
+          echo "# Missing pgBackRest stanza config on server" >&2
+          echo "# dir: /etc/pgbackrest/conf.d" >&2
+          echo "# action: run: just setup-pgbackrest --server {{ server }}" >&2
+          echo "############################################################" >&2
+          echo "" >&2
+          exit 1
+        fi
+        if [[ "${#files[@]}" -ne 1 ]]; then
+          echo "" >&2
+          echo "############################################################" >&2
+          echo "# Multiple pgBackRest stanza configs found on server" >&2
+          echo "# dir: /etc/pgbackrest/conf.d" >&2
+          echo "# action: specify stanza explicitly on the server, then re-run" >&2
+          echo "############################################################" >&2
+          ls -lah /etc/pgbackrest/conf.d >&2 || true
+          echo "" >&2
+          exit 1
+        fi
+        CONF_FILE="${files[0]}"
+
+        STANZA="$(
+          sed -nE 's/^[[:space:]]*\[([^]]+)\][[:space:]]*$/\1/p' "${CONF_FILE}" \
+            | grep -vE '^global(:|$)' \
+            | head -n 1 || true
+        )"
+        if [[ -z "${STANZA}" ]]; then
+          echo "failed to detect stanza from ${CONF_FILE}" >&2
+          exit 1
+        fi
+        echo "stanza=${STANZA}"
+
+        sudo -u postgres pgbackrest --config="${CONF}" --config-include-path=/etc/pgbackrest/conf.d --stanza="${STANZA}" --log-level-console=info backup
+    REMOTE
 
 _echo-generic-deploy:
     #!/bin/bash
