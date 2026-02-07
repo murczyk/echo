@@ -104,10 +104,10 @@ repo_package_names() {
     | sort -u
 }
 
-latest_pkg_ref_in_repo() {
+repo_has_pkg_name() {
   local repo_name="$1"
   local pkg_name="$2"
-  aptly repo search "$repo_name" "Name (= $pkg_name)" 2>/dev/null | head -n1 || true
+  [[ -n "$(aptly repo search "$repo_name" "Name (= $pkg_name)" 2>/dev/null | head -n1 || true)" ]]
 }
 
 pool_files_for_pkg_ref() {
@@ -130,26 +130,35 @@ pick_existing_pool_file_for_pkg_ref() {
   return 1
 }
 
-add_latest_pkg_to_repo_from_repo() {
-  local src_repo="$1"
-  local dst_repo="$2"
-  local pkg_name="$3"
+add_latest_pkgs_to_repo_from_repos() {
+  local dst_repo="$1"
+  local pkg_name="$2"
+  local primary_repo="${3-}"
+  local fallback_repo="${4-}"
 
-  local pkg_ref
-  pkg_ref="$(latest_pkg_ref_in_repo "$src_repo" "$pkg_name")"
-  if [[ -z "$pkg_ref" ]]; then
-    echo "::error::no packages found in repo '$src_repo' for '$pkg_name'" >&2
-    return 1
-  fi
+  local added=0
+  local arch=""
+  local pool_file=""
+  declare -A arch_added=()
 
-  local pool_file
-  pool_file="$(pick_existing_pool_file_for_pkg_ref "$pkg_ref")" || true
-  if [[ -z "$pool_file" ]]; then
-    echo "::error::no existing pool .deb file found for '$pkg_ref' (repo '$src_repo'); echo-ci pool may be incomplete" >&2
-    return 1
-  fi
+  for src_repo in "$primary_repo" "$fallback_repo"; do
+    [[ -n "$src_repo" ]] || continue
 
-  aptly repo add "$dst_repo" "$pool_file"
+    while IFS= read -r pkg_ref; do
+      [[ -n "$pkg_ref" ]] || continue
+      arch="${pkg_ref##*_}"
+      [[ -n "${arch_added["$arch"]:-}" ]] && continue
+
+      pool_file="$(pick_existing_pool_file_for_pkg_ref "$pkg_ref")" || true
+      [[ -z "$pool_file" ]] && continue
+
+      aptly repo add "$dst_repo" "$pool_file"
+      arch_added["$arch"]=1
+      added=$((added + 1))
+    done < <(aptly repo search "$src_repo" "Name (= $pkg_name)" 2>/dev/null || true)
+  done
+
+  echo "$added"
 }
 declare -A EXPECTED_SHA=()
 declare -A EXPECTED_SIZE=()
@@ -188,11 +197,20 @@ while IFS= read -r name; do
 done < <(repo_package_names "$RUN_REPO")
 
 for name in "${!PKG_NAMES[@]}"; do
-  src="$REPO"
-  if [[ -n "$(latest_pkg_ref_in_repo "$RUN_REPO" "$name")" ]]; then
-    src="$RUN_REPO"
+  required=0
+  if repo_has_pkg_name "$RUN_REPO" "$name"; then
+    required=1
   fi
-  add_latest_pkg_to_repo_from_repo "$src" "$PUBLISH_REPO" "$name"
+
+  added="$(add_latest_pkgs_to_repo_from_repos "$PUBLISH_REPO" "$name" "$RUN_REPO" "$REPO")"
+  if [[ "$added" -eq 0 ]]; then
+    if [[ "$required" -eq 1 ]]; then
+      echo "::error::failed to add any packages for '$name' (present in run repo '$RUN_REPO'); echo-ci pool may be incomplete" >&2
+      exit 1
+    else
+      echo "::warning::skipping '$name': no existing pool .deb files found in '$REPO' (echo-ci pool may be incomplete)" >&2
+    fi
+  fi
 done
 
 snapshot_exists() {
@@ -228,7 +246,10 @@ if aptly repo show echo-install-utils >/dev/null 2>&1; then
   create_repo_fresh "$UTILS_RUN_REPO"
   while IFS= read -r name; do
     [[ -n "$name" ]] || continue
-    add_latest_pkg_to_repo_from_repo "echo-install-utils" "$UTILS_RUN_REPO" "$name"
+    added="$(add_latest_pkgs_to_repo_from_repos "$UTILS_RUN_REPO" "$name" "echo-install-utils")"
+    if [[ "$added" -eq 0 ]]; then
+      echo "::warning::skipping echo-install-utils '$name': no existing pool .deb files found (pool may be incomplete)" >&2
+    fi
   done < <(repo_package_names echo-install-utils)
 
   SNAP_UTILS="echo-install-utils-$DT"
