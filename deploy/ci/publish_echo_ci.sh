@@ -77,73 +77,123 @@ GPG_KEYID="${5-}"
 GPG_PASS_FILE="${6-}"
 GPG_PROVIDER="${7-}"
 
-aptly repo show "$REPO" >/dev/null 2>&1 || \
-  aptly repo create -distribution="$DIST" -component="$COMP" "$REPO"
-
 cd /home/echo/echo-debs
-deb_packages_identical() {
-  local deb_a="$1"
-  local deb_b="$2"
-  local data_a data_b ctrl_a ctrl_b status
-  data_a=$(mktemp -d)
-  data_b=$(mktemp -d)
-  ctrl_a=$(mktemp -d)
-  ctrl_b=$(mktemp -d)
-  status=1
-  if dpkg-deb -x "$deb_a" "$data_a" && dpkg-deb -x "$deb_b" "$data_b" \
-    && dpkg-deb -e "$deb_a" "$ctrl_a" && dpkg-deb -e "$deb_b" "$ctrl_b"; then
-    if diff -qr "$data_a" "$data_b" >/dev/null \
-      && diff -qr "$ctrl_a" "$ctrl_b" >/dev/null; then
-      status=0
-    fi
+
+repo_exists() {
+  local name="$1"
+  aptly repo show "$name" >/dev/null 2>&1
+}
+
+drop_repo_if_exists() {
+  local name="$1"
+  if repo_exists "$name"; then
+    aptly repo drop -force "$name" || true
   fi
-  rm -rf "$data_a" "$data_b" "$ctrl_a" "$ctrl_b"
-  return $status
+}
+
+create_repo_fresh() {
+  local name="$1"
+  drop_repo_if_exists "$name"
+  aptly repo create -distribution="$DIST" -component="$COMP" "$name"
+}
+
+repo_package_names() {
+  local name="$1"
+  aptly repo show -with-packages "$name" \
+    | sed -n 's/^  \([^_]*\)_.*/\1/p' \
+    | sort -u
+}
+
+latest_pkg_ref_in_repo() {
+  local repo_name="$1"
+  local pkg_name="$2"
+  aptly repo search "$repo_name" "Name (= $pkg_name)" 2>/dev/null | head -n1 || true
+}
+
+pool_files_for_pkg_ref() {
+  local pkg_ref="$1"
+  # When there are duplicate packages with the same name/version/arch, aptly prints multiple entries
+  # (each with its own "Files in the pool" section). We use existing pool files only.
+  aptly package show -with-files "$pkg_ref" \
+    | sed -n 's/^  \(\/home\/echo\/\.aptly\/pool\/.*\.deb\)$/\1/p'
+}
+
+pick_existing_pool_file_for_pkg_ref() {
+  local pkg_ref="$1"
+  local p
+  while IFS= read -r p; do
+    if [[ -f "$p" ]]; then
+      echo "$p"
+      return 0
+    fi
+  done < <(pool_files_for_pkg_ref "$pkg_ref")
+  return 1
+}
+
+add_latest_pkg_to_repo_from_repo() {
+  local src_repo="$1"
+  local dst_repo="$2"
+  local pkg_name="$3"
+
+  local pkg_ref
+  pkg_ref="$(latest_pkg_ref_in_repo "$src_repo" "$pkg_name")"
+  if [[ -z "$pkg_ref" ]]; then
+    echo "::error::no packages found in repo '$src_repo' for '$pkg_name'" >&2
+    return 1
+  fi
+
+  local pool_file
+  pool_file="$(pick_existing_pool_file_for_pkg_ref "$pkg_ref")" || true
+  if [[ -z "$pool_file" ]]; then
+    echo "::error::no existing pool .deb file found for '$pkg_ref' (repo '$src_repo'); echo-ci pool may be incomplete" >&2
+    return 1
+  fi
+
+  aptly repo add "$dst_repo" "$pool_file"
 }
 declare -A EXPECTED_SHA=()
 declare -A EXPECTED_SIZE=()
 added_basenames=()
-for f in "$REPO"/*.deb; do
-  if [[ -f "$f" ]]; then
-    bn=$(basename "$f")
-    EXPECTED_SHA["$bn"]=$(sha256sum "$f" | awk '{print $1}')
-    EXPECTED_SIZE["$bn"]=$(stat -c%s "$f")
-    if add_output=$(aptly repo add "$REPO" "$f" 2>&1); then
-      added_basenames+=("$bn")
-    else
-      publish_path=$(find "$HOME/.aptly/public/$REPO/pool" -name "$bn" -type f -print -quit || true)
-      if [[ -z "$publish_path" ]]; then
-        publish_path=$(find "$HOME/.aptly/pool" -name "$bn" -type f -print -quit || true)
-      fi
-      if [[ -n "$publish_path" ]]; then
-        actual_sha=$(sha256sum "$publish_path" | awk '{print $1}')
-        actual_size=$(stat -c%s "$publish_path")
-        if [[ "$actual_sha" == "${EXPECTED_SHA["$bn"]}" && "$actual_size" == "${EXPECTED_SIZE["$bn"]}" ]]; then
-          EXPECTED_SHA["$bn"]="$actual_sha"
-          EXPECTED_SIZE["$bn"]="$actual_size"
-          echo "::notice::$bn already exists in $REPO with identical contents; skipping add"
-          added_basenames+=("$bn")
-        elif deb_packages_identical "$f" "$publish_path"; then
-          EXPECTED_SHA["$bn"]="$actual_sha"
-          EXPECTED_SIZE["$bn"]="$actual_size"
-          echo "::notice::$bn already exists in $REPO; payload matches after extraction so skipping add"
-          added_basenames+=("$bn")
-        else
-          echo "$add_output" >&2
-          echo "::notice::$bn already exists in $REPO with different contents; leaving published artifact untouched and skipping upload" >&2
-        fi
-      else
-        echo "$add_output" >&2
-        echo "::error::failed to add package $bn to repo $REPO and no existing published file was found" >&2
-        rm -f -- "$f" || true
-        exit 1
-      fi
-    fi
-    rm -f -- "$f" || true
-  fi
+DT="$(date -u +%Y-%m-%d-%H-%M-%S)"
+
+# Keep a "history" repo (REPO) if it exists, but publish from a fresh "latest-only" repo each time.
+# This avoids publish breakage if echo-ci pool has been manually cleaned and old package files are missing.
+RUN_REPO="$REPO-run-$DT"
+PUBLISH_REPO="$REPO-publish-$DT"
+
+create_repo_fresh "$RUN_REPO"
+create_repo_fresh "$PUBLISH_REPO"
+
+for f in "$DEBS_DIR"/*.deb; do
+  [[ -f "$f" ]] || continue
+  bn="$(basename "$f")"
+  EXPECTED_SHA["$bn"]="$(sha256sum "$f" | awk '{print $1}')"
+  EXPECTED_SIZE["$bn"]="$(stat -c%s "$f")"
+  aptly repo add "$RUN_REPO" "$f"
+  added_basenames+=("$bn")
+  rm -f -- "$f" || true
 done
 
-DT="$(date -u +%Y-%m-%d-%H-%M-%S)"
+declare -A PKG_NAMES=()
+if repo_exists "$REPO"; then
+  while IFS= read -r name; do
+    [[ -n "$name" ]] || continue
+    PKG_NAMES["$name"]=1
+  done < <(repo_package_names "$REPO")
+fi
+
+while IFS= read -r name; do
+  [[ -n "$name" ]] || continue
+  PKG_NAMES["$name"]=1
+done < <(repo_package_names "$RUN_REPO")
+
+for name in "${!PKG_NAMES[@]}"; do
+  src="$REPO"
+  if [[ -n "$(latest_pkg_ref_in_repo "$RUN_REPO" "$name")" ]]; then
+    src="$RUN_REPO"
+  fi
+  add_latest_pkg_to_repo_from_repo "$src" "$PUBLISH_REPO" "$name"
+done
 
 snapshot_exists() {
   local name="$1"
@@ -167,14 +217,22 @@ create_snapshot_if_missing() {
 }
 
 SNAP_REPO="$REPO-$DT"
-create_snapshot_if_missing "$SNAP_REPO" from repo "$REPO"
+create_snapshot_if_missing "$SNAP_REPO" from repo "$PUBLISH_REPO"
 
 SNAP_TO_PUBLISH="$SNAP_REPO"
 MERGE_LIST=("$SNAP_REPO")
 
 if aptly repo show echo-install-utils >/dev/null 2>&1; then
+  # Publish only the latest version of each package from echo-install-utils as well (pool may have been cleaned).
+  UTILS_RUN_REPO="echo-install-utils-publish-$DT"
+  create_repo_fresh "$UTILS_RUN_REPO"
+  while IFS= read -r name; do
+    [[ -n "$name" ]] || continue
+    add_latest_pkg_to_repo_from_repo "echo-install-utils" "$UTILS_RUN_REPO" "$name"
+  done < <(repo_package_names echo-install-utils)
+
   SNAP_UTILS="echo-install-utils-$DT"
-  create_snapshot_if_missing "$SNAP_UTILS" from repo echo-install-utils
+  create_snapshot_if_missing "$SNAP_UTILS" from repo "$UTILS_RUN_REPO"
   MERGE_LIST+=("$SNAP_UTILS")
 fi
 
@@ -233,6 +291,13 @@ if ((${#added_basenames[@]} > 0)); then
       exit 1
     fi
   done
+fi
+
+# Success cleanup: keep snapshots, but drop temporary repos created during this run.
+drop_repo_if_exists "$RUN_REPO"
+drop_repo_if_exists "$PUBLISH_REPO"
+if [[ -n "${UTILS_RUN_REPO:-}" ]]; then
+  drop_repo_if_exists "$UTILS_RUN_REPO"
 fi
 
 ls -lah "$HOME/.aptly/public/$REPO/dists/$DIST" || true
