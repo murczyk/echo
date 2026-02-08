@@ -177,12 +177,38 @@ create_repo_fresh "$PUBLISH_REPO"
 for f in "$DEBS_DIR"/*.deb; do
   [[ -f "$f" ]] || continue
   bn="$(basename "$f")"
+
+  # If the exact package (name+version+arch) already exists in the history repo and its pool file exists,
+  # we treat this run as "no version bump" and skip importing the rebuilt .deb (which could have different
+  # checksums due to build non-determinism).
+  if repo_exists "$REPO"; then
+    pkg="$(dpkg-deb -f "$f" Package)"
+    ver="$(dpkg-deb -f "$f" Version)"
+    arch="$(dpkg-deb -f "$f" Architecture)"
+    existing_ref="$(aptly repo search "$REPO" "Name (= $pkg), Version (= $ver), Architecture (= $arch)" 2>/dev/null | head -n1 || true)"
+    if [[ -n "$existing_ref" ]]; then
+      existing_pool="$(pick_existing_pool_file_for_pkg_ref "$existing_ref")" || true
+      if [[ -n "$existing_pool" ]]; then
+        echo "::notice::⏭️ skipping already-published $existing_ref (no version bump?)" >&2
+        rm -f -- "$f" || true
+        continue
+      fi
+    fi
+  fi
+
   EXPECTED_SHA["$bn"]="$(sha256sum "$f" | awk '{print $1}')"
   EXPECTED_SIZE["$bn"]="$(stat -c%s "$f")"
   aptly repo add "$RUN_REPO" "$f"
   added_basenames+=("$bn")
   rm -f -- "$f" || true
 done
+
+if ((${#added_basenames[@]} == 0)); then
+  echo "::notice::⏭️ no new .deb packages to publish (versions already exist); skipping publish" >&2
+  drop_repo_if_exists "$RUN_REPO"
+  drop_repo_if_exists "$PUBLISH_REPO"
+  exit 0
+fi
 
 declare -A PKG_NAMES=()
 if repo_exists "$REPO"; then
@@ -240,6 +266,46 @@ create_snapshot_if_missing "$SNAP_REPO" from repo "$PUBLISH_REPO"
 
 SNAP_TO_PUBLISH="$SNAP_REPO"
 MERGE_LIST=("$SNAP_REPO")
+
+find_published_path_for_basename() {
+  local bn="$1"
+  local expected_sha="$2"
+  local expected_size="$3"
+  local pool_dir="$HOME/.aptly/public/$REPO/pool"
+
+  local -a candidates=()
+  local p=""
+  while IFS= read -r p; do
+    [[ -n "$p" ]] || continue
+    candidates+=("$p")
+  done < <(find "$pool_dir" -type f \( -name "$bn" -o -name "*_$bn" \) -print 2>/dev/null || true)
+
+  if ((${#candidates[@]} == 0)); then
+    return 1
+  fi
+
+  local sha=""
+  local size=""
+  for p in "${candidates[@]}"; do
+    sha="$(sha256sum "$p" | awk '{print $1}')"
+    size="$(stat -c%s "$p")"
+    if [[ "$sha" == "$expected_sha" && "$size" == "$expected_size" ]]; then
+      echo "$p"
+      return 0
+    fi
+  done
+
+  echo "::error::published file mismatch for $bn: expected $expected_sha ($expected_size bytes); candidates:" >&2
+  local shown=0
+  for p in "${candidates[@]}"; do
+    sha="$(sha256sum "$p" | awk '{print $1}')"
+    size="$(stat -c%s "$p")"
+    echo "  $p $sha ($size bytes)" >&2
+    shown=$((shown + 1))
+    [[ "$shown" -ge 10 ]] && break
+  done
+  return 2
+}
 
 if aptly repo show echo-install-utils >/dev/null 2>&1; then
   # Publish only the latest version of each package from echo-install-utils as well (pool may have been cleaned).
@@ -301,17 +367,13 @@ if ((${#added_basenames[@]} > 0)); then
       echo "::error::missing expected metadata for $bn" >&2
       exit 1
     fi
-    # aptly may publish pool files with a hash prefix (e.g. "<hash>_<filename>.deb").
-    publish_path="$(find "$HOME/.aptly/public/$REPO/pool" -type f \
-      \( -name "$bn" -o -name "*_$bn" \) -print -quit || true)"
-    if [[ -z "$publish_path" ]]; then
+    rc=0
+    publish_path="$(find_published_path_for_basename "$bn" "$expected_sha" "$expected_size")" || rc=$?
+    if [[ "${rc:-0}" -eq 1 ]]; then
       echo "::error::published file $bn not found under public/$REPO/pool" >&2
       exit 1
     fi
-    actual_sha=$(sha256sum "$publish_path" | awk '{print $1}')
-    actual_size=$(stat -c%s "$publish_path")
-    if [[ "$actual_sha" != "$expected_sha" || "$actual_size" != "$expected_size" ]]; then
-      echo "::error::published file mismatch for $bn: expected $expected_sha ($expected_size bytes) got $actual_sha ($actual_size bytes)" >&2
+    if [[ "${rc:-0}" -eq 2 ]]; then
       exit 1
     fi
   done
