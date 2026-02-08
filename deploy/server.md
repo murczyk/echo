@@ -190,54 +190,17 @@ just builder=echo-gpu server=$server deploy-geo-screenshot
 
 echo-sergeant
 
-## Backups: Using GPG and encryption
+## Backups: pgBackRest
+
+Nightly DB backups are triggered by `/etc/cron.d/echo_cron` via
+`/usr/bin/wdintel-rs --mode=live backup` (which runs `pgbackrest backup`
+locally on the server as `postgres`).
 
 ### Setup
 
-- `just server=<server> setup-b2`
-- import
-
-```
-$ scp gpg-pub.asc {{server}}:
-$ ssh {{server}}
-[ubuntu@server]$ sudo su
-[root@server]$ gpg --import gpg-pub.asc
-[root@server]$ sudo mv gpg-pub.asc /etc/echo/
-[root@server]$ gpg --edit-key FA2ED97558147E30
-> trust
-> 5
-> y
-> quit
-[root@server]$ exit
-[ubuntu@server]$ exit
-$ just server={{server}} backup
-```
-
-### Additional info
-
-#### Encrypt
-
-```
-gpg --encrypt --recipient 'Echo' test.txt
-```
-
-#### Decrypt
-
-```
-gpg --output test.txt --decrypt test.txt.gpg
-```
-
-#### Info
-
-- see https://www.madboa.com/geek/gpg-quickstart/
-- see https://gist.github.com/angela-d/8b27670bac26e4bf7c431715fef5cc51
-
-```
-gpg --gen-key
-gpg --list-secret-keys --keyid-format LONG
-gpg --export -a FA2ED97558147E30 > gpg-pub.asc
-gpg --export-secret-keys -a FA2ED97558147E30 > gpg-sc.asc
-```
+1. Read `docs/POSTGRESQL.md` (pgBackRest section) for the config layout.
+2. Run: `just setup-pgbackrest --server <server>`
+3. One-off manual backup: `just backup --server <server>`
 
 ## POST SETUP
 

@@ -129,8 +129,11 @@ pub async fn run_merge_network_tui(mode: Mode) -> Result<(), AppError> {
     for (_, network_rows) in result.data {
         for network_row in network_rows {
             let id = network_row.recording.id;
-            let rec =
-                add_network_model(&result.models, &sigint_network_units, network_row);
+            let rec = add_network_model(
+                &result.models,
+                &sigint_network_units,
+                network_row,
+            );
             if let Some(rec) = rec {
                 models.insert(id, rec);
             }
