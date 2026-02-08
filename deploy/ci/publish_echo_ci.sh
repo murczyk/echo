@@ -178,10 +178,114 @@ add_latest_pkgs_to_repo_from_repos() {
 
   echo "$added"
 }
+
+snapshot_package_names() {
+  local snapshot="$1"
+  [[ -n "$snapshot" ]] || return 0
+  aptly snapshot show -with-packages "$snapshot" 2>/dev/null \
+    | sed -n 's/^  \([^_]*\)_.*/\1/p' \
+    | sort -u \
+    || true
+}
+
+add_latest_pkgs_to_repo_from_sources() {
+  # Prefer latest per arch in this order:
+  # 1) primary repo (this run)
+  # 2) currently-published snapshot (what users already have)
+  # 3) fallback repo ("history" repo, if present)
+  local dst_repo="$1"
+  local pkg_name="$2"
+  local primary_repo="${3-}"
+  local published_snapshot="${4-}"
+  local fallback_repo="${5-}"
+
+  local added=0
+  local pool_file=""
+  local pkg_ref=""
+  declare -A arch_added=()
+
+  for arch in amd64 arm64 all; do
+    [[ -n "${arch_added["$arch"]:-}" ]] && continue
+
+    if [[ -n "$primary_repo" ]]; then
+      pkg_ref="$(aptly repo search "$primary_repo" "Name (= $pkg_name), Architecture (= $arch)" 2>/dev/null | head -n1 || true)"
+      if [[ -n "$pkg_ref" ]]; then
+        pool_file="$(pick_existing_pool_file_for_pkg_ref "$pkg_ref")" || true
+        if [[ -n "$pool_file" ]]; then
+          aptly repo add "$dst_repo" "$pool_file" 1>&2
+          arch_added["$arch"]=1
+          added=$((added + 1))
+          continue
+        fi
+      fi
+    fi
+
+    if [[ -n "$published_snapshot" ]]; then
+      pkg_ref="$(aptly snapshot search "$published_snapshot" "Name (= $pkg_name), Architecture (= $arch)" 2>/dev/null | head -n1 || true)"
+      if [[ -n "$pkg_ref" ]]; then
+        pool_file="$(pick_existing_pool_file_for_pkg_ref "$pkg_ref")" || true
+        if [[ -n "$pool_file" ]]; then
+          aptly repo add "$dst_repo" "$pool_file" 1>&2
+          arch_added["$arch"]=1
+          added=$((added + 1))
+          continue
+        fi
+      fi
+    fi
+
+    if [[ -n "$fallback_repo" ]]; then
+      pkg_ref="$(aptly repo search "$fallback_repo" "Name (= $pkg_name), Architecture (= $arch)" 2>/dev/null | head -n1 || true)"
+      if [[ -n "$pkg_ref" ]]; then
+        pool_file="$(pick_existing_pool_file_for_pkg_ref "$pkg_ref")" || true
+        if [[ -n "$pool_file" ]]; then
+          aptly repo add "$dst_repo" "$pool_file" 1>&2
+          arch_added["$arch"]=1
+          added=$((added + 1))
+          continue
+        fi
+      fi
+    fi
+  done
+
+  echo "$added"
+}
 declare -A EXPECTED_SHA=()
 declare -A EXPECTED_SIZE=()
 added_basenames=()
-DT="$(date -u +%Y-%m-%d-%H-%M-%S)"
+# Ensure names are unique even if multiple runs start within the same second
+# (e.g. manual retries or concurrent CI on the same echo-ci host).
+DT="$(date -u +%Y-%m-%d-%H-%M-%S)-$RANDOM"
+
+current_published_snapshot() {
+  # Prints the snapshot name currently published for "$DIST" + "$REPO" prefix + "$COMP" component,
+  # or nothing if not published yet.
+  # Output format varies across aptly versions; parse the "Sources:" table.
+  local out=""
+  out="$(aptly publish show "$DIST" "$REPO" 2>/dev/null)" || return 0
+
+  echo "$out" \
+    | sed -n -E "s/^[[:space:]]*$COMP:[[:space:]]+([^[:space:]]+)[[:space:]]+\\[snapshot\\].*/\\1/p" \
+    | head -n1 \
+    || true
+}
+
+snapshot_has_pkg_ref() {
+  local snapshot="$1"
+  local pkg="$2"
+  local ver="$3"
+  local arch="$4"
+  [[ -n "$snapshot" ]] || return 1
+  aptly snapshot search "$snapshot" "Name (= $pkg), Version (= $ver), Architecture (= $arch)" 2>/dev/null \
+    | head -n1 \
+    || true
+}
+
+PUBLISHED_SNAPSHOT="$(current_published_snapshot)"
+if [[ -n "$PUBLISHED_SNAPSHOT" ]]; then
+  echo "::notice::currently published snapshot for $REPO/$DIST is '$PUBLISHED_SNAPSHOT'" >&2
+else
+  echo "::notice::no existing publish found for $REPO/$DIST (first publish?)" >&2
+fi
 
 # Keep a "history" repo (REPO) if it exists, but publish from a fresh "latest-only" repo each time.
 # This avoids publish breakage if echo-ci pool has been manually cleaned and old package files are missing.
@@ -200,13 +304,31 @@ for f in "$DEBS_DIR"/*.deb; do
   [[ -f "$f" ]] || continue
   bn="$(basename "$f")"
 
+  pkg="$(dpkg-deb -f "$f" Package)"
+  ver="$(dpkg-deb -f "$f" Version)"
+  arch="$(dpkg-deb -f "$f" Architecture)"
+
+  # If this exact (name, version, arch) is already published, treat it as "no bump-version-push"
+  # and skip importing the rebuilt file. Rebuilding without bumping version is common and the
+  # resulting .deb can be non-deterministic, but Debian repositories cannot safely "replace"
+  # same-version packages for clients.
+  if [[ -n "$PUBLISHED_SNAPSHOT" ]]; then
+    existing_ref="$(snapshot_has_pkg_ref "$PUBLISHED_SNAPSHOT" "$pkg" "$ver" "$arch")"
+    if [[ -n "$existing_ref" ]]; then
+      existing_pool="$(pick_existing_pool_file_for_pkg_ref "$existing_ref")" || true
+      if [[ -n "$existing_pool" ]]; then
+        echo "::notice::⏭️ skipping already-published $pkg $ver $arch (no version bump?)" >&2
+        rm -f -- "$f" || true
+        continue
+      fi
+      echo "::warning::published package $existing_ref exists but pool file is missing; re-importing to repair pool" >&2
+    fi
+  fi
+
   # If the exact package (name+version+arch) already exists in the history repo and its pool file exists,
   # we treat this run as "no version bump" and skip importing the rebuilt .deb (which could have different
   # checksums due to build non-determinism).
   if [[ "$HAVE_HISTORY_REPO" -eq 1 ]]; then
-    pkg="$(dpkg-deb -f "$f" Package)"
-    ver="$(dpkg-deb -f "$f" Version)"
-    arch="$(dpkg-deb -f "$f" Architecture)"
     existing_ref="$(aptly repo search "$REPO" "Name (= $pkg), Version (= $ver), Architecture (= $arch)" 2>/dev/null | head -n1 || true)"
     if [[ -n "$existing_ref" ]]; then
       existing_pool="$(pick_existing_pool_file_for_pkg_ref "$existing_ref")" || true
@@ -233,6 +355,12 @@ if ((${#added_basenames[@]} == 0)); then
 fi
 
 declare -A PKG_NAMES=()
+if [[ -n "$PUBLISHED_SNAPSHOT" ]]; then
+  while IFS= read -r name; do
+    [[ -n "$name" ]] || continue
+    PKG_NAMES["$name"]=1
+  done < <(snapshot_package_names "$PUBLISHED_SNAPSHOT")
+fi
 if [[ "$HAVE_HISTORY_REPO" -eq 1 ]]; then
   while IFS= read -r name; do
     [[ -n "$name" ]] || continue
@@ -251,7 +379,7 @@ for name in "${!PKG_NAMES[@]}"; do
     required=1
   fi
 
-  added="$(add_latest_pkgs_to_repo_from_repos "$PUBLISH_REPO" "$name" "$RUN_REPO" "$REPO")"
+  added="$(add_latest_pkgs_to_repo_from_sources "$PUBLISH_REPO" "$name" "$RUN_REPO" "$PUBLISHED_SNAPSHOT" "$REPO")"
   if [[ "$added" -eq 0 ]]; then
     if [[ "$required" -eq 1 ]]; then
       echo "::error::failed to add any packages for '$name' (present in run repo '$RUN_REPO'); echo-ci pool may be incomplete" >&2
