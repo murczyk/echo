@@ -6,6 +6,8 @@ echo "Running backend tests with Python service..."
 # Set up branch-specific test database
 echo "Setting up test database..."
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$REPO_ROOT"
 source "$SCRIPT_DIR/setup_test_database.sh"
 
 # Export the database name for tests
@@ -17,6 +19,12 @@ mkdir -p ~/Downloads/storage
 touch ~/Downloads/storage/wiki.model
 touch ~/Downloads/storage/callsigns20230512.pt
 
+# Reuse Cargo artifacts between `just test-be` (runs in `wdintel-rs/`) and later `cargo build`/`cargo deb`
+# (run from repo root during packaging).
+if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
+    export CARGO_TARGET_DIR="$REPO_ROOT/target"
+fi
+
 # Launch Python service in background
 just dev-py &
 DEV_PID=$!
@@ -25,14 +33,15 @@ DEV_PID=$!
 trap 'kill "$DEV_PID" 2>/dev/null || true' EXIT
 
 # Wait for the service to be ready
+PY_SERVICE_STARTUP_TIMEOUT_SECS="${PY_SERVICE_STARTUP_TIMEOUT_SECS:-240}"
 echo "Waiting for Python service to start..."
-for i in {1..180}; do
+for ((i = 1; i <= PY_SERVICE_STARTUP_TIMEOUT_SECS; i++)); do
     if curl -s http://127.0.0.1:5000/ > /dev/null 2>&1; then
         echo "Python service is ready!"
         break
     fi
-    if [ $i -eq 180 ]; then
-        echo "Python service failed to start within 180 seconds"
+    if [[ $i -eq "$PY_SERVICE_STARTUP_TIMEOUT_SECS" ]]; then
+        echo "Python service failed to start within ${PY_SERVICE_STARTUP_TIMEOUT_SECS} seconds"
         exit 1
     fi
     sleep 1

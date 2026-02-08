@@ -18,7 +18,17 @@ fi
 # Build frontend assets required by wdintel-rs package
 if [ -d "wdintel-web" ]; then
   echo "> Building frontend (wdintel-web)"
-  (cd wdintel-web && npm ci && npm run build)
+  (
+    cd wdintel-web
+    # Reuse cached node_modules when possible (self-hosted CI keeps ignored files).
+    if [ ! -d "node_modules" ] || [ "package-lock.json" -nt "node_modules/.npm_installed" ]; then
+      npm ci
+      touch "node_modules/.npm_installed"
+    else
+      echo "node_modules already up to date, skipping npm ci"
+    fi
+    npm run build
+  )
 fi
 
 # Build release binaries first for faster cargo-deb (reuse artifacts)

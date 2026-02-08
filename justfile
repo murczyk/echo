@@ -203,6 +203,41 @@ ci-save-cache-sccache clean="false":
 ci-test-be:
     bash deploy/run_backend_tests.sh
 
+[arg('builder', long='builder')]
+ci-clean builder="echo-gpu":
+    #!/bin/bash
+    set -euo pipefail
+    BUILDER="{{ builder }}"
+    if [[ -z "$BUILDER" ]]; then
+      echo "missing --builder (example: just ci-clean --builder echo-gpu)" >&2
+      exit 1
+    fi
+
+    echo "🧹 Cleaning CI caches on ${BUILDER}..."
+    ssh "${BUILDER}" 'set -euo pipefail
+      echo "host=$(hostname) user=$(whoami)"
+
+      cache_root="${ECHO_CI_CACHE_DIR:-$HOME/.cache/echo-ci}"
+      echo "Removing cache root: ${cache_root}"
+      rm -rf -- "${cache_root}" || true
+
+      # spaCy/pip caches (best-effort)
+      rm -rf -- "$HOME/.cache/spacy" || true
+      rm -rf -- "$HOME/.cache/pip" || true
+      rm -rf -- "/tmp/cache" || true
+
+      # Remove workspace-local caches. Keep `.git` so Actions can reuse checkout.
+      for ws in "$HOME/actions-runner"*/_work/echo/echo /home/ubuntu/actions-runner*/_work/echo/echo; do
+        [[ -d "$ws" ]] || continue
+        echo "Cleaning workspace caches under: $ws"
+        rm -rf -- "$ws/target" || true
+        rm -rf -- "$ws/wdintel-rs/wdintel-py/.venv" || true
+        rm -rf -- "$ws/wdintel-web/node_modules" || true
+      done
+
+      echo "✅ CI cache cleanup done"
+    '
+
 setup-test-db branch_name="":
     #!/bin/bash
     if [ -n "{{ branch_name }}" ]; then
@@ -757,6 +792,29 @@ backup-many _servers_pos="" servers="":
       --values "{{ servers }}" \
       --cwd "{{ justfile_directory() }}" \
       -- just backup --server={}
+
+[arg('servers', long='servers')]
+deploy-many _servers_pos="" servers="":
+    #!/bin/bash
+    set -euo pipefail
+    if [[ "{{ _servers_pos }}" != "" ]]; then
+      echo "positional servers are not allowed; use: just deploy-many --servers=\"echo-staging echo-kherson2 ...\"" >&2
+      exit 1
+    fi
+    if [[ "{{ servers }}" == "" ]]; then
+      echo "missing --servers. usage: just deploy-many --servers=\"echo-staging echo-kherson2 ...\"" >&2
+      exit 1
+    fi
+
+    if ! command -v echo-install-utils >/dev/null 2>&1; then
+      echo "missing echo-install-utils in PATH (install it or deploy it first)" >&2
+      exit 1
+    fi
+
+    echo-install-utils run-many \
+      --values "{{ servers }}" \
+      --cwd "{{ justfile_directory() }}" \
+      -- just server={} deploy
 
 _echo-generic-deploy:
     #!/bin/bash
