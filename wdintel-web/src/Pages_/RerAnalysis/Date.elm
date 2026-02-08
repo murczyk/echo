@@ -28,7 +28,7 @@ dateAndPanelsBlock isDark timeZone model mapFeatureFlag =
                         , unfold = model.unfoldMapBlock
                         , disabled = False
                         }
-                        (i [ class "bi bi-pin-map" ] [])
+                        (i [ class "bi bi-map" ] [])
                         Nothing
 
                   else
