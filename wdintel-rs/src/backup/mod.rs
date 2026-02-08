@@ -1,8 +1,10 @@
 use crate::config::Config;
 use crate::error::AppError;
 use crate::types::*;
-use chrono::prelude::*;
 use log::*;
+use regex::Regex;
+use std::fs;
+use std::path::{Path, PathBuf};
 use xshell::{cmd, Shell};
 
 async fn sleep_before_backup(config: &Config, nowait: bool) {
@@ -22,111 +24,116 @@ async fn sleep_before_backup(config: &Config, nowait: bool) {
     }
 }
 
-pub async fn backup(mode: Mode, nowait: bool) -> Result<(), AppError> {
-    let config = crate::config::read_config(mode)?;
-    sleep_before_backup(&config, nowait).await;
-    // only launch this command for tailscale domains
-    if !config.public_host.ends_with(".ts.net") {
-        return Ok(());
+fn pgbackrest_conf_path() -> &'static str {
+    crate::config::PGBACKREST_CONF_PATH
+}
+
+fn pgbackrest_conf_include_dir() -> &'static str {
+    crate::config::PGBACKREST_CONF_INCLUDE_DIR
+}
+
+fn detect_stanza_conf_files(dir: &Path) -> anyhow::Result<Vec<PathBuf>> {
+    let mut files = vec![];
+    let entries = fs::read_dir(dir).c(h!())?;
+    for entry in entries {
+        let entry = entry.c(h!())?;
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        if name.starts_with(crate::config::PGBACKREST_STANZA_CONF_PREFIX)
+            && name.ends_with(crate::config::PGBACKREST_STANZA_CONF_SUFFIX)
+        {
+            files.push(path);
+        }
     }
-    info!("starting backup");
+    files.sort();
+    Ok(files)
+}
+
+fn detect_stanza_conf_file() -> anyhow::Result<PathBuf> {
+    let dir = Path::new(pgbackrest_conf_include_dir());
+    if !dir.is_dir() {
+        bail!(
+            "pgBackRest include dir missing: {}",
+            pgbackrest_conf_include_dir()
+        );
+    }
+    let files = detect_stanza_conf_files(dir)?;
+    match files.len() {
+        0 => bail!(
+            "no stanza config found in {} (expected {}*{})",
+            pgbackrest_conf_include_dir(),
+            crate::config::PGBACKREST_STANZA_CONF_PREFIX,
+            crate::config::PGBACKREST_STANZA_CONF_SUFFIX
+        ),
+        1 => Ok(files[0].clone()),
+        _ => bail!(
+            "multiple stanza configs found in {}: {:?}",
+            pgbackrest_conf_include_dir(),
+            files
+        ),
+    }
+}
+
+fn parse_stanza_name(conf_file: &Path) -> anyhow::Result<String> {
+    let content = fs::read_to_string(conf_file).c(h!())?;
+    let re =
+        Regex::new(r"(?m)^[[:space:]]*\[([^\]]+)\][[:space:]]*$").c(h!())?;
+    for caps in re.captures_iter(&content) {
+        let Some(name) = caps.get(1).map(|m| m.as_str().trim()) else {
+            continue;
+        };
+        if name == "global" || name.starts_with("global:") {
+            continue;
+        }
+        if !name.is_empty() {
+            return Ok(name.to_string());
+        }
+    }
+    bail!("failed to detect stanza from {}", conf_file.display())
+}
+
+fn detect_pgbackrest_stanza() -> anyhow::Result<String> {
+    let conf = Path::new(pgbackrest_conf_path());
+    if !conf.is_file() {
+        bail!(
+            "pgBackRest config missing: {} (run setup-pgbackrest)",
+            pgbackrest_conf_path()
+        );
+    }
+    let conf_file = detect_stanza_conf_file()?;
+    parse_stanza_name(&conf_file)
+}
+
+fn run_pgbackrest_backup(stanza: &str) -> anyhow::Result<()> {
     let sh = Shell::new().c(h!())?;
-    let pgpwd = crate::config::DEFAULT_PG_PASSWORD.to_string();
-    let server = config.public_host;
-    let now = Utc::now();
-    let day_s = now.format("%Y-%m-%d").to_string();
-    let dt1 = now.format("%Y-%m-%d-%H-%M-%S").to_string();
-    let Some(backup_key_id) = config.backup_key_id else {
-        return Ok(());
-    };
-    let Some(backup_key) = config.backup_key else {
-        return Ok(());
-    };
-    info!("> postgresql backup begin");
-    cmd!(sh, "mkdir -p /tmp2/backup").run().c(h!())?;
+    let conf = pgbackrest_conf_path();
+    let include = pgbackrest_conf_include_dir();
+
+    // Cron runs as root; use postgres for correct perms and config expectations.
     cmd!(
         sh,
-        "pg_dump --user wd -Fc wd --file wd-{server}-{dt1}.pgrestore"
-    )
-    .env("PGPASSWORD", pgpwd)
-    .run()
-    .c(h!())?;
-    cmd!(sh, "ls -lah wd-{server}-{dt1}.pgrestore")
-        .run()
-        .c(h!())?;
-    cmd!(
-        sh,
-        "gpg --encrypt --recipient 'Echo' wd-{server}-{dt1}.pgrestore"
+        "sudo -n -u postgres pgbackrest --config={conf} --config-include-path={include} --stanza={stanza} --log-level-console=info backup"
     )
     .run()
     .c(h!())?;
-    cmd!(sh, "ls -lah wd-{server}-{dt1}.pgrestore.gpg")
-        .run()
-        .c(h!())?;
-    cmd!(sh, "b2 file upload echouabackup ./wd-{server}-{dt1}.pgrestore.gpg backup/echo/{day_s}/wd-{server}-{dt1}.pgrestore.gpg")
-        .env("B2_APPLICATION_KEY_ID", backup_key_id.clone())
-        .env("B2_APPLICATION_KEY", backup_key.clone())
-        .run()
-        .c(h!())?;
-    cmd!(sh, "rm wd-{server}-{dt1}.pgrestore.gpg")
-        .run()
-        .c(h!())?;
-    cmd!(sh, "rm wd-{server}-{dt1}.pgrestore").run().c(h!())?;
-    info!("postgresql backup done");
     Ok(())
 }
 
-#[allow(dead_code)]
-pub async fn backup_to_b2(mode: Mode) -> Result<(), AppError> {
+pub async fn backup(mode: Mode, nowait: bool) -> Result<(), AppError> {
     let config = crate::config::read_config(mode)?;
-    sleep_before_backup(&config, false).await;
-    // only launch this command for tailscale domains
+    sleep_before_backup(&config, nowait).await;
+
+    // Only launch this command for tailscale domains (our server deployments).
     if !config.public_host.ends_with(".ts.net") {
         return Ok(());
     }
-    info!("starting backup");
-    let sh = Shell::new().c(h!())?;
-    let pgpwd = crate::config::DEFAULT_PG_PASSWORD.to_string();
-    let server = config.public_host;
-    let now = Utc::now();
-    let day_s = now.format("%Y-%m-%d").to_string();
-    let dt1 = now.format("%Y-%m-%d-%H-%M-%S").to_string();
-    let Some(backup_key_id) = config.backup_key_id else {
-        return Ok(());
-    };
-    let Some(backup_key) = config.backup_key else {
-        return Ok(());
-    };
-    info!("> postgresql backup begin");
-    cmd!(sh, "mkdir -p /tmp2/backup").run().c(h!())?;
-    cmd!(
-        sh,
-        "pg_dump --user wd -Fc wd --file wd-{server}-{dt1}.pgrestore"
-    )
-    .env("PGPASSWORD", pgpwd)
-    .run()
-    .c(h!())?;
-    cmd!(sh, "ls -lah wd-{server}-{dt1}.pgrestore")
-        .run()
-        .c(h!())?;
-    cmd!(
-        sh,
-        "gpg --encrypt --recipient 'Echo' wd-{server}-{dt1}.pgrestore"
-    )
-    .run()
-    .c(h!())?;
-    cmd!(sh, "ls -lah wd-{server}-{dt1}.pgrestore.gpg")
-        .run()
-        .c(h!())?;
-    cmd!(sh, "b2 upload-file echouabackup ./wd-{server}-{dt1}.pgrestore.gpg backup/echo/{day_s}/wd-{server}-{dt1}.pgrestore.gpg")
-        .env("B2_APPLICATION_KEY_ID", backup_key_id.clone())
-        .env("B2_APPLICATION_KEY", backup_key.clone())
-        .run()
-        .c(h!())?;
-    cmd!(sh, "rm wd-{server}-{dt1}.pgrestore.gpg")
-        .run()
-        .c(h!())?;
-    cmd!(sh, "rm wd-{server}-{dt1}.pgrestore").run().c(h!())?;
-    info!("postgresql backup done");
+
+    info!("starting pgBackRest backup");
+    let stanza = detect_pgbackrest_stanza().c(h!())?;
+    info!("pgBackRest stanza: {stanza}");
+    run_pgbackrest_backup(&stanza).c(h!())?;
+    info!("pgBackRest backup done");
     Ok(())
 }

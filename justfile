@@ -735,6 +735,29 @@ backup server:
         sudo -u postgres pgbackrest --config="${CONF}" --config-include-path=/etc/pgbackrest/conf.d --stanza="${STANZA}" --log-level-console=info backup
     REMOTE
 
+[arg('servers', long='servers')]
+backup-many _servers_pos="" servers="":
+    #!/bin/bash
+    set -euo pipefail
+    if [[ "{{ _servers_pos }}" != "" ]]; then
+      echo "positional servers are not allowed; use: just backup-many --servers=\"echo-staging echo-kherson2 ...\"" >&2
+      exit 1
+    fi
+    if [[ "{{ servers }}" == "" ]]; then
+      echo "missing --servers. usage: just backup-many --servers=\"echo-staging echo-kherson2 ...\"" >&2
+      exit 1
+    fi
+
+    if ! command -v echo-install-utils >/dev/null 2>&1; then
+      echo "missing echo-install-utils in PATH (install it or deploy it first)" >&2
+      exit 1
+    fi
+
+    echo-install-utils run-many \
+      --values "{{ servers }}" \
+      --cwd "{{ justfile_directory() }}" \
+      -- just backup --server={}
+
 _echo-generic-deploy:
     #!/bin/bash
     set -euxo pipefail
