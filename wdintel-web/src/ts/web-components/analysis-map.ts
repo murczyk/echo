@@ -273,7 +273,7 @@ class AnalysisMap extends HTMLElement {
          minZoomForPoints: 11,
          requestDelayMs: 200,
          cacheTtlMs: 5 * 60 * 1000,
-         maxCachedTiles: 50
+         maxCachedTiles: 100
        },
        {
          onVisibilityToggle: (palitraId) => {
