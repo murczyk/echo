@@ -270,7 +270,7 @@ class AnalysisMap extends HTMLElement {
      this._palitraManager = new PalitraManager(
        this._map,
        {
-         minZoomForPoints: 13,
+         minZoomForPoints: 11,
          requestDelayMs: 200,
          cacheTtlMs: 5 * 60 * 1000,
          maxCachedTiles: 50
