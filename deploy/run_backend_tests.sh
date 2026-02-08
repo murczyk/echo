@@ -6,6 +6,8 @@ echo "Running backend tests with Python service..."
 # Set up branch-specific test database
 echo "Setting up test database..."
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$REPO_ROOT"
 source "$SCRIPT_DIR/setup_test_database.sh"
 
 # Export the database name for tests
@@ -16,6 +18,12 @@ echo "Using test database: $TEST_DB_NAME"
 mkdir -p ~/Downloads/storage
 touch ~/Downloads/storage/wiki.model
 touch ~/Downloads/storage/callsigns20230512.pt
+
+# Reuse Cargo artifacts between `just test-be` (runs in `wdintel-rs/`) and later `cargo build`/`cargo deb`
+# (run from repo root during packaging).
+if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
+    export CARGO_TARGET_DIR="$REPO_ROOT/target"
+fi
 
 # Launch Python service in background
 just dev-py &
