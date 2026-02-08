@@ -79,6 +79,22 @@ GPG_PROVIDER="${7-}"
 
 cd /home/echo/echo-debs
 
+# Ensure we don't run multiple aptly operations concurrently on echo-ci.
+# This prevents noisy "Unable to open database, sleeping..." retries caused by Bolt DB locks.
+LOCK_FILE="$HOME/.aptly/.echo-ci-aptly.lock"
+if command -v flock >/dev/null 2>&1; then
+  mkdir -p "$(dirname "$LOCK_FILE")"
+  exec 9>"$LOCK_FILE"
+  if flock -w 600 9; then
+    echo "::notice::🔒 acquired aptly lock ($LOCK_FILE)" >&2
+  else
+    echo "::error::failed to acquire aptly lock ($LOCK_FILE) within 600s" >&2
+    exit 1
+  fi
+else
+  echo "::warning::flock not found; aptly db locks may cause retries" >&2
+fi
+
 repo_exists() {
   local name="$1"
   aptly repo show "$name" >/dev/null 2>&1
@@ -137,17 +153,18 @@ add_latest_pkgs_to_repo_from_repos() {
   local fallback_repo="${4-}"
 
   local added=0
-  local arch=""
   local pool_file=""
+  local pkg_ref=""
   declare -A arch_added=()
 
+  # Prefer latest per arch. `aptly repo search` output order is relied upon (same as previous code which used `head -n1`).
   for src_repo in "$primary_repo" "$fallback_repo"; do
     [[ -n "$src_repo" ]] || continue
 
-    while IFS= read -r pkg_ref; do
-      [[ -n "$pkg_ref" ]] || continue
-      arch="${pkg_ref##*_}"
+    for arch in amd64 arm64 all; do
       [[ -n "${arch_added["$arch"]:-}" ]] && continue
+      pkg_ref="$(aptly repo search "$src_repo" "Name (= $pkg_name), Architecture (= $arch)" 2>/dev/null | head -n1 || true)"
+      [[ -n "$pkg_ref" ]] || continue
 
       pool_file="$(pick_existing_pool_file_for_pkg_ref "$pkg_ref")" || true
       [[ -z "$pool_file" ]] && continue
@@ -156,7 +173,7 @@ add_latest_pkgs_to_repo_from_repos() {
       aptly repo add "$dst_repo" "$pool_file" 1>&2
       arch_added["$arch"]=1
       added=$((added + 1))
-    done < <(aptly repo search "$src_repo" "Name (= $pkg_name)" 2>/dev/null || true)
+    done
   done
 
   echo "$added"
@@ -174,6 +191,11 @@ PUBLISH_REPO="$REPO-publish-$DT"
 create_repo_fresh "$RUN_REPO"
 create_repo_fresh "$PUBLISH_REPO"
 
+HAVE_HISTORY_REPO=0
+if repo_exists "$REPO"; then
+  HAVE_HISTORY_REPO=1
+fi
+
 for f in "$DEBS_DIR"/*.deb; do
   [[ -f "$f" ]] || continue
   bn="$(basename "$f")"
@@ -181,7 +203,7 @@ for f in "$DEBS_DIR"/*.deb; do
   # If the exact package (name+version+arch) already exists in the history repo and its pool file exists,
   # we treat this run as "no version bump" and skip importing the rebuilt .deb (which could have different
   # checksums due to build non-determinism).
-  if repo_exists "$REPO"; then
+  if [[ "$HAVE_HISTORY_REPO" -eq 1 ]]; then
     pkg="$(dpkg-deb -f "$f" Package)"
     ver="$(dpkg-deb -f "$f" Version)"
     arch="$(dpkg-deb -f "$f" Architecture)"
@@ -211,7 +233,7 @@ if ((${#added_basenames[@]} == 0)); then
 fi
 
 declare -A PKG_NAMES=()
-if repo_exists "$REPO"; then
+if [[ "$HAVE_HISTORY_REPO" -eq 1 ]]; then
   while IFS= read -r name; do
     [[ -n "$name" ]] || continue
     PKG_NAMES["$name"]=1
