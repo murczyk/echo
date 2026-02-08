@@ -301,6 +301,8 @@ export class PalitraManager {
     // Create cluster group with custom styling
     const clusterGroup = L.markerClusterGroup({
       maxClusterRadius: 40,
+      animate: false,
+      animateAddingMarkers: false,
       spiderfyOnMaxZoom: true,
       showCoverageOnHover: false,
       zoomToBoundsOnClick: true,
@@ -379,13 +381,23 @@ export class PalitraManager {
     }
 
     const currentBounds = this.map.getBounds();
+    const bufferRatio = this.options.pointsViewportBufferRatio ?? 0.15;
+    const viewportWithBuffer = currentBounds.pad(bufferRatio);
     const visiblePalitras = this.palitras.filter(pd =>
       this.visibleIds.includes(pd.palitra.id)
     );
 
     visiblePalitras.forEach(palitraDetails => {
       const points = this.cacheManager.getPointsForBounds(palitraDetails.palitra.id, currentBounds);
-      const cluster = this.createPointsCluster(palitraDetails.palitra, points);
+      const pointsInView: typeof points = [];
+      // Filter points to only include those in current bounds + 15% buffer
+      for (let i = 0; i < points.length; i++) {
+        const p = points[i];
+        if (viewportWithBuffer.contains([p.coords.lat, p.coords.lng])) {
+          pointsInView.push(p);
+        }
+      }
+      const cluster = this.createPointsCluster(palitraDetails.palitra, pointsInView);
       if (cluster) {
         this.pointsClusters.set(palitraDetails.palitra.id, cluster);
         this.map.addLayer(cluster);
