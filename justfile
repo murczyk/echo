@@ -674,7 +674,11 @@ backup server:
     if [[ "{{ server }}" == "" ]]; then
         just _print-servers; exit 1;
     fi
-    ssh {{ server }} 'sudo echo-install-utils install-pgbackrest'
+    echo ""
+    echo "############################################################"
+    echo "🗄️  pgBackRest backup: {{ server }}"
+    echo "############################################################"
+    echo ""
     ssh {{ server }} 'sudo bash -s' <<'REMOTE'
         set -euo pipefail
 
