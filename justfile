@@ -37,10 +37,15 @@ default:
     @just --list
 
 [arg('server', long='server')]
-setup-pgbackrest server:
+[arg('target', long='target')]
+setup-pgbackrest server target="":
     #!/bin/bash
     set -euo pipefail
-    bash deploy/setup-pgbackrest.sh --server "{{ server }}"
+    args=(--server "{{ server }}")
+    if [[ "{{ target }}" != "" ]]; then
+        args+=(--target "{{ target }}")
+    fi
+    bash deploy/setup-pgbackrest.sh "${args[@]}"
 
 _print-servers:
     @echo "❌ Server parameter not recognized. Can be one of: echo-zaporizhzha, echo-kherson, echo-donetsk, echo-soledar. Value: {{ server }}"
@@ -612,7 +617,7 @@ copy-db-pgbackrest target server="":
             echo "# tried:" >&2
             printf '# - %s\n' "${conf_candidates[@]}" >&2
             echo "# target: {{ target }}" >&2
-            echo "# action: run: just setup-pgbackrest --server {{ target }}" >&2
+            echo "# action: run: just setup-pgbackrest --server ${SERVER_KEY} --target {{ target }}" >&2
             echo "############################################################" >&2
             echo "" >&2
             exit 1
@@ -626,7 +631,7 @@ copy-db-pgbackrest target server="":
             echo "# Missing pgBackRest config on target" >&2
             echo "# dir: /etc/pgbackrest/conf.d" >&2
             echo "# target: {{ target }}" >&2
-            echo "# action: run: just setup-pgbackrest --server {{ target }}" >&2
+            echo "# action: run: just setup-pgbackrest --server <server> --target {{ target }}" >&2
             echo "############################################################" >&2
             echo "" >&2
             exit 1
