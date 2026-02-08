@@ -152,7 +152,8 @@ add_latest_pkgs_to_repo_from_repos() {
       pool_file="$(pick_existing_pool_file_for_pkg_ref "$pkg_ref")" || true
       [[ -z "$pool_file" ]] && continue
 
-      aptly repo add "$dst_repo" "$pool_file"
+      # Keep stdout clean so callers can capture only our numeric return value.
+      aptly repo add "$dst_repo" "$pool_file" 1>&2
       arch_added["$arch"]=1
       added=$((added + 1))
     done < <(aptly repo search "$src_repo" "Name (= $pkg_name)" 2>/dev/null || true)
@@ -300,7 +301,9 @@ if ((${#added_basenames[@]} > 0)); then
       echo "::error::missing expected metadata for $bn" >&2
       exit 1
     fi
-    publish_path=$(find "$HOME/.aptly/public/$REPO/pool" -name "$bn" -type f -print -quit || true)
+    # aptly may publish pool files with a hash prefix (e.g. "<hash>_<filename>.deb").
+    publish_path="$(find "$HOME/.aptly/public/$REPO/pool" -type f \
+      \( -name "$bn" -o -name "*_$bn" \) -print -quit || true)"
     if [[ -z "$publish_path" ]]; then
       echo "::error::published file $bn not found under public/$REPO/pool" >&2
       exit 1
