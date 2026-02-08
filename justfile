@@ -674,11 +674,13 @@ backup server:
     if [[ "{{ server }}" == "" ]]; then
         just _print-servers; exit 1;
     fi
+    set +x
     echo ""
     echo "############################################################"
     echo "🗄️  pgBackRest backup: {{ server }}"
     echo "############################################################"
     echo ""
+    set -x
     ssh {{ server }} 'sudo bash -s' <<'REMOTE'
         set -euo pipefail
 
