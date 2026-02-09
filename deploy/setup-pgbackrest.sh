@@ -2,36 +2,54 @@
 set -euo pipefail
 
 SERVER=""
-TARGET=""
+BACKUP_NAME=""
+LEGACY_TARGET=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --server)
       SERVER="${2:-}"
       shift 2
       ;;
+    --backup-name)
+      BACKUP_NAME="${2:-}"
+      shift 2
+      ;;
     --target)
-      TARGET="${2:-}"
+      LEGACY_TARGET="${2:-}"
       shift 2
       ;;
     --help|-h)
-      echo "usage: $0 --server <server> [--target <ssh-host>]" >&2
+      echo "usage: $0 --server <ssh-host> [--backup-name <backup-name>]" >&2
+      echo "" >&2
+      echo "legacy usage: $0 --server <backup-name> --target <ssh-host>" >&2
       exit 0
       ;;
     *)
       echo "unknown argument: $1" >&2
-      echo "usage: $0 --server <server> [--target <ssh-host>]" >&2
+      echo "usage: $0 --server <ssh-host> [--backup-name <backup-name>]" >&2
       exit 2
       ;;
   esac
 done
 
 if [[ -z "${SERVER}" ]]; then
-  echo "missing required argument: --server <server>" >&2
+  echo "missing required argument: --server <ssh-host>" >&2
   exit 2
 fi
 
-if [[ -z "${TARGET}" ]]; then
-  TARGET="${SERVER}"
+if [[ -n "${LEGACY_TARGET}" ]]; then
+  if [[ -n "${BACKUP_NAME}" ]]; then
+    echo "invalid args: don't use legacy --target together with --backup-name" >&2
+    exit 2
+  fi
+  # Legacy calling convention: --server=<backup-name> --target=<ssh-host>.
+  BACKUP_NAME="${SERVER}"
+  SERVER="${LEGACY_TARGET}"
+  LEGACY_TARGET=""
+fi
+
+if [[ -z "${BACKUP_NAME}" ]]; then
+  BACKUP_NAME="${SERVER}"
 fi
 
 need_cmd() {
@@ -48,11 +66,11 @@ need_cmd awk
 
 ECHO_INSTALL_UTILS_BIN="${ECHO_INSTALL_UTILS_BIN:-echo-install-utils}"
 
-echo "==> [server=${SERVER} target=${TARGET}] ensure pgdg apt repo + pgbackrest package"
-ssh "${TARGET}" "sudo echo-install-utils install-pgbackrest"
+echo "==> [server=${SERVER} backup-name=${BACKUP_NAME}] ensure pgdg apt repo + pgbackrest package"
+ssh "${SERVER}" "sudo echo-install-utils install-pgbackrest"
 
-echo "==> [server=${SERVER} target=${TARGET}] ensure /etc/pgbackrest/pgbackrest.conf base config"
-ssh "${TARGET}" "sudo bash -s" <<'REMOTE'
+echo "==> [server=${SERVER} backup-name=${BACKUP_NAME}] ensure /etc/pgbackrest/pgbackrest.conf base config"
+ssh "${SERVER}" "sudo bash -s" <<'REMOTE'
 set -euo pipefail
 
 # See note below in this script: pgBackRest reads pgbackrest.conf and also conf.d/*.conf.
@@ -79,10 +97,10 @@ fi
 REMOTE
 
 STANZA=""
-if [[ "${TARGET}" == "${SERVER}" ]]; then
-  echo "==> [server=${SERVER} target=${TARGET}] detect pgBackRest stanza (existing config)"
+if [[ "${SERVER}" == "${BACKUP_NAME}" ]]; then
+  echo "==> [server=${SERVER} backup-name=${BACKUP_NAME}] detect pgBackRest stanza (existing config)"
   STANZA="$(
-    ssh "${TARGET}" "sudo bash -s" <<'REMOTE'
+    ssh "${SERVER}" "sudo bash -s" <<'REMOTE'
 set -euo pipefail
 
 stanza=""
@@ -115,97 +133,48 @@ if [[ -z "${stanza}" ]]; then
   fi
 fi
 
-if [[ -n "${stanza}" ]]; then
-  printf '%s' "${stanza}"
-fi
+	if [[ -n "${stanza}" ]]; then
+	  printf '%s' "${stanza}"
+	fi
 REMOTE
   )"
 fi
 
-BW_NOTE="echo-pgbackrest-${SERVER}"
+if [[ -z "${STANZA}" ]]; then
+  if [[ "${BACKUP_NAME}" == wd-* ]]; then
+    STANZA="${BACKUP_NAME}"
+  else
+    STANZA="wd-${BACKUP_NAME}"
+  fi
+fi
+
+echo "stanza=${STANZA}"
+
+BW_NOTE="echo-pgbackrest-${BACKUP_NAME}"
 BW_EXIT_CODE=0
 
-if [[ -n "${STANZA}" ]]; then
-  echo "stanza=${STANZA}"
-  SERVER_PGBR_CONF="/etc/pgbackrest/conf.d/pgbackrest-${STANZA}.conf"
+SERVER_PGBR_CONF="/etc/pgbackrest/conf.d/pgbackrest-${STANZA}.conf"
 
-  echo "==> [server=${SERVER} target=${TARGET}] sync ${SERVER_PGBR_CONF} from Bitwarden"
-  ssh "${TARGET}" "sudo install -d -m 0755 /etc/pgbackrest/conf.d"
-  set +e
-  "${ECHO_INSTALL_UTILS_BIN}" bw-sync "${TARGET}" "${BW_NOTE}" "${SERVER_PGBR_CONF}" --no-restart --exit-code
-  BW_EXIT_CODE="$?"
-  set -e
-  if [[ "${BW_EXIT_CODE}" -ne 0 && "${BW_EXIT_CODE}" -ne 2 ]]; then
-    echo "bw-sync failed with exit code ${BW_EXIT_CODE}" >&2
-    exit "${BW_EXIT_CODE}"
-  fi
-  ssh "${TARGET}" "sudo chown root:root '${SERVER_PGBR_CONF}' && sudo chmod 0644 '${SERVER_PGBR_CONF}'"
-else
-  # First run: fetch note to temp, detect stanza, then install to final path.
-  REMOTE_TMP="/tmp/pgbackrest.${SERVER}.conf"
-  echo "==> [server=${SERVER} target=${TARGET}] sync ${REMOTE_TMP} from Bitwarden (for stanza detection)"
-  set +e
-  "${ECHO_INSTALL_UTILS_BIN}" bw-sync "${TARGET}" "${BW_NOTE}" "${REMOTE_TMP}" --no-restart --exit-code
-  BW_EXIT_CODE="$?"
-  set -e
-  if [[ "${BW_EXIT_CODE}" -ne 0 && "${BW_EXIT_CODE}" -ne 2 ]]; then
-    echo "bw-sync failed with exit code ${BW_EXIT_CODE}" >&2
-    exit "${BW_EXIT_CODE}"
-  fi
-
-  echo "==> [server=${SERVER} target=${TARGET}] detect pgBackRest stanza from ${REMOTE_TMP}"
-  STANZA="$(
-    ssh "${TARGET}" "sudo CONF_PATH='${REMOTE_TMP}' bash -s" <<'REMOTE'
-set -euo pipefail
-
-CONF="${CONF_PATH:?}"
-stanza="$(
-  awk '
-    {
-      line=$0
-      sub(/^[[:space:]]+/, "", line)
-      sub(/[[:space:]]+$/, "", line)
-      if (line ~ /^\[/ && line ~ /\]$/) {
-        s = substr(line, 2, length(line) - 2)
-        if (s !~ /^global(:|$)/) { print s; exit }
-      }
-    }
-  ' "$CONF" || true
-)"
-
-if [[ -n "${stanza}" ]]; then
-  printf '%s' "${stanza}"
+echo "==> [server=${SERVER} backup-name=${BACKUP_NAME}] sync ${SERVER_PGBR_CONF} from Bitwarden"
+ssh "${SERVER}" "sudo install -d -m 0755 /etc/pgbackrest/conf.d"
+set +e
+"${ECHO_INSTALL_UTILS_BIN}" bw-sync "${SERVER}" "${BW_NOTE}" "${SERVER_PGBR_CONF}" --no-restart --exit-code
+BW_EXIT_CODE="$?"
+set -e
+if [[ "${BW_EXIT_CODE}" -ne 0 && "${BW_EXIT_CODE}" -ne 2 ]]; then
+  echo "bw-sync failed with exit code ${BW_EXIT_CODE}" >&2
+  exit "${BW_EXIT_CODE}"
 fi
-REMOTE
-  )"
-  if [[ -z "${STANZA}" ]]; then
-    echo "failed to detect stanza from ${REMOTE_TMP} on ${TARGET}" >&2
-    exit 1
-  fi
-  echo "stanza=${STANZA}"
+ssh "${SERVER}" "sudo chown root:root '${SERVER_PGBR_CONF}' && sudo chmod 0644 '${SERVER_PGBR_CONF}'"
 
-  SERVER_PGBR_CONF="/etc/pgbackrest/conf.d/pgbackrest-${STANZA}.conf"
-  echo "==> [server=${SERVER} target=${TARGET}] install ${SERVER_PGBR_CONF}"
-  ssh "${TARGET}" "sudo REMOTE_TMP='${REMOTE_TMP}' SERVER_PGBR_CONF='${SERVER_PGBR_CONF}' bash -s" <<'REMOTE'
-set -euo pipefail
-
-REMOTE_TMP="${REMOTE_TMP:?}"
-SERVER_PGBR_CONF="${SERVER_PGBR_CONF:?}"
-
-install -d -m 0755 /etc/pgbackrest/conf.d
-install -m 0644 -o root -g root "${REMOTE_TMP}" "${SERVER_PGBR_CONF}"
-rm -f "${REMOTE_TMP}"
-REMOTE
-fi
-
-if [[ "${TARGET}" == "${SERVER}" ]]; then
-  TMP_90="/tmp/90-pgbackrest.${SERVER}.conf"
+if [[ "${SERVER}" == "${BACKUP_NAME}" ]]; then
+  TMP_90="/tmp/90-pgbackrest.${BACKUP_NAME}.conf"
   sed -e "s/@STANZA@/${STANZA}/g" "deploy/postgresql/90-pgbackrest.conf.template" > "${TMP_90}"
 
-  echo "==> [server=${SERVER} target=${TARGET}] ensure /etc/postgresql/14/main/conf.d/90-pgbackrest.conf"
+  echo "==> [server=${SERVER} backup-name=${BACKUP_NAME}] ensure /etc/postgresql/14/main/conf.d/90-pgbackrest.conf"
   CONF_CHANGED="false"
   set +e
-  "${ECHO_INSTALL_UTILS_BIN}" ssh-sync-file --take-a --exit-code "${TMP_90}" "${TARGET}:/etc/postgresql/14/main/conf.d/90-pgbackrest.conf"
+  "${ECHO_INSTALL_UTILS_BIN}" ssh-sync-file --take-a --exit-code "${TMP_90}" "${SERVER}:/etc/postgresql/14/main/conf.d/90-pgbackrest.conf"
   RC="$?"
   set -e
   if [[ "${RC}" -eq 2 ]]; then
@@ -215,23 +184,23 @@ if [[ "${TARGET}" == "${SERVER}" ]]; then
     exit "${RC}"
   fi
 
-  ssh "${TARGET}" "sudo chown root:root /etc/postgresql/14/main/conf.d/90-pgbackrest.conf && sudo chmod 0644 /etc/postgresql/14/main/conf.d/90-pgbackrest.conf"
+  ssh "${SERVER}" "sudo chown root:root /etc/postgresql/14/main/conf.d/90-pgbackrest.conf && sudo chmod 0644 /etc/postgresql/14/main/conf.d/90-pgbackrest.conf"
 
   if [[ "${CONF_CHANGED}" == "true" ]]; then
-    echo "==> [server=${SERVER} target=${TARGET}] postgres config changed, restarting cluster 14/main"
-    ssh "${TARGET}" "sudo pg_ctlcluster 14 main restart"
+    echo "==> [server=${SERVER} backup-name=${BACKUP_NAME}] postgres config changed, restarting cluster 14/main"
+    ssh "${SERVER}" "sudo pg_ctlcluster 14 main restart"
   else
-    echo "==> [server=${SERVER} target=${TARGET}] postgres config unchanged, restart skipped"
+    echo "==> [server=${SERVER} backup-name=${BACKUP_NAME}] postgres config unchanged, restart skipped"
   fi
 
-  echo "==> [server=${SERVER} target=${TARGET}] ensure stanza exists, then pgbackrest check"
-  ssh "${TARGET}" "set -euo pipefail; \
+  echo "==> [server=${SERVER} backup-name=${BACKUP_NAME}] ensure stanza exists, then pgbackrest check"
+  ssh "${SERVER}" "set -euo pipefail; \
     sudo -u postgres pgbackrest --config='/etc/pgbackrest/pgbackrest.conf' --config-include-path='/etc/pgbackrest/conf.d' --stanza='${STANZA}' --log-level-console=info stanza-create; \
     sudo -u postgres pgbackrest --config='/etc/pgbackrest/pgbackrest.conf' --config-include-path='/etc/pgbackrest/conf.d' --stanza='${STANZA}' --log-level-console=info check"
 
   rm -f "${TMP_90}"
 else
-  echo "==> [server=${SERVER} target=${TARGET}] target differs from server; skipping postgres archive_command config and pgbackrest stanza-create/check"
+  echo "==> [server=${SERVER} backup-name=${BACKUP_NAME}] backup-name differs from server; skipping postgres archive_command config and pgbackrest stanza-create/check"
 fi
 
-echo "==> [server=${SERVER} target=${TARGET}] done"
+echo "==> [server=${SERVER} backup-name=${BACKUP_NAME}] done"

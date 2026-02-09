@@ -199,7 +199,7 @@ locally on the server as `postgres`).
 ### Setup
 
 1. Read `docs/POSTGRESQL.md` (pgBackRest section) for the config layout.
-2. Run: `just setup-pgbackrest --server <server>`
+2. Run: `just setup-pgbackrest --server <ssh-host> [--backup-name <backup-name>]`
 3. One-off manual backup: `just backup --server <server>`
 
 ## POST SETUP
