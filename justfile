@@ -36,15 +36,15 @@ wd_fasttext_models := justfile_directory() + "/echo-ai/fasttext-models"
 default:
     @just --list
 
-# setup pgBackRest: `--target` is the host where pgBackRest config will be placed (if empty, `target = server`); `--server` selects which host's DB dump/backups will be downloaded from/to
+# setup pgBackRest: runs on `--server`; `--backup-name` selects which host's backup/stanza config will be installed (defaults to `--server`)
 [arg('server', long='server')]
-[arg('target', long='target')]
-setup-pgbackrest server target="":
+[arg('backup_name', long='backup-name')]
+setup-pgbackrest server backup_name="":
     #!/bin/bash
     set -euo pipefail
     args=(--server "{{ server }}")
-    if [[ "{{ target }}" != "" ]]; then
-        args+=(--target "{{ target }}")
+    if [[ "{{ backup_name }}" != "" ]]; then
+        args+=(--backup-name "{{ backup_name }}")
     fi
     bash deploy/setup-pgbackrest.sh "${args[@]}"
 
@@ -621,7 +621,7 @@ restore-pgbackrest server backup_name="":
           echo "# tried:" >&2
           printf '# - %s\n' "${conf_candidates[@]}" >&2
           echo "# server: ${SERVER_KEY} (config key)" >&2
-          echo "# action: run: just setup-pgbackrest --server ${SERVER_KEY} --target $(hostname)" >&2
+          echo "# action: run: just setup-pgbackrest --server $(hostname) --backup-name ${SERVER_KEY}" >&2
           echo "############################################################" >&2
           echo "" >&2
           exit 1
