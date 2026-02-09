@@ -679,7 +679,7 @@ restore-pgbackrest server backup_name="":
             sudo install -d -m 0755 /etc/postgresql/14/main/conf.d
             tmp="$(mktemp)"
             cat > "${tmp}" <<EOF
-                # Managed by `just restore-pgbackrest`. Derived from pg_control of the restored cluster.
+                # Managed by just restore-pgbackrest. Derived from pg_control of the restored cluster.
                 max_connections = ${req_max_connections:-100}
                 max_worker_processes = ${req_max_worker_processes:-8}
                 max_wal_senders = ${req_max_wal_senders:-10}
