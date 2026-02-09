@@ -36,6 +36,7 @@ wd_fasttext_models := justfile_directory() + "/echo-ai/fasttext-models"
 default:
     @just --list
 
+# setup pgBackRest: `--target` is the host where pgBackRest config will be placed (if empty, `target = server`); `--server` selects which host's DB dump/backups will be downloaded from/to
 [arg('server', long='server')]
 [arg('target', long='target')]
 setup-pgbackrest server target="":
