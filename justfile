@@ -585,76 +585,60 @@ copy-db-to-target:
     ssh -t {{ target }} "sudo -u postgres pg_restore -d {{ pgdb }} /var/tmp/wd-{{ dt1 }}.pgrestore && sudo rm /var/tmp/wd-{{ dt1 }}.pgrestore"
     rm /var/tmp/wd-{{ dt1 }}.pgrestore.gz | echo "ok"
 
-[arg('target', long='target')]
+# restore postgres via pgBackRest: runs on `--target` (defaults to `--server`); `--server` selects which host's backups will be restored
 [arg('server', long='server')]
-copy-db-pgbackrest target server="":
+[arg('target', long='target')]
+restore-pgbackrest server target="":
     #!/bin/bash
     set -euxo pipefail
-    if [[ "{{ target }}" == "" ]]; then
-        echo "❌ `target` parameter not recognized. Value: {{ target }}"; exit 1;
+    if [[ "{{ server }}" == "" ]]; then
+        just _print-servers; exit 1;
     fi
-    TARGET="{{ target }}"
-    ssh "$TARGET" 'sudo echo-install-utils install-pgbackrest'
     SERVER_KEY="{{ server }}"
+    TARGET="{{ target }}"
+    if [[ -z "${TARGET}" ]]; then
+      TARGET="${SERVER_KEY}"
+    fi
+    ssh "$TARGET" 'sudo echo-install-utils install-pgbackrest'
     ssh "$TARGET" "sudo SERVER_KEY='${SERVER_KEY}' bash -s" <<'REMOTE'
         set -euo pipefail
 
-        if [[ -n "${SERVER_KEY}" ]]; then
-          conf_candidates=(
-            "/etc/pgbackrest/conf.d/pgbackrest-${SERVER_KEY}.conf"
-            "/etc/pgbackrest/conf.d/pgbackrest-wd-${SERVER_KEY}.conf"
-          )
-          CONF_FILE=""
-          for c in "${conf_candidates[@]}"; do
-            if [[ -f "${c}" ]]; then
-              CONF_FILE="${c}"
-              break
-            fi
-          done
-          if [[ -z "${CONF_FILE}" ]]; then
-            echo "" >&2
-            echo "############################################################" >&2
-            echo "# Missing pgBackRest config on target" >&2
-            echo "# tried:" >&2
-            printf '# - %s\n' "${conf_candidates[@]}" >&2
-            echo "# target: {{ target }}" >&2
-            echo "# action: run: just setup-pgbackrest --server ${SERVER_KEY} --target {{ target }}" >&2
-            echo "############################################################" >&2
-            echo "" >&2
-            exit 1
+        conf_candidates=(
+          "/etc/pgbackrest/conf.d/pgbackrest-${SERVER_KEY}.conf"
+          "/etc/pgbackrest/conf.d/pgbackrest-wd-${SERVER_KEY}.conf"
+        )
+        CONF_FILE=""
+        for c in "${conf_candidates[@]}"; do
+          if [[ -f "${c}" ]]; then
+            CONF_FILE="${c}"
+            break
           fi
-        else
-          shopt -s nullglob
-          files=(/etc/pgbackrest/conf.d/pgbackrest-*.conf)
-          if [[ "${#files[@]}" -eq 0 ]]; then
-            echo "" >&2
-            echo "############################################################" >&2
-            echo "# Missing pgBackRest config on target" >&2
-            echo "# dir: /etc/pgbackrest/conf.d" >&2
-            echo "# target: {{ target }}" >&2
-            echo "# action: run: just setup-pgbackrest --server <server> --target {{ target }}" >&2
-            echo "############################################################" >&2
-            echo "" >&2
-            exit 1
-          fi
-          if [[ "${#files[@]}" -ne 1 ]]; then
-            echo "" >&2
-            echo "############################################################" >&2
-            echo "# Multiple pgBackRest configs found on target, specify --server" >&2
-            echo "# dir: /etc/pgbackrest/conf.d" >&2
-            echo "# target: {{ target }}" >&2
-            echo "############################################################" >&2
-            ls -lah /etc/pgbackrest/conf.d >&2 || true
-            echo "" >&2
-            exit 1
-          fi
-          CONF_FILE="${files[0]}"
+        done
+        if [[ -z "${CONF_FILE}" ]]; then
+          echo "" >&2
+          echo "############################################################" >&2
+          echo "# Missing pgBackRest config on target" >&2
+          echo "# tried:" >&2
+          printf '# - %s\n' "${conf_candidates[@]}" >&2
+          echo "# server: ${SERVER_KEY} (config key)" >&2
+          echo "# action: run: just setup-pgbackrest --server ${SERVER_KEY} --target $(hostname)" >&2
+          echo "############################################################" >&2
+          echo "" >&2
+          exit 1
         fi
 
         STANZA="$(
-          sed -nE 's/^[[:space:]]*\[([^]]+)\][[:space:]]*$/\1/p' "${CONF_FILE}" \
-            | grep -vE '^global(:|$)' \
-            | head -n 1 || true
+          awk '
+            {
+              line=$0
+              sub(/^[[:space:]]+/, "", line)
+              sub(/[[:space:]]+$/, "", line)
+              if (line ~ /^\[/ && line ~ /\]$/) {
+                s = substr(line, 2, length(line) - 2)
+                if (s !~ /^global(:|$)/) { print s; exit }
+              }
+            }
+          ' "${CONF_FILE}" || true
         )"
         if [[ -z "${STANZA}" ]]; then
           echo "failed to detect stanza from ${CONF_FILE}" >&2
