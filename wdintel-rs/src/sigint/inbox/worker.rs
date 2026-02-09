@@ -505,10 +505,6 @@ fn build_task_filter(
     if let Some(freq) = task.frequency.clone() {
         task_filter = task_filter.add(sigint_inbox_item::Column::Freq.eq(freq))
     }
-    if let Some(id) = task.sigint_network_id {
-        task_filter = task_filter
-            .add(sigint_inbox_item_network::Column::SigintNetworkId.eq(id))
-    }
     if let Some(master_key) = task.group_master_key.clone() {
         task_filter = task_filter
             .add(signal_message_group::Column::GroupMasterKey.eq(master_key))

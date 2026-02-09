@@ -37,8 +37,8 @@ default:
     @just --list
 
 # setup pgBackRest: runs on `--server`; `--backup-name` selects which host's backup/stanza config will be installed (defaults to `--server`)
-[arg('server', long='server')]
 [arg('backup_name', long='backup-name')]
+[arg('server', long='server')]
 setup-pgbackrest server backup_name="":
     #!/bin/bash
     set -euo pipefail
@@ -586,8 +586,8 @@ copy-db-to-target:
     rm /var/tmp/wd-{{ dt1 }}.pgrestore.gz | echo "ok"
 
 # restore postgres via pgBackRest: runs on `--server`; `--backup-name` selects which host's backups will be restored (defaults to `--server`)
-[arg('server', long='server')]
 [arg('backup_name', long='backup-name')]
+[arg('server', long='server')]
 restore-pgbackrest server backup_name="":
     #!/bin/bash
     set -euxo pipefail
