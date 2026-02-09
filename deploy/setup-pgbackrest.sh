@@ -44,6 +44,7 @@ need_cmd() {
 
 need_cmd ssh
 need_cmd sed
+need_cmd awk
 
 ECHO_INSTALL_UTILS_BIN="${ECHO_INSTALL_UTILS_BIN:-echo-install-utils}"
 
@@ -99,9 +100,17 @@ if [[ -z "${stanza}" ]]; then
   files=(/etc/pgbackrest/conf.d/pgbackrest-*.conf)
   if [[ "${#files[@]}" -eq 1 ]]; then
     stanza="$(
-      sed -nE 's/^[[:space:]]*\\[([^]]+)\\][[:space:]]*$/\\1/p' "${files[0]}" \
-        | grep -vE '^global(:|$)' \
-        | head -n 1 || true
+      awk '
+        {
+          line=$0
+          sub(/^[[:space:]]+/, "", line)
+          sub(/[[:space:]]+$/, "", line)
+          if (line ~ /^\[/ && line ~ /\]$/) {
+            s = substr(line, 2, length(line) - 2)
+            if (s !~ /^global(:|$)/) { print s; exit }
+          }
+        }
+      ' "${files[0]}" || true
     )"
   fi
 fi
@@ -151,9 +160,17 @@ set -euo pipefail
 
 CONF="${CONF_PATH:?}"
 stanza="$(
-  sed -nE 's/^[[:space:]]*\\[([^]]+)\\][[:space:]]*$/\\1/p' "$CONF" \
-    | grep -vE '^global(:|$)' \
-    | head -n 1 || true
+  awk '
+    {
+      line=$0
+      sub(/^[[:space:]]+/, "", line)
+      sub(/[[:space:]]+$/, "", line)
+      if (line ~ /^\[/ && line ~ /\]$/) {
+        s = substr(line, 2, length(line) - 2)
+        if (s !~ /^global(:|$)/) { print s; exit }
+      }
+    }
+  ' "$CONF" || true
 )"
 
 if [[ -n "${stanza}" ]]; then
