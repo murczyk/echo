@@ -585,22 +585,22 @@ copy-db-to-target:
     ssh -t {{ target }} "sudo -u postgres pg_restore -d {{ pgdb }} /var/tmp/wd-{{ dt1 }}.pgrestore && sudo rm /var/tmp/wd-{{ dt1 }}.pgrestore"
     rm /var/tmp/wd-{{ dt1 }}.pgrestore.gz | echo "ok"
 
-# restore postgres via pgBackRest: runs on `--target` (defaults to `--server`); `--server` selects which host's backups will be restored
+# restore postgres via pgBackRest: runs on `--server`; `--backup-name` selects which host's backups will be restored (defaults to `--server`)
 [arg('server', long='server')]
-[arg('target', long='target')]
-restore-pgbackrest server target="":
+[arg('backup_name', long='backup-name')]
+restore-pgbackrest server backup_name="":
     #!/bin/bash
     set -euxo pipefail
     if [[ "{{ server }}" == "" ]]; then
         just _print-servers; exit 1;
     fi
-    SERVER_KEY="{{ server }}"
-    TARGET="{{ target }}"
-    if [[ -z "${TARGET}" ]]; then
-      TARGET="${SERVER_KEY}"
+    TARGET="{{ server }}"
+    BACKUP_NAME="{{ backup_name }}"
+    if [[ -z "${BACKUP_NAME}" ]]; then
+      BACKUP_NAME="${TARGET}"
     fi
     ssh "$TARGET" 'sudo echo-install-utils install-pgbackrest'
-    ssh "$TARGET" "sudo SERVER_KEY='${SERVER_KEY}' bash -s" <<'REMOTE'
+    ssh "$TARGET" "sudo SERVER_KEY='${BACKUP_NAME}' bash -s" <<'REMOTE'
         set -euo pipefail
 
         conf_candidates=(
