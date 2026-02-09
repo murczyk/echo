@@ -119,6 +119,22 @@ pub async fn search_palitra_points_by_labels(
     if palitra_ids.is_empty() {
         return Ok(vec![]);
     }
+    dbg!("{:?}", &palitra_ids);
+
+    let normalized_labels: Vec<String> = req.point_labels;
+    // .iter()
+    // .filter_map(|label| normalize_label_cache(label))
+    // .collect();
+    if normalized_labels.is_empty() {
+        return Ok(vec![]);
+    }
+    dbg!("{:?}", &normalized_labels);
+
+    let mut label_condition = Condition::any();
+    for label in &normalized_labels {
+        label_condition =
+            label_condition.add(palitra_point::Column::Label.eq(label));
+    }
 
     let points = palitra_point::Entity::find()
         .select_only()
@@ -128,7 +144,8 @@ pub async fn search_palitra_points_by_labels(
         .column(palitra_point::Column::Label)
         .filter(palitra_point::Column::PalitraId.eq_any(palitra_ids.clone()))
         .filter(palitra_point::Column::Deleted.eq(false))
-        .filter(palitra_point::Column::Label.eq_any(req.point_labels.clone()))
+        .filter(palitra_point::Column::Label.is_not_null())
+        .filter(label_condition)
         .into_tuple::<(i64, f64, f64, Option<String>)>()
         .all(dbx)
         .await
@@ -172,15 +189,21 @@ pub async fn suggest_palitra_point_labels(
         return Ok(vec![]);
     }
 
-    let pattern = format!("{}%", &req.prefix);
+    let prefix = normalize_label_cache(&req.prefix).unwrap_or_default();
+    if prefix.is_empty() {
+        return Ok(vec![]);
+    }
+    let limit = req.limit.unwrap_or(15).min(50);
+    let prefix_pattern = build_label_pattern(&prefix, false);
+
     let labels = palitra_point::Entity::find()
         .select_only()
         .column(palitra_point::Column::PalitraId)
         .column(palitra_point::Column::Label)
-        .filter(palitra_point::Column::PalitraId.eq_any(palitra_ids))
+        .filter(palitra_point::Column::PalitraId.eq_any(palitra_ids.clone()))
         .filter(palitra_point::Column::Deleted.eq(false))
         .filter(palitra_point::Column::Label.is_not_null())
-        .filter(palitra_point::Column::Label.like(pattern))
+        .filter(palitra_point::Column::Label.like(prefix_pattern))
         .order_by_asc(palitra_point::Column::Label)
         .distinct()
         .into_tuple::<(i64, Option<String>)>()
@@ -188,13 +211,49 @@ pub async fn suggest_palitra_point_labels(
         .await
         .c(h!())?;
 
-    let labels = labels
+    let mut labels: Vec<PalitraPointLabelSuggestRsp> = labels
         .into_iter()
         .map(|(palitra_id, label)| PalitraPointLabelSuggestRsp {
             palitra_id,
             label: label.unwrap_or_default(),
         })
         .collect();
+
+    if labels.len() < limit as usize {
+        let remaining = limit - labels.len() as u64;
+        let similar_pattern = build_label_pattern(&prefix, true);
+        let mut similar_query = palitra_point::Entity::find()
+            .select_only()
+            .column(palitra_point::Column::PalitraId)
+            .column(palitra_point::Column::Label)
+            .filter(palitra_point::Column::PalitraId.eq_any(palitra_ids))
+            .filter(palitra_point::Column::Deleted.eq(false))
+            .filter(palitra_point::Column::Label.is_not_null())
+            .filter(palitra_point::Column::Label.like(similar_pattern))
+            .order_by_asc(palitra_point::Column::Label)
+            .distinct();
+
+        let used_labels: Vec<String> =
+            labels.iter().map(|item| item.label.clone()).collect();
+        if !used_labels.is_empty() {
+            similar_query = similar_query
+                .filter(palitra_point::Column::Label.is_not_in(used_labels));
+        }
+
+        let similar = similar_query
+            .limit(remaining)
+            .into_tuple::<(i64, Option<String>)>()
+            .all(dbx)
+            .await
+            .c(h!())?;
+
+        labels.extend(similar.into_iter().map(|(palitra_id, label)| {
+            PalitraPointLabelSuggestRsp {
+                palitra_id,
+                label: label.unwrap_or_default(),
+            }
+        }));
+    }
 
     Ok(labels)
 }
@@ -204,7 +263,24 @@ fn normalize_label_cache(label: &str) -> Option<String> {
     if trimmed.is_empty() {
         None
     } else {
-        Some(trimmed.to_lowercase())
+        let normalized = trimmed
+            .split_whitespace()
+            .filter(|part| !part.is_empty())
+            .join(" ");
+        // Some(normalized.to_lowercase())
+        Some(normalized)
+    }
+}
+
+fn build_label_pattern(label: &str, surround: bool) -> String {
+    let pattern = label
+        .split_whitespace()
+        .filter(|part| !part.is_empty())
+        .join("%");
+    if surround {
+        format!("%{}%", pattern)
+    } else {
+        format!("{}%", pattern)
     }
 }
 
