@@ -308,7 +308,13 @@ pub async fn main_server(
     }
 
     let bind_ip = "0.0.0.0";
-    let bind_port = 8081;
+    let bind_port = if let Ok(port) = std::env::var("ECHO_SERVER_PORT") {
+        info!("port overridden from env: {port}");
+        port.parse::<u16>().c(h!())?
+    } else {
+        info!("starting echo server on default 8081 port. override it with ECHO_SERVER_PORT variable.");
+        8081
+    };
     info!("Starting server on {bind_ip}:{bind_port}");
 
     let env_for_server = env.clone();
