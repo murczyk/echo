@@ -16,7 +16,8 @@ export class PalitraManager {
   private enabled = true;
   private boundsApplied = false;
   private requestTimer: number | null = null;
-  
+  private _searchQuery = '';
+
   constructor(
     private map: L.Map,
     private options: PalitraManagerOptions,
@@ -80,6 +81,100 @@ export class PalitraManager {
     }
   }
 
+  setSearchQuery(query: string): void {
+    const q = (query ?? '').trim();
+    if (q === '') {
+      this._searchQuery = '';
+      this.updatePoints();
+      this.schedulePointsRequest();
+      return;
+    }
+    this._searchQuery = q;
+    const palitraIds = this.palitras.map(p => p.palitra.id);
+    if (palitraIds.length === 0) {
+      this._showSearchResults([]);
+      return;
+    }
+
+    const qLower = q.toLowerCase();
+
+    const fromCache = this.cacheManager.getCachedPointsForPalitras(palitraIds);
+    const filteredFromCache = fromCache.map(({ palitra_id, points }) => ({
+      palitra_id,
+      points: points.filter(
+        (p) => p.label != null && p.label.toLowerCase().includes(qLower)
+      )
+    }));
+    this._showSearchResults(filteredFromCache);
+
+    this.cacheManager
+      .fetchSearchPoints(palitraIds, [q])
+      .then((backendData) => {
+        if (this._searchQuery !== q) return;
+        const merged = this._mergeSearchResults(filteredFromCache, backendData);
+        this._showSearchResults(merged);
+      })
+      .catch((err) => {
+        console.error('[PalitraManager] Search failed:', err);
+      });
+  }
+
+  private _mergeSearchResults(
+    cacheData: { palitra_id: number; points: PalitraPoint[] }[],
+    backendData: { palitra_id: number; points: PalitraPoint[] }[]
+  ): { palitra_id: number; points: PalitraPoint[] }[] {
+    const byPalitra = new Map<number, Map<string, PalitraPoint>>();
+    const addPoints = (palitraId: number, points: PalitraPoint[]) => {
+      let byKey = byPalitra.get(palitraId);
+      if (!byKey) {
+        byKey = new Map();
+        byPalitra.set(palitraId, byKey);
+      }
+      points.forEach((p) => {
+        byKey!.set(PalitraCacheManager.pointKey(p), p);
+      });
+    };
+    cacheData.forEach(({ palitra_id, points }) => addPoints(palitra_id, points));
+    backendData.forEach(({ palitra_id, points }) => addPoints(palitra_id, points));
+    return Array.from(byPalitra.entries()).map(([palitra_id, byKey]) => ({
+      palitra_id,
+      points: Array.from(byKey.values())
+    }));
+  }
+
+  private _showSearchResults(data: { palitra_id: number; points: PalitraPoint[] }[]): void {
+    this.pointsClusters.forEach((cluster) => this.map.removeLayer(cluster));
+    this.pointsClusters.clear();
+
+    if (!this.enabled) {
+      return;
+    }
+
+    const palitraById = new Map(this.palitras.map(p => [p.palitra.id, p.palitra]));
+    const boundsPoints: L.LatLng[] = [];
+
+    data.forEach(({ palitra_id, points }) => {
+      const palitra = palitraById.get(palitra_id);
+      if (!palitra || points.length === 0) {
+        return;
+      }
+      const cluster = this.createPointsCluster(palitra, points);
+      if (cluster) {
+        this.pointsClusters.set(palitra_id, cluster);
+        this.map.addLayer(cluster);
+        cluster.eachLayer((layer) => {
+          const latLng = (layer as L.CircleMarker).getLatLng();
+          boundsPoints.push(latLng);
+        });
+      }
+    });
+
+    if (boundsPoints.length > 0) {
+      const bounds = L.latLngBounds(boundsPoints);
+      this.map.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 });
+    }
+  }
+
   destroy(): void {
     if (this.requestTimer !== null) {
       window.clearTimeout(this.requestTimer);
@@ -106,6 +201,9 @@ export class PalitraManager {
 
   private async requestPoints(): Promise<void> {
     if (!this.enabled) {
+      return;
+    }
+    if (this._searchQuery) {
       return;
     }
     if (this.visibleIds.length === 0) {
@@ -363,6 +461,10 @@ export class PalitraManager {
   }
 
   private updatePoints(): void {
+    if (this._searchQuery) {
+      return;
+    }
+
     // Remove all existing point clusters from map
     this.pointsClusters.forEach((cluster) => {
       this.map.removeLayer(cluster);

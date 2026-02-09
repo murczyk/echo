@@ -22,6 +22,22 @@ export type FeatureToggleState = {
   kmzEnabled: boolean;
   pelengsEnabled: boolean;
 };
+
+/** Creates a map control that hosts <analysis-map-search>. */
+export function createSearchControl() {
+  const SearchControlClass = L.Control.extend({
+    onAdd: function (_map: L.Map) {
+      this._container = L.DomUtil.create('div', 'leaflet-bar leaflet-control search-control');
+      const searchEl = document.createElement('analysis-map-search') as HTMLElement;
+      this._container.appendChild(searchEl);
+      L.DomEvent.disableClickPropagation(this._container);
+      L.DomEvent.disableScrollPropagation(this._container);
+      return this._container;
+    },
+  });
+
+  return new SearchControlClass({ position: 'topleft' });
+}
 export function createLayerSwitchControl(
   tileLayers: { openStreetMap: L.TileLayer, googleHybrid: L.TileLayer },
   features: FeatureToggleState,
