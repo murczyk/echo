@@ -892,38 +892,37 @@ pub fn build_network_freq_join_condition(
         Expr::cust("COALESCE(network_freqs.active_to, CURRENT_TIMESTAMP AT TIME ZONE 'UTC')")
     };
 
-    let join_condition =
-        Expr::col((SigintInboxItem::Table, SigintInboxItem::Id))
-            .equals((
-                SigintInboxItemNetwork::Table,
-                SigintInboxItemNetwork::SigintInboxItemId,
-            ))
-            .and(
-                Expr::col((
-                    SigintInboxItemNetwork::Table,
-                    SigintInboxItemNetwork::SigintNetworkId,
-                ))
-                .equals((
-                    Alias::new("network_freqs"),
-                    Alias::new("network_id"),
-                )),
-            )
-            .and(
-                Expr::col((SigintInboxItem::Table, SigintInboxItem::Freq))
-                    .equals((Alias::new("network_freqs"), Alias::new("freq"))),
-            )
-            .and(
-                Expr::cust(
-                    "COALESCE(sigint_inbox_item.datetime, signal_message.timestamp)",
-                )
-                .gte(lower_bound),
-            )
-            .and(
-                Expr::cust(
-                    "COALESCE(sigint_inbox_item.datetime, signal_message.timestamp)",
-                )
-                .lte(upper_bound),
-            );
+    let join_condition = Expr::col((
+        SigintInboxItem::Table,
+        SigintInboxItem::Id,
+    ))
+    .equals((
+        SigintInboxItemNetwork::Table,
+        SigintInboxItemNetwork::SigintInboxItemId,
+    ))
+    .and(
+        Expr::col((
+            SigintInboxItemNetwork::Table,
+            SigintInboxItemNetwork::SigintNetworkId,
+        ))
+        .equals((Alias::new("network_freqs"), Alias::new("network_id"))),
+    )
+    .and(
+        Expr::col((SigintInboxItem::Table, SigintInboxItem::Freq))
+            .equals((Alias::new("network_freqs"), Alias::new("freq"))),
+    )
+    .and(
+        Expr::cust(
+            "COALESCE(sigint_inbox_item.datetime, signal_message.timestamp)",
+        )
+        .gte(lower_bound),
+    )
+    .and(
+        Expr::cust(
+            "COALESCE(sigint_inbox_item.datetime, signal_message.timestamp)",
+        )
+        .lte(upper_bound),
+    );
 
     Ok(join_condition)
 }
