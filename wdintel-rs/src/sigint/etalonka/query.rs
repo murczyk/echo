@@ -13,10 +13,7 @@ use chrono::prelude::*;
 use futures::stream::TryStreamExt;
 use log::*;
 use sea_orm::{sea_query::PostgresQueryBuilder, Value, *};
-use sea_query::{
-    Alias, CommonTableExpression, Expr, Iden, Query, SelectStatement,
-    SimpleExpr, WithClause,
-};
+use sea_query::*;
 use serde::Serialize;
 use std::cmp::Ordering;
 use std::collections::HashMap;
@@ -916,12 +913,16 @@ pub fn build_network_freq_join_condition(
                     .equals((Alias::new("network_freqs"), Alias::new("freq"))),
             )
             .and(
-                Expr::col((SigintInboxItem::Table, SigintInboxItem::Datetime))
-                    .gte(lower_bound),
+                Expr::cust(
+                    "COALESCE(sigint_inbox_item.datetime, signal_message.timestamp)",
+                )
+                .gte(lower_bound),
             )
             .and(
-                Expr::col((SigintInboxItem::Table, SigintInboxItem::Datetime))
-                    .lte(upper_bound),
+                Expr::cust(
+                    "COALESCE(sigint_inbox_item.datetime, signal_message.timestamp)",
+                )
+                .lte(upper_bound),
             );
 
     Ok(join_condition)

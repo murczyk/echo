@@ -7,6 +7,7 @@ use crate::{h, new_pg_pool_from_mode};
 use chrono::{NaiveDateTime, Timelike, Utc};
 use itertools::Itertools;
 use log::{error, info, warn};
+use sea_orm::sea_query::Expr;
 use sea_orm::*;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::time::{Duration, Instant};
@@ -181,6 +182,25 @@ async fn run_inbox_network_worker_once(
         NETWORK_INBOX_FRESH_WORKER_CUTOFF_DAYS
     };
     let cutoff = Utc::now().naive_utc() - chrono::Duration::days(cutoff_days);
+    if !is_for_old_worker {
+        let moved = network_invalidation_task::Entity::update_many()
+            .col_expr(
+                network_invalidation_task::Column::IsForOldWorker,
+                Expr::value(true),
+            )
+            .filter(network_invalidation_task::Column::CompletedAt.is_null())
+            .filter(network_invalidation_task::Column::IsForOldWorker.eq(false))
+            .filter(network_invalidation_task::Column::TillTs.lt(cutoff))
+            .exec(db)
+            .await
+            .c(h!())?;
+        if moved.rows_affected > 0 {
+            info!(
+                "moved {} old-range network invalidation tasks to old worker",
+                moved.rows_affected
+            );
+        }
+    }
     let pending_tasks = network_invalidation_task::Entity::find()
         .filter(network_invalidation_task::Column::CompletedAt.is_null())
         .filter(network_invalidation_task::Column::TillTs.gte(cutoff))
