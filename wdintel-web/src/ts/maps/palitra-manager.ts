@@ -96,19 +96,23 @@ export class PalitraManager {
       return;
     }
 
-    const qLower = q.toLowerCase();
+    const tokens = q.split(/\s+/).filter(Boolean);
+    const tokensLower = tokens.map((t) => t.toLowerCase());
 
     const fromCache = this.cacheManager.getCachedPointsForPalitras(palitraIds);
     const filteredFromCache = fromCache.map(({ palitra_id, points }) => ({
       palitra_id,
       points: points.filter(
-        (p) => p.label != null && p.label.toLowerCase().includes(qLower)
+        (p) =>
+          p.label &&
+          tokensLower.some((t) => p.label!.toLowerCase().includes(t))
       )
     }));
     this._showSearchResults(filteredFromCache);
 
+    const termsForApi = [...new Set(tokens)];
     this.cacheManager
-      .fetchSearchPoints(palitraIds, [q])
+      .fetchSearchPoints(palitraIds, termsForApi)
       .then((backendData) => {
         if (this._searchQuery !== q) return;
         const merged = this._mergeSearchResults(filteredFromCache, backendData);

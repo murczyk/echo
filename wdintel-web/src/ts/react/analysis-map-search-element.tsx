@@ -1,6 +1,6 @@
 import SearchIcon from '@mui/icons-material/Search';
 import { InputAdornment, TextField } from '@mui/material';
-import { createTheme, ThemeProvider, useTheme } from '@mui/material/styles';
+import { createTheme, ThemeProvider } from '@mui/material/styles';
 import React, { useCallback, useRef, useState } from 'react';
 import { createRoot, Root } from 'react-dom/client';
 
@@ -15,7 +15,8 @@ export type SearchInputProps = {
 
 export function SearchInput(props: SearchInputProps) {
   const { placeholder = 'Пошук...', onSearch, className } = props;
-  const theme = useTheme();
+  const mode = useMuiPaletteMode();
+  const theme = React.useMemo(() => createTheme({ palette: { mode } }), [mode]);
   const [value, setValue] = useState('');
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -62,49 +63,51 @@ export function SearchInput(props: SearchInputProps) {
   }, []);
 
   return (
-    <TextField
-      className={className}
-      placeholder={placeholder}
-      value={value}
-      onChange={handleChange}
-      size="small"
-      variant="outlined"
-      sx={{
-        backgroundColor: theme.palette.mode === 'dark' ? 'background.default' : 'background.paper',
-        minWidth: 300,
-      }}
-      InputProps={{
-        startAdornment: (
-          <InputAdornment position="start">
-            <SearchIcon sx={{ color: value ? 'action.active' : 'action.disabled' }} />
-          </InputAdornment>
-        ),
-        ...(value
-          ? {
-              endAdornment: (
-                <InputAdornment position="end">
-                  <button
-                    type="button"
-                    onClick={handleClear}
-                    aria-label="Очистити"
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      cursor: 'pointer',
-                      padding: 4,
-                      fontSize: '1rem',
-                      lineHeight: 1,
-                      color: theme.palette.text.secondary,
-                    }}
-                  >
-                    ×
-                  </button>
-                </InputAdornment>
-              ),
-            }
-          : {}),
-      }}
-    />
+    <ThemeProvider theme={theme}>
+      <TextField
+        className={className}
+        placeholder={placeholder}
+        value={value}
+        onChange={handleChange}
+        size="small"
+        variant="outlined"
+        sx={{
+          backgroundColor: theme.palette.mode === 'dark' ? 'background.default' : 'background.paper',
+          minWidth: 300,
+        }}
+        InputProps={{
+          startAdornment: (
+            <InputAdornment position="start">
+              <SearchIcon sx={{ color: value ? 'action.active' : 'action.disabled' }} />
+            </InputAdornment>
+          ),
+          ...(value
+            ? {
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <button
+                      type="button"
+                      onClick={handleClear}
+                      aria-label="Очистити"
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        padding: 4,
+                        fontSize: '1rem',
+                        lineHeight: 1,
+                        color: theme.palette.text.secondary,
+                      }}
+                    >
+                      ×
+                    </button>
+                  </InputAdornment>
+                ),
+              }
+            : {}),
+        }}
+      />
+    </ThemeProvider>
   );
 }
 
@@ -127,17 +130,6 @@ function useMuiPaletteMode() {
   return mode;
 }
 
-function AnalysisMapSearchRoot(props: { onSearch: (value: string) => void }) {
-  const mode = useMuiPaletteMode();
-  const theme = React.useMemo(() => createTheme({ palette: { mode } }), [mode]);
-
-  return (
-    <ThemeProvider theme={theme}>
-      <SearchInput placeholder="Введіть точку або лісосмугу" onSearch={props.onSearch} />
-    </ThemeProvider>
-  );
-}
-
 // web-component wrapper for SearchInput react component
 class AnalysisMapSearchElement extends HTMLElement {
   private root: Root | null = null;
@@ -150,7 +142,7 @@ class AnalysisMapSearchElement extends HTMLElement {
     const onSearch = (value: string) => {
       this.dispatchEvent(new CustomEvent('search-points', { detail: value, bubbles: true, composed: true }));
     };
-    this.root.render(<AnalysisMapSearchRoot onSearch={onSearch} />);
+    this.root.render(<SearchInput placeholder="Введіть точку або лісосмугу" onSearch={onSearch} />);
   }
 
   disconnectedCallback() {
