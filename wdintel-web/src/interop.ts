@@ -308,8 +308,6 @@ export const onReady = ({ app, env }) => {
 
     if (app.ports && app.ports.waterfall_copyTextToClipboard) {
         app.ports.waterfall_copyTextToClipboard.subscribe(({ text }) => {
-            // Port runs async; clipboard.read() would throw "Document is not focused" here.
-            // Use textarea + execCommand('copy') so we never call clipboard.read().
             copyTextToClipboard(text);
         });
     }
