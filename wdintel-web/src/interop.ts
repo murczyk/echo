@@ -320,7 +320,7 @@ export const onReady = ({ app, env }) => {
         fallbackCopyTextToClipboard(text);
     }
 
-    // When copy runs, the user's click has often already finished (Elm sent to port). Browser then often
+    // When copy runs, the user's click has often already finished (Elm sent to port). Browser then
     // throws "Document is not focused" error. This workaround is a fallback for that.
     function fallbackCopyTextToClipboard(text: string) {
         const ta = document.createElement('textarea');
