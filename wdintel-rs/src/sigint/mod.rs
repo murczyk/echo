@@ -29,7 +29,6 @@ pub mod comments;
 pub mod etalonka;
 pub mod freq;
 pub(crate) mod import;
-pub mod inbox;
 pub(crate) mod key;
 pub mod network;
 pub mod oneoff;

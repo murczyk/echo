@@ -1050,11 +1050,11 @@ async fn async_main(
             messenger::oneoff::oneoff_fix_whatsapp_senders(mode).await
         }
         Cmd::OneoffBackfillInboxNetworks(ps) => {
-            sigint::inbox::oneoff::oneoff_backfill_inbox_networks(mode, ps)
+            sigint::network::etalon_calc::oneoff::oneoff_backfill_inbox_networks(mode, ps)
                 .await
         }
         Cmd::NetworkInvalidationTui => {
-            sigint::inbox::tui::run_network_invalidation_tui(mode).await
+           sigint::network::etalon_calc::tui::run_network_invalidation_tui(mode).await
         }
         Cmd::OneoffRestartEcho(ps) => {
             oneoff::oneoff_restart_echo(mode, &ps).await
