@@ -252,14 +252,14 @@ where
     };
     model.insert(dbx).await.context(h!())?;
     if let Err(e) =
-        crate::sigint::network::etalon_calc::invalidate_network_inbox_for_group_with_key(
+    crate::sigint::network::etalon_calc::invalidate_network_inbox_for_group_with_key(
             dbx,
             &master_key,
         )
-        .await
-    {
-        error!("invalidate_network_inbox_for_group failed: {e:#?}")
-    }
+            .await
+        {
+            error!("invalidate_network_inbox_for_group failed: {e:#?}")
+        }
     Ok(Some(aor))
 }
 

@@ -2016,14 +2016,19 @@ mod tests {
         .await
         .unwrap();
 
-        let inbox_item = mk_sigint_inbox_item(
+        let dt_kyiv = DateTime::<Utc>::from_naive_utc_and_offset(now, Utc)
+            .with_timezone(&Kyiv);
+        let date = dt_kyiv.format("%Y-%m-%d").to_string();
+        let time = dt_kyiv.format("%H:%M:%S").to_string();
+
+        let _inbox_item = mk_sigint_inbox_item(
             &env.dbx,
             sigint_inbox_item::ActiveModel {
                 id: Set(message.id),
                 freq: Set(Some(freq.clone())),
                 callsigns: Set(Some(json!(["Alpha"]))),
-                date: Set(Some(now.date().to_string())),
-                time: Set(Some(now.time().format("%H:%M:%S").to_string())),
+                date: Set(Some(date)),
+                time: Set(Some(time)),
                 parsed_unit_v2: Set(false),
                 ..Default::default()
             },
@@ -2039,6 +2044,22 @@ mod tests {
             datasource_group_id: Set(Some(datasource_group.id)),
             created_at: Set(now),
             ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        let inbox_item = sigint_inbox_item::Entity::find_by_id(message.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .expect("expected inbox item");
+
+        sigint_inbox_item_network::ActiveModel {
+            id: NotSet,
+            sigint_inbox_item_id: Set(inbox_item.id),
+            sigint_network_id: Set(network.id),
+            created_at: NotSet,
         }
         .insert(&env.dbx)
         .await

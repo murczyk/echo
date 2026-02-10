@@ -1211,18 +1211,12 @@ where
         q = q
             .join_as(
                 JoinType::InnerJoin,
-                sigint_inbox_item::Relation::SigintNetworkFreq
-                    .def()
-                    .on_condition(|_left, right| {
-                        Expr::col((right, sigint_network_freq::Column::Deleted))
-                            .eq(false)
-                            .into_condition()
-                    }),
-                Alias::new("sigint_network_freq"),
+                sigint_inbox_item::Relation::SigintInboxItemNetwork.def(),
+                Alias::new("sigint_inbox_item_network"),
             )
             .join_as(
                 JoinType::InnerJoin,
-                sigint_network_freq::Relation::SigintNetwork
+                sigint_inbox_item_network::Relation::SigintNetwork
                     .def()
                     .on_condition(|_left, right| {
                         Expr::col((right, sigint_network::Column::Deleted))
