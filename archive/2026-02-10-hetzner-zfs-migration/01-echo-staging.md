@@ -138,3 +138,61 @@ If validation fails on target:
 ssh ${DST} "pct stop 660 || true"
 sudo pct start 660
 ```
+
+## FIX NETWORK
+
+• Because there were two independent blockers, and either one is enough to make “no internet”:
+
+  1. The CT’s default gateway was wrong (10.192.254.1)
+
+  - CT network is 10.190.254.0/24 on vnet0, so the gateway must be 10.190.254.1 (as in /etc/pve/sdn/subnets.cfg).
+  - With gw=10.192.254.1, the container tries to ARP for a gateway that doesn’t exist on that L2 segment, so it can’t even reach its first hop. That matches the “Destination Host Unreachable from 10.190.254.3” symptom.
+
+  2. Host forwarding was disabled (net.ipv4.ip_forward = 0)
+
+  - Even if you set a correct static IP/gateway inside the container, Proxmox SDN’s snat 1 needs the host to forward packets from vnet0 to vmbr0.
+  - With ip_forward=0, the container can typically ping the gateway, but nothing gets routed/NATed out to the internet. In our test, internet started working only after setting ip_forward=1.
+
+  So your “set static IP inside container didn’t help” is consistent with either:
+
+  - you still had the wrong gateway (so traffic never left the CT), or
+  - you fixed the gateway, but the host still wasn’t forwarding (so traffic left the CT but died on the host).
+
+### INSTURCTION
+
+• 1. SSH to the node
+
+  ssh pve-hz-1-ziggy
+
+  2. Fix the container’s gateway (CT 660)
+
+  - Check what SDN says the gateway is:
+
+  sudo cat /etc/pve/sdn/subnets.cfg
+
+  - Edit CT config and set gw= to that gateway (for you: 10.190.254.1):
+
+  sudo cp -a /etc/pve/lxc/660.conf /etc/pve/lxc/660.conf.bak.$(date +%Y%m%d%H%M%S)
+  sudo nano /etc/pve/lxc/660.conf
+  # fix the net0 line, e.g. gw=10.190.254.1
+
+  3. Enable IPv4 forwarding on the host (needed for SDN SNAT)
+
+  - Enable now:
+
+  sudo sysctl -w net.ipv4.ip_forward=1
+
+  - Persist across reboot:
+
+  printf '%s\n' 'net.ipv4.ip_forward=1' | sudo tee /etc/sysctl.d/99-ipforward.conf >/dev/null
+  sudo sysctl --system
+
+  4. Restart the container to apply config cleanly
+
+  sudo pct reboot 660
+
+  5. Verify from inside the container
+
+  sudo pct exec 660 -- ip -4 route
+  sudo pct exec 660 -- ping -c1 10.190.254.1
+  sudo pct exec 660 -- ping -c1 8.8.8.8
