@@ -1832,18 +1832,31 @@ async fn cleanup_networks_worker_1(
                 .await
                 .context(h!())?;
 
-        let mut network = network.into_active_model();
-        network.active_from = Set(network_active_from);
-        network.active_to = Set(network_active_to);
-        let network = network.update(dbx).await.context(h!())?;
-        if let Err(e) = sigint::network::etalon_calc::invalidate_network_inbox(
-            network.clone(),
-            vec![],
-            dbx,
-        )
-        .await
-        {
-            error!("invalidate_network_inbox failed: {e:#?}");
+        let synthetic_active_to =
+            calc_network_synthetic_active_to(dbx, network_id, delta)
+                .await
+                .context(h!())?;
+        let existing_active_to = network.active_to;
+        let network_active_to = match existing_active_to {
+            Some(_) => existing_active_to,
+            None => synthetic_active_to.or(network_active_to),
+        };
+
+        if !network.deleted {
+            let mut network = network.into_active_model();
+            network.active_from = Set(network_active_from);
+            network.active_to = Set(network_active_to);
+            let network = network.update(dbx).await.context(h!())?;
+            if let Err(e) =
+                sigint::network::etalon_calc::invalidate_network_inbox(
+                    network.clone(),
+                    vec![],
+                    dbx,
+                )
+                .await
+            {
+                error!("invalidate_network_inbox failed: {e:#?}");
+            }
         }
     }
 
@@ -1903,14 +1916,51 @@ async fn cleanup_networks_worker_1(
             == 0;
 
         if should_delete || should_deactivate {
+            let deleted = network.deleted;
+            let no_active_to = network.active_to.is_none();
+            let network_id = network.id;
             let mut network = network.into_active_model();
             network.deleted = Set(should_delete);
-            network.active_to = Set(Some(start_time.naive_utc()));
+            if !deleted && no_active_to {
+                let synthetic_active_to =
+                    calc_network_synthetic_active_to(dbx, network_id, delta)
+                        .await
+                        .context(h!())?;
+                network.active_to = Set(synthetic_active_to);
+            }
             network.update(dbx).await.context(h!())?;
         }
     }
     debug!("cleanup_networks_worker completed");
     Ok(())
+}
+
+async fn calc_network_synthetic_active_to(
+    dbx: &DatabaseConnection,
+    network_id: i64,
+    delta: Duration,
+) -> Result<Option<NaiveDateTime>, AppError> {
+    let last_dt: Option<NaiveDateTime> =
+        sigint_inbox_item_network::Entity::find()
+            .join(
+                JoinType::InnerJoin,
+                sigint_inbox_item_network::Relation::SigintInboxItem.def(),
+            )
+            .filter(
+                sigint_inbox_item_network::Column::SigintNetworkId
+                    .eq(network_id),
+            )
+            .filter(sigint_inbox_item::Column::Datetime.is_not_null())
+            .select_only()
+            .column(sigint_inbox_item::Column::Datetime)
+            .order_by_desc(sigint_inbox_item::Column::Datetime)
+            .into_tuple::<Option<NaiveDateTime>>()
+            .one(dbx)
+            .await
+            .context(h!())?
+            .flatten();
+
+    Ok(last_dt.map(|dt| dt + delta))
 }
 
 #[post("/api/sigint/merge-network")]
