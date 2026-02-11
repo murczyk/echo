@@ -2743,10 +2743,15 @@ async fn count_stats(
             .await
             .context(h!())?;
 
-    let groups_count =
-        stats::count_groups(&req, &user, &env, master_keys_noimport)
+    let groups =
+        stats::fetch_groups(&req, &user, &env, master_keys_noimport.clone())
             .await
             .context(h!())?;
+    let groups =
+        include_missing_secret_groups(&env.dbx, groups, &master_keys_noimport)
+            .await
+            .context(h!())?;
+    let groups_count = groups.len() as i64;
     let senders_count =
         stats::count_senders(&req, &user, &env, master_keys.clone())
             .await
@@ -2816,10 +2821,15 @@ async fn group_stats_count(
         get_identity_sigint_groups_noimport(&env.dbx, &user, &env.config)
             .await
             .context(h!())?;
-    let groups_count =
-        stats::count_groups(&req, &user, &env, master_keys_noimport)
+    let groups =
+        stats::fetch_groups(&req, &user, &env, master_keys_noimport.clone())
             .await
             .context(h!())?;
+    let groups =
+        include_missing_secret_groups(&env.dbx, groups, &master_keys_noimport)
+            .await
+            .context(h!())?;
+    let groups_count = groups.len() as i64;
     Ok(Json(groups_count))
 }
 
