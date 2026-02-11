@@ -27,6 +27,7 @@ use rust_xlsxwriter::{Format, Workbook};
 use sea_orm::sea_query::extension::postgres::PgExpr;
 use sea_orm::{prelude::Expr, sea_query::Alias, *};
 use sea_query::*;
+use std::collections::HashSet;
 use tempfile::TempDir;
 
 pub mod geojson;
@@ -2358,9 +2359,14 @@ async fn group_stats(
         .context(h!())?
         .context(h!())?;
     let master_keys_noimport_count = master_keys_noimport.len();
-    let groups = stats::fetch_groups(&req, &user, &env, master_keys_noimport)
-        .await
-        .context(h!())?;
+    let groups =
+        stats::fetch_groups(&req, &user, &env, master_keys_noimport.clone())
+            .await
+            .context(h!())?;
+    let groups =
+        include_missing_secret_groups(&env.dbx, groups, &master_keys_noimport)
+            .await
+            .context(h!())?;
     let group_names = collect_group_names(&groups, &env.dbx, is_admin)
         .await
         .context(h!())?;
@@ -2375,6 +2381,46 @@ async fn group_stats(
         groups,
         group_names,
     }))
+}
+
+async fn include_missing_secret_groups(
+    dbx: &DatabaseConnection,
+    groups: Vec<AnalysisStatsGroup>,
+    allowed_group_keys: &[String],
+) -> Result<Vec<AnalysisStatsGroup>, AppError> {
+    if allowed_group_keys.is_empty() {
+        return Ok(groups);
+    }
+
+    let existing_keys = groups
+        .iter()
+        .map(|group| group.master_key.clone())
+        .collect::<HashSet<_>>();
+    let mut groups = groups;
+
+    let secret_group_keys = signal_group::Entity::find()
+        .select_only()
+        .column(signal_group::Column::MasterKey)
+        .filter(signal_group::Column::Deleted.eq(false))
+        .filter(signal_group::Column::IsSecret.eq(true))
+        .filter(
+            signal_group::Column::MasterKey.eq_any(allowed_group_keys.to_vec()),
+        )
+        .into_tuple::<String>()
+        .all(dbx)
+        .await
+        .c(h!())?;
+
+    for key in secret_group_keys {
+        if !existing_keys.contains(&key) {
+            groups.push(AnalysisStatsGroup {
+                master_key: key,
+                count: 0,
+            });
+        }
+    }
+
+    Ok(groups)
 }
 
 #[post("/api/rer/analysis/stats/senders")]
