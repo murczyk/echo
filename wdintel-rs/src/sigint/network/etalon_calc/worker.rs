@@ -300,11 +300,11 @@ async fn triage_tasks(
     delete_original_tasks(&existing_tasks, &old_worker_ids, &txn)
         .await
         .c(h!())?;
+    let filter = network_invalidation_task::Column::Tag
+        .eq(NETWORK_INVALIDATION_TASK_TAG_RECENT.to_string());
+    let filter2 = network_invalidation_task::Column::SinceTs.gte(cutoff);
     let mut sorted_tasks = network_invalidation_task::Entity::find()
-        .filter(
-            network_invalidation_task::Column::Tag
-                .eq(NETWORK_INVALIDATION_TASK_TAG_RECENT.to_string()),
-        )
+        .filter(filter.or(filter2))
         .order_by_desc(network_invalidation_task::Column::TillTs)
         .all(&txn)
         .await
