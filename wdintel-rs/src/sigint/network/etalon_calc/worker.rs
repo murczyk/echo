@@ -5,7 +5,6 @@ use crate::types::{Mode, ShortContext};
 use crate::utils::worker_watch;
 use crate::{h, new_pg_pool_from_mode};
 use chrono::{NaiveDateTime, Timelike, Utc};
-use itertools::Itertools;
 use log::{error, info, warn};
 use sea_orm::*;
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -142,37 +141,40 @@ async fn run_inbox_network_worker_once(
     db: &DatabaseConnection,
     is_for_old_worker: bool,
 ) -> anyhow::Result<()> {
-    let since_ts = if is_for_old_worker {
-        Utc::now().naive_utc()
-            - chrono::Duration::days(NETWORK_INBOX_FRESH_WORKER_CUTOFF_DAYS)
+    let (tag, cutoff_days) = if is_for_old_worker {
+        (
+            NETWORK_INVALIDATION_TASK_TAG_OLD,
+            NETWORK_INBOX_OLD_WORKER_CUTOFF_DAYS,
+        )
     } else {
-        Utc::now().naive_utc()
-    };
-    let cutoff_days = if is_for_old_worker {
-        NETWORK_INBOX_OLD_WORKER_CUTOFF_DAYS
-    } else {
-        NETWORK_INBOX_FRESH_WORKER_CUTOFF_DAYS
+        (
+            NETWORK_INVALIDATION_TASK_TAG_RECENT,
+            NETWORK_INBOX_FRESH_WORKER_CUTOFF_DAYS,
+        )
     };
     let cutoff = Utc::now().naive_utc() - chrono::Duration::days(cutoff_days);
+    let task_filter = if is_for_old_worker {
+        network_invalidation_task::Column::Tag
+            .eq(NETWORK_INVALIDATION_TASK_TAG_OLD.to_string())
+    } else {
+        network_invalidation_task::Column::TillTs.lte(Utc::now().naive_utc())
+    };
     let pending_tasks = network_invalidation_task::Entity::find()
         .filter(network_invalidation_task::Column::CompletedAt.is_null())
-        .filter(network_invalidation_task::Column::TillTs.lte(since_ts))
+        .filter(task_filter)
         .all(db)
         .await
         .c(h!())?;
     let txn = db.begin().await.c(h!())?;
     network_invalidation_task::Entity::delete_many() // delete all completed tasks before moving forward
         .filter(network_invalidation_task::Column::CompletedAt.is_not_null())
-        .filter(
-            network_invalidation_task::Column::IsForOldWorker
-                .eq(is_for_old_worker),
-        )
+        .filter(network_invalidation_task::Column::Tag.eq(tag))
         .exec(&txn)
         .await
         .c(h!())?;
     let mut task_list: Vec<network_invalidation_task::Model> =
         if is_for_old_worker {
-            triage_tasks_for_old_worker(pending_tasks, cutoff, &txn)
+            triage_tasks_for_old_worker(pending_tasks, &txn)
                 .await
                 .c(h!())?
         } else {
@@ -294,22 +296,25 @@ async fn triage_tasks(
         .collect::<Vec<_>>();
 
     let txn = db.begin().await.c(h!())?;
-    let inserted_tasks =
-        insert_triaged_tasks(all_tasks, false, &txn).await.c(h!())?;
+    insert_triaged_tasks(all_tasks, false, &txn).await.c(h!())?;
     delete_original_tasks(&existing_tasks, &old_worker_ids, &txn)
         .await
         .c(h!())?;
-    let mut sorted_tasks = inserted_tasks
-        .into_iter()
-        .sorted_by_key(|m| m.till_ts)
-        .collect::<Vec<_>>();
+    let mut sorted_tasks = network_invalidation_task::Entity::find()
+        .filter(
+            network_invalidation_task::Column::Tag
+                .eq(NETWORK_INVALIDATION_TASK_TAG_RECENT.to_string()),
+        )
+        .order_by_desc(network_invalidation_task::Column::TillTs)
+        .all(&txn)
+        .await
+        .c(h!())?;
     sorted_tasks.reverse();
     let mut result = vec![];
     for r in sorted_tasks {
-        if r.till_ts < cutoff || r.since_ts < cutoff {
-            //tasks are already split by 1 hour window, so we can check both since and till, they are 1 hour apart
+        if r.since_ts < cutoff {
             let mut rec = r.into_active_model();
-            rec.is_for_old_worker = Set(true);
+            rec.tag = Set(NETWORK_INVALIDATION_TASK_TAG_OLD.to_string());
             rec.update(db).await.c(h!())?;
         } else {
             result.push(r);
@@ -331,12 +336,12 @@ async fn split_task_by_cutoff(
     let mut task2 = task.clone().into_active_model();
     let txn = db.begin().await.c(h!())?;
     task1.till_ts = Set(cutoff);
-    task1.is_for_old_worker = Set(true);
+    task1.tag = Set(NETWORK_INVALIDATION_TASK_TAG_OLD.to_string());
     task1.id = NotSet;
     task1.created_at = NotSet;
 
     task2.since_ts = Set(cutoff);
-    task2.is_for_old_worker = Set(false);
+    task2.tag = Set(NETWORK_INVALIDATION_TASK_TAG_RECENT.to_string());
     task2.id = NotSet;
     task2.created_at = NotSet;
 
@@ -356,7 +361,6 @@ async fn split_task_by_cutoff(
 // then replace the original tasks with the normalized set.
 async fn triage_tasks_for_old_worker(
     existing_tasks: Vec<network_invalidation_task::Model>,
-    cutoff: NaiveDateTime,
     db: &DatabaseTransaction,
 ) -> anyhow::Result<Vec<network_invalidation_task::Model>> {
     let all_tasks = existing_tasks
@@ -364,27 +368,19 @@ async fn triage_tasks_for_old_worker(
         .cloned()
         .flat_map(split_task)
         .collect::<Vec<_>>();
-    let inserted_tasks =
-        insert_triaged_tasks(all_tasks, true, db).await.c(h!())?;
+    insert_triaged_tasks(all_tasks, true, db).await.c(h!())?;
     delete_original_tasks(&existing_tasks, &BTreeSet::new(), db)
         .await
         .c(h!())?;
-    let mut sorted_tasks = inserted_tasks
-        .into_iter()
-        .sorted_by_key(|m| m.till_ts)
-        .collect::<Vec<_>>();
-    sorted_tasks.reverse();
-    let mut result = vec![];
-    for r in sorted_tasks {
-        if r.till_ts > cutoff {
-            let mut rec = r.into_active_model();
-            rec.is_for_old_worker = Set(false);
-            rec.update(db).await.c(h!())?;
-        } else {
-            result.push(r);
-        }
-    }
-    Ok(result)
+    network_invalidation_task::Entity::find()
+        .filter(
+            network_invalidation_task::Column::Tag
+                .eq(NETWORK_INVALIDATION_TASK_TAG_OLD.to_string()),
+        )
+        .order_by_desc(network_invalidation_task::Column::TillTs)
+        .all(db)
+        .await
+        .c(h!())
 }
 
 // Split a task into hour-aligned windows to limit per-task processing size.
@@ -421,8 +417,13 @@ async fn insert_triaged_tasks(
     tasks: Vec<network_invalidation_task::Model>,
     is_for_old_worker: bool,
     db: &DatabaseTransaction,
-) -> anyhow::Result<Vec<network_invalidation_task::Model>> {
+) -> anyhow::Result<()> {
     let mut inserted = Vec::new();
+    let tag = if is_for_old_worker {
+        NETWORK_INVALIDATION_TASK_TAG_OLD
+    } else {
+        NETWORK_INVALIDATION_TASK_TAG_RECENT
+    };
     for task in tasks {
         let active = network_invalidation_task::ActiveModel {
             id: NotSet,
@@ -435,12 +436,13 @@ async fn insert_triaged_tasks(
             aor_id: NotSet,
             group_master_key: NotSet,
             sigint_network_id: Set(task.sigint_network_id),
-            is_for_old_worker: Set(is_for_old_worker),
+            tag: Set(tag.to_string()),
         };
         let task = active.insert(db).await.c(h!())?;
         inserted.push(task);
     }
-    Ok(inserted)
+    info!("inserted {} tasks", inserted.len());
+    Ok(())
 }
 
 // Remove the original pending tasks after triage, keeping any task reassigned to old worker.

@@ -142,6 +142,9 @@ pub const ENCRYPTION_KEY_PLACEHOLDER: &str = "🔑";
 pub const ENCRYPTION_KEY_DESCRIPTION_PLACEHOLDER: &str = "...";
 pub const NETWORKS_IMPORT_TUI_ROWS_NUM_PAGE_SIZE: usize = 10;
 
+pub const NETWORK_INVALIDATION_TASK_TAG_OLD: &str = "old";
+pub const NETWORK_INVALIDATION_TASK_TAG_RECENT: &str = "recent";
+
 /// Dynamic config that's different on different deployments
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct Config {

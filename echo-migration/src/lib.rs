@@ -198,6 +198,7 @@ mod m20260122_133442_add_sigint_key_share_policy;
 mod m20260123_082757_add_stale_task;
 mod m20260124_161520_add_sigint_inbox_item_network_indexes;
 mod m20260126_083712_add_network_invalidation_task_aor;
+mod m20260211_161110_add_network_invalidation_task_tag;
 
 pub struct Migrator;
 
@@ -403,6 +404,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260123_082757_add_stale_task::Migration),
             Box::new(m20260124_161520_add_sigint_inbox_item_network_indexes::Migration),
             Box::new(m20260126_083712_add_network_invalidation_task_aor::Migration),
+            Box::new(m20260211_161110_add_network_invalidation_task_tag::Migration),
         ]
     }
 }

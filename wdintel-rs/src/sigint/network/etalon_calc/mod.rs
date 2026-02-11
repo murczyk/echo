@@ -46,7 +46,7 @@ where
         created_at: NotSet,
         aor_id: NotSet,
         sigint_network_id: NotSet,
-        is_for_old_worker: NotSet,
+        tag: NotSet,
     }
     .insert(db)
     .await
@@ -71,7 +71,7 @@ pub async fn invalidate_network_inbox_for_aor(
         created_at: NotSet,
         aor_id: Set(Some(aor.id)),
         sigint_network_id: NotSet,
-        is_for_old_worker: NotSet,
+        tag: NotSet,
     }
     .insert(db)
     .await
@@ -100,7 +100,7 @@ pub async fn invalidate_network_inbox_for_freq(
         created_at: NotSet,
         aor_id: NotSet,
         sigint_network_id: NotSet,
-        is_for_old_worker: NotSet,
+        tag: NotSet,
         group_master_key: NotSet,
     }
     .insert(db)
@@ -132,8 +132,8 @@ pub async fn invalidate_network_inbox(
         created_at: NotSet,
         aor_id: NotSet,
         sigint_network_id: Set(Some(network.id)),
-        is_for_old_worker: NotSet,
         group_master_key: NotSet,
+        tag: NotSet,
     };
     backfill_task.clone().insert(db).await.c(h!())?;
     let mut sigint_freqs = sigint_network_freq::Entity::find()
