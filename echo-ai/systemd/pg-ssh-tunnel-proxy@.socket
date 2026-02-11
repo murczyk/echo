@@ -1,0 +1,8 @@
+[Unit]
+Description=Socket-activation for SSH tunnel to PostgreSQL server %i
+
+[Socket]
+ListenStream=%t/pg-ssh-tunnel-%i/.s.PGSQL.5432
+
+[Install]
+WantedBy=sockets.target

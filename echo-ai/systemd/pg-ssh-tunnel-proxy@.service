@@ -1,0 +1,14 @@
+[Unit]
+Description=Socket-activation proxy for SSH tunnel to PostgreSQL server %i
+
+## Stop also when stopped listening for socket-activation.
+BindsTo=pg-ssh-tunnel-proxy@%i.socket
+After=pg-ssh-tunnel-proxy@%i.socket
+
+## Stop also when ssh-tunnel stops/breaks
+#  (otherwise, could not restart).
+BindsTo=pg-ssh-tunnel@%i.service
+After=pg-ssh-tunnel@%i.service
+
+[Service]
+ExecStart=/lib/systemd/systemd-socket-proxyd --exit-idle-time=500s %t/pg-ssh-tunnel-proxy-%i.sock
