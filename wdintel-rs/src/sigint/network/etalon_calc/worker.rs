@@ -1,4 +1,5 @@
 use crate::config::*;
+use crate::entities::network_invalidation_task;
 use crate::entities::*;
 use crate::types::{Mode, ShortContext};
 use crate::utils::worker_watch;
@@ -171,7 +172,7 @@ async fn run_inbox_network_worker_once(
         .c(h!())?;
     let mut task_list: Vec<network_invalidation_task::Model> =
         if is_for_old_worker {
-            triage_tasks_for_old_worker(pending_tasks, &txn)
+            triage_tasks_for_old_worker(pending_tasks, cutoff, &txn)
                 .await
                 .c(h!())?
         } else {
@@ -298,12 +299,23 @@ async fn triage_tasks(
     delete_original_tasks(&existing_tasks, &old_worker_ids, &txn)
         .await
         .c(h!())?;
-    txn.commit().await.c(h!())?;
-    let mut result = inserted_tasks
+    let mut sorted_tasks = inserted_tasks
         .into_iter()
         .sorted_by_key(|m| m.till_ts)
         .collect::<Vec<_>>();
-    result.reverse();
+    sorted_tasks.reverse();
+    let mut result = vec![];
+    for r in sorted_tasks {
+        if r.till_ts < cutoff || r.since_ts < cutoff {
+            //tasks are already split by 1 hour window, so we can check both since and till, they are 1 hour apart
+            let mut rec = r.into_active_model();
+            rec.is_for_old_worker = Set(true);
+            rec.update(db).await.c(h!())?;
+        } else {
+            result.push(r);
+        }
+    }
+    txn.commit().await.c(h!())?;
     Ok(result)
 }
 
@@ -344,6 +356,7 @@ async fn split_task_by_cutoff(
 // then replace the original tasks with the normalized set.
 async fn triage_tasks_for_old_worker(
     existing_tasks: Vec<network_invalidation_task::Model>,
+    cutoff: NaiveDateTime,
     db: &DatabaseTransaction,
 ) -> anyhow::Result<Vec<network_invalidation_task::Model>> {
     let all_tasks = existing_tasks
@@ -356,11 +369,21 @@ async fn triage_tasks_for_old_worker(
     delete_original_tasks(&existing_tasks, &BTreeSet::new(), db)
         .await
         .c(h!())?;
-    let mut result = inserted_tasks
+    let mut sorted_tasks = inserted_tasks
         .into_iter()
         .sorted_by_key(|m| m.till_ts)
         .collect::<Vec<_>>();
-    result.reverse();
+    sorted_tasks.reverse();
+    let mut result = vec![];
+    for r in sorted_tasks {
+        if r.till_ts > cutoff {
+            let mut rec = r.into_active_model();
+            rec.is_for_old_worker = Set(false);
+            rec.update(db).await.c(h!())?;
+        } else {
+            result.push(r);
+        }
+    }
     Ok(result)
 }
 

@@ -1,6 +1,6 @@
 use crate::entities::*;
 use crate::sigint::network::etalon_calc::consistency::InboxItem;
-use crate::types::ShortContext;
+use crate::types::*;
 use crate::{config, h};
 use chrono::{Duration, NaiveDateTime, Utc};
 use sea_orm::*;
@@ -13,6 +13,7 @@ pub mod worker;
 pub async fn invalidate_network_inbox_for_group_with_key<'a, 'async_trait, C>(
     db: &'a C,
     master_key: &str,
+    context_msg: String,
 ) -> anyhow::Result<()>
 where
     C: ConnectionTrait + 'async_trait,
@@ -22,16 +23,18 @@ where
         .await
         .c(h!())?
         .c(h!())?;
-    invalidate_network_inbox_for_group(db, &group).await
+    invalidate_network_inbox_for_group(db, &group, context_msg).await
 }
 
 pub async fn invalidate_network_inbox_for_group<'a, 'async_trait, C>(
     db: &'a C,
     group: &signal_group::Model,
+    context_msg: String,
 ) -> anyhow::Result<()>
 where
     C: ConnectionTrait + 'async_trait,
 {
+    info!("network invalidation task created, reason: {}", context_msg);
     network_invalidation_task::ActiveModel {
         id: NotSet,
         frequency: NotSet,
@@ -54,7 +57,9 @@ where
 pub async fn invalidate_network_inbox_for_aor(
     db: &DatabaseConnection,
     aor: &area_of_responsibility::Model,
+    context_msg: String,
 ) -> anyhow::Result<()> {
+    info!("network invalidation task created, reason: {}", context_msg);
     network_invalidation_task::ActiveModel {
         id: NotSet,
         frequency: NotSet,
@@ -79,7 +84,9 @@ pub async fn invalidate_network_inbox_for_freq(
     since_ts: Option<NaiveDateTime>,
     till_ts: Option<NaiveDateTime>,
     db: &DatabaseConnection,
+    context_msg: String,
 ) -> anyhow::Result<()> {
+    info!("network invalidation task created, reason: {}", context_msg);
     network_invalidation_task::ActiveModel {
         id: NotSet,
         frequency: Set(Some(freq.to_string())),
@@ -107,6 +114,12 @@ pub async fn invalidate_network_inbox(
     frequencies: Vec<String>,
     db: &DatabaseConnection,
 ) -> anyhow::Result<()> {
+    let frequencies_desc = if frequencies.is_empty() {
+        "all".to_string()
+    } else {
+        frequencies.join(" ,")
+    };
+    info!("network invalidation task created for network #{}, frequencies: {frequencies_desc}", network.id);
     let backfill_task = network_invalidation_task::ActiveModel {
         id: NotSet,
         frequency: NotSet,

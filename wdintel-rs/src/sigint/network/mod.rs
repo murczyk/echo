@@ -1392,6 +1392,7 @@ pub async fn add_network_freq(
         network_active_from,
         network_active_to,
         &env.dbx,
+        format!("added network frequency from web UI: {}", req.freq_rec.freq),
     )
     .await
     .c(h!())?;
@@ -1557,18 +1558,22 @@ pub async fn update_network_freq(
 
     txn.commit().await.context(h!())?;
 
+    if network_detail.is_empty() {
+        return Err(AppError::NotFound);
+    }
+
     crate::sigint::network::etalon_calc::invalidate_network_inbox_for_freq(
         &req.freq,
         network_active_from,
         network_active_to,
         &env.dbx,
+        format!(
+            "edited network frequency from web UI: {}",
+            network_detail[0].name
+        ),
     )
     .await
     .c(h!())?;
-
-    if network_detail.is_empty() {
-        return Err(AppError::NotFound);
-    }
 
     Ok(Json(network_detail[0].clone()))
 }
