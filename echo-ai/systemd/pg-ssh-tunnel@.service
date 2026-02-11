@@ -7,6 +7,7 @@ StopWhenUnneeded=true
 [Service]
 Type=notify
 NotifyAccess=all
+Restart=on-failure
 # Prefixed with `-` not to mark service as failed on net-fails;
 # will be restarted on-demand by socket-activation.
 ExecStart=-/usr/bin/ssh -kaxNT \
@@ -17,4 +18,4 @@ ExecStart=-/usr/bin/ssh -kaxNT \
     -o StreamLocalBindUnlink=yes \
     -o PermitLocalCommand=yes \
     -o LocalCommand="systemd-notify --ready" \
-    %i -L %t/pg-ssh-tunnel-proxy-%i.sock:localhost:5432
+    %i -L %t/pg-ssh-tunnel@%i.sock:/run/postgresql/.s.PGSQL.5432

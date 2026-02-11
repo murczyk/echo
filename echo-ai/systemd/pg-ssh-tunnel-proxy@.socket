@@ -1,8 +1,11 @@
 [Unit]
 Description=Socket-activation for SSH tunnel to PostgreSQL server %i
 
+# connect using
+# psql -U wd -h ${XDG_RUNTIME_DIR}/pg-ssh-tunnel-proxy/host-in-ssh-config
+# XDG_RUNTIME_DIR is usually /run/user/1000
 [Socket]
-ListenStream=%t/pg-ssh-tunnel-%i/.s.PGSQL.5432
+ListenStream=%t/pg-ssh-tunnel-proxy/%i/.s.PGSQL.5432
 
 [Install]
 WantedBy=sockets.target
