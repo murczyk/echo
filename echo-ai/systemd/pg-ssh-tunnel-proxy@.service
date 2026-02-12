@@ -1,5 +1,6 @@
 [Unit]
 Description=Socket-activation proxy for SSH tunnel to PostgreSQL server %i
+StopWhenUnneeded=true
 
 # Stop also when stopped listening for socket-activation.
 BindsTo=pg-ssh-tunnel-proxy@%i.socket
