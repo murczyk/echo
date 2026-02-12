@@ -307,13 +307,18 @@ pub(crate) fn palitra_search_cache_key(
     let mut palitra_ids = req.palitra_ids.clone();
     palitra_ids.sort_unstable();
     palitra_ids.dedup();
-    let mut labels: Vec<String> = req
+    let labels: Vec<String> = req
         .point_labels
         .iter()
         .filter_map(|label| normalize_label_cache(label))
+        .scan(HashSet::new(), |used, label| {
+            if used.insert(label.clone()) {
+                Some(label)
+            } else {
+                None
+            }
+        })
         .collect();
-    labels.sort();
-    labels.dedup();
     format!(
         "palitra:points:search:{login}:{}:{}",
         palitra_ids.iter().join(","),
