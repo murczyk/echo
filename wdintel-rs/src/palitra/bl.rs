@@ -279,8 +279,7 @@ fn normalize_label_cache(label: &str) -> Option<String> {
             .split_whitespace()
             .filter(|part| !part.is_empty())
             .join(" ");
-        // Some(normalized.to_lowercase())
-        Some(normalized)
+        Some(normalized.to_lowercase())
     }
 }
 
