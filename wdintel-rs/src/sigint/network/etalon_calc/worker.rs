@@ -5,12 +5,12 @@ use crate::types::{Mode, ShortContext};
 use crate::utils::worker_watch;
 use crate::{h, new_pg_pool_from_mode};
 use chrono::{NaiveDateTime, Timelike, Utc};
+use echo_migration::Expr;
 use log::{error, info, warn};
+use sea_orm::sea_query::ExprTrait;
 use sea_orm::*;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::time::{Duration, Instant};
-use sea_orm::sea_query::ExprTrait;
-use echo_migration::Expr;
 // Worker that keeps recent inbox items aligned with network definitions by
 // picking pending invalidation tasks, normalizing them (split/merge), and
 // executing them in a stable order.
@@ -322,7 +322,7 @@ async fn triage_tasks(
             network_invalidation_task::Column::Tag,
             Expr::value(NETWORK_INVALIDATION_TASK_TAG_RECENT.to_string()),
         )
-        .filter(filter_recent.and(filter_old.not()))
+        .filter(filter_recent.clone())
         .exec(&txn)
         .await
         .c(h!())?;
@@ -332,11 +332,10 @@ async fn triage_tasks(
             network_invalidation_task::Column::Tag,
             Expr::value(NETWORK_INVALIDATION_TASK_TAG_OLD.to_string()),
         )
-        .filter(filter_old.and(filter_recent.not()))
+        .filter(filter_old.clone().and(filter_recent.clone().not()))
         .exec(&txn)
         .await
         .c(h!())?;
-
 
     network_invalidation_task::Entity::update_many()
         .col_expr(
@@ -348,7 +347,6 @@ async fn triage_tasks(
         .exec(&txn)
         .await
         .c(h!())?;
-
 
     let sorted_tasks = network_invalidation_task::Entity::find()
         .order_by_desc(network_invalidation_task::Column::TillTs)
