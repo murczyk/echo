@@ -31,8 +31,10 @@ All commands below are intended to be run on the source node `pve-1` as user `zi
 
 ```bash
 CT=660
-DS=rpool/data/subvol-660-disk-0
+DS=rpool/data/subvol-${CT}-disk-0
 DST=root@pve-hz-1.eagle-atria.ts.net
+MIG_DATE=2026-02-10
+SNAP_PREFIX=mig${CT}
 ```
 
 Optional sanity checks:
@@ -41,7 +43,7 @@ Optional sanity checks:
 sudo pct status ${CT}
 sudo zfs list -o name,used,avail,refer,mountpoint ${DS}
 ssh ${DST} "pct status ${CT} || true"
-ssh ${DST} "zfs list -o name,used,avail,refer,mountpoint rpool/data/subvol-660-disk-0 2>/dev/null || true"
+ssh ${DST} "zfs list -o name,used,avail,refer,mountpoint ${DS} 2>/dev/null || true"
 ```
 
 ## Step 1: Pre-copy (online)
@@ -49,9 +51,9 @@ ssh ${DST} "zfs list -o name,used,avail,refer,mountpoint rpool/data/subvol-660-d
 Full send while CT is running:
 
 ```bash
-SNAP=mig660-pre1-2026-02-10
+SNAP=${SNAP_PREFIX}-pre1-${MIG_DATE}
 sudo zfs snapshot ${DS}@${SNAP}
-sudo zfs send -p -c ${DS}@${SNAP} | ssh ${DST} "zfs recv -F rpool/data/subvol-660-disk-0"
+sudo zfs send -p -c ${DS}@${SNAP} | ssh ${DST} "zfs recv -F ${DS}"
 ```
 
 ## Monitoring
@@ -62,16 +64,16 @@ Expected size / transfer size estimates (run on `pve-1`):
 
 ```bash
 # Rough expected on-disk size on the target (depends on compress/dedup; here dedup is off)
-sudo zfs list -o name,used,refer,logicalused,compressratio,refquota rpool/data/subvol-660-disk-0
+sudo zfs list -o name,used,refer,logicalused,compressratio,refquota ${DS}
 
 # Estimate full send stream size for a snapshot
-SNAP=mig660-pre1-2026-02-10
-sudo zfs send -n -v -p -c rpool/data/subvol-660-disk-0@${SNAP}
+SNAP=${SNAP_PREFIX}-pre1-${MIG_DATE}
+sudo zfs send -n -v -p -c ${DS}@${SNAP}
 
 # Estimate incremental send stream size (diff)
-FROM=mig660-pre1-2026-02-10
-TO=mig660-pre2-2026-02-10
-sudo zfs send -n -v -p -c -i rpool/data/subvol-660-disk-0@${FROM} rpool/data/subvol-660-disk-0@${TO}
+FROM=${SNAP_PREFIX}-pre1-${MIG_DATE}
+TO=${SNAP_PREFIX}-pre2-${MIG_DATE}
+sudo zfs send -n -v -p -c -i ${DS}@${FROM} ${DS}@${TO}
 ```
 
 On `pve-1` (source):
@@ -87,18 +89,18 @@ sudo ip -s link show dev tailscale0 | sed -n '1,12p'
 On `pve-hz-1` (target):
 
 ```bash
-ps -eo pid,etimes,cmd | egrep "zfs recv -F rpool/data/subvol-660-disk-0" | egrep -v egrep || true
-zfs get -H -o property,value used rpool/data/subvol-660-disk-0 || true
+ps -eo pid,etimes,cmd | egrep "zfs recv -F ${DS}" | egrep -v egrep || true
+zfs get -H -o property,value used ${DS} || true
 zpool iostat -v rpool 1
 ```
 
 Recommended: one more incremental pre-copy (still online) to reduce final downtime:
 
 ```bash
-FROM=mig660-pre1-2026-02-10
-TO=mig660-pre2-2026-02-10
+FROM=${SNAP_PREFIX}-pre1-${MIG_DATE}
+TO=${SNAP_PREFIX}-pre2-${MIG_DATE}
 sudo zfs snapshot ${DS}@${TO}
-sudo zfs send -p -c -i ${DS}@${FROM} ${DS}@${TO} | ssh ${DST} "zfs recv -F rpool/data/subvol-660-disk-0"
+sudo zfs send -p -c -i ${DS}@${FROM} ${DS}@${TO} | ssh ${DST} "zfs recv -F ${DS}"
 ```
 
 You can repeat more incrementals; always use `-i last_snap new_snap`.
@@ -108,24 +110,24 @@ You can repeat more incrementals; always use `-i last_snap new_snap`.
 Stop source CT, snapshot, send final incremental:
 
 ```bash
-LAST=mig660-pre2-2026-02-10
-FINAL=mig660-final-2026-02-10
+LAST=${SNAP_PREFIX}-pre2-${MIG_DATE}
+FINAL=${SNAP_PREFIX}-final-${MIG_DATE}
 sudo pct shutdown ${CT} --timeout 120 || sudo pct stop ${CT}
 sudo zfs snapshot ${DS}@${FINAL}
-sudo zfs send -p -c -i ${DS}@${LAST} ${DS}@${FINAL} | ssh ${DST} "zfs recv -F rpool/data/subvol-660-disk-0"
+sudo zfs send -p -c -i ${DS}@${LAST} ${DS}@${FINAL} | ssh ${DST} "zfs recv -F ${DS}"
 ```
 
-Copy CT config to the target (so Proxmox knows about CT 660 and points it at the already-received dataset):
+Copy CT config to the target (so Proxmox knows about CT `${CT}` and points it at the already-received dataset):
 
 ```bash
-sudo cat /etc/pve/lxc/660.conf | ssh ${DST} "cat > /etc/pve/lxc/660.conf"
+sudo cat /etc/pve/lxc/${CT}.conf | ssh ${DST} "cat > /etc/pve/lxc/${CT}.conf"
 ```
 
 Start on target, then find the (new) IP:
 
 ```bash
-ssh ${DST} "pct start 660"
-ssh ${DST} "pct exec 660 -- ip -4 addr show dev eth0"
+ssh ${DST} "pct start ${CT}"
+ssh ${DST} "pct exec ${CT} -- ip -4 addr show dev eth0"
 ```
 
 Update DNS / reverse proxy upstream / allowlists as needed due to SDN subnet change.
@@ -135,8 +137,8 @@ Update DNS / reverse proxy upstream / allowlists as needed due to SDN subnet cha
 If validation fails on target:
 
 ```bash
-ssh ${DST} "pct stop 660 || true"
-sudo pct start 660
+ssh ${DST} "pct stop ${CT} || true"
+sudo pct start ${CT}
 ```
 
 ## FIX NETWORK
@@ -160,39 +162,59 @@ sudo pct start 660
 
 ### INSTURCTION
 
-• 1. SSH to the node
+Reuse the existing `CT` variable (or set it if running only this section):
 
-  ssh pve-hz-1-ziggy
+```bash
+CT=660
+```
 
-  2. Fix the container’s gateway (CT 660)
+1. SSH to the node
 
-  - Check what SDN says the gateway is:
+```bash
+ssh pve-hz-1-ziggy
+```
 
-  sudo cat /etc/pve/sdn/subnets.cfg
+2. Fix the container gateway (CT `${CT}`)
 
-  - Edit CT config and set gw= to that gateway (for you: 10.190.254.1):
+Check what SDN says the gateway is:
 
-  sudo cp -a /etc/pve/lxc/660.conf /etc/pve/lxc/660.conf.bak.$(date +%Y%m%d%H%M%S)
-  sudo nano /etc/pve/lxc/660.conf
-  # fix the net0 line, e.g. gw=10.190.254.1
+```bash
+sudo cat /etc/pve/sdn/subnets.cfg
+```
 
-  3. Enable IPv4 forwarding on the host (needed for SDN SNAT)
+Edit CT config and set `gw=` to that gateway (for this node: `10.190.254.1`):
 
-  - Enable now:
+```bash
+sudo cp -a /etc/pve/lxc/${CT}.conf /etc/pve/lxc/${CT}.conf.bak.$(date +%Y%m%d%H%M%S)
+sudo nano /etc/pve/lxc/${CT}.conf
+# fix the net0 line, e.g. gw=10.190.254.1
+```
 
-  sudo sysctl -w net.ipv4.ip_forward=1
+3. Enable IPv4 forwarding on the host (needed for SDN SNAT)
 
-  - Persist across reboot:
+Enable now:
 
-  printf '%s\n' 'net.ipv4.ip_forward=1' | sudo tee /etc/sysctl.d/99-ipforward.conf >/dev/null
-  sudo sysctl --system
+```bash
+sudo sysctl -w net.ipv4.ip_forward=1
+```
 
-  4. Restart the container to apply config cleanly
+Persist across reboot:
 
-  sudo pct reboot 660
+```bash
+printf '%s\n' 'net.ipv4.ip_forward=1' | sudo tee /etc/sysctl.d/99-ipforward.conf >/dev/null
+sudo sysctl --system
+```
 
-  5. Verify from inside the container
+4. Restart the container to apply config cleanly
 
-  sudo pct exec 660 -- ip -4 route
-  sudo pct exec 660 -- ping -c1 10.190.254.1
-  sudo pct exec 660 -- ping -c1 8.8.8.8
+```bash
+sudo pct reboot ${CT}
+```
+
+5. Verify from inside the container
+
+```bash
+sudo pct exec ${CT} -- ip -4 route
+sudo pct exec ${CT} -- ping -c1 10.190.254.1
+sudo pct exec ${CT} -- ping -c1 8.8.8.8
+```
