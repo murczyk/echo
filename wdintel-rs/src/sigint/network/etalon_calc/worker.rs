@@ -310,19 +310,23 @@ async fn triage_tasks(
         .c(h!())?;
 
     let cutoff2 = cutoff - Duration::from_hours(1);
-    let filter_recent = Condition::all()
-        .add(network_invalidation_task::Column::SinceTs.gte(cutoff2))
-        .add(network_invalidation_task::Column::TillTs.gte(cutoff2));
-    let filter_old = Condition::all()
-        .add(network_invalidation_task::Column::SinceTs.lte(cutoff))
-        .add(network_invalidation_task::Column::TillTs.lte(cutoff));
+    let filter_recent = || {
+        Condition::all()
+            .add(network_invalidation_task::Column::SinceTs.gte(cutoff2))
+            .add(network_invalidation_task::Column::TillTs.gte(cutoff2))
+    };
+    let filter_old = || {
+        Condition::all()
+            .add(network_invalidation_task::Column::SinceTs.lte(cutoff))
+            .add(network_invalidation_task::Column::TillTs.lte(cutoff))
+    };
 
     network_invalidation_task::Entity::update_many()
         .col_expr(
             network_invalidation_task::Column::Tag,
             Expr::value(NETWORK_INVALIDATION_TASK_TAG_RECENT.to_string()),
         )
-        .filter(filter_recent.clone())
+        .filter(filter_recent().and(filter_old().not()))
         .exec(&txn)
         .await
         .c(h!())?;
@@ -332,7 +336,7 @@ async fn triage_tasks(
             network_invalidation_task::Column::Tag,
             Expr::value(NETWORK_INVALIDATION_TASK_TAG_OLD.to_string()),
         )
-        .filter(filter_old.clone().and(filter_recent.clone().not()))
+        .filter(filter_old().and(filter_recent().not()))
         .exec(&txn)
         .await
         .c(h!())?;
@@ -342,8 +346,8 @@ async fn triage_tasks(
             network_invalidation_task::Column::Tag,
             Expr::value(NETWORK_INVALIDATION_TASK_TAG_UNASSIGNED.to_string()),
         )
-        .filter(filter_recent.not())
-        .filter(filter_old.not())
+        .filter(filter_recent().not())
+        .filter(filter_old().not())
         .exec(&txn)
         .await
         .c(h!())?;
