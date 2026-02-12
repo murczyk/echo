@@ -1,8 +1,5 @@
-use crate::config::{
-    SIGINT_INBOX_TUI_BUCKET_GAP, SIGINT_INBOX_TUI_CHUNK_COUNT,
-    SIGINT_INBOX_TUI_EVENT_POLL_MS, SIGINT_INBOX_TUI_REFRESH_MS,
-};
-use crate::entities::network_invalidation_task;
+use crate::config::*;
+use crate::entities::*;
 use crate::types::{AppError, Mode, ShortContext};
 use crate::{h, new_pg_pool_from_mode};
 use chrono::{DateTime, NaiveDateTime, Utc};
@@ -19,6 +16,7 @@ use ratatui::text::Line;
 use ratatui::widgets::{BarChart, Block, Borders, Gauge, Paragraph, Wrap};
 use ratatui::{Frame, Terminal};
 use sea_orm::{DatabaseConnection, EntityTrait, QueryOrder};
+use std::collections::HashMap;
 use std::io::{self, Stdout};
 use std::time::{Duration, Instant};
 
@@ -36,6 +34,8 @@ struct TaskGroupSnapshot {
     pending: usize,
     last_completed_till_ts: Option<NaiveDateTime>,
     chunks: Vec<ChunkSnapshot>,
+    status_nm: String,
+    status_time_elapsed: String,
 }
 
 struct ChunkSnapshot {
@@ -112,9 +112,22 @@ async fn load_snapshot(
         .await
         .c(h!())?;
     let (old_tasks, fresh_tasks, unassigned_tasks) = split_tasks(tasks);
+    let workers = network_invalidation_worker::Entity::find()
+        .all(db)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|w| (w.tag.clone(), w))
+        .collect::<HashMap<_, _>>();
     Ok(TuiSnapshot {
-        fresh: build_group_snapshot(fresh_tasks),
-        old: build_group_snapshot(old_tasks),
+        fresh: build_group_snapshot(
+            fresh_tasks,
+            workers.get(NETWORK_INVALIDATION_TASK_TAG_RECENT),
+        ),
+        old: build_group_snapshot(
+            old_tasks,
+            workers.get(NETWORK_INVALIDATION_TASK_TAG_RECENT),
+        ),
         unassigned: unassigned_tasks.len(),
         last_update: Utc::now(),
     })
@@ -148,6 +161,7 @@ fn split_tasks(
 
 fn build_group_snapshot(
     tasks: Vec<network_invalidation_task::Model>,
+    m_worker: Option<&network_invalidation_worker::Model>,
 ) -> TaskGroupSnapshot {
     let mut tasks = tasks;
     tasks.sort_by_key(|task| (task.since_ts, task.till_ts));
@@ -189,6 +203,16 @@ fn build_group_snapshot(
     );
 
     let total = tasks.len();
+
+    let (status_nm, status_time_elapsed) = match m_worker {
+        Some(worker) => {
+            let time =
+                (Utc::now().naive_utc() - worker.updated_at).num_seconds();
+            (format!("{:?}", worker.status), format!("{time}s"))
+        }
+        None => ("???".to_string(), "???".to_string()),
+    };
+
     TaskGroupSnapshot {
         total,
         completed,
@@ -196,6 +220,8 @@ fn build_group_snapshot(
         pending,
         last_completed_till_ts,
         chunks,
+        status_nm,
+        status_time_elapsed,
     }
 }
 
@@ -240,7 +266,11 @@ fn render_group(
     title: &str,
     group: &TaskGroupSnapshot,
 ) {
-    let block = Block::default().borders(Borders::ALL).title(title);
+    let title_full = format!(
+        "{title} | {} for {}",
+        group.status_nm, group.status_time_elapsed
+    );
+    let block = Block::default().borders(Borders::ALL).title(title_full);
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
