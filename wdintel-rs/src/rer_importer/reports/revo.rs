@@ -100,7 +100,10 @@ pub async fn report_docx_kind_revo(
     info!("get_organism_logins took: {:?}", start.elapsed());
 
     let start = Instant::now();
-    let current_req = req.req.clone();
+    let report_tags_only_this_unit =
+        req.report_tags_only_this_unit.unwrap_or(false);
+    let mut current_req = req.req.clone();
+    current_req.report_tags_only_this_unit = Some(false);
     let mut messages: Vec<(i64, InboxMessage)> =
         crate::rer_importer::inbox::get_inbox_messages_with_conn(
             &read_db,
@@ -111,7 +114,7 @@ pub async fn report_docx_kind_revo(
         )
         .await
         .context(h!())?;
-    if req.report_tags_only_this_unit.unwrap_or(false) {
+    if report_tags_only_this_unit {
         messages = filter_messages_by_logins(&read_db, messages, &logins)
             .await
             .context(h!())?;
@@ -133,8 +136,6 @@ pub async fn report_docx_kind_revo(
     };
 
     let start = Instant::now();
-    let report_tags_only_this_unit =
-        req.report_tags_only_this_unit.unwrap_or(false);
     let mut report = collect_report(
         messages,
         logins.clone(),
