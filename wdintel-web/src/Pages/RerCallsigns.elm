@@ -98,6 +98,7 @@ type alias Model =
     , showLoadMore : Bool
     , loadingMore : Bool
     , downloadCsvInProgress : Bool
+    , downloadXlsxInProgress : Bool
     , inpSourceSelState : Select.State
     , inpSourceSelMenu : List (Select.MenuItem Int)
     , expandedArmies : Set.Set String
@@ -165,6 +166,7 @@ init req _ =
             , showLoadMore = False
             , loadingMore = False
             , downloadCsvInProgress = False
+            , downloadXlsxInProgress = False
             , inpSourceSelState = Select.initState (Select.selectIdentifier "inpSourceSelState")
             , inpSourceSelMenu = []
             , expandedArmies = Set.empty
@@ -218,6 +220,8 @@ type Msg
     | Refresh
     | DownloadCsv Bool
     | DownloadCsvDone (Result ApiError Bytes)
+    | DownloadXlsx Bool
+    | DownloadXlsxDone (Result ApiError Bytes)
     | GotUnitStats (Result ApiError B.CallsignUnitStatsRsp)
     | DateTimeFromMsg (Shared.Components.DateTime.Msg Msg)
     | DateTimeToMsg (Shared.Components.DateTime.Msg Msg)
@@ -1004,6 +1008,32 @@ update req shared msg model =
         DownloadCsvDone (Ok bytes) ->
             ( { model | downloadCsvInProgress = False }
             , E.sendCmd <| Download.bytes "callsigns.csv" "text/csv" bytes
+            )
+
+        DownloadXlsx allowed ->
+            if allowed then
+                ( { model | downloadXlsxInProgress = True }
+                , E.sendCmd <|
+                    Api.sigint_list_callsigns_xlsx
+                        DownloadXlsxDone
+                        (buildListCallsignsReq model { afterId = Nothing, limit = Nothing })
+                )
+
+            else
+                ( model, E.none )
+
+        DownloadXlsxDone (Err err) ->
+            ( { model | downloadXlsxInProgress = False }
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження XLSX" err
+            )
+
+        DownloadXlsxDone (Ok bytes) ->
+            ( { model | downloadXlsxInProgress = False }
+            , E.sendCmd <|
+                Download.bytes
+                    "callsigns.xlsx"
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    bytes
             )
 
         GotUnitStats (Err err) ->
@@ -2060,6 +2090,25 @@ contentBlock shared model user =
                                             ]
                                             ([ text "Завантажити csv" ]
                                                 ++ (if model.downloadCsvInProgress then
+                                                        [ Shared.Components.Spinner.loadingSpinner2Sm ]
+
+                                                    else
+                                                        []
+                                                   )
+                                            )
+                                        ]
+
+                                    else
+                                        []
+                                ++ if hasUnitEditorRole then
+                                        [ button
+                                            [ class "px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-700 flex items-center gap-2"
+                                            , onClick (DownloadXlsx hasUnitEditorRole)
+                                            , Attr.disabled model.downloadXlsxInProgress
+                                            , attribute "title" "Завантажити XLSX з обраними фільтрами"
+                                            ]
+                                            ([ text "Завантажити XLSX" ]
+                                                ++ (if model.downloadXlsxInProgress then
                                                         [ Shared.Components.Spinner.loadingSpinner2Sm ]
 
                                                     else
