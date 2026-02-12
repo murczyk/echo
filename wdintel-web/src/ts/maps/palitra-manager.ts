@@ -90,8 +90,8 @@ export class PalitraManager {
       return;
     }
     this._searchQuery = q;
-    // search only visible palitras
-    const palitraIds = this.palitras.filter(p => this.visibleIds.includes(p.palitra.id)).map(p => p.palitra.id);
+    // search in all palitras, not only visible ones
+    const palitraIds = this.palitras.map(p => p.palitra.id);
     if (palitraIds.length === 0) {
       this._showSearchResults([]);
       return;
