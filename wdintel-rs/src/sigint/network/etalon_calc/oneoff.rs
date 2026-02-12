@@ -26,8 +26,8 @@ pub async fn oneoff_backfill_inbox_networks(
         completed_at: NotSet,
         created_at: NotSet,
         aor_id: NotSet,
-        is_for_old_worker: NotSet,
         group_master_key: NotSet,
+        tag: NotSet,
     }
     .insert(&db)
     .await

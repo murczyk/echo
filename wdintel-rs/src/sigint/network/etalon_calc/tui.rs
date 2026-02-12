@@ -26,6 +26,7 @@ struct TuiSnapshot {
     fresh: TaskGroupSnapshot,
     old: TaskGroupSnapshot,
     last_update: DateTime<Utc>,
+    unassigned: usize,
 }
 
 struct TaskGroupSnapshot {
@@ -110,10 +111,11 @@ async fn load_snapshot(
         .all(db)
         .await
         .c(h!())?;
-    let (old_tasks, fresh_tasks) = split_tasks(tasks);
+    let (old_tasks, fresh_tasks, unassigned_tasks) = split_tasks(tasks);
     Ok(TuiSnapshot {
         fresh: build_group_snapshot(fresh_tasks),
         old: build_group_snapshot(old_tasks),
+        unassigned: unassigned_tasks.len(),
         last_update: Utc::now(),
     })
 }
@@ -123,17 +125,25 @@ fn split_tasks(
 ) -> (
     Vec<network_invalidation_task::Model>,
     Vec<network_invalidation_task::Model>,
+    Vec<network_invalidation_task::Model>,
 ) {
     let mut old = Vec::new();
     let mut fresh = Vec::new();
+    let mut unassigned = Vec::new();
     for task in tasks {
-        if task.is_for_old_worker {
-            old.push(task);
-        } else {
-            fresh.push(task);
-        }
+        match task.tag.as_str() {
+            txt if txt
+                .eq(crate::config::NETWORK_INVALIDATION_TASK_TAG_RECENT) =>
+            {
+                fresh.push(task)
+            }
+            txt if txt.eq(crate::config::NETWORK_INVALIDATION_TASK_TAG_OLD) => {
+                old.push(task)
+            }
+            _ => unassigned.push(task),
+        };
     }
-    (old, fresh)
+    (old, fresh, unassigned)
 }
 
 fn build_group_snapshot(
@@ -221,7 +231,7 @@ fn draw_ui(frame: &mut Frame<'_>, snapshot: &TuiSnapshot) {
         "Pipeline (is_for_old_worker=true)",
         &snapshot.old,
     );
-    render_footer(frame, root[2], snapshot.last_update);
+    render_footer(frame, root[2], snapshot.last_update, snapshot.unassigned);
 }
 
 fn render_group(
@@ -321,10 +331,11 @@ fn render_footer(
     frame: &mut Frame<'_>,
     area: Rect,
     last_update: DateTime<Utc>,
+    unassigned_qty: usize,
 ) {
     let footer = Paragraph::new(Line::from(format!(
-        "Last update: {} | q or Esc to quit",
-        last_update.format("%Y-%m-%d %H:%M:%S")
+        "Last update: {} | Unassigned tasks: {unassigned_qty} | q or Esc to quit",
+        last_update.format("%Y-%m-%d %H:%M:%S"),
     )));
     frame.render_widget(footer, area);
 }

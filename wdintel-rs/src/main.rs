@@ -1054,7 +1054,7 @@ async fn async_main(
                 .await
         }
         Cmd::NetworkInvalidationTui => {
-            sigint::network::etalon_calc::tui::run_network_invalidation_tui(mode).await
+           sigint::network::etalon_calc::tui::run_network_invalidation_tui(mode).await
         }
         Cmd::OneoffRestartEcho(ps) => {
             oneoff::oneoff_restart_echo(mode, &ps).await

@@ -37,8 +37,8 @@ default:
     @just --list
 
 # setup pgBackRest: runs on `--server`; `--backup-name` selects which host's backup/stanza config will be installed (defaults to `--server`)
-[arg('server', long='server')]
 [arg('backup_name', long='backup-name')]
+[arg('server', long='server')]
 setup-pgbackrest server backup_name="":
     #!/bin/bash
     set -euo pipefail
@@ -62,7 +62,17 @@ dev-front2:
     (cd wdintel-web && npm ci && npx elm-land build && npx elm-land server)
 
 build-front:
-    (cd wdintel-web && npm run build)
+    #!/bin/bash
+    set -euxo pipefail
+    cd wdintel-web
+
+    # Install/update deps before build so elm-land uses project-pinned toolchain.
+    if [ ! -d "node_modules" ] || [ ! -f "node_modules/.npm_installed" ] || [ "package-lock.json" -nt "node_modules/.npm_installed" ]; then
+        npm ci
+        touch node_modules/.npm_installed
+    fi
+
+    npm run build
 
 dev-back:
     (cd wdintel-rs && RUST_BACKTRACE=0 {{ rust_log }}cargo watch -- cargo run -- --mode=debug server {{ dev_back_args }})
@@ -586,8 +596,8 @@ copy-db-to-target:
     rm /var/tmp/wd-{{ dt1 }}.pgrestore.gz | echo "ok"
 
 # restore postgres via pgBackRest: runs on `--server`; `--backup-name` selects which host's backups will be restored (defaults to `--server`)
-[arg('server', long='server')]
 [arg('backup_name', long='backup-name')]
+[arg('server', long='server')]
 restore-pgbackrest server backup_name="":
     #!/bin/bash
     set -euxo pipefail

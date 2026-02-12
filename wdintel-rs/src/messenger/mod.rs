@@ -112,7 +112,12 @@ pub async fn group_update(
 
     txn.commit().await.c(h!())?;
     crate::sigint::network::etalon_calc::invalidate_network_inbox_for_group(
-        &env.dbx, &res.group,
+        &env.dbx,
+        &res.group,
+        format!(
+            "updated group from web UI: {}",
+            res.group.master_key.clone()
+        ),
     )
     .await
     .c(h!())?;

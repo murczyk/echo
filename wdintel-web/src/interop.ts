@@ -309,16 +309,35 @@ export const onReady = ({ app, env }) => {
 
     if (app.ports && app.ports.waterfall_copyTextToClipboard) {
         app.ports.waterfall_copyTextToClipboard.subscribe(({ text }) => {
-            if (!navigator.clipboard) {
-            } else {
-                navigator.clipboard.read().then((contents) => {
-                    if (!navigator.clipboard) {
-                    } else {
-                        navigator.clipboard.writeText(text).then(() => { });
-                    }
-                });
-            }
+            copyTextToClipboard(text);
         });
+    }
+
+    function copyTextToClipboard(text: string) {
+        if (navigator.clipboard?.writeText) {
+            navigator.clipboard.writeText(text).catch(() => fallbackCopyTextToClipboard(text));
+            return;
+        }
+        fallbackCopyTextToClipboard(text);
+    }
+
+    // When copy runs, the user's click has often already finished (Elm sent to port). Browser then
+    // throws "Document is not focused" error. This workaround is a fallback for that.
+    function fallbackCopyTextToClipboard(text: string) {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.left = '-9999px';
+        ta.style.top = '0';
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        try {
+            document.execCommand('copy');
+        } finally {
+            document.body.removeChild(ta);
+        }
     }
 
     if (app.ports && app.ports.waterfall_getVisibleMsgIds && app.ports.waterfall_getVisibleMsgIdsRes) {

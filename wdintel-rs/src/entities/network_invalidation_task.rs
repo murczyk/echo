@@ -18,10 +18,11 @@ pub struct Model {
     pub created_at: DateTime,
     pub sigint_network_id: Option<i64>,
     pub started_at: Option<DateTime>,
-    pub is_for_old_worker: bool,
     pub aor_id: Option<i64>,
     #[sea_orm(column_type = "Text", nullable)]
     pub group_master_key: Option<String>,
+    #[sea_orm(column_type = "Text")]
+    pub tag: String,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
