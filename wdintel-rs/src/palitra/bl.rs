@@ -121,16 +121,21 @@ pub async fn search_palitra_points_by_labels(
     }
     dbg!("{:?}", &palitra_ids);
 
-    let normalized_labels: Vec<String> = req
+    let mut normalized_labels: Vec<String> = req
         .point_labels
         .iter()
         .filter_map(|label| normalize_label_cache(label))
         .map(|label| label.to_lowercase())
         .collect();
+    if normalized_labels.len() > 1 {
+        let combined_label = normalized_labels.join(" ");
+        if !normalized_labels.contains(&combined_label) {
+            normalized_labels.push(combined_label);
+        }
+    }
     if normalized_labels.is_empty() {
         return Ok(vec![]);
     }
-    dbg!("{:?}", &normalized_labels);
 
     let mut label_condition = Condition::any();
     for label in &normalized_labels {
