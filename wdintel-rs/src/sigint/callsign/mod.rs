@@ -93,6 +93,8 @@ pub async fn list_callsigns_csv(
 
     let temp_file_name = temp_file.path().to_str().context(h!())?;
     {
+        use std::io::Write as _;
+
         #[derive(Serialize)]
         pub struct CallsignCsvRow<'se> {
             pub id: i64,
@@ -110,7 +112,11 @@ pub async fn list_callsigns_csv(
             pub radio_freq: Option<String>,
         }
         let tz = crate::config::get_tz();
-        let mut wtr = csv::Writer::from_path(temp_file_name).c(h!())?;
+        let mut csv_file = temp_file.reopen().context(h!())?;
+        csv_file
+            .write_all(crate::config::SIGINT_CSV_UTF8_BOM)
+            .c(h!())?;
+        let mut wtr = csv::Writer::from_writer(csv_file);
         for callsign in res.into_iter() {
             let created_at =
                 chrono::DateTime::from_timestamp_millis(callsign.created_at)

@@ -45,6 +45,7 @@ pub const DISCORD_WEBHOOK: &str = "https://discord.com/api/webhooks/141708483338
 pub const FEATURE_CALLSIGNS_ALG2: bool = false;
 /// Safety limit: cut network-callsigns time window if too wide
 pub const NETWORK_CALLSIGNS_MAX_WINDOW_DAYS: i64 = 60;
+pub const SIGINT_CSV_UTF8_BOM: &[u8; 3] = b"\xEF\xBB\xBF";
 pub const SIGINT_NETWORK_LIST_DEFAULT_LIMIT: i64 = 100;
 pub const SIGINT_NETWORK_LIST_MAX_LIMIT: u64 = 100;
 /// Ukraine boundaries WGS84
