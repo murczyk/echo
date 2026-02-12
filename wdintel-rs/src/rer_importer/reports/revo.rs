@@ -100,9 +100,8 @@ pub async fn report_docx_kind_revo(
     info!("get_organism_logins took: {:?}", start.elapsed());
 
     let start = Instant::now();
-    let mut current_req = req.req.clone();
-    current_req.report_tags_only_this_unit = req.report_tags_only_this_unit;
-    let messages: Vec<(i64, InboxMessage)> =
+    let current_req = req.req.clone();
+    let mut messages: Vec<(i64, InboxMessage)> =
         crate::rer_importer::inbox::get_inbox_messages_with_conn(
             &read_db,
             &login,
@@ -112,6 +111,11 @@ pub async fn report_docx_kind_revo(
         )
         .await
         .context(h!())?;
+    if req.report_tags_only_this_unit.unwrap_or(false) {
+        messages = filter_messages_by_logins(&read_db, messages, &logins)
+            .await
+            .context(h!())?;
+    }
     info!(
         "get_inbox_messages_with_conn took: {:?}, messages count: {}",
         start.elapsed(),
@@ -129,10 +133,18 @@ pub async fn report_docx_kind_revo(
     };
 
     let start = Instant::now();
-    let mut report =
-        collect_report(messages, logins.clone(), env, &read_db, range_khz)
-            .await
-            .context(h!())?;
+    let report_tags_only_this_unit =
+        req.report_tags_only_this_unit.unwrap_or(false);
+    let mut report = collect_report(
+        messages,
+        logins.clone(),
+        env,
+        &read_db,
+        range_khz,
+        report_tags_only_this_unit,
+    )
+    .await
+    .context(h!())?;
     info!("collect_report took: {:?}", start.elapsed());
 
     let start = Instant::now();
@@ -568,10 +580,11 @@ fn get_processed_correspondence(
 
 async fn collect_report(
     messages: Vec<(i64, InboxMessage)>,
-    _logins: Vec<String>,
+    logins: Vec<String>,
     env: &Env,
     dbx: &DatabaseConnection,
     range_khz: f64,
+    report_tags_only_this_unit: bool,
 ) -> anyhow::Result<Report> {
     let start_collect = Instant::now();
     info!("collect_report: extracting groups and freqs");
@@ -693,11 +706,15 @@ async fn collect_report(
     let mut comments = BTreeMap::new();
     // Load all comments in a single query if possible, otherwise chunk
     if message_ids.len() <= 20000 {
-        sigint_comment::Entity::find()
+        let mut query = sigint_comment::Entity::find()
             .filter(sigint_comment::Column::SignalMessageId.eq_any(message_ids))
             .select_only()
             .column(sigint_comment::Column::SignalMessageId)
-            .column(sigint_comment::Column::Comment)
+            .column(sigint_comment::Column::Comment);
+        if report_tags_only_this_unit {
+            query = query.filter(sigint_comment::Column::Login.eq_any(logins));
+        }
+        query
             .into_model::<CommentSummary>()
             .all(dbx)
             .await
@@ -709,14 +726,19 @@ async fn collect_report(
     } else {
         // For very large datasets, chunk to avoid query size limits
         for ids in message_ids.chunks(20000) {
-            sigint_comment::Entity::find()
+            let mut query = sigint_comment::Entity::find()
                 .filter(
                     sigint_comment::Column::SignalMessageId
                         .eq_any(ids.to_vec()),
                 )
                 .select_only()
                 .column(sigint_comment::Column::SignalMessageId)
-                .column(sigint_comment::Column::Comment)
+                .column(sigint_comment::Column::Comment);
+            if report_tags_only_this_unit {
+                query =
+                    query.filter(sigint_comment::Column::Login.is_in(&logins));
+            }
+            query
                 .into_model::<CommentSummary>()
                 .all(dbx)
                 .await
@@ -1069,4 +1091,54 @@ async fn collect_report(
         start_collect.elapsed()
     );
     Ok(report)
+}
+
+async fn filter_messages_by_logins(
+    dbx: &DatabaseConnection,
+    messages: Vec<(i64, InboxMessage)>,
+    logins: &[String],
+) -> anyhow::Result<Vec<(i64, InboxMessage)>> {
+    let message_ids: Vec<i64> = messages.iter().map(|(id, _)| *id).collect();
+    if message_ids.is_empty() {
+        return Ok(messages);
+    }
+    let mut allowed_ids = HashSet::new();
+    if message_ids.len() <= 20000 {
+        sigint_comment::Entity::find()
+            .filter(sigint_comment::Column::SignalMessageId.eq_any(message_ids))
+            .filter(sigint_comment::Column::Login.is_in(logins))
+            .select_only()
+            .column(sigint_comment::Column::SignalMessageId)
+            .into_tuple::<i64>()
+            .all(dbx)
+            .await
+            .context(h!())?
+            .into_iter()
+            .for_each(|id| {
+                allowed_ids.insert(id);
+            });
+    } else {
+        for ids in message_ids.chunks(20000) {
+            sigint_comment::Entity::find()
+                .filter(
+                    sigint_comment::Column::SignalMessageId
+                        .eq_any(ids.to_vec()),
+                )
+                .filter(sigint_comment::Column::Login.is_in(logins))
+                .select_only()
+                .column(sigint_comment::Column::SignalMessageId)
+                .into_tuple::<i64>()
+                .all(dbx)
+                .await
+                .context(h!())?
+                .into_iter()
+                .for_each(|id| {
+                    allowed_ids.insert(id);
+                });
+        }
+    }
+    Ok(messages
+        .into_iter()
+        .filter(|(id, _)| allowed_ids.contains(id))
+        .collect())
 }
