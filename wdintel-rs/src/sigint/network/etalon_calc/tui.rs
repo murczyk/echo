@@ -126,7 +126,7 @@ async fn load_snapshot(
         ),
         old: build_group_snapshot(
             old_tasks,
-            workers.get(NETWORK_INVALIDATION_TASK_TAG_RECENT),
+            workers.get(NETWORK_INVALIDATION_TASK_TAG_OLD),
         ),
         unassigned: unassigned_tasks.len(),
         last_update: Utc::now(),
