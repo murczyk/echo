@@ -233,7 +233,10 @@ async fn run_inbox_network_worker_once(
             work_started = Instant::now();
         }
 
-        info!("[{tag} worker] run_network_invalidation_tasks started, {} tasks", next_tasks.len());
+        info!(
+            "[{tag} worker] run_network_invalidation_tasks started, {} tasks",
+            next_tasks.len()
+        );
         run_network_invalidation_tasks(
             next_tasks,
             &signal_group_aors,
@@ -361,7 +364,7 @@ async fn triage_tasks(
         } else {
             (NETWORK_INVALIDATION_TASK_TAG_UNASSIGNED, false)
         };
-        if !tag.eq(&r.tag) {
+        if r.tag != tag {
             let mut rec = r.into_active_model();
             rec.tag = Set(tag.to_string());
             r = rec.update(db).await.c(h!())?;

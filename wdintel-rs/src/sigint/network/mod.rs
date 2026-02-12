@@ -1675,7 +1675,9 @@ pub async fn delete_network_freq(
 
             if let Err(e) =
                 sigint::network::etalon_calc::invalidate_network_inbox(
-                    network, freqs, &env.dbx,
+                    network,
+                    freqs,
+                    &env.dbx,
                     format!("deleted network {}", network_id),
                 )
                 .await
@@ -2032,7 +2034,10 @@ pub async fn merge_network(
             .c(h!())?,
         vec![],
         &env.dbx,
-        format!("merged this network {} to network {}", req.network_id_from, req.network_id_to),
+        format!(
+            "merged this network {} to network {}",
+            req.network_id_from, req.network_id_to
+        ),
     )
     .await
     .context(h!())?;
@@ -2045,7 +2050,10 @@ pub async fn merge_network(
             .c(h!())?,
         vec![],
         &env.dbx,
-        format!("merged network {} to this network {}", req.network_id_from, req.network_id_to),
+        format!(
+            "merged network {} to this network {}",
+            req.network_id_from, req.network_id_to
+        ),
     )
     .await
     .context(h!())?;

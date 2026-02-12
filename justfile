@@ -62,7 +62,17 @@ dev-front2:
     (cd wdintel-web && npm ci && npx elm-land build && npx elm-land server)
 
 build-front:
-    (cd wdintel-web && npm run build)
+    #!/bin/bash
+    set -euxo pipefail
+    cd wdintel-web
+
+    # Install/update deps before build so elm-land uses project-pinned toolchain.
+    if [ ! -d "node_modules" ] || [ ! -f "node_modules/.npm_installed" ] || [ "package-lock.json" -nt "node_modules/.npm_installed" ]; then
+        npm ci
+        touch node_modules/.npm_installed
+    fi
+
+    npm run build
 
 dev-back:
     (cd wdintel-rs && RUST_BACKTRACE=0 {{ rust_log }}cargo watch -- cargo run -- --mode=debug server {{ dev_back_args }})
