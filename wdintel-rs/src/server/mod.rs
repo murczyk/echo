@@ -157,19 +157,32 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
     Ok(Arc::new(env))
 }
 
-pub async fn main_server(
+async fn init_runtime_env(mode: Mode) -> Result<Arc<Env>, AppError> {
+    crate::migration::run_migration_1(mode).await.c(h!())?;
+    let env = new_env(mode).await.c(h!())?;
+    let config = env.config.clone();
+    if let Err(err) =
+        crate::rer_importer::import_csv::ensure_import_group_exists(
+            &env.dbx, &config,
+        )
+        .await
+    {
+        warn!("Failed to ensure import group exists: {err:?}");
+    };
+    Ok(env)
+}
+
+fn should_start_bgworkers_in_server(mode: Mode, no_bgworker: bool) -> bool {
+    mode != Live && !no_bgworker
+}
+
+fn spawn_background_workers(
     mode: Mode,
-    ps: crate::ServerPs,
+    env: Arc<Env>,
     cancel_token: CancellationToken,
     shutdown_handle: Handle,
-) -> Result<(), AppError> {
-    let mut background_tasks: JoinSet<()> = JoinSet::new();
-    let bg_set = &mut background_tasks;
-
-    crate::migration::run_migration_1(mode).await.c(h!())?;
-
-    let env = new_env(mode).await.c(h!())?;
-
+    bg_set: &mut JoinSet<()>,
+) {
     let config = env.config.clone();
     let config1 = config.clone();
     let dbx4 = env.dbx.clone();
@@ -180,148 +193,114 @@ pub async fn main_server(
     let dbx10 = env.dbx.clone();
     let dbx11 = env.dbx.clone();
     let mil_geo2 = env.mil_geo.clone();
-    if let Err(e) = crate::rer_importer::import_csv::ensure_import_group_exists(
-        &env.dbx, &config,
-    )
-    .await
-    {
-        warn!("Failed to ensure import group exists: {e:?}");
-    };
 
-    let redis_session_store =
-        RedisSessionStore::new(crate::redis_conn_string(&config).c(h!())?)
-            .await
-            .c(h!())?;
-
-    // Create JoinSet for background tasks
-
-    if !ps.no_bgworker {
-        if let Some(secret_config) = config.vault_config.clone() {
-            spawn_named_worker("secret_worker", bg_set, async move {
-                crate::secret::secret_worker(secret_config).await
-            });
-        }
-        spawn_named_worker("healthcheck_worker", bg_set, async move {
-            healthcheck::healthcheck_worker(&dbx9, config1).await;
+    if let Some(secret_config) = config.vault_config.clone() {
+        spawn_named_worker("secret_worker", bg_set, async move {
+            crate::secret::secret_worker(secret_config).await
         });
-        // Activity details worker
-        if let Some(greptimedb) = env.greptime() {
-            let redis = env.redis.clone();
-            spawn_named_worker("activity_details_worker", bg_set, async move {
-                middleware::activity_details_worker(redis, greptimedb).await;
-            });
-        }
-
-        if !config.disable_cleanup_networks_worker.unwrap_or(false) {
-            spawn_named_worker("cleanup_networks_worker", bg_set, async move {
-                crate::sigint::network::cleanup_networks_worker(&dbx4).await;
-            });
-        }
-        if config.fill_comp_freq_worker {
-            spawn_named_worker("fill_comp_freq_worker", bg_set, async move {
-                crate::rer_importer::reports::fill_comp_freq_worker(&dbx6)
-                    .await;
-            });
-        }
-        if !config.disable_inactive_users_worker.unwrap_or(false) {
-            spawn_named_worker("inactive_users_worker", bg_set, async move {
-                crate::users::inactive_users_worker(&dbx7).await;
-            });
-        }
-        if !config.disable_unit_location_v2_worker.unwrap_or(false) {
-            spawn_named_worker("location_v2_worker", bg_set, async move {
-                crate::location::worker::process_location_v2_coords_worker(
-                    &dbx8, mil_geo2,
-                )
-                .await;
-            });
-        }
-
-        // AoR assignments consistency check worker (runs every 5 minutes)
-        spawn_named_worker("aor_assignments_worker", bg_set, async move {
-            crate::sigint::aor::worker::aor_assignments_check_worker(&dbx10)
-                .await;
+    }
+    spawn_named_worker("healthcheck_worker", bg_set, async move {
+        healthcheck::healthcheck_worker(&dbx9, config1).await;
+    });
+    if let Some(greptimedb) = env.greptime() {
+        let redis = env.redis.clone();
+        spawn_named_worker("activity_details_worker", bg_set, async move {
+            middleware::activity_details_worker(redis, greptimedb).await;
         });
-        let token_1 = cancel_token.clone();
-        let shutdown_handle_1 = shutdown_handle.clone();
-        spawn_named_worker("messenger_receive_worker", bg_set, async move {
-            crate::messenger::worker::receive_thread_nofail(
-                mode,
-                token_1,
-                shutdown_handle_1,
+    }
+    if !config.disable_cleanup_networks_worker.unwrap_or(false) {
+        spawn_named_worker("cleanup_networks_worker", bg_set, async move {
+            crate::sigint::network::cleanup_networks_worker(&dbx4).await;
+        });
+    }
+    if config.fill_comp_freq_worker {
+        spawn_named_worker("fill_comp_freq_worker", bg_set, async move {
+            crate::rer_importer::reports::fill_comp_freq_worker(&dbx6).await;
+        });
+    }
+    if !config.disable_inactive_users_worker.unwrap_or(false) {
+        spawn_named_worker("inactive_users_worker", bg_set, async move {
+            crate::users::inactive_users_worker(&dbx7).await;
+        });
+    }
+    if !config.disable_unit_location_v2_worker.unwrap_or(false) {
+        spawn_named_worker("location_v2_worker", bg_set, async move {
+            crate::location::worker::process_location_v2_coords_worker(
+                &dbx8, mil_geo2,
             )
             .await;
         });
-        let token_2 = cancel_token.clone();
-        spawn_named_worker("process_queue_nofail", bg_set, async move {
-            crate::messenger::worker::queue::process_queue_nofail(
-                mode, token_2,
+    }
+
+    spawn_named_worker("aor_assignments_worker", bg_set, async move {
+        crate::sigint::aor::worker::aor_assignments_check_worker(&dbx10).await;
+    });
+    let token_1 = cancel_token.clone();
+    let shutdown_handle_1 = shutdown_handle.clone();
+    spawn_named_worker("messenger_receive_worker", bg_set, async move {
+        crate::messenger::worker::receive_thread_nofail(
+            mode,
+            token_1,
+            shutdown_handle_1,
+        )
+        .await;
+    });
+    let token_2 = cancel_token.clone();
+    spawn_named_worker("process_queue_nofail", bg_set, async move {
+        crate::messenger::worker::queue::process_queue_nofail(mode, token_2)
+            .await;
+    });
+    spawn_named_worker("operator_inbox_worker", bg_set, async move {
+        crate::operator::worker::run_operator_inbox_worker_nofail(mode).await;
+    });
+    spawn_named_worker("echo_im_cleanup", bg_set, async move {
+        crate::messenger::worker::cleanup::run_cleanup_worker(mode).await;
+    });
+    spawn_named_worker("recent_inbox_network_worker", bg_set, async move {
+        crate::sigint::network::etalon_calc::worker::run_recent_inbox_network_worker_nofail(mode).await;
+    });
+    spawn_named_worker("old_inbox_network_worker", bg_set, async move {
+        crate::sigint::network::etalon_calc::worker::run_old_inbox_network_worker_nofail(mode).await;
+    });
+    spawn_named_worker(
+        "inbox_network_daily_consistency_worker",
+        bg_set,
+        async move {
+            crate::sigint::network::etalon_calc::worker::run_inbox_network_daily_consistency_worker_nofail(mode).await;
+        },
+    );
+    spawn_named_worker("worker_calculate_group_stats", bg_set, async move {
+        crate::stats::worker::group_stats::worker_calculate_group_stats(mode)
+            .await;
+    });
+    let rq2 = env.rq.clone();
+    let tag_keyword_regex_cache = env.tag_keyword_regex_cache.clone();
+    let token_3 = cancel_token.clone();
+    let redis2 = env.redis.clone();
+    if !config.disable_suggest_message_tags_worker.unwrap_or(false) {
+        spawn_named_worker("suggest_message_tags_worker", bg_set, async move {
+            let mut redis = redis2;
+            crate::tags::worker::suggest_message_tags_worker(
+                &rq2,
+                &dbx11,
+                &mut redis,
+                &tag_keyword_regex_cache,
+                token_3,
             )
             .await;
         });
-        spawn_named_worker("operator_inbox_worker", bg_set, async move {
-            crate::operator::worker::run_operator_inbox_worker_nofail(mode)
-                .await;
-        });
-        spawn_named_worker("echo_im_cleanup", bg_set, async move {
-            crate::messenger::worker::cleanup::run_cleanup_worker(mode).await;
-        });
-        spawn_named_worker("recent_inbox_network_worker", bg_set, async move {
-            crate::sigint::network::etalon_calc::worker::run_recent_inbox_network_worker_nofail(mode).await;
-        });
-        spawn_named_worker("old_inbox_network_worker", bg_set, async move {
-            crate::sigint::network::etalon_calc::worker::run_old_inbox_network_worker_nofail(
-                mode,
-            )
-            .await;
-        });
-        spawn_named_worker(
-            "inbox_network_daily_consistency_worker",
-            bg_set,
-            async move {
-                crate::sigint::network::etalon_calc::worker::run_inbox_network_daily_consistency_worker_nofail(mode).await;
-            },
-        );
-        spawn_named_worker(
-            "worker_calculate_group_stats",
-            bg_set,
-            async move {
-                crate::stats::worker::group_stats::worker_calculate_group_stats(mode).await;
-            },
-        );
-        let rq2 = env.rq.clone();
-        let tag_keyword_regex_cache = env.tag_keyword_regex_cache.clone();
-        let token_2 = cancel_token.clone();
-        let redis2 = env.redis.clone();
-        if !config.disable_suggest_message_tags_worker.unwrap_or(false) {
-            spawn_named_worker(
-                "suggest_message_tags_worker",
-                bg_set,
-                async move {
-                    let mut redis = redis2;
-                    crate::tags::worker::suggest_message_tags_worker(
-                        &rq2,
-                        &dbx11,
-                        &mut redis,
-                        &tag_keyword_regex_cache,
-                        token_2,
-                    )
-                    .await;
-                },
-            );
-        }
     }
 
     spawn_named_worker("signal_cli_verbose_logger", bg_set, async move {
         info!("Starting enable_signal_cli_verbose_logging");
-        if let Err(e) = echo_im::enable_signal_cli_verbose_logging(
+        if let Err(err) = echo_im::enable_signal_cli_verbose_logging(
             "echo",
             SIGNAL_CLIENT_PORT,
         )
         .await
         {
             if mode == Live {
-                error!("failed to configure signal cli: {e:?}");
+                error!("failed to configure signal cli: {err:?}");
             }
         }
         info!("Done starting enable_signal_cli_verbose_logging");
@@ -332,6 +311,36 @@ pub async fn main_server(
         spawn_named_worker("cleanup_tmp_worker", bg_set, async move {
             echo_install_utils::tmpdir::cleanup_tmp_worker_nofail().await;
         });
+    }
+}
+
+pub async fn main_server(
+    mode: Mode,
+    ps: crate::ServerPs,
+    cancel_token: CancellationToken,
+    shutdown_handle: Handle,
+) -> Result<(), AppError> {
+    let env = init_runtime_env(mode).await.c(h!())?;
+    let config = env.config.clone();
+
+    let redis_session_store =
+        RedisSessionStore::new(crate::redis_conn_string(&config).c(h!())?)
+            .await
+            .c(h!())?;
+
+    let mut background_tasks: JoinSet<()> = JoinSet::new();
+    let should_start_bgworkers =
+        should_start_bgworkers_in_server(mode, ps.no_bgworker);
+    if should_start_bgworkers {
+        spawn_background_workers(
+            mode,
+            env.clone(),
+            cancel_token.clone(),
+            shutdown_handle.clone(),
+            &mut background_tasks,
+        );
+    } else {
+        info!("Background workers are disabled in server mode={mode}");
     }
 
     let bind_ip = "0.0.0.0";
@@ -648,10 +657,14 @@ pub async fn main_server(
     .run();
 
     let task_completion_future = async move {
-        while background_tasks.join_next().await.is_some() {
-            // do nothing
+        if should_start_bgworkers {
+            while background_tasks.join_next().await.is_some() {
+                // do nothing
+            }
+            info!("[Background] All tasks in JoinSet completed on their own.");
+        } else {
+            std::future::pending::<()>().await;
         }
-        info!("[Background] All tasks in JoinSet completed on their own.");
     };
 
     let server_handle = server.handle();
@@ -687,5 +700,57 @@ pub async fn main_server(
             }
         }
     }).await.c(h!())?;
+    Ok(())
+}
+
+pub async fn main_bgworker(
+    mode: Mode,
+    cancel_token: CancellationToken,
+    shutdown_handle: Handle,
+) -> Result<(), AppError> {
+    let env = init_runtime_env(mode).await.c(h!())?;
+    let mut background_tasks: JoinSet<()> = JoinSet::new();
+    spawn_background_workers(
+        mode,
+        env,
+        cancel_token.clone(),
+        shutdown_handle.clone(),
+        &mut background_tasks,
+    );
+
+    let task_completion_future = async move {
+        while background_tasks.join_next().await.is_some() {
+            // do nothing
+        }
+        info!("[Background] All tasks in JoinSet completed on their own.");
+    };
+
+    let mut sigint = signal(SignalKind::interrupt())
+        .expect("Failed to register SIGINT handler");
+    let mut sigterm = signal(SignalKind::terminate())
+        .expect("Failed to register SIGTERM handler");
+
+    shutdown_handle
+        .spawn(async move {
+            tokio::select! {
+                _ = sigint.recv() => {
+                    println!("\n[SIGINT / CTRL+C] detected. Signaling shutdown.");
+                    cancel_token.cancel();
+                },
+                _ = sigterm.recv() => {
+                    println!("\n[SIGTERM / KILL] detected. Signaling shutdown.");
+                    cancel_token.cancel();
+                },
+                _ = tokio::signal::ctrl_c() => {
+                    info!("\n[CTRL+C] detected. Starting graceful shutdown...");
+                    cancel_token.cancel();
+                },
+                _ = task_completion_future => {
+                    info!("[Bgworker] All background tasks finished.");
+                }
+            }
+        })
+        .await
+        .c(h!())?;
     Ok(())
 }

@@ -175,6 +175,15 @@ sudo systemctl enable --now wdintel-rs.socket
 sudo systemctl disable wdintel-rs
 ```
 
+Background workers are split into a separate unit:
+
+```
+sudo systemctl enable --now wdintel-rs-bgworker
+```
+
+`wdintel-rs --mode=live server` starts without background workers by default.
+For local debug (`--mode=debug`), background workers are still enabled by default.
+
 ## SSL/Letsencrypt Tailscale
 
 ```

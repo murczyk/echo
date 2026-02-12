@@ -379,6 +379,24 @@ deploy:
     fi
 
     echo "CI finished detected. Proceeding with remote apt install."
+    ssh {{ server }} 'set -euo pipefail
+      if systemctl cat wdintel-rs-bgworker.service >/dev/null 2>&1; then
+        echo "Stopping wdintel-rs-bgworker.service and waiting up to 120 seconds..."
+        sudo systemctl stop wdintel-rs-bgworker.service || true
+        for i in $(seq 1 120); do
+          if ! systemctl is-active --quiet wdintel-rs-bgworker.service; then
+            echo "wdintel-rs-bgworker.service is stopped."
+            break
+          fi
+          if [ "$i" -eq 120 ]; then
+            echo "wdintel-rs-bgworker.service did not stop within 120 seconds." >&2
+            exit 1
+          fi
+          sleep 1
+        done
+      else
+        echo "wdintel-rs-bgworker.service is not installed; skipping stop wait."
+      fi'
     # Quiet update/install (stdout suppressed for update; install in -qq)
     ssh {{ server }} 'sudo apt-get -qq update > /dev/null && sudo DEBIAN_FRONTEND=noninteractive apt-get -y -qq install echo-install wdintel-rs echo-docs'
     # Success notification
@@ -854,6 +872,7 @@ deploy-many _servers_pos="" servers="":
       exit 1
     fi
 
+    echo "Each server deploy waits up to 120s for wdintel-rs-bgworker.service to stop before apt install."
     echo-install-utils run-many \
       --values "{{ servers }}" \
       --cwd "{{ justfile_directory() }}" \
