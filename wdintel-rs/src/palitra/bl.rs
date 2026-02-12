@@ -121,10 +121,12 @@ pub async fn search_palitra_points_by_labels(
     }
     dbg!("{:?}", &palitra_ids);
 
-    let normalized_labels: Vec<String> = req.point_labels;
-    // .iter()
-    // .filter_map(|label| normalize_label_cache(label))
-    // .collect();
+    let normalized_labels: Vec<String> = req
+        .point_labels
+        .iter()
+        .filter_map(|label| normalize_label_cache(label))
+        .map(|label| label.to_lowercase())
+        .collect();
     if normalized_labels.is_empty() {
         return Ok(vec![]);
     }
@@ -132,8 +134,10 @@ pub async fn search_palitra_points_by_labels(
 
     let mut label_condition = Condition::any();
     for label in &normalized_labels {
-        label_condition =
-            label_condition.add(palitra_point::Column::Label.eq(label));
+        label_condition = label_condition.add(Expr::cust_with_values(
+            "lower(label) = $1",
+            vec![label.clone()],
+        ));
     }
 
     let points = palitra_point::Entity::find()
@@ -194,7 +198,8 @@ pub async fn suggest_palitra_point_labels(
         return Ok(vec![]);
     }
     let limit = req.limit.unwrap_or(15).min(50);
-    let prefix_pattern = build_label_pattern(&prefix, false);
+    let normalized_prefix = prefix.to_lowercase();
+    let prefix_pattern = build_label_pattern(&normalized_prefix, false);
 
     let labels = palitra_point::Entity::find()
         .select_only()
@@ -203,7 +208,10 @@ pub async fn suggest_palitra_point_labels(
         .filter(palitra_point::Column::PalitraId.eq_any(palitra_ids.clone()))
         .filter(palitra_point::Column::Deleted.eq(false))
         .filter(palitra_point::Column::Label.is_not_null())
-        .filter(palitra_point::Column::Label.like(prefix_pattern))
+        .filter(Expr::cust_with_values(
+            "lower(label) LIKE $1",
+            vec![prefix_pattern],
+        ))
         .order_by_asc(palitra_point::Column::Label)
         .distinct()
         .limit(limit)
@@ -222,7 +230,7 @@ pub async fn suggest_palitra_point_labels(
 
     if labels.len() < limit as usize {
         let remaining = limit - labels.len() as u64;
-        let similar_pattern = build_label_pattern(&prefix, true);
+        let similar_pattern = build_label_pattern(&normalized_prefix, true);
         let mut similar_query = palitra_point::Entity::find()
             .select_only()
             .column(palitra_point::Column::PalitraId)
@@ -230,7 +238,10 @@ pub async fn suggest_palitra_point_labels(
             .filter(palitra_point::Column::PalitraId.eq_any(palitra_ids))
             .filter(palitra_point::Column::Deleted.eq(false))
             .filter(palitra_point::Column::Label.is_not_null())
-            .filter(palitra_point::Column::Label.like(similar_pattern))
+            .filter(Expr::cust_with_values(
+                "lower(label) LIKE $1",
+                vec![similar_pattern],
+            ))
             .order_by_asc(palitra_point::Column::Label)
             .distinct();
 
