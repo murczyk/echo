@@ -9,6 +9,8 @@ use log::{error, info, warn};
 use sea_orm::*;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::time::{Duration, Instant};
+use sea_orm::sea_query::ExprTrait;
+use echo_migration::Expr;
 // Worker that keeps recent inbox items aligned with network definitions by
 // picking pending invalidation tasks, normalizing them (split/merge), and
 // executing them in a stable order.
@@ -303,12 +305,53 @@ async fn triage_tasks(
     delete_original_tasks(&existing_tasks, &old_worker_ids, &txn)
         .await
         .c(h!())?;
+
+    let cutoff2 = cutoff - Duration::from_hours(1);
+    let filter_recent = Condition::all()
+        .add(network_invalidation_task::Column::SinceTs.gte(cutoff2))
+        .add(network_invalidation_task::Column::TillTs.gte(cutoff2));
+    let filter_old = Condition::all()
+        .add(network_invalidation_task::Column::SinceTs.lte(cutoff))
+        .add(network_invalidation_task::Column::TillTs.lte(cutoff));
+
+    network_invalidation_task::Entity::update_many()
+        .col_expr(
+            network_invalidation_task::Column::Tag,
+            Expr::value(NETWORK_INVALIDATION_TASK_TAG_RECENT.to_string()),
+        )
+        .filter(filter_recent.and(filter_old.not()))
+        .exec(&txn)
+        .await
+        .c(h!())?;
+
+    network_invalidation_task::Entity::update_many()
+        .col_expr(
+            network_invalidation_task::Column::Tag,
+            Expr::value(NETWORK_INVALIDATION_TASK_TAG_OLD.to_string()),
+        )
+        .filter(filter_old.and(filter_recent.not()))
+        .exec(&txn)
+        .await
+        .c(h!())?;
+
+
+    network_invalidation_task::Entity::update_many()
+        .col_expr(
+            network_invalidation_task::Column::Tag,
+            Expr::value(NETWORK_INVALIDATION_TASK_TAG_UNASSIGNED.to_string()),
+        )
+        .filter(filter_recent.not())
+        .filter(filter_old.not())
+        .exec(&txn)
+        .await
+        .c(h!())?;
+
+
     let sorted_tasks = network_invalidation_task::Entity::find()
         .order_by_desc(network_invalidation_task::Column::TillTs)
         .all(&txn)
         .await
         .c(h!())?;
-    let cutoff2 = cutoff - Duration::from_hours(1);
     let mut result = vec![];
     for mut r in sorted_tasks {
         let (tag, push) = if r.since_ts > cutoff2 && r.till_ts > cutoff2 {
@@ -318,7 +361,7 @@ async fn triage_tasks(
         } else {
             (NETWORK_INVALIDATION_TASK_TAG_UNASSIGNED, false)
         };
-        if !r.tag.eq(tag) {
+        if !tag.eq(&r.tag) {
             let mut rec = r.into_active_model();
             rec.tag = Set(tag.to_string());
             r = rec.update(db).await.c(h!())?;
