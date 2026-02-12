@@ -206,6 +206,7 @@ pub async fn suggest_palitra_point_labels(
         .filter(palitra_point::Column::Label.like(prefix_pattern))
         .order_by_asc(palitra_point::Column::Label)
         .distinct()
+        .limit(limit)
         .into_tuple::<(i64, Option<String>)>()
         .all(dbx)
         .await
@@ -313,8 +314,9 @@ pub(crate) fn palitra_suggest_cache_key(
     palitra_ids.sort_unstable();
     palitra_ids.dedup();
     let prefix = normalize_label_cache(&req.prefix).unwrap_or_default();
+    let limit = req.limit.unwrap_or(15).min(50);
     format!(
-        "palitra:points:label-suggest:{login}:{}:{prefix}",
+        "palitra:points:label-suggest:{login}:{}:{prefix}:{limit}",
         palitra_ids.iter().join(",")
     )
 }
