@@ -144,6 +144,7 @@ pub const NETWORKS_IMPORT_TUI_ROWS_NUM_PAGE_SIZE: usize = 10;
 
 pub const NETWORK_INVALIDATION_TASK_TAG_OLD: &str = "old";
 pub const NETWORK_INVALIDATION_TASK_TAG_RECENT: &str = "recent";
+pub const NETWORK_INVALIDATION_TASK_TAG_UNASSIGNED: &str = "unassigned";
 
 /// Dynamic config that's different on different deployments
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]

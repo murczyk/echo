@@ -216,6 +216,7 @@ pub async fn restore_network(
         network,
         vec![],
         &env.dbx,
+        format!("restoring network {network_id}"),
     )
     .await
     .c(h!())?;
@@ -488,6 +489,7 @@ pub async fn create_network(
         network.clone(),
         vec![],
         &env.dbx,
+        format!("created network {}", network.id),
     )
     .await
     .c(h!())?;
@@ -595,6 +597,7 @@ pub async fn update_network(
         network.clone(),
         vec![],
         &env.dbx,
+        format!("updated network {}", network.id),
     )
     .await
     .c(h!())?;
@@ -677,6 +680,7 @@ pub async fn delete_network(
         network.clone(),
         vec![],
         &env.dbx,
+        format!("deleted network {}", network.id),
     )
     .await
     .c(h!())?;
@@ -1244,10 +1248,12 @@ pub async fn update_freq_networks(
     txn.commit().await.context(h!())?;
 
     for network in networks {
+        let network_id = network.id;
         sigint::network::etalon_calc::invalidate_network_inbox(
             network,
             vec![req.freq.clone()],
             &env.dbx,
+            format!("updated frequencies for network {}", network_id),
         )
         .await
         .c(h!())?;
@@ -1670,6 +1676,7 @@ pub async fn delete_network_freq(
             if let Err(e) =
                 sigint::network::etalon_calc::invalidate_network_inbox(
                     network, freqs, &env.dbx,
+                    format!("deleted network {}", network_id),
                 )
                 .await
             {
@@ -1823,6 +1830,7 @@ async fn cleanup_networks_worker_1(
                         network.clone(),
                         vec![network_freq.freq],
                         dbx,
+                        format!("cleanup worker updates active_to for deleted network {}", network.id),
                     )
                     .await
                 {
@@ -1857,6 +1865,7 @@ async fn cleanup_networks_worker_1(
                     network.clone(),
                     vec![],
                     dbx,
+                    format!("cleanup worker calculated active_to for inactive network {}", network.id),
                 )
                 .await
             {
@@ -2023,6 +2032,7 @@ pub async fn merge_network(
             .c(h!())?,
         vec![],
         &env.dbx,
+        format!("merged this network {} to network {}", req.network_id_from, req.network_id_to),
     )
     .await
     .context(h!())?;
@@ -2035,6 +2045,7 @@ pub async fn merge_network(
             .c(h!())?,
         vec![],
         &env.dbx,
+        format!("merged network {} to this network {}", req.network_id_from, req.network_id_to),
     )
     .await
     .context(h!())?;
@@ -2276,6 +2287,7 @@ pub async fn update_network_posts(
         network.clone(),
         vec![],
         &env.dbx,
+        format!("updated posts for network {}", req.network_id),
     )
     .await
     .context(h!())?;
@@ -2401,6 +2413,7 @@ pub async fn update_network_units(
         network,
         vec![],
         &env.dbx,
+        format!("updated units for network {}", req.network_id),
     )
     .await
     .context(h!())?;
@@ -2732,10 +2745,12 @@ pub async fn fix_network_areas_of_responsibility(
         } else {
             info!("added default aor to network {}", n.id);
 
+            let network_id = n.id;
             sigint::network::etalon_calc::invalidate_network_inbox(
                 n,
                 vec![],
                 db,
+                format!("fixed AORs for network {}", network_id),
             )
             .await
             .c(h!())?;

@@ -113,13 +113,14 @@ pub async fn invalidate_network_inbox(
     network: sigint_network::Model,
     frequencies: Vec<String>,
     db: &DatabaseConnection,
+    context_msg: String,
 ) -> anyhow::Result<()> {
     let frequencies_desc = if frequencies.is_empty() {
         "all".to_string()
     } else {
         frequencies.join(" ,")
     };
-    info!("network invalidation task created for network #{}, frequencies: {frequencies_desc}", network.id);
+    info!("network invalidation task created for network #{}, frequencies: {frequencies_desc}; reason: {context_msg}", network.id);
     let backfill_task = network_invalidation_task::ActiveModel {
         id: NotSet,
         frequency: NotSet,

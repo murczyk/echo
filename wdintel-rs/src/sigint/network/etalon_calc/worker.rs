@@ -183,6 +183,7 @@ async fn run_inbox_network_worker_once(
     txn.commit().await.c(h!())?;
 
     if task_list.is_empty() {
+        info!("[{tag} worker] task_list is empty after triage, skipping...");
         return Ok(());
     }
 
@@ -229,6 +230,8 @@ async fn run_inbox_network_worker_once(
             .await;
             work_started = Instant::now();
         }
+
+        info!("[{tag} worker] run_network_invalidation_tasks started, {} tasks", next_tasks.len());
         run_network_invalidation_tasks(
             next_tasks,
             &signal_group_aors,
@@ -300,23 +303,27 @@ async fn triage_tasks(
     delete_original_tasks(&existing_tasks, &old_worker_ids, &txn)
         .await
         .c(h!())?;
-    let filter = network_invalidation_task::Column::Tag
-        .eq(NETWORK_INVALIDATION_TASK_TAG_RECENT.to_string());
-    let filter2 = network_invalidation_task::Column::SinceTs.gte(cutoff);
-    let mut sorted_tasks = network_invalidation_task::Entity::find()
-        .filter(filter.or(filter2))
+    let sorted_tasks = network_invalidation_task::Entity::find()
         .order_by_desc(network_invalidation_task::Column::TillTs)
         .all(&txn)
         .await
         .c(h!())?;
-    sorted_tasks.reverse();
+    let cutoff2 = cutoff - Duration::from_hours(1);
     let mut result = vec![];
-    for r in sorted_tasks {
-        if r.since_ts < cutoff {
-            let mut rec = r.into_active_model();
-            rec.tag = Set(NETWORK_INVALIDATION_TASK_TAG_OLD.to_string());
-            rec.update(db).await.c(h!())?;
+    for mut r in sorted_tasks {
+        let (tag, push) = if r.since_ts > cutoff2 && r.till_ts > cutoff2 {
+            (NETWORK_INVALIDATION_TASK_TAG_RECENT, true)
+        } else if r.since_ts < cutoff && r.till_ts < cutoff {
+            (NETWORK_INVALIDATION_TASK_TAG_OLD, false)
         } else {
+            (NETWORK_INVALIDATION_TASK_TAG_UNASSIGNED, false)
+        };
+        if !r.tag.eq(tag) {
+            let mut rec = r.into_active_model();
+            rec.tag = Set(tag.to_string());
+            r = rec.update(db).await.c(h!())?;
+        }
+        if push {
             result.push(r);
         }
     }
@@ -690,11 +697,11 @@ async fn process_invalidation_filter(
             items_to_process.push(item);
         }
         crate::sigint::network::etalon_calc::calculate_sigint_inbox_item_networks(
-                items_to_process,
-                &txn,
-            )
-                .await
-                .c(h!())?;
+            items_to_process,
+            &txn,
+        )
+            .await
+            .c(h!())?;
         txn.commit().await.c(h!())?;
         for i in new_processed_items {
             processed_items.insert(i);
