@@ -162,26 +162,39 @@ update_public_host_configs() {
 
 update_nginx() {
   local nginx_dir="/etc/nginx/sites-enabled"
-  local nginx_file="$nginx_dir/echo"
+  local canonical_nginx_file="$nginx_dir/echo"
+  local nginx_file="$canonical_nginx_file"
 
-  if [[ ! -f "$nginx_file" && -d "$nginx_dir" ]]; then
+  if [[ ! -d "$nginx_dir" ]]; then
+    warn "nginx config directory not found: $nginx_dir"
+    return 0
+  fi
+
+  if [[ ! -f "$nginx_file" ]]; then
     local candidate
-    candidate=$(grep -rl "echo-dev-template" "$nginx_dir" 2>/dev/null | head -n1 || true)
+
+    if [[ -f "$nginx_dir/$DOMAIN" ]]; then
+      candidate="$nginx_dir/$DOMAIN"
+    else
+      candidate=$(grep -rl "echo-dev-template" "$nginx_dir" 2>/dev/null | head -n1 || true)
+    fi
+
     if [[ -z "$candidate" ]]; then
       candidate=$(grep -rl "server_name[[:space:]]\\+echo\\.local" "$nginx_dir" 2>/dev/null | head -n1 || true)
     fi
+
     if [[ -n "$candidate" ]]; then
-      nginx_file="$candidate"
+      if [[ "$candidate" != "$canonical_nginx_file" ]]; then
+        run_root mv "$candidate" "$canonical_nginx_file"
+        log "Normalized nginx site filename to $canonical_nginx_file (from $(basename "$candidate"))"
+      fi
+      nginx_file="$canonical_nginx_file"
     fi
   fi
 
   if [[ -f "$nginx_file" ]]; then
-    if [[ "$(basename "$nginx_file")" == "echo" ]]; then
-      local renamed="$nginx_dir/$DOMAIN"
-      if [[ ! -e "$renamed" ]]; then
-        run_root mv "$nginx_file" "$renamed"
-        nginx_file="$renamed"
-      fi
+    if [[ -f "$nginx_dir/$DOMAIN" && "$nginx_dir/$DOMAIN" != "$canonical_nginx_file" ]]; then
+      warn "Legacy nginx file kept as-is: $nginx_dir/$DOMAIN (canonical file is $canonical_nginx_file)"
     fi
 
     run_root sed -i -E "s|^\s*server_name\s+[^;]+;|    server_name ${DOMAIN};|" "$nginx_file"
@@ -237,7 +250,7 @@ main() {
   renew_cert
 
   echo
-  echo "✅ Ready: https://${DOMAIN}"
+  echo "✅ Ready: https://${DOMAIN}:8300"
   if [[ -n "$MACHINE" ]]; then
     echo
     echo "SSH config:"

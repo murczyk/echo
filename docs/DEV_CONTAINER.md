@@ -85,7 +85,7 @@ https://ziggy-dev-echo.eagle-atria.ts.net
 
 ```bash
 TEMPLATE=echo-dev-template
-cd ~/workspace/echo
+cd ~/workspace/echo-dev-env/
 
 echo-install-utils incus-clone --tailscale "$TS_KEY" --clear-all --ssh "$SSH_PUBLIC_KEY" -- "$TEMPLATE" "$MACHINE"
 incus file push ./deploy/dev-post-clone.sh "$MACHINE/var/tmp/dev-post-clone.sh"
