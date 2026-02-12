@@ -6,7 +6,7 @@ use crate::utils::worker_watch;
 use crate::{h, new_pg_pool_from_mode};
 use chrono::{NaiveDateTime, Timelike, Utc};
 use echo_migration::Expr;
-use log::{error, info, warn};
+use log::{debug, error, info, warn};
 use sea_orm::sea_query::ExprTrait;
 use sea_orm::*;
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -197,6 +197,7 @@ async fn run_inbox_network_worker_once(
     let mut work_started = Instant::now();
     let mut fuel = 1_000_000;
     let mut processed_items = HashSet::new();
+    let total_counter = task_list.len();
     while !task_list.is_empty() {
         if is_for_old_worker && !check_is_worker_night_shift() {
             return Ok(());
@@ -233,8 +234,8 @@ async fn run_inbox_network_worker_once(
             work_started = Instant::now();
         }
 
-        info!(
-            "[{tag} worker] run_network_invalidation_tasks started, {} tasks",
+        debug!(
+            "[{tag} worker] run_network_invalidation_tasks: processing next tasks batch - {}/{total_counter}",
             next_tasks.len()
         );
         run_network_invalidation_tasks(
