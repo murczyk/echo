@@ -1071,6 +1071,27 @@ oneoff-import-gdocs:
     # ssh echo-donetsk '/usr/bin/wdintel-rs --mode=live oneoff-import-callsigns-gdoc'
     echo "DONE. Now redeploy all the sigint workers"
 
+[arg('server', long='server')]
+oneoff-2026-02-13-bgworker-00-pre-deploy server='':
+    #!/bin/bash
+    set -euo pipefail
+    . deploy/utils.sh
+    ensure_nonempty "server" "{{ server }}"
+    ssh {{ server }} 'sudo systemctl disable --now wdintel-rs-bgworker.socket wdintel-py.socket echo-whatsapp.socket echo-signal-cli.socket || true'
+    ssh {{ server }} 'sudo systemctl daemon-reload'
+    ssh {{ server }} 'systemctl --no-pager list-unit-files --type=socket | grep -E "wdintel-rs-bgworker\\.socket|wdintel-rs\\.socket|wdintel-py\\.socket|echo-whatsapp\\.socket|echo-signal-cli\\.socket" || true'
+
+[arg('server', long='server')]
+oneoff-2026-02-13-bgworker-01-post-deploy server='':
+    #!/bin/bash
+    set -euo pipefail
+    . deploy/utils.sh
+    ensure_nonempty "server" "{{ server }}"
+    ssh {{ server }} 'sudo systemctl daemon-reload'
+    ssh {{ server }} 'sudo systemctl enable --now wdintel-rs.socket'
+    ssh {{ server }} 'sudo systemctl enable --now wdintel-rs-bgworker'
+    ssh {{ server }} 'systemctl --no-pager status wdintel-rs.socket wdintel-rs-bgworker.service --no-pager'
+
 # WARNING! ECHO-IM migrations are not applied here. To apply ECHO-IM migrations too, run `cargo run -p wdintel-rs -- --mode=debug migrate`
 #
 
