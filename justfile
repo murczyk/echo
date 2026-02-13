@@ -300,15 +300,25 @@ check-git-hooks:
     rm echo-install/rusty-tags.emacs || true
     find ./wdintel-web/src -type f -name '*.elm' -print0 | xargs -0 etags --regex @elm.tags  --append
 
-deploy:
+[arg('server', long='server')]
+deploy _server_pos="" server="":
     #!/bin/bash
     set -euo pipefail
     # Enable tracing if DEBUG=1 or TRACE=1 is set in environment
     if [[ "${DEBUG:-0}" == "1" || "${TRACE:-0}" == "1" ]]; then
       set -x
     fi
-    if [[ "{{ server }}" == "" ]]; then
-     just _print-servers; exit 1;
+    if [[ "{{ _server_pos }}" != "" && "{{ server }}" != "" ]]; then
+      echo "pass either positional server or --server, not both." >&2
+      exit 1
+    fi
+
+    if [[ "{{ _server_pos }}" != "" ]]; then
+      SERVER="{{ _server_pos }}"
+    elif [[ "{{ server }}" != "" ]]; then
+      SERVER="{{ server }}"
+    else
+      just _print-servers; exit 1;
     fi
     # Determine version from root Cargo.toml ([workspace.package].version)
     VERSION=$(tq -r -f Cargo.toml workspace.package.version)
@@ -330,12 +340,12 @@ deploy:
       exit 1
     fi
 
-    printf "\n🚀🚀🚀 deploying %s 🚀🚀🚀\n\n" "{{ server }}"
+    printf "\n🚀🚀🚀 deploying %s 🚀🚀🚀\n\n" "$SERVER"
 
     # Notify Discord at the start of deployment including local hostname
     curl -sS -X POST \
       -H 'Content-Type: application/json' \
-      -d "{\"content\":\"deploying {{ server }} (version $VERSION); waiting for CI from $(hostname)\"}" \
+      -d "{\"content\":\"deploying $SERVER (version $VERSION); waiting for CI from $(hostname)\"}" \
       '{{ discord_webhook }}' || true
 
     # Helpful link to CI runs
@@ -379,7 +389,7 @@ deploy:
     fi
 
     echo "CI finished detected. Proceeding with remote apt install."
-    ssh {{ server }} 'set -euo pipefail
+    ssh "$SERVER" 'set -euo pipefail
       if systemctl cat wdintel-rs-bgworker.service >/dev/null 2>&1; then
         echo "Stopping wdintel-rs-bgworker.service and waiting up to 120 seconds..."
         sudo systemctl stop wdintel-rs-bgworker.service || true
@@ -398,11 +408,11 @@ deploy:
         echo "wdintel-rs-bgworker.service is not installed; skipping stop wait."
       fi'
     # Quiet update/install (stdout suppressed for update; install in -qq)
-    ssh {{ server }} 'sudo apt-get -qq update > /dev/null && sudo DEBIAN_FRONTEND=noninteractive apt-get -y -qq install echo-install wdintel-rs echo-docs'
+    ssh "$SERVER" 'sudo apt-get -qq update > /dev/null && sudo DEBIAN_FRONTEND=noninteractive apt-get -y -qq install echo-install wdintel-rs echo-docs'
     # Success notification
     curl -sS -X POST \
       -H 'Content-Type: application/json' \
-      -d "{\"content\":\"✅ Deployed {{ server }} (version $VERSION) via apt-get\"}" \
+      -d "{\"content\":\"✅ Deployed $SERVER (version $VERSION) via apt-get\"}" \
       '{{ discord_webhook }}' || true
 
 collect-ip-loop:
