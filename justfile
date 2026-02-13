@@ -1090,6 +1090,7 @@ oneoff-2026-02-13-bgworker-01-post-deploy server='':
     ssh {{ server }} 'sudo systemctl daemon-reload'
     ssh {{ server }} 'sudo systemctl enable --now wdintel-rs.socket'
     ssh {{ server }} 'sudo systemctl enable --now wdintel-rs-bgworker'
+    ssh {{ server }} 'sudo systemctl disable --now wdintel-rs.service'
     ssh {{ server }} 'systemctl --no-pager status wdintel-rs.socket wdintel-rs-bgworker.service --no-pager'
 
 # WARNING! ECHO-IM migrations are not applied here. To apply ECHO-IM migrations too, run `cargo run -p wdintel-rs -- --mode=debug migrate`

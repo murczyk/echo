@@ -9,6 +9,10 @@
 
 ## NEXT
 
+- 👷 Розгортання (bgworker/socket activation): для деплоїв wdintel-rs запустити:
+  - `just oneoff-2026-02-13-bgworker-00-pre-deploy --server=<server>` перед деплоєм
+  - `just oneoff-2026-02-13-bgworker-01-post-deploy --server=<server>` після деплою
+
 ## 2026-02-13
 
 - [#1852](https://github.com/echoua/echo/issues/1852) ✅ Частоти: додано опис полів при додаванні ключів шифрування у формах редагування/створення частоти
