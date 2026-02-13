@@ -13,7 +13,7 @@ All commands below are intended to be run on the source node `pve-1` as user `zi
 
 - Source `pve-1`:
   - VM `109` (`srv-vault`) is `running`
-  - `rootfs: local-zfs:vm-109-disk-0,size=<FILL>`
+  - `virtio0: local-zfs:vm-109-disk-0,size=<FILL>`
   - dataset: `rpool/data/vm-109-disk-0` (refquota=<FILL>)
 - Target `pve-hz-1`:
   - VMID `109` is free
