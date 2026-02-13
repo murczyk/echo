@@ -1,32 +1,11 @@
-import { createTheme, ThemeProvider } from '@mui/material/styles';
-import React from 'react';
+import { ThemeProvider } from '@mui/material/styles';
 import { createRoot, Root } from 'react-dom/client';
 
 import { AdminTagsNeoKeywordEditPage } from './routes/admin-tags-neo-keyword-edit';
-
-function getMuiPaletteMode(): 'light' | 'dark' {
-  return document.documentElement.getAttribute('data-bs-theme') === 'dark' ? 'dark' : 'light';
-}
-
-function useMuiPaletteMode() {
-  const [mode, setMode] = React.useState(getMuiPaletteMode);
-
-  React.useEffect(() => {
-    const observer = new MutationObserver(() => setMode(getMuiPaletteMode()));
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ['data-bs-theme'],
-    });
-
-    return () => observer.disconnect();
-  }, []);
-
-  return mode;
-}
+import { useNeoMuiTheme } from './mui-theme';
 
 function TagsNeoKeywordEditRoot(props: { tagId: string | null; keywordId: string | null }) {
-  const mode = useMuiPaletteMode();
-  const theme = React.useMemo(() => createTheme({ palette: { mode } }), [mode]);
+  const theme = useNeoMuiTheme();
 
   return (
     <ThemeProvider theme={theme}>

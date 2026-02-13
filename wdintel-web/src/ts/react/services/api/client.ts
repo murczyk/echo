@@ -2,6 +2,9 @@ type JsonValue = string | number | boolean | null | JsonObject | JsonValue[];
 type JsonObject = { [key: string]: JsonValue };
 
 type HttpMethod = 'POST' | 'PUT' | 'DELETE' | 'GET';
+type RequestOptions = {
+  signal?: AbortSignal;
+};
 async function parseErrorMessage(response: Response): Promise<string> {
   const contentType = response.headers.get('content-type') || '';
 
@@ -25,13 +28,19 @@ async function parseErrorMessage(response: Response): Promise<string> {
   return response.statusText || `HTTP ${response.status}`;
 }
 
-async function requestJson<T>(method: HttpMethod, url: string, body?: JsonValue | JsonObject) {
+async function requestJson<T>(
+  method: HttpMethod,
+  url: string,
+  body?: JsonValue | JsonObject,
+  options?: RequestOptions,
+) {
   const init: RequestInit = {
     method,
     headers: {
       'Content-Type': 'application/json',
     },
     credentials: 'include',
+    signal: options?.signal,
   };
 
   if (method !== 'GET') {
@@ -57,26 +66,26 @@ async function requestJson<T>(method: HttpMethod, url: string, body?: JsonValue 
   }
 }
 
-export async function postJson<T>(url: string, body?: JsonValue | JsonObject) {
-  return requestJson<T>('POST', url, body);
+export async function postJson<T>(url: string, body?: JsonValue | JsonObject, options?: RequestOptions) {
+  return requestJson<T>('POST', url, body, options);
 }
 
-export async function getJson<T>(url: string) {
-  return requestJson<T>('GET', url);
+export async function getJson<T>(url: string, options?: RequestOptions) {
+  return requestJson<T>('GET', url, undefined, options);
 }
 
-export async function postVoid(url: string, body?: JsonValue | JsonObject) {
-  await requestJson('POST', url, body);
+export async function postVoid(url: string, body?: JsonValue | JsonObject, options?: RequestOptions) {
+  await requestJson('POST', url, body, options);
 }
 
-export async function putJson<T>(url: string, body?: JsonValue | JsonObject) {
-  return requestJson<T>('PUT', url, body);
+export async function putJson<T>(url: string, body?: JsonValue | JsonObject, options?: RequestOptions) {
+  return requestJson<T>('PUT', url, body, options);
 }
 
-export async function putVoid(url: string, body?: JsonValue | JsonObject) {
-  await requestJson('PUT', url, body);
+export async function putVoid(url: string, body?: JsonValue | JsonObject, options?: RequestOptions) {
+  await requestJson('PUT', url, body, options);
 }
 
-export async function deleteVoid(url: string, body?: JsonValue | JsonObject) {
-  await requestJson('DELETE', url, body);
+export async function deleteVoid(url: string, body?: JsonValue | JsonObject, options?: RequestOptions) {
+  await requestJson('DELETE', url, body, options);
 }

@@ -29,7 +29,7 @@ function normalizeServerInfo(raw: ServerInfoLike | null | undefined): ServerInfo
   };
 }
 
-export async function fetchServerInfo(): Promise<ServerInfo> {
-  const data = await postJson<ServerInfoLike>('/api-public/server-info', {});
+export async function fetchServerInfo(signal?: AbortSignal): Promise<ServerInfo> {
+  const data = await postJson<ServerInfoLike>('/api-public/server-info', {}, { signal });
   return normalizeServerInfo(data ?? {});
 }
