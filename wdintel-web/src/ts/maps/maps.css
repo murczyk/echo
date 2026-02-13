@@ -90,32 +90,38 @@
 	padding: 6px 12px;
 }
 
-div [id^="map-container-"] {
-	width: 100%;
-	height: 100px;
-	z-index: 1;
-	/* Ensure it's above other elements when expanded */
-	position: relative;
-	/* Adjust as needed */
+div [id^='map-container-'] {
+  width: 100%;
+  height: 100px;
+  z-index: 1;
+  /* Ensure it's above other elements when expanded */
+  position: relative;
+  /* Adjust as needed */
 }
 
-div [id^="map-container-"].expanded {
-	width: 100%;
-	height: 100%;
-	position: fixed;
-	top: 50%;
-	left: 50%;
-	transform: translate(-50%, -50%);
-	z-index: 1000;
+div [id^='map-container-'].expanded {
+  width: 100%;
+  height: 100%;
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 1000;
 }
 
-div [id="map-container-analysis"] {
-	width: 100%;
+div [id='map-container-analysis'] {
+  width: 100%;
 }
 
-.leaflet-top.leaflet-left {
-	left: 50%;
-	transform: translateX(-50%);
+/* Topleft as one row: search at left, timeswitch in center (Leaflet only has topleft/topright, so we use one topleft container with flex). */
+#analysis-map .leaflet-top.leaflet-left {
+	display: flex;
+	justify-content: space-between;
+	width: 60%;
+}
+
+.leaflet-control.search-control {
+	border: none;
 }
 
 .leaflet-pane {
@@ -457,57 +463,57 @@ div [id="map-container-analysis"] {
 }
 
 .palitra-color {
-	border-color: #dee2e6 !important;
+  border-color: #dee2e6 !important;
 }
 
 .palitra-info {
-	color: #6c757d !important;
+  color: #6c757d !important;
 }
 
 /* Dark theme */
-html[data-bs-theme="dark"] .leaflet-custom-control,
-html[data-bs-theme="dark"] .palitras-control,
-html[data-bs-theme="dark"] .palitras-control-header,
-html[data-bs-theme="dark"] #analysis-map .layer-switch-control,
-html[data-bs-theme="dark"] #analysis-map .layer-switch-header {
-	background: #212529 !important;
-	border-color: #495057 !important;
+html[data-bs-theme='dark'] .leaflet-custom-control,
+html[data-bs-theme='dark'] .palitras-control,
+html[data-bs-theme='dark'] .palitras-control-header,
+html[data-bs-theme='dark'] #analysis-map .layer-switch-control,
+html[data-bs-theme='dark'] #analysis-map .layer-switch-header {
+  background: #212529 !important;
+  border-color: #495057 !important;
 }
 
-html[data-bs-theme="dark"] .palitras-control-header h3,
-html[data-bs-theme="dark"] .palitras-toggle-button,
-html[data-bs-theme="dark"] .palitras-palette-icon,
-html[data-bs-theme="dark"] .palitra-name,
-html[data-bs-theme="dark"] #analysis-map .layer-switch-header h3,
-html[data-bs-theme="dark"] #analysis-map .layer-switch-toggle-button,
-html[data-bs-theme="dark"] #analysis-map .layer-switch-icon,
-html[data-bs-theme="dark"] #analysis-map .layer-switch-label {
-	color: #dee2e6 !important;
+html[data-bs-theme='dark'] .palitras-control-header h3,
+html[data-bs-theme='dark'] .palitras-toggle-button,
+html[data-bs-theme='dark'] .palitras-palette-icon,
+html[data-bs-theme='dark'] .palitra-name,
+html[data-bs-theme='dark'] #analysis-map .layer-switch-header h3,
+html[data-bs-theme='dark'] #analysis-map .layer-switch-toggle-button,
+html[data-bs-theme='dark'] #analysis-map .layer-switch-icon,
+html[data-bs-theme='dark'] #analysis-map .layer-switch-label {
+  color: #dee2e6 !important;
 }
 
-html[data-bs-theme="dark"] .palitras-toggle-button:hover,
-html[data-bs-theme="dark"] .palitras-palette-icon:hover,
-html[data-bs-theme="dark"] .palitra-item:hover,
-html[data-bs-theme="dark"] #analysis-map .layer-switch-toggle-button:hover,
-html[data-bs-theme="dark"] #analysis-map .layer-switch-icon:hover,
-html[data-bs-theme="dark"] #analysis-map .layer-switch-item:hover {
-	background-color: #343a40 !important;
+html[data-bs-theme='dark'] .palitras-toggle-button:hover,
+html[data-bs-theme='dark'] .palitras-palette-icon:hover,
+html[data-bs-theme='dark'] .palitra-item:hover,
+html[data-bs-theme='dark'] #analysis-map .layer-switch-toggle-button:hover,
+html[data-bs-theme='dark'] #analysis-map .layer-switch-icon:hover,
+html[data-bs-theme='dark'] #analysis-map .layer-switch-item:hover {
+  background-color: #343a40 !important;
 }
 
-html[data-bs-theme="dark"] .palitra-color {
-	border-color: #495057 !important;
+html[data-bs-theme='dark'] .palitra-color {
+  border-color: #495057 !important;
 }
 
-html[data-bs-theme="dark"] .palitra-info {
-	color: #adb5bd !important;
+html[data-bs-theme='dark'] .palitra-info {
+  color: #adb5bd !important;
 }
 
 /* Palitra points cluster styles */
 .palitra-point-cluster {
-	transition: transform 0.2s ease;
+  transition: transform 0.2s ease;
 }
 
 .palitra-point-cluster:hover {
-	transform: scale(1.1);
-	cursor: pointer;
+  transform: scale(1.1);
+  cursor: pointer;
 }

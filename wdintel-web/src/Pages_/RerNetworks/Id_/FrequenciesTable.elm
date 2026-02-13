@@ -1446,6 +1446,8 @@ freqEditSidebarContent shared model user freqId updateReq =
                     ]
                 , div [ class "space-y-2" ]
                     [ label [ class "text-sm font-medium text-foreground" ] [ text "Ключі" ]
+                    , p [ class "text-xs text-muted-foreground" ]
+                        [ text "Пошук і вибір існуючих ключів. Щоб додати новий ключ — використовуйте блок нижче." ]
                     , let
                         selectedItems =
                             findSelectItemsById model model.freqEditKeySelect.selected
@@ -1485,8 +1487,11 @@ freqEditSidebarContent shared model user freqId updateReq =
                     keyInvalid =
                         keyValue == "" || keyWrongLength
                   in
-                  div [ class "space-y-2" ]
-                    [ div [ class "flex gap-2" ]
+                  div [ class "space-y-2 rounded-lg border border-border bg-muted/30 p-3" ]
+                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Додати новий ключ" ]
+                    , p [ class "text-xs text-muted-foreground" ]
+                        [ text "Введіть ключ і натисніть «Додати новий» — інакше він не збережеться при збереженні форми." ]
+                    , div [ class "flex gap-2" ]
                         [ Button.new { label = "Додати новий", onClick = FreqEditNewKeyClicked }
                             |> Button.withStyleSecondary
                             |> Button.withClasses "whitespace-nowrap"
@@ -1686,8 +1691,10 @@ freqCreateSidebarContent shared model user =
                     _ ->
                         div [ class "text-sm text-muted-foreground" ] [ text "Завантаження модуляцій..." ]
                 ]
-            , div []
-                [ label [ class "block text-sm font-medium mb-1" ] [ text "Ключі" ]
+            , div [ class "space-y-2" ]
+                [ label [ class "text-sm font-medium text-foreground" ] [ text "Ключі" ]
+                , p [ class "text-xs text-muted-foreground" ]
+                    [ text "Пошук і вибір існуючих ключів. Щоб додати новий ключ — використовуйте блок нижче." ]
                 , let
                     selectedItems =
                         findSelectItemsById model model.freqCreateKeySelect.selected
@@ -1706,36 +1713,39 @@ freqCreateSidebarContent shared model user =
                                 defaultOptions
                     ]
                 ]
-                , let
-                    keyRules =
-                        keyRulesFromModulationId model model.freqCreateModulationSelect.selected
+            , let
+                keyRules =
+                    keyRulesFromModulationId model model.freqCreateModulationSelect.selected
 
-                    keyValue =
-                        String.trim model.freqCreateNewKeyInput
+                keyValue =
+                    String.trim model.freqCreateNewKeyInput
 
-                    keyLen =
-                        String.length keyValue
+                keyLen =
+                    String.length keyValue
 
-                    keyWrongLength =
-                        case keyRules.requiredLen of
-                            Just requiredLen ->
-                                keyRules.keyAllowed && keyValue /= "" && keyLen /= requiredLen
+                keyWrongLength =
+                    case keyRules.requiredLen of
+                        Just requiredLen ->
+                            keyRules.keyAllowed && keyValue /= "" && keyLen /= requiredLen
 
-                            Nothing ->
-                                False
+                        Nothing ->
+                            False
 
-                    keyInvalid =
-                        keyValue == "" || keyWrongLength
+                keyInvalid =
+                    keyValue == "" || keyWrongLength
               in
-              div [ class "space-y-2" ]
-                [ div [ class "flex gap-2" ]
+              div [ class "space-y-2 rounded-lg border border-border bg-muted/30 p-3" ]
+                [ label [ class "text-sm font-medium text-foreground" ] [ text "Додати новий ключ" ]
+                , p [ class "text-xs text-muted-foreground" ]
+                    [ text "Введіть ключ і натисніть «Додати новий» — інакше він не збережеться при збереженні форми." ]
+                , div [ class "flex gap-2" ]
                     [ Button.new { label = "Додати новий", onClick = FreqCreateNewKeyClicked }
                         |> Button.withStyleSecondary
                         |> Button.withClasses "whitespace-nowrap"
                         |> Button.withDisabled (keyInvalid || model.freqCreateNewKeySaving)
                         |> Button.view
                     , input
-                        [ class "w-full p-2 border border-border rounded font-mono"
+                        [ class "w-full px-3 py-2 border border-border rounded-md bg-background text-foreground font-mono"
                         , type_ "text"
                         , placeholder "Введіть новий ключ"
                         , value model.freqCreateNewKeyInput

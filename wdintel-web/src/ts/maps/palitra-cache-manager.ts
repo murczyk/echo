@@ -107,9 +107,55 @@ export class PalitraCacheManager {
     }
   }
 
-  /** Coordinate key for deduplication */
-  private static pointKey(p: PalitraPoint): string {
-    return `${p.label}:${p.coords.lat},${p.coords.lng}`;
+  /** All cached points for given palitras (from all tiles), deduped, for local search */
+  getCachedPointsForPalitras(palitraIds: number[]): { palitra_id: number; points: PalitraPoint[] }[] {
+    const result: { palitra_id: number; points: PalitraPoint[] }[] = [];
+    for (const palitraId of palitraIds) {
+      const tiles = this.tiles.get(palitraId);
+      if (!tiles) {
+        result.push({ palitra_id: palitraId, points: [] });
+        continue;
+      }
+      const seen = new Set<string>();
+      const points: PalitraPoint[] = [];
+      tiles.forEach((tilePoints) => {
+        for (const p of tilePoints) {
+          const key = PalitraCacheManager.pointKey(p);
+          if (seen.has(key)) continue;
+          seen.add(key);
+          points.push(p);
+        }
+      });
+      result.push({ palitra_id: palitraId, points });
+    }
+    return result;
+  }
+
+  /** Key for point deduplication (label + coords). */
+  static pointKey(p: PalitraPoint): string {
+    return `${p.label ?? ''}:${p.coords.lat},${p.coords.lng}`;
+  }
+
+  /** Fetch points by label search (exact match). Does not use tile cache. */
+  async fetchSearchPoints(
+    palitraIds: number[],
+    pointLabels: string[]
+  ): Promise<{ palitra_id: number; points: PalitraPoint[] }[]> {
+    if (palitraIds.length === 0 || pointLabels.length === 0) {
+      return [];
+    }
+    const response = await fetch('/api/palitra/points/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        palitra_ids: palitraIds,
+        point_labels: pointLabels
+      })
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    return response.json();
   }
 
   /** Store points in the cache 

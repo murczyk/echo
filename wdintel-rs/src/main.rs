@@ -535,6 +535,7 @@ pub struct ImportTuiPs {
 #[command(author, version, about, long_about = None)]
 enum Cmd {
     Server(ServerPs),
+    Bgworker,
     GenElm,
     GenTs,
     #[command(visible_alias = "migration")]
@@ -842,6 +843,9 @@ async fn async_main(
     match action {
         Cmd::Server(ps) => {
             server::main_server(mode, ps, token, shutdown_handle.clone()).await
+        }
+        Cmd::Bgworker => {
+            server::main_bgworker(mode, token, shutdown_handle.clone()).await
         }
         Cmd::OneoffEnsureTagsOrdering => {
             tags::ordering::oneoff_ensure_tags_ordering(mode).await

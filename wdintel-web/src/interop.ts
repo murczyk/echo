@@ -18,6 +18,7 @@ import "./styles/floating-popup.css"
 import { setupMap, addPointsToLayer } from './ts/maps/maps'
 import { MapPoint, MapPointDetailed, MapPointShort } from './ts/maps/types'
 import './ts/web-components/analysis-map'
+import './ts/react/analysis-map-search-element'
 import './ts/web-components/modal-dialog.ts'
 import './ts/web-components/bar-chart-2.ts'
 import './ts/web-components/small-map.ts'

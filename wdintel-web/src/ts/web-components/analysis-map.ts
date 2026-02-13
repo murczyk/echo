@@ -7,8 +7,9 @@ import { KMZLayer, kmzLayerFactory } from '../maps/leaflet-kmz'
 import { MapPointDetailed } from '../maps/types';
 import { messagesCountText } from '../maps/language-utils';
 import { loadRerAnalysisQueryState, RerAnalysisQueryState, saveRerAnalysisQueryState } from '../rer-analysis-query-state';
-import { TimeswitchControl, FeatureToggleState, createLayerSwitchControl, createExitControl2, createTimeswitchControl, createAttributionControl, createPalitrasControl, FeatureName, LayerSwitchControl } from '../maps/controls';
+import { TimeswitchControl, FeatureToggleState, createLayerSwitchControl, createExitControl2, createTimeswitchControl, createAttributionControl, createPalitrasControl, FeatureName, LayerSwitchControl, createSearchControl } from '../maps/controls';
 import { AnalysisMapStateStore, AnalysisMapStoredState } from '../maps/analysis-map-state';
+import { parseCoordinateInput } from '../maps/coordinate-search';
 import { PalitraManager } from '../maps/palitra-manager';
 import { PalitraDetails } from '../maps/palitra-types';
 
@@ -133,16 +134,58 @@ class AnalysisMap extends HTMLElement {
   private _pelengsEnabled = true;
   private _layerSwitchControl: LayerSwitchControl | null = null;
   private _stateStore: AnalysisMapStateStore;
-
+  private _coordinateSearchMarker: L.CircleMarker | null = null;
+  private _searchPointsHandler = (e: CustomEvent<string>) => {
+    const value = (e.detail ?? '').trim();
+    const coords = parseCoordinateInput(value);
+    if (coords && this._map) {
+      this._flyToCoordinate(coords);
+      this._palitraManager?.setSearchQuery('');
+    } else {
+      this._clearCoordinateMarker();
+      this._palitraManager?.setSearchQuery(value);
+    }
+  }
   constructor() {
     super();
     this._stateStore = new AnalysisMapStateStore();
     this._applyState(this._stateStore.getState());
   }
 
-  connectedCallback() { }
+  connectedCallback() {
+    this.addEventListener('search-points', this._searchPointsHandler);
+  }
 
-  disconnectedCallback() { }
+  disconnectedCallback() {
+    this.removeEventListener('search-points', this._searchPointsHandler);
+  }
+
+  private _clearCoordinateMarker(): void {
+    if (this._coordinateSearchMarker && this._map) {
+      this._map.removeLayer(this._coordinateSearchMarker);
+      this._coordinateSearchMarker = null;
+    }
+  }
+
+  private _flyToCoordinate(coords: { lat: number; lng: number }): void {
+    if (!this._map) return;
+    this._clearCoordinateMarker();
+    const latlng: L.LatLngExpression = [coords.lat, coords.lng];
+    this._map.flyTo(latlng, 13, { duration: 0.4 });
+    const marker = L.circleMarker(latlng, {
+      color: '#0d6efd',
+      fillColor: '#0d6efd',
+      fillOpacity: 0.8,
+      radius: 8,
+      weight: 2
+    });
+    marker.bindPopup(
+      `<div>Координати: ${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}</div>`,
+      { closeButton: true }
+    );
+    marker.addTo(this._map);
+    this._coordinateSearchMarker = marker;
+  }
 
   attributeChangedCallback(name: string, oldValue: any, newValue: string) {
     if (name === 'visibility') {
@@ -243,7 +286,9 @@ class AnalysisMap extends HTMLElement {
 
   private render() {
     this.innerHTML = `
-    <div id="analysis-map"> </div>
+    <div class="analysis-map-wrapper" style="display: flex; flex-direction: column; height: 100%; min-height: 0;">
+      <div id="analysis-map" style="flex: 1; min-height: 0;"></div>
+    </div>
       `;
   }
 
@@ -328,6 +373,7 @@ class AnalysisMap extends HTMLElement {
     }
 
     const switchTimeControl = createTimeswitchControl(this._daterange);
+    map.addControl(createSearchControl());
     map.addControl(switchTimeControl)
 
     map.addControl(createExitControl2(exitCallback));

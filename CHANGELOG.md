@@ -11,15 +11,33 @@
 
 - [#1911](https://github.com/echoua/echo/issues/1911) ✅ Налаштування: Додано альтернативну версію компоненту на React з покращеним UX/UI: WCAG, логіка зберігання за відсутності змін і т. п. Рефакторинг логіки стилізації альтернативних версій компонентів.
 
+- 👷 Розгортання (bgworker/socket activation): для деплоїв wdintel-rs запустити:
+  - `just oneoff-2026-02-13-bgworker-00-pre-deploy --server=<server>` перед деплоєм
+  - `just oneoff-2026-02-13-bgworker-01-post-deploy --server=<server>` після деплою
+
+## 2026-02-13
+
+- [#1852](https://github.com/echoua/echo/issues/1852) ✅ Частоти: додано опис полів при додаванні ключів шифрування у формах редагування/створення частоти
+
+- [#1916](https://github.com/echoua/echo/issues/1916) ✅ Карта: підтримка пошуку точок в WGS84 та MGRS
+
 ## 2026-02-11
 
 - [#1816](https://github.com/echoua/echo/issues/1816) ✅ Аналіз: Конструктор звітів: Додано функціонал "теги без ботів" та "тільки з коментарями мого підрозділу"
 - [#1818](https://github.com/echoua/echo/issues/1818) ✅ Еталонка: Мережі: Відображення сесій для позивних в мережі
 - [#1881](https://github.com/echoua/echo/issues/1881) Додатковий захист фільтру груп
+- [#1887](https://github.com/echoua/echo/issues/1887) 👷 Socket-активація Systemd. На кожному сервері:
+
+```
+sudo systemctl enable --now wdintel-rs.socket
+sudo systemctl disable wdintel-rs
+```
+
 - [#1857](https://github.com/echoua/echo/issues/1857) ✅ Доробили механізм перенесення еталонних мереж і підрозділів між серверами
 
 ## 2026-02-10
 
+- [#1625](https://github.com/echoua/echo/issues/1625) ✅ Карта: пошук точок палітр на карті
 - [#1907](https://github.com/echoua/echo/issues/1907) 🐞Оперативний: додано резервний метод копіювання, коли браузер видає помилку
 
 ## 2026-02-08
