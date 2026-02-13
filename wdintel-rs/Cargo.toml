@@ -139,6 +139,7 @@ proj = ["milgeo-rs/proj"]
 maintainer-scripts = "debian/"
 systemd-units = [
 	{ unit-name = "wdintel-rs" },
+	{ unit-name = "wdintel-rs-bgworker" },
 	{ unit-name = "wdintel-py" },
 	# legacy mechanism without echo-im, to be discontinued
 	{ unit-name = "echo-signal-cli" },

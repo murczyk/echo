@@ -18,6 +18,11 @@
 - [1816](https://github.com/echoua/echo/issues/1816) ✅ Аналіз: Конструктор звітів: Додано функціонал "теги без ботів" та "тільки з коментарями мого підрозділу"
 - [#1818](https://github.com/echoua/echo/issues/1818) ✅ Еталонка: Мережі: Відображення сесій для позивних в мережі
 - [#1881](https://github.com/echoua/echo/issues/1881) Додатковий захист фільтру груп
+- [#1887](https://github.com/echoua/echo/issues/1887) 👷 Socket-активація Systemd. На кожному сервері:
+```
+sudo systemctl enable --now wdintel-rs.socket
+sudo systemctl disable wdintel-rs
+```
 - [#1857](https://github.com/echoua/echo/issues/1857) ✅ Доробили механізм перенесення еталонних мереж і підрозділів між серверами
 
 ## 2026-02-10
