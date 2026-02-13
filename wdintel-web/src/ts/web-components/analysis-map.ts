@@ -9,6 +9,7 @@ import { messagesCountText } from '../maps/language-utils';
 import { loadRerAnalysisQueryState, RerAnalysisQueryState, saveRerAnalysisQueryState } from '../rer-analysis-query-state';
 import { TimeswitchControl, FeatureToggleState, createLayerSwitchControl, createExitControl2, createTimeswitchControl, createAttributionControl, createPalitrasControl, FeatureName, LayerSwitchControl, createSearchControl } from '../maps/controls';
 import { AnalysisMapStateStore, AnalysisMapStoredState } from '../maps/analysis-map-state';
+import { parseCoordinateInput } from '../maps/coordinate-search';
 import { PalitraManager } from '../maps/palitra-manager';
 import { PalitraDetails } from '../maps/palitra-types';
 
@@ -133,8 +134,17 @@ class AnalysisMap extends HTMLElement {
   private _pelengsEnabled = true;
   private _layerSwitchControl: LayerSwitchControl | null = null;
   private _stateStore: AnalysisMapStateStore;
+  private _coordinateSearchMarker: L.CircleMarker | null = null;
   private _searchPointsHandler = (e: CustomEvent<string>) => {
-    this._palitraManager?.setSearchQuery(e.detail ?? '');
+    const value = (e.detail ?? '').trim();
+    const coords = parseCoordinateInput(value);
+    if (coords && this._map) {
+      this._flyToCoordinate(coords);
+      this._palitraManager?.setSearchQuery('');
+    } else {
+      this._clearCoordinateMarker();
+      this._palitraManager?.setSearchQuery(value);
+    }
   }
   constructor() {
     super();
@@ -148,6 +158,33 @@ class AnalysisMap extends HTMLElement {
 
   disconnectedCallback() {
     this.removeEventListener('search-points', this._searchPointsHandler);
+  }
+
+  private _clearCoordinateMarker(): void {
+    if (this._coordinateSearchMarker && this._map) {
+      this._map.removeLayer(this._coordinateSearchMarker);
+      this._coordinateSearchMarker = null;
+    }
+  }
+
+  private _flyToCoordinate(coords: { lat: number; lng: number }): void {
+    if (!this._map) return;
+    this._clearCoordinateMarker();
+    const latlng: L.LatLngExpression = [coords.lat, coords.lng];
+    this._map.flyTo(latlng, 13, { duration: 0.4 });
+    const marker = L.circleMarker(latlng, {
+      color: '#0d6efd',
+      fillColor: '#0d6efd',
+      fillOpacity: 0.8,
+      radius: 8,
+      weight: 2
+    });
+    marker.bindPopup(
+      `<div>Координати: ${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}</div>`,
+      { closeButton: true }
+    );
+    marker.addTo(this._map);
+    this._coordinateSearchMarker = marker;
   }
 
   attributeChangedCallback(name: string, oldValue: any, newValue: string) {
