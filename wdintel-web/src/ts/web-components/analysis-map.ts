@@ -7,7 +7,7 @@ import { KMZLayer, kmzLayerFactory } from '../maps/leaflet-kmz'
 import { MapPointDetailed } from '../maps/types';
 import { messagesCountText } from '../maps/language-utils';
 import { loadRerAnalysisQueryState, RerAnalysisQueryState, saveRerAnalysisQueryState } from '../rer-analysis-query-state';
-import { TimeswitchControl, FeatureToggleState, createLayerSwitchControl, createExitControl2, createTimeswitchControl, createAttributionControl, createPalitrasControl, FeatureName, LayerSwitchControl } from '../maps/controls';
+import { TimeswitchControl, FeatureToggleState, createLayerSwitchControl, createExitControl2, createTimeswitchControl, createAttributionControl, createPalitrasControl, FeatureName, LayerSwitchControl, createSearchControl } from '../maps/controls';
 import { AnalysisMapStateStore, AnalysisMapStoredState } from '../maps/analysis-map-state';
 import { PalitraManager } from '../maps/palitra-manager';
 import { PalitraDetails } from '../maps/palitra-types';
@@ -133,16 +133,22 @@ class AnalysisMap extends HTMLElement {
   private _pelengsEnabled = true;
   private _layerSwitchControl: LayerSwitchControl | null = null;
   private _stateStore: AnalysisMapStateStore;
-
+  private _searchPointsHandler = (e: CustomEvent<string>) => {
+    this._palitraManager?.setSearchQuery(e.detail ?? '');
+  }
   constructor() {
     super();
     this._stateStore = new AnalysisMapStateStore();
     this._applyState(this._stateStore.getState());
   }
 
-  connectedCallback() { }
+  connectedCallback() {
+    this.addEventListener('search-points', this._searchPointsHandler);
+  }
 
-  disconnectedCallback() { }
+  disconnectedCallback() {
+    this.removeEventListener('search-points', this._searchPointsHandler);
+  }
 
   attributeChangedCallback(name: string, oldValue: any, newValue: string) {
     if (name === 'visibility') {
@@ -243,7 +249,9 @@ class AnalysisMap extends HTMLElement {
 
   private render() {
     this.innerHTML = `
-    <div id="analysis-map"> </div>
+    <div class="analysis-map-wrapper" style="display: flex; flex-direction: column; height: 100%; min-height: 0;">
+      <div id="analysis-map" style="flex: 1; min-height: 0;"></div>
+    </div>
       `;
   }
 
@@ -328,6 +336,7 @@ class AnalysisMap extends HTMLElement {
     }
 
     const switchTimeControl = createTimeswitchControl(this._daterange);
+    map.addControl(createSearchControl());
     map.addControl(switchTimeControl)
 
     map.addControl(createExitControl2(exitCallback));
