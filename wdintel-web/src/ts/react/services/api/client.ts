@@ -5,6 +5,21 @@ type HttpMethod = 'POST' | 'PUT' | 'DELETE' | 'GET';
 type RequestOptions = {
   signal?: AbortSignal;
 };
+
+export class HttpRequestError extends Error {
+  status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = 'HttpRequestError';
+    this.status = status;
+  }
+}
+
+export function isUnauthorizedError(error: unknown): boolean {
+  return error instanceof HttpRequestError && error.status === 401;
+}
+
 async function parseErrorMessage(response: Response): Promise<string> {
   const contentType = response.headers.get('content-type') || '';
 
@@ -51,7 +66,7 @@ async function requestJson<T>(
 
   if (!response.ok) {
     const message = await parseErrorMessage(response);
-    throw new Error(message);
+    throw new HttpRequestError(response.status, message);
   }
 
   if (response.status === 204) return undefined as T;

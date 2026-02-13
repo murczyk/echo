@@ -16,6 +16,7 @@ import React from 'react';
 
 import { SettingsSaveReq, SigintZone } from '../../../../Bindings';
 import { Button } from '../../components/mui-customized/button';
+import { isUnauthorizedError } from '../../services/api/client';
 import { fetchServerInfo } from '../../services/api/server-info';
 import { fetchCurrentUser, logoutCurrentUser, saveUserSettings } from '../../services/api/user';
 import { listSigintZones } from '../../services/api/zones';
@@ -64,19 +65,31 @@ export function SettingsNeoPage() {
       setLoadError(null);
 
       try {
-        const [zonesData, user, serverInfo] = await Promise.all([
+        const [zonesData, user] = await Promise.all([
           listSigintZones(abortController.signal),
           fetchCurrentUser(abortController.signal),
-          fetchServerInfo(abortController.signal),
         ]);
 
         setZones(zonesData);
         setZoneId(user.sigintZoneId);
         setInitialZoneId(user.sigintZoneId);
         setUserName(user.name);
-        setVersionText(serverInfo.version || 'невідома версія');
+        try {
+          const serverInfo = await fetchServerInfo(abortController.signal);
+          if (!abortController.signal.aborted) {
+            setVersionText(serverInfo.version || 'невідома версія');
+          }
+        } catch (_) {
+          if (!abortController.signal.aborted) {
+            setVersionText('невідома версія');
+          }
+        }
       } catch (error) {
         if (abortController.signal.aborted) return;
+        if (isUnauthorizedError(error)) {
+          window.location.assign('/login');
+          return;
+        }
         setLoadError(`Помилка завантаження налаштувань: ${formatErrorMessage(error)}`);
       } finally {
         if (abortController.signal.aborted) return;
@@ -108,6 +121,10 @@ export function SettingsNeoPage() {
       setInitialZoneId(zoneId);
       setSaveSuccess('Налаштування збережено.');
     } catch (error) {
+      if (isUnauthorizedError(error)) {
+        window.location.assign('/login');
+        return;
+      }
       setSaveError(`Помилка збереження: ${formatErrorMessage(error)}`);
     } finally {
       setSaveInProgress(false);
