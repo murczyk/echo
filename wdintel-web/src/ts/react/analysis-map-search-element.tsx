@@ -73,7 +73,7 @@ export function SearchInput(props: SearchInputProps) {
         variant="outlined"
         sx={{
           backgroundColor: theme.palette.mode === 'dark' ? 'background.default' : 'background.paper',
-          minWidth: 300,
+          minWidth: 420,
         }}
         InputProps={{
           startAdornment: (
@@ -142,7 +142,7 @@ class AnalysisMapSearchElement extends HTMLElement {
     const onSearch = (value: string) => {
       this.dispatchEvent(new CustomEvent('search-points', { detail: value, bubbles: true, composed: true }));
     };
-    this.root.render(<SearchInput placeholder="Введіть точку або лісосмугу" onSearch={onSearch} />);
+    this.root.render(<SearchInput placeholder="Точка, лісосмуга або координати (WGS84, MGRS)" onSearch={onSearch} />);
   }
 
   disconnectedCallback() {
