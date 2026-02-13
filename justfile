@@ -1077,7 +1077,13 @@ oneoff-2026-02-13-bgworker-00-pre-deploy server='':
     set -euo pipefail
     . deploy/utils.sh
     ensure_nonempty "server" "{{ server }}"
-    ssh {{ server }} 'sudo systemctl disable --now wdintel-rs-bgworker.socket wdintel-py.socket echo-whatsapp.socket echo-signal-cli.socket || true'
+    ssh {{ server }} 'for unit in wdintel-rs-bgworker.socket wdintel-py.socket echo-whatsapp.socket echo-signal-cli.socket; do
+      if systemctl list-unit-files --type=socket --no-legend | awk "{print \$1}" | grep -qx "$unit"; then
+        sudo systemctl disable --now "$unit" || true
+      else
+        echo "Unit \"$unit\" not found, skipping."
+      fi
+    done'
     ssh {{ server }} 'sudo systemctl daemon-reload'
     ssh {{ server }} 'systemctl --no-pager list-unit-files --type=socket | grep -E "wdintel-rs-bgworker\\.socket|wdintel-rs\\.socket|wdintel-py\\.socket|echo-whatsapp\\.socket|echo-signal-cli\\.socket" || true'
 
