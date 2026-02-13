@@ -46,6 +46,7 @@ pub mod login;
 pub mod modulation;
 pub mod network_callsign;
 pub mod network_invalidation_task;
+pub mod network_invalidation_worker;
 pub mod nominatimres;
 pub mod organism;
 pub mod organism_aor;

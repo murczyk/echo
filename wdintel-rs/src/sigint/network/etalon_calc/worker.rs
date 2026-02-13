@@ -1,5 +1,6 @@
 use crate::config::*;
 use crate::entities::network_invalidation_task;
+use crate::entities::sea_orm_active_enums::NetworkInvalidationWorkerStatus;
 use crate::entities::*;
 use crate::types::{Mode, ShortContext};
 use crate::utils::worker_watch;
@@ -43,12 +44,56 @@ async fn run_recent_inbox_network_worker_inner(
     }
     let db = new_pg_pool_from_mode(mode).await.c(h!())?;
     info!("run_inbox_network_worker_once started");
-    if let Err(e) = run_inbox_network_worker_once(&db, false).await {
+    if let Err(e) = run_inbox_network_worker_once(&db, false, &config).await {
         error!("run_inbox_network_worker_once failed: {e:#?}");
     } else {
         info!("run_inbox_network_worker_once completed");
     }
+    update_worker_status(
+        &db,
+        NetworkInvalidationWorkerStatus::Sleep,
+        NETWORK_INVALIDATION_TASK_TAG_RECENT,
+    )
+    .await
+    .c(h!())?;
     Ok(())
+}
+
+async fn update_worker_status(
+    db: &DatabaseConnection,
+    new_status: NetworkInvalidationWorkerStatus,
+    tag: &str,
+) -> anyhow::Result<network_invalidation_worker::Model> {
+    let worker = ensure_worker(db, tag).await.c(h!())?;
+    let mut rec = worker.into_active_model();
+    rec.status = Set(new_status);
+    rec.updated_at = Set(Utc::now().naive_utc());
+    let worker = rec.update(db).await.c(h!())?;
+    Ok(worker)
+}
+
+async fn ensure_worker(
+    dbx: &DatabaseConnection,
+    tag: &str,
+) -> anyhow::Result<network_invalidation_worker::Model> {
+    let worker = network_invalidation_worker::Entity::find()
+        .filter(network_invalidation_worker::Column::Tag.eq(tag.to_string()))
+        .one(dbx)
+        .await
+        .c(h!())?;
+    if let Some(worker) = worker {
+        Ok(worker)
+    } else {
+        network_invalidation_worker::ActiveModel {
+            id: NotSet,
+            tag: Set(tag.to_string()),
+            status: Set(NetworkInvalidationWorkerStatus::Sleep),
+            updated_at: NotSet,
+        }
+        .insert(dbx)
+        .await
+        .c(h!())
+    }
 }
 
 // Old worker: only handles tasks marked as is_for_old_worker and workers at worker hours (in config.rs).
@@ -80,13 +125,20 @@ async fn run_old_inbox_network_worker_inner(mode: Mode) -> anyhow::Result<()> {
     }
 
     let db = new_pg_pool_from_mode(mode).await.c(h!())?;
-    wait_until_worker_shift_start().await;
+    wait_until_worker_shift_start(&config).await;
     info!("run_old_inbox_network_worker_once started");
-    if let Err(e) = run_inbox_network_worker_once(&db, true).await {
+    if let Err(e) = run_inbox_network_worker_once(&db, true, &config).await {
         error!("run_old_inbox_network_worker_once failed: {e:#?}");
     } else {
         info!("run_old_inbox_network_worker_once completed");
     }
+    update_worker_status(
+        &db,
+        NetworkInvalidationWorkerStatus::Sleep,
+        NETWORK_INVALIDATION_TASK_TAG_OLD,
+    )
+    .await
+    .c(h!())?;
     Ok(())
 }
 
@@ -142,6 +194,7 @@ async fn run_inbox_network_daily_consistency_worker_inner(
 async fn run_inbox_network_worker_once(
     db: &DatabaseConnection,
     is_for_old_worker: bool,
+    config: &Config,
 ) -> anyhow::Result<()> {
     let (tag, cutoff_days) = if is_for_old_worker {
         (
@@ -154,6 +207,9 @@ async fn run_inbox_network_worker_once(
             NETWORK_INBOX_FRESH_WORKER_CUTOFF_DAYS,
         )
     };
+    update_worker_status(db, NetworkInvalidationWorkerStatus::Triage, tag)
+        .await
+        .c(h!())?;
     let cutoff = Utc::now().naive_utc() - chrono::Duration::days(cutoff_days);
     let task_filter = if is_for_old_worker {
         network_invalidation_task::Column::Tag
@@ -189,6 +245,9 @@ async fn run_inbox_network_worker_once(
         return Ok(());
     }
 
+    update_worker_status(db, NetworkInvalidationWorkerStatus::Working, tag)
+        .await
+        .c(h!())?;
     let signal_group_aors = load_signal_group_aors(db).await.c(h!())?;
 
     let max_till_ts_raw = task_list.iter().map(|x| x.till_ts).max().c(h!())?;
@@ -199,7 +258,7 @@ async fn run_inbox_network_worker_once(
     let mut processed_items = HashSet::new();
     let total_counter = task_list.len();
     while !task_list.is_empty() {
-        if is_for_old_worker && !check_is_worker_night_shift() {
+        if is_for_old_worker && !check_is_worker_night_shift(config) {
             return Ok(());
         }
         let min_till_ts = max_till_ts - chrono::Duration::hours(1);

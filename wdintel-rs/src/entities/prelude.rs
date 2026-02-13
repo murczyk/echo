@@ -44,6 +44,7 @@ pub use super::login::Entity as Login;
 pub use super::modulation::Entity as Modulation;
 pub use super::network_callsign::Entity as NetworkCallsign;
 pub use super::network_invalidation_task::Entity as NetworkInvalidationTask;
+pub use super::network_invalidation_worker::Entity as NetworkInvalidationWorker;
 pub use super::nominatimres::Entity as Nominatimres;
 pub use super::organism::Entity as Organism;
 pub use super::organism_aor::Entity as OrganismAor;

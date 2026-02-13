@@ -45,6 +45,7 @@ pub const DISCORD_WEBHOOK: &str = "https://discord.com/api/webhooks/141708483338
 pub const FEATURE_CALLSIGNS_ALG2: bool = false;
 /// Safety limit: cut network-callsigns time window if too wide
 pub const NETWORK_CALLSIGNS_MAX_WINDOW_DAYS: i64 = 60;
+pub const SIGINT_CSV_UTF8_BOM: &[u8; 3] = b"\xEF\xBB\xBF";
 pub const SIGINT_NETWORK_LIST_DEFAULT_LIMIT: i64 = 100;
 pub const SIGINT_NETWORK_LIST_MAX_LIMIT: u64 = 100;
 /// Ukraine boundaries WGS84
@@ -131,7 +132,7 @@ pub const WORKER_NIGHT_SHIFT_START_HOUR: u32 = 21;
 pub const WORKER_NIGHT_SHIFT_END_HOUR: u32 = 7;
 pub const WORKER_NIGHT_SHIFT_WAIT_BEFORE_START_SECS: u64 = 60;
 pub const NETWORK_INBOX_OLD_WORKER_ACTIVE_REST_SECS: u64 = 2;
-pub const SIGINT_INBOX_TUI_REFRESH_MS: u64 = 500;
+pub const SIGINT_INBOX_TUI_REFRESH_MS: u64 = 2000;
 pub const SIGINT_INBOX_TUI_EVENT_POLL_MS: u64 = 250;
 pub const SIGINT_INBOX_TUI_CHUNK_COUNT: usize = 10;
 pub const SIGINT_INBOX_TUI_BUCKET_GAP: usize = 2;
@@ -205,6 +206,8 @@ pub struct Config {
     pub s3_config: Option<S3Config>,
     pub store_palitra_in_s3: Option<bool>,
     pub alpine_converter_url: Option<String>,
+    pub network_invalidation_worker_night_shift_start_hour: Option<u32>,
+    pub network_invalidation_worker_night_shift_end_hour: Option<u32>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
@@ -436,9 +439,9 @@ pub fn get_cleanup_networks_worker_sleep_duration() -> std::time::Duration {
     std::time::Duration::from_secs(3600)
 }
 
-pub async fn wait_until_worker_shift_start() {
+pub async fn wait_until_worker_shift_start(config: &Config) {
     loop {
-        if check_is_worker_night_shift() {
+        if check_is_worker_night_shift(config) {
             break;
         }
         tokio::time::sleep(Duration::from_secs(
@@ -448,8 +451,13 @@ pub async fn wait_until_worker_shift_start() {
     }
 }
 
-pub fn check_is_worker_night_shift() -> bool {
+pub fn check_is_worker_night_shift(config: &Config) -> bool {
+    let shift_start = config
+        .network_invalidation_worker_night_shift_start_hour
+        .unwrap_or(WORKER_NIGHT_SHIFT_START_HOUR);
+    let shift_end = config
+        .network_invalidation_worker_night_shift_end_hour
+        .unwrap_or(WORKER_NIGHT_SHIFT_END_HOUR);
     let now = Utc::now().with_timezone(&get_tz());
-    !(WORKER_NIGHT_SHIFT_END_HOUR..WORKER_NIGHT_SHIFT_START_HOUR)
-        .contains(&now.hour())
+    !(shift_end..shift_start).contains(&now.hour())
 }

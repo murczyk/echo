@@ -18,6 +18,7 @@ import {
 } from '@mui/material';
 import {
   MRT_ColumnDef,
+  MRT_SortingState,
   MaterialReactTable,
   useMaterialReactTable,
 } from 'material-react-table';
@@ -157,6 +158,9 @@ const DEFAULT_ZONE_COLUMN_ORDER = [
 ];
 
 const ORPHAN_GROUPS_TABLE_MAX_HEIGHT = 500;
+const DEFAULT_ACTIVITY_DAY_SORTING: MRT_SortingState = [
+  { id: 'activityDay', desc: true },
+];
 
 const orphanDefaultMRTOptions = getDefaultMRTOptions<OrphanSignalGroupEntry>();
 const zoneDefaultMRTOptions = getDefaultMRTOptions<ZoneGroupRow>();
@@ -703,6 +707,7 @@ function OrphanGroupsSection(props: {
       tableId="admin-orphan-groups"
       defaultColumnOrder={DEFAULT_ORPHAN_COLUMN_ORDER}
       defaultColumnVisibility={DEFAULT_ORPHAN_COLUMNS_VISIBILITY}
+      defaultSorting={DEFAULT_ACTIVITY_DAY_SORTING}
     >
       <div className="table-responsive-modern w-full min-w-0">
         <OrphanGroupsTable
@@ -737,6 +742,7 @@ function ZoneGroupsSection(props: {
       tableId={`admin-zone-${props.zoneId}`}
       defaultColumnOrder={DEFAULT_ZONE_COLUMN_ORDER}
       defaultColumnVisibility={DEFAULT_ZONE_COLUMNS_VISIBILITY}
+      defaultSorting={DEFAULT_ACTIVITY_DAY_SORTING}
     >
       <div className="table-responsive-modern w-full min-w-0">
         <ZoneGroupsTable

@@ -10,6 +10,7 @@ use crate::utils::dt_from_millis;
 use actix_web::post;
 use actix_web::web::Json;
 use itertools::Itertools;
+use rust_xlsxwriter::{Format, Workbook};
 use sea_orm::*;
 use sea_orm::{DbBackend, Statement};
 use sea_query::types::IntoColumnRef;
@@ -20,6 +21,23 @@ pub mod bl;
 pub mod bl_network_callsign;
 pub mod network_callsign;
 pub mod types;
+
+#[derive(Serialize)]
+struct CallsignExportRow {
+    pub id: i64,
+    pub callsign: String,
+    pub position: String,
+    pub comment: String,
+    pub unit_id: i64,
+    pub unit_name: String,
+    pub active: bool,
+    pub source_id: Option<i32>,
+    pub source_name: Option<String>,
+    pub created_at: String,
+    pub developing: bool,
+    /// Set when source_id points to "radio" (id=2)
+    pub radio_freq: Option<String>,
+}
 
 #[post("/api/sigint/callsigns")]
 pub async fn list_callsigns(
@@ -51,38 +69,7 @@ pub async fn list_callsigns_csv(
         .await
         .c(h!())?;
 
-    let res = list_callsigns_impl(&env.dbx, &req.0).await.c(h!())?;
-
-    let sigint_unit_ids: Vec<i64> = res
-        .iter()
-        .map(|callsign| callsign.unit_id)
-        .unique()
-        .collect();
-
-    let source_ids: Vec<i64> = res
-        .iter()
-        .flat_map(|callsign| callsign.source_id)
-        .map(|id| id as i64)
-        .unique()
-        .collect();
-
-    let units: HashMap<i64, String> = sigint_unit::Entity::find()
-        .filter(sigint_unit::Column::Id.is_in(sigint_unit_ids))
-        .all(&env.dbx)
-        .await
-        .context(h!())?
-        .into_iter()
-        .map(|unit| (unit.id, unit.name))
-        .collect();
-
-    let sources: HashMap<i64, String> = source::Entity::find()
-        .filter(source::Column::Id.is_in(source_ids))
-        .all(&env.dbx)
-        .await
-        .context(h!())?
-        .into_iter()
-        .map(|source| (source.id, source.name))
-        .collect();
+    let rows = list_callsigns_export_rows(&env.dbx, &req.0).await.c(h!())?;
 
     let temp_file = tempfile::Builder::new()
         .prefix("sigint-callsigns")
@@ -93,50 +80,14 @@ pub async fn list_callsigns_csv(
 
     let temp_file_name = temp_file.path().to_str().context(h!())?;
     {
-        #[derive(Serialize)]
-        pub struct CallsignCsvRow<'se> {
-            pub id: i64,
-            pub callsign: String,
-            pub position: String,
-            pub comment: String,
-            pub unit_id: i64,
-            pub unit_name: &'se str,
-            pub active: bool,
-            pub source_id: Option<i32>,
-            pub source_name: Option<&'se str>,
-            pub created_at: String,
-            pub developing: bool,
-            /// Set when source_id points to "radio" (id=2)
-            pub radio_freq: Option<String>,
-        }
-        let tz = crate::config::get_tz();
-        let mut wtr = csv::Writer::from_path(temp_file_name).c(h!())?;
-        for callsign in res.into_iter() {
-            let created_at =
-                chrono::DateTime::from_timestamp_millis(callsign.created_at)
-                    .unwrap();
-            let row = CallsignCsvRow {
-                id: callsign.id,
-                callsign: callsign.callsign,
-                position: callsign.position,
-                comment: callsign.comment,
-                unit_id: callsign.unit_id,
-                unit_name: units
-                    .get(&callsign.unit_id)
-                    .map(String::as_str)
-                    .unwrap_or(""),
-                active: callsign.active,
-                source_id: callsign.source_id,
-                source_name: callsign.source_id.and_then(|id| {
-                    sources.get(&(id as i64)).map(String::as_str)
-                }),
-                created_at: created_at
-                    .with_timezone(&tz)
-                    .format("%Y-%m-%d %H:%M:%S")
-                    .to_string(),
-                developing: callsign.developing,
-                radio_freq: callsign.radio_freq,
-            };
+        use std::io::Write as _;
+
+        let mut csv_file = temp_file.reopen().context(h!())?;
+        csv_file
+            .write_all(crate::config::SIGINT_CSV_UTF8_BOM)
+            .c(h!())?;
+        let mut wtr = csv::Writer::from_writer(csv_file);
+        for row in rows.into_iter() {
             wtr.serialize(&row).c(h!())?;
         }
         wtr.flush().c(h!())?;
@@ -146,6 +97,167 @@ pub async fn list_callsigns_csv(
         .await
         .c(h!())?;
     Ok(file.into_response(&http_req))
+}
+
+#[post("/api/sigint/callsigns/xlsx")]
+pub async fn list_callsigns_xlsx(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<ListCallsignsReq>,
+    http_req: actix_web::HttpRequest,
+) -> Result<actix_web::HttpResponse, AppError> {
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .c(h!())?;
+
+    let rows = list_callsigns_export_rows(&env.dbx, &req.0).await.c(h!())?;
+
+    let temp_file = tempfile::Builder::new()
+        .prefix("sigint-callsigns")
+        .suffix(".xlsx")
+        .rand_bytes(5)
+        .tempfile()
+        .context(h!())?;
+    let temp_file_name = temp_file.path().to_str().context(h!())?;
+
+    let mut workbook = Workbook::new();
+    let sheet = workbook.add_worksheet();
+    sheet.set_name("Позивні").c(h!())?;
+
+    let headers = [
+        "id",
+        "callsign",
+        "position",
+        "comment",
+        "unit_id",
+        "unit_name",
+        "active",
+        "source_id",
+        "source_name",
+        "created_at",
+        "developing",
+        "radio_freq",
+    ];
+    let col_widths = [
+        10.0, 20.0, 24.0, 40.0, 10.0, 34.0, 10.0, 10.0, 20.0, 22.0, 12.0, 16.0,
+    ];
+
+    let format_bold = Format::new().set_bold();
+    for (col, header) in headers.iter().enumerate() {
+        sheet
+            .write_string_with_format(0, col as u16, *header, &format_bold)
+            .c(h!())?;
+        sheet
+            .set_column_width(col as u16, col_widths[col])
+            .c(h!())?;
+    }
+
+    for (row_idx, row) in rows.iter().enumerate() {
+        let row_num = row_idx as u32 + 1;
+        sheet.write_number(row_num, 0, row.id as f64).c(h!())?;
+        sheet.write_string(row_num, 1, &row.callsign).c(h!())?;
+        sheet.write_string(row_num, 2, &row.position).c(h!())?;
+        sheet.write_string(row_num, 3, &row.comment).c(h!())?;
+        sheet.write_number(row_num, 4, row.unit_id as f64).c(h!())?;
+        sheet.write_string(row_num, 5, &row.unit_name).c(h!())?;
+        sheet
+            .write_string(row_num, 6, if row.active { "true" } else { "false" })
+            .c(h!())?;
+        if let Some(source_id) = row.source_id {
+            sheet.write_number(row_num, 7, source_id as f64).c(h!())?;
+        }
+        if let Some(source_name) = row.source_name.as_ref() {
+            sheet.write_string(row_num, 8, source_name).c(h!())?;
+        }
+        sheet.write_string(row_num, 9, &row.created_at).c(h!())?;
+        sheet
+            .write_string(
+                row_num,
+                10,
+                if row.developing { "true" } else { "false" },
+            )
+            .c(h!())?;
+        if let Some(radio_freq) = row.radio_freq.as_ref() {
+            sheet.write_string(row_num, 11, radio_freq).c(h!())?;
+        }
+    }
+
+    workbook.save(temp_file_name).c(h!())?;
+
+    let file = actix_files::NamedFile::open_async(temp_file_name)
+        .await
+        .c(h!())?;
+    Ok(file.into_response(&http_req))
+}
+
+async fn list_callsigns_export_rows(
+    dbx: &DatabaseConnection,
+    req: &ListCallsignsReq,
+) -> Result<Vec<CallsignExportRow>, AppError> {
+    let callsigns = list_callsigns_impl(dbx, req).await.c(h!())?;
+
+    let sigint_unit_ids: Vec<i64> = callsigns
+        .iter()
+        .map(|callsign| callsign.unit_id)
+        .unique()
+        .collect();
+    let source_ids: Vec<i64> = callsigns
+        .iter()
+        .flat_map(|callsign| callsign.source_id)
+        .map(|source_id| source_id as i64)
+        .unique()
+        .collect();
+
+    let units: HashMap<i64, String> = sigint_unit::Entity::find()
+        .filter(sigint_unit::Column::Id.is_in(sigint_unit_ids))
+        .all(dbx)
+        .await
+        .context(h!())?
+        .into_iter()
+        .map(|unit| (unit.id, unit.name))
+        .collect();
+    let sources: HashMap<i64, String> = source::Entity::find()
+        .filter(source::Column::Id.is_in(source_ids))
+        .all(dbx)
+        .await
+        .context(h!())?
+        .into_iter()
+        .map(|source| (source.id, source.name))
+        .collect();
+
+    let tz = crate::config::get_tz();
+    callsigns
+        .into_iter()
+        .map(|callsign| {
+            let created_at =
+                chrono::DateTime::from_timestamp_millis(callsign.created_at)
+                    .unwrap()
+                    .with_timezone(&tz)
+                    .format("%Y-%m-%d %H:%M:%S")
+                    .to_string();
+
+            Ok(CallsignExportRow {
+                id: callsign.id,
+                callsign: callsign.callsign,
+                position: callsign.position,
+                comment: callsign.comment,
+                unit_id: callsign.unit_id,
+                unit_name: units
+                    .get(&callsign.unit_id)
+                    .cloned()
+                    .unwrap_or_default(),
+                active: callsign.active,
+                source_id: callsign.source_id,
+                source_name: callsign
+                    .source_id
+                    .and_then(|source_id| sources.get(&(source_id as i64)))
+                    .cloned(),
+                created_at,
+                developing: callsign.developing,
+                radio_freq: callsign.radio_freq,
+            })
+        })
+        .collect()
 }
 
 async fn list_callsigns_impl(

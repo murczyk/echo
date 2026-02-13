@@ -96,6 +96,7 @@ type ColumnVisibility = { [key: string]: boolean };
 type TableStateProviderProps = {
   defaultColumnVisibility: ColumnVisibility;
   defaultColumnOrder: MRT_ColumnOrderState;
+  defaultSorting?: MRT_SortingState;
   defaultDate?: Dayjs;
   disableSavingOfColumnsVisibility?: boolean;
   tableId: string;
@@ -139,7 +140,7 @@ export function TableStateProvider(props: React.PropsWithChildren<TableStateProv
   });
 
   const [columnFilters, setColumnFilters] = React.useState<MRT_ColumnFiltersState>([]);
-  const [sorting, setSorting] = React.useState<MRT_SortingState>([]);
+  const [sorting, setSorting] = React.useState<MRT_SortingState>(() => props.defaultSorting ?? []);
   const [density, setDensity] = React.useState<MRT_DensityState>('compact');
   const [globalFilter, setGlobalFilter] = React.useState('');
   const [columnSizing, setColumnSizing] = React.useState<MRT_ColumnSizingState>(() => getInitialColumnSizing());

@@ -497,6 +497,7 @@ pub async fn main_server(
             .service(crate::sigint::unit::units_search)
             .service(crate::sigint::callsign::list_callsigns)
             .service(crate::sigint::callsign::list_callsigns_csv)
+            .service(crate::sigint::callsign::list_callsigns_xlsx)
             .service(crate::sigint::callsign::get_callsigns_with_units_from_inbox)
             .service(crate::sigint::callsign::create_callsign)
             .service(crate::sigint::callsign::update_callsign)
