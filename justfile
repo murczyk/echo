@@ -1087,7 +1087,7 @@ oneoff-2026-02-13-bgworker-00-pre-deploy server='':
     set -euo pipefail
     . deploy/utils.sh
     ensure_nonempty "server" "{{ server }}"
-    ssh {{ server }} 'for unit in wdintel-rs-bgworker.socket wdintel-py.socket echo-whatsapp.socket echo-signal-cli.socket; do
+    ssh {{ server }} 'for unit in wdintel-rs-bgworker.socket; do
       if systemctl list-unit-files --type=socket --no-legend | awk "{print \$1}" | grep -qx "$unit"; then
         sudo systemctl disable --now "$unit" || true
       else
@@ -1104,16 +1104,7 @@ oneoff-2026-02-13-bgworker-01-post-deploy server='':
     . deploy/utils.sh
     ensure_nonempty "server" "{{ server }}"
     ssh {{ server }} 'set -x; sudo systemctl daemon-reload'
-    ssh {{ server }} 'set -x
-      for unit in wdintel-py.socket wdintel-py.service; do
-        if systemctl list-unit-files --full --no-legend | cut -d " " -f1 | grep -qx "$unit"; then
-          echo "Disabling $unit before wdintel-rs socket enable..."
-          sudo systemctl disable --now "$unit" || true
-        else
-          echo "$unit not installed; skipping."
-        fi
-      done
-    '
+    # WDINTEL-PY is managed separately; do not disable it during this rollout.
     ssh {{ server }} '
       set -euo pipefail
       set -x
