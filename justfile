@@ -1106,7 +1106,7 @@ oneoff-2026-02-13-bgworker-01-post-deploy server='':
     ssh {{ server }} 'set -x; sudo systemctl daemon-reload'
     ssh {{ server }} 'set -x
       for unit in wdintel-py.socket wdintel-py.service; do
-        if systemctl list-unit-files --type=all --full --no-legend | awk "{print \$1}" | grep -qx "$unit"; then
+        if systemctl list-unit-files --full --no-legend | cut -d " " -f1 | grep -qx "$unit"; then
           echo "Disabling $unit before wdintel-rs socket enable..."
           sudo systemctl disable --now "$unit" || true
         else
@@ -1167,14 +1167,17 @@ oneoff-2026-02-13-bgworker-01-post-deploy server='':
         echo "Stopping conflict-prone units on this host: echo-signal-cli.socket and echo-signal-cli.service."
         sudo systemctl disable --now echo-signal-cli.socket echo-signal-cli.service || true
 
-        for unit in $(sudo systemctl list-units --all --no-legend --full "echo-signal-bot@*.service" "echo-signal-bot@*.socket" | awk "{print \\$1}"); do
+        for unit in $(sudo systemctl list-units --all --no-legend --full "echo-signal-bot@*.service" "echo-signal-bot@*.socket" | cut -d " " -f1); do
           echo "Stopping conflicting unit: $unit"
           sudo systemctl disable --now "$unit"
         done
 
         if sudo ss -ltnp | grep -q "LISTEN .*:8081"; then
-          echo "ERROR: 8081 is still in use after cleanup. Check custom services bound to 8081 and stop them manually."
-          exit 1
+          if ! sudo ss -ltnp | grep "LISTEN .*:8081" | grep -q "wdintel-rs"; then
+            echo "ERROR: 8081 is still in use by unexpected process after cleanup."
+            sudo ss -ltnp | grep "LISTEN .*:8081" || true
+            exit 1
+          fi
         fi
       fi
     '
