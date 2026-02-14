@@ -105,7 +105,6 @@ export function SettingsNeoPage() {
   }, []);
 
   const isDirty = zoneId !== initialZoneId;
-  const zoneFieldError = zoneId === null && isDirty;
 
   async function handleSave(event?: React.FormEvent) {
     event?.preventDefault();
@@ -229,8 +228,6 @@ export function SettingsNeoPage() {
                     name="settings-zone"
                     label="РЕР-напрямок"
                     placeholder="Оберіть зону"
-                    required
-                    error={Boolean(zoneFieldError)}
                     helperText="Оберіть зону РЕР-напрямку для вашого облікового запису"
                   />
                 )}
@@ -244,7 +241,7 @@ export function SettingsNeoPage() {
               <Button
                 variant="contained"
                 type="submit"
-                disabled={saveInProgress || logoutInProgress || !isDirty || zoneFieldError}
+                disabled={saveInProgress || logoutInProgress || !isDirty}
                 startIcon={saveInProgress ? <CircularProgress size={18} /> : <SaveIcon fontSize="small" />}
                 sx={{ textTransform: 'none', fontWeight: 500 }}
               >
