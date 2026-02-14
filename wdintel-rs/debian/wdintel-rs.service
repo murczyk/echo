@@ -2,7 +2,7 @@
 Description=wdintel-rs
 
 [Service]
-ExecStart=/usr/bin/wdintel-rs --mode=live server --no-bgworker
+ExecStart=/usr/bin/wdintel-rs --mode=live server
 Restart=always
 User=root
 Group=root

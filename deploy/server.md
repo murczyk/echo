@@ -181,7 +181,9 @@ Background workers are split into a separate unit:
 sudo systemctl enable --now wdintel-rs-bgworker
 ```
 
-`wdintel-rs --mode=live server` starts without background workers by default.
+`wdintel-rs --mode=live server` starts with background workers by default.
+In `live` mode, the server process only runs `secret_worker` (vault secret loader) by default;
+full background workers are expected from `wdintel-rs-bgworker`.
 For local debug (`--mode=debug`), background workers are still enabled by default.
 
 ## SSL/Letsencrypt Tailscale
