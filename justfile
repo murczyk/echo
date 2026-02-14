@@ -409,6 +409,57 @@ deploy _server_pos="" server="":
       fi'
     # Quiet update/install (stdout suppressed for update; install in -qq)
     ssh "$SERVER" 'sudo apt-get -qq update > /dev/null && sudo DEBIAN_FRONTEND=noninteractive apt-get -y -qq install echo-install wdintel-rs echo-docs'
+
+    # Re-assert critical services after deploy package update
+    ssh "$SERVER" '
+      set -euo pipefail
+      set -x
+
+      sudo systemctl daemon-reload
+      sudo systemctl enable --now wdintel-rs.socket
+      sudo systemctl enable --now wdintel-rs-bgworker.service
+      sudo systemctl enable --now wdintel-py.service
+      sudo systemctl enable --now wdintel-py.socket
+
+      for unit in wdintel-rs.socket wdintel-rs-bgworker.service wdintel-py.service wdintel-py.socket; do
+        if ! systemctl is-enabled --quiet "$unit"; then
+          echo "ERROR: $unit is not enabled after deploy." >&2
+          systemctl is-enabled "$unit" || true
+          exit 1
+        fi
+      done
+
+      if ! systemctl is-active --quiet wdintel-rs-bgworker.service; then
+        echo "ERROR: wdintel-rs-bgworker.service is not active after deploy." >&2
+        systemctl status --no-pager wdintel-rs-bgworker.service || true
+        exit 1
+      fi
+      if ! systemctl is-active --quiet wdintel-py.service; then
+        echo "ERROR: wdintel-py.service is not active after deploy." >&2
+        systemctl status --no-pager wdintel-py.service || true
+        exit 1
+      fi
+      if ! systemctl is-active --quiet wdintel-rs.socket; then
+        echo "ERROR: wdintel-rs.socket is not active on 8081." >&2
+        systemctl status --no-pager wdintel-rs.socket || true
+        exit 1
+      fi
+
+      if ! sudo ss -ltnp | grep -q "LISTEN .*:8081"; then
+        echo "ERROR: 8081 is not listening after deploy." >&2
+        sudo ss -ltnp | grep "LISTEN" | grep ":8081" || true
+        exit 1
+      fi
+      if ! sudo ss -ltnp | grep "LISTEN .*:8081" | grep -q "systemd"; then
+        echo "ERROR: 8081 is bound by unexpected process after deploy." >&2
+        sudo ss -ltnp | grep "LISTEN .*:8081" || true
+        exit 1
+      fi
+
+      sudo systemctl status --no-pager wdintel-rs.socket wdintel-rs-bgworker.service wdintel-py.service wdintel-py.socket
+      sudo ss -ltnp | grep "LISTEN .*:8081" || true
+    '
+
     # Success notification
     curl -sS -X POST \
       -H 'Content-Type: application/json' \
