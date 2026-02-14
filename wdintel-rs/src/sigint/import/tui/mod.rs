@@ -210,6 +210,554 @@ pub async fn run_import_network_tui(
     Ok(())
 }
 
+pub async fn oneoff_import_network_details(
+    mode: Mode,
+    ps: ImportTuiPs,
+) -> Result<(), AppError> {
+    info!("loading data from {}...", ps.path);
+    let db = new_pg_pool_from_mode(mode).await.c(h!())?;
+    let mut file_read = File::open(ps.path).await.context(h!())?;
+    let mut buffer = Vec::new();
+    file_read.read_to_end(&mut buffer).await.context(h!())?;
+    let etalon_txt = String::from_utf8_lossy(&buffer).to_string();
+    let etalon_full: EtalonData =
+        serde_json::from_str(&etalon_txt).context(h!())?;
+    let units = etalon_full.sigint_unit;
+    let mut unit_data = load_unit_data(&db, units, false).await.c(h!())?;
+    let imported_network_units: Vec<sigint_network_unit::Model> =
+        etalon_full.sigint_network_unit;
+    let imported_networks: Vec<sigint_network::Model> =
+        etalon_full.sigint_network;
+    let mut network_data = load_network_data(
+        &db,
+        unit_data.clone(),
+        imported_network_units,
+        imported_networks,
+    )
+    .await
+    .c(h!())?;
+
+    let mut network_matches = HashMap::new();
+    let matched_networks =
+        network_data.data.remove(&Tab::Matched).unwrap_or_default();
+    for n in matched_networks {
+        let original_id = n.recording.id;
+        let Some(target_network_id) = n.target.map(|r| r.id) else {
+            continue;
+        };
+        network_matches.insert(original_id, target_network_id);
+    }
+
+    let mut unit_matches = HashMap::new();
+    let matched_units =
+        unit_data.data.remove(&Tab::Matched).unwrap_or_default();
+    for u in matched_units {
+        let original_id = u.recording.id;
+        let Some(target_unit_id) = u.target.map(|r| r.id) else {
+            continue;
+        };
+        unit_matches.insert(original_id, target_unit_id);
+    }
+
+    import_network_freqs(
+        network_matches.clone(),
+        etalon_full.sigint_network_freq,
+        etalon_full.modulation,
+        &db,
+    )
+    .await
+    .c(h!())?;
+
+    import_sigint_signals(unit_matches.clone(), etalon_full.sigint_signal, &db)
+        .await
+        .c(h!())?;
+
+    import_sigint_network_descriptions(
+        network_matches.clone(),
+        etalon_full.sigint_network_description,
+        &db,
+    )
+    .await
+    .c(h!())?;
+
+    let matched_sigint_callsigns = import_sigint_callsigns(
+        unit_matches.clone(),
+        etalon_full.sigint_callsign,
+        &db,
+    )
+    .await
+    .c(h!())?;
+
+    import_network_callsigns(
+        unit_matches,
+        network_matches,
+        matched_sigint_callsigns,
+        etalon_full.sigint_network_callsign,
+        &db,
+    )
+    .await
+    .c(h!())?;
+    Ok(())
+}
+
+async fn import_network_callsigns(
+    unit_matches: HashMap<i64, i64>,
+    network_matches: HashMap<i64, i64>,
+    sigint_callsign_matches: HashMap<i64, i64>,
+    sigint_network_callsigns: Vec<sigint_network_callsign::Model>,
+    db: &DatabaseConnection,
+) -> anyhow::Result<()> {
+    let local_network_ids = network_matches.values().cloned().collect_vec();
+    let local_sigint_callsign_ids =
+        sigint_callsign_matches.values().cloned().collect_vec();
+    let local_unit_ids = unit_matches.values().cloned().collect_vec();
+    let mut cond = Condition::any();
+    if !local_network_ids.is_empty() {
+        cond = cond.add(
+            sigint_network_callsign::Column::SigintNetworkId
+                .is_in(local_network_ids),
+        );
+    }
+    if !local_unit_ids.is_empty() {
+        cond = cond.add(
+            sigint_network_callsign::Column::UnitId
+                .is_in(local_unit_ids)
+                .or(sigint_network_callsign::Column::UnitId.is_null()),
+        );
+    }
+    if !local_sigint_callsign_ids.is_empty() {
+        cond =
+            cond.add(
+                sigint_network_callsign::Column::SigintCallsignId
+                    .is_null()
+                    .or(sigint_network_callsign::Column::SigintCallsignId
+                        .is_null()),
+            );
+    }
+
+    let existing_network_callsigns = sigint_network_callsign::Entity::find()
+        .filter(cond)
+        .all(db)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|s| {
+            (
+                (
+                    s.unit_id,
+                    s.sigint_callsign_id,
+                    s.sigint_network_id,
+                    s.sigint_callsign.clone(),
+                ),
+                s,
+            )
+        })
+        .collect::<HashMap<_, _>>();
+    let mut callsign_to_create = Vec::new();
+    for import_signal in sigint_network_callsigns {
+        let sigint_callsign_id = match import_signal.sigint_callsign_id {
+            None => None,
+            Some(sigint_callsign_id) => {
+                let Some(sigint_callsign_id) =
+                    sigint_callsign_matches.get(&sigint_callsign_id)
+                else {
+                    continue;
+                };
+                Some(*sigint_callsign_id)
+            }
+        };
+        let unit_id = match import_signal.unit_id {
+            None => None,
+            Some(unit_id) => {
+                let Some(unit_id) = unit_matches.get(&unit_id) else {
+                    continue;
+                };
+                Some(*unit_id)
+            }
+        };
+        let Some(sigint_network_id) =
+            network_matches.get(&import_signal.sigint_network_id)
+        else {
+            continue;
+        };
+        let already_existing = existing_network_callsigns.get(&(
+            unit_id,
+            sigint_callsign_id,
+            *sigint_network_id,
+            import_signal.sigint_callsign.clone(),
+        ));
+        if already_existing.is_some() {
+            continue;
+        }
+        callsign_to_create.push(sigint_network_callsign::ActiveModel {
+            id: NotSet,
+            sigint_network_id: Set(*sigint_network_id),
+            sigint_callsign: Set(import_signal.sigint_callsign),
+            position: Set(import_signal.position),
+            comment: Set(import_signal.comment),
+            sigint_callsign_id: Set(sigint_callsign_id),
+            source_id: NotSet,
+            radio_freq: Set(import_signal.radio_freq),
+            developing: Set(import_signal.developing),
+            unit_developing: Set(import_signal.unit_developing),
+            unit_id: Set(unit_id),
+            main_radio_station: Set(import_signal.main_radio_station),
+            deleted: Set(import_signal.deleted),
+            created_at: Set(import_signal.created_at),
+            sigint_origin_id: Set(import_signal.sigint_origin_id),
+            original_id: Set(import_signal.original_id),
+        });
+    }
+    let new_callsigns_counter = callsign_to_create.len();
+    let txn = db.begin().await.c(h!())?;
+    for rec in callsign_to_create {
+        rec.insert(&txn).await.c(h!())?;
+    }
+    confirm_new_records_and_finish(
+        txn,
+        new_callsigns_counter,
+        "sigint_network_callsign",
+    )
+    .await
+    .c(h!())?;
+    Ok(())
+}
+
+async fn import_sigint_signals(
+    unit_matches: HashMap<i64, i64>,
+    import_sigint_signal: Vec<sigint_signal::Model>,
+    db: &DatabaseConnection,
+) -> anyhow::Result<()> {
+    let sigint_signals_to_import = import_sigint_signal
+        .into_iter()
+        .filter(|s| s.unit.is_none_or(|id| unit_matches.contains_key(&id)))
+        .collect_vec();
+    let local_unit_ids = unit_matches.values().cloned().collect_vec();
+    let include_null_units =
+        sigint_signals_to_import.iter().any(|s| s.unit.is_none());
+    let existing_sigint_signals = if local_unit_ids.is_empty()
+        && !include_null_units
+    {
+        HashMap::new()
+    } else {
+        let mut cond = Condition::any();
+        if !local_unit_ids.is_empty() {
+            cond = cond.add(sigint_signal::Column::Unit.is_in(local_unit_ids));
+        }
+        if include_null_units {
+            cond = cond.add(sigint_signal::Column::Unit.is_null());
+        }
+        sigint_signal::Entity::find()
+            .filter(cond)
+            .all(db)
+            .await
+            .c(h!())?
+            .into_iter()
+            .map(|s| ((s.unit, s.text.clone()), s))
+            .collect::<HashMap<_, _>>()
+    };
+    let mut signals_to_create = Vec::new();
+    for import_signal in sigint_signals_to_import {
+        let unit_id = match import_signal.unit {
+            None => None,
+            Some(unit_id) => {
+                let Some(unit_id) = unit_matches.get(&unit_id) else {
+                    continue;
+                };
+                Some(*unit_id)
+            }
+        };
+        let already_existing =
+            existing_sigint_signals.get(&(unit_id, import_signal.text.clone()));
+        if already_existing.is_some() {
+            continue;
+        }
+        signals_to_create.push(sigint_signal::ActiveModel {
+            id: NotSet,
+            text: Set(import_signal.text),
+            meaning: Set(import_signal.meaning),
+            unit: Set(unit_id),
+            coordinates: Set(import_signal.coordinates),
+            deleted: Set(import_signal.deleted),
+            created_at: Set(import_signal.created_at),
+            sigint_origin_id: Set(import_signal.sigint_origin_id),
+            original_id: Set(import_signal.original_id),
+        });
+    }
+    let new_signals_counter = signals_to_create.len();
+    let txn = db.begin().await.c(h!())?;
+    for rec in signals_to_create {
+        rec.insert(&txn).await.c(h!())?;
+    }
+    confirm_new_records_and_finish(txn, new_signals_counter, "sigint_signal")
+        .await?;
+    Ok(())
+}
+
+async fn import_sigint_callsigns(
+    unit_matches: HashMap<i64, i64>,
+    import_sigint_callsign: Vec<sigint_callsign::Model>,
+    db: &DatabaseConnection,
+) -> anyhow::Result<HashMap<i64, i64>> {
+    let mut result = HashMap::new();
+    let mut new_result = HashMap::new();
+    let callsigns_to_import = import_sigint_callsign
+        .into_iter()
+        .filter(|c| unit_matches.contains_key(&c.unit_id))
+        .collect_vec();
+    let local_unit_ids = unit_matches.values().cloned().collect_vec();
+    let existing_sigint_callsigns = if local_unit_ids.is_empty() {
+        HashMap::new()
+    } else {
+        sigint_callsign::Entity::find()
+            .filter(sigint_callsign::Column::UnitId.is_in(local_unit_ids))
+            .all(db)
+            .await
+            .c(h!())?
+            .into_iter()
+            .map(|c| ((c.unit_id, c.callsign.clone()), c))
+            .collect::<HashMap<_, _>>()
+    };
+    let txn = db.begin().await.c(h!())?;
+    let mut new_callsigns_counter = 0;
+    for import_callsign in callsigns_to_import {
+        let Some(unit_id) = unit_matches.get(&import_callsign.unit_id) else {
+            continue;
+        };
+        let already_existing = existing_sigint_callsigns
+            .get(&(*unit_id, import_callsign.callsign.clone()));
+        if let Some(existing) = already_existing {
+            result.insert(import_callsign.id, existing.id);
+            continue;
+        }
+        let res_rec = sigint_callsign::ActiveModel {
+            id: NotSet,
+            callsign: Set(import_callsign.callsign),
+            position: Set(import_callsign.position),
+            comment: Set(import_callsign.comment),
+            unit_id: Set(*unit_id),
+            deleted: Set(import_callsign.deleted),
+            created_at: Set(import_callsign.created_at),
+            source_id: Set(import_callsign.source_id),
+            developing: Set(import_callsign.developing),
+            radio_freq: Set(import_callsign.radio_freq),
+            sigint_origin_id: Set(import_callsign.sigint_origin_id),
+            original_id: Set(import_callsign.original_id),
+        }
+        .insert(&txn)
+        .await
+        .c(h!())?;
+        new_result.insert(import_callsign.id, res_rec.id);
+        new_callsigns_counter += 1;
+    }
+    let confirmed = confirm_new_records_and_finish(
+        txn,
+        new_callsigns_counter,
+        "sigint_callsign",
+    )
+    .await
+    .c(h!())?;
+    if confirmed {
+        for (id1, id2) in new_result {
+            result.insert(id1, id2);
+        }
+    }
+    Ok(result)
+}
+
+async fn import_sigint_network_descriptions(
+    network_matches: HashMap<i64, i64>,
+    import_sigint_network_description: Vec<sigint_network_description::Model>,
+    db: &DatabaseConnection,
+) -> anyhow::Result<()> {
+    let descriptions_to_import = import_sigint_network_description
+        .into_iter()
+        .filter(|d| network_matches.contains_key(&d.network_id))
+        .collect_vec();
+    let local_network_ids = network_matches.values().cloned().collect_vec();
+    let existing_sigint_network_descriptions = if local_network_ids.is_empty() {
+        HashMap::new()
+    } else {
+        sigint_network_description::Entity::find()
+            .filter(
+                sigint_network_description::Column::NetworkId
+                    .is_in(local_network_ids),
+            )
+            .all(db)
+            .await
+            .c(h!())?
+            .into_iter()
+            .map(|d| ((d.network_id, format!("{:?}", d.r#type)), d))
+            .collect::<HashMap<_, _>>()
+    };
+    let import_freq_ids = descriptions_to_import
+        .iter()
+        .filter_map(|d| d.sigint_network_freq_id)
+        .collect_vec();
+    let sigint_network_freq_id_map = if import_freq_ids.is_empty() {
+        HashMap::new()
+    } else {
+        sigint_network_freq::Entity::find()
+            .filter(
+                sigint_network_freq::Column::OriginalId.is_in(import_freq_ids),
+            )
+            .all(db)
+            .await
+            .c(h!())?
+            .into_iter()
+            .flat_map(|f| f.original_id.map(|id| (id, f.id)))
+            .collect::<HashMap<_, _>>()
+    };
+    let mut descriptions_to_create = Vec::new();
+    for import_desc in descriptions_to_import {
+        let Some(network_id) = network_matches.get(&import_desc.network_id)
+        else {
+            continue;
+        };
+        let already_existing = existing_sigint_network_descriptions
+            .get(&(*network_id, format!("{:?}", import_desc.r#type)));
+        if already_existing.is_some() {
+            continue;
+        }
+        let sigint_network_freq_id = import_desc
+            .sigint_network_freq_id
+            .and_then(|id| sigint_network_freq_id_map.get(&id).cloned());
+        descriptions_to_create.push(sigint_network_description::ActiveModel {
+            id: NotSet,
+            network_id: Set(*network_id),
+            login: Set(SYSTEM_LOGIN_NAME.to_string()),
+            r#type: Set(import_desc.r#type),
+            description: Set(import_desc.description),
+            comment: Set(import_desc.comment),
+            deleted: Set(import_desc.deleted),
+            created_at: Set(import_desc.created_at),
+            sigint_network_freq_id: Set(sigint_network_freq_id),
+            sigint_origin_id: Set(import_desc.sigint_origin_id),
+            original_id: Set(import_desc.original_id),
+        });
+    }
+    let new_descriptions_counter = descriptions_to_create.len();
+    let txn = db.begin().await.c(h!())?;
+    for rec in descriptions_to_create {
+        rec.insert(&txn).await.c(h!())?;
+    }
+    confirm_new_records_and_finish(
+        txn,
+        new_descriptions_counter,
+        "sigint_network_description",
+    )
+    .await?;
+    Ok(())
+}
+
+async fn import_network_freqs(
+    network_matches: HashMap<i64, i64>,
+    import_sigint_network_freqs: Vec<sigint_network_freq::Model>,
+    modulation: Vec<modulation::Model>,
+    db: &DatabaseConnection,
+) -> anyhow::Result<()> {
+    let local_modulation_map = modulation::Entity::find()
+        .all(db)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|m| (m.name.clone(), m))
+        .collect::<HashMap<_, _>>();
+    let import_to_local_modulation_map: HashMap<i32, modulation::Model> =
+        modulation
+            .into_iter()
+            .flat_map(|m| {
+                local_modulation_map
+                    .get(&m.name)
+                    .map(|m2| (m.id, m2.clone()))
+            })
+            .collect::<HashMap<_, _>>();
+
+    let sigint_network_freqs_to_import = import_sigint_network_freqs
+        .into_iter()
+        .filter(|f| network_matches.contains_key(&f.network_id))
+        .collect_vec();
+    let local_network_ids = network_matches.values().cloned().collect_vec();
+    let existing_sigint_network_freqs = sigint_network_freq::Entity::find()
+        .filter(sigint_network_freq::Column::NetworkId.is_in(local_network_ids))
+        .all(db)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|f| ((f.network_id, f.freq.clone()), f))
+        .collect::<HashMap<_, _>>();
+    let mut freqs_to_create = Vec::new();
+    for import_freq in sigint_network_freqs_to_import {
+        let Some(network_id) = network_matches.get(&import_freq.network_id)
+        else {
+            continue;
+        };
+        let already_existing = existing_sigint_network_freqs
+            .get(&(*network_id, import_freq.freq.clone()))
+            .cloned();
+        if already_existing.is_some() {
+            //TODO update
+            continue;
+        }
+        let modulation_id = import_freq
+            .modulation_id
+            .and_then(|id| import_to_local_modulation_map.get(&id))
+            .map(|m| m.id);
+        freqs_to_create.push(sigint_network_freq::ActiveModel {
+            id: NotSet,
+            network_id: Set(*network_id),
+            freq: Set(import_freq.freq),
+            created_at: Set(import_freq.created_at),
+            kind: Set(import_freq.kind),
+            modulation_id: Set(modulation_id),
+            active_from: Set(import_freq.active_from),
+            active_to: Set(import_freq.active_to),
+            sigint_origin_id: Set(import_freq.sigint_origin_id),
+            deleted: Set(import_freq.deleted),
+            original_id: Set(import_freq.original_id),
+        });
+    }
+    let new_freqs_counter = freqs_to_create.len();
+    let txn = db.begin().await.c(h!())?;
+    for rec in freqs_to_create {
+        rec.insert(&txn).await.c(h!())?;
+    }
+    confirm_new_records_and_finish(
+        txn,
+        new_freqs_counter,
+        "sigint_network_freq",
+    )
+    .await?;
+    Ok(())
+}
+
+async fn confirm_new_records_and_finish(
+    txn: DatabaseTransaction,
+    new_recs_counter: usize,
+    entity_name: &str,
+) -> anyhow::Result<bool> {
+    if new_recs_counter == 0 {
+        info!("No new {entity_name} recs to insert.");
+        txn.commit().await.c(h!())?;
+        return Ok(false);
+    }
+    let import_confirmed = Confirm::with_theme(&ColorfulTheme::default())
+        .with_prompt(format!(
+            "Are you sure you want to create {new_recs_counter} new {entity_name} recordings?"
+        ))
+        .default(true)
+        .interact()
+        .context(h!())?;
+    if !import_confirmed {
+        txn.rollback().await.c(h!())?;
+        info!("Import aborted.");
+        return Ok(false);
+    }
+    txn.commit().await.c(h!())?;
+    info!("inserted {new_recs_counter} new {entity_name} recs!");
+    Ok(true)
+}
+
 fn setup_terminal() -> io::Result<Terminal<CrosstermBackend<Stdout>>> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
