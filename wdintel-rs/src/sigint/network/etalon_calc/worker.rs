@@ -257,6 +257,7 @@ async fn run_inbox_network_worker_once(
     let mut fuel = 1_000_000;
     let mut processed_items = HashSet::new();
     let total_counter = task_list.len();
+    let mut counter = 0;
     while !task_list.is_empty() {
         if is_for_old_worker && !check_is_worker_night_shift(config) {
             return Ok(());
@@ -293,9 +294,10 @@ async fn run_inbox_network_worker_once(
             work_started = Instant::now();
         }
 
+        counter += next_tasks.len();
+
         debug!(
-            "[{tag} worker] run_network_invalidation_tasks: processing next tasks batch - {}/{total_counter}",
-            next_tasks.len()
+            "[{tag} worker] run_network_invalidation_tasks: processing next tasks batch - {counter}/{total_counter}"
         );
         run_network_invalidation_tasks(
             next_tasks,
