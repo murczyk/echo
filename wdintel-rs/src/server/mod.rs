@@ -314,10 +314,7 @@ fn spawn_background_workers(
     }
 }
 
-fn spawn_vault_background_workers(
-    env: Arc<Env>,
-    bg_set: &mut JoinSet<()>,
-) {
+fn spawn_vault_background_workers(env: Arc<Env>, bg_set: &mut JoinSet<()>) {
     if let Some(secret_config) = env.config.vault_config.clone() {
         spawn_named_worker("secret_worker", bg_set, async move {
             crate::secret::secret_worker(secret_config).await
@@ -344,7 +341,10 @@ pub async fn main_server(
         should_start_bgworkers_in_server(mode, ps.no_bgworker);
     if should_start_bgworkers {
         match mode {
-            Mode::Live => spawn_vault_background_workers(env.clone(), &mut background_tasks),
+            Mode::Live => spawn_vault_background_workers(
+                env.clone(),
+                &mut background_tasks,
+            ),
             Mode::Test | Mode::Debug => spawn_background_workers(
                 mode,
                 env.clone(),
