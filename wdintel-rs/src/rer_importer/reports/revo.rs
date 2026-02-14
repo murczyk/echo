@@ -15,6 +15,7 @@ use rust_xlsxwriter::{
     ColNum, ExcelDateTime, Format, FormatAlign, RowNum, Workbook, Worksheet,
 };
 use sea_orm::*;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
 use std::time::Instant;
 
@@ -103,7 +104,7 @@ pub async fn report_docx_kind_revo(
     let report_tags_only_this_unit =
         req.report_tags_only_this_unit.unwrap_or(false);
     let mut current_req = req.req.clone();
-    current_req.report_tags_only_this_unit = Some(false);
+    current_req.report_tags_only_this_unit = req.report_tags_only_this_unit;
     let mut messages: Vec<(i64, InboxMessage)> =
         crate::rer_importer::inbox::get_inbox_messages_with_conn(
             &read_db,
@@ -115,9 +116,29 @@ pub async fn report_docx_kind_revo(
         .await
         .context(h!())?;
     if report_tags_only_this_unit {
-        messages = filter_messages_by_logins(&read_db, messages, &logins)
+        let mut comment_req = req.req.clone();
+        comment_req.report_tags_only_this_unit = Some(false);
+        let comment_messages =
+            crate::rer_importer::inbox::get_inbox_messages_with_conn(
+                &read_db,
+                &login,
+                &logins,
+                env,
+                &comment_req,
+            )
             .await
             .context(h!())?;
+        let comment_messages =
+            filter_messages_by_logins(&read_db, comment_messages, &logins)
+                .await
+                .context(h!())?;
+        let mut existing_ids: HashSet<i64> =
+            messages.iter().map(|(id, _)| *id).collect();
+        for (id, msg) in comment_messages {
+            if existing_ids.insert(id) {
+                messages.push((id, msg));
+            }
+        }
     }
     info!(
         "get_inbox_messages_with_conn took: {:?}, messages count: {}",
