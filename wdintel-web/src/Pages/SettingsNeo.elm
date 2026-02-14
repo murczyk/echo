@@ -59,7 +59,7 @@ subscriptions _ =
 
 view : Shared.Model -> Model -> View Msg
 view _ _ =
-    { title = "налаштування (neo)"
+    { title = "налаштування"
     , body =
         [ div [ class "mt-4 px-4 w-4/5 mx-auto" ]
             [ node "settings-neo" [] [] ]

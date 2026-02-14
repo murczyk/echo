@@ -103,8 +103,8 @@ navBar user shared activeName props =
                     [ menuWithSubs "import" "імпорт" importSubs ]
                 ++ ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Basic" user)
                     [ menuWithSubs "other" "інше" otherSubs ]
-                ++ ifOrEmpty (hasRole "Basic" user)
-                    [ menu Route.Path.Settings "settings" "налаштування (старі)" ]
+                -- ++ ifOrEmpty (hasRole "Basic" user)
+                --     [ menu Route.Path.Settings "settings" "налаштування (старі)" ]
                 ++ ifOrEmpty (hasRole "Basic" user)
                     [ menu Route.Path.SettingsNeo "settings-neo" "налаштування" ]
                 ++ ifOrEmpty (hasRole "Admin" user)

@@ -15,6 +15,7 @@ import Html.Styled
 import Layouts
 import Page exposing (Page)
 import Route exposing (Route)
+import Route.Path
 import Select
 import Shared
 import Shared.Model exposing (isDarkMode)
@@ -40,11 +41,13 @@ init _ =
       , saveInProgress = False
       , zoneSelectState = Select.initState (Select.selectIdentifier "zone-select")
       }
-    , E.sendCmd <|
-        Cmd.batch
-            [ Api.sigint_zones_list GotZoneList
-            , Api.api_user GotUser
-            ]
+    , E.replaceRoutePath Route.Path.SettingsNeo
+    -- Old settings page is kept intentionally, but direct /settings access is disabled.
+    -- , E.sendCmd <|
+    --     Cmd.batch
+    --         [ Api.sigint_zones_list GotZoneList
+    --         , Api.api_user GotUser
+    --         ]
     )
 
 
