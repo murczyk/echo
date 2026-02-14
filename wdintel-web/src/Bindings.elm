@@ -2798,6 +2798,7 @@ coordsEncoder struct =
 type alias KmzColorInfo =
     { colorHex : String
     , count : Int
+    , suggestedSuffix : Maybe String
     }
 
 
@@ -2806,6 +2807,7 @@ kmzColorInfoEncoder struct =
     Json.Encode.object
         [ ( "color_hex", Json.Encode.string struct.colorHex )
         , ( "count", Json.Encode.int struct.count )
+        , ( "suggested_suffix", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.suggestedSuffix )
         ]
 
 
@@ -8212,6 +8214,7 @@ kmzColorInfoDecoder =
     Json.Decode.succeed KmzColorInfo
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "color_hex" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "count" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "suggested_suffix" (Json.Decode.nullable Json.Decode.string)))
 
 
 analyzeKmzResponseDecoder : Json.Decode.Decoder AnalyzeKmzResponse

@@ -68,6 +68,8 @@ type alias Model =
     , kmzAnalysis : RemoteData ApiError B.AnalyzeKmzResponse
     , uploadedKmzFile : Maybe File
     , selectedColorFromKmz : Maybe String
+    , kmzColorOptions : List KmzColorOption
+    , kmzCreateBatch : Maybe KmzCreateBatch
     }
 
 
@@ -82,6 +84,21 @@ type AccessForm
     = LoginsAccess String
     | OrganismsAccess String
     | AorAccess String
+
+
+type alias KmzColorOption =
+    { rank : Int
+    , colorHex : String
+    , count : Int
+    , selected : Bool
+    , suffix : String
+    }
+
+
+type alias KmzCreateBatch =
+    { pending : Int
+    , createdPalitras : List B.Palitra
+    }
 
 
 normalizeAccessForm : AccessForm -> AccessForm
@@ -128,7 +145,11 @@ type Msg
     | KmzFileSelected File
     | KmzAnalysisResponse (Result ApiError B.AnalyzeKmzResponse)
     | SelectColorFromKmz String
+    | ToggleKmzColorSelection String
+    | SetAllKmzColorSelections Bool
+    | UpdateKmzColorSuffix String String
     | SubmitCreateWithKmz
+    | CreateWithKmzResponse (Result ApiError B.Palitra)
 
 
 isAdmin : Auth.User -> Bool
@@ -193,6 +214,8 @@ init user _ =
       , kmzAnalysis = NotAsked
       , uploadedKmzFile = Nothing
       , selectedColorFromKmz = Nothing
+      , kmzColorOptions = []
+      , kmzCreateBatch = Nothing
       }
     , E.sendCmd <|
         Cmd.batch
@@ -478,6 +501,8 @@ update user msg model =
                 , kmzAnalysis = NotAsked
                 , uploadedKmzFile = Nothing
                 , selectedColorFromKmz = Nothing
+                , kmzColorOptions = []
+                , kmzCreateBatch = Nothing
               }
             , if List.isEmpty allCmds then
                 E.none
@@ -552,6 +577,8 @@ update user msg model =
                 , kmzAnalysis = NotAsked
                 , uploadedKmzFile = Nothing
                 , selectedColorFromKmz = Nothing
+                , kmzColorOptions = []
+                , kmzCreateBatch = Nothing
               }
             , E.none
             )
@@ -601,6 +628,8 @@ update user msg model =
                 , kmzAnalysis = NotAsked
                 , uploadedKmzFile = Nothing
                 , selectedColorFromKmz = Nothing
+                , kmzColorOptions = []
+                , kmzCreateBatch = Nothing
               }
             , E.none
             )
@@ -1066,13 +1095,15 @@ update user msg model =
             ( { model
                 | uploadedKmzFile = Just file
                 , kmzAnalysis = Loading
+                , kmzColorOptions = []
+                , selectedColorFromKmz = Nothing
+                , kmzCreateBatch = Nothing
               }
             , E.sendCmd <| Api.palitra_analyze_kmz KmzAnalysisResponse file
             )
 
         KmzAnalysisResponse (Ok analysis) ->
             let
-                -- Автоматично вибираємо перший колір (найпоширеніший), або дефолтний, якщо кольори не знайдено
                 firstColor =
                     if List.isEmpty analysis.topColors then
                         Just "#00bcd4"
@@ -1092,42 +1123,281 @@ update user msg model =
             ( { model
                 | kmzAnalysis = Success analysis
                 , selectedColorFromKmz = firstColor
+                , kmzColorOptions = kmzColorOptionsFromAnalysis analysis.topColors
+                , kmzCreateBatch = Nothing
                 , form = newForm
               }
             , E.none
             )
 
         KmzAnalysisResponse (Err err) ->
-            ( { model | kmzAnalysis = Failure err }
+            ( { model
+                | kmzAnalysis = Failure err
+                , kmzColorOptions = []
+                , selectedColorFromKmz = Nothing
+                , kmzCreateBatch = Nothing
+              }
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Не вдалося проаналізувати KMZ файл" err
             )
 
         SelectColorFromKmz colorHex ->
             ( { model | selectedColorFromKmz = Just colorHex }, E.none )
 
+        ToggleKmzColorSelection colorHex ->
+            ( { model
+                | kmzColorOptions =
+                    model.kmzColorOptions
+                        |> List.map
+                            (\colorOption ->
+                                if colorOption.colorHex == colorHex then
+                                    { colorOption
+                                        | selected = not colorOption.selected
+                                    }
+
+                                else
+                                    colorOption
+                            )
+              }
+            , E.none
+            )
+
+        SetAllKmzColorSelections isSelected ->
+            ( { model
+                | kmzColorOptions =
+                    model.kmzColorOptions
+                        |> List.map
+                            (\colorOption ->
+                                { colorOption | selected = isSelected }
+                            )
+              }
+            , E.none
+            )
+
+        UpdateKmzColorSuffix colorHex suffix ->
+            ( { model
+                | kmzColorOptions =
+                    model.kmzColorOptions
+                        |> List.map
+                            (\colorOption ->
+                                if colorOption.colorHex == colorHex then
+                                    { colorOption | suffix = suffix }
+
+                                else
+                                    colorOption
+                            )
+              }
+            , E.none
+            )
+
         SubmitCreateWithKmz ->
-            case ( model.uploadedKmzFile, model.selectedColorFromKmz ) of
-                ( Just file, Just colorHex ) ->
-                    if isFormValid model.form then
-                        let
-                            updatedForm =
-                                model.form
+            case model.uploadedKmzFile of
+                Nothing ->
+                    ( model, E.none )
 
-                            formWithColor =
-                                { updatedForm | colorHex = colorHex }
-
-                            req =
-                                buildCreateReq formWithColor
-                        in
-                        ( { model | submitInFlight = True }
-                        , E.sendCmd <| Api.palitra_create_with_kmz CreateResponse req file
-                        )
-
-                    else
+                Just file ->
+                    if not (isCreateFormValid user model) then
                         ( model, E.none )
 
-                _ ->
+                    else if List.isEmpty model.kmzColorOptions then
+                        case model.selectedColorFromKmz of
+                            Just colorHex ->
+                                let
+                                    baseForm =
+                                        model.form
+
+                                    formWithColor =
+                                        { baseForm | colorHex = colorHex }
+
+                                    req =
+                                        buildCreateReq formWithColor
+                                in
+                                ( { model
+                                    | submitInFlight = True
+                                    , kmzCreateBatch =
+                                        Just
+                                            { pending = 1
+                                            , createdPalitras = []
+                                            }
+                                  }
+                                , E.sendCmd <| Api.palitra_create_with_kmz CreateWithKmzResponse req file
+                                )
+
+                            Nothing ->
+                                ( model, E.none )
+
+                    else
+                        let
+                            baseForm =
+                                model.form
+
+                            selectedColorOptions =
+                                model.kmzColorOptions
+                                    |> List.filter .selected
+
+                            createCmds =
+                                selectedColorOptions
+                                    |> List.map
+                                        (\colorOption ->
+                                            let
+                                                palitraName =
+                                                    buildPalitraNameWithSuffix baseForm.name colorOption.suffix
+
+                                                formWithColor =
+                                                    { baseForm
+                                                        | colorHex = colorOption.colorHex
+                                                        , name = palitraName
+                                                    }
+
+                                                req =
+                                                    buildCreateReq formWithColor
+                                            in
+                                            Api.palitra_create_with_kmz CreateWithKmzResponse req file
+                                        )
+                        in
+                        if List.isEmpty createCmds then
+                            ( model, E.none )
+
+                        else
+                            ( { model
+                                | submitInFlight = True
+                                , kmzCreateBatch =
+                                    Just
+                                        { pending = List.length createCmds
+                                        , createdPalitras = []
+                                        }
+                              }
+                            , E.sendCmd <| Cmd.batch createCmds
+                            )
+
+        CreateWithKmzResponse (Ok palitra) ->
+            case model.kmzCreateBatch of
+                Just kmzCreateBatch ->
+                    completeKmzCreateRequest model
+                        { kmzCreateBatch
+                            | pending = kmzCreateBatch.pending - 1
+                            , createdPalitras =
+                                palitra :: kmzCreateBatch.createdPalitras
+                        }
+
+                Nothing ->
                     ( model, E.none )
+
+        CreateWithKmzResponse (Err err) ->
+            case model.kmzCreateBatch of
+                Just kmzCreateBatch ->
+                    let
+                        ( updatedModel, completeEffect ) =
+                            completeKmzCreateRequest model
+                                { kmzCreateBatch
+                                    | pending = kmzCreateBatch.pending - 1
+                                }
+                    in
+                    ( updatedModel
+                    , E.batch
+                        [ completeEffect
+                        , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Не вдалося створити палітру" err
+                        ]
+                    )
+
+                Nothing ->
+                    ( model
+                    , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Не вдалося створити палітру" err
+                    )
+
+
+kmzColorOptionsFromAnalysis : List B.KmzColorInfo -> List KmzColorOption
+kmzColorOptionsFromAnalysis topColors =
+    topColors
+        |> List.indexedMap
+            (\index colorInfo ->
+                let
+                    suggestedSuffix =
+                        colorInfo.suggestedSuffix
+                            |> Maybe.map String.trim
+                            |> Maybe.withDefault ""
+                in
+                { rank = index + 1
+                , colorHex = colorInfo.colorHex
+                , count = colorInfo.count
+                , selected = True
+                , suffix = suggestedSuffix
+                }
+            )
+
+
+buildPalitraNameWithSuffix : String -> String -> String
+buildPalitraNameWithSuffix baseName suffix =
+    let
+        normalizedBaseName =
+            String.trim baseName
+
+        normalizedSuffix =
+            String.trim suffix
+    in
+    if String.isEmpty normalizedSuffix then
+        normalizedBaseName
+
+    else
+        normalizedBaseName ++ " " ++ normalizedSuffix
+
+
+completeKmzCreateRequest : Model -> KmzCreateBatch -> ( Model, Effect Msg )
+completeKmzCreateRequest model kmzCreateBatch =
+    if kmzCreateBatch.pending > 0 then
+        ( { model | kmzCreateBatch = Just kmzCreateBatch }, E.none )
+
+    else
+        finalizeKmzCreateBatch model kmzCreateBatch.createdPalitras
+
+
+finalizeKmzCreateBatch : Model -> List B.Palitra -> ( Model, Effect Msg )
+finalizeKmzCreateBatch model createdPalitras =
+    if List.isEmpty createdPalitras then
+        ( { model
+            | submitInFlight = False
+            , kmzCreateBatch = Nothing
+          }
+        , E.none
+        )
+
+    else
+        let
+            createdPalitrasInOrder =
+                List.reverse createdPalitras
+
+            updatedPalitras =
+                case model.palitras of
+                    Success list ->
+                        Success (createdPalitrasInOrder ++ list)
+
+                    _ ->
+                        Success createdPalitrasInOrder
+
+            loginsSelect =
+                model.loginsSelect
+
+            organismsSelect =
+                model.organismsSelect
+
+            aorSelect =
+                model.aorSelect
+        in
+        ( { model
+            | palitras = updatedPalitras
+            , form = emptyForm
+            , submitInFlight = False
+            , showCreateSidebar = False
+            , loginsSelect = { loginsSelect | selected = [] }
+            , organismsSelect = { organismsSelect | selected = [] }
+            , aorSelect = { aorSelect | selected = [] }
+            , kmzAnalysis = NotAsked
+            , uploadedKmzFile = Nothing
+            , selectedColorFromKmz = Nothing
+            , kmzColorOptions = []
+            , kmzCreateBatch = Nothing
+          }
+        , E.none
+        )
 
 
 view : Auth.User -> Shared.Model -> Model -> View Msg
@@ -1623,6 +1893,21 @@ isFormValid form =
                 not (List.isEmpty aorList)
 
 
+hasSelectedKmzColors : Model -> Bool
+hasSelectedKmzColors model =
+    model.kmzColorOptions
+        |> List.any .selected
+
+
+isKmzColorSelectionValid : Model -> Bool
+isKmzColorSelectionValid model =
+    if List.isEmpty model.kmzColorOptions then
+        model.selectedColorFromKmz /= Nothing
+
+    else
+        hasSelectedKmzColors model
+
+
 isCreateFormValid : Auth.User -> Model -> Bool
 isCreateFormValid user model =
     let
@@ -1631,45 +1916,49 @@ isCreateFormValid user model =
 
         admin =
             isAdmin user
+
+        accessValid =
+            if admin then
+                -- Для адмінів використовуємо стандартну валідацію форми
+                isFormValid model.form
+
+            else
+                -- Для звичайних користувачів перевіряємо restricted поля через myScope
+                case model.form.access of
+                    LoginsAccess _ ->
+                        -- LoginsAccess завжди валідне для не-адмінів (автоматично підставляється user.name)
+                        True
+
+                    OrganismsAccess _ ->
+                        -- Перевіряємо, що myScope завантажено і organism призначено
+                        case model.myScope of
+                            Success scope ->
+                                case scope.organism of
+                                    Just _ ->
+                                        True
+
+                                    Nothing ->
+                                        False
+
+                            _ ->
+                                -- myScope ще не завантажено
+                                False
+
+                    AorAccess _ ->
+                        -- Перевіряємо, що myScope завантажено і є хоча б одна смуга
+                        case model.myScope of
+                            Success scope ->
+                                not (List.isEmpty scope.aorIds)
+
+                            _ ->
+                                -- myScope ще не завантажено
+                                False
     in
     if not nameValid then
         False
 
-    else if admin then
-        -- Для адмінів використовуємо стандартну валідацію форми
-        isFormValid model.form
-
     else
-        -- Для звичайних користувачів перевіряємо restricted поля через myScope
-        case model.form.access of
-            LoginsAccess _ ->
-                -- LoginsAccess завжди валідне для не-адмінів (автоматично підставляється user.name)
-                True
-
-            OrganismsAccess _ ->
-                -- Перевіряємо, що myScope завантажено і organism призначено
-                case model.myScope of
-                    Success scope ->
-                        case scope.organism of
-                            Just _ ->
-                                True
-
-                            Nothing ->
-                                False
-
-                    _ ->
-                        -- myScope ще не завантажено
-                        False
-
-            AorAccess _ ->
-                -- Перевіряємо, що myScope завантажено і є хоча б одна смуга
-                case model.myScope of
-                    Success scope ->
-                        not (List.isEmpty scope.aorIds)
-
-                    _ ->
-                        -- myScope ще не завантажено
-                        False
+        accessValid && isKmzColorSelectionValid model
 
 
 createPalitraSidebarContent : Bool -> Auth.User -> Model -> List (Html Msg)
@@ -2027,16 +2316,16 @@ createPalitraSidebarContent isDark user model =
             [ text "" ]
 
         Success analysis ->
-            -- Крок 2: Вибір кольору + форма
+            -- Крок 2: Вибір кольорів + форма
             [ div [ class "flex flex-col h-full" ]
                 [ div [ class "p-6 border-b border-border" ]
                     [ h2 [ class "text-lg font-semibold mb-1" ] [ text "Створити палітру" ]
-                    , p [ class "text-sm text-muted-foreground" ] [ text "Крок 2: Виберіть колір та заповніть форму" ]
+                    , p [ class "text-sm text-muted-foreground" ] [ text "Крок 2: Виберіть кольори, задайте суфікси та заповніть форму" ]
                     ]
                 , div [ class "flex-1 overflow-y-auto p-6" ]
                     [ div [ class "space-y-6" ]
                         [ div [ class "space-y-2" ]
-                            [ label [ class "text-sm font-medium text-foreground" ] [ text "Оберіть колір з KMZ *" ]
+                            [ label [ class "text-sm font-medium text-foreground" ] [ text "Оберіть кольори з KMZ (топ 20) *" ]
                             , if List.isEmpty analysis.topColors then
                                 -- Показуємо колор-пікер, якщо кольори не знайдено
                                 div [ class "flex flex-col gap-3" ]
@@ -2058,36 +2347,92 @@ createPalitraSidebarContent isDark user model =
                                     ]
 
                               else
-                                -- Показуємо кнопки з кольорами, якщо вони знайдені
-                                div [ class "flex gap-3" ]
-                                    (analysis.topColors
-                                        |> List.map
-                                            (\colorInfo ->
-                                                let
-                                                    isSelected =
-                                                        model.selectedColorFromKmz == Just colorInfo.colorHex
-                                                in
-                                                button
-                                                    [ class "flex flex-col items-center gap-2 p-4 border-2 rounded-lg transition-all cursor-pointer"
-                                                    , class
-                                                        (if isSelected then
-                                                            "border-primary bg-primary/10"
+                                let
+                                    selectedCount =
+                                        model.kmzColorOptions
+                                            |> List.filter .selected
+                                            |> List.length
+                                in
+                                div [ class "space-y-3" ]
+                                    [ div [ class "flex items-center justify-between gap-2" ]
+                                        [ div [ class "text-xs text-muted-foreground" ]
+                                            [ text
+                                                ("Обрано "
+                                                    ++ String.fromInt selectedCount
+                                                    ++ " з "
+                                                    ++ String.fromInt (List.length model.kmzColorOptions)
+                                                )
+                                            ]
+                                        , div [ class "flex items-center gap-2" ]
+                                            [ button
+                                                [ type_ "button"
+                                                , class "px-2 py-1 text-xs border border-border rounded-md hover:bg-muted/40"
+                                                , onClick (SetAllKmzColorSelections True)
+                                                ]
+                                                [ text "Обрати всі" ]
+                                            , button
+                                                [ type_ "button"
+                                                , class "px-2 py-1 text-xs border border-border rounded-md hover:bg-muted/40"
+                                                , onClick (SetAllKmzColorSelections False)
+                                                ]
+                                                [ text "Зняти всі" ]
+                                            ]
+                                        ]
+                                    , div [ class "space-y-2" ]
+                                        (model.kmzColorOptions
+                                            |> List.map
+                                                (\colorOption ->
+                                                    div
+                                                        [ class
+                                                            ("grid grid-cols-[auto_1fr] gap-3 p-3 border rounded-md "
+                                                                ++ (if colorOption.selected then
+                                                                        "border-primary bg-primary/5"
 
-                                                         else
-                                                            "border-border hover:border-primary/50"
-                                                        )
-                                                    , onClick (SelectColorFromKmz colorInfo.colorHex)
-                                                    ]
-                                                    [ div
-                                                        [ class "w-16 h-16 rounded-md border border-border"
-                                                        , style "background-color" colorInfo.colorHex
+                                                                    else
+                                                                        "border-border"
+                                                                   )
+                                                            )
                                                         ]
-                                                        []
-                                                    , div [ class "text-xs font-mono" ] [ text colorInfo.colorHex ]
-                                                    , div [ class "text-sm font-semibold" ] [ text (String.fromInt colorInfo.count ++ " точок") ]
-                                                    ]
-                                            )
-                                    )
+                                                        [ div [ class "pt-1" ]
+                                                            [ input
+                                                                [ type_ "checkbox"
+                                                                , checked colorOption.selected
+                                                                , onClick (ToggleKmzColorSelection colorOption.colorHex)
+                                                                ]
+                                                                []
+                                                            ]
+                                                        , div [ class "space-y-2" ]
+                                                            [ div [ class "flex items-center gap-3" ]
+                                                                [ div
+                                                                    [ class "w-9 h-9 rounded border border-border"
+                                                                    , style "background-color" colorOption.colorHex
+                                                                    ]
+                                                                    []
+                                                                , div [ class "flex flex-col" ]
+                                                                    [ div [ class "text-sm font-medium" ]
+                                                                        [ text ("Топ #" ++ String.fromInt colorOption.rank) ]
+                                                                    , div [ class "text-xs text-muted-foreground font-mono" ]
+                                                                        [ text colorOption.colorHex ]
+                                                                    ]
+                                                                , div [ class "ml-auto text-xs text-muted-foreground" ]
+                                                                    [ text (String.fromInt colorOption.count ++ " елементів") ]
+                                                                ]
+                                                            , div [ class "space-y-1" ]
+                                                                [ label [ class "text-xs text-muted-foreground" ] [ text "Суфікс назви для цього кольору" ]
+                                                                , input
+                                                                    [ type_ "text"
+                                                                    , class "w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
+                                                                    , placeholder "Наприклад: (синій)"
+                                                                    , value colorOption.suffix
+                                                                    , onInput (\value -> UpdateKmzColorSuffix colorOption.colorHex value)
+                                                                    ]
+                                                                    []
+                                                                ]
+                                                            ]
+                                                        ]
+                                                )
+                                        )
+                                    ]
                             ]
                         , div [ class "space-y-2" ]
                             [ label [ class "text-sm font-medium text-foreground" ] [ text "Назва *" ]

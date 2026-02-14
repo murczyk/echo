@@ -250,7 +250,7 @@ pub async fn analyze_kmz(
     let tmp_path = tmp_dir.path().join(&filename);
     tokio::fs::write(&tmp_path, val).await.c(h!())?;
 
-    // Extract top 3 colors based on file extension
+    // Extract top colors based on file extension
     let extension = tmp_path
         .extension()
         .and_then(|ext| ext.to_str())

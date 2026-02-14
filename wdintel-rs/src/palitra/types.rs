@@ -127,6 +127,7 @@ pub struct PalitraPoints {
 pub struct KmzColorInfo {
     pub color_hex: String,
     pub count: i32,
+    pub suggested_suffix: Option<String>,
 }
 
 #[derive(
