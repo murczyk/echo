@@ -673,7 +673,9 @@ pub async fn main_server(
     .run();
 
     let task_completion_future = async move {
-        if should_start_bgworkers {
+        if should_start_bgworkers && mode == Mode::Live {
+            std::future::pending::<()>().await;
+        } else if should_start_bgworkers {
             while background_tasks.join_next().await.is_some() {
                 // do nothing
             }
