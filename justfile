@@ -886,7 +886,7 @@ deploy-many _servers_pos="" servers="":
     echo-install-utils run-many \
       --values "{{ servers }}" \
       --cwd "{{ justfile_directory() }}" \
-      -- just server={} deploy
+      -- just deploy --server={}
 
 _echo-generic-deploy:
     #!/bin/bash
