@@ -21,6 +21,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
 use ratatui::{Frame, Terminal};
 use sea_orm::*;
+use serde_json::json;
 use std::io;
 use std::io::Stdout;
 use std::time::Duration;
@@ -1190,6 +1191,11 @@ async fn import_network_data(
         return Ok(());
     }
     let txn = db.begin().await.c(h!())?;
+    let new_logins_created =
+        ensure_import_network_logins(&txn, &data, &network.models).await?;
+    if new_logins_created > 0 {
+        info!("Created {} missing login(s).", new_logins_created);
+    }
     for row in data {
         let rec = network.models.get(&row.recording.id).cloned().c(h!())?;
         let unit_id = network
@@ -1216,6 +1222,70 @@ async fn import_network_data(
     txn.commit().await.c(h!())?;
     info!("Import completed.");
     Ok(())
+}
+
+async fn ensure_import_network_logins<'a, 'async_trait, C>(
+    txn: &C,
+    data: &[DataRow],
+    network_models: &HashMap<i64, sigint_network::Model>,
+) -> anyhow::Result<usize>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let mut required_logins = HashSet::new();
+    for row in data {
+        let Some(rec) = network_models.get(&row.recording.id) else {
+            continue;
+        };
+        if let Some(login) = rec.updated_by.as_ref() {
+            required_logins.insert(login.to_string());
+        }
+    }
+    if required_logins.is_empty() {
+        return Ok(0);
+    }
+
+    let existing_logins = login::Entity::find()
+        .filter(login::Column::Login.is_in(required_logins.clone()))
+        .all(txn)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|login| login.login)
+        .collect::<HashSet<_>>();
+
+    let missing_logins = required_logins
+        .difference(&existing_logins)
+        .cloned()
+        .collect::<Vec<_>>();
+    if missing_logins.is_empty() {
+        return Ok(0);
+    }
+
+    let now = Utc::now().naive_utc();
+    let to_insert = missing_logins
+        .into_iter()
+        .map(|login| login::ActiveModel {
+            login: Set(login),
+            password: Set(None),
+            roles: Set(json!([])),
+            created_at: Set(now),
+            sigint_zone_id: Set(None),
+            organism_id: Set(None),
+            deleted: Set(true),
+            delta_login_id: Set(None),
+            last_active_at: Set(None),
+            deactivation_reason: Set(None),
+            deleted_permanently: Set(false),
+        })
+        .collect::<Vec<_>>();
+
+    let count = to_insert.len();
+    login::Entity::insert_many(to_insert)
+        .exec(txn)
+        .await
+        .c(h!())?;
+    Ok(count)
 }
 
 async fn import_data(
