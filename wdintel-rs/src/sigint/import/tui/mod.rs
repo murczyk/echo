@@ -330,7 +330,7 @@ async fn import_network_callsigns(
         cond =
             cond.add(
                 sigint_network_callsign::Column::SigintCallsignId
-                    .is_null()
+                    .is_in(local_sigint_callsign_ids)
                     .or(sigint_network_callsign::Column::SigintCallsignId
                         .is_null()),
             );
@@ -519,16 +519,27 @@ async fn import_sigint_callsigns(
             .map(|c| ((c.unit_id, c.callsign.clone()), c))
             .collect::<HashMap<_, _>>()
     };
+    let mut existing_callsign_keys = existing_sigint_callsigns
+        .keys()
+        .cloned()
+        .collect::<HashSet<_>>();
+    let mut created_callsigns = HashMap::new();
     let txn = db.begin().await.c(h!())?;
     let mut new_callsigns_counter = 0;
     for import_callsign in callsigns_to_import {
         let Some(unit_id) = unit_matches.get(&import_callsign.unit_id) else {
             continue;
         };
-        let already_existing = existing_sigint_callsigns
-            .get(&(*unit_id, import_callsign.callsign.clone()));
-        if let Some(existing) = already_existing {
+        let key = (*unit_id, import_callsign.callsign.clone());
+        if let Some(existing) = existing_sigint_callsigns.get(&key) {
             result.insert(import_callsign.id, existing.id);
+            continue;
+        }
+        if let Some(existing_id) = created_callsigns.get(&key) {
+            result.insert(import_callsign.id, *existing_id);
+            continue;
+        }
+        if existing_callsign_keys.contains(&key) {
             continue;
         }
         let res_rec = sigint_callsign::ActiveModel {
@@ -548,6 +559,8 @@ async fn import_sigint_callsigns(
         .insert(&txn)
         .await
         .c(h!())?;
+        existing_callsign_keys.insert(key.clone());
+        created_callsigns.insert(key, res_rec.id);
         new_result.insert(import_callsign.id, res_rec.id);
         new_callsigns_counter += 1;
     }
