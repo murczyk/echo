@@ -86,6 +86,10 @@ pub const LONG_POLL_MIN_RESPONSE_TIME_MS: u64 = 500;
 pub const REDIS_MAXLEN: usize = 1000;
 pub const REDIS_SESSIONS_KEY: &str = "echo-sessions";
 pub const SESSION_STREAM_LIFETIME_SEC: i64 = 180;
+pub const SESSION_ACTIVITY_QUEUE_CAPACITY_DEFAULT: usize = 2048;
+pub const SESSION_ACTIVITY_PAYLOAD_MAX_BYTES_DEFAULT: usize = 4096;
+pub const SESSION_ACTIVITY_GREPTIME_GET_TIMEOUT_MS_DEFAULT: u64 = 500;
+pub const SESSION_ACTIVITY_GREPTIME_QUERY_TIMEOUT_MS_DEFAULT: u64 = 1000;
 pub const INACTIVE_USERS_DEACTIVATE_DURATION_SEC: u64 = 3600;
 pub const INACTIVE_USERS_DEACTIVATE_AFTER_DAYS: i64 = 30;
 /// Default root prefix for encrypted messenger media stored on S3
@@ -189,6 +193,10 @@ pub struct Config {
     pub greptime_user: Option<String>,
     pub greptime_password: Option<String>,
     pub greptime_dbname: Option<String>,
+    pub session_activity_queue_capacity: Option<usize>,
+    pub session_activity_payload_max_bytes: Option<usize>,
+    pub session_activity_greptime_get_timeout_ms: Option<u64>,
+    pub session_activity_greptime_query_timeout_ms: Option<u64>,
     pub feature_tmp_in_memory: Option<bool>,
     pub feature_strict_networks: Option<bool>,
     pub is_slave: Option<bool>,

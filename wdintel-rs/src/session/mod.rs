@@ -4,62 +4,83 @@ use crate::types::*;
 use chrono::prelude::*;
 use redis::aio::ConnectionManager;
 use redis::AsyncCommands;
+use std::sync::atomic::Ordering;
+use std::time::Duration;
+use tokio::sync::mpsc::error::TrySendError;
+use tokio_util::sync::CancellationToken;
 
 pub mod types;
+
+const ACTIVITY_PAGE_VISIT_INSERT_SQL: &str =
+    "INSERT INTO activity_page_visit (ts, id, public_host, username, page, payload)
+     VALUES ($1, $2, $3, $4, $5, $6)";
+
+fn session_activity_ms_to_duration(ms: u64) -> Duration {
+    Duration::from_millis(ms.max(1))
+}
+
+fn cap_payload_bytes(
+    payload: Option<serde_json::Value>,
+    max_bytes: usize,
+) -> anyhow::Result<Option<Vec<u8>>> {
+    let Some(payload) = payload else {
+        return Ok(None);
+    };
+    let payload = serde_json::to_vec(&payload).c(h!())?;
+    if payload.len() > max_bytes {
+        debug!(
+            "session activity payload dropped: size={} > cap={max_bytes}",
+            payload.len()
+        );
+        return Ok(None);
+    }
+    Ok(Some(payload))
+}
+
+fn enqueue_session_activity(
+    env: &actix_web::web::Data<Env>,
+    event: SessionActivityEvent,
+) {
+    let Some(session_activity_tx) = env.session_activity_tx.as_ref() else {
+        return;
+    };
+    match session_activity_tx.try_send(event) {
+        Ok(()) => {
+            env.session_activity_enqueued
+                .fetch_add(1, Ordering::Relaxed);
+        }
+        Err(TrySendError::Full(_)) => {
+            let dropped =
+                env.session_activity_dropped.fetch_add(1, Ordering::Relaxed)
+                    + 1;
+            if dropped % 100 == 1 {
+                warn!(
+                    "session activity queue is full; dropped_total={dropped}"
+                );
+            }
+        }
+        Err(TrySendError::Closed(_)) => {
+            warn!("session activity queue is closed");
+        }
+    }
+}
 
 pub async fn record_new_session(
     user_id: &str,
     session_id: Uuid,
     env: &actix_web::web::Data<Env>,
 ) -> anyhow::Result<()> {
-    if let Some(greptime) = env.greptime() {
-        let user_id = user_id.to_string();
-        let public_host = env.config.public_host.clone();
-
-        tokio::spawn(async move {
-            let now = Utc::now().naive_utc();
-            let username = Some(user_id);
-            let public_host = Some(public_host);
-
-            let client = match greptime.get().await {
-                Ok(client) => client,
-                Err(e) => {
-                    warn!("Failed to get connection from pool: {e:?}");
-                    return;
-                }
-            };
-
-            let stmt = match client.prepare(
-                "INSERT INTO activity_page_visit (ts, id, public_host, username, page, payload)
-                 VALUES ($1, $2, $3, $4, $5, $6)"
-            ).await {
-                Ok(stmt) => stmt,
-                Err(e) => {
-                    warn!("Failed to prepare statement: {e:?}");
-                    return;
-                }
-            };
-
-            let res = client
-                .execute(
-                    &stmt,
-                    &[
-                        &now,
-                        &session_id.to_string(),
-                        &public_host,
-                        &username,
-                        &Option::<String>::None,
-                        &Option::<Vec<u8>>::None,
-                    ],
-                )
-                .await;
-
-            if let Err(e) = res {
-                warn!("Failed to insert activity_page_visit: {:?} {}", e, h!());
-            }
-        });
-    }
-
+    enqueue_session_activity(
+        env,
+        SessionActivityEvent {
+            ts: Utc::now().naive_utc(),
+            id: session_id.to_string(),
+            public_host: Some(env.config.public_host.clone()),
+            username: Some(user_id.to_string()),
+            page: None,
+            payload: None,
+        },
+    );
     Ok(())
 }
 
@@ -69,62 +90,113 @@ pub async fn record_page_visit(
     env: &actix_web::web::Data<Env>,
     payload: Option<serde_json::Value>,
 ) -> anyhow::Result<()> {
-    if let Some(greptime) = env.greptime() {
-        let user_id = user_id.to_string();
-        let page = page.clone();
-        let payload = payload.clone();
-        // deadpool_postgres fails to write JSON, so we manually convert to Vec<u8> here
-        let payload: Option<Vec<u8>> = match payload {
-            Some(ref p) => {
-                let str = serde_json::to_string(&p).c(h!())?;
-                let bytes = str.as_bytes().to_vec();
-                Some(bytes)
-            }
-            None => None,
-        };
-        let public_host = env.config.public_host.clone();
+    let payload =
+        cap_payload_bytes(payload, env.session_activity_payload_max_bytes())
+            .c(h!())?;
+    enqueue_session_activity(
+        env,
+        SessionActivityEvent {
+            ts: Utc::now().naive_utc(),
+            id: Uuid::now_v7().to_string(),
+            public_host: Some(env.config.public_host.clone()),
+            username: Some(user_id.to_string()),
+            page: page.clone(),
+            payload,
+        },
+    );
+    Ok(())
+}
 
-        tokio::spawn(async move {
-            let now = Utc::now().naive_utc();
-            let id = Uuid::now_v7().to_string();
-            let username = Some(user_id);
-            let public_host = Some(public_host);
-
-            let client = match greptime.get().await {
-                Ok(client) => client,
-                Err(e) => {
-                    warn!("Failed to get connection from pool: {e:?}");
-                    return;
-                }
-            };
-
-            let stmt = match client.prepare(
-                "INSERT INTO activity_page_visit (ts, id, public_host, username, page, payload)
-                 VALUES ($1, $2, $3, $4, $5, $6)"
-            ).await {
-                Ok(stmt) => stmt,
-                Err(e) => {
-                    warn!("Failed to prepare statement: {e:?}");
-                    return;
-                }
-            };
-
-            let res = client
-                .execute(
-                    &stmt,
-                    &[&now, &id, &public_host, &username, &page, &payload],
-                )
-                .await;
-
-            if let Err(e) = res {
-                warn!(
-                    "Failed to insert activity_page_visit: {:?}, {}",
-                    e,
-                    h!()
-                );
-            }
-        });
+pub async fn run_activity_worker_nofail(
+    env: Arc<Env>,
+    cancel_token: CancellationToken,
+) {
+    if let Err(err) = run_activity_worker(env, cancel_token).await {
+        error!("session activity worker failed: {err:?}");
     }
+}
+
+async fn run_activity_worker(
+    env: Arc<Env>,
+    cancel_token: CancellationToken,
+) -> anyhow::Result<()> {
+    let Some(greptime) = env.greptime() else {
+        info!("session activity worker disabled: greptime is not configured");
+        return Ok(());
+    };
+    let Some(mut rx) = env.take_session_activity_rx().await else {
+        info!("session activity worker disabled: queue is not initialized");
+        return Ok(());
+    };
+    let get_timeout = session_activity_ms_to_duration(
+        env.session_activity_greptime_get_timeout_ms(),
+    );
+    let query_timeout = session_activity_ms_to_duration(
+        env.session_activity_greptime_query_timeout_ms(),
+    );
+    info!(
+        "starting session activity worker; get_timeout_ms={} query_timeout_ms={}",
+        get_timeout.as_millis(),
+        query_timeout.as_millis()
+    );
+    loop {
+        tokio::select! {
+            _ = cancel_token.cancelled() => {
+                info!("session activity worker received cancellation");
+                break;
+            }
+            maybe_event = rx.recv() => {
+                let Some(event) = maybe_event else {
+                    info!("session activity worker queue closed");
+                    break;
+                };
+                if let Err(err) = write_activity_page_visit(
+                    &greptime,
+                    &event,
+                    get_timeout,
+                    query_timeout,
+                )
+                .await {
+                    warn!("Failed to insert activity_page_visit: {err:?}");
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+async fn write_activity_page_visit(
+    greptime: &deadpool_postgres::Pool,
+    event: &SessionActivityEvent,
+    get_timeout: Duration,
+    query_timeout: Duration,
+) -> anyhow::Result<()> {
+    let client = tokio::time::timeout(get_timeout, greptime.get())
+        .await
+        .context("greptime get connection timeout")
+        .c(h!())?
+        .context("greptime get connection failed")
+        .c(h!())?;
+
+    tokio::time::timeout(
+        query_timeout,
+        client.execute(
+            ACTIVITY_PAGE_VISIT_INSERT_SQL,
+            &[
+                &event.ts,
+                &event.id,
+                &event.public_host,
+                &event.username,
+                &event.page,
+                &event.payload,
+            ],
+        ),
+    )
+    .await
+    .context("greptime insert timeout")
+    .c(h!())?
+    .context("greptime insert failed")
+    .c(h!())?;
 
     Ok(())
 }

@@ -111,6 +111,20 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
     } else {
         None
     };
+    let session_activity_queue_capacity = config
+        .session_activity_queue_capacity
+        .unwrap_or(SESSION_ACTIVITY_QUEUE_CAPACITY_DEFAULT);
+    let (session_activity_tx, session_activity_rx) =
+        if m_greptimedb.is_some() && session_activity_queue_capacity > 0 {
+            let (tx, rx) =
+                tokio::sync::mpsc::channel(session_activity_queue_capacity);
+            (Some(tx), Some(rx))
+        } else {
+            if m_greptimedb.is_some() && session_activity_queue_capacity == 0 {
+                warn!("session activity queue disabled: capacity is 0");
+            }
+            (None, None)
+        };
     let settlement_paths = config.settlement_paths().c(h!())?;
     let settlements_data =
         crate::location::load_from_file(settlement_paths, mode)
@@ -153,6 +167,16 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
         version: version.clone(),
         replicas,
         tag_keyword_regex_cache: Arc::new(RwLock::new(Default::default())),
+        session_activity_tx,
+        session_activity_rx: Arc::new(tokio::sync::Mutex::new(
+            session_activity_rx,
+        )),
+        session_activity_dropped: Arc::new(std::sync::atomic::AtomicU64::new(
+            0,
+        )),
+        session_activity_enqueued: Arc::new(std::sync::atomic::AtomicU64::new(
+            0,
+        )),
     };
     Ok(Arc::new(env))
 }
@@ -337,6 +361,19 @@ pub async fn main_server(
             .c(h!())?;
 
     let mut background_tasks: JoinSet<()> = JoinSet::new();
+    let session_env = env.clone();
+    let token_session = cancel_token.clone();
+    spawn_named_worker(
+        "session_activity_worker",
+        &mut background_tasks,
+        async move {
+            crate::session::run_activity_worker_nofail(
+                session_env,
+                token_session,
+            )
+            .await;
+        },
+    );
     let should_start_bgworkers =
         should_start_bgworkers_in_server(mode, ps.no_bgworker);
     if should_start_bgworkers {
