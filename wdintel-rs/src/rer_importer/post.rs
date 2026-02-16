@@ -24,7 +24,7 @@ pub fn extract_post(inp: &str) -> Result<Option<String>, AppError> {
         let Some(post) = extract_last_post_from_posts_header(line) else {
             break '_if;
         };
-        transit_post = Some(post);
+        transit_post = Some(normalize_post_name(&post));
     }
 
     // Extract transit_post_name if message has Отримано з поста "transit_post_name" substring.
@@ -43,7 +43,7 @@ pub fn extract_post(inp: &str) -> Result<Option<String>, AppError> {
         let Some(post) = m_cap_s(&capts, "post") else {
             break '_if;
         };
-        transit_post = Some(post.trim().to_string());
+        transit_post = Some(normalize_post_name(&post));
     }
 
     // Extract transit_post_name for unquoted form: Отримано з поста <name>
@@ -61,7 +61,7 @@ pub fn extract_post(inp: &str) -> Result<Option<String>, AppError> {
         let Some(post) = m_cap_s(&capts, "post") else {
             break '_if;
         };
-        transit_post = Some(post.trim().to_string());
+        transit_post = Some(normalize_post_name(&post));
     }
 
     // like: П54 or ЦФП157
@@ -77,7 +77,7 @@ pub fn extract_post(inp: &str) -> Result<Option<String>, AppError> {
         let Some(post) = m_cap_s(&capts, "post") else {
             break '_if;
         };
-        return Ok(Some(post.trim().to_string()));
+        return Ok(Some(normalize_post_name(&post)));
     }
 
     // like: "ЦФП14"
@@ -93,7 +93,7 @@ pub fn extract_post(inp: &str) -> Result<Option<String>, AppError> {
         let Some(post) = m_cap_s(&capts, "post") else {
             break '_if;
         };
-        return Ok(Some(post.trim().to_string()));
+        return Ok(Some(normalize_post_name(&post)));
     }
 
     // like: (ЦФП90)
@@ -109,7 +109,7 @@ pub fn extract_post(inp: &str) -> Result<Option<String>, AppError> {
         let Some(post) = m_cap_s(&capts, "post") else {
             break '_if;
         };
-        return Ok(Some(post.trim().to_string()));
+        return Ok(Some(normalize_post_name(&post)));
     }
 
     // like: ЦФП 80
@@ -124,7 +124,7 @@ pub fn extract_post(inp: &str) -> Result<Option<String>, AppError> {
         let Some(post) = m_cap_s(&capts, "post") else {
             break '_if;
         };
-        return Ok(Some(post.trim().to_string()));
+        return Ok(Some(normalize_post_name(&post)));
     }
 
     // like: П34 just one in the string
@@ -139,7 +139,7 @@ pub fn extract_post(inp: &str) -> Result<Option<String>, AppError> {
         let Some(post) = m_cap_s(&capts, "post") else {
             break '_if;
         };
-        return Ok(Some(post.trim().to_string()));
+        return Ok(Some(normalize_post_name(&post)));
     }
 
     Ok(transit_post)
@@ -154,7 +154,7 @@ fn extract_last_post_from_posts_header(line: &str) -> Option<String> {
     let last_quoted = RE_QUOTED_POST
         .captures_iter(line)
         .filter_map(|capts| m_cap_s(&capts, "post"))
-        .map(|post| post.trim().to_string())
+        .map(|post| normalize_post_name(&post))
         .last();
     if last_quoted.is_some() {
         return last_quoted;
@@ -166,7 +166,27 @@ fn extract_last_post_from_posts_header(line: &str) -> Option<String> {
     if last.is_empty() {
         return None;
     }
-    Some(last.to_string())
+    Some(normalize_post_name(last))
+}
+
+fn normalize_post_name(post: &str) -> String {
+    let trimmed = post.trim();
+    if trimmed.len() < 2 {
+        return trimmed.to_string();
+    }
+    let first = trimmed.chars().next().unwrap();
+    let last = trimmed.chars().last().unwrap();
+    let is_wrapped =
+        (first == '"' && last == '"') || (first == '\'' && last == '\'');
+    if !is_wrapped {
+        return trimmed.to_string();
+    }
+    let start = first.len_utf8();
+    let end = trimmed.len().saturating_sub(last.len_utf8());
+    if start >= end {
+        return trimmed.to_string();
+    }
+    trimmed[start..end].trim().to_string()
 }
 
 #[cfg(test)]
@@ -606,6 +626,32 @@ Kupol80
 -46579, доброе утро экипажам ...одиночных площадок, следую к вам, прошел ... Александровка вошел вашу зону, подход ..."#;
         let res = extract_post(body).unwrap();
         assert_eq!(res.unwrap(), "**33".to_string())
+    }
+
+    #[test]
+    fn extract_post_strip_double_quotes() {
+        let body = r#"
+Отримано з поста "Сорока 12"
+--------------------------------------
+11.11, 07:39:51
+450.4650
+НВ
+"#;
+        let res = extract_post(body).unwrap();
+        assert_eq!(res.unwrap(), "Сорока 12".to_string())
+    }
+
+    #[test]
+    fn extract_post_strip_single_quotes_from_posts_header() {
+        let body = r#"
+Отримано з постів 'Сорока 12', 'Сорока 13'
+--------------------------------------
+11.11, 07:39:51
+450.4650
+НВ
+"#;
+        let res = extract_post(body).unwrap();
+        assert_eq!(res.unwrap(), "Сорока 13".to_string())
     }
 
     #[test]
