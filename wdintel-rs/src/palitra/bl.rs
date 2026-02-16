@@ -681,9 +681,10 @@ pub async fn rewrite_palitra_points(
     delete_existing_palitra_points(palitra_id, txn)
         .await
         .c(h!())?;
-    let mut points = vec![];
+    let mut points_batch =
+        Vec::with_capacity(crate::config::PALITRA_POINTS_INSERT_BATCH_SIZE);
     for point in coords {
-        points.push(palitra_point::ActiveModel {
+        points_batch.push(palitra_point::ActiveModel {
             id: NotSet,
             label: Set(point.label),
             palitra_id: Set(palitra_id),
@@ -693,11 +694,23 @@ pub async fn rewrite_palitra_points(
             deleted_at: NotSet,
             created_at: NotSet,
         });
+        if points_batch.len() >= crate::config::PALITRA_POINTS_INSERT_BATCH_SIZE
+        {
+            palitra_point::Entity::insert_many(points_batch)
+                .exec(txn)
+                .await
+                .context(h!())?;
+            points_batch = Vec::with_capacity(
+                crate::config::PALITRA_POINTS_INSERT_BATCH_SIZE,
+            );
+        }
     }
-    palitra_point::Entity::insert_many(points)
-        .exec(txn)
-        .await
-        .context(h!())?;
+    if !points_batch.is_empty() {
+        palitra_point::Entity::insert_many(points_batch)
+            .exec(txn)
+            .await
+            .context(h!())?;
+    }
     recalculate_center(txn, palitra_id).await.c(h!())?;
     recalculate_convex_hull(txn, palitra_id).await.c(h!())?;
     Ok(())
