@@ -172,14 +172,17 @@ fn m_add_coordinates(
     coordinates: Option<String>,
 ) {
     if let Some(c) = coordinates {
-        match Coords::from_csv(&c) {
-            Ok(coords) => {
-                let point = PalitraPoint { coords, label };
-                values.push(point);
+        match Coords::list_from_kml_coordinates(&c) {
+            Ok(coords_list) => {
+                for coords in coords_list {
+                    let point = PalitraPoint {
+                        coords,
+                        label: label.clone(),
+                    };
+                    values.push(point);
+                }
             }
-            Err(e) => {
-                error!("Failed to parse coordinates {c}: {e:?}");
-            }
+            Err(e) => error!("Failed to parse coordinates {c}: {e:?}"),
         }
     }
 }
