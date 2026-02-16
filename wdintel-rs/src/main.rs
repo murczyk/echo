@@ -191,6 +191,16 @@ pub struct OneoffBackfillInboxNetworksPs {
 }
 
 #[derive(clap::Parser, Debug)]
+pub struct OneoffReprocessInboxPostsPs {
+    /// Start day (inclusive). Format: `YYYY-MM-DD`.
+    #[arg(long)]
+    pub start_day: String,
+    /// Do not persist updates.
+    #[arg(long)]
+    pub dry_run: bool,
+}
+
+#[derive(clap::Parser, Debug)]
 pub struct OneoffRadioPerDayPerAbonentPs {
     pub input: String,
 }
@@ -614,6 +624,7 @@ enum Cmd {
     OneoffImportSignalsCallsignsCsv(OneoffImportSignalsCallsignsCsvPs),
     OneoffFixWhatsappSenders,
     OneoffBackfillInboxNetworks(OneoffBackfillInboxNetworksPs),
+    OneoffReprocessInboxPosts(OneoffReprocessInboxPostsPs),
     OneoffRestartEcho(OneoffRestartEchoPs),
 }
 
@@ -1057,6 +1068,9 @@ async fn async_main(
         Cmd::OneoffBackfillInboxNetworks(ps) => {
             sigint::network::etalon_calc::oneoff::oneoff_backfill_inbox_networks(mode, ps)
                 .await
+        }
+        Cmd::OneoffReprocessInboxPosts(ps) => {
+            rer_importer::oneoff_reprocess_inbox_posts(mode, &ps).await
         }
         Cmd::NetworkInvalidationTui => {
            sigint::network::etalon_calc::tui::run_network_invalidation_tui(mode).await
