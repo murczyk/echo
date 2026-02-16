@@ -1073,9 +1073,8 @@ fn primitive_to_naive_datetime(
     let utc = dt.assume_utc();
     let secs = utc.unix_timestamp();
     let nanos = utc.nanosecond();
-    let res = NaiveDateTime::from_timestamp_opt(secs, nanos)
-        .context(h!())?;
-    Ok(res)
+    let res = DateTime::from_timestamp(secs, nanos).context(h!())?;
+    Ok(res.naive_utc())
 }
 
 async fn load_network_callsigns_from_stats(
@@ -1091,12 +1090,10 @@ async fn load_network_callsigns_from_stats(
         callsign: String,
     }
 
-    let batches = crate::stats::collect_signal_group_batches(
-        groups.clone(),
-        dbx,
-    )
-    .await
-    .c(h!())?;
+    let batches =
+        crate::stats::collect_signal_group_batches(groups.clone(), dbx)
+            .await
+            .c(h!())?;
     let batch_ids = batches.iter().map(|b| b.id).collect::<Vec<i64>>();
     if batch_ids.is_empty() {
         return Ok(HashMap::new());
@@ -1152,12 +1149,10 @@ async fn load_network_freqs_activity_from_stats(
         quantity: i64,
     }
 
-    let batches = crate::stats::collect_signal_group_batches(
-        groups.clone(),
-        dbx,
-    )
-    .await
-    .c(h!())?;
+    let batches =
+        crate::stats::collect_signal_group_batches(groups.clone(), dbx)
+            .await
+            .c(h!())?;
     let batch_ids = batches.iter().map(|b| b.id).collect::<Vec<i64>>();
     if batch_ids.is_empty() {
         return Ok(HashMap::new());
@@ -1167,14 +1162,12 @@ async fn load_network_freqs_activity_from_stats(
         .select_only()
         .column(stats_group_network_freq_day::Column::Dt)
         .column(stats_group_network_freq_day::Column::Frequency)
-        .expr_as(Expr::cust("SUM(quantity)"), Alias::new("quantity"))
+        .expr_as(Expr::cust("SUM(quantity)"), "quantity")
         .filter(
             stats_group_network_freq_day::Column::SignalGroupBatchId
                 .eq_any(batch_ids),
         )
-        .filter(
-            stats_group_network_freq_day::Column::NetworkId.eq(network_id),
-        )
+        .filter(stats_group_network_freq_day::Column::NetworkId.eq(network_id))
         .group_by(stats_group_network_freq_day::Column::Dt)
         .group_by(stats_group_network_freq_day::Column::Frequency)
         .into_model::<FreqStatRow>()
@@ -2324,9 +2317,33 @@ pub async fn network_freqs_list(
     .await
     .context(h!())?;
 
-    let freqs = load_freqs(&env.dbx, &groups, req.network_id, None, &user_id)
+    let freqs = if env
+        .config
+        .feature_group_stats_aggregated
+        .unwrap_or(FEATURE_GROUP_STATS_AGGREGATED_DEFAULT)
+    {
+        let counts = load_network_freqs_counts_from_stats(
+            &env.dbx,
+            &groups,
+            req.network_id,
+        )
         .await
         .context(h!())?;
+        load_freqs_with_stats(
+            &env.dbx,
+            &groups,
+            req.network_id,
+            None,
+            &user_id,
+            counts,
+        )
+        .await
+        .context(h!())?
+    } else {
+        load_freqs(&env.dbx, &groups, req.network_id, None, &user_id)
+            .await
+            .context(h!())?
+    };
 
     let res = SingleNetworkFreqsListRsp { freqs };
 

@@ -139,6 +139,36 @@ pub async fn load_freqs(
     filter: Option<&NetworkFreqFilter>,
     user_login: &str,
 ) -> Result<Vec<NetworkFreqsRes>, AppError> {
+    load_freqs_impl(db, groups, network_id, filter, user_login, None).await
+}
+
+pub async fn load_freqs_with_stats(
+    db: &DatabaseConnection,
+    groups: &Vec<String>,
+    network_id: i64,
+    filter: Option<&NetworkFreqFilter>,
+    user_login: &str,
+    freq_counts: HashMap<String, i64>,
+) -> Result<Vec<NetworkFreqsRes>, AppError> {
+    load_freqs_impl(
+        db,
+        groups,
+        network_id,
+        filter,
+        user_login,
+        Some(freq_counts),
+    )
+    .await
+}
+
+async fn load_freqs_impl(
+    db: &DatabaseConnection,
+    groups: &Vec<String>,
+    network_id: i64,
+    filter: Option<&NetworkFreqFilter>,
+    user_login: &str,
+    freq_counts: Option<HashMap<String, i64>>,
+) -> Result<Vec<NetworkFreqsRes>, AppError> {
     trace!("> load freqs for network: {network_id:?}");
 
     let nf = Alias::new("network_freqs");
@@ -212,9 +242,14 @@ pub async fn load_freqs(
         .to_owned();
 
     let mut q_agg: SelectStatement = Query::select();
+    let message_count_expr = if freq_counts.is_none() {
+        Expr::cust("COUNT(*)")
+    } else {
+        Expr::cust("0")
+    };
     q_agg
         .expr_as(Expr::cust("network_freq_id"), Alias::new("network_freq_id"))
-        .expr_as(Expr::cust("COUNT(*)"), Alias::new("message_count"))
+        .expr_as(message_count_expr, Alias::new("message_count"))
         .expr_as(Expr::cust("MAX(datetime)"), Alias::new("last_datetime"))
         .expr_as(Expr::cust("jsonb_agg(callsigns)"), Alias::new("callsigns"))
         .from(Alias::new("network_messages"))
@@ -370,14 +405,21 @@ pub async fn load_freqs(
             if let Ok(id) = network_freq_id {
                 freq_ids.push(id);
             }
+            let freq: String = row.try_get("", "freq").unwrap_or_default();
+            let message_count = if let Some(counts) = freq_counts.as_ref() {
+                counts.get(&freq).copied().unwrap_or(0)
+            } else {
+                row.try_get("", "message_count").unwrap_or(0)
+            };
+
             Ok(NetworkFreqsRes {
                 network_freq_id: network_freq_id.unwrap_or_default(),
-                freq: row.try_get("", "freq").unwrap_or_default(),
+                freq,
                 modulation_id: row.try_get("", "modulation_id").ok(),
                 modulation: row.try_get("", "modulation_name").ok(),
                 encryption_key_ids: vec![],
                 encryption_keys: vec![],
-                message_count: row.try_get("", "message_count").unwrap_or(0),
+                message_count,
                 callsigns: row_callsigns,
                 last_datetime: row
                     .try_get("", "last_datetime")
@@ -416,6 +458,47 @@ pub async fn load_freqs(
         }
         _err => _err,
     }
+}
+
+pub async fn load_network_freqs_counts_from_stats(
+    dbx: &DatabaseConnection,
+    groups: &Vec<String>,
+    network_id: i64,
+) -> Result<HashMap<String, i64>, AppError> {
+    #[derive(FromQueryResult)]
+    struct FreqStatRow {
+        frequency: String,
+        quantity: i64,
+    }
+
+    let batches =
+        crate::stats::collect_signal_group_batches(groups.clone(), dbx)
+            .await
+            .c(h!())?;
+    let batch_ids = batches.iter().map(|b| b.id).collect::<Vec<i64>>();
+    if batch_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let rows = stats_group_network_freq_day::Entity::find()
+        .select_only()
+        .column(stats_group_network_freq_day::Column::Frequency)
+        .expr_as(Expr::cust("SUM(quantity)"), "quantity")
+        .filter(
+            stats_group_network_freq_day::Column::SignalGroupBatchId
+                .eq_any(batch_ids),
+        )
+        .filter(stats_group_network_freq_day::Column::NetworkId.eq(network_id))
+        .group_by(stats_group_network_freq_day::Column::Frequency)
+        .into_model::<FreqStatRow>()
+        .all(dbx)
+        .await
+        .c(h!())?;
+
+    Ok(rows
+        .into_iter()
+        .map(|row| (row.frequency, row.quantity))
+        .collect())
 }
 
 fn flatten_and_dedup(input: Vec<Vec<String>>) -> Vec<String> {

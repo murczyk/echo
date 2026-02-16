@@ -1404,8 +1404,7 @@ pub async fn recalculate_network_stats(
     }
     txn.commit().await.c(h!())?;
 
-    let mut network_day: HashMap<(NaiveDate, i64, i64), i32> =
-        HashMap::new();
+    let mut network_day: HashMap<(NaiveDate, i64, i64), i32> = HashMap::new();
     let mut network_freq_day: HashMap<(NaiveDate, i64, i64, String), i32> =
         HashMap::new();
     let mut network_callsign_day: HashMap<(NaiveDate, i64, i64, String), i32> =
@@ -1628,7 +1627,8 @@ async fn load_network_stats(
     let stats_by_datetime =
         network_stats_by_datetime(dbx, since_ts, till_ts, network_ids).await?;
     let stats_by_created_at =
-        network_stats_by_created_at(dbx, since_ts, till_ts, network_ids).await?;
+        network_stats_by_created_at(dbx, since_ts, till_ts, network_ids)
+            .await?;
     Ok(stats_by_datetime
         .into_iter()
         .chain(stats_by_created_at)
