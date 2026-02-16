@@ -416,24 +416,21 @@ deploy _server_pos="" server:
       set -x
 
       sudo systemctl daemon-reload
+      sudo systemctl disable --now wdintel-rs.service || true
+
+      # Leave only wdintel-rs.socket on :8081; clean up legacy/generated sockets.
+      for unit in wdintel-rs-bgworker.socket wdintel-py.socket echo-whatsapp.socket echo-vector.socket echo-signal-cli.socket; do
+        if systemctl cat "$unit" >/dev/null 2>&1; then
+          sudo systemctl disable --now "$unit" || true
+        fi
+      done
+      for unit in $(sudo systemctl list-units --all --no-legend --full "echo-signal-bot@*.socket" "echo-whatsapp-bot@*.socket" | awk "{print \$1}"); do
+        sudo systemctl disable --now "$unit" || true
+      done
+
       sudo systemctl enable --now wdintel-rs.socket
       sudo systemctl enable --now wdintel-rs-bgworker.service
       sudo systemctl enable --now wdintel-py.service
-
-      # wdintel-py.socket may be absent or fail to bind on hosts where
-      # wdintel-py.service already owns port 5000. Keep deploy strict for
-      # required units and treat the socket as best-effort.
-      if systemctl cat wdintel-py.socket >/dev/null 2>&1; then
-        if ! sudo systemctl enable wdintel-py.socket; then
-          echo "WARN: failed to enable wdintel-py.socket; continuing." >&2
-        fi
-        if ! sudo systemctl start wdintel-py.socket; then
-          echo "WARN: failed to start wdintel-py.socket; continuing." >&2
-          systemctl status --no-pager wdintel-py.socket || true
-        fi
-      else
-        echo "wdintel-py.socket is not installed; skipping."
-      fi
 
       for unit in wdintel-rs.socket wdintel-rs-bgworker.service wdintel-py.service; do
         if ! systemctl is-enabled --quiet "$unit"; then
@@ -1152,7 +1149,7 @@ oneoff-2026-02-13-bgworker-00-pre-deploy server='':
     set -euo pipefail
     . deploy/utils.sh
     ensure_nonempty "server" "{{ server }}"
-    ssh {{ server }} 'for unit in wdintel-rs-bgworker.socket; do
+    ssh {{ server }} 'for unit in wdintel-rs-bgworker.socket wdintel-py.socket echo-whatsapp.socket echo-vector.socket echo-signal-cli.socket; do
       if systemctl list-unit-files --type=socket --no-legend | awk "{print \$1}" | grep -qx "$unit"; then
         sudo systemctl disable --now "$unit" || true
       else
@@ -1160,7 +1157,7 @@ oneoff-2026-02-13-bgworker-00-pre-deploy server='':
       fi
     done'
     ssh {{ server }} 'sudo systemctl daemon-reload'
-    ssh {{ server }} 'systemctl --no-pager list-unit-files --type=socket | grep -E "wdintel-rs-bgworker\\.socket|wdintel-rs\\.socket|wdintel-py\\.socket|echo-whatsapp\\.socket|echo-signal-cli\\.socket" || true'
+    ssh {{ server }} 'systemctl --no-pager list-unit-files --type=socket | grep -E "wdintel-rs-bgworker\\.socket|wdintel-rs\\.socket|wdintel-py\\.socket|echo-whatsapp\\.socket|echo-vector\\.socket|echo-signal-cli\\.socket|echo-signal-bot@\\.socket|echo-whatsapp-bot@\\.socket" || true'
 
 [arg('server', long='server')]
 oneoff-2026-02-13-bgworker-01-post-deploy server='':
@@ -1220,17 +1217,21 @@ oneoff-2026-02-13-bgworker-01-post-deploy server='':
         echo "Port 8081 is already bound; checking known conflicting units."
         sudo ss -ltnp | grep "LISTEN .*:8081" || true
 
-        echo "Stopping conflict-prone units on this host: echo-signal-cli.socket and echo-signal-cli.service."
-        sudo systemctl disable --now echo-signal-cli.socket echo-signal-cli.service || true
+        echo "Stopping conflict-prone socket units on this host."
+        for unit in wdintel-rs-bgworker.socket wdintel-py.socket echo-whatsapp.socket echo-vector.socket echo-signal-cli.socket; do
+          if systemctl list-unit-files --type=socket --no-legend | awk "{print \$1}" | grep -qx "$unit"; then
+            sudo systemctl disable --now "$unit" || true
+          fi
+        done
 
-        for unit in $(sudo systemctl list-units --all --no-legend --full "echo-signal-bot@*.service" "echo-signal-bot@*.socket" | cut -d " " -f1); do
+        for unit in $(sudo systemctl list-units --all --no-legend --full "echo-signal-bot@*.service" "echo-signal-bot@*.socket" "echo-whatsapp-bot@*.service" "echo-whatsapp-bot@*.socket" | cut -d " " -f1); do
           echo "Stopping conflicting unit: $unit"
-          sudo systemctl disable --now "$unit"
+          sudo systemctl disable --now "$unit" || true
         done
 
         if sudo ss -ltnp | grep -q "LISTEN .*:8081"; then
-          if ! sudo ss -ltnp | grep "LISTEN .*:8081" | grep -q "wdintel-rs"; then
-            echo "ERROR: 8081 is still in use by unexpected process after cleanup."
+          if ! sudo ss -ltnp | grep "LISTEN .*:8081" | grep -q "systemd"; then
+            echo "ERROR: 8081 is still in use by non-systemd process after cleanup."
             sudo ss -ltnp | grep "LISTEN .*:8081" || true
             exit 1
           fi
