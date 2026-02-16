@@ -301,7 +301,7 @@ check-git-hooks:
     find ./wdintel-web/src -type f -name '*.elm' -print0 | xargs -0 etags --regex @elm.tags  --append
 
 [arg('server', long='server')]
-deploy _server_pos="" server="":
+deploy _server_pos="" server:
     #!/bin/bash
     set -euo pipefail
     # Enable tracing if DEBUG=1 or TRACE=1 is set in environment
