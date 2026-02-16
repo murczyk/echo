@@ -1033,6 +1033,17 @@ struct StatsRow {
     pub unit_v2: Option<String>,
 }
 
+#[derive(FromQueryResult, Clone)]
+struct NetworkStatsRow {
+    pub id: i64,
+    pub created_at: NaiveDateTime,
+    pub datetime: Option<NaiveDateTime>,
+    pub group_master_key: String,
+    pub network_id: i64,
+    pub freq: Option<String>,
+    pub callsigns: Option<sea_orm::prelude::Json>,
+}
+
 pub(crate) fn round_to_5min(
     ts: NaiveDateTime,
 ) -> anyhow::Result<NaiveDateTime> {
@@ -1346,6 +1357,160 @@ pub async fn recalculate_group_stats(
             .c(h!())?;
         txn.commit().await.c(h!())?;
     }
+
+    if recalculate_day_stats {
+        recalculate_network_stats(dbx, since_ts, till_ts, None)
+            .await
+            .c(h!())?;
+    }
+    Ok(())
+}
+
+pub async fn recalculate_network_stats(
+    dbx: &DatabaseConnection,
+    since_ts: NaiveDateTime,
+    till_ts: NaiveDateTime,
+    network_ids: Option<&HashSet<i64>>,
+) -> Result<(), AppError> {
+    let stats = load_network_stats(dbx, since_ts, till_ts, network_ids)
+        .await
+        .c(h!())?;
+    let since_date = get_local_date(since_ts);
+    let till_date = get_local_date(till_ts);
+
+    let batches = signal_group_batch::Entity::find().all(dbx).await.c(h!())?;
+    let mut batches_map = batches
+        .into_iter()
+        .map(|b| (b.group_master_keys, b.id))
+        .collect::<HashMap<String, i64>>();
+
+    let mut msg_groups: HashMap<i64, HashSet<String>> = HashMap::new();
+    for row in &stats {
+        msg_groups
+            .entry(row.id)
+            .or_default()
+            .insert(row.group_master_key.clone());
+    }
+
+    let txn = dbx.begin().await.c(h!())?;
+    let mut message_batch_map: HashMap<i64, i64> = HashMap::new();
+    for (msg_id, keys) in msg_groups {
+        let batch_key = all_to_batch_key(keys);
+        ensure_batch_key(&txn, &mut batches_map, &batch_key)
+            .await
+            .c(h!())?;
+        let batch_id = *batches_map.get(&batch_key).c(h!())?;
+        message_batch_map.insert(msg_id, batch_id);
+    }
+    txn.commit().await.c(h!())?;
+
+    let mut network_day: HashMap<(NaiveDate, i64, i64), i32> =
+        HashMap::new();
+    let mut network_freq_day: HashMap<(NaiveDate, i64, i64, String), i32> =
+        HashMap::new();
+    let mut network_callsign_day: HashMap<(NaiveDate, i64, i64, String), i32> =
+        HashMap::new();
+
+    for row in stats {
+        let ts = row.datetime.unwrap_or(row.created_at);
+        let day = get_local_date(ts);
+        let batch_id = *message_batch_map.get(&row.id).c(h!())?;
+
+        *network_day
+            .entry((day, batch_id, row.network_id))
+            .or_insert(0) += 1;
+
+        if let Some(freq) = row.freq.clone() {
+            let freq = freq.trim().to_string();
+            if !freq.is_empty() {
+                *network_freq_day
+                    .entry((day, batch_id, row.network_id, freq))
+                    .or_insert(0) += 1;
+            }
+        }
+
+        let callsigns: Vec<String> = row
+            .callsigns
+            .and_then(|c| serde_json::from_value(c).ok())
+            .unwrap_or_default();
+        for callsign in callsigns {
+            let callsign = callsign.trim().to_string();
+            if callsign.is_empty() {
+                continue;
+            }
+            *network_callsign_day
+                .entry((day, batch_id, row.network_id, callsign))
+                .or_insert(0) += 1;
+        }
+    }
+
+    let txn = dbx.begin().await.c(h!())?;
+    stats_group_network_day::Entity::delete_many()
+        .filter(stats_group_network_day::Column::Dt.gte(since_date))
+        .filter(stats_group_network_day::Column::Dt.lte(till_date))
+        .exec(&txn)
+        .await
+        .c(h!())?;
+    stats_group_network_freq_day::Entity::delete_many()
+        .filter(stats_group_network_freq_day::Column::Dt.gte(since_date))
+        .filter(stats_group_network_freq_day::Column::Dt.lte(till_date))
+        .exec(&txn)
+        .await
+        .c(h!())?;
+    stats_group_network_callsign_day::Entity::delete_many()
+        .filter(stats_group_network_callsign_day::Column::Dt.gte(since_date))
+        .filter(stats_group_network_callsign_day::Column::Dt.lte(till_date))
+        .exec(&txn)
+        .await
+        .c(h!())?;
+
+    for ((day, batch_id, network_id), quantity) in network_day {
+        stats_group_network_day::ActiveModel {
+            id: NotSet,
+            dt: Set(day),
+            network_id: Set(network_id),
+            quantity: Set(quantity),
+            created_at: NotSet,
+            signal_group_batch_id: Set(batch_id),
+        }
+        .insert(&txn)
+        .await
+        .c(h!())?;
+    }
+
+    for ((day, batch_id, network_id, freq), quantity) in network_freq_day {
+        stats_group_network_freq_day::ActiveModel {
+            id: NotSet,
+            dt: Set(day),
+            network_id: Set(network_id),
+            frequency: Set(freq),
+            quantity: Set(quantity),
+            created_at: NotSet,
+            signal_group_batch_id: Set(batch_id),
+        }
+        .insert(&txn)
+        .await
+        .c(h!())?;
+    }
+
+    for ((day, batch_id, network_id, callsign), quantity) in
+        network_callsign_day
+    {
+        stats_group_network_callsign_day::ActiveModel {
+            id: NotSet,
+            dt: Set(day),
+            network_id: Set(network_id),
+            callsign: Set(callsign),
+            quantity: Set(quantity),
+            created_at: NotSet,
+            signal_group_batch_id: Set(batch_id),
+        }
+        .insert(&txn)
+        .await
+        .c(h!())?;
+    }
+
+    txn.commit().await.c(h!())?;
     Ok(())
 }
 
@@ -1452,6 +1617,102 @@ fn generic_stats_base_select() -> Select<signal_message::Entity> {
         .group_by(sigint_inbox_item::Column::Id)
         .group_by(signal_message_group::Column::GroupMasterKey)
         .group_by(signal_group_aor::Column::Id)
+}
+
+async fn load_network_stats(
+    dbx: &DatabaseConnection,
+    since_ts: NaiveDateTime,
+    till_ts: NaiveDateTime,
+    network_ids: Option<&HashSet<i64>>,
+) -> Result<Vec<NetworkStatsRow>, AppError> {
+    let stats_by_datetime =
+        network_stats_by_datetime(dbx, since_ts, till_ts, network_ids).await?;
+    let stats_by_created_at =
+        network_stats_by_created_at(dbx, since_ts, till_ts, network_ids).await?;
+    Ok(stats_by_datetime
+        .into_iter()
+        .chain(stats_by_created_at)
+        .collect_vec())
+}
+
+async fn network_stats_by_datetime(
+    dbx: &DatabaseConnection,
+    since_ts: NaiveDateTime,
+    till_ts: NaiveDateTime,
+    network_ids: Option<&HashSet<i64>>,
+) -> Result<Vec<NetworkStatsRow>, AppError> {
+    let mut stats = network_stats_base_select()
+        .filter(sigint_inbox_item::Column::Datetime.is_not_null())
+        .filter(sigint_inbox_item::Column::Datetime.gte(since_ts))
+        .filter(sigint_inbox_item::Column::Datetime.lt(till_ts));
+    if let Some(network_ids) = network_ids {
+        stats = stats.filter(
+            sigint_inbox_item_network::Column::SigintNetworkId
+                .eq_any(network_ids.iter().copied().collect_vec()),
+        );
+    }
+    let stats = stats
+        .into_model::<NetworkStatsRow>()
+        .all(dbx)
+        .await
+        .c(h!())?;
+    Ok(stats)
+}
+
+async fn network_stats_by_created_at(
+    dbx: &DatabaseConnection,
+    since_ts: NaiveDateTime,
+    till_ts: NaiveDateTime,
+    network_ids: Option<&HashSet<i64>>,
+) -> Result<Vec<NetworkStatsRow>, AppError> {
+    let mut stats = network_stats_base_select()
+        .filter(sigint_inbox_item::Column::Datetime.is_null())
+        .filter(signal_message::Column::CreatedAt.gte(since_ts))
+        .filter(signal_message::Column::CreatedAt.lt(till_ts));
+    if let Some(network_ids) = network_ids {
+        stats = stats.filter(
+            sigint_inbox_item_network::Column::SigintNetworkId
+                .eq_any(network_ids.iter().copied().collect_vec()),
+        );
+    }
+    let stats = stats
+        .into_model::<NetworkStatsRow>()
+        .all(dbx)
+        .await
+        .c(h!())?;
+    Ok(stats)
+}
+
+fn network_stats_base_select() -> Select<signal_message::Entity> {
+    signal_message::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::SigintInboxItem.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::SignalMessageGroup.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            sigint_inbox_item::Relation::SigintInboxItemNetwork.def(),
+        )
+        .select_only()
+        .column(signal_message::Column::Id)
+        .column(signal_message::Column::CreatedAt)
+        .column(sigint_inbox_item::Column::Datetime)
+        .column(signal_message_group::Column::GroupMasterKey)
+        .column(sigint_inbox_item::Column::Freq)
+        .column(sigint_inbox_item::Column::Callsigns)
+        .column_as(
+            sigint_inbox_item_network::Column::SigintNetworkId,
+            "network_id",
+        )
+        .filter(signal_message::Column::Deleted.eq(false))
+        .group_by(signal_message::Column::Id)
+        .group_by(sigint_inbox_item::Column::Id)
+        .group_by(signal_message_group::Column::GroupMasterKey)
+        .group_by(sigint_inbox_item_network::Column::SigintNetworkId)
 }
 
 async fn update_5min_stats_group(
@@ -2612,7 +2873,7 @@ pub fn start_of_day(since_date: NaiveDate) -> Result<NaiveDateTime, AppError> {
         .naive_utc())
 }
 
-fn get_local_date(since_ts: NaiveDateTime) -> NaiveDate {
+pub(crate) fn get_local_date(since_ts: NaiveDateTime) -> NaiveDate {
     since_ts.and_utc().with_timezone(&get_tz()).date_naive()
 }
 

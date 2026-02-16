@@ -11,9 +11,9 @@ pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
     pub dt: Date,
-    pub network_id: i64,
     #[sea_orm(column_type = "Text")]
     pub frequency: String,
+    pub network_id: i64,
     pub quantity: i32,
     pub created_at: DateTime,
     pub signal_group_batch_id: i64,

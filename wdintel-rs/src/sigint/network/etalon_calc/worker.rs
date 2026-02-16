@@ -688,11 +688,28 @@ async fn run_network_invalidation_tasks(
 ) -> anyhow::Result<()> {
     let mut started_tasks = vec![];
     let mut task_filters = Vec::new();
+    let mut network_ids = HashSet::new();
+    let mut needs_all_networks = false;
+    let mut min_since_ts: Option<NaiveDateTime> = None;
+    let mut max_till_ts: Option<NaiveDateTime> = None;
     for task in tasks {
         if task.started_at.is_some() {
             warn!("task {} was already started!", task.id);
         }
         let task = mark_task_started(&task, dbx).await.c(h!())?;
+        min_since_ts = match min_since_ts {
+            Some(prev) => Some(prev.min(task.since_ts)),
+            None => Some(task.since_ts),
+        };
+        max_till_ts = match max_till_ts {
+            Some(prev) => Some(prev.max(task.till_ts)),
+            None => Some(task.till_ts),
+        };
+        if let Some(network_id) = task.sigint_network_id {
+            network_ids.insert(network_id);
+        } else {
+            needs_all_networks = true;
+        }
         started_tasks.push(task.clone());
         task_filters.extend(build_task_filters(&task, signal_group_aors));
     }
@@ -700,6 +717,23 @@ async fn run_network_invalidation_tasks(
     process_task_filters(task_filters, processed_items, dbx)
         .await
         .c(h!())?;
+
+    if let (Some(since_ts), Some(till_ts)) = (min_since_ts, max_till_ts) {
+        let network_ids = if needs_all_networks {
+            None
+        } else {
+            Some(&network_ids)
+        };
+        crate::stats::recalculate_network_stats(
+            dbx,
+            since_ts,
+            till_ts,
+            network_ids,
+        )
+        .await
+        .c(h!())?;
+    }
+
     let completed_at = Some(Utc::now().naive_utc());
     mark_tasks_completed(started_tasks, completed_at, dbx)
         .await
