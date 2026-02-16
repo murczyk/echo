@@ -2,12 +2,14 @@ use crate::entities::*;
 use crate::types::*;
 use sea_orm::*;
 
+#[derive(Clone)]
 pub struct UnitData {
     pub data: HashMap<Tab, Vec<DataRow>>,
     pub models: HashMap<i64, sigint_unit::Model>,
     pub perfect_matches: Vec<Vec<i64>>,
 }
 
+#[derive(Clone)]
 pub struct NetworkData {
     pub data: HashMap<Tab, Vec<DataRow>>,
     pub models: HashMap<i64, sigint_network::Model>,
