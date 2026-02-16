@@ -419,9 +419,23 @@ deploy _server_pos="" server:
       sudo systemctl enable --now wdintel-rs.socket
       sudo systemctl enable --now wdintel-rs-bgworker.service
       sudo systemctl enable --now wdintel-py.service
-      sudo systemctl enable --now wdintel-py.socket
 
-      for unit in wdintel-rs.socket wdintel-rs-bgworker.service wdintel-py.service wdintel-py.socket; do
+      # wdintel-py.socket may be absent or fail to bind on hosts where
+      # wdintel-py.service already owns port 5000. Keep deploy strict for
+      # required units and treat the socket as best-effort.
+      if systemctl cat wdintel-py.socket >/dev/null 2>&1; then
+        if ! sudo systemctl enable wdintel-py.socket; then
+          echo "WARN: failed to enable wdintel-py.socket; continuing." >&2
+        fi
+        if ! sudo systemctl start wdintel-py.socket; then
+          echo "WARN: failed to start wdintel-py.socket; continuing." >&2
+          systemctl status --no-pager wdintel-py.socket || true
+        fi
+      else
+        echo "wdintel-py.socket is not installed; skipping."
+      fi
+
+      for unit in wdintel-rs.socket wdintel-rs-bgworker.service wdintel-py.service; do
         if ! systemctl is-enabled --quiet "$unit"; then
           echo "ERROR: $unit is not enabled after deploy." >&2
           systemctl is-enabled "$unit" || true
@@ -456,7 +470,7 @@ deploy _server_pos="" server:
         exit 1
       fi
 
-      sudo systemctl status --no-pager wdintel-rs.socket wdintel-rs-bgworker.service wdintel-py.service wdintel-py.socket
+      sudo systemctl status --no-pager wdintel-rs.socket wdintel-rs-bgworker.service wdintel-py.service
       sudo ss -ltnp | grep "LISTEN .*:8081" || true
     '
 
