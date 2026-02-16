@@ -7,6 +7,7 @@ use crate::types::*;
 use chrono::*;
 use sea_orm::sea_query::*;
 use sea_orm::*;
+use std::collections::HashSet;
 
 use log::*;
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QuerySelect};
@@ -115,6 +116,152 @@ pub async fn merge_two_networks(
     network_from_model.update(txn).await.context(h!())?;
 
     info!("✅ Merged network {network_id_from} into {network_id_to}");
+
+    Ok(())
+}
+
+pub async fn merge_two_network_freqs(
+    txn: &DatabaseTransaction,
+    _login: &str,
+    freq_id_from: i64,
+    freq_id_to: i64,
+) -> anyhow::Result<(), AppError> {
+    if freq_id_from == freq_id_to {
+        return Ok(());
+    }
+
+    let freq_from = sigint_network_freq::Entity::find_by_id(freq_id_from)
+        .one(txn)
+        .await
+        .context(h!())?
+        .ok_or(AppError::NotFound)?;
+    let freq_to = sigint_network_freq::Entity::find_by_id(freq_id_to)
+        .one(txn)
+        .await
+        .context(h!())?
+        .ok_or(AppError::NotFound)?;
+
+    if freq_from.network_id != freq_to.network_id
+        || freq_from.freq.trim() != freq_to.freq.trim()
+    {
+        return Err(AppError::BL {
+            msg: "Network frequency mismatch".to_string(),
+        });
+    }
+
+    sigint_network_description::Entity::update_many()
+        .filter(
+            sigint_network_description::Column::SigintNetworkFreqId
+                .eq(freq_id_from),
+        )
+        .col_expr(
+            sigint_network_description::Column::SigintNetworkFreqId,
+            Expr::value(freq_id_to),
+        )
+        .exec(txn)
+        .await
+        .context(h!())?;
+
+    sigint_network_encryption_key::Entity::update_many()
+        .filter(
+            sigint_network_encryption_key::Column::SigintNetworkFreqId
+                .eq(freq_id_from),
+        )
+        .col_expr(
+            sigint_network_encryption_key::Column::SigintNetworkFreqId,
+            Expr::value(freq_id_to),
+        )
+        .exec(txn)
+        .await
+        .context(h!())?;
+
+    sigint_network_freq_changelog::Entity::update_many()
+        .filter(
+            sigint_network_freq_changelog::Column::SigintNetworkFreqId
+                .eq(freq_id_from),
+        )
+        .col_expr(
+            sigint_network_freq_changelog::Column::SigintNetworkFreqId,
+            Expr::value(freq_id_to),
+        )
+        .exec(txn)
+        .await
+        .context(h!())?;
+
+    reassign_encryption_key_freqs(txn, freq_id_from, freq_id_to)
+        .await
+        .c(h!())?;
+
+    if !freq_from.deleted {
+        let mut freq_from_record: sigint_network_freq::ActiveModel =
+            freq_from.into();
+        freq_from_record.deleted = Set(true);
+        freq_from_record.update(txn).await.context(h!())?;
+    }
+
+    info!("✅ Merged network freq {freq_id_from} into {freq_id_to}");
+
+    Ok(())
+}
+
+async fn reassign_encryption_key_freqs(
+    txn: &DatabaseTransaction,
+    freq_id_from: i64,
+    freq_id_to: i64,
+) -> Result<(), AppError> {
+    let key_freqs_from = sigint_network_encryption_key_freq::Entity::find()
+        .filter(
+            sigint_network_encryption_key_freq::Column::SigintNetworkFreqId
+                .eq(freq_id_from),
+        )
+        .all(txn)
+        .await
+        .context(h!())?;
+
+    if key_freqs_from.is_empty() {
+        return Ok(());
+    }
+
+    let key_ids = key_freqs_from
+        .iter()
+        .map(|rec| rec.sigint_network_encryption_key_id)
+        .collect::<Vec<_>>();
+
+    let existing_key_ids = sigint_network_encryption_key_freq::Entity::find()
+        .filter(
+            sigint_network_encryption_key_freq::Column::SigintNetworkFreqId
+                .eq(freq_id_to),
+        )
+        .filter(
+            sigint_network_encryption_key_freq::Column::SigintNetworkEncryptionKeyId
+                .is_in(key_ids.clone()),
+        )
+        .select_only()
+        .column(
+            sigint_network_encryption_key_freq::Column::SigintNetworkEncryptionKeyId,
+        )
+        .into_tuple::<i64>()
+        .all(txn)
+        .await
+        .context(h!())?
+        .into_iter()
+        .collect::<HashSet<_>>();
+
+    for key_freq in key_freqs_from {
+        if existing_key_ids.contains(&key_freq.sigint_network_encryption_key_id)
+        {
+            sigint_network_encryption_key_freq::Entity::delete_by_id(
+                key_freq.id,
+            )
+            .exec(txn)
+            .await
+            .context(h!())?;
+        } else {
+            let mut key_freq_record = key_freq.into_active_model();
+            key_freq_record.sigint_network_freq_id = Set(freq_id_to);
+            key_freq_record.update(txn).await.context(h!())?;
+        }
+    }
 
     Ok(())
 }

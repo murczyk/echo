@@ -556,6 +556,7 @@ enum Cmd {
     OneoffImportNetworkDetails(ImportTuiPs),
     TuiMergeUnit,
     TuiMergeNetwork,
+    TuiMergeNetworkFreq,
     ExportUnit(ExportUnitPs),
     ImportUnit(ImportUnitPs),
     RenewTailscaleCert(RenewTailscaleCertPs),
@@ -1092,6 +1093,9 @@ async fn async_main(
         }
         Cmd::TuiMergeNetwork => {
             sigint::import::tui::run_merge_network_tui(mode).await
+        }
+        Cmd::TuiMergeNetworkFreq => {
+            sigint::import::tui::run_merge_network_freq_tui(mode).await
         }
     }
 }

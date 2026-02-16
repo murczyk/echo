@@ -35,6 +35,7 @@ pub mod types;
 enum DataKind {
     Units,
     Networks,
+    NetworkFeqs,
 }
 
 #[derive(PartialEq)]
@@ -147,6 +148,140 @@ pub async fn run_merge_network_tui(mode: Mode) -> Result<(), AppError> {
         error!("{e:#?}");
     }
     Ok(())
+}
+
+pub async fn run_merge_network_freq_tui(mode: Mode) -> Result<(), AppError> {
+    let db = new_pg_pool_from_mode(mode).await.c(h!())?;
+    let (records_to_merge, details) =
+        collect_duplicate_network_freqs(&db).await?;
+    if records_to_merge.is_empty() {
+        println!("No duplicate network frequencies found.");
+        return Ok(());
+    }
+
+    if let Err(e) =
+        merge_all(&db, records_to_merge, details, DataKind::NetworkFeqs).await
+    {
+        error!("{e:#?}");
+    }
+    Ok(())
+}
+
+async fn collect_duplicate_network_freqs(
+    db: &DatabaseConnection,
+) -> Result<(Vec<Vec<i64>>, HashMap<i64, DataRecDetailed>), AppError> {
+    let modulation_map = load_modulation_map(db).await?;
+    let network_names = load_network_name_map(db).await?;
+
+    let freqs = sigint_network_freq::Entity::find()
+        .filter(sigint_network_freq::Column::Deleted.eq(false))
+        .filter(sigint_network_freq::Column::ActiveTo.is_null())
+        .all(db)
+        .await
+        .c(h!())?;
+
+    let mut grouped: HashMap<(i64, String), Vec<sigint_network_freq::Model>> =
+        HashMap::new();
+    for network_freq in freqs {
+        grouped
+            .entry((network_freq.network_id, network_freq.freq.clone()))
+            .or_default()
+            .push(network_freq);
+    }
+
+    let mut records_to_merge = Vec::new();
+    let mut details = HashMap::new();
+    for ((network_id, _freq), network_freqs) in grouped {
+        if network_freqs.len() < 2 {
+            continue;
+        }
+        records_to_merge
+            .push(network_freqs.iter().map(|rec| rec.id).collect::<Vec<_>>());
+        let network_name = network_names
+            .get(&network_id)
+            .cloned()
+            .unwrap_or("-".to_string());
+        for network_freq in network_freqs {
+            let rec = network_freq_details(
+                network_freq,
+                &network_name,
+                &modulation_map,
+            );
+            details.insert(rec.id, rec);
+        }
+    }
+
+    Ok((records_to_merge, details))
+}
+
+async fn load_modulation_map(
+    db: &DatabaseConnection,
+) -> Result<HashMap<i32, modulation::Model>, AppError> {
+    let map = modulation::Entity::find()
+        .all(db)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|rec| (rec.id, rec))
+        .collect::<HashMap<_, _>>();
+    Ok(map)
+}
+
+async fn load_network_name_map(
+    db: &DatabaseConnection,
+) -> Result<HashMap<i64, String>, AppError> {
+    let map = sigint_network::Entity::find()
+        .select_only()
+        .column(sigint_network::Column::Id)
+        .column(sigint_network::Column::Name)
+        .into_tuple::<(i64, String)>()
+        .all(db)
+        .await
+        .c(h!())?
+        .into_iter()
+        .collect::<HashMap<_, _>>();
+    Ok(map)
+}
+
+fn network_freq_details(
+    network_freq: sigint_network_freq::Model,
+    network_name: &str,
+    modulation_map: &HashMap<i32, modulation::Model>,
+) -> DataRecDetailed {
+    let modulation = network_freq
+        .modulation_id
+        .and_then(|id| modulation_map.get(&id))
+        .map(|rec| rec.name.clone())
+        .unwrap_or("-".to_string());
+    let full_name = format!("{} {}", network_freq.freq.trim(), network_name);
+    let mut details = HashMap::new();
+    details.insert("freq".to_string(), network_freq.freq.clone());
+    details.insert("network".to_string(), network_name.to_string());
+    details.insert("deleted".to_string(), format!("{}", network_freq.deleted));
+    details.insert("kind".to_string(), format!("{:?}", network_freq.kind));
+    details.insert(
+        "network_id".to_string(),
+        network_freq.network_id.to_string(),
+    );
+    details.insert("modulation".to_string(), modulation);
+    details.insert(
+        "active_from".to_string(),
+        format!("{:?}", network_freq.active_from),
+    );
+    details.insert(
+        "active_to".to_string(),
+        network_freq
+            .active_to
+            .map(|n| format!("{n}"))
+            .unwrap_or("-".to_string())
+            .to_string(),
+    );
+
+    DataRecDetailed {
+        id: network_freq.id,
+        full_name,
+        details,
+    }
 }
 
 pub async fn run_import_unit_tui(
@@ -1909,6 +2044,7 @@ async fn merge_all(
     let title = match kind {
         DataKind::Units => "UNITS",
         DataKind::Networks => "NETWORKS",
+        DataKind::NetworkFeqs => "FREQS",
     };
     let records_to_merge = cleanup_ids(records_to_merge);
     let total_count = records_to_merge.len();
@@ -1960,6 +2096,15 @@ async fn merge_all(
                         let txn = db.begin().await.c(h!())?;
                         crate::sigint::network::merge::merge_two_networks(
                             &txn, "system", false, id_2, id_1,
+                        )
+                        .await
+                        .c(h!())?;
+                        txn.commit().await.c(h!())?;
+                    }
+                    DataKind::NetworkFeqs => {
+                        let txn = db.begin().await.c(h!())?;
+                        crate::sigint::network::merge::merge_two_network_freqs(
+                            &txn, "system", id_2, id_1,
                         )
                         .await
                         .c(h!())?;
