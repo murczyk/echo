@@ -291,15 +291,15 @@ async fn load_and_triage_tasks_batch(
     cutoff: NaiveDateTime,
     tag: &str,
 ) -> anyhow::Result<Vec<network_invalidation_task::Model>> {
+    let mut result = vec![];
     loop {
         let pending_tasks =
             load_pending_tasks_batch(db, is_for_old_worker, tag)
                 .await
                 .c(h!())?;
         if pending_tasks.is_empty() {
-            return Ok(Vec::new());
+            break;
         }
-        let pending_tasks_count = pending_tasks.len();
         let triaged_tasks = triage_pending_tasks_batch(
             db,
             pending_tasks,
@@ -310,17 +310,12 @@ async fn load_and_triage_tasks_batch(
         .await
         .c(h!())?;
         if !triaged_tasks.is_empty() {
-            return Ok(triaged_tasks);
+            for t in triaged_tasks {
+                result.push(t);
+            }
         }
-        if pending_tasks_count
-            < NETWORK_INVALIDATION_TASK_FETCH_BATCH_SIZE as usize
-        {
-            return Ok(Vec::new());
-        }
-        info!(
-            "[{tag} worker] triaged batch without recent work, retrying next pending batch"
-        );
     }
+    Ok(result)
 }
 
 async fn load_pending_tasks_batch(
