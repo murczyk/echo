@@ -15,6 +15,11 @@ export interface PalitrasControl extends L.Control {
   updatePalitras: (palitras: PalitraDetails[], visibleIds: number[]) => void
 }
 
+export interface SearchControl extends L.Control {
+  updateResultsCount: (count: number | null) => void
+  updateSearchLoading: (isLoading: boolean) => void
+}
+
 export type FeatureName = 'palitras' | 'kmz' | 'pelengs';
 
 export type FeatureToggleState = {
@@ -24,19 +29,27 @@ export type FeatureToggleState = {
 };
 
 /** Creates a map control that hosts <analysis-map-search>. */
-export function createSearchControl() {
+export function createSearchControl(): SearchControl {
   const SearchControlClass = L.Control.extend({
+    _searchElement: null as (HTMLElement & { setResultsCount?: (count: number | null) => void; setSearchLoading?: (isLoading: boolean) => void }) | null,
     onAdd: function (_map: L.Map) {
       this._container = L.DomUtil.create('div', 'leaflet-bar leaflet-control search-control');
-      const searchEl = document.createElement('analysis-map-search') as HTMLElement;
+      const searchEl = document.createElement('analysis-map-search') as HTMLElement & { setResultsCount?: (count: number | null) => void; setSearchLoading?: (isLoading: boolean) => void };
+      this._searchElement = searchEl;
       this._container.appendChild(searchEl);
       L.DomEvent.disableClickPropagation(this._container);
       L.DomEvent.disableScrollPropagation(this._container);
       return this._container;
     },
+    updateResultsCount: function (count: number | null) {
+      this._searchElement?.setResultsCount?.(count);
+    },
+    updateSearchLoading: function (isLoading: boolean) {
+      this._searchElement?.setSearchLoading?.(isLoading);
+    }
   });
 
-  return new SearchControlClass({ position: 'topleft' });
+  return new SearchControlClass({ position: 'topleft' }) as SearchControl;
 }
 
 export function createMapZoomControl() {

@@ -25,6 +25,8 @@ export type PalitraDetails = {
 
 export interface PalitraManagerCallbacks {
   onVisibilityToggle: (palitraId: number) => void;
+  onSearchResultsCountChanged: (count: number | null) => void;
+  onSearchLoadingChanged: (isLoading: boolean) => void;
 }
 
 export interface PalitraManagerOptions {

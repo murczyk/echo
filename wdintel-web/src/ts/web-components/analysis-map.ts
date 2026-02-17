@@ -7,7 +7,7 @@ import { KMZLayer, kmzLayerFactory } from '../maps/leaflet-kmz'
 import { MapPointDetailed } from '../maps/types';
 import { messagesCountText } from '../maps/language-utils';
 import { loadRerAnalysisQueryState, RerAnalysisQueryState, saveRerAnalysisQueryState } from '../rer-analysis-query-state';
-import { TimeswitchControl, FeatureToggleState, createLayerSwitchControl, createExitControl2, createTimeswitchControl, createAttributionControl, createPalitrasControl, FeatureName, LayerSwitchControl, createSearchControl, createMapZoomControl } from '../maps/controls';
+import { TimeswitchControl, FeatureToggleState, createLayerSwitchControl, createExitControl2, createTimeswitchControl, createAttributionControl, createPalitrasControl, FeatureName, LayerSwitchControl, createSearchControl, createMapZoomControl, SearchControl } from '../maps/controls';
 import { AnalysisMapStateStore, AnalysisMapStoredState } from '../maps/analysis-map-state';
 import { parseCoordinateInput } from '../maps/coordinate-search';
 import { PalitraManager } from '../maps/palitra-manager';
@@ -133,6 +133,7 @@ class AnalysisMap extends HTMLElement {
   private _kmzEnabled = true;
   private _pelengsEnabled = true;
   private _layerSwitchControl: LayerSwitchControl | null = null;
+  private _searchControl: SearchControl | null = null;
   private _stateStore: AnalysisMapStateStore;
   private _coordinateSearchMarker: L.CircleMarker | null = null;
   private _searchPointsHandler = (e: CustomEvent<string>) => {
@@ -140,6 +141,8 @@ class AnalysisMap extends HTMLElement {
     const coords = parseCoordinateInput(value);
     if (coords && this._map) {
       this._flyToCoordinate(coords);
+      this._searchControl?.updateSearchLoading(false);
+      this._searchControl?.updateResultsCount(null);
       this._palitraManager?.setSearchQuery('');
     } else {
       this._clearCoordinateMarker();
@@ -333,6 +336,12 @@ class AnalysisMap extends HTMLElement {
              composed: true
            });
            this.dispatchEvent(event);
+         },
+         onSearchResultsCountChanged: (count) => {
+           this._searchControl?.updateResultsCount(count);
+         },
+         onSearchLoadingChanged: (isLoading) => {
+           this._searchControl?.updateSearchLoading(isLoading);
          }
        }
      );
@@ -378,7 +387,9 @@ class AnalysisMap extends HTMLElement {
     }
 
     const switchTimeControl = createTimeswitchControl(this._daterange);
-    map.addControl(createSearchControl());
+    const searchControl = createSearchControl();
+    map.addControl(searchControl);
+    this._searchControl = searchControl;
     map.addControl(switchTimeControl)
 
     map.addControl(createExitControl2(exitCallback));
