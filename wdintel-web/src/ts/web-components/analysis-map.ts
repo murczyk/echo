@@ -298,18 +298,23 @@ class AnalysisMap extends HTMLElement {
       const tileLayers = getTileLayers();
 
       // Start with a single base layer to avoid loading two full tile stacks at once
-      const map = L.map(mapContainer, { zoomControl: false, attributionControl: false }).setView([47.42135, 35.62197], 8);
+      const map = L.map(mapContainer, {
+        zoomControl: false,
+        attributionControl: false
+      }).setView([47.42135, 35.62197], 8);
       tileLayers.googleHybrid.addTo(map);
+      // Keep Leaflet's click-to-focus behavior, but prevent nested scroll containers
+      // from jumping when the map receives focus on mousedown.
+      this._patchMouseDownMapFocus(map);
 
       const result = this._initializeControls(map, tileLayers)
       this._map = result.map;
       this._switchTimeControl = result.switchTimeControl;
 
-     //TODO: remove
+      // TODO: Remove
       if (!window.location.hostname.includes('echo-soledarnist')) {
-
         await this._loadKmzLayer();
-     }
+      }
 
      // Initialize palitra manager
      this._palitraManager = new PalitraManager(
@@ -385,6 +390,44 @@ class AnalysisMap extends HTMLElement {
     const palitrasControl = createPalitrasControl([], [], palitraToggleCallback);
 
     return { map, switchTimeControl, palitrasControl };
+  }
+
+  private _patchMouseDownMapFocus(map: L.Map) {
+    const keyboardHandler = (map as L.Map & { keyboard?: { _onMouseDown?: (e: MouseEvent) => void; _focused?: boolean; _map?: L.Map } }).keyboard;
+    const originalOnMouseDown = keyboardHandler?._onMouseDown;
+    if (!keyboardHandler || !originalOnMouseDown) {
+      return;
+    }
+
+    const mapContainer = map.getContainer() as HTMLElement;
+    L.DomEvent.off(mapContainer, 'mousedown', originalOnMouseDown, keyboardHandler);
+
+    const patchedOnMouseDown = function(this: { _focused?: boolean; _map?: L.Map }) {
+      if (this._focused) {
+        return;
+      }
+
+      const container = this._map?.getContainer() as HTMLElement | undefined;
+      if (!container) {
+        return;
+      }
+
+      try {
+        // Modern browsers: preserve focus without triggering scroll reposition.
+        container.focus({ preventScroll: true });
+      } catch (_error) {
+        // Older browser fallback: mimic Leaflet default behavior.
+        const body = document.body;
+        const docEl = document.documentElement;
+        const top = body.scrollTop || docEl.scrollTop;
+        const left = body.scrollLeft || docEl.scrollLeft;
+        container.focus();
+        window.scrollTo(left, top);
+      }
+    };
+
+    keyboardHandler._onMouseDown = patchedOnMouseDown;
+    L.DomEvent.on(mapContainer, 'mousedown', patchedOnMouseDown, keyboardHandler);
   }
 
   private _replacePointsOnMap(points: MapPointDetailed[]) {
