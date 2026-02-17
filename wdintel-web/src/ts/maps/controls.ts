@@ -375,6 +375,7 @@ export function createPalitrasControl(
     _visibleIds: visibleIds,
     _onToggle: onToggle,
     _isCollapsed: false,
+    _renderedPalitrasSignature: null as string | null,
 
     onAdd: function(map: L.Map) {
       this._container = L.DomUtil.create('div', 'palitras-control');
@@ -417,10 +418,26 @@ export function createPalitrasControl(
       this._render();
     },
 
+    _getPalitrasSignature: function(palitrasState: PalitraDetails[]) {
+      return palitrasState
+        .map((palitraDetails: PalitraDetails) => {
+          const palitra = palitraDetails.palitra;
+          const geometry = palitra.geometry;
+          const geometrySignature = geometry
+            ? `${geometry.center.lat}:${geometry.center.lng}:${geometry.perimeter_linear_ring.length}`
+            : 'none';
+          return `${palitra.id}|${palitra.name}|${palitra.color_hex}|${geometrySignature}|${palitraDetails.points.length}`;
+        })
+        .join(';');
+    },
+
     _render: function() {
       if (!this._container) {
         return;
       }
+
+      const previousList = this._container.querySelector('.palitras-control-list') as HTMLDivElement | null;
+      const previousScrollTop = previousList?.scrollTop ?? 0;
       
       if (!this._palitras || this._palitras.length === 0) {
         this._container.innerHTML = '';
@@ -479,6 +496,11 @@ export function createPalitrasControl(
       this._container.innerHTML = '';
       this._container.appendChild(header);
       this._container.appendChild(listContainer);
+      this._renderedPalitrasSignature = this._getPalitrasSignature(this._palitras);
+
+      if (previousScrollTop > 0) {
+        listContainer.scrollTop = previousScrollTop;
+      }
       
       // Apply collapsed class if needed
       if (this._isCollapsed) {
@@ -494,6 +516,7 @@ export function createPalitrasControl(
       
       const item = document.createElement('div');
       item.className = 'palitra-item';
+      item.dataset.palitraId = String(palitra.id);
       
       const isVisible = this._visibleIds.includes(palitra.id);
       
@@ -548,10 +571,35 @@ export function createPalitrasControl(
       return item;
     },
 
+    _syncVisibleCheckboxes: function() {
+      if (!this._container) {
+        return;
+      }
+      const visibleIdsSet = new Set(this._visibleIds);
+      const items = this._container.querySelectorAll('.palitra-item');
+      items.forEach((itemEl) => {
+        const item = itemEl as HTMLDivElement;
+        const palitraId = Number(item.dataset.palitraId);
+        if (!Number.isFinite(palitraId)) {
+          return;
+        }
+        const checkbox = item.querySelector('.palitra-checkbox') as HTMLInputElement | null;
+        if (checkbox) {
+          checkbox.checked = visibleIdsSet.has(palitraId);
+        }
+      });
+    },
+
     updatePalitras: function(palitras: PalitraDetails[], visibleIds: number[]) {
+      const nextSignature = this._getPalitrasSignature(palitras);
+      const shouldFullRender = this._renderedPalitrasSignature !== nextSignature;
       this._palitras = palitras;
       this._visibleIds = visibleIds;
-      this._render();
+      if (shouldFullRender) {
+        this._render();
+        return;
+      }
+      this._syncVisibleCheckboxes();
     }
   });
 
