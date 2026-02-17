@@ -34,9 +34,8 @@ toggleButton2 config label mCountLabel =
     button
         [ type_ "button"
         , class "inline-flex items-center justify-center text-nowrap rounded-none p-1 transition-colors duration-200 ease-in-out"
-        , classList 
-            [ ( "bg-neutral-light text-text hover:bg-neutral-light-hover border border-border", not config.isDark && not config.unfold )
-            , ( "bg-neutral-dark text-w hover:bg-neutral-dark-hover", config.isDark && not config.unfold )
+        , classList
+            [ ( "bg-neutral-light text-text hover:bg-neutral-light-hover border border-border dark:bg-neutral-dark dark:text-w dark:hover:bg-neutral-dark-hover", not config.unfold )
             , ( "bg-[var(--color-secondary)] text-w hover:bg-secondary-hover", config.unfold )
             ]
         , style "min-height" "40px"
