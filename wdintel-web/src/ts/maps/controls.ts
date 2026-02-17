@@ -38,6 +38,50 @@ export function createSearchControl() {
 
   return new SearchControlClass({ position: 'topleft' });
 }
+
+export function createMapZoomControl() {
+  const ZoomControlClass = L.Control.extend({
+    onAdd: function(map: L.Map) {
+      this._map = map;
+      this._container = L.DomUtil.create('div', 'leaflet-bar leaflet-control layer-switch-control collapsed analysis-map-zoom-control');
+
+      const createButton = (iconClass: string, ariaLabel: string, onClick: () => void) => {
+        const button = document.createElement('button');
+        button.className = 'layer-switch-icon';
+        button.type = 'button';
+        button.setAttribute('aria-label', ariaLabel);
+        button.innerHTML = `<i class="${iconClass}"></i>`;
+        button.addEventListener('click', (e) => {
+          e.stopPropagation();
+          onClick();
+        });
+        return button;
+      };
+
+      const zoomInButton = createButton('bi bi-plus-lg', 'Zoom in', () => this._map.zoomIn());
+      const zoomOutButton = createButton('bi bi-dash-lg', 'Zoom out', () => this._map.zoomOut());
+
+      const header = document.createElement('div');
+      header.className = 'layer-switch-header';
+      header.appendChild(zoomInButton);
+      header.appendChild(zoomOutButton);
+
+      this._container.appendChild(header);
+
+      L.DomEvent.on(this._container, 'dblclick', (e) => {
+        e.stopPropagation();
+        L.DomEvent.preventDefault(e);
+      });
+
+      L.DomEvent.disableClickPropagation(this._container);
+      L.DomEvent.disableScrollPropagation(this._container);
+      return this._container;
+    },
+  });
+
+  return new ZoomControlClass({ position: 'topright' });
+}
+
 export function createLayerSwitchControl(
   tileLayers: { openStreetMap: L.TileLayer, googleHybrid: L.TileLayer },
   features: FeatureToggleState,
@@ -89,7 +133,7 @@ export function createLayerSwitchControl(
       // Re-render to update structure
       this._render();
     },
-    
+
     _switchLayer: function(layerName: 'openStreetMap' | 'googleHybrid') {
       // Remove current layer
       if (this._currentLayer) {

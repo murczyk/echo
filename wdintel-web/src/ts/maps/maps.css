@@ -124,6 +124,27 @@ div [id='map-container-analysis'] {
 	border: none;
 }
 
+#analysis-map .leaflet-top.leaflet-right .layer-switch-control {
+	clear: both;
+}
+
+#analysis-map .leaflet-top.leaflet-right .analysis-map-zoom-control {
+	clear: none;
+}
+
+#analysis-map .analysis-map-zoom-control.collapsed {
+	width: 88px;
+	min-width: 88px;
+	max-width: 88px;
+}
+
+#analysis-map .analysis-map-zoom-control .layer-switch-header {
+	border-bottom: none;
+	padding: 8px;
+	gap: 8px;
+	justify-content: space-between;
+}
+
 .leaflet-pane {
 	z-index: 25;
 }

@@ -7,7 +7,7 @@ import { KMZLayer, kmzLayerFactory } from '../maps/leaflet-kmz'
 import { MapPointDetailed } from '../maps/types';
 import { messagesCountText } from '../maps/language-utils';
 import { loadRerAnalysisQueryState, RerAnalysisQueryState, saveRerAnalysisQueryState } from '../rer-analysis-query-state';
-import { TimeswitchControl, FeatureToggleState, createLayerSwitchControl, createExitControl2, createTimeswitchControl, createAttributionControl, createPalitrasControl, FeatureName, LayerSwitchControl, createSearchControl } from '../maps/controls';
+import { TimeswitchControl, FeatureToggleState, createLayerSwitchControl, createExitControl2, createTimeswitchControl, createAttributionControl, createPalitrasControl, FeatureName, LayerSwitchControl, createSearchControl, createMapZoomControl } from '../maps/controls';
 import { AnalysisMapStateStore, AnalysisMapStoredState } from '../maps/analysis-map-state';
 import { parseCoordinateInput } from '../maps/coordinate-search';
 import { PalitraManager } from '../maps/palitra-manager';
@@ -385,6 +385,7 @@ class AnalysisMap extends HTMLElement {
     const layerSwitchControl = createLayerSwitchControl(tileLayers, this._getFeatureToggleState(), featureToggleCallback);
     this._layerSwitchControl = layerSwitchControl;
     map.addControl(layerSwitchControl);
+    map.addControl(createMapZoomControl());
     map.addControl(createAttributionControl());
 
     const palitrasControl = createPalitrasControl([], [], palitraToggleCallback);
