@@ -419,6 +419,15 @@ pub async fn oneoff_import_network_details(
     .await
     .c(h!())?;
 
+    import_sigint_network_aors(
+        network_matches.clone(),
+        etalon_full.sigint_network_aor,
+        etalon_full.area_of_responsibility,
+        &db,
+    )
+    .await
+    .c(h!())?;
+
     let matched_sigint_callsigns = import_sigint_callsigns(
         unit_matches.clone(),
         etalon_full.sigint_callsign,
@@ -433,6 +442,110 @@ pub async fn oneoff_import_network_details(
         matched_sigint_callsigns,
         etalon_full.sigint_network_callsign,
         &db,
+    )
+    .await
+    .c(h!())?;
+    Ok(())
+}
+
+async fn import_sigint_network_aors(
+    network_matches: HashMap<i64, i64>,
+    import_sigint_network_aors: Vec<sigint_network_aor::Model>,
+    import_aors: Vec<area_of_responsibility::Model>,
+    db: &DatabaseConnection,
+) -> anyhow::Result<()> {
+    let import_aors_by_id = import_aors
+        .into_iter()
+        .map(|aor| (aor.id, aor))
+        .collect::<HashMap<_, _>>();
+    let import_aor_original_ids = import_aors_by_id
+        .values()
+        .filter(|aor| !(aor.is_top_level && aor.is_default))
+        .map(|aor| aor.id)
+        .collect_vec();
+    let local_default_aor = crate::sigint::aor::load_default_aor(db).await?;
+    let local_aors = if import_aor_original_ids.is_empty() {
+        Vec::new()
+    } else {
+        area_of_responsibility::Entity::find()
+            .filter(
+                area_of_responsibility::Column::OriginalId
+                    .is_in(import_aor_original_ids),
+            )
+            .all(db)
+            .await
+            .c(h!())?
+    };
+    let local_aors_by_original_id = local_aors
+        .into_iter()
+        .flat_map(|aor| aor.original_id.map(|id| (id, aor.id)))
+        .collect::<HashMap<_, _>>();
+
+    let network_aors_to_import = import_sigint_network_aors
+        .into_iter()
+        .filter(|rec| network_matches.contains_key(&rec.network_id))
+        .collect_vec();
+    let local_network_ids = network_matches.values().cloned().collect_vec();
+    let existing_network_aors = if local_network_ids.is_empty() {
+        HashMap::new()
+    } else {
+        sigint_network_aor::Entity::find()
+            .filter(
+                sigint_network_aor::Column::NetworkId.is_in(local_network_ids),
+            )
+            .all(db)
+            .await
+            .c(h!())?
+            .into_iter()
+            .map(|rec| ((rec.network_id, rec.aor_id), rec))
+            .collect::<HashMap<_, _>>()
+    };
+
+    let mut network_aors_to_create = Vec::new();
+    for import_aor in network_aors_to_import {
+        let Some(network_id) = network_matches.get(&import_aor.network_id)
+        else {
+            continue;
+        };
+        let Some(import_aor_details) =
+            import_aors_by_id.get(&import_aor.aor_id)
+        else {
+            continue;
+        };
+        let local_aor_id = if import_aor_details.is_top_level
+            && import_aor_details.is_default
+        {
+            local_default_aor.id
+        } else {
+            let Some(local_aor_id) =
+                local_aors_by_original_id.get(&import_aor_details.id)
+            else {
+                continue;
+            };
+            *local_aor_id
+        };
+
+        if existing_network_aors.contains_key(&(*network_id, local_aor_id)) {
+            continue;
+        }
+        network_aors_to_create.push(sigint_network_aor::ActiveModel {
+            id: NotSet,
+            network_id: Set(*network_id),
+            aor_id: Set(local_aor_id),
+            created_at: Set(import_aor.created_at),
+            sigint_origin_id: Set(import_aor.sigint_origin_id),
+            original_id: Set(import_aor.original_id),
+        });
+    }
+    let new_network_aors_counter = network_aors_to_create.len();
+    let txn = db.begin().await.c(h!())?;
+    for rec in network_aors_to_create {
+        rec.insert(&txn).await.c(h!())?;
+    }
+    confirm_new_records_and_finish(
+        txn,
+        new_network_aors_counter,
+        "sigint_network_aor",
     )
     .await
     .c(h!())?;
