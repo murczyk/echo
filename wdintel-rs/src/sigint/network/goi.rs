@@ -113,7 +113,7 @@ async fn get_goi_report_freqs(
                         sigint_network_freq::Entity,
                         sigint_network_freq::Column::ActiveTo,
                     ))
-                    .gt(Expr::cust("NOW() - interval '1 month'")),
+                    .gte(Expr::cust("NOW()")),
                 ),
         )
         .filter(area_of_responsibility::Column::IsTopLevel.eq(true))
