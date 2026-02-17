@@ -96,8 +96,8 @@ export class PalitraManager {
       this._showSearchResults([]);
       return;
     }
-
-    const tokens = q.split(/\s+/).filter(Boolean);
+    /** Split multiple points by comma or space */
+    const tokens = q.split(/[,\s]+/).filter(Boolean);
     const tokensLower = tokens.map((t) => t.toLowerCase());
 
     const fromCache = this.cacheManager.getCachedPointsForPalitras(palitraIds);
