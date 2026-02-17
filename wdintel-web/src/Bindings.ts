@@ -833,7 +833,7 @@ export type SavedFilter = {
 export type SavedFilterDuty = {
   id: number;
   name: string;
-  req: RerDutyQueryStateWf;
+  req: RerDutyFeedFilterState;
 };
 
 export type SavedFilterUpsertReq = {
@@ -843,7 +843,7 @@ export type SavedFilterUpsertReq = {
 
 export type SavedFilterDutyUpsertReq = {
   name: string;
-  req: RerDutyQueryStateWf;
+  req: RerDutyFeedFilterState;
 };
 
 export type SavedFilterRenameReq = {
@@ -851,11 +851,11 @@ export type SavedFilterRenameReq = {
   name: string;
 };
 
-export type RerDutyQueryState = {
-  waterfalls: Array<[string, RerDutyQueryStateWf]> | null;
+export type RerDutyState = {
+  messageFeeds: Array<[string, RerDutyFeedFilterState]> | null;
 };
 
-export type RerDutyQueryStateWf = {
+export type RerDutyFeedFilterState = {
   groupsSelected: Array<string> | null;
   sendersSelected: Array<string> | null;
   deniedSenders: Array<string> | null;
