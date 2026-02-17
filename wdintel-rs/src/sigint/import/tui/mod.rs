@@ -369,8 +369,8 @@ pub async fn oneoff_import_network_details(
     let mut network_data = load_network_data(
         &db,
         unit_data.clone(),
-        imported_network_units,
-        imported_networks,
+        imported_network_units.clone(),
+        imported_networks.clone(),
         true,
     )
     .await
@@ -396,6 +396,20 @@ pub async fn oneoff_import_network_details(
             continue;
         };
         unit_matches.insert(original_id, target_unit_id);
+    }
+
+    let matched_by_original_id = add_network_matches_by_original_id(
+        &db,
+        &mut network_matches,
+        &imported_networks,
+        &imported_network_units,
+    )
+    .await
+    .c(h!())?;
+    if matched_by_original_id > 0 {
+        info!(
+            "Matched {matched_by_original_id} non-matched network(s) via original_id."
+        );
     }
 
     import_network_freqs(
@@ -446,6 +460,89 @@ pub async fn oneoff_import_network_details(
     .await
     .c(h!())?;
     Ok(())
+}
+
+async fn add_network_matches_by_original_id(
+    db: &DatabaseConnection,
+    network_matches: &mut HashMap<i64, i64>,
+    imported_networks: &[sigint_network::Model],
+    imported_network_units: &[sigint_network_unit::Model],
+) -> anyhow::Result<usize> {
+    let unmatched_import_network_ids = imported_networks
+        .iter()
+        .map(|network| network.id)
+        .filter(|network_id| !network_matches.contains_key(network_id))
+        .collect_vec();
+    if unmatched_import_network_ids.is_empty() {
+        return Ok(0);
+    }
+
+    let mut imported_unit_ids_by_network_id = HashMap::new();
+    for imported_network_unit in imported_network_units {
+        imported_unit_ids_by_network_id
+            .entry(imported_network_unit.network_id)
+            .or_insert_with(Vec::new)
+            .push(imported_network_unit.unit_id);
+    }
+
+    let local_networks = sigint_network::Entity::find()
+        .filter(
+            sigint_network::Column::OriginalId
+                .is_in(unmatched_import_network_ids.clone()),
+        )
+        .all(db)
+        .await
+        .c(h!())?;
+    let mut local_networks_by_original_id = HashMap::new();
+    for local_network in local_networks {
+        let Some(original_id) = local_network.original_id else {
+            continue;
+        };
+        local_networks_by_original_id
+            .entry(original_id)
+            .or_insert_with(Vec::new)
+            .push(local_network.id);
+    }
+
+    let mut matched_counter = 0;
+    for imported_network in imported_networks {
+        if network_matches.contains_key(&imported_network.id) {
+            continue;
+        }
+        let local_network_ids = local_networks_by_original_id
+            .get(&imported_network.id)
+            .cloned()
+            .unwrap_or_default();
+        if local_network_ids.len() == 1 {
+            let local_network_id = local_network_ids[0];
+            network_matches.insert(imported_network.id, local_network_id);
+            matched_counter += 1;
+            continue;
+        }
+        let unit_ids = imported_unit_ids_by_network_id
+            .get(&imported_network.id)
+            .cloned()
+            .unwrap_or_default();
+        let unit_ids_txt = if unit_ids.is_empty() {
+            "-".to_string()
+        } else {
+            unit_ids.iter().join(",")
+        };
+        let unresolved_reason = if local_network_ids.is_empty() {
+            "no_local_original_id_match"
+        } else {
+            "multiple_local_original_id_matches"
+        };
+        warn!(
+            "Unmatched network: id={}, name=\"{}\", import_unit_ids=[{}], reason={}",
+            imported_network.id,
+            imported_network.name,
+            unit_ids_txt,
+            unresolved_reason
+        );
+    }
+
+    Ok(matched_counter)
 }
 
 async fn import_sigint_network_aors(
