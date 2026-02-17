@@ -1,6 +1,10 @@
 [package]
 name = "echo-docs"
+<<<<<<< HEAD
 version = "0.1.1-rc.202602211643"
+=======
+version = "0.1.1-rc.202602171624"
+>>>>>>> fc729d63 (bump: 0.1.1-rc.202602171624)
 edition = "2021"
 authors = ["rickyrepel@gmail.com"]
 license = "AllRightsReserved"
