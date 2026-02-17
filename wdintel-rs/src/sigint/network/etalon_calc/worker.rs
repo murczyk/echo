@@ -569,6 +569,8 @@ async fn insert_triaged_tasks(
     is_for_old_worker: bool,
     db: &DatabaseTransaction,
 ) -> anyhow::Result<Vec<network_invalidation_task::Model>> {
+    let task_count_before_dedupe = tasks.len();
+    let mut seen_tasks = HashSet::new();
     let mut inserted = Vec::new();
     let tag = if is_for_old_worker {
         NETWORK_INVALIDATION_TASK_TAG_OLD
@@ -576,6 +578,17 @@ async fn insert_triaged_tasks(
         NETWORK_INVALIDATION_TASK_TAG_RECENT
     };
     for task in tasks {
+        let task_key = (
+            task.frequency.clone(),
+            task.since_ts,
+            task.till_ts,
+            task.sigint_network_id,
+            task.aor_id,
+            task.group_master_key.clone(),
+        );
+        if !seen_tasks.insert(task_key) {
+            continue;
+        }
         let active = network_invalidation_task::ActiveModel {
             id: NotSet,
             frequency: Set(task.frequency.clone()),
@@ -592,7 +605,11 @@ async fn insert_triaged_tasks(
         let task = active.insert(db).await.c(h!())?;
         inserted.push(task);
     }
-    info!("inserted {} tasks", inserted.len());
+    info!(
+        "inserted {} tasks (from {} triaged candidates)",
+        inserted.len(),
+        task_count_before_dedupe
+    );
     Ok(inserted)
 }
 
@@ -606,10 +623,11 @@ async fn delete_original_tasks(
         .iter()
         .map(|task| task.id)
         .filter(|id| !old_worker_ids.contains(id))
-        .collect::<Vec<_>>();
+        .collect::<BTreeSet<_>>();
     if ids_to_delete.is_empty() {
         return Ok(());
     }
+    let ids_to_delete = ids_to_delete.into_iter().collect::<Vec<_>>();
     for id_chunk in ids_to_delete.chunks(NETWORK_INVALIDATION_DELETE_MAX_IDS) {
         network_invalidation_task::Entity::delete_many()
             .filter(
@@ -830,15 +848,18 @@ async fn process_invalidation_filter(
         if sigint_inbox_items.is_empty() {
             break;
         }
-        let mut new_processed_items = processed_items.clone();
+        let mut new_processed_item_ids = Vec::new();
         last_id = sigint_inbox_items.iter().map(|i| i.id).min();
         let mut items_to_process = vec![];
         for item in sigint_inbox_items {
-            if new_processed_items.contains(&item.id) {
+            if processed_items.contains(&item.id) {
                 continue;
             }
-            new_processed_items.insert(item.id);
+            new_processed_item_ids.push(item.id);
             items_to_process.push(item);
+        }
+        if items_to_process.is_empty() {
+            continue;
         }
         crate::sigint::network::etalon_calc::calculate_sigint_inbox_item_networks(
             items_to_process,
@@ -847,8 +868,8 @@ async fn process_invalidation_filter(
             .await
             .c(h!())?;
         txn.commit().await.c(h!())?;
-        for i in new_processed_items {
-            processed_items.insert(i);
+        for id in new_processed_item_ids {
+            processed_items.insert(id);
         }
     }
     Ok(())
