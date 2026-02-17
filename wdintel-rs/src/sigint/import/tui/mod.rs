@@ -115,6 +115,7 @@ pub async fn run_merge_network_tui(mode: Mode) -> Result<(), AppError> {
         unit_data,
         imported_network_units,
         imported_networks,
+        true,
     )
     .await
     .c(h!())?;
@@ -332,6 +333,7 @@ pub async fn run_import_network_tui(
         unit_data,
         imported_network_units,
         imported_networks,
+        true,
     )
     .await
     .c(h!())?;
@@ -369,6 +371,7 @@ pub async fn oneoff_import_network_details(
         unit_data.clone(),
         imported_network_units,
         imported_networks,
+        true,
     )
     .await
     .c(h!())?;
@@ -1667,6 +1670,7 @@ async fn load_network_data(
     mut unit_data: UnitData,
     all_imported_network_units: Vec<sigint_network_unit::Model>,
     imported_networks: Vec<sigint_network::Model>,
+    include_inactive_networks: bool,
 ) -> anyhow::Result<NetworkData> {
     let mut perfect_matches = vec![];
     let models = imported_networks
@@ -1677,12 +1681,13 @@ async fn load_network_data(
     let mut data = HashMap::new();
     let mut model_to_unit_id = HashMap::new();
 
-    let local_networks = sigint_network::Entity::find()
-        .find_with_related(sigint_network_unit::Entity)
-        .filter(sigint_network::Column::Deleted.eq(false))
-        .all(db)
-        .await
-        .c(h!())?;
+    let mut local_networks = sigint_network::Entity::find()
+        .find_with_related(sigint_network_unit::Entity);
+    if !include_inactive_networks {
+        local_networks =
+            local_networks.filter(sigint_network::Column::Deleted.eq(false));
+    }
+    let local_networks = local_networks.all(db).await.c(h!())?;
 
     let mut local_unit_networks = HashMap::new();
     for (local_network, local_network_units) in local_networks {
@@ -1724,7 +1729,7 @@ async fn load_network_data(
     }
 
     for imported_network in imported_networks {
-        if imported_network.deleted {
+        if imported_network.deleted && !include_inactive_networks {
             continue;
         }
         let mut network_row = DataRow {
@@ -2095,7 +2100,7 @@ async fn merge_all(
                     DataKind::Networks => {
                         let txn = db.begin().await.c(h!())?;
                         crate::sigint::network::merge::merge_two_networks(
-                            &txn, "system", false, id_2, id_1,
+                            &txn, "system", false, true, id_2, id_1,
                         )
                         .await
                         .c(h!())?;
