@@ -77,7 +77,13 @@ async fn get_goi_report_freqs(
     env: &Env,
 ) -> Result<HashMap<String, Vec<NetworkFreq>>, AppError> {
     let today = Utc::now().with_timezone(&get_tz()).date_naive();
-    let today_start = today.and_hms_opt(0, 0, 0).unwrap_or_default();
+    let today_start_local = today.and_hms_opt(0, 0, 0).unwrap_or_default();
+    let today_start = get_tz()
+        .from_local_datetime(&today_start_local)
+        .single()
+        .context(h!())?
+        .with_timezone(&Utc)
+        .naive_utc();
     let q = sigint_network::Entity::find()
         .join(
             JoinType::InnerJoin,
@@ -114,7 +120,7 @@ async fn get_goi_report_freqs(
                         sigint_network::Entity,
                         sigint_network::Column::ActiveTo,
                     ))
-                        .gte(Expr::val(today_start)),
+                    .gte(Expr::val(today_start)),
                 ),
         )
         .filter(sigint_network_freq::Column::Deleted.eq(false))
@@ -126,7 +132,7 @@ async fn get_goi_report_freqs(
                         sigint_network_freq::Entity,
                         sigint_network_freq::Column::ActiveTo,
                     ))
-                        .gte(Expr::val(today_start)),
+                    .gte(Expr::val(today_start)),
                 ),
         )
         .filter(area_of_responsibility::Column::IsTopLevel.eq(true))
