@@ -6,52 +6,74 @@ from pathlib import Path
 
 import mlflow
 
+from echo_ai.lake import Lake
 
-def real_main(
-    unsupervised: bool, restore: bool, restore_databases: str, databases: str
-):
+
+def real_main(unsupervised: str, databases: str):
     src = Path(__file__).parent
     project = str(src.parent)
 
     databases_list = databases.split(None)
-    if restore or restore_databases:
-        tags = {"task": "download-backups"}
-        with mlflow.start_run(nested=True, tags=tags):
-            mlflow.run(
-                project,
-                entry_point="restore",
-                env_manager="uv",
-                parameters={"restore_databases": restore_databases},
-            )
+    with tempfile.TemporaryDirectory() as temp_dir:
+        print("creating connection to datalake")
+        lake = Lake(temp_directory=temp_dir)
+        try:
+            refresh_datalake(lake, databases_list)
+        finally:
+            lake.close()
 
-    if len(databases_list) == 1 and os.path.isfile(databases_list[0]):
-        data_file = databases_list[0]
-        process_file(project, data_file, unsupervised)
-    else:
-        with tempfile.NamedTemporaryFile() as temp_file:
-            data_file = temp_file.name
-            mlflow.run(
-                project,
-                entry_point="prepare",
-                env_manager="uv",
-                parameters={"data_file": data_file, "prepare_databases": databases},
-            )
-            process_file(project, data_file, unsupervised)
+    flag_unsupervised = False
+    if unsupervised == "true":
+        flag_unsupervised = True
+
+    process_file(project, flag_unsupervised)
 
 
-def process_file(project: str, data_file: str, unsupervised: bool):
-    parameters = {"data_file": data_file}
+def refresh_datalake(lake: Lake, databases_list: list[str]):
+    print("creating lake schema")
+    lake.create_schema_if_not_exists()
+
+    for db in databases_list:
+        print(f"trying to attach local '{db}'")
+        try:
+            lake.attach_local(db)
+        except:
+            print(f"trying to attach remote '{db}'")
+            lake.attach_remote(db)
+
+        try:
+            refresh_from_db(lake, db)
+        finally:
+            lake.detach(db)
+
+
+def refresh_from_db(lake: Lake, db: str):
+    print(f"merging tags from '{db}'")
+    lake.merge_tags(db)
+    print(f"finished merging tags from '{db}'")
+
+    print(f"merging inbox item tags from '{db}'")
+    lake.merge_inbox_item_tags(db)
+    print(f"finished merging inbox item tags from '{db}'")
+
+    print(f"inserting model errors from '{db}'")
+    lake.insert_model_error(db)
+    print(f"finished model errors from '{db}'")
+
+    print(f"inserting inbox messages from '{db}'")
+    lake.insert_inbox_message(db)
+    print(f"finished inserting inbox messages from '{db}'")
+
+
+def process_file(project: str, unsupervised: bool):
 
     if unsupervised:
         mlflow.run(
             project,
             entry_point="unsupervised",
             env_manager="uv",
-            parameters=parameters,
         )
-    run = mlflow.run(
-        project, entry_point="supervised", env_manager="uv", parameters=parameters
-    )
+    run = mlflow.run(project, entry_point="supervised", env_manager="uv")
 
     if os.environ.get("AWS_ACCESS_KEY_ID") and os.environ.get("AWS_SECRET_ACCESS_KEY"):
         mlflow.run(
@@ -63,10 +85,8 @@ def process_file(project: str, data_file: str, unsupervised: bool):
 
 
 def main():
-    parser = argparse.ArgumentParser(fromfile_prefix_chars="@")
-    parser.add_argument("--restore", action="store_true", required=False)
-    parser.add_argument("--unsupervised", action="store_true", required=False)
-    parser.add_argument("--restore_databases", type=str)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--unsupervised", type=str, default="false")
     parser.add_argument("--databases", type=str, required=True)
 
     args = vars(parser.parse_args())

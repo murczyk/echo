@@ -10,36 +10,9 @@ from fasttext.FastText import _FastText, loss_name, model_name
 from mlflow import pyfunc
 from mlflow.artifacts import download_artifacts
 from mlflow.models import Model
-from mlflow.models.evaluation.evaluators import classifier
 from mlflow.models.model import MLMODEL_FILE_NAME
-from mlflow.pyfunc import PyFuncModel
 from mlflow.pyfunc.model import PythonModel, PythonModelContext
 from mlflow.utils.environment import _CONDA_ENV_FILE_NAME, _PYTHON_ENV_FILE_NAME
-
-original_extract_predict_fns = classifier._extract_predict_fn_and_predict_proba_fn  # pyright: ignore
-
-
-def _patched_extract_predict_fns(model: PyFuncModel | None):
-    predict_fn, predict_proba_fn = original_extract_predict_fns(model)
-
-    if model and predict_proba_fn is None:
-        model_predict_fn = model._predict_fn
-        signature = model_predict_fn.__func__
-        print(f"model: {model}")
-        print(f"signature: {signature}")
-
-        if signature is FastTextPythonModel.predict:
-
-            def func(input_data):
-                params = {"method": "predict_proba"}
-                return model_predict_fn(input_data, params)
-
-            predict_proba_fn = func
-
-    return predict_fn, predict_proba_fn
-
-
-classifier._extract_predict_fn_and_predict_proba_fn = _patched_extract_predict_fns  # pyright: ignore
 
 FLAVOR_NAME = "fasttext"
 UNSUPERVISED_ARGS = [

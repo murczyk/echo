@@ -6,7 +6,7 @@ import pandas as pd
 import pandas.util
 import pyarrow as pa
 from datasets import Dataset
-from mlflow.data.pandas_dataset import compute_pandas_digest
+from mlflow.data.digest_utils import compute_pandas_digest
 
 
 def to_pandas_df(dataset: Dataset | pa.Table) -> pd.DataFrame:

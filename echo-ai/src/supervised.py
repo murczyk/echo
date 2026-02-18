@@ -4,11 +4,23 @@ import os
 import sys
 import tempfile
 
-import duckdb
 import mlflow
 
-from echo_ai.loader import LABEL_DICT
+from echo_ai.lake import Lake
 from echo_ai.supervised import train_supervised
+
+LABEL_DICT = {
+    0: "переміщення",
+    1: "бпла",
+    2: "звʼязок",
+    3: "забезп",
+    4: "арта",
+    5: "втрати",
+    6: "іфо",
+    7: "палітра",
+    8: "мораль",
+    9: "зіткнення",
+}
 
 
 def resolve_pretrain(pretrained_vectors, args):
@@ -44,7 +56,6 @@ def resolve_pretrain(pretrained_vectors, args):
 
 
 def real_main(args):
-    data_file = args["data_file"]
     label_list = args["labels"]
     label_dict = {}
     if label_list:
@@ -60,19 +71,16 @@ def real_main(args):
     print(f"starting training for labels: {label_list}")
 
     with tempfile.TemporaryDirectory() as temp_dir:
-        config = {
-            "preserve_insertion_order": False,
-            "temp_directory": temp_dir,
-        }
-        with duckdb.connect(config=config) as con:  # pyright: ignore
-            train_supervised(temp_dir, label_dict, data_file, con, args)
+        print("creating connection to datalake")
+        lake = Lake(temp_directory=temp_dir)
+        train_supervised(lake, label_dict, args)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--thread", type=int, default=multiprocessing.cpu_count())
     parser.add_argument("--dim", type=int, default=100)
-    parser.add_argument("--seed", type=int, default=4313)
+    parser.add_argument("--seed", type=int, default=4507)
     parser.add_argument("--model", type=str, default="skipgram")
     parser.add_argument("--lr", type=float)
     parser.add_argument("--ws", type=int)
@@ -93,7 +101,6 @@ def main() -> None:
     parser.add_argument("--lrUpdateRate", type=int)
     parser.add_argument("--t", type=float)
     parser.add_argument("-l", "--labels", action="extend", nargs=1, required=False)
-    parser.add_argument("data_file", type=str)
     args = vars(parser.parse_args())
 
     pretrained_vectors = args.get("pretrainedVectors")

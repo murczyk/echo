@@ -9,45 +9,28 @@ entry_points:
       bucket: { type: string, default: "echouastorage" }
       prefix: { type: string, default: "lfs/echo-ai/models/" }
     command: "python src/upload.py {run_id} {bucket} {prefix}"
-  restore:
-    parameters:
-      restore_databases: string
-    command: "cd /usr/local/echo-ai-train && ./train-download-backups.sh {restore_databases}"
-  prepare:
-    parameters:
-      data_file: path
-      prepare_databases: string
-    command: "python src/prepare.py -o {data_file} {prepare_databases}"
   scheduled:
     parameters:
-      # restore: {type: string, default: "false"}
-      # unsupervised: {type: string, default: "false"}
-      # restore_databases: {type: string, default: ""}
+      unsupervised: { type: string, default: "false" }
       databases: { type: string }
-    command: "python src/scheduled.py --databases {databases}"
-  embeddings:
-    parameters:
-      data_file: path
-    command: "python src/embeddings.py {data_file}"
+    command: "python src/scheduled.py --databases {databases} --unsupervised {unsupervised}"
   supervised:
     parameters:
-      data_file: path
       dim: { type: int, default: 100 }
       epoch: { type: int, default: 15 }
       wordNgrams: { type: int, default: 3 }
       autotuneModelSize: { type: string, default: "128M" }
       pretrainedVectors: { type: string, default: "pretrained.vec" }
-      autotuneMetric: { type: string, default: "precisionAtRecall:80:__label__1" } # --autotuneMetric {autotuneMetric}
-      autotunePredictions: { type: int, default: 2 } # --autotunePredictions {autotunePredictions}
-      autotuneDuration: { type: int, default: 1800 } # --autotuneDuration {autotuneDuration}
+      autotuneMetric: { type: string, default: "precisionAtRecall:80:__label__1" }
+      autotunePredictions: { type: int, default: 2 }
+      autotuneDuration: { type: int, default: 300 }
     command: >-
-      python src/supervised.py {data_file} --dim {dim} --epoch {epoch} --wordNgrams {wordNgrams} --pretrainedVectors {pretrainedVectors}
+      python src/supervised.py --dim {dim} --epoch {epoch} --wordNgrams {wordNgrams} --pretrainedVectors {pretrainedVectors}
       --autotuneModelSize {autotuneModelSize} --autotuneMetric {autotuneMetric} --autotunePredictions {autotunePredictions} --autotuneDuration {autotuneDuration}
   unsupervised:
     parameters:
-      data_file: path
       dim: { type: int, default: 100 }
       epoch: { type: int, default: 20 }
       wordNgrams: { type: int, default: 3 }
     command: >-
-      python src/unsupervised.py {data_file} --dim {dim} --epoch {epoch} --wordNgrams {wordNgrams}
+      python src/unsupervised.py --dim {dim} --epoch {epoch} --wordNgrams {wordNgrams}

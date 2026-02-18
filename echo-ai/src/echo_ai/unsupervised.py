@@ -1,9 +1,10 @@
-import os
-
 import fasttext
 import mlflow
-from mlflow.data.huggingface_dataset import HuggingFaceDataset
+from mlflow.data.pandas_dataset import from_pandas
 from mlflow.entities.logged_model_input import LoggedModelInput
+
+from echo_ai import arrow, quack
+from echo_ai.lake import Lake
 
 from .fasttext_model import (
     UNSUPERVISED_ARGS,
@@ -13,21 +14,20 @@ from .fasttext_model import (
 )
 
 
-def train_unsupervised(dataset: HuggingFaceDataset, **kwargs):
-    corpus = f"corpus.{dataset.digest}.txt"
-
-    if os.path.isfile(corpus):
-        print(f"found existing corpus file: '{corpus}', reusing")
-    else:
-        print(f"creating new corpus file: '{corpus}'")
-        dataset.ds.to_csv(
-            corpus,
-            columns=["text"],
-            index=False,
-            quoting=None,
-            lineterminator="\n",
-            header=False,
-        )
+def train_unsupervised(lake: Lake, **kwargs):
+    seed = kwargs.get("seed", 4507)
+    shuffle = kwargs.get("shuffle", True)
+    rel = lake.create_messages_labeled_onehot(shuffle=shuffle, seed=seed)
+    count = quack.count_star(rel)
+    print(f"found {count} training rows")
+    df = quack.to_df_arrow(rel.select("text").limit(1000))
+    print(df.head())
+    dataset = from_pandas(
+        df,
+        name="corpus",
+        digest=arrow.digest(df, str(count)),
+    )
+    corpus = lake.to_plain_text(rel, dataset)
 
     pretrained_vectors = kwargs.get("pretrainedVectors", "pretrained.vec")
 

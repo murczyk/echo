@@ -1,21 +1,18 @@
 import argparse
 import multiprocessing
+import tempfile
 
 import mlflow
 
-from echo_ai.loader import LABEL_DICT, load_parquet
+from echo_ai.lake import Lake
 from echo_ai.unsupervised import train_unsupervised
 
 
 def real_main(args):
-    data_file = args["data_file"]
-    dataset = load_parquet(
-        LABEL_DICT,
-        data_file,
-        embeddings=False,
-        unsupervised=True,
-    )
-    train_unsupervised(dataset, **args)
+    with tempfile.TemporaryDirectory() as temp_dir:
+        print("creating connection to datalake")
+        lake = Lake(temp_directory=temp_dir)
+        train_unsupervised(lake, **args)
 
 
 def main():
@@ -38,9 +35,7 @@ def main():
     parser.add_argument("--t", type=float)
     parser.add_argument("--verbose", type=int, default=3)
     parser.add_argument("--pretrainedVectors", type=str, default="pretrained.vec")
-    parser.add_argument("--seed", type=int, default=4313)
-    parser.add_argument("--labels", action="extend", nargs=1, required=False)
-    parser.add_argument("data_file", type=str)
+    parser.add_argument("--seed", type=int, default=4507)
     args = vars(parser.parse_args())
 
     tags = {"task": "unsupervised"}

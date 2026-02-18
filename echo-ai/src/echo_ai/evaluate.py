@@ -35,10 +35,16 @@ def evaluate_model(label_name: str, model_uri: str, split_csv: dict[str, str]):
     mlflow.set_active_model(model_id=model.model_id)
     results = _do_evaluate_model(label_name, model, split_csv)
     labels = [label_name]
-    plot_precision_recall(labels, "test", [results["test"]])
-    plot_precision_recall(labels, "train", [results["train"]])
-    plot_threshold_recall(labels, "test", [results["test"]])
-    plot_threshold_recall(labels, "train", [results["train"]])
+
+    train_results = results["train"]
+    plot_precision_recall(labels, "train", [train_results])
+    plot_threshold_recall(labels, "train", [train_results])
+
+    test_results = results.get("test")
+    if test_results:
+        plot_precision_recall(labels, "test", [test_results])
+        plot_threshold_recall(labels, "test", [test_results])
+
     return results
 
 
@@ -51,6 +57,9 @@ def _do_evaluate_model(
     results = {}
     fasttext_model = model.get_raw_model()
     for split, dataset_path in split_csv.items():
+        if not dataset_path:
+            continue
+
         print(
             f"evaluating model for label {label_name} split {split} on with '{dataset_path}'"
         )

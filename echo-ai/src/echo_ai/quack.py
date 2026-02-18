@@ -17,3 +17,11 @@ def define_sql_view(con: DuckDBPyConnection, view_name: str, sql: str):
 def to_df_arrow(rel: DuckDBPyRelation):
     table = rel.fetch_arrow_table()
     return arrow.to_pandas_df(table)
+
+
+def count_star(rel: DuckDBPyRelation):
+    c = rel.count("*").fetchone()
+    if c:
+        (count,) = c
+        return count
+    return 0

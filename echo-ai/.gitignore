@@ -7,3 +7,5 @@ corpus.*.txt
 *.test.*.txt
 __pycache__/
 .venv/
+*.ducklake
+*.ducklake.files/
