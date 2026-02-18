@@ -1247,7 +1247,7 @@ view _ shared user model =
                 [ class "align-self-stretch"
                 , style "width" "220px"
                 , style "min-width" "220px"
-                , style "height" "calc(-50px + 100vh)"
+                , class "app-shell-fill-height"
                 , style "overflow-y" "scroll"
                 ]
                 [ div
@@ -1260,7 +1260,7 @@ view _ shared user model =
                 ]
             , div
                 [ class "border-start grow-1"
-                , style "height" "calc(-50px + 100vh)"
+                , class "app-shell-fill-height"
                 , style "overflow-y" "scroll"
                 ]
                 [ h1 [ class "py-2 ps-4" ]

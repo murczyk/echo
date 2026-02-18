@@ -3,7 +3,6 @@
 }
 
 #analysis-map .exit-button {
-	margin-right: 10px !important;
 	padding: 8px;
 	border-radius: 8px;
 	width: 48px;
@@ -170,21 +169,91 @@ div [id='map-container-analysis'] {
 	clear: both;
 }
 
-#analysis-map .leaflet-top.leaflet-right .analysis-map-zoom-control {
-	clear: none;
+#analysis-map .leaflet-bottom.leaflet-left {
+	left: 0;
+	right: 0;
+	width: auto;
+	display: flex;
+	justify-content: center;
+	align-items: flex-end;
+	pointer-events: none;
 }
 
-#analysis-map .analysis-map-zoom-control.collapsed {
-	width: 88px;
-	min-width: 88px;
-	max-width: 88px;
+#analysis-map .leaflet-bottom.leaflet-left .layer-switch-control {
+	position: absolute;
+	left: 10px;
+	bottom: 10px;
+	margin: 0;
+	pointer-events: auto;
+	z-index: 1001;
 }
 
-#analysis-map .analysis-map-zoom-control .layer-switch-header {
-	border-bottom: none;
-	padding: 8px;
-	gap: 8px;
-	justify-content: space-between;
+#analysis-map .leaflet-control-attribution {
+	position: static;
+	transform: none;
+	margin: 0 0 10px 0;
+	z-index: 1000;
+	pointer-events: auto;
+	background: color-mix(in srgb, var(--bs-body-bg) 82%, transparent);
+	color: var(--bs-body-color);
+	font: 11px/1.5 "Helvetica Neue", Arial, Helvetica, sans-serif;
+	padding: 0 5px;
+	border-radius: 3px;
+	border: 1px solid var(--bs-border-color);
+}
+
+#analysis-map .leaflet-control-attribution a {
+	color: var(--bs-link-color, #0d6efd);
+	text-decoration: none;
+}
+
+#analysis-map .leaflet-control-attribution a:hover {
+	text-decoration: underline;
+}
+
+#analysis-map .analysis-map-zoom-control {
+	clear: both;
+	background: var(--bs-card-bg) !important;
+	border: 1px solid var(--bs-border-color);
+	border-radius: 8px;
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+}
+
+#analysis-map .leaflet-bottom.leaflet-right .analysis-map-zoom-control {
+	margin-right: 10px;
+	margin-bottom: 10px;
+}
+
+#analysis-map .analysis-map-zoom-button {
+	background: transparent;
+	border: none;
+	cursor: pointer;
+	color: var(--bs-body-color);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 44px;
+	height: 44px;
+	padding: 0;
+	font-size: 18px;
+	transition: background-color 0.2s, color 0.2s;
+}
+
+#analysis-map .analysis-map-zoom-button + .analysis-map-zoom-button {
+	border-top: 1px solid var(--bs-border-color);
+}
+
+#analysis-map .analysis-map-zoom-button:hover {
+	background-color: var(--bs-secondary-bg);
+	color: var(--bs-primary);
+}
+
+#analysis-map .analysis-map-zoom-button:focus {
+	outline: 2px solid var(--bs-primary);
+	outline-offset: -2px;
 }
 
 .leaflet-pane {
@@ -499,6 +568,7 @@ div [id='map-container-analysis'] {
 .leaflet-custom-control,
 .palitras-control,
 .palitras-control-header,
+#analysis-map .analysis-map-zoom-control,
 #analysis-map .layer-switch-control,
 #analysis-map .layer-switch-header {
 	background: #ffffff !important;
@@ -509,6 +579,7 @@ div [id='map-container-analysis'] {
 .palitras-toggle-button,
 .palitras-palette-icon,
 .palitra-name,
+#analysis-map .analysis-map-zoom-button,
 #analysis-map .layer-switch-header h3,
 #analysis-map .layer-switch-toggle-button,
 #analysis-map .layer-switch-icon,
@@ -519,6 +590,7 @@ div [id='map-container-analysis'] {
 .palitras-toggle-button:hover,
 .palitras-palette-icon:hover,
 .palitra-item:hover,
+#analysis-map .analysis-map-zoom-button:hover,
 #analysis-map .layer-switch-toggle-button:hover,
 #analysis-map .layer-switch-icon:hover,
 #analysis-map .layer-switch-item:hover {
@@ -537,6 +609,7 @@ div [id='map-container-analysis'] {
 html[data-bs-theme='dark'] .leaflet-custom-control,
 html[data-bs-theme='dark'] .palitras-control,
 html[data-bs-theme='dark'] .palitras-control-header,
+html[data-bs-theme='dark'] #analysis-map .analysis-map-zoom-control,
 html[data-bs-theme='dark'] #analysis-map .layer-switch-control,
 html[data-bs-theme='dark'] #analysis-map .layer-switch-header {
   background: #212529 !important;
@@ -547,6 +620,7 @@ html[data-bs-theme='dark'] .palitras-control-header h3,
 html[data-bs-theme='dark'] .palitras-toggle-button,
 html[data-bs-theme='dark'] .palitras-palette-icon,
 html[data-bs-theme='dark'] .palitra-name,
+html[data-bs-theme='dark'] #analysis-map .analysis-map-zoom-button,
 html[data-bs-theme='dark'] #analysis-map .layer-switch-header h3,
 html[data-bs-theme='dark'] #analysis-map .layer-switch-toggle-button,
 html[data-bs-theme='dark'] #analysis-map .layer-switch-icon,
@@ -557,6 +631,7 @@ html[data-bs-theme='dark'] #analysis-map .layer-switch-label {
 html[data-bs-theme='dark'] .palitras-toggle-button:hover,
 html[data-bs-theme='dark'] .palitras-palette-icon:hover,
 html[data-bs-theme='dark'] .palitra-item:hover,
+html[data-bs-theme='dark'] #analysis-map .analysis-map-zoom-button:hover,
 html[data-bs-theme='dark'] #analysis-map .layer-switch-toggle-button:hover,
 html[data-bs-theme='dark'] #analysis-map .layer-switch-icon:hover,
 html[data-bs-theme='dark'] #analysis-map .layer-switch-item:hover {

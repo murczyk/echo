@@ -5,7 +5,7 @@ import Auth
 import Core.Types exposing (ApiError)
 import Effect as E exposing (Effect)
 import Html exposing (..)
-import Html.Attributes exposing (class)
+import Html.Attributes exposing (class, id)
 import Html.Events exposing (onClick, stopPropagationOn)
 import Layout exposing (Layout)
 import Process
@@ -162,7 +162,8 @@ view user activeName shared route { toContentMsg, model, content } =
     , body =
         [ div [ onClick (SetOpenDropdown Nothing) ]
             [ div
-                [ class "fixed top-0 left-0 right-0 z-500 transition-all duration-300 ease-in-out"
+                [ id "app-navbar-shell"
+                , class "fixed top-0 left-0 right-0 z-500 transition-all duration-300 ease-in-out"
                 , class
                     (if model.isNavbarVisible then
                         "translate-y-0"
@@ -189,13 +190,13 @@ view user activeName shared route { toContentMsg, model, content } =
             ]
             |> Html.map toContentMsg
         , div
-            [ class "transition-all duration-300 ease-in-out"
+            [ class "transition-all duration-300 ease-in-out app-shell"
             , class
                 (if model.isNavbarVisible then
-                    "pt-[50px] min-h-[calc(100vh-50px)]"
+                    "app-shell--navbar-visible"
 
                  else
-                    "pt-0 min-h-screen"
+                    "app-shell--navbar-hidden"
                 )
             , onClick (toContentMsg (SetOpenDropdown Nothing))
             ]

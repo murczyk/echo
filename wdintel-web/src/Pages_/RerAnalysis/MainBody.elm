@@ -882,7 +882,7 @@ view user model shared route =
                                     ( Encode.list B.palitraDetailsEncoder [], False )
                     in
                     div
-                        (class "h-full relative"
+                        (class "h-full min-h-0 relative"
                             :: (if not model.unfoldMapBlock then
                                     [ class "h-0" ]
 
@@ -891,7 +891,7 @@ view user model shared route =
                                )
                         )
                         (Html.node "analysis-map"
-                            [ class "h-full block relative z-10"
+                            [ class "h-full block z-10"
                             , attribute "daterange" (Encode.encode 0 encodedDates)
                             , attribute "points" (Encode.encode 0 encodedPoints)
                             , attribute "messages" (Encode.encode 0 encodedMessagesAndUnits)
@@ -930,15 +930,13 @@ view user model shared route =
         [ -- viewIf model.showReportConstructor reportConstructorBlock
           viewReportConstructor
         , div
-            [ class "page-rer-analysis overflow-y-hidden grid grid-cols-24 gap-2"
-            , style "height" <| "calc(100vh - " ++ fromInt navbarHeightPx ++ "px)"
-            ]
+            [ class "page-rer-analysis overflow-y-hidden grid grid-cols-24 gap-2 app-shell-fill-height" ]
             [ div
                 [ class "overflow-auto text-sm col-span-5 h-full "
                 ]
                 [ Pages_.RerAnalysis.Filters.view (isDarkMode shared.themeMode) user model ]
             , div
-                [ class "col-span-19 flex flex-col h-full relative  mt-4 overflow-auto"
+                [ class "col-span-19 flex flex-col h-full min-h-0 relative overflow-auto pt-4"
                 , id "messages-div"
                 ]
                 [ div
@@ -951,14 +949,15 @@ view user model shared route =
                 , div
                     [ class "sticky top-0 z-50 bg-[var(--background-color)]"
                     ]
-                    [ div [ class "flex items-center justify-between px-4 mb-2 " ]
+                    [ div [ class "flex items-center justify-between px-4 mb-6" ]
                         [ div [ class "flex items-center" ]
                             [ h1 [ class "text-xl font-semibold" ] [ text "аналіз" ]
                             , headerControls
                             ]
                         ]
                     ]
-                , div [ class "flex-grow max-xl:mx-2 mx-4" ]
+                , div
+                    [ class "flex-grow min-h-0 ml-2 mr-6" ]
                     (mapBlock
                         :: (if not model.unfoldMapBlock then
                                 [ div []

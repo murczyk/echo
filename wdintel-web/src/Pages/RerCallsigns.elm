@@ -2411,7 +2411,7 @@ view : Bool -> Shared.Model -> B.User -> Model -> View Msg
 view dark shared user model =
     { title = "позивні"
     , body =
-        [ div [ class "flex justify-start items-start h-[calc(100vh-50px)]" ]
+        [ div [ class "flex justify-start items-start app-shell-fill-height" ]
             [ if model.showSidebar then
                 div
                     [ class "self-stretch max-h-full min-w-[260px] max-w-[340px] w-[22vw] overflow-y-auto border-r border-border bg-card relative transition-all duration-300"

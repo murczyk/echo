@@ -56,11 +56,11 @@ export function createMapZoomControl() {
   const ZoomControlClass = L.Control.extend({
     onAdd: function(map: L.Map) {
       this._map = map;
-      this._container = L.DomUtil.create('div', 'leaflet-bar leaflet-control layer-switch-control collapsed analysis-map-zoom-control');
+      this._container = L.DomUtil.create('div', 'leaflet-bar leaflet-control analysis-map-zoom-control');
 
       const createButton = (iconClass: string, ariaLabel: string, onClick: () => void) => {
         const button = document.createElement('button');
-        button.className = 'layer-switch-icon';
+        button.className = 'analysis-map-zoom-button';
         button.type = 'button';
         button.setAttribute('aria-label', ariaLabel);
         button.innerHTML = `<i class="${iconClass}"></i>`;
@@ -74,12 +74,8 @@ export function createMapZoomControl() {
       const zoomInButton = createButton('bi bi-plus-lg', 'Zoom in', () => this._map.zoomIn());
       const zoomOutButton = createButton('bi bi-dash-lg', 'Zoom out', () => this._map.zoomOut());
 
-      const header = document.createElement('div');
-      header.className = 'layer-switch-header';
-      header.appendChild(zoomInButton);
-      header.appendChild(zoomOutButton);
-
-      this._container.appendChild(header);
+      this._container.appendChild(zoomInButton);
+      this._container.appendChild(zoomOutButton);
 
       L.DomEvent.on(this._container, 'dblclick', (e) => {
         e.stopPropagation();
@@ -92,7 +88,7 @@ export function createMapZoomControl() {
     },
   });
 
-  return new ZoomControlClass({ position: 'topright' });
+  return new ZoomControlClass({ position: 'bottomright' });
 }
 
 export function createLayerSwitchControl(
@@ -320,11 +316,11 @@ export function createLayerSwitchControl(
     }
   });
 
-  return new LayerSwitchControl({ position: 'topright' });
+  return new LayerSwitchControl({ position: 'bottomleft' });
 }
 
 export function createAttributionControl() {
-  return L.control.attribution({});
+  return L.control.attribution({ position: 'bottomleft' });
 }
 
 export function createTimeswitchControl(dates: { startDate: number; endDate: number }) {

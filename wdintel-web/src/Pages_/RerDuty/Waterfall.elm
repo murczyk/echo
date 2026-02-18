@@ -3129,7 +3129,7 @@ messageTab ps shared model =
         [ deleteFilterModal
         , deleteMessageModal
         , div
-            [ class "flex justify-center items-start w-full max-h-[calc(100vh-50px)] overflow-auto bg-column"
+            [ class "flex justify-center items-start w-full app-shell-fill-max-height overflow-auto bg-column"
             , id <| waterfallControlPanelId model.id
             , classList [ ( "border", model.unfoldSettings ), ( "pos-abs", model.unfoldSettings ) ]
             ]
