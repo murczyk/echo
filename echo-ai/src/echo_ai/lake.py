@@ -318,6 +318,12 @@ class Lake:
             xdg_runtime_dir = Path(f"/run/user/{uid}")
 
         pg_host = xdg_runtime_dir / "pg-ssh-tunnel-proxy" / db
+
+        if pg_host.is_dir():
+            pg_host = str(pg_host)
+        else:
+            pg_host = db
+
         self.conn.execute(f"""
         INSTALL postgres;
         LOAD postgres;

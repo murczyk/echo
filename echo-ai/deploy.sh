@@ -27,7 +27,8 @@ TUNNELS=(
     pg-ssh-tunnel-proxy@echo-kherson2-dev.socket
 )
 systemctl --user enable "${TUNNELS[@]}"
-systemctl --user restart "${TUNNELS[@]}"
+systemctl --user stop "${TUNNELS[@]}"
+systemctl --user start "${TUNNELS[@]}"
 systemctl --user enable mlflow.service
 systemctl --user enable --now mlflow-gc.timer
 systemctl --user restart mlflow.service

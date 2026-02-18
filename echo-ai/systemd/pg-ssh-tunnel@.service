@@ -16,8 +16,9 @@ ExecStart=-/usr/bin/ssh -kaxNT \
     -o UserKnownHostsFile=/dev/null \
     -o ControlMaster=no \
     -o StreamLocalBindUnlink=yes \
+    -o ConnectTimeout=5 \
     -o PermitLocalCommand=yes \
-    -o ServerAliveInterval=15 \
+    -o ServerAliveInterval=60 \
     -o ServerAliveCountMax=4 \
     -o LocalCommand="systemd-notify --ready" \
     %i -L %t/pg-ssh-tunnel@%i.sock:/run/postgresql/.s.PGSQL.5432
