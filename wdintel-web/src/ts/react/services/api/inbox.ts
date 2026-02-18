@@ -5,6 +5,7 @@ import type {
   GroupAdminData,
   ImportantAddReq,
   ImportantRmReq,
+  InboxCommentSaveReq,
   InboxDeleteReq,
   InboxMessage as InboxMessageType,
   InboxMessageTagsAddReq,
@@ -51,13 +52,19 @@ function normalizeProfileEntry(
 }
 
 function normalizeInboxMessage(
-  m: InboxMessageType & { group_master_key?: string | null; network_ids?: number[] | null; location?: string | null }
+  m: InboxMessageType & {
+    group_master_key?: string | null;
+    network_ids?: number[] | null;
+    location?: string | null;
+    extended_form?: string | null;
+  }
 ): InboxMessageType {
   const raw = m as Record<string, unknown>;
   const groupMasterKey = (m.groupMasterKey ?? raw.group_master_key ?? null) as string | null;
   const networkIds = (m.networkIds ?? raw.network_ids ?? null) as number[] | null;
   const location = (m.location ?? raw.location ?? null) as string | null;
-  return { ...m, groupMasterKey, networkIds, location };
+  const extendedForm = (m.extendedForm ?? raw.extended_form ?? null) as string | null;
+  return { ...m, groupMasterKey, networkIds, location, extendedForm };
 }
 
 function normalizeSignalGroupEntry(g: InboxMessagesRspRaw['signal_groups'][number]): SignalGroupEntry {
@@ -187,6 +194,13 @@ export async function importantRemove(req: ImportantRmReq): Promise<void> {
 
 export async function deleteMessage(req: InboxDeleteReq): Promise<void> {
   await postVoid('/api/rer-importer/delete-message', { id: req.id });
+}
+
+export async function commentSave(req: InboxCommentSaveReq): Promise<void> {
+  await postVoid('/api/rer-importer/comment-save', {
+    message_id: req.messageId,
+    comment: req.comment,
+  });
 }
 
 export async function inboxMessageTagsAdd(req: InboxMessageTagsAddReq): Promise<void> {

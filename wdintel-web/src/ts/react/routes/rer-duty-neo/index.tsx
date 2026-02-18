@@ -33,6 +33,7 @@ import type {
 import {
   bookmarkAdd,
   bookmarkRemove,
+  commentSave,
   deleteMessage,
   getGroupInfosBatch,
   fetchInboxCount,
@@ -276,6 +277,9 @@ export function RerDutyNeoPage() {
   const [digestCount, setDigestCount] = React.useState<number | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = React.useState<number | null>(null);
   const [deleteConfirmFeedId, setDeleteConfirmFeedId] = React.useState<string | null>(null);
+  const [commentMessageId, setCommentMessageId] = React.useState<number | null>(null);
+  const [commentFeedId, setCommentFeedId] = React.useState<string | null>(null);
+  const [commentText, setCommentText] = React.useState('');
   const [reloadFreqsLoading, setReloadFreqsLoading] = React.useState(false);
   const loadNewerRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
   const refreshMessageCounterRef = React.useRef<() => Promise<void>>(() => Promise.resolve());
@@ -613,6 +617,36 @@ export function RerDutyNeoPage() {
     }
     setDeleteConfirmId(null);
     setDeleteConfirmFeedId(null);
+  };
+
+  const openCommentDialog = (msgId: number, feedId: string, currentComment: string | null) => {
+    setCommentMessageId(msgId);
+    setCommentFeedId(feedId);
+    setCommentText(currentComment ?? '');
+  };
+
+  const handleCommentSave = async () => {
+    if (commentMessageId == null || commentFeedId == null) return;
+    const trimmed = commentText.trim() || null;
+    try {
+      await commentSave({ messageId: commentMessageId, comment: trimmed });
+      setMessageFeeds((prev) =>
+        prev.map((w) =>
+          w.id === commentFeedId
+            ? {
+                ...w,
+                items: w.items.map(([id, m]) =>
+                  id === commentMessageId ? [id, { ...m, extendedForm: trimmed }] : [id, m]
+                ),
+              }
+            : w
+        )
+      );
+      setCommentMessageId(null);
+      setCommentFeedId(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
   };
 
   const senderOptions = React.useMemo(() => {
@@ -1114,25 +1148,25 @@ export function RerDutyNeoPage() {
                                     }
                                   />
                                 </span>
+                                {/* Comment (as in Elm): pencil opens comment dialog; delete hidden for now */}
                                 <span
                                   role="button"
                                   tabIndex={0}
-                                  title="Видалити"
+                                  title="редагувати коментар"
                                   className="me-1 cursor-pointer"
                                   style={{ fontSize: '1rem' }}
-                                  onClick={() => {
-                                    setDeleteConfirmId(id);
-                                    setDeleteConfirmFeedId(w.id);
-                                  }}
+                                  onClick={() => openCommentDialog(id, w.id, msg.extendedForm ?? null)}
                                   onKeyDown={(e) => {
-                                    if (e.key === 'Enter') {
-                                      setDeleteConfirmId(id);
-                                      setDeleteConfirmFeedId(w.id);
-                                    }
+                                    if (e.key === 'Enter') openCommentDialog(id, w.id, msg.extendedForm ?? null);
                                   }}
                                 >
+                                  <i className="bi bi-chat-square text-action" />
+                                </span>
+                                {/* Delete hidden for now
+                                <span ... onClick={() => { setDeleteConfirmId(id); setDeleteConfirmFeedId(w.id); }}>
                                   <i className="bi bi-trash3 text-action" />
                                 </span>
+                                */}
                               </div>
                               {groupName != null && (
                                 <div className="bg-card rounded-sm text-sm">
@@ -1207,6 +1241,22 @@ export function RerDutyNeoPage() {
                                       <i className="bi bi-box-arrow-up-right cursor-pointer leading-none" />
                                     </div>
                                   </a>
+                                </div>
+                              )}
+
+                              {msg.extendedForm != null && msg.extendedForm.trim() !== '' && (
+                                <div className="bg-card text-sm mb-2 rounded-sm">
+                                  <div className="flex justify-between items-center py-1 px-2 border-border">
+                                    <div className="flex items-center">
+                                      <i className="bi bi-chat-text mr-1 text-icons leading-none" title="Коментар" />
+                                      <span className="text-xs">Коментар</span>
+                                    </div>
+                                  </div>
+                                  <div className="flex justify-between items-center py-1 pl-6 pr-2 border-b-2 border-border">
+                                    <div className="flex items-center">
+                                      <span className="font-semibold text-xs">{msg.extendedForm}</span>
+                                    </div>
+                                  </div>
                                 </div>
                               )}
                             </div>
@@ -1299,6 +1349,41 @@ export function RerDutyNeoPage() {
           sx={{ alignSelf: 'flex-start', flexShrink: 0 }}
         ></Button>
       </Box>
+
+      <Dialog
+        open={commentMessageId != null}
+        onClose={() => {
+          setCommentMessageId(null);
+          setCommentFeedId(null);
+        }}
+      >
+        <DialogTitle>Коментар</DialogTitle>
+        <DialogContent>
+          <TextField
+            autoFocus
+            fullWidth
+            multiline
+            minRows={4}
+            placeholder="Введіть коментар..."
+            value={commentText}
+            onChange={(e) => setCommentText(e.target.value)}
+            sx={{ mt: 1, minWidth: 300 }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => {
+              setCommentMessageId(null);
+              setCommentFeedId(null);
+            }}
+          >
+            Відміна
+          </Button>
+          <Button variant="contained" onClick={handleCommentSave}>
+            Зберегти
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog
         open={deleteConfirmId != null}
