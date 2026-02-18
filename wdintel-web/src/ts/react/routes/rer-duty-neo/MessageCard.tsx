@@ -40,7 +40,7 @@ export function MessageCard({
   onToggleTag,
 }: MessageCardProps) {
   return (
-    <Box component="li" className="list-none flex px-2 rer-duty-message mb-3">
+    <Box component="li" className="list-none flex px-2 rer-duty-message mb-3 font-size-[13px]">
       {/* Left column: date/time, actions, group, sender, freq */}
       <div
         className="min-w-[120px] mr-2 basis-1/4 mb-[8px]"
@@ -134,14 +134,14 @@ export function MessageCard({
           <div className="bg-card rounded-sm text-sm">
             <div className="flex items-center px-2 py-1 border-b-2 border-border">
               <i className="bi bi-signal mr-1 text-icons leading-none" title="Група" />
-              <span className="text-xs">{groupName}</span>
+              <span>{groupName}</span>
             </div>
           </div>
         )}
         {senderName != null && (
           <div className="py-1 px-2 flex items-center bg-card rounded-sm text-sm mb-2">
             <i className="bi bi-person-circle mr-1 text-icons leading-none" title="Відправник" />
-            <span className="text-xs">{senderName}</span>
+            <span>{senderName}</span>
           </div>
         )}
         {msg.freq != null && (
@@ -149,7 +149,7 @@ export function MessageCard({
             <div className="flex justify-between items-center py-1 px-2 border-b-2 border-border">
               <div className="flex items-center">
                 <i className="bi bi-broadcast mr-1 text-icons leading-none" title="Частота" />
-                <span className="font-semibold text-xs">{msg.freq}</span>
+                <span className="font-semibold">{msg.freq}</span>
               </div>
               <span
                 role="button"
@@ -171,7 +171,7 @@ export function MessageCard({
             <div className="flex justify-between items-center py-1 px-2 border-b-2 border-border">
               <div className="flex items-center">
                 <i className="bi bi-bar-chart-line mr-1 text-icons leading-none" title="Аналіз" />
-                <span className="text-xs">Аналіз</span>
+                <span>Аналіз</span>
               </div>
               <a
                 href={buildAnalysisHref(msg, false)}
@@ -248,39 +248,62 @@ export function MessageCard({
             <i className="bi bi-geo text-icons" title="Локація" /> {msg.location ?? 'Не встановлена'}
           </div>
         </div>
-        <div className="whitespace-pre-wrap break-words mt-1 mb-2">{msg.text || '—'}</div>
+        <div className="whitespace-pre-wrap break-words mt-1 mb-3">{msg.text || '—'}</div>
         <Box className="flex flex-wrap gap-1 mt-1">
           {tagIdsList.map((tagId) => {
             const label = tagsMap[tagId] ?? `#${tagId}`;
             const isSet = messageHasTag(msg, tagId);
             const contribs = (msg.inboxTags ?? []).filter((t) => t.tagId === tagId);
-            const humans = contribs
-              .filter((t) => !t.model)
-              .map((t) => t.login)
-              .filter(Boolean) as string[];
-            const bots = contribs
-              .filter((t) => t.model)
-              .map((t) => `${t.model} (${Math.round((t.confidence ?? 0) * 100)}%)`);
+            const humanContribs = contribs.filter((t) => !t.model);
+            const botContribs = contribs.filter((t) => t.model);
+            const humanLogins = humanContribs.map((t) => t.login).filter(Boolean) as string[];
+            const bots = botContribs.map((t) => `${t.model} (${Math.round((t.confidence ?? 0) * 100)}%)`);
             const tip =
-              isSet && (humans.length > 0 || bots.length > 0)
+              isSet && (humanContribs.length > 0 || botContribs.length > 0)
                 ? [
-                    ...(humans.length > 0 ? [`Користувачі: ${humans.join(', ')}`] : []),
+                    ...(humanLogins.length > 0
+                      ? [`Користувачі: ${humanLogins.join(', ')}`]
+                      : humanContribs.length > 0
+                      ? ['Користувачі: (ваш вибір)']
+                      : []),
                     ...(bots.length > 0 ? [`Боти: ${bots.join(', ')}`] : []),
                   ].join('\n')
                 : isSet
                 ? 'Натисніть, щоб зняти тег'
                 : 'Натисніть, щоб додати тег';
+            const showBadge = isSet && (humanContribs.length > 0 || botContribs.length > 0);
             return (
               <Tooltip key={tagId} title={tip} placement="top">
-                <Chip
-                  size="small"
-                  label={label}
-                  onClick={() => onToggleTag(tagId)}
-                  color={isSet ? 'primary' : 'default'}
-                  variant={isSet ? 'filled' : 'outlined'}
-                  className="text-sm h-5 cursor-pointer"
-                  sx={{ '& .MuiChip-label': { px: 0.75 } }}
-                />
+                <Box component="span" className="relative inline-flex">
+                  <Chip
+                    size="small"
+                    label={label}
+                    onClick={() => onToggleTag(tagId)}
+                    color={isSet ? 'primary' : 'default'}
+                    variant={isSet ? 'filled' : 'outlined'}
+                    className="text-sm h-5 cursor-pointer"
+                    sx={{ '& .MuiChip-label': { px: 0.75 } }}
+                  />
+                  {showBadge && (
+                    <span
+                      className="absolute -top-[13px] -right-1 flex items-center gap-1 text-[10px] bg-card border border-border rounded-full px-1.5 py-0.5 shadow-sm"
+                      aria-hidden
+                    >
+                      {botContribs.length > 0 && (
+                        <span className="flex items-center gap-0.5" title="Боти">
+                          <i className="bi bi-robot" />
+                          <span>{botContribs.length}</span>
+                        </span>
+                      )}
+                      {humanContribs.length > 0 && (
+                        <span className="flex items-center gap-0.5" title="Користувачі">
+                          <i className="bi bi-person-fill" />
+                          <span>{humanContribs.length}</span>
+                        </span>
+                      )}
+                    </span>
+                  )}
+                </Box>
               </Tooltip>
             );
           })}

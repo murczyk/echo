@@ -8,6 +8,7 @@ import type {
   InboxCommentSaveReq,
   InboxDeleteReq,
   InboxMessage as InboxMessageType,
+  InboxMessageTag,
   InboxMessageTagsAddReq,
   InboxMessageTagsRmReq,
   InboxMessagesReq,
@@ -51,12 +52,35 @@ function normalizeProfileEntry(
   };
 }
 
+type InboxMessageTagRaw = {
+  id?: number;
+  tag_id?: number;
+  tagId?: number;
+  confidence?: number;
+  login?: string | null;
+  model?: string | null;
+  organism_id?: number | null;
+  organismId?: number | null;
+};
+
+function normalizeInboxMessageTag(t: InboxMessageTagRaw): InboxMessageTag {
+  return {
+    id: (t.id ?? 0) as number,
+    tagId: (t.tagId ?? t.tag_id ?? 0) as number,
+    confidence: (t.confidence ?? 0) as number,
+    login: (t.login ?? null) as string | null,
+    model: (t.model ?? null) as string | null,
+    organismId: (t.organismId ?? t.organism_id ?? null) as number | null,
+  };
+}
+
 function normalizeInboxMessage(
   m: InboxMessageType & {
     group_master_key?: string | null;
     network_ids?: number[] | null;
     location?: string | null;
     extended_form?: string | null;
+    inbox_tags?: InboxMessageTagRaw[] | null;
   }
 ): InboxMessageType {
   const raw = m as Record<string, unknown>;
@@ -64,7 +88,12 @@ function normalizeInboxMessage(
   const networkIds = (m.networkIds ?? raw.network_ids ?? null) as number[] | null;
   const location = (m.location ?? raw.location ?? null) as string | null;
   const extendedForm = (m.extendedForm ?? raw.extended_form ?? null) as string | null;
-  return { ...m, groupMasterKey, networkIds, location, extendedForm };
+  const rawInboxTags = (raw.inbox_tags ?? m.inboxTags ?? null) as InboxMessageTagRaw[] | null | undefined;
+  const inboxTags: InboxMessageType['inboxTags'] =
+    rawInboxTags != null && Array.isArray(rawInboxTags)
+      ? rawInboxTags.map(normalizeInboxMessageTag)
+      : null;
+  return { ...m, groupMasterKey, networkIds, location, extendedForm, inboxTags };
 }
 
 function normalizeSignalGroupEntry(g: InboxMessagesRspRaw['signal_groups'][number]): SignalGroupEntry {
