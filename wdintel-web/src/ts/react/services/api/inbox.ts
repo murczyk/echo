@@ -244,7 +244,7 @@ export async function inboxMessageTagsRm(req: InboxMessageTagsRmReq): Promise<vo
 
 function rerDutyQueryStateWfToSnake(
   w: RerDutyFeedFilterState
-): Record<string, unknown> {
+): Record<string, string[] | number | null> {
   return {
     groups_selected: w.groupsSelected,
     senders_selected: w.sendersSelected,
