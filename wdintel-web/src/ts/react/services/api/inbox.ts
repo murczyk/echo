@@ -51,10 +51,13 @@ function normalizeProfileEntry(
 }
 
 function normalizeInboxMessage(
-  m: InboxMessageType & { group_master_key?: string | null }
+  m: InboxMessageType & { group_master_key?: string | null; network_ids?: number[] | null; location?: string | null }
 ): InboxMessageType {
-  const groupMasterKey = m.groupMasterKey ?? m.group_master_key ?? null;
-  return { ...m, groupMasterKey };
+  const raw = m as Record<string, unknown>;
+  const groupMasterKey = (m.groupMasterKey ?? raw.group_master_key ?? null) as string | null;
+  const networkIds = (m.networkIds ?? raw.network_ids ?? null) as number[] | null;
+  const location = (m.location ?? raw.location ?? null) as string | null;
+  return { ...m, groupMasterKey, networkIds, location };
 }
 
 function normalizeSignalGroupEntry(g: InboxMessagesRspRaw['signal_groups'][number]): SignalGroupEntry {

@@ -141,7 +141,8 @@ function parseStateFromUrl(): RerDutyState {
   try {
     const raw = JSON.parse(decodeURIComponent(stateStr)) as Record<string, unknown>;
     if (!raw || typeof raw !== 'object') return { messageFeeds: [['mf-0', emptyFilter()]] };
-    const wfs = raw.waterfalls ?? raw.waterfall;
+    // React writes messageFeeds; Elm writes waterfalls
+    const wfs = raw.messageFeeds ?? raw.waterfalls ?? raw.waterfall;
     if (!Array.isArray(wfs) || wfs.length === 0) return { messageFeeds: [['mf-0', emptyFilter()]] };
     const list: [string, RerDutyFeedFilterState][] = wfs.map((entry: unknown) => {
       if (Array.isArray(entry) && entry.length >= 2) {
@@ -183,11 +184,14 @@ function formatTime(time: string | null): string {
 }
 
 /** Date without year (e.g. "16.02.2025" -> "16.02") */
+/** Format as day.month (no year), e.g. "16.02". Parses via Date so order of input parts doesn't matter. */
 function formatDateNoYear(date: string | null): string {
   if (date == null || date === '') return '—';
-  const parts = date.trim().split(/[.\-/]/);
-  if (parts.length >= 2) return `${parts[0]}.${parts[1]}`;
-  return date;
+  const d = new Date(date.trim());
+  if (Number.isNaN(d.getTime())) return date;
+  const day = d.getDate();
+  const month = d.getMonth() + 1;
+  return `${day}.${month.toString().padStart(2, '0')}`;
 }
 
 /** Format date as YYYY-MM-DD (matches Elm renderDateF4) */
@@ -280,6 +284,7 @@ export function RerDutyNeoPage() {
   React.useEffect(() => {
     return () => {
       mountedRef.current = false;
+      if (copiedFeedbackTimeoutRef.current) clearTimeout(copiedFeedbackTimeoutRef.current);
     };
   }, []);
   const reloadLatestFrequencies = React.useCallback(async () => {
@@ -430,11 +435,19 @@ export function RerDutyNeoPage() {
   }, []);
 
   const feedIds = React.useMemo(() => messageFeeds.map((w) => w.id).join(','), [messageFeeds]);
+  const feedsNeedingLoadKey = React.useMemo(
+    () =>
+      messageFeeds
+        .filter((w) => w.loading && w.items.length === 0)
+        .map((w) => `${w.id}:${JSON.stringify(w.filter)}`)
+        .join(';'),
+    [messageFeeds]
+  );
   React.useEffect(() => {
     messageFeeds.forEach((w) => {
       if (w.loading && w.items.length === 0) loadFeedInitialMessages(w.id, w.filter);
     });
-  }, [feedIds, messageFeeds.length, loadFeedInitialMessages]);
+  }, [feedIds, feedsNeedingLoadKey, loadFeedInitialMessages]);
 
   // Poll for newer messages and message count every LOAD_NEWER_INTERVAL_MS
   React.useEffect(() => {
@@ -449,7 +462,7 @@ export function RerDutyNeoPage() {
 
   const applyFilter = React.useCallback((feedId: string, f: RerDutyFeedFilterState) => {
     setMessageFeeds((prev) => {
-      const next = prev.map((w) => (w.id === feedId ? { ...w, filter: f } : w));
+      const next = prev.map((w) => (w.id === feedId ? { ...w, filter: f, items: [], loading: true } : w));
       pushStateToUrl(toQueryState(next));
       return next;
     });
@@ -571,10 +584,19 @@ export function RerDutyNeoPage() {
     }
   };
 
-  const handleMessageCopy = (text: string) => {
+  const [copiedFeedbackId, setCopiedFeedbackId] = React.useState<string | null>(null);
+  const copiedFeedbackTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleMessageCopy = (text: string, feedbackId: string) => {
     navigator.clipboard?.writeText(text).catch((err) => {
       console.error('Failed to copy text to clipboard', err);
     });
+    if (copiedFeedbackTimeoutRef.current) clearTimeout(copiedFeedbackTimeoutRef.current);
+    setCopiedFeedbackId(feedbackId);
+    copiedFeedbackTimeoutRef.current = setTimeout(() => {
+      setCopiedFeedbackId(null);
+      copiedFeedbackTimeoutRef.current = null;
+    }, 1000);
   };
 
   const handleDeleteConfirm = async () => {
@@ -707,20 +729,6 @@ export function RerDutyNeoPage() {
                 gap: 1,
               }}
             >
-              <Box display="flex" alignItems="center" justifyContent="space-between" gap={0.5}>
-                {messageFeeds.length > 1 && (
-                  <Button
-                    size="small"
-                    color="error"
-                    aria-label="Закрити колонку"
-                    onClick={() => removeMessageFeed(w.id)}
-                    sx={{ minWidth: 32 }}
-                  >
-                    <i className="bi bi-x-lg" />
-                  </Button>
-                )}
-              </Box>
-
               {unfoldFilters && (
                 <Paper variant="outlined" sx={{ p: 1.5 }}>
                   <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
@@ -752,7 +760,7 @@ export function RerDutyNeoPage() {
                       </Box>
                     </Box>
 
-                    {/* Відправник: лише / окрім */}
+                    {/* Відправник */}
                     <Box>
                       <Typography variant="subtitle2" sx={{ mb: 0.5, fontWeight: 600 }}>
                         Відправник
@@ -949,7 +957,7 @@ export function RerDutyNeoPage() {
                 </Paper>
               )}
 
-              <Box sx={{ mb: 0.5 }}>
+              <Box sx={{ mb: 0.5 }} display="flex" alignItems="center" justifyContent="space-between">
                 <Button
                   size="small"
                   variant="outlined"
@@ -967,6 +975,20 @@ export function RerDutyNeoPage() {
                 >
                   Показано: {w.items.length}
                 </Typography>
+
+                <Box gap={0.5}>
+                  {messageFeeds.length > 1 && (
+                    <Button
+                      size="small"
+                      color="error"
+                      aria-label="Закрити колонку"
+                      onClick={() => removeMessageFeed(w.id)}
+                      sx={{ minWidth: 32 }}
+                    >
+                      <i className="bi bi-x-lg" />
+                    </Button>
+                  )}
+                </Box>
               </Box>
 
               {w.loading ? (
@@ -988,7 +1010,7 @@ export function RerDutyNeoPage() {
                       Немає повідомлень
                     </Typography>
                   ) : (
-                    <Box component="ul" sx={{ m: 0, px: 0, listStyle: 'none' }} className="rer-duty">
+                    <Box component="ul" sx={{ m: 0, px: 0, listStyle: 'none' }} className="rer-duty pt-2">
                       {w.items.map(([id, msg]) => {
                         const senderName =
                           msg.sender != null ? profileLabel(msg.sender, profiles[msg.sender] ?? null) : null;
@@ -1078,11 +1100,19 @@ export function RerDutyNeoPage() {
                                   role="button"
                                   tabIndex={0}
                                   title="Копіювати"
-                                  className="cursor-pointer text-sm"
-                                  onClick={() => handleMessageCopy(msg.text || '')}
-                                  onKeyDown={(e) => e.key === 'Enter' && handleMessageCopy(msg.text || '')}
+                                  className="cursor-pointer text-normal"
+                                  onClick={() => handleMessageCopy(msg.text || '', `text-${id}`)}
+                                  onKeyDown={(e) =>
+                                    e.key === 'Enter' && handleMessageCopy(msg.text || '', `text-${id}`)
+                                  }
                                 >
-                                  <i className="bi bi-clipboard text-action cursor-pointer" />
+                                  <i
+                                    className={
+                                      copiedFeedbackId === `text-${id}`
+                                        ? 'bi bi-clipboard-check-fill text-action cursor-pointer'
+                                        : 'bi bi-clipboard text-action cursor-pointer'
+                                    }
+                                  />
                                 </span>
                                 <span
                                   role="button"
@@ -1105,182 +1135,111 @@ export function RerDutyNeoPage() {
                                 </span>
                               </div>
                               {groupName != null && (
-                                <div
-                                  className="bg-card rounded-sm text-sm mb-2"
-                                  style={{
-                                    backgroundColor: 'var(--color-card)',
-                                    borderRadius: 4,
-                                    fontSize: '.875rem',
-                                    marginBottom: 8,
-                                  }}
-                                >
-                                  <div
-                                    className="flex items-center px-2 py-1 border-b-2 border-border"
-                                    style={{
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      padding: '4px 8px',
-                                      borderBottom: '2px solid var(--color-border)',
-                                    }}
-                                  >
-                                    <i
-                                      className="bi bi-signal mr-1 text-icons leading-none"
-                                      title="Група"
-                                      style={{ marginRight: 4 }}
-                                    />
-                                    <span className="text-xs" style={{ fontSize: '.75rem' }}>
-                                      {groupName}
-                                    </span>
+                                <div className="bg-card rounded-sm text-sm">
+                                  <div className="flex items-center px-2 py-1 border-b-2 border-border">
+                                    <i className="bi bi-signal mr-1 text-icons leading-none" title="Група" />
+                                    <span className="text-xs">{groupName}</span>
                                   </div>
                                 </div>
                               )}
                               {senderName != null && (
-                                <div
-                                  className="py-1 px-2 flex items-center"
-                                  style={{ padding: '4px 8px', display: 'flex', alignItems: 'center' }}
-                                >
-                                  <i
-                                    className="bi bi-person-circle mr-1 text-icons leading-none"
-                                    title="Відправник"
-                                    style={{ marginRight: 4 }}
-                                  />
-                                  <span className="text-xs" style={{ fontSize: '.75rem' }}>
-                                    {senderName}
-                                  </span>
+                                <div className="py-1 px-2 flex items-center bg-card rounded-sm text-sm mb-2">
+                                  <i className="bi bi-person-circle mr-1 text-icons leading-none" title="Відправник" />
+                                  <span className="text-xs">{senderName}</span>
                                 </div>
                               )}
                               {msg.freq != null && (
-                                <div
-                                  className="bg-card text-sm mb-2 rounded-sm"
-                                  style={{
-                                    backgroundColor: 'var(--color-card)',
-                                    fontSize: '.875rem',
-                                    marginBottom: 8,
-                                    borderRadius: 4,
-                                  }}
-                                >
-                                  <div
-                                    className="flex justify-between items-center py-1 px-2 border-b-2 border-border"
-                                    style={{
-                                      display: 'flex',
-                                      justifyContent: 'space-between',
-                                      alignItems: 'center',
-                                      padding: '4px 8px',
-                                      borderBottom: '2px solid var(--color-border)',
-                                    }}
-                                  >
-                                    <div
-                                      className="flex items-center"
-                                      style={{ display: 'flex', alignItems: 'center' }}
-                                    >
-                                      <i
-                                        className="bi bi-broadcast mr-1 text-icons leading-none"
-                                        title="Частота"
-                                        style={{ marginRight: 4 }}
-                                      />
-                                      <span
-                                        className="font-semibold text-xs"
-                                        style={{ fontWeight: 600, fontSize: '.75rem' }}
-                                      >
-                                        {msg.freq}
-                                      </span>
+                                <div className="bg-card text-sm mb-2 rounded-sm">
+                                  <div className="flex justify-between items-center py-1 px-2 border-b-2 border-border">
+                                    <div className="flex items-center">
+                                      <i className="bi bi-broadcast mr-1 text-icons leading-none" title="Частота" />
+                                      <span className="font-semibold text-xs">{msg.freq}</span>
                                     </div>
                                     <span
                                       role="button"
                                       tabIndex={0}
                                       title="Копіювати частоту"
-                                      className="cursor-pointer text-action"
-                                      style={{ fontSize: '.875rem' }}
-                                      onClick={() => handleMessageCopy(msg.freq ?? '')}
-                                      onKeyDown={(e) => e.key === 'Enter' && handleMessageCopy(msg.freq ?? '')}
-                                    >
-                                      <i className="bi bi-clipboard cursor-pointer" />
-                                    </span>
-                                  </div>
-                                  <div
-                                    className="flex justify-between items-center py-1 px-2 border-b-2 border-border"
-                                    style={{
-                                      display: 'flex',
-                                      justifyContent: 'space-between',
-                                      alignItems: 'center',
-                                      padding: '4px 8px',
-                                      borderBottom: '2px solid var(--color-border)',
-                                    }}
-                                  >
-                                    <div
-                                      className="flex items-center"
-                                      style={{ display: 'flex', alignItems: 'center' }}
+                                      className="cursor-pointer text-action text-sm"
+                                      onClick={() => handleMessageCopy(msg.freq ?? '', `freq-${id}`)}
+                                      onKeyDown={(e) =>
+                                        e.key === 'Enter' && handleMessageCopy(msg.freq ?? '', `freq-${id}`)
+                                      }
                                     >
                                       <i
-                                        className="bi bi-bar-chart-line mr-1 text-icons leading-none"
-                                        title="Аналіз"
-                                        style={{ marginRight: 4 }}
+                                        className={
+                                          copiedFeedbackId === `freq-${id}`
+                                            ? 'bi bi-clipboard-check-fill cursor-pointer'
+                                            : 'bi bi-clipboard cursor-pointer'
+                                        }
                                       />
-                                      <span style={{ fontSize: '.75rem' }}>Аналіз</span>
+                                    </span>
+                                  </div>
+                                  <div className="flex justify-between items-center py-1 px-2 border-b-2 border-border">
+                                    <div className="flex items-center">
+                                      <i className="bi bi-bar-chart-line mr-1 text-icons leading-none" title="Аналіз" />
+                                      <span className="text-xs">Аналіз</span>
                                     </div>
                                     <a
                                       href={buildAnalysisHref(msg, false)}
                                       target="_blank"
                                       rel="noopener noreferrer"
                                       title="Відкрити повідомлення в Аналізі"
-                                      className="text-action"
-                                      style={{ fontSize: '.875rem', color: 'inherit' }}
+                                      className="text-action text-sm text-inherit"
                                     >
                                       <i className="bi bi-box-arrow-up-right cursor-pointer" />
                                     </a>
                                   </div>
-                                  <div
-                                    className="flex justify-between items-center py-1 px-2"
-                                    style={{
-                                      display: 'flex',
-                                      justifyContent: 'space-between',
-                                      alignItems: 'center',
-                                      padding: '4px 8px',
-                                    }}
+                                  <a
+                                    href={buildAnalysisHref(msg, true)}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    title="Відкрити повідомлення на карті в аналізі"
+                                    className="text-action text-sm text-inherit"
                                   >
-                                    <span style={{ fontSize: '.75rem' }}>Карта</span>
-                                    <div
-                                      className="flex items-center"
-                                      style={{ display: 'flex', alignItems: 'center' }}
-                                    >
-                                      <i
-                                        className="bi bi-map text-icons leading-none mr-2"
-                                        title="Відкрити повідомлення на карті"
-                                        style={{ marginRight: 8, fontSize: '.875rem' }}
-                                      />
-                                      <a
-                                        href={buildAnalysisHref(msg, true)}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        title="Відкрити повідомлення на карті в аналізі"
-                                        className="text-action"
-                                        style={{ fontSize: '.875rem', color: 'inherit' }}
-                                      >
-                                        <i className="bi bi-box-arrow-up-right cursor-pointer leading-none" />
-                                      </a>
+                                    <div className="flex justify-between py-1 px-2 w-full">
+                                      <div>
+                                        <i
+                                          className="bi bi-map text-icons leading-none mr-2 text-sm"
+                                          title="Відкрити повідомлення на карті"
+                                        />
+                                        <span className="text-xs">Карта</span>
+                                      </div>
+                                      <i className="bi bi-box-arrow-up-right cursor-pointer leading-none" />
                                     </div>
-                                  </div>
+                                  </a>
                                 </div>
                               )}
                             </div>
                             {/* Right column: message card */}
-                            <div
-                              className="mb-2 rounded-3 px-2 pt-2 pb-2 basis-3/4 flex-1 message-div bg-card relative"
-                              style={{
-                                marginBottom: 8,
-                                borderRadius: 12,
-                                padding: '8px',
-                                flex: '1 1 0%',
-                                minWidth: 0,
-                                backgroundColor: 'var(--color-card)',
-                                position: 'relative',
-                                overflowWrap: 'break-word',
-                                wordBreak: 'break-word',
-                              }}
-                            >
-                              <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', marginTop: 4 }}>
-                                {msg.text || '—'}
+                            <div className="mb-2 rounded-3 px-2 pt-2 pb-2 basis-3/4 flex-1 message-div bg-card relative min-w-0 break-words">
+                              {/* Еталонна прив'язка Мережі + Локація */}
+                              <div className="flex justify-start items-start flex-wrap py-1 border-b-2 border-border gap-2">
+                                <div className="font-semibold inline-flex gap-1">
+                                  <i className="bi bi-people text-icons" title="Еталонна прив'язка" />
+                                  {(msg.networkIds ?? []).length > 0 ? (
+                                    (msg.networkIds ?? []).map((networkId) => (
+                                      <a
+                                        href={`/rer-networks/${networkId}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="opacity-70 hover:opacity-100 transition-opacity cursor-pointer inline-flex items-center gap-1 font-medium group"
+                                        title="Відкрити мережу в новій вкладці"
+                                        key={networkId}
+                                      >
+                                        Мережа {networkId}
+                                        <i className="bi bi-box-arrow-up-right text-sm" />
+                                      </a>
+                                    ))
+                                  ) : (
+                                    <span>Не встановлена</span>
+                                  )}
+                                </div>
+                                <div className="font-semibold break-words min-w-0">
+                                  <i className="bi bi-geo text-icons" title="Локація" />{' '}
+                                  {msg.location ?? 'Не встановлена'}
+                                </div>
                               </div>
+                              <div className="whitespace-pre-wrap break-words mt-1 mb-2">{msg.text || '—'}</div>
                               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
                                 {tagIdsList.map((tagId) => {
                                   const label = tagsMap[tagId] ?? `#${tagId}`;
@@ -1333,14 +1292,12 @@ export function RerDutyNeoPage() {
           );
         })}
         <Button
-          size="small"
-          variant="outlined"
+          size="large"
+          className="p-0"
           startIcon={<i className="bi bi-plus-square" />}
           onClick={createMessageFeed}
           sx={{ alignSelf: 'flex-start', flexShrink: 0 }}
-        >
-          Нова колонка
-        </Button>
+        ></Button>
       </Box>
 
       <Dialog
