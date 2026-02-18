@@ -228,11 +228,11 @@ update shared msg model =
                         Cmd.none
             )
 
-        GotDeltaRedirectUrl (Err e) ->
-            ( model
+        GotDeltaRedirectUrl (Err _) ->
+            ( { model | formErrors = Dict.empty }
             , E.sendCmd <|
                 Shared.Components.Toast.addError ToastMsg
-                "Сталася помилка. спробуйте ще раз або зверніться до адміністратора."
+                    "Сталася помилка. спробуйте ще раз або зверніться до адміністратора."
             )
 
 
