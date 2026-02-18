@@ -7,7 +7,7 @@ import { KMZLayer, kmzLayerFactory } from '../maps/leaflet-kmz'
 import { MapPointDetailed } from '../maps/types';
 import { messagesCountText } from '../maps/language-utils';
 import { loadRerAnalysisQueryState, RerAnalysisQueryState, saveRerAnalysisQueryState } from '../rer-analysis-query-state';
-import { TimeswitchControl, FeatureToggleState, createLayerSwitchControl, createExitControl2, createTimeswitchControl, createAttributionControl, createPalitrasControl, FeatureName, LayerSwitchControl, createSearchControl } from '../maps/controls';
+import { TimeswitchControl, FeatureToggleState, createLayerSwitchControl, createExitControl2, createTimeswitchControl, createAttributionControl, createPalitrasControl, FeatureName, LayerSwitchControl, createSearchControl, createMapZoomControl, SearchControl } from '../maps/controls';
 import { AnalysisMapStateStore, AnalysisMapStoredState } from '../maps/analysis-map-state';
 import { parseCoordinateInput } from '../maps/coordinate-search';
 import { PalitraManager } from '../maps/palitra-manager';
@@ -133,6 +133,7 @@ class AnalysisMap extends HTMLElement {
   private _kmzEnabled = true;
   private _pelengsEnabled = true;
   private _layerSwitchControl: LayerSwitchControl | null = null;
+  private _searchControl: SearchControl | null = null;
   private _stateStore: AnalysisMapStateStore;
   private _coordinateSearchMarker: L.CircleMarker | null = null;
   private _searchPointsHandler = (e: CustomEvent<string>) => {
@@ -140,6 +141,8 @@ class AnalysisMap extends HTMLElement {
     const coords = parseCoordinateInput(value);
     if (coords && this._map) {
       this._flyToCoordinate(coords);
+      this._searchControl?.updateSearchLoading(false);
+      this._searchControl?.updateResultsCount(null);
       this._palitraManager?.setSearchQuery('');
     } else {
       this._clearCoordinateMarker();
@@ -298,18 +301,23 @@ class AnalysisMap extends HTMLElement {
       const tileLayers = getTileLayers();
 
       // Start with a single base layer to avoid loading two full tile stacks at once
-      const map = L.map(mapContainer, { zoomControl: false, attributionControl: false }).setView([47.42135, 35.62197], 8);
+      const map = L.map(mapContainer, {
+        zoomControl: false,
+        attributionControl: false
+      }).setView([47.42135, 35.62197], 8);
       tileLayers.googleHybrid.addTo(map);
+      // Keep Leaflet's click-to-focus behavior, but prevent nested scroll containers
+      // from jumping when the map receives focus on mousedown.
+      this._patchMouseDownMapFocus(map);
 
       const result = this._initializeControls(map, tileLayers)
       this._map = result.map;
       this._switchTimeControl = result.switchTimeControl;
 
-     //TODO: remove
+      // TODO: Remove
       if (!window.location.hostname.includes('echo-soledarnist')) {
-
         await this._loadKmzLayer();
-     }
+      }
 
      // Initialize palitra manager
      this._palitraManager = new PalitraManager(
@@ -328,6 +336,12 @@ class AnalysisMap extends HTMLElement {
              composed: true
            });
            this.dispatchEvent(event);
+         },
+         onSearchResultsCountChanged: (count) => {
+           this._searchControl?.updateResultsCount(count);
+         },
+         onSearchLoadingChanged: (isLoading) => {
+           this._searchControl?.updateSearchLoading(isLoading);
          }
        }
      );
@@ -373,18 +387,59 @@ class AnalysisMap extends HTMLElement {
     }
 
     const switchTimeControl = createTimeswitchControl(this._daterange);
-    map.addControl(createSearchControl());
+    const searchControl = createSearchControl();
+    map.addControl(searchControl);
+    this._searchControl = searchControl;
     map.addControl(switchTimeControl)
 
     map.addControl(createExitControl2(exitCallback));
     const layerSwitchControl = createLayerSwitchControl(tileLayers, this._getFeatureToggleState(), featureToggleCallback);
     this._layerSwitchControl = layerSwitchControl;
     map.addControl(layerSwitchControl);
+    map.addControl(createMapZoomControl());
     map.addControl(createAttributionControl());
 
     const palitrasControl = createPalitrasControl([], [], palitraToggleCallback);
 
     return { map, switchTimeControl, palitrasControl };
+  }
+
+  private _patchMouseDownMapFocus(map: L.Map) {
+    const keyboardHandler = (map as L.Map & { keyboard?: { _onMouseDown?: (e: MouseEvent) => void; _focused?: boolean; _map?: L.Map } }).keyboard;
+    const originalOnMouseDown = keyboardHandler?._onMouseDown;
+    if (!keyboardHandler || !originalOnMouseDown) {
+      return;
+    }
+
+    const mapContainer = map.getContainer() as HTMLElement;
+    L.DomEvent.off(mapContainer, 'mousedown', originalOnMouseDown, keyboardHandler);
+
+    const patchedOnMouseDown = function(this: { _focused?: boolean; _map?: L.Map }) {
+      if (this._focused) {
+        return;
+      }
+
+      const container = this._map?.getContainer() as HTMLElement | undefined;
+      if (!container) {
+        return;
+      }
+
+      try {
+        // Modern browsers: preserve focus without triggering scroll reposition.
+        container.focus({ preventScroll: true });
+      } catch (_error) {
+        // Older browser fallback: mimic Leaflet default behavior.
+        const body = document.body;
+        const docEl = document.documentElement;
+        const top = body.scrollTop || docEl.scrollTop;
+        const left = body.scrollLeft || docEl.scrollLeft;
+        container.focus();
+        window.scrollTo(left, top);
+      }
+    };
+
+    keyboardHandler._onMouseDown = patchedOnMouseDown;
+    L.DomEvent.on(mapContainer, 'mousedown', patchedOnMouseDown, keyboardHandler);
   }
 
   private _replacePointsOnMap(points: MapPointDetailed[]) {

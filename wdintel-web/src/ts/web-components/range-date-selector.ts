@@ -2,47 +2,97 @@ import { daysCountText } from "../maps/language-utils";
 
 const styles = `
 <style>
-                .container {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  margin: 0 auto;
-  gap: 5px;
-}
+  .container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin: 0 auto;
+    gap: 6px;
+    font-family: var(--bs-body-font-family, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif);
+    color: var(--bs-body-color);
+  }
 
-.top-row {
-  border: 1px solid black;
-  padding: 5px 10px;
-  border-radius: 5px;
-  font-size: 20px;
-  background-color: var(--bs-tertiary-bg);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
+  .top-row {
+    background: var(--bs-card-bg, var(--bs-body-bg));
+    border: 1px solid var(--bs-border-color);
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    box-sizing: border-box;
+    padding: 7px 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
 
-.bottom-row {
-  
-  border: 1px solid black;
-  border-radius: 5px;
-  padding: 2.5px 5px;
-  cursor: pointer;
-  background-color: var(--bs-tertiary-bg);
-}
-.bottom-row:hover {
-  background-color: #d3d4d5;
-}
+  .date-display {
+    min-width: 158px;
+    text-align: center;
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.2;
+    letter-spacing: 0.01em;
+    color: var(--bs-body-color);
+    user-select: none;
+    white-space: nowrap;
+  }
 
-.arrow {
-  cursor: pointer;
-  margin-top: -3px;
-  user-select: none;
-}
+  .icon-button {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 8px;
+    color: var(--bs-body-color);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    transition: background-color 0.2s, color 0.2s;
+    font-size: 18px;
+    width: 32px;
+    height: 32px;
+    line-height: 1;
+  }
 
-.arrow:hover {
-  color: #d3d4d5;
-}
-            </style>
+  .icon-symbol {
+    display: inline-block;
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 1;
+    transform: translateY(-1px);
+  }
+
+  .icon-button:hover {
+    background-color: var(--bs-secondary-bg);
+    color: var(--bs-primary);
+  }
+
+  .icon-button:focus {
+    outline: 2px solid var(--bs-primary);
+    outline-offset: 2px;
+  }
+
+  .jump-button {
+    background: var(--bs-card-bg, var(--bs-body-bg));
+    border: 1px solid var(--bs-border-color);
+    border-radius: 6px;
+    min-height: 30px;
+    padding: 4px 10px;
+    cursor: pointer;
+    color: var(--bs-body-color);
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    transition: background-color 0.2s, color 0.2s;
+  }
+
+  .jump-button:hover {
+    background-color: var(--bs-secondary-bg);
+  }
+
+  .jump-button:focus {
+    outline: none;
+  }
+</style>
 
 
 `
@@ -53,6 +103,9 @@ class DateRangeSelector extends HTMLElement {
   private daysJumpOption = [1, 3, 7, 30]
   private currentJumpIndex = 0;
   private selectedJumpValue = 1;
+  private onJumpClick = (event: MouseEvent) => this.setRangeDays(event);
+  private onMoveBackward = () => this.moveRange(-1);
+  private onMoveForward = () => this.moveRange(1);
 
   static observedAttributes = ["dates"];
 
@@ -66,18 +119,17 @@ class DateRangeSelector extends HTMLElement {
 
   connectedCallback() {
     if (this.shadowRoot) {
-      this.shadowRoot.querySelector('.bottom-row')?.addEventListener('click', this.setRangeDays.bind(this));
-      this.shadowRoot.getElementById('backward')?.addEventListener('click', this.moveRange.bind(this, -1));
-      this.shadowRoot.getElementById('forward')?.addEventListener('click', this.moveRange.bind(this, 1));
+      this.shadowRoot.querySelector('.jump-button')?.addEventListener('click', this.onJumpClick);
+      this.shadowRoot.getElementById('backward')?.addEventListener('click', this.onMoveBackward);
+      this.shadowRoot.getElementById('forward')?.addEventListener('click', this.onMoveForward);
     }
   }
 
   disconnectedCallback() {
     if (this.shadowRoot) {
-
-      this.shadowRoot.querySelector('.bottom-row')?.removeEventListener('click', this.setRangeDays.bind(this));
-      this.shadowRoot.getElementById('backward')?.removeEventListener('click', this.moveRange.bind(this, -1));
-      this.shadowRoot.getElementById('forward')?.removeEventListener('click', this.moveRange.bind(this, 1));
+      this.shadowRoot.querySelector('.jump-button')?.removeEventListener('click', this.onJumpClick);
+      this.shadowRoot.getElementById('backward')?.removeEventListener('click', this.onMoveBackward);
+      this.shadowRoot.getElementById('forward')?.removeEventListener('click', this.onMoveForward);
     }
   }
 
@@ -100,11 +152,15 @@ class DateRangeSelector extends HTMLElement {
                 ${styles}
                 <div class="container">
                   <div class="top-row">
-                    <span class="arrow" id="backward">←</span>
-                      <span id="dateDisplay">12.10.24 - 12.11.24</span>
-                    <span class="arrow" id="forward">→</span>
+                    <button class="icon-button" id="backward" type="button" aria-label="Попередній період">
+                      <span class="icon-symbol">‹</span>
+                    </button>
+                    <span class="date-display" id="dateDisplay">12.10.24 - 12.11.24</span>
+                    <button class="icon-button" id="forward" type="button" aria-label="Наступний період">
+                      <span class="icon-symbol">›</span>
+                    </button>
                   </div>
-                  <div class="bottom-row">${daysCountText(this.selectedJumpValue)}</div>
+                  <button class="jump-button" type="button">${daysCountText(this.selectedJumpValue)}</button>
                 </div>   
     `;
   }

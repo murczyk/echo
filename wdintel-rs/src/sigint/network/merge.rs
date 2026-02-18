@@ -7,6 +7,7 @@ use crate::types::*;
 use chrono::*;
 use sea_orm::sea_query::*;
 use sea_orm::*;
+use std::collections::HashSet;
 
 use log::*;
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QuerySelect};
@@ -15,6 +16,7 @@ pub async fn merge_two_networks(
     txn: &DatabaseTransaction,
     login: &str,
     perform_merge_check: bool,
+    merge_inactive: bool,
     network_id_from: i64,
     network_id_to: i64,
 ) -> anyhow::Result<(), AppError> {
@@ -23,6 +25,15 @@ pub async fn merge_two_networks(
         find_network(txn, network_id_from).await.context(h!())?;
 
     let network_to = find_network(txn, network_id_to).await.context(h!())?;
+
+    if !merge_inactive
+        && (is_inactive_network(&network_from)
+            || is_inactive_network(&network_to))
+    {
+        return Err(AppError::BL {
+            msg: "Inactive networks merge is disabled".to_string(),
+        });
+    }
 
     // Fetch units for both networks
     let unit_from = sigint_network_unit::Entity::find()
@@ -59,23 +70,29 @@ pub async fn merge_two_networks(
         }
     }
 
-    reassign_freqs(txn, login, network_id_from, network_id_to)
+    reassign_freqs(txn, login, merge_inactive, network_id_from, network_id_to)
         .await
         .c(h!())?;
 
-    reassign_posts(txn, network_id_from, network_id_to)
+    reassign_posts(txn, merge_inactive, network_id_from, network_id_to)
         .await
         .c(h!())?;
 
-    reassign_descriptions(txn, network_id_from, network_id_to)
+    reassign_descriptions(txn, merge_inactive, network_id_from, network_id_to)
         .await
         .c(h!())?;
 
-    reassign_callsigns(txn, login, network_id_from, network_id_to)
-        .await
-        .c(h!())?;
+    reassign_callsigns(
+        txn,
+        login,
+        merge_inactive,
+        network_id_from,
+        network_id_to,
+    )
+    .await
+    .c(h!())?;
 
-    reassign_aors(txn, network_id_from, network_id_to)
+    reassign_aors(txn, merge_inactive, network_id_from, network_id_to)
         .await
         .c(h!())?;
 
@@ -119,29 +136,184 @@ pub async fn merge_two_networks(
     Ok(())
 }
 
+fn is_inactive_network(network: &sigint_network::Model) -> bool {
+    network.deleted || network.active_to.is_some()
+}
+
+pub async fn merge_two_network_freqs(
+    txn: &DatabaseTransaction,
+    _login: &str,
+    freq_id_from: i64,
+    freq_id_to: i64,
+) -> anyhow::Result<(), AppError> {
+    if freq_id_from == freq_id_to {
+        return Ok(());
+    }
+
+    let freq_from = sigint_network_freq::Entity::find_by_id(freq_id_from)
+        .one(txn)
+        .await
+        .context(h!())?
+        .ok_or(AppError::NotFound)?;
+    let freq_to = sigint_network_freq::Entity::find_by_id(freq_id_to)
+        .one(txn)
+        .await
+        .context(h!())?
+        .ok_or(AppError::NotFound)?;
+
+    if freq_from.network_id != freq_to.network_id
+        || freq_from.freq.trim() != freq_to.freq.trim()
+    {
+        return Err(AppError::BL {
+            msg: "Network frequency mismatch".to_string(),
+        });
+    }
+
+    sigint_network_description::Entity::update_many()
+        .filter(
+            sigint_network_description::Column::SigintNetworkFreqId
+                .eq(freq_id_from),
+        )
+        .col_expr(
+            sigint_network_description::Column::SigintNetworkFreqId,
+            Expr::value(freq_id_to),
+        )
+        .exec(txn)
+        .await
+        .context(h!())?;
+
+    sigint_network_encryption_key::Entity::update_many()
+        .filter(
+            sigint_network_encryption_key::Column::SigintNetworkFreqId
+                .eq(freq_id_from),
+        )
+        .col_expr(
+            sigint_network_encryption_key::Column::SigintNetworkFreqId,
+            Expr::value(freq_id_to),
+        )
+        .exec(txn)
+        .await
+        .context(h!())?;
+
+    sigint_network_freq_changelog::Entity::update_many()
+        .filter(
+            sigint_network_freq_changelog::Column::SigintNetworkFreqId
+                .eq(freq_id_from),
+        )
+        .col_expr(
+            sigint_network_freq_changelog::Column::SigintNetworkFreqId,
+            Expr::value(freq_id_to),
+        )
+        .exec(txn)
+        .await
+        .context(h!())?;
+
+    reassign_encryption_key_freqs(txn, freq_id_from, freq_id_to)
+        .await
+        .c(h!())?;
+
+    if !freq_from.deleted {
+        let mut freq_from_record: sigint_network_freq::ActiveModel =
+            freq_from.into();
+        freq_from_record.deleted = Set(true);
+        freq_from_record.update(txn).await.context(h!())?;
+    }
+
+    info!("✅ Merged network freq {freq_id_from} into {freq_id_to}");
+
+    Ok(())
+}
+
+async fn reassign_encryption_key_freqs(
+    txn: &DatabaseTransaction,
+    freq_id_from: i64,
+    freq_id_to: i64,
+) -> Result<(), AppError> {
+    let key_freqs_from = sigint_network_encryption_key_freq::Entity::find()
+        .filter(
+            sigint_network_encryption_key_freq::Column::SigintNetworkFreqId
+                .eq(freq_id_from),
+        )
+        .all(txn)
+        .await
+        .context(h!())?;
+
+    if key_freqs_from.is_empty() {
+        return Ok(());
+    }
+
+    let key_ids = key_freqs_from
+        .iter()
+        .map(|rec| rec.sigint_network_encryption_key_id)
+        .collect::<Vec<_>>();
+
+    let existing_key_ids = sigint_network_encryption_key_freq::Entity::find()
+        .filter(
+            sigint_network_encryption_key_freq::Column::SigintNetworkFreqId
+                .eq(freq_id_to),
+        )
+        .filter(
+            sigint_network_encryption_key_freq::Column::SigintNetworkEncryptionKeyId
+                .is_in(key_ids.clone()),
+        )
+        .select_only()
+        .column(
+            sigint_network_encryption_key_freq::Column::SigintNetworkEncryptionKeyId,
+        )
+        .into_tuple::<i64>()
+        .all(txn)
+        .await
+        .context(h!())?
+        .into_iter()
+        .collect::<HashSet<_>>();
+
+    for key_freq in key_freqs_from {
+        if existing_key_ids.contains(&key_freq.sigint_network_encryption_key_id)
+        {
+            sigint_network_encryption_key_freq::Entity::delete_by_id(
+                key_freq.id,
+            )
+            .exec(txn)
+            .await
+            .context(h!())?;
+        } else {
+            let mut key_freq_record = key_freq.into_active_model();
+            key_freq_record.sigint_network_freq_id = Set(freq_id_to);
+            key_freq_record.update(txn).await.context(h!())?;
+        }
+    }
+
+    Ok(())
+}
+
 ///Reassign frequencies from the old networt to the new one
 async fn reassign_freqs(
     txn: &DatabaseTransaction,
     login: &str,
+    merge_inactive: bool,
     network_id_from: i64,
     network_id_to: i64,
 ) -> Result<(), AppError> {
-    let freqs_to = sigint_network_freq::Entity::find()
+    let mut freqs_to = sigint_network_freq::Entity::find()
         .select_only()
         .column(sigint_network_freq::Column::Freq)
-        .filter(sigint_network_freq::Column::NetworkId.eq(network_id_to))
-        .filter(sigint_network_freq::Column::ActiveTo.is_null())
-        .filter(sigint_network_freq::Column::Deleted.eq(false))
-        .into_query();
+        .filter(sigint_network_freq::Column::NetworkId.eq(network_id_to));
+    if !merge_inactive {
+        freqs_to = freqs_to
+            .filter(sigint_network_freq::Column::Deleted.eq(false))
+            .filter(sigint_network_freq::Column::ActiveTo.is_null());
+    }
+    let freqs_to = freqs_to.into_query();
 
-    let freqs_from = sigint_network_freq::Entity::find()
+    let mut freqs_from = sigint_network_freq::Entity::find()
         .filter(sigint_network_freq::Column::NetworkId.eq(network_id_from))
-        .filter(sigint_network_freq::Column::ActiveTo.is_null())
-        .filter(sigint_network_freq::Column::Deleted.eq(false))
-        .filter(sigint_network_freq::Column::Freq.not_in_subquery(freqs_to))
-        .all(txn)
-        .await
-        .context(h!())?;
+        .filter(sigint_network_freq::Column::Freq.not_in_subquery(freqs_to));
+    if !merge_inactive {
+        freqs_from = freqs_from
+            .filter(sigint_network_freq::Column::Deleted.eq(false))
+            .filter(sigint_network_freq::Column::ActiveTo.is_null());
+    }
+    let freqs_from = freqs_from.all(txn).await.context(h!())?;
 
     for freq in freqs_from {
         let id = freq.id;
@@ -185,18 +357,27 @@ async fn reassign_freqs(
 
     // Delete all remaining freqs in the source network (those not reassigned)
     // Collect IDs first for logging
-    let freq_vals: Vec<String> = sigint_network_freq::Entity::find()
-        .filter(sigint_network_freq::Column::NetworkId.eq(network_id_from))
-        .filter(sigint_network_freq::Column::Deleted.eq(false))
+    let mut freqs_to_delete = sigint_network_freq::Entity::find()
+        .filter(sigint_network_freq::Column::NetworkId.eq(network_id_from));
+    if !merge_inactive {
+        freqs_to_delete = freqs_to_delete
+            .filter(sigint_network_freq::Column::Deleted.eq(false));
+    }
+    let freq_vals: Vec<String> = freqs_to_delete
+        .clone()
         .all(txn)
         .await
         .context(h!())?
         .into_iter()
         .map(|f| f.freq)
         .collect();
-    let update_res = sigint_network_freq::Entity::update_many()
-        .filter(sigint_network_freq::Column::NetworkId.eq(network_id_from))
-        .filter(sigint_network_freq::Column::Deleted.eq(false))
+    let mut update_remaining_freqs = sigint_network_freq::Entity::update_many()
+        .filter(sigint_network_freq::Column::NetworkId.eq(network_id_from));
+    if !merge_inactive {
+        update_remaining_freqs = update_remaining_freqs
+            .filter(sigint_network_freq::Column::Deleted.eq(false));
+    }
+    let update_res = update_remaining_freqs
         .col_expr(sigint_network_freq::Column::Deleted, Expr::value(true))
         .exec(txn)
         .await
@@ -212,24 +393,29 @@ async fn reassign_freqs(
 /// Reassign posts to the new network
 async fn reassign_posts(
     txn: &DatabaseTransaction,
+    merge_inactive: bool,
     network_id_from: i64,
     network_id_to: i64,
 ) -> Result<(), AppError> {
-    let posts_to = sigint_network_post::Entity::find()
+    let mut posts_to = sigint_network_post::Entity::find()
         .select_only()
         .column(sigint_network_post::Column::PostId)
-        .filter(sigint_network_post::Column::NetworkId.eq(network_id_to))
-        .filter(sigint_network_post::Column::Deleted.eq(false))
-        .into_query();
+        .filter(sigint_network_post::Column::NetworkId.eq(network_id_to));
+    if !merge_inactive {
+        posts_to =
+            posts_to.filter(sigint_network_post::Column::Deleted.eq(false));
+    }
+    let posts_to = posts_to.into_query();
 
-    let posts_from = sigint_network_post::Entity::find()
+    let mut posts_from = sigint_network_post::Entity::find()
         .find_also_related(SigintPost)
         .filter(sigint_network_post::Column::NetworkId.eq(network_id_from))
-        .filter(sigint_network_post::Column::Deleted.eq(false))
-        .filter(sigint_network_post::Column::PostId.not_in_subquery(posts_to))
-        .all(txn)
-        .await
-        .context(h!())?;
+        .filter(sigint_network_post::Column::PostId.not_in_subquery(posts_to));
+    if !merge_inactive {
+        posts_from =
+            posts_from.filter(sigint_network_post::Column::Deleted.eq(false));
+    }
+    let posts_from = posts_from.all(txn).await.context(h!())?;
 
     for (network_post, post) in posts_from {
         let post_id = network_post.post_id;
@@ -242,8 +428,14 @@ async fn reassign_posts(
 
     // Delete all remaining posts in the source network (those not reassigned)
     // Collect IDs first for logging
-    let post_ids: Vec<i64> = sigint_network_post::Entity::find()
-        .filter(sigint_network_post::Column::NetworkId.eq(network_id_from))
+    let mut remaining_posts = sigint_network_post::Entity::find()
+        .filter(sigint_network_post::Column::NetworkId.eq(network_id_from));
+    if !merge_inactive {
+        remaining_posts = remaining_posts
+            .filter(sigint_network_post::Column::Deleted.eq(false));
+    }
+    let post_ids: Vec<i64> = remaining_posts
+        .clone()
         .all(txn)
         .await
         .context(h!())?
@@ -251,12 +443,14 @@ async fn reassign_posts(
         .map(|post| post.id)
         .collect();
 
-    let update_res = sigint_network_post::Entity::update_many()
+    let mut update_remaining_posts = sigint_network_post::Entity::update_many()
         .col_expr(sigint_network_post::Column::Deleted, Expr::value(true))
-        .filter(sigint_network_post::Column::NetworkId.eq(network_id_from))
-        .exec(txn)
-        .await
-        .context(h!())?;
+        .filter(sigint_network_post::Column::NetworkId.eq(network_id_from));
+    if !merge_inactive {
+        update_remaining_posts = update_remaining_posts
+            .filter(sigint_network_post::Column::Deleted.eq(false));
+    }
+    let update_res = update_remaining_posts.exec(txn).await.context(h!())?;
     info!(
         "Marked as deleted {} remaining posts with IDs: {:?}",
         update_res.rows_affected, post_ids
@@ -268,17 +462,19 @@ async fn reassign_posts(
 /// Reassign descriptions to the new network
 async fn reassign_descriptions(
     txn: &DatabaseTransaction,
+    merge_inactive: bool,
     network_id_from: i64,
     network_id_to: i64,
 ) -> Result<(), AppError> {
-    let descriptions_from = sigint_network_description::Entity::find()
+    let mut descriptions_from = sigint_network_description::Entity::find()
         .filter(
             sigint_network_description::Column::NetworkId.eq(network_id_from),
-        )
-        .filter(sigint_network_description::Column::Deleted.eq(false))
-        .all(txn)
-        .await
-        .context(h!())?;
+        );
+    if !merge_inactive {
+        descriptions_from = descriptions_from
+            .filter(sigint_network_description::Column::Deleted.eq(false));
+    }
+    let descriptions_from = descriptions_from.all(txn).await.context(h!())?;
 
     for description in descriptions_from {
         let descr_id = description.id;
@@ -290,10 +486,16 @@ async fn reassign_descriptions(
 
     // Delete all remaining descriptions in the source network (those not reassigned)
     // Collect IDs first for logging
-    let descr_ids: Vec<i64> = sigint_network_description::Entity::find()
+    let mut remaining_descriptions = sigint_network_description::Entity::find()
         .filter(
             sigint_network_description::Column::NetworkId.eq(network_id_from),
-        )
+        );
+    if !merge_inactive {
+        remaining_descriptions = remaining_descriptions
+            .filter(sigint_network_description::Column::Deleted.eq(false));
+    }
+    let descr_ids: Vec<i64> = remaining_descriptions
+        .clone()
         .all(txn)
         .await
         .context(h!())?
@@ -301,14 +503,21 @@ async fn reassign_descriptions(
         .map(|descr| descr.id)
         .collect();
 
-    let update_res = sigint_network_description::Entity::update_many()
-        .col_expr(
-            sigint_network_description::Column::Deleted,
-            Expr::value(true),
-        )
-        .filter(
-            sigint_network_description::Column::NetworkId.eq(network_id_from),
-        )
+    let mut update_remaining_descriptions =
+        sigint_network_description::Entity::update_many()
+            .col_expr(
+                sigint_network_description::Column::Deleted,
+                Expr::value(true),
+            )
+            .filter(
+                sigint_network_description::Column::NetworkId
+                    .eq(network_id_from),
+            );
+    if !merge_inactive {
+        update_remaining_descriptions = update_remaining_descriptions
+            .filter(sigint_network_description::Column::Deleted.eq(false));
+    }
+    let update_res = update_remaining_descriptions
         .exec(txn)
         .await
         .context(h!())?;
@@ -323,31 +532,36 @@ async fn reassign_descriptions(
 async fn reassign_callsigns(
     txn: &DatabaseTransaction,
     login: &str,
+    merge_inactive: bool,
     network_id_from: i64,
     network_id_to: i64,
 ) -> Result<(), AppError> {
-    let callsigns_to = sigint_network_callsign::Entity::find()
+    let mut callsigns_to = sigint_network_callsign::Entity::find()
         .select_only()
         .column(sigint_network_callsign::Column::SigintCallsign)
         .filter(
             sigint_network_callsign::Column::SigintNetworkId.eq(network_id_to),
-        )
-        .filter(sigint_network_callsign::Column::Deleted.eq(false))
-        .into_query();
+        );
+    if !merge_inactive {
+        callsigns_to = callsigns_to
+            .filter(sigint_network_callsign::Column::Deleted.eq(false));
+    }
+    let callsigns_to = callsigns_to.into_query();
 
-    let callsigns_from = sigint_network_callsign::Entity::find()
+    let mut callsigns_from = sigint_network_callsign::Entity::find()
         .filter(
             sigint_network_callsign::Column::SigintNetworkId
                 .eq(network_id_from),
         )
-        .filter(sigint_network_callsign::Column::Deleted.eq(false))
         .filter(
             sigint_network_callsign::Column::SigintCallsign
                 .not_in_subquery(callsigns_to),
-        )
-        .all(txn)
-        .await
-        .context(h!())?;
+        );
+    if !merge_inactive {
+        callsigns_from = callsigns_from
+            .filter(sigint_network_callsign::Column::Deleted.eq(false));
+    }
+    let callsigns_from = callsigns_from.all(txn).await.context(h!())?;
 
     for net_callsign in callsigns_from {
         let id = net_callsign.id;
@@ -391,24 +605,33 @@ async fn reassign_callsigns(
 
     // Delete all remaining network callsigns in the source network (those not reassigned)
     // Collect IDs first for logging
-    let callsign_vals: Vec<String> = sigint_network_callsign::Entity::find()
+    let mut remaining_callsigns = sigint_network_callsign::Entity::find()
         .filter(
             sigint_network_callsign::Column::SigintNetworkId
                 .eq(network_id_from),
-        )
-        .filter(sigint_network_callsign::Column::Deleted.eq(false))
+        );
+    if !merge_inactive {
+        remaining_callsigns = remaining_callsigns
+            .filter(sigint_network_callsign::Column::Deleted.eq(false));
+    }
+    let callsign_vals: Vec<String> = remaining_callsigns
+        .clone()
         .all(txn)
         .await
         .context(h!())?
         .into_iter()
         .map(|c| c.sigint_callsign)
         .collect();
-    let update_res = sigint_network_callsign::Entity::update_many()
-        .filter(
+    let mut update_remaining_callsigns =
+        sigint_network_callsign::Entity::update_many().filter(
             sigint_network_callsign::Column::SigintNetworkId
                 .eq(network_id_from),
-        )
-        .filter(sigint_network_callsign::Column::Deleted.eq(false))
+        );
+    if !merge_inactive {
+        update_remaining_callsigns = update_remaining_callsigns
+            .filter(sigint_network_callsign::Column::Deleted.eq(false));
+    }
+    let update_res = update_remaining_callsigns
         .col_expr(sigint_network_callsign::Column::Deleted, Expr::value(true))
         .exec(txn)
         .await
@@ -424,6 +647,7 @@ async fn reassign_callsigns(
 /// Reassign network aor to the new network
 async fn reassign_aors(
     txn: &DatabaseTransaction,
+    _merge_inactive: bool,
     network_id_from: i64,
     network_id_to: i64,
 ) -> Result<(), AppError> {

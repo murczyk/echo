@@ -8,7 +8,6 @@ use crate::{h, new_pg_pool_from_mode};
 use chrono::{NaiveDateTime, Timelike, Utc};
 use echo_migration::Expr;
 use log::{debug, error, info, warn};
-use sea_orm::sea_query::ExprTrait;
 use sea_orm::*;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::time::{Duration, Instant};
@@ -211,35 +210,18 @@ async fn run_inbox_network_worker_once(
         .await
         .c(h!())?;
     let cutoff = Utc::now().naive_utc() - chrono::Duration::days(cutoff_days);
-    let task_filter = if is_for_old_worker {
-        network_invalidation_task::Column::Tag
-            .eq(NETWORK_INVALIDATION_TASK_TAG_OLD.to_string())
-    } else {
-        network_invalidation_task::Column::TillTs.lte(Utc::now().naive_utc())
-    };
-    let pending_tasks = network_invalidation_task::Entity::find()
-        .filter(network_invalidation_task::Column::CompletedAt.is_null())
-        .filter(task_filter)
-        .all(db)
+    let max_pending_task_id = load_max_pending_task_id(db, is_for_old_worker)
         .await
         .c(h!())?;
-    let txn = db.begin().await.c(h!())?;
-    network_invalidation_task::Entity::delete_many() // delete all completed tasks before moving forward
-        .filter(network_invalidation_task::Column::CompletedAt.is_not_null())
-        .filter(network_invalidation_task::Column::Tag.eq(tag))
-        .exec(&txn)
-        .await
-        .c(h!())?;
-    let mut task_list: Vec<network_invalidation_task::Model> =
-        if is_for_old_worker {
-            triage_tasks_for_old_worker(pending_tasks, &txn)
-                .await
-                .c(h!())?
-        } else {
-            triage_tasks(pending_tasks, cutoff, &txn).await.c(h!())?
-        };
-    txn.commit().await.c(h!())?;
-
+    let mut task_list = load_and_triage_tasks_batch(
+        db,
+        is_for_old_worker,
+        cutoff,
+        tag,
+        max_pending_task_id,
+    )
+    .await
+    .c(h!())?;
     if task_list.is_empty() {
         info!("[{tag} worker] task_list is empty after triage, skipping...");
         return Ok(());
@@ -257,6 +239,7 @@ async fn run_inbox_network_worker_once(
     let mut fuel = 1_000_000;
     let mut processed_items = HashSet::new();
     let total_counter = task_list.len();
+    let mut counter = 0;
     while !task_list.is_empty() {
         if is_for_old_worker && !check_is_worker_night_shift(config) {
             return Ok(());
@@ -293,9 +276,10 @@ async fn run_inbox_network_worker_once(
             work_started = Instant::now();
         }
 
+        counter += next_tasks.len();
+
         debug!(
-            "[{tag} worker] run_network_invalidation_tasks: processing next tasks batch - {}/{total_counter}",
-            next_tasks.len()
+            "[{tag} worker] run_network_invalidation_tasks: processing next tasks batch - {counter}/{total_counter}"
         );
         run_network_invalidation_tasks(
             next_tasks,
@@ -307,6 +291,137 @@ async fn run_inbox_network_worker_once(
         .c(h!())?;
     }
     Ok(())
+}
+
+async fn load_and_triage_tasks_batch(
+    db: &DatabaseConnection,
+    is_for_old_worker: bool,
+    cutoff: NaiveDateTime,
+    tag: &str,
+    max_pending_task_id: Option<i64>,
+) -> anyhow::Result<Vec<network_invalidation_task::Model>> {
+    let mut result = vec![];
+    loop {
+        let pending_tasks = load_pending_tasks_batch(
+            db,
+            is_for_old_worker,
+            tag,
+            max_pending_task_id,
+        )
+        .await
+        .c(h!())?;
+        if pending_tasks.is_empty() {
+            break;
+        }
+        let triaged_tasks = triage_pending_tasks_batch(
+            db,
+            pending_tasks,
+            is_for_old_worker,
+            cutoff,
+            tag,
+        )
+        .await
+        .c(h!())?;
+        if !triaged_tasks.is_empty() {
+            for t in triaged_tasks {
+                result.push(t);
+            }
+        }
+    }
+    Ok(result)
+}
+
+async fn load_pending_tasks_batch(
+    db: &DatabaseConnection,
+    is_for_old_worker: bool,
+    tag: &str,
+    max_pending_task_id: Option<i64>,
+) -> anyhow::Result<Vec<network_invalidation_task::Model>> {
+    let mut pending_tasks_query = network_invalidation_task::Entity::find()
+        .filter(network_invalidation_task::Column::CompletedAt.is_null())
+        .order_by_desc(network_invalidation_task::Column::Id)
+        .limit(NETWORK_INVALIDATION_TASK_FETCH_BATCH_SIZE);
+    if let Some(max_id) = max_pending_task_id {
+        pending_tasks_query = pending_tasks_query
+            .filter(network_invalidation_task::Column::Id.lte(max_id));
+    }
+    if is_for_old_worker {
+        pending_tasks_query = pending_tasks_query.filter(
+            network_invalidation_task::Column::Tag
+                .eq(NETWORK_INVALIDATION_TASK_TAG_OLD.to_string()),
+        );
+    } else {
+        pending_tasks_query = pending_tasks_query.filter(
+            network_invalidation_task::Column::TillTs
+                .lte(Utc::now().naive_utc()),
+        );
+        pending_tasks_query = pending_tasks_query.filter(
+            network_invalidation_task::Column::Tag
+                .ne(NETWORK_INVALIDATION_TASK_TAG_OLD.to_string()),
+        );
+    }
+    let pending_tasks = pending_tasks_query.all(db).await.c(h!())?;
+    if pending_tasks.len()
+        == NETWORK_INVALIDATION_TASK_FETCH_BATCH_SIZE as usize
+    {
+        info!(
+            "[{tag} worker] fetched max pending tasks batch: {}",
+            NETWORK_INVALIDATION_TASK_FETCH_BATCH_SIZE
+        );
+    }
+    Ok(pending_tasks)
+}
+
+async fn load_max_pending_task_id(
+    db: &DatabaseConnection,
+    is_for_old_worker: bool,
+) -> anyhow::Result<Option<i64>> {
+    let mut query = network_invalidation_task::Entity::find()
+        .select_only()
+        .column(network_invalidation_task::Column::Id)
+        .filter(network_invalidation_task::Column::CompletedAt.is_null())
+        .order_by_desc(network_invalidation_task::Column::Id);
+    if is_for_old_worker {
+        query = query.filter(
+            network_invalidation_task::Column::Tag
+                .eq(NETWORK_INVALIDATION_TASK_TAG_OLD.to_string()),
+        );
+    } else {
+        query = query.filter(
+            network_invalidation_task::Column::TillTs
+                .lte(Utc::now().naive_utc()),
+        );
+        query = query.filter(
+            network_invalidation_task::Column::Tag
+                .ne(NETWORK_INVALIDATION_TASK_TAG_OLD.to_string()),
+        );
+    }
+    query.into_tuple::<i64>().one(db).await.c(h!())
+}
+
+async fn triage_pending_tasks_batch(
+    db: &DatabaseConnection,
+    pending_tasks: Vec<network_invalidation_task::Model>,
+    is_for_old_worker: bool,
+    cutoff: NaiveDateTime,
+    tag: &str,
+) -> anyhow::Result<Vec<network_invalidation_task::Model>> {
+    let txn = db.begin().await.c(h!())?;
+    network_invalidation_task::Entity::delete_many() // delete completed tasks before triage
+        .filter(network_invalidation_task::Column::CompletedAt.is_not_null())
+        .filter(network_invalidation_task::Column::Tag.eq(tag))
+        .exec(&txn)
+        .await
+        .c(h!())?;
+    let task_list = if is_for_old_worker {
+        triage_tasks_for_old_worker(pending_tasks, &txn)
+            .await
+            .c(h!())?
+    } else {
+        triage_tasks(pending_tasks, cutoff, &txn).await.c(h!())?
+    };
+    txn.commit().await.c(h!())?;
+    Ok(task_list)
 }
 
 async fn load_signal_group_aors(
@@ -338,6 +453,7 @@ async fn triage_tasks(
     let mut existing_tasks = vec![];
     let mut recent_tasks = Vec::new();
     let mut old_worker_ids = BTreeSet::new();
+    let mut ids_to_mark_old = Vec::new();
     for task in input_tasks {
         if task.since_ts < cutoff && task.till_ts > cutoff {
             split_task_by_cutoff(
@@ -352,6 +468,9 @@ async fn triage_tasks(
             .c(h!())?;
         } else if task.till_ts <= cutoff {
             old_worker_ids.insert(task.id);
+            if task.tag != NETWORK_INVALIDATION_TASK_TAG_OLD {
+                ids_to_mark_old.push(task.id);
+            }
         } else {
             existing_tasks.push(task.clone());
             recent_tasks.push(task);
@@ -364,79 +483,40 @@ async fn triage_tasks(
         .collect::<Vec<_>>();
 
     let txn = db.begin().await.c(h!())?;
-    insert_triaged_tasks(all_tasks, false, &txn).await.c(h!())?;
+    mark_tasks_old(ids_to_mark_old, &txn).await.c(h!())?;
+    let mut triaged_recent_tasks =
+        insert_triaged_tasks(all_tasks, false, &txn).await.c(h!())?;
     delete_original_tasks(&existing_tasks, &old_worker_ids, &txn)
         .await
         .c(h!())?;
-
-    let cutoff2 = cutoff - Duration::from_hours(1);
-    let filter_recent = || {
-        Condition::all()
-            .add(network_invalidation_task::Column::SinceTs.gte(cutoff2))
-            .add(network_invalidation_task::Column::TillTs.gte(cutoff2))
-    };
-    let filter_old = || {
-        Condition::all()
-            .add(network_invalidation_task::Column::SinceTs.lte(cutoff))
-            .add(network_invalidation_task::Column::TillTs.lte(cutoff))
-    };
-
-    network_invalidation_task::Entity::update_many()
-        .col_expr(
-            network_invalidation_task::Column::Tag,
-            Expr::value(NETWORK_INVALIDATION_TASK_TAG_RECENT.to_string()),
-        )
-        .filter(filter_recent().and(filter_old().not()))
-        .exec(&txn)
-        .await
-        .c(h!())?;
-
-    network_invalidation_task::Entity::update_many()
-        .col_expr(
-            network_invalidation_task::Column::Tag,
-            Expr::value(NETWORK_INVALIDATION_TASK_TAG_OLD.to_string()),
-        )
-        .filter(filter_old().and(filter_recent().not()))
-        .exec(&txn)
-        .await
-        .c(h!())?;
-
-    network_invalidation_task::Entity::update_many()
-        .col_expr(
-            network_invalidation_task::Column::Tag,
-            Expr::value(NETWORK_INVALIDATION_TASK_TAG_UNASSIGNED.to_string()),
-        )
-        .filter(filter_recent().not())
-        .filter(filter_old().not())
-        .exec(&txn)
-        .await
-        .c(h!())?;
-
-    let sorted_tasks = network_invalidation_task::Entity::find()
-        .order_by_desc(network_invalidation_task::Column::TillTs)
-        .all(&txn)
-        .await
-        .c(h!())?;
-    let mut result = vec![];
-    for mut r in sorted_tasks {
-        let (tag, push) = if r.since_ts > cutoff2 && r.till_ts > cutoff2 {
-            (NETWORK_INVALIDATION_TASK_TAG_RECENT, true)
-        } else if r.since_ts < cutoff && r.till_ts < cutoff {
-            (NETWORK_INVALIDATION_TASK_TAG_OLD, false)
-        } else {
-            (NETWORK_INVALIDATION_TASK_TAG_UNASSIGNED, false)
-        };
-        if r.tag != tag {
-            let mut rec = r.into_active_model();
-            rec.tag = Set(tag.to_string());
-            r = rec.update(db).await.c(h!())?;
-        }
-        if push {
-            result.push(r);
-        }
-    }
+    triaged_recent_tasks.sort_by(|a, b| {
+        b.till_ts.cmp(&a.till_ts).then_with(|| b.id.cmp(&a.id))
+    });
     txn.commit().await.c(h!())?;
-    Ok(result)
+    Ok(triaged_recent_tasks)
+}
+
+async fn mark_tasks_old(
+    task_ids: Vec<i64>,
+    db: &DatabaseTransaction,
+) -> anyhow::Result<()> {
+    if task_ids.is_empty() {
+        return Ok(());
+    }
+    for id_chunk in task_ids.chunks(NETWORK_INVALIDATION_DELETE_MAX_IDS) {
+        network_invalidation_task::Entity::update_many()
+            .col_expr(
+                network_invalidation_task::Column::Tag,
+                Expr::value(NETWORK_INVALIDATION_TASK_TAG_OLD.to_string()),
+            )
+            .filter(
+                network_invalidation_task::Column::Id.is_in(id_chunk.to_vec()),
+            )
+            .exec(db)
+            .await
+            .c(h!())?;
+    }
+    Ok(())
 }
 
 async fn split_task_by_cutoff(
@@ -483,19 +563,15 @@ async fn triage_tasks_for_old_worker(
         .cloned()
         .flat_map(split_task)
         .collect::<Vec<_>>();
-    insert_triaged_tasks(all_tasks, true, db).await.c(h!())?;
+    let mut triaged_old_tasks =
+        insert_triaged_tasks(all_tasks, true, db).await.c(h!())?;
     delete_original_tasks(&existing_tasks, &BTreeSet::new(), db)
         .await
         .c(h!())?;
-    network_invalidation_task::Entity::find()
-        .filter(
-            network_invalidation_task::Column::Tag
-                .eq(NETWORK_INVALIDATION_TASK_TAG_OLD.to_string()),
-        )
-        .order_by_desc(network_invalidation_task::Column::TillTs)
-        .all(db)
-        .await
-        .c(h!())
+    triaged_old_tasks.sort_by(|a, b| {
+        b.till_ts.cmp(&a.till_ts).then_with(|| b.id.cmp(&a.id))
+    });
+    Ok(triaged_old_tasks)
 }
 
 // Split a task into hour-aligned windows to limit per-task processing size.
@@ -532,7 +608,9 @@ async fn insert_triaged_tasks(
     tasks: Vec<network_invalidation_task::Model>,
     is_for_old_worker: bool,
     db: &DatabaseTransaction,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<Vec<network_invalidation_task::Model>> {
+    let task_count_before_dedupe = tasks.len();
+    let mut seen_tasks = HashSet::new();
     let mut inserted = Vec::new();
     let tag = if is_for_old_worker {
         NETWORK_INVALIDATION_TASK_TAG_OLD
@@ -540,6 +618,17 @@ async fn insert_triaged_tasks(
         NETWORK_INVALIDATION_TASK_TAG_RECENT
     };
     for task in tasks {
+        let task_key = (
+            task.frequency.clone(),
+            task.since_ts,
+            task.till_ts,
+            task.sigint_network_id,
+            task.aor_id,
+            task.group_master_key.clone(),
+        );
+        if !seen_tasks.insert(task_key) {
+            continue;
+        }
         let active = network_invalidation_task::ActiveModel {
             id: NotSet,
             frequency: Set(task.frequency.clone()),
@@ -556,8 +645,12 @@ async fn insert_triaged_tasks(
         let task = active.insert(db).await.c(h!())?;
         inserted.push(task);
     }
-    info!("inserted {} tasks", inserted.len());
-    Ok(())
+    info!(
+        "inserted {} tasks (from {} triaged candidates)",
+        inserted.len(),
+        task_count_before_dedupe
+    );
+    Ok(inserted)
 }
 
 // Remove the original pending tasks after triage, keeping any task reassigned to old worker.
@@ -570,10 +663,11 @@ async fn delete_original_tasks(
         .iter()
         .map(|task| task.id)
         .filter(|id| !old_worker_ids.contains(id))
-        .collect::<Vec<_>>();
+        .collect::<BTreeSet<_>>();
     if ids_to_delete.is_empty() {
         return Ok(());
     }
+    let ids_to_delete = ids_to_delete.into_iter().collect::<Vec<_>>();
     for id_chunk in ids_to_delete.chunks(NETWORK_INVALIDATION_DELETE_MAX_IDS) {
         network_invalidation_task::Entity::delete_many()
             .filter(
@@ -794,15 +888,18 @@ async fn process_invalidation_filter(
         if sigint_inbox_items.is_empty() {
             break;
         }
-        let mut new_processed_items = processed_items.clone();
+        let mut new_processed_item_ids = Vec::new();
         last_id = sigint_inbox_items.iter().map(|i| i.id).min();
         let mut items_to_process = vec![];
         for item in sigint_inbox_items {
-            if new_processed_items.contains(&item.id) {
+            if processed_items.contains(&item.id) {
                 continue;
             }
-            new_processed_items.insert(item.id);
+            new_processed_item_ids.push(item.id);
             items_to_process.push(item);
+        }
+        if items_to_process.is_empty() {
+            continue;
         }
         crate::sigint::network::etalon_calc::calculate_sigint_inbox_item_networks(
             items_to_process,
@@ -811,8 +908,8 @@ async fn process_invalidation_filter(
             .await
             .c(h!())?;
         txn.commit().await.c(h!())?;
-        for i in new_processed_items {
-            processed_items.insert(i);
+        for id in new_processed_item_ids {
+            processed_items.insert(id);
         }
     }
     Ok(())

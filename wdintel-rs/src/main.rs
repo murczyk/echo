@@ -191,6 +191,16 @@ pub struct OneoffBackfillInboxNetworksPs {
 }
 
 #[derive(clap::Parser, Debug)]
+pub struct OneoffReprocessInboxPostsPs {
+    /// Start day (inclusive). Format: `YYYY-MM-DD`.
+    #[arg(long)]
+    pub start_day: String,
+    /// Do not persist updates.
+    #[arg(long)]
+    pub dry_run: bool,
+}
+
+#[derive(clap::Parser, Debug)]
 pub struct OneoffRadioPerDayPerAbonentPs {
     pub input: String,
 }
@@ -543,8 +553,10 @@ enum Cmd {
     NetworkInvalidationTui,
     TuiImportUnit(ImportTuiPs),
     TuiImportNetwork(ImportTuiPs),
+    OneoffImportNetworkDetails(ImportTuiPs),
     TuiMergeUnit,
     TuiMergeNetwork,
+    TuiMergeNetworkFreq,
     ExportUnit(ExportUnitPs),
     ImportUnit(ImportUnitPs),
     RenewTailscaleCert(RenewTailscaleCertPs),
@@ -613,6 +625,7 @@ enum Cmd {
     OneoffImportSignalsCallsignsCsv(OneoffImportSignalsCallsignsCsvPs),
     OneoffFixWhatsappSenders,
     OneoffBackfillInboxNetworks(OneoffBackfillInboxNetworksPs),
+    OneoffReprocessInboxPosts(OneoffReprocessInboxPostsPs),
     OneoffRestartEcho(OneoffRestartEchoPs),
 }
 
@@ -1057,6 +1070,9 @@ async fn async_main(
             sigint::network::etalon_calc::oneoff::oneoff_backfill_inbox_networks(mode, ps)
                 .await
         }
+        Cmd::OneoffReprocessInboxPosts(ps) => {
+            rer_importer::oneoff_reprocess_inbox_posts(mode, &ps).await
+        }
         Cmd::NetworkInvalidationTui => {
            sigint::network::etalon_calc::tui::run_network_invalidation_tui(mode).await
         }
@@ -1069,11 +1085,17 @@ async fn async_main(
         Cmd::TuiImportNetwork(ps) => {
             sigint::import::tui::run_import_network_tui(mode, ps).await
         }
+        Cmd::OneoffImportNetworkDetails(ps) => {
+            sigint::import::tui::oneoff_import_network_details(mode, ps).await
+        }
         Cmd::TuiMergeUnit => {
             sigint::import::tui::run_merge_unit_tui(mode).await
         }
         Cmd::TuiMergeNetwork => {
             sigint::import::tui::run_merge_network_tui(mode).await
+        }
+        Cmd::TuiMergeNetworkFreq => {
+            sigint::import::tui::run_merge_network_freq_tui(mode).await
         }
     }
 }

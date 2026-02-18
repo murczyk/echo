@@ -327,22 +327,23 @@ view user model shared route =
                     False
 
         headerCountsPill data isReloading =
-            span
-                ([ class "mr-1 inline-block px-1.5 py-1 font-medium rounded-full border transition-colors duration-200"
-                 , style "font-size" ".5rem"
-                 , class "bg-[var(--color-bg-muted)] text-[var(--color-text)] border-[var(--color-border-muted)]"
-                 ]
-                    ++ (if isReloading then
-                            [ title "оновлюється…" ]
+            node "analysis-count-chip"
+                [ attribute "selected-count" (fromInt data.countSelected)
+                , attribute "overall-count" (fromInt data.countOverall)
+                , attribute "is-reloading"
+                    (if isReloading then
+                        "true"
 
-                        else
-                            []
-                       )
-                )
-                [ text (fromInt data.countSelected ++ " з " ++ fromInt data.countOverall) ]
+                     else
+                        "false"
+                    )
+                , attribute "role" "status"
+                , attribute "aria-live" "polite"
+                ]
+                []
 
         headerControls =
-            div [ class "flex items-center gap-2 ml-4" ]
+            div [ class "flex items-center ml-4", style "gap" "8px" ]
                 [ case model.counts of
                     Success data ->
                         headerCountsPill data False
@@ -352,10 +353,18 @@ view user model shared route =
 
                     _ ->
                         div [ class "mr-3 inline-block", style "min-width" "60px" ] []
-                , div [ class "flex items-center gap-1" ]
+                , div
+                    [ class "inline-flex items-stretch border border-border"
+                    , style "border-radius" "2px"
+                    , style "overflow" "hidden"
+                    ]
                     [ button
                         [ onClick Refresh
-                        , class "outline-0! border-1! border-border rounded-sm! bg-bw text-[21px]! transition-colors duration-350 hover:bg-action! hover:text-bw! py-[1px] px-[6px]"
+                        , class "inline-flex items-center justify-center text-nowrap rounded-none p-1 transition-colors duration-200 ease-in-out bg-neutral-light text-text hover:bg-neutral-light-hover dark:bg-neutral-dark dark:text-w dark:hover:bg-neutral-dark-hover"
+                        , style "min-height" "40px"
+                        , style "min-width" "50px"
+                        , style "border" "none"
+                        , style "border-right" "1px solid var(--color-border)"
                         , title "Оновити"
                         ]
                         [ if isLoadingStats model then
@@ -366,7 +375,10 @@ view user model shared route =
                         ]
                     , button
                         [ onClick ClearAllFilters
-                        , class "outline-0! border-1! border-border rounded-sm! bg-bw text-[21px]! transition-colors duration-350 hover:bg-action! hover:text-bw! py-[1px] px-[6px]"
+                        , class "inline-flex items-center justify-center text-nowrap rounded-none p-1 transition-colors duration-200 ease-in-out bg-neutral-light text-text hover:bg-neutral-light-hover dark:bg-neutral-dark dark:text-w dark:hover:bg-neutral-dark-hover"
+                        , style "min-height" "40px"
+                        , style "min-width" "50px"
+                        , style "border" "none"
                         , title "Скинути фільтри"
                         ]
                         [ i [ class "bi bi-x-octagon" ] []

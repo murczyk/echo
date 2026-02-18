@@ -718,8 +718,9 @@ pub async fn read_and_fix_kml(
     kml_path: &Path,
     base_path: &Path,
 ) -> Result<Kml, AppError> {
-    let mut kml: Kml =
-        quick_xml::de::from_str(&std::fs::read_to_string(kml_path)?).c(h!())?;
+    let input = std::fs::read_to_string(kml_path)?;
+    let input = strip_kml_description(&input)?;
+    let mut kml: Kml = quick_xml::de::from_str(&input).c(h!())?;
     let style_maps = extract_style_maps(&kml.nodes.clone())?;
     let style_maps_highlight =
         extract_style_maps_hightlight(&kml.nodes.clone())?;
@@ -753,6 +754,13 @@ pub async fn read_and_fix_kml(
         )?;
     }
     Ok(kml)
+}
+
+fn strip_kml_description(input: &str) -> Result<String, AppError> {
+    let re = Regex::new(r"(?s)<description>.*?</description>").c(h!())?;
+    Ok(re
+        .replace_all(input, "<description></description>")
+        .to_string())
 }
 
 #[async_recursion]

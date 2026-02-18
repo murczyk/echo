@@ -1717,6 +1717,7 @@ async fn cleanup_networks_worker_1(
         .map_err(Into::<AppError>::into)?;
     let start_time = Utc::now();
     let cleanup_time = start_time - delta;
+    let recent_network_cutoff = cleanup_time.naive_utc();
 
     #[derive(Debug, Clone, FromQueryResult)]
     struct NetworkFreqDesc {
@@ -1820,10 +1821,17 @@ async fn cleanup_networks_worker_1(
         .await
         .context(h!())?;
 
+    let recent_network_ids: HashSet<i64> = networks
+        .iter()
+        .filter(|(network, _)| network.created_at > recent_network_cutoff)
+        .map(|(network, _)| network.id)
+        .collect();
+
     for (network, network_freqs) in networks {
+        let is_recent_network = recent_network_ids.contains(&network.id);
         for network_freq in network_freqs {
             let is_deleted = ids.contains(&network_freq.id);
-            if is_deleted {
+            if is_deleted && !is_recent_network {
                 let mut model = network_freq.into_active_model();
                 model.active_to = Set(Some(Utc::now().naive_utc()));
                 let network_freq = model.update(dbx).await.context(h!())?;
@@ -1860,7 +1868,9 @@ async fn cleanup_networks_worker_1(
         if !network.deleted {
             let mut network = network.into_active_model();
             network.active_from = Set(network_active_from);
-            network.active_to = Set(network_active_to);
+            if !is_recent_network {
+                network.active_to = Set(network_active_to);
+            }
             let network = network.update(dbx).await.context(h!())?;
             if let Err(e) =
                 sigint::network::etalon_calc::invalidate_network_inbox(
@@ -1877,6 +1887,10 @@ async fn cleanup_networks_worker_1(
     }
 
     for sigint_network_freq in networks_freqs_to_remove {
+        if recent_network_ids.contains(&sigint_network_freq.network_id) {
+            continue;
+        }
+
         let unit_desc = networks_desc
             .get(&sigint_network_freq.network_id)
             .map(|x| x.join(", "))
@@ -1931,13 +1945,16 @@ async fn cleanup_networks_worker_1(
             .count()
             == 0;
 
-        if should_delete || should_deactivate {
+        let is_recent_network = network.created_at > recent_network_cutoff;
+        let should_apply_deactivation = should_deactivate && !is_recent_network;
+        let should_apply_delete = should_delete && !is_recent_network;
+        if should_apply_delete || should_apply_deactivation {
             let deleted = network.deleted;
             let no_active_to = network.active_to.is_none();
             let network_id = network.id;
             let mut network = network.into_active_model();
-            network.deleted = Set(should_delete);
-            if !deleted && no_active_to {
+            network.deleted = Set(should_apply_delete);
+            if should_apply_deactivation && !deleted && no_active_to {
                 let synthetic_active_to =
                     calc_network_synthetic_active_to(dbx, network_id, delta)
                         .await
@@ -2002,6 +2019,7 @@ pub async fn merge_network(
     merge_two_networks(
         &txn,
         &user_id,
+        false,
         false,
         req.network_id_from,
         req.network_id_to,

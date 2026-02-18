@@ -1,8 +1,12 @@
 #!/bin/sh
 
-#DEBHELPER#
-
 set -e
 
 mkdir -p /var/log/echo
 chmod 777 /var/log/echo
+
+if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
+  #DEBHELPER#
+else
+  echo "systemctl not available; skipping systemd unit activation in package maintainer scripts."
+fi

@@ -116,6 +116,25 @@ pub struct Env {
     pub callsigns_whitelist: HashSet<String>,
     pub replicas: Vec<ReplicaPool>,
     pub tag_keyword_regex_cache: Arc<RwLock<TagKeywordRegexCache>>,
+    pub session_activity_tx:
+        Option<tokio::sync::mpsc::Sender<SessionActivityEvent>>,
+    pub session_activity_rx: Arc<
+        tokio::sync::Mutex<
+            Option<tokio::sync::mpsc::Receiver<SessionActivityEvent>>,
+        >,
+    >,
+    pub session_activity_dropped: Arc<std::sync::atomic::AtomicU64>,
+    pub session_activity_enqueued: Arc<std::sync::atomic::AtomicU64>,
+}
+
+#[derive(Debug)]
+pub struct SessionActivityEvent {
+    pub ts: NaiveDateTime,
+    pub id: String,
+    pub public_host: Option<String>,
+    pub username: Option<String>,
+    pub page: Option<String>,
+    pub payload: Option<Vec<u8>>,
 }
 
 #[derive(Default)]
@@ -173,6 +192,33 @@ impl Env {
 
     pub fn replica(&self) -> sea_orm::DatabaseConnection {
         self.replica_with_label().0
+    }
+
+    pub async fn take_session_activity_rx(
+        &self,
+    ) -> Option<tokio::sync::mpsc::Receiver<SessionActivityEvent>> {
+        let mut lock = self.session_activity_rx.lock().await;
+        lock.take()
+    }
+
+    pub fn session_activity_payload_max_bytes(&self) -> usize {
+        self.config.session_activity_payload_max_bytes.unwrap_or(
+            crate::config::SESSION_ACTIVITY_PAYLOAD_MAX_BYTES_DEFAULT,
+        )
+    }
+
+    pub fn session_activity_greptime_get_timeout_ms(&self) -> u64 {
+        let timeout_ms = self.config.session_activity_greptime_get_timeout_ms;
+        timeout_ms.unwrap_or(
+            crate::config::SESSION_ACTIVITY_GREPTIME_GET_TIMEOUT_MS_DEFAULT,
+        )
+    }
+
+    pub fn session_activity_greptime_query_timeout_ms(&self) -> u64 {
+        let timeout_ms = self.config.session_activity_greptime_query_timeout_ms;
+        timeout_ms.unwrap_or(
+            crate::config::SESSION_ACTIVITY_GREPTIME_QUERY_TIMEOUT_MS_DEFAULT,
+        )
     }
 }
 

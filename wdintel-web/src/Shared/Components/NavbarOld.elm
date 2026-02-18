@@ -2,11 +2,9 @@ module Shared.Components.NavbarOld exposing (navBar)
 
 import Auth
 import Core.Auth exposing (hasRole, serverModeIs)
-import Dict
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (onClick)
-import Route
 import Route.Path
 import Shared
 import Shared.Components.ThemeSwitcher exposing (themeSwitcher)
@@ -114,8 +112,10 @@ navBar user shared activeName props =
                     [ menuWithSubs "import" "імпорт" importSubs ]
                 ++ ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Basic" user)
                     [ menuWithSubs "other" "інше" otherSubs ]
+                -- ++ ifOrEmpty (hasRole "Basic" user)
+                --     [ menu Route.Path.Settings "settings" "налаштування (старі)" ]
                 ++ ifOrEmpty (hasRole "Basic" user)
-                    [ menu Route.Path.Settings "settings" "налаштування" ]
+                    [ menu Route.Path.SettingsNeo "settings-neo" "налаштування" ]
                 ++ ifOrEmpty (hasRole "Admin" user)
                     [ menuWithSubs "admin" "адмін" adminSubs ]
 
@@ -217,6 +217,7 @@ navBar user shared activeName props =
 -- Main navbar links: always white text
 
 
+menuItem : { a | onDropdownToggle : Maybe b -> msg } -> d -> Route.Path.Path -> d -> String -> Html msg
 menuItem props activeName hrefLink activeNameExp nameText =
     li []
         [ a

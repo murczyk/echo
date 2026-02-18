@@ -69,6 +69,7 @@ pub const MESSENGER_CLEANUP_OK_SLEEP_SEC: u64 = 600;
 pub const MESSENGER_CLEANUP_ERR_SLEEP_SEC: u64 = 15;
 pub const LONG_POLL_SLEEP_MS: u64 = 5000;
 pub const NETWORK_INVALIDATION_BATCH_SIZE: u64 = 100; // actual limit in pg is around 25k, but it's better to do it in smaller batches
+pub const NETWORK_INVALIDATION_TASK_FETCH_BATCH_SIZE: u64 = 1000;
 pub const NETWORK_INVALIDATION_TASKS_FILTER_CHUNK: usize = 200;
 pub const NETWORK_INVALIDATION_QUERY_MAX_PARAMS: usize = 60_000; // keep under PG 65_535 parameter cap
 pub const NETWORK_INVALIDATION_DELETE_MAX_IDS: usize = 60_000; // keep under PG 65_535 parameter cap
@@ -86,6 +87,10 @@ pub const LONG_POLL_MIN_RESPONSE_TIME_MS: u64 = 500;
 pub const REDIS_MAXLEN: usize = 1000;
 pub const REDIS_SESSIONS_KEY: &str = "echo-sessions";
 pub const SESSION_STREAM_LIFETIME_SEC: i64 = 180;
+pub const SESSION_ACTIVITY_QUEUE_CAPACITY_DEFAULT: usize = 2048;
+pub const SESSION_ACTIVITY_PAYLOAD_MAX_BYTES_DEFAULT: usize = 4096;
+pub const SESSION_ACTIVITY_GREPTIME_GET_TIMEOUT_MS_DEFAULT: u64 = 500;
+pub const SESSION_ACTIVITY_GREPTIME_QUERY_TIMEOUT_MS_DEFAULT: u64 = 1000;
 pub const INACTIVE_USERS_DEACTIVATE_DURATION_SEC: u64 = 3600;
 pub const INACTIVE_USERS_DEACTIVATE_AFTER_DAYS: i64 = 30;
 /// Default root prefix for encrypted messenger media stored on S3
@@ -112,6 +117,7 @@ pub const ONEOFF_COUNT_BATCHES_SLEEP_MS: u64 = 200;
 pub const ONEOFF_COUNT_BATCHES_SIZE: u64 = 10000;
 pub const PALITRA_STORAGE_DIR_NAME: &str = "palitra_assets";
 pub const PALITRA_KMZ_TOP_COLORS_LIMIT: usize = 20;
+pub const PALITRA_POINTS_INSERT_BATCH_SIZE: usize = 10_000;
 /// Global limit when since_id_noninclusive and since_date_inclusive_ms is not set, safety measure
 pub const RER_DUTY_MAX_DAYS: i64 = 3;
 pub const RER_IMPORTER_BOOKMARK_LIST_LIMIT: u64 = 100;
@@ -189,6 +195,10 @@ pub struct Config {
     pub greptime_user: Option<String>,
     pub greptime_password: Option<String>,
     pub greptime_dbname: Option<String>,
+    pub session_activity_queue_capacity: Option<usize>,
+    pub session_activity_payload_max_bytes: Option<usize>,
+    pub session_activity_greptime_get_timeout_ms: Option<u64>,
+    pub session_activity_greptime_query_timeout_ms: Option<u64>,
     pub feature_tmp_in_memory: Option<bool>,
     pub feature_strict_networks: Option<bool>,
     pub is_slave: Option<bool>,

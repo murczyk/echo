@@ -301,7 +301,7 @@ check-git-hooks:
     find ./wdintel-web/src -type f -name '*.elm' -print0 | xargs -0 etags --regex @elm.tags  --append
 
 [arg('server', long='server')]
-deploy _server_pos="" server="":
+deploy _server_pos="" server:
     #!/bin/bash
     set -euo pipefail
     # Enable tracing if DEBUG=1 or TRACE=1 is set in environment
@@ -409,6 +409,68 @@ deploy _server_pos="" server="":
       fi'
     # Quiet update/install (stdout suppressed for update; install in -qq)
     ssh "$SERVER" 'sudo apt-get -qq update > /dev/null && sudo DEBIAN_FRONTEND=noninteractive apt-get -y -qq install echo-install wdintel-rs echo-docs'
+
+    # Re-assert critical services after deploy package update
+    ssh "$SERVER" '
+      set -euo pipefail
+      set -x
+
+      sudo systemctl daemon-reload
+      sudo systemctl disable --now wdintel-rs.service || true
+
+      # Leave only wdintel-rs.socket on :8081; clean up legacy/generated sockets.
+      for unit in wdintel-rs-bgworker.socket wdintel-py.socket echo-whatsapp.socket echo-vector.socket echo-signal-cli.socket; do
+        if systemctl cat "$unit" >/dev/null 2>&1; then
+          sudo systemctl disable --now "$unit" || true
+        fi
+      done
+      for unit in $(sudo systemctl list-units --all --no-legend --full "echo-signal-bot@*.socket" "echo-whatsapp-bot@*.socket" | awk "{print \$1}"); do
+        sudo systemctl disable --now "$unit" || true
+      done
+
+      sudo systemctl enable --now wdintel-rs.socket
+      sudo systemctl enable --now wdintel-rs-bgworker.service
+      sudo systemctl enable --now wdintel-py.service
+
+      for unit in wdintel-rs.socket wdintel-rs-bgworker.service wdintel-py.service; do
+        if ! systemctl is-enabled --quiet "$unit"; then
+          echo "ERROR: $unit is not enabled after deploy." >&2
+          systemctl is-enabled "$unit" || true
+          exit 1
+        fi
+      done
+
+      if ! systemctl is-active --quiet wdintel-rs-bgworker.service; then
+        echo "ERROR: wdintel-rs-bgworker.service is not active after deploy." >&2
+        systemctl status --no-pager wdintel-rs-bgworker.service || true
+        exit 1
+      fi
+      if ! systemctl is-active --quiet wdintel-py.service; then
+        echo "ERROR: wdintel-py.service is not active after deploy." >&2
+        systemctl status --no-pager wdintel-py.service || true
+        exit 1
+      fi
+      if ! systemctl is-active --quiet wdintel-rs.socket; then
+        echo "ERROR: wdintel-rs.socket is not active on 8081." >&2
+        systemctl status --no-pager wdintel-rs.socket || true
+        exit 1
+      fi
+
+      if ! sudo ss -ltnp | grep -q "LISTEN .*:8081"; then
+        echo "ERROR: 8081 is not listening after deploy." >&2
+        sudo ss -ltnp | grep "LISTEN" | grep ":8081" || true
+        exit 1
+      fi
+      if ! sudo ss -ltnp | grep "LISTEN .*:8081" | grep -q "systemd"; then
+        echo "ERROR: 8081 is bound by unexpected process after deploy." >&2
+        sudo ss -ltnp | grep "LISTEN .*:8081" || true
+        exit 1
+      fi
+
+      sudo systemctl status --no-pager wdintel-rs.socket wdintel-rs-bgworker.service wdintel-py.service
+      sudo ss -ltnp | grep "LISTEN .*:8081" || true
+    '
+
     # Success notification
     curl -sS -X POST \
       -H 'Content-Type: application/json' \
@@ -886,7 +948,7 @@ deploy-many _servers_pos="" servers="":
     echo-install-utils run-many \
       --values "{{ servers }}" \
       --cwd "{{ justfile_directory() }}" \
-      -- just server={} deploy
+      -- just deploy --server={}
 
 _echo-generic-deploy:
     #!/bin/bash
@@ -1087,7 +1149,7 @@ oneoff-2026-02-13-bgworker-00-pre-deploy server='':
     set -euo pipefail
     . deploy/utils.sh
     ensure_nonempty "server" "{{ server }}"
-    ssh {{ server }} 'for unit in wdintel-rs-bgworker.socket wdintel-py.socket echo-whatsapp.socket echo-signal-cli.socket; do
+    ssh {{ server }} 'for unit in wdintel-rs-bgworker.socket wdintel-py.socket echo-whatsapp.socket echo-vector.socket echo-signal-cli.socket; do
       if systemctl list-unit-files --type=socket --no-legend | awk "{print \$1}" | grep -qx "$unit"; then
         sudo systemctl disable --now "$unit" || true
       else
@@ -1095,19 +1157,91 @@ oneoff-2026-02-13-bgworker-00-pre-deploy server='':
       fi
     done'
     ssh {{ server }} 'sudo systemctl daemon-reload'
-    ssh {{ server }} 'systemctl --no-pager list-unit-files --type=socket | grep -E "wdintel-rs-bgworker\\.socket|wdintel-rs\\.socket|wdintel-py\\.socket|echo-whatsapp\\.socket|echo-signal-cli\\.socket" || true'
+    ssh {{ server }} 'systemctl --no-pager list-unit-files --type=socket | grep -E "wdintel-rs-bgworker\\.socket|wdintel-rs\\.socket|wdintel-py\\.socket|echo-whatsapp\\.socket|echo-vector\\.socket|echo-signal-cli\\.socket|echo-signal-bot@\\.socket|echo-whatsapp-bot@\\.socket" || true'
 
 [arg('server', long='server')]
 oneoff-2026-02-13-bgworker-01-post-deploy server='':
     #!/bin/bash
-    set -euo pipefail
+    set -euxo pipefail
     . deploy/utils.sh
     ensure_nonempty "server" "{{ server }}"
-    ssh {{ server }} 'sudo systemctl daemon-reload'
-    ssh {{ server }} 'sudo systemctl enable --now wdintel-rs.socket'
-    ssh {{ server }} 'sudo systemctl enable --now wdintel-rs-bgworker'
-    ssh {{ server }} 'sudo systemctl disable --now wdintel-rs.service'
-    ssh {{ server }} 'systemctl --no-pager status wdintel-rs.socket wdintel-rs-bgworker.service --no-pager'
+    ssh {{ server }} 'set -x; sudo systemctl daemon-reload'
+    # WDINTEL-PY is managed separately; do not disable it during this rollout.
+    ssh {{ server }} '
+      set -euo pipefail
+      set -x
+      echo "Stopping existing wdintel-rs units before enabling new deployment units."
+      for unit in wdintel-rs.service wdintel-rs-bgworker.service; do
+        if systemctl list-units --all --no-legend --full "$unit" 2>/dev/null | grep -qx "$unit"; then
+          if systemctl is-active --quiet "$unit"; then
+            echo "Stopping active $unit ..."
+            sudo systemctl stop "$unit" || true
+            for i in $(seq 1 120); do
+              if ! systemctl is-active --quiet "$unit"; then
+                echo "$unit is stopped."
+                break
+              fi
+              if [ "$i" -eq 120 ]; then
+                echo "ERROR: $unit did not stop within 120 seconds." >&2
+                exit 1
+              fi
+              sleep 1
+            done
+          else
+            echo "$unit already stopped."
+          fi
+        else
+          echo "$unit not installed on this host."
+        fi
+      done
+    '
+    ssh {{ server }} 'set -x
+      echo "Checking port 8081 listeners before enabling units:"
+      if sudo ss -ltnp | grep -q "LISTEN .*:8081"; then
+        echo "Active LISTEN on :8081:"
+        sudo ss -ltnp | grep "LISTEN .*:8081" || true
+        if ! sudo ss -ltnp | grep "LISTEN .*:8081" | grep -q systemd; then
+          echo "ERROR: non-systemd listener on :8081 found. Release it before rerun."
+          if command -v lsof >/dev/null 2>&1; then
+            sudo lsof -iTCP:8081 -sTCP:LISTEN -n -P || true
+          fi
+          exit 1
+        fi
+      fi
+      if command -v lsof >/dev/null 2>&1; then
+        sudo lsof -iTCP:8081 -sTCP:LISTEN -n -P || true
+      fi
+    '
+    ssh {{ server }} '
+      if sudo ss -ltnp | grep -q "LISTEN .*:8081"; then
+        echo "Port 8081 is already bound; checking known conflicting units."
+        sudo ss -ltnp | grep "LISTEN .*:8081" || true
+
+        echo "Stopping conflict-prone socket units on this host."
+        for unit in wdintel-rs-bgworker.socket wdintel-py.socket echo-whatsapp.socket echo-vector.socket echo-signal-cli.socket; do
+          if systemctl list-unit-files --type=socket --no-legend | awk "{print \$1}" | grep -qx "$unit"; then
+            sudo systemctl disable --now "$unit" || true
+          fi
+        done
+
+        for unit in $(sudo systemctl list-units --all --no-legend --full "echo-signal-bot@*.service" "echo-signal-bot@*.socket" "echo-whatsapp-bot@*.service" "echo-whatsapp-bot@*.socket" | cut -d " " -f1); do
+          echo "Stopping conflicting unit: $unit"
+          sudo systemctl disable --now "$unit" || true
+        done
+
+        if sudo ss -ltnp | grep -q "LISTEN .*:8081"; then
+          if ! sudo ss -ltnp | grep "LISTEN .*:8081" | grep -q "systemd"; then
+            echo "ERROR: 8081 is still in use by non-systemd process after cleanup."
+            sudo ss -ltnp | grep "LISTEN .*:8081" || true
+            exit 1
+          fi
+        fi
+      fi
+    '
+    ssh {{ server }} 'set -x; sudo systemctl enable --now wdintel-rs.socket'
+    ssh {{ server }} 'set -x; sudo systemctl enable --now wdintel-rs-bgworker'
+    ssh {{ server }} 'set -x; sudo systemctl disable --now wdintel-rs.service'
+    ssh {{ server }} 'set -x; systemctl --no-pager status wdintel-rs.socket wdintel-rs-bgworker.service --no-pager'
 
 # WARNING! ECHO-IM migrations are not applied here. To apply ECHO-IM migrations too, run `cargo run -p wdintel-rs -- --mode=debug migrate`
 #

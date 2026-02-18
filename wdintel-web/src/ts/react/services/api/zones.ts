@@ -365,8 +365,8 @@ export async function listDatasources(): Promise<DatasourcePair[]> {
   return (data || []).map(normalizeDatasourcePair).filter(Boolean) as DatasourcePair[];
 }
 
-export async function listSigintZones(): Promise<ZonePair[]> {
-  const data = await postJson<unknown[]>('/api/sigint/zones/list', {});
+export async function listSigintZones(signal?: AbortSignal): Promise<ZonePair[]> {
+  const data = await postJson<unknown[]>('/api/sigint/zones/list', {}, { signal });
   return (data || []).map(normalizeZonePair).filter(Boolean) as ZonePair[];
 }
 

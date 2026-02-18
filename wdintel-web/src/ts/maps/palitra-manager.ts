@@ -85,6 +85,8 @@ export class PalitraManager {
     const q = (query ?? '').trim();
     if (q === '') {
       this._searchQuery = '';
+      this.callbacks.onSearchLoadingChanged(false);
+      this.callbacks.onSearchResultsCountChanged(null);
       this.updatePoints();
       this.schedulePointsRequest();
       return;
@@ -93,11 +95,14 @@ export class PalitraManager {
     // search in all palitras, not only visible ones
     const palitraIds = this.palitras.map(p => p.palitra.id);
     if (palitraIds.length === 0) {
+      this.callbacks.onSearchLoadingChanged(false);
       this._showSearchResults([]);
       return;
     }
-
-    const tokens = q.split(/\s+/).filter(Boolean);
+    this.callbacks.onSearchLoadingChanged(true);
+    
+    /** Split multiple points by comma or space */
+    const tokens = q.split(/[,\s]+/).filter(Boolean);
     const tokensLower = tokens.map((t) => t.toLowerCase());
 
     const fromCache = this.cacheManager.getCachedPointsForPalitras(palitraIds);
@@ -121,6 +126,10 @@ export class PalitraManager {
       })
       .catch((err) => {
         console.error('[PalitraManager] Search failed:', err);
+      })
+      .finally(() => {
+        if (this._searchQuery !== q) return;
+        this.callbacks.onSearchLoadingChanged(false);
       });
   }
 
@@ -148,6 +157,9 @@ export class PalitraManager {
   }
 
   private _showSearchResults(data: { palitra_id: number; points: PalitraPoint[] }[]): void {
+    const resultsCount = data.reduce((acc, item) => acc + item.points.length, 0);
+    this.callbacks.onSearchResultsCountChanged(resultsCount);
+
     this.pointsClusters.forEach((cluster) => this.map.removeLayer(cluster));
     this.pointsClusters.clear();
 

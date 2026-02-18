@@ -582,6 +582,108 @@ pub async fn oneoff_nominalize_freq(mode: Mode) -> Result<(), AppError> {
     Ok(())
 }
 
+#[derive(FromQueryResult)]
+struct InboxPostRecalcRow {
+    id: i64,
+    post_id: Option<i64>,
+    body: Option<String>,
+}
+
+pub async fn oneoff_reprocess_inbox_posts(
+    mode: Mode,
+    ps: &crate::OneoffReprocessInboxPostsPs,
+) -> Result<(), AppError> {
+    println!(
+        "> oneoff_reprocess_inbox_posts start_day={} dry_run={}",
+        ps.start_day, ps.dry_run
+    );
+    let dbx = crate::new_pg_pool_from_mode(mode).await.c(h!())?;
+    let start_utc = parse_start_day_to_utc(&ps.start_day).c(h!())?;
+
+    let q = build_inbox_posts_recalc_query(start_utc);
+    let page_size = 1000_u64;
+    let paginator = q.paginate(&dbx, page_size);
+    let total_pages = paginator.num_pages().await.c(h!())?;
+
+    let mut total = 0_u64;
+    let mut updated = 0_u64;
+    let mut unchanged = 0_u64;
+    let mut skipped_no_body = 0_u64;
+
+    for page in 0..total_pages {
+        let rows = paginator.fetch_page(page).await.c(h!())?;
+        for row in rows {
+            total += 1;
+            let Some(body) = row.body else {
+                skipped_no_body += 1;
+                continue;
+            };
+
+            let post = crate::rer_importer::post::extract_post(&body)?;
+            let new_post_id =
+                crate::sigint::post::get_or_create_post_id(&dbx, &post)
+                    .await
+                    .c(h!())?;
+
+            if row.post_id == new_post_id {
+                unchanged += 1;
+                continue;
+            }
+
+            updated += 1;
+            if ps.dry_run {
+                continue;
+            }
+
+            let inbox_item = sigint_inbox_item::ActiveModel {
+                id: Set(row.id),
+                post_id: Set(new_post_id),
+                ..Default::default()
+            };
+            inbox_item.update(&dbx).await.c(h!())?;
+        }
+    }
+
+    println!(
+        "> done oneoff_reprocess_inbox_posts: total={total} updated={updated} unchanged={unchanged} skipped_no_body={skipped_no_body}"
+    );
+    Ok(())
+}
+
+fn build_inbox_posts_recalc_query(
+    start_utc: NaiveDateTime,
+) -> Selector<SelectModel<InboxPostRecalcRow>> {
+    sigint_inbox_item::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            sigint_inbox_item::Relation::SignalMessage.def(),
+        )
+        .filter(sigint_inbox_item::Column::Datetime.gte(start_utc))
+        .filter(signal_message::Column::Deleted.eq(false))
+        .select_only()
+        .column(sigint_inbox_item::Column::Id)
+        .column(sigint_inbox_item::Column::PostId)
+        .column_as(signal_message::Column::Body, "body")
+        .order_by_asc(sigint_inbox_item::Column::Id)
+        .into_model::<InboxPostRecalcRow>()
+}
+
+fn parse_start_day_to_utc(start_day: &str) -> Result<NaiveDateTime, AppError> {
+    let local_date =
+        NaiveDate::parse_from_str(start_day, "%Y-%m-%d").c(h!())?;
+    let local_midnight =
+        local_date.and_hms_opt(0, 0, 0).ok_or(AppError::BL {
+            msg: format!("invalid local midnight for date {start_day}"),
+        })?;
+    let zoned = local_midnight
+        .and_local_timezone(crate::config::get_tz())
+        .single()
+        .ok_or(AppError::BL {
+            msg: format!("ambiguous local datetime: {local_midnight}"),
+        })?;
+    Ok(zoned.to_utc().naive_utc())
+}
+
 pub async fn oneoff_reprocess_unit_names(mode: Mode) -> Result<(), AppError> {
     println!("> oneoff_reprocess_coords");
     let dbx = crate::new_pg_pool_from_mode(mode).await.c(h!())?;

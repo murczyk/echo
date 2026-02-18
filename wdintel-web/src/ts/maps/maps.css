@@ -3,15 +3,19 @@
 }
 
 #analysis-map .exit-button {
-	margin-right: 12px !important;
-	padding: 4px;
-	border-radius: 4px;
-	width: 35px;
-	height: 35px;
-	text-align: center;
+	margin-right: 10px !important;
+	padding: 8px;
+	border-radius: 8px;
+	width: 48px;
+	height: 48px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
 	cursor: pointer;
 	background: var(--bs-body-bg) !important;
 	color: var(--bs-body-color) !important;
+	border: 1px solid var(--bs-border-color);
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
 #analysis-map .leaflet-popup-content-wrapper,
@@ -115,13 +119,72 @@ div [id='map-container-analysis'] {
 
 /* Topleft as one row: search at left, timeswitch in center (Leaflet only has topleft/topright, so we use one topleft container with flex). */
 #analysis-map .leaflet-top.leaflet-left {
-	display: flex;
-	justify-content: space-between;
-	width: 60%;
+	display: grid;
+	grid-template-columns: 1fr auto 1fr;
+	align-items: flex-start;
+	width: 100%;
+}
+
+#analysis-map .leaflet-top.leaflet-left > .leaflet-control {
+	align-self: flex-start;
+}
+
+#analysis-map .leaflet-top.leaflet-left > .search-control {
+	grid-column: 1;
+	justify-self: start;
+}
+
+#analysis-map .leaflet-top.leaflet-left > .control-container {
+	grid-column: 2;
+	justify-self: center;
 }
 
 .leaflet-control.search-control {
 	border: none;
+}
+
+.analysis-map-search-wrap {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 6px;
+}
+
+.analysis-map-search-results-count {
+	min-height: 30px;
+	padding: 4px 10px;
+	font-size: 12px;
+	font-weight: 600;
+	line-height: 1.2;
+	font-family: var(--bs-body-font-family, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif);
+	color: var(--bs-body-color);
+	background: var(--bs-card-bg, var(--bs-body-bg));
+	border: 1px solid var(--bs-border-color);
+	border-radius: 6px;
+	margin-left: 0;
+	display: inline-flex;
+	align-items: center;
+}
+
+#analysis-map .leaflet-top.leaflet-right .layer-switch-control {
+	clear: both;
+}
+
+#analysis-map .leaflet-top.leaflet-right .analysis-map-zoom-control {
+	clear: none;
+}
+
+#analysis-map .analysis-map-zoom-control.collapsed {
+	width: 88px;
+	min-width: 88px;
+	max-width: 88px;
+}
+
+#analysis-map .analysis-map-zoom-control .layer-switch-header {
+	border-bottom: none;
+	padding: 8px;
+	gap: 8px;
+	justify-content: space-between;
 }
 
 .leaflet-pane {
