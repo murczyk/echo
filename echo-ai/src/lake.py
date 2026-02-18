@@ -1,16 +1,16 @@
+import argparse
 import tempfile
 
 from echo_ai.lake import Lake
 
 
-def main():
+def real_main(args):
+    db = args["db"]
     with tempfile.TemporaryDirectory() as temp_dir:
         print("creating connection to datalake")
         lake = Lake(temp_directory=temp_dir)
         print("creating lake schema")
         lake.create_schema_if_not_exists()
-
-        db = "echo-volyn2"
 
         print(f"attaching '{db}'")
         lake.attach_local(db)
@@ -33,6 +33,13 @@ def main():
 
         rel = lake.create_messages_labeled_onehot()
         print(rel)
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("db", type=str)
+    args = vars(parser.parse_args())
+    real_main(args)
 
 
 if __name__ == "__main__":

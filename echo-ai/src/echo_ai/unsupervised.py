@@ -17,7 +17,7 @@ from .fasttext_model import (
 def train_unsupervised(lake: Lake, **kwargs):
     seed = kwargs.get("seed", 4507)
     shuffle = kwargs.get("shuffle", True)
-    rel = lake.create_messages_labeled_onehot(shuffle=shuffle, seed=seed)
+    rel = lake.messages_including_unlabeled(shuffle=shuffle, seed=seed)
     count = quack.count_star(rel)
     print(f"found {count} training rows")
     df = quack.to_df_arrow(rel.select("text").limit(1000))

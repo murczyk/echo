@@ -1,4 +1,3 @@
-import csv
 import os
 from pathlib import Path
 
@@ -92,6 +91,40 @@ class Lake:
         WHEN NOT MATCHED BY TARGET THEN INSERT;
         """)
 
+    def messages_including_unlabeled(
+        self, shuffle: bool = True, seed: int = 4507
+    ) -> DuckDBPyRelation:
+        order_clause = ""
+        if shuffle:
+            order_clause = f"ORDER BY hash(source, id, {seed})"
+        query = self.conn.query(rf"""
+        SELECT DISTINCT ON (text)
+            source,
+            id,
+            text
+        FROM
+        (
+            SELECT
+                source,
+                id,
+                array_to_string(
+                    regexp_extract_all(
+                        lower(
+                            coalesce(nullif(regexp_replace(body, '^[^—]*—\s*', ''), ''), body)
+                        ),
+                        $$[\pL\pN_`'’ʼ]+$$
+                    ),
+                    ' '
+                ) AS text
+            FROM
+                sigint_inbox_message
+        ) AS x
+        WHERE
+            text <> ''
+            {order_clause}
+        """)
+        return query
+
     def create_messages_labeled_onehot(
         self, shuffle: bool = True, seed: int = 4507
     ) -> DuckDBPyRelation:
@@ -100,51 +133,62 @@ class Lake:
         if shuffle:
             pred_order = f"ORDER BY hash(source, id, {seed})"
 
-        self.conn.execute(rf"""
-        CREATE TEMPORARY TABLE IF NOT EXISTS tmp_messages_labeled_onehot AS
-        WITH cte AS NOT MATERIALIZED (
+        self.conn.execute(r"""
+        CREATE TEMPORARY TABLE IF NOT EXISTS tmp_messages_pivot AS
+        WITH cte AS (
             SELECT
-                text: array_to_string(regexp_extract_all(lower(text), $$[\pL\pN_`'’ʼ]+$$), ' '),
-                * EXCLUDE(text),
-                min_label_0: MIN(created_at) FILTER (label_0 = true) OVER (PARTITION BY source),
-                min_label_1: MIN(created_at) FILTER (label_1 = true) OVER (PARTITION BY source),
-                min_label_2: MIN(created_at) FILTER (label_2 = true) OVER (PARTITION BY source),
-                min_label_3: MIN(created_at) FILTER (label_3 = true) OVER (PARTITION BY source),
-                min_label_4: MIN(created_at) FILTER (label_4 = true) OVER (PARTITION BY source),
-                min_label_5: MIN(created_at) FILTER (label_5 = true) OVER (PARTITION BY source),
-                min_label_6: MIN(created_at) FILTER (label_6 = true) OVER (PARTITION BY source),
-                min_label_7: MIN(created_at) FILTER (label_7 = true) OVER (PARTITION BY source),
-                min_label_8: MIN(created_at) FILTER (label_8 = true) OVER (PARTITION BY source),
-                min_label_9: MIN(created_at) FILTER (label_9 = true) OVER (PARTITION BY source)
+                m.source,
+                m.id,
+                m.created_at,
+                array_to_string(
+                    regexp_extract_all(
+                        lower(
+                            coalesce(nullif(regexp_replace(m.body, '^[^—]*—\s*', ''), ''), m.body)
+                        ),
+                        $$[\pL\pN_`'’ʼ]+$$
+                    ),
+                    ' '
+                ) AS text,
+                l.label_id
             FROM
-                messages_labeled_onehot
+                sigint_inbox_message m
+            JOIN
+                sigint_inbox_item_tag mt on m.source = mt.source AND m.id = mt.sigint_inbox_item_id
+            JOIN
+                tag t ON mt.source = t.source AND mt.tag_id = t.id
+            JOIN
+                label l ON t.label = l.label_text
         )
-        SELECT
-            text,
-            body,
+        PIVOT cte
+        ON label_id IN (0, 1, 2, 3, 4, 5, 6, 7, 8, 9)
+        USING coalesce(max(label_id = label_id)::BOOLEAN, FALSE) AS onehot
+        """)
+
+        self.conn.execute(r"""
+        CREATE OR REPLACE VIEW tmp_messages_labeled_onehot AS
+        SELECT DISTINCT ON (text, "0_onehot", "1_onehot", "2_onehot", "3_onehot", "4_onehot", "5_onehot", "6_onehot", "7_onehot", "8_onehot", "9_onehot")
             source,
             id,
             created_at,
-            datetime,
-            labels,
-            label_0: CASE WHEN created_at >= min_label_0 THEN label_0 END,
-            label_1: CASE WHEN created_at >= min_label_1 THEN label_1 END,
-            label_2: CASE WHEN created_at >= min_label_2 THEN label_2 END,
-            label_3: CASE WHEN created_at >= min_label_3 THEN label_3 END,
-            label_4: CASE WHEN created_at >= min_label_4 THEN label_4 END,
-            label_5: CASE WHEN created_at >= min_label_5 THEN label_5 END,
-            label_6: CASE WHEN created_at >= min_label_6 THEN label_6 END,
-            label_7: CASE WHEN created_at >= min_label_7 THEN label_7 END,
-            label_8: CASE WHEN created_at >= min_label_8 THEN label_8 END,
-            label_9: CASE WHEN created_at >= min_label_9 THEN label_9 END,
+            text,
+            label_0: "0_onehot",
+            label_1: "1_onehot",
+            label_2: "2_onehot",
+            label_3: "3_onehot",
+            label_4: "4_onehot",
+            label_5: "5_onehot",
+            label_6: "6_onehot",
+            label_7: "7_onehot",
+            label_8: "8_onehot",
+            label_9: "9_onehot"
         FROM
-            cte
+            tmp_messages_pivot
         WHERE
             text <> ''
-        {pred_order}
-        ;
         """)
-        return self.conn.table("tmp_messages_labeled_onehot")
+        return self.conn.query(
+            f"SELECT * FROM tmp_messages_labeled_onehot {pred_order}"
+        )
 
     def split_for_label(
         self, label_column_name: str, and_filter: str
@@ -158,7 +202,7 @@ class Lake:
             tmp_messages_labeled_onehot
         WHERE
             {label_column_name} IS NOT NULL
-            AND LENGTH(labels) > 0
+            AND (label_0 OR label_1 OR label_2 OR label_3 OR label_4 OR label_5 OR label_6 OR label_7 OR label_8 OR label_9)
             AND {and_filter}
         """)
 
@@ -348,81 +392,4 @@ class Lake:
             removed_at TIMESTAMP WITH TIME ZONE NOT NULL
         );
         ALTER TABLE sigint_inbox_tag_model_error SET PARTITIONED BY (source);
-
-        CREATE OR REPLACE VIEW messages_trimmed AS
-        WITH cte1 AS NOT MATERIALIZED (
-            SELECT
-                m.body,
-                body_trim_dash: regexp_replace(m.body, '(?sm)\A.+?^\s*(?:1\.|[-—]+|$)', '', 'sm'),
-                body_trim_emptyline: regexp_replace(m.body, '(?sm)\A.+?^$', '', 'sm'),
-                m.source,
-                m.id,
-                m.created_at,
-                m.datetime
-            FROM
-                sigint_inbox_message m
-        ), cte2 AS NOT MATERIALIZED (
-            SELECT
-                CASE
-                    WHEN regexp_matches(body, '(?sm)\A(?:1\.|[-—]+)\s+', 'sm') THEN body
-                    WHEN body_trim_dash <> '' AND length(body_trim_dash) < length(body_trim_emptyline) THEN body_trim_dash
-                    WHEN body_trim_emptyline <> '' THEN body_trim_emptyline
-                    ELSE body
-                END AS text,
-                * EXCLUDE(body_trim_dash, body_trim_emptyline)
-            FROM
-                cte1
-        )
-        SELECT
-            text: regexp_replace(text, '(?m)^[0-9][.-—]', '', 'gm'),
-            * EXCLUDE(text)
-        FROM
-            cte2
-        WHERE
-            text <> ''
-        ;
-
-        CREATE OR REPLACE VIEW messages_labeled AS
-        WITH cte1 AS (
-            SELECT
-                mt.source,
-                mt.sigint_inbox_item_id,
-                list(l.label_id) as labels
-            FROM
-                sigint_inbox_item_tag mt
-            JOIN
-                tag t ON mt.tag_id = t.id
-            JOIN
-                label l ON t.label = l.label_text
-            GROUP BY
-                mt.source,
-                mt.sigint_inbox_item_id
-        )
-        SELECT
-            m.*,
-            COALESCE(ml.labels, []::INT[]) AS labels
-        FROM
-            messages_trimmed m
-        LEFT JOIN
-            cte1 ml
-                ON m.source = ml.source
-               AND m.id = ml.sigint_inbox_item_id
-        ;
-
-        CREATE OR REPLACE VIEW messages_labeled_onehot AS
-        SELECT
-            *,
-            label_0: list_contains(labels, 0),
-            label_1: list_contains(labels, 1),
-            label_2: list_contains(labels, 2),
-            label_3: list_contains(labels, 3),
-            label_4: list_contains(labels, 4),
-            label_5: list_contains(labels, 5),
-            label_6: list_contains(labels, 6),
-            label_7: list_contains(labels, 7),
-            label_8: list_contains(labels, 8),
-            label_9: list_contains(labels, 9)
-        FROM
-            messages_labeled;
-
         """)

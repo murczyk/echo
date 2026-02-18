@@ -37,9 +37,11 @@ def refresh_datalake(lake: Lake, databases_list: list[str]):
         print(f"trying to attach local '{db}'")
         try:
             lake.attach_local(db)
+            print(f"attached local '{db}'")
         except:
             print(f"trying to attach remote '{db}'")
             lake.attach_remote(db)
+            print(f"attached remote '{db}'")
 
         try:
             refresh_from_db(lake, db)
