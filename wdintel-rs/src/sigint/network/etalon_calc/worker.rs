@@ -210,10 +210,18 @@ async fn run_inbox_network_worker_once(
         .await
         .c(h!())?;
     let cutoff = Utc::now().naive_utc() - chrono::Duration::days(cutoff_days);
-    let mut task_list =
-        load_and_triage_tasks_batch(db, is_for_old_worker, cutoff, tag)
-            .await
-            .c(h!())?;
+    let max_pending_task_id = load_max_pending_task_id(db, is_for_old_worker)
+        .await
+        .c(h!())?;
+    let mut task_list = load_and_triage_tasks_batch(
+        db,
+        is_for_old_worker,
+        cutoff,
+        tag,
+        max_pending_task_id,
+    )
+    .await
+    .c(h!())?;
     if task_list.is_empty() {
         info!("[{tag} worker] task_list is empty after triage, skipping...");
         return Ok(());
@@ -290,13 +298,18 @@ async fn load_and_triage_tasks_batch(
     is_for_old_worker: bool,
     cutoff: NaiveDateTime,
     tag: &str,
+    max_pending_task_id: Option<i64>,
 ) -> anyhow::Result<Vec<network_invalidation_task::Model>> {
     let mut result = vec![];
     loop {
-        let pending_tasks =
-            load_pending_tasks_batch(db, is_for_old_worker, tag)
-                .await
-                .c(h!())?;
+        let pending_tasks = load_pending_tasks_batch(
+            db,
+            is_for_old_worker,
+            tag,
+            max_pending_task_id,
+        )
+        .await
+        .c(h!())?;
         if pending_tasks.is_empty() {
             break;
         }
@@ -322,11 +335,16 @@ async fn load_pending_tasks_batch(
     db: &DatabaseConnection,
     is_for_old_worker: bool,
     tag: &str,
+    max_pending_task_id: Option<i64>,
 ) -> anyhow::Result<Vec<network_invalidation_task::Model>> {
     let mut pending_tasks_query = network_invalidation_task::Entity::find()
         .filter(network_invalidation_task::Column::CompletedAt.is_null())
         .order_by_desc(network_invalidation_task::Column::Id)
         .limit(NETWORK_INVALIDATION_TASK_FETCH_BATCH_SIZE);
+    if let Some(max_id) = max_pending_task_id {
+        pending_tasks_query = pending_tasks_query
+            .filter(network_invalidation_task::Column::Id.lte(max_id));
+    }
     if is_for_old_worker {
         pending_tasks_query = pending_tasks_query.filter(
             network_invalidation_task::Column::Tag
@@ -352,6 +370,33 @@ async fn load_pending_tasks_batch(
         );
     }
     Ok(pending_tasks)
+}
+
+async fn load_max_pending_task_id(
+    db: &DatabaseConnection,
+    is_for_old_worker: bool,
+) -> anyhow::Result<Option<i64>> {
+    let mut query = network_invalidation_task::Entity::find()
+        .select_only()
+        .column(network_invalidation_task::Column::Id)
+        .filter(network_invalidation_task::Column::CompletedAt.is_null())
+        .order_by_desc(network_invalidation_task::Column::Id);
+    if is_for_old_worker {
+        query = query.filter(
+            network_invalidation_task::Column::Tag
+                .eq(NETWORK_INVALIDATION_TASK_TAG_OLD.to_string()),
+        );
+    } else {
+        query = query.filter(
+            network_invalidation_task::Column::TillTs
+                .lte(Utc::now().naive_utc()),
+        );
+        query = query.filter(
+            network_invalidation_task::Column::Tag
+                .ne(NETWORK_INVALIDATION_TASK_TAG_OLD.to_string()),
+        );
+    }
+    query.into_tuple::<i64>().one(db).await.c(h!())
 }
 
 async fn triage_pending_tasks_batch(
