@@ -33,7 +33,7 @@ export function buildInboxReq(opts: {
 }): InboxMessagesReq {
   const f = opts.filter;
   return {
-    sinceIdNoninclusive: null,
+    sinceIdNoninclusive: opts.sinceIdNoninclusive ?? null,
     beforeIdNoninclusive: opts.beforeIdNoninclusive ?? null,
     sinceDateInclusiveMs: opts.sinceDateInclusiveMs ?? null,
     tillDateInclusiveMs: null,
@@ -195,6 +195,8 @@ export type MessageFeedState = {
   items: MessageItem[];
   loading: boolean;
   loadingEarlier: boolean;
+  /** True after "load earlier" returned 0 new items — nothing older to fetch */
+  hasReachedStart: boolean;
 };
 
 export function toQueryState(messageFeeds: MessageFeedState[]): RerDutyState {

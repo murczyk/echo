@@ -230,16 +230,16 @@ menuItem props activeName hrefLink activeNameExp nameText =
 
 
 menuItemWithBadge props activeName hrefLink activeNameExp nameText badgeText badgeTitle =
-    li []
+    li [ class "relative" ]
         [ a
-            [ class "inline-flex items-center py-2 text-white hover:bg-black/10 px-2 rounded transition-all duration-200"
+            [ class "block py-2 pr-10 text-white hover:bg-black/10 px-2 rounded transition-all duration-200"
             , Route.Path.href hrefLink
             , classList [ ( "font-medium", activeName == activeNameExp ) ]
             , onClick (props.onDropdownToggle Nothing)
             ]
             [ text nameText
             , span
-                [ class "ml-1.5 text-[10px] font-normal px-1.5 py-0.5 rounded border border-amber-400/80 bg-amber-500/25 text-amber-200"
+                [ class "absolute -top-[5px] -right-[10px] text-[10px] font-normal px-1.5 py-0.5 rounded border border-amber-400 bg-amber-500/25 text-amber-200 z-[1]"
                 , attribute "title" badgeTitle
                 ]
                 [ text badgeText ]

@@ -149,9 +149,9 @@ export function FeedColumn({
         <Button
           size="small"
           variant="outlined"
-          disabled={feed.loadingEarlier || feed.items.length === 0}
+          disabled={feed.loadingEarlier || feed.items.length === 0 || feed.hasReachedStart}
           onClick={onLoadEarlier}
-          title="Завантажити старіші"
+          title={feed.hasReachedStart ? 'Немає старіших повідомлень' : 'Завантажити старіші'}
         >
           {feed.loadingEarlier ? <CircularProgress size={16} /> : 'Завантажити старіші'}
         </Button>

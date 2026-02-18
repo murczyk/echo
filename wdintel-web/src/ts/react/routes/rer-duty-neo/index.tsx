@@ -56,6 +56,7 @@ export function RerDutyNeoPage() {
       items: [],
       loading: true,
       loadingEarlier: false,
+      hasReachedStart: false,
     }));
   });
   const [error, setError] = React.useState<string | null>(null);
@@ -152,7 +153,7 @@ export function RerDutyNeoPage() {
   const loadFeedEarlierMessages = React.useCallback(
     async (feedId: string) => {
       const w = messageFeeds.find((x) => x.id === feedId);
-      if (!w || w.items.length === 0) return;
+      if (!w || w.items.length === 0 || w.hasReachedStart) return;
       const firstId = w.items[0][0];
       setMessageFeeds((prev) => prev.map((x) => (x.id === feedId ? { ...x, loadingEarlier: true } : x)));
       setError(null);
@@ -167,7 +168,13 @@ export function RerDutyNeoPage() {
             if (x.id !== feedId) return x;
             const existingIds = new Set(x.items.map(([id]) => id));
             const newItems = rsp.inboxItems.filter(([id]) => !existingIds.has(id));
-            return { ...x, items: [...newItems, ...x.items], loadingEarlier: false };
+            const hasReachedStart = newItems.length === 0;
+            return {
+              ...x,
+              items: [...newItems, ...x.items],
+              loadingEarlier: false,
+              hasReachedStart,
+            };
           })
         );
       } catch (e) {
@@ -260,7 +267,9 @@ export function RerDutyNeoPage() {
 
   const applyFilter = React.useCallback((feedId: string, f: RerDutyFeedFilterState) => {
     setMessageFeeds((prev) => {
-      const next = prev.map((w) => (w.id === feedId ? { ...w, filter: f, items: [], loading: true } : w));
+      const next = prev.map((w) =>
+        w.id === feedId ? { ...w, filter: f, items: [], loading: true, hasReachedStart: false } : w
+      );
       pushStateToUrl(toQueryState(next));
       return next;
     });
@@ -290,6 +299,7 @@ export function RerDutyNeoPage() {
       items: [],
       loading: true,
       loadingEarlier: false,
+      hasReachedStart: false,
     };
     setMessageFeeds((prev) => {
       if (prev.some((w) => w.id === id)) return prev;

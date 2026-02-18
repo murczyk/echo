@@ -221,6 +221,7 @@ export function FeedFilterPanel({
               <InputLabel>вибрати фільтр</InputLabel>
               <Select
                 label="вибрати фільтр"
+                className="min-w-[110px]"
                 value={selectedSavedId ?? ''}
                 onChange={(e) => {
                   const id = e.target.value as number | '';

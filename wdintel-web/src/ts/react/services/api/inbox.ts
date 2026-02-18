@@ -278,7 +278,7 @@ export async function savedFilterUpsert(
   };
   const raw = await postJson<Array<{ id: number; name: string; req: unknown }>>(
     '/api/rer/duty/saved-filter-upsert',
-    JSON.stringify(body)
+    body
   );
   return (raw || []).map((r) => ({
     id: r.id,
