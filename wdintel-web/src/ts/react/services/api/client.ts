@@ -25,7 +25,8 @@ async function parseErrorMessage(response: Response): Promise<string> {
   return response.statusText || `HTTP ${response.status}`;
 }
 
-async function requestJson<T>(method: HttpMethod, url: string, body?: JsonValue | JsonObject) {
+/** Body is JSON.stringified; use any JSON-serializable value (plain objects, arrays, primitives). */
+async function requestJson<T>(method: HttpMethod, url: string, body?: unknown) {
   const init: RequestInit = {
     method,
     headers: {
@@ -57,7 +58,7 @@ async function requestJson<T>(method: HttpMethod, url: string, body?: JsonValue 
   }
 }
 
-export async function postJson<T>(url: string, body?: JsonValue | JsonObject) {
+export async function postJson<T>(url: string, body?: unknown) {
   return requestJson<T>('POST', url, body);
 }
 
@@ -65,18 +66,18 @@ export async function getJson<T>(url: string) {
   return requestJson<T>('GET', url);
 }
 
-export async function postVoid(url: string, body?: JsonValue | JsonObject) {
+export async function postVoid(url: string, body?: unknown) {
   await requestJson('POST', url, body);
 }
 
-export async function putJson<T>(url: string, body?: JsonValue | JsonObject) {
+export async function putJson<T>(url: string, body?: unknown) {
   return requestJson<T>('PUT', url, body);
 }
 
-export async function putVoid(url: string, body?: JsonValue | JsonObject) {
+export async function putVoid(url: string, body?: unknown) {
   await requestJson('PUT', url, body);
 }
 
-export async function deleteVoid(url: string, body?: JsonValue | JsonObject) {
+export async function deleteVoid(url: string, body?: unknown) {
   await requestJson('DELETE', url, body);
 }
