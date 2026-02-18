@@ -43,6 +43,8 @@ pub struct Model {
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
+    #[sea_orm(has_one = "super::aor_location_config::Entity")]
+    AorLocationConfig,
     #[sea_orm(has_many = "super::datasource::Entity")]
     Datasource,
     #[sea_orm(
@@ -77,6 +79,12 @@ pub enum Relation {
     StatsGroupAorId5min,
     #[sea_orm(has_many = "super::stats_group_aor_id_day::Entity")]
     StatsGroupAorIdDay,
+}
+
+impl Related<super::aor_location_config::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::AorLocationConfig.def()
+    }
 }
 
 impl Related<super::datasource::Entity> for Entity {

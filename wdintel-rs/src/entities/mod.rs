@@ -3,6 +3,7 @@
 pub mod prelude;
 
 pub mod alert;
+pub mod aor_location_config;
 pub mod area_of_responsibility;
 pub mod bgtask;
 pub mod bgtask_res;
@@ -121,6 +122,9 @@ pub mod stats_group_freq_5min;
 pub mod stats_group_freq_day;
 pub mod stats_group_location_5min;
 pub mod stats_group_location_day;
+pub mod stats_group_network_callsign_day;
+pub mod stats_group_network_day;
+pub mod stats_group_network_freq_day;
 pub mod stats_group_post_id_5min;
 pub mod stats_group_post_id_day;
 pub mod stats_group_sender_5min;

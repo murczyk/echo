@@ -689,12 +689,18 @@ pub async fn oneoff_reprocess_unit_names(mode: Mode) -> Result<(), AppError> {
     let dbx = crate::new_pg_pool_from_mode(mode).await.c(h!())?;
     let config = crate::config::read_config(mode)?;
     let settlements = Arc::new(RwLock::new(
-        crate::location::load_from_file(
+        crate::location::load_settlements_data_config(
             config.settlement_paths().c(h!())?,
             mode,
         )
         .unwrap(),
     ));
+    crate::location::aor_config::init_aor_location_config(
+        &dbx,
+        settlements.clone(),
+    )
+    .await
+    .c(h!())?;
 
     let q = sigint_inbox_item::Entity::find()
         .join(

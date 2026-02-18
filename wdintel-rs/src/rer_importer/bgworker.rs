@@ -5,7 +5,7 @@ use sea_orm::*;
 const CAPACITY: usize = 2000;
 
 pub async fn process_message_to_inbox_nofail<'a, 'async_trait, C>(
-    settlements: Arc<RwLock<crate::location::SettlementsData>>,
+    settlements: Arc<RwLock<crate::location::SettlementsDataConfig>>,
     txn: &'a C,
     rq: &reqwest::Client,
     config: &Config,

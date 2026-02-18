@@ -1,7 +1,7 @@
 use crate::config::*;
 use crate::entities::signal_message_queue;
 use crate::entities::*;
-use crate::location::SettlementsData;
+use crate::location::SettlementsDataConfig;
 use crate::messenger::types::{EchoAccountF1, Message};
 use crate::types::*;
 use crate::utils::setup_worker;
@@ -21,7 +21,7 @@ pub struct ProcessorPool {
 #[derive(Clone)]
 pub struct WorkerContext {
     pub config: Config,
-    pub settlements: Arc<RwLock<SettlementsData>>,
+    pub settlements: Arc<RwLock<SettlementsDataConfig>>,
     pub rq: Client,
     pub redis: ConnectionManager,
     pub dbx: DatabaseConnection,

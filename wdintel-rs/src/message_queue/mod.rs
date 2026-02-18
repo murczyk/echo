@@ -2,7 +2,9 @@ use crate::config::*;
 use crate::entities::*;
 use crate::messenger::dedupe;
 use crate::messenger::media::MediaUploadInput;
-use crate::{location::SettlementsData, messenger::types::Message, types::*};
+use crate::{
+    location::SettlementsDataConfig, messenger::types::Message, types::*,
+};
 use echo_im::types::MessageAttachmentF1;
 use redis::aio::ConnectionManager;
 use sea_orm::*;
@@ -17,7 +19,7 @@ pub async fn process_signal_message_queue_item(
     m: Message,
     attachments: Vec<MessageAttachmentF1>,
     redis: &mut ConnectionManager,
-    settlements: Arc<RwLock<SettlementsData>>,
+    settlements: Arc<RwLock<SettlementsDataConfig>>,
     rq: &reqwest::Client,
     config: &Config,
     s3: &Option<opendal::Operator>,
