@@ -15,6 +15,23 @@ import Time
 
 dateAndPanelsBlock : Bool -> Time.Zone -> Model -> Bool -> Html Msg
 dateAndPanelsBlock isDark timeZone model mapFeatureFlag =
+    let
+        searchDisabled =
+            model.unfoldMapBlock
+
+        searchButtonBaseClass =
+            "inline-flex items-center justify-center text-nowrap rounded-none p-1 bg-neutral-light text-text dark:bg-neutral-dark dark:text-w"
+
+        searchButtonHoverClass =
+            " transition-colors duration-200 ease-in-out hover:bg-neutral-light-hover dark:hover:bg-neutral-dark-hover"
+
+        searchButtonClass =
+            if searchDisabled then
+                searchButtonBaseClass
+
+            else
+                searchButtonBaseClass ++ searchButtonHoverClass
+    in
     div [ class "d-inline-block align-middle" ]
         [ div [ class "d-flex align-items-center", style "gap" "8px", style "padding-top" "1px" ]
             [ Shared.Components.DateRangePicker.view { zone = timeZone, from = model.from, to = model.to } model.dateRangePicker
@@ -82,6 +99,7 @@ dateAndPanelsBlock isDark timeZone model mapFeatureFlag =
                 , style "border" "1px solid var(--color-border)"
                 , style "border-radius" "2px"
                 , style "overflow" "hidden"
+                , style "opacity" (if searchDisabled then "0.65" else "1")
                 ]
                 [ div
                     [ class "position-relative d-inline-flex align-items-center"
@@ -98,6 +116,8 @@ dateAndPanelsBlock isDark timeZone model mapFeatureFlag =
                         , style "background" "var(--color-bw)"
                         , style "color" "var(--color-text)"
                         , placeholder "пошук"
+                        , disabled model.unfoldMapBlock
+                        , style "cursor" (if searchDisabled then "not-allowed" else "text")
                         , onInput SearchInput
                         , onKeyDown SearchInputKeyDown
                         , value <| model.searchInput
@@ -112,18 +132,22 @@ dateAndPanelsBlock isDark timeZone model mapFeatureFlag =
                             , style "right" "8px"
                             , style "outline" "none"
                             , style "box-shadow" "none"
+                            , style "cursor" (if searchDisabled then "not-allowed" else "pointer")
+                            , disabled model.unfoldMapBlock
                             , onClick SearchReset
                             ]
                             []
                     ]
                 , button
                     [ type_ "button"
-                    , class "inline-flex items-center justify-center text-nowrap rounded-none p-1 transition-colors duration-200 ease-in-out bg-neutral-light text-text hover:bg-neutral-light-hover dark:bg-neutral-dark dark:text-w dark:hover:bg-neutral-dark-hover"
+                    , class searchButtonClass
                     , style "min-height" "40px"
                     , style "min-width" "50px"
                     , style "border" "none"
                     , style "border-left" "1px solid var(--color-border)"
+                    , style "cursor" (if searchDisabled then "not-allowed" else "pointer")
                     , title "шукати"
+                    , disabled model.unfoldMapBlock
                     , onClick SearchDo
                     ]
                     [ i [ class "bi bi-search" ] []
