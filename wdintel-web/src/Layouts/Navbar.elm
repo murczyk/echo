@@ -133,7 +133,7 @@ view user activeName shared route { toContentMsg, model, content } =
             { onToggleTheme = ToggleDarkTheme
             , onThemeChange = SetThemeMode
             , onNavbarVisibilityChange = ToggleNavbarVisibility
-            , isRerDuty = route.url.path == "/rer-duty"
+            , isRerDuty = route.url.path == "/rer-duty" || route.url.path == "/rer-duty-neo"
             , openDropdown = model.openDropdown
             , onDropdownToggle = SetOpenDropdown
             }
@@ -159,7 +159,7 @@ view user activeName shared route { toContentMsg, model, content } =
                     )
                 ]
                 [ navbarHtml ]
-            , if route.url.path == "/rer-duty" && not model.isNavbarVisible then
+            , if (route.url.path == "/rer-duty" || route.url.path == "/rer-duty-neo") && not model.isNavbarVisible then
                 div
                     [ class "fixed top-4 right-4 z-500 transition-opacity duration-300 ease-in-out opacity-100" ]
                     [ div
