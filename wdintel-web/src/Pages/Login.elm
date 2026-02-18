@@ -229,7 +229,11 @@ update shared msg model =
             )
 
         GotDeltaRedirectUrl (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model
+            , E.sendCmd <|
+                Shared.Components.Toast.addError ToastMsg
+                "Сталася помилка. спробуйте ще раз або зверніться до адміністратора."
+            )
 
 
 subscriptions : Model -> Sub Msg
