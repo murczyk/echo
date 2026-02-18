@@ -2020,6 +2020,7 @@ pub async fn merge_network(
         &txn,
         &user_id,
         false,
+        false,
         req.network_id_from,
         req.network_id_to,
     )

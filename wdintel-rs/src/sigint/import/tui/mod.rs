@@ -115,6 +115,7 @@ pub async fn run_merge_network_tui(mode: Mode) -> Result<(), AppError> {
         unit_data,
         imported_network_units,
         imported_networks,
+        true,
     )
     .await
     .c(h!())?;
@@ -332,6 +333,7 @@ pub async fn run_import_network_tui(
         unit_data,
         imported_network_units,
         imported_networks,
+        true,
     )
     .await
     .c(h!())?;
@@ -367,8 +369,9 @@ pub async fn oneoff_import_network_details(
     let mut network_data = load_network_data(
         &db,
         unit_data.clone(),
-        imported_network_units,
-        imported_networks,
+        imported_network_units.clone(),
+        imported_networks.clone(),
+        true,
     )
     .await
     .c(h!())?;
@@ -395,6 +398,20 @@ pub async fn oneoff_import_network_details(
         unit_matches.insert(original_id, target_unit_id);
     }
 
+    let matched_by_original_id = add_network_matches_by_original_id(
+        &db,
+        &mut network_matches,
+        &imported_networks,
+        &imported_network_units,
+    )
+    .await
+    .c(h!())?;
+    if matched_by_original_id > 0 {
+        info!(
+            "Matched {matched_by_original_id} non-matched network(s) via original_id."
+        );
+    }
+
     import_network_freqs(
         network_matches.clone(),
         etalon_full.sigint_network_freq,
@@ -416,6 +433,15 @@ pub async fn oneoff_import_network_details(
     .await
     .c(h!())?;
 
+    import_sigint_network_aors(
+        network_matches.clone(),
+        etalon_full.sigint_network_aor,
+        etalon_full.area_of_responsibility,
+        &db,
+    )
+    .await
+    .c(h!())?;
+
     let matched_sigint_callsigns = import_sigint_callsigns(
         unit_matches.clone(),
         etalon_full.sigint_callsign,
@@ -430,6 +456,193 @@ pub async fn oneoff_import_network_details(
         matched_sigint_callsigns,
         etalon_full.sigint_network_callsign,
         &db,
+    )
+    .await
+    .c(h!())?;
+    Ok(())
+}
+
+async fn add_network_matches_by_original_id(
+    db: &DatabaseConnection,
+    network_matches: &mut HashMap<i64, i64>,
+    imported_networks: &[sigint_network::Model],
+    imported_network_units: &[sigint_network_unit::Model],
+) -> anyhow::Result<usize> {
+    let unmatched_import_network_ids = imported_networks
+        .iter()
+        .map(|network| network.id)
+        .filter(|network_id| !network_matches.contains_key(network_id))
+        .collect_vec();
+    if unmatched_import_network_ids.is_empty() {
+        return Ok(0);
+    }
+
+    let mut imported_unit_ids_by_network_id = HashMap::new();
+    for imported_network_unit in imported_network_units {
+        imported_unit_ids_by_network_id
+            .entry(imported_network_unit.network_id)
+            .or_insert_with(Vec::new)
+            .push(imported_network_unit.unit_id);
+    }
+
+    let local_networks = sigint_network::Entity::find()
+        .filter(
+            sigint_network::Column::OriginalId
+                .is_in(unmatched_import_network_ids.clone()),
+        )
+        .all(db)
+        .await
+        .c(h!())?;
+    let mut local_networks_by_original_id = HashMap::new();
+    for local_network in local_networks {
+        let Some(original_id) = local_network.original_id else {
+            continue;
+        };
+        local_networks_by_original_id
+            .entry(original_id)
+            .or_insert_with(Vec::new)
+            .push(local_network.id);
+    }
+
+    let mut matched_counter = 0;
+    for imported_network in imported_networks {
+        if network_matches.contains_key(&imported_network.id) {
+            continue;
+        }
+        let local_network_ids = local_networks_by_original_id
+            .get(&imported_network.id)
+            .cloned()
+            .unwrap_or_default();
+        if local_network_ids.len() == 1 {
+            let local_network_id = local_network_ids[0];
+            network_matches.insert(imported_network.id, local_network_id);
+            matched_counter += 1;
+            continue;
+        }
+        let unit_ids = imported_unit_ids_by_network_id
+            .get(&imported_network.id)
+            .cloned()
+            .unwrap_or_default();
+        let unit_ids_txt = if unit_ids.is_empty() {
+            "-".to_string()
+        } else {
+            unit_ids.iter().join(",")
+        };
+        let unresolved_reason = if local_network_ids.is_empty() {
+            "no_local_original_id_match"
+        } else {
+            "multiple_local_original_id_matches"
+        };
+        warn!(
+            "Unmatched network: id={}, name=\"{}\", import_unit_ids=[{}], reason={}",
+            imported_network.id,
+            imported_network.name,
+            unit_ids_txt,
+            unresolved_reason
+        );
+    }
+
+    Ok(matched_counter)
+}
+
+async fn import_sigint_network_aors(
+    network_matches: HashMap<i64, i64>,
+    import_sigint_network_aors: Vec<sigint_network_aor::Model>,
+    import_aors: Vec<area_of_responsibility::Model>,
+    db: &DatabaseConnection,
+) -> anyhow::Result<()> {
+    let import_aors_by_id = import_aors
+        .into_iter()
+        .map(|aor| (aor.id, aor))
+        .collect::<HashMap<_, _>>();
+    let import_aor_original_ids = import_aors_by_id
+        .values()
+        .filter(|aor| !(aor.is_top_level && aor.is_default))
+        .map(|aor| aor.id)
+        .collect_vec();
+    let local_default_aor = crate::sigint::aor::load_default_aor(db).await?;
+    let local_aors = if import_aor_original_ids.is_empty() {
+        Vec::new()
+    } else {
+        area_of_responsibility::Entity::find()
+            .filter(
+                area_of_responsibility::Column::OriginalId
+                    .is_in(import_aor_original_ids),
+            )
+            .all(db)
+            .await
+            .c(h!())?
+    };
+    let local_aors_by_original_id = local_aors
+        .into_iter()
+        .flat_map(|aor| aor.original_id.map(|id| (id, aor.id)))
+        .collect::<HashMap<_, _>>();
+
+    let network_aors_to_import = import_sigint_network_aors
+        .into_iter()
+        .filter(|rec| network_matches.contains_key(&rec.network_id))
+        .collect_vec();
+    let local_network_ids = network_matches.values().cloned().collect_vec();
+    let existing_network_aors = if local_network_ids.is_empty() {
+        HashMap::new()
+    } else {
+        sigint_network_aor::Entity::find()
+            .filter(
+                sigint_network_aor::Column::NetworkId.is_in(local_network_ids),
+            )
+            .all(db)
+            .await
+            .c(h!())?
+            .into_iter()
+            .map(|rec| ((rec.network_id, rec.aor_id), rec))
+            .collect::<HashMap<_, _>>()
+    };
+
+    let mut network_aors_to_create = Vec::new();
+    for import_aor in network_aors_to_import {
+        let Some(network_id) = network_matches.get(&import_aor.network_id)
+        else {
+            continue;
+        };
+        let Some(import_aor_details) =
+            import_aors_by_id.get(&import_aor.aor_id)
+        else {
+            continue;
+        };
+        let local_aor_id = if import_aor_details.is_top_level
+            && import_aor_details.is_default
+        {
+            local_default_aor.id
+        } else {
+            let Some(local_aor_id) =
+                local_aors_by_original_id.get(&import_aor_details.id)
+            else {
+                continue;
+            };
+            *local_aor_id
+        };
+
+        if existing_network_aors.contains_key(&(*network_id, local_aor_id)) {
+            continue;
+        }
+        network_aors_to_create.push(sigint_network_aor::ActiveModel {
+            id: NotSet,
+            network_id: Set(*network_id),
+            aor_id: Set(local_aor_id),
+            created_at: Set(import_aor.created_at),
+            sigint_origin_id: Set(import_aor.sigint_origin_id),
+            original_id: Set(import_aor.original_id),
+        });
+    }
+    let new_network_aors_counter = network_aors_to_create.len();
+    let txn = db.begin().await.c(h!())?;
+    for rec in network_aors_to_create {
+        rec.insert(&txn).await.c(h!())?;
+    }
+    confirm_new_records_and_finish(
+        txn,
+        new_network_aors_counter,
+        "sigint_network_aor",
     )
     .await
     .c(h!())?;
@@ -1667,6 +1880,7 @@ async fn load_network_data(
     mut unit_data: UnitData,
     all_imported_network_units: Vec<sigint_network_unit::Model>,
     imported_networks: Vec<sigint_network::Model>,
+    include_inactive_networks: bool,
 ) -> anyhow::Result<NetworkData> {
     let mut perfect_matches = vec![];
     let models = imported_networks
@@ -1677,12 +1891,13 @@ async fn load_network_data(
     let mut data = HashMap::new();
     let mut model_to_unit_id = HashMap::new();
 
-    let local_networks = sigint_network::Entity::find()
-        .find_with_related(sigint_network_unit::Entity)
-        .filter(sigint_network::Column::Deleted.eq(false))
-        .all(db)
-        .await
-        .c(h!())?;
+    let mut local_networks = sigint_network::Entity::find()
+        .find_with_related(sigint_network_unit::Entity);
+    if !include_inactive_networks {
+        local_networks =
+            local_networks.filter(sigint_network::Column::Deleted.eq(false));
+    }
+    let local_networks = local_networks.all(db).await.c(h!())?;
 
     let mut local_unit_networks = HashMap::new();
     for (local_network, local_network_units) in local_networks {
@@ -1724,7 +1939,7 @@ async fn load_network_data(
     }
 
     for imported_network in imported_networks {
-        if imported_network.deleted {
+        if imported_network.deleted && !include_inactive_networks {
             continue;
         }
         let mut network_row = DataRow {
@@ -2095,7 +2310,7 @@ async fn merge_all(
                     DataKind::Networks => {
                         let txn = db.begin().await.c(h!())?;
                         crate::sigint::network::merge::merge_two_networks(
-                            &txn, "system", false, id_2, id_1,
+                            &txn, "system", false, true, id_2, id_1,
                         )
                         .await
                         .c(h!())?;
