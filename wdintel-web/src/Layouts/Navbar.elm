@@ -1,20 +1,21 @@
 module Layouts.Navbar exposing (Model, Msg, Props, layout)
 
+import Browser.Events
 import Auth
 import Core.Types exposing (ApiError)
 import Effect as E exposing (Effect)
 import Html exposing (..)
-import Html.Attributes exposing (class, classList)
-import Html.Events exposing (onClick)
+import Html.Attributes exposing (class)
+import Html.Events exposing (onClick, stopPropagationOn)
 import Layout exposing (Layout)
 import Process
+import Json.Decode
 import Route exposing (Route)
 import Shared
 import Shared.Components.Navbar
 import Shared.Components.NavbarOld
 import Shared.Components.Toast as Toast
 import Shared.Model exposing (ThemeMode(..))
-import Shared.Msg
 import Task
 import View exposing (View)
 
@@ -68,6 +69,8 @@ keepAliveInterval =
 type Msg
     = ToggleDarkTheme
     | SetThemeMode Shared.Model.ThemeMode
+    | KeyPressed String
+    | NoOp
     | Slept
     | KeepAliveDone (Result ApiError ())
     | ToggleNavbarVisibility
@@ -87,6 +90,16 @@ update route msg model =
             ( model
             , E.setThemeMode themeMode
             )
+
+        KeyPressed key ->
+            if key == "Escape" then
+                ( { model | openDropdown = Nothing }, E.none )
+
+            else
+                ( model, E.none )
+
+        NoOp ->
+            ( model, E.none )
 
         Slept ->
             ( model
@@ -118,8 +131,8 @@ update route msg model =
 
 
 subscriptions : Model -> Sub Msg
-subscriptions model =
-    Sub.none
+subscriptions _ =
+    Browser.Events.onKeyDown (Json.Decode.map KeyPressed (Json.Decode.field "key" Json.Decode.string))
 
 
 
@@ -147,7 +160,7 @@ view user activeName shared route { toContentMsg, model, content } =
     in
     { title = content.title
     , body =
-        [ div []
+        [ div [ onClick (SetOpenDropdown Nothing) ]
             [ div
                 [ class "fixed top-0 left-0 right-0 z-500 transition-all duration-300 ease-in-out"
                 , class
@@ -157,6 +170,7 @@ view user activeName shared route { toContentMsg, model, content } =
                      else
                         "-translate-y-full"
                     )
+                , stopPropagationOn "click" (Json.Decode.succeed ( NoOp, True ))
                 ]
                 [ navbarHtml ]
             , if route.url.path == "/rer-duty" && not model.isNavbarVisible then
@@ -183,6 +197,7 @@ view user activeName shared route { toContentMsg, model, content } =
                  else
                     "pt-0 min-h-screen"
                 )
+            , onClick (toContentMsg (SetOpenDropdown Nothing))
             ]
             content.body
         ]

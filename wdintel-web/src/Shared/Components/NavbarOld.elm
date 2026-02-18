@@ -4,7 +4,8 @@ import Auth
 import Core.Auth exposing (hasRole, serverModeIs)
 import Html exposing (..)
 import Html.Attributes exposing (..)
-import Html.Events exposing (onClick)
+import Html.Events exposing (on, onClick)
+import Json.Decode
 import Route.Path
 import Shared
 import Shared.Components.ThemeSwitcher exposing (themeSwitcher)
@@ -235,6 +236,9 @@ menuItemWithSubs props isDarkMode activeName activeNameExp nameText subs =
         isOpen =
             props.openDropdown == Just activeNameExp
 
+        dropdownMenuId =
+            "navbar-dropdown-menu-" ++ activeNameExp
+
         toggleMsg =
             if isOpen then
                 props.onDropdownToggle Nothing
@@ -264,6 +268,7 @@ menuItemWithSubs props isDarkMode activeName activeNameExp nameText subs =
                         a
                             [ class ("flex items-center justify-between px-4 py-2 " ++ dropdownTextClass ++ " hover:bg-black/10 rounded transition-all duration-200")
                             , classList [ ( "font-medium", sub.activeName == activeName ) ]
+                            , attribute "role" "menuitem"
                             , Route.Path.href path
                             , onClick (props.onDropdownToggle Nothing)
                             ]
@@ -279,6 +284,7 @@ menuItemWithSubs props isDarkMode activeName activeNameExp nameText subs =
                         a
                             [ class ("flex items-center justify-between px-4 py-2 " ++ dropdownTextClass ++ " hover:bg-black/10 rounded transition-all duration-200")
                             , classList [ ( "font-medium", sub.activeName == activeName ) ]
+                            , attribute "role" "menuitem"
                             , href link
                             , target "_blank"
                             , onClick (props.onDropdownToggle Nothing)
@@ -290,10 +296,12 @@ menuItemWithSubs props isDarkMode activeName activeNameExp nameText subs =
     in
     li [ class "relative group" ]
         [ button
-            [ class "inline-flex items-center py-2 px-2 cursor-pointer text-white hover:bg-black/10 rounded transition-all duration-200"
+            [ class "inline-flex items-center py-2 px-2 cursor-pointer text-white hover:bg-black/10 rounded transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-1"
             , classList [ ( "font-medium", activeName == activeNameExp ) ]
             , onClick toggleMsg
+            , onDropdownTriggerKey toggleMsg
             , attribute "aria-haspopup" "true"
+            , attribute "aria-controls" dropdownMenuId
             , attribute "aria-expanded"
                 (if isOpen then
                     "true"
@@ -305,14 +313,16 @@ menuItemWithSubs props isDarkMode activeName activeNameExp nameText subs =
             ]
             [ span [] [ text nameText ]
             , i
-                [ class "bi bi-chevron-down ml-1 text-xs transition-transform group-hover:rotate-180"
+                [ class "bi bi-chevron-down ml-1 text-xs transition-transform"
                 , classList [ ( "rotate-180", isOpen ) ]
                 ]
                 []
             ]
         , div [ class "absolute left-0 pt-2 z-500" ]
             [ ul
-                [ class ("w-56 " ++ dropdownBgClass ++ " rounded-lg shadow-lg border border-black/15 transition-all duration-200")
+                [ id dropdownMenuId
+                , class ("w-56 " ++ dropdownBgClass ++ " rounded-lg shadow-lg border border-black/15 transition-all duration-200")
+                , attribute "role" "menu"
                 , classList
                     [ ( "hidden", not isOpen )
                     , ( "block", isOpen )
@@ -321,3 +331,18 @@ menuItemWithSubs props isDarkMode activeName activeNameExp nameText subs =
                 (List.map dropdownItem subs)
             ]
         ]
+
+
+onDropdownTriggerKey : msg -> Attribute msg
+onDropdownTriggerKey msg =
+    on "keydown"
+        (Json.Decode.andThen
+            (\key ->
+                if key == "Enter" || key == " " || key == "ArrowDown" then
+                    Json.Decode.succeed msg
+
+                else
+                    Json.Decode.fail "ignored-key"
+            )
+            (Json.Decode.field "key" Json.Decode.string)
+        )
