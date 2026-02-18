@@ -1,3 +1,4 @@
+use crate::config::get_tz;
 use crate::entities::*;
 use crate::error::AppError;
 use crate::types::*;
@@ -75,6 +76,14 @@ struct NetworkFreq {
 async fn get_goi_report_freqs(
     env: &Env,
 ) -> Result<HashMap<String, Vec<NetworkFreq>>, AppError> {
+    let today = Utc::now().with_timezone(&get_tz()).date_naive();
+    let today_start_local = today.and_hms_opt(0, 0, 0).unwrap_or_default();
+    let today_start = get_tz()
+        .from_local_datetime(&today_start_local)
+        .single()
+        .context(h!())?
+        .with_timezone(&Utc)
+        .naive_utc();
     let q = sigint_network::Entity::find()
         .join(
             JoinType::InnerJoin,
@@ -103,7 +112,17 @@ async fn get_goi_report_freqs(
         .column_as(area_of_responsibility::Column::Name, "aor_name")
         .column(sigint_network_freq::Column::CreatedAt)
         .filter(sigint_network::Column::Deleted.eq(false))
-        .filter(sigint_network::Column::ActiveTo.is_null())
+        .filter(
+            Condition::any()
+                .add(sigint_network::Column::ActiveTo.is_null())
+                .add(
+                    Expr::col((
+                        sigint_network::Entity,
+                        sigint_network::Column::ActiveTo,
+                    ))
+                    .gte(Expr::val(today_start)),
+                ),
+        )
         .filter(sigint_network_freq::Column::Deleted.eq(false))
         .filter(
             Condition::any()
@@ -113,7 +132,7 @@ async fn get_goi_report_freqs(
                         sigint_network_freq::Entity,
                         sigint_network_freq::Column::ActiveTo,
                     ))
-                    .gt(Expr::cust("NOW() - interval '1 month'")),
+                    .gt(Expr::val(today_start)),
                 ),
         )
         .filter(area_of_responsibility::Column::IsTopLevel.eq(true))
