@@ -1,5 +1,6 @@
+import CloseIcon from '@mui/icons-material/Close';
 import SearchIcon from '@mui/icons-material/Search';
-import { InputAdornment, TextField } from '@mui/material';
+import { CircularProgress, IconButton, InputAdornment, TextField } from '@mui/material';
 import { createTheme, ThemeProvider } from '@mui/material/styles';
 import React, { useCallback, useRef, useState } from 'react';
 import { createRoot, Root } from 'react-dom/client';
@@ -19,7 +20,17 @@ export type SearchInputProps = {
 export function SearchInput(props: SearchInputProps) {
   const { placeholder = SEARCH_TEXT, onSearch, className, resultsCount = null, isSearchLoading = false } = props;
   const mode = useMuiPaletteMode();
-  const theme = React.useMemo(() => createTheme({ palette: { mode } }), [mode]);
+  const theme = React.useMemo(
+    () =>
+      createTheme({
+        palette: { mode },
+        typography: {
+          fontFamily:
+            'var(--bs-body-font-family, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif)',
+        },
+      }),
+    [mode],
+  );
   const [value, setValue] = useState('');
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const showResults = value.trim().length > 0 && (isSearchLoading || resultsCount !== null);
@@ -78,39 +89,66 @@ export function SearchInput(props: SearchInputProps) {
           size="small"
           variant="outlined"
           sx={{
-            backgroundColor: theme.palette.mode === 'dark' ? 'background.default' : 'background.paper',
-            minWidth: 420,
+            minWidth: 300,
+            '& .MuiOutlinedInput-root': {
+              minHeight: 48,
+              height: 48,
+              borderRadius: 2,
+              backgroundColor: 'background.paper',
+              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
+              '& .MuiOutlinedInput-notchedOutline': {
+                borderColor: 'divider',
+              },
+              '&:hover .MuiOutlinedInput-notchedOutline': {
+                borderColor: 'divider',
+              },
+              '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+                borderColor: 'primary.main',
+                borderWidth: 1,
+              },
+            },
           }}
           InputProps={{
+            sx: {
+              height: 48,
+              '& .MuiInputBase-input': {
+                fontSize: 14,
+                lineHeight: '20px',
+                boxSizing: 'border-box',
+                padding: '13px 8px 13px 0 !important',
+              },
+              '& .MuiInputAdornment-root': {
+                maxHeight: 48,
+              },
+            },
             startAdornment: (
               <InputAdornment position="start">
-                <SearchIcon sx={{ color: value ? 'action.active' : 'action.disabled' }} />
+                <SearchIcon sx={{ color: value ? 'text.primary' : 'text.secondary' }} />
               </InputAdornment>
             ),
             ...(value
               ? {
                   endAdornment: (
                     <InputAdornment position="end">
-                      <button
-                        type="button"
+                      <IconButton
+                        edge="end"
                         onClick={handleClear}
                         aria-label="Очистити"
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          cursor: 'pointer',
-                          padding: 4,
-                          fontSize: '1rem',
-                          lineHeight: 1,
-                          color: theme.palette.text.secondary,
-                        }}
+                        size="small"
+                        sx={{ color: 'text.secondary' }}
                       >
-                        ×
-                      </button>
+                        <CloseIcon fontSize="small" />
+                      </IconButton>
                     </InputAdornment>
                   ),
                 }
-              : {}),
+              : {
+                  endAdornment: isSearchLoading ? (
+                    <InputAdornment position="end">
+                      <CircularProgress size={16} thickness={5} />
+                    </InputAdornment>
+                  ) : undefined,
+                }),
           }}
         />
         {showResults ? (
@@ -168,7 +206,7 @@ class AnalysisMapSearchElement extends HTMLElement {
     };
     this.root.render(
       <SearchInput
-        placeholder="Точка, лісосмуга або координати (WGS84, MGRS)"
+        placeholder="Точка, лісосмуга або координати"
         onSearch={onSearch}
         resultsCount={this.resultsCount}
         isSearchLoading={this.isSearchLoading}

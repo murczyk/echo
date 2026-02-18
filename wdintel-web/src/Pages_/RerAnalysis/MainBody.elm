@@ -327,19 +327,20 @@ view user model shared route =
                     False
 
         headerCountsPill data isReloading =
-            span
-                ([ class "mr-1 inline-block px-1.5 py-1 font-medium rounded-full border transition-colors duration-200"
-                 , style "font-size" ".5rem"
-                 , class "bg-[var(--color-bg-muted)] text-[var(--color-text)] border-[var(--color-border-muted)]"
-                 ]
-                    ++ (if isReloading then
-                            [ title "оновлюється…" ]
+            node "analysis-count-chip"
+                [ attribute "selected-count" (fromInt data.countSelected)
+                , attribute "overall-count" (fromInt data.countOverall)
+                , attribute "is-reloading"
+                    (if isReloading then
+                        "true"
 
-                        else
-                            []
-                       )
-                )
-                [ text (fromInt data.countSelected ++ " з " ++ fromInt data.countOverall) ]
+                     else
+                        "false"
+                    )
+                , attribute "role" "status"
+                , attribute "aria-live" "polite"
+                ]
+                []
 
         headerControls =
             div [ class "flex items-center ml-4", style "gap" "8px" ]
