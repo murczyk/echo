@@ -237,7 +237,7 @@ update shared msg model =
             ( { model | formErrors = Dict.empty }
             , E.batch
                 [ Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails
-                    "Сталася помилка. спробуйте ще раз або зверніться до адміністратора"
+                    "Сталася помилка. Спробуйте ще раз або зверніться до адміністратора"
                     e
                 ]
             )
