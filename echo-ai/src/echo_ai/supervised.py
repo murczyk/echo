@@ -52,6 +52,9 @@ def train_supervised(
         label_column_name = f"label_{label_index}"
 
         rel_train = lake.split_for_label(label_column_name, and_train)
+        train_stats = rel_train.aggregate("label, count(*) AS samples", "label")
+        print(f"training samples for {label_name}: ", flush=True)
+        print(train_stats, flush=True)
         df_train = quack.to_df_arrow(rel_train.limit(1000))
         (len_train,) = rel_train.count("*").fetchone()  # pyright: ignore
         print(f"{len_train} rows for {label_name} train dataset", flush=True)
@@ -63,6 +66,9 @@ def train_supervised(
         )
         train_path = lake.to_plain_text(rel_train, pd_train)
         rel_test = lake.split_for_label(label_column_name, and_test)
+        test_stats = rel_test.aggregate("label, count(*) AS samples", "label")
+        print(f"test samples for {label_name}: ", flush=True)
+        print(test_stats, flush=True)
         df_test = quack.to_df_arrow(rel_test.limit(1000))
         (len_test,) = rel_test.count("*").fetchone()  # pyright: ignore
         print(f"{len_test} rows for {label_name} test dataset", flush=True)
