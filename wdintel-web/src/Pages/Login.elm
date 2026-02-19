@@ -20,6 +20,7 @@ import Shared
 import Shared.Model exposing (isDarkMode)
 import Task
 import Url.Builder
+import Utils.Api.ErrorHandling
 import Utils.Components exposing (fieldError, isInvalidCls)
 import Utils.Utils exposing (..)
 import View exposing (View)
@@ -85,6 +86,7 @@ init route shared _ =
 type Msg
     = NoOp
     | ToastMsg Shared.Components.Toast.Msg
+    | SharedToastMsg Shared.Components.Toast.Msg
     | SetLoginInp String
     | SetPasswordInp String
     | Login
@@ -123,6 +125,9 @@ update shared msg model =
             ( { model | toasts = im }
             , E.sendCmd <| Cmd.map ToastMsg icmds
             )
+
+        SharedToastMsg toastMsg ->
+            ( model, E.sendToastMsg toastMsg )
 
         SetLoginInp s ->
             ( { model | loginInp = s }, E.none )
@@ -229,7 +234,13 @@ update shared msg model =
             )
 
         GotDeltaRedirectUrl (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( { model | formErrors = Dict.empty }
+            , E.batch
+                [ Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails
+                    "Сталася помилка. Спробуйте ще раз або зверніться до адміністратора"
+                    e
+                ]
+            )
 
 
 subscriptions : Model -> Sub Msg
@@ -237,9 +248,10 @@ subscriptions model =
     Sub.none
 
 
-body : Bool -> Bool -> Model -> List (Html Msg)
-body isDarkMode deltaLoginFlag model =
-    [ Shared.Components.Toast.view ToastMsg model.toasts <|
+body : Bool -> Bool -> Shared.Components.Toast.Model -> Model -> List (Html Msg)
+body isDarkMode deltaLoginFlag sharedToasts model =
+    [ Shared.Components.Toast.overlay SharedToastMsg sharedToasts
+    , Shared.Components.Toast.view ToastMsg model.toasts <|
         div
             [ class "d-flex flex-column justify-content-center align-items-center"
             , style "height" "100vh"
@@ -396,5 +408,5 @@ view shared model =
                     False
     in
     { title = "логін"
-    , body = body (isDarkMode shared.themeMode) featureDelta model
+    , body = body (isDarkMode shared.themeMode) featureDelta shared.toasts model
     }
