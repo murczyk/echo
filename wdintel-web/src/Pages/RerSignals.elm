@@ -1259,8 +1259,7 @@ view _ shared user model =
                     ]
                 ]
             , div
-                [ class "border-start grow-1"
-                , class "app-shell-fill-height"
+                [ class "border-start grow-1 app-shell-fill-height"
                 , style "overflow-y" "scroll"
                 ]
                 [ h1 [ class "py-2 ps-4" ]
