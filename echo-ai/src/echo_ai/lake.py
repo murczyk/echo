@@ -21,7 +21,7 @@ class Lake:
         self.conn.execute("""
         INSTALL ducklake;
         LOAD ducklake;
-        ATTACH 'ducklake:sqlite:datalake.ducklake.sqlite' AS datalake (DATA_PATH 'datalake.ducklake.files/');
+        ATTACH 'ducklake:datalake.ducklake.duckdb' AS datalake;
         USE datalake;
         """)
 
@@ -31,7 +31,7 @@ class Lake:
     def to_plain_text(self, rel: DuckDBPyRelation, ml_dataset: Dataset) -> str:
         path = self.temp_directory / f"{ml_dataset.name}.{ml_dataset.digest}.txt"
         file_name = str(path)
-        print(f"creating file '{file_name}'")
+        print(f"creating file '{file_name}'", flush=True)
 
         rel.select("text").to_csv(
             file_name,

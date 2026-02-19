@@ -19,9 +19,9 @@ def train_unsupervised(lake: Lake, **kwargs):
     shuffle = kwargs.get("shuffle", True)
     rel = lake.messages_including_unlabeled(shuffle=shuffle, seed=seed)
     count = quack.count_star(rel)
-    print(f"found {count} training rows")
+    print(f"found {count} training rows", flush=True)
     df = quack.to_df_arrow(rel.select("text").limit(1000))
-    print(df.head())
+    print(df.head(), flush=True)
     dataset = from_pandas(
         df,
         name="corpus",
@@ -33,12 +33,12 @@ def train_unsupervised(lake: Lake, **kwargs):
 
     fasttext_kwargs = get_training_args(UNSUPERVISED_ARGS, **kwargs)
 
-    print(f"fasttext arguments: {fasttext_kwargs}")
+    print(f"fasttext arguments: {fasttext_kwargs}", flush=True)
     model = fasttext.train_unsupervised(input=corpus, **fasttext_kwargs)
 
     model_params = get_model_params(model)
 
-    print(f"params: {model_params}")
+    print(f"params: {model_params}", flush=True)
     mlflow.log_params(model_params)
 
     name = "unsupervised"

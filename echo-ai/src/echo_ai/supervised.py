@@ -103,22 +103,25 @@ def train_supervised(
                 cutoff = get_cutoff_for_file_size(
                     fasttext_model, qnorm=qnorm, qout=qout, file_size=file_size
                 )
-                mlflow.log_params(
-                    {
-                        "qnorm": qnorm,
-                        "qout": qout,
-                        "file_size": file_size,
-                        "cutoff": cutoff,
-                        "retrain": retrain,
-                    }
-                )
+                q_params = {
+                    "qnorm": qnorm,
+                    "qout": qout,
+                    "file_size": file_size,
+                    "cutoff": cutoff,
+                    "retrain": retrain,
+                }
+                mlflow.log_params(q_params)
+                print(f"starting quantize arguments: {q_params}", flush=True)
+
                 fasttext_model.quantize(
                     input=train_path,
                     retrain=retrain,
                     cutoff=cutoff,
                     qnorm=qnorm,
                     qout=qout,
+                    thread=fasttext_kwargs["thread"],
                 )
+                print("finished quantize", flush=True)
 
             model_params = get_model_params(fasttext_model)
             print(f"params: {model_params}", flush=True)

@@ -10,7 +10,7 @@ from echo_ai.unsupervised import train_unsupervised
 
 def real_main(args):
     with tempfile.TemporaryDirectory() as temp_dir:
-        print("creating connection to datalake")
+        print("creating connection to datalake", flush=True)
         lake = Lake(temp_directory=temp_dir)
         train_unsupervised(lake, **args)
 
@@ -39,9 +39,9 @@ def main():
     args = vars(parser.parse_args())
 
     tags = {"task": "unsupervised"}
-    print(f"starting training for unsupervised model, parameters: {args}")
+    print(f"starting training for unsupervised model, parameters: {args}", flush=True)
     with mlflow.start_run(tags=tags) as run:
-        print(f"run {run.info.run_name}, id: {run.info.run_id}")
+        print(f"run {run.info.run_name}, id: {run.info.run_id}", flush=True)
         real_main(args)
 
 

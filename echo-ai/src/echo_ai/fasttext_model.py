@@ -297,7 +297,7 @@ K_CUTOFF_LIMIT = 256
 def get_cutoff_for_file_size(model: _FastText, qout: bool, qnorm: bool, file_size: int):
     output = model.get_output_matrix()
     (out_m, out_n) = output.shape
-    if qout:
+    if qout and out_m > K_CUTOFF_LIMIT:
         output_pq_size = 16 + 4 * (out_n * (1 << 8))
         out_model_size = (
             21
@@ -309,7 +309,9 @@ def get_cutoff_for_file_size(model: _FastText, qout: bool, qnorm: bool, file_siz
         out_model_size = 16 + 4 * (out_m * out_n)
 
     args = model.f.getArgs()
-    dim = args.dim
+    input_matrix = model.get_input_matrix()
+    (inp_m, inp_n) = input_matrix.shape
+    dim = inp_n
     dsub = args.dsub
     target = file_size - (107) - 4 * (1 << 8) * dim - out_model_size
     cutoff = target // ((dim + dsub - 1) / dsub + (1 if qnorm else 0) + 10)
