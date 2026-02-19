@@ -99,11 +99,10 @@ pub async fn init_aor_location_config(
             aor_location_config::ActiveModel {
                 id: NotSet,
                 aor_id: Set(aor.id),
-                settlements_config: Set(available_configs
-                    .first()
-                    .cloned()
-                    .unwrap_or_default()),
-                settlements_configs: Set(serde_json::json!(available_configs)),
+                // Empty explicit selection -> fallback to default
+                // settlements list from config.toml.
+                settlements_config: Set(String::new()),
+                settlements_configs: Set(serde_json::json!([])),
                 created_at: NotSet,
                 updated_at: NotSet,
             }
