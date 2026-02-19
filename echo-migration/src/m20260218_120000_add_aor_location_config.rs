@@ -12,7 +12,6 @@ impl MigrationTrait for Migration {
             create table aor_location_config (
                 id bigserial primary key,
                 aor_id bigint not null references area_of_responsibility(id) on delete cascade,
-                settlements_config text not null,
                 created_at timestamp without time zone default (now() at time zone 'utc') not null,
                 updated_at timestamp without time zone default (now() at time zone 'utc') not null,
                 unique(aor_id)

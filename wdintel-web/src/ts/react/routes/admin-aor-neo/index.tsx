@@ -15,6 +15,7 @@ import {
   renderColumnActionsMenuItems,
 } from '../../components/mui-customized/table/get-default-table-options';
 import { TableStateProvider, useTableStateContext } from '../../components/mui-customized/table/table-state-provider';
+import { AdminLocationConfigsNeoPage } from '../admin-location-configs-neo';
 import { listAors } from '../../services/api/aor';
 import { navigateWithinSpa, withBackTo } from '../../utils/browser';
 
@@ -276,6 +277,7 @@ function AdminAorNeoPageBody() {
       />
 
       {renderTable()}
+      <AdminLocationConfigsNeoPage />
     </div>
   );
 }

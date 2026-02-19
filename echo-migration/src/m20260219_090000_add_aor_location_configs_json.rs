@@ -11,13 +11,6 @@ impl MigrationTrait for Migration {
             r#"
             alter table aor_location_config
                 add column if not exists settlements_configs jsonb not null default '[]'::jsonb;
-
-            update aor_location_config
-            set settlements_configs = case
-                when settlements_config = '' then '[]'::jsonb
-                else to_jsonb(array[settlements_config])
-            end
-            where settlements_configs = '[]'::jsonb;
             "#,
         )
         .await?;

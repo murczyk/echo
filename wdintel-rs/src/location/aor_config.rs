@@ -9,8 +9,7 @@ use actix_web::web::Json;
 use sea_orm::{ActiveValue::Set, *};
 
 fn parse_selected_configs(row: &aor_location_config::Model) -> Vec<String> {
-    let m_json = row
-        .settlements_configs
+    row.settlements_configs
         .as_array()
         .map(|items| {
             items
@@ -18,14 +17,8 @@ fn parse_selected_configs(row: &aor_location_config::Model) -> Vec<String> {
                 .filter_map(|v| v.as_str().map(str::to_owned))
                 .collect_vec()
         })
-        .filter(|items| !items.is_empty());
-    m_json.unwrap_or_else(|| {
-        if row.settlements_config.is_empty() {
-            vec![]
-        } else {
-            vec![row.settlements_config.clone()]
-        }
-    })
+        .filter(|items| !items.is_empty())
+        .unwrap_or(vec![])
 }
 
 fn normalize_selected_configs(
@@ -101,7 +94,6 @@ pub async fn init_aor_location_config(
                 aor_id: Set(aor.id),
                 // Empty explicit selection -> fallback to default
                 // settlements list from config.toml.
-                settlements_config: Set(String::new()),
                 settlements_configs: Set(serde_json::json!([])),
                 created_at: NotSet,
                 updated_at: NotSet,
@@ -259,12 +251,10 @@ pub async fn save_aor_location_config(
         .c(h!())?;
 
     let selected_configs = req.settlements_configs.clone();
-    let first_selected = selected_configs.first().cloned().unwrap_or_default();
 
     match existing {
         Some(rec) => {
             let mut rec = rec.into_active_model();
-            rec.settlements_config = Set(first_selected.clone());
             rec.settlements_configs =
                 Set(serde_json::json!(selected_configs.clone()));
             rec.updated_at = NotSet;
@@ -274,7 +264,6 @@ pub async fn save_aor_location_config(
             aor_location_config::ActiveModel {
                 id: NotSet,
                 aor_id: Set(req.aor_id),
-                settlements_config: Set(first_selected),
                 settlements_configs: Set(serde_json::json!(
                     selected_configs.clone()
                 )),

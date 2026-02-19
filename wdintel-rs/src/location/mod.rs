@@ -198,6 +198,7 @@ pub fn parse_location_with_aor(
         .map(|x| x.to_string())
         .collect_vec();
     let result = find_matching_settlements(words, settlements_data).c(h!())?;
+    println!("{:?}", result);
     if result.is_empty() {
         return Ok(vec![]);
     }
@@ -522,6 +523,7 @@ fn collect_blacklist() -> Vec<&'static str> {
         "ПІХОТНОГО",
         "СТРІЛЕЦЬКОГО",
         r#"ІМ\."#,
+        r#"ЙМ\."#,
         "ВІЙСЬКОВА",
         "ВІЙСЬКОВУ",
         "ВІЙСЬКОВОЇ",
@@ -536,6 +538,9 @@ fn collect_blacklist() -> Vec<&'static str> {
         "КРАСНОДАРСЬКИЙ",
         "БАТАРЕЯ",
         "БАТАРЄЯ",
+        r#"Н\.П"#,
+        r#"Н\.П."#,
+        "Н/П",
     ]
 }
 
@@ -1053,6 +1058,42 @@ mod tests {
 
     #[test]
     pub fn test_pidar3() {
+        let config = crate::config::read_config(Mode::Test).unwrap();
+        let settlements = Arc::new(RwLock::new(
+            load_settlements_data_config(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
+        ));
+        let result = parse_location_with_aor_id(settlements, String::from(
+            r#"  УКХ р/м артилерійський підрозділ йм. 9 мсп (р-н йм. УСТІНКА) (05.07.2025)"#,
+        ))
+            .unwrap();
+        let result = test_settlements_array(result);
+        assert_eq!(vec!["УСТІНКА"], result);
+    }
+
+    #[test]
+    pub fn test_pidar4() {
+        let config = crate::config::read_config(Mode::Test).unwrap();
+        let settlements = Arc::new(RwLock::new(
+            load_settlements_data_config(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
+        ));
+        let result = parse_location_with_aor_id(settlements, String::from(
+            r#"  УКХ р/м артилерійський підрозділ йм. 9 мсп (р-н йм. н.п. УСТІНКА) (05.07.2025)"#,
+        ))
+            .unwrap();
+        let result = test_settlements_array(result);
+        assert_eq!(vec!["УСТІНКА"], result);
+    }
+
+    #[test]
+    pub fn test_pidar5() {
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             load_settlements_data_config(

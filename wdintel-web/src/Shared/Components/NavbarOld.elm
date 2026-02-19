@@ -57,7 +57,6 @@ navBar user shared activeName props =
             , Menu (Internal Route.Path.Admin_TagsNeo) "tags-neo" "теги"
             , Menu (Internal Route.Path.Admin_AorNeo) "aor-neo" "смуги"
             , Menu (Internal Route.Path.Admin_KeysNeo) "keys-neo" "ключі"
-            , Menu (Internal Route.Path.Admin_LocationConfigsNeo) "location-config-neo" "локації по смугах"
             , Menu (Internal Route.Path.Admin_MessangerNeo) "messanger-neo" "месенджери"
             , Menu (Internal Route.Path.Admin_ControlPanelNeo) "control-panel-neo" "панель керування"
             , Menu (Internal Route.Path.AdminOld) "zones-old" "напрямки (старі)"
