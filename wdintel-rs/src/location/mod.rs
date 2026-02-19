@@ -73,7 +73,16 @@ fn select_settlements_data(
 ) -> &SettlementsData {
     match m_aor_id {
         Some(aor_id) => match config.aor_id_to_settlements_data.get(&aor_id) {
-            Some(data) => data.as_ref(),
+            Some(data) => {
+                let config_names = config
+                    .aor_id_to_config_names
+                    .get(&aor_id)
+                    .cloned()
+                    .unwrap_or_default()
+                    .join(", ");
+                info!("[DELETEME] parsing location: aor_id={aor_id}, config_names=[{config_names}]");
+                data.as_ref()
+            }
             None => {
                 warn!(
                     "no settlements config found for aor_id={}, using default settlements list from config.toml",
