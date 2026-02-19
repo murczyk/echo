@@ -1,1 +1,15 @@
 *       @k-bx
+
+# Front-end related files
+*.elm   @ozelenyi @vladyslav-koshulko
+*.html  @ozelenyi @vladyslav-koshulko
+*.js    @ozelenyi @vladyslav-koshulko
+*.mjs   @ozelenyi @vladyslav-koshulko
+*.cjs   @ozelenyi @vladyslav-koshulko
+*.ts    @ozelenyi @vladyslav-koshulko
+*.jsx   @ozelenyi @vladyslav-koshulko
+*.tsx   @ozelenyi @vladyslav-koshulko
+*.css   @ozelenyi @vladyslav-koshulko
+*.scss  @ozelenyi @vladyslav-koshulko
+*.sass  @ozelenyi @vladyslav-koshulko
+*.less  @ozelenyi @vladyslav-koshulko
