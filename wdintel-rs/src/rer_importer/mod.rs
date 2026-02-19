@@ -725,6 +725,7 @@ pub async fn oneoff_reprocess_unit_names(mode: Mode) -> Result<(), AppError> {
             .await
             .c(h!())?
             .ok_or("error 17263")?;
+        let m_aor_id = resolve_message_aor_id(&dbx, id).await.c(h!())?;
 
         let unit_old = item.unit.clone();
         if let Some(body) = inbox_message.body {
@@ -736,10 +737,11 @@ pub async fn oneoff_reprocess_unit_names(mode: Mode) -> Result<(), AppError> {
                 .into_iter()
                 .map(|x| x.to_uppercase())
                 .collect_vec();
-            let result = crate::unit::parser::extract_unit(
+            let result = crate::unit::parser::extract_unit_with_aor(
                 settlements.clone(),
                 &body,
                 callsigns,
+                m_aor_id,
             )?;
             let unit_new = result.unit.clone();
             if unit_new.is_none() && unit_old.is_some() {
@@ -753,11 +755,13 @@ pub async fn oneoff_reprocess_unit_names(mode: Mode) -> Result<(), AppError> {
                         Some(utils::format_settlements_list(locations))
                     }
                     (Some(location), None) => {
-                        let locations = crate::location::parse_location(
-                            settlements.clone(),
-                            location,
-                        )
-                        .c(h!())?;
+                        let locations =
+                            crate::location::parse_location_with_aor(
+                                settlements.clone(),
+                                location,
+                                m_aor_id,
+                            )
+                            .c(h!())?;
                         Some(utils::format_settlements_list(locations))
                     }
                     _ => None,
@@ -772,6 +776,40 @@ pub async fn oneoff_reprocess_unit_names(mode: Mode) -> Result<(), AppError> {
         }
     }
     Ok(())
+}
+
+async fn resolve_message_aor_id(
+    dbx: &DatabaseConnection,
+    message_id: i64,
+) -> Result<Option<i64>, AppError> {
+    let m_group_master_key = signal_message_group::Entity::find()
+        .filter(signal_message_group::Column::SignalMessageId.eq(message_id))
+        .filter(signal_message_group::Column::GroupMasterKey.is_not_null())
+        .order_by_asc(signal_message_group::Column::Id)
+        .select_only()
+        .column(signal_message_group::Column::GroupMasterKey)
+        .into_tuple::<String>()
+        .one(dbx)
+        .await
+        .c(h!())?;
+    let Some(group_master_key) = m_group_master_key else {
+        return Ok(None);
+    };
+    let m_aor_id = signal_group_aor::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            signal_group_aor::Relation::AreaOfResponsibility.def(),
+        )
+        .filter(signal_group_aor::Column::MasterKey.eq(group_master_key))
+        .filter(area_of_responsibility::Column::Deleted.eq(false))
+        .order_by_asc(signal_group_aor::Column::Id)
+        .select_only()
+        .column(signal_group_aor::Column::AorId)
+        .into_tuple::<i64>()
+        .one(dbx)
+        .await
+        .c(h!())?;
+    Ok(m_aor_id)
 }
 
 #[post("/api/rer-importer/latest-senders")]

@@ -72,11 +72,16 @@ fn select_settlements_data(
     m_aor_id: Option<i64>,
 ) -> &SettlementsData {
     match m_aor_id {
-        Some(aor_id) => config
-            .aor_id_to_settlements_data
-            .get(&aor_id)
-            .map(|s| s.as_ref())
-            .unwrap_or(config.default_settlements_data.as_ref()),
+        Some(aor_id) => match config.aor_id_to_settlements_data.get(&aor_id) {
+            Some(data) => data.as_ref(),
+            None => {
+                warn!(
+                    "no settlements config found for aor_id={}, using default settlements list from config.toml",
+                    aor_id
+                );
+                config.default_settlements_data.as_ref()
+            }
+        },
         None => config.default_settlements_data.as_ref(),
     }
 }
@@ -147,13 +152,6 @@ fn find_locations_by_name(
         }
     }
     Ok(matches)
-}
-
-pub fn parse_location(
-    settlements: Arc<RwLock<SettlementsDataConfig>>,
-    location: String,
-) -> anyhow::Result<Vec<SettlementDetails>> {
-    parse_location_with_aor(settlements, location, None).c(h!())
 }
 
 pub fn parse_location_with_aor(
@@ -566,6 +564,13 @@ fn deduplicate_settlement_names(
 mod tests {
     use super::*;
 
+    fn parse_location_with_aor_id(
+        settlements: Arc<RwLock<SettlementsDataConfig>>,
+        location: String,
+    ) -> anyhow::Result<Vec<SettlementDetails>> {
+        parse_location_with_aor(settlements, location, None)
+    }
+
     fn test_settlements_array(data: Vec<SettlementDetails>) -> Vec<String> {
         let mut result = vec![];
         for row in data {
@@ -586,8 +591,11 @@ mod tests {
             )
             .unwrap(),
         ));
-        let result =
-            parse_location(settlements, String::from("\"location\"")).unwrap();
+        let result = parse_location_with_aor_id(
+            settlements,
+            String::from("\"location\""),
+        )
+        .unwrap();
         assert!(result.is_empty());
     }
 
@@ -601,7 +609,7 @@ mod tests {
             )
             .unwrap(),
         ));
-        let result = parse_location(
+        let result = parse_location_with_aor_id(
             settlements,
             String::from("СТЕПНЕ - МИРНЕ-НЕСТЕРЯНКА"),
         )
@@ -620,8 +628,11 @@ mod tests {
             )
             .unwrap(),
         ));
-        let result =
-            parse_location(settlements, String::from("рн Миколаївка")).unwrap();
+        let result = parse_location_with_aor_id(
+            settlements,
+            String::from("рн Миколаївка"),
+        )
+        .unwrap();
         let result = test_settlements_array(result);
         assert_eq!(vec!["МИКОЛАЇВКА",], result);
     }
@@ -636,9 +647,11 @@ mod tests {
             )
             .unwrap(),
         ));
-        let result =
-            parse_location(settlements, String::from("УКРАЇНСЬКЕ-БАГАТЕ"))
-                .unwrap();
+        let result = parse_location_with_aor_id(
+            settlements,
+            String::from("УКРАЇНСЬКЕ-БАГАТЕ"),
+        )
+        .unwrap();
         let result = test_settlements_array(result);
         assert_eq!(vec!["БАГАТЕ", "УКРАЇНСЬКЕ",], result);
     }
@@ -654,7 +667,8 @@ mod tests {
             .unwrap(),
         ));
         let result =
-            parse_location(settlements, String::from("ПОРТЛЕНД")).unwrap();
+            parse_location_with_aor_id(settlements, String::from("ПОРТЛЕНД"))
+                .unwrap();
         assert!(result.is_empty());
     }
 
@@ -668,7 +682,7 @@ mod tests {
             )
             .unwrap(),
         ));
-        let result = parse_location(
+        let result = parse_location_with_aor_id(
             settlements,
             String::from("РЕМІВКА-СТЕПОВЕ-ПРИЮТНЕ"),
         )
@@ -688,7 +702,8 @@ mod tests {
             .unwrap(),
         ));
         let result =
-            parse_location(settlements, String::from("СТЕПОВЕ")).unwrap();
+            parse_location_with_aor_id(settlements, String::from("СТЕПОВЕ"))
+                .unwrap();
         let result = test_settlements_array(result);
         assert_eq!(vec!["СТЕПОВЕ",], result);
     }
@@ -703,7 +718,7 @@ mod tests {
             )
             .unwrap(),
         ));
-        let result = parse_location(
+        let result = parse_location_with_aor_id(
             settlements,
             String::from("Завітне Бажання, Старомлинівка"),
         )
@@ -722,7 +737,7 @@ mod tests {
             )
             .unwrap(),
         ));
-        let result = parse_location(
+        let result = parse_location_with_aor_id(
             settlements,
             String::from("3123132 vsd сх. Соледар, Донецька обл"),
         )
@@ -747,7 +762,7 @@ mod tests {
             )
             .unwrap(),
         ));
-        let result = parse_location(
+        let result = parse_location_with_aor_id(
             settlements,
             String::from("сх. Соледар, Донецька обл."),
         )
@@ -766,7 +781,7 @@ mod tests {
             )
             .unwrap(),
         ));
-        let result = parse_location(
+        let result = parse_location_with_aor_id(
             settlements,
             String::from("ОЧЕРЕТУВАТЕ-СОЛОДКА БАЛКА"),
         )
@@ -785,9 +800,11 @@ mod tests {
             )
             .unwrap(),
         ));
-        let result =
-            parse_location(settlements, String::from("Півд. Мала Токмачка"))
-                .unwrap();
+        let result = parse_location_with_aor_id(
+            settlements,
+            String::from("Півд. Мала Токмачка"),
+        )
+        .unwrap();
         let result = test_settlements_array(result);
         assert_eq!(vec!["МАЛА ТОКМАЧКА",], result);
     }
@@ -802,9 +819,11 @@ mod tests {
             )
             .unwrap(),
         ));
-        let result =
-            parse_location(settlements, String::from("ЛУГОВЕ - ЖЕРЕБ"))
-                .unwrap();
+        let result = parse_location_with_aor_id(
+            settlements,
+            String::from("ЛУГОВЕ - ЖЕРЕБ"),
+        )
+        .unwrap();
         let result = test_settlements_array(result);
         assert_eq!(vec!["ЛУГОВЕ",], result);
     }
@@ -820,7 +839,8 @@ mod tests {
             .unwrap(),
         ));
         let result =
-            parse_location(settlements, String::from("Робоботине")).unwrap();
+            parse_location_with_aor_id(settlements, String::from("Робоботине"))
+                .unwrap();
         let result = test_settlements_array(result);
         assert_eq!(vec!["РОБОТИНЕ",], result);
     }
@@ -835,7 +855,7 @@ mod tests {
             )
             .unwrap(),
         ));
-        let result = parse_location(
+        let result = parse_location_with_aor_id(
             settlements,
             String::from("Соледар, Донцька обл., Завітне Бажання"),
         )
@@ -854,7 +874,7 @@ mod tests {
             )
             .unwrap(),
         ));
-        let result = parse_location(
+        let result = parse_location_with_aor_id(
             settlements,
             String::from("Соледар, Донецкая обл., Завітне Божання"),
         )
@@ -873,7 +893,7 @@ mod tests {
             )
             .unwrap(),
         ));
-        let result = parse_location(
+        let result = parse_location_with_aor_id(
             settlements,
             String::from("Завітне Божання, Соледар, Донецьк. обл."),
         )
@@ -892,7 +912,7 @@ mod tests {
             )
             .unwrap(),
         ));
-        let result = parse_location(
+        let result = parse_location_with_aor_id(
             settlements,
             String::from("Соледар, Донецька обл., Зивітне Божання"),
         )
@@ -911,7 +931,7 @@ mod tests {
             )
             .unwrap(),
         ));
-        let result = parse_location(
+        let result = parse_location_with_aor_id(
             settlements,
             String::from("Зивітне Божання, Qоледар, Донецька обл."),
         )
@@ -930,7 +950,7 @@ mod tests {
             )
             .unwrap(),
         ));
-        let result = parse_location(
+        let result = parse_location_with_aor_id(
             settlements,
             String::from(
                 "Dmre (йм. 5 омбр 4 А) (йм. р-н Новоселівка-Сміле-Гоголівка)",
@@ -951,8 +971,11 @@ mod tests {
             )
             .unwrap(),
         ));
-        let result =
-            parse_location(settlements, String::from("р-н Бабиного")).unwrap();
+        let result = parse_location_with_aor_id(
+            settlements,
+            String::from("р-н Бабиного"),
+        )
+        .unwrap();
         let result = test_settlements_array(result);
         assert_eq!(vec!["БАБИНЕ",], result);
     }
@@ -967,7 +990,7 @@ mod tests {
             )
             .unwrap(),
         ));
-        let result = parse_location(settlements, String::from(r#"УКХ р\м НВ підрозділу 435.25 йм. західніше Роботиного, та Вербове-Романівське"#)).unwrap();
+        let result = parse_location_with_aor_id(settlements, String::from(r#"УКХ р\м НВ підрозділу 435.25 йм. західніше Роботиного, та Вербове-Романівське"#)).unwrap();
         let result = test_settlements_array(result);
         assert_eq!(vec!["ВЕРБОВЕ", "РОБОТИНЕ", "РОМАНІВСЬКЕ"], result);
     }
@@ -982,7 +1005,7 @@ mod tests {
             )
             .unwrap(),
         ));
-        let result = parse_location(
+        let result = parse_location_with_aor_id(
             settlements,
             String::from("ОГІРЦЕВЕ-ГАТИЩЕ-ВОВЧАНСЬК"),
         )
@@ -1001,7 +1024,7 @@ mod tests {
             )
             .unwrap(),
         ));
-        let result = parse_location(settlements, String::from(r#"УКХ Центр ( гсабатр гсадн 30 мсп 72 мсд 44 АК ЛВО ров (р-н Щебекіно))"#)).unwrap();
+        let result = parse_location_with_aor_id(settlements, String::from(r#"УКХ Центр ( гсабатр гсадн 30 мсп 72 мсд 44 АК ЛВО ров (р-н Щебекіно))"#)).unwrap();
         let result = test_settlements_array(result);
         assert_eq!(vec!["ШЕБЕКИНО"], result);
     }
@@ -1016,7 +1039,7 @@ mod tests {
             )
             .unwrap(),
         ));
-        let result = parse_location(settlements, String::from(
+        let result = parse_location_with_aor_id(settlements, String::from(
             r#"УКХ р/м НВ арт. підрозділу ( Пеленг Яснізорі- Устинка) Analog"#,
         ))
             .unwrap();
@@ -1034,7 +1057,7 @@ mod tests {
             )
             .unwrap(),
         ));
-        let result = parse_location(
+        let result = parse_location_with_aor_id(
             settlements,
             String::from(r#"    УКХ р/м ім. ТГр 45 абр ВП"#),
         )
@@ -1054,7 +1077,8 @@ mod tests {
             .unwrap(),
         ));
         let result =
-            parse_location(settlements, String::from("ФРАНКА")).unwrap();
+            parse_location_with_aor_id(settlements, String::from("ФРАНКА"))
+                .unwrap();
         assert!(result.is_empty());
     }
 
@@ -1068,8 +1092,11 @@ mod tests {
             )
             .unwrap(),
         ));
-        let result =
-            parse_location(settlements, String::from("р-н Водяного")).unwrap();
+        let result = parse_location_with_aor_id(
+            settlements,
+            String::from("р-н Водяного"),
+        )
+        .unwrap();
         let result = test_settlements_array(result);
         assert_eq!(vec!["ВОДЯНЕ",], result);
     }
@@ -1084,9 +1111,11 @@ mod tests {
             )
             .unwrap(),
         ));
-        let result =
-            parse_location(settlements, String::from("рай. Кремінної"))
-                .unwrap();
+        let result = parse_location_with_aor_id(
+            settlements,
+            String::from("рай. Кремінної"),
+        )
+        .unwrap();
         let result = test_settlements_array(result);
         assert_eq!(vec!["КРЕМІННА",], result);
     }
@@ -1101,9 +1130,11 @@ mod tests {
             )
             .unwrap(),
         ));
-        let result =
-            parse_location(settlements, String::from("район Вугледара"))
-                .unwrap();
+        let result = parse_location_with_aor_id(
+            settlements,
+            String::from("район Вугледара"),
+        )
+        .unwrap();
         let result = test_settlements_array(result);
         assert_eq!(vec!["ВУГЛЕДАР",], result);
     }
@@ -1118,9 +1149,11 @@ mod tests {
             )
             .unwrap(),
         ));
-        let result =
-            parse_location(settlements, String::from("укх   йм район Пісків"))
-                .unwrap();
+        let result = parse_location_with_aor_id(
+            settlements,
+            String::from("укх   йм район Пісків"),
+        )
+        .unwrap();
         let result = test_settlements_array(result);
         assert_eq!(vec!["ПІСКИ",], result);
     }
@@ -1135,8 +1168,11 @@ mod tests {
             )
             .unwrap(),
         ));
-        let result =
-            parse_location(settlements, String::from("біля Бабиного")).unwrap();
+        let result = parse_location_with_aor_id(
+            settlements,
+            String::from("біля Бабиного"),
+        )
+        .unwrap();
         let result = test_settlements_array(result);
         assert_eq!(vec!["БАБИНЕ",], result);
     }
@@ -1151,7 +1187,7 @@ mod tests {
             )
             .unwrap(),
         ));
-        let result = parse_location(
+        let result = parse_location_with_aor_id(
             settlements,
             String::from("УКХ р/м Не встановлена мережа (ЦфП_101)"),
         )
@@ -1170,12 +1206,84 @@ mod tests {
             )
             .unwrap(),
         ));
-        let result = parse_location(
+        let result = parse_location_with_aor_id(
             settlements,
             String::from("13 зсб 252 мсп (урочище Новоєгорівка - Долгоє)"),
         )
         .unwrap();
         let result = test_settlements_array(result);
         assert_eq!(vec!["ДОЛГОЄ", "НОВОЄГОРІВКА"], result);
+    }
+
+    #[test]
+    pub fn test_parse_with_different_aor_configs() {
+        let config = crate::config::read_config(Mode::Test).unwrap();
+        let settlements = Arc::new(RwLock::new(
+            load_settlements_data_config(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
+        ));
+
+        let alpha = "КВАДРОЗЕБРААЛЬФА".to_string();
+        let beta = "МЕТЕОРБЕТАОМЕГА".to_string();
+
+        {
+            let mut settlements_lock = settlements.write().unwrap();
+
+            let mut settlements_data_alpha = load_from_file(
+                settlements_lock.default_settlements_files.clone(),
+                Mode::Test,
+            )
+            .unwrap();
+            let alpha_details = SettlementDetails {
+                id: Some(9_000_001),
+                name: alpha.clone(),
+                region: "ТЕСТОВА ОБЛАСТЬ".to_string(),
+                language: Language::Ua,
+                coords: Some((48.0, 33.0)),
+            };
+            settlements_data_alpha
+                .3
+                .insert(alpha_details.id.unwrap(), alpha_details.clone());
+            settlements_data_alpha.2.insert(&alpha, alpha_details);
+
+            let mut settlements_data_beta = load_from_file(
+                settlements_lock.default_settlements_files.clone(),
+                Mode::Test,
+            )
+            .unwrap();
+            let beta_details = SettlementDetails {
+                id: Some(9_000_002),
+                name: beta.clone(),
+                region: "ТЕСТОВА ОБЛАСТЬ".to_string(),
+                language: Language::Ua,
+                coords: Some((49.0, 34.0)),
+            };
+            settlements_data_beta
+                .3
+                .insert(beta_details.id.unwrap(), beta_details.clone());
+            settlements_data_beta.2.insert(&beta, beta_details);
+
+            settlements_lock
+                .aor_id_to_settlements_data
+                .insert(1, Arc::new(settlements_data_alpha));
+            settlements_lock
+                .aor_id_to_settlements_data
+                .insert(2, Arc::new(settlements_data_beta));
+        }
+
+        let aor1 = parse_location_with_aor(
+            settlements.clone(),
+            alpha.clone(),
+            Some(1),
+        )
+        .unwrap();
+        let aor2 = parse_location_with_aor(settlements, alpha.clone(), Some(2))
+            .unwrap();
+
+        assert_eq!(test_settlements_array(aor1), vec![alpha]);
+        assert!(aor2.is_empty());
     }
 }

@@ -158,12 +158,18 @@ export function AdminLocationConfigsNeoPage() {
       ) : null}
 
       {loadStatus === 'success' ? (
-        <Table size="small">
+        <Table
+          size="small"
+          sx={{
+            width: '100%',
+            tableLayout: 'fixed',
+          }}
+        >
           <TableHead>
             <TableRow>
-              <TableCell>Смуга</TableCell>
-              <TableCell>Конфігурація</TableCell>
-              <TableCell width={220}>Дія</TableCell>
+              <TableCell sx={{ width: '10%' }}>Смуга</TableCell>
+              <TableCell sx={{ width: '80%' }}>Конфігурація</TableCell>
+              <TableCell sx={{ width: '10%' }}>Дія</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
@@ -174,7 +180,7 @@ export function AdminLocationConfigsNeoPage() {
               );
               return (
                 <TableRow key={row.aorId}>
-                  <TableCell>{row.aorName}</TableCell>
+                  <TableCell sx={{ width: '10%' }}>{row.aorName}</TableCell>
                   <TableCell>
                     <FormControl size="small" fullWidth>
                       <Select
@@ -186,6 +192,13 @@ export function AdminLocationConfigsNeoPage() {
                             ? selected.join(', ')
                             : 'За замовчуванням (config.toml)'
                         }
+                        sx={{
+                          '& .MuiSelect-select': {
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                          },
+                        }}
                       >
                         {availableConfigs.map((config) => (
                           <MenuItem value={config} key={config}>
@@ -195,7 +208,7 @@ export function AdminLocationConfigsNeoPage() {
                       </Select>
                     </FormControl>
                   </TableCell>
-                  <TableCell>
+                  <TableCell sx={{ width: '10%' }}>
                     <div className="flex items-center gap-2">
                       <Button
                         variant="contained"
