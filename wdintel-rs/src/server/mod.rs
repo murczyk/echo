@@ -313,20 +313,6 @@ fn spawn_background_workers(
             )
             .await;
         });
-        spawn_named_worker("operator_inbox_worker", bg_set, async move {
-            crate::operator::worker::run_operator_inbox_worker_nofail(mode)
-                .await;
-        });
-        spawn_named_worker("echo_im_cleanup", bg_set, async move {
-            crate::messenger::worker::cleanup::run_cleanup_worker(mode).await;
-        });
-        spawn_named_worker(
-            "worker_calculate_group_stats",
-            bg_set,
-            async move {
-                crate::stats::worker::group_stats::worker_calculate_group_stats(mode).await;
-            },
-        );
         if let Some(model_config) = env.config.models_config.clone() {
             let token = cancel_token.clone();
             let storage_dir = env.config.storage_dir.clone();
@@ -338,28 +324,6 @@ fn spawn_background_workers(
                 )
                 .await;
             });
-        }
-
-        let rq2 = env.rq.clone();
-        let tag_keyword_regex_cache = env.tag_keyword_regex_cache.clone();
-        let token_2 = cancel_token.clone();
-        let redis2 = env.redis.clone();
-        if !config.disable_suggest_message_tags_worker.unwrap_or(false) {
-            spawn_named_worker(
-                "suggest_message_tags_worker",
-                bg_set,
-                async move {
-                    let mut redis = redis2;
-                    crate::tags::worker::suggest_message_tags_worker(
-                        &rq2,
-                        &dbx11,
-                        &mut redis,
-                        &tag_keyword_regex_cache,
-                        token_2,
-                    )
-                    .await;
-                },
-            );
         }
     }
 

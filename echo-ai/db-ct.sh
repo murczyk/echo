@@ -17,9 +17,10 @@ fi
 
 if ! sudo grep -q echo-ai-train "$PG_HBA_CONF"; then
   echo "adding echo-ai-train to pg_hba.conf"
+  TRAIN_IP=$(tailscale ip -4)
   cat <<EOF | sudo tee -a "$PG_HBA_CONF"
 # echo-ai-train
-host    wd              wd              100.88.242.43/32            scram-sha-256
+host    wd              wd              ${TRAIN_IP}/32            scram-sha-256
 EOF
    sudo systemctl reload postgresql@14-main.service
 fi
