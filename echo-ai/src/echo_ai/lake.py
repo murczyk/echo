@@ -47,47 +47,56 @@ class Lake:
 
     def merge_tags(self, db: str):
         self.conn.execute(f"""
-        WITH cte AS NOT MATERIALIZED (
+        WITH cte AS (
             SELECT
-                '{db}' AS source
-                , id
-                , label
-                , extra
-                , ord
-                , title
-                , enabled
-            FROM
-                "{db}".tag
+                '{db}' AS source,
+                *
+            FROM postgres_query('{db}', $$
+                SELECT
+                      id
+                    , label
+                    , extra
+                    , ord
+                    , title
+                    , enabled
+                FROM
+                    tag
+            $$)
         )
-        MERGE INTO tag AS tag
-        USING cte ON (
-            tag.source = cte.source
-            AND tag.id = cte.id
+        MERGE INTO tag AS tgt
+        USING cte AS src ON (
+            tgt.source = src.source
+            AND tgt.id = src.id
         )
-        WHEN NOT MATCHED BY SOURCE THEN DELETE
+        WHEN NOT MATCHED BY SOURCE AND tgt.source = '{db}' THEN DELETE
         WHEN NOT MATCHED BY TARGET THEN INSERT;
         """)
 
     def merge_inbox_item_tags(self, db: str):
         self.conn.execute(f"""
-        WITH cte AS NOT MATERIALIZED (
+        WITH cte AS (
             SELECT
-                '{db}' AS source
-                , sigint_inbox_item_id
-                , tag_id
-                , login
-            FROM
-                "{db}".sigint_inbox_item_tag
-            WHERE
-                model IS NULL
+                '{db}' AS source,
+                *
+            FROM postgres_query('{db}', $$
+                SELECT
+                      sigint_inbox_item_id
+                    , tag_id
+                    , login
+                FROM
+                    sigint_inbox_item_tag
+                WHERE
+                    model IS NULL
+            $$)
         )
-        MERGE INTO sigint_inbox_item_tag AS sigint_inbox_item_tag
-        USING cte ON (
-            sigint_inbox_item_tag.source = cte.source
-            AND sigint_inbox_item_tag.sigint_inbox_item_id = cte.sigint_inbox_item_id
-            AND sigint_inbox_item_tag.tag_id = cte.tag_id
+        MERGE INTO sigint_inbox_item_tag AS tgt
+        USING cte AS src ON (
+            tgt.source = src.source
+            AND tgt.sigint_inbox_item_id = src.sigint_inbox_item_id
+            AND tgt.tag_id = src.tag_id
+            AND tgt.login = src.login
         )
-        WHEN NOT MATCHED BY SOURCE THEN DELETE
+        WHEN NOT MATCHED BY SOURCE AND tgt.source = '{db}' THEN DELETE
         WHEN NOT MATCHED BY TARGET THEN INSERT;
         """)
 
