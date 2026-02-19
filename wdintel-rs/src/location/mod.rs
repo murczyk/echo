@@ -370,20 +370,15 @@ pub fn load_from_file(
     let mut settlements = BTreeMap::new();
 
     for source in settlements_paths {
-        // info!("[{}] loading source", &source);
-        // let path = format!("{}/{}", dir, source.clone());
         let path = root_dir.join(source.clone());
-        let text = match path.exists() {
-            true => fs::read_to_string(path.clone()).c(h!())?,
-            false => {
-                warn!(
-                    "[{}] cannot load source at {}, loading settlements.json",
-                    &source,
-                    path.display()
-                );
-                fs::read_to_string("/etc/echo/settlements.json").c(h!())?
-            }
-        };
+        if !path.exists() {
+            return Err(anyhow!(
+                "[{}] cannot load settlements source at {}",
+                &source,
+                path.display()
+            ));
+        }
+        let text = fs::read_to_string(path.clone()).c(h!())?;
         if mode != Mode::Test {
             debug!("[{}] loaded source successfully", &source);
         }
