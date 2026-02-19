@@ -1,8 +1,15 @@
 # Allows echo-ai-train to connect to remote postgresql over tailscale
 # Example:
-# ssh echo@ct-echo-kherson2-dev.alpines-banded.ts.net "bash -s" < db-ct.sh
+# ssh echo@ct-echo-kherson2-dev.alpines-banded.ts.net "bash -s" -- < db-ct.sh $(tailscale ip -4)
 PG_HBA_CONF="/etc/postgresql/14/main/pg_hba.conf"
 POSTGRES_CONF="/etc/postgresql/14/main/postgresql.conf"
+TRAIN_IP="$1"
+
+if [ -z "${TRAIN_IP}" ];
+then
+    echo "Usage: db-ct.sh \$(tailscale ip -4)"  >&2
+    exit 1
+fi
 
 if ! command -v jq > /dev/null 2>&1; then
     sudo apt-get -y install jq
