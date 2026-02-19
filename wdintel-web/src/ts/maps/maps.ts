@@ -93,6 +93,8 @@ export function createFullScreenControl(toggleMapSize: () => void) {
 			let container = L.DomUtil.create('div', 'leaflet-custom-control');
 			let button = L.DomUtil.create('a', '', container);
 			button.href = '#';
+			button.setAttribute('aria-label', 'Розгорнути або згорнути мапу');
+			button.title = 'Розгорнути або згорнути мапу';
 			button.innerHTML = '<i class="bi bi-arrows-fullscreen" style="font-size: 12px;"></i>';
 			L.DomEvent.on(button, 'click', L.DomEvent.stopPropagation)
 				.on(button, 'click', L.DomEvent.preventDefault)
@@ -108,6 +110,8 @@ export function createExitControl(closeMap: () => void) {
 			let container = L.DomUtil.create('div', 'leaflet-custom-control');
 			let button = L.DomUtil.create('a', '', container);
 			button.href = '#';
+			button.setAttribute('aria-label', 'Закрити мапу');
+			button.title = 'Закрити мапу';
 			button.innerHTML = '<i class="bi bi-x-lg" style="font-size: 12px;"></i>';
 			L.DomEvent.on(button, 'click', L.DomEvent.stopPropagation)
 				.on(button, 'click', L.DomEvent.preventDefault)
@@ -197,4 +201,3 @@ export async function setupMap(data: { points: MapPointShort[], containerId: str
 		}
 	});
 }
-

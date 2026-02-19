@@ -2159,7 +2159,7 @@ view : Bool -> Shared.Model -> B.User -> Model -> View Msg
 view dark shared user model =
     { title = "частоти"
     , body =
-        [ div [ class "flex page-rer-freqs", style "height" "calc(-50px + 100vh)" ]
+        [ div [ class "flex page-rer-freqs app-shell-fill-height" ]
             [ if model.showSidebar then
                 leftPanel shared model
 

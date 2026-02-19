@@ -678,7 +678,7 @@ function AdminOrganismsNeoPageBody() {
   };
 
   return (
-    <div className="w-full flex h-[calc(100vh-50px)] flex-col gap-4 pt-2 min-w-0">
+    <div className="w-full flex app-shell-fill-height flex-col gap-4 pt-2 min-w-0">
       {referenceStatus === 'error' ? (
         <Alert severity="error" onClose={() => setReferenceError(null)}>
           {referenceError || 'Помилка завантаження довідників'}

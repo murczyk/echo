@@ -83,6 +83,68 @@ function applyCurrentTheme() {
     }
 }
 
+function setAppShellNavbarHeightVar(heightPx: number): void {
+    if (!Number.isFinite(heightPx) || heightPx <= 0) {
+        return;
+    }
+    document.documentElement.style.setProperty('--app-shell-navbar-height', `${Math.round(heightPx)}px`);
+}
+
+function createNavbarHeightSync() {
+    let observedNavbar: HTMLElement | null = null;
+    let rafId = 0;
+    const resizeObserver = typeof ResizeObserver !== 'undefined'
+        ? new ResizeObserver(() => {
+            scheduleSync();
+        })
+        : null;
+
+    const syncNavbar = () => {
+        rafId = 0;
+        const navbar = document.getElementById('app-navbar-shell') as HTMLElement | null;
+
+        if (navbar !== observedNavbar) {
+            if (observedNavbar && resizeObserver) {
+                resizeObserver.unobserve(observedNavbar);
+            }
+            observedNavbar = navbar;
+            if (observedNavbar && resizeObserver) {
+                resizeObserver.observe(observedNavbar);
+            }
+        }
+
+        if (observedNavbar) {
+            setAppShellNavbarHeightVar(observedNavbar.getBoundingClientRect().height);
+        }
+    };
+
+    const scheduleSync = () => {
+        if (rafId !== 0) {
+            return;
+        }
+        rafId = window.requestAnimationFrame(syncNavbar);
+    };
+
+    const mutationObserver = new MutationObserver(() => {
+        scheduleSync();
+    });
+    // We only need to detect navbar mount/unmount/replacement, not every style/class mutation in the app.
+    mutationObserver.observe(document.body, {
+        childList: true,
+        subtree: true
+    });
+
+    window.addEventListener('resize', scheduleSync, { passive: true });
+    window.addEventListener('orientationchange', scheduleSync, { passive: true });
+
+    requestAnimationFrame(() => {
+        scheduleSync();
+        setTimeout(scheduleSync, 350);
+    });
+
+    return scheduleSync;
+}
+
 // Listen for system theme changes
 if (window.matchMedia) {
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
@@ -162,6 +224,7 @@ export const onReady = ({ app, env }) => {
 
     // Apply initial theme based on localStorage or system preference
     applyCurrentTheme();
+    const syncNavbarHeight = createNavbarHeightSync();
 
     setupCommentDraftTracker();
 
@@ -513,6 +576,7 @@ export const onReady = ({ app, env }) => {
             requestAnimationFrame(() => {
                 // Then add a delay to allow CSS transitions to complete
                 setTimeout(() => {
+                    syncNavbarHeight();
                     window.dispatchEvent(new Event('resize'));
                 }, 300); // Match the transition duration from CSS
             });

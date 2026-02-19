@@ -20,6 +20,10 @@ export interface SearchControl extends L.Control {
   updateSearchLoading: (isLoading: boolean) => void
 }
 
+export interface MapWindowControl extends L.Control {
+  setFullscreen: (isFullscreen: boolean) => void
+}
+
 export type FeatureName = 'palitras' | 'kmz' | 'pelengs';
 
 export type FeatureToggleState = {
@@ -56,13 +60,14 @@ export function createMapZoomControl() {
   const ZoomControlClass = L.Control.extend({
     onAdd: function(map: L.Map) {
       this._map = map;
-      this._container = L.DomUtil.create('div', 'leaflet-bar leaflet-control layer-switch-control collapsed analysis-map-zoom-control');
+      this._container = L.DomUtil.create('div', 'leaflet-bar leaflet-control analysis-map-zoom-control');
 
       const createButton = (iconClass: string, ariaLabel: string, onClick: () => void) => {
         const button = document.createElement('button');
-        button.className = 'layer-switch-icon';
+        button.className = 'analysis-map-zoom-button';
         button.type = 'button';
         button.setAttribute('aria-label', ariaLabel);
+        button.title = ariaLabel;
         button.innerHTML = `<i class="${iconClass}"></i>`;
         button.addEventListener('click', (e) => {
           e.stopPropagation();
@@ -71,15 +76,11 @@ export function createMapZoomControl() {
         return button;
       };
 
-      const zoomInButton = createButton('bi bi-plus-lg', 'Zoom in', () => this._map.zoomIn());
-      const zoomOutButton = createButton('bi bi-dash-lg', 'Zoom out', () => this._map.zoomOut());
+      const zoomInButton = createButton('bi bi-plus-lg', 'Збільшити мапу', () => this._map.zoomIn());
+      const zoomOutButton = createButton('bi bi-dash-lg', 'Зменшити мапу', () => this._map.zoomOut());
 
-      const header = document.createElement('div');
-      header.className = 'layer-switch-header';
-      header.appendChild(zoomInButton);
-      header.appendChild(zoomOutButton);
-
-      this._container.appendChild(header);
+      this._container.appendChild(zoomInButton);
+      this._container.appendChild(zoomOutButton);
 
       L.DomEvent.on(this._container, 'dblclick', (e) => {
         e.stopPropagation();
@@ -92,7 +93,7 @@ export function createMapZoomControl() {
     },
   });
 
-  return new ZoomControlClass({ position: 'topright' });
+  return new ZoomControlClass({ position: 'bottomright' });
 }
 
 export function createLayerSwitchControl(
@@ -176,7 +177,8 @@ export function createLayerSwitchControl(
         layersIcon.className = 'layer-switch-icon';
         layersIcon.innerHTML = '<i class="bi bi-layers"></i>';
         layersIcon.type = 'button';
-        layersIcon.setAttribute('aria-label', 'Expand layers list');
+        layersIcon.setAttribute('aria-label', 'Розгорнути список шарів');
+        layersIcon.title = 'Розгорнути список шарів';
         layersIcon.addEventListener('click', (e) => {
           e.stopPropagation();
           this._toggleCollapsed();
@@ -191,7 +193,8 @@ export function createLayerSwitchControl(
         toggleButton.className = 'layer-switch-toggle-button';
         toggleButton.innerHTML = '<i class="bi bi-chevron-down"></i>';
         toggleButton.type = 'button';
-        toggleButton.setAttribute('aria-label', 'Collapse layers list');
+        toggleButton.setAttribute('aria-label', 'Згорнути список шарів');
+        toggleButton.title = 'Згорнути список шарів';
         
         toggleButton.addEventListener('click', (e) => {
           e.stopPropagation();
@@ -320,11 +323,11 @@ export function createLayerSwitchControl(
     }
   });
 
-  return new LayerSwitchControl({ position: 'topright' });
+  return new LayerSwitchControl({ position: 'bottomleft' });
 }
 
 export function createAttributionControl() {
-  return L.control.attribution({});
+  return L.control.attribution({ position: 'bottomleft' });
 }
 
 export function createTimeswitchControl(dates: { startDate: number; endDate: number }) {
@@ -374,6 +377,75 @@ export function createExitControl2(closeMap: () => void) {
     }
   });
   return new ExitControl({ position: 'topright' });
+}
+
+export function createMapWindowControl(
+  closeMap: () => void,
+  toggleFullscreen: () => void,
+  initialFullscreen = false
+): MapWindowControl {
+  const MapWindowControlClass = L.Control.extend({
+    _isFullscreen: initialFullscreen,
+    _fullscreenButton: null as HTMLButtonElement | null,
+
+    _updateFullscreenButton: function() {
+      if (!this._fullscreenButton) {
+        return;
+      }
+
+      this._fullscreenButton.innerHTML = this._isFullscreen
+        ? '<i class="bi bi-fullscreen-exit"></i>'
+        : '<i class="bi bi-arrows-fullscreen"></i>';
+      this._fullscreenButton.setAttribute(
+        'aria-label',
+        this._isFullscreen ? 'Згорнути мапу' : 'Розгорнути мапу'
+      );
+      this._fullscreenButton.title = this._isFullscreen ? 'Згорнути мапу' : 'Розгорнути мапу';
+    },
+
+    onAdd: function(_map: L.Map) {
+      this._container = L.DomUtil.create('div', 'leaflet-bar leaflet-control analysis-map-window-control');
+
+      const fullscreenButton = document.createElement('button');
+      fullscreenButton.className = 'analysis-map-window-button';
+      fullscreenButton.type = 'button';
+      fullscreenButton.addEventListener('click', (event) => {
+        L.DomEvent.stopPropagation(event);
+        L.DomEvent.preventDefault(event);
+        this._isFullscreen = !this._isFullscreen;
+        this._updateFullscreenButton();
+        toggleFullscreen();
+      });
+      this._fullscreenButton = fullscreenButton;
+      this._updateFullscreenButton();
+
+      const closeButton = document.createElement('button');
+      closeButton.className = 'analysis-map-window-button';
+      closeButton.type = 'button';
+      closeButton.innerHTML = '<i class="bi bi-x-lg"></i>';
+      closeButton.setAttribute('aria-label', 'Закрити мапу');
+      closeButton.title = 'Закрити мапу';
+      closeButton.addEventListener('click', (event) => {
+        L.DomEvent.stopPropagation(event);
+        L.DomEvent.preventDefault(event);
+        closeMap();
+      });
+
+      this._container.appendChild(fullscreenButton);
+      this._container.appendChild(closeButton);
+
+      L.DomEvent.disableClickPropagation(this._container);
+      L.DomEvent.disableScrollPropagation(this._container);
+      return this._container;
+    },
+
+    setFullscreen: function(isFullscreen: boolean) {
+      this._isFullscreen = isFullscreen;
+      this._updateFullscreenButton();
+    }
+  });
+
+  return new MapWindowControlClass({ position: 'topright' }) as MapWindowControl;
 }
 
 export function createPalitrasControl(
@@ -467,7 +539,8 @@ export function createPalitrasControl(
         paletteIcon.className = 'palitras-palette-icon';
         paletteIcon.innerHTML = '<i class="bi bi-palette"></i>';
         paletteIcon.type = 'button';
-        paletteIcon.setAttribute('aria-label', 'Expand palitras list');
+        paletteIcon.setAttribute('aria-label', 'Розгорнути список палітр');
+        paletteIcon.title = 'Розгорнути список палітр';
         paletteIcon.addEventListener('click', (e) => {
           e.stopPropagation();
           this._toggleCollapsed();
@@ -482,7 +555,8 @@ export function createPalitrasControl(
         toggleButton.className = 'palitras-toggle-button';
         toggleButton.innerHTML = '<i class="bi bi-chevron-down"></i>';
         toggleButton.type = 'button';
-        toggleButton.setAttribute('aria-label', 'Collapse palitras list');
+        toggleButton.setAttribute('aria-label', 'Згорнути список палітр');
+        toggleButton.title = 'Згорнути список палітр';
         
         // Store reference to update icon later
         this._toggleButton = toggleButton;

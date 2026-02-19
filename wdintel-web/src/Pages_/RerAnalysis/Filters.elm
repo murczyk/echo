@@ -762,7 +762,7 @@ view isDark user model =
                 ]
     in
     div
-        [ class "flex flex-col p-2  min-h-full"
+        [ class "flex flex-col p-6 pr-2 min-h-full"
         , style "min-height" "100%"
         ]
     <|

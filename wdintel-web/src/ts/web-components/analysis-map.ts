@@ -7,7 +7,7 @@ import { KMZLayer, kmzLayerFactory } from '../maps/leaflet-kmz'
 import { MapPointDetailed } from '../maps/types';
 import { messagesCountText } from '../maps/language-utils';
 import { loadRerAnalysisQueryState, RerAnalysisQueryState, saveRerAnalysisQueryState } from '../rer-analysis-query-state';
-import { TimeswitchControl, FeatureToggleState, createLayerSwitchControl, createExitControl2, createTimeswitchControl, createAttributionControl, createPalitrasControl, FeatureName, LayerSwitchControl, createSearchControl, createMapZoomControl, SearchControl } from '../maps/controls';
+import { TimeswitchControl, FeatureToggleState, createLayerSwitchControl, createTimeswitchControl, createAttributionControl, createPalitrasControl, FeatureName, LayerSwitchControl, createSearchControl, createMapZoomControl, SearchControl, createMapWindowControl, MapWindowControl } from '../maps/controls';
 import { AnalysisMapStateStore, AnalysisMapStoredState } from '../maps/analysis-map-state';
 import { parseCoordinateInput } from '../maps/coordinate-search';
 import { PalitraManager } from '../maps/palitra-manager';
@@ -136,6 +136,8 @@ class AnalysisMap extends HTMLElement {
   private _searchControl: SearchControl | null = null;
   private _stateStore: AnalysisMapStateStore;
   private _coordinateSearchMarker: L.CircleMarker | null = null;
+  private _isFullscreen = false;
+  private _mapWindowControl: MapWindowControl | null = null;
   private _searchPointsHandler = (e: CustomEvent<string>) => {
     const value = (e.detail ?? '').trim();
     const coords = parseCoordinateInput(value);
@@ -149,6 +151,12 @@ class AnalysisMap extends HTMLElement {
       this._palitraManager?.setSearchQuery(value);
     }
   }
+  private _escapeHandler = (event: KeyboardEvent) => {
+    if (event.key === 'Escape' && this._isFullscreen) {
+      event.preventDefault();
+      this._setFullscreen(false);
+    }
+  }
   constructor() {
     super();
     this._stateStore = new AnalysisMapStateStore();
@@ -157,10 +165,13 @@ class AnalysisMap extends HTMLElement {
 
   connectedCallback() {
     this.addEventListener('search-points', this._searchPointsHandler);
+    window.addEventListener('keydown', this._escapeHandler);
   }
 
   disconnectedCallback() {
     this.removeEventListener('search-points', this._searchPointsHandler);
+    window.removeEventListener('keydown', this._escapeHandler);
+    this._setFullscreen(false);
   }
 
   private _clearCoordinateMarker(): void {
@@ -369,6 +380,7 @@ class AnalysisMap extends HTMLElement {
 
   private _initializeControls(map: L.Map, tileLayers: { openStreetMap: L.TileLayer, googleHybrid: L.TileLayer }) {
     const exitCallback = () => {
+      this._setFullscreen(false);
       const event = new CustomEvent('exit', {
         detail: {
         },
@@ -392,7 +404,9 @@ class AnalysisMap extends HTMLElement {
     this._searchControl = searchControl;
     map.addControl(switchTimeControl)
 
-    map.addControl(createExitControl2(exitCallback));
+    const mapWindowControl = createMapWindowControl(exitCallback, () => this._toggleFullscreen(), this._isFullscreen);
+    map.addControl(mapWindowControl);
+    this._mapWindowControl = mapWindowControl;
     const layerSwitchControl = createLayerSwitchControl(tileLayers, this._getFeatureToggleState(), featureToggleCallback);
     this._layerSwitchControl = layerSwitchControl;
     map.addControl(layerSwitchControl);
@@ -402,6 +416,24 @@ class AnalysisMap extends HTMLElement {
     const palitrasControl = createPalitrasControl([], [], palitraToggleCallback);
 
     return { map, switchTimeControl, palitrasControl };
+  }
+
+  private _toggleFullscreen() {
+    this._setFullscreen(!this._isFullscreen);
+  }
+
+  private _setFullscreen(enabled: boolean) {
+    if (this._isFullscreen === enabled) {
+      return;
+    }
+
+    this._isFullscreen = enabled;
+    this.classList.toggle('analysis-map-fullscreen', enabled);
+    document.body.classList.toggle('analysis-map-fullscreen-open', enabled);
+    this._mapWindowControl?.setFullscreen(enabled);
+    window.setTimeout(() => {
+      this._map?.invalidateSize();
+    }, 0);
   }
 
   private _patchMouseDownMapFocus(map: L.Map) {
