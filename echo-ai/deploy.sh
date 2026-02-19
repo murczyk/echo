@@ -17,18 +17,6 @@ fi
 install -D -m 0644 -t "$HOME/.config/systemd/user" systemd/*
 systemctl --user daemon-reload
 sudo loginctl enable-linger "$(id -u -n)"
-TUNNELS=(
-    pg-ssh-tunnel-proxy@echo-skhid-dev.socket
-    pg-ssh-tunnel-proxy@echo-pivnich-dev.socket
-    pg-ssh-tunnel-proxy@echo-siversk-dev.socket
-    pg-ssh-tunnel-proxy@echo-zp2-dev.socket
-    pg-ssh-tunnel-proxy@echo-kharkiv2-dev.socket
-    pg-ssh-tunnel-proxy@echo-volyn2-dev.socket
-    pg-ssh-tunnel-proxy@echo-kherson2-dev.socket
-)
-systemctl --user enable "${TUNNELS[@]}"
-systemctl --user stop "${TUNNELS[@]}"
-systemctl --user start "${TUNNELS[@]}"
 systemctl --user enable mlflow.service
 systemctl --user enable --now mlflow-gc.timer
 systemctl --user restart mlflow.service

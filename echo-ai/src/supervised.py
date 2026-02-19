@@ -25,7 +25,10 @@ LABEL_DICT = {
 
 def resolve_pretrain(pretrained_vectors, args):
     if os.path.isfile(pretrained_vectors):
-        print(f"using pretrained word vectors from file '{pretrained_vectors}'")
+        print(
+            f"using pretrained word vectors from file '{pretrained_vectors}'",
+            flush=True,
+        )
     else:
         dim = args["dim"]
         complex_filter = f"""
@@ -45,13 +48,13 @@ def resolve_pretrain(pretrained_vectors, args):
             model = models_with_complex_filter[0]
             path = f"{model.artifact_location}/{pretrained_vectors}"
             if os.path.isfile(path):
-                print(f"found pretrained vectors at {path}")
+                print(f"found pretrained vectors at {path}", flush=True)
                 args["pretrainedVectors"] = path
             else:
-                print(f"pretrained vectors '{path}' do not exist")
+                print(f"pretrained vectors '{path}' do not exist", flush=True)
                 sys.exit(1)
         else:
-            print(f"pretrained vectors '{pretrained_vectors}' do not exist")
+            print(f"pretrained vectors '{pretrained_vectors}' do not exist", flush=True)
             sys.exit(1)
 
 
@@ -68,10 +71,10 @@ def real_main(args):
         label_dict = LABEL_DICT.copy()
     label_list = list(label_dict.values())
 
-    print(f"starting training for labels: {label_list}")
+    print(f"starting training for labels: {label_list}", flush=True)
 
     with tempfile.TemporaryDirectory() as temp_dir:
-        print("creating connection to datalake")
+        print("creating connection to datalake", flush=True)
         lake = Lake(temp_directory=temp_dir)
         train_supervised(lake, label_dict, args)
 
@@ -108,9 +111,9 @@ def main() -> None:
         resolve_pretrain(pretrained_vectors, args)
 
     tags = {"task": "supervised"}
-    print("starting training for supervised model")
+    print("starting training for supervised model", flush=True)
     with mlflow.start_run(tags=tags) as run:
-        print(f"run {run.info.run_name}, id: {run.info.run_id}")
+        print(f"run {run.info.run_name}, id: {run.info.run_id}", flush=True)
         real_main(args)
 
 

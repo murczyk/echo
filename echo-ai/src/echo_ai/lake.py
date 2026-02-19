@@ -21,7 +21,7 @@ class Lake:
         self.conn.execute("""
         INSTALL ducklake;
         LOAD ducklake;
-        ATTACH 'ducklake:datalake.ducklake' AS datalake;
+        ATTACH 'ducklake:sqlite:datalake.ducklake.sqlite' AS datalake (DATA_PATH 'datalake.ducklake.files/');
         USE datalake;
         """)
 
@@ -309,25 +309,10 @@ class Lake:
         """)
 
     def attach_remote(self, db: str):
-        xdg_runtime_dir = os.getenv("XDG_RUNTIME_DIR")
-
-        if xdg_runtime_dir:
-            xdg_runtime_dir = Path(xdg_runtime_dir)
-        else:
-            uid = os.getuid()
-            xdg_runtime_dir = Path(f"/run/user/{uid}")
-
-        pg_host = xdg_runtime_dir / "pg-ssh-tunnel-proxy" / db
-
-        if pg_host.is_dir():
-            pg_host = str(pg_host)
-        else:
-            pg_host = db
-
         self.conn.execute(f"""
         INSTALL postgres;
         LOAD postgres;
-        ATTACH 'dbname=wd host={pg_host}' AS "{db}" (TYPE postgres);
+        ATTACH 'dbname=wd host={db}' AS "{db}" (TYPE postgres);
         """)
 
     def detach(self, db: str):

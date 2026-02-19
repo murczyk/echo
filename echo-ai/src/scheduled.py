@@ -15,7 +15,7 @@ def real_main(unsupervised: str, databases: str):
 
     databases_list = databases.split(None)
     with tempfile.TemporaryDirectory() as temp_dir:
-        print("creating connection to datalake")
+        print("creating connection to datalake", flush=True)
         lake = Lake(temp_directory=temp_dir)
         try:
             refresh_datalake(lake, databases_list)
@@ -30,18 +30,18 @@ def real_main(unsupervised: str, databases: str):
 
 
 def refresh_datalake(lake: Lake, databases_list: list[str]):
-    print("creating lake schema")
+    print("creating lake schema", flush=True)
     lake.create_schema_if_not_exists()
 
     for db in databases_list:
-        print(f"trying to attach local '{db}'")
+        print(f"trying to attach local '{db}'", flush=True)
         try:
             lake.attach_local(db)
-            print(f"attached local '{db}'")
+            print(f"attached local '{db}'", flush=True)
         except:
-            print(f"trying to attach remote '{db}'")
+            print(f"trying to attach remote '{db}'", flush=True)
             lake.attach_remote(db)
-            print(f"attached remote '{db}'")
+            print(f"attached remote '{db}'", flush=True)
 
         try:
             refresh_from_db(lake, db)
@@ -50,21 +50,21 @@ def refresh_datalake(lake: Lake, databases_list: list[str]):
 
 
 def refresh_from_db(lake: Lake, db: str):
-    print(f"merging tags from '{db}'")
+    print(f"merging tags from '{db}'", flush=True)
     lake.merge_tags(db)
-    print(f"finished merging tags from '{db}'")
+    print(f"finished merging tags from '{db}'", flush=True)
 
-    print(f"merging inbox item tags from '{db}'")
+    print(f"merging inbox item tags from '{db}'", flush=True)
     lake.merge_inbox_item_tags(db)
-    print(f"finished merging inbox item tags from '{db}'")
+    print(f"finished merging inbox item tags from '{db}'", flush=True)
 
-    print(f"inserting model errors from '{db}'")
+    print(f"inserting model errors from '{db}'", flush=True)
     lake.insert_model_error(db)
-    print(f"finished model errors from '{db}'")
+    print(f"finished model errors from '{db}'", flush=True)
 
-    print(f"inserting inbox messages from '{db}'")
+    print(f"inserting inbox messages from '{db}'", flush=True)
     lake.insert_inbox_message(db)
-    print(f"finished inserting inbox messages from '{db}'")
+    print(f"finished inserting inbox messages from '{db}'", flush=True)
 
 
 def process_file(project: str, unsupervised: bool):
@@ -95,11 +95,11 @@ def main():
 
     databases = args["databases"]
     if not databases or not databases.strip():
-        print("provide at least one database")
+        print("provide at least one database", flush=True)
         sys.exit(1)
 
     tags = {"task": "scheduled"}
-    print(f"starting scheduled training with params: {args}")
+    print(f"starting scheduled training with params: {args}", flush=True)
     with mlflow.start_run(tags=tags):
         real_main(**args)
 

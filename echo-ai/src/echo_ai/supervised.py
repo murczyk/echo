@@ -34,7 +34,7 @@ def train_supervised(
 
     seed = args.get("seed", 4507)
     shuffle = args.get("shuffle", True)
-    print(f"preparing training dataset, seed {seed}, shuffle {shuffle}")
+    print(f"preparing training dataset, seed {seed}, shuffle {shuffle}", flush=True)
     rel = lake.create_messages_labeled_onehot(shuffle=shuffle, seed=seed)
     result = rel.max("created_at").fetchone()
     if not result:
@@ -42,7 +42,7 @@ def train_supervised(
         sys.exit(1)
     (created_at_max,) = result
     last_week = cast(datetime.datetime, created_at_max) - datetime.timedelta(weeks=1)
-    print(f"splitting train and test at '{last_week}'")
+    print(f"splitting train and test at '{last_week}'", flush=True)
 
     and_train = f"created_at < '{last_week.isoformat()}'"
     and_test = f"created_at >= '{last_week.isoformat()}'"
@@ -54,7 +54,7 @@ def train_supervised(
         rel_train = lake.split_for_label(label_column_name, and_train)
         df_train = quack.to_df_arrow(rel_train.limit(1000))
         (len_train,) = rel_train.count("*").fetchone()  # pyright: ignore
-        print(f"{len_train} rows for {label_name} train dataset")
+        print(f"{len_train} rows for {label_name} train dataset", flush=True)
         pd_train = from_pandas(
             df_train,
             name=f"{label_name}.train",
@@ -65,7 +65,7 @@ def train_supervised(
         rel_test = lake.split_for_label(label_column_name, and_test)
         df_test = quack.to_df_arrow(rel_test.limit(1000))
         (len_test,) = rel_test.count("*").fetchone()  # pyright: ignore
-        print(f"{len_test} rows for {label_name} test dataset")
+        print(f"{len_test} rows for {label_name} test dataset", flush=True)
         pd_test = from_pandas(
             df_test,
             name=f"{label_name}.test",
@@ -76,7 +76,7 @@ def train_supervised(
 
         tags = {"label": label_name, "task": "supervised"}
         with mlflow.start_run(nested=True, tags=tags):
-            print(f"starting training for {label_name}")
+            print(f"starting training for {label_name}", flush=True)
 
             autotuneMetric = args.get("autotuneMetric")
             autotuneModelSize = args.get("autotuneModelSize")
@@ -90,7 +90,7 @@ def train_supervised(
                 fasttext_kwargs.pop("autotuneDuration", None)
                 fasttext_kwargs.pop("autotuneModelSize", None)
 
-            print(f"fasttext arguments: {fasttext_kwargs}")
+            print(f"fasttext arguments: {fasttext_kwargs}", flush=True)
             fasttext_model = fasttext.train_supervised(
                 input=train_path, **fasttext_kwargs
             )
@@ -121,7 +121,7 @@ def train_supervised(
                 )
 
             model_params = get_model_params(fasttext_model)
-            print(f"params: {model_params}")
+            print(f"params: {model_params}", flush=True)
             model_params["label_name"] = label_name
             mlflow.log_params(model_params)
 
