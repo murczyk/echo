@@ -3,7 +3,7 @@ import { postJson } from './client';
 type AorLocationConfigItemRaw = {
   aor_id: number;
   aor_name: string;
-  selected_config: string | null;
+  selected_configs: string[];
 };
 
 type ListAorLocationConfigRspRaw = {
@@ -13,13 +13,13 @@ type ListAorLocationConfigRspRaw = {
 
 type SaveAorLocationConfigReqRaw = {
   aor_id: number;
-  settlements_config: string;
+  settlements_configs: string[];
 };
 
 export type AorLocationConfigItem = {
   aorId: number;
   aorName: string;
-  selectedConfig: string | null;
+  selectedConfigs: string[];
 };
 
 export type ListAorLocationConfigRsp = {
@@ -31,7 +31,7 @@ function normalizeItem(raw: AorLocationConfigItemRaw): AorLocationConfigItem {
   return {
     aorId: raw.aor_id,
     aorName: raw.aor_name,
-    selectedConfig: raw.selected_config,
+    selectedConfigs: raw.selected_configs || [],
   };
 }
 
@@ -43,10 +43,10 @@ export async function listAorLocationConfigs(): Promise<ListAorLocationConfigRsp
   };
 }
 
-export async function saveAorLocationConfig(aorId: number, settlementsConfig: string): Promise<AorLocationConfigItem> {
+export async function saveAorLocationConfig(aorId: number, settlementsConfigs: string[]): Promise<AorLocationConfigItem> {
   const req: SaveAorLocationConfigReqRaw = {
     aor_id: aorId,
-    settlements_config: settlementsConfig,
+    settlements_configs: settlementsConfigs,
   };
   const data = await postJson<AorLocationConfigItemRaw>('/api/admin/location-config/save', req);
   return normalizeItem(data);

@@ -1,4 +1,5 @@
 use crate::location::SettlementsData;
+use crate::types::Mode;
 use crate::types::{Deserialize, Serialize};
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 use std::collections::{BTreeMap, HashMap};
@@ -64,10 +65,12 @@ pub struct SettlementFileRow {
 
 pub struct SettlementsDataConfig {
     pub aor_id_to_settlements_data: HashMap<i64, Arc<SettlementsData>>,
-    pub aor_id_to_config_name: HashMap<i64, String>,
+    pub aor_id_to_config_names: HashMap<i64, Vec<String>>,
     pub default_settlements_data: Arc<SettlementsData>,
+    pub default_settlements_files: Vec<String>,
     pub settlements_data_by_config: HashMap<String, Arc<SettlementsData>>,
     pub available_settlements_configs: Vec<String>,
+    pub mode: Mode,
 }
 
 impl Default for SettlementsDataConfig {
@@ -80,10 +83,12 @@ impl Default for SettlementsDataConfig {
         ));
         Self {
             aor_id_to_settlements_data: HashMap::new(),
-            aor_id_to_config_name: HashMap::new(),
+            aor_id_to_config_names: HashMap::new(),
             default_settlements_data: default_settlements_data.clone(),
+            default_settlements_files: vec![],
             settlements_data_by_config: HashMap::new(),
             available_settlements_configs: vec![],
+            mode: Mode::Test,
         }
     }
 }
@@ -94,7 +99,7 @@ impl Default for SettlementsDataConfig {
 pub struct AorLocationConfigItem {
     pub aor_id: i64,
     pub aor_name: String,
-    pub selected_config: Option<String>,
+    pub selected_configs: Vec<String>,
 }
 
 #[derive(
@@ -110,5 +115,5 @@ pub struct ListAorLocationConfigRsp {
 )]
 pub struct SaveAorLocationConfigReq {
     pub aor_id: i64,
-    pub settlements_config: String,
+    pub settlements_configs: Vec<String>,
 }

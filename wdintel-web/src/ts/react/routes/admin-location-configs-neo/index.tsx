@@ -25,10 +25,14 @@ import {
 type LoadingStatus = 'idle' | 'loading' | 'success' | 'error';
 
 type RowState = AorLocationConfigItem & {
-  editedConfig: string;
+  editedConfigs: string[];
   isSaving: boolean;
   saveError: string | null;
 };
+
+function areEqualStringArrays(left: string[], right: string[]): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
 
 function formatErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
@@ -55,7 +59,7 @@ export function AdminLocationConfigsNeoPage() {
       setRows(
         data.items.map((item) => ({
           ...item,
-          editedConfig: item.selectedConfig || data.availableConfigs[0] || '',
+          editedConfigs: item.selectedConfigs || [],
           isSaving: false,
           saveError: null,
         }))
@@ -71,14 +75,15 @@ export function AdminLocationConfigsNeoPage() {
     load();
   }, []);
 
-  function onSelectChange(aorId: number, event: SelectChangeEvent<string>) {
-    const selected = event.target.value;
+  function onSelectChange(aorId: number, event: SelectChangeEvent<string[]>) {
+    const value = event.target.value;
+    const selected = typeof value === 'string' ? value.split(',') : value;
     setRows((prev) =>
       prev.map((row) =>
         row.aorId === aorId
           ? {
               ...row,
-              editedConfig: selected,
+              editedConfigs: selected,
               saveError: null,
             }
           : row
@@ -87,7 +92,6 @@ export function AdminLocationConfigsNeoPage() {
   }
 
   async function onSave(row: RowState) {
-    if (!row.editedConfig) return;
     setRows((prev) =>
       prev.map((entry) =>
         entry.aorId === row.aorId
@@ -101,14 +105,14 @@ export function AdminLocationConfigsNeoPage() {
     );
 
     try {
-      const saved = await saveAorLocationConfig(row.aorId, row.editedConfig);
+      const saved = await saveAorLocationConfig(row.aorId, row.editedConfigs);
       setRows((prev) =>
         prev.map((entry) =>
           entry.aorId === row.aorId
             ? {
                 ...entry,
-                selectedConfig: saved.selectedConfig,
-                editedConfig: saved.selectedConfig || row.editedConfig,
+                selectedConfigs: saved.selectedConfigs,
+                editedConfigs: saved.selectedConfigs,
                 isSaving: false,
                 saveError: null,
               }
@@ -164,15 +168,24 @@ export function AdminLocationConfigsNeoPage() {
           </TableHead>
           <TableBody>
             {rows.map((row) => {
-              const isChanged = (row.selectedConfig || '') !== row.editedConfig;
+              const isChanged = !areEqualStringArrays(
+                row.selectedConfigs || [],
+                row.editedConfigs || []
+              );
               return (
                 <TableRow key={row.aorId}>
                   <TableCell>{row.aorName}</TableCell>
                   <TableCell>
                     <FormControl size="small" fullWidth>
                       <Select
-                        value={row.editedConfig}
+                        multiple
+                        value={row.editedConfigs}
                         onChange={(event) => onSelectChange(row.aorId, event)}
+                        renderValue={(selected) =>
+                          selected.length > 0
+                            ? selected.join(', ')
+                            : 'За замовчуванням (config.toml)'
+                        }
                       >
                         {availableConfigs.map((config) => (
                           <MenuItem value={config} key={config}>
@@ -186,7 +199,7 @@ export function AdminLocationConfigsNeoPage() {
                     <div className="flex items-center gap-2">
                       <Button
                         variant="contained"
-                        disabled={!isChanged || row.isSaving || !row.editedConfig}
+                        disabled={!isChanged || row.isSaving}
                         onClick={() => onSave(row)}
                       >
                         {row.isSaving ? 'Збереження...' : 'Зберегти'}

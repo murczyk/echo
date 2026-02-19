@@ -8,15 +8,65 @@ use actix_web::post;
 use actix_web::web::Json;
 use sea_orm::{ActiveValue::Set, *};
 
-fn pick_settlements_data(
+fn parse_selected_configs(row: &aor_location_config::Model) -> Vec<String> {
+    let m_json = row
+        .settlements_configs
+        .as_array()
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|v| v.as_str().map(str::to_owned))
+                .collect_vec()
+        })
+        .filter(|items| !items.is_empty());
+    m_json.unwrap_or_else(|| {
+        if row.settlements_config.is_empty() {
+            vec![]
+        } else {
+            vec![row.settlements_config.clone()]
+        }
+    })
+}
+
+fn normalize_selected_configs(
+    selected_configs: Vec<String>,
+    available_configs: &[String],
+) -> Vec<String> {
+    let available = available_configs.iter().collect::<HashSet<_>>();
+    let mut out = Vec::new();
+    for config in selected_configs {
+        if !available.contains(&config) {
+            continue;
+        }
+        if out.contains(&config) {
+            continue;
+        }
+        out.push(config);
+    }
+    out
+}
+
+fn pick_settlements_data_for_configs(
+    selected_configs: &[String],
     settlements_data_by_config: &HashMap<String, Arc<SettlementsData>>,
     default_settlements_data: Arc<SettlementsData>,
-    config_name: &str,
-) -> Arc<SettlementsData> {
-    settlements_data_by_config
-        .get(config_name)
-        .cloned()
-        .unwrap_or(default_settlements_data)
+    mode: Mode,
+) -> anyhow::Result<Arc<SettlementsData>> {
+    if selected_configs.is_empty() {
+        return Ok(default_settlements_data);
+    }
+
+    if selected_configs.len() == 1 {
+        if let Some(data) = settlements_data_by_config.get(&selected_configs[0])
+        {
+            return Ok(data.clone());
+        }
+    }
+
+    let settlements_data =
+        crate::location::load_from_file(selected_configs.to_vec(), mode)
+            .c(h!())?;
+    Ok(Arc::new(settlements_data))
 }
 
 pub async fn init_aor_location_config(
@@ -34,12 +84,7 @@ pub async fn init_aor_location_config(
             settlements.read().map_err(|e| anyhow!("{e:?}")).c(h!())?;
         settlements_lock.available_settlements_configs.clone()
     };
-    let default_config = available_configs
-        .first()
-        .cloned()
-        .unwrap_or_else(String::new);
-
-    if default_config.is_empty() {
+    if available_configs.is_empty() {
         return Ok(());
     }
 
@@ -54,7 +99,11 @@ pub async fn init_aor_location_config(
             aor_location_config::ActiveModel {
                 id: NotSet,
                 aor_id: Set(aor.id),
-                settlements_config: Set(default_config.clone()),
+                settlements_config: Set(available_configs
+                    .first()
+                    .cloned()
+                    .unwrap_or_default()),
+                settlements_configs: Set(serde_json::json!(available_configs)),
                 created_at: NotSet,
                 updated_at: NotSet,
             }
@@ -79,20 +128,29 @@ pub async fn refresh_settlements_aor_map(
     let mut settlements_lock =
         settlements.write().map_err(|e| anyhow!("{e:?}")).c(h!())?;
     settlements_lock.aor_id_to_settlements_data.clear();
-    settlements_lock.aor_id_to_config_name.clear();
+    settlements_lock.aor_id_to_config_names.clear();
+    let available_configs =
+        settlements_lock.available_settlements_configs.clone();
+    let mode = settlements_lock.mode;
 
     for row in rows {
-        let settlements_data = pick_settlements_data(
+        let selected_configs = normalize_selected_configs(
+            parse_selected_configs(&row),
+            &available_configs,
+        );
+        let settlements_data = pick_settlements_data_for_configs(
+            &selected_configs,
             &settlements_lock.settlements_data_by_config,
             settlements_lock.default_settlements_data.clone(),
-            &row.settlements_config,
-        );
+            mode,
+        )
+        .c(h!())?;
         settlements_lock
             .aor_id_to_settlements_data
             .insert(row.aor_id, settlements_data);
         settlements_lock
-            .aor_id_to_config_name
-            .insert(row.aor_id, row.settlements_config);
+            .aor_id_to_config_names
+            .insert(row.aor_id, selected_configs);
     }
     Ok(())
 }
@@ -127,22 +185,25 @@ pub async fn list_aor_location_configs(
         .read()
         .map_err(|e| AppError::from(format!("{e:?}")))
         .c(h!())?;
-    let default_config = settlements_lock
-        .available_settlements_configs
-        .first()
-        .cloned();
+    let default_configs = settlements_lock.default_settlements_files.clone();
 
     let items = aors
         .into_iter()
         .map(|aor| {
-            let selected_config = row_by_aor_id
+            let selected_configs = row_by_aor_id
                 .get(&aor.id)
-                .map(|row| row.settlements_config.clone())
-                .or_else(|| default_config.clone());
+                .map(parse_selected_configs)
+                .map(|selected| {
+                    normalize_selected_configs(
+                        selected,
+                        &settlements_lock.available_settlements_configs,
+                    )
+                })
+                .unwrap_or_else(|| default_configs.clone());
             AorLocationConfigItem {
                 aor_id: aor.id,
                 aor_name: aor.name,
-                selected_config,
+                selected_configs,
             }
         })
         .collect_vec();
@@ -173,16 +234,15 @@ pub async fn save_aor_location_config(
             .read()
             .map_err(|e| AppError::from(format!("{e:?}")))
             .c(h!())?;
-        if !settlements_lock
-            .available_settlements_configs
-            .contains(&req.settlements_config)
-        {
-            return Err(AppError::BL {
-                msg: format!(
-                    "unknown settlements config: {}",
-                    req.settlements_config
-                ),
-            });
+        for config in &req.settlements_configs {
+            if !settlements_lock
+                .available_settlements_configs
+                .contains(config)
+            {
+                return Err(AppError::BL {
+                    msg: format!("unknown settlements config: {config}"),
+                });
+            }
         }
     }
 
@@ -199,10 +259,15 @@ pub async fn save_aor_location_config(
         .await
         .c(h!())?;
 
+    let selected_configs = req.settlements_configs.clone();
+    let first_selected = selected_configs.first().cloned().unwrap_or_default();
+
     match existing {
         Some(rec) => {
             let mut rec = rec.into_active_model();
-            rec.settlements_config = Set(req.settlements_config.clone());
+            rec.settlements_config = Set(first_selected.clone());
+            rec.settlements_configs =
+                Set(serde_json::json!(selected_configs.clone()));
             rec.updated_at = NotSet;
             rec.update(&env.dbx).await.c(h!())?;
         }
@@ -210,7 +275,10 @@ pub async fn save_aor_location_config(
             aor_location_config::ActiveModel {
                 id: NotSet,
                 aor_id: Set(req.aor_id),
-                settlements_config: Set(req.settlements_config.clone()),
+                settlements_config: Set(first_selected),
+                settlements_configs: Set(serde_json::json!(
+                    selected_configs.clone()
+                )),
                 created_at: NotSet,
                 updated_at: NotSet,
             }
@@ -227,6 +295,6 @@ pub async fn save_aor_location_config(
     Ok(Json(AorLocationConfigItem {
         aor_id: aor.id,
         aor_name: aor.name,
-        selected_config: Some(req.settlements_config),
+        selected_configs,
     }))
 }

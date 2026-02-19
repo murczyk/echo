@@ -453,10 +453,12 @@ pub fn load_settlements_data_config(
     }
     Ok(SettlementsDataConfig {
         aor_id_to_settlements_data: HashMap::new(),
-        aor_id_to_config_name: HashMap::new(),
+        aor_id_to_config_names: HashMap::new(),
         default_settlements_data,
+        default_settlements_files: settlements_paths.clone(),
         settlements_data_by_config,
         available_settlements_configs: settlements_paths,
+        mode,
     })
 }
 
