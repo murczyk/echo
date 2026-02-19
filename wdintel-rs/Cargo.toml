@@ -92,6 +92,8 @@ rustls = { version = "0.23.31", default-features = false, features = ["ring", "s
 ssh2 = "0.9.5"
 demoji = "0.0.3"
 dialoguer = "0.11.0"
+ratatui = { version = "0.27.0", default-features = false, features = ["crossterm"] }
+crossterm = "0.27.0"
 tracing-subscriber = { version = "0.3.19", features = ["tracing-log"] }
 unicode-normalization = "0.1.24"
 content_disposition = "0.4.0"
@@ -106,7 +108,7 @@ rev = "bb5c826c880050a371c8479aadf3e3a979880aca"
 
 [dependencies.echo-im]
 git = "ssh://git@github.com/echoua/echo-im.git"
-rev = "e284644427c54688e9559c92b3944f9ca641f7ba"
+rev = "345bc1b171aaf334ae8412e4a9c4dab3e3922fd6"
 
 [dependencies.milgeo-rs]
 git = "ssh://git@github.com/echoua/milgeo-rs.git"
@@ -137,6 +139,7 @@ proj = ["milgeo-rs/proj"]
 maintainer-scripts = "debian/"
 systemd-units = [
 	{ unit-name = "wdintel-rs" },
+	{ unit-name = "wdintel-rs-bgworker" },
 	{ unit-name = "wdintel-py" },
 	# legacy mechanism without echo-im, to be discontinued
 	{ unit-name = "echo-signal-cli" },

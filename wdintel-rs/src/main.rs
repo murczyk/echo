@@ -55,6 +55,7 @@ pub mod storage;
 pub mod tags;
 pub mod terminal;
 pub mod tests;
+pub mod ts;
 pub mod types;
 pub mod unit;
 pub mod users;
@@ -180,6 +181,26 @@ pub struct OneoffReprocessCallsignsPs {
 }
 
 #[derive(clap::Parser, Debug)]
+pub struct OneoffBackfillInboxNetworksPs {
+    /// Start datetime (inclusive). Example: `2023-04-17T00:00:00`
+    #[arg(long, value_enum)]
+    pub start: Option<String>,
+    /// Start datetime (non-inclusive). Example: `2023-04-18T00:00:00`
+    #[arg(long, value_enum)]
+    pub end: Option<String>,
+}
+
+#[derive(clap::Parser, Debug)]
+pub struct OneoffReprocessInboxPostsPs {
+    /// Start day (inclusive). Format: `YYYY-MM-DD`.
+    #[arg(long)]
+    pub start_day: String,
+    /// Do not persist updates.
+    #[arg(long)]
+    pub dry_run: bool,
+}
+
+#[derive(clap::Parser, Debug)]
 pub struct OneoffRadioPerDayPerAbonentPs {
     pub input: String,
 }
@@ -208,6 +229,35 @@ pub struct OneoffImportSigintCommentsPs {
     pub excluded_organisms: Vec<String>,
     #[arg(long)]
     pub excluded_logins: Vec<String>,
+}
+
+#[derive(clap::Parser, Debug)]
+pub struct OneoffTagMessagesReportPs {
+    /// Start date (inclusive). Format: `YYYY-MM-DD`.
+    #[arg(long)]
+    pub start: String,
+    /// End date (inclusive). Format: `YYYY-MM-DD`.
+    #[arg(long)]
+    pub end: String,
+    /// Output CSV file path.
+    #[arg(long)]
+    pub output: String,
+}
+
+#[derive(clap::Parser, Debug)]
+pub struct OneoffEtalonkaReportNetworksFromRerAnalysisPs {
+    /// Start date (inclusive). Format: `YYYY-MM-DD`.
+    #[arg(long)]
+    pub start: String,
+    /// End date (non-inclusive). Format: `YYYY-MM-DD`.
+    #[arg(long)]
+    pub end: String,
+    /// Filter by AOR names (repeat the flag for multiple).
+    #[arg(long = "only-aor")]
+    pub only_aor: Vec<String>,
+    /// Login used for access and filters.
+    #[arg(long, default_value = SYSTEM_LOGIN_NAME)]
+    pub login: String,
 }
 
 #[derive(clap::Parser, Debug)]
@@ -485,13 +535,28 @@ pub struct BackupPs {
     pub nowait: bool,
 }
 
+#[derive(clap::Parser, Debug)]
+pub struct ImportTuiPs {
+    #[arg(long, value_enum)]
+    pub path: String,
+}
+
 #[derive(clap::Subcommand, Debug)]
 #[command(author, version, about, long_about = None)]
 enum Cmd {
     Server(ServerPs),
+    Bgworker,
     GenElm,
+    GenTs,
     #[command(visible_alias = "migration")]
     Migrate,
+    NetworkInvalidationTui,
+    TuiImportUnit(ImportTuiPs),
+    TuiImportNetwork(ImportTuiPs),
+    OneoffImportNetworkDetails(ImportTuiPs),
+    TuiMergeUnit,
+    TuiMergeNetwork,
+    TuiMergeNetworkFreq,
     ExportUnit(ExportUnitPs),
     ImportUnit(ImportUnitPs),
     RenewTailscaleCert(RenewTailscaleCertPs),
@@ -515,6 +580,10 @@ enum Cmd {
     OneoffReprocessCallsignTokens(OneoffReprocessCallsignTokensPs),
     OneoffExportSigintComments(OneoffExportSigintCommentsPs),
     OneoffImportSigintComments(OneoffImportSigintCommentsPs),
+    OneoffTagMessagesReport(OneoffTagMessagesReportPs),
+    OneoffEtalonkaReportNetworksFromRerAnalysis(
+        OneoffEtalonkaReportNetworksFromRerAnalysisPs,
+    ),
     OneoffGenDatasetCallsigns,
     OneoffReprocessCoords(OneoffReprocessCoordsPs),
     OneoffReprocessUnitNames,
@@ -555,6 +624,8 @@ enum Cmd {
     OneoffSuggestInboxMessageTags(OneoffSuggestInboxMessageTagsPs),
     OneoffImportSignalsCallsignsCsv(OneoffImportSignalsCallsignsCsvPs),
     OneoffFixWhatsappSenders,
+    OneoffBackfillInboxNetworks(OneoffBackfillInboxNetworksPs),
+    OneoffReprocessInboxPosts(OneoffReprocessInboxPostsPs),
     OneoffRestartEcho(OneoffRestartEchoPs),
 }
 
@@ -599,7 +670,7 @@ async fn new_pg_pool_from_conn_string(
         .sqlx_logging(true)
         .sqlx_logging_level(LevelFilter::Debug)
         .sqlx_slow_statements_logging_settings(
-            LevelFilter::Warn,
+            LevelFilter::Off,
             core::time::Duration::from_millis(PG_SLOW_STATEMENT_THRESHOLD_MS),
         );
 
@@ -739,7 +810,8 @@ fn main() -> Result<(), AppError> {
         .expect("failed to install default rustls ring provider");
 
     env_logger::try_init_from_env(
-        env_logger::Env::new().default_filter_or("info,wdintel_rs=debug"),
+        env_logger::Env::new()
+            .default_filter_or("info,wdintel_rs=debug,sqlx::query=off"),
     )
     .ok();
 
@@ -785,12 +857,16 @@ async fn async_main(
         Cmd::Server(ps) => {
             server::main_server(mode, ps, token, shutdown_handle.clone()).await
         }
+        Cmd::Bgworker => {
+            server::main_bgworker(mode, token, shutdown_handle.clone()).await
+        }
         Cmd::OneoffEnsureTagsOrdering => {
             tags::ordering::oneoff_ensure_tags_ordering(mode).await
         }
         Cmd::OneoffTestKml => kml::main_test_kml(mode),
         Cmd::OneoffTestXmlLib => atak::main_test_xml_lib(mode),
         Cmd::GenElm => elm::main_gen_elm(),
+        Cmd::GenTs => ts::main_gen_ts(),
         Cmd::OneoffPrintDescriptionIconTitle => {
             kml::oneoff_print_description_icon_title(mode)
         }
@@ -846,6 +922,15 @@ async fn async_main(
         }
         Cmd::OneoffImportSigintComments(ps) => {
             sigint::comments::oneoff_import_sigint_comments(mode, &ps).await
+        }
+        Cmd::OneoffTagMessagesReport(ps) => {
+            sigint::oneoff::oneoff_tag_messages_report(mode, &ps).await
+        }
+        Cmd::OneoffEtalonkaReportNetworksFromRerAnalysis(ps) => {
+            sigint::oneoff::oneoff_etalonka_report_networks_from_rer_analysis(
+                mode, &ps,
+            )
+            .await
         }
         Cmd::OneoffGenDatasetCallsigns => {
             ml::oneoff_gen_dataset_callsigns(mode).await
@@ -981,8 +1066,36 @@ async fn async_main(
         Cmd::OneoffFixWhatsappSenders => {
             messenger::oneoff::oneoff_fix_whatsapp_senders(mode).await
         }
+        Cmd::OneoffBackfillInboxNetworks(ps) => {
+            sigint::network::etalon_calc::oneoff::oneoff_backfill_inbox_networks(mode, ps)
+                .await
+        }
+        Cmd::OneoffReprocessInboxPosts(ps) => {
+            rer_importer::oneoff_reprocess_inbox_posts(mode, &ps).await
+        }
+        Cmd::NetworkInvalidationTui => {
+           sigint::network::etalon_calc::tui::run_network_invalidation_tui(mode).await
+        }
         Cmd::OneoffRestartEcho(ps) => {
             oneoff::oneoff_restart_echo(mode, &ps).await
+        }
+        Cmd::TuiImportUnit(ps) => {
+            sigint::import::tui::run_import_unit_tui(mode, ps).await
+        }
+        Cmd::TuiImportNetwork(ps) => {
+            sigint::import::tui::run_import_network_tui(mode, ps).await
+        }
+        Cmd::OneoffImportNetworkDetails(ps) => {
+            sigint::import::tui::oneoff_import_network_details(mode, ps).await
+        }
+        Cmd::TuiMergeUnit => {
+            sigint::import::tui::run_merge_unit_tui(mode).await
+        }
+        Cmd::TuiMergeNetwork => {
+            sigint::import::tui::run_merge_network_tui(mode).await
+        }
+        Cmd::TuiMergeNetworkFreq => {
+            sigint::import::tui::run_merge_network_freq_tui(mode).await
         }
     }
 }

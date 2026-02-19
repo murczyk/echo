@@ -2,7 +2,7 @@
   "compilerOptions": {
     "target": "ES2022",                     // Specify ECMAScript target version
     "module": "ES2022",                     // Specify module code generation
-    "lib": ["DOM", "ES2022"],               // Include the necessary libraries
+    "lib": ["DOM", "DOM.Iterable", "ES2022"],               // Include the necessary libraries
     //strict block
     "strict": false,
     //"noImplicitAny": true,
@@ -16,6 +16,7 @@
     "noEmit": true,
     "experimentalDecorators": true,
     "useDefineForClassFields": false,
+    "jsx": "react-jsx",
   },
   "include": [
     "src/interop.ts",                             // Include all TypeScript files in the src directory

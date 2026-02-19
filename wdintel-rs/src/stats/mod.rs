@@ -13,7 +13,7 @@ use echo_migration::{Expr, IntoCondition};
 use itertools::Itertools;
 use log::*;
 use sea_orm::*;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use tokio::time::sleep;
 
 pub mod worker;
@@ -272,6 +272,7 @@ pub async fn read_group_stats_aggregated(
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
 ) -> anyhow::Result<Vec<AnalysisStatsGroup>> {
+    let allowed_keys = master_keys.iter().cloned().collect::<HashSet<_>>();
     let (intervals_5min, days) =
         collect_time_intervals_for_stats(dt_since, dt_till).c(h!())?;
 
@@ -303,9 +304,10 @@ pub async fn read_group_stats_aggregated(
         .c(h!())?
         .into_iter()
         .flat_map(|m| {
-            collect_group_keys_for_batch(
+            collect_group_keys_for_batch_filtered(
                 m.signal_group_batch_id,
                 &batches_map,
+                &allowed_keys,
                 m,
             )
         })
@@ -331,9 +333,10 @@ pub async fn read_group_stats_aggregated(
             .c(h!())?
             .into_iter()
             .flat_map(|m| {
-                collect_group_keys_for_batch(
+                collect_group_keys_for_batch_filtered(
                     m.signal_group_batch_id,
                     &batches_map,
+                    &allowed_keys,
                     m,
                 )
             })
@@ -409,7 +412,12 @@ pub async fn read_sender_stats_aggregated(
     };
     let mut result = vec![];
     for (uuid, count) in stats {
-        result.push(AnalysisStatsSender { uuid, count });
+        result.push(AnalysisStatsSender {
+            uuid,
+            count,
+            freq_breakdown: vec![],
+            per_day: BTreeMap::new(),
+        });
     }
     Ok(result)
 }
@@ -511,11 +519,17 @@ pub async fn read_aor_stats_aggregated(
     let batch_ids = batches.iter().map(|b| b.id).collect::<Vec<i64>>();
 
     let mut stats: HashMap<i64, i64> = stats_group_aor_id_5min::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            stats_group_aor_id_5min::Relation::AreaOfResponsibility.def(),
+        )
         .filter(interval_5mins_filter)
         .filter(
             stats_group_aor_id_5min::Column::SignalGroupBatchId
                 .eq_any(batch_ids.clone()),
         )
+        .filter(area_of_responsibility::Column::Deleted.eq(false))
+        .filter(area_of_responsibility::Column::IsTopLevel.eq(true))
         .all(&env.dbx)
         .await
         .c(h!())?
@@ -532,11 +546,17 @@ pub async fn read_aor_stats_aggregated(
             interval_day_filter = interval_day_filter.add(filter);
         }
         stats_group_aor_id_day::Entity::find()
+            .join(
+                JoinType::InnerJoin,
+                stats_group_aor_id_day::Relation::AreaOfResponsibility.def(),
+            )
             .filter(interval_day_filter)
             .filter(
                 stats_group_aor_id_day::Column::SignalGroupBatchId
                     .eq_any(batch_ids.clone()),
             )
+            .filter(area_of_responsibility::Column::Deleted.eq(false))
+            .filter(area_of_responsibility::Column::IsTopLevel.eq(true))
             .all(&env.dbx)
             .await
             .c(h!())?
@@ -1040,81 +1060,8 @@ pub async fn recalculate_group_stats(
         .collect::<HashMap<String, i64>>();
 
     if recalculate_5min_stats {
-        let since_filter_1 = sigint_inbox_item::Column::Datetime
-            .is_null()
-            .and(signal_message::Column::CreatedAt.gte(since_ts));
-        let since_filter_2 = sigint_inbox_item::Column::Datetime
-            .is_not_null()
-            .and(sigint_inbox_item::Column::Datetime.gte(since_ts));
-
-        let till_filter_1 = sigint_inbox_item::Column::Datetime
-            .is_null()
-            .and(signal_message::Column::CreatedAt.lt(till_ts));
-        let till_filter_2 = sigint_inbox_item::Column::Datetime
-            .is_not_null()
-            .and(sigint_inbox_item::Column::Datetime.lt(till_ts));
-
-        let generic_stats = signal_message::Entity::find()
-            .join(
-                JoinType::InnerJoin,
-                signal_message::Relation::SigintInboxItem.def(),
-            )
-            .join(
-                JoinType::InnerJoin,
-                signal_message::Relation::SignalMessageGroup.def(),
-            )
-            .join(
-                JoinType::InnerJoin,
-                signal_message_group::Relation::SignalGroup.def(),
-            )
-            .join(
-                JoinType::InnerJoin,
-                signal_group::Relation::SignalGroupAor.def(),
-            )
-            .join(
-                JoinType::LeftJoin,
-                sigint_inbox_item_tag::Relation::SigintInboxItem
-                    .def()
-                    .rev()
-                    .on_condition(|_left, right| {
-                        Expr::col((
-                            right,
-                            sigint_inbox_item_tag::Column::Confidence,
-                        ))
-                        .gte(TAG_MINIMUM_CONFIDENCE)
-                        .into_condition()
-                    }),
-            )
-            .select_only()
-            .column(signal_message::Column::Id)
-            .column(signal_message::Column::CreatedAt)
-            .column(sigint_inbox_item::Column::Datetime)
-            .column(signal_message_group::Column::GroupMasterKey)
-            .column(sigint_inbox_item::Column::Freq)
-            .column(sigint_inbox_item::Column::Callsigns)
-            .column(sigint_inbox_item::Column::LocationV2)
-            .column(sigint_inbox_item::Column::UnitV2)
-            .column(sigint_inbox_item::Column::PostId)
-            .column(signal_message::Column::Sender)
-            .column(signal_group_aor::Column::AorId)
-            .expr_as(
-                Expr::cust_with_expr(
-                    "array_agg($1) filter (where $1 is not null)",
-                    Expr::col(sigint_inbox_item_tag::Column::TagId),
-                ),
-                "tags",
-            )
-            .filter(since_filter_1.or(since_filter_2))
-            .filter(till_filter_1.or(till_filter_2))
-            .filter(signal_message::Column::Deleted.eq(false))
-            .group_by(signal_message::Column::Id)
-            .group_by(sigint_inbox_item::Column::Id)
-            .group_by(signal_message_group::Column::GroupMasterKey)
-            .group_by(signal_group_aor::Column::Id)
-            .into_model::<StatsRow>()
-            .all(dbx)
-            .await
-            .c(h!())?;
+        let generic_stats =
+            load_generic_stats(dbx, since_ts, till_ts).await.c(h!())?;
 
         let group_stats = generic_stats
             .clone()
@@ -1400,6 +1347,111 @@ pub async fn recalculate_group_stats(
         txn.commit().await.c(h!())?;
     }
     Ok(())
+}
+
+async fn load_generic_stats(
+    dbx: &DatabaseConnection,
+    since_ts: NaiveDateTime,
+    till_ts: NaiveDateTime,
+) -> Result<Vec<StatsRow>, AppError> {
+    let stats_by_datetime =
+        generic_stats_by_datetime(dbx, since_ts, till_ts).await?;
+    let stats_by_created_at =
+        generic_stats_by_created_at(dbx, since_ts, till_ts).await?;
+    Ok(stats_by_datetime
+        .into_iter()
+        .chain(stats_by_created_at)
+        .collect_vec())
+}
+
+async fn generic_stats_by_datetime(
+    dbx: &DatabaseConnection,
+    since_ts: NaiveDateTime,
+    till_ts: NaiveDateTime,
+) -> Result<Vec<StatsRow>, AppError> {
+    let stats = generic_stats_base_select()
+        .filter(sigint_inbox_item::Column::Datetime.is_not_null())
+        .filter(sigint_inbox_item::Column::Datetime.gte(since_ts))
+        .filter(sigint_inbox_item::Column::Datetime.lt(till_ts))
+        .into_model::<StatsRow>()
+        .all(dbx)
+        .await
+        .c(h!())?;
+    Ok(stats)
+}
+
+async fn generic_stats_by_created_at(
+    dbx: &DatabaseConnection,
+    since_ts: NaiveDateTime,
+    till_ts: NaiveDateTime,
+) -> Result<Vec<StatsRow>, AppError> {
+    let stats = generic_stats_base_select()
+        .filter(sigint_inbox_item::Column::Datetime.is_null())
+        .filter(signal_message::Column::CreatedAt.gte(since_ts))
+        .filter(signal_message::Column::CreatedAt.lt(till_ts))
+        .into_model::<StatsRow>()
+        .all(dbx)
+        .await
+        .c(h!())?;
+    Ok(stats)
+}
+
+fn generic_stats_base_select() -> Select<signal_message::Entity> {
+    signal_message::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::SigintInboxItem.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::SignalMessageGroup.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            signal_message_group::Relation::SignalGroup.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            signal_group::Relation::SignalGroupAor.def(),
+        )
+        .join(
+            JoinType::LeftJoin,
+            sigint_inbox_item_tag::Relation::SigintInboxItem
+                .def()
+                .rev()
+                .on_condition(|_left, right| {
+                    Expr::col((
+                        right,
+                        sigint_inbox_item_tag::Column::Confidence,
+                    ))
+                    .gte(TAG_MINIMUM_CONFIDENCE)
+                    .into_condition()
+                }),
+        )
+        .select_only()
+        .column(signal_message::Column::Id)
+        .column(signal_message::Column::CreatedAt)
+        .column(sigint_inbox_item::Column::Datetime)
+        .column(signal_message_group::Column::GroupMasterKey)
+        .column(sigint_inbox_item::Column::Freq)
+        .column(sigint_inbox_item::Column::Callsigns)
+        .column(sigint_inbox_item::Column::LocationV2)
+        .column(sigint_inbox_item::Column::UnitV2)
+        .column(sigint_inbox_item::Column::PostId)
+        .column(signal_message::Column::Sender)
+        .column(signal_group_aor::Column::AorId)
+        .expr_as(
+            Expr::cust_with_expr(
+                "array_agg($1) filter (where $1 is not null)",
+                Expr::col(sigint_inbox_item_tag::Column::TagId),
+            ),
+            "tags",
+        )
+        .filter(signal_message::Column::Deleted.eq(false))
+        .group_by(signal_message::Column::Id)
+        .group_by(sigint_inbox_item::Column::Id)
+        .group_by(signal_message_group::Column::GroupMasterKey)
+        .group_by(signal_group_aor::Column::Id)
 }
 
 async fn update_5min_stats_group(
@@ -2588,15 +2640,18 @@ fn all_to_batch_key(keys: HashSet<String>) -> String {
     to_batch_key(&text)
 }
 
-fn collect_group_keys_for_batch<T: Clone>(
+fn collect_group_keys_for_batch_filtered<T: Clone>(
     batch_id: i64,
     batches: &HashMap<i64, Vec<String>>,
+    allowed_keys: &HashSet<String>,
     m: T,
 ) -> Vec<(T, String)> {
     let keys = batches.get(&batch_id).cloned().unwrap_or_default();
     let mut result = vec![];
     for key in keys {
-        result.push((m.clone(), key));
+        if allowed_keys.contains(&key) {
+            result.push((m.clone(), key));
+        }
     }
     result
 }
@@ -2634,6 +2689,9 @@ fn batch_key_to_group_keys(batch_key: String) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::functest::tests::*;
+    use sea_orm::ActiveValue::Set;
+    use serial_test::serial;
     #[test]
     fn test_get_local_date() {
         let utc_date = NaiveDate::from_ymd_opt(2025, 6, 6).unwrap();
@@ -2746,6 +2804,81 @@ mod tests {
         //     NaiveDate::from_ymd_opt(2025, 10, 15).unwrap(),
         // ];
         // assert_eq!(_days, expected_days, "Days vector should contain all dates from the day after dt_since to the day of dt_till.");
+    }
+
+    #[test]
+    fn test_collect_group_keys_for_batch_filtered() {
+        let mut batches = HashMap::new();
+        batches.insert(1, vec!["a".to_string(), "b".to_string()]);
+        let allowed = HashSet::from(["a".to_string()]);
+        let res =
+            collect_group_keys_for_batch_filtered(1, &batches, &allowed, 10);
+        assert_eq!(res, vec![(10, "a".to_string())]);
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_read_group_stats_aggregated_filters_orphan_keys() {
+        let env = cleanup().await.unwrap();
+
+        let allowed_group = mk_signal_group(
+            &env.dbx,
+            signal_group::ActiveModel {
+                master_key: Set("allowed-group".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let orphan_group = mk_signal_group(
+            &env.dbx,
+            signal_group::ActiveModel {
+                master_key: Set("orphan-group".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let batch_key = all_to_batch_key(HashSet::from([
+            allowed_group.master_key.clone(),
+            orphan_group.master_key.clone(),
+        ]));
+        let batch = signal_group_batch::ActiveModel {
+            group_master_keys: Set(batch_key),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        let now = Utc::now().naive_utc();
+        stats_group_5min::ActiveModel {
+            dt: Set(now),
+            quantity: Set(3),
+            signal_group_batch_id: Set(batch.id),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        let dt_since = now - Duration::minutes(10);
+        let dt_till = now + Duration::minutes(10);
+        let stats = read_group_stats_aggregated(
+            &env.dbx,
+            vec![allowed_group.master_key.clone()],
+            dt_since,
+            dt_till,
+        )
+        .await
+        .unwrap();
+
+        let keys = stats
+            .into_iter()
+            .map(|entry| entry.master_key)
+            .collect::<HashSet<_>>();
+        assert_eq!(keys, HashSet::from([allowed_group.master_key]));
     }
 
     fn ndt(

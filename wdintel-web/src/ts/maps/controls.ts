@@ -15,6 +15,15 @@ export interface PalitrasControl extends L.Control {
   updatePalitras: (palitras: PalitraDetails[], visibleIds: number[]) => void
 }
 
+export interface SearchControl extends L.Control {
+  updateResultsCount: (count: number | null) => void
+  updateSearchLoading: (isLoading: boolean) => void
+}
+
+export interface MapWindowControl extends L.Control {
+  setFullscreen: (isFullscreen: boolean) => void
+}
+
 export type FeatureName = 'palitras' | 'kmz' | 'pelengs';
 
 export type FeatureToggleState = {
@@ -22,6 +31,71 @@ export type FeatureToggleState = {
   kmzEnabled: boolean;
   pelengsEnabled: boolean;
 };
+
+/** Creates a map control that hosts <analysis-map-search>. */
+export function createSearchControl(): SearchControl {
+  const SearchControlClass = L.Control.extend({
+    _searchElement: null as (HTMLElement & { setResultsCount?: (count: number | null) => void; setSearchLoading?: (isLoading: boolean) => void }) | null,
+    onAdd: function (_map: L.Map) {
+      this._container = L.DomUtil.create('div', 'leaflet-bar leaflet-control search-control');
+      const searchEl = document.createElement('analysis-map-search') as HTMLElement & { setResultsCount?: (count: number | null) => void; setSearchLoading?: (isLoading: boolean) => void };
+      this._searchElement = searchEl;
+      this._container.appendChild(searchEl);
+      L.DomEvent.disableClickPropagation(this._container);
+      L.DomEvent.disableScrollPropagation(this._container);
+      return this._container;
+    },
+    updateResultsCount: function (count: number | null) {
+      this._searchElement?.setResultsCount?.(count);
+    },
+    updateSearchLoading: function (isLoading: boolean) {
+      this._searchElement?.setSearchLoading?.(isLoading);
+    }
+  });
+
+  return new SearchControlClass({ position: 'topleft' }) as SearchControl;
+}
+
+export function createMapZoomControl() {
+  const ZoomControlClass = L.Control.extend({
+    onAdd: function(map: L.Map) {
+      this._map = map;
+      this._container = L.DomUtil.create('div', 'leaflet-bar leaflet-control analysis-map-zoom-control');
+
+      const createButton = (iconClass: string, ariaLabel: string, onClick: () => void) => {
+        const button = document.createElement('button');
+        button.className = 'analysis-map-zoom-button';
+        button.type = 'button';
+        button.setAttribute('aria-label', ariaLabel);
+        button.title = ariaLabel;
+        button.innerHTML = `<i class="${iconClass}"></i>`;
+        button.addEventListener('click', (e) => {
+          e.stopPropagation();
+          onClick();
+        });
+        return button;
+      };
+
+      const zoomInButton = createButton('bi bi-plus-lg', 'Збільшити мапу', () => this._map.zoomIn());
+      const zoomOutButton = createButton('bi bi-dash-lg', 'Зменшити мапу', () => this._map.zoomOut());
+
+      this._container.appendChild(zoomInButton);
+      this._container.appendChild(zoomOutButton);
+
+      L.DomEvent.on(this._container, 'dblclick', (e) => {
+        e.stopPropagation();
+        L.DomEvent.preventDefault(e);
+      });
+
+      L.DomEvent.disableClickPropagation(this._container);
+      L.DomEvent.disableScrollPropagation(this._container);
+      return this._container;
+    },
+  });
+
+  return new ZoomControlClass({ position: 'bottomright' });
+}
+
 export function createLayerSwitchControl(
   tileLayers: { openStreetMap: L.TileLayer, googleHybrid: L.TileLayer },
   features: FeatureToggleState,
@@ -73,7 +147,7 @@ export function createLayerSwitchControl(
       // Re-render to update structure
       this._render();
     },
-    
+
     _switchLayer: function(layerName: 'openStreetMap' | 'googleHybrid') {
       // Remove current layer
       if (this._currentLayer) {
@@ -103,7 +177,8 @@ export function createLayerSwitchControl(
         layersIcon.className = 'layer-switch-icon';
         layersIcon.innerHTML = '<i class="bi bi-layers"></i>';
         layersIcon.type = 'button';
-        layersIcon.setAttribute('aria-label', 'Expand layers list');
+        layersIcon.setAttribute('aria-label', 'Розгорнути список шарів');
+        layersIcon.title = 'Розгорнути список шарів';
         layersIcon.addEventListener('click', (e) => {
           e.stopPropagation();
           this._toggleCollapsed();
@@ -118,7 +193,8 @@ export function createLayerSwitchControl(
         toggleButton.className = 'layer-switch-toggle-button';
         toggleButton.innerHTML = '<i class="bi bi-chevron-down"></i>';
         toggleButton.type = 'button';
-        toggleButton.setAttribute('aria-label', 'Collapse layers list');
+        toggleButton.setAttribute('aria-label', 'Згорнути список шарів');
+        toggleButton.title = 'Згорнути список шарів';
         
         toggleButton.addEventListener('click', (e) => {
           e.stopPropagation();
@@ -247,11 +323,11 @@ export function createLayerSwitchControl(
     }
   });
 
-  return new LayerSwitchControl({ position: 'topright' });
+  return new LayerSwitchControl({ position: 'bottomleft' });
 }
 
 export function createAttributionControl() {
-  return L.control.attribution({});
+  return L.control.attribution({ position: 'bottomleft' });
 }
 
 export function createTimeswitchControl(dates: { startDate: number; endDate: number }) {
@@ -303,6 +379,75 @@ export function createExitControl2(closeMap: () => void) {
   return new ExitControl({ position: 'topright' });
 }
 
+export function createMapWindowControl(
+  closeMap: () => void,
+  toggleFullscreen: () => void,
+  initialFullscreen = false
+): MapWindowControl {
+  const MapWindowControlClass = L.Control.extend({
+    _isFullscreen: initialFullscreen,
+    _fullscreenButton: null as HTMLButtonElement | null,
+
+    _updateFullscreenButton: function() {
+      if (!this._fullscreenButton) {
+        return;
+      }
+
+      this._fullscreenButton.innerHTML = this._isFullscreen
+        ? '<i class="bi bi-fullscreen-exit"></i>'
+        : '<i class="bi bi-arrows-fullscreen"></i>';
+      this._fullscreenButton.setAttribute(
+        'aria-label',
+        this._isFullscreen ? 'Згорнути мапу' : 'Розгорнути мапу'
+      );
+      this._fullscreenButton.title = this._isFullscreen ? 'Згорнути мапу' : 'Розгорнути мапу';
+    },
+
+    onAdd: function(_map: L.Map) {
+      this._container = L.DomUtil.create('div', 'leaflet-bar leaflet-control analysis-map-window-control');
+
+      const fullscreenButton = document.createElement('button');
+      fullscreenButton.className = 'analysis-map-window-button';
+      fullscreenButton.type = 'button';
+      fullscreenButton.addEventListener('click', (event) => {
+        L.DomEvent.stopPropagation(event);
+        L.DomEvent.preventDefault(event);
+        this._isFullscreen = !this._isFullscreen;
+        this._updateFullscreenButton();
+        toggleFullscreen();
+      });
+      this._fullscreenButton = fullscreenButton;
+      this._updateFullscreenButton();
+
+      const closeButton = document.createElement('button');
+      closeButton.className = 'analysis-map-window-button';
+      closeButton.type = 'button';
+      closeButton.innerHTML = '<i class="bi bi-x-lg"></i>';
+      closeButton.setAttribute('aria-label', 'Закрити мапу');
+      closeButton.title = 'Закрити мапу';
+      closeButton.addEventListener('click', (event) => {
+        L.DomEvent.stopPropagation(event);
+        L.DomEvent.preventDefault(event);
+        closeMap();
+      });
+
+      this._container.appendChild(fullscreenButton);
+      this._container.appendChild(closeButton);
+
+      L.DomEvent.disableClickPropagation(this._container);
+      L.DomEvent.disableScrollPropagation(this._container);
+      return this._container;
+    },
+
+    setFullscreen: function(isFullscreen: boolean) {
+      this._isFullscreen = isFullscreen;
+      this._updateFullscreenButton();
+    }
+  });
+
+  return new MapWindowControlClass({ position: 'topright' }) as MapWindowControl;
+}
+
 export function createPalitrasControl(
   palitras: PalitraDetails[], 
   visibleIds: number[],
@@ -315,6 +460,7 @@ export function createPalitrasControl(
     _visibleIds: visibleIds,
     _onToggle: onToggle,
     _isCollapsed: false,
+    _renderedPalitrasSignature: null as string | null,
 
     onAdd: function(map: L.Map) {
       this._container = L.DomUtil.create('div', 'palitras-control');
@@ -357,10 +503,26 @@ export function createPalitrasControl(
       this._render();
     },
 
+    _getPalitrasSignature: function(palitrasState: PalitraDetails[]) {
+      return palitrasState
+        .map((palitraDetails: PalitraDetails) => {
+          const palitra = palitraDetails.palitra;
+          const geometry = palitra.geometry;
+          const geometrySignature = geometry
+            ? `${geometry.center.lat}:${geometry.center.lng}:${geometry.perimeter_linear_ring.length}`
+            : 'none';
+          return `${palitra.id}|${palitra.name}|${palitra.color_hex}|${geometrySignature}|${palitraDetails.points.length}`;
+        })
+        .join(';');
+    },
+
     _render: function() {
       if (!this._container) {
         return;
       }
+
+      const previousList = this._container.querySelector('.palitras-control-list') as HTMLDivElement | null;
+      const previousScrollTop = previousList?.scrollTop ?? 0;
       
       if (!this._palitras || this._palitras.length === 0) {
         this._container.innerHTML = '';
@@ -377,7 +539,8 @@ export function createPalitrasControl(
         paletteIcon.className = 'palitras-palette-icon';
         paletteIcon.innerHTML = '<i class="bi bi-palette"></i>';
         paletteIcon.type = 'button';
-        paletteIcon.setAttribute('aria-label', 'Expand palitras list');
+        paletteIcon.setAttribute('aria-label', 'Розгорнути список палітр');
+        paletteIcon.title = 'Розгорнути список палітр';
         paletteIcon.addEventListener('click', (e) => {
           e.stopPropagation();
           this._toggleCollapsed();
@@ -392,7 +555,8 @@ export function createPalitrasControl(
         toggleButton.className = 'palitras-toggle-button';
         toggleButton.innerHTML = '<i class="bi bi-chevron-down"></i>';
         toggleButton.type = 'button';
-        toggleButton.setAttribute('aria-label', 'Collapse palitras list');
+        toggleButton.setAttribute('aria-label', 'Згорнути список палітр');
+        toggleButton.title = 'Згорнути список палітр';
         
         // Store reference to update icon later
         this._toggleButton = toggleButton;
@@ -419,6 +583,11 @@ export function createPalitrasControl(
       this._container.innerHTML = '';
       this._container.appendChild(header);
       this._container.appendChild(listContainer);
+      this._renderedPalitrasSignature = this._getPalitrasSignature(this._palitras);
+
+      if (previousScrollTop > 0) {
+        listContainer.scrollTop = previousScrollTop;
+      }
       
       // Apply collapsed class if needed
       if (this._isCollapsed) {
@@ -434,6 +603,7 @@ export function createPalitrasControl(
       
       const item = document.createElement('div');
       item.className = 'palitra-item';
+      item.dataset.palitraId = String(palitra.id);
       
       const isVisible = this._visibleIds.includes(palitra.id);
       
@@ -488,10 +658,35 @@ export function createPalitrasControl(
       return item;
     },
 
+    _syncVisibleCheckboxes: function() {
+      if (!this._container) {
+        return;
+      }
+      const visibleIdsSet = new Set(this._visibleIds);
+      const items = this._container.querySelectorAll('.palitra-item');
+      items.forEach((itemEl) => {
+        const item = itemEl as HTMLDivElement;
+        const palitraId = Number(item.dataset.palitraId);
+        if (!Number.isFinite(palitraId)) {
+          return;
+        }
+        const checkbox = item.querySelector('.palitra-checkbox') as HTMLInputElement | null;
+        if (checkbox) {
+          checkbox.checked = visibleIdsSet.has(palitraId);
+        }
+      });
+    },
+
     updatePalitras: function(palitras: PalitraDetails[], visibleIds: number[]) {
+      const nextSignature = this._getPalitrasSignature(palitras);
+      const shouldFullRender = this._renderedPalitrasSignature !== nextSignature;
       this._palitras = palitras;
       this._visibleIds = visibleIds;
-      this._render();
+      if (shouldFullRender) {
+        this._render();
+        return;
+      }
+      this._syncVisibleCheckboxes();
     }
   });
 

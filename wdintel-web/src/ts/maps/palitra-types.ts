@@ -25,6 +25,8 @@ export type PalitraDetails = {
 
 export interface PalitraManagerCallbacks {
   onVisibilityToggle: (palitraId: number) => void;
+  onSearchResultsCountChanged: (count: number | null) => void;
+  onSearchLoadingChanged: (isLoading: boolean) => void;
 }
 
 export interface PalitraManagerOptions {
@@ -32,4 +34,6 @@ export interface PalitraManagerOptions {
   requestDelayMs: number;
   cacheTtlMs: number;
   maxCachedTiles: number;
+  /** Buffer ratio for viewport filtering. Only points inside viewport + buffer are rendered. Default 0.15. */
+  pointsViewportBufferRatio?: number;
 }

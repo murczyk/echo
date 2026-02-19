@@ -33,6 +33,7 @@ use std::collections::{BTreeSet, HashMap};
 use time::{Duration as TimeDuration, PrimitiveDateTime};
 
 pub mod bl;
+pub mod etalon_calc;
 pub mod goi;
 pub mod merge;
 pub mod oneoff;
@@ -199,9 +200,9 @@ pub async fn restore_network(
     crate::users::has_any_role(&env.dbx, &user_id, vec!["Rer", "Api"]).await?;
     let txn = env.dbx.begin().await.context(h!())?;
     let network_id = req.into_inner().network_id;
-    let network = find_network(&txn, network_id).await.context(h!())?;
+    let mut network = find_network(&txn, network_id).await.context(h!())?;
     if network.deleted && network.active_to.is_some() {
-        bl_restore_network(&txn, network).await.context(h!())?;
+        network = bl_restore_network(&txn, network).await.context(h!())?;
     } else {
         error!("user {user_id} attempted to re-activate already active network, skipping...");
     }
@@ -211,6 +212,14 @@ pub async fn restore_network(
         .context(h!())?;
     txn.commit().await.context(h!())?;
     let res = res.into_iter().next().context(h!())?;
+    sigint::network::etalon_calc::invalidate_network_inbox(
+        network,
+        vec![],
+        &env.dbx,
+        format!("restoring network {network_id}"),
+    )
+    .await
+    .c(h!())?;
     Ok(Json(res))
 }
 
@@ -476,6 +485,15 @@ pub async fn create_network(
     let event = EventMsg::new(EventType::ETNetworkChanged);
     fanout(&mut env.redis.clone(), event).await.context(h!())?;
 
+    sigint::network::etalon_calc::invalidate_network_inbox(
+        network.clone(),
+        vec![],
+        &env.dbx,
+        format!("created network {}", network.id),
+    )
+    .await
+    .c(h!())?;
+
     let res = render_networks(vec![network], &env.dbx, &user_id)
         .await
         .context(h!())?
@@ -575,6 +593,15 @@ pub async fn update_network(
 
     txn.commit().await.context(h!())?;
 
+    sigint::network::etalon_calc::invalidate_network_inbox(
+        network.clone(),
+        vec![],
+        &env.dbx,
+        format!("updated network {}", network.id),
+    )
+    .await
+    .c(h!())?;
+
     let res = render_networks(vec![network], &env.dbx, &user_id)
         .await
         .context(h!())?
@@ -648,6 +675,15 @@ pub async fn delete_network(
 
     let event = EventMsg::new(EventType::ETNetworkChanged);
     fanout(&mut env.redis.clone(), event).await.context(h!())?;
+
+    sigint::network::etalon_calc::invalidate_network_inbox(
+        network.clone(),
+        vec![],
+        &env.dbx,
+        format!("deleted network {}", network.id),
+    )
+    .await
+    .c(h!())?;
 
     let res = render_networks(vec![network], &env.dbx, &user_id)
         .await
@@ -727,47 +763,13 @@ pub async fn network_callsigns(
         }
     }
 
-    // SeaQuery CTE approach (no raw SQL string construction)
-    let network_freqs = Query::select()
-        .expr_as(
-            Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::NetworkId)),
-            Alias::new("network_id"),
-        )
-        .expr_as(
-            Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::Freq)),
-            Alias::new("freq"),
-        )
-        .expr_as(
-            Expr::col((
-                SigintNetworkFreq::Table,
-                SigintNetworkFreq::ActiveFrom,
-            )),
-            Alias::new("active_from"),
-        )
-        .expr_as(
-            Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::ActiveTo)),
-            Alias::new("active_to"),
-        )
-        .from(SigintNetworkFreq::Table)
-        .and_where(
-            sigint_network_freq::Column::NetworkId
-                .eq_any(req.network_ids.clone()),
-        )
-        .to_owned();
-
-    let network_freqs_cte = CommonTableExpression::new()
-        .query(network_freqs)
-        .table_name(Alias::new("network_freqs"))
-        .to_owned();
-
     let mut network_messages = Query::select()
         .expr_as(
-            Expr::col((SigintInboxItem::Table, SigintInboxItem::Freq)),
-            Alias::new("freq"),
-        )
-        .expr_as(
-            Expr::col((SigintInboxItem::Table, SigintInboxItem::Datetime)),
-            Alias::new("datetime"),
+            Expr::col((
+                SigintInboxItemNetwork::Table,
+                SigintInboxItemNetwork::SigintNetworkId,
+            )),
+            Alias::new("network_id"),
         )
         .expr_as(
             Expr::cust(
@@ -788,10 +790,37 @@ pub async fn network_callsigns(
             Expr::col((SignalMessage::Table, SignalMessage::DatasourceGroupId))
                 .equals((DatasourceGroup::Table, DatasourceGroup::Id)),
         )
+        .join(
+            JoinType::InnerJoin,
+            SigintInboxItemNetwork::Table,
+            Expr::col((SigintInboxItem::Table, SigintInboxItem::Id)).equals((
+                SigintInboxItemNetwork::Table,
+                SigintInboxItemNetwork::SigintInboxItemId,
+            )),
+        )
+        .join(
+            JoinType::InnerJoin,
+            SigintNetwork::Table,
+            Expr::col((
+                SigintInboxItemNetwork::Table,
+                SigintInboxItemNetwork::SigintNetworkId,
+            ))
+            .equals((SigintNetwork::Table, SigintNetwork::Id)),
+        )
         .and_where(
             Expr::col((SignalMessage::Table, SignalMessage::Deleted)).eq(false),
         )
         .and_where(datasource_group::Column::GroupMasterKey.eq_any(groups))
+        .and_where(
+            Expr::col((
+                SigintInboxItemNetwork::Table,
+                SigintInboxItemNetwork::SigintNetworkId,
+            ))
+            .is_in(req.network_ids.clone()),
+        )
+        .and_where(
+            Expr::col((SigintNetwork::Table, SigintNetwork::Deleted)).eq(false),
+        )
         .to_owned();
     if let Some(cut) = cutoff_since {
         network_messages.and_where(
@@ -804,38 +833,20 @@ pub async fn network_callsigns(
         .table_name(Alias::new("network_messages"))
         .to_owned();
 
-    let nf = Alias::new("network_freqs");
     let nm = Alias::new("network_messages");
     let main_query = Query::select()
-        .expr_as(Expr::col((nf.clone(), "network_id")), Alias::new("id"))
+        .expr_as(Expr::col((nm.clone(), "network_id")), Alias::new("id"))
         .expr_as(
             Expr::cust(
                 "array_to_json(array_agg(DISTINCT network_messages.callsign))",
             ),
             Alias::new("callsigns"),
         )
-        .from_as(nf.clone(), nf.clone())
-        .join(
-            JoinType::InnerJoin,
-            nm.clone(),
-            Expr::col((nf.clone(), "freq"))
-                .equals((nm.clone(), "freq"))
-                .and(
-                    Expr::col((nm.clone(), "datetime"))
-                        .gte(Expr::col((nf.clone(), "active_from"))),
-                )
-                .and(
-                    Expr::col((nm.clone(), "datetime")).lt(Expr::cust(
-                        "COALESCE(network_freqs.active_to, CURRENT_TIMESTAMP AT TIME ZONE 'UTC')",
-                    )),
-                ),
-        )
-        .group_by_col((nf.clone(), "network_id"))
+        .from_as(nm.clone(), nm.clone())
+        .group_by_col((nm.clone(), "network_id"))
         .to_owned();
 
     let combined_query = Query::with()
-        .cte(network_freqs_cte)
-        .clone()
         .cte(network_messages_cte)
         .clone()
         .query(main_query)
@@ -933,48 +944,11 @@ pub async fn network_freqs_activity_one(
     .await
     .context(h!())?;
 
-    let network_freqs_cte = Query::select()
-        .expr_as(
-            Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::Id)),
-            Alias::new("id"),
-        )
-        // .expr_as(
-        //     Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::NetworkId)),
-        //     Alias::new("network_id"),
-        // )
-        .expr_as(
-            Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::Freq)),
-            Alias::new("freq"),
-        )
-        .expr_as(
-            Expr::col((
-                SigintNetworkFreq::Table,
-                SigintNetworkFreq::ActiveFrom,
-            )),
-            Alias::new("active_from"),
-        )
-        .expr_as(
-            Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::ActiveTo)),
-            Alias::new("active_to"),
-        )
-        .from(SigintNetworkFreq::Table)
-        .and_where(
-            Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::NetworkId))
-                .eq(req.network_id),
-        )
-        .to_owned();
-
-    let network_freqs_cte = sea_orm::sea_query::CommonTableExpression::new()
-        .query(network_freqs_cte)
-        .table_name(Alias::new("network_freqs"))
-        .to_owned();
-
     let main_query = Query::select()
     .expr_as(
         Expr::cust("(EXTRACT(EPOCH FROM DATE_TRUNC('day', sigint_inbox_item.datetime AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Kyiv')) * 1000)::BIGINT"),
         Alias::new("day"),
     )
-    // .expr_as(Expr::col((Alias::new("network_freqs"), Alias::new("network_id"))), Alias::new("network_id"))
     .expr_as(Expr::col((SigintInboxItem::Table, SigintInboxItem::Freq)), Alias::new("freq"))
     .expr_as(Expr::cust("COUNT(*)"), Alias::new("message_count"))
     .from(SignalMessage::Table)
@@ -992,22 +966,32 @@ pub async fn network_freqs_activity_one(
     )
     .join(
         JoinType::InnerJoin,
-        Alias::new("network_freqs"),
-        Expr::col((SigintInboxItem::Table, SigintInboxItem::Freq))
-            .equals((Alias::new("network_freqs"), Alias::new("freq")))
-            .and(
-                Expr::col((SigintInboxItem::Table, SigintInboxItem::Datetime))
-                    .gte(Expr::col((Alias::new("network_freqs"), Alias::new("active_from"))))
-            )
-            .and(
-                Expr::col((SigintInboxItem::Table, SigintInboxItem::Datetime))
-                    .lte(Expr::cust("COALESCE(network_freqs.active_to, CURRENT_TIMESTAMP AT TIME ZONE 'UTC')"))
-            ),
+        SigintInboxItemNetwork::Table,
+        Expr::col((SigintInboxItem::Table, SigintInboxItem::Id)).equals((
+            SigintInboxItemNetwork::Table,
+            SigintInboxItemNetwork::SigintInboxItemId,
+        )),
+    )
+    .join(
+        JoinType::InnerJoin,
+        SigintNetwork::Table,
+        Expr::col((
+            SigintInboxItemNetwork::Table,
+            SigintInboxItemNetwork::SigintNetworkId,
+        ))
+        .equals((SigintNetwork::Table, SigintNetwork::Id)),
     )
     .and_where(Expr::col((SignalMessage::Table, SignalMessage::Deleted)).eq(false))
     .and_where(datasource_group::Column::GroupMasterKey.eq_any(groups))
+    .and_where(
+        Expr::col((
+            SigintInboxItemNetwork::Table,
+            SigintInboxItemNetwork::SigintNetworkId,
+        ))
+        .eq(req.network_id),
+    )
+    .and_where(Expr::col((SigintNetwork::Table, SigintNetwork::Deleted)).eq(false))
     .add_group_by([
-        // Expr::col((Alias::new("network_freqs"), Alias::new("network_id"))).into(),
         Expr::col((SigintInboxItem::Table, SigintInboxItem::Freq)).into(),
         Expr::cust("day"),
     ])
@@ -1015,12 +999,7 @@ pub async fn network_freqs_activity_one(
     .order_by_expr(Expr::cust("day"), Order::Asc)
     .to_owned();
 
-    let combined_query = Query::with()
-        .cte(network_freqs_cte)
-        .clone()
-        .query(main_query);
-
-    let combined_query: String = combined_query.to_string(PostgresQueryBuilder);
+    let combined_query: String = main_query.to_string(PostgresQueryBuilder);
 
     // debug!(">  network_freqs_activity query: {}", combined_query);
 
@@ -1268,6 +1247,18 @@ pub async fn update_freq_networks(
 
     txn.commit().await.context(h!())?;
 
+    for network in networks {
+        let network_id = network.id;
+        sigint::network::etalon_calc::invalidate_network_inbox(
+            network,
+            vec![req.freq.clone()],
+            &env.dbx,
+            format!("updated frequencies for network {}", network_id),
+        )
+        .await
+        .c(h!())?;
+    }
+
     let event = EventMsg::new(EventType::ETNetworkChanged);
     fanout(&mut env.redis.clone(), event).await.context(h!())?;
 
@@ -1401,6 +1392,16 @@ pub async fn add_network_freq(
             .context(h!())?;
 
     txn.commit().await.context(h!())?;
+
+    crate::sigint::network::etalon_calc::invalidate_network_inbox_for_freq(
+        &req.freq_rec.freq,
+        network_active_from,
+        network_active_to,
+        &env.dbx,
+        format!("added network frequency from web UI: {}", req.freq_rec.freq),
+    )
+    .await
+    .c(h!())?;
 
     let event = EventMsg::new(EventType::ETNetworkChanged);
     fanout(&mut env.redis.clone(), event).await.context(h!())?;
@@ -1567,6 +1568,19 @@ pub async fn update_network_freq(
         return Err(AppError::NotFound);
     }
 
+    crate::sigint::network::etalon_calc::invalidate_network_inbox_for_freq(
+        &req.freq,
+        network_active_from,
+        network_active_to,
+        &env.dbx,
+        format!(
+            "edited network frequency from web UI: {}",
+            network_detail[0].name
+        ),
+    )
+    .await
+    .c(h!())?;
+
     Ok(Json(network_detail[0].clone()))
 }
 
@@ -1646,17 +1660,35 @@ pub async fn delete_network_freq(
                 Set(Some(user.id().c(h!())?.to_string()));
             network_model.active_from = Set(network_active_from);
             network_model.active_to = Set(network_active_to);
-            network_model.update(&txn).await.context(h!())?;
+            let network = network_model.update(&txn).await.context(h!())?;
 
             network_detail = Some(
                 bl_network_info_batch(vec![network_id], &txn, &user_id)
                     .await
                     .context(h!())?,
             );
+
+            let freqs = match req.freq.clone() {
+                None => vec![],
+                Some(freq) => vec![freq],
+            };
+
+            if let Err(e) =
+                sigint::network::etalon_calc::invalidate_network_inbox(
+                    network,
+                    freqs,
+                    &env.dbx,
+                    format!("deleted network {}", network_id),
+                )
+                .await
+            {
+                error!("invalidate_network_inbox failed: {e:#?}");
+            }
         }
     }
 
     txn.commit().await.context(h!())?;
+
     let network_details = network_detail.clone().context(h!())?;
     let first_network_detail = network_details.first().context(h!())?;
     Ok(Json(first_network_detail.clone()))
@@ -1666,8 +1698,7 @@ pub async fn cleanup_networks_worker(dbx: &DatabaseConnection) {
     debug!("Starting cleanup_networks_worker");
 
     loop {
-        let _loop_guard =
-            crate::utils::worker_watch::loop_guard("cleanup_networks_worker");
+        let _loop_guard = worker_watch::loop_guard("cleanup_networks_worker");
         if let Err(e) = cleanup_networks_worker_1(dbx).await {
             error!("error in cleanup_networks_worker_1: {e:?}");
         }
@@ -1686,6 +1717,7 @@ async fn cleanup_networks_worker_1(
         .map_err(Into::<AppError>::into)?;
     let start_time = Utc::now();
     let cleanup_time = start_time - delta;
+    let recent_network_cutoff = cleanup_time.naive_utc();
 
     #[derive(Debug, Clone, FromQueryResult)]
     struct NetworkFreqDesc {
@@ -1711,18 +1743,46 @@ async fn cleanup_networks_worker_1(
             Expr::exists(
                 Query::select()
                     .expr(Expr::value(1))
-                    .from(sigint_inbox_item::Entity)
-                    .and_where(
-                        Expr::col(sigint_inbox_item::Column::Freq)
-                            .equals(sigint_network_freq::Column::Freq),
+                    .from(sigint_inbox_item_network::Entity)
+                    .join(
+                        JoinType::InnerJoin,
+                        sigint_inbox_item::Entity,
+                        Expr::col((
+                            sigint_inbox_item_network::Entity,
+                            sigint_inbox_item_network::Column::SigintInboxItemId,
+                        ))
+                        .equals((
+                            sigint_inbox_item::Entity,
+                            sigint_inbox_item::Column::Id,
+                        )),
                     )
                     .and_where(
-                        Expr::col(sigint_inbox_item::Column::Datetime)
-                            .gte(cleanup_time),
+                        Expr::col((
+                            sigint_inbox_item_network::Entity,
+                            sigint_inbox_item_network::Column::SigintNetworkId,
+                        ))
+                        .equals(sigint_network_freq::Column::NetworkId),
                     )
                     .and_where(
-                        Expr::col(sigint_inbox_item::Column::Freq)
-                            .is_not_null(),
+                        Expr::col((
+                            sigint_inbox_item::Entity,
+                            sigint_inbox_item::Column::Freq,
+                        ))
+                        .equals(sigint_network_freq::Column::Freq),
+                    )
+                    .and_where(
+                        Expr::col((
+                            sigint_inbox_item::Entity,
+                            sigint_inbox_item::Column::Datetime,
+                        ))
+                        .gte(cleanup_time),
+                    )
+                    .and_where(
+                        Expr::col((
+                            sigint_inbox_item::Entity,
+                            sigint_inbox_item::Column::Freq,
+                        ))
+                        .is_not_null(),
                     )
                     .to_owned(),
             )
@@ -1761,13 +1821,31 @@ async fn cleanup_networks_worker_1(
         .await
         .context(h!())?;
 
+    let recent_network_ids: HashSet<i64> = networks
+        .iter()
+        .filter(|(network, _)| network.created_at > recent_network_cutoff)
+        .map(|(network, _)| network.id)
+        .collect();
+
     for (network, network_freqs) in networks {
+        let is_recent_network = recent_network_ids.contains(&network.id);
         for network_freq in network_freqs {
             let is_deleted = ids.contains(&network_freq.id);
-            if is_deleted {
+            if is_deleted && !is_recent_network {
                 let mut model = network_freq.into_active_model();
                 model.active_to = Set(Some(Utc::now().naive_utc()));
-                model.update(dbx).await.context(h!())?;
+                let network_freq = model.update(dbx).await.context(h!())?;
+                if let Err(e) =
+                    sigint::network::etalon_calc::invalidate_network_inbox(
+                        network.clone(),
+                        vec![network_freq.freq],
+                        dbx,
+                        format!("cleanup worker updates active_to for deleted network {}", network.id),
+                    )
+                    .await
+                {
+                    error!("invalidate_network_inbox failed: {e:#?}");
+                }
             }
         }
 
@@ -1777,13 +1855,42 @@ async fn cleanup_networks_worker_1(
                 .await
                 .context(h!())?;
 
-        let mut network = network.into_active_model();
-        network.active_from = Set(network_active_from);
-        network.active_to = Set(network_active_to);
-        network.update(dbx).await.context(h!())?;
+        let synthetic_active_to =
+            calc_network_synthetic_active_to(dbx, network_id, delta)
+                .await
+                .context(h!())?;
+        let existing_active_to = network.active_to;
+        let network_active_to = match existing_active_to {
+            Some(_) => existing_active_to,
+            None => synthetic_active_to.or(network_active_to),
+        };
+
+        if !network.deleted {
+            let mut network = network.into_active_model();
+            network.active_from = Set(network_active_from);
+            if !is_recent_network {
+                network.active_to = Set(network_active_to);
+            }
+            let network = network.update(dbx).await.context(h!())?;
+            if let Err(e) =
+                sigint::network::etalon_calc::invalidate_network_inbox(
+                    network.clone(),
+                    vec![],
+                    dbx,
+                    format!("cleanup worker calculated active_to for inactive network {}", network.id),
+                )
+                .await
+            {
+                error!("invalidate_network_inbox failed: {e:#?}");
+            }
+        }
     }
 
     for sigint_network_freq in networks_freqs_to_remove {
+        if recent_network_ids.contains(&sigint_network_freq.network_id) {
+            continue;
+        }
+
         let unit_desc = networks_desc
             .get(&sigint_network_freq.network_id)
             .map(|x| x.join(", "))
@@ -1838,15 +1945,55 @@ async fn cleanup_networks_worker_1(
             .count()
             == 0;
 
-        if should_delete || should_deactivate {
+        let is_recent_network = network.created_at > recent_network_cutoff;
+        let should_apply_deactivation = should_deactivate && !is_recent_network;
+        let should_apply_delete = should_delete && !is_recent_network;
+        if should_apply_delete || should_apply_deactivation {
+            let deleted = network.deleted;
+            let no_active_to = network.active_to.is_none();
+            let network_id = network.id;
             let mut network = network.into_active_model();
-            network.deleted = Set(should_delete);
-            network.active_to = Set(Some(start_time.naive_utc()));
+            network.deleted = Set(should_apply_delete);
+            if should_apply_deactivation && !deleted && no_active_to {
+                let synthetic_active_to =
+                    calc_network_synthetic_active_to(dbx, network_id, delta)
+                        .await
+                        .context(h!())?;
+                network.active_to = Set(synthetic_active_to);
+            }
             network.update(dbx).await.context(h!())?;
         }
     }
     debug!("cleanup_networks_worker completed");
     Ok(())
+}
+
+async fn calc_network_synthetic_active_to(
+    dbx: &DatabaseConnection,
+    network_id: i64,
+    delta: Duration,
+) -> Result<Option<NaiveDateTime>, AppError> {
+    let last_dt: Option<NaiveDateTime> =
+        sigint_inbox_item_network::Entity::find()
+            .join(
+                JoinType::InnerJoin,
+                sigint_inbox_item_network::Relation::SigintInboxItem.def(),
+            )
+            .filter(
+                sigint_inbox_item_network::Column::SigintNetworkId
+                    .eq(network_id),
+            )
+            .filter(sigint_inbox_item::Column::Datetime.is_not_null())
+            .select_only()
+            .column(sigint_inbox_item::Column::Datetime)
+            .order_by_desc(sigint_inbox_item::Column::Datetime)
+            .into_tuple::<Option<NaiveDateTime>>()
+            .one(dbx)
+            .await
+            .context(h!())?
+            .flatten();
+
+    Ok(last_dt.map(|dt| dt + delta))
 }
 
 #[post("/api/sigint/merge-network")]
@@ -1873,6 +2020,7 @@ pub async fn merge_network(
         &txn,
         &user_id,
         false,
+        false,
         req.network_id_from,
         req.network_id_to,
     )
@@ -1889,12 +2037,44 @@ pub async fn merge_network(
     let network = find_network(&env.dbx, req.network_id_to)
         .await
         .context(h!())?;
-    let res = render_networks(vec![network], &env.dbx, &user_id)
+    let res = render_networks(vec![network.clone()], &env.dbx, &user_id)
         .await
         .context(h!())?
         .into_iter()
         .next()
         .context(h!())?;
+
+    sigint::network::etalon_calc::invalidate_network_inbox(
+        sigint_network::Entity::find_by_id(req.network_id_from)
+            .one(&env.dbx)
+            .await
+            .c(h!())?
+            .c(h!())?,
+        vec![],
+        &env.dbx,
+        format!(
+            "merged this network {} to network {}",
+            req.network_id_from, req.network_id_to
+        ),
+    )
+    .await
+    .context(h!())?;
+
+    sigint::network::etalon_calc::invalidate_network_inbox(
+        sigint_network::Entity::find_by_id(req.network_id_to)
+            .one(&env.dbx)
+            .await
+            .c(h!())?
+            .c(h!())?,
+        vec![],
+        &env.dbx,
+        format!(
+            "merged network {} to this network {}",
+            req.network_id_from, req.network_id_to
+        ),
+    )
+    .await
+    .context(h!())?;
 
     Ok(Json(res))
 }
@@ -2060,7 +2240,7 @@ pub async fn update_network_posts(
     let txn = env.dbx.begin().await.context(h!())?;
 
     // 1. Check if network exists
-    let network = find_network(&txn, req.network_id).await.context(h!())?;
+    let mut network = find_network(&txn, req.network_id).await.context(h!())?;
 
     // 2. Fetch current non-deleted post_ids for the network
     let existing_posts = sigint_network_post::Entity::find()
@@ -2118,7 +2298,7 @@ pub async fn update_network_posts(
         let mut network_model = network.into_active_model();
         network_model.updated_at = Set(Utc::now().naive_utc());
         network_model.updated_by = Set(Some(user.id().c(h!())?.to_string()));
-        network_model.update(&txn).await.context(h!())?;
+        network = network_model.update(&txn).await.context(h!())?;
     }
 
     // Now fetch the updated network with all posts to return
@@ -2128,6 +2308,15 @@ pub async fn update_network_posts(
             .context(h!())?;
 
     txn.commit().await.context(h!())?;
+
+    sigint::network::etalon_calc::invalidate_network_inbox(
+        network.clone(),
+        vec![],
+        &env.dbx,
+        format!("updated posts for network {}", req.network_id),
+    )
+    .await
+    .context(h!())?;
 
     if network_detail.is_empty() {
         return Err(AppError::NotFound);
@@ -2175,7 +2364,7 @@ pub async fn update_network_units(
     let txn = env.dbx.begin().await.context(h!())?;
 
     // 1. Check if network exists
-    let network = find_network(&txn, req.network_id).await.context(h!())?;
+    let mut network = find_network(&txn, req.network_id).await.context(h!())?;
 
     // 2. Fetch current non-deleted unit_ids for the network
     let existing_units = sigint_network_unit::Entity::find()
@@ -2235,7 +2424,7 @@ pub async fn update_network_units(
         let mut network_model = network.into_active_model();
         network_model.updated_at = Set(Utc::now().naive_utc());
         network_model.updated_by = Set(Some(user.id().c(h!())?.to_string()));
-        network_model.update(&txn).await.context(h!())?;
+        network = network_model.update(&txn).await.context(h!())?;
     }
 
     // Now fetch the updated network with all units to return
@@ -2245,6 +2434,15 @@ pub async fn update_network_units(
             .context(h!())?;
 
     txn.commit().await.context(h!())?;
+
+    sigint::network::etalon_calc::invalidate_network_inbox(
+        network,
+        vec![],
+        &env.dbx,
+        format!("updated units for network {}", req.network_id),
+    )
+    .await
+    .context(h!())?;
 
     if network_detail.is_empty() {
         return Err(AppError::NotFound);
@@ -2569,9 +2767,19 @@ pub async fn fix_network_areas_of_responsibility(
     let networks = networks.all(db).await.context(h!())?;
     for n in networks {
         if let Err(e) = insert_network_aor(db, &n, None).await {
-            error!("failed to insert group's area of responsibility: {e:?}")
+            error!("failed to insert network's area of responsibility: {e:?}");
         } else {
-            info!("added default aor to network {}", n.id)
+            info!("added default aor to network {}", n.id);
+
+            let network_id = n.id;
+            sigint::network::etalon_calc::invalidate_network_inbox(
+                n,
+                vec![],
+                db,
+                format!("fixed AORs for network {}", network_id),
+            )
+            .await
+            .c(h!())?;
         }
     }
     Ok(())

@@ -77,73 +77,318 @@ GPG_KEYID="${5-}"
 GPG_PASS_FILE="${6-}"
 GPG_PROVIDER="${7-}"
 
-aptly repo show "$REPO" >/dev/null 2>&1 || \
-  aptly repo create -distribution="$DIST" -component="$COMP" "$REPO"
-
 cd /home/echo/echo-debs
-deb_packages_identical() {
-  local deb_a="$1"
-  local deb_b="$2"
-  local data_a data_b ctrl_a ctrl_b status
-  data_a=$(mktemp -d)
-  data_b=$(mktemp -d)
-  ctrl_a=$(mktemp -d)
-  ctrl_b=$(mktemp -d)
-  status=1
-  if dpkg-deb -x "$deb_a" "$data_a" && dpkg-deb -x "$deb_b" "$data_b" \
-    && dpkg-deb -e "$deb_a" "$ctrl_a" && dpkg-deb -e "$deb_b" "$ctrl_b"; then
-    if diff -qr "$data_a" "$data_b" >/dev/null \
-      && diff -qr "$ctrl_a" "$ctrl_b" >/dev/null; then
-      status=0
-    fi
+
+# Ensure we don't run multiple aptly operations concurrently on echo-ci.
+# This prevents noisy "Unable to open database, sleeping..." retries caused by Bolt DB locks.
+LOCK_FILE="$HOME/.aptly/.echo-ci-aptly.lock"
+if command -v flock >/dev/null 2>&1; then
+  mkdir -p "$(dirname "$LOCK_FILE")"
+  exec 9>"$LOCK_FILE"
+  if flock -w 600 9; then
+    echo "::notice::🔒 acquired aptly lock ($LOCK_FILE)" >&2
+  else
+    echo "::error::failed to acquire aptly lock ($LOCK_FILE) within 600s" >&2
+    exit 1
   fi
-  rm -rf "$data_a" "$data_b" "$ctrl_a" "$ctrl_b"
-  return $status
+else
+  echo "::warning::flock not found; aptly db locks may cause retries" >&2
+fi
+
+repo_exists() {
+  local name="$1"
+  aptly repo show "$name" >/dev/null 2>&1
+}
+
+drop_repo_if_exists() {
+  local name="$1"
+  if repo_exists "$name"; then
+    aptly repo drop -force "$name" || true
+  fi
+}
+
+create_repo_fresh() {
+  local name="$1"
+  drop_repo_if_exists "$name"
+  aptly repo create -distribution="$DIST" -component="$COMP" "$name"
+}
+
+repo_package_names() {
+  local name="$1"
+  aptly repo show -with-packages "$name" \
+    | sed -n 's/^  \([^_]*\)_.*/\1/p' \
+    | sort -u
+}
+
+repo_has_pkg_name() {
+  local repo_name="$1"
+  local pkg_name="$2"
+  [[ -n "$(aptly repo search "$repo_name" "Name (= $pkg_name)" 2>/dev/null | head -n1 || true)" ]]
+}
+
+pool_files_for_pkg_ref() {
+  local pkg_ref="$1"
+  # When there are duplicate packages with the same name/version/arch, aptly prints multiple entries
+  # (each with its own "Files in the pool" section). We use existing pool files only.
+  aptly package show -with-files "$pkg_ref" \
+    | sed -n 's/^  \(\/home\/echo\/\.aptly\/pool\/.*\.deb\)$/\1/p'
+}
+
+pick_existing_pool_file_for_pkg_ref() {
+  local pkg_ref="$1"
+  local p
+  while IFS= read -r p; do
+    if [[ -f "$p" ]]; then
+      echo "$p"
+      return 0
+    fi
+  done < <(pool_files_for_pkg_ref "$pkg_ref")
+  return 1
+}
+
+add_latest_pkgs_to_repo_from_repos() {
+  local dst_repo="$1"
+  local pkg_name="$2"
+  local primary_repo="${3-}"
+  local fallback_repo="${4-}"
+
+  local added=0
+  local pool_file=""
+  local pkg_ref=""
+  declare -A arch_added=()
+
+  # Prefer latest per arch. `aptly repo search` output order is relied upon (same as previous code which used `head -n1`).
+  for src_repo in "$primary_repo" "$fallback_repo"; do
+    [[ -n "$src_repo" ]] || continue
+
+    for arch in amd64 arm64 all; do
+      [[ -n "${arch_added["$arch"]:-}" ]] && continue
+      pkg_ref="$(aptly repo search "$src_repo" "Name (= $pkg_name), Architecture (= $arch)" 2>/dev/null | head -n1 || true)"
+      [[ -n "$pkg_ref" ]] || continue
+
+      pool_file="$(pick_existing_pool_file_for_pkg_ref "$pkg_ref")" || true
+      [[ -z "$pool_file" ]] && continue
+
+      # Keep stdout clean so callers can capture only our numeric return value.
+      aptly repo add "$dst_repo" "$pool_file" 1>&2
+      arch_added["$arch"]=1
+      added=$((added + 1))
+    done
+  done
+
+  echo "$added"
+}
+
+snapshot_package_names() {
+  local snapshot="$1"
+  [[ -n "$snapshot" ]] || return 0
+  aptly snapshot show -with-packages "$snapshot" 2>/dev/null \
+    | sed -n 's/^  \([^_]*\)_.*/\1/p' \
+    | sort -u \
+    || true
+}
+
+add_latest_pkgs_to_repo_from_sources() {
+  # Prefer latest per arch in this order:
+  # 1) primary repo (this run)
+  # 2) currently-published snapshot (what users already have)
+  # 3) fallback repo ("history" repo, if present)
+  local dst_repo="$1"
+  local pkg_name="$2"
+  local primary_repo="${3-}"
+  local published_snapshot="${4-}"
+  local fallback_repo="${5-}"
+
+  local added=0
+  local pool_file=""
+  local pkg_ref=""
+  declare -A arch_added=()
+
+  for arch in amd64 arm64 all; do
+    [[ -n "${arch_added["$arch"]:-}" ]] && continue
+
+    if [[ -n "$primary_repo" ]]; then
+      pkg_ref="$(aptly repo search "$primary_repo" "Name (= $pkg_name), Architecture (= $arch)" 2>/dev/null | head -n1 || true)"
+      if [[ -n "$pkg_ref" ]]; then
+        pool_file="$(pick_existing_pool_file_for_pkg_ref "$pkg_ref")" || true
+        if [[ -n "$pool_file" ]]; then
+          aptly repo add "$dst_repo" "$pool_file" 1>&2
+          arch_added["$arch"]=1
+          added=$((added + 1))
+          continue
+        fi
+      fi
+    fi
+
+    if [[ -n "$published_snapshot" ]]; then
+      pkg_ref="$(aptly snapshot search "$published_snapshot" "Name (= $pkg_name), Architecture (= $arch)" 2>/dev/null | head -n1 || true)"
+      if [[ -n "$pkg_ref" ]]; then
+        pool_file="$(pick_existing_pool_file_for_pkg_ref "$pkg_ref")" || true
+        if [[ -n "$pool_file" ]]; then
+          aptly repo add "$dst_repo" "$pool_file" 1>&2
+          arch_added["$arch"]=1
+          added=$((added + 1))
+          continue
+        fi
+      fi
+    fi
+
+    if [[ -n "$fallback_repo" ]]; then
+      pkg_ref="$(aptly repo search "$fallback_repo" "Name (= $pkg_name), Architecture (= $arch)" 2>/dev/null | head -n1 || true)"
+      if [[ -n "$pkg_ref" ]]; then
+        pool_file="$(pick_existing_pool_file_for_pkg_ref "$pkg_ref")" || true
+        if [[ -n "$pool_file" ]]; then
+          aptly repo add "$dst_repo" "$pool_file" 1>&2
+          arch_added["$arch"]=1
+          added=$((added + 1))
+          continue
+        fi
+      fi
+    fi
+  done
+
+  echo "$added"
 }
 declare -A EXPECTED_SHA=()
 declare -A EXPECTED_SIZE=()
 added_basenames=()
-for f in "$REPO"/*.deb; do
-  if [[ -f "$f" ]]; then
-    bn=$(basename "$f")
-    EXPECTED_SHA["$bn"]=$(sha256sum "$f" | awk '{print $1}')
-    EXPECTED_SIZE["$bn"]=$(stat -c%s "$f")
-    if add_output=$(aptly repo add "$REPO" "$f" 2>&1); then
-      added_basenames+=("$bn")
-    else
-      publish_path=$(find "$HOME/.aptly/public/$REPO/pool" -name "$bn" -type f -print -quit || true)
-      if [[ -z "$publish_path" ]]; then
-        publish_path=$(find "$HOME/.aptly/pool" -name "$bn" -type f -print -quit || true)
-      fi
-      if [[ -n "$publish_path" ]]; then
-        actual_sha=$(sha256sum "$publish_path" | awk '{print $1}')
-        actual_size=$(stat -c%s "$publish_path")
-        if [[ "$actual_sha" == "${EXPECTED_SHA["$bn"]}" && "$actual_size" == "${EXPECTED_SIZE["$bn"]}" ]]; then
-          EXPECTED_SHA["$bn"]="$actual_sha"
-          EXPECTED_SIZE["$bn"]="$actual_size"
-          echo "::notice::$bn already exists in $REPO with identical contents; skipping add"
-          added_basenames+=("$bn")
-        elif deb_packages_identical "$f" "$publish_path"; then
-          EXPECTED_SHA["$bn"]="$actual_sha"
-          EXPECTED_SIZE["$bn"]="$actual_size"
-          echo "::notice::$bn already exists in $REPO; payload matches after extraction so skipping add"
-          added_basenames+=("$bn")
-        else
-          echo "$add_output" >&2
-          echo "::notice::$bn already exists in $REPO with different contents; leaving published artifact untouched and skipping upload" >&2
-        fi
-      else
-        echo "$add_output" >&2
-        echo "::error::failed to add package $bn to repo $REPO and no existing published file was found" >&2
+# Ensure names are unique even if multiple runs start within the same second
+# (e.g. manual retries or concurrent CI on the same echo-ci host).
+DT="$(date -u +%Y-%m-%d-%H-%M-%S)-$RANDOM"
+
+current_published_snapshot() {
+  # Prints the snapshot name currently published for "$DIST" + "$REPO" prefix + "$COMP" component,
+  # or nothing if not published yet.
+  # Output format varies across aptly versions; parse the "Sources:" table.
+  local out=""
+  out="$(aptly publish show "$DIST" "$REPO" 2>/dev/null)" || return 0
+
+  echo "$out" \
+    | sed -n -E "s/^[[:space:]]*$COMP:[[:space:]]+([^[:space:]]+)[[:space:]]+\\[snapshot\\].*/\\1/p" \
+    | head -n1 \
+    || true
+}
+
+snapshot_has_pkg_ref() {
+  local snapshot="$1"
+  local pkg="$2"
+  local ver="$3"
+  local arch="$4"
+  [[ -n "$snapshot" ]] || return 1
+  aptly snapshot search "$snapshot" "Name (= $pkg), Version (= $ver), Architecture (= $arch)" 2>/dev/null \
+    | head -n1 \
+    || true
+}
+
+PUBLISHED_SNAPSHOT="$(current_published_snapshot)"
+if [[ -n "$PUBLISHED_SNAPSHOT" ]]; then
+  echo "::notice::currently published snapshot for $REPO/$DIST is '$PUBLISHED_SNAPSHOT'" >&2
+else
+  echo "::notice::no existing publish found for $REPO/$DIST (first publish?)" >&2
+fi
+
+# Keep a "history" repo (REPO) if it exists, but publish from a fresh "latest-only" repo each time.
+# This avoids publish breakage if echo-ci pool has been manually cleaned and old package files are missing.
+RUN_REPO="$REPO-run-$DT"
+PUBLISH_REPO="$REPO-publish-$DT"
+
+create_repo_fresh "$RUN_REPO"
+create_repo_fresh "$PUBLISH_REPO"
+
+HAVE_HISTORY_REPO=0
+if repo_exists "$REPO"; then
+  HAVE_HISTORY_REPO=1
+fi
+
+for f in "$DEBS_DIR"/*.deb; do
+  [[ -f "$f" ]] || continue
+  bn="$(basename "$f")"
+
+  pkg="$(dpkg-deb -f "$f" Package)"
+  ver="$(dpkg-deb -f "$f" Version)"
+  arch="$(dpkg-deb -f "$f" Architecture)"
+
+  # If this exact (name, version, arch) is already published, treat it as "no bump-version-push"
+  # and skip importing the rebuilt file. Rebuilding without bumping version is common and the
+  # resulting .deb can be non-deterministic, but Debian repositories cannot safely "replace"
+  # same-version packages for clients.
+  if [[ -n "$PUBLISHED_SNAPSHOT" ]]; then
+    existing_ref="$(snapshot_has_pkg_ref "$PUBLISHED_SNAPSHOT" "$pkg" "$ver" "$arch")"
+    if [[ -n "$existing_ref" ]]; then
+      existing_pool="$(pick_existing_pool_file_for_pkg_ref "$existing_ref")" || true
+      if [[ -n "$existing_pool" ]]; then
+        echo "::notice::⏭️ skipping already-published $pkg $ver $arch (no version bump?)" >&2
         rm -f -- "$f" || true
-        exit 1
+        continue
+      fi
+      echo "::warning::published package $existing_ref exists but pool file is missing; re-importing to repair pool" >&2
+    fi
+  fi
+
+  # If the exact package (name+version+arch) already exists in the history repo and its pool file exists,
+  # we treat this run as "no version bump" and skip importing the rebuilt .deb (which could have different
+  # checksums due to build non-determinism).
+  if [[ "$HAVE_HISTORY_REPO" -eq 1 ]]; then
+    existing_ref="$(aptly repo search "$REPO" "Name (= $pkg), Version (= $ver), Architecture (= $arch)" 2>/dev/null | head -n1 || true)"
+    if [[ -n "$existing_ref" ]]; then
+      existing_pool="$(pick_existing_pool_file_for_pkg_ref "$existing_ref")" || true
+      if [[ -n "$existing_pool" ]]; then
+        echo "::notice::⏭️ skipping already-published $existing_ref (no version bump?)" >&2
+        rm -f -- "$f" || true
+        continue
       fi
     fi
-    rm -f -- "$f" || true
   fi
+
+  EXPECTED_SHA["$bn"]="$(sha256sum "$f" | awk '{print $1}')"
+  EXPECTED_SIZE["$bn"]="$(stat -c%s "$f")"
+  aptly repo add "$RUN_REPO" "$f"
+  added_basenames+=("$bn")
+  rm -f -- "$f" || true
 done
 
-DT="$(date -u +%Y-%m-%d-%H-%M-%S)"
+if ((${#added_basenames[@]} == 0)); then
+  echo "::notice::⏭️ no new .deb packages to publish (versions already exist); skipping publish" >&2
+  drop_repo_if_exists "$RUN_REPO"
+  drop_repo_if_exists "$PUBLISH_REPO"
+  exit 0
+fi
+
+declare -A PKG_NAMES=()
+if [[ -n "$PUBLISHED_SNAPSHOT" ]]; then
+  while IFS= read -r name; do
+    [[ -n "$name" ]] || continue
+    PKG_NAMES["$name"]=1
+  done < <(snapshot_package_names "$PUBLISHED_SNAPSHOT")
+fi
+if [[ "$HAVE_HISTORY_REPO" -eq 1 ]]; then
+  while IFS= read -r name; do
+    [[ -n "$name" ]] || continue
+    PKG_NAMES["$name"]=1
+  done < <(repo_package_names "$REPO")
+fi
+
+while IFS= read -r name; do
+  [[ -n "$name" ]] || continue
+  PKG_NAMES["$name"]=1
+done < <(repo_package_names "$RUN_REPO")
+
+for name in "${!PKG_NAMES[@]}"; do
+  required=0
+  if repo_has_pkg_name "$RUN_REPO" "$name"; then
+    required=1
+  fi
+
+  added="$(add_latest_pkgs_to_repo_from_sources "$PUBLISH_REPO" "$name" "$RUN_REPO" "$PUBLISHED_SNAPSHOT" "$REPO")"
+  if [[ "$added" -eq 0 ]]; then
+    if [[ "$required" -eq 1 ]]; then
+      echo "::error::failed to add any packages for '$name' (present in run repo '$RUN_REPO'); echo-ci pool may be incomplete" >&2
+      exit 1
+    else
+      echo "::warning::skipping '$name': no existing pool .deb files found in '$REPO' (echo-ci pool may be incomplete)" >&2
+    fi
+  fi
+done
 
 snapshot_exists() {
   local name="$1"
@@ -167,14 +412,65 @@ create_snapshot_if_missing() {
 }
 
 SNAP_REPO="$REPO-$DT"
-create_snapshot_if_missing "$SNAP_REPO" from repo "$REPO"
+create_snapshot_if_missing "$SNAP_REPO" from repo "$PUBLISH_REPO"
 
 SNAP_TO_PUBLISH="$SNAP_REPO"
 MERGE_LIST=("$SNAP_REPO")
 
+find_published_path_for_basename() {
+  local bn="$1"
+  local expected_sha="$2"
+  local expected_size="$3"
+  local pool_dir="$HOME/.aptly/public/$REPO/pool"
+
+  local -a candidates=()
+  local p=""
+  while IFS= read -r p; do
+    [[ -n "$p" ]] || continue
+    candidates+=("$p")
+  done < <(find "$pool_dir" -type f \( -name "$bn" -o -name "*_$bn" \) -print 2>/dev/null || true)
+
+  if ((${#candidates[@]} == 0)); then
+    return 1
+  fi
+
+  local sha=""
+  local size=""
+  for p in "${candidates[@]}"; do
+    sha="$(sha256sum "$p" | awk '{print $1}')"
+    size="$(stat -c%s "$p")"
+    if [[ "$sha" == "$expected_sha" && "$size" == "$expected_size" ]]; then
+      echo "$p"
+      return 0
+    fi
+  done
+
+  echo "::error::published file mismatch for $bn: expected $expected_sha ($expected_size bytes); candidates:" >&2
+  local shown=0
+  for p in "${candidates[@]}"; do
+    sha="$(sha256sum "$p" | awk '{print $1}')"
+    size="$(stat -c%s "$p")"
+    echo "  $p $sha ($size bytes)" >&2
+    shown=$((shown + 1))
+    [[ "$shown" -ge 10 ]] && break
+  done
+  return 2
+}
+
 if aptly repo show echo-install-utils >/dev/null 2>&1; then
+  # Publish only the latest version of each package from echo-install-utils as well (pool may have been cleaned).
+  UTILS_RUN_REPO="echo-install-utils-publish-$DT"
+  create_repo_fresh "$UTILS_RUN_REPO"
+  while IFS= read -r name; do
+    [[ -n "$name" ]] || continue
+    added="$(add_latest_pkgs_to_repo_from_repos "$UTILS_RUN_REPO" "$name" "echo-install-utils")"
+    if [[ "$added" -eq 0 ]]; then
+      echo "::warning::skipping echo-install-utils '$name': no existing pool .deb files found (pool may be incomplete)" >&2
+    fi
+  done < <(repo_package_names echo-install-utils)
+
   SNAP_UTILS="echo-install-utils-$DT"
-  create_snapshot_if_missing "$SNAP_UTILS" from repo echo-install-utils
+  create_snapshot_if_missing "$SNAP_UTILS" from repo "$UTILS_RUN_REPO"
   MERGE_LIST+=("$SNAP_UTILS")
 fi
 
@@ -221,18 +517,23 @@ if ((${#added_basenames[@]} > 0)); then
       echo "::error::missing expected metadata for $bn" >&2
       exit 1
     fi
-    publish_path=$(find "$HOME/.aptly/public/$REPO/pool" -name "$bn" -type f -print -quit || true)
-    if [[ -z "$publish_path" ]]; then
+    rc=0
+    publish_path="$(find_published_path_for_basename "$bn" "$expected_sha" "$expected_size")" || rc=$?
+    if [[ "${rc:-0}" -eq 1 ]]; then
       echo "::error::published file $bn not found under public/$REPO/pool" >&2
       exit 1
     fi
-    actual_sha=$(sha256sum "$publish_path" | awk '{print $1}')
-    actual_size=$(stat -c%s "$publish_path")
-    if [[ "$actual_sha" != "$expected_sha" || "$actual_size" != "$expected_size" ]]; then
-      echo "::error::published file mismatch for $bn: expected $expected_sha ($expected_size bytes) got $actual_sha ($actual_size bytes)" >&2
+    if [[ "${rc:-0}" -eq 2 ]]; then
       exit 1
     fi
   done
+fi
+
+# Success cleanup: keep snapshots, but drop temporary repos created during this run.
+drop_repo_if_exists "$RUN_REPO"
+drop_repo_if_exists "$PUBLISH_REPO"
+if [[ -n "${UTILS_RUN_REPO:-}" ]]; then
+  drop_repo_if_exists "$UTILS_RUN_REPO"
 fi
 
 ls -lah "$HOME/.aptly/public/$REPO/dists/$DIST" || true

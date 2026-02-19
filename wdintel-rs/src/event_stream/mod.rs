@@ -223,8 +223,12 @@ pub async fn fanout(
     event: EventMsg,
 ) -> Result<(), AppError> {
     // println!("> piped_fanout: event = {event:?}");
+    let sessions = crate::session::get_all_sessions(redis).await.c(h!())?;
+    if sessions.is_empty() {
+        return Ok(());
+    }
     let mut pipe = redis::pipe();
-    for session in crate::session::get_all_sessions(redis).await.c(h!())? {
+    for session in sessions {
         let event = event.clone();
         let _res: () = pipe_xadd(
             &mut pipe,

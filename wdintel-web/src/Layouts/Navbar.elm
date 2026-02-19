@@ -1,20 +1,21 @@
 module Layouts.Navbar exposing (Model, Msg, Props, layout)
 
+import Browser.Events
 import Auth
 import Core.Types exposing (ApiError)
 import Effect as E exposing (Effect)
 import Html exposing (..)
-import Html.Attributes exposing (class, classList)
-import Html.Events exposing (onClick)
+import Html.Attributes exposing (class, id)
+import Html.Events exposing (onClick, stopPropagationOn)
 import Layout exposing (Layout)
 import Process
+import Json.Decode
 import Route exposing (Route)
 import Shared
 import Shared.Components.Navbar
 import Shared.Components.NavbarOld
 import Shared.Components.Toast as Toast
 import Shared.Model exposing (ThemeMode(..))
-import Shared.Msg
 import Task
 import View exposing (View)
 
@@ -68,6 +69,8 @@ keepAliveInterval =
 type Msg
     = ToggleDarkTheme
     | SetThemeMode Shared.Model.ThemeMode
+    | KeyPressed String
+    | NoOp
     | Slept
     | KeepAliveDone (Result ApiError ())
     | ToggleNavbarVisibility
@@ -87,6 +90,16 @@ update route msg model =
             ( model
             , E.setThemeMode themeMode
             )
+
+        KeyPressed key ->
+            if key == "Escape" then
+                ( { model | openDropdown = Nothing }, E.none )
+
+            else
+                ( model, E.none )
+
+        NoOp ->
+            ( model, E.none )
 
         Slept ->
             ( model
@@ -118,8 +131,17 @@ update route msg model =
 
 
 subscriptions : Model -> Sub Msg
-subscriptions model =
-    Sub.none
+subscriptions _ =
+    Browser.Events.onKeyDown <|
+        Json.Decode.andThen
+            (\key ->
+                if key == "Escape" then
+                    Json.Decode.succeed (KeyPressed key)
+
+                else
+                    Json.Decode.fail "Ignore non-Escape keys"
+            )
+            (Json.Decode.field "key" Json.Decode.string)
 
 
 
@@ -133,7 +155,7 @@ view user activeName shared route { toContentMsg, model, content } =
             { onToggleTheme = ToggleDarkTheme
             , onThemeChange = SetThemeMode
             , onNavbarVisibilityChange = ToggleNavbarVisibility
-            , isRerDuty = route.url.path == "/rer-duty"
+            , isRerDuty = route.url.path == "/rer-duty" || route.url.path == "/rer-duty-neo"
             , openDropdown = model.openDropdown
             , onDropdownToggle = SetOpenDropdown
             }
@@ -147,9 +169,10 @@ view user activeName shared route { toContentMsg, model, content } =
     in
     { title = content.title
     , body =
-        [ div []
+        [ div [ onClick (SetOpenDropdown Nothing) ]
             [ div
-                [ class "fixed top-0 left-0 right-0 z-500 transition-all duration-300 ease-in-out"
+                [ id "app-navbar-shell"
+                , class "fixed top-0 left-0 right-0 z-500 transition-all duration-300 ease-in-out"
                 , class
                     (if model.isNavbarVisible then
                         "translate-y-0"
@@ -157,9 +180,10 @@ view user activeName shared route { toContentMsg, model, content } =
                      else
                         "-translate-y-full"
                     )
+                , stopPropagationOn "click" (Json.Decode.succeed ( NoOp, True ))
                 ]
                 [ navbarHtml ]
-            , if route.url.path == "/rer-duty" && not model.isNavbarVisible then
+            , if (route.url.path == "/rer-duty" || route.url.path == "/rer-duty-neo") && not model.isNavbarVisible then
                 div
                     [ class "fixed top-4 right-4 z-500 transition-opacity duration-300 ease-in-out opacity-100" ]
                     [ div
@@ -175,14 +199,15 @@ view user activeName shared route { toContentMsg, model, content } =
             ]
             |> Html.map toContentMsg
         , div
-            [ class "transition-all duration-300 ease-in-out"
+            [ class "transition-all duration-300 ease-in-out app-shell"
             , class
                 (if model.isNavbarVisible then
-                    "pt-[50px] min-h-[calc(100vh-50px)]"
+                    "app-shell--navbar-visible"
 
                  else
-                    "pt-0 min-h-screen"
+                    "app-shell--navbar-hidden"
                 )
+            , onClick (toContentMsg (SetOpenDropdown Nothing))
             ]
             content.body
         ]

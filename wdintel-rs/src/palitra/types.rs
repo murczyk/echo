@@ -91,6 +91,31 @@ pub struct PalitraPointsReq {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub struct PalitraSearchPointsReq {
+    pub palitra_ids: Vec<i64>,
+    pub point_labels: Vec<String>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct PalitraPointLabelSuggestReq {
+    pub palitra_ids: Vec<i64>,
+    pub prefix: String,
+    pub limit: Option<u64>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct PalitraPointLabelSuggestRsp {
+    pub palitra_id: i64,
+    pub label: String,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct PalitraPoints {
     pub palitra_id: i64,
     pub points: Vec<PalitraPoint>,
@@ -102,6 +127,7 @@ pub struct PalitraPoints {
 pub struct KmzColorInfo {
     pub color_hex: String,
     pub count: i32,
+    pub suggested_suffix: Option<String>,
 }
 
 #[derive(
@@ -127,6 +153,33 @@ impl Coords {
             .parse::<f64>()
             .c(h!())?;
         Ok(Coords { lat, lng })
+    }
+
+    pub fn list_from_kml_coordinates(
+        coordinates: &str,
+    ) -> anyhow::Result<Vec<Coords>> {
+        let mut result = Vec::new();
+        let mut first_error: Option<anyhow::Error> = None;
+        for token in coordinates.split_whitespace() {
+            let token = token.trim();
+            if token.is_empty() {
+                continue;
+            }
+            match Coords::from_csv(token) {
+                Ok(coords) => result.push(coords),
+                Err(e) => {
+                    if first_error.is_none() {
+                        first_error = Some(e);
+                    }
+                }
+            }
+        }
+        if result.is_empty() {
+            return Err(first_error.unwrap_or_else(|| {
+                anyhow::anyhow!("bad coordinates: {coordinates}")
+            }));
+        }
+        Ok(result)
     }
 }
 
@@ -171,5 +224,17 @@ mod tests {
             Coords::from_csv("  31.1234 ,  49.9876 ").expect("parse coords");
         assert_eq!(coords.lat, 49.9876);
         assert_eq!(coords.lng, 31.1234);
+    }
+
+    #[test]
+    fn parses_multiple_kml_coordinates() {
+        let coords =
+            Coords::list_from_kml_coordinates("30.5,50.4,0 31.1,49.9,0")
+                .expect("parse coords list");
+        assert_eq!(coords.len(), 2);
+        assert_eq!(coords[0].lat, 50.4);
+        assert_eq!(coords[0].lng, 30.5);
+        assert_eq!(coords[1].lat, 49.9);
+        assert_eq!(coords[1].lng, 31.1);
     }
 }

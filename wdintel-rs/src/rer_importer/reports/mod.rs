@@ -14,6 +14,7 @@ use futures_util::TryStreamExt;
 use indicatif::ProgressBar;
 use sea_orm::*;
 
+mod active_networks;
 pub mod babak;
 mod digest;
 pub mod interception;
@@ -115,8 +116,21 @@ pub async fn report_docx(
         std::path::PathBuf::from_str(&env.config.storage_dir).context(h!())?;
     let outfolder = storage_dir.join("reports_log");
     let _ = std::fs::create_dir_all(&outfolder);
-    let filename =
-        format!("report_{}.docx", Utc::now().format("%Y-%m-%d-%H-%M-%S-%3f"));
+    let file_extension = match req.kind.as_str() {
+        "interception" | "pelengs" | "senders" | "posts" => "xlsx",
+        "reo" => match req.report_type {
+            Some(types::ReportType::Reo(_, types::ReoReportFileType::Xlsx)) => {
+                "xlsx"
+            }
+            _ => "docx",
+        },
+        _ => "docx",
+    };
+    let filename = format!(
+        "report_{}.{}",
+        Utc::now().format("%Y-%m-%d-%H-%M-%S-%3f"),
+        file_extension
+    );
     let outpath = outfolder.join(&filename);
     let user_login = user.id().context(h!())?;
     if req.kind == "tags" {
@@ -143,19 +157,23 @@ pub async fn report_docx(
         )
         .await
         .c(h!())?;
-    } else if req.kind == "senders" {
+    } else if req.kind == "senders" || req.kind == "posts" {
+        let (aggregation, advanced_freqs) = match &req.report_type {
+            Some(types::ReportType::Senders(settings)) => {
+                (settings.aggregation.clone(), settings.advanced_freqs)
+            }
+            _ => (
+                if req.kind == "posts" {
+                    types::ReportAggregation::ByPost
+                } else {
+                    types::ReportAggregation::ByProfile
+                },
+                false,
+            ),
+        };
         self::senders::report_xlsx_kind_senders(
-            types::ReportAggregation::ByProfile,
-            user,
-            &env,
-            &req.req,
-            &outpath,
-        )
-        .await
-        .c(h!())?;
-    } else if req.kind == "posts" {
-        self::senders::report_xlsx_kind_senders(
-            types::ReportAggregation::ByPost,
+            aggregation,
+            advanced_freqs,
             user,
             &env,
             &req.req,
@@ -191,6 +209,18 @@ pub async fn report_docx(
         self::posts::report_docx_kind_posts(user, &env, &req, &outpath)
             .await
             .c(h!())?;
+    } else if req.kind == "active_networks" {
+        crate::users::has_any_role(
+            &env.dbx,
+            &user.id().c(h!())?,
+            vec!["UnitsEditor", "CallsignsEditor", "Admin"],
+        )
+        .await?;
+        self::active_networks::report_docx_kind_active_networks(
+            &env, &req, &outpath,
+        )
+        .await
+        .c(h!())?;
     } else {
         return Err(format!("Unknown report kind {}", req.kind).into());
     }

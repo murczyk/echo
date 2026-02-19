@@ -107,6 +107,62 @@ export class PalitraCacheManager {
     }
   }
 
+  /** All cached points for given palitras (from all tiles), deduped, for local search */
+  getCachedPointsForPalitras(palitraIds: number[]): { palitra_id: number; points: PalitraPoint[] }[] {
+    const result: { palitra_id: number; points: PalitraPoint[] }[] = [];
+    for (const palitraId of palitraIds) {
+      const tiles = this.tiles.get(palitraId);
+      if (!tiles) {
+        result.push({ palitra_id: palitraId, points: [] });
+        continue;
+      }
+      const seen = new Set<string>();
+      const points: PalitraPoint[] = [];
+      tiles.forEach((tilePoints) => {
+        for (const p of tilePoints) {
+          const key = PalitraCacheManager.pointKey(p);
+          if (seen.has(key)) continue;
+          seen.add(key);
+          points.push(p);
+        }
+      });
+      result.push({ palitra_id: palitraId, points });
+    }
+    return result;
+  }
+
+  /** Key for point deduplication (label + coords). */
+  static pointKey(p: PalitraPoint): string {
+    return `${p.label ?? ''}:${p.coords.lat},${p.coords.lng}`;
+  }
+
+  /** Fetch points by label search (exact match). Does not use tile cache. */
+  async fetchSearchPoints(
+    palitraIds: number[],
+    pointLabels: string[]
+  ): Promise<{ palitra_id: number; points: PalitraPoint[] }[]> {
+    if (palitraIds.length === 0 || pointLabels.length === 0) {
+      return [];
+    }
+    const response = await fetch('/api/palitra/points/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        palitra_ids: palitraIds,
+        point_labels: pointLabels
+      })
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    return response.json();
+  }
+
+  /** Store points in the cache 
+   * @param data - The data to store
+   * @param tileKey - The tile key
+   * Seen is a set of keys for deduplication bc same point can be in multiple tiles
+  */
   storePoints(data: { palitra_id: number; points: PalitraPoint[] }[], tileKey: string): void {
     let totalNewPoints = 0;
     data.forEach(item => {
@@ -116,12 +172,20 @@ export class PalitraCacheManager {
           tiles = new Map();
           this.tiles.set(item.palitra_id, tiles);
         }
-        const points = item.points || [];
+        const raw = item.points || [];
+        const seen = new Set<string>();
+        const points: PalitraPoint[] = [];
+        for (const p of raw) {
+          const key = PalitraCacheManager.pointKey(p);
+          if (seen.has(key)) continue;
+          seen.add(key);
+          points.push(p);
+        }
         tiles.set(tileKey, points);
         totalNewPoints += points.length;
       }
     });
-    
+
     console.log(`[Palitra Cache] Stored ${totalNewPoints} points for tile ${tileKey}`);
     this.logStats();
     
@@ -200,11 +264,18 @@ export class PalitraCacheManager {
     }
   }
 
+  /**
+   * Merge points from all tiles that intersect the current view and return
+   * them for display on the map. This is the single place where points from
+   * multiple tiles are combined; deduplication by (lat, lng) ensures the
+   * same point from overlapping tiles appears only once.
+   */
   getPointsForBounds(palitraId: number, bounds: L.LatLngBounds): PalitraPoint[] {
     const tiles = this.tiles.get(palitraId);
     if (!tiles) {
       return [];
     }
+    const seen = new Set<string>();
     const points: PalitraPoint[] = [];
     tiles.forEach((tilePoints, tileKey) => {
       const tileBounds = this.parseTileKeyBounds(tileKey);
@@ -212,7 +283,12 @@ export class PalitraCacheManager {
         return;
       }
       if (bounds.intersects(tileBounds)) {
-        points.push(...tilePoints);
+        for (const p of tilePoints) {
+          const key = PalitraCacheManager.pointKey(p);
+          if (seen.has(key)) continue;
+          seen.add(key);
+          points.push(p);
+        }
       }
     });
     return points;

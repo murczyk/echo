@@ -1448,6 +1448,7 @@ signalProfileEntryEncoder struct =
 
 type alias BatchSignalGroupReq =
     { groups : List SignalGroupReq
+    , skipGroupStats : Maybe Bool
     }
 
 
@@ -1455,6 +1456,7 @@ batchSignalGroupReqEncoder : BatchSignalGroupReq -> Json.Encode.Value
 batchSignalGroupReqEncoder struct =
     Json.Encode.object
         [ ( "groups", Json.Encode.list signalGroupReqEncoder struct.groups )
+        , ( "skip_group_stats", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.skipGroupStats )
         ]
 
 
@@ -1554,9 +1556,27 @@ analysisStatsAorEncoder struct =
         ]
 
 
+type alias SenderFrequencyBreakdown =
+    { freq : Maybe String
+    , post : Maybe String
+    , count : Int
+    }
+
+
+senderFrequencyBreakdownEncoder : SenderFrequencyBreakdown -> Json.Encode.Value
+senderFrequencyBreakdownEncoder struct =
+    Json.Encode.object
+        [ ( "freq", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.freq )
+        , ( "post", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.post )
+        , ( "count", Json.Encode.int struct.count )
+        ]
+
+
 type alias AnalysisStatsSender =
     { uuid : String
     , count : Int
+    , freqBreakdown : List SenderFrequencyBreakdown
+    , perDay : Dict String Int
     }
 
 
@@ -1565,6 +1585,8 @@ analysisStatsSenderEncoder struct =
     Json.Encode.object
         [ ( "uuid", Json.Encode.string struct.uuid )
         , ( "count", Json.Encode.int struct.count )
+        , ( "freq_breakdown", Json.Encode.list senderFrequencyBreakdownEncoder struct.freqBreakdown )
+        , ( "per_day", Json.Encode.dict identity Json.Encode.int struct.perDay )
         ]
 
 
@@ -2776,6 +2798,7 @@ coordsEncoder struct =
 type alias KmzColorInfo =
     { colorHex : String
     , count : Int
+    , suggestedSuffix : Maybe String
     }
 
 
@@ -2784,6 +2807,7 @@ kmzColorInfoEncoder struct =
     Json.Encode.object
         [ ( "color_hex", Json.Encode.string struct.colorHex )
         , ( "count", Json.Encode.int struct.count )
+        , ( "suggested_suffix", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.suggestedSuffix )
         ]
 
 
@@ -3681,6 +3705,32 @@ deleteEncryptionKeyReqEncoder struct =
         ]
 
 
+type alias CreateSigintKeySharePolicyReq =
+    { grantFrom : Int
+    , grantTo : Int
+    }
+
+
+createSigintKeySharePolicyReqEncoder : CreateSigintKeySharePolicyReq -> Json.Encode.Value
+createSigintKeySharePolicyReqEncoder struct =
+    Json.Encode.object
+        [ ( "grant_from", Json.Encode.int struct.grantFrom )
+        , ( "grant_to", Json.Encode.int struct.grantTo )
+        ]
+
+
+type alias DeleteSigintKeySharePolicyReq =
+    { id : Int
+    }
+
+
+deleteSigintKeySharePolicyReqEncoder : DeleteSigintKeySharePolicyReq -> Json.Encode.Value
+deleteSigintKeySharePolicyReqEncoder struct =
+    Json.Encode.object
+        [ ( "id", Json.Encode.int struct.id )
+        ]
+
+
 type alias Tag =
     { label : String
     , extra : Maybe Bool
@@ -3845,6 +3895,33 @@ reoReportSettingsEncoder struct =
         ]
 
 
+type ReoReportFileType
+    = Docx
+    | Xlsx
+
+
+reoReportFileTypeEncoder : ReoReportFileType -> Json.Encode.Value
+reoReportFileTypeEncoder enum =
+    case enum of
+        Docx ->
+            Json.Encode.string "Docx"
+
+        Xlsx ->
+            Json.Encode.string "Xlsx"
+
+
+type alias ActiveNetworksReportSettings =
+    { aorIds : List Int
+    }
+
+
+activeNetworksReportSettingsEncoder : ActiveNetworksReportSettings -> Json.Encode.Value
+activeNetworksReportSettingsEncoder struct =
+    Json.Encode.object
+        [ ( "aor_ids", Json.Encode.list Json.Encode.int struct.aorIds )
+        ]
+
+
 type ReportAggregation
     = ByProfile
     | ByPost
@@ -3886,8 +3963,9 @@ type ReportType
     | Pelengs
     | Senders SenderReportSettings
     | Naushnom
-    | Reo ReoReportSettings
+    | Reo ReoReportSettings ReoReportFileType
     | Digest
+    | ActiveNetworks ActiveNetworksReportSettings
 
 
 reportTypeEncoder : ReportType -> Json.Encode.Value
@@ -3914,15 +3992,19 @@ reportTypeEncoder enum =
         Naushnom ->
             Json.Encode.string "Naushnom"
 
-        Reo inner ->
-            Json.Encode.object [ ( "Reo", reoReportSettingsEncoder inner ) ]
+        Reo t0 t1 ->
+            Json.Encode.object [ ( "Reo", Json.Encode.list identity [ reoReportSettingsEncoder t0, reoReportFileTypeEncoder t1 ] ) ]
 
         Digest ->
             Json.Encode.string "Digest"
 
+        ActiveNetworks inner ->
+            Json.Encode.object [ ( "ActiveNetworks", activeNetworksReportSettingsEncoder inner ) ]
+
 
 type alias SenderReportSettings =
     { aggregation : ReportAggregation
+    , advancedFreqs : Bool
     }
 
 
@@ -3930,6 +4012,7 @@ senderReportSettingsEncoder : SenderReportSettings -> Json.Encode.Value
 senderReportSettingsEncoder struct =
     Json.Encode.object
         [ ( "aggregation", reportAggregationEncoder struct.aggregation )
+        , ( "advanced_freqs", Json.Encode.bool struct.advancedFreqs )
         ]
 
 
@@ -6695,6 +6778,26 @@ listAreasOfResponsibilityReqEncoder struct =
         ]
 
 
+type alias SigintKeySharePolicy =
+    { id : Int
+    , grantFrom : Int
+    , grantTo : Int
+    , author : String
+    , createdAt : Int
+    }
+
+
+sigintKeySharePolicyEncoder : SigintKeySharePolicy -> Json.Encode.Value
+sigintKeySharePolicyEncoder struct =
+    Json.Encode.object
+        [ ( "id", Json.Encode.int struct.id )
+        , ( "grant_from", Json.Encode.int struct.grantFrom )
+        , ( "grant_to", Json.Encode.int struct.grantTo )
+        , ( "author", Json.Encode.string struct.author )
+        , ( "created_at", Json.Encode.int struct.createdAt )
+        ]
+
+
 nameDecoder : Json.Decode.Decoder Name
 nameDecoder =
     Json.Decode.succeed Name
@@ -7412,11 +7515,21 @@ analysisStatsAorDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "count" Json.Decode.int))
 
 
+senderFrequencyBreakdownDecoder : Json.Decode.Decoder SenderFrequencyBreakdown
+senderFrequencyBreakdownDecoder =
+    Json.Decode.succeed SenderFrequencyBreakdown
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freq" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "post" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "count" Json.Decode.int))
+
+
 analysisStatsSenderDecoder : Json.Decode.Decoder AnalysisStatsSender
 analysisStatsSenderDecoder =
     Json.Decode.succeed AnalysisStatsSender
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "uuid" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "count" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freq_breakdown" (Json.Decode.list senderFrequencyBreakdownDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "per_day" (Json.Decode.dict Json.Decode.int)))
 
 
 analysisStatsReqDecoder : Json.Decode.Decoder AnalysisStatsReq
@@ -7743,6 +7856,7 @@ batchSignalGroupReqDecoder : Json.Decode.Decoder BatchSignalGroupReq
 batchSignalGroupReqDecoder =
     Json.Decode.succeed BatchSignalGroupReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "groups" (Json.Decode.list signalGroupReqDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "skip_group_stats" (Json.Decode.nullable Json.Decode.bool)))
 
 
 signalGroupsRspDecoder : Json.Decode.Decoder SignalGroupsRsp
@@ -8100,6 +8214,7 @@ kmzColorInfoDecoder =
     Json.Decode.succeed KmzColorInfo
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "color_hex" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "count" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "suggested_suffix" (Json.Decode.nullable Json.Decode.string)))
 
 
 analyzeKmzResponseDecoder : Json.Decode.Decoder AnalyzeKmzResponse
@@ -8695,6 +8810,12 @@ reoReportSettingsDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "adjacent_freqs_distance" Json.Decode.float))
 
 
+activeNetworksReportSettingsDecoder : Json.Decode.Decoder ActiveNetworksReportSettings
+activeNetworksReportSettingsDecoder =
+    Json.Decode.succeed ActiveNetworksReportSettings
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aor_ids" (Json.Decode.list Json.Decode.int)))
+
+
 reportAggregationDecoder : Json.Decode.Decoder ReportAggregation
 reportAggregationDecoder =
     Json.Decode.oneOf
@@ -8794,7 +8915,7 @@ reportTypeDecoder =
                         unexpected ->
                             Json.Decode.fail <| "Unexpected variant " ++ unexpected
                 )
-        , Json.Decode.map Reo (Json.Decode.field "Reo" reoReportSettingsDecoder)
+        , Json.Decode.field "Reo" (Json.Decode.succeed Reo |> Json.Decode.andThen (\x -> Json.Decode.index 0 reoReportSettingsDecoder |> Json.Decode.map x) |> Json.Decode.andThen (\x -> Json.Decode.index 1 reoReportFileTypeDecoder |> Json.Decode.map x))
         , Json.Decode.string
             |> Json.Decode.andThen
                 (\x ->
@@ -8805,6 +8926,7 @@ reportTypeDecoder =
                         unexpected ->
                             Json.Decode.fail <| "Unexpected variant " ++ unexpected
                 )
+        , Json.Decode.map ActiveNetworks (Json.Decode.field "ActiveNetworks" activeNetworksReportSettingsDecoder)
         ]
 
 
@@ -8812,6 +8934,7 @@ senderReportSettingsDecoder : Json.Decode.Decoder SenderReportSettings
 senderReportSettingsDecoder =
     Json.Decode.succeed SenderReportSettings
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aggregation" reportAggregationDecoder))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "advanced_freqs" Json.Decode.bool))
 
 
 listUnitsSortByDecoder : Json.Decode.Decoder ListUnitsSortBy
@@ -10252,6 +10375,32 @@ deleteAreaOfResponsibilityReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.int))
 
 
+reoReportFileTypeDecoder : Json.Decode.Decoder ReoReportFileType
+reoReportFileTypeDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Docx" ->
+                            Json.Decode.succeed Docx
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Xlsx" ->
+                            Json.Decode.succeed Xlsx
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
+
+
 listAreasOfResponsibilitySortByDecoder : Json.Decode.Decoder ListAreasOfResponsibilitySortBy
 listAreasOfResponsibilitySortByDecoder =
     Json.Decode.oneOf
@@ -10282,6 +10431,16 @@ listAreasOfResponsibilityReqDecoder : Json.Decode.Decoder ListAreasOfResponsibil
 listAreasOfResponsibilityReqDecoder =
     Json.Decode.succeed ListAreasOfResponsibilityReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sort_by" (Json.Decode.nullable listAreasOfResponsibilitySortByDecoder)))
+
+
+sigintKeySharePolicyDecoder : Json.Decode.Decoder SigintKeySharePolicy
+sigintKeySharePolicyDecoder =
+    Json.Decode.succeed SigintKeySharePolicy
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "grant_from" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "grant_to" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "author" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" Json.Decode.int))
 
 
 deltaLoginUrlDecoder : Json.Decode.Decoder DeltaLoginUrl

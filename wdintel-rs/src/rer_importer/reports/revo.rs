@@ -11,7 +11,11 @@ use actix_identity::Identity;
 use anyhow::Context;
 use chrono::prelude::*;
 use docx_rs::*;
+use rust_xlsxwriter::{
+    ColNum, ExcelDateTime, Format, FormatAlign, RowNum, Workbook, Worksheet,
+};
 use sea_orm::*;
+use std::collections::*;
 use std::path::Path;
 use std::time::Instant;
 
@@ -97,9 +101,11 @@ pub async fn report_docx_kind_revo(
     info!("get_organism_logins took: {:?}", start.elapsed());
 
     let start = Instant::now();
+    let report_tags_only_this_unit =
+        req.report_tags_only_this_unit.unwrap_or(false);
     let mut current_req = req.req.clone();
     current_req.report_tags_only_this_unit = req.report_tags_only_this_unit;
-    let messages: Vec<(i64, InboxMessage)> =
+    let mut messages: Vec<(i64, InboxMessage)> =
         crate::rer_importer::inbox::get_inbox_messages_with_conn(
             &read_db,
             &login,
@@ -109,6 +115,13 @@ pub async fn report_docx_kind_revo(
         )
         .await
         .context(h!())?;
+    if report_tags_only_this_unit {
+        messages = merge_messages_with_comment_rules(
+            &read_db, messages, &login, &logins, env, req,
+        )
+        .await
+        .context(h!())?;
+    }
     info!(
         "get_inbox_messages_with_conn took: {:?}, messages count: {}",
         start.elapsed(),
@@ -116,17 +129,26 @@ pub async fn report_docx_kind_revo(
     );
 
     let range_khz = match req.report_type {
-        Some(ReportType::Reo(ReoReportSettings {
-            adjacent_freqs_distance,
-        })) => adjacent_freqs_distance * 1000.0,
+        Some(ReportType::Reo(
+            ReoReportSettings {
+                adjacent_freqs_distance,
+            },
+            _,
+        )) => adjacent_freqs_distance * 1000.0,
         _ => 0.0,
     };
 
     let start = Instant::now();
-    let mut report =
-        collect_report(messages, logins.clone(), env, &read_db, range_khz)
-            .await
-            .context(h!())?;
+    let mut report = collect_report(
+        messages,
+        logins.clone(),
+        env,
+        &read_db,
+        range_khz,
+        report_tags_only_this_unit,
+    )
+    .await
+    .context(h!())?;
     info!("collect_report took: {:?}", start.elapsed());
 
     let start = Instant::now();
@@ -147,6 +169,262 @@ pub async fn report_docx_kind_revo(
                 report.summary.unidentified_qty
         );
 
+    let result = match req.report_type {
+        Some(ReportType::Reo(_, ReoReportFileType::Xlsx)) => {
+            generate_xlsx_kind_revo(report, network_summary, outpath)
+        }
+        _ => generate_docx_kind_revo(report, network_summary, outpath),
+    };
+
+    info!(
+        "report_docx_kind_revo completed in total: {:?}",
+        start_total.elapsed()
+    );
+
+    result
+}
+
+fn generate_xlsx_kind_revo(
+    report: Report,
+    network_summary: String,
+    outpath: &Path,
+) -> Result<(), AppError> {
+    let mut workbook = Workbook::new();
+    let sheet = workbook
+        .add_worksheet()
+        .set_name("РЕО")
+        .context(h!())?
+        .set_column_width(0, 40)
+        .context(h!())?;
+
+    let coltitle = Format::new()
+        .set_align(FormatAlign::Center)
+        .set_font_size(12.0)
+        .set_text_wrap();
+
+    let headers: Vec<(&str, i32)> = vec![
+        ("Назва радіомережі", 40),
+        ("Місто/Населений пункт", 30),
+        ("Частоти", 12),
+        ("Час початку роботи радіомережі", 20),
+        ("Час закінчення роботи радіомережі", 20),
+        ("Сеанси", 8),
+        ("Склад кореспондентів радіомережі та приналежність", 30),
+        ("Характер радіообміну", 30),
+        ("Особливості функціонування радіомереж", 30),
+        ("Що було виявлено", 40),
+    ];
+
+    let mut row_num: RowNum = 0;
+    let max_col_num = (headers.len() as u32) as ColNum;
+
+    sheet
+        .merge_range(
+            0,
+            0,
+            0,
+            max_col_num - 1,
+            network_summary.as_str(),
+            &coltitle,
+        )
+        .context(h!())?;
+    row_num += 1;
+
+    for (col_num, (header_name, header_with)) in headers.into_iter().enumerate()
+    {
+        sheet
+            .write_string_with_format(
+                row_num,
+                col_num as ColNum,
+                header_name,
+                &coltitle,
+            )
+            .context(h!())?
+            .set_column_width(col_num as ColNum, header_with)
+            .context(h!())?;
+    }
+    row_num += 1;
+
+    sheet
+        .merge_range(
+            row_num,
+            0,
+            row_num,
+            max_col_num - 1,
+            "Російська Федерація",
+            &coltitle,
+        )
+        .context(h!())?;
+    row_num += 1;
+
+    for hostile_network in report.hostile_networks {
+        generate_networks_sheet(sheet, row_num, &coltitle, hostile_network)?;
+        row_num += 1;
+    }
+
+    sheet
+        .merge_range(
+            row_num,
+            0,
+            row_num,
+            max_col_num - 1,
+            "Невизначені",
+            &coltitle,
+        )
+        .context(h!())?;
+    row_num += 1;
+
+    for undefined_network in report.undefined_networks {
+        generate_networks_sheet(sheet, row_num, &coltitle, undefined_network)?;
+        row_num += 1;
+    }
+    let start = Instant::now();
+    workbook.save(outpath).context(h!())?; // Save the workbook
+    info!("writing xlsx to file took: {:?}", start.elapsed());
+
+    Ok(())
+}
+
+fn generate_networks_sheet<'a>(
+    sheet: &'a mut Worksheet,
+    row_num: RowNum,
+    cell_format: &Format,
+    network_row: NetworkRow,
+) -> Result<&'a mut Worksheet, AppError> {
+    let mut col_num = 0;
+    let date_cell_format = cell_format.clone().set_num_format("dd.mm.yy hh:mm");
+    let number_cell_format = cell_format.clone().set_num_format("0");
+
+    sheet
+        .write_string_with_format(
+            row_num,
+            col_num,
+            network_row.name,
+            cell_format,
+        )
+        .context(h!())?
+        .set_column_width(col_num, 40)
+        .context(h!())?;
+    col_num += 1;
+
+    if let Some(location) = network_row.location {
+        sheet
+            .write_string_with_format(row_num, col_num, location, cell_format)
+            .context(h!())?
+            .set_column_width(col_num, 30)
+            .context(h!())?;
+    }
+    col_num += 1;
+
+    sheet
+        .write_string_with_format(
+            row_num,
+            col_num,
+            network_row.freqs.join("\n"),
+            cell_format,
+        )
+        .context(h!())?
+        .set_column_width(col_num, 12)
+        .context(h!())?;
+    col_num += 1;
+
+    let since = ExcelDateTime::from_timestamp(
+        network_row.activity.since.and_utc().timestamp(),
+    )
+    .context(h!())?;
+    sheet
+        .write_datetime_with_format(row_num, col_num, &since, &date_cell_format)
+        .context(h!())?
+        .set_column_width(col_num, 20)
+        .context(h!())?;
+    col_num += 1;
+
+    let till = ExcelDateTime::from_timestamp(
+        network_row.activity.till.and_utc().timestamp(),
+    )
+    .context(h!())?;
+    sheet
+        .write_datetime_with_format(row_num, col_num, till, &date_cell_format)
+        .context(h!())?
+        .set_column_width(col_num, 20)
+        .context(h!())?;
+    col_num += 1;
+
+    let sessions = network_row.activity.seances_qty as f64;
+    sheet
+        .write_number_with_format(
+            row_num,
+            col_num,
+            sessions,
+            &number_cell_format,
+        )
+        .context(h!())?
+        .set_column_width(col_num, 8)
+        .context(h!())?;
+    col_num += 1;
+
+    let correspondences =
+        get_processed_correspondence(network_row.correspondents).join(", ");
+
+    sheet
+        .write_string_with_format(
+            row_num,
+            col_num,
+            correspondences,
+            cell_format,
+        )
+        .context(h!())?
+        .set_column_width(col_num, 30)
+        .context(h!())?;
+    col_num += 1;
+
+    if let Some(communication_kind) = network_row.communication_kind {
+        sheet
+            .write_string_with_format(
+                row_num,
+                col_num,
+                communication_kind,
+                cell_format,
+            )
+            .context(h!())?
+            .set_column_width(col_num, 30)
+            .context(h!())?;
+    }
+    col_num += 1;
+
+    let functionality_details = network_row.functionality_details;
+    sheet
+        .write_string_with_format(
+            row_num,
+            col_num,
+            functionality_details,
+            cell_format,
+        )
+        .context(h!())?
+        .set_column_width(col_num, 50)
+        .context(h!())?;
+    col_num += 1;
+
+    let identified_details = network_row.identified_details.join("\n");
+    sheet
+        .write_string_with_format(
+            row_num,
+            col_num,
+            identified_details,
+            cell_format,
+        )
+        .context(h!())?
+        .set_column_width(col_num, 40)
+        .context(h!())?;
+
+    Ok(sheet)
+}
+
+fn generate_docx_kind_revo(
+    report: Report,
+    network_summary: String,
+    outpath: &Path,
+) -> Result<(), AppError> {
     let start = Instant::now();
     let config = DocxConfig {
         columns_count: 6,
@@ -212,10 +490,6 @@ pub async fn report_docx_kind_revo(
     docx.build().pack(file).context(h!())?;
     info!("writing docx to file took: {:?}", start.elapsed());
 
-    info!(
-        "report_docx_kind_revo completed in total: {:?}",
-        start_total.elapsed()
-    );
     Ok(())
 }
 
@@ -260,18 +534,7 @@ fn render_network_row(row: NetworkRow, config: &DocxConfig) -> TableRow {
         config,
     ));
 
-    let mut correspondents = vec![];
-    let mut other_correspondents = vec![];
-    for c in row.correspondents {
-        let callsign = c.callsign.to_uppercase();
-        match c.position {
-            Some(unit_name) => {
-                correspondents.push(format!("{callsign} - {unit_name}"));
-            }
-            None => other_correspondents.push(callsign),
-        }
-    }
-    correspondents.push(other_correspondents.join(", "));
+    let correspondents = get_processed_correspondence(row.correspondents);
     let correspondents_cell = mk_multiline_text_cell(
         correspondents,
         util::ParagraphStyle::Default,
@@ -301,12 +564,31 @@ fn render_network_row(row: NetworkRow, config: &DocxConfig) -> TableRow {
     ])
 }
 
+fn get_processed_correspondence(
+    correspondents: Vec<NetworkCorrespondent>,
+) -> Vec<String> {
+    let mut result_correspondents = vec![];
+    let mut other_correspondents = vec![];
+    for c in correspondents {
+        let callsign = c.callsign.to_uppercase();
+        match c.position {
+            Some(unit_name) => {
+                result_correspondents.push(format!("{callsign} - {unit_name}"));
+            }
+            None => other_correspondents.push(callsign),
+        }
+    }
+    result_correspondents.push(other_correspondents.join(", "));
+    result_correspondents
+}
+
 async fn collect_report(
     messages: Vec<(i64, InboxMessage)>,
-    _logins: Vec<String>,
+    logins: Vec<String>,
     env: &Env,
     dbx: &DatabaseConnection,
     range_khz: f64,
+    report_tags_only_this_unit: bool,
 ) -> anyhow::Result<Report> {
     let start_collect = Instant::now();
     info!("collect_report: extracting groups and freqs");
@@ -428,11 +710,15 @@ async fn collect_report(
     let mut comments = BTreeMap::new();
     // Load all comments in a single query if possible, otherwise chunk
     if message_ids.len() <= 20000 {
-        sigint_comment::Entity::find()
+        let mut query = sigint_comment::Entity::find()
             .filter(sigint_comment::Column::SignalMessageId.eq_any(message_ids))
             .select_only()
             .column(sigint_comment::Column::SignalMessageId)
-            .column(sigint_comment::Column::Comment)
+            .column(sigint_comment::Column::Comment);
+        if report_tags_only_this_unit {
+            query = query.filter(sigint_comment::Column::Login.eq_any(logins));
+        }
+        query
             .into_model::<CommentSummary>()
             .all(dbx)
             .await
@@ -444,14 +730,19 @@ async fn collect_report(
     } else {
         // For very large datasets, chunk to avoid query size limits
         for ids in message_ids.chunks(20000) {
-            sigint_comment::Entity::find()
+            let mut query = sigint_comment::Entity::find()
                 .filter(
                     sigint_comment::Column::SignalMessageId
                         .eq_any(ids.to_vec()),
                 )
                 .select_only()
                 .column(sigint_comment::Column::SignalMessageId)
-                .column(sigint_comment::Column::Comment)
+                .column(sigint_comment::Column::Comment);
+            if report_tags_only_this_unit {
+                query =
+                    query.filter(sigint_comment::Column::Login.is_in(&logins));
+            }
+            query
                 .into_model::<CommentSummary>()
                 .all(dbx)
                 .await
@@ -804,4 +1095,161 @@ async fn collect_report(
         start_collect.elapsed()
     );
     Ok(report)
+}
+
+async fn filter_messages_by_logins(
+    dbx: &DatabaseConnection,
+    messages: Vec<(i64, InboxMessage)>,
+    logins: &[String],
+) -> anyhow::Result<Vec<(i64, InboxMessage)>> {
+    let message_ids: Vec<i64> = messages.iter().map(|(id, _)| *id).collect();
+    if message_ids.is_empty() {
+        return Ok(messages);
+    }
+    let mut allowed_ids = HashSet::new();
+    if message_ids.len() <= 20000 {
+        sigint_comment::Entity::find()
+            .filter(sigint_comment::Column::SignalMessageId.eq_any(message_ids))
+            .filter(sigint_comment::Column::Login.is_in(logins))
+            .filter(sigint_comment::Column::Comment.eq("").not())
+            .select_only()
+            .column(sigint_comment::Column::SignalMessageId)
+            .into_tuple::<i64>()
+            .all(dbx)
+            .await
+            .context(h!())?
+            .into_iter()
+            .for_each(|id| {
+                allowed_ids.insert(id);
+            });
+    } else {
+        for ids in message_ids.chunks(20000) {
+            sigint_comment::Entity::find()
+                .filter(
+                    sigint_comment::Column::SignalMessageId
+                        .eq_any(ids.to_vec()),
+                )
+                .filter(sigint_comment::Column::Login.is_in(logins))
+                .filter(sigint_comment::Column::Comment.eq("").not())
+                .select_only()
+                .column(sigint_comment::Column::SignalMessageId)
+                .into_tuple::<i64>()
+                .all(dbx)
+                .await
+                .context(h!())?
+                .into_iter()
+                .for_each(|id| {
+                    allowed_ids.insert(id);
+                });
+        }
+    }
+    Ok(messages
+        .into_iter()
+        .filter(|(id, _)| allowed_ids.contains(id))
+        .collect())
+}
+
+// We need this merge to enforce report data validation: include records with
+// current-unit comments or tags, but exclude those where a current-unit tag is
+// paired only with a non-empty comment from another unit.
+async fn merge_messages_with_comment_rules(
+    dbx: &DatabaseConnection,
+    messages: Vec<(i64, InboxMessage)>,
+    login: &str,
+    logins: &Vec<String>,
+    env: &Env,
+    req: &super::types::ReportPreviewReq,
+) -> anyhow::Result<Vec<(i64, InboxMessage)>> {
+    let tag_message_ids: HashSet<i64> =
+        messages.iter().map(|(id, _)| *id).collect();
+    let mut comment_req = req.req.clone();
+    comment_req.report_tags_only_this_unit = Some(false);
+    let comment_messages =
+        crate::rer_importer::inbox::get_inbox_messages_with_conn(
+            dbx,
+            login,
+            logins,
+            env,
+            &comment_req,
+        )
+        .await
+        .context(h!())?;
+    let comment_messages =
+        filter_messages_by_logins(dbx, comment_messages, logins)
+            .await
+            .context(h!())?;
+    let comment_message_ids: HashSet<i64> =
+        comment_messages.iter().map(|(id, _)| *id).collect();
+    let other_comment_ids =
+        message_ids_with_nonempty_comments_from_other_logins(
+            dbx,
+            &tag_message_ids,
+            logins,
+        )
+        .await
+        .context(h!())?;
+    let mut merged_messages = HashMap::new();
+    for (id, msg) in messages {
+        let include = if comment_message_ids.contains(&id) {
+            true
+        } else {
+            !other_comment_ids.contains(&id)
+        };
+        if include {
+            merged_messages.insert(id, msg);
+        }
+    }
+    for (id, msg) in comment_messages {
+        merged_messages.entry(id).or_insert(msg);
+    }
+    Ok(merged_messages.into_iter().collect())
+}
+
+async fn message_ids_with_nonempty_comments_from_other_logins(
+    dbx: &DatabaseConnection,
+    message_ids: &HashSet<i64>,
+    logins: &Vec<String>,
+) -> anyhow::Result<HashSet<i64>> {
+    if message_ids.is_empty() {
+        return Ok(HashSet::new());
+    }
+    let mut other_ids = HashSet::new();
+    let message_ids: Vec<i64> = message_ids.iter().copied().collect();
+    if message_ids.len() <= 20000 {
+        sigint_comment::Entity::find()
+            .filter(sigint_comment::Column::SignalMessageId.eq_any(message_ids))
+            .filter(sigint_comment::Column::Login.is_not_in(logins))
+            .filter(sigint_comment::Column::Comment.eq("").not())
+            .select_only()
+            .column(sigint_comment::Column::SignalMessageId)
+            .into_tuple::<i64>()
+            .all(dbx)
+            .await
+            .context(h!())?
+            .into_iter()
+            .for_each(|id| {
+                other_ids.insert(id);
+            });
+    } else {
+        for ids in message_ids.chunks(20000) {
+            sigint_comment::Entity::find()
+                .filter(
+                    sigint_comment::Column::SignalMessageId
+                        .eq_any(ids.to_vec()),
+                )
+                .filter(sigint_comment::Column::Login.is_not_in(logins))
+                .filter(sigint_comment::Column::Comment.eq("").not())
+                .select_only()
+                .column(sigint_comment::Column::SignalMessageId)
+                .into_tuple::<i64>()
+                .all(dbx)
+                .await
+                .context(h!())?
+                .into_iter()
+                .for_each(|id| {
+                    other_ids.insert(id);
+                });
+        }
+    }
+    Ok(other_ids)
 }

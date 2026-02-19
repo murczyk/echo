@@ -21,6 +21,7 @@ pub async fn oneoff_restart_echo(
             .context(h!())?
     }
     restart_process("wdintel-rs")?;
+    restart_process_if_exists("wdintel-rs-bgworker")?;
 
     Ok(())
 }
@@ -30,6 +31,17 @@ pub fn restart_process(process_name: &str) -> anyhow::Result<()> {
     cmd!(sh, "sudo -S systemctl restart {process_name}")
         .run()
         .context(h!())?;
+    Ok(())
+}
+
+fn restart_process_if_exists(process_name: &str) -> anyhow::Result<()> {
+    let sh = Shell::new().c(h!())?;
+    cmd!(
+        sh,
+        "bash -lc \"if systemctl cat {process_name} >/dev/null 2>&1; then sudo -S systemctl restart {process_name}; fi\""
+    )
+    .run()
+    .context(h!())?;
     Ok(())
 }
 

@@ -17,6 +17,8 @@ messageStub =
     , callsigns = []
     , callsignsAlg2 = []
     , checked = True
+    , important = False
+    , bookmarked = False
     , coords = Nothing
     , datasourceId = Just 1
     , date = Just "2024-09-19"
@@ -40,8 +42,14 @@ messageStub =
     , unit = Just "УКХ р/м йм. 1/2 мсб 1199 мсп"
     , postId = Nothing
     , networkIds = Nothing
+    , inboxTags = Nothing
     , messageUid = Nothing
     }
+
+
+messageStubWithUid : String -> B.InboxMessage
+messageStubWithUid uid =
+    { messageStub | messageUid = Just uid }
 
 
 
@@ -75,6 +83,24 @@ tests =
                             Messages.toMessageList result |> List.reverse |> List.head
                     in
                     Expect.equal last (Just ( initialLastId + 2, messageStub ))
+            , test "Appending skips duplicate message_uid" <|
+                \_ ->
+                    let
+                        initialMessages =
+                            Messages.fromList [ ( 1, messageStubWithUid "uid-1" ) ]
+
+                        newMessages =
+                            [ ( 2, messageStubWithUid "uid-1" )
+                            , ( 3, messageStubWithUid "uid-2" )
+                            ]
+
+                        result =
+                            Messages.appendList initialMessages newMessages
+
+                        ids =
+                            Messages.toMessageList result |> List.map Tuple.first
+                    in
+                    Expect.equal ids [ 1, 3 ]
             , test "Appending messages exceeding limit" <|
                 \_ ->
                     let

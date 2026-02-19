@@ -536,7 +536,9 @@ loadNewGroups messages model =
         E.sendCmd <|
             Api.rer_importer_signal_group_info_batch
                 GotGroupInfos
-                { groups = newGroupsIds |> List.map (\id -> { masterKey = id }) }
+                { groups = newGroupsIds |> List.map (\id -> { masterKey = id })
+                , skipGroupStats = Just True
+                }
 
     else
         E.none
@@ -1962,7 +1964,9 @@ update shared user msg model =
             , E.sendCmd <|
                 Api.rer_importer_signal_group_info_batch
                     GotGroupInfos
-                    { groups = vs |> List.map (\id -> { masterKey = id }) }
+                    { groups = vs |> List.map (\id -> { masterKey = id })
+                    , skipGroupStats = Just True
+                    }
             )
 
         TickTimeTick now ->
@@ -3125,7 +3129,7 @@ messageTab ps shared model =
         [ deleteFilterModal
         , deleteMessageModal
         , div
-            [ class "flex justify-center items-start w-full max-h-[calc(100vh-50px)] overflow-auto bg-column"
+            [ class "flex justify-center items-start w-full app-shell-fill-max-height overflow-auto bg-column"
             , id <| waterfallControlPanelId model.id
             , classList [ ( "border", model.unfoldSettings ), ( "pos-abs", model.unfoldSettings ) ]
             ]

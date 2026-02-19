@@ -168,13 +168,27 @@ init route _ =
             , reportTemplate = RTTags
             , reportTagsOnlyThisUnit = False
             , reportTagsOnlyThisUnitForReport = False
+            , reportAdvancedSenders = False
             , reportAdjacentFreqsRangeSelect =
                 { state = Select.initState (Select.selectIdentifier "selectReportAdjacentFreqsRange")
                 , items = Config.adjacentFreqsRangeOptions |> List.map (\x -> Select.basicMenuItem { item = x, label = String.fromFloat (x * 1000) ++ " кГц" })
                 , selected = 0
                 }
+            , reportReoFileTypeSelect =
+                { state = Select.initState (Select.selectIdentifier "selectReportReoFileType")
+                , items =
+                    [ Select.basicMenuItem { item = B.Docx, label = "docx" }
+                    , Select.basicMenuItem { item = B.Xlsx, label = "xlsx" }
+                    ]
+                , selected = B.Docx
+                }
 
             -- , reportIframeUrl = Nothing
+            , reportActiveNetworksAorsSelect =
+                { state = Select.initState (Select.selectIdentifier "selectReportActiveNetworksAors")
+                , items = []
+                , selected = []
+                }
             , reportDownloadInProgress = False
             , noMoreToLoad = False
             , newCallsignsLoading = False
@@ -190,6 +204,7 @@ init route _ =
 
             --
             , aors = NotAsked
+            , allAors = []
             , aorNames = []
             , groups = NotAsked
             , senders = NotAsked
@@ -254,6 +269,7 @@ init route _ =
         , E.map RowsMsg Shared.Components.RerMessage.init
         , Core.EventHelpers.subscribeToInboxChanges route.path
         , E.sendCmd <| Ports.rer_analysis_saveQueryState (B.rerAnalysisQueryStateEncoder initialQueryState)
+        , E.sendCmd <| Api.aor_list GotAllAors { sortBy = Nothing }
         , palitrasEff
         , pollEvents Nothing
         ]
@@ -309,12 +325,7 @@ getInboxReq model =
         model.networksSelected
             |> List.filterMap String.toInt
             |> emptyToNothing
-    , withoutModelTags =
-        if model.withoutModelTags then
-            Just True
-
-        else
-            Nothing
+    , withoutModelTags = Just model.withoutModelTags
     }
 
 
@@ -1228,6 +1239,34 @@ update user shared route msg model =
                                             ++ ")"
                                     }
                             )
+              }
+            , E.none
+            )
+
+        GotAllAors (Err e) ->
+            ( model, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження списку смуг" e )
+
+        GotAllAors (Ok vs) ->
+            let
+                reportActiveNetworksAorsSelect =
+                    model.reportActiveNetworksAorsSelect
+
+                topLevelAors =
+                    vs |> List.filter .isTopLevel
+
+                reportAorItems =
+                    topLevelAors
+                        |> List.map
+                            (\aor ->
+                                Select.basicMenuItem
+                                    { item = aor.id
+                                    , label = aor.name
+                                    }
+                            )
+            in
+            ( { model
+                | allAors = topLevelAors
+                , reportActiveNetworksAorsSelect = { reportActiveNetworksAorsSelect | items = reportAorItems }
               }
             , E.none
             )
@@ -3012,7 +3051,24 @@ update user shared route msg model =
             )
 
         ReportTemplateSelect template ->
-            ( { model | reportTemplate = template }
+            let
+                isAdvanced =
+                    case template of
+                        RTSenders _ ->
+                            True
+
+                        _ ->
+                            False
+            in
+            ( { model
+                | reportTemplate = template
+                , reportAdvancedSenders =
+                    if isAdvanced then
+                        model.reportAdvancedSenders
+
+                    else
+                        False
+              }
             , E.none
             )
 
@@ -3049,6 +3105,19 @@ update user shared route msg model =
             , E.none
             )
 
+        ReportAdvancedSendersToggle ->
+            ( { model | reportAdvancedSenders = not model.reportAdvancedSenders }
+            , E.none
+            )
+
+        ReportTagsWithoutBotTagsToggle ->
+            ( if model.withoutModelTags then
+                { model | withoutModelTags = False }
+              else
+                { model | withoutModelTags = True }
+            , E.none
+            )
+
         ReportDownloadDocx ->
             ( { model | reportDownloadInProgress = True }
             , E.getDocxReportForDownload ReportDownloadDocxDone
@@ -3069,37 +3138,45 @@ update user shared route msg model =
                 m2 =
                     { model | reportDownloadInProgress = False }
 
-                extension =
+                ( extension, mimeType ) =
                     case model.reportTemplate of
                         RTTags ->
-                            "docx"
+                            ( "docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document" )
 
                         RTMouse ->
-                            "docx"
+                            ( "docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document" )
 
                         RTPelengs ->
-                            "xlsx"
+                            ( "xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" )
 
                         RTBabak ->
-                            "docx"
+                            ( "docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document" )
 
                         RTInterception ->
-                            "xlsx"
+                            ( "xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" )
 
                         RTPostsDocx ->
-                            "docx"
+                            ( "docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document" )
 
                         RTSenders _ ->
-                            "xlsx"
+                            ( "xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" )
 
                         RTNaUshnom ->
-                            "docx"
+                            ( "docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document" )
 
                         RTReo ->
-                            "docx"
+                            case model.reportReoFileTypeSelect.selected of
+                                B.Xlsx ->
+                                    ( "xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" )
+
+                                B.Docx ->
+                                    ( "docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document" )
 
                         RTDigest ->
-                            "docx"
+                            ( "docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document" )
+
+                        ActiveNetworks ->
+                            ( "docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document" )
 
                 -- filename like "report_2023-07-17-12-00_2023-07-18-12-00"
                 fname =
@@ -3117,7 +3194,7 @@ update user shared route msg model =
                         ++ extension
             in
             ( m2
-            , E.downloadFile fname "application/vnd.openxmlformats-officedocument.wordprocessingml.document" bytes
+            , E.downloadFile fname mimeType bytes
             )
 
         ScrollMessagesToTop ->
@@ -3418,6 +3495,64 @@ update user shared route msg model =
             in
             ( { model | reportAdjacentFreqsRangeSelect = a2 }, E.none )
 
+        SelectReportReoFileType imsg ->
+            let
+                ( mAction, imodel2, _ ) =
+                    Select.update imsg model.reportReoFileTypeSelect.state
+
+                reportReoFileTypeSelect =
+                    model.reportReoFileTypeSelect
+
+                a2 =
+                    { reportReoFileTypeSelect
+                        | state = imodel2
+                        , selected =
+                            case mAction of
+                                Just (Select.Select i) ->
+                                    i
+
+                                _ ->
+                                    reportReoFileTypeSelect.selected
+                    }
+            in
+            ( { model | reportReoFileTypeSelect = a2 }, E.none )
+
+        SelectReportActiveNetworksAors imsg ->
+            let
+                ( mAction, imodel2, icmd ) =
+                    Select.update imsg model.reportActiveNetworksAorsSelect.state
+
+                reportActiveNetworksAorsSelect =
+                    model.reportActiveNetworksAorsSelect
+
+                selected =
+                    case mAction of
+                        Just (Select.Select i) ->
+                            if List.member i reportActiveNetworksAorsSelect.selected then
+                                List.filter (\x -> x /= i) reportActiveNetworksAorsSelect.selected
+
+                            else
+                                reportActiveNetworksAorsSelect.selected ++ [ i ]
+
+                        Just (Select.Deselect items) ->
+                            List.filter (\x -> not (List.member x items)) reportActiveNetworksAorsSelect.selected
+
+                        Just Select.Clear ->
+                            []
+
+                        _ ->
+                            reportActiveNetworksAorsSelect.selected
+
+                a2 =
+                    { reportActiveNetworksAorsSelect
+                        | state = imodel2
+                        , selected = selected
+                    }
+            in
+            ( { model | reportActiveNetworksAorsSelect = a2 }
+            , E.sendCmd <| Cmd.map SelectReportActiveNetworksAors icmd
+            )
+
         GroupsActivityPeriodChanged period ->
             case ( model.from.datePosix, model.to.datePosix, List.head model.freqsSelected ) of
                 ( Just dtFromPosix, Just dtToPosix, Just freq ) ->
@@ -3507,19 +3642,26 @@ reportTemplateToApiType model template =
 
         RTSenders y ->
             if y == Senders then
-                Just (B.Senders { aggregation = B.ByProfile })
+                Just (B.Senders { aggregation = B.ByProfile, advancedFreqs = model.reportAdvancedSenders })
 
             else
-                Just (B.Senders { aggregation = B.ByPost })
+                Just (B.Senders { aggregation = B.ByPost, advancedFreqs = model.reportAdvancedSenders })
 
         RTNaUshnom ->
             Just B.Naushnom
 
         RTReo ->
-            Just (B.Reo { adjacentFreqsDistance = model.reportAdjacentFreqsRangeSelect.selected })
+            Just
+                (B.Reo
+                    { adjacentFreqsDistance = model.reportAdjacentFreqsRangeSelect.selected }
+                    model.reportReoFileTypeSelect.selected
+                )
 
         RTDigest ->
             Just B.Digest
+
+        ActiveNetworks ->
+            Just (B.ActiveNetworks { aorIds = model.reportActiveNetworksAorsSelect.selected })
 
 
 

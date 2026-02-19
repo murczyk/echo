@@ -31,13 +31,19 @@ jobs:
       ECHO_CI_DIST: ${{ secrets.ECHO_CI_DIST || 'jammy' }}
       ECHO_CI_COMPONENT: ${{ secrets.ECHO_CI_COMPONENT || 'main' }}
     steps:
-      - name: Ensure fresh workspace
+      - name: Ensure clean git state (keep caches)
         shell: "bash --noprofile --norc {0}"
         run: |
           set -euo pipefail
-          echo "Cleaning $GITHUB_WORKSPACE to ensure a fresh checkout..."
-          if [ -d "$GITHUB_WORKSPACE" ]; then
-            find "$GITHUB_WORKSPACE" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+          # Self-hosted runner: keep ignored caches like `target/`, `.venv/`, `node_modules/`
+          # to avoid re-downloading models/deps and to reuse Cargo build artifacts across runs.
+          if [ -d "$GITHUB_WORKSPACE/.git" ]; then
+            echo "Reusing existing checkout in $GITHUB_WORKSPACE (preserving ignored caches)"
+            cd "$GITHUB_WORKSPACE"
+            git reset --hard
+            git clean -ffd
+          else
+            echo "No existing checkout found in $GITHUB_WORKSPACE; proceeding with fresh checkout"
           fi
 
       - uses: actions/checkout@v4
@@ -168,4 +174,4 @@ jobs:
       - name: Remove target on failure
         if: failure()
         shell: "bash --noprofile --norc {0}"
-        run: rm -rf target
+        run: rm -rf target/debian || true

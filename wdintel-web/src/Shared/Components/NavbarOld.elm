@@ -2,11 +2,10 @@ module Shared.Components.NavbarOld exposing (navBar)
 
 import Auth
 import Core.Auth exposing (hasRole, serverModeIs)
-import Dict
 import Html exposing (..)
 import Html.Attributes exposing (..)
-import Html.Events exposing (onClick)
-import Route
+import Html.Events exposing (on, onClick)
+import Json.Decode
 import Route.Path
 import Shared
 import Shared.Components.ThemeSwitcher exposing (themeSwitcher)
@@ -46,17 +45,29 @@ navBar user shared activeName props =
         menu =
             menuItem props activeName
 
+        menuWithBadge =
+            menuItemWithBadge props activeName
+
         menuWithSubs =
             menuItemWithSubs props (isDarkMode shared.themeMode) activeName
 
         adminSubs =
             [ Menu (Internal Route.Path.Admin) "zones" "напрямки"
-            , Menu (Internal Route.Path.Admin_Users) "users" "користувачі"
-            , Menu (Internal Route.Path.Admin_Organisms) "organisms" "організми"
-            , Menu (Internal Route.Path.Admin_Tags) "tags" "теги"
-            , Menu (Internal Route.Path.AreasOfResponsibility) "areasOfResponsibility" "смуги"
-            , Menu (Internal Route.Path.Admin_Messanger) "messanger" "месенджери"
-            , Menu (Internal Route.Path.Admin_ControlPanel) "control-panel" "панель керування"
+            , Menu (Internal Route.Path.Admin_UsersNeo) "users-neo" "користувачі"
+            , Menu (Internal Route.Path.Admin_OrganismsNeo) "organisms-neo" "організми"
+            , Menu (Internal Route.Path.Admin_TagsNeo) "tags-neo" "теги"
+            , Menu (Internal Route.Path.Admin_AorNeo) "aor-neo" "смуги"
+            , Menu (Internal Route.Path.Admin_KeysNeo) "keys-neo" "ключі"
+            , Menu (Internal Route.Path.Admin_MessangerNeo) "messanger-neo" "месенджери"
+            , Menu (Internal Route.Path.Admin_ControlPanelNeo) "control-panel-neo" "панель керування"
+            , Menu (Internal Route.Path.AdminOld) "zones-old" "напрямки (старі)"
+            , Menu (Internal Route.Path.Admin_Users) "users" "користувачі (стара)"
+            , Menu (Internal Route.Path.Admin_Organisms) "organisms" "організми (стара)"
+            , Menu (Internal Route.Path.Admin_Tags) "tags" "теги (стара)"
+            , Menu (Internal Route.Path.AreasOfResponsibility) "areasOfResponsibility" "смуги (стара)"
+            , Menu (Internal Route.Path.Admin_Keys) "keys" "ключі (стара)"
+            , Menu (Internal Route.Path.Admin_Messanger) "messanger" "месенджери (стара)"
+            , Menu (Internal Route.Path.Admin_ControlPanel) "control-panel" "панель керування (стара)"
             ]
 
         etalonkaSubs =
@@ -91,7 +102,9 @@ navBar user shared activeName props =
         menuItems =
             menu Route.Path.Home_ "home" "головна"
                 :: ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Rer" user)
-                    [ menu Route.Path.RerDuty "duty" "оперативний" ]
+                    [ menu Route.Path.RerDuty "duty" "оперативний"
+                    , menuWithBadge Route.Path.RerDutyNeo "rer-duty-neo" "оперативний" "Alpha" "Сторінка в розробці, потребує допрацювання"
+                    ]
                 ++ ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Rer" user)
                     [ menu Route.Path.RerAnalysis "analysis" "аналіз" ]
                 ++ ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Rer" user)
@@ -100,8 +113,10 @@ navBar user shared activeName props =
                     [ menuWithSubs "import" "імпорт" importSubs ]
                 ++ ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Basic" user)
                     [ menuWithSubs "other" "інше" otherSubs ]
+                -- ++ ifOrEmpty (hasRole "Basic" user)
+                --     [ menu Route.Path.Settings "settings" "налаштування (старі)" ]
                 ++ ifOrEmpty (hasRole "Basic" user)
-                    [ menu Route.Path.Settings "settings" "налаштування" ]
+                    [ menu Route.Path.SettingsNeo "settings-neo" "налаштування" ]
                 ++ ifOrEmpty (hasRole "Admin" user)
                     [ menuWithSubs "admin" "адмін" adminSubs ]
 
@@ -203,6 +218,7 @@ navBar user shared activeName props =
 -- Main navbar links: always white text
 
 
+menuItem : { a | onDropdownToggle : Maybe b -> msg } -> d -> Route.Path.Path -> d -> String -> Html msg
 menuItem props activeName hrefLink activeNameExp nameText =
     li []
         [ a
@@ -215,6 +231,23 @@ menuItem props activeName hrefLink activeNameExp nameText =
         ]
 
 
+menuItemWithBadge props activeName hrefLink activeNameExp nameText badgeText badgeTitle =
+    li [ class "relative" ]
+        [ a
+            [ class "block py-2 pr-10 text-white hover:bg-black/10 px-2 rounded transition-all duration-200"
+            , Route.Path.href hrefLink
+            , classList [ ( "font-medium", activeName == activeNameExp ) ]
+            , onClick (props.onDropdownToggle Nothing)
+            ]
+            [ text nameText
+            , span
+                [ class "absolute -top-[5px] -right-[10px] text-[10px] font-normal px-1.5 py-0.5 rounded border border-amber-400 bg-amber-500/25 text-amber-200 z-[1]"
+                , attribute "title" badgeTitle
+                ]
+                [ text badgeText ]
+            ]
+        ]
+
 
 -- Dropdowns: black text in light mode, white in dark mode
 
@@ -224,6 +257,9 @@ menuItemWithSubs props isDarkMode activeName activeNameExp nameText subs =
     let
         isOpen =
             props.openDropdown == Just activeNameExp
+
+        dropdownMenuId =
+            "navbar-dropdown-menu-" ++ activeNameExp
 
         toggleMsg =
             if isOpen then
@@ -254,6 +290,7 @@ menuItemWithSubs props isDarkMode activeName activeNameExp nameText subs =
                         a
                             [ class ("flex items-center justify-between px-4 py-2 " ++ dropdownTextClass ++ " hover:bg-black/10 rounded transition-all duration-200")
                             , classList [ ( "font-medium", sub.activeName == activeName ) ]
+                            , attribute "role" "menuitem"
                             , Route.Path.href path
                             , onClick (props.onDropdownToggle Nothing)
                             ]
@@ -269,6 +306,7 @@ menuItemWithSubs props isDarkMode activeName activeNameExp nameText subs =
                         a
                             [ class ("flex items-center justify-between px-4 py-2 " ++ dropdownTextClass ++ " hover:bg-black/10 rounded transition-all duration-200")
                             , classList [ ( "font-medium", sub.activeName == activeName ) ]
+                            , attribute "role" "menuitem"
                             , href link
                             , target "_blank"
                             , onClick (props.onDropdownToggle Nothing)
@@ -280,10 +318,12 @@ menuItemWithSubs props isDarkMode activeName activeNameExp nameText subs =
     in
     li [ class "relative group" ]
         [ button
-            [ class "inline-flex items-center py-2 px-2 cursor-pointer text-white hover:bg-black/10 rounded transition-all duration-200"
+            [ class "inline-flex items-center py-2 px-2 cursor-pointer text-white hover:bg-black/10 rounded transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-1"
             , classList [ ( "font-medium", activeName == activeNameExp ) ]
             , onClick toggleMsg
+            , onDropdownTriggerKey toggleMsg
             , attribute "aria-haspopup" "true"
+            , attribute "aria-controls" dropdownMenuId
             , attribute "aria-expanded"
                 (if isOpen then
                     "true"
@@ -295,14 +335,16 @@ menuItemWithSubs props isDarkMode activeName activeNameExp nameText subs =
             ]
             [ span [] [ text nameText ]
             , i
-                [ class "bi bi-chevron-down ml-1 text-xs transition-transform group-hover:rotate-180"
+                [ class "bi bi-chevron-down ml-1 text-xs transition-transform"
                 , classList [ ( "rotate-180", isOpen ) ]
                 ]
                 []
             ]
         , div [ class "absolute left-0 pt-2 z-500" ]
             [ ul
-                [ class ("w-56 " ++ dropdownBgClass ++ " rounded-lg shadow-lg border border-black/15 transition-all duration-200")
+                [ id dropdownMenuId
+                , class ("w-56 " ++ dropdownBgClass ++ " rounded-lg shadow-lg border border-black/15 transition-all duration-200")
+                , attribute "role" "menu"
                 , classList
                     [ ( "hidden", not isOpen )
                     , ( "block", isOpen )
@@ -311,3 +353,18 @@ menuItemWithSubs props isDarkMode activeName activeNameExp nameText subs =
                 (List.map dropdownItem subs)
             ]
         ]
+
+
+onDropdownTriggerKey : msg -> Attribute msg
+onDropdownTriggerKey msg =
+    on "keydown"
+        (Json.Decode.andThen
+            (\key ->
+                if key == "ArrowDown" then
+                    Json.Decode.succeed msg
+
+                else
+                    Json.Decode.fail "ignored-key"
+            )
+            (Json.Decode.field "key" Json.Decode.string)
+        )

@@ -36,6 +36,18 @@ wd_fasttext_models := justfile_directory() + "/echo-ai/fasttext-models"
 default:
     @just --list
 
+# setup pgBackRest: runs on `--server`; `--backup-name` selects which host's backup/stanza config will be installed (defaults to `--server`)
+[arg('backup_name', long='backup-name')]
+[arg('server', long='server')]
+setup-pgbackrest server backup_name="":
+    #!/bin/bash
+    set -euo pipefail
+    args=(--server "{{ server }}")
+    if [[ "{{ backup_name }}" != "" ]]; then
+        args+=(--backup-name "{{ backup_name }}")
+    fi
+    bash deploy/setup-pgbackrest.sh "${args[@]}"
+
 _print-servers:
     @echo "❌ Server parameter not recognized. Can be one of: echo-zaporizhzha, echo-kherson, echo-donetsk, echo-soledar. Value: {{ server }}"
 
@@ -50,7 +62,17 @@ dev-front2:
     (cd wdintel-web && npm ci && npx elm-land build && npx elm-land server)
 
 build-front:
-    (cd wdintel-web && npm run build)
+    #!/bin/bash
+    set -euxo pipefail
+    cd wdintel-web
+
+    # Install/update deps before build so elm-land uses project-pinned toolchain.
+    if [ ! -d "node_modules" ] || [ ! -f "node_modules/.npm_installed" ] || [ "package-lock.json" -nt "node_modules/.npm_installed" ]; then
+        npm ci
+        touch node_modules/.npm_installed
+    fi
+
+    npm run build
 
 dev-back:
     (cd wdintel-rs && RUST_BACKTRACE=0 {{ rust_log }}cargo watch -- cargo run -- --mode=debug server {{ dev_back_args }})
@@ -60,7 +82,7 @@ dev-back-noproj:
     (cd wdintel-rs && {{ rust_log }}cargo watch -- cargo run --no-default-features -- --mode=debug server {{ dev_back_args }})
 
 dev-back-sudo:
-    (cd wdintel-rs && cargo build && {{ rust_log }}sudo ./target/debug/wdintel-rs --mode=debug server {{ dev_back_args }})
+    (cd wdintel-rs && cargo build && cd .. && {{ rust_log }}sudo ./target/debug/wdintel-rs --mode=debug server {{ dev_back_args }})
 
 # mkdir -p ~/Downloads/storage
 
@@ -116,11 +138,14 @@ gen-seaorm:
     python3 deploy/patch_seaorm.py
     just fmt
 
-gen-front: gen-elm
+gen-front: gen-elm gen-ts
 
 gen-elm:
     (cd wdintel-rs && cargo run -- --mode=debug gen-elm)
     elm-format --yes wdintel-web/src/Bindings.elm
+
+gen-ts:
+    (cd wdintel-rs && cargo run -- --mode=debug gen-ts)
 
 test-fe:
     #!/bin/bash
@@ -194,6 +219,41 @@ ci-save-cache-sccache clean="false":
 ci-test-be:
     bash deploy/run_backend_tests.sh
 
+[arg('builder', long='builder')]
+ci-clean builder="echo-gpu":
+    #!/bin/bash
+    set -euo pipefail
+    BUILDER="{{ builder }}"
+    if [[ -z "$BUILDER" ]]; then
+      echo "missing --builder (example: just ci-clean --builder echo-gpu)" >&2
+      exit 1
+    fi
+
+    echo "🧹 Cleaning CI caches on ${BUILDER}..."
+    ssh "${BUILDER}" 'set -euo pipefail
+      echo "host=$(hostname) user=$(whoami)"
+
+      cache_root="${ECHO_CI_CACHE_DIR:-$HOME/.cache/echo-ci}"
+      echo "Removing cache root: ${cache_root}"
+      rm -rf -- "${cache_root}" || true
+
+      # spaCy/pip caches (best-effort)
+      rm -rf -- "$HOME/.cache/spacy" || true
+      rm -rf -- "$HOME/.cache/pip" || true
+      rm -rf -- "/tmp/cache" || true
+
+      # Remove workspace-local caches. Keep `.git` so Actions can reuse checkout.
+      for ws in "$HOME/actions-runner"*/_work/echo/echo /home/ubuntu/actions-runner*/_work/echo/echo; do
+        [[ -d "$ws" ]] || continue
+        echo "Cleaning workspace caches under: $ws"
+        rm -rf -- "$ws/target" || true
+        rm -rf -- "$ws/wdintel-rs/wdintel-py/.venv" || true
+        rm -rf -- "$ws/wdintel-web/node_modules" || true
+      done
+
+      echo "✅ CI cache cleanup done"
+    '
+
 setup-test-db branch_name="":
     #!/bin/bash
     if [ -n "{{ branch_name }}" ]; then
@@ -240,15 +300,25 @@ check-git-hooks:
     rm echo-install/rusty-tags.emacs || true
     find ./wdintel-web/src -type f -name '*.elm' -print0 | xargs -0 etags --regex @elm.tags  --append
 
-deploy:
+[arg('server', long='server')]
+deploy _server_pos="" server:
     #!/bin/bash
     set -euo pipefail
     # Enable tracing if DEBUG=1 or TRACE=1 is set in environment
     if [[ "${DEBUG:-0}" == "1" || "${TRACE:-0}" == "1" ]]; then
       set -x
     fi
-    if [[ "{{ server }}" == "" ]]; then
-     just _print-servers; exit 1;
+    if [[ "{{ _server_pos }}" != "" && "{{ server }}" != "" ]]; then
+      echo "pass either positional server or --server, not both." >&2
+      exit 1
+    fi
+
+    if [[ "{{ _server_pos }}" != "" ]]; then
+      SERVER="{{ _server_pos }}"
+    elif [[ "{{ server }}" != "" ]]; then
+      SERVER="{{ server }}"
+    else
+      just _print-servers; exit 1;
     fi
     # Determine version from root Cargo.toml ([workspace.package].version)
     VERSION=$(tq -r -f Cargo.toml workspace.package.version)
@@ -270,12 +340,12 @@ deploy:
       exit 1
     fi
 
-    printf "\n🚀🚀🚀 deploying %s 🚀🚀🚀\n\n" "{{ server }}"
+    printf "\n🚀🚀🚀 deploying %s 🚀🚀🚀\n\n" "$SERVER"
 
     # Notify Discord at the start of deployment including local hostname
     curl -sS -X POST \
       -H 'Content-Type: application/json' \
-      -d "{\"content\":\"deploying {{ server }} (version $VERSION); waiting for CI from $(hostname)\"}" \
+      -d "{\"content\":\"deploying $SERVER (version $VERSION); waiting for CI from $(hostname)\"}" \
       '{{ discord_webhook }}' || true
 
     # Helpful link to CI runs
@@ -319,12 +389,92 @@ deploy:
     fi
 
     echo "CI finished detected. Proceeding with remote apt install."
+    ssh "$SERVER" 'set -euo pipefail
+      if systemctl cat wdintel-rs-bgworker.service >/dev/null 2>&1; then
+        echo "Stopping wdintel-rs-bgworker.service and waiting up to 120 seconds..."
+        sudo systemctl stop wdintel-rs-bgworker.service || true
+        for i in $(seq 1 120); do
+          if ! systemctl is-active --quiet wdintel-rs-bgworker.service; then
+            echo "wdintel-rs-bgworker.service is stopped."
+            break
+          fi
+          if [ "$i" -eq 120 ]; then
+            echo "wdintel-rs-bgworker.service did not stop within 120 seconds." >&2
+            exit 1
+          fi
+          sleep 1
+        done
+      else
+        echo "wdintel-rs-bgworker.service is not installed; skipping stop wait."
+      fi'
     # Quiet update/install (stdout suppressed for update; install in -qq)
-    ssh {{ server }} 'sudo apt-get -qq update > /dev/null && sudo DEBIAN_FRONTEND=noninteractive apt-get -y -qq install echo-install wdintel-rs echo-docs'
+    ssh "$SERVER" 'sudo apt-get -qq update > /dev/null && sudo DEBIAN_FRONTEND=noninteractive apt-get -y -qq install echo-install wdintel-rs echo-docs'
+
+    # Re-assert critical services after deploy package update
+    ssh "$SERVER" '
+      set -euo pipefail
+      set -x
+
+      sudo systemctl daemon-reload
+      sudo systemctl disable --now wdintel-rs.service || true
+
+      # Leave only wdintel-rs.socket on :8081; clean up legacy/generated sockets.
+      for unit in wdintel-rs-bgworker.socket wdintel-py.socket echo-whatsapp.socket echo-vector.socket echo-signal-cli.socket; do
+        if systemctl cat "$unit" >/dev/null 2>&1; then
+          sudo systemctl disable --now "$unit" || true
+        fi
+      done
+      for unit in $(sudo systemctl list-units --all --no-legend --full "echo-signal-bot@*.socket" "echo-whatsapp-bot@*.socket" | awk "{print \$1}"); do
+        sudo systemctl disable --now "$unit" || true
+      done
+
+      sudo systemctl enable --now wdintel-rs.socket
+      sudo systemctl enable --now wdintel-rs-bgworker.service
+      sudo systemctl enable --now wdintel-py.service
+
+      for unit in wdintel-rs.socket wdintel-rs-bgworker.service wdintel-py.service; do
+        if ! systemctl is-enabled --quiet "$unit"; then
+          echo "ERROR: $unit is not enabled after deploy." >&2
+          systemctl is-enabled "$unit" || true
+          exit 1
+        fi
+      done
+
+      if ! systemctl is-active --quiet wdintel-rs-bgworker.service; then
+        echo "ERROR: wdintel-rs-bgworker.service is not active after deploy." >&2
+        systemctl status --no-pager wdintel-rs-bgworker.service || true
+        exit 1
+      fi
+      if ! systemctl is-active --quiet wdintel-py.service; then
+        echo "ERROR: wdintel-py.service is not active after deploy." >&2
+        systemctl status --no-pager wdintel-py.service || true
+        exit 1
+      fi
+      if ! systemctl is-active --quiet wdintel-rs.socket; then
+        echo "ERROR: wdintel-rs.socket is not active on 8081." >&2
+        systemctl status --no-pager wdintel-rs.socket || true
+        exit 1
+      fi
+
+      if ! sudo ss -ltnp | grep -q "LISTEN .*:8081"; then
+        echo "ERROR: 8081 is not listening after deploy." >&2
+        sudo ss -ltnp | grep "LISTEN" | grep ":8081" || true
+        exit 1
+      fi
+      if ! sudo ss -ltnp | grep "LISTEN .*:8081" | grep -q "systemd"; then
+        echo "ERROR: 8081 is bound by unexpected process after deploy." >&2
+        sudo ss -ltnp | grep "LISTEN .*:8081" || true
+        exit 1
+      fi
+
+      sudo systemctl status --no-pager wdintel-rs.socket wdintel-rs-bgworker.service wdintel-py.service
+      sudo ss -ltnp | grep "LISTEN .*:8081" || true
+    '
+
     # Success notification
     curl -sS -X POST \
       -H 'Content-Type: application/json' \
-      -d "{\"content\":\"✅ Deployed {{ server }} (version $VERSION) via apt-get\"}" \
+      -d "{\"content\":\"✅ Deployed $SERVER (version $VERSION) via apt-get\"}" \
       '{{ discord_webhook }}' || true
 
 collect-ip-loop:
@@ -405,6 +555,10 @@ copy-db:
     elif [[ "{{ server }}" == "echo-skhid" ]]; then \
         just server={{ server }} _copy-db; \
     elif [[ "{{ server }}" == "echo-kupiansk" ]]; then \
+        just server={{ server }} _copy-db; \
+    elif [[ "{{ server }}" == "echo-zp2" ]]; then \
+        just server={{ server }} _copy-db; \
+    elif [[ "{{ server }}" == "echo-staging" ]]; then \
         just server={{ server }} _copy-db; \
     else \
         just _print-servers; exit 1; \
@@ -540,6 +694,121 @@ copy-db-to-target:
     ssh -t {{ target }} "sudo -u postgres pg_restore -d {{ pgdb }} /var/tmp/wd-{{ dt1 }}.pgrestore && sudo rm /var/tmp/wd-{{ dt1 }}.pgrestore"
     rm /var/tmp/wd-{{ dt1 }}.pgrestore.gz | echo "ok"
 
+# restore postgres via pgBackRest: runs on `--server`; `--backup-name` selects which host's backups will be restored (defaults to `--server`)
+[arg('backup_name', long='backup-name')]
+[arg('server', long='server')]
+restore-pgbackrest server backup_name="":
+    #!/bin/bash
+    set -euxo pipefail
+    if [[ "{{ server }}" == "" ]]; then
+        just _print-servers; exit 1;
+    fi
+    TARGET="{{ server }}"
+    BACKUP_NAME="{{ backup_name }}"
+    if [[ -z "${BACKUP_NAME}" ]]; then
+      BACKUP_NAME="${TARGET}"
+    fi
+    ssh "$TARGET" 'sudo echo-install-utils install-pgbackrest'
+    ssh "$TARGET" "sudo SERVER_KEY='${BACKUP_NAME}' bash -s" <<'REMOTE'
+        set -euo pipefail
+
+        conf_candidates=(
+          "/etc/pgbackrest/conf.d/pgbackrest-${SERVER_KEY}.conf"
+          "/etc/pgbackrest/conf.d/pgbackrest-wd-${SERVER_KEY}.conf"
+        )
+        CONF_FILE=""
+        for c in "${conf_candidates[@]}"; do
+          if [[ -f "${c}" ]]; then
+            CONF_FILE="${c}"
+            break
+          fi
+        done
+        if [[ -z "${CONF_FILE}" ]]; then
+          echo "" >&2
+          echo "############################################################" >&2
+          echo "# Missing pgBackRest config on target" >&2
+          echo "# tried:" >&2
+          printf '# - %s\n' "${conf_candidates[@]}" >&2
+          echo "# server: ${SERVER_KEY} (config key)" >&2
+          echo "# action: run: just setup-pgbackrest --server $(hostname) --backup-name ${SERVER_KEY}" >&2
+          echo "############################################################" >&2
+          echo "" >&2
+          exit 1
+        fi
+
+        STANZA="$(
+          awk '
+            {
+              line=$0
+              sub(/^[[:space:]]+/, "", line)
+              sub(/[[:space:]]+$/, "", line)
+              if (line ~ /^\[/ && line ~ /\]$/) {
+                s = substr(line, 2, length(line) - 2)
+                if (s !~ /^global(:|$)/) { print s; exit }
+              }
+            }
+          ' "${CONF_FILE}" || true
+        )"
+        if [[ -z "${STANZA}" ]]; then
+          echo "failed to detect stanza from ${CONF_FILE}" >&2
+          exit 1
+        fi
+        echo "stanza=${STANZA}"
+
+        CONF=/etc/pgbackrest/pgbackrest.conf
+        if [[ ! -f "${CONF}" ]]; then
+          echo "missing ${CONF} on target; run setup-pgbackrest first" >&2
+          exit 1
+        fi
+
+        set +e
+        sudo pg_ctlcluster 14 main stop
+        RC="$?"
+        set -e
+        # `pg_ctlcluster stop` exits with code 2 when the cluster is already stopped.
+        if [[ "${RC}" -ne 0 && "${RC}" -ne 2 ]]; then
+          exit "${RC}"
+        fi
+        sudo -u postgres pgbackrest --config="${CONF}" --config-include-path=/etc/pgbackrest/conf.d --stanza="${STANZA}" --delta --log-level-console=info restore
+
+        # Ensure Postgres settings are >= the values stored in the restored pg_control.
+        # Otherwise startup may fail with "recovery aborted because of insufficient parameter settings".
+        if [[ -x /usr/lib/postgresql/14/bin/pg_controldata ]]; then
+          ctl="$(
+            cd / >/dev/null 2>&1 || true
+            sudo -u postgres -H /usr/lib/postgresql/14/bin/pg_controldata /var/lib/postgresql/14/main 2>/dev/null || true
+          )"
+          if [[ -n "${ctl}" ]]; then
+            req_max_connections="$(printf '%s\n' "${ctl}" | sed -nE 's/^max_connections setting:[[:space:]]*([0-9]+).*/\1/p' | head -n 1 || true)"
+            req_max_worker_processes="$(printf '%s\n' "${ctl}" | sed -nE 's/^max_worker_processes setting:[[:space:]]*([0-9]+).*/\1/p' | head -n 1 || true)"
+            req_max_wal_senders="$(printf '%s\n' "${ctl}" | sed -nE 's/^max_wal_senders setting:[[:space:]]*([0-9]+).*/\1/p' | head -n 1 || true)"
+            req_max_prepared_xacts="$(printf '%s\n' "${ctl}" | sed -nE 's/^max_prepared_xacts setting:[[:space:]]*([0-9]+).*/\1/p' | head -n 1 || true)"
+            req_max_locks_per_xact="$(printf '%s\n' "${ctl}" | sed -nE 's/^max_locks_per_xact setting:[[:space:]]*([0-9]+).*/\1/p' | head -n 1 || true)"
+
+            sudo install -d -m 0755 /etc/postgresql/14/main/conf.d
+            tmp="$(mktemp)"
+            cat > "${tmp}" <<EOF
+                # Managed by just restore-pgbackrest. Derived from pg_control of the restored cluster.
+                max_connections = ${req_max_connections:-100}
+                max_worker_processes = ${req_max_worker_processes:-8}
+                max_wal_senders = ${req_max_wal_senders:-10}
+                max_prepared_transactions = ${req_max_prepared_xacts:-0}
+                max_locks_per_transaction = ${req_max_locks_per_xact:-64}
+    EOF
+            sudo install -m 0644 -o root -g root "${tmp}" /etc/postgresql/14/main/conf.d/99-echo-restore-required.conf
+            rm -f "${tmp}"
+          fi
+        fi
+        set +e
+        sudo pg_ctlcluster 14 main start
+        RC="$?"
+        set -e
+        # `pg_ctlcluster start` exits with code 2 when the cluster is already running.
+        if [[ "${RC}" -ne 0 && "${RC}" -ne 2 ]]; then
+          exit "${RC}"
+        fi
+    REMOTE
+
 copy-db-local:
     #!/bin/bash
     set -euxo pipefail
@@ -548,11 +817,9 @@ copy-db-local:
     fi
     echo 'this command requires sudo access'
     sudo ls
-    ssh -t {{ server }} '(cd ~/Downloads && PGPASSWORD="{{ pgpwd }}" pg_dump --user wd -Fc wd > wd-{{ dt1 }}.pgrestore && ls -lah wd-{{ dt1 }}.pgrestore)'
-    ssh -t {{ server }} 'mv ~/Downloads/wd-{{ dt1 }}.pgrestore > /var/tmp/wd-{{ dt1 }}.pgrestore'
-    scp {{ server }}:/var/tmp/wd-{{ dt1 }}.pgrestore ~/Downloads/
+    ssh -t {{ server }} '(cd /var/tmp && PGPASSWORD="{{ pgpwd }}" pg_dump --user wd -Fc wd > wd-{{ dt1 }}.pgrestore && ls -lah wd-{{ dt1 }}.pgrestore)'
+    scp {{ server }}:/var/tmp/wd-{{ dt1 }}.pgrestore /var/tmp/
     ssh -t {{ server }} '(rm ~/Downloads/wd-{{ dt1 }}.pgrestore) | echo "ok"'
-    mv ~/Downloads/wd-{{ dt1 }}.pgrestore.gz /var/tmp/
     just dt1={{ dt1 }} pgdb={{ pgdb }} restore-db-local
     sudo rm /var/tmp/wd-{{ dt1 }}.pgrestore
     ssh -t {{ server }} '(rm /var/tmp/wd-{{ dt1 }}.pgrestore) | echo "ok"'
@@ -568,13 +835,129 @@ setup-b2:
 # before running, make sure to read/setup "Backups" section in server.md
 
 # also run just setup-b2
-backup:
+[arg('server', long='server')]
+backup-legacy server:
     ssh -t {{ server }} '(cd ~/Downloads && PGPASSWORD="{{ pgpwd }}" pg_dump --user wd -Fc wd > wd-{{ server }}-{{ dt1 }}.pgrestore && ls -lah wd-{{ server }}-{{ dt1 }}.pgrestore)'
     ssh -t {{ server }} '(cd ~/Downloads && sudo gpg --encrypt --recipient 'Echo' wd-{{ server }}-{{ dt1 }}.pgrestore && ls -lah wd-{{ server }}-{{ dt1 }}.pgrestore.gpg)'
     ssh -t {{ server }} 'sudo chown $USER:$USER ~/Downloads/wd-{{ server }}-{{ dt1 }}.pgrestore.gpg'
     ssh -t {{ server }} '(cd ~/Downloads && B2_APPLICATION_KEY_ID={{ backup_key_id }} B2_APPLICATION_KEY={{ backup_key }} b2 upload-file echouabackup ./wd-{{ server }}-{{ dt1 }}.pgrestore.gpg backup/wd-{{ server }}-{{ dt1 }}.pgrestore.gpg)'
     ssh -t {{ server }} 'rm ~/Downloads/wd-{{ server }}-{{ dt1 }}.pgrestore.gpg'
     ssh -t {{ server }} 'rm ~/Downloads/wd-{{ server }}-{{ dt1 }}.pgrestore'
+
+[arg('server', long='server')]
+backup server:
+    #!/bin/bash
+    set -euxo pipefail
+    if [[ "{{ server }}" == "" ]]; then
+        just _print-servers; exit 1;
+    fi
+    set +x
+    echo ""
+    echo "############################################################"
+    echo "🗄️  pgBackRest backup: {{ server }}"
+    echo "############################################################"
+    echo ""
+    set -x
+    ssh {{ server }} 'sudo bash -s' <<'REMOTE'
+        set -euo pipefail
+
+        CONF="/etc/pgbackrest/pgbackrest.conf"
+        if [[ ! -f "${CONF}" ]]; then
+          echo "" >&2
+          echo "############################################################" >&2
+          echo "# Missing pgBackRest config on server" >&2
+          echo "# file: ${CONF}" >&2
+          echo "# action: run: just setup-pgbackrest --server {{ server }}" >&2
+          echo "############################################################" >&2
+          echo "" >&2
+          exit 1
+        fi
+
+        shopt -s nullglob
+        files=(/etc/pgbackrest/conf.d/pgbackrest-*.conf)
+        if [[ "${#files[@]}" -eq 0 ]]; then
+          echo "" >&2
+          echo "############################################################" >&2
+          echo "# Missing pgBackRest stanza config on server" >&2
+          echo "# dir: /etc/pgbackrest/conf.d" >&2
+          echo "# action: run: just setup-pgbackrest --server {{ server }}" >&2
+          echo "############################################################" >&2
+          echo "" >&2
+          exit 1
+        fi
+        if [[ "${#files[@]}" -ne 1 ]]; then
+          echo "" >&2
+          echo "############################################################" >&2
+          echo "# Multiple pgBackRest stanza configs found on server" >&2
+          echo "# dir: /etc/pgbackrest/conf.d" >&2
+          echo "# action: specify stanza explicitly on the server, then re-run" >&2
+          echo "############################################################" >&2
+          ls -lah /etc/pgbackrest/conf.d >&2 || true
+          echo "" >&2
+          exit 1
+        fi
+        CONF_FILE="${files[0]}"
+
+        STANZA="$(
+          sed -nE 's/^[[:space:]]*\[([^]]+)\][[:space:]]*$/\1/p' "${CONF_FILE}" \
+            | grep -vE '^global(:|$)' \
+            | head -n 1 || true
+        )"
+        if [[ -z "${STANZA}" ]]; then
+          echo "failed to detect stanza from ${CONF_FILE}" >&2
+          exit 1
+        fi
+        echo "stanza=${STANZA}"
+
+        sudo -u postgres pgbackrest --config="${CONF}" --config-include-path=/etc/pgbackrest/conf.d --stanza="${STANZA}" --log-level-console=info backup
+    REMOTE
+
+[arg('servers', long='servers')]
+backup-many _servers_pos="" servers="":
+    #!/bin/bash
+    set -euo pipefail
+    if [[ "{{ _servers_pos }}" != "" ]]; then
+      echo "positional servers are not allowed; use: just backup-many --servers=\"echo-staging echo-kherson2 ...\"" >&2
+      exit 1
+    fi
+    if [[ "{{ servers }}" == "" ]]; then
+      echo "missing --servers. usage: just backup-many --servers=\"echo-staging echo-kherson2 ...\"" >&2
+      exit 1
+    fi
+
+    if ! command -v echo-install-utils >/dev/null 2>&1; then
+      echo "missing echo-install-utils in PATH (install it or deploy it first)" >&2
+      exit 1
+    fi
+
+    echo-install-utils run-many \
+      --values "{{ servers }}" \
+      --cwd "{{ justfile_directory() }}" \
+      -- just backup --server={}
+
+[arg('servers', long='servers')]
+deploy-many _servers_pos="" servers="":
+    #!/bin/bash
+    set -euo pipefail
+    if [[ "{{ _servers_pos }}" != "" ]]; then
+      echo "positional servers are not allowed; use: just deploy-many --servers=\"echo-staging echo-kherson2 ...\"" >&2
+      exit 1
+    fi
+    if [[ "{{ servers }}" == "" ]]; then
+      echo "missing --servers. usage: just deploy-many --servers=\"echo-staging echo-kherson2 ...\"" >&2
+      exit 1
+    fi
+
+    if ! command -v echo-install-utils >/dev/null 2>&1; then
+      echo "missing echo-install-utils in PATH (install it or deploy it first)" >&2
+      exit 1
+    fi
+
+    echo "Each server deploy waits up to 120s for wdintel-rs-bgworker.service to stop before apt install."
+    echo-install-utils run-many \
+      --values "{{ servers }}" \
+      --cwd "{{ justfile_directory() }}" \
+      -- just deploy --server={}
 
 _echo-generic-deploy:
     #!/bin/bash
@@ -626,6 +1009,7 @@ setup-py:
     . deploy/utils.sh
     ensure_nonempty "server" "{{ server }}"
     ssh {{ server }} 'sudo python3 -m pip install -U -r /usr/share/wdintel-py/requirements.txt'
+    ssh {{ server }} 'if ! python3 -c "import spacy; spacy.load(\"ru_core_news_md\")" 2>/dev/null; then sudo python3 -m spacy download ru_core_news_md; else echo "Spacy model already downloaded, skipping"; fi'
 
 ai-mlflow-gc:
     #!/bin/bash
@@ -784,6 +1168,106 @@ oneoff-import-gdocs:
     # ssh echo-kherson '/usr/bin/wdintel-rs --mode=live oneoff-import-callsigns-gdoc'
     # ssh echo-donetsk '/usr/bin/wdintel-rs --mode=live oneoff-import-callsigns-gdoc'
     echo "DONE. Now redeploy all the sigint workers"
+
+[arg('server', long='server')]
+oneoff-2026-02-13-bgworker-00-pre-deploy server='':
+    #!/bin/bash
+    set -euo pipefail
+    . deploy/utils.sh
+    ensure_nonempty "server" "{{ server }}"
+    ssh {{ server }} 'for unit in wdintel-rs-bgworker.socket wdintel-py.socket echo-whatsapp.socket echo-vector.socket echo-signal-cli.socket; do
+      if systemctl list-unit-files --type=socket --no-legend | awk "{print \$1}" | grep -qx "$unit"; then
+        sudo systemctl disable --now "$unit" || true
+      else
+        echo "Unit \"$unit\" not found, skipping."
+      fi
+    done'
+    ssh {{ server }} 'sudo systemctl daemon-reload'
+    ssh {{ server }} 'systemctl --no-pager list-unit-files --type=socket | grep -E "wdintel-rs-bgworker\\.socket|wdintel-rs\\.socket|wdintel-py\\.socket|echo-whatsapp\\.socket|echo-vector\\.socket|echo-signal-cli\\.socket|echo-signal-bot@\\.socket|echo-whatsapp-bot@\\.socket" || true'
+
+[arg('server', long='server')]
+oneoff-2026-02-13-bgworker-01-post-deploy server='':
+    #!/bin/bash
+    set -euxo pipefail
+    . deploy/utils.sh
+    ensure_nonempty "server" "{{ server }}"
+    ssh {{ server }} 'set -x; sudo systemctl daemon-reload'
+    # WDINTEL-PY is managed separately; do not disable it during this rollout.
+    ssh {{ server }} '
+      set -euo pipefail
+      set -x
+      echo "Stopping existing wdintel-rs units before enabling new deployment units."
+      for unit in wdintel-rs.service wdintel-rs-bgworker.service; do
+        if systemctl list-units --all --no-legend --full "$unit" 2>/dev/null | grep -qx "$unit"; then
+          if systemctl is-active --quiet "$unit"; then
+            echo "Stopping active $unit ..."
+            sudo systemctl stop "$unit" || true
+            for i in $(seq 1 120); do
+              if ! systemctl is-active --quiet "$unit"; then
+                echo "$unit is stopped."
+                break
+              fi
+              if [ "$i" -eq 120 ]; then
+                echo "ERROR: $unit did not stop within 120 seconds." >&2
+                exit 1
+              fi
+              sleep 1
+            done
+          else
+            echo "$unit already stopped."
+          fi
+        else
+          echo "$unit not installed on this host."
+        fi
+      done
+    '
+    ssh {{ server }} 'set -x
+      echo "Checking port 8081 listeners before enabling units:"
+      if sudo ss -ltnp | grep -q "LISTEN .*:8081"; then
+        echo "Active LISTEN on :8081:"
+        sudo ss -ltnp | grep "LISTEN .*:8081" || true
+        if ! sudo ss -ltnp | grep "LISTEN .*:8081" | grep -q systemd; then
+          echo "ERROR: non-systemd listener on :8081 found. Release it before rerun."
+          if command -v lsof >/dev/null 2>&1; then
+            sudo lsof -iTCP:8081 -sTCP:LISTEN -n -P || true
+          fi
+          exit 1
+        fi
+      fi
+      if command -v lsof >/dev/null 2>&1; then
+        sudo lsof -iTCP:8081 -sTCP:LISTEN -n -P || true
+      fi
+    '
+    ssh {{ server }} '
+      if sudo ss -ltnp | grep -q "LISTEN .*:8081"; then
+        echo "Port 8081 is already bound; checking known conflicting units."
+        sudo ss -ltnp | grep "LISTEN .*:8081" || true
+
+        echo "Stopping conflict-prone socket units on this host."
+        for unit in wdintel-rs-bgworker.socket wdintel-py.socket echo-whatsapp.socket echo-vector.socket echo-signal-cli.socket; do
+          if systemctl list-unit-files --type=socket --no-legend | awk "{print \$1}" | grep -qx "$unit"; then
+            sudo systemctl disable --now "$unit" || true
+          fi
+        done
+
+        for unit in $(sudo systemctl list-units --all --no-legend --full "echo-signal-bot@*.service" "echo-signal-bot@*.socket" "echo-whatsapp-bot@*.service" "echo-whatsapp-bot@*.socket" | cut -d " " -f1); do
+          echo "Stopping conflicting unit: $unit"
+          sudo systemctl disable --now "$unit" || true
+        done
+
+        if sudo ss -ltnp | grep -q "LISTEN .*:8081"; then
+          if ! sudo ss -ltnp | grep "LISTEN .*:8081" | grep -q "systemd"; then
+            echo "ERROR: 8081 is still in use by non-systemd process after cleanup."
+            sudo ss -ltnp | grep "LISTEN .*:8081" || true
+            exit 1
+          fi
+        fi
+      fi
+    '
+    ssh {{ server }} 'set -x; sudo systemctl enable --now wdintel-rs.socket'
+    ssh {{ server }} 'set -x; sudo systemctl enable --now wdintel-rs-bgworker'
+    ssh {{ server }} 'set -x; sudo systemctl disable --now wdintel-rs.service'
+    ssh {{ server }} 'set -x; systemctl --no-pager status wdintel-rs.socket wdintel-rs-bgworker.service --no-pager'
 
 # WARNING! ECHO-IM migrations are not applied here. To apply ECHO-IM migrations too, run `cargo run -p wdintel-rs -- --mode=debug migrate`
 #

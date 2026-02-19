@@ -168,6 +168,29 @@ pub enum NetworkDescriptionType {
     Serialize,
     Deserialize,
 )]
+#[sea_orm(
+    rs_type = "String",
+    db_type = "Enum",
+    enum_name = "network_invalidation_worker_status"
+)]
+pub enum NetworkInvalidationWorkerStatus {
+    #[sea_orm(string_value = "sleep")]
+    Sleep,
+    #[sea_orm(string_value = "triage")]
+    Triage,
+    #[sea_orm(string_value = "working")]
+    Working,
+}
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    EnumIter,
+    DeriveActiveEnum,
+    Serialize,
+    Deserialize,
+)]
 #[sea_orm(rs_type = "String", db_type = "Enum", enum_name = "settlement_kind")]
 pub enum SettlementKind {
     #[sea_orm(string_value = "City")]

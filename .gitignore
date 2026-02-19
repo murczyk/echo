@@ -9,6 +9,7 @@ wdintel
 **/__pycache__
 *.pyc
 .vscode
+deploy/config-local*.toml
 deploy/config-live*.toml
 deploy/client_secret_*
 deploy/config-backup.toml
@@ -23,3 +24,4 @@ deploy/vector/env-*
 deploy/vector/kibana/sink-hammer.yaml
 .cursor/
 .ai/
+.j

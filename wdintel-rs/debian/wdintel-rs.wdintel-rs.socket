@@ -1,0 +1,10 @@
+[Unit]
+Description=wdintel-rs socket
+
+[Socket]
+ListenStream=8081
+NoDelay=true
+Backlog=4096
+
+[Install]
+WantedBy=sockets.target

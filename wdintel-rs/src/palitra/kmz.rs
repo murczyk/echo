@@ -172,20 +172,35 @@ fn m_add_coordinates(
     coordinates: Option<String>,
 ) {
     if let Some(c) = coordinates {
-        match Coords::from_csv(&c) {
-            Ok(coords) => {
-                let point = PalitraPoint { coords, label };
-                values.push(point);
+        match Coords::list_from_kml_coordinates(&c) {
+            Ok(coords_list) => {
+                for coords in coords_list {
+                    let point = PalitraPoint {
+                        coords,
+                        label: label.clone(),
+                    };
+                    values.push(point);
+                }
             }
-            Err(e) => {
-                error!("Failed to parse coordinates {c}: {e:?}");
-            }
+            Err(e) => error!("Failed to parse coordinates {c}: {e:?}"),
         }
     }
 }
 
-/// Extracts colors from KML document and counts their usage
-/// Returns top 3 most frequent colors with their counts
+#[derive(Default)]
+struct ColorAggregate {
+    count: i32,
+    parent_folder_counts: HashMap<String, i32>,
+}
+
+#[derive(Default)]
+struct StyleIndexes {
+    styles: HashMap<String, Style>,
+    style_map_refs: HashMap<String, String>,
+}
+
+/// Extracts colors from KML placemarks and counts items per color.
+/// Also suggests suffix by taking the dominant parent folder for each color.
 pub async fn extract_top_colors_from_kmz(
     kmz_path: &Path,
 ) -> anyhow::Result<Vec<KmzColorInfo>> {
@@ -207,17 +222,18 @@ pub async fn extract_top_colors_from_kmz(
     .c(h!())?
     .c(h!())?;
 
-    let mut color_counts: HashMap<String, i32> = HashMap::new();
+    let mut color_counts: HashMap<String, ColorAggregate> = HashMap::new();
 
     for entry in walkdir.filter_map(|e| e.ok()) {
         if entry.file_type().is_file() {
             let path = entry.path();
             if path.extension().and_then(|ext| ext.to_str()) == Some("kml") {
-                match extract_colors_from_kml(path).await {
-                    Ok(colors) => {
-                        for color in colors {
-                            *color_counts.entry(color).or_insert(0) += 1;
-                        }
+                match extract_color_aggregates_from_kml(path).await {
+                    Ok(kml_color_counts) => {
+                        merge_color_aggregates(
+                            &mut color_counts,
+                            kml_color_counts,
+                        );
                     }
                     Err(e) => {
                         error!("Failed to extract colors from {path:?}: {e:?}");
@@ -228,143 +244,373 @@ pub async fn extract_top_colors_from_kmz(
         }
     }
 
-    // Sort by count descending and take top 3
-    let mut color_vec: Vec<(String, i32)> = color_counts.into_iter().collect();
-    color_vec.sort_by(|a, b| b.1.cmp(&a.1));
-
-    let top_colors = color_vec
-        .into_iter()
-        .take(3)
-        .map(|(color_hex, count)| KmzColorInfo { color_hex, count })
-        .collect();
-
-    Ok(top_colors)
+    Ok(extract_top_colors_from_aggregates(color_counts))
 }
 
-/// Extracts top 3 colors from a single KML file
+/// Extracts top configured colors from a single KML file.
 pub async fn extract_top_colors_from_kml(
     kml_path: &Path,
 ) -> anyhow::Result<Vec<KmzColorInfo>> {
-    let mut color_counts: HashMap<String, i32> = HashMap::new();
-
-    match extract_colors_from_kml(kml_path).await {
-        Ok(colors) => {
-            for color in colors {
-                *color_counts.entry(color).or_insert(0) += 1;
-            }
-        }
-        Err(e) => {
-            error!("Failed to extract colors from {kml_path:?}: {e:?}");
-            return Err(e);
-        }
-    }
-
-    // Sort by count descending and take top 3
-    let mut color_vec: Vec<(String, i32)> = color_counts.into_iter().collect();
-    color_vec.sort_by(|a, b| b.1.cmp(&a.1));
-
-    let top_colors = color_vec
-        .into_iter()
-        .take(3)
-        .map(|(color_hex, count)| KmzColorInfo { color_hex, count })
-        .collect();
-
-    Ok(top_colors)
+    let color_counts = extract_color_aggregates_from_kml(kml_path).await?;
+    Ok(extract_top_colors_from_aggregates(color_counts))
 }
 
-/// Extracts colors from a single KML file
-async fn extract_colors_from_kml(path: &Path) -> anyhow::Result<Vec<String>> {
+async fn extract_color_aggregates_from_kml(
+    path: &Path,
+) -> anyhow::Result<HashMap<String, ColorAggregate>> {
     let parent = path.parent().c(h!())?;
     let doc = crate::kml::read_and_fix_kml(false, path, parent)
         .await
         .c(h!())?;
 
-    let mut colors = Vec::new();
-    let mut queue = doc.nodes;
+    let mut style_indexes = StyleIndexes::default();
+    collect_style_indexes_from_nodes(&doc.nodes, &mut style_indexes);
 
-    loop {
-        let Some(node) = queue.pop() else {
-            break;
-        };
+    let mut color_counts = HashMap::new();
+    collect_color_data_from_nodes(
+        &doc.nodes,
+        None,
+        &style_indexes,
+        &mut color_counts,
+    );
+    Ok(color_counts)
+}
 
+fn collect_style_indexes_from_nodes(
+    nodes: &[Node],
+    style_indexes: &mut StyleIndexes,
+) {
+    for node in nodes {
         match node {
-            Node::Folder(n) => {
-                // Process styles from Folder
-                for style in &n.styles {
-                    extract_color_from_style(style, &mut colors);
-                }
-                // Process child nodes
-                for n in n.nodes {
-                    queue.push(n);
-                }
+            Node::Folder(folder) => {
+                collect_styles_from_slice(&folder.styles, style_indexes);
+                collect_style_maps_from_slice(
+                    &folder.style_maps,
+                    style_indexes,
+                );
+                collect_style_indexes_from_nodes(&folder.nodes, style_indexes);
             }
-            Node::Document(n) => {
-                // Process styles from Document
-                for style in &n.styles {
-                    extract_color_from_style(style, &mut colors);
-                }
-                // Process cascading styles from Document
-                for cs in &n.cascading_styles {
-                    if let Some(style) = &cs.style {
-                        extract_color_from_style(style, &mut colors);
+            Node::Document(document) => {
+                collect_styles_from_slice(&document.styles, style_indexes);
+                for cascading_style in &document.cascading_styles {
+                    if let Some(style) = &cascading_style.style {
+                        collect_style(style, style_indexes);
                     }
                 }
-                // Process child nodes
-                for n in n.nodes {
-                    queue.push(n);
+                collect_style_maps_from_slice(
+                    &document.style_maps,
+                    style_indexes,
+                );
+                collect_style_indexes_from_nodes(
+                    &document.nodes,
+                    style_indexes,
+                );
+            }
+            Node::Style(style) => {
+                collect_style(style, style_indexes);
+            }
+            Node::StyleMap(style_map) => {
+                collect_style_map(style_map, style_indexes);
+            }
+            Node::CascadingStyle(cascading_style) => {
+                if let Some(style) = &cascading_style.style {
+                    collect_style(style, style_indexes);
                 }
             }
-            Node::Placemark(p) => {
-                // Extract color from inline style
-                if let Some(style) = p.style {
-                    extract_color_from_style(&style, &mut colors);
-                }
+            _ => {}
+        }
+    }
+}
+
+fn collect_styles_from_slice(
+    styles: &[Style],
+    style_indexes: &mut StyleIndexes,
+) {
+    for style in styles {
+        collect_style(style, style_indexes);
+    }
+}
+
+fn collect_style(style: &Style, style_indexes: &mut StyleIndexes) {
+    if let Some(style_id) = &style.id {
+        style_indexes.styles.insert(style_id.clone(), style.clone());
+    }
+}
+
+fn collect_style_maps_from_slice(
+    style_maps: &[StyleMap],
+    style_indexes: &mut StyleIndexes,
+) {
+    for style_map in style_maps {
+        collect_style_map(style_map, style_indexes);
+    }
+}
+
+fn collect_style_map(style_map: &StyleMap, style_indexes: &mut StyleIndexes) {
+    let Some(style_map_id) = &style_map.id else {
+        return;
+    };
+
+    let m_style_ref = style_map
+        .pairs
+        .iter()
+        .find(|pair| pair.key.body == "normal")
+        .or_else(|| style_map.pairs.first())
+        .map(|pair| normalize_style_ref(&pair.style_url.body))
+        .filter(|style_ref| !style_ref.is_empty());
+
+    if let Some(style_ref) = m_style_ref {
+        style_indexes
+            .style_map_refs
+            .insert(style_map_id.clone(), style_ref);
+    }
+}
+
+fn normalize_style_ref(style_ref: &str) -> String {
+    style_ref.trim().trim_start_matches('#').to_string()
+}
+
+fn collect_color_data_from_nodes(
+    nodes: &[Node],
+    parent_folder_name: Option<String>,
+    style_indexes: &StyleIndexes,
+    color_counts: &mut HashMap<String, ColorAggregate>,
+) {
+    for node in nodes {
+        match node {
+            Node::Folder(folder) => {
+                let next_parent_folder_name = folder
+                    .name
+                    .as_ref()
+                    .map(|name| name.body.trim().to_string())
+                    .filter(|name| !name.is_empty())
+                    .or_else(|| parent_folder_name.clone());
+
+                collect_color_data_from_nodes(
+                    &folder.nodes,
+                    next_parent_folder_name,
+                    style_indexes,
+                    color_counts,
+                );
             }
-            Node::Style(s) => {
-                extract_color_from_style(&s, &mut colors);
+            Node::Document(document) => {
+                collect_color_data_from_nodes(
+                    &document.nodes,
+                    parent_folder_name.clone(),
+                    style_indexes,
+                    color_counts,
+                );
             }
-            Node::StyleMap(_) => {
-                // StyleMaps not yet processed for colors
+            Node::Placemark(placemark) => {
+                collect_color_from_placemark(
+                    placemark,
+                    parent_folder_name.as_ref(),
+                    style_indexes,
+                    color_counts,
+                );
             }
-            Node::CascadingStyle(cs) => {
-                if let Some(style) = cs.style {
-                    extract_color_from_style(&style, &mut colors);
-                }
-            }
-            _ => continue,
+            _ => {}
+        }
+    }
+}
+
+fn collect_color_from_placemark(
+    placemark: &Placemark,
+    parent_folder_name: Option<&String>,
+    style_indexes: &StyleIndexes,
+    color_counts: &mut HashMap<String, ColorAggregate>,
+) {
+    if !placemark_has_supported_geometry(placemark) {
+        return;
+    }
+
+    let m_color_hex = extract_color_from_placemark(placemark, style_indexes);
+    let Some(color_hex) = m_color_hex else {
+        return;
+    };
+
+    let color_aggregate = color_counts.entry(color_hex).or_default();
+    color_aggregate.count += 1;
+
+    if let Some(parent_folder_name) = parent_folder_name {
+        *color_aggregate
+            .parent_folder_counts
+            .entry(parent_folder_name.clone())
+            .or_insert(0) += 1;
+    }
+}
+
+fn placemark_has_supported_geometry(placemark: &Placemark) -> bool {
+    let has_point_coordinates = placemark
+        .point
+        .as_ref()
+        .and_then(|point| point.coordinates.as_ref())
+        .is_some();
+    if has_point_coordinates {
+        return true;
+    }
+
+    let has_polygon_coordinates = placemark
+        .polygon
+        .as_ref()
+        .and_then(|polygon| polygon.outer_boundary_is.as_ref())
+        .and_then(|outer_boundary| outer_boundary.linear_ring.as_ref())
+        .and_then(|linear_ring| linear_ring.coordinates.as_ref())
+        .and_then(|coordinates| coordinates.body.as_ref())
+        .is_some();
+    if has_polygon_coordinates {
+        return true;
+    }
+
+    let has_line_coordinates = placemark
+        .line_string
+        .as_ref()
+        .and_then(|line_string| line_string.coordinates.as_ref())
+        .and_then(|coordinates| coordinates.body.as_ref())
+        .is_some();
+    if has_line_coordinates {
+        return true;
+    }
+
+    placemark
+        .multi_geometry
+        .as_ref()
+        .map(|multi_geometry| {
+            multi_geometry.line_strings.iter().any(|line_string| {
+                line_string
+                    .coordinates
+                    .as_ref()
+                    .and_then(|coordinates| coordinates.body.as_ref())
+                    .is_some()
+            })
+        })
+        .unwrap_or(false)
+}
+
+fn extract_color_from_placemark(
+    placemark: &Placemark,
+    style_indexes: &StyleIndexes,
+) -> Option<String> {
+    if let Some(inline_style) = &placemark.style {
+        if let Some(color_hex) =
+            extract_preferred_color_from_style(inline_style)
+        {
+            return Some(color_hex);
         }
     }
 
-    Ok(colors)
+    placemark.style_url.as_ref().and_then(|style_url| {
+        resolve_color_from_style_url(style_url, style_indexes)
+    })
 }
 
-fn extract_color_from_style(style: &Style, colors: &mut Vec<String>) {
-    // Extract from IconStyle
+fn extract_preferred_color_from_style(style: &Style) -> Option<String> {
     if let Some(icon_style) = &style.icon_style {
         if let Some(color) = &icon_style.color {
             if let Ok(hex_color) = kml_color_to_hex(&color.body) {
-                colors.push(hex_color);
+                return Some(hex_color);
             }
         }
     }
 
-    // Extract from LineStyle
     if let Some(line_style) = &style.line_style {
         if let Some(color) = &line_style.color {
             if let Ok(hex_color) = kml_color_to_hex(&color.body) {
-                colors.push(hex_color);
+                return Some(hex_color);
             }
         }
     }
 
-    // Extract from PolyStyle
     if let Some(poly_style) = &style.poly_style {
         if let Some(color) = &poly_style.color {
             if let Ok(hex_color) = kml_color_to_hex(&color.body) {
-                colors.push(hex_color);
+                return Some(hex_color);
             }
         }
     }
+
+    None
+}
+
+fn resolve_color_from_style_url(
+    style_url: &StyleUrl,
+    style_indexes: &StyleIndexes,
+) -> Option<String> {
+    let mut style_ref = normalize_style_ref(&style_url.body);
+    if style_ref.is_empty() {
+        return None;
+    }
+
+    for _ in 0..4 {
+        if let Some(style) = style_indexes.styles.get(&style_ref) {
+            return extract_preferred_color_from_style(style);
+        }
+
+        let m_mapped_style_ref = style_indexes
+            .style_map_refs
+            .get(&style_ref)
+            .map(|mapped| normalize_style_ref(mapped));
+        let Some(mapped_style_ref) = m_mapped_style_ref else {
+            break;
+        };
+        if mapped_style_ref.is_empty() || mapped_style_ref == style_ref {
+            break;
+        }
+        style_ref = mapped_style_ref;
+    }
+
+    None
+}
+
+fn merge_color_aggregates(
+    color_counts: &mut HashMap<String, ColorAggregate>,
+    kml_color_counts: HashMap<String, ColorAggregate>,
+) {
+    for (color_hex, kml_color_aggregate) in kml_color_counts {
+        let color_aggregate = color_counts.entry(color_hex).or_default();
+        color_aggregate.count += kml_color_aggregate.count;
+
+        for (parent_folder_name, count) in
+            kml_color_aggregate.parent_folder_counts
+        {
+            *color_aggregate
+                .parent_folder_counts
+                .entry(parent_folder_name)
+                .or_insert(0) += count;
+        }
+    }
+}
+
+fn extract_top_colors_from_aggregates(
+    color_counts: HashMap<String, ColorAggregate>,
+) -> Vec<KmzColorInfo> {
+    let mut color_vec: Vec<(String, ColorAggregate)> =
+        color_counts.into_iter().collect();
+    color_vec
+        .sort_by(|a, b| b.1.count.cmp(&a.1.count).then_with(|| a.0.cmp(&b.0)));
+
+    color_vec
+        .into_iter()
+        .take(crate::config::PALITRA_KMZ_TOP_COLORS_LIMIT)
+        .map(|(color_hex, color_aggregate)| KmzColorInfo {
+            color_hex,
+            count: color_aggregate.count,
+            suggested_suffix: pick_suggested_suffix(
+                &color_aggregate.parent_folder_counts,
+            ),
+        })
+        .collect()
+}
+
+fn pick_suggested_suffix(
+    parent_folder_counts: &HashMap<String, i32>,
+) -> Option<String> {
+    let mut folder_vec: Vec<(&String, &i32)> =
+        parent_folder_counts.iter().collect();
+    folder_vec.sort_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
+    folder_vec
+        .first()
+        .map(|(folder_name, _)| (*folder_name).clone())
 }
 
 #[cfg(test)]

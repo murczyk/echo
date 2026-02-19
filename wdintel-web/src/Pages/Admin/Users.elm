@@ -1113,14 +1113,6 @@ mainContent shared model =
     [ div [ class "" ]
         [ h1 [ class "text-2xl font-bold mb-6" ] [ text "Користувачі" ]
         , let
-            featureDelta =
-                case shared.serverInfo of
-                    Just info ->
-                        info.featureDelta
-
-                    Nothing ->
-                        False
-
             addLoginPanel : Model -> Html Msg
             addLoginPanel addState =
                 let
@@ -1138,15 +1130,11 @@ mainContent shared model =
                             |> Maybe.map (\( id, item ) -> Select.basicMenuItem { item = id, label = item.name })
                 in
                 div [ class "border mb-4 p-2", style "background-color" "var(--bs-tertiary-bg)" ]
-                    [ if featureDelta then
-                        div [ class "mr-2" ]
-                            [ Checkbox.new { isChecked = addState.addDeltaLogin, onToggle = \_ -> ToggleAddDeltaLogin }
-                                |> Checkbox.withContent [ span [] [ text "Delta логін" ] ]
-                                |> Checkbox.view
-                            ]
-
-                      else
-                        text ""
+                    [ div [ class "mr-2" ]
+                        [ Checkbox.new { isChecked = addState.addDeltaLogin, onToggle = \_ -> ToggleAddDeltaLogin }
+                            |> Checkbox.withContent [ span [] [ text "Delta логін" ] ]
+                            |> Checkbox.view
+                        ]
                     , div [ class "flex justify-start items-start gap-[1%]" ]
                         [ div [ class "flex-1" ]
                             [ input
@@ -1544,14 +1532,6 @@ mainContent shared model =
 editLoginSidebarContent : Shared.Model -> Model -> String -> LoginEdit -> List (Html Msg)
 editLoginSidebarContent shared model loginId editState =
     let
-        featureDelta =
-            case shared.serverInfo of
-                Just info ->
-                    info.featureDelta
-
-                Nothing ->
-                    False
-
         organismSelectedItem =
             editState.inpOrganism.selectedItem
                 |> Maybe.andThen (\itemId -> ListX.find (\x -> x.id == itemId) model.organisms)
@@ -1569,21 +1549,17 @@ editLoginSidebarContent shared model loginId editState =
             ]
         , div [ class "flex-1 overflow-y-auto p-6" ]
             [ div [ class "space-y-6" ]
-                [ if featureDelta then
-                    div [ class "space-y-2" ]
-                        [ label [ class "text-sm font-medium text-foreground" ] [ text "Дельта логін" ]
-                        , input
-                            [ class "w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
-                            , type_ "text"
-                            , placeholder "Дельта логін"
-                            , value (Maybe.withDefault "" editState.deltaLogin)
-                            , onInput SetEditDeltaLogin
-                            ]
-                            []
+                [ div [ class "space-y-2" ]
+                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Дельта логін" ]
+                    , input
+                        [ class "w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
+                        , type_ "text"
+                        , placeholder "Дельта логін"
+                        , value (Maybe.withDefault "" editState.deltaLogin)
+                        , onInput SetEditDeltaLogin
                         ]
-
-                  else
-                    text ""
+                        []
+                    ]
                 , div [ class "space-y-2" ]
                     [ label [ class "text-sm font-medium text-foreground" ] [ text "Пароль" ]
                     , div [ class "flex items-center gap-2" ]
@@ -1681,14 +1657,6 @@ editLoginSidebarContent shared model loginId editState =
 usersTableConfig : Shared.Model -> Model -> Table.Config B.Login Msg
 usersTableConfig shared model =
     let
-        featureDelta =
-            case shared.serverInfo of
-                Just info ->
-                    info.featureDelta
-
-                Nothing ->
-                    False
-
         defaultCustomizations =
             Table.defaultCustomizations
 
@@ -1827,17 +1795,13 @@ usersTableConfig shared model =
                 |> Table.withColumnWidth "5%"
             ]
 
-        -- Add delta login column if feature is enabled
         deltaColumn =
-            if featureDelta then
-                [ Table.stringColumn "Дельта логін" (\login -> Maybe.withDefault "" login.deltaLogin) |> Table.withColumnWidth "10%" ]
-
-            else
-                []
+            Table.stringColumn "Дельта логін" (\login -> Maybe.withDefault "" login.deltaLogin)
+                |> Table.withColumnWidth "10%"
     in
     Table.customConfig
         { toId = .login
         , toMsg = SetTableState
-        , columns = deltaColumn ++ baseColumns
+        , columns = deltaColumn :: baseColumns
         , customizations = customizations
         }

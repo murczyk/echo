@@ -13,15 +13,14 @@ import Html.Attributes exposing (..)
 import Html.Events exposing (..)
 import Html.Styled
 import Layouts
-import Maybe.Extra as MaybeX
 import Page exposing (Page)
 import Route exposing (Route)
+import Route.Path
 import Select
 import Shared
 import Shared.Model exposing (isDarkMode)
 import Utils.Api.ErrorHandling
 import Utils.Select
-import Utils.Views
 import View exposing (View)
 
 
@@ -42,11 +41,13 @@ init _ =
       , saveInProgress = False
       , zoneSelectState = Select.initState (Select.selectIdentifier "zone-select")
       }
-    , E.sendCmd <|
-        Cmd.batch
-            [ Api.sigint_zones_list GotZoneList
-            , Api.api_user GotUser
-            ]
+    , E.replaceRoutePath Route.Path.SettingsNeo
+    -- Old settings page is kept intentionally, but direct /settings access is disabled.
+    -- , E.sendCmd <|
+    --     Cmd.batch
+    --         [ Api.sigint_zones_list GotZoneList
+    --         , Api.api_user GotUser
+    --         ]
     )
 
 
@@ -61,7 +62,7 @@ type Msg
 
 
 page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
-page user shared req =
+page user shared _ =
     Page.new
         { init = init
         , update = update
@@ -72,7 +73,7 @@ page user shared req =
 
 
 toLayout : Auth.User -> Model -> Layouts.Layout Msg
-toLayout user model =
+toLayout user _ =
     Layouts.Navbar
         { user = user
         , activeName = "settings"
@@ -80,7 +81,7 @@ toLayout user model =
 
 
 subscriptions : Model -> Sub Msg
-subscriptions model =
+subscriptions _ =
     Sub.none
 
 
@@ -164,7 +165,7 @@ view shared user model =
         selectedZoneItem =
             Maybe.andThen
                 (\zoneId ->
-                    List.head (List.filter (\( _, zone ) -> zoneId == zoneId) model.zones)
+                    List.head (List.filter (\( _, _ ) -> zoneId == zoneId) model.zones)
                         |> Maybe.map (\( _, zone ) -> Select.basicMenuItem { item = zoneId, label = zone.name })
                 )
                 model.zoneId
@@ -173,7 +174,7 @@ view shared user model =
             Maybe.map .version shared.serverInfo
                 |> Maybe.withDefault "невідома версія"
     in
-    { title = "налаштування"
+    { title = "налаштування (старі)"
     , body =
         [ div [ class "w-4/5 mx-auto px-4 pt-4" ]
             [ div [ class "flex" ]
@@ -182,7 +183,7 @@ view shared user model =
                       div [ class "mb-4" ]
                         [ div [ class "flex items-center justify-between mb-4" ]
                             [ h1 [ class "py-4 text-[var(--text-color)]" ]
-                                [ text "налаштування" ]
+                                [ text "налаштування (старі)" ]
                             , div [ class "flex items-center gap-4 text-sm" ]
                                 [ a
                                     [ href "https://signal.me/#p/+380502711438"

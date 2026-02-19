@@ -34,7 +34,8 @@ sudo tailscale up
 <details>
 
 ```
-sudo apt-get install -y nginx python3-pip gdal-data libopencv-dev libproj22 libprotobuf23 poppler-data proj-bin proj-data redis-server libxkbcommon-x11-0
+# sudo apt-get install -y nginx python3-pip gdal-data libopencv-dev libproj22 libprotobuf23 poppler-data proj-bin proj-data redis-server libxkbcommon-x11-0
+sudo apt-get install -y nginx python3-pip gdal-data redis-server sqlite3
 ```
 
 </details>
@@ -44,7 +45,8 @@ sudo apt-get install -y nginx python3-pip gdal-data libopencv-dev libproj22 libp
 <details>
 
 ```
-sudo apt-get install -y llvm libclang-dev clang poppler-utils ffmpeg libssl-dev pkgconf cmake libopencv-dev libproj-dev sqlite3
+# sudo apt-get install -y llvm libclang-dev clang poppler-utils ffmpeg libssl-dev pkgconf cmake libopencv-dev libproj-dev sqlite3
+sudo apt-get install -y llvm libclang-dev clang ffmpeg libssl-dev pkgconf cmake libopencv-dev libproj-dev sqlite3
 wget https://github.com/pdf2htmlEX/pdf2htmlEX/releases/download/v0.18.8.rc1/pdf2htmlEX-0.18.8.rc1-master-20200630-Ubuntu-focal-x86_64.deb
 sudo apt install ./pdf2htmlEX-0.18.8.rc1-master-20200630-Ubuntu-focal-x86_64.deb
 ```
@@ -76,16 +78,11 @@ sudo timedatectl set-timezone UTC
 
 <details>
 
-> use this tutorial in case postgres14 is not available: https://www.atlantic.net/dedicated-server-hosting/how-to-install-and-configure-postgres-14-on-ubuntu/
-
 ```
-sudo apt install -y postgresql-14 postgresql-14-postgis-3
-sudo -u postgres psql
-postgres=# create database wd;
-postgres=# CREATE USER wd WITH SUPERUSER PASSWORD 'fee_-_-_-FnoeKFBeebu87bf';
+sudo echo-install-utils setup-postgresql --db-name wd --db-user wd --password 'fee_-_-_-FnoeKFBeebu87bf' --install-pg-uuidv7 --install-pg-repack --install-postgis --setup-slowlog
 ```
 
-Edit `/etc/postgresql/14/main/pg_hba.conf` (`sudo nano`), change:
+`sudo nano /etc/postgresql/14/main/pg_hba.conf` change (if not already):
 
 ```
 local   all             all                                     peer
@@ -97,9 +94,6 @@ to
 local   all             all                                     md5
 ```
 
-- `sudo systemctl restart postgresql`
-- `sudo -u postgres psql wd`
-  - `create extension postgis;`
 - load (scp) `deploy/wd-2024-06-21-13-00-59.pgrestore` it into the
   server (command displayed at the end of gen-db-skeleton)
   - For context, it was generated via this:
@@ -145,36 +139,13 @@ just builder=echo-gpu server=<server> deploy
 just server=$server deploy-echo-ai
 ```
 
-## Signal
+## ECHO-IM
 
-- after deploy, scan QR code
-- To **link new device**:
+- TODO: install echo im binaries
 
-<details>
+## MILGEO-RS
 
-1. Run ssh tunnel like this:
-
-```
-ssh -nNT -L 8083:localhost:8083 {{server}}
-```
-2. Open http://localhost:8083/v1/qrcodelink?device_name=echo
-
-</details>
-
-## Whatsapp
-
-- if you indent to use WhatsApp transport, put its phone value in toml file. then:
-
-<details>
-
-```
-ssh <server>
-journalctl -u echo-whatsapp.service -f
-```
-
-- See QR code and scan to link new device.
-
-</details>
+- proj database (see justfile)
 
 ## Nginx
 
@@ -195,6 +166,25 @@ $ scp deploy/nginx/<server> <server>: && ssh <server> 'sudo mv <server> /etc/ngi
 ## Enable services
 
 Once also enable services in systemd: `sudo systemctl enable wdintel-rs echo-whatsapp echo-signal-cli`
+
+If you want socket activation (reduced downtime during quick restarts), enable the socket
+and disable the direct service autostart:
+
+```
+sudo systemctl enable --now wdintel-rs.socket
+sudo systemctl disable wdintel-rs
+```
+
+Background workers are split into a separate unit:
+
+```
+sudo systemctl enable --now wdintel-rs-bgworker
+```
+
+`wdintel-rs --mode=live server` starts with background workers by default.
+In `live` mode, the server process only runs `secret_worker` (vault secret loader) by default;
+full background workers are expected from `wdintel-rs-bgworker`.
+For local debug (`--mode=debug`), background workers are still enabled by default.
 
 ## SSL/Letsencrypt Tailscale
 
@@ -219,54 +209,17 @@ just builder=echo-gpu server=$server deploy-geo-screenshot
 
 echo-sergeant
 
-## Backups: Using GPG and encryption
+## Backups: pgBackRest
+
+Nightly DB backups are triggered by `/etc/cron.d/echo_cron` via
+`/usr/bin/wdintel-rs --mode=live backup` (which runs `pgbackrest backup`
+locally on the server as `postgres`).
 
 ### Setup
 
-- `just server=<server> setup-b2`
-- import
-
-```
-$ scp gpg-pub.asc {{server}}:
-$ ssh {{server}}
-[ubuntu@server]$ sudo su
-[root@server]$ gpg --import gpg-pub.asc
-[root@server]$ sudo mv gpg-pub.asc /etc/echo/
-[root@server]$ gpg --edit-key FA2ED97558147E30
-> trust
-> 5
-> y
-> quit
-[root@server]$ exit
-[ubuntu@server]$ exit
-$ just server={{server}} backup
-```
-
-### Additional info
-
-#### Encrypt
-
-```
-gpg --encrypt --recipient 'Echo' test.txt
-```
-
-#### Decrypt
-
-```
-gpg --output test.txt --decrypt test.txt.gpg
-```
-
-#### Info
-
-- see https://www.madboa.com/geek/gpg-quickstart/
-- see https://gist.github.com/angela-d/8b27670bac26e4bf7c431715fef5cc51
-
-```
-gpg --gen-key
-gpg --list-secret-keys --keyid-format LONG
-gpg --export -a FA2ED97558147E30 > gpg-pub.asc
-gpg --export-secret-keys -a FA2ED97558147E30 > gpg-sc.asc
-```
+1. Read `docs/POSTGRESQL.md` (pgBackRest section) for the config layout.
+2. Run: `just setup-pgbackrest --server <ssh-host> [--backup-name <backup-name>]`
+3. One-off manual backup: `just backup --server <server>`
 
 ## POST SETUP
 

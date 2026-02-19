@@ -383,6 +383,7 @@ pub struct SignalGroupReq {
 )]
 pub struct BatchSignalGroupReq {
     pub groups: Vec<SignalGroupReq>,
+    pub skip_group_stats: Option<bool>,
 }
 
 #[derive(
@@ -513,9 +514,20 @@ pub struct AnalysisStatsGroup {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub struct SenderFrequencyBreakdown {
+    pub freq: Option<String>,
+    pub post: Option<String>,
+    pub count: i64,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct AnalysisStatsSender {
     pub uuid: String,
     pub count: i64,
+    pub freq_breakdown: Vec<SenderFrequencyBreakdown>,
+    pub per_day: BTreeMap<String, i64>,
 }
 
 #[derive(

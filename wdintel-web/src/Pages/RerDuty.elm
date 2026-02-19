@@ -180,38 +180,38 @@ recalcDuplicates model =
         --     msgs
         go : ( Int, B.InboxMessage ) -> RecalcDuplicatesAcc -> RecalcDuplicatesAcc
         go ( id_, msg ) acc =
-            if msg.text == "" then
-                acc
+            let
+                mUid =
+                    msg.messageUid
+                        |> andThen
+                            (\uid ->
+                                if String.isEmpty uid then
+                                    Nothing
 
-            else
-                let
-                    form1 =
-                        msg.text
+                                else
+                                    Just uid
+                            )
+            in
+            case mUid of
+                Nothing ->
+                    acc
 
-                    form2 =
-                        String.dropRight 1 msg.text
+                Just uid ->
+                    let
+                        seenUid =
+                            Dict.get uid acc.seenMsgs
+                    in
+                    if isJust seenUid && (seenUid /= Just id_) then
+                        { acc
+                            | duplicates = acc.duplicates |> Set.insert id_
+                        }
 
-                    seenForm1 =
-                        Dict.get form1 acc.seenMsgs
-
-                    seenForm2 =
-                        Dict.get form2 acc.seenMsgs
-                in
-                if
-                    (isJust seenForm1 && (seenForm1 /= Just id_))
-                        || (isJust seenForm2 && (seenForm2 /= Just id_))
-                then
-                    { acc
-                        | duplicates = acc.duplicates |> Set.insert id_
-                    }
-
-                else
-                    { acc
-                        | seenMsgs =
-                            acc.seenMsgs
-                                |> Dict.insert form1 id_
-                                |> Dict.insert form2 id_
-                    }
+                    else
+                        { acc
+                            | seenMsgs =
+                                acc.seenMsgs
+                                    |> Dict.insert uid id_
+                        }
     in
     (List.foldl go
         { duplicates = Set.empty

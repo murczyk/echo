@@ -10,7 +10,7 @@ import Html.Extra as HtmlX exposing (viewIf, viewMaybe)
 import Html.Styled
 import Json.Decode as Decode
 import Json.Encode as Encode
-import List.Extra exposing (frequencies)
+import List.Extra as ListX exposing (frequencies)
 import Pages_.RerAnalysis.Constants exposing (..)
 import Pages_.RerAnalysis.Date
 import Pages_.RerAnalysis.Filters
@@ -327,22 +327,23 @@ view user model shared route =
                     False
 
         headerCountsPill data isReloading =
-            span
-                ([ class "mr-1 inline-block px-1.5 py-1 font-medium rounded-full border transition-colors duration-200"
-                 , style "font-size" ".5rem"
-                 , class "bg-[var(--color-bg-muted)] text-[var(--color-text)] border-[var(--color-border-muted)]"
-                 ]
-                    ++ (if isReloading then
-                            [ title "оновлюється…" ]
+            node "analysis-count-chip"
+                [ attribute "selected-count" (fromInt data.countSelected)
+                , attribute "overall-count" (fromInt data.countOverall)
+                , attribute "is-reloading"
+                    (if isReloading then
+                        "true"
 
-                        else
-                            []
-                       )
-                )
-                [ text (fromInt data.countSelected ++ " з " ++ fromInt data.countOverall) ]
+                     else
+                        "false"
+                    )
+                , attribute "role" "status"
+                , attribute "aria-live" "polite"
+                ]
+                []
 
         headerControls =
-            div [ class "flex items-center gap-2 ml-4" ]
+            div [ class "flex items-center ml-4", style "gap" "8px" ]
                 [ case model.counts of
                     Success data ->
                         headerCountsPill data False
@@ -352,10 +353,18 @@ view user model shared route =
 
                     _ ->
                         div [ class "mr-3 inline-block", style "min-width" "60px" ] []
-                , div [ class "flex items-center gap-1" ]
+                , div
+                    [ class "inline-flex items-stretch border border-border"
+                    , style "border-radius" "2px"
+                    , style "overflow" "hidden"
+                    ]
                     [ button
                         [ onClick Refresh
-                        , class "outline-0! border-1! border-border rounded-sm! bg-bw text-[21px]! transition-colors duration-350 hover:bg-action! hover:text-bw! py-[1px] px-[6px]"
+                        , class "inline-flex items-center justify-center text-nowrap rounded-none p-1 transition-colors duration-200 ease-in-out bg-neutral-light text-text hover:bg-neutral-light-hover dark:bg-neutral-dark dark:text-w dark:hover:bg-neutral-dark-hover"
+                        , style "min-height" "40px"
+                        , style "min-width" "50px"
+                        , style "border" "none"
+                        , style "border-right" "1px solid var(--color-border)"
                         , title "Оновити"
                         ]
                         [ if isLoadingStats model then
@@ -366,7 +375,10 @@ view user model shared route =
                         ]
                     , button
                         [ onClick ClearAllFilters
-                        , class "outline-0! border-1! border-border rounded-sm! bg-bw text-[21px]! transition-colors duration-350 hover:bg-action! hover:text-bw! py-[1px] px-[6px]"
+                        , class "inline-flex items-center justify-center text-nowrap rounded-none p-1 transition-colors duration-200 ease-in-out bg-neutral-light text-text hover:bg-neutral-light-hover dark:bg-neutral-dark dark:text-w dark:hover:bg-neutral-dark-hover"
+                        , style "min-height" "40px"
+                        , style "min-width" "50px"
+                        , style "border" "none"
                         , title "Скинути фільтри"
                         ]
                         [ i [ class "bi bi-x-octagon" ] []
@@ -557,6 +569,11 @@ view user model shared route =
                     (ReportTemplateSelect RTDigest)
                     "Дайджест"
                     "Для генерування потрібні права редактора чи адміна"
+                , templateCard
+                    (model.reportTemplate == ActiveNetworks)
+                    (ReportTemplateSelect ActiveNetworks)
+                    "Активні радіомережі"
+                    "Для генерування потрібні права редактора чи адміна"
                 ]
             -- Add adjacent-freqs range selector when RTReo is chosen
             , HtmlX.viewIf (model.reportTemplate == RTReo) <|
@@ -597,8 +614,127 @@ view user model shared route =
                                 "не обрано"
                                 options2
                         )
-                    ]                
-            , HtmlX.viewIf (List.member model.reportTemplate [ RTTags, RTBabak, RTInterception ]) <|
+                    ]
+            , HtmlX.viewIf (model.reportTemplate == RTReo) <|
+                let
+                    isDark =
+                        isDarkMode shared.themeMode
+
+                    selDescription =
+                        p
+                            [ class "text-sm leading-relaxed"
+                            , classList
+                                [ ( "text-gray-600", not (isDarkMode shared.themeMode) )
+                                , ( "text-gray-400", isDarkMode shared.themeMode )
+                                ]
+                            ]
+                            [ text "Формат файлу" ]
+
+                    selItem =
+                        Just
+                            (Select.basicMenuItem
+                                { item = model.reportReoFileTypeSelect.selected
+                                , label =
+                                    case model.reportReoFileTypeSelect.selected of
+                                        B.Docx ->
+                                            "docx"
+
+                                        B.Xlsx ->
+                                            "xlsx"
+                                }
+                            )
+
+                    options =
+                        Utils.Select.defaultOptions isDark
+
+                    options2 =
+                        { options | clearable = False }
+                in
+                div [ class "p-3 bg-gray-100 text-gray-900 mb-4" ]
+                    [ selDescription
+                    , Html.map SelectReportReoFileType
+                        (Html.Styled.toUnstyled <|
+                            Utils.Select.renderSelectSingle
+                                selItem
+                                model.reportReoFileTypeSelect.state
+                                model.reportReoFileTypeSelect.items
+                                "не обрано"
+                                options2
+                        )
+                    ]
+
+            , HtmlX.viewIf (model.reportTemplate == ActiveNetworks) <|
+                let
+                    isDark =
+                        isDarkMode shared.themeMode
+
+                    selDescription =
+                        p
+                            [ class "text-sm leading-relaxed"
+                            , classList
+                                [ ( "text-gray-600", not (isDarkMode shared.themeMode) )
+                                , ( "text-gray-400", isDarkMode shared.themeMode )
+                                ]
+                            ]
+                            [ text "Обрати смуги відповідальності (якщо не обрано жодної - будуть всі)" ]
+
+                    selectedItems =
+                        model.reportActiveNetworksAorsSelect.selected
+                            |> List.filterMap
+                                (\id ->
+                                    model.allAors
+                                        |> ListX.find (\entry -> entry.id == id)
+                                        |> Maybe.map (\entry -> Select.basicMenuItem { item = entry.id, label = entry.name })
+                                )
+
+                    options =
+                        Utils.Select.defaultOptions isDark
+
+                    options2 =
+                        options
+                in
+                div [ class "p-3 bg-gray-100 text-gray-900 mb-4" ]
+                    [ selDescription
+                    , Html.map SelectReportActiveNetworksAors
+                        (Html.Styled.toUnstyled <|
+                            Utils.Select.renderSelect
+                                selectedItems
+                                model.reportActiveNetworksAorsSelect.state
+                                model.reportActiveNetworksAorsSelect.items
+                                "обрати смуги..."
+                                options2
+                        )
+                    ]
+            , HtmlX.viewIf (List.member model.reportTemplate [
+            RTBabak,
+            RTInterception
+            ]) <|
+                div [ class "p-3 bg-gray-100 text-gray-900 mb-4" ]
+                    [ div [ class "form-check" ]
+                        [ input
+                            [ class "form-check-input"
+                            , type_ "checkbox"
+                            , checked model.withoutModelTags
+                            , id "report-without-model-tags"
+                            , onClick ReportTagsWithoutBotTagsToggle
+                            ]
+                            []
+                        , label
+                            [ class "form-check-label"
+                            , for "report-without-model-tags"
+                            ]
+                            [ text "без автоматичних тегів" ]
+                        ]
+                    ]
+            , HtmlX.viewIf (List.member model.reportTemplate [
+            RTTags,
+            RTPelengs,
+            RTBabak,
+            RTInterception,
+            RTPostsDocx,
+            RTMouse,
+            RTReo
+             ]) <|
                 div [ class "p-3 bg-gray-100 text-gray-900 mb-4" ]
                     [ div [ class "form-check" ]
                         [ input
@@ -643,6 +779,28 @@ view user model shared route =
                                 , for "senders-posts-checkbox"
                                 ]
                                 [ text "шукати по постах"
+                                ]
+                            ]
+                        , div [ class "form-check mt-2" ]
+                            [ input
+                                [ class "form-check-input"
+                                , type_ "checkbox"
+                                , checked model.reportAdvancedSenders
+                                , id "senders-advanced-checkbox"
+                                , onClick ReportAdvancedSendersToggle
+                                ]
+                                []
+                            , label
+                                [ class "form-check-label"
+                                , for "senders-advanced-checkbox"
+                                ]
+                                [ text
+                                    (if x == Posts then
+                                        "розширений звіт (пости)"
+
+                                     else
+                                        "розширений звіт (профілі)"
+                                    )
                                 ]
                             ]
                         ]
@@ -724,7 +882,7 @@ view user model shared route =
                                     ( Encode.list B.palitraDetailsEncoder [], False )
                     in
                     div
-                        (class "h-full relative"
+                        (class "h-full min-h-0 relative"
                             :: (if not model.unfoldMapBlock then
                                     [ class "h-0" ]
 
@@ -733,7 +891,7 @@ view user model shared route =
                                )
                         )
                         (Html.node "analysis-map"
-                            [ class "h-full block relative z-10"
+                            [ class "h-full block z-10"
                             , attribute "daterange" (Encode.encode 0 encodedDates)
                             , attribute "points" (Encode.encode 0 encodedPoints)
                             , attribute "messages" (Encode.encode 0 encodedMessagesAndUnits)
@@ -772,15 +930,13 @@ view user model shared route =
         [ -- viewIf model.showReportConstructor reportConstructorBlock
           viewReportConstructor
         , div
-            [ class "page-rer-analysis overflow-y-hidden grid grid-cols-24 gap-2"
-            , style "height" <| "calc(100vh - " ++ fromInt navbarHeightPx ++ "px)"
-            ]
+            [ class "page-rer-analysis overflow-y-hidden grid grid-cols-24 gap-2 app-shell-fill-height" ]
             [ div
                 [ class "overflow-auto text-sm col-span-5 h-full "
                 ]
                 [ Pages_.RerAnalysis.Filters.view (isDarkMode shared.themeMode) user model ]
             , div
-                [ class "col-span-19 flex flex-col h-full relative  mt-4 overflow-auto"
+                [ class "col-span-19 flex flex-col h-full min-h-0 relative overflow-auto pt-4"
                 , id "messages-div"
                 ]
                 [ div
@@ -793,14 +949,15 @@ view user model shared route =
                 , div
                     [ class "sticky top-0 z-50 bg-[var(--background-color)]"
                     ]
-                    [ div [ class "flex items-center justify-between px-4 mb-2 " ]
+                    [ div [ class "flex items-center justify-between px-4 mb-6" ]
                         [ div [ class "flex items-center" ]
                             [ h1 [ class "text-xl font-semibold" ] [ text "аналіз" ]
                             , headerControls
                             ]
                         ]
                     ]
-                , div [ class "flex-grow max-xl:mx-2 mx-4" ]
+                , div
+                    [ class "flex-grow min-h-0 ml-2 mr-6" ]
                     (mapBlock
                         :: (if not model.unfoldMapBlock then
                                 [ div []

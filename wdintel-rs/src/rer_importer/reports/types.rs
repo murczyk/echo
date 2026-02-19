@@ -1,5 +1,7 @@
 use crate::rer_importer::InboxMessagesReq;
+use chrono::NaiveDateTime;
 use elm_rs::{Elm, ElmDecode, ElmEncode};
+use sea_orm::FromQueryResult;
 use serde::{Deserialize, Serialize};
 
 #[derive(
@@ -22,8 +24,9 @@ pub enum ReportType {
     Pelengs,
     Senders(SenderReportSettings),
     Naushnom,
-    Reo(ReoReportSettings),
+    Reo(ReoReportSettings, ReoReportFileType),
     Digest,
+    ActiveNetworks(ActiveNetworksReportSettings),
 }
 
 #[derive(
@@ -47,6 +50,57 @@ pub struct ReoReportSettings {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub enum ReoReportFileType {
+    Docx,
+    Xlsx,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct SenderReportSettings {
     pub aggregation: ReportAggregation,
+    #[serde(default)]
+    pub advanced_freqs: bool,
+}
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct ActiveNetworksReportSettings {
+    pub aor_ids: Vec<i64>,
+}
+
+pub struct AreaOfResponsibilityNetworkComments {
+    pub area_of_responsibility: AreaOfResponsibility,
+    pub network_unit_comments: Vec<NetworkUnitComments>,
+}
+
+pub struct NetworkUnitComments {
+    pub network: SigintNetwork,
+    pub units: Vec<NetworkUnit>,
+    pub comments: Vec<SigintComment>,
+}
+
+#[derive(Debug, Clone, FromQueryResult)]
+pub struct AreaOfResponsibility {
+    pub id: i64,
+    pub name: String,
+}
+
+#[derive(Debug, FromQueryResult)]
+pub struct SigintNetwork {
+    pub id: i64,
+    pub name: String,
+    pub active_from: Option<NaiveDateTime>,
+}
+
+#[derive(Debug, Clone, FromQueryResult)]
+pub struct NetworkUnit {
+    pub name: String,
+}
+
+#[derive(Debug, Clone, FromQueryResult)]
+pub struct SigintComment {
+    pub comment: String,
+    pub created_at: NaiveDateTime,
 }

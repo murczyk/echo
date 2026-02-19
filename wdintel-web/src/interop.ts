@@ -18,10 +18,26 @@ import "./styles/floating-popup.css"
 import { setupMap, addPointsToLayer } from './ts/maps/maps'
 import { MapPoint, MapPointDetailed, MapPointShort } from './ts/maps/types'
 import './ts/web-components/analysis-map'
+import './ts/react/analysis-map-search-element'
+import './ts/react/analysis-count-chip-element'
 import './ts/web-components/modal-dialog.ts'
 import './ts/web-components/bar-chart-2.ts'
 import './ts/web-components/small-map.ts'
 import './ts/web-components/floating-popup.ts'
+import './ts/react/aor-neo-element'
+import './ts/react/admin-neo-element'
+import './ts/react/aor-neo-form-element'
+import './ts/react/control-panel-neo-element'
+import './ts/react/keys-neo-element'
+import './ts/react/messanger-neo-element'
+import './ts/react/organisms-neo-element'
+import './ts/react/organisms-neo-edit-element'
+import './ts/react/settings-neo-element'
+import './ts/react/tags-neo-element'
+import './ts/react/tags-neo-edit-element'
+import './ts/react/tags-neo-keyword-edit-element'
+import './ts/react/users-neo-element'
+import './ts/react/rer-duty-neo-element'
 import { saveRerAnalysisQueryState } from "./ts/rer-analysis-query-state"
 import { setupCommentDraftTracker } from "./ts/comment-draft-tracker"
 
@@ -65,6 +81,68 @@ function applyCurrentTheme() {
         const systemTheme = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
         applyTheme(systemTheme);
     }
+}
+
+function setAppShellNavbarHeightVar(heightPx: number): void {
+    if (!Number.isFinite(heightPx) || heightPx <= 0) {
+        return;
+    }
+    document.documentElement.style.setProperty('--app-shell-navbar-height', `${Math.round(heightPx)}px`);
+}
+
+function createNavbarHeightSync() {
+    let observedNavbar: HTMLElement | null = null;
+    let rafId = 0;
+    const resizeObserver = typeof ResizeObserver !== 'undefined'
+        ? new ResizeObserver(() => {
+            scheduleSync();
+        })
+        : null;
+
+    const syncNavbar = () => {
+        rafId = 0;
+        const navbar = document.getElementById('app-navbar-shell') as HTMLElement | null;
+
+        if (navbar !== observedNavbar) {
+            if (observedNavbar && resizeObserver) {
+                resizeObserver.unobserve(observedNavbar);
+            }
+            observedNavbar = navbar;
+            if (observedNavbar && resizeObserver) {
+                resizeObserver.observe(observedNavbar);
+            }
+        }
+
+        if (observedNavbar) {
+            setAppShellNavbarHeightVar(observedNavbar.getBoundingClientRect().height);
+        }
+    };
+
+    const scheduleSync = () => {
+        if (rafId !== 0) {
+            return;
+        }
+        rafId = window.requestAnimationFrame(syncNavbar);
+    };
+
+    const mutationObserver = new MutationObserver(() => {
+        scheduleSync();
+    });
+    // We only need to detect navbar mount/unmount/replacement, not every style/class mutation in the app.
+    mutationObserver.observe(document.body, {
+        childList: true,
+        subtree: true
+    });
+
+    window.addEventListener('resize', scheduleSync, { passive: true });
+    window.addEventListener('orientationchange', scheduleSync, { passive: true });
+
+    requestAnimationFrame(() => {
+        scheduleSync();
+        setTimeout(scheduleSync, 350);
+    });
+
+    return scheduleSync;
 }
 
 // Listen for system theme changes
@@ -146,6 +224,7 @@ export const onReady = ({ app, env }) => {
 
     // Apply initial theme based on localStorage or system preference
     applyCurrentTheme();
+    const syncNavbarHeight = createNavbarHeightSync();
 
     setupCommentDraftTracker();
 
@@ -296,16 +375,35 @@ export const onReady = ({ app, env }) => {
 
     if (app.ports && app.ports.waterfall_copyTextToClipboard) {
         app.ports.waterfall_copyTextToClipboard.subscribe(({ text }) => {
-            if (!navigator.clipboard) {
-            } else {
-                navigator.clipboard.read().then((contents) => {
-                    if (!navigator.clipboard) {
-                    } else {
-                        navigator.clipboard.writeText(text).then(() => { });
-                    }
-                });
-            }
+            copyTextToClipboard(text);
         });
+    }
+
+    function copyTextToClipboard(text: string) {
+        if (navigator.clipboard?.writeText) {
+            navigator.clipboard.writeText(text).catch(() => fallbackCopyTextToClipboard(text));
+            return;
+        }
+        fallbackCopyTextToClipboard(text);
+    }
+
+    // When copy runs, the user's click has often already finished (Elm sent to port). Browser then
+    // throws "Document is not focused" error. This workaround is a fallback for that.
+    function fallbackCopyTextToClipboard(text: string) {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.left = '-9999px';
+        ta.style.top = '0';
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        try {
+            document.execCommand('copy');
+        } finally {
+            document.body.removeChild(ta);
+        }
     }
 
     if (app.ports && app.ports.waterfall_getVisibleMsgIds && app.ports.waterfall_getVisibleMsgIdsRes) {
@@ -478,6 +576,7 @@ export const onReady = ({ app, env }) => {
             requestAnimationFrame(() => {
                 // Then add a delay to allow CSS transitions to complete
                 setTimeout(() => {
+                    syncNavbarHeight();
                     window.dispatchEvent(new Event('resize'));
                 }, 300); // Match the transition duration from CSS
             });

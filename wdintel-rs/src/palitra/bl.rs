@@ -6,8 +6,10 @@ use crate::utils::orm::ArrayColumnOps;
 use anyhow::Context;
 use chrono::{DateTime, Utc};
 use itertools::{Either, Itertools};
+use redis::AsyncCommands;
 use sea_orm::prelude::*;
 use sea_orm::*;
+use serde::de::DeserializeOwned;
 use std::collections::{HashMap, HashSet};
 
 enum PalitraUpdateAction {
@@ -99,6 +101,267 @@ pub async fn list_all_palitras_detailed(
     let palitra_ids = collect_palitra_ids(login, dbx).await.c(h!())?;
     let result = render_palitra_details(dbx, palitra_ids).await.c(h!())?;
     Ok(result)
+}
+
+pub async fn search_palitra_points_by_labels(
+    login: String,
+    req: PalitraSearchPointsReq,
+    dbx: &DatabaseConnection,
+) -> anyhow::Result<Vec<PalitraPoints>> {
+    let allowed_palitra_ids = collect_palitra_ids(login, dbx).await.c(h!())?;
+    let allowed_palitra_ids: HashSet<i64> =
+        allowed_palitra_ids.into_iter().collect();
+    let palitra_ids: Vec<i64> = req
+        .palitra_ids
+        .into_iter()
+        .filter(|id| allowed_palitra_ids.contains(id))
+        .collect();
+    if palitra_ids.is_empty() {
+        return Ok(vec![]);
+    }
+    dbg!("{:?}", &palitra_ids);
+
+    let mut normalized_labels: Vec<String> = req
+        .point_labels
+        .iter()
+        .filter_map(|label| normalize_label_cache(label))
+        .map(|label| label.to_lowercase())
+        .collect();
+    if normalized_labels.len() > 1 {
+        let combined_label = normalized_labels.join(" ");
+        if !normalized_labels.contains(&combined_label) {
+            normalized_labels.push(combined_label);
+        }
+    }
+    if normalized_labels.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let mut label_condition = Condition::any();
+    for label in &normalized_labels {
+        label_condition = label_condition.add(Expr::cust_with_values(
+            "lower(label) = $1",
+            vec![label.clone()],
+        ));
+    }
+
+    let points = palitra_point::Entity::find()
+        .select_only()
+        .column(palitra_point::Column::PalitraId)
+        .column(palitra_point::Column::Lat)
+        .column(palitra_point::Column::Lng)
+        .column(palitra_point::Column::Label)
+        .filter(palitra_point::Column::PalitraId.eq_any(palitra_ids.clone()))
+        .filter(palitra_point::Column::Deleted.eq(false))
+        .filter(palitra_point::Column::Label.is_not_null())
+        .filter(label_condition)
+        .into_tuple::<(i64, f64, f64, Option<String>)>()
+        .all(dbx)
+        .await
+        .c(h!())?;
+
+    let mut points_by_id: HashMap<i64, Vec<PalitraPoint>> = HashMap::new();
+    for (palitra_id, lat, lng, label) in points {
+        points_by_id
+            .entry(palitra_id)
+            .or_default()
+            .push(PalitraPoint {
+                label,
+                coords: Coords { lat, lng },
+            });
+    }
+
+    let result = palitra_ids
+        .into_iter()
+        .map(|palitra_id| PalitraPoints {
+            palitra_id,
+            points: points_by_id.remove(&palitra_id).unwrap_or_default(),
+        })
+        .collect();
+    Ok(result)
+}
+
+pub async fn suggest_palitra_point_labels(
+    login: String,
+    req: PalitraPointLabelSuggestReq,
+    dbx: &DatabaseConnection,
+) -> anyhow::Result<Vec<PalitraPointLabelSuggestRsp>> {
+    let allowed_palitra_ids = collect_palitra_ids(login, dbx).await.c(h!())?;
+    let allowed_palitra_ids: HashSet<i64> =
+        allowed_palitra_ids.into_iter().collect();
+    let palitra_ids: Vec<i64> = req
+        .palitra_ids
+        .into_iter()
+        .filter(|id| allowed_palitra_ids.contains(id))
+        .collect();
+    if palitra_ids.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let prefix = normalize_label_cache(&req.prefix).unwrap_or_default();
+    if prefix.is_empty() {
+        return Ok(vec![]);
+    }
+    let limit = req.limit.unwrap_or(15).min(50);
+    let normalized_prefix = prefix.to_lowercase();
+    let prefix_pattern = build_label_pattern(&normalized_prefix, false);
+
+    let labels = palitra_point::Entity::find()
+        .select_only()
+        .column(palitra_point::Column::PalitraId)
+        .column(palitra_point::Column::Label)
+        .filter(palitra_point::Column::PalitraId.eq_any(palitra_ids.clone()))
+        .filter(palitra_point::Column::Deleted.eq(false))
+        .filter(palitra_point::Column::Label.is_not_null())
+        .filter(Expr::cust_with_values(
+            "lower(label) LIKE $1",
+            vec![prefix_pattern],
+        ))
+        .order_by_asc(palitra_point::Column::Label)
+        .distinct()
+        .limit(limit)
+        .into_tuple::<(i64, Option<String>)>()
+        .all(dbx)
+        .await
+        .c(h!())?;
+
+    let mut labels: Vec<PalitraPointLabelSuggestRsp> = labels
+        .into_iter()
+        .map(|(palitra_id, label)| PalitraPointLabelSuggestRsp {
+            palitra_id,
+            label: label.unwrap_or_default(),
+        })
+        .collect();
+
+    if labels.len() < limit as usize {
+        let remaining = limit - labels.len() as u64;
+        let similar_pattern = build_label_pattern(&normalized_prefix, true);
+        let mut similar_query = palitra_point::Entity::find()
+            .select_only()
+            .column(palitra_point::Column::PalitraId)
+            .column(palitra_point::Column::Label)
+            .filter(palitra_point::Column::PalitraId.eq_any(palitra_ids))
+            .filter(palitra_point::Column::Deleted.eq(false))
+            .filter(palitra_point::Column::Label.is_not_null())
+            .filter(Expr::cust_with_values(
+                "lower(label) LIKE $1",
+                vec![similar_pattern],
+            ))
+            .order_by_asc(palitra_point::Column::Label)
+            .distinct();
+
+        let used_labels: Vec<String> =
+            labels.iter().map(|item| item.label.clone()).collect();
+        if !used_labels.is_empty() {
+            similar_query = similar_query
+                .filter(palitra_point::Column::Label.is_not_in(used_labels));
+        }
+
+        let similar = similar_query
+            .limit(remaining)
+            .into_tuple::<(i64, Option<String>)>()
+            .all(dbx)
+            .await
+            .c(h!())?;
+
+        labels.extend(similar.into_iter().map(|(palitra_id, label)| {
+            PalitraPointLabelSuggestRsp {
+                palitra_id,
+                label: label.unwrap_or_default(),
+            }
+        }));
+    }
+
+    Ok(labels)
+}
+
+fn normalize_label_cache(label: &str) -> Option<String> {
+    let trimmed = label.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        let normalized = trimmed
+            .split_whitespace()
+            .filter(|part| !part.is_empty())
+            .join(" ");
+        Some(normalized.to_lowercase())
+    }
+}
+
+fn build_label_pattern(label: &str, surround: bool) -> String {
+    let pattern = label
+        .split_whitespace()
+        .filter(|part| !part.is_empty())
+        .join("%");
+    if surround {
+        format!("%{}%", pattern)
+    } else {
+        format!("{}%", pattern)
+    }
+}
+
+pub(crate) fn palitra_search_cache_key(
+    login: &str,
+    req: &PalitraSearchPointsReq,
+) -> String {
+    let mut palitra_ids = req.palitra_ids.clone();
+    palitra_ids.sort_unstable();
+    palitra_ids.dedup();
+    let labels: Vec<String> = req
+        .point_labels
+        .iter()
+        .filter_map(|label| normalize_label_cache(label))
+        .scan(HashSet::new(), |used, label| {
+            if used.insert(label.clone()) {
+                Some(label)
+            } else {
+                None
+            }
+        })
+        .collect();
+    format!(
+        "palitra:points:search:{login}:{}:{}",
+        palitra_ids.iter().join(","),
+        labels.join(",")
+    )
+}
+
+pub(crate) fn palitra_suggest_cache_key(
+    login: &str,
+    req: &PalitraPointLabelSuggestReq,
+) -> String {
+    let mut palitra_ids = req.palitra_ids.clone();
+    palitra_ids.sort_unstable();
+    palitra_ids.dedup();
+    let prefix = normalize_label_cache(&req.prefix).unwrap_or_default();
+    let limit = req.limit.unwrap_or(15).min(50);
+    format!(
+        "palitra:points:label-suggest:{login}:{}:{prefix}:{limit}",
+        palitra_ids.iter().join(",")
+    )
+}
+
+pub(crate) async fn read_cached_json<T: DeserializeOwned>(
+    redis: &mut redis::aio::ConnectionManager,
+    key: &str,
+) -> anyhow::Result<Option<T>> {
+    let raw: Option<String> = redis.get(key).await.c(h!())?;
+    match raw {
+        Some(raw) => Ok(Some(serde_json::from_str(&raw).c(h!())?)),
+        None => Ok(None),
+    }
+}
+
+pub(crate) async fn write_cached_json<T: Serialize>(
+    redis: &mut redis::aio::ConnectionManager,
+    key: &str,
+    ttl_sec: u64,
+    value: &T,
+) -> anyhow::Result<()> {
+    let raw = serde_json::to_string(value).c(h!())?;
+    let _: () = redis.set(key, raw).await.c(h!())?;
+    let _: () = redis.expire(key, ttl_sec as i64).await.c(h!())?;
+    Ok(())
 }
 
 pub async fn list_palitra_points_by_viewport_bounds(
@@ -418,9 +681,10 @@ pub async fn rewrite_palitra_points(
     delete_existing_palitra_points(palitra_id, txn)
         .await
         .c(h!())?;
-    let mut points = vec![];
+    let mut points_batch =
+        Vec::with_capacity(crate::config::PALITRA_POINTS_INSERT_BATCH_SIZE);
     for point in coords {
-        points.push(palitra_point::ActiveModel {
+        points_batch.push(palitra_point::ActiveModel {
             id: NotSet,
             label: Set(point.label),
             palitra_id: Set(palitra_id),
@@ -430,11 +694,23 @@ pub async fn rewrite_palitra_points(
             deleted_at: NotSet,
             created_at: NotSet,
         });
+        if points_batch.len() >= crate::config::PALITRA_POINTS_INSERT_BATCH_SIZE
+        {
+            palitra_point::Entity::insert_many(points_batch)
+                .exec(txn)
+                .await
+                .context(h!())?;
+            points_batch = Vec::with_capacity(
+                crate::config::PALITRA_POINTS_INSERT_BATCH_SIZE,
+            );
+        }
     }
-    palitra_point::Entity::insert_many(points)
-        .exec(txn)
-        .await
-        .context(h!())?;
+    if !points_batch.is_empty() {
+        palitra_point::Entity::insert_many(points_batch)
+            .exec(txn)
+            .await
+            .context(h!())?;
+    }
     recalculate_center(txn, palitra_id).await.c(h!())?;
     recalculate_convex_hull(txn, palitra_id).await.c(h!())?;
     Ok(())

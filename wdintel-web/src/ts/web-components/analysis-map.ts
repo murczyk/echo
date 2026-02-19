@@ -7,8 +7,9 @@ import { KMZLayer, kmzLayerFactory } from '../maps/leaflet-kmz'
 import { MapPointDetailed } from '../maps/types';
 import { messagesCountText } from '../maps/language-utils';
 import { loadRerAnalysisQueryState, RerAnalysisQueryState, saveRerAnalysisQueryState } from '../rer-analysis-query-state';
-import { TimeswitchControl, FeatureToggleState, createLayerSwitchControl, createExitControl2, createTimeswitchControl, createAttributionControl, createPalitrasControl, FeatureName, LayerSwitchControl } from '../maps/controls';
+import { TimeswitchControl, FeatureToggleState, createLayerSwitchControl, createTimeswitchControl, createAttributionControl, createPalitrasControl, FeatureName, LayerSwitchControl, createSearchControl, createMapZoomControl, SearchControl, createMapWindowControl, MapWindowControl } from '../maps/controls';
 import { AnalysisMapStateStore, AnalysisMapStoredState } from '../maps/analysis-map-state';
+import { parseCoordinateInput } from '../maps/coordinate-search';
 import { PalitraManager } from '../maps/palitra-manager';
 import { PalitraDetails } from '../maps/palitra-types';
 
@@ -132,17 +133,73 @@ class AnalysisMap extends HTMLElement {
   private _kmzEnabled = true;
   private _pelengsEnabled = true;
   private _layerSwitchControl: LayerSwitchControl | null = null;
+  private _searchControl: SearchControl | null = null;
   private _stateStore: AnalysisMapStateStore;
-
+  private _coordinateSearchMarker: L.CircleMarker | null = null;
+  private _isFullscreen = false;
+  private _mapWindowControl: MapWindowControl | null = null;
+  private _searchPointsHandler = (e: CustomEvent<string>) => {
+    const value = (e.detail ?? '').trim();
+    const coords = parseCoordinateInput(value);
+    if (coords && this._map) {
+      this._flyToCoordinate(coords);
+      this._searchControl?.updateSearchLoading(false);
+      this._searchControl?.updateResultsCount(null);
+      this._palitraManager?.setSearchQuery('');
+    } else {
+      this._clearCoordinateMarker();
+      this._palitraManager?.setSearchQuery(value);
+    }
+  }
+  private _escapeHandler = (event: KeyboardEvent) => {
+    if (event.key === 'Escape' && this._isFullscreen) {
+      event.preventDefault();
+      this._setFullscreen(false);
+    }
+  }
   constructor() {
     super();
     this._stateStore = new AnalysisMapStateStore();
     this._applyState(this._stateStore.getState());
   }
 
-  connectedCallback() { }
+  connectedCallback() {
+    this.addEventListener('search-points', this._searchPointsHandler);
+    window.addEventListener('keydown', this._escapeHandler);
+  }
 
-  disconnectedCallback() { }
+  disconnectedCallback() {
+    this.removeEventListener('search-points', this._searchPointsHandler);
+    window.removeEventListener('keydown', this._escapeHandler);
+    this._setFullscreen(false);
+  }
+
+  private _clearCoordinateMarker(): void {
+    if (this._coordinateSearchMarker && this._map) {
+      this._map.removeLayer(this._coordinateSearchMarker);
+      this._coordinateSearchMarker = null;
+    }
+  }
+
+  private _flyToCoordinate(coords: { lat: number; lng: number }): void {
+    if (!this._map) return;
+    this._clearCoordinateMarker();
+    const latlng: L.LatLngExpression = [coords.lat, coords.lng];
+    this._map.flyTo(latlng, 13, { duration: 0.4 });
+    const marker = L.circleMarker(latlng, {
+      color: '#0d6efd',
+      fillColor: '#0d6efd',
+      fillOpacity: 0.8,
+      radius: 8,
+      weight: 2
+    });
+    marker.bindPopup(
+      `<div>Координати: ${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}</div>`,
+      { closeButton: true }
+    );
+    marker.addTo(this._map);
+    this._coordinateSearchMarker = marker;
+  }
 
   attributeChangedCallback(name: string, oldValue: any, newValue: string) {
     if (name === 'visibility') {
@@ -243,7 +300,9 @@ class AnalysisMap extends HTMLElement {
 
   private render() {
     this.innerHTML = `
-    <div id="analysis-map"> </div>
+    <div class="analysis-map-wrapper" style="display: flex; flex-direction: column; height: 100%; min-height: 0;">
+      <div id="analysis-map" style="flex: 1; min-height: 0;"></div>
+    </div>
       `;
   }
 
@@ -253,27 +312,32 @@ class AnalysisMap extends HTMLElement {
       const tileLayers = getTileLayers();
 
       // Start with a single base layer to avoid loading two full tile stacks at once
-      const map = L.map(mapContainer, { zoomControl: false, attributionControl: false }).setView([47.42135, 35.62197], 8);
+      const map = L.map(mapContainer, {
+        zoomControl: false,
+        attributionControl: false
+      }).setView([47.42135, 35.62197], 8);
       tileLayers.googleHybrid.addTo(map);
+      // Keep Leaflet's click-to-focus behavior, but prevent nested scroll containers
+      // from jumping when the map receives focus on mousedown.
+      this._patchMouseDownMapFocus(map);
 
       const result = this._initializeControls(map, tileLayers)
       this._map = result.map;
       this._switchTimeControl = result.switchTimeControl;
 
-     //TODO: remove
+      // TODO: Remove
       if (!window.location.hostname.includes('echo-soledarnist')) {
-
         await this._loadKmzLayer();
-     }
+      }
 
      // Initialize palitra manager
      this._palitraManager = new PalitraManager(
        this._map,
        {
-         minZoomForPoints: 13,
+         minZoomForPoints: 11,
          requestDelayMs: 200,
          cacheTtlMs: 5 * 60 * 1000,
-         maxCachedTiles: 50
+         maxCachedTiles: 100
        },
        {
          onVisibilityToggle: (palitraId) => {
@@ -283,6 +347,12 @@ class AnalysisMap extends HTMLElement {
              composed: true
            });
            this.dispatchEvent(event);
+         },
+         onSearchResultsCountChanged: (count) => {
+           this._searchControl?.updateResultsCount(count);
+         },
+         onSearchLoadingChanged: (isLoading) => {
+           this._searchControl?.updateSearchLoading(isLoading);
          }
        }
      );
@@ -310,6 +380,7 @@ class AnalysisMap extends HTMLElement {
 
   private _initializeControls(map: L.Map, tileLayers: { openStreetMap: L.TileLayer, googleHybrid: L.TileLayer }) {
     const exitCallback = () => {
+      this._setFullscreen(false);
       const event = new CustomEvent('exit', {
         detail: {
         },
@@ -328,17 +399,79 @@ class AnalysisMap extends HTMLElement {
     }
 
     const switchTimeControl = createTimeswitchControl(this._daterange);
+    const searchControl = createSearchControl();
+    map.addControl(searchControl);
+    this._searchControl = searchControl;
     map.addControl(switchTimeControl)
 
-    map.addControl(createExitControl2(exitCallback));
+    const mapWindowControl = createMapWindowControl(exitCallback, () => this._toggleFullscreen(), this._isFullscreen);
+    map.addControl(mapWindowControl);
+    this._mapWindowControl = mapWindowControl;
     const layerSwitchControl = createLayerSwitchControl(tileLayers, this._getFeatureToggleState(), featureToggleCallback);
     this._layerSwitchControl = layerSwitchControl;
     map.addControl(layerSwitchControl);
+    map.addControl(createMapZoomControl());
     map.addControl(createAttributionControl());
 
     const palitrasControl = createPalitrasControl([], [], palitraToggleCallback);
 
     return { map, switchTimeControl, palitrasControl };
+  }
+
+  private _toggleFullscreen() {
+    this._setFullscreen(!this._isFullscreen);
+  }
+
+  private _setFullscreen(enabled: boolean) {
+    if (this._isFullscreen === enabled) {
+      return;
+    }
+
+    this._isFullscreen = enabled;
+    this.classList.toggle('analysis-map-fullscreen', enabled);
+    document.body.classList.toggle('analysis-map-fullscreen-open', enabled);
+    this._mapWindowControl?.setFullscreen(enabled);
+    window.setTimeout(() => {
+      this._map?.invalidateSize();
+    }, 0);
+  }
+
+  private _patchMouseDownMapFocus(map: L.Map) {
+    const keyboardHandler = (map as L.Map & { keyboard?: { _onMouseDown?: (e: MouseEvent) => void; _focused?: boolean; _map?: L.Map } }).keyboard;
+    const originalOnMouseDown = keyboardHandler?._onMouseDown;
+    if (!keyboardHandler || !originalOnMouseDown) {
+      return;
+    }
+
+    const mapContainer = map.getContainer() as HTMLElement;
+    L.DomEvent.off(mapContainer, 'mousedown', originalOnMouseDown, keyboardHandler);
+
+    const patchedOnMouseDown = function(this: { _focused?: boolean; _map?: L.Map }) {
+      if (this._focused) {
+        return;
+      }
+
+      const container = this._map?.getContainer() as HTMLElement | undefined;
+      if (!container) {
+        return;
+      }
+
+      try {
+        // Modern browsers: preserve focus without triggering scroll reposition.
+        container.focus({ preventScroll: true });
+      } catch (_error) {
+        // Older browser fallback: mimic Leaflet default behavior.
+        const body = document.body;
+        const docEl = document.documentElement;
+        const top = body.scrollTop || docEl.scrollTop;
+        const left = body.scrollLeft || docEl.scrollLeft;
+        container.focus();
+        window.scrollTo(left, top);
+      }
+    };
+
+    keyboardHandler._onMouseDown = patchedOnMouseDown;
+    L.DomEvent.on(mapContainer, 'mousedown', patchedOnMouseDown, keyboardHandler);
   }
 
   private _replacePointsOnMap(points: MapPointDetailed[]) {

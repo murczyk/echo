@@ -1,13 +1,19 @@
 use crate::storage;
 use crate::types::*;
 use anyhow::Result;
+use chrono::Timelike;
 use opendal::Operator;
+use std::time::Duration;
 
 pub const DEFAULT_PG_HOST: &str = "localhost";
 pub const DEFAULT_PG_PORT: u16 = 5432;
 pub const DEFAULT_PG_USER: &str = "wd";
 pub const DEFAULT_PG_PASSWORD: &str = "fee_-_-_-FnoeKFBeebu87bf";
 pub const DEFAULT_PG_DBNAME: &str = "wd";
+pub const PGBACKREST_CONF_PATH: &str = "/etc/pgbackrest/pgbackrest.conf";
+pub const PGBACKREST_CONF_INCLUDE_DIR: &str = "/etc/pgbackrest/conf.d";
+pub const PGBACKREST_STANZA_CONF_PREFIX: &str = "pgbackrest-";
+pub const PGBACKREST_STANZA_CONF_SUFFIX: &str = ".conf";
 pub const PG_SLOW_STATEMENT_THRESHOLD_MS: u64 = 5_000;
 pub const NLP_ADDR: &str = "http://127.0.0.1:5000";
 pub const RQ_TIMEOUT: u64 = 10;
@@ -39,6 +45,7 @@ pub const DISCORD_WEBHOOK: &str = "https://discord.com/api/webhooks/141708483338
 pub const FEATURE_CALLSIGNS_ALG2: bool = false;
 /// Safety limit: cut network-callsigns time window if too wide
 pub const NETWORK_CALLSIGNS_MAX_WINDOW_DAYS: i64 = 60;
+pub const SIGINT_CSV_UTF8_BOM: &[u8; 3] = b"\xEF\xBB\xBF";
 pub const SIGINT_NETWORK_LIST_DEFAULT_LIMIT: i64 = 100;
 pub const SIGINT_NETWORK_LIST_MAX_LIMIT: u64 = 100;
 /// Ukraine boundaries WGS84
@@ -61,9 +68,15 @@ pub const MESSENGER_WORKER_BATCH_SIZE: u64 = 100;
 pub const MESSENGER_CLEANUP_OK_SLEEP_SEC: u64 = 600;
 pub const MESSENGER_CLEANUP_ERR_SLEEP_SEC: u64 = 15;
 pub const LONG_POLL_SLEEP_MS: u64 = 5000;
+pub const NETWORK_INVALIDATION_BATCH_SIZE: u64 = 100; // actual limit in pg is around 25k, but it's better to do it in smaller batches
+pub const NETWORK_INVALIDATION_TASK_FETCH_BATCH_SIZE: u64 = 1000;
+pub const NETWORK_INVALIDATION_TASKS_FILTER_CHUNK: usize = 200;
+pub const NETWORK_INVALIDATION_QUERY_MAX_PARAMS: usize = 60_000; // keep under PG 65_535 parameter cap
+pub const NETWORK_INVALIDATION_DELETE_MAX_IDS: usize = 60_000; // keep under PG 65_535 parameter cap
 
 pub const ONEOFF_CALCULATE_SIGNAL_MESSAGE_GROUPS_SLEEP_SEC: u64 = 10;
 pub const ONEOFF_CALCULATE_SIGNAL_MESSAGR_GROUPS_BATCH_SIZE: u64 = 10000;
+pub const ONEOFF_ETALONKA_REPORT_OUTPUT_DIR: &str = "/var/tmp";
 pub const WORKER_CALCULATE_GROUP_STATS_EVERY_MINUTES_NUM: i64 = 2;
 pub const WORKER_CALCULATE_GROUP_STATS_SINCE_MINS: i64 = 60;
 pub const WORKER_CALCULATE_GROUP_STATS_SLEEP_SEC: u64 = 10;
@@ -74,6 +87,10 @@ pub const LONG_POLL_MIN_RESPONSE_TIME_MS: u64 = 500;
 pub const REDIS_MAXLEN: usize = 1000;
 pub const REDIS_SESSIONS_KEY: &str = "echo-sessions";
 pub const SESSION_STREAM_LIFETIME_SEC: i64 = 180;
+pub const SESSION_ACTIVITY_QUEUE_CAPACITY_DEFAULT: usize = 2048;
+pub const SESSION_ACTIVITY_PAYLOAD_MAX_BYTES_DEFAULT: usize = 4096;
+pub const SESSION_ACTIVITY_GREPTIME_GET_TIMEOUT_MS_DEFAULT: u64 = 500;
+pub const SESSION_ACTIVITY_GREPTIME_QUERY_TIMEOUT_MS_DEFAULT: u64 = 1000;
 pub const INACTIVE_USERS_DEACTIVATE_DURATION_SEC: u64 = 3600;
 pub const INACTIVE_USERS_DEACTIVATE_AFTER_DAYS: i64 = 30;
 /// Default root prefix for encrypted messenger media stored on S3
@@ -95,9 +112,12 @@ pub const STATS_READ_FROM_TABLE_MINIMUM_MIN: i64 = 15;
 pub const STATS_5MIN_MAX_NUM_DAYS: i64 = 2000; // FIXME change to 2
 pub const FEATURE_GROUP_STATS_AGGREGATED_DEFAULT: bool = true;
 pub const FEATURE_DELETE_UPLOADED_ATTACHMENT_DEFAULT: bool = true;
+pub const FEATURE_ACCESS_LOG_DEFAULT: bool = false;
 pub const ONEOFF_COUNT_BATCHES_SLEEP_MS: u64 = 200;
 pub const ONEOFF_COUNT_BATCHES_SIZE: u64 = 10000;
 pub const PALITRA_STORAGE_DIR_NAME: &str = "palitra_assets";
+pub const PALITRA_KMZ_TOP_COLORS_LIMIT: usize = 20;
+pub const PALITRA_POINTS_INSERT_BATCH_SIZE: usize = 10_000;
 /// Global limit when since_id_noninclusive and since_date_inclusive_ms is not set, safety measure
 pub const RER_DUTY_MAX_DAYS: i64 = 3;
 pub const RER_IMPORTER_BOOKMARK_LIST_LIMIT: u64 = 100;
@@ -109,10 +129,32 @@ pub const TAG_SUGGEST_WORKER_BATCH_SIZE: usize = 100;
 pub const TAG_SUGGEST_WORKER_REGEX_CONFIDENCE: f64 = 0.8;
 
 pub const MAX_FIX_WHATSAPP_SENDERS_MESSAGE_DAYS: i64 = 30;
+pub const PALITRA_POINT_SEARCH_CACHE_TTL_SEC: u64 = 60;
+pub const PALITRA_POINT_LABEL_SUGGEST_CACHE_TTL_SEC: u64 = 120;
+pub const NETWORK_INBOX_WORKER_DEFAULT_SLEEP: u64 = 30;
+pub const NETWORK_INBOX_FRESH_WORKER_CUTOFF_DAYS: i64 = 40; // to ensure month reports are valid at all times
+pub const NETWORK_INBOX_OLD_WORKER_CUTOFF_DAYS: i64 = 365;
+pub const SIGINT_INBOX_NETWORK_CHECK_SLEEP_SECS: u64 = 2 * 60 * 60;
+pub const WORKER_NIGHT_SHIFT_START_HOUR: u32 = 21;
+pub const WORKER_NIGHT_SHIFT_END_HOUR: u32 = 7;
+pub const WORKER_NIGHT_SHIFT_WAIT_BEFORE_START_SECS: u64 = 60;
+pub const NETWORK_INBOX_OLD_WORKER_ACTIVE_REST_SECS: u64 = 2;
+pub const SIGINT_INBOX_TUI_REFRESH_MS: u64 = 2000;
+pub const SIGINT_INBOX_TUI_EVENT_POLL_MS: u64 = 250;
+pub const SIGINT_INBOX_TUI_CHUNK_COUNT: usize = 10;
+pub const SIGINT_INBOX_TUI_BUCKET_GAP: usize = 2;
+pub const NETWORK_INBOX_OLD_WORKER_START_HOUR: u32 = 2;
+pub const NETWORK_INBOX_OLD_WORKER_WAIT_BEFORE_START_SECS: u64 = 60;
+pub const NETWORK_INBOX_OLD_WORKER_ACTIVE_WINDOW_SECS: u64 = 15;
 pub const DEFAULT_STORE_PALITRA_IN_S3: bool = true;
 pub const KMZ_CONTENT_TYPE: &str = "application/vnd.google-earth.kmz";
 pub const ENCRYPTION_KEY_PLACEHOLDER: &str = "🔑";
 pub const ENCRYPTION_KEY_DESCRIPTION_PLACEHOLDER: &str = "...";
+pub const NETWORKS_IMPORT_TUI_ROWS_NUM_PAGE_SIZE: usize = 10;
+
+pub const NETWORK_INVALIDATION_TASK_TAG_OLD: &str = "old";
+pub const NETWORK_INVALIDATION_TASK_TAG_RECENT: &str = "recent";
+pub const NETWORK_INVALIDATION_TASK_TAG_UNASSIGNED: &str = "unassigned";
 
 /// Dynamic config that's different on different deployments
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
@@ -142,6 +184,7 @@ pub struct Config {
     pub cluster_radius: Option<f64>,
     pub feature_delta: Option<bool>,
     pub feature_analysis_map: Option<bool>,
+    pub feature_access_log: Option<bool>,
     pub settlements_sources: Option<String>,
     secret_config: Option<SecretConfig>,
     pub sleep_before_backup_mins: Option<u64>,
@@ -152,6 +195,10 @@ pub struct Config {
     pub greptime_user: Option<String>,
     pub greptime_password: Option<String>,
     pub greptime_dbname: Option<String>,
+    pub session_activity_queue_capacity: Option<usize>,
+    pub session_activity_payload_max_bytes: Option<usize>,
+    pub session_activity_greptime_get_timeout_ms: Option<u64>,
+    pub session_activity_greptime_query_timeout_ms: Option<u64>,
     pub feature_tmp_in_memory: Option<bool>,
     pub feature_strict_networks: Option<bool>,
     pub is_slave: Option<bool>,
@@ -166,10 +213,13 @@ pub struct Config {
     pub messenger_worker_pool_capacity: Option<usize>,
     pub feature_group_stats_aggregated: Option<bool>,
     pub feature_delete_uploaded_attachment: Option<bool>,
+    pub feature_calculate_sigint_inbox_item_networks: Option<bool>,
     pub s3_config: Option<S3Config>,
     pub store_palitra_in_s3: Option<bool>,
     pub alpine_converter_url: Option<String>,
     pub models_config: Option<ModelsConfig>,
+    pub network_invalidation_worker_night_shift_start_hour: Option<u32>,
+    pub network_invalidation_worker_night_shift_end_hour: Option<u32>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
@@ -282,6 +332,10 @@ pub fn mk_s3_config(config: &Config) -> Result<Option<storage::S3Config>> {
 }
 
 pub fn read_config(mode: Mode) -> Result<Config, AppError> {
+    if let Ok(path) = std::env::var("ECHO_CONFIG_PATH") {
+        info!("reading config from {path}...");
+        return read_from_path(PathBuf::from(path));
+    }
     let folder = get_deploy_folder(mode).context(h!())?;
     let path = match mode {
         Mode::Live => folder.join("config.toml"),
@@ -401,4 +455,27 @@ pub fn get_tz() -> chrono_tz::Tz {
 
 pub fn get_cleanup_networks_worker_sleep_duration() -> std::time::Duration {
     std::time::Duration::from_secs(3600)
+}
+
+pub async fn wait_until_worker_shift_start(config: &Config) {
+    loop {
+        if check_is_worker_night_shift(config) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_secs(
+            WORKER_NIGHT_SHIFT_WAIT_BEFORE_START_SECS,
+        ))
+        .await;
+    }
+}
+
+pub fn check_is_worker_night_shift(config: &Config) -> bool {
+    let shift_start = config
+        .network_invalidation_worker_night_shift_start_hour
+        .unwrap_or(WORKER_NIGHT_SHIFT_START_HOUR);
+    let shift_end = config
+        .network_invalidation_worker_night_shift_end_hour
+        .unwrap_or(WORKER_NIGHT_SHIFT_END_HOUR);
+    let now = Utc::now().with_timezone(&get_tz());
+    !(shift_end..shift_start).contains(&now.hour())
 }

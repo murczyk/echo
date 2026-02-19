@@ -70,6 +70,7 @@ pub async fn oneoff_merge_all_possible_networks(
                         &txn,
                         MERGE_NETWORKS_API_LOGIN,
                         true,
+                        false,
                         secondary_id,
                         primary_id,
                     )
@@ -111,6 +112,7 @@ pub async fn oneoff_merge_two_networks(
         &txn,
         MERGE_NETWORKS_API_LOGIN,
         true,
+        false,
         ps.network_id_from,
         ps.network_id_to,
     )

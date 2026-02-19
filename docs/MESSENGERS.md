@@ -60,8 +60,22 @@ root@echo-pivnich:/etc/echo/signal-cli-data/pivnich-signal/signal-cli# rm -rf ./
 ```sql
 select max(sm.timestamp), g.id, g.name from signal_message sm inner join datasource_group g on sm.datasource_group_id = g.id where sm.created_at > '2025-11-12 10:00' and sm.datasource_group_id in (select id from datasource_group where datasource_id = 4) group by g.id, g.name;
 ```
+
 - `echo_whatsapp_queue -> echo_inbox_message -> signal_message`
 
+- альтернативно ехо схід:
+
+```
+wd=# select max(created_at),account_id from echo_inbox_message group by account_id;
+            max             | account_id
+----------------------------+------------
+ 2026-02-03 17:25:42.078617 |         26
+ 2026-02-03 17:29:38.258668 |         25
+ 2026-02-03 17:29:54.641973 |         23
+ 2026-02-03 17:29:50.959153 |         22
+ 2026-02-03 17:29:07.176077 |         24
+(5 rows)
+```
 
 ### Troubleshoot відставання Донецьк 5NOV25
 

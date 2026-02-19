@@ -72,6 +72,10 @@ async fn get_inbox_messages_report(
             }
             condition
         });
+    let sigint_groups =
+        crate::messenger::group::get_identity_sigint_groups(&read_db, &login)
+            .await
+            .c(h!())?;
     let mut q = SignalMessage::find()
         .inner_join(sigint_inbox_item::Entity)
         .column(sigint_inbox_item::Column::Datetime)
@@ -185,11 +189,10 @@ async fn get_inbox_messages_report(
         .group_by(sigint_inbox_item::Column::Id)
         .group_by(sigint_important::Column::SignalMessageId)
         .filter(signal_message::Column::Deleted.eq(false))
-        .filter(datasource_group::Column::GroupMasterKey.eq_any(
-            crate::messenger::group::get_identity_sigint_groups(&read_db, &login)
-                .await
-                .c(h!())?,
-        ));
+        .filter(
+            datasource_group::Column::GroupMasterKey
+                .eq_any(sigint_groups.clone()),
+        );
 
     if req.without_model_tags == Some(true) {
         q = q.filter(sigint_inbox_item_tag::Column::Model.is_null());
@@ -209,7 +212,11 @@ async fn get_inbox_messages_report(
     if req.checked_only == Some(true) {
         q = q.filter(sigint_inbox_item::Column::Checked.eq(Some(true)));
     }
-    let q = filter_selected_groups(q, &req.selected_groups)?;
+    let q = filter_selected_groups_with_access(
+        q,
+        &req.selected_groups,
+        &sigint_groups,
+    )?;
     let q = filter_selected_senders(q, &req.selected_senders)?;
     let q = filter_denied_senders(q, &req.denied_senders)?;
     let q = filter_selected_freqs(q, &req.selected_freqs)?;

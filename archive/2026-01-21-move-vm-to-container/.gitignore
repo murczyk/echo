@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+ct_packages.txt
+vm_packages.txt
+vm_only_packages.txt
+migration_plan_*.md
+migration_plan_*.json
+migration_results_*.md
+.migration_known_hosts
+*.tar
+

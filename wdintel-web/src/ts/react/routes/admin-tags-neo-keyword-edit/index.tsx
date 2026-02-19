@@ -1,0 +1,351 @@
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import {
+  CircularProgress,
+  FormControlLabel,
+  Checkbox as MuiCheckbox,
+  TextField,
+  Typography,
+} from '@mui/material';
+import React from 'react';
+
+import { TagKeyword, TagKeywordAddReq } from '../../../../Bindings';
+import { Info } from '../../components/info';
+import { Button } from '../../components/mui-customized/button';
+import { addTagKeywords, listTags, updateTagKeyword } from '../../services/api/tags';
+import { navigateWithinSpa } from '../../utils/browser';
+
+type LoadingStatus = 'idle' | 'loading' | 'success' | 'error';
+
+type StatusMessage = { kind: 'error'; message: string } | null;
+
+type KeywordFormState = {
+  keyword: string;
+  keywordFormsInput: string;
+  keywordNegativeFormsInput: string;
+  isRegex: boolean;
+};
+
+const emptyForm: KeywordFormState = {
+  keyword: '',
+  keywordFormsInput: '',
+  keywordNegativeFormsInput: '',
+  isRegex: false,
+};
+
+function formatErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  try {
+    return JSON.stringify(error);
+  } catch (_) {
+    return 'Невідома помилка';
+  }
+}
+
+function parseId(value: string | null): number | null {
+  if (!value) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function splitLines(value: string): string[] {
+  return value
+    .split('\n')
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+}
+
+function buildKeywordRequest(form: KeywordFormState): { errors: Record<string, string>; req: TagKeywordAddReq | null } {
+  const errors: Record<string, string> = {};
+  const keyword = form.keyword.trim();
+  if (!keyword) {
+    errors.keyword = 'Заповніть ключове слово';
+  }
+
+  if (Object.keys(errors).length > 0) {
+    return { errors, req: null };
+  }
+
+  const keywordForms = splitLines(form.keywordFormsInput);
+  const keywordNegativeForms = splitLines(form.keywordNegativeFormsInput);
+
+  return {
+    errors: {},
+    req: {
+      isRegex: form.isRegex,
+      keyword,
+      keywordForms: keywordForms.length > 0 ? keywordForms : null,
+      keywordNegativeForms: keywordNegativeForms.length > 0 ? keywordNegativeForms : null,
+    },
+  };
+}
+
+function applyKeywordToForm(keyword: TagKeyword): KeywordFormState {
+  return {
+    keyword: keyword.keyword,
+    keywordFormsInput: keyword.keywordForms.join('\n'),
+    keywordNegativeFormsInput: keyword.keywordNegativeForms.join('\n'),
+    isRegex: keyword.isRegex,
+  };
+}
+
+function getBackToPath(defaultTagId: number | null): string {
+  const params = new URLSearchParams(window.location.search);
+  const backTo = params.get('backTo');
+  if (backTo) {
+    try {
+      return decodeURIComponent(backTo);
+    } catch (_) {
+      return '/admin/tags-neo';
+    }
+  }
+
+  if (defaultTagId) {
+    return `/admin/tags-neo/edit?id=${defaultTagId}`;
+  }
+
+  return '/admin/tags-neo';
+}
+
+function getQueryParam(name: string): string | null {
+  const params = new URLSearchParams(window.location.search);
+  return params.get(name);
+}
+
+function KeywordForm(props: {
+  form: KeywordFormState;
+  errors: Record<string, string>;
+  disabled: boolean;
+  onChange: (next: KeywordFormState) => void;
+}) {
+  const update = (patch: Partial<KeywordFormState>) => props.onChange({ ...props.form, ...patch });
+
+  return (
+    <div className="space-y-4">
+      <TextField
+        label="Ключове слово *"
+        value={props.form.keyword}
+        onChange={(event) => update({ keyword: event.target.value })}
+        fullWidth
+        disabled={props.disabled}
+        error={Boolean(props.errors.keyword)}
+        helperText={props.errors.keyword || ' '}
+      />
+      <TextField
+        label="Форми (по одному на рядок, опційно)"
+        value={props.form.keywordFormsInput}
+        onChange={(event) => update({ keywordFormsInput: event.target.value })}
+        fullWidth
+        multiline
+        minRows={4}
+        disabled={props.disabled}
+      />
+      <TextField
+        label="Негативні форми (по одному на рядок, опційно)"
+        value={props.form.keywordNegativeFormsInput}
+        onChange={(event) => update({ keywordNegativeFormsInput: event.target.value })}
+        fullWidth
+        multiline
+        minRows={4}
+        disabled={props.disabled}
+      />
+      <FormControlLabel
+        control={
+          <MuiCheckbox
+            checked={props.form.isRegex}
+            onChange={(event) => update({ isRegex: event.target.checked })}
+            disabled={props.disabled}
+          />
+        }
+        label="Regex"
+      />
+    </div>
+  );
+}
+
+function LoadingState() {
+  return (
+    <div className="flex items-center justify-center py-12">
+      <CircularProgress size={28} />
+    </div>
+  );
+}
+
+function ErrorState(props: { error: string; onBack: () => void }) {
+  return (
+    <div className="space-y-4">
+      <Button variant="outlined" startIcon={<ArrowBackIcon />} onClick={props.onBack}>
+        Назад
+      </Button>
+      <div className="text-red-600">{props.error}</div>
+    </div>
+  );
+}
+
+function FormHeader(props: { title: string; subtitle?: string | null; onBack: () => void }) {
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <div>
+        <Typography variant="h5" className="!font-semibold">
+          {props.title}
+        </Typography>
+        {props.subtitle ? (
+          <Typography variant="body2" className="text-muted-foreground">
+            {props.subtitle}
+          </Typography>
+        ) : null}
+      </div>
+      <Button variant="outlined" startIcon={<ArrowBackIcon />} onClick={props.onBack}>
+        Назад
+      </Button>
+    </div>
+  );
+}
+
+function FormActions(props: { saving: boolean; isNew: boolean; onSave: () => void; onBack: () => void }) {
+  return (
+    <div className="flex gap-3">
+      <Button variant="outlined" onClick={props.onBack} disabled={props.saving}>
+        Повернутись
+      </Button>
+      <Button variant="contained" onClick={props.onSave} disabled={props.saving}>
+        {props.isNew ? 'Створити' : 'Зберегти'}
+      </Button>
+    </div>
+  );
+}
+
+type AdminTagsNeoKeywordEditPageProps = {
+  tagId: string | null;
+  keywordId: string | null;
+};
+
+function AdminTagsNeoKeywordEditPageBody(props: AdminTagsNeoKeywordEditPageProps) {
+  const [form, setForm] = React.useState<KeywordFormState>(emptyForm);
+  const [status, setStatus] = React.useState<LoadingStatus>('idle');
+  const [loadError, setLoadError] = React.useState<string | null>(null);
+  const [saving, setSaving] = React.useState(false);
+  const [formErrors, setFormErrors] = React.useState<Record<string, string>>({});
+  const [actionStatus, setActionStatus] = React.useState<StatusMessage>(null);
+  const [tagLabel, setTagLabel] = React.useState<string | null>(null);
+  const [tagId, setTagId] = React.useState<number | null>(null);
+  const [keywordId, setKeywordId] = React.useState<number | null>(null);
+
+  const resolvedTagId = React.useMemo(() => parseId(props.tagId) ?? parseId(getQueryParam('tagId')), [props.tagId]);
+  const resolvedKeywordId = React.useMemo(
+    () => parseId(props.keywordId) ?? parseId(getQueryParam('keywordId')),
+    [props.keywordId],
+  );
+
+  const effectiveTagId = tagId ?? resolvedTagId;
+  const effectiveKeywordId = keywordId ?? resolvedKeywordId;
+  const isNew = effectiveKeywordId === null;
+
+  async function loadTag(tagIdValue: number, keywordIdValue: number | null) {
+    setStatus('loading');
+    setLoadError(null);
+    try {
+      const tags = await listTags();
+      const foundTag = tags.find((tag) => tag.tagId === tagIdValue);
+      if (!foundTag) {
+        setStatus('error');
+        setLoadError('Тег не знайдено');
+        return;
+      }
+
+      setTagLabel(foundTag.label);
+      setTagId(foundTag.tagId);
+
+      if (keywordIdValue === null) {
+        setKeywordId(null);
+        setForm(emptyForm);
+        setStatus('success');
+        return;
+      }
+
+      const keyword = foundTag.keywords.find((kw) => kw.tagKeywordId === keywordIdValue);
+      if (!keyword) {
+        setStatus('error');
+        setLoadError('Ключове слово не знайдено');
+        return;
+      }
+
+      setKeywordId(keyword.tagKeywordId);
+      setForm(applyKeywordToForm(keyword));
+      setStatus('success');
+    } catch (err) {
+      setStatus('error');
+      setLoadError(formatErrorMessage(err));
+    }
+  }
+
+  React.useEffect(() => {
+    if (!resolvedTagId) {
+      setStatus('error');
+      setLoadError('Некоректний id тегу');
+      return;
+    }
+
+    loadTag(resolvedTagId, resolvedKeywordId);
+  }, [resolvedTagId, resolvedKeywordId]);
+
+  function navigateBack() {
+    navigateWithinSpa(getBackToPath(effectiveTagId));
+  }
+
+  async function handleSave() {
+    const { errors, req } = buildKeywordRequest(form);
+    setFormErrors(errors);
+    if (!req) return;
+
+    if (!effectiveTagId) {
+      setActionStatus({ kind: 'error', message: 'Спочатку збережіть тег' });
+      return;
+    }
+
+    setSaving(true);
+    setActionStatus(null);
+    try {
+      if (isNew) {
+        await addTagKeywords(effectiveTagId, [req]);
+      } else if (effectiveKeywordId !== null) {
+        await updateTagKeyword(effectiveTagId, effectiveKeywordId, req);
+      }
+      navigateWithinSpa(getBackToPath(effectiveTagId));
+    } catch (err) {
+      setActionStatus({ kind: 'error', message: `Не вдалося зберегти ключове слово: ${formatErrorMessage(err)}` });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (status === 'loading') {
+    return <LoadingState />;
+  }
+
+  if (status === 'error') {
+    return <ErrorState error={loadError || 'Помилка завантаження'} onBack={navigateBack} />;
+  }
+
+  return (
+    <div className="flex flex-col items-center">
+      <div className="w-full md:max-w-screen-lg space-y-6">
+        <FormHeader
+          title={isNew ? 'Створити ключове слово' : 'Редагувати ключове слово'}
+          subtitle={tagLabel ? `Тег: ${tagLabel}` : null}
+          onBack={navigateBack}
+        />
+
+        <KeywordForm form={form} errors={formErrors} disabled={saving} onChange={setForm} />
+
+        <FormActions saving={saving} isNew={isNew} onSave={handleSave} onBack={navigateBack} />
+
+        {actionStatus?.kind === 'error' ? <Info text={actionStatus.message} color="error" /> : null}
+      </div>
+    </div>
+  );
+}
+
+export function AdminTagsNeoKeywordEditPage(props: AdminTagsNeoKeywordEditPageProps) {
+  return <AdminTagsNeoKeywordEditPageBody tagId={props.tagId} keywordId={props.keywordId} />;
+}

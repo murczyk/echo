@@ -42,10 +42,12 @@ async fn check_signal_groups(dbx: &DatabaseConnection) -> anyhow::Result<()> {
     for g in groups {
         let cnt = counts.get(&g.master_key).cloned().unwrap_or(0);
         if cnt == 0 {
-            error!(
-                "[AOR Check] signal_group master_key={} name={:?} has zero AORs assigned (expected at least 1)",
-                g.master_key, g.name
-            );
+            if let Some(name) = g.name {
+                error!(
+                    "[AOR Check] signal_group master_key={} name={} has zero AORs assigned (expected at least 1)",
+                    g.master_key, name
+                );
+            }
         }
     }
     Ok(())

@@ -125,10 +125,19 @@ pub async fn aggregate_to_inbox_messages(
         .map(|bm| bm.signal_message_id)
         .collect::<HashSet<_>>();
 
-    let mut group_query = signal_message_group::Entity::find().filter(
-        signal_message_group::Column::SignalMessageId
-            .eq_any(message_ids.clone()),
-    );
+    let sigint_groups =
+        crate::messenger::group::get_identity_sigint_groups(&env.dbx, login)
+            .await
+            .c(h!())?;
+    let mut group_query = signal_message_group::Entity::find()
+        .filter(
+            signal_message_group::Column::SignalMessageId
+                .eq_any(message_ids.clone()),
+        )
+        .filter(
+            signal_message_group::Column::GroupMasterKey
+                .eq_any(sigint_groups.clone()),
+        );
     if let Some(selected_groups) = req.selected_groups.as_ref() {
         if !selected_groups.is_empty() {
             group_query = group_query.filter(
@@ -938,6 +947,17 @@ pub async fn submit_upsert_inbox_item(
         coords_vec,
         inbox_id,
         Utc::now().naive_utc(),
+        txn,
+    )
+    .await
+    .c(h!())?;
+    let new_item = sigint_inbox_item::Entity::find_by_id(inbox_id)
+        .one(txn)
+        .await
+        .c(h!())?
+        .c(h!())?;
+    crate::sigint::network::etalon_calc::calculate_sigint_inbox_item_networks(
+        vec![new_item],
         txn,
     )
     .await

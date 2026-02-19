@@ -8,15 +8,17 @@ use crate::h;
 use crate::sigint::aor::load_default_aor;
 use crate::sigint::import::types::*;
 use crate::types::Mode;
+use crate::utils::orm::ArrayColumnOps;
 use anyhow::Context;
 use dialoguer::{theme::ColorfulTheme, Confirm};
 use log::*;
 use sea_orm::*;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 mod query;
+pub mod tui;
 pub mod types;
 
 pub async fn oneoff_export_etalon_data(
@@ -25,7 +27,7 @@ pub async fn oneoff_export_etalon_data(
 ) -> Result<(), AppError> {
     info!("exporting etalon...");
     let dbx = crate::new_pg_pool_from_mode(mode).await.context(h!())?;
-    let etalon = export_etalon_data(&dbx).await.context(h!())?;
+    let etalon = export_etalon_data(&dbx, true).await.context(h!())?;
     let content = serde_json::to_string(&etalon).context(h!())?;
     let mut file =
         File::create(destination_path.clone()).await.context(h!())?;
@@ -180,6 +182,7 @@ fn print_import_stats<ID: Id>(import_stats: &ImportResult<ID>) -> String {
 
 async fn export_etalon_data<'a, 'async_trait, C>(
     txn: &'a C,
+    include_deleted: bool,
 ) -> anyhow::Result<EtalonData>
 where
     C: ConnectionTrait + 'async_trait,
@@ -192,31 +195,66 @@ where
         .context(h!())?;
     let sigint_signal =
         sigint_signal::Entity::find().all(txn).await.context(h!())?;
-    let sigint_network = sigint_network::Entity::find()
-        .all(txn)
-        .await
-        .context(h!())?;
+    let mut sigint_network_q = sigint_network::Entity::find();
+    if !include_deleted {
+        sigint_network_q =
+            sigint_network_q.filter(sigint_network::Column::Deleted.eq(false));
+    }
+    let sigint_network = sigint_network_q.all(txn).await.context(h!())?;
+    let sigint_network_ids = sigint_network
+        .iter()
+        .map(|network| network.id)
+        .collect::<Vec<_>>();
+    let deleted_sigint_network_ids = sigint_network
+        .iter()
+        .filter(|network| network.deleted)
+        .map(|network| network.id)
+        .collect::<HashSet<_>>();
     let sigint_network_changelog = sigint_network_changelog::Entity::find()
         .all(txn)
         .await
         .context(h!())?;
-    let sigint_network_description = sigint_network_description::Entity::find()
-        .all(txn)
-        .await
-        .context(h!())?;
-    let sigint_network_freq = sigint_network_freq::Entity::find()
-        .all(txn)
-        .await
-        .context(h!())?;
+    let mut sigint_network_description = if sigint_network_ids.is_empty() {
+        Vec::new()
+    } else {
+        sigint_network_description::Entity::find()
+            .filter(
+                sigint_network_description::Column::NetworkId
+                    .eq_any(sigint_network_ids.clone()),
+            )
+            .all(txn)
+            .await
+            .context(h!())?
+    };
+    let mut sigint_network_freq = if sigint_network_ids.is_empty() {
+        Vec::new()
+    } else {
+        sigint_network_freq::Entity::find()
+            .filter(
+                sigint_network_freq::Column::NetworkId
+                    .eq_any(sigint_network_ids.clone()),
+            )
+            .all(txn)
+            .await
+            .context(h!())?
+    };
     let sigint_network_freq_changelog =
         sigint_network_freq_changelog::Entity::find()
             .all(txn)
             .await
             .context(h!())?;
-    let sigint_network_unit = sigint_network_unit::Entity::find()
-        .all(txn)
-        .await
-        .context(h!())?;
+    let sigint_network_unit = if sigint_network_ids.is_empty() {
+        Vec::new()
+    } else {
+        sigint_network_unit::Entity::find()
+            .filter(
+                sigint_network_unit::Column::NetworkId
+                    .eq_any(sigint_network_ids.clone()),
+            )
+            .all(txn)
+            .await
+            .context(h!())?
+    };
     let sigint_network_unit_changelog =
         sigint_network_unit_changelog::Entity::find()
             .all(txn)
@@ -234,14 +272,30 @@ where
         .context(h!())?;
     let sigint_post =
         sigint_post::Entity::find().all(txn).await.context(h!())?;
-    let sigint_network_post = sigint_network_post::Entity::find()
-        .all(txn)
-        .await
-        .context(h!())?;
-    let sigint_network_callsign = sigint_network_callsign::Entity::find()
-        .all(txn)
-        .await
-        .context(h!())?;
+    let mut sigint_network_post = if sigint_network_ids.is_empty() {
+        Vec::new()
+    } else {
+        sigint_network_post::Entity::find()
+            .filter(
+                sigint_network_post::Column::NetworkId
+                    .eq_any(sigint_network_ids.clone()),
+            )
+            .all(txn)
+            .await
+            .context(h!())?
+    };
+    let mut sigint_network_callsign = if sigint_network_ids.is_empty() {
+        Vec::new()
+    } else {
+        sigint_network_callsign::Entity::find()
+            .filter(
+                sigint_network_callsign::Column::SigintNetworkId
+                    .eq_any(sigint_network_ids.clone()),
+            )
+            .all(txn)
+            .await
+            .context(h!())?
+    };
     let sigint_network_callsign_changelog =
         sigint_network_callsign_changelog::Entity::find()
             .all(txn)
@@ -251,14 +305,32 @@ where
         .all(txn)
         .await
         .context(h!())?;
-    let sigint_network_aor = sigint_network_aor::Entity::find()
-        .all(txn)
-        .await
-        .context(h!())?;
+    let sigint_network_aor = if sigint_network_ids.is_empty() {
+        Vec::new()
+    } else {
+        sigint_network_aor::Entity::find()
+            .filter(
+                sigint_network_aor::Column::NetworkId
+                    .eq_any(sigint_network_ids),
+            )
+            .all(txn)
+            .await
+            .context(h!())?
+    };
     let sigint_zone_aor = sigint_zone_aor::Entity::find()
         .all(txn)
         .await
         .context(h!())?;
+
+    if include_deleted && !deleted_sigint_network_ids.is_empty() {
+        mark_network_related_data_as_deleted(
+            &deleted_sigint_network_ids,
+            &mut sigint_network_freq,
+            &mut sigint_network_description,
+            &mut sigint_network_post,
+            &mut sigint_network_callsign,
+        );
+    }
 
     let result = EtalonData {
         area_of_responsibility,
@@ -284,6 +356,35 @@ where
         sigint_network_callsign_changelog,
     };
     Ok(result)
+}
+
+fn mark_network_related_data_as_deleted(
+    deleted_network_ids: &HashSet<i64>,
+    sigint_network_freq: &mut [sigint_network_freq::Model],
+    sigint_network_description: &mut [sigint_network_description::Model],
+    sigint_network_post: &mut [sigint_network_post::Model],
+    sigint_network_callsign: &mut [sigint_network_callsign::Model],
+) {
+    for network_freq in sigint_network_freq {
+        if deleted_network_ids.contains(&network_freq.network_id) {
+            network_freq.deleted = true;
+        }
+    }
+    for network_description in sigint_network_description {
+        if deleted_network_ids.contains(&network_description.network_id) {
+            network_description.deleted = true;
+        }
+    }
+    for network_post in sigint_network_post {
+        if deleted_network_ids.contains(&network_post.network_id) {
+            network_post.deleted = true;
+        }
+    }
+    for network_callsign in sigint_network_callsign {
+        if deleted_network_ids.contains(&network_callsign.sigint_network_id) {
+            network_callsign.deleted = true;
+        }
+    }
 }
 
 async fn import_etalon_data(
@@ -1293,7 +1394,7 @@ where
             kind: Set(rec.kind),
             active_from: Set(rec.active_from),
             active_to: Set(rec.active_to),
-            deleted: Set(false),
+            deleted: Set(rec.deleted),
             sigint_origin_id: Set(Some(origin_id)),
         };
 

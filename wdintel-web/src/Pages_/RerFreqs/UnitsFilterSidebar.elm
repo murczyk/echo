@@ -15,9 +15,8 @@ import Utils.RemoteData as RD exposing (RemoteData(..))
 view : Shared.Model -> Model -> Html Msg
 view shared model =
     div
-        [ class "self-stretch"
+        [ class "self-stretch app-shell-fill-height"
         , style "min-width" "220px"
-        , style "height" "calc(-50px + 100vh)"
         , style "overflow-y" "scroll"
         ]
         [ div

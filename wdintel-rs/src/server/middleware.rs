@@ -1,3 +1,4 @@
+use crate::config::FEATURE_ACCESS_LOG_DEFAULT;
 use crate::types::*;
 use crate::utils::worker_watch;
 use actix_web::{
@@ -22,6 +23,16 @@ fn should_skip_access_log(path: &str) -> bool {
     ACCESS_LOG_SKIP_PATTERNS
         .iter()
         .any(|pattern| path.starts_with(pattern))
+}
+
+fn is_access_log_enabled(req: &ServiceRequest) -> bool {
+    req.app_data::<actix_web::web::Data<Env>>()
+        .map(|env| {
+            env.config
+                .feature_access_log
+                .unwrap_or(FEATURE_ACCESS_LOG_DEFAULT)
+        })
+        .unwrap_or(FEATURE_ACCESS_LOG_DEFAULT)
 }
 
 fn log_access_event(
@@ -56,6 +67,10 @@ pub async fn access_log_middleware<B>(
 where
     B: MessageBody,
 {
+    if !is_access_log_enabled(&req) {
+        return next.call(req).await;
+    }
+
     let method = req.method().to_string();
     let path = req.path().to_owned();
     let client_ip = req

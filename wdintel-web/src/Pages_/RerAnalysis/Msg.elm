@@ -122,6 +122,8 @@ type Msg
     | GotUserInfo String (Result ApiError B.User)
     | ReportTagsOnlyThisUnitToggle
     | ReportTagsOnlyThisUnitForReportToggle
+    | ReportTagsWithoutBotTagsToggle
+    | ReportAdvancedSendersToggle
     | DeleteMessageConfirm
     | DeleteMessageCancel
     | DeleteMessageDone Int (Result ApiError ())
@@ -146,6 +148,8 @@ type Msg
     | SetUnitFilterFromMap String
     | SelectFilterAdjacentFreqsRange (Select.Msg Float)
     | SelectReportAdjacentFreqsRange (Select.Msg Float)
+    | SelectReportReoFileType (Select.Msg B.ReoReportFileType)
+    | SelectReportActiveNetworksAors (Select.Msg Int)
     | GroupsActivityPeriodChanged GroupsActivityPeriod
     | FilterTagsOptionChanged Bool
     | UnitsExactMatchOnlyChanged Bool
@@ -154,3 +158,4 @@ type Msg
     | EditSidebarUpdate Int (B.InboxMessage -> B.InboxMessage)
     | EditSidebarSaveDone Int (Result ApiError ())
     | GotPalitras (Result ApiError (List B.Palitra))
+    | GotAllAors (Result ApiError (List B.AreaOfResponsibility))

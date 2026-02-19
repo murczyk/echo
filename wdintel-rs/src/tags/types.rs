@@ -1,4 +1,6 @@
 use elm_rs::{Elm, ElmDecode, ElmEncode};
+use sea_orm::prelude::DateTimeWithTimeZone;
+use sea_orm::FromQueryResult;
 use serde::{Deserialize, Serialize};
 
 #[derive(
@@ -76,4 +78,44 @@ pub struct InboxMessageTagsRmReq {
 pub struct InboxMessageTagModelErrorReq {
     pub message_id: i64,
     pub tag_id: i64,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct TagModelError {
+    pub id: i64,
+    pub sigint_inbox_item_id: i64,
+    pub model: String,
+    pub model_login: Option<String>,
+    pub confidence: f64,
+    pub removed_by_login: String,
+    pub removed_at: i64,
+    pub body: String,
+    pub timestamp: Option<i64>,
+    pub coords: Option<String>,
+    pub freq: Option<String>,
+    pub post_id: Option<i64>,
+    pub datetime: Option<i64>,
+    pub location_v2: Option<String>,
+    pub post_name: Option<String>,
+}
+
+#[derive(FromQueryResult)]
+pub struct TagModelErrorQueryDesc {
+    pub id: i64,
+    pub sigint_inbox_item_id: i64,
+    pub model: String,
+    pub model_login: Option<String>,
+    pub confidence: f64,
+    pub removed_by_login: String,
+    pub removed_at: DateTimeWithTimeZone,
+    pub body: String,
+    pub timestamp: Option<chrono::NaiveDateTime>,
+    pub coords: Option<String>,
+    pub freq: Option<String>,
+    pub post_id: Option<i64>,
+    pub datetime: Option<chrono::NaiveDateTime>,
+    pub location_v2: Option<String>,
+    pub post_name: Option<String>,
 }
