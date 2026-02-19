@@ -49,7 +49,7 @@ navBar user shared activeName props =
             menuItemWithBadge props activeName
 
         menuWithSubs =
-            menuItemWithSubs props (isDarkMode shared.themeMode) activeName
+            menuItemWithSubs props activeName
 
         adminSubs =
             [ Menu (Internal Route.Path.Admin) "zones" "напрямки"
@@ -252,8 +252,8 @@ menuItemWithBadge props activeName hrefLink activeNameExp nameText badgeText bad
 -- Dropdowns: black text in light mode, white in dark mode
 
 
-menuItemWithSubs : Props msg -> Bool -> String -> String -> String -> List Menu -> Html msg
-menuItemWithSubs props isDarkMode activeName activeNameExp nameText subs =
+menuItemWithSubs : Props msg -> String -> String -> String -> List Menu -> Html msg
+menuItemWithSubs props activeName activeNameExp nameText subs =
     let
         isOpen =
             props.openDropdown == Just activeNameExp
@@ -268,27 +268,13 @@ menuItemWithSubs props isDarkMode activeName activeNameExp nameText subs =
             else
                 props.onDropdownToggle (Just activeNameExp)
 
-        dropdownTextClass =
-            if isDarkMode then
-                "text-white"
-
-            else
-                "text-black"
-
-        dropdownBgClass =
-            if isDarkMode then
-                "bg-gray-900"
-
-            else
-                "bg-white"
-
         dropdownItem : Menu -> Html msg
         dropdownItem sub =
             li []
                 [ case sub.link of
                     Internal path ->
                         a
-                            [ class ("flex items-center justify-between px-4 py-2 " ++ dropdownTextClass ++ " hover:bg-black/10 rounded transition-all duration-200")
+                            [ class "flex items-center justify-between px-4 py-2 text-[var(--color-text)] hover:bg-[var(--color-column)] rounded transition-all duration-200"
                             , classList [ ( "font-medium", sub.activeName == activeName ) ]
                             , attribute "role" "menuitem"
                             , Route.Path.href path
@@ -304,7 +290,7 @@ menuItemWithSubs props isDarkMode activeName activeNameExp nameText subs =
 
                     External link ->
                         a
-                            [ class ("flex items-center justify-between px-4 py-2 " ++ dropdownTextClass ++ " hover:bg-black/10 rounded transition-all duration-200")
+                            [ class "flex items-center justify-between px-4 py-2 text-[var(--color-text)] hover:bg-[var(--color-column)] rounded transition-all duration-200"
                             , classList [ ( "font-medium", sub.activeName == activeName ) ]
                             , attribute "role" "menuitem"
                             , href link
@@ -343,7 +329,7 @@ menuItemWithSubs props isDarkMode activeName activeNameExp nameText subs =
         , div [ class "absolute left-0 pt-2 z-500" ]
             [ ul
                 [ id dropdownMenuId
-                , class ("w-56 " ++ dropdownBgClass ++ " rounded-lg shadow-lg border border-black/15 transition-all duration-200")
+                , class "w-56 bg-[var(--color-card)] rounded-lg shadow-lg border border-[var(--color-border)] transition-all duration-200"
                 , attribute "role" "menu"
                 , classList
                     [ ( "hidden", not isOpen )
