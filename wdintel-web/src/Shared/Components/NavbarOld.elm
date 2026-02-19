@@ -360,7 +360,7 @@ onDropdownTriggerKey msg =
     on "keydown"
         (Json.Decode.andThen
             (\key ->
-                if key == "Enter" || key == " " || key == "ArrowDown" then
+                if key == "ArrowDown" then
                     Json.Decode.succeed msg
 
                 else
