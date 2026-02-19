@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 
 import duckdb
@@ -61,6 +60,8 @@ class Lake:
                     , enabled
                 FROM
                     tag
+                WHERE
+                    enabled = true
             $$)
         )
         MERGE INTO tag AS tgt
@@ -164,36 +165,56 @@ class Lake:
             JOIN
                 sigint_inbox_item_tag mt on m.source = mt.source AND m.id = mt.sigint_inbox_item_id
             JOIN
-                tag t ON mt.source = t.source AND mt.tag_id = t.id
+                tag t ON mt.source = t.source AND mt.tag_id = t.id and t.enabled = true
             JOIN
                 label l ON t.label = l.label_text
         )
         PIVOT cte
         ON label_id IN (0, 1, 2, 3, 4, 5, 6, 7, 8, 9)
-        USING coalesce(max(label_id = label_id)::BOOLEAN, FALSE) AS onehot
+        USING coalesce(max(TRUE), FALSE) AS onehot;
         """)
 
         self.conn.execute(r"""
         CREATE OR REPLACE VIEW tmp_messages_labeled_onehot AS
-        SELECT DISTINCT ON (text, "0_onehot", "1_onehot", "2_onehot", "3_onehot", "4_onehot", "5_onehot", "6_onehot", "7_onehot", "8_onehot", "9_onehot")
-            source,
-            id,
-            created_at,
-            text,
-            label_0: "0_onehot",
-            label_1: "1_onehot",
-            label_2: "2_onehot",
-            label_3: "3_onehot",
-            label_4: "4_onehot",
-            label_5: "5_onehot",
-            label_6: "6_onehot",
-            label_7: "7_onehot",
-            label_8: "8_onehot",
-            label_9: "9_onehot"
+        WITH source_flags AS (
+            -- Pre-calculate first time a source EVER had a specific label (single pass)
+            SELECT
+                source,
+                min(created_at) filter("0_onehot" = true) AS min_created_at_0,
+                min(created_at) filter("1_onehot" = true) AS min_created_at_1,
+                min(created_at) filter("2_onehot" = true) AS min_created_at_2,
+                min(created_at) filter("3_onehot" = true) AS min_created_at_3,
+                min(created_at) filter("4_onehot" = true) AS min_created_at_4,
+                min(created_at) filter("5_onehot" = true) AS min_created_at_5,
+                min(created_at) filter("6_onehot" = true) AS min_created_at_6,
+                min(created_at) filter("7_onehot" = true) AS min_created_at_7,
+                min(created_at) filter("8_onehot" = true) AS min_created_at_8,
+                min(created_at) filter("9_onehot" = true) AS min_created_at_9
+            FROM tmp_messages_pivot
+            GROUP BY source
+        )
+        SELECT DISTINCT ON (x.text, x."0_onehot", x."1_onehot", x."2_onehot", x."3_onehot", x."4_onehot", x."5_onehot", x."6_onehot", x."7_onehot", x."8_onehot", x."9_onehot")
+            x.source,
+            x.id,
+            x.created_at,
+            x.text,
+            CASE WHEN x.created_at >= f.min_created_at_0 THEN x."0_onehot" END AS label_0,
+            CASE WHEN x.created_at >= f.min_created_at_1 THEN x."1_onehot" END AS label_1,
+            CASE WHEN x.created_at >= f.min_created_at_2 THEN x."2_onehot" END AS label_2,
+            CASE WHEN x.created_at >= f.min_created_at_3 THEN x."3_onehot" END AS label_3,
+            CASE WHEN x.created_at >= f.min_created_at_4 THEN x."4_onehot" END AS label_4,
+            CASE WHEN x.created_at >= f.min_created_at_5 THEN x."5_onehot" END AS label_5,
+            CASE WHEN x.created_at >= f.min_created_at_6 THEN x."6_onehot" END AS label_6,
+            CASE WHEN x.created_at >= f.min_created_at_7 THEN x."7_onehot" END AS label_7,
+            CASE WHEN x.created_at >= f.min_created_at_8 THEN x."8_onehot" END AS label_8,
+            CASE WHEN x.created_at >= f.min_created_at_9 THEN x."9_onehot" END AS label_9
         FROM
-            tmp_messages_pivot
+            tmp_messages_pivot x
+        JOIN
+            source_flags f ON x.source = f.source
         WHERE
-            text <> ''
+            x.text <> ''
+        ;
         """)
         return self.conn.query(
             f"SELECT * FROM tmp_messages_labeled_onehot {pred_order}"
@@ -202,7 +223,6 @@ class Lake:
     def split_for_label(
         self, label_column_name: str, and_filter: str
     ) -> DuckDBPyRelation:
-        self.create_messages_labeled_onehot()
         return self.conn.query(f"""
         SELECT
              '__label__' || {label_column_name}::int || ' ' || text AS text,
@@ -211,7 +231,6 @@ class Lake:
             tmp_messages_labeled_onehot
         WHERE
             {label_column_name} IS NOT NULL
-            AND (label_0 OR label_1 OR label_2 OR label_3 OR label_4 OR label_5 OR label_6 OR label_7 OR label_8 OR label_9)
             AND {and_filter}
         """)
 
