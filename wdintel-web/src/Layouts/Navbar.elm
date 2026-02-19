@@ -132,7 +132,16 @@ update route msg model =
 
 subscriptions : Model -> Sub Msg
 subscriptions _ =
-    Browser.Events.onKeyDown (Json.Decode.map KeyPressed (Json.Decode.field "key" Json.Decode.string))
+    Browser.Events.onKeyDown <|
+        Json.Decode.andThen
+            (\key ->
+                if key == "Escape" then
+                    Json.Decode.succeed (KeyPressed key)
+
+                else
+                    Json.Decode.fail "Ignore non-Escape keys"
+            )
+            (Json.Decode.field "key" Json.Decode.string)
 
 
 
