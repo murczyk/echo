@@ -32,3 +32,40 @@ host    wd              wd              ${TRAIN_IP}/32            scram-sha-256
 EOF
    sudo systemctl reload postgresql@14-main.service
 fi
+
+
+SERVICE_UNIT_FILE="/etc/systemd/system/pgbackrest-restore.service"
+if [[ ! -f "${SERVICE_UNIT_FILE}" ]]; then
+    STANZA=$(pgbackrest info --output=json | jq -r '.[0].name')
+    cat << EOF | sudo tee /etc/systemd/system/pgbackrest-restore.service
+[Unit]
+Description=Restore latest pgBackRest backup
+Before=postgresql@14-main.service
+Conflicts=postgresql@14-main.service
+
+[Service]
+Type=oneshot
+User=postgres
+ExecStart=/usr/bin/pgbackrest --stanza=${STANZA} --delta --log-level-console=info restore
+ExecStopPost=+/usr/bin/systemctl start --no-block postgresql@14-main.service
+EOF
+fi
+
+TIMER_UNIT="pgbackrest-restore.timer"
+TIMER_UNIT_FILE="/etc/systemd/system/${TIMER_UNIT}"
+if [[ ! -f "${TIMER_UNIT_FILE}" ]]; then
+    cat << EOF | sudo tee "${TIMER_UNIT_FILE}"
+[Unit]
+Description=Run pgbackrest-restore daily at 01:01
+[Timer]
+
+OnCalendar=*-*-* 01:01:00 Europe/Kyiv
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+fi
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now "${TIMER_UNIT}"
