@@ -33,6 +33,7 @@ struct TaskGroupSnapshot {
     in_progress: usize,
     pending: usize,
     last_completed_till_ts: Option<NaiveDateTime>,
+    last_completed_ago_seconds: Option<i64>,
     chunks: Vec<ChunkSnapshot>,
     status_nm: String,
     status_time_elapsed: String,
@@ -170,6 +171,7 @@ fn build_group_snapshot(
     let mut in_progress = 0;
     let mut pending = 0;
     let mut last_completed_till_ts = None;
+    let mut last_completed_at = None;
     let mut min_since_ts = None;
     let mut max_till_ts = None;
 
@@ -183,6 +185,12 @@ fn build_group_snapshot(
             last_completed_till_ts = match last_completed_till_ts {
                 None => Some(task.till_ts),
                 Some(value) => Some(value.min(task.till_ts)),
+            };
+            last_completed_at = match last_completed_at {
+                None => task.completed_at,
+                Some(value) => {
+                    task.completed_at.map(|done_at| value.max(done_at))
+                }
             };
         }
         min_since_ts = match min_since_ts {
@@ -203,11 +211,13 @@ fn build_group_snapshot(
     );
 
     let total = tasks.len();
+    let now = Utc::now().naive_utc();
+    let last_completed_ago_seconds =
+        last_completed_at.map(|done_at| (now - done_at).num_seconds().max(0));
 
     let (status_nm, status_time_elapsed) = match m_worker {
         Some(worker) => {
-            let time =
-                (Utc::now().naive_utc() - worker.updated_at).num_seconds();
+            let time = (now - worker.updated_at).num_seconds();
             (format!("{:?}", worker.status), format!("{time}s"))
         }
         None => ("???".to_string(), "???".to_string()),
@@ -219,6 +229,7 @@ fn build_group_snapshot(
         in_progress,
         pending,
         last_completed_till_ts,
+        last_completed_ago_seconds,
         chunks,
         status_nm,
         status_time_elapsed,
@@ -266,9 +277,11 @@ fn render_group(
     title: &str,
     group: &TaskGroupSnapshot,
 ) {
+    let last_completed_txt =
+        format_last_completed_task(group.last_completed_ago_seconds);
     let title_full = format!(
-        "{title} | {} for {}",
-        group.status_nm, group.status_time_elapsed
+        "{title} | {} for {} | Last completed task: {last_completed_txt}",
+        group.status_nm, group.status_time_elapsed,
     );
     let block = Block::default().borders(Borders::ALL).title(title_full);
     let inner = block.inner(area);
@@ -545,4 +558,13 @@ fn bucket_layout_width(area_width: usize, count: usize) -> (usize, usize) {
 fn format_ts(ts: Option<NaiveDateTime>) -> String {
     ts.map(|value| value.format("%Y-%m-%d %H:%M").to_string())
         .unwrap_or_else(|| "-".to_string())
+}
+
+fn format_last_completed_task(
+    last_completed_ago_seconds: Option<i64>,
+) -> String {
+    match last_completed_ago_seconds {
+        Some(seconds) => format!("{seconds}s ago"),
+        None => "N/A".to_string(),
+    }
 }
