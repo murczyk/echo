@@ -144,6 +144,37 @@ class Lake:
             pred_order = f"ORDER BY hash(source, id, {seed})"
 
         self.conn.execute(r"""
+        CREATE OR REPLACE VIEW vw_messages_errors AS
+        WITH cte AS (
+            SELECT
+                m.source,
+                m.id,
+                m.created_at,
+                array_to_string(
+                    regexp_extract_all(
+                        lower(
+                            coalesce(nullif(regexp_replace(m.body, '^[^—]*—\s*', ''), ''), m.body)
+                        ),
+                        $$[\pL\pN_`'’ʼ]+$$
+                    ),
+                    ' '
+                ) AS text,
+                l.label_id
+            FROM
+                sigint_inbox_message m
+            JOIN
+                sigint_inbox_tag_model_error me on m.source = me.source AND m.id = me.sigint_inbox_item_id
+            JOIN
+                tag t ON me.source = t.source AND me.tag_id = t.id and t.enabled = true
+            JOIN
+                label l ON t.label = l.label_text
+        )
+        PIVOT cte
+        ON label_id IN (0, 1, 2, 3, 4, 5, 6, 7, 8, 9)
+        USING max(FALSE) AS onehot;
+        """)
+
+        self.conn.execute(r"""
         CREATE TEMPORARY TABLE IF NOT EXISTS tmp_messages_pivot AS
         WITH cte AS (
             SELECT
@@ -171,7 +202,9 @@ class Lake:
         )
         PIVOT cte
         ON label_id IN (0, 1, 2, 3, 4, 5, 6, 7, 8, 9)
-        USING coalesce(max(TRUE), FALSE) AS onehot;
+        USING coalesce(max(TRUE), FALSE) AS onehot
+        UNION ALL
+        SELECT * FROM vw_messages_errors;
         """)
 
         self.conn.execute(r"""
