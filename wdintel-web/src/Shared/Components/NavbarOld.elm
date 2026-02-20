@@ -76,7 +76,8 @@ navBar user shared activeName props =
             , Menu (Internal Route.Path.RerUnits) "rer-units" "підрозділи"
             , Menu (Internal Route.Path.RerSignals) "signals" "сигнали"
             , Menu (Internal Route.Path.RerNetworks) "networks" "мережі"
-            , Menu (Internal Route.Path.RerPalitra) "palitra" "палітра"
+            , Menu (Internal Route.Path.RerPalitraNeo) "palitra" "палітра"
+            , Menu (Internal Route.Path.RerPalitra) "palitra" "палітра (стара)"
             ]
 
         importSubs =

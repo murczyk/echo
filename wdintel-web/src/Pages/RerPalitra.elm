@@ -1406,7 +1406,7 @@ view user shared model =
         isDark =
             isDarkMode shared.themeMode
     in
-    { title = "палітри"
+    { title = "палітри (старі)"
     , body =
         [ div
             [ classList [ ( "overflow-hidden", model.showCreateSidebar || model.editSidebar /= Nothing ) ]
@@ -1429,7 +1429,7 @@ view user shared model =
                 Success pal ->
                     div []
                         [ div []
-                            [ h1 [ class "py-4 text-2xl font-bold text-foreground" ] [ text "Палітри" ]
+                            [ h1 [ class "py-4 text-2xl font-bold text-foreground" ] [ text "палітри (старі)" ]
                             , div [ class "mb-4 flex justify-end gap-2" ]
                                 [ a
                                     [ Attr.href "/alpinequest-kmz"
