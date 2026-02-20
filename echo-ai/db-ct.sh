@@ -7,7 +7,8 @@ TRAIN_IP="$1"
 
 if [ -z "${TRAIN_IP}" ];
 then
-    echo "Usage: db-ct.sh \$(tailscale ip -4)"  >&2
+    echo 'Provide an tailscale IP as argument to add to pg_hba.conf' >&2
+    echo 'Usage: ssh <SERVER> "bash -s" -- < db-ct.sh $(tailscale ip -4)' >&2
     exit 1
 fi
 
