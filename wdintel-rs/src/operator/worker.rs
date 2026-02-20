@@ -50,7 +50,7 @@ pub async fn run_operator_inbox_worker_nofail(mode: Mode) {
 }
 
 async fn receive_once(
-    settlements: Arc<RwLock<crate::location::SettlementsData>>,
+    settlements: Arc<RwLock<crate::location::SettlementsDataConfig>>,
     config: &crate::config::Config,
     dbx: &DatabaseConnection,
     rq: &reqwest::Client,

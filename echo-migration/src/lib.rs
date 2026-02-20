@@ -202,6 +202,8 @@ mod m20260206_175400_palitra_point_search_indexes;
 mod m20260211_161110_add_network_invalidation_task_tag;
 mod m20260212_150900_palitra_point_label_lower_pat_idx;
 mod m20260212_164832_add_worker_status;
+mod m20260218_120000_add_aor_location_config;
+mod m20260219_090000_add_aor_location_configs_json;
 
 pub struct Migrator;
 
@@ -411,6 +413,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20260211_161110_add_network_invalidation_task_tag::Migration),
             Box::new(m20260212_150900_palitra_point_label_lower_pat_idx::Migration),
             Box::new(m20260212_164832_add_worker_status::Migration),
+            Box::new(m20260218_120000_add_aor_location_config::Migration),
+            Box::new(m20260219_090000_add_aor_location_configs_json::Migration),
         ]
     }
 }

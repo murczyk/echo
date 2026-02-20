@@ -43,12 +43,18 @@ pub async fn oneoff_rer_csv_import_1(
     .await
     .c(h!())?;
     let settlements = Arc::new(RwLock::new(
-        crate::location::load_from_file(
+        crate::location::load_settlements_data_config(
             config.settlement_paths().unwrap(),
             mode,
         )
         .unwrap(),
     ));
+    crate::location::aor_config::init_aor_location_config(
+        &dbx,
+        settlements.clone(),
+    )
+    .await
+    .c(h!())?;
     let rq: reqwest::Client = reqwest::Client::builder()
         .timeout(core::time::Duration::from_secs(
             crate::config::RQ_TIMEOUT_SIGNAL_API,
@@ -337,7 +343,7 @@ pub struct DeltaCsvFreqRec {
 }
 
 pub async fn rer_delta_csv_import_go(
-    settlements: Arc<RwLock<crate::location::SettlementsData>>,
+    settlements: Arc<RwLock<crate::location::SettlementsDataConfig>>,
     dbx: &sea_orm::DatabaseConnection,
     config: &Config,
     redis: &mut redis::aio::ConnectionManager,

@@ -749,7 +749,7 @@ pub fn aggregate_network_units(
 }
 
 pub async fn submit_upsert_inbox_item(
-    settlements: Arc<RwLock<crate::location::SettlementsData>>,
+    settlements: Arc<RwLock<crate::location::SettlementsDataConfig>>,
     txn: &DatabaseTransaction,
     id: i64,
     message: &InboxMessage,
@@ -859,11 +859,31 @@ pub async fn submit_upsert_inbox_item(
     }
 
     let location = message.location.clone();
+    let m_aor_id = match message.group_master_key.clone() {
+        Some(group_master_key) => signal_group_aor::Entity::find()
+            .join(
+                JoinType::InnerJoin,
+                signal_group_aor::Relation::AreaOfResponsibility.def(),
+            )
+            .filter(signal_group_aor::Column::MasterKey.eq(group_master_key))
+            .filter(area_of_responsibility::Column::Deleted.eq(false))
+            .order_by_asc(signal_group_aor::Column::Id)
+            .select_only()
+            .column(signal_group_aor::Column::AorId)
+            .into_tuple::<i64>()
+            .one(txn)
+            .await
+            .c(h!())?,
+        None => None,
+    };
     let location_v2 = match location.clone() {
         Some(location) => {
-            let locations =
-                crate::location::parse_location(settlements.clone(), location)
-                    .context(h!())?;
+            let locations = crate::location::parse_location_with_aor(
+                settlements.clone(),
+                location,
+                m_aor_id,
+            )
+            .context(h!())?;
             Some(utils::format_settlements_list(locations))
         }
         None => location.clone(), //fallback
