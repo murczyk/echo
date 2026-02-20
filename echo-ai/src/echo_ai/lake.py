@@ -117,15 +117,7 @@ class Lake:
             SELECT
                 source,
                 id,
-                array_to_string(
-                    regexp_extract_all(
-                        lower(
-                            coalesce(nullif(regexp_replace(body, '^[^—]*—\s*', ''), ''), body)
-                        ),
-                        $$[\pL\pN_`'’ʼ]+$$
-                    ),
-                    ' '
-                ) AS text
+                normalize_body_text(body) as text
             FROM
                 sigint_inbox_message
         ) AS x
@@ -144,21 +136,13 @@ class Lake:
             pred_order = f"ORDER BY hash(source, id, {seed})"
 
         self.conn.execute(r"""
-        CREATE OR REPLACE VIEW vw_messages_errors AS
+        CREATE OR REPLACE TEMPORARY VIEW vw_messages_errors AS
         WITH cte AS (
             SELECT
                 m.source,
                 m.id,
                 m.created_at,
-                array_to_string(
-                    regexp_extract_all(
-                        lower(
-                            coalesce(nullif(regexp_replace(m.body, '^[^—]*—\s*', ''), ''), m.body)
-                        ),
-                        $$[\pL\pN_`'’ʼ]+$$
-                    ),
-                    ' '
-                ) AS text,
+                normalize_body_text(m.body) AS text,
                 l.label_id
             FROM
                 sigint_inbox_message m
@@ -181,15 +165,7 @@ class Lake:
                 m.source,
                 m.id,
                 m.created_at,
-                array_to_string(
-                    regexp_extract_all(
-                        lower(
-                            coalesce(nullif(regexp_replace(m.body, '^[^—]*—\s*', ''), ''), m.body)
-                        ),
-                        $$[\pL\pN_`'’ʼ]+$$
-                    ),
-                    ' '
-                ) AS text,
+                normalize_body_text(m.body) AS text,
                 l.label_id
             FROM
                 sigint_inbox_message m
@@ -208,7 +184,7 @@ class Lake:
         """)
 
         self.conn.execute(r"""
-        CREATE OR REPLACE VIEW tmp_messages_labeled_onehot AS
+        CREATE OR REPLACE TEMPORARY VIEW tmp_messages_labeled_onehot AS
         WITH source_flags AS (
             -- Pre-calculate first time a source EVER had a specific label (single pass)
             SELECT
@@ -381,7 +357,7 @@ class Lake:
 
     def create_schema_if_not_exists(self):
         self.conn.execute(r"""
-        CREATE OR REPLACE VIEW label(label_id, label_text) AS
+        CREATE OR REPLACE TEMPORARY VIEW label(label_id, label_text) AS
         (
             VALUES
             (0, 'переміщення'),
@@ -444,4 +420,14 @@ class Lake:
             removed_at TIMESTAMP WITH TIME ZONE NOT NULL
         );
         ALTER TABLE sigint_inbox_tag_model_error SET PARTITIONED BY (source);
+
+        CREATE TEMPORARY MACRO normalize_body_text(body) AS array_to_string(
+            regexp_extract_all(
+                lower(
+                    coalesce(nullif(regexp_replace(body, '^[^—]*—\s*', ''), ''), body)
+                ),
+                $$[\pL\pN_`'’ʼ]+$$
+            ),
+            ' '
+        );
         """)
