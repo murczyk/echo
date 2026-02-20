@@ -1,4 +1,5 @@
 import datetime
+import multiprocessing
 import sys
 from typing import cast
 
@@ -23,6 +24,76 @@ from .fasttext_model import (
     get_training_args,
     log_model,
 )
+
+
+def train_model(return_dict: dict, job: dict):
+    experiment_id = job["experiment_id"]
+    run_id = job["run_id"]
+    mlflow.set_experiment(experiment_id=experiment_id)
+    mlflow.start_run(run_id=run_id)
+
+    fasttext_kwargs = job["fasttext_kwargs"]
+    len_test = job["len_test"]
+    test_path = job["test_path"]
+    autotuneMetric = fasttext_kwargs.get("autotuneMetric")
+    autotuneModelSize = fasttext_kwargs.get("autotuneModelSize")
+
+    if autotuneMetric and len_test > 0:
+        fasttext_kwargs["autotuneValidationFile"] = test_path
+    else:
+        fasttext_kwargs.pop("autotuneValidationFile", None)
+        fasttext_kwargs.pop("autotuneDuration", None)
+        fasttext_kwargs.pop("autotunePredictions", None)
+        fasttext_kwargs.pop("autotuneDuration", None)
+        fasttext_kwargs.pop("autotuneModelSize", None)
+
+    train_path = job["train_path"]
+    print(f"fasttext arguments: {fasttext_kwargs}", flush=True)
+    fasttext_model = fasttext.train_supervised(input=train_path, **fasttext_kwargs)
+
+    if autotuneModelSize and not autotuneMetric:
+        qnorm = False
+        qout = False
+        retrain = True
+        file_size = humanfriendly.parse_size(autotuneModelSize, binary=True)
+        cutoff = get_cutoff_for_file_size(
+            fasttext_model, qnorm=qnorm, qout=qout, file_size=file_size
+        )
+        q_params = {
+            "qnorm": qnorm,
+            "qout": qout,
+            "file_size": file_size,
+            "cutoff": cutoff,
+            "retrain": retrain,
+        }
+        mlflow.log_params(q_params)
+        print(f"starting quantize arguments: {q_params}", flush=True)
+
+        fasttext_model.quantize(
+            input=train_path,
+            retrain=retrain,
+            cutoff=cutoff,
+            qnorm=qnorm,
+            qout=qout,
+            thread=fasttext_kwargs["thread"],
+        )
+        print("finished quantize", flush=True)
+
+    label_name = job["label_name"]
+    model_params = get_model_params(fasttext_model)
+    print(f"params: {model_params}", flush=True)
+    model_params["label_name"] = label_name
+    mlflow.log_params(model_params)
+
+    name = f"supervised-{label_name}"
+    model_info = log_model(
+        fasttext_model,
+        name=name,
+        model_type="classifier",
+    )
+    del fasttext_model
+    return_dict["model_id"] = model_info.model_id
+    return_dict["model_uri"] = model_info.model_uri
 
 
 def train_supervised(
@@ -81,74 +152,39 @@ def train_supervised(
         test_path = lake.to_plain_text(rel_test, pd_test)
 
         tags = {"label": label_name, "task": "supervised"}
-        with mlflow.start_run(nested=True, tags=tags):
+        with mlflow.start_run(nested=True, tags=tags) as run:
             print(f"starting training for {label_name}", flush=True)
 
-            autotuneMetric = args.get("autotuneMetric")
-            autotuneModelSize = args.get("autotuneModelSize")
-
-            if autotuneMetric and len_test > 0:
-                fasttext_kwargs["autotuneValidationFile"] = test_path
-            else:
-                fasttext_kwargs.pop("autotuneValidationFile", None)
-                fasttext_kwargs.pop("autotuneDuration", None)
-                fasttext_kwargs.pop("autotunePredictions", None)
-                fasttext_kwargs.pop("autotuneDuration", None)
-                fasttext_kwargs.pop("autotuneModelSize", None)
-
-            print(f"fasttext arguments: {fasttext_kwargs}", flush=True)
-            fasttext_model = fasttext.train_supervised(
-                input=train_path, **fasttext_kwargs
+            manager = multiprocessing.Manager()
+            return_dict = manager.dict()
+            p = multiprocessing.Process(
+                target=train_model,
+                args=[
+                    return_dict,
+                    {
+                        "run_id": run.info.run_id,
+                        "experiment_id": run.info.experiment_id,
+                        "label_name": label_name,
+                        "fasttext_kwargs": fasttext_kwargs,
+                        "train_path": train_path,
+                        "len_test": len_test,
+                        "test_path": test_path,
+                    },
+                ],
             )
+            p.start()
+            p.join()
+            model_id = return_dict["model_id"]
+            model_uri = return_dict["model_uri"]
 
-            if autotuneModelSize and not autotuneMetric:
-                qnorm = False
-                qout = False
-                retrain = True
-                file_size = humanfriendly.parse_size(autotuneModelSize, binary=True)
-                cutoff = get_cutoff_for_file_size(
-                    fasttext_model, qnorm=qnorm, qout=qout, file_size=file_size
-                )
-                q_params = {
-                    "qnorm": qnorm,
-                    "qout": qout,
-                    "file_size": file_size,
-                    "cutoff": cutoff,
-                    "retrain": retrain,
-                }
-                mlflow.log_params(q_params)
-                print(f"starting quantize arguments: {q_params}", flush=True)
-
-                fasttext_model.quantize(
-                    input=train_path,
-                    retrain=retrain,
-                    cutoff=cutoff,
-                    qnorm=qnorm,
-                    qout=qout,
-                    thread=fasttext_kwargs["thread"],
-                )
-                print("finished quantize", flush=True)
-
-            model_params = get_model_params(fasttext_model)
-            print(f"params: {model_params}", flush=True)
-            model_params["label_name"] = label_name
-            mlflow.log_params(model_params)
-
-            name = f"supervised-{label_name}"
-            model_info = log_model(
-                fasttext_model,
-                name=name,
-                model_type="classifier",
-            )
-            del fasttext_model
-            logged_model = LoggedModelInput(model_id=model_info.model_id)
+            logged_model = LoggedModelInput(model_id=model_id)
             mlflow.log_input(pd_train, context="training", model=logged_model)
             split_csv = {
                 "train": train_path,
             }
             if len_test > 0:
                 split_csv["test"] = test_path
-            eval_results = evaluate_model(label_name, model_info.model_uri, split_csv)
+            eval_results = evaluate_model(label_name, model_uri, split_csv)
             results_per_split.append(eval_results)
 
     results_test = [item["test"] for item in results_per_split]
