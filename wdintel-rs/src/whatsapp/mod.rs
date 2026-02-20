@@ -9,7 +9,7 @@ use sea_orm::*;
 pub mod types;
 
 pub async fn receive_thread_nofail(
-    settlements: Arc<RwLock<crate::location::SettlementsData>>,
+    settlements: Arc<RwLock<crate::location::SettlementsDataConfig>>,
     config: &crate::config::Config,
     dbx: &sea_orm::DatabaseConnection,
     redis: &mut redis::aio::ConnectionManager,
@@ -43,7 +43,7 @@ pub async fn receive_thread_nofail(
 }
 
 async fn receive_thread(
-    settlements: Arc<RwLock<crate::location::SettlementsData>>,
+    settlements: Arc<RwLock<crate::location::SettlementsDataConfig>>,
     config: &crate::config::Config,
     dbx: &sea_orm::DatabaseConnection,
     redis: &mut redis::aio::ConnectionManager,
@@ -90,7 +90,7 @@ async fn receive_thread(
 }
 
 async fn receive_once(
-    settlements: Arc<RwLock<crate::location::SettlementsData>>,
+    settlements: Arc<RwLock<crate::location::SettlementsDataConfig>>,
     config: &crate::config::Config,
     dbx: &sea_orm::DatabaseConnection,
     rq: &reqwest::Client,

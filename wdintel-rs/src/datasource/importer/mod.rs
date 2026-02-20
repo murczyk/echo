@@ -2,7 +2,7 @@ use crate::config::Config;
 use crate::datasource::importer::types::*;
 use crate::entities::*;
 use crate::error::AppError;
-use crate::location::SettlementsData;
+use crate::location::SettlementsDataConfig;
 use crate::types::*;
 use crate::utils::orm::ArrayColumnOps;
 use crate::{OneoffExportDataSourcePs, OneoffImportDataSourcePs};
@@ -46,12 +46,18 @@ pub async fn oneoff_import_datasource(
             .await
             .context(h!())?;
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(
+            crate::location::load_settlements_data_config(
                 config.settlement_paths().context(h!())?,
                 mode,
             )
             .context(h!())?,
         ));
+        crate::location::aor_config::init_aor_location_config(
+            &db,
+            settlements.clone(),
+        )
+        .await
+        .context(h!())?;
         let rq: reqwest::Client = reqwest::Client::builder()
             .timeout(core::time::Duration::from_secs(
                 crate::config::RQ_TIMEOUT_SIGNAL_API,
@@ -221,7 +227,7 @@ async fn collect_datasource_data(
 async fn import_data(
     imported_data: DatasourceDetails,
     db: DatabaseConnection,
-    settlements: Arc<RwLock<SettlementsData>>,
+    settlements: Arc<RwLock<SettlementsDataConfig>>,
     config: Config,
     redis: ConnectionManager,
     rq: Client,

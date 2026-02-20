@@ -22,7 +22,7 @@ use sea_orm::*;
 /// - changing datasource_group_id if coordinates are present
 /// - firing [ETInboxChanged](crate::event_stream::types::EventType::ETInboxChanged) event
 pub async fn construct_inbox_item<'a, 'async_trait, C>(
-    settlements: Arc<RwLock<crate::location::SettlementsData>>,
+    settlements: Arc<RwLock<crate::location::SettlementsDataConfig>>,
     txn: &'a C,
     rq: &reqwest::Client,
     config: &Config,
@@ -40,6 +40,7 @@ where
         .await
         .c(h!())?
         .ok_or(format!("Couldn't find a message id={message_id}"))?;
+    let m_aor_id = resolve_message_aor_id(txn, message_id).await.c(h!())?;
 
     let body = message.body.clone().unwrap_or("".to_string());
     if crate::rer_importer::multimessage::should_try_split_message(&body) {
@@ -121,10 +122,11 @@ where
         .chain(callsigns_alg2.clone().into_iter())
         .unique()
         .collect_vec();
-    let unit_and_loc = crate::unit::parser::extract_unit(
+    let unit_and_loc = crate::unit::parser::extract_unit_with_aor(
         settlements.clone(),
         &body,
         all_callsigns,
+        m_aor_id,
     )?;
     let unit = unit_and_loc.unit;
     let unit_v2 = find_unit_v2(txn, cache, &unit).await.c(h!())?;
@@ -132,10 +134,12 @@ where
     let settlement_list =
         match (unit_and_loc.locality, unit_and_loc.locality_v2) {
             (Some(_), Some(locations)) => locations,
-            (Some(location), None) => {
-                crate::location::parse_location(settlements.clone(), location)
-                    .c(h!())?
-            }
+            (Some(location), None) => crate::location::parse_location_with_aor(
+                settlements.clone(),
+                location,
+                m_aor_id,
+            )
+            .c(h!())?,
             _ => vec![],
         };
 
@@ -302,6 +306,43 @@ where
     }
     let m_unit = cached_m_unit.filter(|u| !u.is_empty());
     Ok(m_unit)
+}
+
+async fn resolve_message_aor_id<'a, 'async_trait, C>(
+    txn: &'a C,
+    message_id: i64,
+) -> Result<Option<i64>, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let m_group_master_key = signal_message_group::Entity::find()
+        .filter(signal_message_group::Column::SignalMessageId.eq(message_id))
+        .filter(signal_message_group::Column::GroupMasterKey.is_not_null())
+        .order_by_asc(signal_message_group::Column::Id)
+        .select_only()
+        .column(signal_message_group::Column::GroupMasterKey)
+        .into_tuple::<String>()
+        .one(txn)
+        .await
+        .c(h!())?;
+    let Some(group_master_key) = m_group_master_key else {
+        return Ok(None);
+    };
+    let m_aor_id = signal_group_aor::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            signal_group_aor::Relation::AreaOfResponsibility.def(),
+        )
+        .filter(signal_group_aor::Column::MasterKey.eq(group_master_key))
+        .filter(area_of_responsibility::Column::Deleted.eq(false))
+        .order_by_asc(signal_group_aor::Column::Id)
+        .select_only()
+        .column(signal_group_aor::Column::AorId)
+        .into_tuple::<i64>()
+        .one(txn)
+        .await
+        .c(h!())?;
+    Ok(m_aor_id)
 }
 
 async fn try_set_commintify_sender<C>(
