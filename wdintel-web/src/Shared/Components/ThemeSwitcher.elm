@@ -9,6 +9,7 @@ import Shared.Model exposing (ThemeMode(..))
 type alias Props msg =
     { currentTheme : ThemeMode
     , onThemeChange : ThemeMode -> msg
+    , triggerClass : String
     }
 
 
@@ -16,12 +17,12 @@ themeSwitcher : Props msg -> Html msg
 themeSwitcher props =
     div [ class "relative group" ]
         [ div
-            [ class "cursor-pointer p-2 rounded-lg hover:bg-[var(--color-column)] transition-all duration-200"
+            [ class ("cursor-pointer " ++ props.triggerClass)
             , onClick (props.onThemeChange (getNextTheme props.currentTheme))
             ]
             [ i
                 [ class
-                    ("bi text-lg text-white "
+                    ("bi text-lg text-current "
                         ++ (case props.currentTheme of
                                 Light ->
                                     "bi-sun"
@@ -78,4 +79,5 @@ colorThemeSwitcher msg isDark =
     themeSwitcher
         { currentTheme = if isDark then Dark else Light
         , onThemeChange = \_ -> msg
+        , triggerClass = "p-2 rounded transition-all duration-200"
         }

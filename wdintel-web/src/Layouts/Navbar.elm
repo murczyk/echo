@@ -68,6 +68,7 @@ keepAliveInterval =
 
 type Msg
     = ToggleDarkTheme
+    | SignOutClicked
     | SetThemeMode Shared.Model.ThemeMode
     | KeyPressed String
     | NoOp
@@ -84,6 +85,11 @@ update route msg model =
         ToggleDarkTheme ->
             ( model
             , E.toggleDarkMode
+            )
+
+        SignOutClicked ->
+            ( model
+            , E.logout
             )
 
         SetThemeMode themeMode ->
@@ -153,6 +159,7 @@ view user activeName shared route { toContentMsg, model, content } =
     let
         navbarProps =
             { onToggleTheme = ToggleDarkTheme
+            , onLogout = SignOutClicked
             , onThemeChange = SetThemeMode
             , onNavbarVisibilityChange = ToggleNavbarVisibility
             , isRerDuty = route.url.path == "/rer-duty" || route.url.path == "/rer-duty-neo"

@@ -68,7 +68,7 @@ export function PalitraTable({
         </Box>
       ) : (
         <TableContainer sx={{ overflowX: 'auto' }}>
-          <Table size="small" sx={{ minWidth: 820 }}>
+          <Table sx={{ minWidth: 820 }}>
             <TableHead>
               <TableRow>
                 <TableCell sortDirection={sortColumn === 'name' ? sortDirection : false}>

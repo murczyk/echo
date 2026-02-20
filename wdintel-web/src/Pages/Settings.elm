@@ -210,7 +210,7 @@ view shared user model =
                         [ -- Form header
                           div [ class "px-6 py-4 border-b border-[var(--border-color)] bg-[var(--color-bg-inactive)]" ]
                             [ h2 [ class "text-lg font-semibold text-[var(--text-color)]" ]
-                                [ text "Основні налаштування" ]
+                                [ text "Основні" ]
                             ]
 
                         -- Form content

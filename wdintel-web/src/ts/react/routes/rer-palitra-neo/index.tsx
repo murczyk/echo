@@ -1,5 +1,6 @@
-import { Alert, Box, Button, Stack, Typography } from '@mui/material';
+import { Alert, Box, Button, Stack } from '@mui/material';
 
+import { PageHeader } from '../../components/PageHeader';
 import { CreatePalitraDrawer } from './components/CreatePalitraDrawer';
 import { EditPalitraDrawer } from './components/EditPalitraDrawer';
 import { PalitraTable } from './components/PalitraTable';
@@ -10,28 +11,26 @@ export function RerPalitraNeoPage() {
 
   return (
     <Box className="w-full">
-      <Stack spacing={2}>
-        <Stack direction="row" alignItems="center" justifyContent="space-between" flexWrap="wrap" gap={2}>
-          <Typography component="h1" variant="h4" sx={{ fontWeight: 700 }}>
-            палітри
-          </Typography>
-
-          <Stack direction="row" spacing={1}>
-            <Button
-              component="a"
-              href="/alpinequest-kmz"
-              target="_blank"
-              rel="noopener noreferrer"
-              variant="outlined"
-              sx={{ textTransform: 'none' }}
-            >
-              AlpineQuest конвертер
-            </Button>
-            <Button variant="contained" onClick={page.openCreate} sx={{ textTransform: 'none' }}>
-              Додати палітру
-            </Button>
-          </Stack>
-        </Stack>
+      <Stack spacing={3}>
+        <PageHeader
+          title="палітри"
+          actions={
+            <Stack direction="row" spacing={2}>
+              <Button
+                component="a"
+                href="/alpinequest-kmz"
+                target="_blank"
+                rel="noopener noreferrer"
+                variant="outlined"
+              >
+                AlpineQuest конвертер
+              </Button>
+              <Button variant="contained" onClick={page.openCreate}>
+                Додати палітру
+              </Button>
+            </Stack>
+          }
+        />
 
         {page.error ? <Alert severity="error">{page.error.text}</Alert> : null}
 

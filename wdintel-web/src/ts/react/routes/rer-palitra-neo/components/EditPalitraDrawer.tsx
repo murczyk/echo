@@ -41,6 +41,11 @@ export function EditPalitraDrawer({
       anchor="right"
       open={open}
       onClose={editInFlight ? undefined : onClose}
+      sx={{
+        zIndex: 3500,
+        '& .MuiBackdrop-root': { zIndex: 3499 },
+        '& .MuiDrawer-paper': { zIndex: 3500 },
+      }}
       PaperProps={{ sx: { width: { xs: '100%', sm: 560 }, maxWidth: '100vw', display: 'flex' } }}
     >
       <Box sx={{ p: 2.5, borderBottom: '1px solid', borderColor: 'divider' }}>

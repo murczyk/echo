@@ -68,6 +68,11 @@ export function CreatePalitraDrawer({
       anchor="right"
       open={open}
       onClose={createInFlight ? undefined : onClose}
+      sx={{
+        zIndex: 3500,
+        '& .MuiBackdrop-root': { zIndex: 3499 },
+        '& .MuiDrawer-paper': { zIndex: 3500 },
+      }}
       PaperProps={{ sx: { width: { xs: '100%', sm: 680 }, maxWidth: '100vw', display: 'flex' } }}
     >
       <Box sx={{ p: 2.5, borderBottom: '1px solid', borderColor: 'divider' }}>
@@ -79,7 +84,7 @@ export function CreatePalitraDrawer({
             variant="outlined"
             onClick={onRequestAnalyzeKmz}
             disabled={kmzAnalyzing || createInFlight}
-            sx={{ textTransform: 'none', alignSelf: 'flex-start' }}
+            sx={{ alignSelf: 'flex-start' }}
           >
             {kmzAnalyzing ? 'Аналіз...' : kmzFile ? 'Замінити KMZ файл' : 'Обрати KMZ файл'}
           </Button>

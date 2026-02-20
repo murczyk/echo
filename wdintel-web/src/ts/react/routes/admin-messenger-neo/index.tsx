@@ -36,6 +36,7 @@ import {
   Login,
 } from '../../../../Bindings';
 import { Info } from '../../components/info';
+import { PageHeader } from '../../components/PageHeader';
 import { Button } from '../../components/mui-customized/button';
 import { IconButton } from '../../components/mui-customized/icon-button';
 import {
@@ -1486,11 +1487,7 @@ function AdminMessengerNeoPageBody() {
 
   return (
     <div className="mt-2 w-full space-y-4">
-      <div className="flex items-center justify-between gap-4">
-        <Typography variant="h5" component="h1" className="!font-semibold">
-          Месенджери
-        </Typography>
-      </div>
+      <PageHeader title="Месенджери" />
 
       {actionStatus?.kind === 'error' ? (
         <Info text={actionStatus.message} color="error" />

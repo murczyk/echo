@@ -31,6 +31,7 @@ type alias Menu =
 
 type alias Props msg =
     { onToggleTheme : msg
+    , onLogout : msg
     , onThemeChange : Shared.Model.ThemeMode -> msg
     , onNavbarVisibilityChange : msg
     , isRerDuty : Bool
@@ -179,12 +180,18 @@ navBar user shared activeName props =
                 , div [ class "flex items-center space-x-4" ]
                     [ ul [ class "flex items-center space-x-4" ] menuItems
                     ]
-                , div [ class "flex gap-1 items-center" ]
-                    [ span [ class "text-white" ]
-                        [ themeSwitcher
-                            { currentTheme = shared.themeMode
-                            , onThemeChange = props.onThemeChange
-                            }
+                , div [ class "flex gap-2 items-center" ]
+                    [ themeSwitcher
+                        { currentTheme = shared.themeMode
+                        , onThemeChange = props.onThemeChange
+                        , triggerClass = "block py-2 text-white hover:bg-black/10 px-2 rounded transition-all duration-200"
+                        }
+                    , button
+                        [ class "block py-2 text-white hover:bg-black/10 px-2 rounded transition-all duration-200 border-0 appearance-none flex items-center gap-1"
+                        , onClick props.onLogout
+                        ]
+                        [ i [ class "bi bi-box-arrow-right text-lg" ] []
+                        , span [] [ text ("(" ++ user.name ++ ")") ]
                         ]
                     , div
                         [ class "w-6 h-6 flex items-center justify-center"
