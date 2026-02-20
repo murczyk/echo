@@ -188,9 +188,11 @@ pub fn parse_location_with_aor(
         .replace("РАЙ.", "РАЙОН")
         .replace("Р-Н. ", "РАЙОН ")
         .replace("Р-Н ", "РАЙОН ")
+        .replace("Н.П.", " ")
         .replace("ОБ-ТЬ", "ОБЛАСТЬ");
     let location = JUNK_CHAR_RE.replace_all(&location, " ").to_string();
     let location = JUNK_WORD_RE.replace_all(&location, " ").to_string();
+    println!("wip: {location}");
     let location = trim(location);
     let location = try_process_nearest_location(location);
     let words = location
@@ -198,7 +200,6 @@ pub fn parse_location_with_aor(
         .map(|x| x.to_string())
         .collect_vec();
     let result = find_matching_settlements(words, settlements_data).c(h!())?;
-    println!("{:?}", result);
     if result.is_empty() {
         return Ok(vec![]);
     }
@@ -351,9 +352,12 @@ fn handle_three_words_group(
 }
 
 fn trim(string: String) -> String {
-    let mut string = string.replace("    ", " ").replace("   ", " ");
+    let mut string = string;
     while string.contains("  ") {
-        string = string.replace("  ", " ");
+        string = string
+            .replace("    ", " ")
+            .replace("   ", " ")
+            .replace("  ", " ");
     }
     String::from(string.trim())
 }
@@ -522,8 +526,8 @@ fn collect_blacklist() -> Vec<&'static str> {
         "ТАНКОВОГО",
         "ПІХОТНОГО",
         "СТРІЛЕЦЬКОГО",
-        r#"ІМ\."#,
-        r#"ЙМ\."#,
+        r#"ІМ"#,
+        r#"ЙМ"#,
         "ВІЙСЬКОВА",
         "ВІЙСЬКОВУ",
         "ВІЙСЬКОВОЇ",
@@ -538,9 +542,6 @@ fn collect_blacklist() -> Vec<&'static str> {
         "КРАСНОДАРСЬКИЙ",
         "БАТАРЕЯ",
         "БАТАРЄЯ",
-        r#"Н\.П"#,
-        r#"Н\.П."#,
-        "Н/П",
     ]
 }
 
