@@ -1,4 +1,4 @@
-module Pages_.Admin.Messanger.LinkFlow exposing
+module Pages_.Admin.Messenger.LinkFlow exposing
     ( LinkFlow
     , PhoneForm
     , ApiForm
@@ -147,8 +147,6 @@ updateQrCode qrCode linkFlow =
             linkFlow
 
 
--- API functions for form management
-
 updatePhoneNumber : String -> LinkFlow -> LinkFlow
 updatePhoneNumber phoneNumber linkFlow =
     case linkFlow of
@@ -238,8 +236,6 @@ updateSelectedApiUser selectedApiUser linkFlow =
             linkFlow
 
 
--- Getter functions
-
 getPhoneForm : LinkFlow -> Maybe PhoneForm
 getPhoneForm linkFlow =
     case linkFlow of
@@ -296,8 +292,6 @@ getSuccessAccount linkFlow =
             Nothing
 
 
--- State checking functions
-
 isInFormState : LinkFlow -> Bool
 isInFormState linkFlow =
     case linkFlow of
@@ -347,7 +341,6 @@ isInErrorState linkFlow =
             False
 
 
--- Helper function to get current flow type
 getCurrentFlowType : LinkFlow -> FlowType
 getCurrentFlowType linkFlow =
     if isApi linkFlow then
@@ -357,7 +350,6 @@ getCurrentFlowType linkFlow =
         PhoneFlow
 
 
--- Helper function to convert FlowType to string for UI
 flowTypeToString : FlowType -> String
 flowTypeToString flowType =
     case flowType of
@@ -368,7 +360,6 @@ flowTypeToString flowType =
             "api"
 
 
--- Helper function to convert string to FlowType
 stringToFlowType : String -> Maybe FlowType
 stringToFlowType str =
     case str of
@@ -382,7 +373,6 @@ stringToFlowType str =
             Nothing
 
 
--- Utility functions for creating FlowType instances
 phoneFlowType : FlowType
 phoneFlowType =
     PhoneFlow
@@ -393,7 +383,6 @@ apiFlowType =
     ApiFlow
 
 
--- Utility functions for checking FlowType
 isPhoneFlowType : FlowType -> Bool
 isPhoneFlowType flowType =
     case flowType of

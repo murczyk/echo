@@ -44,7 +44,6 @@ import Utils.Components exposing (fieldError, isInvalidCls)
 import Utils.EnumeratedList as EL exposing (EnumeratedItem, EnumeratedList)
 import Utils.Select
 import Utils.Utils exposing (..)
-import Utils.Views
 import Uuid.Barebones
 import View exposing (View)
 
@@ -81,7 +80,7 @@ type SelectedCoord
 
 
 page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
-page user shared req =
+page user shared _ =
     Page.new
         { init = init
         , update = update
@@ -92,7 +91,7 @@ page user shared req =
 
 
 toLayout : Auth.User -> Model -> Layouts.Layout Msg
-toLayout user model =
+toLayout user _ =
     Layouts.Navbar
         { user = user
         , activeName = "bpla"
@@ -250,9 +249,9 @@ buildRowInfo ( i, r ) =
                 |> MaybeX.values
                 |> List.map
                     (\( coordId, coords ) ->
-                        case renderCoordinatesToLatLng coordId coords r.coordinatesWgs84 of
-                            Just latlng ->
-                                Just
+                        renderCoordinatesToLatLng coordId coords r.coordinatesWgs84
+                            |> Maybe.map
+                                (\latlng ->
                                     { content = r.content
                                     , imageUrls = r.imageUrls
                                     , lat = latlng.lat
@@ -260,9 +259,7 @@ buildRowInfo ( i, r ) =
                                     , title = r.title
                                     , icon = r.icon
                                     }
-
-                            Nothing ->
-                                Nothing
+                                )
                     )
                 |> MaybeX.values
 
@@ -280,15 +277,13 @@ renderCoordinatesToLatLng coordId coords coordinatesWgs84 =
                 }
 
         _ ->
-            case Dict.get coordId coordinatesWgs84 of
-                Nothing ->
-                    Nothing
-
-                Just { lat, lng } ->
-                    Just
+            Dict.get coordId coordinatesWgs84
+                |> Maybe.map
+                    (\{ lat, lng } ->
                         { lat = Core.Coordinates.renderWgsFloat lat
                         , lng = Core.Coordinates.renderWgsFloat lng
                         }
+                    )
 
 
 type alias Icon =
@@ -1096,7 +1091,7 @@ update msg model =
 
 
 subscriptions : Model -> Sub Msg
-subscriptions model =
+subscriptions _ =
     Sub.batch
         [ Ports.importer_usk2000ToWgs84Res GotUsk2000ToWgs84Res
         , Ports.importer_proposeIconsRes GotProposedIcons
@@ -1509,7 +1504,7 @@ pdfUploadProgressDivs model =
 
 
 view : Bool -> Shared.Model -> B.User -> Model -> View Msg
-view dark shared user model =
+view dark _ _ model =
     let
         spinner =
             div

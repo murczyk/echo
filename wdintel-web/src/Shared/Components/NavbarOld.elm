@@ -58,15 +58,15 @@ navBar user shared activeName props =
             , Menu (Internal Route.Path.Admin_TagsNeo) "tags-neo" "теги"
             , Menu (Internal Route.Path.Admin_AorNeo) "aor-neo" "смуги"
             , Menu (Internal Route.Path.Admin_KeysNeo) "keys-neo" "ключі"
-            , Menu (Internal Route.Path.Admin_MessangerNeo) "messanger-neo" "месенджери"
+            , Menu (Internal Route.Path.Admin_MessengerNeo) "messenger-neo" "месенджери"
             , Menu (Internal Route.Path.Admin_ControlPanelNeo) "control-panel-neo" "панель керування"
-            , Menu (Internal Route.Path.AdminOld) "zones-old" "напрямки (старі)"
+            , Menu (Internal Route.Path.AdminOld) "zones-old" "напрямки (стара)"
             , Menu (Internal Route.Path.Admin_Users) "users" "користувачі (стара)"
             , Menu (Internal Route.Path.Admin_Organisms) "organisms" "організми (стара)"
             , Menu (Internal Route.Path.Admin_Tags) "tags" "теги (стара)"
             , Menu (Internal Route.Path.AreasOfResponsibility) "areasOfResponsibility" "смуги (стара)"
             , Menu (Internal Route.Path.Admin_Keys) "keys" "ключі (стара)"
-            , Menu (Internal Route.Path.Admin_Messanger) "messanger" "месенджери (стара)"
+            , Menu (Internal Route.Path.Admin_Messenger) "messenger" "месенджери (стара)"
             , Menu (Internal Route.Path.Admin_ControlPanel) "control-panel" "панель керування (стара)"
             ]
 
@@ -76,8 +76,8 @@ navBar user shared activeName props =
             , Menu (Internal Route.Path.RerUnits) "rer-units" "підрозділи"
             , Menu (Internal Route.Path.RerSignals) "signals" "сигнали"
             , Menu (Internal Route.Path.RerNetworks) "networks" "мережі"
-            , Menu (Internal Route.Path.RerPalitraNeo) "palitra" "палітра"
-            , Menu (Internal Route.Path.RerPalitra) "palitra" "палітра (стара)"
+            , Menu (Internal Route.Path.RerPalitraNeo) "palitra-neo" "палітри"
+            , Menu (Internal Route.Path.RerPalitra) "palitra" "палітри (стара)"
             ]
 
         importSubs =
@@ -115,7 +115,7 @@ navBar user shared activeName props =
                 ++ ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Basic" user)
                     [ menuWithSubs "other" "інше" otherSubs ]
                 -- ++ ifOrEmpty (hasRole "Basic" user)
-                --     [ menu Route.Path.Settings "settings" "налаштування (старі)" ]
+                --     [ menu Route.Path.Settings "settings" "налаштування (стара)" ]
                 ++ ifOrEmpty (hasRole "Basic" user)
                     [ menu Route.Path.SettingsNeo "settings-neo" "налаштування" ]
                 ++ ifOrEmpty (hasRole "Admin" user)

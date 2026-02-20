@@ -1,4 +1,4 @@
-module Pages.Admin.MessangerNeo exposing (Model, Msg, page)
+module Pages.Admin.MessengerNeo exposing (Model, Msg, page)
 
 import Auth
 import Effect as E exposing (Effect)
@@ -41,7 +41,7 @@ toLayout : Auth.User -> Model -> Layouts.Layout Msg
 toLayout user _ =
     Layouts.Navbar
         { user = user
-        , activeName = "admin"
+        , activeName = "messenger-neo"
         }
 
 
@@ -62,6 +62,6 @@ view _ _ =
     { title = "Адмін: месенджери (neo)"
     , body =
         [ div [ class "mt-4 w-full px-4" ]
-            [ node "messanger-neo" [] [] ]
+            [ node "messenger-neo" [] [] ]
         ]
     }

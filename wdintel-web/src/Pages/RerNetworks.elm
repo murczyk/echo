@@ -42,7 +42,6 @@ import Shared.Components.Table.Config as TableConfig
 import Shared.Model exposing (isDarkMode)
 import Task
 import Time exposing (Posix)
-import TimeZone
 import Utils.Api.ErrorHandling
 import Utils.NetworksUtils as EUtils
 import Utils.RemoteData as RD exposing (RemoteData(..))
@@ -1702,7 +1701,7 @@ view _ shared user model =
                       div [ class "flex gap-[16px]" ] buttons
                     ]
                 , case model.networksMergeStatus of
-                    CalculatedSuggestions (_ :: xs) ->
+                    CalculatedSuggestions (_ :: _) ->
                         -- div [ class "w-full bg-[#F5F28A]/[40%] h-[70px] mb-[16px] border-1 border-[#F5F28A] rounded-lg flex justify-between items-center px-[16px] py-[8px] font-medium" ]
                         --     [ text <| (String.fromInt (List.length xs + 1) ++ " неопрацьованих пропозицій по злиттю мереж")
                         --     , Button.new { label = "Поєднати мережі", onClick = NetworksMergeStart }
@@ -1859,5 +1858,5 @@ toLayout : Auth.User -> Model -> Layouts.Layout Msg
 toLayout user _ =
     Layouts.Navbar
         { user = user
-        , activeName = "rer"
+        , activeName = "networks"
         }

@@ -73,7 +73,7 @@ page user shared _ =
 
 
 toLayout : Auth.User -> Model -> Layouts.Layout Msg
-toLayout user _ =
+toLayout user model =
     Layouts.Navbar
         { user = user
         , activeName = "settings"
@@ -174,7 +174,7 @@ view shared user model =
             Maybe.map .version shared.serverInfo
                 |> Maybe.withDefault "невідома версія"
     in
-    { title = "налаштування (старі)"
+    { title = "налаштування (стара)"
     , body =
         [ div [ class "w-4/5 mx-auto px-4 pt-4" ]
             [ div [ class "flex" ]
@@ -183,7 +183,7 @@ view shared user model =
                       div [ class "mb-4" ]
                         [ div [ class "flex items-center justify-between mb-4" ]
                             [ h1 [ class "py-4 text-[var(--text-color)]" ]
-                                [ text "налаштування (старі)" ]
+                                [ text "налаштування (стара)" ]
                             , div [ class "flex items-center gap-4 text-sm" ]
                                 [ a
                                     [ href "https://signal.me/#p/+380502711438"

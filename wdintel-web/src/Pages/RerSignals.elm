@@ -7,13 +7,12 @@ import Bytes exposing (Bytes)
 import Core.Auth
 import Core.Types exposing (ApiError)
 import Debounce exposing (Debounce)
-import Dict exposing (Dict)
+import Dict
 import Effect as E exposing (Effect)
 import File.Download as Download
 import Html exposing (..)
 import Html.Attributes as Attr exposing (..)
 import Html.Events exposing (..)
-import Html.Extra as HtmlX
 import Html.Styled as Styled
 import Layouts
 import List.Extra as ListX
@@ -28,13 +27,10 @@ import Shared.Components.Spinner
 import Shared.Components.Table as Table
 import Shared.Components.Table.Column as TableColumn
 import Shared.Components.Table.Config as TableConfig
-import Shared.Components.Watermark as Watermark
 import Shared.Model exposing (isDarkMode)
-import Task
 import Time
-import TimeZone
 import Utils.Api.ErrorHandling
-import Utils.RemoteData as RD exposing (RemoteData(..))
+import Utils.RemoteData exposing (RemoteData(..))
 import Utils.Select
 import Utils.Time
 import Utils.Utils exposing (..)
@@ -53,10 +49,10 @@ page user shared _ =
 
 
 toLayout : Auth.User -> Model -> Layouts.Layout Msg
-toLayout user model =
+toLayout user _ =
     Layouts.Navbar
         { user = user
-        , activeName = "rer"
+        , activeName = "signals"
         }
 
 
@@ -217,17 +213,15 @@ update shared msg model =
                     in
                     ( { model
                         | editSignalState =
-                            case Utils.Select.singleUpd mAction (Just editState.inpUnit) of
-                                Nothing ->
-                                    Nothing
-
-                                Just unitId ->
-                                    Just
+                            Utils.Select.singleUpd mAction (Just editState.inpUnit)
+                                |> Maybe.map
+                                    (\unitId ->
                                         { editState
                                             | inpUnitSelState = iState
                                             , inpUnit =
                                                 unitId
                                         }
+                                    )
                       }
                     , E.sendCmd <| Cmd.map EditUnitSelMsg iCmd
                     )
@@ -352,12 +346,12 @@ update shared msg model =
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення сигналу" err
             )
 
-        EditSignalDone id (Ok _) ->
+        EditSignalDone _ (Ok _) ->
             ( { model | editSignalState = Nothing, editSignalSidebar = Nothing, loading = True, loadingUnitStats = True }
             , initLoad model
             )
 
-        EditSignalCancel id ->
+        EditSignalCancel _ ->
             ( { model | editSignalState = Nothing }, E.none )
 
         InpText v ->
@@ -639,7 +633,7 @@ filteredSignals model =
 
 
 signalsTableConfig : Shared.Model -> Model -> B.User -> Maybe Int -> Table.Config B.Signal Msg
-signalsTableConfig shared model user editingSignalId =
+signalsTableConfig shared _ user editingSignalId =
     let
         hasEditorRole =
             Core.Auth.hasRole "UnitsEditor" user
@@ -948,107 +942,6 @@ deleteConfirmationModal model =
     ModalDialog.modalDialog model.deleteDialogOpen DeleteSignalCancel [] dialogContent
 
 
-renderSignalTrEdit : Shared.Model -> Model -> B.User -> B.Signal -> EditSignalState -> Html Msg
-renderSignalTrEdit shared model user signal editState =
-    let
-        hasEditorRole =
-            Core.Auth.hasRole "UnitsEditor" user
-    in
-    tr []
-        [ td []
-            [ input
-                [ class "form-control"
-                , type_ "text"
-                , placeholder "Позиція/Сигнал"
-                , value editState.inpText
-                , onInput <| EditSignalMsg << (\v -> { editState | inpText = v })
-                ]
-                []
-            ]
-        , td []
-            [ input
-                [ class "form-control"
-                , type_ "text"
-                , placeholder "Значення"
-                , value editState.inpMeaning
-                , onInput <| EditSignalMsg << (\v -> { editState | inpMeaning = v })
-                ]
-                []
-            ]
-        , td []
-            [ let
-                selectItem : Maybe (Select.MenuItem Int)
-                selectItem =
-                    case shared.masterUnits of
-                        Success units ->
-                            Dict.get editState.inpUnit units
-                                |> Maybe.map
-                                    (\unit ->
-                                        Select.basicMenuItem
-                                            { item = unit.id, label = unit.name }
-                                    )
-
-                        _ ->
-                            Nothing
-              in
-              div
-                [ class "d-flex justify-content-between align-items-center"
-                , style "min-width" "200px"
-                , style "font-size" ".8rem"
-                ]
-                [ div [ class "flex-grow-1" ]
-                    [ let
-                        options =
-                            Utils.Select.defaultOptions (isDarkMode shared.themeMode)
-
-                        options2 =
-                            { options | disabled = not hasEditorRole }
-                      in
-                      Html.map EditUnitSelMsg <|
-                        Styled.toUnstyled <|
-                            Utils.Select.renderSelectSingle
-                                selectItem
-                                editState.inpUnitSelState
-                                (populateUnitMenu shared)
-                                "підрозділ"
-                                options2
-                    ]
-                ]
-            ]
-        , td []
-            [ input
-                [ class "form-control"
-                , type_ "text"
-                , placeholder "Координати"
-                , value editState.inpCoordinates
-                , onInput <| EditSignalMsg << (\v -> { editState | inpCoordinates = v })
-                ]
-                []
-            ]
-        , td []
-            [ text <|
-                Utils.Time.renderDateTimeF1 shared.timeZone
-                    (Time.millisToPosix signal.createdAt)
-            ]
-        , td [ style "font-size" ".8rem" ]
-            [ div [ class "d-flex justify-content-start align-items-center" ]
-                [ button
-                    [ Attr.title "Зберегти"
-                    , class "icon-btn icon-btn-primary"
-                    , onClick <| EditSignalSave signal.id
-                    ]
-                    [ i [ class "bi bi-check2" ] [] ]
-                , button
-                    [ Attr.title "Скасувати"
-                    , class "icon-btn icon-btn-danger"
-                    , onClick <| EditSignalCancel signal.id
-                    ]
-                    [ i [ class "bi bi-x" ] [] ]
-                ]
-            ]
-        ]
-
-
 contentBlock : Shared.Model -> Model -> Auth.User -> Html Msg
 contentBlock shared model user =
     let
@@ -1066,8 +959,8 @@ contentBlock shared model user =
                             , Attr.disabled (not hasEditorRole || model.downloadCsvInProgress)
                             , attribute "title" "Завантажити CSV з обраними фільтрами"
                             ]
-                            ([ text "Завантажити csv" ]
-                                ++ (if model.downloadCsvInProgress then
+                            ((text "Завантажити csv")
+                                :: (if model.downloadCsvInProgress then
                                         [ Shared.Components.Spinner.loadingSpinner2Sm ]
 
                                     else
@@ -1234,7 +1127,7 @@ view _ shared user model =
 
         sidebarContent =
             case model.editSignalSidebar of
-                Just ( signalId, signal ) ->
+                Just ( _, signal ) ->
                     editSignalSidebarContent shared model user signal
 
                 Nothing ->

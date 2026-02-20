@@ -109,7 +109,7 @@ update route msg model =
                 ]
             )
 
-        KeepAliveDone (Err e) ->
+        KeepAliveDone (Err _) ->
             ( model, E.none )
 
         KeepAliveDone (Ok _) ->

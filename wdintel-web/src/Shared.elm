@@ -28,7 +28,7 @@ import Task
 import TimeZone
 import Url
 import Utils.Api.Temp exposing (leExpectJson)
-import Utils.RemoteData as RD exposing (RemoteData(..))
+import Utils.RemoteData exposing (RemoteData(..))
 
 
 type alias Flags =
@@ -51,7 +51,7 @@ type alias Model =
 
 
 init : Result Json.Decode.Error Flags -> Route () -> ( Model, Effect Msg )
-init flagsResult route =
+init flagsResult _ =
     let
         flags =
             case flagsResult of
@@ -234,7 +234,7 @@ update req msg model =
             , E.none
             )
 
-        CallsignsInfoReturnedByApi (Err e) ->
+        CallsignsInfoReturnedByApi (Err _) ->
             ( model, E.none )
 
         CallsignsInfoReturnedByApi (Ok callsigns) ->
@@ -282,7 +282,7 @@ update req msg model =
             , E.none
             )
 
-        PostsReturnedByApi (Err err) ->
+        PostsReturnedByApi (Err _) ->
             ( model, E.none )
 
         ToastMsg toastMsg ->

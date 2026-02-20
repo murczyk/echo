@@ -1406,7 +1406,7 @@ view user shared model =
         isDark =
             isDarkMode shared.themeMode
     in
-    { title = "палітри (старі)"
+    { title = "палітри (стара)"
     , body =
         [ div
             [ classList [ ( "overflow-hidden", model.showCreateSidebar || model.editSidebar /= Nothing ) ]
@@ -1429,7 +1429,7 @@ view user shared model =
                 Success pal ->
                     div []
                         [ div []
-                            [ h1 [ class "py-4 text-2xl font-bold text-foreground" ] [ text "палітри (старі)" ]
+                            [ h1 [ class "py-4 text-2xl font-bold text-foreground" ] [ text "палітри (стара)" ]
                             , div [ class "mb-4 flex justify-end gap-2" ]
                                 [ a
                                     [ Attr.href "/alpinequest-kmz"
@@ -1467,10 +1467,10 @@ page user shared _ =
 
 
 toLayout : Auth.User -> Model -> Layouts.Layout Msg
-toLayout user _ =
+toLayout user model =
     Layouts.Navbar
         { user = user
-        , activeName = "etalonka"
+        , activeName = "palitra"
         }
 
 

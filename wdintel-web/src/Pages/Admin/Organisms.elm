@@ -28,9 +28,7 @@ import Shared.Components.Table as Table
 import Shared.Components.Table.Column as TableColumn
 import Shared.Components.Table.Config as TableConfig
 import Shared.Model exposing (isDarkMode)
-import Task
 import Time
-import TimeZone
 import Utils.Api.ErrorHandling
 import Utils.Components exposing (..)
 import Utils.RemoteData as RD
@@ -42,7 +40,7 @@ import View exposing (View)
 
 
 page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
-page user shared req =
+page user shared _ =
     Page.new
         { init = init
         , update = update
@@ -53,10 +51,10 @@ page user shared req =
 
 
 toLayout : Auth.User -> Model -> Layouts.Layout Msg
-toLayout user model =
+toLayout user _ =
     Layouts.Navbar
         { user = user
-        , activeName = "admin"
+        , activeName = "organisms"
         }
 
 
@@ -289,7 +287,6 @@ roles =
 
 type FormField
     = Name
-    | Roles
 
 
 type alias FieldError =
@@ -1424,22 +1421,20 @@ update msg model =
                     { currentParentOrganism | items = parentItems }
 
                 editOrganism2 =
-                    case model.editOrganism of
-                        Just ( editId, editState ) ->
-                            let
-                                editParentOrganism =
-                                    editState.inpParentOrganism
-                            in
-                            Just
+                    model.editOrganism
+                        |> Maybe.map
+                            (\( editId, editState ) ->
+                                let
+                                    editParentOrganism =
+                                        editState.inpParentOrganism
+                                in
                                 ( editId
                                 , { editState
                                     | inpParentOrganism =
                                         { editParentOrganism | items = parentItems }
                                   }
                                 )
-
-                        Nothing ->
-                            Nothing
+                            )
 
                 newModel =
                     { model
@@ -1495,16 +1490,15 @@ update msg model =
                     { currentParentOrganism | items = parentItems }
 
                 rowPopup2 =
-                    case model.rowShowAllPopupStatus of
-                        Just ( orgId, _ ) ->
-                            if orgId == deletedId then
-                                Nothing
+                    model.rowShowAllPopupStatus
+                        |> Maybe.andThen
+                            (\( orgId, popup ) ->
+                                if orgId == deletedId then
+                                    Nothing
 
-                            else
-                                model.rowShowAllPopupStatus
-
-                        Nothing ->
-                            Nothing
+                                else
+                                    Just ( orgId, popup )
+                            )
             in
             ( { model
                 | organisms = updatedOrganisms
@@ -1638,7 +1632,7 @@ viewFormErrors field errors =
 
 
 subscriptions : Model -> Sub Msg
-subscriptions model =
+subscriptions _ =
     Sub.none
 
 
@@ -1754,12 +1748,8 @@ organismsTableConfig groups organismGroups allOrganisms timeZone editingOrganism
                                         o.aorIds
                                             |> List.filterMap
                                                 (\aorId ->
-                                                    case RD.toMaybe aorList of
-                                                        Just aors ->
-                                                            ListX.find (\aor -> aor.id == aorId) aors
-
-                                                        Nothing ->
-                                                            Nothing
+                                                    RD.toMaybe aorList
+                                                        |> Maybe.andThen (ListX.find (\aor -> aor.id == aorId))
                                                 )
 
                                     visibleAors =
@@ -2190,13 +2180,12 @@ addOrganismSidebarContent isDark model =
                         [ Html.map AddParentSelMsg <|
                             Styled.toUnstyled <|
                                 Utils.Select.renderSelectSingle
-                                    (case model.inpParentOrganism.selectedItem of
-                                        Just id ->
-                                            ListX.find (\o -> o.id == id) model.organisms
-                                                |> Maybe.map (\o -> Select.basicMenuItem { item = id, label = o.name })
-
-                                        Nothing ->
-                                            Nothing
+                                    (model.inpParentOrganism.selectedItem
+                                        |> Maybe.andThen
+                                            (\id ->
+                                                ListX.find (\o -> o.id == id) model.organisms
+                                                    |> Maybe.map (\o -> Select.basicMenuItem { item = id, label = o.name })
+                                            )
                                     )
                                     model.inpParentOrganism.selectState
                                     model.inpParentOrganism.items
@@ -2413,13 +2402,12 @@ editOrganismSidebarContent isDark model organismId editState =
                         [ Html.map EditParentSelMsg <|
                             Styled.toUnstyled <|
                                 Utils.Select.renderSelectSingle
-                                    (case editState.inpParentOrganism.selectedItem of
-                                        Just id ->
-                                            ListX.find (\o -> o.id == id) model.organisms
-                                                |> Maybe.map (\o -> Select.basicMenuItem { item = id, label = o.name })
-
-                                        Nothing ->
-                                            Nothing
+                                    (editState.inpParentOrganism.selectedItem
+                                        |> Maybe.andThen
+                                            (\id ->
+                                                ListX.find (\o -> o.id == id) model.organisms
+                                                    |> Maybe.map (\o -> Select.basicMenuItem { item = id, label = o.name })
+                                            )
                                     )
                                     editState.inpParentOrganism.selectState
                                     editState.inpParentOrganism.items
@@ -2602,7 +2590,7 @@ view dark shared user model =
 
 
 body : Bool -> Shared.Model -> B.User -> Model -> List (Html Msg)
-body dark shared user model =
+body dark shared _ model =
     let
         sidebarOpen =
             model.sidebarType /= Nothing
@@ -2646,7 +2634,7 @@ body dark shared user model =
 
 
 mainBlock : Bool -> Model -> Shared.Model -> List (Html Msg)
-mainBlock isDark model shared =
+mainBlock _ model shared =
     [ div []
         [ div [ class "flex justify-between items-center mb-6" ]
             [ div [ class "flex items-center gap-4" ]
@@ -2710,8 +2698,8 @@ deleteModalView maybeModal =
                         ]
                     , if hasMultipleActiveUsers then
                         div [ class "p-3 rounded-md bg-yellow-50 border border-yellow-200 text-yellow-900 text-sm" ]
-                            ([ strong [] [ text "Активні користувачі організму:" ] ]
-                                ++ [ renderActiveLogins modalState ]
+                            ((strong [] [ text "Активні користувачі організму:" ])
+                                :: [ renderActiveLogins modalState ]
                             )
 
                       else

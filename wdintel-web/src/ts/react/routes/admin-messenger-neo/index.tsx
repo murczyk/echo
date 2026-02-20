@@ -542,7 +542,7 @@ function TableRowActions(props: TableActionsProps) {
   );
 }
 
-type MessangerAccountsTableProps = {
+type MessengerAccountsTableProps = {
   data: EchoAccountF1[];
   actionsDisabled: boolean;
   onRestart: (accountId: number) => void;
@@ -554,7 +554,7 @@ type MessangerAccountsTableProps = {
 
 const defaultMRTOptions = getDefaultMRTOptions<EchoAccountF1>();
 
-function MessangerAccountsTable(props: MessangerAccountsTableProps) {
+function MessengerAccountsTable(props: MessengerAccountsTableProps) {
   const columns = useMessengerColumns();
   const tableStateContext = useTableStateContext();
 
@@ -631,7 +631,7 @@ function MessangerAccountsTable(props: MessangerAccountsTableProps) {
   return <MaterialReactTable table={table} />;
 }
 
-function AdminMessangerNeoPageBody() {
+function AdminMessengerNeoPageBody() {
   const [accounts, setAccounts] = React.useState<EchoAccountF1[]>([]);
   const [accountsStatus, setAccountsStatus] =
     React.useState<LoadingStatus>('idle');
@@ -1096,7 +1096,7 @@ function AdminMessangerNeoPageBody() {
     if (accountsStatus === 'success') {
       return (
         <div className="table-responsive-modern">
-          <MessangerAccountsTable
+          <MessengerAccountsTable
             data={accounts}
             actionsDisabled={isMutating}
             onRestart={handleRestartDatasource}
@@ -1527,14 +1527,14 @@ function AdminMessangerNeoPageBody() {
   );
 }
 
-export function AdminMessangerNeoPage() {
+export function AdminMessengerNeoPage() {
   return (
     <TableStateProvider
-      tableId="admin-messanger"
+      tableId="admin-messenger"
       defaultColumnOrder={DEFAULT_COLUMN_ORDER}
       defaultColumnVisibility={DEFAULT_COLUMNS_VISIBILITY}
     >
-      <AdminMessangerNeoPageBody />
+      <AdminMessengerNeoPageBody />
     </TableStateProvider>
   );
 }
