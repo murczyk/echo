@@ -73,16 +73,7 @@ fn select_settlements_data(
 ) -> &SettlementsData {
     match m_aor_id {
         Some(aor_id) => match config.aor_id_to_settlements_data.get(&aor_id) {
-            Some(data) => {
-                let config_names = config
-                    .aor_id_to_config_names
-                    .get(&aor_id)
-                    .cloned()
-                    .unwrap_or_default()
-                    .join(", ");
-                info!("[DELETEME] parsing location: aor_id={aor_id}, config_names=[{config_names}]");
-                data.as_ref()
-            }
+            Some(data) => data.as_ref(),
             None => {
                 warn!(
                     "no settlements config found for aor_id={}, using default settlements list from config.toml",
@@ -192,7 +183,6 @@ pub fn parse_location_with_aor(
         .replace("ОБ-ТЬ", "ОБЛАСТЬ");
     let location = JUNK_CHAR_RE.replace_all(&location, " ").to_string();
     let location = JUNK_WORD_RE.replace_all(&location, " ").to_string();
-    println!("wip: {location}");
     let location = trim(location);
     let location = try_process_nearest_location(location);
     let words = location
