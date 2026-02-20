@@ -78,12 +78,15 @@ def process_file(project: str, unsupervised: bool):
     run = mlflow.run(project, entry_point="supervised", env_manager="uv")
 
     if os.environ.get("AWS_ACCESS_KEY_ID") and os.environ.get("AWS_SECRET_ACCESS_KEY"):
+        print("will upload training results", flush=True)
         mlflow.run(
             project,
             entry_point="upload",
             env_manager="uv",
             parameters={"run_id": run.run_id},
         )
+    else:
+        print("skipping uploading training results, no credentials", flush=True)
 
 
 def main():

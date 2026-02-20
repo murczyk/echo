@@ -352,6 +352,22 @@ class Lake:
         ATTACH 'dbname=wd host={db}' AS "{db}" (TYPE postgres);
         """)
 
+    def get_label_dict(self, label_list: list[str]) -> dict[int, str]:
+        unique_labels = self.conn.query(
+            "SELECT DISTINCT ON (label_id) * FROM label ORDER BY label_id"
+        ).fetchall()
+        all_labels = {label_id: label_text for label_id, label_text in unique_labels}
+
+        if label_list:
+            label_dict = {
+                key: value
+                for key, value in all_labels.items()
+                if value in label_list or str(key) in label_list
+            }
+            return label_dict
+        else:
+            return all_labels
+
     def detach(self, db: str):
         self.conn.execute(f"""DETACH "{db}";""")
 

@@ -112,7 +112,7 @@ def train_supervised(
         print("input file is empty")
         sys.exit(1)
     (created_at_max,) = result
-    last_week = cast(datetime.datetime, created_at_max) - datetime.timedelta(weeks=1)
+    last_week = cast(datetime.datetime, created_at_max) - datetime.timedelta(weeks=4)
     print(f"splitting train and test at '{last_week}'", flush=True)
 
     and_train = f"created_at < '{last_week.isoformat()}'"

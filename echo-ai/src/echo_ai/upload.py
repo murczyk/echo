@@ -101,7 +101,7 @@ Training run [{run_id}]({run_url}) completed:
                 webhook.add_file(f.read(), file_name)
                 webhook.add_embed({"image": {"url": f"attachment://{file_name}"}})
 
-    # webhook.execute()
+    webhook.execute()
 
 
 def get_report_record(params: dict, metrics: dict):
@@ -152,6 +152,7 @@ def upload_run(experiment_id: str, run_id: str, bucket: str, prefix: str):
     # upload_artifacts(bucket, prefix, thresholds, models)
     discord_webhook_url = os.environ.get("DISCORD_WEBHOOK_URL")
     if discord_webhook_url:
+        print("sending Discord notification", flush=True)
         discord_notify_success(
             url=discord_webhook_url,
             experiment_id=experiment_id,
@@ -160,3 +161,5 @@ def upload_run(experiment_id: str, run_id: str, bucket: str, prefix: str):
             df=df,
             artifacts=artifacts,
         )
+    else:
+        print("skipping sending Discord notification", flush=True)

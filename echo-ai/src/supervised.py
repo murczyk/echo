@@ -60,22 +60,14 @@ def resolve_pretrain(pretrained_vectors, args):
 
 def real_main(args):
     label_list = args["labels"]
-    label_dict = {}
-    if label_list:
-        label_dict = {
-            key: value
-            for key, value in LABEL_DICT.items()
-            if value in label_list or str(key) in label_list
-        }
-    else:
-        label_dict = LABEL_DICT.copy()
-    label_list = list(label_dict.values())
 
     print(f"starting training for labels: {label_list}", flush=True)
 
     with tempfile.TemporaryDirectory() as temp_dir:
         print("creating connection to datalake", flush=True)
         lake = Lake(temp_directory=temp_dir)
+        lake.create_schema_if_not_exists()
+        label_dict = lake.get_label_dict(label_list)
         train_supervised(lake, label_dict, args)
 
 
