@@ -135,7 +135,7 @@ export function SettingsNeoPage() {
               component="h2"
               sx={{ m: 0, fontSize: '1.75rem', lineHeight: 1.35, fontWeight: 600, color: 'text.primary' }}
             >
-              Основні налаштування
+              Основні
             </Typography>
           </div>
 
