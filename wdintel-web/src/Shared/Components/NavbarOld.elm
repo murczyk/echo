@@ -327,7 +327,7 @@ menuItemWithSubs props activeName activeNameExp nameText subs =
                 ]
                 []
             ]
-        , div [ class "absolute left-0 pt-2 z-500" ]
+        , div [ class "absolute left-0 pt-2 z-[3001]" ]
             [ ul
                 [ id dropdownMenuId
                 , class "w-56 bg-[var(--color-card)] rounded-lg shadow-lg border border-[var(--color-border)] transition-all duration-200"
