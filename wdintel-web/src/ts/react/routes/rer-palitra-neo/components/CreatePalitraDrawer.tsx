@@ -26,6 +26,7 @@ import { AccessEditor } from './AccessEditor';
 type Props = {
   open: boolean;
   onClose: () => void;
+  onExited: () => void;
   createInFlight: boolean;
   kmzAnalyzing: boolean;
   kmzFile: File | null;
@@ -48,9 +49,10 @@ type Props = {
 
 const steps = [ 'KMZ файл', 'Параметри і доступ' ];
 
-export function CreatePalitraDrawer({
+function CreatePalitraDrawerComponent({
   open,
   onClose,
+  onExited,
   createInFlight,
   kmzAnalyzing,
   kmzFile,
@@ -74,9 +76,9 @@ export function CreatePalitraDrawer({
   const prevCanContinueFromKmzStepRef = React.useRef(false);
 
   React.useEffect(() => {
-    if (!open) return;
     setActiveStep(0);
     prevCanContinueFromKmzStepRef.current = false;
+    if (!open) return;
   }, [open]);
 
   const hasSelectedKmzColor = kmzColorOptions.some((option) => option.selected);
@@ -125,6 +127,7 @@ export function CreatePalitraDrawer({
         anchor="right"
         variant="persistent"
         open={open}
+        SlideProps={{ onExited }}
         PaperProps={{ sx: { width: { xs: '100%', sm: 680 }, maxWidth: '100vw', display: 'flex' } }}
       >
         <Box sx={{ position: 'relative', display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
@@ -318,3 +321,5 @@ export function CreatePalitraDrawer({
     </>
   );
 }
+
+export const CreatePalitraDrawer = React.memo(CreatePalitraDrawerComponent);

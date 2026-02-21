@@ -3,11 +3,11 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import {
   Box,
+  Button,
+  ButtonGroup,
   Chip,
   CircularProgress,
-  IconButton,
   Paper,
-  Stack,
   Table,
   TableBody,
   TableCell,
@@ -18,8 +18,10 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
+import { getContrastRatio } from '@mui/material/styles';
 
 import { AreaOfResponsibility, MyScope, Organism, Palitra, User } from '../../../../../Bindings';
+import { formatDateTime24 } from '../../../utils/misc';
 import { getAccessSummary, isAdmin } from '../helpers';
 import { SortColumn, SortDirection } from '../types';
 
@@ -40,8 +42,36 @@ type Props = {
   onDelete: (palitra: Palitra) => void;
 };
 
+const actionsColumnSx = {
+  width: 148,
+  minWidth: 148,
+  pr: 2,
+};
+
+const visuallyHiddenSx = {
+  border: 0,
+  clip: 'rect(0 0 0 0)',
+  height: 1,
+  margin: -1,
+  overflow: 'hidden',
+  padding: 0,
+  position: 'absolute',
+  whiteSpace: 'nowrap',
+  width: 1,
+};
+
 function canModifyPalitra(user: User | null, palitra: Palitra): boolean {
   return isAdmin(user) || palitra.author === user?.name;
+}
+
+function getReadableTextColor(backgroundColor: string): string {
+  try {
+    const whiteContrast = getContrastRatio(backgroundColor, '#ffffff');
+    const blackContrast = getContrastRatio(backgroundColor, '#000000');
+    return whiteContrast >= blackContrast ? '#ffffff' : '#000000';
+  } catch (_) {
+    return '#000000';
+  }
 }
 
 export function PalitraTable({
@@ -98,6 +128,15 @@ export function PalitraTable({
                     Файл
                   </TableSortLabel>
                 </TableCell>
+                <TableCell sortDirection={sortColumn === 'lastUploadedAtTs' ? sortDirection : false}>
+                  <TableSortLabel
+                    active={sortColumn === 'lastUploadedAtTs'}
+                    direction={sortColumn === 'lastUploadedAtTs' ? sortDirection : 'desc'}
+                    onClick={() => onSortColumn('lastUploadedAtTs')}
+                  >
+                    Додано
+                  </TableSortLabel>
+                </TableCell>
                 <TableCell sortDirection={sortColumn === 'author' ? sortDirection : false}>
                   <TableSortLabel
                     active={sortColumn === 'author'}
@@ -108,7 +147,11 @@ export function PalitraTable({
                   </TableSortLabel>
                 </TableCell>
                 <TableCell>Доступ</TableCell>
-                <TableCell align="right">Дія</TableCell>
+                <TableCell align="right" sx={actionsColumnSx}>
+                  <Box component="span" sx={visuallyHiddenSx}>
+                    Дії
+                  </Box>
+                </TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -116,6 +159,7 @@ export function PalitraTable({
                 const canModify = canModifyPalitra(user, palitra);
                 const deleting = inFlightDeleteId === palitra.id;
                 const uploading = inFlightUploadId === palitra.id;
+                const chipTextColor = getReadableTextColor(palitra.colorHex);
 
                 return (
                   <TableRow key={palitra.id} hover>
@@ -125,7 +169,7 @@ export function PalitraTable({
                         size="small"
                         label={palitra.colorHex}
                         sx={{
-                          color: 'common.white',
+                          color: chipTextColor,
                           backgroundColor: palitra.colorHex,
                           minWidth: '90px',
                           fontFamily: 'monospace',
@@ -133,55 +177,58 @@ export function PalitraTable({
                       />
                     </TableCell>
                     <TableCell>{palitra.sourceFileName ?? '—'}</TableCell>
+                    <TableCell>{formatDateTime24(palitra.lastUploadedAtTs)}</TableCell>
                     <TableCell>{palitra.author ?? '—'}</TableCell>
                     <TableCell>
                       <Typography variant="caption" color="text.secondary">
                         {getAccessSummary(palitra, user, myScope, organisms, aors)}
                       </Typography>
                     </TableCell>
-                    <TableCell align="right">
-                      {canModify ? (
-                        <Stack direction="row" spacing={0.5} justifyContent="flex-end">
-                          <Tooltip title="Редагувати">
-                            <span>
-                              <IconButton
-                                size="small"
-                                aria-label="Редагувати палітру"
-                                onClick={() => onOpenEdit(palitra)}
-                                disabled={deleting || uploading}
-                              >
-                                <EditIcon fontSize="small" />
-                              </IconButton>
-                            </span>
-                          </Tooltip>
-                          <Tooltip title="Завантажити точки">
-                            <span>
-                              <IconButton
-                                size="small"
-                                aria-label="Завантажити точки палітри"
-                                onClick={() => onRequestUploadPoints(palitra.id)}
-                                disabled={deleting || uploading}
-                              >
-                                {uploading ? <CircularProgress size={16} /> : <CloudUploadIcon fontSize="small" />}
-                              </IconButton>
-                            </span>
-                          </Tooltip>
-                          <Tooltip title="Видалити">
-                            <span>
-                              <IconButton
-                                size="small"
-                                aria-label="Видалити палітру"
-                                onClick={() => onDelete(palitra)}
-                                disabled={deleting || uploading}
-                              >
-                                {deleting ? <CircularProgress size={16} /> : <DeleteIcon fontSize="small" color="error" />}
-                              </IconButton>
-                            </span>
-                          </Tooltip>
-                        </Stack>
-                      ) : (
-                        '—'
-                      )}
+                    <TableCell align="right" sx={actionsColumnSx}>
+                      <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+                        {canModify ? (
+                          <ButtonGroup size="small" variant="outlined" aria-label="Дії з палітрою">
+                            <Tooltip title="Редагувати">
+                              <span>
+                                <Button
+                                  aria-label="Редагувати палітру"
+                                  onClick={() => onOpenEdit(palitra)}
+                                  disabled={deleting || uploading}
+                                  sx={{ minWidth: 36, px: 1 }}
+                                >
+                                  <EditIcon fontSize="small" />
+                                </Button>
+                              </span>
+                            </Tooltip>
+                            <Tooltip title="Завантажити точки">
+                              <span>
+                                <Button
+                                  aria-label="Завантажити точки палітри"
+                                  onClick={() => onRequestUploadPoints(palitra.id)}
+                                  disabled={deleting || uploading}
+                                  sx={{ minWidth: 36, px: 1 }}
+                                >
+                                  {uploading ? <CircularProgress size={16} /> : <CloudUploadIcon fontSize="small" />}
+                                </Button>
+                              </span>
+                            </Tooltip>
+                            <Tooltip title="Видалити">
+                              <span>
+                                <Button
+                                  aria-label="Видалити палітру"
+                                  onClick={() => onDelete(palitra)}
+                                  disabled={deleting || uploading}
+                                  sx={{ minWidth: 36, px: 1, color: 'error.main' }}
+                                >
+                                  {deleting ? <CircularProgress size={16} /> : <DeleteIcon fontSize="small" color="error" />}
+                                </Button>
+                              </span>
+                            </Tooltip>
+                          </ButtonGroup>
+                        ) : (
+                          '—'
+                        )}
+                      </Box>
                     </TableCell>
                   </TableRow>
                 );

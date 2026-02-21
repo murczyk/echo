@@ -1,4 +1,4 @@
-import { Alert, Box, Button, Stack } from '@mui/material';
+import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, Stack } from '@mui/material';
 
 import { PageHeader } from '../../components/PageHeader';
 import { CreatePalitraDrawer } from './components/CreatePalitraDrawer';
@@ -25,7 +25,7 @@ export function RerPalitraNeoPage() {
               >
                 AlpineQuest конвертер
               </Button>
-              <Button variant="contained" onClick={page.openCreate}>
+              <Button variant="contained" onClick={page.openCreate} disabled={page.createInFlight}>
                 Додати палітру
               </Button>
             </Stack>
@@ -48,9 +48,32 @@ export function RerPalitraNeoPage() {
           inFlightUploadId={page.inFlightUploadId}
           onOpenEdit={page.openEdit}
           onRequestUploadPoints={page.requestUploadPoints}
-          onDelete={page.handleDelete}
+          onDelete={page.requestDelete}
         />
       </Stack>
+
+      <Dialog open={page.deleteDialogOpen} onClose={page.cancelDelete} TransitionProps={{ onExited: page.onDeleteDialogExited }}>
+        <DialogTitle>Підтвердження видалення</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            {`Видалити палітру "${page.deleteDialogPalitra?.name ?? ''}"?`}
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 3, pt: 1.5 }}>
+          <Button onClick={page.cancelDelete} disabled={page.inFlightDeleteId !== null}>
+            Скасувати
+          </Button>
+          <Button
+            onClick={page.confirmDelete}
+            color="error"
+            variant="contained"
+            disabled={page.inFlightDeleteId !== null}
+            startIcon={page.inFlightDeleteId !== null ? <CircularProgress color="inherit" size={16} /> : null}
+          >
+            Видалити
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <input
         ref={page.uploadPointsInputRef}
@@ -71,6 +94,7 @@ export function RerPalitraNeoPage() {
       <CreatePalitraDrawer
         open={page.createOpen}
         onClose={page.resetCreateFlow}
+        onExited={page.onCreateDrawerExited}
         createInFlight={page.createInFlight}
         kmzAnalyzing={page.kmzAnalyzing}
         kmzFile={page.kmzFile}
@@ -85,9 +109,9 @@ export function RerPalitraNeoPage() {
         allLogins={page.allLogins}
         availableAccessTypes={page.availableAccessTypes}
         onRequestAnalyzeKmz={page.requestAnalyzeKmz}
-        onSetKmzColorOptions={(updater) => page.setKmzColorOptions((prev) => updater(prev))}
+        onSetKmzColorOptions={page.updateKmzColorOptions}
         onSetSelectedColorFromKmz={page.setSelectedColorFromKmz}
-        onSetCreateForm={(updater) => page.setCreateForm((prev) => updater(prev))}
+        onSetCreateForm={page.updateCreateForm}
         onCreate={page.handleCreate}
       />
 
@@ -103,7 +127,7 @@ export function RerPalitraNeoPage() {
         aors={page.aors}
         allLogins={page.allLogins}
         availableAccessTypes={page.availableAccessTypes}
-        onSetEditForm={(updater) => page.setEditForm((prev) => updater(prev))}
+        onSetEditForm={page.updateEditForm}
         onSave={page.handleEditSave}
       />
     </Box>

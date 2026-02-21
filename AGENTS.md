@@ -27,6 +27,12 @@
 - Always show the user what changes you've made and ask for permission before committing
 - Use `git status` and `git diff` to show what will be committed
 - Even for urgent fixes or reverts, always ask before committing/pushing. The user needs to be aware of what's being changed in their repository.
+- When proposing commit messages, write them in past simple (for example: `Fixed navbar login redirect`).
+
+## CHANGELOG
+
+- Every new `CHANGELOG.md` entry must include a GitHub reference in the beginning: issue (`[#123](https://github.com/echoua/echo/issues/123)`).
+- If the GitHub issue number is unknown, ask the user for it and do not add placeholder markers like `TODO` to `CHANGELOG.md`.
 
 ## Migrations
 

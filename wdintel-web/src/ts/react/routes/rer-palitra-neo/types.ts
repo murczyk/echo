@@ -21,5 +21,5 @@ export type UiError = {
   text: string;
 };
 
-export type SortColumn = 'name' | 'colorHex' | 'sourceFileName' | 'author';
+export type SortColumn = 'name' | 'colorHex' | 'sourceFileName' | 'author' | 'lastUploadedAtTs';
 export type SortDirection = 'asc' | 'desc';

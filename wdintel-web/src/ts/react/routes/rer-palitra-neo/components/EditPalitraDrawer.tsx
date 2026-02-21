@@ -1,4 +1,5 @@
 import { Box, Button, CircularProgress, Drawer, Stack, TextField, Typography } from '@mui/material';
+import React from 'react';
 
 import { AreaOfResponsibility, MyScope, Organism, User } from '../../../../../Bindings';
 import { applyRestrictedAccess, isFormValid } from '../helpers';
@@ -21,7 +22,7 @@ type Props = {
   onSave: () => void;
 };
 
-export function EditPalitraDrawer({
+function EditPalitraDrawerComponent({
   open,
   onClose,
   editInFlight,
@@ -101,3 +102,5 @@ export function EditPalitraDrawer({
     </Drawer>
   );
 }
+
+export const EditPalitraDrawer = React.memo(EditPalitraDrawerComponent);

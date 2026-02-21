@@ -8,6 +8,7 @@ import {
   Stack,
   TextField,
 } from '@mui/material';
+import React from 'react';
 
 import { AreaOfResponsibility, MyScope, Organism, User } from '../../../../../Bindings';
 import {
@@ -30,7 +31,7 @@ type Props = {
   availableAccessTypes: AccessType[];
 };
 
-export function AccessEditor({
+function AccessEditorComponent({
   form,
   onChange,
   readOnly = false,
@@ -43,9 +44,23 @@ export function AccessEditor({
 }: Props) {
   const restrictedByRole = isAccessRestricted(user);
   const restricted = restrictedByRole || readOnly;
-  const loginOptions = Array.from(new Set([...allLogins, ...form.logins]));
-  const organismOptions = restrictedByRole ? (myScope?.organism ? [myScope.organism] : []) : organisms;
-  const aorOptions = restrictedByRole ? myScope?.aors ?? [] : aors;
+  const loginOptions = React.useMemo(() => Array.from(new Set([...allLogins, ...form.logins])), [allLogins, form.logins]);
+  const organismOptions = React.useMemo(
+    () => (restrictedByRole ? (myScope?.organism ? [myScope.organism] : []) : organisms),
+    [restrictedByRole, myScope, organisms],
+  );
+  const aorOptions = React.useMemo(
+    () => (restrictedByRole ? myScope?.aors ?? [] : aors),
+    [restrictedByRole, myScope, aors],
+  );
+  const selectedOrganisms = React.useMemo(
+    () => organismOptions.filter((option) => form.organismIds.includes(option.id)),
+    [organismOptions, form.organismIds],
+  );
+  const selectedAors = React.useMemo(
+    () => aorOptions.filter((option) => form.aorIds.includes(option.id)),
+    [aorOptions, form.aorIds],
+  );
 
   return (
     <Stack spacing={1.5}>
@@ -96,7 +111,7 @@ export function AccessEditor({
           multiple
           size="small"
           options={organismOptions}
-          value={organismOptions.filter((option) => form.organismIds.includes(option.id))}
+          value={selectedOrganisms}
           isOptionEqualToValue={(option, value) => option.id === value.id}
           getOptionLabel={(option) => option.name}
           onChange={(_, selected) => onChange({ ...form, organismIds: selected.map((entry) => entry.id) })}
@@ -116,7 +131,7 @@ export function AccessEditor({
           multiple
           size="small"
           options={aorOptions}
-          value={aorOptions.filter((option) => form.aorIds.includes(option.id))}
+          value={selectedAors}
           isOptionEqualToValue={(option, value) => option.id === value.id}
           getOptionLabel={(option) => option.name}
           onChange={(_, selected) => onChange({ ...form, aorIds: selected.map((entry) => entry.id) })}
@@ -133,3 +148,5 @@ export function AccessEditor({
     </Stack>
   );
 }
+
+export const AccessEditor = React.memo(AccessEditorComponent);

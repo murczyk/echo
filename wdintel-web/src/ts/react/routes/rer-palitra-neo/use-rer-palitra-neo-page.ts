@@ -44,10 +44,12 @@ export function useRerPalitraNeoPage() {
   const [loading, setLoading] = React.useState(true);
   const [inFlightDeleteId, setInFlightDeleteId] = React.useState<number | null>(null);
   const [inFlightUploadId, setInFlightUploadId] = React.useState<number | null>(null);
+  const [deleteDialogPalitra, setDeleteDialogPalitra] = React.useState<Palitra | null>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false);
   const [error, setError] = React.useState<UiError | null>(null);
 
-  const [sortColumn, setSortColumn] = React.useState<SortColumn>('name');
-  const [sortDirection, setSortDirection] = React.useState<SortDirection>('asc');
+  const [sortColumn, setSortColumn] = React.useState<SortColumn>('lastUploadedAtTs');
+  const [sortDirection, setSortDirection] = React.useState<SortDirection>('desc');
 
   const [createOpen, setCreateOpen] = React.useState(false);
   const [createForm, setCreateForm] = React.useState<PalitraFormState>(getInitialCreateForm(null, null));
@@ -62,12 +64,25 @@ export function useRerPalitraNeoPage() {
   const [editPalitraId, setEditPalitraId] = React.useState<number | null>(null);
   const [editForm, setEditForm] = React.useState<PalitraFormState | null>(null);
   const [editInFlight, setEditInFlight] = React.useState(false);
+  const createCloseClearErrorRef = React.useRef(true);
 
   const uploadPointsInputRef = React.useRef<HTMLInputElement | null>(null);
   const uploadKmzInputRef = React.useRef<HTMLInputElement | null>(null);
   const pendingUploadPalitraIdRef = React.useRef<number | null>(null);
 
   const availableAccessTypes = React.useMemo(() => getAvailableAccessTypes(user, myScope), [user, myScope]);
+  const updateCreateForm = React.useCallback(
+    (updater: (prev: PalitraFormState) => PalitraFormState) => setCreateForm((prev) => updater(prev)),
+    [],
+  );
+  const updateKmzColorOptions = React.useCallback(
+    (updater: (prev: KmzColorOption[]) => KmzColorOption[]) => setKmzColorOptions((prev) => updater(prev)),
+    [],
+  );
+  const updateEditForm = React.useCallback(
+    (updater: (prev: PalitraFormState | null) => PalitraFormState | null) => setEditForm((prev) => updater(prev)),
+    [],
+  );
 
   const sortedPalitras = React.useMemo(() => {
     const sorted = [...palitras];
@@ -80,8 +95,12 @@ export function useRerPalitraNeoPage() {
         result = compareStrings(normalizeSortableValue(a.colorHex), normalizeSortableValue(b.colorHex));
       } else if (sortColumn === 'sourceFileName') {
         result = compareStrings(normalizeSortableValue(a.sourceFileName), normalizeSortableValue(b.sourceFileName));
-      } else {
+      } else if (sortColumn === 'author') {
         result = compareStrings(normalizeSortableValue(a.author), normalizeSortableValue(b.author));
+      } else {
+        const left = a.lastUploadedAtTs ?? Number.NEGATIVE_INFINITY;
+        const right = b.lastUploadedAtTs ?? Number.NEGATIVE_INFINITY;
+        result = left - right;
       }
 
       return sortDirection === 'asc' ? result : -result;
@@ -134,11 +153,8 @@ export function useRerPalitraNeoPage() {
     };
   }, []);
 
-  function resetCreateFlow(clearError = true) {
-    if (clearError) {
-      setError(null);
-    }
-    setCreateOpen(false);
+  function clearCreateFlow(clearError: boolean) {
+    if (clearError) setError(null);
     setCreateForm(getInitialCreateForm(user, myScope));
     setCreateInFlight(false);
     setKmzFile(null);
@@ -148,14 +164,21 @@ export function useRerPalitraNeoPage() {
     setSelectedColorFromKmz(DEFAULT_COLOR_HEX);
   }
 
+  function resetCreateFlow(clearError = true) {
+    createCloseClearErrorRef.current = clearError;
+    setCreateOpen(false);
+  }
+
   function openCreate() {
+    if (createInFlight) return;
     setError(null);
-    setCreateForm(getInitialCreateForm(user, myScope));
+    clearCreateFlow(false);
     setCreateOpen(true);
-    setKmzFile(null);
-    setKmzAnalysis(null);
-    setKmzColorOptions([]);
-    setSelectedColorFromKmz(DEFAULT_COLOR_HEX);
+  }
+
+  function onCreateDrawerExited() {
+    if (createOpen) return;
+    clearCreateFlow(createCloseClearErrorRef.current);
   }
 
   function openEdit(palitra: Palitra) {
@@ -176,12 +199,27 @@ export function useRerPalitraNeoPage() {
     }
 
     setSortColumn(column);
-    setSortDirection('asc');
+    setSortDirection(column === 'lastUploadedAtTs' ? 'desc' : 'asc');
   }
 
-  async function handleDelete(palitra: Palitra) {
+  function requestDelete(palitra: Palitra) {
     if (inFlightDeleteId !== null) return;
-    if (!window.confirm(`Видалити палітру "${palitra.name}"?`)) return;
+    const activeElement = document.activeElement;
+    if (activeElement instanceof HTMLElement) {
+      activeElement.blur();
+    }
+    setDeleteDialogPalitra(palitra);
+    setDeleteDialogOpen(true);
+  }
+
+  function cancelDelete() {
+    if (inFlightDeleteId !== null) return;
+    setDeleteDialogOpen(false);
+  }
+
+  async function confirmDelete() {
+    const palitra = deleteDialogPalitra;
+    if (!palitra || inFlightDeleteId !== null) return;
 
     setInFlightDeleteId(palitra.id);
     setError(null);
@@ -189,6 +227,7 @@ export function useRerPalitraNeoPage() {
     try {
       await deletePalitra(palitra.id);
       setPalitras((prev) => prev.filter((item) => item.id !== palitra.id));
+      setDeleteDialogOpen(false);
     } catch (deleteError) {
       if (isUnauthorizedError(deleteError)) {
         window.location.assign('/login');
@@ -199,6 +238,11 @@ export function useRerPalitraNeoPage() {
     } finally {
       setInFlightDeleteId(null);
     }
+  }
+
+  function onDeleteDialogExited() {
+    if (deleteDialogOpen || inFlightDeleteId !== null) return;
+    setDeleteDialogPalitra(null);
   }
 
   function requestUploadPoints(palitraId: number) {
@@ -384,6 +428,8 @@ export function useRerPalitraNeoPage() {
     sortDirection,
     inFlightDeleteId,
     inFlightUploadId,
+    deleteDialogPalitra,
+    deleteDialogOpen,
     createOpen,
     createForm,
     createInFlight,
@@ -402,14 +448,21 @@ export function useRerPalitraNeoPage() {
     setEditForm,
     setKmzColorOptions,
     setSelectedColorFromKmz,
+    updateCreateForm,
+    updateKmzColorOptions,
+    updateEditForm,
     openCreate,
     resetCreateFlow,
     openEdit,
     closeEdit,
     onSortColumn,
     requestUploadPoints,
-    handleDelete,
+    requestDelete,
+    cancelDelete,
+    confirmDelete,
+    onDeleteDialogExited,
     requestAnalyzeKmz,
+    onCreateDrawerExited,
     handleCreate,
     handleEditSave,
     handleUploadPointsSelected,
