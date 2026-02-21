@@ -80,13 +80,12 @@ export function AccessEditor({
           onChange={(_, selected) => onChange({ ...form, logins: normalizeLogins(selected) })}
           freeSolo={!restricted}
           forcePopupIcon
-          disableCloseOnSelect
           disabled={restricted}
           renderInput={(params) => (
             <TextField
               {...params}
               label={restricted ? 'Ваш логін' : 'Логіни'}
-              helperText={restricted ? 'Автоматично заповнюється вашим логіном' : 'Оберіть або введіть логіни'}
+              helperText={restricted ? 'Автоматично заповнюється вашим логіном' : 'Оберіть логіни'}
             />
           )}
         />
@@ -101,7 +100,6 @@ export function AccessEditor({
           isOptionEqualToValue={(option, value) => option.id === value.id}
           getOptionLabel={(option) => option.name}
           onChange={(_, selected) => onChange({ ...form, organismIds: selected.map((entry) => entry.id) })}
-          disableCloseOnSelect
           disabled={restricted}
           renderInput={(params) => (
             <TextField
@@ -122,7 +120,6 @@ export function AccessEditor({
           isOptionEqualToValue={(option, value) => option.id === value.id}
           getOptionLabel={(option) => option.name}
           onChange={(_, selected) => onChange({ ...form, aorIds: selected.map((entry) => entry.id) })}
-          disableCloseOnSelect
           disabled={readOnly}
           renderInput={(params) => (
             <TextField

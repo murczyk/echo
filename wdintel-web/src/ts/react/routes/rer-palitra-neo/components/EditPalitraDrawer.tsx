@@ -41,11 +41,6 @@ export function EditPalitraDrawer({
       anchor="right"
       open={open}
       onClose={editInFlight ? undefined : onClose}
-      sx={{
-        zIndex: 3500,
-        '& .MuiBackdrop-root': { zIndex: 3499 },
-        '& .MuiDrawer-paper': { zIndex: 3500 },
-      }}
       PaperProps={{ sx: { width: { xs: '100%', sm: 560 }, maxWidth: '100vw', display: 'flex' } }}
     >
       <Box sx={{ p: 2.5, borderBottom: '1px solid', borderColor: 'divider' }}>
@@ -86,7 +81,7 @@ export function EditPalitraDrawer({
           </Stack>
         ) : null}
       </Box>
-      <Box sx={{ p: 2.5, borderTop: '1px solid', borderColor: 'divider', display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
+      <Box sx={{ p: 2.5, borderTop: '1px solid', borderColor: 'divider', display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
         <Button onClick={onClose} disabled={editInFlight}>
           Скасувати
         </Button>
