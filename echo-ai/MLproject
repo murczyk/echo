@@ -11,7 +11,7 @@ entry_points:
     command: "python src/upload.py {run_id} {bucket} {prefix}"
   scheduled:
     parameters:
-      unsupervised: { type: string, default: "false" }
+      unsupervised: { type: string, default: "true" }
       databases: { type: string }
     command: "python src/scheduled.py --databases {databases} --unsupervised {unsupervised}"
   supervised:

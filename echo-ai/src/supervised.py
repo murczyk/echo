@@ -9,19 +9,6 @@ import mlflow
 from echo_ai.lake import Lake
 from echo_ai.supervised import train_supervised
 
-LABEL_DICT = {
-    0: "переміщення",
-    1: "бпла",
-    2: "звʼязок",
-    3: "забезп",
-    4: "арта",
-    5: "втрати",
-    6: "іфо",
-    7: "палітра",
-    8: "мораль",
-    9: "зіткнення",
-}
-
 
 def resolve_pretrain(pretrained_vectors, args):
     if os.path.isfile(pretrained_vectors):

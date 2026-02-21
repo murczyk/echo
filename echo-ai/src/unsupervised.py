@@ -12,6 +12,7 @@ def real_main(args):
     with tempfile.TemporaryDirectory() as temp_dir:
         print("creating connection to datalake", flush=True)
         lake = Lake(temp_directory=temp_dir)
+        lake.create_schema_if_not_exists()
         train_unsupervised(lake, **args)
 
 
