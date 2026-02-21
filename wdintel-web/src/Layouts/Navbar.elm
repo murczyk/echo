@@ -5,7 +5,7 @@ import Auth
 import Core.Types exposing (ApiError)
 import Effect as E exposing (Effect)
 import Html exposing (..)
-import Html.Attributes exposing (class, id)
+import Html.Attributes exposing (class, id, style)
 import Html.Events exposing (onClick, stopPropagationOn)
 import Layout exposing (Layout)
 import Process
@@ -173,6 +173,7 @@ view user activeName shared route { toContentMsg, model, content } =
             [ div
                 [ id "app-navbar-shell"
                 , class "fixed top-0 left-0 right-0 z-500 transition-all duration-300 ease-in-out"
+                , style "z-index" "3000"
                 , class
                     (if model.isNavbarVisible then
                         "translate-y-0"

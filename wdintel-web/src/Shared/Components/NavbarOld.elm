@@ -9,7 +9,7 @@ import Json.Decode
 import Route.Path
 import Shared
 import Shared.Components.ThemeSwitcher exposing (themeSwitcher)
-import Shared.Model exposing (isDarkMode)
+import Shared.Model exposing (ThemeMode)
 import Utils.Utils exposing (..)
 
 
@@ -31,7 +31,7 @@ type alias Menu =
 
 type alias Props msg =
     { onToggleTheme : msg
-    , onThemeChange : Shared.Model.ThemeMode -> msg
+    , onThemeChange : ThemeMode -> msg
     , onNavbarVisibilityChange : msg
     , isRerDuty : Bool
     , openDropdown : Maybe String
@@ -49,7 +49,7 @@ navBar user shared activeName props =
             menuItemWithBadge props activeName
 
         menuWithSubs =
-            menuItemWithSubs props (isDarkMode shared.themeMode) activeName
+            menuItemWithSubs props activeName
 
         adminSubs =
             [ Menu (Internal Route.Path.Admin) "zones" "напрямки"
@@ -124,13 +124,6 @@ navBar user shared activeName props =
             [ style "background" "linear-gradient(to bottom, rgba(var(--bd-coyote-rgb), 1), rgba(var(--bd-coyote-rgb), .95))"
             , class "border-b border-black/15 py-2"
             ]
-
-        exoLogoClass =
-            if not (isDarkMode shared.themeMode) then
-                "invert brightness-0"
-
-            else
-                ""
     in
     header navbarStyles
         [ nav [ class "container mx-auto px-4" ]
@@ -171,7 +164,7 @@ navBar user shared activeName props =
                         ]
                     , img
                         [ src "/img/echo-logo.svg"
-                        , class (exoLogoClass ++ " dark:invert dark:brightness-0 dark:contrast-200 h-[16px]")
+                        , class "h-[16px]"
                         ]
                         []
                     ]
@@ -252,8 +245,8 @@ menuItemWithBadge props activeName hrefLink activeNameExp nameText badgeText bad
 -- Dropdowns: black text in light mode, white in dark mode
 
 
-menuItemWithSubs : Props msg -> Bool -> String -> String -> String -> List Menu -> Html msg
-menuItemWithSubs props isDarkMode activeName activeNameExp nameText subs =
+menuItemWithSubs : Props msg -> String -> String -> String -> List Menu -> Html msg
+menuItemWithSubs props activeName activeNameExp nameText subs =
     let
         isOpen =
             props.openDropdown == Just activeNameExp
@@ -269,18 +262,10 @@ menuItemWithSubs props isDarkMode activeName activeNameExp nameText subs =
                 props.onDropdownToggle (Just activeNameExp)
 
         dropdownTextClass =
-            if isDarkMode then
-                "text-white"
-
-            else
-                "text-black"
+            "text-[var(--color-text)]"
 
         dropdownBgClass =
-            if isDarkMode then
-                "bg-gray-900"
-
-            else
-                "bg-white"
+            "bg-[var(--color-card)]"
 
         dropdownItem : Menu -> Html msg
         dropdownItem sub =
