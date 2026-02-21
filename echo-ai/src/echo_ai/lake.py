@@ -84,10 +84,10 @@ class Lake:
                       sigint_inbox_item_id
                     , tag_id
                     , login
+                    , model
+                    , confidence
                 FROM
                     sigint_inbox_item_tag
-                WHERE
-                    model IS NULL
             $$)
         )
         MERGE INTO sigint_inbox_item_tag AS tgt
@@ -96,6 +96,7 @@ class Lake:
             AND tgt.sigint_inbox_item_id = src.sigint_inbox_item_id
             AND tgt.tag_id = src.tag_id
             AND tgt.login = src.login
+            AND tgt.model = src.model
         )
         WHEN NOT MATCHED BY SOURCE AND tgt.source = '{db}' THEN DELETE
         WHEN NOT MATCHED BY TARGET THEN INSERT;
@@ -136,51 +137,30 @@ class Lake:
             pred_order = f"ORDER BY hash(source, id, {seed})"
 
         self.conn.execute(r"""
-        CREATE OR REPLACE TEMPORARY VIEW vw_messages_errors AS
-        WITH cte AS (
-            SELECT
-                m.source,
-                m.id,
-                m.created_at,
-                normalize_body_text(m.body) AS text,
-                l.label_id
-            FROM
-                sigint_inbox_message m
-            JOIN
-                sigint_inbox_tag_model_error me on m.source = me.source AND m.id = me.sigint_inbox_item_id
-            JOIN
-                tag t ON me.source = t.source AND me.tag_id = t.id and t.enabled = true
-            JOIN
-                label l ON t.label = l.label_text
-        )
-        PIVOT cte
-        ON label_id IN (0, 1, 2, 3, 4, 5, 6, 7, 8, 9)
-        USING max(FALSE) AS onehot;
-        """)
-
-        self.conn.execute(r"""
         CREATE TEMPORARY TABLE IF NOT EXISTS tmp_messages_pivot AS
         WITH cte AS (
-            SELECT
-                m.source,
-                m.id,
-                m.created_at,
-                normalize_body_text(m.body) AS text,
-                l.label_id
-            FROM
-                sigint_inbox_message m
-            JOIN
-                sigint_inbox_item_tag mt on m.source = mt.source AND m.id = mt.sigint_inbox_item_id
-            JOIN
-                tag t ON mt.source = t.source AND mt.tag_id = t.id and t.enabled = true
-            JOIN
-                label l ON t.label = l.label_text
+            SELECT * FROM (
+                SELECT
+                    m.source,
+                    m.id,
+                    m.created_at,
+                    normalize_body_text(m.body) AS text,
+                    x.label_id,
+                    x.label_value AS label_value
+                FROM (
+                    SELECT * FROM vw_golden_negatives
+                    UNION ALL
+                    SELECT * FROM vw_golden_positives
+                ) AS x
+                JOIN sigint_inbox_message m
+                    ON m.source = x.source AND m.id = sigint_inbox_item_id
+            ) AS m
+            WHERE m.text <> ''
         )
         PIVOT cte
         ON label_id IN (0, 1, 2, 3, 4, 5, 6, 7, 8, 9)
-        USING coalesce(max(TRUE), FALSE) AS onehot
-        UNION ALL
-        SELECT * FROM vw_messages_errors;
+        USING min(label_value) AS onehot
+        GROUP BY source, id, created_at, text;
         """)
 
         self.conn.execute(r"""
@@ -202,32 +182,35 @@ class Lake:
             FROM tmp_messages_pivot
             GROUP BY source
         )
-        SELECT DISTINCT ON (x.text, x."0_onehot", x."1_onehot", x."2_onehot", x."3_onehot", x."4_onehot", x."5_onehot", x."6_onehot", x."7_onehot", x."8_onehot", x."9_onehot")
+        SELECT
             x.source,
             x.id,
             x.created_at,
             x.text,
-            CASE WHEN x.created_at >= f.min_created_at_0 THEN x."0_onehot" END AS label_0,
-            CASE WHEN x.created_at >= f.min_created_at_1 THEN x."1_onehot" END AS label_1,
-            CASE WHEN x.created_at >= f.min_created_at_2 THEN x."2_onehot" END AS label_2,
-            CASE WHEN x.created_at >= f.min_created_at_3 THEN x."3_onehot" END AS label_3,
-            CASE WHEN x.created_at >= f.min_created_at_4 THEN x."4_onehot" END AS label_4,
-            CASE WHEN x.created_at >= f.min_created_at_5 THEN x."5_onehot" END AS label_5,
-            CASE WHEN x.created_at >= f.min_created_at_6 THEN x."6_onehot" END AS label_6,
-            CASE WHEN x.created_at >= f.min_created_at_7 THEN x."7_onehot" END AS label_7,
-            CASE WHEN x.created_at >= f.min_created_at_8 THEN x."8_onehot" END AS label_8,
-            CASE WHEN x.created_at >= f.min_created_at_9 THEN x."9_onehot" END AS label_9
+            CASE WHEN x.created_at >= f.min_created_at_0 THEN coalesce(x."0_onehot", FALSE) END AS label_0,
+            CASE WHEN x.created_at >= f.min_created_at_1 THEN coalesce(x."1_onehot", FALSE) END AS label_1,
+            CASE WHEN x.created_at >= f.min_created_at_2 THEN coalesce(x."2_onehot", FALSE) END AS label_2,
+            CASE WHEN x.created_at >= f.min_created_at_3 THEN coalesce(x."3_onehot", FALSE) END AS label_3,
+            CASE WHEN x.created_at >= f.min_created_at_4 THEN coalesce(x."4_onehot", FALSE) END AS label_4,
+            CASE WHEN x.created_at >= f.min_created_at_5 THEN coalesce(x."5_onehot", FALSE) END AS label_5,
+            CASE WHEN x.created_at >= f.min_created_at_6 THEN coalesce(x."6_onehot", FALSE) END AS label_6,
+            CASE WHEN x.created_at >= f.min_created_at_7 THEN coalesce(x."7_onehot", FALSE) END AS label_7,
+            CASE WHEN x.created_at >= f.min_created_at_8 THEN coalesce(x."8_onehot", FALSE) END AS label_8,
+            CASE WHEN x.created_at >= f.min_created_at_9 THEN coalesce(x."9_onehot", FALSE) END AS label_9
         FROM
             tmp_messages_pivot x
         JOIN
             source_flags f ON x.source = f.source
-        WHERE
-            x.text <> ''
         ;
         """)
-        return self.conn.query(
-            f"SELECT * FROM tmp_messages_labeled_onehot {pred_order}"
-        )
+
+        return self.conn.query(f"""
+        SELECT DISTINCT ON (text, label_0, label_1, label_2, label_3, label_4, label_5, label_6, label_7, label_8, label_9)
+            *
+        FROM
+            tmp_messages_labeled_onehot
+        {pred_order}
+        """)
 
     def split_for_label(
         self, label_column_name: str, and_filter: str
@@ -372,78 +355,5 @@ class Lake:
         self.conn.execute(f"""DETACH "{db}";""")
 
     def create_schema_if_not_exists(self):
-        self.conn.execute(r"""
-        CREATE OR REPLACE TEMPORARY VIEW label(label_id, label_text) AS
-        (
-            VALUES
-            (0, 'переміщення'),
-            (1, 'бпла'),
-            (2, 'звʼязок'),
-            (3, 'забезп'),
-            (4, 'арта'),
-            (4, 'ураження'),
-            (5, 'втрати'),
-            (5, 'евакуація'),
-            (6, 'іфо'),
-            (6, 'позиції'),
-            (7, 'палітра'),
-            (7, 'прив''язка'),
-            (8, 'мораль'),
-            (9, 'зіткнення'),
-            (9, 'штурм'),
-            (9, 'шд')
-        );
-
-        CREATE TABLE IF NOT EXISTS tag (
-            source VARCHAR NOT NULL,
-            id BIGINT NOT NULL,
-            label VARCHAR NOT NULL,
-            extra BOOLEAN NOT NULL,
-            ord DOUBLE NULL,
-            title VARCHAR NULL,
-            enabled BOOLEAN NOT NULL
-        );
-        ALTER TABLE tag SET PARTITIONED BY (source);
-
-        CREATE TABLE IF NOT EXISTS sigint_inbox_item_tag (
-            source VARCHAR NOT NULL,
-            sigint_inbox_item_id BIGINT NOT NULL,
-            tag_id BIGINT NOT NULL,
-            login VARCHAR NULL
-        );
-        ALTER TABLE sigint_inbox_item_tag SET PARTITIONED BY (source);
-
-        CREATE TABLE IF NOT EXISTS sigint_inbox_message (
-            source VARCHAR NOT NULL,
-            id BIGINT NOT NULL,
-            created_at TIMESTAMP WITH TIME ZONE NOT NULL,
-            datetime TIMESTAMP WITH TIME ZONE NULL,
-            body VARCHAR NOT NULL,
-            body_start INT NULL,
-            body_end INT NULL
-        );
-        ALTER TABLE sigint_inbox_message SET PARTITIONED BY (source, year(created_at), month(created_at));
-
-        CREATE TABLE IF NOT EXISTS sigint_inbox_tag_model_error (
-            source VARCHAR NOT NULL,
-            id BIGINT NOT NULL,
-            tag_id BIGINT NOT NULL,
-            sigint_inbox_item_id BIGINT NOT NULL,
-            model VARCHAR NOT NULL,
-            model_login VARCHAR NULL,
-            confidence DOUBLE NOT NULL,
-            removed_by_login VARCHAR NOT NULL,
-            removed_at TIMESTAMP WITH TIME ZONE NOT NULL
-        );
-        ALTER TABLE sigint_inbox_tag_model_error SET PARTITIONED BY (source);
-
-        CREATE TEMPORARY MACRO normalize_body_text(body) AS array_to_string(
-            regexp_extract_all(
-                lower(
-                    coalesce(nullif(regexp_replace(body, '^[^—]*—\s*', ''), ''), body)
-                ),
-                $$[\pL\pN_`'’ʼ]+$$
-            ),
-            ' '
-        );
-        """)
+        script = Path(__file__).parent / "lake.sql"
+        self.conn.execute(script.read_text())

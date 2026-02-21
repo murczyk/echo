@@ -7,11 +7,11 @@ entry_points:
     parameters:
       run_id: string
       bucket: { type: string, default: "echouastorage" }
-      prefix: { type: string, default: "lfs/echo-ai/models/" }
+      prefix: { type: string, default: "lfs/echo-ai/models-v2/" }
     command: "python src/upload.py {run_id} {bucket} {prefix}"
   scheduled:
     parameters:
-      unsupervised: { type: string, default: "true" }
+      unsupervised: { type: string, default: "false" }
       databases: { type: string }
     command: "python src/scheduled.py --databases {databases} --unsupervised {unsupervised}"
   supervised:
@@ -19,13 +19,14 @@ entry_points:
       dim: { type: int, default: 100 }
       epoch: { type: int, default: 15 }
       wordNgrams: { type: int, default: 3 }
+      lr: { type: float, default: 0.02 }
       autotuneModelSize: { type: string, default: "128M" }
       pretrainedVectors: { type: string, default: "pretrained.vec" }
       autotuneMetric: { type: string, default: "precisionAtRecall:80:__label__1" }
       autotunePredictions: { type: int, default: 2 }
       autotuneDuration: { type: int, default: 600 }
     command: >-
-      python src/supervised.py --dim {dim} --epoch {epoch} --wordNgrams {wordNgrams} --pretrainedVectors {pretrainedVectors}
+      python src/supervised.py --dim {dim} --epoch {epoch} --lr {lr} --wordNgrams {wordNgrams} --pretrainedVectors {pretrainedVectors}
       --autotuneModelSize {autotuneModelSize}
       --autotuneMetric {autotuneMetric} --autotunePredictions {autotunePredictions} --autotuneDuration {autotuneDuration}
   unsupervised:

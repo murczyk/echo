@@ -149,7 +149,12 @@ def upload_run(experiment_id: str, run_id: str, bucket: str, prefix: str):
 
     df = pd.DataFrame.from_records(records)
 
-    # upload_artifacts(bucket, prefix, thresholds, models)
+    if os.environ.get("AWS_ACCESS_KEY_ID") and os.environ.get("AWS_SECRET_ACCESS_KEY"):
+        print("will upload trained models", flush=True)
+        upload_artifacts(bucket, prefix, thresholds, models)
+    else:
+        print("skipping uploading trained models, no credentials", flush=True)
+
     discord_webhook_url = os.environ.get("DISCORD_WEBHOOK_URL")
     if discord_webhook_url:
         print("sending Discord notification", flush=True)
