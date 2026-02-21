@@ -121,8 +121,7 @@ view vps model =
     let
         body =
             div
-                ([ onClick OpenPopup
-                 , class "date-range-picker d-flex form-control"
+                ([ class "date-range-picker d-flex form-control"
                  , style "gap" "7px"
                  , style "padding-left" "10px"
                  , style "padding-right" "10px"
@@ -238,7 +237,12 @@ view vps model =
             { body = body
             , popupBody = popupBody
             , isOpen = model.isOpen
-            , onOpen = OpenPopup
+            , onOpen =
+                if model.isOpen then
+                    ClosePopup
+
+                else
+                    OpenPopup
             , onClose = ClosePopup
             , disabled = False
             }
