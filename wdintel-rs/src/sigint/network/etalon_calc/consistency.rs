@@ -387,7 +387,8 @@ fn try_discard_by_unit(
             continue;
         };
         for network_unit_name in units {
-            if is_parent_of(network_unit_name, message_unit_name)
+            if network_unit_name.eq(message_unit_name)
+                || is_parent_of(network_unit_name, message_unit_name)
                 || is_parent_of(message_unit_name, network_unit_name)
             {
                 result.insert(*network_id);
