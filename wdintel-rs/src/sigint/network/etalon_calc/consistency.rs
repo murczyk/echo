@@ -13,11 +13,13 @@ pub struct InboxItem {
     pub id: i64,
     pub timestamp: Option<NaiveDateTime>,
     pub freq: Option<String>,
+    pub unit: Option<String>,
 }
 
 #[derive(Debug, FromQueryResult)]
 struct NetworkFreqResult {
     pub network_id: i64,
+    pub unit: Option<String>,
     pub freq: String,
     pub freq_active_from: Option<NaiveDateTime>,
     pub freq_active_to: Option<NaiveDateTime>,
@@ -106,6 +108,7 @@ where
         .column_as(signal_message::Column::Id, "id")
         .column_as(signal_message::Column::Timestamp, "timestamp")
         .column_as(sigint_inbox_item::Column::Freq, "freq")
+        .column_as(sigint_inbox_item::Column::UnitV2, "unit")
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(sigint_inbox_item::Column::Datetime.gte(day_start))
         .filter(sigint_inbox_item::Column::Datetime.lt(day_end))
@@ -194,9 +197,18 @@ where
     // Step 3: Load network_freq + networks, collect network_ids
     let networks_freqs = sigint_network_freq::Entity::find()
         .inner_join(sigint_network::Entity)
+        .join(
+            JoinType::LeftJoin,
+            sigint_network::Relation::SigintNetworkUnit.def(),
+        )
+        .join(
+            JoinType::LeftJoin,
+            sigint_network_unit::Relation::SigintUnit.def(),
+        )
         .select_only()
         .column(sigint_network_freq::Column::NetworkId)
         .column(sigint_network_freq::Column::Freq)
+        .column_as(sigint_unit::Column::Name, "unit")
         .column_as(sigint_network_freq::Column::ActiveFrom, "freq_active_from")
         .column_as(sigint_network_freq::Column::ActiveTo, "freq_active_to")
         .column_as(sigint_network::Column::ActiveFrom, "network_active_from")
@@ -213,14 +225,8 @@ where
         .context(h!())?;
 
     let mut network_ids = HashSet::new();
-    let mut freq_networks_map: HashMap<String, Vec<NetworkFreqResult>> =
-        HashMap::new();
-    for nf in networks_freqs {
+    for nf in &networks_freqs {
         network_ids.insert(nf.network_id);
-        freq_networks_map
-            .entry(nf.freq.clone())
-            .or_default()
-            .push(nf);
     }
 
     // Step 5: Load AORs for networks
@@ -251,7 +257,7 @@ where
         groups_map,
         &group_bounds_map,
         &network_bounds_map,
-        &freq_networks_map,
+        networks_freqs,
     )
     .context(h!())?;
 
@@ -263,8 +269,24 @@ fn match_network_ids_for_messages(
     groups_map: &HashMap<i64, Vec<signal_message_group::Model>>,
     group_bounds_map: &HashMap<String, Vec<(f64, f64)>>,
     network_bounds_map: &HashMap<i64, Vec<(f64, f64)>>,
-    freq_networks_map: &HashMap<String, Vec<NetworkFreqResult>>,
+    networks_freqs: Vec<NetworkFreqResult>,
 ) -> anyhow::Result<HashMap<i64, Vec<i64>>> {
+    let mut freq_networks_map: HashMap<String, Vec<NetworkFreqResult>> =
+        HashMap::new();
+    let mut network_units: HashMap<i64, HashSet<String>> = HashMap::new();
+    for nf in networks_freqs {
+        if let Some(unit) = &nf.unit {
+            network_units
+                .entry(nf.network_id)
+                .or_default()
+                .insert(unit.clone());
+        }
+        freq_networks_map
+            .entry(nf.freq.clone())
+            .or_default()
+            .push(nf);
+    }
+
     let mut result = HashMap::new();
 
     fn is_active_at(
@@ -343,11 +365,50 @@ fn match_network_ids_for_messages(
                 }
             }
         }
+        matched = try_discard_by_unit(&msg.unit, matched, &network_units);
 
         result.insert(msg.id, matched.into_iter().collect::<Vec<_>>());
     }
 
     Ok(result)
+}
+
+fn try_discard_by_unit(
+    message_unit_name: &Option<String>,
+    matched_networks: HashSet<i64>,
+    network_units: &HashMap<i64, HashSet<String>>,
+) -> HashSet<i64> {
+    let Some(message_unit_name) = message_unit_name else {
+        return matched_networks;
+    };
+    let mut result = HashSet::new();
+    for network_id in &matched_networks {
+        let Some(units) = network_units.get(network_id) else {
+            continue;
+        };
+        for network_unit_name in units {
+            if network_unit_name.eq(message_unit_name)
+                || is_parent_of(network_unit_name, message_unit_name)
+                || is_parent_of(message_unit_name, network_unit_name)
+            {
+                result.insert(*network_id);
+                break;
+            }
+        }
+    }
+    // if we managed to narrow down matches by unit - return narrowed result, otherwise return the original
+    if result.is_empty() {
+        matched_networks
+    } else {
+        result
+    }
+}
+
+fn is_parent_of(
+    network_unit_name: &String,
+    message_unit_name: &String,
+) -> bool {
+    message_unit_name.ends_with(&format!(" {network_unit_name}"))
 }
 
 async fn load_actual_networks_for_messages<'a, 'async_trait, C>(
