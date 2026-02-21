@@ -948,6 +948,7 @@ view user model shared route =
                     ]
                 , div
                     [ class "sticky top-0 z-50 bg-[var(--background-color)]"
+                    , style "z-index" "1100"
                     ]
                     [ div [ class "flex items-center justify-between px-4 mb-6" ]
                         [ div [ class "flex items-center" ]
