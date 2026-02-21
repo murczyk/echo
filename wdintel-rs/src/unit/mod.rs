@@ -269,7 +269,9 @@ pub fn has_unit(text: &String) -> bool {
 }
 
 pub fn parse_library_unit(text: &String) -> Vec<String> {
-    let mut units_info = capture_library_unit(text);
+    let text = preprocess_unit_text(text);
+    println!("parsing unit {text}");
+    let mut units_info = capture_library_unit(&text);
     units_info.sort_by_key(|x| x.idx);
 
     // current_group collects segments like company number, batallion number etc. until it sees that unit type isn't increasing or not present, it then "splits" and pushes new accumulator
@@ -521,6 +523,13 @@ where
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect_vec())
+}
+
+fn preprocess_unit_text(input: &String) -> String {
+    input
+        .replace(" зі складу ", " ")
+        .replace(" ймовірно ", " ")
+        .replace(" йм. ", " ")
 }
 
 #[cfg(test)]

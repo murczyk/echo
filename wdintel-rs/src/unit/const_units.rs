@@ -67,7 +67,7 @@ pub fn list_battalions() -> &'static BTreeSet<String> {
     &BATTALIONS
 }
 
-fn companies_arr() -> [&'static str; 168] {
+fn companies_arr() -> [&'static str; 169] {
     [
         "автр",
         "авто",
@@ -237,6 +237,7 @@ fn companies_arr() -> [&'static str; 168] {
         "хозв",
         "хозо",
         "штрафб",
+        "шр",
     ]
 }
 
