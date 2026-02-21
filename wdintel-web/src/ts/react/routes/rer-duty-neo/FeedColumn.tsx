@@ -15,7 +15,6 @@ import { MessageCard } from './MessageCard';
 
 export type FeedColumnProps = {
   feed: MessageFeedState;
-  showFilters: boolean;
   filterStable: {
     groupsSelected: string[];
     sendersSelected: string[];
@@ -35,6 +34,7 @@ export type FeedColumnProps = {
   canRemove: boolean;
   maxWidth?: string | number;
   copiedFeedbackId: string | null;
+  networkDisplayMap: Record<number, string>;
   tagsMap: Record<number, string>;
   tagIdsList: number[];
   messageHasTag: (msg: InboxMessage, tagId: number) => boolean;
@@ -62,7 +62,6 @@ export type FeedColumnProps = {
 
 export function FeedColumn({
   feed,
-  showFilters,
   filterStable,
   groupsList,
   groupInfos,
@@ -75,6 +74,7 @@ export function FeedColumn({
   reloadFreqsLoading,
   canRemove,
   copiedFeedbackId,
+  networkDisplayMap,
   tagsMap,
   tagIdsList,
   messageHasTag,
@@ -101,6 +101,39 @@ export function FeedColumn({
   onMessageToggleTag,
 }: FeedColumnProps) {
   const feedId = feed.id;
+  const [showFilters, setShowFilters] = React.useState(false);
+  const scrollContainerRef = React.useRef<HTMLDivElement>(null);
+  const loadEarlierTriggeredRef = React.useRef(false);
+  const initialScrollDoneRef = React.useRef(false);
+
+  React.useEffect(() => {
+    if (feed.loading || feed.items.length === 0 || initialScrollDoneRef.current) return;
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const setScrollToMiddle = () => {
+      const { scrollHeight, clientHeight } = el;
+      if (scrollHeight > clientHeight) {
+        el.scrollTop = (scrollHeight - clientHeight) / 2;
+      }
+      initialScrollDoneRef.current = true;
+    };
+    requestAnimationFrame(() => requestAnimationFrame(setScrollToMiddle));
+  }, [feed.loading, feed.items.length]);
+
+  const handleScroll = React.useCallback(() => {
+    const el = scrollContainerRef.current;
+    if (!el || feed.loadingEarlier || feed.hasReachedStart || feed.items.length === 0) return;
+    const scrollTop = el.scrollTop;
+    const threshold = 200;
+    if (scrollTop <= threshold) {
+      if (!loadEarlierTriggeredRef.current) {
+        loadEarlierTriggeredRef.current = true;
+        onLoadEarlier();
+      }
+    } else {
+      loadEarlierTriggeredRef.current = false;
+    }
+  }, [feed.loadingEarlier, feed.hasReachedStart, feed.items.length, onLoadEarlier]);
 
   const applySenders = (v: string[]) => {
     onApplyFilter({ ...feed.filter, sendersSelected: v.length ? v : null });
@@ -116,7 +149,33 @@ export function FeedColumn({
   };
 
   return (
-    <Box className="flex flex-col flex-1 min-w-[320px] gap-2" sx={{ maxWidth: maxWidth ?? '100%' }}>
+    <Box className="flex flex-col flex-1 min-w-0 gap-1" sx={{ maxWidth: maxWidth ?? '100%', minWidth: 0 }}>
+      <Box
+        className="flex justify-between gap-2 flex-wrap text-sm items-stretch h-8"
+        sx={{ '& .MuiButton-root': { minHeight: 0, height: '100%' } }}
+      >
+        <Button
+          size="small"
+          variant="text"
+          className="self-stretch px-4"
+          startIcon={<i className="bi bi-gear" />}
+          endIcon={showFilters ? <i className="bi bi-chevron-up" /> : <i className="bi bi-chevron-down" />}
+          onClick={() => setShowFilters((s) => !s)}
+        >
+          Фільтри
+        </Button>
+        {canRemove && !showFilters && (
+          <Button
+            size="small"
+            color="inherit"
+            aria-label="Закрити колонку"
+            onClick={onRemoveColumn}
+            className="h-4 w-4"
+          >
+            <i className="bi bi-x-lg" />
+          </Button>
+        )}
+      </Box>
       {showFilters && (
         <FeedFilterPanel
           feedId={feedId}
@@ -145,40 +204,17 @@ export function FeedColumn({
         />
       )}
 
-      <Box className="mb-2 flex items-center justify-between">
-        <Button
-          size="small"
-          variant="outlined"
-          disabled={feed.loadingEarlier || feed.items.length === 0 || feed.hasReachedStart}
-          onClick={onLoadEarlier}
-          title={feed.hasReachedStart ? 'Немає старіших повідомлень' : 'Завантажити старіші'}
-        >
-          {feed.loadingEarlier ? <CircularProgress size={16} /> : 'Завантажити старіші'}
-        </Button>
-        <Typography variant="caption" className="ml-2" component="span" title="Кількість повідомлень у цій колонці">
-          Показано: {feed.items.length}
-        </Typography>
-        <Box className="gap-1">
-          {canRemove && (
-            <Button
-              size="small"
-              color="error"
-              aria-label="Закрити колонку"
-              onClick={onRemoveColumn}
-              className="min-w-8"
-            >
-              <i className="bi bi-x-lg" />
-            </Button>
-          )}
-        </Box>
-      </Box>
-
       {feed.loading ? (
-        <Box className="flex justify-center items-center py-8">
+        <Box className="flex-1 flex justify-center items-center min-h-[50vh] max-h-[90vh]">
           <CircularProgress />
         </Box>
       ) : (
-        <Paper variant="outlined" className="flex-1 overflow-auto max-h-[65vh] p-0">
+        <Paper
+          variant="outlined"
+          className="flex-1 overflow-auto max-h-[90vh] min-h-0 p-0"
+          ref={scrollContainerRef}
+          onScroll={handleScroll}
+        >
           {feed.items.length === 0 ? (
             <Typography color="text.secondary" className="p-4">
               Немає повідомлень
@@ -187,7 +223,7 @@ export function FeedColumn({
             <Box component="ul" className="m-0 px-0 list-none rer-duty pt-2">
               {feed.items.map(([id, msg]) => {
                 const senderName = msg.sender != null ? profileLabel(msg.sender, profiles[msg.sender] ?? null) : null;
-                const groupName = msg.groupMasterKey != null ? groupInfos[msg.groupMasterKey]?.name ?? null : null;
+                const groupName = msg.groupMasterKey != null ? (groupInfos[msg.groupMasterKey]?.name ?? null) : null;
                 return (
                   <MessageCard
                     key={id}
@@ -197,6 +233,7 @@ export function FeedColumn({
                     groupName={groupName}
                     senderName={senderName}
                     copiedFeedbackId={copiedFeedbackId}
+                    networkDisplayMap={networkDisplayMap}
                     tagsMap={tagsMap}
                     tagIdsList={tagIdsList}
                     messageHasTag={messageHasTag}

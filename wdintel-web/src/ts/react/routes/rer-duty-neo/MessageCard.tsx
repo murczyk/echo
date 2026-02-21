@@ -11,6 +11,7 @@ export type MessageCardProps = {
   groupName: string | null;
   senderName: string | null;
   copiedFeedbackId: string | null;
+  networkDisplayMap: Record<number, string>;
   tagsMap: Record<number, string>;
   tagIdsList: number[];
   messageHasTag: (msg: InboxMessage, tagId: number) => boolean;
@@ -29,6 +30,7 @@ export function MessageCard({
   groupName,
   senderName,
   copiedFeedbackId,
+  networkDisplayMap,
   tagsMap,
   tagIdsList,
   messageHasTag,
@@ -236,7 +238,7 @@ export function MessageCard({
                   title="Відкрити мережу в новій вкладці"
                   key={networkId}
                 >
-                  Мережа {networkId}
+                  {networkDisplayMap[networkId] ?? `Мережа ${networkId}`}
                   <i className="bi bi-box-arrow-up-right text-sm" />
                 </a>
               ))

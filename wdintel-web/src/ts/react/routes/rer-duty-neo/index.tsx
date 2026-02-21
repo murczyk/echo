@@ -1,5 +1,3 @@
-import ExpandLessIcon from '@mui/icons-material/ExpandLess';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { Box, Button, Chip, Paper, Typography } from '@mui/material';
 import React from 'react';
 
@@ -7,10 +5,12 @@ import type {
   InboxMessage,
   InboxMessageTag,
   InboxMessagesReq,
+  Network,
   RerDutyFeedFilterState,
   SavedFilterDuty,
   SignalGroupEntry,
   SignalProfileEntry,
+  Unit,
 } from '../../../../Bindings';
 import {
   bookmarkAdd,
@@ -32,20 +32,26 @@ import {
   savedFiltersList,
   savedFilterUpsert,
 } from '../../services/api/inbox';
+import { getNetworksByIds } from '../../services/api/networks';
+import { getUnitsList } from '../../services/api/units';
 import { CommentDialog, DeleteConfirmDialog } from './dialogs';
 import { FeedColumn } from './FeedColumn';
 import {
   buildInboxReq,
+  createMasterUnitText,
   emptyFilter,
   generateMessageFeedId,
-  LOAD_NEWER_INTERVAL_MS,
+  INBOX_COUNT_POLL_INTERVAL_MS,
   normalizeFeed,
   parseStateFromUrl,
   profileLabel,
   pushStateToUrl,
+  sortMessageItemsByTime,
   toQueryState,
 } from './utils';
 import type { MessageFeedState } from './utils';
+
+const MAX_MESSAGE_FEEDS = 4;
 
 export function RerDutyNeoPage() {
   const [messageFeeds, setMessageFeeds] = React.useState<MessageFeedState[]>(() => {
@@ -65,7 +71,6 @@ export function RerDutyNeoPage() {
   const [groupInfos, setGroupInfos] = React.useState<Record<string, SignalGroupEntry>>({});
   const [groupsList, setGroupsList] = React.useState<string[]>([]);
   const [tagsMap, setTagsMap] = React.useState<Record<number, string>>({});
-  const [unfoldFilters, setUnfoldFilters] = React.useState(false);
   const [savedFilters, setSavedFilters] = React.useState<SavedFilterDuty[]>([]);
   const [selectedSavedId, setSelectedSavedId] = React.useState<number | null>(null);
   const [saveFilterName, setSaveFilterName] = React.useState('');
@@ -76,6 +81,8 @@ export function RerDutyNeoPage() {
   const [commentFeedId, setCommentFeedId] = React.useState<string | null>(null);
   const [commentText, setCommentText] = React.useState('');
   const [reloadFreqsLoading, setReloadFreqsLoading] = React.useState(false);
+  const [networkMap, setNetworkMap] = React.useState<Record<number, Network>>({});
+  const [unitsMap, setUnitsMap] = React.useState<Record<number, Unit>>({});
   const loadNewerRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
   const refreshMessageCounterRef = React.useRef<() => Promise<void>>(() => Promise.resolve());
 
@@ -135,7 +142,9 @@ export function RerDutyNeoPage() {
         seen.add(id);
         return true;
       });
-      setMessageFeeds((prev) => prev.map((x) => (x.id === feedId ? { ...x, items: deduped, loading: false } : x)));
+      setMessageFeeds((prev) =>
+        prev.map((x) => (x.id === feedId ? { ...x, items: sortMessageItemsByTime(deduped), loading: false } : x)),
+      );
       if (rsp.signalProfiles) setProfiles((p) => ({ ...p, ...rsp.signalProfiles }));
       if (rsp.signalGroups?.length) {
         const map: Record<string, SignalGroupEntry> = {};
@@ -171,18 +180,18 @@ export function RerDutyNeoPage() {
             const hasReachedStart = newItems.length === 0;
             return {
               ...x,
-              items: [...newItems, ...x.items],
+              items: sortMessageItemsByTime([...newItems, ...x.items]),
               loadingEarlier: false,
               hasReachedStart,
             };
-          })
+          }),
         );
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
         setMessageFeeds((prev) => prev.map((x) => (x.id === feedId ? { ...x, loadingEarlier: false } : x)));
       }
     },
-    [messageFeeds]
+    [messageFeeds],
   );
 
   const loadFeedNewerMessages = React.useCallback(
@@ -203,15 +212,15 @@ export function RerDutyNeoPage() {
               const existingIds = new Set(x.items.map(([id]) => id));
               const newItems = rsp.inboxItems.filter(([id]) => !existingIds.has(id));
               if (newItems.length === 0) return x;
-              return { ...x, items: [...x.items, ...newItems] };
-            })
+              return { ...x, items: sortMessageItemsByTime([...x.items, ...newItems]) };
+            }),
           );
         }
       } catch {
         // ignore single failure to keep polling and prev messages
       }
     },
-    [messageFeeds]
+    [messageFeeds],
   );
 
   const refreshMessageCounter = React.useCallback(async () => {
@@ -246,7 +255,7 @@ export function RerDutyNeoPage() {
         .filter((w) => w.loading && w.items.length === 0)
         .map((w) => `${w.id}:${JSON.stringify(w.filter)}`)
         .join(';'),
-    [messageFeeds]
+    [messageFeeds],
   );
   React.useEffect(() => {
     messageFeeds.forEach((w) => {
@@ -254,21 +263,83 @@ export function RerDutyNeoPage() {
     });
   }, [feedIds, feedsNeedingLoadKey, loadFeedInitialMessages]);
 
-  // Poll for newer messages and message count every LOAD_NEWER_INTERVAL_MS
+  // Poll get-inbox-count every 2s
   React.useEffect(() => {
     loadNewerRef.current = setInterval(() => {
-      messageFeeds.forEach((w) => loadFeedNewerMessages(w.id));
       refreshMessageCounter();
-    }, LOAD_NEWER_INTERVAL_MS);
+    }, INBOX_COUNT_POLL_INTERVAL_MS);
     return () => {
       if (loadNewerRef.current) clearInterval(loadNewerRef.current);
     };
-  }, [messageFeeds, loadFeedNewerMessages, refreshMessageCounter]);
+  }, [refreshMessageCounter]);
+
+  // Fetch missing networks on demand - only IDs that appear in messages and are not yet loaded
+  const allNetworkIds = React.useMemo(() => {
+    const ids = new Set<number>();
+    messageFeeds.forEach((w) => {
+      w.items.forEach(([, msg]) => {
+        (msg.networkIds ?? []).forEach((id) => ids.add(id));
+      });
+    });
+    return Array.from(ids);
+  }, [messageFeeds]);
+
+  const networkMapRef = React.useRef(networkMap);
+  networkMapRef.current = networkMap;
+  React.useEffect(() => {
+    const missing = allNetworkIds.filter((id) => !(id in networkMapRef.current));
+    if (missing.length === 0) return;
+    let cancelled = false;
+    getNetworksByIds(missing)
+      .then((networks) => {
+        if (cancelled) return;
+        setNetworkMap((prev) => {
+          const next = { ...prev };
+          networks.forEach((n) => {
+            next[n.id] = n;
+          });
+          return next;
+        });
+      })
+      .catch((err) => console.error('Failed to load networks', err));
+    return () => {
+      cancelled = true;
+    };
+  }, [allNetworkIds.join(',')]);
+
+  // Fetch all units once for network display text
+  React.useEffect(() => {
+    let cancelled = false;
+    getUnitsList()
+      .then((units) => {
+        if (cancelled) return;
+        setUnitsMap((prev) => {
+          const next = { ...prev };
+          units.forEach((u) => {
+            next[u.id] = u;
+          });
+          return next;
+        });
+      })
+      .catch((err) => console.error('Failed to load units', err));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const networkDisplayMap = React.useMemo(() => {
+    const out: Record<number, string> = {};
+    Object.entries(networkMap).forEach(([idStr, n]) => {
+      const id = Number(idStr);
+      out[id] = createMasterUnitText(n, unitsMap);
+    });
+    return out;
+  }, [networkMap, unitsMap]);
 
   const applyFilter = React.useCallback((feedId: string, f: RerDutyFeedFilterState) => {
     setMessageFeeds((prev) => {
       const next = prev.map((w) =>
-        w.id === feedId ? { ...w, filter: f, items: [], loading: true, hasReachedStart: false } : w
+        w.id === feedId ? { ...w, filter: f, items: [], loading: true, hasReachedStart: false } : w,
       );
       pushStateToUrl(toQueryState(next));
       return next;
@@ -302,7 +373,7 @@ export function RerDutyNeoPage() {
       hasReachedStart: false,
     };
     setMessageFeeds((prev) => {
-      if (prev.some((w) => w.id === id)) return prev;
+      if (prev.length >= MAX_MESSAGE_FEEDS || prev.some((w) => w.id === id)) return prev;
       const next = [...prev, newFeed];
       pushStateToUrl(toQueryState(next));
       return next;
@@ -319,7 +390,7 @@ export function RerDutyNeoPage() {
         return next;
       });
     },
-    [messageFeeds.length]
+    [messageFeeds.length],
   );
 
   const handleSaveFilter = async (feedId: string) => {
@@ -360,11 +431,11 @@ export function RerDutyNeoPage() {
             ? {
                 ...w,
                 items: w.items.map(([msgId, msg]) =>
-                  msgId === id ? [msgId, { ...msg, bookmarked: !currentlyBookmarked }] : [msgId, msg]
+                  msgId === id ? [msgId, { ...msg, bookmarked: !currentlyBookmarked }] : [msgId, msg],
                 ),
               }
-            : w
-        )
+            : w,
+        ),
       );
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -381,11 +452,11 @@ export function RerDutyNeoPage() {
             ? {
                 ...w,
                 items: w.items.map(([msgId, msg]) =>
-                  msgId === id ? [msgId, { ...msg, important: !currentlyImportant }] : [msgId, msg]
+                  msgId === id ? [msgId, { ...msg, important: !currentlyImportant }] : [msgId, msg],
                 ),
               }
-            : w
-        )
+            : w,
+        ),
       );
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -413,8 +484,8 @@ export function RerDutyNeoPage() {
       await deleteMessage({ id: deleteConfirmId });
       setMessageFeeds((prev) =>
         prev.map((w) =>
-          w.id === deleteConfirmFeedId ? { ...w, items: w.items.filter(([id]) => id !== deleteConfirmId) } : w
-        )
+          w.id === deleteConfirmFeedId ? { ...w, items: w.items.filter(([id]) => id !== deleteConfirmId) } : w,
+        ),
       );
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -440,11 +511,11 @@ export function RerDutyNeoPage() {
             ? {
                 ...w,
                 items: w.items.map(([id, m]) =>
-                  id === commentMessageId ? [id, { ...m, extendedForm: trimmed }] : [id, m]
+                  id === commentMessageId ? [id, { ...m, extendedForm: trimmed }] : [id, m],
                 ),
               }
-            : w
-        )
+            : w,
+        ),
       );
       setCommentMessageId(null);
       setCommentFeedId(null);
@@ -466,7 +537,7 @@ export function RerDutyNeoPage() {
         .map(Number)
         .filter((n) => !Number.isNaN(n))
         .sort((a, b) => a - b),
-    [tagsMap]
+    [tagsMap],
   );
 
   function messageHasTag(msg: InboxMessage, tagId: number): boolean {
@@ -504,8 +575,8 @@ export function RerDutyNeoPage() {
         prev.map((x) =>
           x.id === feedId
             ? { ...x, items: x.items.map(([id, m]) => (id === msgId ? [id, updateMessage(m)] : [id, m])) }
-            : x
-        )
+            : x,
+        ),
       );
       try {
         if (hasTag) await inboxMessageTagsRm({ messageId: msgId, tagId });
@@ -514,16 +585,16 @@ export function RerDutyNeoPage() {
         setError(e instanceof Error ? e.message : String(e));
         setMessageFeeds((prev) =>
           prev.map((x) =>
-            x.id === feedId ? { ...x, items: x.items.map(([id, m]) => (id === msgId ? [id, pair[1]] : [id, m])) } : x
-          )
+            x.id === feedId ? { ...x, items: x.items.map(([id, m]) => (id === msgId ? [id, pair[1]] : [id, m])) } : x,
+          ),
         );
       }
     },
-    [messageFeeds]
+    [messageFeeds],
   );
 
   return (
-    <Box className="flex flex-col h-full min-h-[60vh]">
+    <Box className="flex flex-col h-full min-h-[60vh] w-full">
       <Box className="flex items-center justify-between flex-wrap gap-2 mb-2">
         {digestCount != null && digestCount > 0 && (
           <Chip size="small" color="primary" label={`Нових: ${digestCount}`} />
@@ -536,17 +607,7 @@ export function RerDutyNeoPage() {
         </Paper>
       )}
 
-      <Paper variant="outlined" className="p-2 mb-2">
-        <Button
-          size="small"
-          startIcon={unfoldFilters ? <ExpandLessIcon /> : <ExpandMoreIcon />}
-          onClick={() => setUnfoldFilters((u) => !u)}
-        >
-          Фільтри
-        </Button>
-      </Paper>
-
-      <Box className="flex flex-nowrap gap-4 overflow-x-auto min-h-0">
+      <Box className="flex flex-nowrap gap-2 overflow-x-auto min-h-0 justify-center w-full">
         {messageFeeds.map((w) => {
           const filterStable = {
             groupsSelected: w.filter.groupsSelected ?? [],
@@ -559,7 +620,6 @@ export function RerDutyNeoPage() {
             <FeedColumn
               key={w.id}
               feed={w}
-              showFilters={unfoldFilters}
               filterStable={filterStable}
               groupsList={groupsList}
               groupInfos={groupInfos}
@@ -571,8 +631,17 @@ export function RerDutyNeoPage() {
               saveFilterName={saveFilterName}
               reloadFreqsLoading={reloadFreqsLoading}
               canRemove={messageFeeds.length > 1}
-              maxWidth={messageFeeds.length === 1 ? '100%' : '50%'}
+              maxWidth={
+                messageFeeds.length >= 4
+                  ? 'calc((100% - 2rem) / 4)'
+                  : messageFeeds.length === 3
+                    ? 'calc((100% - 2rem - 48px) / 3)'
+                    : messageFeeds.length === 2
+                      ? 'calc((90% - 2rem - 48px) / 2)'
+                      : '45%'
+              }
               copiedFeedbackId={copiedFeedbackId}
+              networkDisplayMap={networkDisplayMap}
               tagsMap={tagsMap}
               tagIdsList={tagIdsList}
               messageHasTag={messageHasTag}
@@ -603,12 +672,28 @@ export function RerDutyNeoPage() {
             />
           );
         })}
-        <Button
-          size="large"
-          className="p-0 self-start shrink-0"
-          startIcon={<i className="bi bi-plus-square" />}
-          onClick={createMessageFeed}
-        ></Button>
+        {messageFeeds.length < MAX_MESSAGE_FEEDS && (
+          <Button
+            size="large"
+            variant="text"
+            className="p-0 self-start shrink-0"
+            sx={{
+              width: 48,
+              minWidth: 48,
+              minHeight: 42,
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+              backgroundColor: 'transparent',
+              '&:hover': { backgroundColor: 'background.default' },
+              '& .bi': { fontSize: 23 },
+            }}
+            onClick={createMessageFeed}
+            aria-label="Додати колонку"
+          >
+            <i className="bi bi-plus-square" />
+          </Button>
+        )}
       </Box>
 
       <CommentDialog

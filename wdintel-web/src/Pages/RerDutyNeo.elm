@@ -59,7 +59,7 @@ view : Model -> View Msg
 view _ =
     { title = "РЕР-оперативний (neo)"
     , body =
-        [ div [ class "bg-background flex rer-duty flex-1 mt-4 px-3 w-full" ]
+        [ div [ class "bg-background flex rer-duty flex-1 px-2 w-full" ]
             [ node "rer-duty-neo" [] [] ]
         ]
     }
