@@ -1,4 +1,4 @@
-module Pages_.RerAnalysis.Constants exposing (correlatedFreqsLimit, navbarHeightPx, reportTemplateToString)
+module Pages_.RerAnalysis.Constants exposing (correlatedFreqsLimit, reportTemplateToString)
 
 import Pages_.RerAnalysis.Model exposing (..)
 
@@ -6,13 +6,6 @@ import Pages_.RerAnalysis.Model exposing (..)
 correlatedFreqsLimit : number
 correlatedFreqsLimit =
     20
-
-
-{-| Used in css calc
--}
-navbarHeightPx : number
-navbarHeightPx =
-    50
 
 
 reportTemplateToString : ReportTemplate -> String

@@ -1,7 +1,7 @@
 use crate::config::{get_tz, read_config, Config};
 use crate::error::AppError;
 use crate::h;
-use crate::location::SettlementsData;
+use crate::location::SettlementsDataConfig;
 use crate::new_redis;
 use crate::types::*;
 use chrono::prelude::*;
@@ -193,7 +193,7 @@ pub async fn setup_worker(
     mode: Mode,
 ) -> anyhow::Result<(
     Config,
-    Arc<RwLock<SettlementsData>>,
+    Arc<RwLock<SettlementsDataConfig>>,
     Client,
     ConnectionManager,
     DatabaseConnection,
@@ -202,8 +202,15 @@ pub async fn setup_worker(
     let db = crate::new_pg_pool_from_config(&config).await.c(h!())?;
     let settlement_paths = config.settlement_paths().c(h!())?;
     let settlements = Arc::new(RwLock::new(
-        crate::location::load_from_file(settlement_paths, mode).c(h!())?,
+        crate::location::load_settlements_data_config(settlement_paths, mode)
+            .c(h!())?,
     ));
+    crate::location::aor_config::init_aor_location_config(
+        &db,
+        settlements.clone(),
+    )
+    .await
+    .c(h!())?;
     let rq = Client::builder()
         .timeout(core::time::Duration::from_secs(crate::config::RQ_TIMEOUT))
         .build()

@@ -17,6 +17,8 @@ messageStub =
     , callsigns = []
     , callsignsAlg2 = []
     , checked = True
+    , important = False
+    , bookmarked = False
     , coords = Nothing
     , datasourceId = Just 1
     , date = Just "2024-09-19"
@@ -40,6 +42,7 @@ messageStub =
     , unit = Just "УКХ р/м йм. 1/2 мсб 1199 мсп"
     , postId = Nothing
     , networkIds = Nothing
+    , inboxTags = Nothing
     , messageUid = Nothing
     }
 

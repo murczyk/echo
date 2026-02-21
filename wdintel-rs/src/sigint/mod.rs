@@ -316,12 +316,18 @@ pub async fn oneoff_sigint_import_mouse(
         .build()
         .c(h!())?;
     let settlements = Arc::new(RwLock::new(
-        crate::location::load_from_file(
+        crate::location::load_settlements_data_config(
             config.settlement_paths().unwrap(),
             mode,
         )
         .unwrap(),
     ));
+    crate::location::aor_config::init_aor_location_config(
+        &dbx,
+        settlements.clone(),
+    )
+    .await
+    .c(h!())?;
 
     let mut workbook: calamine::Xlsx<_> =
         calamine::open_workbook(ps.input.clone()).c(h!())?;
@@ -414,7 +420,7 @@ pub async fn oneoff_sigint_import_mouse(
 
 /// See process_incoming_message_restapi for inspiration
 async fn xlsx_import_process_one(
-    settlements: Arc<RwLock<crate::location::SettlementsData>>,
+    settlements: Arc<RwLock<crate::location::SettlementsDataConfig>>,
     ps: &crate::OneoffSigintImportMousePs,
     dbx: &DatabaseConnection,
     redis: &mut redis::aio::ConnectionManager,

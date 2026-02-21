@@ -1,6 +1,6 @@
 use crate::config::Config;
 use crate::entities::*;
-use crate::location::SettlementsData;
+use crate::location::SettlementsDataConfig;
 use crate::sigint::worker::incoming_message_after_insert;
 use crate::types::*;
 use crate::utils::orm::ArrayColumnOps;
@@ -340,7 +340,7 @@ pub async fn upsert_messages(
     messages: Vec<super::types::Message>,
     datasource_groups: Vec<datasource_group::Model>,
     datasource_mapping: (i64, i64),
-    settlements: Arc<RwLock<SettlementsData>>,
+    settlements: Arc<RwLock<SettlementsDataConfig>>,
     config: Config,
     redis: ConnectionManager,
     rq: Client,

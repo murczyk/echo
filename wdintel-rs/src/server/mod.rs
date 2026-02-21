@@ -127,7 +127,7 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
         };
     let settlement_paths = config.settlement_paths().c(h!())?;
     let settlements_data =
-        crate::location::load_from_file(settlement_paths, mode)
+        crate::location::load_settlements_data_config(settlement_paths, mode)
             .unwrap_or_default();
     let settlements = Arc::new(RwLock::new(settlements_data));
     let callsigns_whitelist =
@@ -178,6 +178,12 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
             0,
         )),
     };
+    crate::location::aor_config::init_aor_location_config(
+        &dbx,
+        settlements.clone(),
+    )
+    .await
+    .c(h!())?;
     Ok(Arc::new(env))
 }
 
@@ -538,6 +544,8 @@ pub async fn main_server(
             .service(crate::rer_importer::reports::report_docx)
             .service(crate::location::find_locations)
             .service(crate::location::fetch_regions)
+            .service(crate::location::aor_config::list_aor_location_configs)
+            .service(crate::location::aor_config::save_aor_location_config)
             .service(crate::users::user_login)
             .service(crate::users::user_test_api_login)
             .service(crate::users::api_user)

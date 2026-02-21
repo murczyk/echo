@@ -1662,7 +1662,7 @@ view : Bool -> Shared.Model -> Auth.User -> Model -> View Msg
 view _ shared user model =
     { title = "мережі"
     , body =
-        [ div [ class "flex rer-networks", style "height" "calc(-50px + 100vh)" ]
+        [ div [ class "flex rer-networks app-shell-fill-height" ]
             [ if model.showSidebar then
                 leftPanel shared model
 
