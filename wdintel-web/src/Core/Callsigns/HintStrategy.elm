@@ -28,6 +28,13 @@ filterNetworksByFreq networks mFreq =
             )
 
 
+{-| Отримує мережі за списком ID з Dict
+-}
+getNetworksByIds : List Int -> Dict Int B.Network -> List B.Network
+getNetworksByIds ids networksDict =
+    ids |> List.filterMap (\id -> Dict.get id networksDict)
+
+
 {-| Отримує ID всіх юнітів з мереж
 -}
 getAllUnitsIdsForNetworks : List B.Network -> List Int
@@ -227,11 +234,24 @@ determineHintStrategyForCallsign :
     -> HintStrategy
 determineHintStrategyForCallsign hintContext message context callsignInfo networksByFreq =
     let
-        -- Якщо є мережа за частотою - перевіряємо чи цей позивний пов'язаний з нею
         hasNetworksByFreq =
             not (List.isEmpty networksByFreq)
     in
-    if hasNetworksByFreq then
+    -- Пріоритет 1: спочатку мережі з message.networkIds
+    if Maybe.withDefault False (Maybe.map (not << List.isEmpty) message.networkIds) then
+        let
+            networksFromMessage =
+                getNetworksByIds (Maybe.withDefault [] message.networkIds) context.networks
+            networkUnits =
+                getUnitsInfoByIds (getAllUnitsIdsForNetworks networksFromMessage) context.masterUnits
+        in
+        NetworkBased
+            { networks = networksFromMessage
+            , units = networkUnits
+            }
+
+        -- Пріоритет 2: мережі за частотою
+    else if hasNetworksByFreq then
         let
             -- Персонально перевіряємо чи цей позивний пов'язаний з мережевими юнітами
             isRelated =
@@ -257,17 +277,6 @@ determineHintStrategyForCallsign hintContext message context callsignInfo networ
                 FrequencyContext ->
                     -- Для частот: якщо позивний НЕ в мережі → SystemWide (каталог)
                     SystemWide
-        -- Якщо немає мережі за частотою, але є networkIds - використовуємо їх
-
-    else if Maybe.withDefault False (Maybe.map (not << List.isEmpty) message.networkIds) then
-        let
-            networkUnits =
-                getUnitsInfoByIds (Maybe.withDefault [] message.networkIds) context.masterUnits
-        in
-        NetworkBased
-            { networks = []
-            , units = networkUnits
-            }
         -- Інакше показуємо підказки по всій системі
 
     else
@@ -304,11 +313,13 @@ determineHintStrategy message context =
 
     else if Maybe.withDefault False (Maybe.map (not << List.isEmpty) message.networkIds) then
         let
+            networksFromMessage =
+                getNetworksByIds (Maybe.withDefault [] message.networkIds) context.networks
             networkUnits =
-                getUnitsInfoByIds (Maybe.withDefault [] message.networkIds) context.masterUnits
+                getUnitsInfoByIds (getAllUnitsIdsForNetworks networksFromMessage) context.masterUnits
         in
         NetworkBased
-            { networks = []
+            { networks = networksFromMessage
             , units = networkUnits
             }
         -- Інакше показуємо підказки по всій системі
