@@ -156,7 +156,7 @@ navBar user shared activeName props =
                         ]
                     , img
                         [ src "/img/echo-logo.svg"
-                        , class "dark:invert dark:brightness-0 dark:contrast-200 h-[16px]"
+                        , class "invert brightness-0 contrast-200 h-[16px]"
                         ]
                         []
                     ]
