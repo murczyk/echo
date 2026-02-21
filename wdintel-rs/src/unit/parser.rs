@@ -33,6 +33,12 @@ pub fn extract_unit_with_aor(
     {
         return Ok(value);
     }
+    if let Some(value) =
+        try_extract_jf_unit_and_location(settlements.clone(), inp, m_aor_id)
+            .c(h!())?
+    {
+        return Ok(value);
+    }
     let mut locality = None;
     let mut locality_v2 = None;
     let lines: Vec<String> = inp
@@ -627,6 +633,61 @@ fn try_remove_commintify_header(lines: Vec<String>) -> Vec<String> {
         }
     }
     lines
+}
+
+fn try_extract_jf_unit_and_location(
+    settlements: Arc<RwLock<crate::location::SettlementsDataConfig>>,
+    inp: &str,
+    m_aor_id: Option<i64>,
+) -> Result<Option<UnitAndLoc>, AppError> {
+    lazy_static! {
+        static ref RE_JF_HEADER: Regex = RegexBuilder::new(
+            r#"(?iu)\d{2}\.\d{2}\.\d{4}\s+\d{2}:\d{2}.*?\b(?:противник\p{L}*|підрозділ\p{L}*|груп\p{L}*)\b\s+(?P<unit>.+?)\s+(?P<location>(?-i:[А-ЯІЇЄҐ][А-ЯІЇЄҐ.\s\-]*[А-ЯІЇЄҐ.]))(?:\b|$)"#
+        )
+        .build()
+        .unwrap();
+        static ref RE_UNIT_CHAIN: Regex =
+            Regex::new(r#"(?iu)\d+\s*[а-яіїєґ]{1,6}(?:\s+\d+\s*[а-яіїєґ]{1,8})+"#)
+                .unwrap();
+    }
+    let Some(first_line) = inp.lines().find(|line| !line.trim().is_empty())
+    else {
+        return Ok(None);
+    };
+    let Some(capts) = RE_JF_HEADER.captures(first_line) else {
+        return Ok(None);
+    };
+    let Some(unit_raw) = m_cap_s(&capts, "unit") else {
+        return Ok(None);
+    };
+    let unit_raw = unit_raw.trim().to_string();
+    let units = crate::unit::parse_library_unit(&unit_raw);
+    let unit = units
+        .iter()
+        .filter(|value| value.chars().any(|ch| ch.is_ascii_digit()))
+        .max_by_key(|value| value.len())
+        .cloned()
+        .or_else(|| {
+            RE_UNIT_CHAIN
+                .find_iter(&unit_raw)
+                .max_by_key(|value| value.as_str().len())
+                .map(|value| value.as_str().trim().to_string())
+        })
+        .unwrap_or(unit_raw);
+    let locality = m_cap_s(&capts, "location")
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    let (locality, locality_v2) = extract_locality(
+        settlements.clone(),
+        inp.to_string(),
+        locality,
+        m_aor_id,
+    )?;
+    Ok(Some(UnitAndLoc {
+        unit: Some(unit),
+        locality,
+        locality_v2,
+    }))
 }
 
 fn try_extract_standard_unit_and_location(
@@ -2400,6 +2461,33 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
         );
         let locality_v2_txt = validate_locality_v2(res.locality_v2);
         assert_eq!(locality_v2_txt, vec!["ОБУХІВКА", "СНАГОСТЬ", "СУДЖА"]);
+    }
+
+    #[test]
+    fn extract_unit_jf_header_01() {
+        let body = r#" 19.02.2026 09:08 противник зі складу 6 шр 2 мсб 283 мсп 144 мсд здійснє переміщення групи в районі південніше СЕРЕДНЄ (за маршрутом: 37U DQ 05770 40609, 37U DQ 05730 40657)
+
+ 19.02.2026, 09:08:31
+ 155.0250
+ МИНСК
+ БОБ, СЕНЯ
+ — Боб, Боб, Боб, им скажи, что им сейчас, скоро нужно будет повернуть направо, направо. Так, Сеня, Сеня, Сеня, смотри, им нужно в район 8 26, чтоб они повернули, и двигались в район 160-й, фиолетовой.
+ -Да, принял, принял,
+ — Минск, Минск, я Сеня. Назад, назад, возвращается 1.
+ - Я тебя принял, принял. 1, 1, продолжает движение?
+ - Нет, нет, первый который зашел до 8 1 6, развернулся, пошел назад. Обратно на 8 1 5.
+ - Боб, Боб, слышишь информацию? Пихай их дальше, блядь, пускай пиздуют."#;
+        let config = crate::config::read_config(Mode::Test).unwrap();
+        let settlements = Arc::new(RwLock::new(
+            crate::location::load_settlements_data_config(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
+        ));
+        let res = extract_unit(settlements, body, vec![]).unwrap();
+        assert_eq!(res.unit.unwrap(), "6 шр 2 мсб 283 мсп 144 мсд".to_string());
+        assert_eq!(res.locality.unwrap(), "СЕРЕДНЄ".to_string());
     }
 
     #[test]

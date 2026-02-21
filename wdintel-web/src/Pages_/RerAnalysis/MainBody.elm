@@ -947,9 +947,7 @@ view user model shared route =
                         [ i [ class "bi bi-arrow-up-circle" ] [] ]
                     ]
                 , div
-                    [ class "sticky top-0 z-50 bg-[var(--background-color)]"
-                    , style "z-index" "1100"
-                    ]
+                    [ class "sticky top-0 z-50 bg-[var(--background-color)]" ]
                     [ div [ class "flex items-center justify-between px-4 mb-6" ]
                         [ div [ class "flex items-center" ]
                             [ h1 [ class "text-xl font-semibold" ] [ text "аналіз" ]

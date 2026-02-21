@@ -9,7 +9,7 @@ import Json.Decode
 import Route.Path
 import Shared
 import Shared.Components.ThemeSwitcher exposing (themeSwitcher)
-import Shared.Model exposing (isDarkMode)
+import Shared.Model exposing (ThemeMode)
 import Utils.Utils exposing (..)
 
 
@@ -32,7 +32,7 @@ type alias Menu =
 type alias Props msg =
     { onToggleTheme : msg
     , onLogout : msg
-    , onThemeChange : Shared.Model.ThemeMode -> msg
+    , onThemeChange : ThemeMode -> msg
     , onNavbarVisibilityChange : msg
     , isRerDuty : Bool
     , openDropdown : Maybe String
@@ -126,13 +126,6 @@ navBar user shared activeName props =
             [ style "background" "linear-gradient(to bottom, rgba(var(--bd-coyote-rgb), 1), rgba(var(--bd-coyote-rgb), .95))"
             , class "border-b border-black/15 py-2"
             ]
-
-        exoLogoClass =
-            if not (isDarkMode shared.themeMode) then
-                "invert brightness-0"
-
-            else
-                ""
     in
     header navbarStyles
         [ nav [ class "container mx-auto px-4" ]
@@ -173,7 +166,7 @@ navBar user shared activeName props =
                         ]
                     , img
                         [ src "/img/echo-logo.svg"
-                        , class (exoLogoClass ++ " dark:invert dark:brightness-0 dark:contrast-200 h-[16px]")
+                        , class "h-[16px]"
                         ]
                         []
                     ]

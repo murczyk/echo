@@ -2,6 +2,12 @@
 	height: 100%;
 }
 
+/* Keep map controls below the analysis sticky toolbar (z-50) and navbar layers. */
+#analysis-map .leaflet-top,
+#analysis-map .leaflet-bottom {
+	z-index: 40;
+}
+
 analysis-map.analysis-map-fullscreen {
 	position: fixed;
 	inset: 0;
