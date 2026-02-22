@@ -1,4 +1,4 @@
-import { Box, Button, Chip, Paper, Typography } from '@mui/material';
+import { Box, Button, Paper, Typography } from '@mui/material';
 import React from 'react';
 
 import type {
@@ -35,7 +35,7 @@ import {
 import { getNetworksByIds } from '../../services/api/networks';
 import { getUnitsList } from '../../services/api/units';
 import { CommentDialog, DeleteConfirmDialog } from './dialogs';
-import { FeedColumn } from './FeedColumn';
+import { FeedColumn, type FeedColumnHandle } from './FeedColumn';
 import {
   buildInboxReq,
   createMasterUnitText,
@@ -43,6 +43,7 @@ import {
   generateMessageFeedId,
   INBOX_COUNT_POLL_INTERVAL_MS,
   normalizeFeed,
+  VIRTUOSO_FIRST_ITEM_INDEX_INITIAL,
   parseStateFromUrl,
   profileLabel,
   pushStateToUrl,
@@ -63,6 +64,7 @@ export function RerDutyNeoPage() {
       loading: true,
       loadingEarlier: false,
       hasReachedStart: false,
+      firstItemIndex: VIRTUOSO_FIRST_ITEM_INDEX_INITIAL,
     }));
   });
   const [error, setError] = React.useState<string | null>(null);
@@ -85,12 +87,33 @@ export function RerDutyNeoPage() {
   const [unitsMap, setUnitsMap] = React.useState<Record<number, Unit>>({});
   const loadNewerRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
   const refreshMessageCounterRef = React.useRef<() => Promise<void>>(() => Promise.resolve());
+  /** Time (ms) from which we count "new" messages for the digest badge; set once on mount */
+  const digestSinceMsRef = React.useRef<number | null>(null);
+  /** Which feed columns are in "watch mode" (auto-scroll to newest when new messages arrive). */
+  const [watchModeByFeedId, setWatchModeByFeedId] = React.useState<Record<string, boolean>>({});
+  /** Feed id currently loading newer messages (after arrow click). */
+  const [loadingNewerFeedId, setLoadingNewerFeedId] = React.useState<string | null>(null);
+  /** Brief per-feed message after arrow click ("Немає нових" / "Завантажено нові"), cleared after delay. */
+  const [arrowResultByFeedId, setArrowResultByFeedId] = React.useState<Record<string, string | null>>({});
+  const columnRefsRef = React.useRef<Record<string, FeedColumnHandle | null>>({});
+  const arrowResultTimeoutsRef = React.useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   const mountedRef = React.useRef(true);
+  const showArrowResult = React.useCallback((feedId: string, message: string) => {
+    const key = feedId;
+    if (arrowResultTimeoutsRef.current[key]) clearTimeout(arrowResultTimeoutsRef.current[key]);
+    setArrowResultByFeedId((prev) => ({ ...prev, [feedId]: message }));
+    arrowResultTimeoutsRef.current[key] = setTimeout(() => {
+      delete arrowResultTimeoutsRef.current[key];
+      setArrowResultByFeedId((prev) => (prev[feedId] === message ? { ...prev, [feedId]: null } : prev));
+    }, 3000);
+  }, []);
+
   React.useEffect(() => {
     return () => {
       mountedRef.current = false;
       if (copiedFeedbackTimeoutRef.current) clearTimeout(copiedFeedbackTimeoutRef.current);
+      Object.values(arrowResultTimeoutsRef.current).forEach(clearTimeout);
     };
   }, []);
   const reloadLatestFrequencies = React.useCallback(async () => {
@@ -143,7 +166,16 @@ export function RerDutyNeoPage() {
         return true;
       });
       setMessageFeeds((prev) =>
-        prev.map((x) => (x.id === feedId ? { ...x, items: sortMessageItemsByTime(deduped), loading: false } : x)),
+        prev.map((x) =>
+          x.id === feedId
+            ? {
+                ...x,
+                items: sortMessageItemsByTime(deduped),
+                loading: false,
+                firstItemIndex: VIRTUOSO_FIRST_ITEM_INDEX_INITIAL,
+              }
+            : x,
+        ),
       );
       if (rsp.signalProfiles) setProfiles((p) => ({ ...p, ...rsp.signalProfiles }));
       if (rsp.signalGroups?.length) {
@@ -161,6 +193,9 @@ export function RerDutyNeoPage() {
 
   const loadFeedEarlierMessages = React.useCallback(
     async (feedId: string) => {
+      if (digestCount === 0) {
+        return;
+      }
       const w = messageFeeds.find((x) => x.id === feedId);
       if (!w || w.items.length === 0 || w.hasReachedStart) return;
       const firstId = w.items[0][0];
@@ -178,11 +213,14 @@ export function RerDutyNeoPage() {
             const existingIds = new Set(x.items.map(([id]) => id));
             const newItems = rsp.inboxItems.filter(([id]) => !existingIds.has(id));
             const hasReachedStart = newItems.length === 0;
+            const prevFirst = x.firstItemIndex ?? VIRTUOSO_FIRST_ITEM_INDEX_INITIAL;
+            const firstItemIndex = Math.max(0, prevFirst - newItems.length);
             return {
               ...x,
               items: sortMessageItemsByTime([...newItems, ...x.items]),
               loadingEarlier: false,
               hasReachedStart,
+              firstItemIndex,
             };
           }),
         );
@@ -191,7 +229,7 @@ export function RerDutyNeoPage() {
         setMessageFeeds((prev) => prev.map((x) => (x.id === feedId ? { ...x, loadingEarlier: false } : x)));
       }
     },
-    [messageFeeds],
+    [messageFeeds, digestCount],
   );
 
   const loadFeedNewerMessages = React.useCallback(
@@ -205,6 +243,8 @@ export function RerDutyNeoPage() {
           filter: f.filter,
         });
         const rsp = await fetchInboxMessages(req);
+        digestSinceMsRef.current = Math.floor(Date.now() / 1000) * 1000;
+        setDigestCount(0);
         if (rsp.inboxItems.length > 0) {
           setMessageFeeds((prev) =>
             prev.map((x) => {
@@ -226,18 +266,31 @@ export function RerDutyNeoPage() {
   const refreshMessageCounter = React.useCallback(async () => {
     const w = messageFeeds[0];
     if (!w) return;
+    const sinceMs = digestSinceMsRef.current ?? Math.floor(Date.now() / 1000) * 1000;
+    if (digestSinceMsRef.current == null) digestSinceMsRef.current = sinceMs;
     try {
       const req = buildInboxReq({
         filter: w.filter,
-        sinceDateInclusiveMs: Math.floor(Date.now() / 1000) * 1000 - 60 * 60 * 1000,
+        sinceDateInclusiveMs: sinceMs,
         nolimit: true,
       });
       const d = await fetchInboxCount(req);
       setDigestCount(d.quantity);
+      if (d.quantity > 0) {
+        const refs = columnRefsRef.current;
+        for (const feedId of Object.keys(watchModeByFeedId)) {
+          if (watchModeByFeedId[feedId]) {
+            await loadFeedNewerMessages(feedId);
+            requestAnimationFrame(() => {
+              requestAnimationFrame(() => refs[feedId]?.scrollToEnd());
+            });
+          }
+        }
+      }
     } catch {
       setDigestCount(null);
     }
-  }, [messageFeeds]);
+  }, [messageFeeds, watchModeByFeedId, loadFeedNewerMessages]);
   refreshMessageCounterRef.current = refreshMessageCounter;
 
   React.useEffect(() => {
@@ -245,6 +298,7 @@ export function RerDutyNeoPage() {
   }, [loadFilterOptions]);
 
   React.useEffect(() => {
+    digestSinceMsRef.current = Math.floor(Date.now() / 1000) * 1000;
     refreshMessageCounterRef.current();
   }, []);
 
@@ -339,7 +393,16 @@ export function RerDutyNeoPage() {
   const applyFilter = React.useCallback((feedId: string, f: RerDutyFeedFilterState) => {
     setMessageFeeds((prev) => {
       const next = prev.map((w) =>
-        w.id === feedId ? { ...w, filter: f, items: [], loading: true, hasReachedStart: false } : w,
+        w.id === feedId
+          ? {
+              ...w,
+              filter: f,
+              items: [],
+              loading: true,
+              hasReachedStart: false,
+              firstItemIndex: VIRTUOSO_FIRST_ITEM_INDEX_INITIAL,
+            }
+          : w,
       );
       pushStateToUrl(toQueryState(next));
       return next;
@@ -371,6 +434,7 @@ export function RerDutyNeoPage() {
       loading: true,
       loadingEarlier: false,
       hasReachedStart: false,
+      firstItemIndex: VIRTUOSO_FIRST_ITEM_INDEX_INITIAL,
     };
     setMessageFeeds((prev) => {
       if (prev.length >= MAX_MESSAGE_FEEDS || prev.some((w) => w.id === id)) return prev;
@@ -594,20 +658,16 @@ export function RerDutyNeoPage() {
   );
 
   return (
-    <Box className="flex flex-col h-full min-h-[60vh] w-full">
-      <Box className="flex items-center justify-between flex-wrap gap-2 mb-2">
-        {digestCount != null && digestCount > 0 && (
-          <Chip size="small" color="primary" label={`Нових: ${digestCount}`} />
-        )}
-      </Box>
+    <Box className="flex flex-col w-full" sx={{ height: 'calc(100vh - 80px)', minHeight: 0, overflow: 'hidden' }}>
+      <Box className="flex items-center justify-between flex-wrap gap-2 mb-2 shrink-0" />
 
       {error && (
-        <Paper elevation={0} className="p-2 mb-2" sx={{ bgcolor: 'error.light', color: 'error.contrastText' }}>
+        <Paper elevation={0} className="p-2 mb-2 shrink-0" sx={{ bgcolor: 'error.light', color: 'error.contrastText' }}>
           {error}
         </Paper>
       )}
 
-      <Box className="flex flex-nowrap gap-2 overflow-x-auto min-h-0 justify-center w-full">
+      <Box className="flex flex-1 flex-nowrap gap-2 overflow-x-auto justify-center w-full min-h-0">
         {messageFeeds.map((w) => {
           const filterStable = {
             groupsSelected: w.filter.groupsSelected ?? [],
@@ -619,6 +679,9 @@ export function RerDutyNeoPage() {
           return (
             <FeedColumn
               key={w.id}
+              ref={(el) => {
+                columnRefsRef.current[w.id] = el;
+              }}
               feed={w}
               filterStable={filterStable}
               groupsList={groupsList}
@@ -669,6 +732,35 @@ export function RerDutyNeoPage() {
               onMessageCopy={handleMessageCopy}
               onMessageComment={(msgId, currentComment) => openCommentDialog(msgId, w.id, currentComment)}
               onMessageToggleTag={(msgId, tagId) => handleToggleTag(w.id, msgId, tagId)}
+              onScrollToTop={() => setWatchModeByFeedId((prev) => ({ ...prev, [w.id]: false }))}
+              isWatchMode={watchModeByFeedId[w.id] ?? false}
+              digestCount={digestCount}
+              loadingNewer={loadingNewerFeedId === w.id}
+              arrowResultMessage={arrowResultByFeedId[w.id] ?? null}
+              onArrowClick={async () => {
+                setWatchModeByFeedId((prev) => ({ ...prev, [w.id]: true }));
+                const refs = columnRefsRef.current;
+                const scrollToEnd = () => {
+                  requestAnimationFrame(() => requestAnimationFrame(() => refs[w.id]?.scrollToEnd()));
+                };
+                scrollToEnd();
+                if (digestCount != null && digestCount > 0) {
+                  setLoadingNewerFeedId(w.id);
+                  try {
+                    if (w.items.length > 0) {
+                      await loadFeedNewerMessages(w.id);
+                    } else if (!w.loading) {
+                      await loadFeedInitialMessages(w.id, w.filter);
+                    }
+                    scrollToEnd();
+                    showArrowResult(w.id, 'Завантажено нові повідомлення');
+                  } finally {
+                    setLoadingNewerFeedId((prev) => (prev === w.id ? null : prev));
+                  }
+                } else {
+                  showArrowResult(w.id, 'Немає нових повідомлень');
+                }
+              }}
             />
           );
         })}
@@ -680,7 +772,7 @@ export function RerDutyNeoPage() {
             sx={{
               width: 48,
               minWidth: 48,
-              minHeight: 42,
+              height: 32,
               display: 'flex',
               justifyContent: 'center',
               alignItems: 'center',

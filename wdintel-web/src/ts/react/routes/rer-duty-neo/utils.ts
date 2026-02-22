@@ -215,6 +215,9 @@ export function sortMessageItemsByTime(items: MessageItem[]): MessageItem[] {
   });
 }
 
+/** Initial firstItemIndex for Virtuoso; decreased when we prepend so scroll position is preserved. */
+export const VIRTUOSO_FIRST_ITEM_INDEX_INITIAL = 10_000;
+
 export type MessageFeedState = {
   id: string;
   filter: RerDutyFeedFilterState;
@@ -223,6 +226,8 @@ export type MessageFeedState = {
   loadingEarlier: boolean;
   /** True after "load earlier" returned 0 new items — nothing older to fetch */
   hasReachedStart: boolean;
+  /** Virtuoso firstItemIndex: start at VIRTUOSO_FIRST_ITEM_INDEX_INITIAL, decrease by N when prepending N items (infinite scroll). */
+  firstItemIndex: number;
 };
 
 export function toQueryState(messageFeeds: MessageFeedState[]): RerDutyState {

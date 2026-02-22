@@ -42,7 +42,7 @@ export function MessageCard({
   onToggleTag,
 }: MessageCardProps) {
   return (
-    <Box component="li" className="list-none flex px-2 rer-duty-message mb-3 font-size-[13px]">
+    <Box component="li" className="list-none flex pr-0 pl-2 rer-duty-message mb-3 font-size-[13px]">
       {/* Left column: date/time, actions, group, sender, freq */}
       <div
         className="min-w-[120px] mr-2 basis-1/4 mb-[8px]"
@@ -261,18 +261,16 @@ export function MessageCard({
             const humanLogins = humanContribs.map((t) => t.login).filter(Boolean) as string[];
             const bots = botContribs.map((t) => `${t.model} (${Math.round((t.confidence ?? 0) * 100)}%)`);
             const tip =
-              isSet && (humanContribs.length > 0 || botContribs.length > 0)
-                ? [
-                    ...(humanLogins.length > 0
-                      ? [`Користувачі: ${humanLogins.join(', ')}`]
-                      : humanContribs.length > 0
-                      ? ['Користувачі: (ваш вибір)']
-                      : []),
-                    ...(bots.length > 0 ? [`Боти: ${bots.join(', ')}`] : []),
-                  ].join('\n')
-                : isSet
-                ? 'Натисніть, щоб зняти тег'
-                : 'Натисніть, щоб додати тег';
+              isSet &&
+              (humanContribs.length > 0 || botContribs.length > 0) &&
+              [
+                ...(humanLogins.length > 0
+                  ? [`Користувачі: ${humanLogins.join(', ')}`]
+                  : humanContribs.length > 0
+                    ? ['Користувачі: (ваш вибір)']
+                    : []),
+                ...(bots.length > 0 ? [`Боти: ${bots.join(', ')}`] : []),
+              ].join('\n');
             const showBadge = isSet && (humanContribs.length > 0 || botContribs.length > 0);
             return (
               <Tooltip key={tagId} title={tip} placement="top">
@@ -281,10 +279,24 @@ export function MessageCard({
                     size="small"
                     label={label}
                     onClick={() => onToggleTag(tagId)}
-                    color={isSet ? 'primary' : 'default'}
-                    variant={isSet ? 'filled' : 'outlined'}
+                    variant="filled"
                     className="text-sm h-5 cursor-pointer"
-                    sx={{ '& .MuiChip-label': { px: 0.75 } }}
+                    sx={{
+                      '& .MuiChip-label': { px: 0.75 },
+                      ...(isSet
+                        ? {
+                            bgcolor: 'var(--color-tag-selected)',
+                            color: 'black',
+                            border: '1px solid var(--color-border-selected)',
+                          }
+                        : {
+                            bgcolor: 'var(--color-tag)',
+                            color: 'var(--color-text)',
+                            border: '1px solid var(--color-border)',
+                            opacity: 0.75,
+                            '&:hover': { opacity: 1 },
+                          }),
+                    }}
                   />
                   {showBadge && (
                     <span
