@@ -1373,11 +1373,21 @@ pub async fn recalculate_network_stats(
     till_ts: NaiveDateTime,
     network_ids: Option<&HashSet<i64>>,
 ) -> Result<(), AppError> {
-    let stats = load_network_stats(dbx, since_ts, till_ts, network_ids)
+    if till_ts <= since_ts {
+        warn!(
+            "skip recalculate_network_stats: non-positive window [{since_ts}..{till_ts})"
+        );
+        return Ok(());
+    }
+
+    let since_date = get_local_date(since_ts);
+    let till_date = get_local_date(till_ts - Duration::nanoseconds(1));
+    let since_day_ts = start_of_day(since_date).c(h!())?;
+    let till_day_ts = start_of_day(till_date + Duration::days(1)).c(h!())?;
+
+    let stats = load_network_stats(dbx, since_day_ts, till_day_ts, network_ids)
         .await
         .c(h!())?;
-    let since_date = get_local_date(since_ts);
-    let till_date = get_local_date(till_ts);
 
     let batches = signal_group_batch::Entity::find().all(dbx).await.c(h!())?;
     let mut batches_map = batches
