@@ -83,6 +83,7 @@ function CreatePalitraDrawerComponent({
 
   const hasSelectedKmzColor = kmzColorOptions.some((option) => option.selected);
   const hasSuccessfulKmzAnalysis = Boolean(kmzAnalysis);
+  const dismissBlocked = createInFlight || kmzAnalyzing;
   const canContinueFromKmzStep = Boolean(kmzFile) && hasSuccessfulKmzAnalysis && !kmzAnalyzing;
   const canCreate =
     createInFlight ||
@@ -107,12 +108,13 @@ function CreatePalitraDrawerComponent({
 
     function onKeyDown(event: KeyboardEvent) {
       if (event.key !== 'Escape') return;
+      if (dismissBlocked) return;
       onClose();
     }
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [open, onClose]);
+  }, [dismissBlocked, open, onClose]);
 
   function canContinueStep(step: number) {
     if (step === 0) return canContinueFromKmzStep;
@@ -133,7 +135,10 @@ function CreatePalitraDrawerComponent({
     <>
       <Backdrop
         open={open}
-        onClick={onClose}
+        onClick={() => {
+          if (dismissBlocked) return;
+          onClose();
+        }}
         sx={{
           zIndex: (theme) => theme.zIndex.drawer - 1,
           color: 'common.white',
@@ -293,11 +298,11 @@ function CreatePalitraDrawerComponent({
           </Stack>
         </Box>
         <Box sx={{ p: 2.5, borderTop: '1px solid', borderColor: 'divider', display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
-          <Button onClick={onClose} disabled={createInFlight}>
+          <Button onClick={onClose} disabled={dismissBlocked}>
             Скасувати
           </Button>
           {activeStep > 0 ? (
-            <Button onClick={() => setActiveStep((prev) => prev - 1)} disabled={createInFlight}>
+            <Button onClick={() => setActiveStep((prev) => prev - 1)} disabled={dismissBlocked}>
               Назад
             </Button>
           ) : null}
