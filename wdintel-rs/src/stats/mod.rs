@@ -1381,7 +1381,7 @@ pub async fn recalculate_network_stats(
     }
 
     let since_date = get_local_date(since_ts);
-    let till_date = get_local_date(till_ts - Duration::nanoseconds(1));
+    let till_date = till_date_inclusive_for_exclusive_till(till_ts).c(h!())?;
     let since_day_ts = start_of_day(since_date).c(h!())?;
     let till_day_ts = start_of_day(till_date + Duration::days(1)).c(h!())?;
 
@@ -1827,7 +1827,7 @@ async fn recalculate_day_stats_group(
     till_ts: NaiveDateTime,
 ) -> Result<(), AppError> {
     let since_date = get_local_date(since_ts);
-    let till_date = get_local_date(till_ts);
+    let till_date = till_date_inclusive_for_exclusive_till(till_ts).c(h!())?;
     let since_start_of_day_ts = start_of_day(since_date).c(h!())?;
 
     let stats_5min = stats_group_5min::Entity::find()
@@ -1950,7 +1950,7 @@ async fn recalculate_day_stats_freq(
     till_ts: NaiveDateTime,
 ) -> Result<(), AppError> {
     let since_date = get_local_date(since_ts);
-    let till_date = get_local_date(till_ts);
+    let till_date = till_date_inclusive_for_exclusive_till(till_ts).c(h!())?;
     let since_start_of_day_ts = start_of_day(since_date).c(h!())?;
 
     let stats_5min = stats_group_freq_5min::Entity::find()
@@ -2077,7 +2077,7 @@ async fn recalculate_day_stats_aor_id(
     till_ts: NaiveDateTime,
 ) -> Result<(), AppError> {
     let since_date = get_local_date(since_ts);
-    let till_date = get_local_date(till_ts);
+    let till_date = till_date_inclusive_for_exclusive_till(till_ts).c(h!())?;
     let since_start_of_day_ts = start_of_day(since_date).c(h!())?;
 
     let stats_5min = stats_group_aor_id_5min::Entity::find()
@@ -2199,7 +2199,7 @@ async fn recalculate_day_stats_post_id(
     till_ts: NaiveDateTime,
 ) -> Result<(), AppError> {
     let since_date = get_local_date(since_ts);
-    let till_date = get_local_date(till_ts);
+    let till_date = till_date_inclusive_for_exclusive_till(till_ts).c(h!())?;
     let since_start_of_day_ts = start_of_day(since_date).c(h!())?;
 
     let stats_5min = stats_group_post_id_5min::Entity::find()
@@ -2327,7 +2327,7 @@ async fn recalculate_day_stats_location(
     till_ts: NaiveDateTime,
 ) -> Result<(), AppError> {
     let since_date = get_local_date(since_ts);
-    let till_date = get_local_date(till_ts);
+    let till_date = till_date_inclusive_for_exclusive_till(till_ts).c(h!())?;
     let since_start_of_day_ts = start_of_day(since_date).c(h!())?;
 
     let stats_5min = stats_group_location_5min::Entity::find()
@@ -2457,7 +2457,7 @@ async fn recalculate_day_stats_sender(
     till_ts: NaiveDateTime,
 ) -> Result<(), AppError> {
     let since_date = get_local_date(since_ts);
-    let till_date = get_local_date(till_ts);
+    let till_date = till_date_inclusive_for_exclusive_till(till_ts).c(h!())?;
     let since_start_of_day_ts = start_of_day(since_date).c(h!())?;
 
     let stats_5min = stats_group_sender_5min::Entity::find()
@@ -2580,7 +2580,7 @@ async fn recalculate_day_stats_tag(
     till_ts: NaiveDateTime,
 ) -> Result<(), AppError> {
     let since_date = get_local_date(since_ts);
-    let till_date = get_local_date(till_ts);
+    let till_date = till_date_inclusive_for_exclusive_till(till_ts).c(h!())?;
     let since_start_of_day_ts = start_of_day(since_date).c(h!())?;
 
     let stats_5min = stats_group_tag_5min::Entity::find()
@@ -2702,7 +2702,7 @@ async fn recalculate_day_stats_callsign(
     till_ts: NaiveDateTime,
 ) -> Result<(), AppError> {
     let since_date = get_local_date(since_ts);
-    let till_date = get_local_date(till_ts);
+    let till_date = till_date_inclusive_for_exclusive_till(till_ts).c(h!())?;
     let since_start_of_day_ts = start_of_day(since_date).c(h!())?;
 
     let stats_5min = stats_group_callsign_5min::Entity::find()
@@ -2831,7 +2831,7 @@ async fn recalculate_day_stats_unit(
     till_ts: NaiveDateTime,
 ) -> Result<(), AppError> {
     let since_date = get_local_date(since_ts);
-    let till_date = get_local_date(till_ts);
+    let till_date = till_date_inclusive_for_exclusive_till(till_ts).c(h!())?;
     let since_start_of_day_ts = start_of_day(since_date).c(h!())?;
 
     let stats_5min = stats_group_unit_5min::Entity::find()
@@ -2919,6 +2919,15 @@ pub fn start_of_day(since_date: NaiveDate) -> Result<NaiveDateTime, AppError> {
         .earliest()
         .c(h!())?
         .naive_utc())
+}
+
+fn till_date_inclusive_for_exclusive_till(
+    till_ts: NaiveDateTime,
+) -> Result<NaiveDate, AppError> {
+    let till_ts = till_ts
+        .checked_sub_signed(Duration::nanoseconds(1))
+        .c(h!())?;
+    Ok(get_local_date(till_ts))
 }
 
 pub(crate) fn get_local_date(since_ts: NaiveDateTime) -> NaiveDate {
