@@ -12,10 +12,10 @@ pub struct Model {
     pub id: i64,
     #[sea_orm(unique)]
     pub aor_id: i64,
-    #[sea_orm(column_type = "JsonBinary")]
-    pub settlements_configs: Json,
     pub created_at: DateTime,
     pub updated_at: DateTime,
+    #[sea_orm(column_type = "JsonBinary")]
+    pub settlements_configs: Json,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

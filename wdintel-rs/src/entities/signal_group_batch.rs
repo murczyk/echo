@@ -43,16 +43,6 @@ pub enum Relation {
     StatsGroupNetworkDay,
     #[sea_orm(has_many = "super::stats_group_network_freq_day::Entity")]
     StatsGroupNetworkFreqDay,
-    #[sea_orm(has_many = "super::stats_group_location_5min::Entity")]
-    StatsGroupLocation5min,
-    #[sea_orm(has_many = "super::stats_group_location_day::Entity")]
-    StatsGroupLocationDay,
-    #[sea_orm(has_many = "super::stats_group_network_callsign_day::Entity")]
-    StatsGroupNetworkCallsignDay,
-    #[sea_orm(has_many = "super::stats_group_network_day::Entity")]
-    StatsGroupNetworkDay,
-    #[sea_orm(has_many = "super::stats_group_network_freq_day::Entity")]
-    StatsGroupNetworkFreqDay,
     #[sea_orm(has_many = "super::stats_group_post_id_5min::Entity")]
     StatsGroupPostId5min,
     #[sea_orm(has_many = "super::stats_group_post_id_day::Entity")]
@@ -116,36 +106,6 @@ impl Related<super::stats_group_freq_5min::Entity> for Entity {
 impl Related<super::stats_group_freq_day::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::StatsGroupFreqDay.def()
-    }
-}
-
-impl Related<super::stats_group_location_5min::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::StatsGroupLocation5min.def()
-    }
-}
-
-impl Related<super::stats_group_location_day::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::StatsGroupLocationDay.def()
-    }
-}
-
-impl Related<super::stats_group_network_callsign_day::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::StatsGroupNetworkCallsignDay.def()
-    }
-}
-
-impl Related<super::stats_group_network_day::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::StatsGroupNetworkDay.def()
-    }
-}
-
-impl Related<super::stats_group_network_freq_day::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::StatsGroupNetworkFreqDay.def()
     }
 }
 
