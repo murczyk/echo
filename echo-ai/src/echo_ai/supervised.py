@@ -6,7 +6,7 @@ from typing import cast
 import fasttext
 import humanfriendly
 import mlflow
-from mlflow.data.pandas_dataset import from_pandas
+from mlflow.data.pandas_dataset import PandasDataset, from_pandas
 from mlflow.entities.logged_model_input import LoggedModelInput
 
 from echo_ai import arrow, quack
@@ -33,13 +33,13 @@ def train_model(return_dict: dict, job: dict):
     mlflow.start_run(run_id=run_id)
 
     fasttext_kwargs = job["fasttext_kwargs"]
-    len_test = job["len_test"]
-    test_path = job["test_path"]
+    len_tune = job["len_tune"]
+    tune_path = job["tune_path"]
     autotuneMetric = fasttext_kwargs.get("autotuneMetric")
     autotuneModelSize = fasttext_kwargs.get("autotuneModelSize")
 
-    if autotuneMetric and len_test > 0:
-        fasttext_kwargs["autotuneValidationFile"] = test_path
+    if autotuneMetric and len_tune > 0:
+        fasttext_kwargs["autotuneValidationFile"] = tune_path
     else:
         fasttext_kwargs.pop("autotuneValidationFile", None)
         fasttext_kwargs.pop("autotuneDuration", None)
@@ -96,6 +96,26 @@ def train_model(return_dict: dict, job: dict):
     return_dict["model_uri"] = model_info.model_uri
 
 
+def create_dataset(
+    lake: Lake, label_column_name: str, label_name: str, split: str, shuffle_seed
+) -> tuple[PandasDataset, str, int]:
+    rel_split = lake.split_for_label(label_column_name, split, shuffle_seed)
+    split_stats = rel_split.aggregate("label, count(*) AS samples", "label")
+    print(f"{split} samples for {label_name}: ", flush=True)
+    print(split_stats, flush=True)
+    df_split = quack.to_df_arrow(rel_split.limit(1000))
+    (len_split,) = rel_split.count("*").fetchone()  # pyright: ignore
+    print(f"{len_split} rows for {label_name} {split} dataset", flush=True)
+    pd_split = from_pandas(
+        df_split,
+        name=f"{label_name}.{split}",
+        digest=arrow.digest(df_split, str(len_split)),
+        targets="label",
+    )
+    split_path = lake.to_plain_text(rel_split, pd_split)
+    return pd_split, split_path, len_split
+
+
 def train_supervised(
     lake: Lake,
     label_dict: dict[int, str],
@@ -105,51 +125,24 @@ def train_supervised(
 
     seed = args.get("seed", 4507)
     shuffle = args.get("shuffle", True)
-    print(f"preparing training dataset, seed {seed}, shuffle {shuffle}", flush=True)
-    rel = lake.create_messages_labeled_onehot(shuffle=shuffle, seed=seed)
-    result = rel.max("created_at").fetchone()
-    if not result:
-        print("input file is empty")
-        sys.exit(1)
-    (created_at_max,) = result
-    last_week = cast(datetime.datetime, created_at_max) - datetime.timedelta(weeks=1)
-    print(f"splitting train and test at '{last_week}'", flush=True)
+    print(f"preparing datasets, seed {seed}, shuffle {shuffle}", flush=True)
+    lake.create_messages_labeled_onehot()
 
-    and_train = f"created_at < '{last_week.isoformat()}'"
-    and_test = f"created_at >= '{last_week.isoformat()}'"
+    shuffle_seed = int(seed) if shuffle else None
 
     results_per_split = []
     for label_index, label_name in label_dict.items():
         label_column_name = f"label_{label_index}"
 
-        rel_train = lake.split_for_label(label_column_name, and_train)
-        train_stats = rel_train.aggregate("label, count(*) AS samples", "label")
-        print(f"training samples for {label_name}: ", flush=True)
-        print(train_stats, flush=True)
-        df_train = quack.to_df_arrow(rel_train.limit(1000))
-        (len_train,) = rel_train.count("*").fetchone()  # pyright: ignore
-        print(f"{len_train} rows for {label_name} train dataset", flush=True)
-        pd_train = from_pandas(
-            df_train,
-            name=f"{label_name}.train",
-            digest=arrow.digest(df_train, str(len_train)),
-            targets="label",
+        pd_train, train_path, len_train = create_dataset(
+            lake, label_column_name, label_name, "train", shuffle_seed
         )
-        train_path = lake.to_plain_text(rel_train, pd_train)
-        rel_test = lake.split_for_label(label_column_name, and_test)
-        test_stats = rel_test.aggregate("label, count(*) AS samples", "label")
-        print(f"test samples for {label_name}: ", flush=True)
-        print(test_stats, flush=True)
-        df_test = quack.to_df_arrow(rel_test.limit(1000))
-        (len_test,) = rel_test.count("*").fetchone()  # pyright: ignore
-        print(f"{len_test} rows for {label_name} test dataset", flush=True)
-        pd_test = from_pandas(
-            df_test,
-            name=f"{label_name}.test",
-            digest=arrow.digest(df_test, str(len_test)),
-            targets="label",
+        pd_validation, validation_path, len_validation = create_dataset(
+            lake, label_column_name, label_name, "validation", shuffle_seed
         )
-        test_path = lake.to_plain_text(rel_test, pd_test)
+        pd_test, test_path, len_test = create_dataset(
+            lake, label_column_name, label_name, "test", shuffle_seed
+        )
 
         tags = {"label": label_name, "task": "supervised"}
         with mlflow.start_run(nested=True, tags=tags) as run:
@@ -167,8 +160,8 @@ def train_supervised(
                         "label_name": label_name,
                         "fasttext_kwargs": fasttext_kwargs,
                         "train_path": train_path,
-                        "len_test": len_test,
-                        "test_path": test_path,
+                        "len_tune": len_validation,
+                        "tune_path": validation_path,
                     },
                 ],
             )
@@ -179,9 +172,12 @@ def train_supervised(
 
             logged_model = LoggedModelInput(model_id=model_id)
             mlflow.log_input(pd_train, context="training", model=logged_model)
+            mlflow.log_input(pd_validation, context="validation", model=logged_model)
             split_csv = {
                 "train": train_path,
             }
+            if len_validation > 0:
+                split_csv["validation"] = validation_path
             if len_test > 0:
                 split_csv["test"] = test_path
             eval_results = evaluate_model(label_name, model_uri, split_csv)

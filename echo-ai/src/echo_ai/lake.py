@@ -128,102 +128,55 @@ class Lake:
         """)
         return query
 
-    def create_messages_labeled_onehot(
-        self, shuffle: bool = True, seed: int = 4507
-    ) -> DuckDBPyRelation:
-
-        pred_order = ""
-        if shuffle:
-            pred_order = f"ORDER BY hash(source, id, {seed})"
-
-        self.conn.execute(r"""
-        CREATE TEMPORARY TABLE IF NOT EXISTS tmp_messages_pivot AS
-        WITH cte AS (
-            SELECT * FROM (
-                SELECT
-                    m.source,
-                    m.id,
-                    m.created_at,
-                    normalize_body_text(m.body) AS text,
-                    x.label_id,
-                    x.label_value AS label_value
-                FROM (
-                    SELECT * FROM vw_golden_negatives
-                    UNION ALL
-                    SELECT * FROM vw_golden_positives
-                ) AS x
-                JOIN sigint_inbox_message m
-                    ON m.source = x.source AND m.id = sigint_inbox_item_id
-            ) AS m
-            WHERE m.text <> ''
-        )
-        PIVOT cte
-        ON label_id IN (0, 1, 2, 3, 4, 5, 6, 7, 8, 9)
-        USING min(label_value) AS onehot
-        GROUP BY source, id, created_at, text;
+    def create_messages_labeled_onehot(self) -> DuckDBPyRelation:
+        self.conn.execute("""
+            CREATE TEMPORARY TABLE IF NOT EXISTS tmp_messages_labeled_onehot AS
+            SELECT * FROM vw_messages_labeled_onehot;
         """)
 
-        self.conn.execute(r"""
-        CREATE OR REPLACE TEMPORARY VIEW tmp_messages_labeled_onehot AS
-        WITH source_flags AS (
-            -- Pre-calculate first time a source EVER had a specific label (single pass)
-            SELECT
-                source,
-                min(created_at) filter("0_onehot" = true) AS min_created_at_0,
-                min(created_at) filter("1_onehot" = true) AS min_created_at_1,
-                min(created_at) filter("2_onehot" = true) AS min_created_at_2,
-                min(created_at) filter("3_onehot" = true) AS min_created_at_3,
-                min(created_at) filter("4_onehot" = true) AS min_created_at_4,
-                min(created_at) filter("5_onehot" = true) AS min_created_at_5,
-                min(created_at) filter("6_onehot" = true) AS min_created_at_6,
-                min(created_at) filter("7_onehot" = true) AS min_created_at_7,
-                min(created_at) filter("8_onehot" = true) AS min_created_at_8,
-                min(created_at) filter("9_onehot" = true) AS min_created_at_9
-            FROM tmp_messages_pivot
-            GROUP BY source
-        )
-        SELECT
-            x.source,
-            x.id,
-            x.created_at,
-            x.text,
-            CASE WHEN x.created_at >= f.min_created_at_0 THEN coalesce(x."0_onehot", FALSE) END AS label_0,
-            CASE WHEN x.created_at >= f.min_created_at_1 THEN coalesce(x."1_onehot", FALSE) END AS label_1,
-            CASE WHEN x.created_at >= f.min_created_at_2 THEN coalesce(x."2_onehot", FALSE) END AS label_2,
-            CASE WHEN x.created_at >= f.min_created_at_3 THEN coalesce(x."3_onehot", FALSE) END AS label_3,
-            CASE WHEN x.created_at >= f.min_created_at_4 THEN coalesce(x."4_onehot", FALSE) END AS label_4,
-            CASE WHEN x.created_at >= f.min_created_at_5 THEN coalesce(x."5_onehot", FALSE) END AS label_5,
-            CASE WHEN x.created_at >= f.min_created_at_6 THEN coalesce(x."6_onehot", FALSE) END AS label_6,
-            CASE WHEN x.created_at >= f.min_created_at_7 THEN coalesce(x."7_onehot", FALSE) END AS label_7,
-            CASE WHEN x.created_at >= f.min_created_at_8 THEN coalesce(x."8_onehot", FALSE) END AS label_8,
-            CASE WHEN x.created_at >= f.min_created_at_9 THEN coalesce(x."9_onehot", FALSE) END AS label_9
-        FROM
-            tmp_messages_pivot x
-        JOIN
-            source_flags f ON x.source = f.source
-        ;
-        """)
-
-        return self.conn.query(f"""
-        SELECT DISTINCT ON (text, label_0, label_1, label_2, label_3, label_4, label_5, label_6, label_7, label_8, label_9)
-            *
-        FROM
-            tmp_messages_labeled_onehot
-        {pred_order}
-        """)
+        return self.conn.table("tmp_messages_labeled_onehot")
 
     def split_for_label(
-        self, label_column_name: str, and_filter: str
+        self, label_column_name: str, split: str, shuffle_seed: int | None
     ) -> DuckDBPyRelation:
+        train_pct = 0.80
+        validation_pct = 0.10
+
+        self.conn.execute(f"""
+        CREATE TEMPORARY TABLE IF NOT EXISTS tmp_{label_column_name}_splits AS
+        WITH ranked_data AS (
+            SELECT
+                *,
+                PERCENT_RANK() OVER (
+                    PARTITION BY {label_column_name}
+                    ORDER BY created_at ASC
+                ) as time_percentile
+            FROM tmp_messages_labeled_onehot
+            WHERE {label_column_name} IS NOT NULL
+        )
+        SELECT
+            *,
+            CASE
+                WHEN time_percentile <= {train_pct} THEN 'train'
+                WHEN time_percentile <= {train_pct + validation_pct} THEN 'validation'
+                ELSE 'test'
+            END as split_group
+        FROM ranked_data;
+        """)
+
+        order_clause = "ORDER BY created_at"
+        if shuffle_seed is not None:
+            order_clause = f"ORDER BY hash(source, id, {shuffle_seed})"
+
         return self.conn.query(f"""
         SELECT
              '__label__' || {label_column_name}::int || ' ' || text AS text,
              {label_column_name}::int AS label
         FROM
-            tmp_messages_labeled_onehot
+            tmp_{label_column_name}_splits
         WHERE
-            {label_column_name} IS NOT NULL
-            AND {and_filter}
+            split_group = '{split}'
+        {order_clause}
         """)
 
     def insert_model_error(self, db: str):

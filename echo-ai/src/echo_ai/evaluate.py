@@ -45,6 +45,11 @@ def evaluate_model(label_name: str, model_uri: str, split_csv: dict[str, str]):
         plot_precision_recall(labels, "test", [test_results])
         plot_threshold_recall(labels, "test", [test_results])
 
+    validation_results = results.get("validation")
+    if validation_results:
+        plot_precision_recall(labels, "validation", [validation_results])
+        plot_threshold_recall(labels, "validation", [validation_results])
+
     return results
 
 
@@ -94,7 +99,7 @@ def _do_evaluate_model(
             "threshold": threshold,
         }
         results[split] = {"metrics": metrics, "plot_data": plot_data}
-        if split == "train":
+        if split != "test":
             continue
 
         df = pd.DataFrame(
