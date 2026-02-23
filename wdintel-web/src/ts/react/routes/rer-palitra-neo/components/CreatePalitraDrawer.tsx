@@ -82,9 +82,14 @@ function CreatePalitraDrawerComponent({
   }, [open]);
 
   const hasSelectedKmzColor = kmzColorOptions.some((option) => option.selected);
-  const canContinueFromKmzStep = Boolean(kmzFile) && !kmzAnalyzing;
+  const hasSuccessfulKmzAnalysis = Boolean(kmzAnalysis);
+  const canContinueFromKmzStep = Boolean(kmzFile) && hasSuccessfulKmzAnalysis && !kmzAnalyzing;
   const canCreate =
-    createInFlight || !kmzFile || !isFormValid(createForm) || (kmzColorOptions.length > 0 && !hasSelectedKmzColor);
+    createInFlight ||
+    !kmzFile ||
+    !hasSuccessfulKmzAnalysis ||
+    !isFormValid(createForm) ||
+    (kmzColorOptions.length > 0 && !hasSelectedKmzColor);
 
   React.useEffect(() => {
     if (!open) return;
