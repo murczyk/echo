@@ -8,9 +8,84 @@ use chrono::{DateTime, Utc};
 use itertools::{Either, Itertools};
 use redis::AsyncCommands;
 use sea_orm::prelude::*;
+use sea_orm::sea_query::SimpleExpr;
 use sea_orm::*;
 use serde::de::DeserializeOwned;
 use std::collections::{HashMap, HashSet};
+
+#[derive(Debug, Clone)]
+enum LabelPattern {
+    Exact(String),
+    Prefix(String),
+    Suffix(String),
+    Contains(String),
+}
+
+impl LabelPattern {
+    fn parse(label: &str) -> Option<Self> {
+        let normalized = normalize_label_cache(label)?;
+        let has_prefix_star = normalized.starts_with('*');
+        let has_suffix_star = normalized.ends_with('*');
+
+        let trimmed = normalized
+            .trim_start_matches('*')
+            .trim_end_matches('*')
+            .trim()
+            .to_string();
+
+        let pattern = match (has_prefix_star, has_suffix_star) {
+            (false, false) => LabelPattern::Exact(normalized),
+            (true, false) => {
+                if trimmed.is_empty() {
+                    return None;
+                }
+                LabelPattern::Suffix(trimmed)
+            }
+            (false, true) => {
+                if trimmed.is_empty() {
+                    return None;
+                }
+                LabelPattern::Prefix(trimmed)
+            }
+            (true, true) => {
+                if trimmed.is_empty() {
+                    return None;
+                }
+                LabelPattern::Contains(trimmed)
+            }
+        };
+        Some(pattern)
+    }
+
+    fn to_expr(&self) -> SimpleExpr {
+        match self {
+            LabelPattern::Exact(value) => {
+                Expr::cust_with_values("lower(label) = $1", vec![value.clone()])
+            }
+            LabelPattern::Prefix(value) => Expr::cust_with_values(
+                "lower(label) LIKE $1",
+                vec![format!("{}%", value)],
+            ),
+            LabelPattern::Suffix(value) => Expr::cust_with_values(
+                "lower(label) LIKE $1",
+                vec![format!("%{}", value)],
+            ),
+            LabelPattern::Contains(value) => Expr::cust_with_values(
+                "lower(label) LIKE $1",
+                vec![format!("%{}%", value)],
+            ),
+        }
+    }
+
+    fn matches(&self, normalized_label: &str) -> bool {
+        match self {
+            LabelPattern::Exact(value) => normalized_label == value,
+            LabelPattern::Prefix(value) => normalized_label.starts_with(value),
+            LabelPattern::Suffix(value) => normalized_label.ends_with(value),
+            LabelPattern::Contains(value) => normalized_label.contains(value),
+        }
+    }
+}
 
 enum PalitraUpdateAction {
     Insert,
@@ -121,28 +196,18 @@ pub async fn search_palitra_points_by_labels(
     }
     dbg!("{:?}", &palitra_ids);
 
-    let mut normalized_labels: Vec<String> = req
+    let label_patterns: Vec<LabelPattern> = req
         .point_labels
         .iter()
-        .filter_map(|label| normalize_label_cache(label))
-        .map(|label| label.to_lowercase())
+        .filter_map(|point| LabelPattern::parse(point))
         .collect();
-    if normalized_labels.len() > 1 {
-        let combined_label = normalized_labels.join(" ");
-        if !normalized_labels.contains(&combined_label) {
-            normalized_labels.push(combined_label);
-        }
-    }
-    if normalized_labels.is_empty() {
+    if label_patterns.is_empty() {
         return Ok(vec![]);
     }
 
     let mut label_condition = Condition::any();
-    for label in &normalized_labels {
-        label_condition = label_condition.add(Expr::cust_with_values(
-            "lower(label) = $1",
-            vec![label.clone()],
-        ));
+    for pattern in &label_patterns {
+        label_condition = label_condition.add(pattern.to_expr());
     }
 
     let points = palitra_point::Entity::find()
@@ -161,7 +226,32 @@ pub async fn search_palitra_points_by_labels(
         .c(h!())?;
 
     let mut points_by_id: HashMap<i64, Vec<PalitraPoint>> = HashMap::new();
+    let mut matched_labels: HashMap<i64, HashSet<usize>> = HashMap::new();
+    let required_matches = label_patterns.len();
     for (palitra_id, lat, lng, label) in points {
+        if let Some(label_value) = label.clone() {
+            if let Some(normalized_label) = normalize_label_cache(&label_value)
+            {
+                let mut matched_any = false;
+                for (idx, pattern) in label_patterns.iter().enumerate() {
+                    if pattern.matches(&normalized_label) {
+                        matched_labels
+                            .entry(palitra_id)
+                            .or_default()
+                            .insert(idx);
+                        matched_any = true;
+                    }
+                }
+                if !matched_any {
+                    continue;
+                }
+            } else {
+                continue;
+            }
+        } else {
+            continue;
+        }
+
         points_by_id
             .entry(palitra_id)
             .or_default()
@@ -173,9 +263,19 @@ pub async fn search_palitra_points_by_labels(
 
     let result = palitra_ids
         .into_iter()
-        .map(|palitra_id| PalitraPoints {
-            palitra_id,
-            points: points_by_id.remove(&palitra_id).unwrap_or_default(),
+        .filter_map(|palitra_id| {
+            let points = points_by_id.remove(&palitra_id).unwrap_or_default();
+            if points.is_empty() {
+                return None;
+            }
+            let matched = matched_labels
+                .get(&palitra_id)
+                .map(|set| set.len())
+                .unwrap_or_default();
+            if matched < required_matches {
+                return None;
+            }
+            Some(PalitraPoints { palitra_id, points })
         })
         .collect();
     Ok(result)
