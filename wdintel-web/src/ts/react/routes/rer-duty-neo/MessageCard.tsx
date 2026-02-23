@@ -2,12 +2,16 @@ import { Box, Chip, Tooltip } from '@mui/material';
 import React from 'react';
 
 import type { InboxMessage } from '../../../../Bindings';
-import { buildAnalysisHref, formatDateNoYear, formatTime } from './utils';
+import { buildAnalysisHref, formatDateNoYear, formatTime, messageRenderDistance } from './utils';
 
 export type MessageCardProps = {
   id: number;
   msg: InboxMessage;
   feedId: string;
+  /** Reference time (ms) for "time ago" in top-right; set when feed was loaded. */
+  referenceTimeMs: number | null;
+  /** Auth user display name for background watermark */
+  authUserName: string | null;
   groupName: string | null;
   senderName: string | null;
   copiedFeedbackId: string | null;
@@ -27,6 +31,8 @@ export function MessageCard({
   id,
   msg,
   feedId: _feedId,
+  referenceTimeMs,
+  authUserName,
   groupName,
   senderName,
   copiedFeedbackId,
@@ -224,8 +230,67 @@ export function MessageCard({
       </div>
 
       {/* Right column: message card */}
-      <div className="mb-2 rounded-sm px-2 pt-2 pb-2 basis-3/4 flex-1 message-div bg-card relative min-w-0 break-words">
-        <div className="flex justify-start items-start flex-wrap py-1 border-b-2 border-border gap-2">
+      <div className="mb-2 rounded-sm px-2 pt-2 pb-2 basis-3/4 flex-1 message-div bg-card relative min-w-0 break-words overflow-hidden">
+        {/* Auth user name watermark in bg, twice same diagonal */}
+        {(authUserName ?? '').trim() !== '' && (
+          <div
+            aria-hidden
+            style={{
+              position: 'absolute',
+              inset: 0,
+              pointerEvents: 'none',
+              overflow: 'hidden',
+            }}
+          >
+            <span
+              style={{
+                position: 'absolute',
+                left: '10%',
+                top: '20%',
+                transform: 'rotate(-28deg)',
+                fontSize: 'clamp(1.5rem, 4vw, 2.25rem)',
+                fontWeight: 600,
+                opacity: 0.08,
+                color: 'currentColor',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {authUserName}
+            </span>
+            <span
+              style={{
+                position: 'absolute',
+                right: '5%',
+                bottom: '15%',
+                transform: 'rotate(-28deg)',
+                fontSize: 'clamp(1.5rem, 4vw, 2.25rem)',
+                fontWeight: 600,
+                opacity: 0.08,
+                color: 'currentColor',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {authUserName}
+            </span>
+          </div>
+        )}
+        <div
+          className="flex justify-start items-start flex-wrap py-1 border-b-2 border-border gap-2"
+          style={{ position: 'relative' }}
+        >
+          {msg.timestamp != null && referenceTimeMs != null && (
+            <div
+              style={{
+                position: 'absolute',
+                top: 4,
+                right: 8,
+                fontSize: '.8rem',
+                color: 'var(--bs-secondary-color)',
+              }}
+            >
+              {messageRenderDistance(msg.timestamp, referenceTimeMs)}
+            </div>
+          )}
           <div className="font-semibold inline-flex gap-1">
             <i className="bi bi-people text-icons" title="Еталонна прив'язка" />
             {(msg.networkIds ?? []).length > 0 ? (

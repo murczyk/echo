@@ -163,6 +163,25 @@ export function formatDateNoYear(date: string | null): string {
   return `${day}.${month.toString().padStart(2, '0')}`;
 }
 
+/** Relative time from event to now, same logic */
+export function messageRenderDistance(eventMs: number, nowMs: number): string {
+  const secsAgo = Math.floor((nowMs - eventMs) / 1000);
+  if (secsAgo < 5) return 'щойно';
+  if (secsAgo < 60) return `${secsAgo} сек`;
+  const minsAgo = Math.floor(secsAgo / 60);
+  if (minsAgo < 60) return `${minsAgo} хв`;
+  const hoursAgo = Math.floor(minsAgo / 60);
+  const eventDate = new Date(eventMs);
+  const nowDate = new Date(nowMs);
+  const sameDay =
+    eventDate.getFullYear() === nowDate.getFullYear() &&
+    eventDate.getMonth() === nowDate.getMonth() &&
+    eventDate.getDate() === nowDate.getDate();
+  if (sameDay || hoursAgo < 24) return `${hoursAgo} год`;
+  const daysAgo = Math.floor((nowMs - eventMs) / (24 * 60 * 60 * 1000));
+  return `${daysAgo} дн`;
+}
+
 export function toDateStr(d: Date): string {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -215,6 +234,16 @@ export function sortMessageItemsByTime(items: MessageItem[]): MessageItem[] {
   });
 }
 
+/** Deduplicate by message id (first occurrence wins). Prevents duplicate key warnings when API or merge returns same id twice. */
+export function dedupeMessageItems(items: MessageItem[]): MessageItem[] {
+  const seen = new Set<number>();
+  return items.filter(([id]) => {
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+}
+
 /** Initial firstItemIndex for Virtuoso; decreased when we prepend so scroll position is preserved. */
 export const VIRTUOSO_FIRST_ITEM_INDEX_INITIAL = 10_000;
 
@@ -228,6 +257,8 @@ export type MessageFeedState = {
   hasReachedStart: boolean;
   /** Virtuoso firstItemIndex: start at VIRTUOSO_FIRST_ITEM_INDEX_INITIAL, decrease by N when prepending N items (infinite scroll). */
   firstItemIndex: number;
+  /** Reference time (ms) for relative "time ago" in message cards; set when feed items are loaded. */
+  referenceTimeMs: number | null;
 };
 
 export function toQueryState(messageFeeds: MessageFeedState[]): RerDutyState {

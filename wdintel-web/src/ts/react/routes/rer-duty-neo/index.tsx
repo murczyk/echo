@@ -39,6 +39,7 @@ import { FeedColumn, type FeedColumnHandle } from './FeedColumn';
 import {
   buildInboxReq,
   createMasterUnitText,
+  dedupeMessageItems,
   emptyFilter,
   generateMessageFeedId,
   INBOX_COUNT_POLL_INTERVAL_MS,
@@ -54,7 +55,12 @@ import type { MessageFeedState } from './utils';
 
 const MAX_MESSAGE_FEEDS = 4;
 
-export function RerDutyNeoPage() {
+export type RerDutyNeoPageProps = {
+  /** Auth user display name from Elm layout (avoids duplicate /api/user request). */
+  authUserName?: string | null;
+};
+
+export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDutyNeoPageProps = {}) {
   const [messageFeeds, setMessageFeeds] = React.useState<MessageFeedState[]>(() => {
     const state = parseStateFromUrl();
     return (state.messageFeeds ?? [['mf-0', emptyFilter()]]).map(([id, filter]) => ({
@@ -65,6 +71,7 @@ export function RerDutyNeoPage() {
       loadingEarlier: false,
       hasReachedStart: false,
       firstItemIndex: VIRTUOSO_FIRST_ITEM_INDEX_INITIAL,
+      referenceTimeMs: null,
     }));
   });
   const [error, setError] = React.useState<string | null>(null);
@@ -85,10 +92,13 @@ export function RerDutyNeoPage() {
   const [reloadFreqsLoading, setReloadFreqsLoading] = React.useState(false);
   const [networkMap, setNetworkMap] = React.useState<Record<number, Network>>({});
   const [unitsMap, setUnitsMap] = React.useState<Record<number, Unit>>({});
+  const authUserName = authUserNameProp ?? null;
   const loadNewerRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
   const refreshMessageCounterRef = React.useRef<() => Promise<void>>(() => Promise.resolve());
   /** Time (ms) from which we count "new" messages for the digest badge; set once on mount */
   const digestSinceMsRef = React.useRef<number | null>(null);
+  /** Feed IDs that currently have a get-inbox (load newer) request in flight; prevents duplicate requests from polling. */
+  const loadNewerInFlightRef = React.useRef<Set<string>>(new Set());
   /** Which feed columns are in "watch mode" (auto-scroll to newest when new messages arrive). */
   const [watchModeByFeedId, setWatchModeByFeedId] = React.useState<Record<string, boolean>>({});
   /** Feed id currently loading newer messages (after arrow click). */
@@ -97,6 +107,8 @@ export function RerDutyNeoPage() {
   const [arrowResultByFeedId, setArrowResultByFeedId] = React.useState<Record<string, string | null>>({});
   const columnRefsRef = React.useRef<Record<string, FeedColumnHandle | null>>({});
   const arrowResultTimeoutsRef = React.useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  /** Feed ID to scroll to end after next commit (used after load newer so we scroll once new items are rendered). */
+  const scrollToEndAfterNewerRef = React.useRef<string | null>(null);
 
   const mountedRef = React.useRef(true);
   const showArrowResult = React.useCallback((feedId: string, message: string) => {
@@ -159,12 +171,7 @@ export function RerDutyNeoPage() {
     try {
       const req = buildInboxReq({ loadLatest: true, filter });
       const rsp = await fetchInboxMessages(req);
-      const seen = new Set<number>();
-      const deduped = rsp.inboxItems.filter(([id]) => {
-        if (seen.has(id)) return false;
-        seen.add(id);
-        return true;
-      });
+      const deduped = dedupeMessageItems(rsp.inboxItems);
       setMessageFeeds((prev) =>
         prev.map((x) =>
           x.id === feedId
@@ -173,6 +180,7 @@ export function RerDutyNeoPage() {
                 items: sortMessageItemsByTime(deduped),
                 loading: false,
                 firstItemIndex: VIRTUOSO_FIRST_ITEM_INDEX_INITIAL,
+                referenceTimeMs: Date.now(),
               }
             : x,
         ),
@@ -215,9 +223,10 @@ export function RerDutyNeoPage() {
             const hasReachedStart = newItems.length === 0;
             const prevFirst = x.firstItemIndex ?? VIRTUOSO_FIRST_ITEM_INDEX_INITIAL;
             const firstItemIndex = Math.max(0, prevFirst - newItems.length);
+            const combined = dedupeMessageItems([...newItems, ...x.items]);
             return {
               ...x,
-              items: sortMessageItemsByTime([...newItems, ...x.items]),
+              items: sortMessageItemsByTime(combined),
               loadingEarlier: false,
               hasReachedStart,
               firstItemIndex,
@@ -234,30 +243,43 @@ export function RerDutyNeoPage() {
 
   const loadFeedNewerMessages = React.useCallback(
     async (feedId: string) => {
-      const f = messageFeeds.find((x) => x.id === feedId);
-      if (!f || f.items.length === 0) return;
-      const lastId = f.items[f.items.length - 1][0];
+      // Prevent duplicate requests from polling
+      if (loadNewerInFlightRef.current.has(feedId)) return;
+      const feed = messageFeeds.find((x) => x.id === feedId);
+      if (!feed || feed.items.length === 0) return;
+      loadNewerInFlightRef.current.add(feedId);
+      const lastId = feed.items[feed.items.length - 1][0];
       try {
         const req = buildInboxReq({
           sinceIdNoninclusive: lastId,
-          filter: f.filter,
+          filter: feed.filter,
         });
         const rsp = await fetchInboxMessages(req);
         digestSinceMsRef.current = Math.floor(Date.now() / 1000) * 1000;
         setDigestCount(0);
         if (rsp.inboxItems.length > 0) {
-          setMessageFeeds((prev) =>
-            prev.map((x) => {
-              if (x.id !== feedId) return x;
-              const existingIds = new Set(x.items.map(([id]) => id));
-              const newItems = rsp.inboxItems.filter(([id]) => !existingIds.has(id));
-              if (newItems.length === 0) return x;
-              return { ...x, items: sortMessageItemsByTime([...x.items, ...newItems]) };
-            }),
-          );
+          const feedNow = messageFeeds.find((x) => x.id === feedId);
+          if (feedNow) {
+            const newItems = rsp.inboxItems.filter(([id]) => !new Set(feedNow.items.map(([i]) => i)).has(id));
+            if (newItems.length > 0) {
+              setMessageFeeds((prev) =>
+                prev.map((x) => {
+                  if (x.id !== feedId) return x;
+                  const existingIds = new Set(x.items.map(([id]) => id));
+                  const toAdd = newItems.filter(([id]) => !existingIds.has(id));
+                  if (toAdd.length === 0) return x;
+                  const combined = dedupeMessageItems([...x.items, ...toAdd]);
+                  return { ...x, items: sortMessageItemsByTime(combined) };
+                }),
+              );
+              scrollToEndAfterNewerRef.current = feedId;
+            }
+          }
         }
       } catch {
         // ignore single failure to keep polling and prev messages
+      } finally {
+        loadNewerInFlightRef.current.delete(feedId);
       }
     },
     [messageFeeds],
@@ -277,13 +299,9 @@ export function RerDutyNeoPage() {
       const d = await fetchInboxCount(req);
       setDigestCount(d.quantity);
       if (d.quantity > 0) {
-        const refs = columnRefsRef.current;
         for (const feedId of Object.keys(watchModeByFeedId)) {
           if (watchModeByFeedId[feedId]) {
             await loadFeedNewerMessages(feedId);
-            requestAnimationFrame(() => {
-              requestAnimationFrame(() => refs[feedId]?.scrollToEnd());
-            });
           }
         }
       }
@@ -326,6 +344,17 @@ export function RerDutyNeoPage() {
       if (loadNewerRef.current) clearInterval(loadNewerRef.current);
     };
   }, [refreshMessageCounter]);
+
+  // After we merged newer messages, scroll that feed to end once the new items are rendered
+  React.useEffect(() => {
+    const feedId = scrollToEndAfterNewerRef.current;
+    if (feedId == null) return;
+    scrollToEndAfterNewerRef.current = null;
+    const refs = columnRefsRef.current;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => refs[feedId]?.scrollToEnd());
+    });
+  }, [messageFeeds]);
 
   // Fetch missing networks on demand - only IDs that appear in messages and are not yet loaded
   const allNetworkIds = React.useMemo(() => {
@@ -401,6 +430,7 @@ export function RerDutyNeoPage() {
               loading: true,
               hasReachedStart: false,
               firstItemIndex: VIRTUOSO_FIRST_ITEM_INDEX_INITIAL,
+              referenceTimeMs: null,
             }
           : w,
       );
@@ -435,6 +465,7 @@ export function RerDutyNeoPage() {
       loadingEarlier: false,
       hasReachedStart: false,
       firstItemIndex: VIRTUOSO_FIRST_ITEM_INDEX_INITIAL,
+      referenceTimeMs: null,
     };
     setMessageFeeds((prev) => {
       if (prev.length >= MAX_MESSAGE_FEEDS || prev.some((w) => w.id === id)) return prev;
@@ -703,6 +734,7 @@ export function RerDutyNeoPage() {
                       ? 'calc((90% - 2rem - 48px) / 2)'
                       : '45%'
               }
+              authUserName={authUserName}
               copiedFeedbackId={copiedFeedbackId}
               networkDisplayMap={networkDisplayMap}
               tagsMap={tagsMap}
@@ -733,6 +765,8 @@ export function RerDutyNeoPage() {
               onMessageComment={(msgId, currentComment) => openCommentDialog(msgId, w.id, currentComment)}
               onMessageToggleTag={(msgId, tagId) => handleToggleTag(w.id, msgId, tagId)}
               onScrollToTop={() => setWatchModeByFeedId((prev) => ({ ...prev, [w.id]: false }))}
+              onReachedBottom={() => setWatchModeByFeedId((prev) => ({ ...prev, [w.id]: true }))}
+              onLeftBottom={() => setWatchModeByFeedId((prev) => ({ ...prev, [w.id]: false }))}
               isWatchMode={watchModeByFeedId[w.id] ?? false}
               digestCount={digestCount}
               loadingNewer={loadingNewerFeedId === w.id}
@@ -752,7 +786,6 @@ export function RerDutyNeoPage() {
                     } else if (!w.loading) {
                       await loadFeedInitialMessages(w.id, w.filter);
                     }
-                    scrollToEnd();
                     showArrowResult(w.id, 'Завантажено нові повідомлення');
                   } finally {
                     setLoadingNewerFeedId((prev) => (prev === w.id ? null : prev));

@@ -52,6 +52,8 @@ export type FeedColumnProps = {
   reloadFreqsLoading: boolean;
   canRemove: boolean;
   maxWidth?: string | number;
+  /** Current auth user display name for message watermarks */
+  authUserName: string | null;
   copiedFeedbackId: string | null;
   networkDisplayMap: Record<number, string>;
   tagsMap: Record<number, string>;
@@ -78,6 +80,10 @@ export type FeedColumnProps = {
   onMessageComment: (msgId: number, currentComment: string | null) => void;
   onMessageToggleTag: (msgId: number, tagId: number) => void;
   onScrollToTop?: () => void;
+  /** Called when user scrolls to bottom; use to enable watch mode (same as after arrow click). */
+  onReachedBottom?: () => void;
+  /** Called when user scrolls away from bottom; use to disable watch mode so we don't load new messages. */
+  onLeftBottom?: () => void;
   isWatchMode?: boolean;
   digestCount?: number | null;
   loadingNewer?: boolean;
@@ -101,6 +107,7 @@ export const FeedColumn = React.forwardRef<FeedColumnHandle, FeedColumnProps>(fu
     saveFilterName,
     reloadFreqsLoading,
     canRemove,
+    authUserName,
     copiedFeedbackId,
     networkDisplayMap,
     tagsMap,
@@ -128,6 +135,8 @@ export const FeedColumn = React.forwardRef<FeedColumnHandle, FeedColumnProps>(fu
     onMessageComment,
     onMessageToggleTag,
     onScrollToTop,
+    onReachedBottom,
+    onLeftBottom,
     isWatchMode = false,
     digestCount = null,
     loadingNewer = false,
@@ -141,6 +150,10 @@ export const FeedColumn = React.forwardRef<FeedColumnHandle, FeedColumnProps>(fu
   const [isAtBottom, setIsAtBottom] = React.useState(true);
   const loadEarlierTriggeredRef = React.useRef(false);
   const virtuosoRef = React.useRef<VirtuosoHandle | null>(null);
+  /** Only enable watch mode when user has scrolled to bottom, not when we're at bottom on initial render. */
+  const hasSeenNotAtBottomRef = React.useRef(false);
+  /** Last at-bottom value from Virtuoso; use for transition detection so we don't rely on stale state. */
+  const atBottomRef = React.useRef(true);
 
   React.useEffect(() => {
     if (!feed.loadingEarlier) loadEarlierTriggeredRef.current = false;
@@ -285,7 +298,14 @@ export const FeedColumn = React.forwardRef<FeedColumnHandle, FeedColumnProps>(fu
               }
             }}
             atBottomThreshold={300}
-            atBottomStateChange={setIsAtBottom}
+            atBottomStateChange={(atBottom) => {
+              const wasAtBottom = atBottomRef.current;
+              atBottomRef.current = atBottom;
+              if (!atBottom) hasSeenNotAtBottomRef.current = true;
+              setIsAtBottom(atBottom);
+              if (atBottom && hasSeenNotAtBottomRef.current) onReachedBottom?.();
+              if (!atBottom && wasAtBottom) onLeftBottom?.();
+            }}
             components={{
               Scroller: FeedScroller,
               Header: () =>
@@ -323,6 +343,8 @@ export const FeedColumn = React.forwardRef<FeedColumnHandle, FeedColumnProps>(fu
                   id={id}
                   msg={msg}
                   feedId={feedId}
+                  referenceTimeMs={feed.referenceTimeMs}
+                  authUserName={authUserName}
                   groupName={groupName}
                   senderName={senderName}
                   copiedFeedbackId={copiedFeedbackId}
@@ -340,7 +362,7 @@ export const FeedColumn = React.forwardRef<FeedColumnHandle, FeedColumnProps>(fu
               );
             }}
           />
-          {onArrowClick != null && !isAtBottom && (
+          {onArrowClick != null && (!isAtBottom || loadingNewer) && (
             <Box
               sx={{
                 position: 'absolute',
