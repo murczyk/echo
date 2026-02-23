@@ -149,6 +149,7 @@ update req msg model =
                     , aorIds = Nothing
                     , ids = Nothing
                     , limit = Nothing
+                    , offset = Nothing
                     }
                 ]
             )
@@ -428,6 +429,7 @@ update req msg model =
                         , aorIds = Nothing
                         , ids = Nothing
                         , limit = Nothing
+                        , offset = Nothing
                         }
                     )
 

@@ -2078,6 +2078,7 @@ mod tests {
                 aor_ids: None,
                 ids: None,
                 limit: None,
+                offset: None,
                 sort_by: None,
             },
             etalonka_type: EtalonkaReportType::ExtendedReport(

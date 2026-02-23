@@ -174,6 +174,13 @@ pub async fn network_list(
                 .try_into()
                 .unwrap_or(SIGINT_NETWORK_LIST_MAX_LIMIT),
         );
+    } else if let Some(limit) = req.limit {
+        networks = networks
+            .limit(limit.try_into().unwrap_or(SIGINT_NETWORK_LIST_MAX_LIMIT));
+    }
+
+    if let Some(offset) = req.offset {
+        networks = networks.offset(offset.try_into().unwrap_or(0));
     }
 
     // debug!(
