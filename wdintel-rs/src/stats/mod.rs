@@ -1690,11 +1690,22 @@ async fn network_stats_by_created_at(
     till_ts: NaiveDateTime,
     network_ids: Option<&HashSet<i64>>,
 ) -> Result<Vec<NetworkStatsRow>, AppError> {
+    let ts_filter = Condition::any()
+        .add(
+            Condition::all()
+                .add(signal_message::Column::Timestamp.is_not_null())
+                .add(signal_message::Column::Timestamp.gte(since_ts))
+                .add(signal_message::Column::Timestamp.lt(till_ts)),
+        )
+        .add(
+            Condition::all()
+                .add(signal_message::Column::Timestamp.is_null())
+                .add(signal_message::Column::CreatedAt.gte(since_ts))
+                .add(signal_message::Column::CreatedAt.lt(till_ts)),
+        );
     let mut stats = network_stats_base_select()
         .filter(sigint_inbox_item::Column::Datetime.is_null())
-        .filter(signal_message::Column::Timestamp.is_not_null())
-        .filter(signal_message::Column::Timestamp.gte(since_ts))
-        .filter(signal_message::Column::Timestamp.lt(till_ts));
+        .filter(ts_filter);
     if let Some(network_ids) = network_ids {
         stats = stats.filter(
             sigint_inbox_item_network::Column::SigintNetworkId
