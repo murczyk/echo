@@ -14,6 +14,9 @@ Use when a task includes user-visible changes and requires updating `CHANGELOG.m
 
 ## Inputs the agent should request or derive
 - Derive ticket/scope from branch or issue link.
+- Prefer parsing branch first:
+- project + number token (for example `ABC-123`) when present
+- otherwise number-only token (for example `123`)
 - Derive user-visible impact from diff.
 - Derive existing `NEXT` formatting from top of `CHANGELOG.md`.
 
@@ -25,6 +28,7 @@ Use when a task includes user-visible changes and requires updating `CHANGELOG.m
 - issue reference style (`[#1234](...)`) when available
 - existing markers (`✅`, `🐞`, `👷`, `🚨`) when applicable
 - Keep entry user-facing and concise.
+- If branch provides `ABC-123`, use the numeric issue part for GitHub issue links unless task context explicitly indicates another tracker mapping.
 - If categories exist in current `NEXT` format (Added/Changed/Fixed), place in correct category.
 - Do not reorder old dated sections.
 - Keep deployment/manual action notes explicit when needed.

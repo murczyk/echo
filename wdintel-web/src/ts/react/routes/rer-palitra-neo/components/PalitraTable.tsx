@@ -5,6 +5,7 @@ import {
   Box,
   Button,
   ButtonGroup,
+  Checkbox,
   Chip,
   CircularProgress,
   Paper,
@@ -37,9 +38,12 @@ type Props = {
   aors: AreaOfResponsibility[];
   inFlightDeleteId: number | null;
   inFlightUploadId: number | null;
+  selectedPalitraIds: number[];
   onOpenEdit: (palitra: Palitra) => void;
   onRequestUploadPoints: (palitraId: number) => void;
   onDelete: (palitra: Palitra) => void;
+  onSetPalitraSelected: (palitraId: number, checked: boolean) => void;
+  onSetAllPalitrasSelected: (palitraIds: number[], checked: boolean) => void;
 };
 
 const actionsColumnSx = {
@@ -86,10 +90,21 @@ export function PalitraTable({
   aors,
   inFlightDeleteId,
   inFlightUploadId,
+  selectedPalitraIds,
   onOpenEdit,
   onRequestUploadPoints,
   onDelete,
+  onSetPalitraSelected,
+  onSetAllPalitrasSelected,
 }: Props) {
+  const selectedPalitraIdSet = new Set(selectedPalitraIds);
+  const selectablePalitraIds = palitras
+    .filter((palitra) => canModifyPalitra(user, palitra) && inFlightDeleteId !== palitra.id && inFlightUploadId !== palitra.id)
+    .map((palitra) => palitra.id);
+  const selectedSelectableCount = selectablePalitraIds.filter((palitraId) => selectedPalitraIdSet.has(palitraId)).length;
+  const allSelectableChecked = selectablePalitraIds.length > 0 && selectedSelectableCount === selectablePalitraIds.length;
+  const hasPartialSelectableChecked = selectedSelectableCount > 0 && !allSelectableChecked;
+
   return (
     <Paper variant="outlined">
       {loading ? (
@@ -98,9 +113,18 @@ export function PalitraTable({
         </Box>
       ) : (
         <TableContainer sx={{ overflowX: 'auto' }}>
-          <Table sx={{ minWidth: 820 }}>
+          <Table sx={{ minWidth: 880 }}>
             <TableHead>
               <TableRow>
+                <TableCell padding="checkbox">
+                  <Checkbox
+                    slotProps={{ input: { 'aria-label': 'Вибрати всі палітри' } }}
+                    checked={allSelectableChecked}
+                    indeterminate={hasPartialSelectableChecked}
+                    disabled={selectablePalitraIds.length === 0}
+                    onChange={(_, checked) => onSetAllPalitrasSelected(selectablePalitraIds, checked)}
+                  />
+                </TableCell>
                 <TableCell sortDirection={sortColumn === 'name' ? sortDirection : false}>
                   <TableSortLabel
                     active={sortColumn === 'name'}
@@ -163,6 +187,14 @@ export function PalitraTable({
 
                 return (
                   <TableRow key={palitra.id} hover>
+                    <TableCell padding="checkbox">
+                      <Checkbox
+                        slotProps={{ input: { 'aria-label': `Вибрати палітру ${palitra.name}` } }}
+                        checked={selectedPalitraIdSet.has(palitra.id)}
+                        disabled={!canModify || deleting || uploading}
+                        onChange={(_, checked) => onSetPalitraSelected(palitra.id, checked)}
+                      />
+                    </TableCell>
                     <TableCell>{palitra.name}</TableCell>
                     <TableCell>
                       <Chip

@@ -97,6 +97,18 @@ function CreatePalitraDrawerComponent({
     }
   }, [open, activeStep, canContinueFromKmzStep]);
 
+  React.useEffect(() => {
+    if (!open) return;
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key !== 'Escape') return;
+      onClose();
+    }
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [open, onClose]);
+
   function canContinueStep(step: number) {
     if (step === 0) return canContinueFromKmzStep;
     return !canCreate;

@@ -24,28 +24,30 @@ export function GlobalFilterTextField(props: GlobalFilterTextFieldProps) {
       }}
       onChange={(event) => props.setGlobalFilter(event.target.value)}
       value={props.globalFilter}
-      InputProps={{
-        startAdornment: (
-          <InputAdornment position="start">
-            <FilterAltIcon
-              sx={{
-                color: props.globalFilter ? 'action.active' : 'action.disabled',
-              }}
-            />
-          </InputAdornment>
-        ),
-        endAdornment: (
-          <InputAdornment position="end">
-            <IconButton
-              disabled={!props.globalFilter}
-              size="small"
-              aria-label="clear-filter"
-              onClick={() => props.setGlobalFilter('')}
-            >
-              {props.globalFilter ? <ClearIcon className="!w-[18px] !h-[18px]" /> : <div className="!w-[18px] !h-[18px]" />}
-            </IconButton>
-          </InputAdornment>
-        ),
+      slotProps={{
+        input: {
+          startAdornment: (
+            <InputAdornment position="start">
+              <FilterAltIcon
+                sx={{
+                  color: props.globalFilter ? 'action.active' : 'action.disabled',
+                }}
+              />
+            </InputAdornment>
+          ),
+          endAdornment: (
+            <InputAdornment position="end">
+              <IconButton
+                disabled={!props.globalFilter}
+                size="small"
+                aria-label="clear-filter"
+                onClick={() => props.setGlobalFilter('')}
+              >
+                {props.globalFilter ? <ClearIcon className="!w-[18px] !h-[18px]" /> : <div className="!w-[18px] !h-[18px]" />}
+              </IconButton>
+            </InputAdornment>
+          ),
+        },
       }}
       variant="outlined"
       size="small"

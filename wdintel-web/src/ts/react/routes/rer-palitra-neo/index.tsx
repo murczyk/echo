@@ -1,4 +1,18 @@
-import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, Stack } from '@mui/material';
+import {
+  Alert,
+  Box,
+  Button,
+  CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
+  List,
+  ListItem,
+  ListItemText,
+  Stack,
+} from '@mui/material';
 
 import { PageHeader } from '../../components/PageHeader';
 import { CreatePalitraDrawer } from './components/CreatePalitraDrawer';
@@ -25,6 +39,14 @@ export function RerPalitraNeoPage() {
               >
                 AlpineQuest конвертер
               </Button>
+              <Button
+                variant="outlined"
+                color="error"
+                onClick={page.requestBulkDelete}
+                disabled={page.selectedPalitraIds.length === 0 || page.bulkDeleteInFlight || page.inFlightDeleteId !== null}
+              >
+                Видалити палітри
+              </Button>
               <Button variant="contained" onClick={page.openCreate} disabled={page.createInFlight}>
                 Додати палітру
               </Button>
@@ -46,9 +68,12 @@ export function RerPalitraNeoPage() {
           aors={page.aors}
           inFlightDeleteId={page.inFlightDeleteId}
           inFlightUploadId={page.inFlightUploadId}
+          selectedPalitraIds={page.selectedPalitraIds}
           onOpenEdit={page.openEdit}
           onRequestUploadPoints={page.requestUploadPoints}
           onDelete={page.requestDelete}
+          onSetPalitraSelected={page.setPalitraSelected}
+          onSetAllPalitrasSelected={page.setAllPalitrasSelected}
         />
       </Stack>
 
@@ -59,7 +84,7 @@ export function RerPalitraNeoPage() {
             {`Видалити палітру "${page.deleteDialogPalitra?.name ?? ''}"?`}
           </DialogContentText>
         </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 3, pt: 1.5 }}>
+        <DialogActions sx={{ px: 3, pb: 3, pt: 3 }}>
           <Button onClick={page.cancelDelete} disabled={page.inFlightDeleteId !== null}>
             Скасувати
           </Button>
@@ -69,6 +94,42 @@ export function RerPalitraNeoPage() {
             variant="contained"
             disabled={page.inFlightDeleteId !== null}
             startIcon={page.inFlightDeleteId !== null ? <CircularProgress color="inherit" size={16} /> : null}
+          >
+            Видалити
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={page.bulkDeleteDialogOpen}
+        onClose={page.cancelBulkDelete}
+        TransitionProps={{ onExited: page.onBulkDeleteDialogExited }}
+        fullWidth
+        maxWidth="sm"
+      >
+        <DialogTitle>Підтвердження видалення</DialogTitle>
+        <DialogContent dividers sx={{ maxHeight: 420 }}>
+          <DialogContentText sx={{ mb: 2 }}>
+            {`Видалити палітр: ${page.bulkDeleteDialogPalitras.length}?`}
+          </DialogContentText>
+          <List dense disablePadding sx={{ maxHeight: 260, overflowY: 'auto' }}>
+            {page.bulkDeleteDialogPalitras.map((palitra) => (
+              <ListItem key={palitra.id} disableGutters sx={{ py: 0.25 }}>
+                <ListItemText primary={palitra.name} secondary={palitra.author ?? undefined} />
+              </ListItem>
+            ))}
+          </List>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 3, pt: 3 }}>
+          <Button onClick={page.cancelBulkDelete} disabled={page.bulkDeleteInFlight || page.inFlightDeleteId !== null}>
+            Скасувати
+          </Button>
+          <Button
+            onClick={page.confirmBulkDelete}
+            color="error"
+            variant="contained"
+            disabled={page.bulkDeleteInFlight || page.inFlightDeleteId !== null}
+            startIcon={page.bulkDeleteInFlight ? <CircularProgress color="inherit" size={16} /> : null}
           >
             Видалити
           </Button>

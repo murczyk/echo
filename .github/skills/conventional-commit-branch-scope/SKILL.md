@@ -21,17 +21,20 @@ Use when preparing commit messages for this repo.
 - Respect repo git rule:
 - Never run `git commit` or `git push` without explicit user permission.
 - Build header:
-- `type(scope): imperative summary`
+- `type(scope): past-simple summary`
 - Scope parser from branch name:
 - Take substring after first `/`.
-- From that substring, extract token up to the next `-` group that matches project tag + ticket id shape.
-- Recommended regex on substring: `^([a-z]+-\d+)`.
+- From that substring, extract ticket token:
+- project tag + ticket id (for example `proj-1234` or `ABC-1234`) when present
+- otherwise number-only token (for example `1234`)
+- Recommended regex on substring (case-insensitive): `^(([a-z]+-\d+)|(\d+))`
 - Example:
 - `feature/proj-1234-add-navbar` -> scope `proj-1234`
+- `feature/1234-add-navbar` -> scope `1234`
 - If parser fails:
 - Use known repo scope convention if present in task context.
 - Otherwise omit scope: `type: summary`.
-- Keep summary imperative, <=72 chars when feasible.
+- Keep summary in past simple (for example `added`, `fixed`, `updated`), <=72 chars when feasible.
 - Add body only when needed:
 - breaking change notes
 - migration/deploy instructions
@@ -40,23 +43,24 @@ Use when preparing commit messages for this repo.
 ## Definition of Done (checklist)
 - Commit header is valid Conventional Commit.
 - Scope follows branch-derived rule when pattern matches.
-- Message is concise and imperative.
+- Message is concise and uses past-simple wording.
 - User permission requested before actual commit.
 
 ## Tiny examples
 ```txt
 Branch: feature/proj-1234-add-navbar
-Commit: feat(proj-1234): improve navbar keyboard handling
+Commit: feat(proj-1234): improved navbar keyboard handling
 ```
 
 ```txt
 Branch: hotfix/navbar
-Commit: fix: prevent menu from staying open after route change
+Commit: fix: prevented menu from staying open after route change
 ```
 
 ## Self-check
 - Re-parse branch name and verify scope extraction.
 - Ensure summary matches actual diff, not planned work.
+- Ensure summary tense is past simple, not imperative/present.
 - Confirm no commit/push command is executed without user approval.
 - Confirm related changelog update requirement was considered.
 

@@ -23,6 +23,7 @@ import {
   kmzColorOptionsFromAnalysis,
   normalizeSortableValue,
   palitraToForm,
+  isAdmin,
   toCreateReq,
 } from './helpers';
 import { KmzColorOption, PalitraFormState, SortColumn, SortDirection, UiError } from './types';
@@ -31,6 +32,10 @@ function fileNameToBaseName(fileName: string): string {
   const dotIndex = fileName.lastIndexOf('.');
   if (dotIndex <= 0) return fileName;
   return fileName.slice(0, dotIndex);
+}
+
+function canModifyPalitra(user: User | null, palitra: Palitra): boolean {
+  return isAdmin(user) || palitra.author === user?.name;
 }
 
 export function useRerPalitraNeoPage() {
@@ -46,6 +51,10 @@ export function useRerPalitraNeoPage() {
   const [inFlightUploadId, setInFlightUploadId] = React.useState<number | null>(null);
   const [deleteDialogPalitra, setDeleteDialogPalitra] = React.useState<Palitra | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false);
+  const [selectedPalitraIds, setSelectedPalitraIds] = React.useState<number[]>([]);
+  const [bulkDeleteDialogPalitras, setBulkDeleteDialogPalitras] = React.useState<Palitra[]>([]);
+  const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = React.useState(false);
+  const [bulkDeleteInFlight, setBulkDeleteInFlight] = React.useState(false);
   const [error, setError] = React.useState<UiError | null>(null);
 
   const [sortColumn, setSortColumn] = React.useState<SortColumn>('lastUploadedAtTs');
@@ -112,6 +121,7 @@ export function useRerPalitraNeoPage() {
   const reloadPalitras = React.useCallback(async () => {
     const list = await listPalitras();
     setPalitras(list);
+    setSelectedPalitraIds((prev) => prev.filter((id) => list.some((palitra) => palitra.id === id)));
   }, []);
 
   React.useEffect(() => {
@@ -203,7 +213,7 @@ export function useRerPalitraNeoPage() {
   }
 
   function requestDelete(palitra: Palitra) {
-    if (inFlightDeleteId !== null) return;
+    if (inFlightDeleteId !== null || bulkDeleteInFlight || bulkDeleteDialogOpen) return;
     const activeElement = document.activeElement;
     if (activeElement instanceof HTMLElement) {
       activeElement.blur();
@@ -213,13 +223,13 @@ export function useRerPalitraNeoPage() {
   }
 
   function cancelDelete() {
-    if (inFlightDeleteId !== null) return;
+    if (inFlightDeleteId !== null || bulkDeleteInFlight) return;
     setDeleteDialogOpen(false);
   }
 
   async function confirmDelete() {
     const palitra = deleteDialogPalitra;
-    if (!palitra || inFlightDeleteId !== null) return;
+    if (!palitra || inFlightDeleteId !== null || bulkDeleteInFlight) return;
 
     setInFlightDeleteId(palitra.id);
     setError(null);
@@ -227,6 +237,7 @@ export function useRerPalitraNeoPage() {
     try {
       await deletePalitra(palitra.id);
       setPalitras((prev) => prev.filter((item) => item.id !== palitra.id));
+      setSelectedPalitraIds((prev) => prev.filter((id) => id !== palitra.id));
       setDeleteDialogOpen(false);
     } catch (deleteError) {
       if (isUnauthorizedError(deleteError)) {
@@ -243,6 +254,107 @@ export function useRerPalitraNeoPage() {
   function onDeleteDialogExited() {
     if (deleteDialogOpen || inFlightDeleteId !== null) return;
     setDeleteDialogPalitra(null);
+  }
+
+  function setPalitraSelected(palitraId: number, checked: boolean) {
+    setSelectedPalitraIds((prev) => {
+      if (checked) {
+        if (prev.includes(palitraId)) return prev;
+        return [...prev, palitraId];
+      }
+
+      return prev.filter((id) => id !== palitraId);
+    });
+  }
+
+  function setAllPalitrasSelected(palitraIds: number[], checked: boolean) {
+    if (palitraIds.length === 0) return;
+
+    setSelectedPalitraIds((prev) => {
+      if (checked) {
+        const selected = new Set(prev);
+        for (const palitraId of palitraIds) {
+          selected.add(palitraId);
+        }
+        return Array.from(selected);
+      }
+
+      const toRemove = new Set(palitraIds);
+      return prev.filter((id) => !toRemove.has(id));
+    });
+  }
+
+  function requestBulkDelete() {
+    if (bulkDeleteInFlight || inFlightDeleteId !== null || deleteDialogOpen) return;
+
+    const selectedSet = new Set(selectedPalitraIds);
+    const selected = palitras.filter(
+      (palitra) =>
+        selectedSet.has(palitra.id) &&
+        canModifyPalitra(user, palitra) &&
+        inFlightDeleteId !== palitra.id &&
+        inFlightUploadId !== palitra.id,
+    );
+    if (selected.length === 0) return;
+
+    const activeElement = document.activeElement;
+    if (activeElement instanceof HTMLElement) {
+      activeElement.blur();
+    }
+
+    setBulkDeleteDialogPalitras(selected);
+    setBulkDeleteDialogOpen(true);
+  }
+
+  function cancelBulkDelete() {
+    if (bulkDeleteInFlight || inFlightDeleteId !== null) return;
+    setBulkDeleteDialogOpen(false);
+  }
+
+  async function confirmBulkDelete() {
+    if (bulkDeleteInFlight || inFlightDeleteId !== null) return;
+
+    const palitrasToDelete = [...bulkDeleteDialogPalitras];
+    if (palitrasToDelete.length === 0) return;
+
+    setBulkDeleteDialogOpen(false);
+    setBulkDeleteInFlight(true);
+    setError(null);
+
+    const failed: string[] = [];
+
+    try {
+      for (const palitra of palitrasToDelete) {
+        setInFlightDeleteId(palitra.id);
+
+        try {
+          await deletePalitra(palitra.id);
+          setPalitras((prev) => prev.filter((item) => item.id !== palitra.id));
+          setSelectedPalitraIds((prev) => prev.filter((id) => id !== palitra.id));
+        } catch (deleteError) {
+          if (isUnauthorizedError(deleteError)) {
+            window.location.assign('/login');
+            return;
+          }
+
+          failed.push(`${palitra.name}: ${formatErrorMessage(deleteError)}`);
+        } finally {
+          setInFlightDeleteId(null);
+        }
+      }
+
+      if (failed.length > 0) {
+        setError({ text: `Не вдалося видалити деякі палітри: ${failed[0]}` });
+      }
+    } finally {
+      setBulkDeleteInFlight(false);
+      setBulkDeleteDialogPalitras([]);
+    }
+  }
+
+  function onBulkDeleteDialogExited() {
+    if (bulkDeleteDialogOpen || bulkDeleteInFlight) return;
+    setBulkDeleteDialogPalitras([]);
   }
 
   function requestUploadPoints(palitraId: number) {
@@ -430,6 +542,10 @@ export function useRerPalitraNeoPage() {
     inFlightUploadId,
     deleteDialogPalitra,
     deleteDialogOpen,
+    selectedPalitraIds,
+    bulkDeleteDialogPalitras,
+    bulkDeleteDialogOpen,
+    bulkDeleteInFlight,
     createOpen,
     createForm,
     createInFlight,
@@ -461,6 +577,12 @@ export function useRerPalitraNeoPage() {
     cancelDelete,
     confirmDelete,
     onDeleteDialogExited,
+    setPalitraSelected,
+    setAllPalitrasSelected,
+    requestBulkDelete,
+    cancelBulkDelete,
+    confirmBulkDelete,
+    onBulkDeleteDialogExited,
     requestAnalyzeKmz,
     onCreateDrawerExited,
     handleCreate,
