@@ -74,6 +74,7 @@ export function RerPalitraNeoPage() {
           onDelete={page.requestDelete}
           onSetPalitraSelected={page.setPalitraSelected}
           onSetAllPalitrasSelected={page.setAllPalitrasSelected}
+          onClearSelectedPalitras={page.clearSelectedPalitras}
         />
       </Stack>
 

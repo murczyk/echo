@@ -1,4 +1,5 @@
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
+import CloseIcon from '@mui/icons-material/Close';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import {
@@ -8,7 +9,13 @@ import {
   Checkbox,
   Chip,
   CircularProgress,
+  FormControl,
+  IconButton,
+  InputAdornment,
+  InputLabel,
+  MenuItem,
   Paper,
+  Select,
   Table,
   TableBody,
   TableCell,
@@ -17,11 +24,12 @@ import {
   TablePagination,
   TableRow,
   TableSortLabel,
+  TextField,
   Tooltip,
   Typography,
 } from '@mui/material';
 import { getContrastRatio } from '@mui/material/styles';
-import { ChangeEvent, useEffect, useState } from 'react';
+import { ChangeEvent, useEffect, useMemo, useState } from 'react';
 
 import { AreaOfResponsibility, MyScope, Organism, Palitra, User } from '../../../../../Bindings';
 import { formatDateTime24 } from '../../../utils/misc';
@@ -46,6 +54,25 @@ type Props = {
   onDelete: (palitra: Palitra) => void;
   onSetPalitraSelected: (palitraId: number, checked: boolean) => void;
   onSetAllPalitrasSelected: (palitraIds: number[], checked: boolean) => void;
+  onClearSelectedPalitras: () => void;
+};
+
+type AuthorFilterOptions = {
+  authors: string[];
+  hasEmptyAuthor: boolean;
+};
+
+type PalitraTableToolbarProps = {
+  authorFilter: string;
+  authorFilterOptions: AuthorFilterOptions;
+  searchInput: string;
+  hasActiveFilters: boolean;
+  isSearchPending: boolean;
+  selectedCount: number;
+  onAuthorFilterChange: (value: string) => void;
+  onSearchInputChange: (value: string) => void;
+  onResetFilters: () => void;
+  onClearSelectedPalitras: () => void;
 };
 
 const actionsColumnSx = {
@@ -54,6 +81,9 @@ const actionsColumnSx = {
   pr: 2,
 };
 const tableColumnCount = 8;
+const allAuthorsFilterValue = '__all__';
+const emptyAuthorFilterValue = '__empty__';
+const searchDebounceMs = 200;
 
 const visuallyHiddenSx = {
   border: 0,
@@ -81,6 +111,136 @@ function getReadableTextColor(backgroundColor: string): string {
   }
 }
 
+function normalizeFilterText(value: string | null): string {
+  return (value ?? '').trim().toLocaleLowerCase('uk');
+}
+
+function isEmptyAuthor(author: string | null): boolean {
+  return author === null || author.trim() === '';
+}
+
+function hasNonEmptyAuthor(author: string | null): author is string {
+  return !isEmptyAuthor(author);
+}
+
+function useDebouncedSearchQuery(value: string, delayMs: number): string {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+
+  useEffect(() => {
+    if (value === '') {
+      setDebouncedValue('');
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setDebouncedValue(value);
+    }, delayMs);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [delayMs, value]);
+
+  return debouncedValue;
+}
+
+function PalitraTableToolbar({
+  authorFilter,
+  authorFilterOptions,
+  searchInput,
+  hasActiveFilters,
+  isSearchPending,
+  selectedCount,
+  onAuthorFilterChange,
+  onSearchInputChange,
+  onResetFilters,
+  onClearSelectedPalitras,
+}: PalitraTableToolbarProps) {
+  return (
+    <Box
+      sx={{
+        px: 2,
+        pt: 2,
+        pb: 1,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: selectedCount > 0 ? 'space-between' : 'flex-start',
+        gap: 2,
+        flexWrap: 'wrap',
+      }}
+    >
+      <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', alignItems: 'center', flex: '1 1 auto', minWidth: 0 }}>
+        <FormControl size="small" sx={{ minWidth: 220 }}>
+          <InputLabel id="palitra-author-filter-label">Автор</InputLabel>
+          <Select
+            labelId="palitra-author-filter-label"
+            label="Автор"
+            value={authorFilter}
+            onChange={(event) => onAuthorFilterChange(event.target.value)}
+          >
+            <MenuItem value={allAuthorsFilterValue}>Усі</MenuItem>
+            {authorFilterOptions.hasEmptyAuthor ? <MenuItem value={emptyAuthorFilterValue}>—</MenuItem> : null}
+            {authorFilterOptions.authors.map((author) => (
+              <MenuItem key={author} value={author}>
+                {author}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+
+        <TextField
+          size="small"
+          label="Назва / файл"
+          value={searchInput}
+          onChange={(event) => onSearchInputChange(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key !== 'Escape' || searchInput === '') return;
+            event.preventDefault();
+            onSearchInputChange('');
+          }}
+          sx={{ minWidth: 260, flex: '1 1 320px' }}
+          InputProps={{
+            endAdornment: searchInput !== '' ? (
+              <InputAdornment position="end">
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  {isSearchPending ? (
+                    <Box component="span" aria-hidden="true" sx={{ display: 'flex', alignItems: 'center' }}>
+                      <CircularProgress size={14} color="inherit" />
+                    </Box>
+                  ) : null}
+                  <Tooltip title="Очистити пошук">
+                    <IconButton
+                      size="small"
+                      edge="end"
+                      aria-label="Очистити пошук"
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => onSearchInputChange('')}
+                    >
+                      <CloseIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                </Box>
+              </InputAdornment>
+            ) : undefined,
+          }}
+        />
+
+        {hasActiveFilters ? (
+          <Button size="small" onClick={onResetFilters} sx={{ ml: 0.5, px: 1.5 }}>
+            Очистити фільтри
+          </Button>
+        ) : null}
+      </Box>
+
+      {selectedCount > 0 ? (
+        <Button size="small" onClick={onClearSelectedPalitras} sx={{ px: 1.5 }}>
+          Очистити вибір
+        </Button>
+      ) : null}
+    </Box>
+  );
+}
+
 export function PalitraTable({
   loading,
   palitras,
@@ -99,11 +259,64 @@ export function PalitraTable({
   onDelete,
   onSetPalitraSelected,
   onSetAllPalitrasSelected,
+  onClearSelectedPalitras,
 }: Props) {
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(25);
+  const [authorFilter, setAuthorFilter] = useState(allAuthorsFilterValue);
+  const [searchInput, setSearchInput] = useState('');
+  const searchQuery = useDebouncedSearchQuery(searchInput, searchDebounceMs);
+  const authorFilterOptions = useMemo<AuthorFilterOptions>(() => {
+    const authorSet = new Set<string>();
+    let hasEmptyAuthor = false;
+
+    for (const palitra of palitras) {
+      const author = palitra.author;
+
+      if (!hasNonEmptyAuthor(author)) {
+        hasEmptyAuthor = true;
+        continue;
+      }
+
+      authorSet.add(author);
+    }
+
+    return {
+      authors: Array.from(authorSet).sort((left, right) => left.localeCompare(right, 'uk')),
+      hasEmptyAuthor,
+    };
+  }, [palitras]);
+  const filteredPalitras = useMemo(() => {
+    const authorFilteredPalitras = (() => {
+      if (authorFilter === allAuthorsFilterValue) {
+        return palitras;
+      }
+
+      if (authorFilter === emptyAuthorFilterValue) {
+        return palitras.filter((palitra) => isEmptyAuthor(palitra.author));
+      }
+
+      return palitras.filter((palitra) => palitra.author === authorFilter);
+    })();
+    const searchNeedle = normalizeFilterText(searchQuery);
+
+    if (searchNeedle === '') {
+      return authorFilteredPalitras;
+    }
+
+    return authorFilteredPalitras.filter((palitra) => {
+      const nameText = normalizeFilterText(palitra.name);
+      const sourceFileText = normalizeFilterText(palitra.sourceFileName);
+      return nameText.includes(searchNeedle) || sourceFileText.includes(searchNeedle);
+    });
+  }, [authorFilter, palitras, searchQuery]);
+  const hasActiveFiltersInput = authorFilter !== allAuthorsFilterValue || searchInput.trim() !== '';
+  const hasActiveFiltersApplied = authorFilter !== allAuthorsFilterValue || searchQuery.trim() !== '';
+  const isSearchPending = searchInput !== searchQuery;
   const paginatedPalitras =
-    rowsPerPage === -1 ? palitras : palitras.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
+    rowsPerPage === -1
+      ? filteredPalitras
+      : filteredPalitras.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
   const selectedPalitraIdSet = new Set(selectedPalitraIds);
   const selectablePalitraIds = paginatedPalitras
     .filter((palitra) => canModifyPalitra(user, palitra) && inFlightDeleteId !== palitra.id && inFlightUploadId !== palitra.id)
@@ -113,8 +326,28 @@ export function PalitraTable({
   const hasPartialSelectableChecked = selectedSelectableCount > 0 && !allSelectableChecked;
 
   useEffect(() => {
+    onClearSelectedPalitras();
     setPage(0);
-  }, [sortColumn, sortDirection]);
+  }, [authorFilter, onClearSelectedPalitras, sortColumn, sortDirection]);
+
+  useEffect(() => {
+    onClearSelectedPalitras();
+    setPage(0);
+  }, [onClearSelectedPalitras, searchInput]);
+
+  useEffect(() => {
+    if (
+      authorFilter !== allAuthorsFilterValue &&
+      authorFilter !== emptyAuthorFilterValue &&
+      !authorFilterOptions.authors.includes(authorFilter)
+    ) {
+      setAuthorFilter(allAuthorsFilterValue);
+    }
+
+    if (authorFilter === emptyAuthorFilterValue && !authorFilterOptions.hasEmptyAuthor) {
+      setAuthorFilter(allAuthorsFilterValue);
+    }
+  }, [authorFilter, authorFilterOptions]);
 
   useEffect(() => {
     if (rowsPerPage === -1) {
@@ -124,24 +357,44 @@ export function PalitraTable({
       return;
     }
 
-    const maxPage = Math.max(0, Math.ceil(palitras.length / rowsPerPage) - 1);
+    const maxPage = Math.max(0, Math.ceil(filteredPalitras.length / rowsPerPage) - 1);
     if (page > maxPage) {
+      onClearSelectedPalitras();
       setPage(maxPage);
     }
-  }, [page, palitras.length, rowsPerPage]);
+  }, [filteredPalitras.length, onClearSelectedPalitras, page, rowsPerPage]);
 
   function handlePageChange(_: unknown, nextPage: number) {
+    onClearSelectedPalitras();
     setPage(nextPage);
   }
 
   function handleRowsPerPageChange(event: ChangeEvent<HTMLInputElement>) {
+    onClearSelectedPalitras();
     setRowsPerPage(Number(event.target.value));
     setPage(0);
+  }
+
+  function resetFilters() {
+    setAuthorFilter(allAuthorsFilterValue);
+    setSearchInput('');
   }
 
   return (
     <Paper variant="outlined">
       <>
+        <PalitraTableToolbar
+          authorFilter={authorFilter}
+          authorFilterOptions={authorFilterOptions}
+          searchInput={searchInput}
+          hasActiveFilters={hasActiveFiltersInput}
+          isSearchPending={isSearchPending}
+          selectedCount={selectedPalitraIds.length}
+          onAuthorFilterChange={setAuthorFilter}
+          onSearchInputChange={setSearchInput}
+          onResetFilters={resetFilters}
+          onClearSelectedPalitras={onClearSelectedPalitras}
+        />
         <TableContainer sx={{ overflowX: 'auto' }}>
           <Table sx={{ minWidth: 880 }}>
             <TableHead>
@@ -217,12 +470,19 @@ export function PalitraTable({
                     </Box>
                   </TableCell>
                 </TableRow>
-              ) : paginatedPalitras.length === 0 ? (
+              ) : filteredPalitras.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={tableColumnCount} sx={{ py: 6 }}>
-                    <Typography variant="body2" color="text.secondary" align="center">
-                      Палітри відсутні
-                    </Typography>
+                    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
+                      <Typography variant="body2" color="text.secondary" align="center">
+                        {hasActiveFiltersApplied ? 'Немає палітр за обраними фільтрами' : 'Палітри відсутні'}
+                      </Typography>
+                      {hasActiveFiltersInput ? (
+                        <Button size="small" onClick={resetFilters} sx={{ px: 1.5 }}>
+                          Очистити фільтри
+                        </Button>
+                      ) : null}
+                    </Box>
                   </TableCell>
                 </TableRow>
               ) : (
@@ -320,10 +580,10 @@ export function PalitraTable({
             </TableBody>
           </Table>
         </TableContainer>
-        {palitras.length > 0 ? (
+        {filteredPalitras.length > 0 ? (
           <TablePagination
             component="div"
-            count={palitras.length}
+            count={filteredPalitras.length}
             page={rowsPerPage === -1 ? 0 : page}
             onPageChange={handlePageChange}
             rowsPerPage={rowsPerPage}

@@ -323,7 +323,7 @@ function CreatePalitraDrawerComponent({
             <Stack spacing={1.5} alignItems="center">
               <CircularProgress color="inherit" />
               <Typography variant="body2">
-                {kmzAnalyzing ? 'Аналіз KMZ...' : 'Створення палітри...'}
+                {kmzAnalyzing ? 'Аналіз KMZ...' : 'Додавання палітри...'}
               </Typography>
             </Stack>
           </Box>

@@ -121,7 +121,7 @@ export function useRerPalitraNeoPage() {
   const reloadPalitras = React.useCallback(async () => {
     const list = await listPalitras();
     setPalitras(list);
-    setSelectedPalitraIds((prev) => prev.filter((id) => list.some((palitra) => palitra.id === id)));
+    setSelectedPalitraIds((prev) => (prev.length === 0 ? prev : []));
   }, []);
 
   React.useEffect(() => {
@@ -283,6 +283,10 @@ export function useRerPalitraNeoPage() {
       return prev.filter((id) => !toRemove.has(id));
     });
   }
+
+  const clearSelectedPalitras = React.useCallback(() => {
+    setSelectedPalitraIds((prev) => (prev.length === 0 ? prev : []));
+  }, []);
 
   function requestBulkDelete() {
     if (bulkDeleteInFlight || inFlightDeleteId !== null || deleteDialogOpen) return;
@@ -579,6 +583,7 @@ export function useRerPalitraNeoPage() {
     onDeleteDialogExited,
     setPalitraSelected,
     setAllPalitrasSelected,
+    clearSelectedPalitras,
     requestBulkDelete,
     cancelBulkDelete,
     confirmBulkDelete,
