@@ -719,6 +719,12 @@ async fn run_network_invalidation_tasks(
         .c(h!())?;
 
     if let (Some(since_ts), Some(till_ts)) = (min_since_ts, max_till_ts) {
+        let since_date = crate::stats::get_local_date(since_ts);
+        let till_date = crate::stats::get_local_date(till_ts);
+        let since_ts = crate::stats::start_of_day(since_date).c(h!())?;
+        let till_ts =
+            crate::stats::start_of_day(till_date + chrono::Duration::days(1))
+                .c(h!())?;
         let network_ids = if needs_all_networks {
             None
         } else {

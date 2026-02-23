@@ -148,7 +148,7 @@ pub async fn load_freqs_with_stats(
     network_id: i64,
     filter: Option<&NetworkFreqFilter>,
     user_login: &str,
-    freq_counts: HashMap<String, i64>,
+    freq_counts: HashMap<i64, i64>,
 ) -> Result<Vec<NetworkFreqsRes>, AppError> {
     load_freqs_impl(
         db,
@@ -167,7 +167,7 @@ async fn load_freqs_impl(
     network_id: i64,
     filter: Option<&NetworkFreqFilter>,
     user_login: &str,
-    freq_counts: Option<HashMap<String, i64>>,
+    freq_counts: Option<HashMap<i64, i64>>,
 ) -> Result<Vec<NetworkFreqsRes>, AppError> {
     trace!("> load freqs for network: {network_id:?}");
 
@@ -401,19 +401,20 @@ async fn load_freqs_impl(
             let active_to = active_to.map(|dt| dt.and_utc().timestamp_millis());
             let active_from = active_from.and_utc().timestamp_millis();
 
-            let network_freq_id = row.try_get("", "network_freq_id");
-            if let Ok(id) = network_freq_id {
-                freq_ids.push(id);
+            let network_freq_id: i64 =
+                row.try_get("", "network_freq_id").unwrap_or_default();
+            if network_freq_id > 0 {
+                freq_ids.push(network_freq_id);
             }
             let freq: String = row.try_get("", "freq").unwrap_or_default();
             let message_count = if let Some(counts) = freq_counts.as_ref() {
-                counts.get(&freq).copied().unwrap_or(0)
+                counts.get(&network_freq_id).copied().unwrap_or(0)
             } else {
                 row.try_get("", "message_count").unwrap_or(0)
             };
 
             Ok(NetworkFreqsRes {
-                network_freq_id: network_freq_id.unwrap_or_default(),
+                network_freq_id,
                 freq,
                 modulation_id: row.try_get("", "modulation_id").ok(),
                 modulation: row.try_get("", "modulation_name").ok(),
@@ -464,11 +465,19 @@ pub async fn load_network_freqs_counts_from_stats(
     dbx: &DatabaseConnection,
     groups: &Vec<String>,
     network_id: i64,
-) -> Result<HashMap<String, i64>, AppError> {
+) -> Result<HashMap<i64, i64>, AppError> {
     #[derive(FromQueryResult)]
-    struct FreqStatRow {
+    struct FreqStatDayRow {
         frequency: String,
+        dt: NaiveDate,
         quantity: i64,
+    }
+    #[derive(FromQueryResult)]
+    struct NetworkFreqRow {
+        network_freq_id: i64,
+        frequency: String,
+        active_from: NaiveDateTime,
+        active_to: Option<NaiveDateTime>,
     }
 
     let batches =
@@ -480,25 +489,68 @@ pub async fn load_network_freqs_counts_from_stats(
         return Ok(HashMap::new());
     }
 
+    let network_freqs = sigint_network_freq::Entity::find()
+        .select_only()
+        .column_as(sigint_network_freq::Column::Id, "network_freq_id")
+        .column_as(sigint_network_freq::Column::Freq, "frequency")
+        .column(sigint_network_freq::Column::ActiveFrom)
+        .column(sigint_network_freq::Column::ActiveTo)
+        .filter(sigint_network_freq::Column::NetworkId.eq(network_id))
+        .filter(sigint_network_freq::Column::Deleted.eq(false))
+        .into_model::<NetworkFreqRow>()
+        .all(dbx)
+        .await
+        .c(h!())?;
+    let mut network_freq_ranges: HashMap<String, Vec<NetworkFreqRow>> =
+        HashMap::new();
+    for network_freq in network_freqs {
+        network_freq_ranges
+            .entry(network_freq.frequency.clone())
+            .or_default()
+            .push(network_freq);
+    }
+
     let rows = stats_group_network_freq_day::Entity::find()
         .select_only()
         .column(stats_group_network_freq_day::Column::Frequency)
+        .column(stats_group_network_freq_day::Column::Dt)
         .expr_as(Expr::cust("SUM(quantity)"), "quantity")
         .filter(
             stats_group_network_freq_day::Column::SignalGroupBatchId
                 .eq_any(batch_ids),
         )
         .filter(stats_group_network_freq_day::Column::NetworkId.eq(network_id))
+        .group_by(stats_group_network_freq_day::Column::Dt)
         .group_by(stats_group_network_freq_day::Column::Frequency)
-        .into_model::<FreqStatRow>()
+        .into_model::<FreqStatDayRow>()
         .all(dbx)
         .await
         .c(h!())?;
 
-    Ok(rows
-        .into_iter()
-        .map(|row| (row.frequency, row.quantity))
-        .collect())
+    let mut network_freq_counts: HashMap<i64, i64> = HashMap::new();
+    for row in rows {
+        let Some(freq_ranges) = network_freq_ranges.get(&row.frequency) else {
+            continue;
+        };
+        let network_freq = freq_ranges
+            .iter()
+            .filter(|freq| {
+                let active_from_date =
+                    crate::stats::get_local_date(freq.active_from);
+                let active_to_date = freq
+                    .active_to
+                    .map(crate::stats::get_local_date)
+                    .unwrap_or(NaiveDate::MAX);
+                row.dt >= active_from_date && row.dt <= active_to_date
+            })
+            .max_by_key(|freq| freq.active_from);
+        if let Some(network_freq) = network_freq {
+            *network_freq_counts
+                .entry(network_freq.network_freq_id)
+                .or_insert(0) += row.quantity;
+        }
+    }
+    Ok(network_freq_counts)
 }
 
 fn flatten_and_dedup(input: Vec<Vec<String>>) -> Vec<String> {
