@@ -1409,8 +1409,12 @@ pub async fn recalculate_network_stats(
         HashMap::new();
     let mut network_callsign_day: HashMap<(NaiveDate, i64, i64, String), i32> =
         HashMap::new();
+    let mut processed_message_networks: HashSet<(i64, i64)> = HashSet::new();
 
     for row in stats {
+        if !processed_message_networks.insert((row.id, row.network_id)) {
+            continue;
+        }
         let ts = row.datetime.unwrap_or(row.created_at);
         let day = get_local_date(ts);
         let batch_id = *message_batch_map.get(&row.id).c(h!())?;
@@ -1444,24 +1448,44 @@ pub async fn recalculate_network_stats(
     }
 
     let txn = dbx.begin().await.c(h!())?;
-    stats_group_network_day::Entity::delete_many()
+    let mut network_day_delete = stats_group_network_day::Entity::delete_many()
         .filter(stats_group_network_day::Column::Dt.gte(since_date))
-        .filter(stats_group_network_day::Column::Dt.lte(till_date))
-        .exec(&txn)
-        .await
-        .c(h!())?;
-    stats_group_network_freq_day::Entity::delete_many()
-        .filter(stats_group_network_freq_day::Column::Dt.gte(since_date))
-        .filter(stats_group_network_freq_day::Column::Dt.lte(till_date))
-        .exec(&txn)
-        .await
-        .c(h!())?;
-    stats_group_network_callsign_day::Entity::delete_many()
-        .filter(stats_group_network_callsign_day::Column::Dt.gte(since_date))
-        .filter(stats_group_network_callsign_day::Column::Dt.lte(till_date))
-        .exec(&txn)
-        .await
-        .c(h!())?;
+        .filter(stats_group_network_day::Column::Dt.lte(till_date));
+    if let Some(network_ids) = network_ids {
+        network_day_delete = network_day_delete.filter(
+            stats_group_network_day::Column::NetworkId
+                .eq_any(network_ids.iter().copied().collect_vec()),
+        );
+    }
+    network_day_delete.exec(&txn).await.c(h!())?;
+
+    let mut network_freq_day_delete =
+        stats_group_network_freq_day::Entity::delete_many()
+            .filter(stats_group_network_freq_day::Column::Dt.gte(since_date))
+            .filter(stats_group_network_freq_day::Column::Dt.lte(till_date));
+    if let Some(network_ids) = network_ids {
+        network_freq_day_delete = network_freq_day_delete.filter(
+            stats_group_network_freq_day::Column::NetworkId
+                .eq_any(network_ids.iter().copied().collect_vec()),
+        );
+    }
+    network_freq_day_delete.exec(&txn).await.c(h!())?;
+
+    let mut network_callsign_day_delete =
+        stats_group_network_callsign_day::Entity::delete_many()
+            .filter(
+                stats_group_network_callsign_day::Column::Dt.gte(since_date),
+            )
+            .filter(
+                stats_group_network_callsign_day::Column::Dt.lte(till_date),
+            );
+    if let Some(network_ids) = network_ids {
+        network_callsign_day_delete = network_callsign_day_delete.filter(
+            stats_group_network_callsign_day::Column::NetworkId
+                .eq_any(network_ids.iter().copied().collect_vec()),
+        );
+    }
+    network_callsign_day_delete.exec(&txn).await.c(h!())?;
 
     for ((day, batch_id, network_id), quantity) in network_day {
         stats_group_network_day::ActiveModel {
