@@ -14,12 +14,14 @@ import {
   TableCell,
   TableContainer,
   TableHead,
+  TablePagination,
   TableRow,
   TableSortLabel,
   Tooltip,
   Typography,
 } from '@mui/material';
 import { getContrastRatio } from '@mui/material/styles';
+import { ChangeEvent, useEffect, useState } from 'react';
 
 import { AreaOfResponsibility, MyScope, Organism, Palitra, User } from '../../../../../Bindings';
 import { formatDateTime24 } from '../../../utils/misc';
@@ -51,6 +53,7 @@ const actionsColumnSx = {
   minWidth: 148,
   pr: 2,
 };
+const tableColumnCount = 8;
 
 const visuallyHiddenSx = {
   border: 0,
@@ -97,21 +100,48 @@ export function PalitraTable({
   onSetPalitraSelected,
   onSetAllPalitrasSelected,
 }: Props) {
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(25);
+  const paginatedPalitras =
+    rowsPerPage === -1 ? palitras : palitras.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
   const selectedPalitraIdSet = new Set(selectedPalitraIds);
-  const selectablePalitraIds = palitras
+  const selectablePalitraIds = paginatedPalitras
     .filter((palitra) => canModifyPalitra(user, palitra) && inFlightDeleteId !== palitra.id && inFlightUploadId !== palitra.id)
     .map((palitra) => palitra.id);
   const selectedSelectableCount = selectablePalitraIds.filter((palitraId) => selectedPalitraIdSet.has(palitraId)).length;
   const allSelectableChecked = selectablePalitraIds.length > 0 && selectedSelectableCount === selectablePalitraIds.length;
   const hasPartialSelectableChecked = selectedSelectableCount > 0 && !allSelectableChecked;
 
+  useEffect(() => {
+    setPage(0);
+  }, [sortColumn, sortDirection]);
+
+  useEffect(() => {
+    if (rowsPerPage === -1) {
+      if (page !== 0) {
+        setPage(0);
+      }
+      return;
+    }
+
+    const maxPage = Math.max(0, Math.ceil(palitras.length / rowsPerPage) - 1);
+    if (page > maxPage) {
+      setPage(maxPage);
+    }
+  }, [page, palitras.length, rowsPerPage]);
+
+  function handlePageChange(_: unknown, nextPage: number) {
+    setPage(nextPage);
+  }
+
+  function handleRowsPerPageChange(event: ChangeEvent<HTMLInputElement>) {
+    setRowsPerPage(Number(event.target.value));
+    setPage(0);
+  }
+
   return (
     <Paper variant="outlined">
-      {loading ? (
-        <Box sx={{ p: 4, display: 'flex', justifyContent: 'center' }}>
-          <CircularProgress size={28} />
-        </Box>
-      ) : (
+      <>
         <TableContainer sx={{ overflowX: 'auto' }}>
           <Table sx={{ minWidth: 880 }}>
             <TableHead>
@@ -179,96 +209,142 @@ export function PalitraTable({
               </TableRow>
             </TableHead>
             <TableBody>
-              {palitras.map((palitra) => {
-                const canModify = canModifyPalitra(user, palitra);
-                const deleting = inFlightDeleteId === palitra.id;
-                const uploading = inFlightUploadId === palitra.id;
-                const chipTextColor = getReadableTextColor(palitra.colorHex);
+              {loading ? (
+                <TableRow>
+                  <TableCell colSpan={tableColumnCount} sx={{ py: 6 }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'center' }}>
+                      <CircularProgress size={28} />
+                    </Box>
+                  </TableCell>
+                </TableRow>
+              ) : paginatedPalitras.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={tableColumnCount} sx={{ py: 6 }}>
+                    <Typography variant="body2" color="text.secondary" align="center">
+                      Палітри відсутні
+                    </Typography>
+                  </TableCell>
+                </TableRow>
+              ) : (
+                paginatedPalitras.map((palitra) => {
+                  const canModify = canModifyPalitra(user, palitra);
+                  const deleting = inFlightDeleteId === palitra.id;
+                  const uploading = inFlightUploadId === palitra.id;
+                  const chipTextColor = getReadableTextColor(palitra.colorHex);
 
-                return (
-                  <TableRow key={palitra.id} hover>
-                    <TableCell padding="checkbox">
-                      <Checkbox
-                        slotProps={{ input: { 'aria-label': `Вибрати палітру ${palitra.name}` } }}
-                        checked={selectedPalitraIdSet.has(palitra.id)}
-                        disabled={!canModify || deleting || uploading}
-                        onChange={(_, checked) => onSetPalitraSelected(palitra.id, checked)}
-                      />
-                    </TableCell>
-                    <TableCell>{palitra.name}</TableCell>
-                    <TableCell>
-                      <Chip
-                        size="small"
-                        label={palitra.colorHex}
-                        sx={{
-                          color: chipTextColor,
-                          backgroundColor: palitra.colorHex,
-                          minWidth: '90px',
-                          fontFamily: 'monospace',
-                        }}
-                      />
-                    </TableCell>
-                    <TableCell>{palitra.sourceFileName ?? '—'}</TableCell>
-                    <TableCell>{formatDateTime24(palitra.lastUploadedAtTs)}</TableCell>
-                    <TableCell>{palitra.author ?? '—'}</TableCell>
-                    <TableCell>
-                      <Typography variant="caption" color="text.secondary">
-                        {getAccessSummary(palitra, user, myScope, organisms, aors)}
-                      </Typography>
-                    </TableCell>
-                    <TableCell align="right" sx={actionsColumnSx}>
-                      <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
-                        {canModify ? (
-                          <ButtonGroup size="small" variant="outlined" aria-label="Дії з палітрою">
-                            <Tooltip title="Редагувати">
-                              <span>
-                                <Button
-                                  aria-label="Редагувати палітру"
-                                  onClick={() => onOpenEdit(palitra)}
-                                  disabled={deleting || uploading}
-                                  sx={{ minWidth: 36, px: 1 }}
-                                >
-                                  <EditIcon fontSize="small" />
-                                </Button>
-                              </span>
-                            </Tooltip>
-                            <Tooltip title="Завантажити точки">
-                              <span>
-                                <Button
-                                  aria-label="Завантажити точки палітри"
-                                  onClick={() => onRequestUploadPoints(palitra.id)}
-                                  disabled={deleting || uploading}
-                                  sx={{ minWidth: 36, px: 1 }}
-                                >
-                                  {uploading ? <CircularProgress size={16} /> : <CloudUploadIcon fontSize="small" />}
-                                </Button>
-                              </span>
-                            </Tooltip>
-                            <Tooltip title="Видалити">
-                              <span>
-                                <Button
-                                  aria-label="Видалити палітру"
-                                  onClick={() => onDelete(palitra)}
-                                  disabled={deleting || uploading}
-                                  sx={{ minWidth: 36, px: 1, color: 'error.main' }}
-                                >
-                                  {deleting ? <CircularProgress size={16} /> : <DeleteIcon fontSize="small" color="error" />}
-                                </Button>
-                              </span>
-                            </Tooltip>
-                          </ButtonGroup>
-                        ) : (
-                          '—'
-                        )}
-                      </Box>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
+                  return (
+                    <TableRow key={palitra.id} hover>
+                      <TableCell padding="checkbox">
+                        <Checkbox
+                          slotProps={{ input: { 'aria-label': `Вибрати палітру ${palitra.name}` } }}
+                          checked={selectedPalitraIdSet.has(palitra.id)}
+                          disabled={!canModify || deleting || uploading}
+                          onChange={(_, checked) => onSetPalitraSelected(palitra.id, checked)}
+                        />
+                      </TableCell>
+                      <TableCell>{palitra.name}</TableCell>
+                      <TableCell>
+                        <Chip
+                          size="small"
+                          label={palitra.colorHex}
+                          sx={{
+                            color: chipTextColor,
+                            backgroundColor: palitra.colorHex,
+                            minWidth: '90px',
+                            fontFamily: 'monospace',
+                          }}
+                        />
+                      </TableCell>
+                      <TableCell>{palitra.sourceFileName ?? '—'}</TableCell>
+                      <TableCell>{formatDateTime24(palitra.lastUploadedAtTs)}</TableCell>
+                      <TableCell>{palitra.author ?? '—'}</TableCell>
+                      <TableCell>
+                        <Typography variant="caption" color="text.secondary">
+                          {getAccessSummary(palitra, user, myScope, organisms, aors)}
+                        </Typography>
+                      </TableCell>
+                      <TableCell align="right" sx={actionsColumnSx}>
+                        <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+                          {canModify ? (
+                            <ButtonGroup size="small" variant="outlined" aria-label="Дії з палітрою">
+                              <Tooltip title="Редагувати">
+                                <span>
+                                  <Button
+                                    aria-label="Редагувати палітру"
+                                    onClick={() => onOpenEdit(palitra)}
+                                    disabled={deleting || uploading}
+                                    sx={{ minWidth: 36, px: 1 }}
+                                  >
+                                    <EditIcon fontSize="small" />
+                                  </Button>
+                                </span>
+                              </Tooltip>
+                              <Tooltip title="Завантажити точки">
+                                <span>
+                                  <Button
+                                    aria-label="Завантажити точки палітри"
+                                    onClick={() => onRequestUploadPoints(palitra.id)}
+                                    disabled={deleting || uploading}
+                                    sx={{ minWidth: 36, px: 1 }}
+                                  >
+                                    {uploading ? <CircularProgress size={16} /> : <CloudUploadIcon fontSize="small" />}
+                                  </Button>
+                                </span>
+                              </Tooltip>
+                              <Tooltip title="Видалити">
+                                <span>
+                                  <Button
+                                    aria-label="Видалити палітру"
+                                    onClick={() => onDelete(palitra)}
+                                    disabled={deleting || uploading}
+                                    sx={{ minWidth: 36, px: 1, color: 'error.main' }}
+                                  >
+                                    {deleting ? (
+                                      <CircularProgress size={16} />
+                                    ) : (
+                                      <DeleteIcon fontSize="small" color="error" />
+                                    )}
+                                  </Button>
+                                </span>
+                              </Tooltip>
+                            </ButtonGroup>
+                          ) : (
+                            '—'
+                          )}
+                        </Box>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
+              )}
             </TableBody>
           </Table>
         </TableContainer>
-      )}
+        {palitras.length > 0 ? (
+          <TablePagination
+            component="div"
+            count={palitras.length}
+            page={rowsPerPage === -1 ? 0 : page}
+            onPageChange={handlePageChange}
+            rowsPerPage={rowsPerPage}
+            onRowsPerPageChange={handleRowsPerPageChange}
+            rowsPerPageOptions={[10, 25, 50, { label: 'Всі', value: -1 }]}
+            labelRowsPerPage="Рядків на сторінці:"
+            labelDisplayedRows={({ from, to, count }) => `${from}–${to} з ${count}`}
+            sx={{
+              '& .MuiTablePagination-toolbar': {
+                minHeight: 52,
+                alignItems: 'center',
+              },
+              '& .MuiTablePagination-selectLabel, & .MuiTablePagination-displayedRows': {
+                mb: 0,
+                display: 'flex',
+                alignItems: 'center',
+              },
+            }}
+          />
+        ) : null}
+      </>
     </Paper>
   );
 }
