@@ -1037,6 +1037,7 @@ struct StatsRow {
 struct NetworkStatsRow {
     pub id: i64,
     pub created_at: NaiveDateTime,
+    pub timestamp: Option<NaiveDateTime>,
     pub datetime: Option<NaiveDateTime>,
     pub group_master_key: String,
     pub network_id: i64,
@@ -1415,7 +1416,7 @@ pub async fn recalculate_network_stats(
         if !processed_message_networks.insert((row.id, row.network_id)) {
             continue;
         }
-        let ts = row.datetime.unwrap_or(row.created_at);
+        let ts = row.datetime.or(row.timestamp).unwrap_or(row.created_at);
         let day = get_local_date(ts);
         let batch_id = *message_batch_map.get(&row.id).c(h!())?;
 
@@ -1691,8 +1692,9 @@ async fn network_stats_by_created_at(
 ) -> Result<Vec<NetworkStatsRow>, AppError> {
     let mut stats = network_stats_base_select()
         .filter(sigint_inbox_item::Column::Datetime.is_null())
-        .filter(signal_message::Column::CreatedAt.gte(since_ts))
-        .filter(signal_message::Column::CreatedAt.lt(till_ts));
+        .filter(signal_message::Column::Timestamp.is_not_null())
+        .filter(signal_message::Column::Timestamp.gte(since_ts))
+        .filter(signal_message::Column::Timestamp.lt(till_ts));
     if let Some(network_ids) = network_ids {
         stats = stats.filter(
             sigint_inbox_item_network::Column::SigintNetworkId
@@ -1724,6 +1726,7 @@ fn network_stats_base_select() -> Select<signal_message::Entity> {
         .select_only()
         .column(signal_message::Column::Id)
         .column(signal_message::Column::CreatedAt)
+        .column(signal_message::Column::Timestamp)
         .column(sigint_inbox_item::Column::Datetime)
         .column(signal_message_group::Column::GroupMasterKey)
         .column(sigint_inbox_item::Column::Freq)

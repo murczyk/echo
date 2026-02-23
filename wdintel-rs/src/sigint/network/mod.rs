@@ -1101,6 +1101,18 @@ async fn load_network_callsigns_from_stats(
 
     let since_date = crate::stats::get_local_date(since_ts);
     let till_date = crate::stats::get_local_date(till_ts);
+    let active_network_ids = sigint_network::Entity::find()
+        .select_only()
+        .column(sigint_network::Column::Id)
+        .filter(sigint_network::Column::Id.eq_any(network_ids.clone()))
+        .filter(sigint_network::Column::Deleted.eq(false))
+        .into_tuple::<i64>()
+        .all(dbx)
+        .await
+        .c(h!())?;
+    if active_network_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
 
     let rows = stats_group_network_callsign_day::Entity::find()
         .select_only()
@@ -1112,7 +1124,7 @@ async fn load_network_callsigns_from_stats(
         )
         .filter(
             stats_group_network_callsign_day::Column::NetworkId
-                .eq_any(network_ids.clone()),
+                .eq_any(active_network_ids),
         )
         .filter(stats_group_network_callsign_day::Column::Dt.gte(since_date))
         .filter(stats_group_network_callsign_day::Column::Dt.lte(till_date))
