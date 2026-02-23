@@ -1,13 +1,22 @@
 import argparse
 import multiprocessing
 import os
+import shutil
+import signal
 import sys
 import tempfile
+from functools import partial
 
 import mlflow
 
 from echo_ai.lake import Lake
 from echo_ai.supervised import train_supervised
+
+
+def signal_handler(temp_dir, lake: Lake, signum, frame):
+    lake.close()
+    shutil.rmtree(temp_dir, ignore_errors=True)
+    sys.exit(1)
 
 
 def resolve_pretrain(pretrained_vectors, args):
@@ -53,6 +62,10 @@ def real_main(args):
     with tempfile.TemporaryDirectory() as temp_dir:
         print("creating connection to datalake", flush=True)
         lake = Lake(temp_directory=temp_dir)
+        handler = partial(signal_handler, temp_dir, lake)
+        signal.signal(signal.SIGTERM, handler)
+        signal.signal(signal.SIGINT, handler)
+
         lake.create_schema_if_not_exists()
         label_dict = lake.get_label_dict(label_list)
         train_supervised(lake, label_dict, args)
