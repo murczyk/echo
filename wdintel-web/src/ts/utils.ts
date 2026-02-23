@@ -2,7 +2,7 @@ import proj4 from "proj4"
 
 
 // https://github.com/AlexZeDiKoN/Bimpsoft/blob/e4118066a734a3af05adfa3eaa0e8f12759e26dc/src/utils/svg/mapObjects.js
-const systems = [
+const systems: [string, string][] = [
   // СК-42
   ['EPSG:4284', '+proj=longlat +ellps=krass +towgs84=23.92,-141.27,-80.9,-0,0.35,0.82,-0.12 +no_defs'],
   ['EPSG:28402', `+proj=tmerc +lat_0=0 +lon_0=9 +k=1 +x_0=2500000 +y_0=0 +ellps=krass +towgs84=23.92,-141.27,-80.9,-0,0.35,0.82,-0.12 +units=m +no_defs`],

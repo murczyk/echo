@@ -150,7 +150,7 @@ toLayout : Auth.User -> Model -> Layouts.Layout Msg
 toLayout user model =
     Layouts.Navbar
         { user = user
-        , activeName = "rer"
+        , activeName = "rer-duty"
         }
 
 

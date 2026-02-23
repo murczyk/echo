@@ -78,13 +78,20 @@ navBar user shared activeName props =
             ]
 
         otherSubs =
-            [ Menu (Internal Route.Path.Importer) "importer" "імпортер"
-            , Menu (Internal Route.Path.Delta) "kmz2geojson" "kmz в geojson"
-            , Menu (Internal Route.Path.AlpinequestKmz) "alpinequest-kmz" "alpinequest в kmz"
-            , Menu (Internal Route.Path.DeltaCsv2kmz) "csv2kmz" "delta csv в kmz"
-            , Menu (Internal Route.Path.DeltaFixkmz) "fixkmz" "очисник kmz"
-            , Menu (Internal Route.Path.CoordsConverter) "coords-converter" "конвертер координат"
-            ]
+            (if serverModeIs "live" shared.serverInfo && hasRole "Rer" user then
+                [ Menu (Internal Route.Path.RerDutyNeo) "rer-duty-neo" "оперативний (Alpha)"
+                ]
+
+             else
+                []
+            )
+                ++ [ Menu (Internal Route.Path.Importer) "importer" "імпортер"
+                   , Menu (Internal Route.Path.Delta) "kmz2geojson" "kmz в geojson"
+                   , Menu (Internal Route.Path.AlpinequestKmz) "alpinequest-kmz" "alpinequest в kmz"
+                   , Menu (Internal Route.Path.DeltaCsv2kmz) "csv2kmz" "delta csv в kmz"
+                   , Menu (Internal Route.Path.DeltaFixkmz) "fixkmz" "очисник kmz"
+                   , Menu (Internal Route.Path.CoordsConverter) "coords-converter" "конвертер координат"
+                   ]
                 ++ (if hasRole "Admin" user then
                         [ Menu (Internal Route.Path.RadiosConvert) "radios-convert" "радіо kmz конвертер" ]
 
@@ -93,11 +100,9 @@ navBar user shared activeName props =
                    )
 
         menuItems =
-            menu Route.Path.Home_ "home" "головна"
-                :: ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Rer" user)
-                    [ menu Route.Path.RerDuty "duty" "оперативний (стара)"
-                    , menu Route.Path.RerDutyNeo "duty" "оперативний"
-                    ]
+            [ menu Route.Path.Home_ "home" "головна" ]
+                ++ ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Rer" user)
+                    [ menu Route.Path.RerDuty "rer-duty" "оперативний" ]
                 ++ ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Rer" user)
                     [ menu Route.Path.RerAnalysis "analysis" "аналіз" ]
                 ++ ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Rer" user)

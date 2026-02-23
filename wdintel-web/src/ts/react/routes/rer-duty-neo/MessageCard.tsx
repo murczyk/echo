@@ -2,15 +2,20 @@ import { Box, Chip, Tooltip } from '@mui/material';
 import React from 'react';
 
 import type { InboxMessage } from '../../../../Bindings';
-import { buildAnalysisHref, formatDateNoYear, formatTime } from './utils';
+import { buildAnalysisHref, formatDateNoYear, formatTime, messageRenderDistance } from './utils';
 
 export type MessageCardProps = {
   id: number;
   msg: InboxMessage;
   feedId: string;
+  /** Reference time (ms) for "time ago" in top-right; set when feed was loaded. */
+  referenceTimeMs: number | null;
+  /** Auth user display name for background watermark */
+  authUserName: string | null;
   groupName: string | null;
   senderName: string | null;
   copiedFeedbackId: string | null;
+  networkDisplayMap: Record<number, string>;
   tagsMap: Record<number, string>;
   tagIdsList: number[];
   messageHasTag: (msg: InboxMessage, tagId: number) => boolean;
@@ -26,9 +31,12 @@ export function MessageCard({
   id,
   msg,
   feedId: _feedId,
+  referenceTimeMs,
+  authUserName,
   groupName,
   senderName,
   copiedFeedbackId,
+  networkDisplayMap,
   tagsMap,
   tagIdsList,
   messageHasTag,
@@ -40,7 +48,7 @@ export function MessageCard({
   onToggleTag,
 }: MessageCardProps) {
   return (
-    <Box component="li" className="list-none flex px-2 rer-duty-message mb-3 font-size-[13px]">
+    <Box component="li" className="list-none flex pr-0 pl-2 rer-duty-message mb-3 font-size-[13px]">
       {/* Left column: date/time, actions, group, sender, freq */}
       <div
         className="min-w-[120px] mr-2 basis-1/4 mb-[8px]"
@@ -222,8 +230,67 @@ export function MessageCard({
       </div>
 
       {/* Right column: message card */}
-      <div className="mb-2 rounded-sm px-2 pt-2 pb-2 basis-3/4 flex-1 message-div bg-card relative min-w-0 break-words">
-        <div className="flex justify-start items-start flex-wrap py-1 border-b-2 border-border gap-2">
+      <div className="mb-2 rounded-sm px-2 pt-2 pb-2 basis-3/4 flex-1 message-div bg-card relative min-w-0 break-words overflow-hidden">
+        {/* Auth user name watermark in bg, twice same diagonal */}
+        {(authUserName ?? '').trim() !== '' && (
+          <div
+            aria-hidden
+            style={{
+              position: 'absolute',
+              inset: 0,
+              pointerEvents: 'none',
+              overflow: 'hidden',
+            }}
+          >
+            <span
+              style={{
+                position: 'absolute',
+                left: '10%',
+                top: '20%',
+                transform: 'rotate(-28deg)',
+                fontSize: 'clamp(1.5rem, 4vw, 2.25rem)',
+                fontWeight: 600,
+                opacity: 0.08,
+                color: 'currentColor',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {authUserName}
+            </span>
+            <span
+              style={{
+                position: 'absolute',
+                right: '5%',
+                bottom: '15%',
+                transform: 'rotate(-28deg)',
+                fontSize: 'clamp(1.5rem, 4vw, 2.25rem)',
+                fontWeight: 600,
+                opacity: 0.08,
+                color: 'currentColor',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {authUserName}
+            </span>
+          </div>
+        )}
+        <div
+          className="flex justify-start items-start flex-wrap py-1 border-b-2 border-border gap-2"
+          style={{ position: 'relative' }}
+        >
+          {msg.timestamp != null && referenceTimeMs != null && (
+            <div
+              style={{
+                position: 'absolute',
+                top: 4,
+                right: 8,
+                fontSize: '.8rem',
+                color: 'var(--bs-secondary-color)',
+              }}
+            >
+              {messageRenderDistance(msg.timestamp, referenceTimeMs)}
+            </div>
+          )}
           <div className="font-semibold inline-flex gap-1">
             <i className="bi bi-people text-icons" title="Еталонна прив'язка" />
             {(msg.networkIds ?? []).length > 0 ? (
@@ -236,7 +303,7 @@ export function MessageCard({
                   title="Відкрити мережу в новій вкладці"
                   key={networkId}
                 >
-                  Мережа {networkId}
+                  {networkDisplayMap[networkId] ?? `Мережа ${networkId}`}
                   <i className="bi bi-box-arrow-up-right text-sm" />
                 </a>
               ))
@@ -259,18 +326,16 @@ export function MessageCard({
             const humanLogins = humanContribs.map((t) => t.login).filter(Boolean) as string[];
             const bots = botContribs.map((t) => `${t.model} (${Math.round((t.confidence ?? 0) * 100)}%)`);
             const tip =
-              isSet && (humanContribs.length > 0 || botContribs.length > 0)
-                ? [
-                    ...(humanLogins.length > 0
-                      ? [`Користувачі: ${humanLogins.join(', ')}`]
-                      : humanContribs.length > 0
-                      ? ['Користувачі: (ваш вибір)']
-                      : []),
-                    ...(bots.length > 0 ? [`Боти: ${bots.join(', ')}`] : []),
-                  ].join('\n')
-                : isSet
-                ? 'Натисніть, щоб зняти тег'
-                : 'Натисніть, щоб додати тег';
+              isSet &&
+              (humanContribs.length > 0 || botContribs.length > 0) &&
+              [
+                ...(humanLogins.length > 0
+                  ? [`Користувачі: ${humanLogins.join(', ')}`]
+                  : humanContribs.length > 0
+                    ? ['Користувачі: (ваш вибір)']
+                    : []),
+                ...(bots.length > 0 ? [`Боти: ${bots.join(', ')}`] : []),
+              ].join('\n');
             const showBadge = isSet && (humanContribs.length > 0 || botContribs.length > 0);
             return (
               <Tooltip key={tagId} title={tip} placement="top">
@@ -279,10 +344,24 @@ export function MessageCard({
                     size="small"
                     label={label}
                     onClick={() => onToggleTag(tagId)}
-                    color={isSet ? 'primary' : 'default'}
-                    variant={isSet ? 'filled' : 'outlined'}
+                    variant="filled"
                     className="text-sm h-5 cursor-pointer"
-                    sx={{ '& .MuiChip-label': { px: 0.75 } }}
+                    sx={{
+                      '& .MuiChip-label': { px: 0.75 },
+                      ...(isSet
+                        ? {
+                            bgcolor: 'var(--color-tag-selected)',
+                            color: 'black',
+                            border: '1px solid var(--color-border-selected)',
+                          }
+                        : {
+                            bgcolor: 'var(--color-tag)',
+                            color: 'var(--color-text)',
+                            border: '1px solid var(--color-border)',
+                            opacity: 0.75,
+                            '&:hover': { opacity: 1 },
+                          }),
+                    }}
                   />
                   {showBadge && (
                     <span

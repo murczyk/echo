@@ -5,7 +5,7 @@ import Auth
 import Core.Types exposing (ApiError)
 import Effect as E exposing (Effect)
 import Html exposing (..)
-import Html.Attributes exposing (class, id)
+import Html.Attributes exposing (attribute, class, id)
 import Html.Events exposing (onClick, stopPropagationOn)
 import Layout exposing (Layout)
 import Process
@@ -199,16 +199,23 @@ view user activeName shared route { toContentMsg, model, content } =
             ]
             |> Html.map toContentMsg
         , div
-            [ class "transition-all duration-300 ease-in-out app-shell"
-            , class
+            ([ class "transition-all duration-300 ease-in-out app-shell"
+             , class
                 (if model.isNavbarVisible then
                     "app-shell--navbar-visible"
 
                  else
                     "app-shell--navbar-hidden"
                 )
-            , onClick (toContentMsg (SetOpenDropdown Nothing))
-            ]
+             , onClick (toContentMsg (SetOpenDropdown Nothing))
+             ]
+                ++ (if route.url.path == "/rer-duty-neo" then
+                        [ attribute "data-auth-user-name" user.name ]
+
+                    else
+                        []
+                   )
+            )
             content.body
         ]
     }
