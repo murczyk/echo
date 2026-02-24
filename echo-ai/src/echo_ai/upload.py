@@ -251,28 +251,28 @@ def should_upload_model(
     }
     if ap_improvement > 0 and pr_improvement > 0:
         print(
-            f"best new version, improved ap {ap_improvement:+.2f%}, improved precision_at_recall {pr_improvement:+.2f%}",
+            f"best new version, improved ap {ap_improvement:+.2%}, improved precision_at_recall {pr_improvement:+.2%}",
             flush=True,
         )
         return True, stats
 
     if ap_improvement > abs(pr_limit) and pr_improvement > pr_limit:
         print(
-            f"good new version improved ap {ap_improvement:+.2f%}, worse precision_at_recall {pr_improvement:+.2f%}",
+            f"good new version improved ap {ap_improvement:+.2%}, worse precision_at_recall {pr_improvement:+.2%}",
             flush=True,
         )
         return True, stats
 
     if pr_improvement > abs(ap_limit) and ap_improvement > ap_limit:
         print(
-            f"good new version worse ap {ap_improvement:+.2f%}, improved precision_at_recall {pr_improvement:+.2f%}",
+            f"good new version worse ap {ap_improvement:+.2%}, improved precision_at_recall {pr_improvement:+.2%}",
             flush=True,
         )
         return True, stats
 
     if ap_improvement != 0 and pr_improvement != 0:
         print(
-            f"bad version worse ap {ap_improvement:+.2f%}, worse precision_at_recall {pr_improvement:+.2f%}",
+            f"bad version worse ap {ap_improvement:+.2%}, worse precision_at_recall {pr_improvement:+.2%}",
             flush=True,
         )
     return False, stats
