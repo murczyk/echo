@@ -1,20 +1,15 @@
 module Pages.RerNetworks.Create exposing (Model, Msg, page)
 
-import Api exposing (check_if_freq_exist)
+import Api
 import Auth
 import Bindings as B
-import Char
-import Core.Types exposing (ApiError)
-import Debounce exposing (Debounce)
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
 import Html exposing (..)
 import Html.Attributes as Attr exposing (..)
 import Html.Events exposing (..)
 import Html.Styled as Styled
-import Http
 import Layouts
-import Maybe.Extra as MaybeX
 import Page exposing (Page)
 import Pages_.RerNetworks.Create.CallsignsTables as CallsignsTables
 import Pages_.RerNetworks.Create.FrequenciesTable as FrequenciesTable
@@ -23,25 +18,19 @@ import Pages_.RerNetworks.Create.Msg exposing (Msg(..))
 import Route exposing (Route)
 import Route.Path
 import Select
-import Set exposing (Set)
+import Set
 import Shared
 import Shared.Components.Button as Button
-import Shared.Components.Checkbox as Checkbox
 import Shared.Components.Pager as Pager
-import Shared.Components.Sidebar as Sidebar
 import Shared.Components.Spinner
 import Shared.Components.Table as Table
-import Shared.Components.Toast
 import Shared.Model exposing (isDarkMode)
-import Time
-import Time.Extra
 import Utils.Api.ErrorHandling
 import Utils.Components exposing (fieldError, isInvalidCls)
 import Utils.NetworksUtils as NetworksUtils
 import Utils.Modulations as Modulations
 import Utils.RemoteData as RD exposing (RemoteData(..))
 import Utils.Select
-import Utils.Time
 import View exposing (View)
 
 
@@ -123,10 +112,10 @@ page user shared route =
 
 
 toLayout : Auth.User -> Model -> Layouts.Layout Msg
-toLayout user model =
+toLayout user _ =
     Layouts.Navbar
         { user = user
-        , activeName = "rer"
+        , activeName = "networks"
         }
 
 
@@ -139,10 +128,10 @@ type alias Model =
 
 
 init : Route () -> Shared.Model -> () -> ( Model, Effect Msg )
-init route shared () =
+init route _ () =
     let
         -- Parse frequency from query parameters
-        freqFromQuery =
+        _ =
             Dict.get "freq" route.query
     in
     ( { formErrors = Dict.empty
@@ -663,12 +652,13 @@ update shared route msg model =
             in
             ( updatedModel
             , E.batch
-                ([ urlEffect ]
-                    ++ (FrequenciesTable.loadFreqsInit network.id
+                (urlEffect
+                    :: ((FrequenciesTable.loadFreqsInit network.id
                             |> List.map (E.map Frequencies)
-                       )
-                    ++ (CallsignsTables.loadCatalogAndNetworkCallsigns network.id
-                            |> List.map (E.map Callsigns)
+                        )
+                            ++ (CallsignsTables.loadCatalogAndNetworkCallsigns network.id
+                                    |> List.map (E.map Callsigns)
+                               )
                        )
                 )
             )
@@ -741,7 +731,7 @@ update shared route msg model =
 
 
 subscriptions : Model -> Sub Msg
-subscriptions model =
+subscriptions _ =
     Sub.none
 
 
@@ -780,7 +770,7 @@ view user shared model =
 
 
 viewHeader : Model -> Html Msg
-viewHeader model =
+viewHeader _ =
     div [ class "flex justify-between items-center mb-[16px]" ]
         [ div []
             [ h2 [] [ text "Створення нової мережі" ]
@@ -826,7 +816,7 @@ viewMissingFieldsBlock shared model =
                     , span [ class "text-red-500 ml-1" ] [ text "*" ]
                     ]
                 , div [ class "col-span-2" ]
-                    ([ input
+                    ((input
                         [ class "form-input w-full h-[40px]"
                         , type_ "text"
                         , value model.createNetworkState.name
@@ -836,8 +826,8 @@ viewMissingFieldsBlock shared model =
                         , placeholder "введіть назву"
                         ]
                         []
-                     ]
-                        ++ fieldError "name" model.formErrors
+                     )
+                        :: fieldError "name" model.formErrors
                     )
                 ]
             , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
@@ -1106,7 +1096,7 @@ viewActionButtons model =
 
 
 createMainInfoBlock : B.CreateNetworkReq -> Shared.Model -> Model -> List (Html Msg)
-createMainInfoBlock createReq shared model =
+createMainInfoBlock createReq _ model =
     [ div [ class "mb-[8px] flex justify-between items-center" ]
         [ h5 []
             [ text "Згідно форми" ]
@@ -1118,7 +1108,7 @@ createMainInfoBlock createReq shared model =
                 , span [ class "text-red-500 ml-1" ] [ text "*" ]
                 ]
             , div [ class "col-span-2" ]
-                ([ input
+                ((input
                     [ value createReq.location
                     , onInput (\newLocation -> UpdateNetworkState (\state -> { state | location = newLocation }))
                     , onBlur (ValidateField "location")
@@ -1127,8 +1117,8 @@ createMainInfoBlock createReq shared model =
                     , isInvalidCls "location" model.formErrors
                     ]
                     []
-                 ]
-                    ++ fieldError "location" model.formErrors
+                 )
+                    :: fieldError "location" model.formErrors
                 )
             ]
         , div [ class "grid grid-cols-3 gap-x-4 items-center" ]

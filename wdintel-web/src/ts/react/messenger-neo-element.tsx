@@ -1,20 +1,20 @@
 import { ThemeProvider } from '@mui/material/styles';
 import { createRoot, Root } from 'react-dom/client';
 
-import { AdminMessangerNeoPage } from './routes/admin-messanger-neo';
+import { AdminMessengerNeoPage } from './routes/admin-messenger-neo';
 import { useNeoMuiTheme } from './mui-theme';
 
-function MessangerNeoRoot() {
+function MessengerNeoRoot() {
   const theme = useNeoMuiTheme();
 
   return (
     <ThemeProvider theme={theme}>
-      <AdminMessangerNeoPage />
+      <AdminMessengerNeoPage />
     </ThemeProvider>
   );
 }
 
-class MessangerNeoElement extends HTMLElement {
+class MessengerNeoElement extends HTMLElement {
   private root: Root | null = null;
 
   connectedCallback() {
@@ -23,7 +23,7 @@ class MessangerNeoElement extends HTMLElement {
       this.root = createRoot(this);
     }
 
-    this.root.render(<MessangerNeoRoot />);
+    this.root.render(<MessengerNeoRoot />);
   }
 
   disconnectedCallback() {
@@ -32,6 +32,6 @@ class MessangerNeoElement extends HTMLElement {
   }
 }
 
-if (!customElements.get('messanger-neo')) {
-  customElements.define('messanger-neo', MessangerNeoElement);
+if (!customElements.get('messenger-neo')) {
+  customElements.define('messenger-neo', MessengerNeoElement);
 }

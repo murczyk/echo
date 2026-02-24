@@ -7,6 +7,28 @@ set -euo pipefail
 #   --cleanup: Drop all test databases matching pattern wd_test_*
 #   --help: Show this help message
 
+wait_for_postgres() {
+    local pg_host="$1"
+    local pg_port="$2"
+    local pg_user="$3"
+    local maintenance_db="$4"
+    local timeout_secs="${POSTGRES_STARTUP_TIMEOUT_SECS:-60}"
+    local i
+
+    echo "Waiting for PostgreSQL to accept connections..."
+    for ((i = 1; i <= timeout_secs; i++)); do
+        if psql -h "$pg_host" -p "$pg_port" -U "$pg_user" -d "$maintenance_db" -tAc "SELECT 1" >/dev/null 2>&1; then
+            echo "PostgreSQL is ready"
+            return 0
+        fi
+        if [ "$i" -eq "$timeout_secs" ]; then
+            echo "Error: PostgreSQL did not become ready within ${timeout_secs} seconds"
+            return 1
+        fi
+        sleep 1
+    done
+}
+
 # Handle command line options
 if [ $# -eq 1 ] && [ "$1" = "--cleanup" ]; then
     echo "Cleaning up all test databases..."
@@ -17,6 +39,7 @@ if [ $# -eq 1 ] && [ "$1" = "--cleanup" ]; then
     export PGPASSWORD="$PG_PASSWORD"
 
     MAINTENANCE_DB="${PG_DATABASE:-postgres}"
+    wait_for_postgres "$PG_HOST" "$PG_PORT" "$PG_USER" "$MAINTENANCE_DB"
 
     # Find and drop all test databases
     psql -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USER" -d "$MAINTENANCE_DB" -t -c "SELECT datname FROM pg_database WHERE datname LIKE 'wd_test_%';" | while read -r db; do
@@ -78,6 +101,7 @@ fi
 
 # Set PGPASSWORD for non-interactive operations
 export PGPASSWORD="$PG_PASSWORD"
+wait_for_postgres "$PG_HOST" "$PG_PORT" "$PG_USER" "$MAINTENANCE_DB"
 
 echo "Checking if database $DB_NAME already exists..."
 DB_EXISTS=$(psql -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USER" -d "$MAINTENANCE_DB" -tAc "SELECT 1 FROM pg_database WHERE datname = '${DB_NAME}';")

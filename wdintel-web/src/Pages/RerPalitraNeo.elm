@@ -1,4 +1,4 @@
-module Pages.Admin.MessangerNeo exposing (Model, Msg, page)
+module Pages.RerPalitraNeo exposing (Model, Msg, page)
 
 import Auth
 import Effect as E exposing (Effect)
@@ -27,12 +27,12 @@ type Msg
 
 
 page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
-page user shared _ =
+page user _ _ =
     Page.new
         { init = init
         , update = update
         , subscriptions = subscriptions
-        , view = view shared
+        , view = view
         }
         |> Page.withLayout (toLayout user)
 
@@ -41,7 +41,7 @@ toLayout : Auth.User -> Model -> Layouts.Layout Msg
 toLayout user _ =
     Layouts.Navbar
         { user = user
-        , activeName = "admin"
+        , activeName = "palitra-neo"
         }
 
 
@@ -57,11 +57,11 @@ subscriptions _ =
     Sub.none
 
 
-view : Shared.Model -> Model -> View Msg
-view _ _ =
-    { title = "Адмін: месенджери (neo)"
+view : Model -> View Msg
+view _ =
+    { title = "палітри"
     , body =
-        [ div [ class "mt-4 w-full px-4" ]
-            [ node "messanger-neo" [] [] ]
+        [ div [ class "mt-4 px-4 w-5/6 mx-auto" ]
+            [ node "rer-palitra-neo" [] [] ]
         ]
     }

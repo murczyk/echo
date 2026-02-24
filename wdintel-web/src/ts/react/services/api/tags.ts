@@ -21,6 +21,15 @@ type TagKeywordLike = {
   keyword_negative_forms?: string[];
 };
 
+type TagModelErrorRaw = {
+  id?: number;
+  body?: string;
+  removedAt?: number;
+  removed_at?: number;
+  removedByLogin?: string;
+  removed_by_login?: string;
+};
+
 type TagAdminLike = {
   tagId?: number;
   tag_id?: number;
@@ -36,15 +45,6 @@ type TagKeywordAddReqBody = {
   keyword: string;
   keyword_forms: string[] | null;
   keyword_negative_forms: string[] | null;
-};
-
-type TagModelErrorRaw = {
-  id?: number;
-  body?: string;
-  removedAt?: number;
-  removed_at?: number;
-  removedByLogin?: string;
-  removed_by_login?: string;
 };
 
 function normalizeTagKeyword(raw: TagKeywordLike): TagKeyword {

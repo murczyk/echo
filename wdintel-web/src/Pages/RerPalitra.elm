@@ -1406,7 +1406,7 @@ view user shared model =
         isDark =
             isDarkMode shared.themeMode
     in
-    { title = "палітри"
+    { title = "палітри (стара)"
     , body =
         [ div
             [ classList [ ( "overflow-hidden", model.showCreateSidebar || model.editSidebar /= Nothing ) ]
@@ -1429,7 +1429,7 @@ view user shared model =
                 Success pal ->
                     div []
                         [ div []
-                            [ h1 [ class "py-4 text-2xl font-bold text-foreground" ] [ text "Палітри" ]
+                            [ h1 [ class "py-4 text-2xl font-bold text-foreground" ] [ text "палітри (стара)" ]
                             , div [ class "mb-4 flex justify-end gap-2" ]
                                 [ a
                                     [ Attr.href "/alpinequest-kmz"
@@ -1467,10 +1467,10 @@ page user shared _ =
 
 
 toLayout : Auth.User -> Model -> Layouts.Layout Msg
-toLayout user _ =
+toLayout user model =
     Layouts.Navbar
         { user = user
-        , activeName = "etalonka"
+        , activeName = "palitra"
         }
 
 
@@ -2156,11 +2156,11 @@ createPalitraSidebarContent isDark user model =
                                                             _ ->
                                                                 Select.basicMenuItem { item = id, label = "Loading..." }
                                                     )
-                                        )
-                                        model.aorSelect.state
-                                        model.aorSelect.items
-                                        "Оберіть смуги"
-                                        selectOptions
+                                            )
+                                            model.aorSelect.state
+                                            model.aorSelect.items
+                                            "Оберіть смуги"
+                                            selectOptions
                     in
                     ( [ div [ class "space-y-2" ]
                             [ label [ class "text-sm font-medium text-foreground" ] [ text "Смуги (AOR)" ]
@@ -2248,7 +2248,7 @@ createPalitraSidebarContent isDark user model =
             -- Крок 1: Завантаження KMZ
             [ div [ class "flex flex-col h-full" ]
                 [ div [ class "p-6 border-b border-border" ]
-                    [ h2 [ class "text-lg font-semibold mb-1" ] [ text "Створити палітру" ]
+                    [ h2 [ class "text-lg font-semibold mb-1" ] [ text "Додати палітру" ]
                     , p [ class "text-sm text-muted-foreground" ] [ text "Крок 1: Завантажте KMZ файл" ]
                     ]
                 , div [ class "flex-1 overflow-y-auto p-6" ]
@@ -2276,7 +2276,7 @@ createPalitraSidebarContent isDark user model =
             -- Завантаження...
             [ div [ class "flex flex-col h-full" ]
                 [ div [ class "p-6 border-b border-border" ]
-                    [ h2 [ class "text-lg font-semibold mb-1" ] [ text "Створити палітру" ]
+                    [ h2 [ class "text-lg font-semibold mb-1" ] [ text "Додати палітру" ]
                     ]
                 , div [ class "flex-1 overflow-y-auto p-6" ]
                     [ div [ class "flex flex-col items-center justify-center h-full space-y-4" ]
@@ -2291,7 +2291,7 @@ createPalitraSidebarContent isDark user model =
             -- Помилка (вже показана через toast)
             [ div [ class "flex flex-col h-full" ]
                 [ div [ class "p-6 border-b border-border" ]
-                    [ h2 [ class "text-lg font-semibold mb-1" ] [ text "Створити палітру" ]
+                    [ h2 [ class "text-lg font-semibold mb-1" ] [ text "Додати палітру" ]
                     ]
                 , div [ class "flex-1 overflow-y-auto p-6" ]
                     [ div [ class "flex flex-col items-center justify-center h-full space-y-4" ]
@@ -2319,7 +2319,7 @@ createPalitraSidebarContent isDark user model =
             -- Крок 2: Вибір кольорів + форма
             [ div [ class "flex flex-col h-full" ]
                 [ div [ class "p-6 border-b border-border" ]
-                    [ h2 [ class "text-lg font-semibold mb-1" ] [ text "Створити палітру" ]
+                    [ h2 [ class "text-lg font-semibold mb-1" ] [ text "Додати палітру" ]
                     , p [ class "text-sm text-muted-foreground" ] [ text "Крок 2: Виберіть кольори, задайте суфікси та заповніть форму" ]
                     ]
                 , div [ class "flex-1 overflow-y-auto p-6" ]
@@ -2680,13 +2680,13 @@ editPalitraSidebarContent isDark user model =
                                                                                 |> ListX.find (\aor -> aor.id == id)
                                                                                 |> Maybe.map (\aor -> Select.basicMenuItem { item = id, label = aor.name })
                                                                         )
-                                                            )
-                                                            model.aorSelect.state
-                                                            (scope.aors
-                                                                |> List.map (\aor -> Select.basicMenuItem { item = aor.id, label = aor.name })
-                                                            )
-                                                            "Оберіть смуги"
-                                                            selectOptions
+                                                                )
+                                                                model.aorSelect.state
+                                                                (scope.aors
+                                                                    |> List.map (\aor -> Select.basicMenuItem { item = aor.id, label = aor.name })
+                                                                )
+                                                                "Оберіть смуги"
+                                                                selectOptions
 
                                             Loading ->
                                                 div [ class "flex flex-col gap-2" ]
@@ -2721,11 +2721,11 @@ editPalitraSidebarContent isDark user model =
                                                                     _ ->
                                                                         Select.basicMenuItem { item = id, label = "Loading..." }
                                                             )
-                                                )
-                                                model.aorSelect.state
-                                                model.aorSelect.items
-                                                "Оберіть смуги"
-                                                selectOptions
+                                                    )
+                                                    model.aorSelect.state
+                                                    model.aorSelect.items
+                                                    "Оберіть смуги"
+                                                    selectOptions
                             in
                             ( [ div [ class "space-y-2" ]
                                     [ label [ class "text-sm font-medium text-foreground" ] [ text "Смуги (AOR)" ]
@@ -2818,24 +2818,24 @@ editPalitraSidebarContent isDark user model =
                             , input
                                 [ class "w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
                                 , type_ "text"
-                        , placeholder "Назва палітри"
-                        , value editForm.name
-                        , onInput (\v -> UpdateEditForm (\f -> { f | name = v }))
-                        ]
-                        []
-                    ]
-                , div [ class "flex flex-col gap-2" ]
-                    [ label
-                        [ class "text-sm font-medium text-foreground"
-                        , style "display" "block"
-                        ]
-                        [ text "Колір" ]
-                    , input
-                        [ type_ "color"
-                        , class "w-16 h-10 border border-border rounded-md"
-                        , value editForm.colorHex
-                        , on "change" (Decode.map (\v -> UpdateEditForm (\f -> { f | colorHex = v })) targetValue)
-                        ]
+                                , placeholder "Назва палітри"
+                                , value editForm.name
+                                , onInput (\v -> UpdateEditForm (\f -> { f | name = v }))
+                                ]
+                                []
+                            ]
+                        , div [ class "flex flex-col gap-2" ]
+                            [ label
+                                [ class "text-sm font-medium text-foreground"
+                                , style "display" "block"
+                                ]
+                                [ text "Колір" ]
+                            , input
+                                [ type_ "color"
+                                , class "w-16 h-10 border border-border rounded-md"
+                                , value editForm.colorHex
+                                , on "change" (Decode.map (\v -> UpdateEditForm (\f -> { f | colorHex = v })) targetValue)
+                                ]
                                 []
                             ]
                         , div [ class "space-y-2" ]
