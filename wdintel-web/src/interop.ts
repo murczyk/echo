@@ -250,7 +250,7 @@ function setAppShellNavbarHeightVar(heightPx: number): void {
     if (!Number.isFinite(heightPx) || heightPx <= 0) {
         return;
     }
-    document.documentElement.style.setProperty('--app-shell-navbar-height', `${Math.round(heightPx)}px`);
+    document.documentElement.style.setProperty('--app-shell-navbar-height', `${Math.ceil(heightPx)}px`);
 }
 
 function createNavbarHeightSync() {

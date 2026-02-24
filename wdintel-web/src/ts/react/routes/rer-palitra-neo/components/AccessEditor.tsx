@@ -135,7 +135,7 @@ function AccessEditorComponent({
           isOptionEqualToValue={(option, value) => option.id === value.id}
           getOptionLabel={(option) => option.name}
           onChange={(_, selected) => onChange({ ...form, aorIds: selected.map((entry) => entry.id) })}
-          disabled={readOnly}
+          disabled={restricted}
           renderInput={(params) => (
             <TextField
               {...params}
