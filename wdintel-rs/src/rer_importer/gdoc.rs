@@ -212,14 +212,14 @@ pub async fn load_callsigns(
         for (callsign, is_unit) in callsigns.iter() {
             if callsign.callsign == c.to_lowercase() {
                 if let Some(unit) = is_unit {
-                    let mut network_ids_reported_in = network_ids_reported_in
+                    let network_ids_reported_in = network_ids_reported_in
                         .get(&callsign.id)
                         .cloned()
                         .unwrap_or_default();
+                    let mut callsign_network_ids = vec![];
                     for network_id in &rec.network_ids {
-                        if !network_ids_reported_in.contains(network_id) {
-                            warn!("missing network mapping to network {network_id} for callsign {c}");
-                            network_ids_reported_in.push(*network_id);
+                        if network_ids_reported_in.contains(network_id) {
+                            callsign_network_ids.push(*network_id);
                         }
                     }
                     res_single.res.push(CallsignInfo {
@@ -235,7 +235,7 @@ pub async fn load_callsigns(
                         unit_1: unit.name.clone(),
                         unit_2: "".to_string(),
                         unit_id: Some(unit.id),
-                        network_ids_reported_in,
+                        network_ids_reported_in: callsign_network_ids,
                     });
                 }
             }
