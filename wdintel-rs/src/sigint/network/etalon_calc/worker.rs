@@ -10,6 +10,7 @@ use echo_migration::Expr;
 use log::{debug, error, info, warn};
 use sea_orm::*;
 use std::collections::{BTreeSet, HashMap, HashSet};
+use std::thread;
 use std::time::{Duration, Instant};
 // Worker that keeps recent inbox items aligned with network definitions by
 // picking pending invalidation tasks, normalizing them (split/merge), and
@@ -125,6 +126,7 @@ async fn run_old_inbox_network_worker_inner(mode: Mode) -> anyhow::Result<()> {
 
     let db = new_pg_pool_from_mode(mode).await.c(h!())?;
     wait_until_worker_shift_start(&config).await;
+    try_cleanup(&db).await.c(h!())?;
     info!("run_old_inbox_network_worker_once started");
     if let Err(e) = run_inbox_network_worker_once(&db, true, &config).await {
         error!("run_old_inbox_network_worker_once failed: {e:#?}");
@@ -138,6 +140,28 @@ async fn run_old_inbox_network_worker_inner(mode: Mode) -> anyhow::Result<()> {
     )
     .await
     .c(h!())?;
+    Ok(())
+}
+
+// if we have too much tasks for some reason - drop them all, wait 5 min for the triage and then proceed
+async fn try_cleanup(db: &DatabaseConnection) -> anyhow::Result<()> {
+    if network_invalidation_task::Entity::find()
+        .count(db)
+        .await
+        .c(h!())?
+        > NETWORK_INVALIDATION_TASK_WAIT_SLEEP_SEC
+    {
+        network_invalidation_task::Entity::delete_many()
+            .exec(db)
+            .await
+            .c(h!())?;
+        crate::sigint::network::etalon_calc::oneoff::backfill_inbox_networks(
+            db, None, None,
+        )
+        .await
+        .c(h!())?;
+        thread::sleep(Duration::from_secs(120));
+    }
     Ok(())
 }
 
