@@ -80,11 +80,12 @@ type alias HintResult =
 -}
 getCallsignsForStrategy :
     HintStrategy
+    -> Maybe (List Int)
     -> Dict Int B.Unit
     -> Dict String (List B.CallsignInfo)
     -> String
     -> List B.CallsignInfo
-getCallsignsForStrategy strategy masterUnits callsignsInfo callsign =
+getCallsignsForStrategy strategy maybeMessageNetworkIds masterUnits callsignsInfo callsign =
     case Dict.get (String.toLower callsign) callsignsInfo of
         Just callsignInfo ->
             if List.length callsignInfo == 0 then
@@ -93,9 +94,21 @@ getCallsignsForStrategy strategy masterUnits callsignsInfo callsign =
             else
                 case strategy of
                     NetworkBased { units } ->
-                        -- For network-based hints we prioritize by unit/network relation only.
-                        -- This avoids showing unrelated hints based solely on reported network IDs.
-                        filterCallsignsByNetworkUnits callsignInfo masterUnits units
+                        case maybeMessageNetworkIds of
+                            Just networkIds ->
+                                if List.isEmpty networkIds then
+                                    filterCallsignsByNetworkUnits callsignInfo masterUnits units
+
+                                else
+                                    callsignInfo
+                                        |> List.filter
+                                            (\info ->
+                                                info.networkIdsReportedIn
+                                                    |> List.any (\networkId -> List.member networkId networkIds)
+                                            )
+
+                            Nothing ->
+                                filterCallsignsByNetworkUnits callsignInfo masterUnits units
 
                     SystemWide ->
                         -- Для SystemWide просто повертаємо позивні для конкретного запиту
@@ -178,6 +191,21 @@ isCallsignRelatedToNetworks maybeCallsignInfo networks masterUnits =
                 isRelated
 
 
+hasCallsignInMessageNetworks : Maybe (List B.CallsignInfo) -> List Int -> Bool
+hasCallsignInMessageNetworks maybeCallsignInfo messageNetworkIds =
+    case maybeCallsignInfo of
+        Nothing ->
+            False
+
+        Just callsignInfoList ->
+            callsignInfoList
+                |> List.any
+                    (\callsignInfo ->
+                        callsignInfo.networkIdsReportedIn
+                            |> List.any (\networkId -> List.member networkId messageNetworkIds)
+                    )
+
+
 {-| Отримує клас іконки для стратегії
 -}
 getIconClass : HintStrategy -> String
@@ -216,8 +244,20 @@ getCallsignHints hintContext message context callsign =
         strategy =
             determineHintStrategyForCallsign hintContext message context callsignInfo networksByFreq
 
+        messageNetworkIdsForPriority =
+            case message.networkIds of
+                Just networkIds ->
+                    if List.isEmpty networkIds then
+                        Nothing
+
+                    else
+                        Just networkIds
+
+                Nothing ->
+                    Nothing
+
         prioritizedCallsigns =
-            getCallsignsForStrategy strategy context.masterUnits context.callsignsInfo callsign
+            getCallsignsForStrategy strategy messageNetworkIdsForPriority context.masterUnits context.callsignsInfo callsign
     in
     { strategy = strategy
     , prioritizedCallsigns = prioritizedCallsigns
@@ -263,17 +303,14 @@ determineHintStrategyForCallsign hintContext message context callsignInfo networ
         MessageContext ->
             case messageNetworkIds of
                 Just networkIds ->
-                    let
-                        networksFromMessage =
-                            getNetworksByIds networkIds context.networks
+                    if hasCallsignInMessageNetworks callsignInfo networkIds then
+                        let
+                            networksFromMessage =
+                                getNetworksByIds networkIds context.networks
 
-                        networkUnits =
-                            getUnitsInfoByIds (getAllUnitsIdsForNetworks networksFromMessage) context.masterUnits
-
-                        isRelatedToMessageNetworks =
-                            isCallsignRelatedToNetworks callsignInfo networksFromMessage context.masterUnits
-                    in
-                    if isRelatedToMessageNetworks then
+                            networkUnits =
+                                getUnitsInfoByIds (getAllUnitsIdsForNetworks networksFromMessage) context.masterUnits
+                        in
                         NetworkBased
                             { networks = networksFromMessage
                             , units = networkUnits
@@ -344,18 +381,7 @@ determineHintStrategy message context =
         hasNetworksByFreq =
             not (List.isEmpty networksByFreq)
     in
-    if hasNetworksByFreq then
-        let
-            networkUnits =
-                getUnitsInfoByIds (getAllUnitsIdsForNetworks networksByFreq) context.masterUnits
-        in
-        NetworkBased
-            { networks = networksByFreq
-            , units = networkUnits
-            }
-        -- Якщо немає мережі за частотою, але є networkIds - використовуємо їх
-
-    else if Maybe.withDefault False (Maybe.map (not << List.isEmpty) message.networkIds) then
+    if Maybe.withDefault False (Maybe.map (not << List.isEmpty) message.networkIds) then
         let
             networksFromMessage =
                 getNetworksByIds (Maybe.withDefault [] message.networkIds) context.networks
@@ -366,7 +392,4 @@ determineHintStrategy message context =
             { networks = networksFromMessage
             , units = networkUnits
             }
-        -- Інакше показуємо підказки по всій системі
-
-    else
-        SystemWide
+    else SystemWide
