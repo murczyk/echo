@@ -1124,5 +1124,5 @@ pub struct FreqPelengsActivityRsp {
 
 pub struct CallsignNetworks {
     pub callsign: String,
-    pub network_ids: Vec<i64>
+    pub network_ids: Vec<i64>,
 }

@@ -480,14 +480,13 @@ pub async fn load_inbox_callsigns(
                 .clone()
                 .into_iter()
                 .chain(item.callsigns_alg2.clone().into_iter())
-                .into_iter()
                 .unique()
                 .collect_vec();
             (item.network_ids.clone(), callsigns)
         })
         .for_each(|(network_ids, callsigns_vec)| {
             if let Some(network_ids) = network_ids {
-                for c in &callsigns_vec {
+                for c in callsigns_vec {
                     callsigns
                         .entry(c.clone())
                         .and_modify(|ns| {
