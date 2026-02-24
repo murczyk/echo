@@ -1,5 +1,4 @@
 import argparse
-import os
 import shutil
 import signal
 import sys
@@ -95,16 +94,12 @@ def process_file(project: str, unsupervised: bool):
         )
     run = mlflow.run(project, entry_point="supervised", env_manager="uv")
 
-    if os.environ.get("AWS_ACCESS_KEY_ID") or os.environ.get("DISCORD_WEBHOOK_URL"):
-        print("will report training results", flush=True)
-        mlflow.run(
-            project,
-            entry_point="upload",
-            env_manager="uv",
-            parameters={"run_id": run.run_id},
-        )
-    else:
-        print("skipping reporting training results, no credentials", flush=True)
+    mlflow.run(
+        project,
+        entry_point="upload",
+        env_manager="uv",
+        parameters={"run_id": run.run_id},
+    )
 
 
 def main():
@@ -114,7 +109,6 @@ def main():
 
     args = vars(parser.parse_args())
 
-    databases = args["databases"]
     tags = {"task": "scheduled"}
     print(f"starting scheduled training with params: {args}", flush=True)
     with mlflow.start_run(tags=tags):
