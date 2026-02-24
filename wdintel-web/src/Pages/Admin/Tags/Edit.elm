@@ -57,7 +57,7 @@ type Msg
 
 
 page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
-page user shared route =
+page user _ route =
     Page.new
         { init = init route
         , update = update
@@ -71,7 +71,7 @@ toLayout : Auth.User -> Model -> Layouts.Layout Msg
 toLayout user _ =
     Layouts.Navbar
         { user = user
-        , activeName = "admin"
+        , activeName = "tags"
         }
 
 
@@ -342,7 +342,7 @@ buildRequest model =
 
 
 view : Auth.User -> Model -> View Msg
-view user model =
+view _ model =
     { title = "Адмін · Тег"
     , body =
         [ div [ class "container py-4" ]

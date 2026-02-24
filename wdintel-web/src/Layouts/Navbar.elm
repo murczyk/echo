@@ -68,6 +68,7 @@ keepAliveInterval =
 
 type Msg
     = ToggleDarkTheme
+    | SignOutClicked
     | SetThemeMode Shared.Model.ThemeMode
     | KeyPressed String
     | NoOp
@@ -84,6 +85,11 @@ update route msg model =
         ToggleDarkTheme ->
             ( model
             , E.toggleDarkMode
+            )
+
+        SignOutClicked ->
+            ( model
+            , E.logout
             )
 
         SetThemeMode themeMode ->
@@ -109,7 +115,7 @@ update route msg model =
                 ]
             )
 
-        KeepAliveDone (Err e) ->
+        KeepAliveDone (Err _) ->
             ( model, E.none )
 
         KeepAliveDone (Ok _) ->
@@ -153,6 +159,7 @@ view user activeName shared route { toContentMsg, model, content } =
     let
         navbarProps =
             { onToggleTheme = ToggleDarkTheme
+            , onLogout = SignOutClicked
             , onThemeChange = SetThemeMode
             , onNavbarVisibilityChange = ToggleNavbarVisibility
             , isRerDuty = route.url.path == "/rer-duty" || route.url.path == "/rer-duty-neo"
@@ -172,7 +179,7 @@ view user activeName shared route { toContentMsg, model, content } =
         [ div [ onClick (SetOpenDropdown Nothing) ]
             [ div
                 [ id "app-navbar-shell"
-                , class "fixed top-0 left-0 right-0 z-500 transition-all duration-300 ease-in-out"
+                , class "fixed top-0 left-0 right-0 z-[1200] transition-all duration-300 ease-in-out"
                 , class
                     (if model.isNavbarVisible then
                         "translate-y-0"
@@ -185,7 +192,7 @@ view user activeName shared route { toContentMsg, model, content } =
                 [ navbarHtml ]
             , if (route.url.path == "/rer-duty" || route.url.path == "/rer-duty-neo") && not model.isNavbarVisible then
                 div
-                    [ class "fixed top-4 right-4 z-500 transition-opacity duration-300 ease-in-out opacity-100" ]
+                    [ class "fixed top-4 right-4 z-[1200] transition-opacity duration-300 ease-in-out opacity-100" ]
                     [ div
                         [ class "cursor-pointer p-2 rounded-full bg-[var(--color-card)] hover:bg-[var(--color-column)] transition-all duration-200"
                         , onClick ToggleNavbarVisibility

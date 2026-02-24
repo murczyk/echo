@@ -29,7 +29,6 @@ import Utils.Time
 import Utils.Utils as Utils exposing (..)
 import Maybe
 import Time
-import TimeZone
 import Page exposing (Page)
 import Route exposing (Route)
 import Select
@@ -451,7 +450,7 @@ type Msg
 
 
 page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
-page user shared req =
+page user shared _ =
     Page.new
         { init = init
         , update = update
@@ -462,10 +461,10 @@ page user shared req =
 
 
 toLayout : Auth.User -> Model -> Layouts.Layout Msg
-toLayout user model =
+toLayout user _ =
     Layouts.Navbar
         { user = user
-        , activeName = "admin"
+        , activeName = "zones-old"
         }
 
 
@@ -746,7 +745,7 @@ update msg model =
                             (\sourceId ->
                                 Dict.get ( zoneId, sourceId ) model.zoneSourceGroups
                                     |> def []
-                                    |> (\groups ->
+                                    |> (\_ ->
                                             Cmd.none
                                        )
                             )
@@ -851,7 +850,7 @@ update msg model =
             , E.none
             )
 
-        UserSelectorLoginsLoaded (Err e) ->
+        UserSelectorLoginsLoaded (Err _) ->
             ( { model | userSelectorLoading = False, userSelectorError = Just "Не вдалося завантажити користувачів" }
             , E.none
             )
@@ -980,7 +979,7 @@ update msg model =
             in
             ( m2, E.sendCmd eff )
 
-        UserSelectorSaveDone (Err e) ->
+        UserSelectorSaveDone (Err _) ->
             ( { model | userSelectorError = Just "Не вдалося зберегти" }
             , E.none
             )
@@ -1112,12 +1111,8 @@ update msg model =
                                             { activityLastDay = 0, activityLastWeek = 0 }
 
                                 existingAdminData =
-                                    case existingOrphanGroup of
-                                        Just orphanGroup ->
-                                            orphanGroup.groupAdminData
-
-                                        Nothing ->
-                                            Nothing
+                                    existingOrphanGroup
+                                        |> Maybe.andThen .groupAdminData
                             in
                             Dict.insert response.groupMasterKey
                                 { masterKey = response.groupMasterKey
@@ -1155,7 +1150,7 @@ update msg model =
             , E.none
             )
 
-        AssignOrphanGroupDone (Err e) ->
+        AssignOrphanGroupDone (Err _) ->
             ( { model
                 | orphanGroupAssignmentInProgress = Nothing
                 , orphanGroupAssignmentError = Just "Не вдалося призначити групу"
@@ -1225,31 +1220,13 @@ update msg model =
                 -- Remove from zoneSourceGroups
                 updatedZoneSourceGroups =
                     Dict.update ( zoneId, datasourceId )
-                        (\maybeGroups ->
-                            case maybeGroups of
-                                Just groups ->
-                                    groups
-                                        |> List.filter (\g -> g.groupMasterKey /= groupKey)
-                                        |> Just
-
-                                Nothing ->
-                                    Nothing
-                        )
+                        (Maybe.map (List.filter (\g -> g.groupMasterKey /= groupKey)))
                         model.zoneSourceGroups
 
                 -- Remove from datasourceGroups
                 updatedDatasourceGroups =
                     Dict.update datasourceId
-                        (\maybeGroups ->
-                            case maybeGroups of
-                                Just groups ->
-                                    groups
-                                        |> List.filter (\g -> g /= groupKey)
-                                        |> Just
-
-                                Nothing ->
-                                    Nothing
-                        )
+                        (Maybe.map (List.filter (\g -> g /= groupKey)))
                         model.datasourceGroups
 
                 -- Add back to orphan groups only if the group is not assigned to any other zone
@@ -1886,7 +1863,7 @@ update msg model =
             in
             ( m2, E.none )
 
-        SaveGroupEditDone (Err e) ->
+        SaveGroupEditDone (Err _) ->
             case model.groupEditDialog of
                 Just dialog ->
                     ( { model
@@ -2047,7 +2024,7 @@ update msg model =
             , E.none
             )
 
-        OrphanGroupEditDone (Err e) ->
+        OrphanGroupEditDone (Err _) ->
             case model.orphanGroupEditDialog of
                 Just dialog ->
                     ( { model
@@ -2178,7 +2155,7 @@ update msg model =
 
 
 subscriptions : Model -> Sub Msg
-subscriptions model =
+subscriptions _ =
     Sub.none
 
 
@@ -2238,7 +2215,7 @@ renderFullNoteModal isDark model =
             text ""
 
 renderOrphanGroupsSection : Bool -> Time.Zone -> Model -> B.User -> Html Msg
-renderOrphanGroupsSection isDark timeZone model user =
+renderOrphanGroupsSection _ timeZone model _ =
     case model.orphanGroups of
         RD.NotAsked ->
             div [ class "bg-[var(--bs-body-bg)] rounded-lg border p-6" ]
@@ -2318,7 +2295,7 @@ getZoneName model zoneId =
 
 
 renderOrphanGroupEditSidebar : Bool -> Model -> OrphanGroupEditDialog -> Html Msg
-renderOrphanGroupEditSidebar isDark model dialog =
+renderOrphanGroupEditSidebar isDark _ dialog =
     Sidebar.view True
         CloseOrphanGroupEdit
         [ div [ class "flex flex-col h-full" ]
@@ -3215,21 +3192,20 @@ renderOrphanGroupsTable model timeZone groups =
         renderDatasourceIcon group =
             let
                 datasourceInfo =
-                    case group.datasourceId of
-                        Just datasourceId ->
-                            List.filterMap
-                                (\( id, datasource ) ->
-                                    if id == datasourceId then
-                                        Just datasource
+                    group.datasourceId
+                        |> Maybe.andThen
+                            (\datasourceId ->
+                                List.filterMap
+                                    (\( id, datasource ) ->
+                                        if id == datasourceId then
+                                            Just datasource
 
-                                    else
-                                        Nothing
-                                )
-                                model.datasources
-                                |> List.head
-
-                        Nothing ->
-                            Nothing
+                                        else
+                                            Nothing
+                                    )
+                                    model.datasources
+                                    |> List.head
+                            )
 
                 ( iconClass, tooltipText, iconColor ) =
                     case datasourceInfo of
@@ -3458,12 +3434,7 @@ groupDatasourcesByType zoneId model =
                         source =
                             findK sourceId model.datasources
                     in
-                    case source of
-                        Nothing ->
-                            Nothing
-
-                        Just ds ->
-                            Just ( sourceId, ds )
+                    source |> Maybe.map (\ds -> ( sourceId, ds ))
                 )
                 zoneSources
 
@@ -3471,7 +3442,7 @@ groupDatasourcesByType zoneId model =
         datasourceTypes : List DatasourceType
         datasourceTypes =
             List.indexedMap
-                (\index ( sourceId, datasource ) ->
+                (\_ ( sourceId, datasource ) ->
                     let
                         -- Get icon for datasource type
                         iconClass : String
@@ -3510,7 +3481,7 @@ groupDatasourcesByType zoneId model =
 
 
 zoneCard2 : Bool -> Model -> B.User -> ( Int, B.SigintZone ) -> Html Msg
-zoneCard2 isDark model user ( zoneId, zone ) =
+zoneCard2 _ model _ ( zoneId, zone ) =
     let
         activeTab : Int
         activeTab =
@@ -3739,7 +3710,7 @@ mainBlock isDark model user shared =
         [ renderOrphanGroupsSection isDark shared.timeZone model user
         , renderFullNoteModal isDark model
         , div [ class "bg-[var(--bs-body-bg)] rounded-lg border p-6" ]
-        [ h2 [ class "text-xl font-semibold mb-4" ] [ text "Напрямки (старі)" ]
+        [ h2 [ class "text-xl font-semibold mb-4" ] [ text "Напрямки (стара)" ]
             , div
                 [ class
                     (if isDark then
@@ -3845,9 +3816,9 @@ mainBlock isDark model user shared =
 
 body : Bool -> Shared.Model -> B.User -> Model -> List (Html Msg)
 body dark shared user model =
-    [ div [ class "mt-2 w-5/6 mx-auto" ] [ mainBlock dark model user shared ] ]
-        ++ (case model.userSelectorDialog of
-                Just dialog ->
+    div [ class "mt-2 w-5/6 mx-auto" ] [ mainBlock dark model user shared ]
+        :: ((case model.userSelectorDialog of
+                Just _ ->
                     [ ModalDialog.modalDialog True
                         CloseUserSelector
                         [ class "medium-modal overflow-visible"
@@ -3914,7 +3885,7 @@ body dark shared user model =
 
                 Nothing ->
                     []
-           )
+           ))
         ++ (case model.orphanGroupAssignmentDialog of
                 Just dialog ->
                     [ renderOrphanGroupAssignmentDialog dark model dialog ]
@@ -3940,6 +3911,6 @@ body dark shared user model =
 
 view : Bool -> Shared.Model -> B.User -> Model -> View Msg
 view dark shared user model =
-    { title = "Адмін: напрямки (старі)"
+    { title = "Адмін: напрямки (стара)"
     , body = body dark shared user model
     }

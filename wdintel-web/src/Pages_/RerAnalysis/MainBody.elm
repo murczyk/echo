@@ -936,7 +936,7 @@ view user model shared route =
                 ]
                 [ Pages_.RerAnalysis.Filters.view (isDarkMode shared.themeMode) user model ]
             , div
-                [ class "col-span-19 flex flex-col h-full min-h-0 relative overflow-auto pt-4"
+                [ class "col-span-19 flex flex-col h-full min-h-0 relative overflow-auto"
                 , id "messages-div"
                 ]
                 [ div
@@ -947,8 +947,8 @@ view user model shared route =
                         [ i [ class "bi bi-arrow-up-circle" ] [] ]
                     ]
                 , div
-                    [ class "sticky top-0 z-50 bg-[var(--background-color)]" ]
-                    [ div [ class "flex items-center justify-between px-4 mb-6" ]
+                    [ class "sticky top-0 z-50 bg-[var(--background-color)] pt-4 pb-6" ]
+                    [ div [ class "flex items-center justify-between px-4" ]
                         [ div [ class "flex items-center" ]
                             [ h1 [ class "text-xl font-semibold" ] [ text "аналіз" ]
                             , headerControls

@@ -1,6 +1,5 @@
 module Pages.Home_ exposing (Model, Msg, page)
 
-import Api
 import Auth
 import Bindings as B
 import Shared.Components.Spinner
@@ -18,11 +17,8 @@ import Page exposing (Page)
 import Process
 import Route exposing (Route)
 import Shared
-import Shared.Model exposing (isDarkMode)
 import Task
-import Time
 import Utils.Api.ErrorHandling
-import Utils.Components exposing (googleMapsOutLink)
 import Utils.RemoteData as RD exposing (RemoteData(..))
 import View exposing (View)
 
@@ -41,7 +37,7 @@ type Msg
 
 
 page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
-page user shared req =
+page user shared _ =
     Page.new
         { init = init
         , update = update
@@ -52,7 +48,7 @@ page user shared req =
 
 
 toLayout : Auth.User -> Model -> Layouts.Layout Msg
-toLayout user model =
+toLayout user _ =
     Layouts.Navbar
         { user = user
         , activeName = "home"
@@ -107,12 +103,12 @@ update msg model =
 
 
 subscriptions : Model -> Sub Msg
-subscriptions model =
+subscriptions _ =
     Sub.none
 
 
 view : Shared.Model -> B.User -> Model -> View Msg
-view shared user model =
+view _ user model =
     { title = "головна"
     , body =
         [ div [ class "my-4 w-4/5 mx-auto" ]

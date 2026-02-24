@@ -4,7 +4,7 @@ import Api
 import Auth
 import Bindings as B
 import Core.Types exposing (ApiError)
-import Dict exposing (Dict)
+import Dict
 import Effect as E exposing (Effect)
 import Html exposing (..)
 import Html.Attributes exposing (..)
@@ -32,7 +32,7 @@ type Msg
 
 
 page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
-page user shared req =
+page user _ _ =
     Page.new
         { init = init
         , update = update
@@ -43,10 +43,10 @@ page user shared req =
 
 
 toLayout : Auth.User -> Model -> Layouts.Layout Msg
-toLayout user model =
+toLayout user _ =
     Layouts.Navbar
         { user = user
-        , activeName = "admin"
+        , activeName = "tags"
         }
 
 
@@ -80,7 +80,7 @@ subscriptions _ =
 
 
 view : Auth.User -> Model -> View Msg
-view user model =
+view _ model =
     { title = "Адмін · Теги"
     , body =
         [ div [ class "container py-4" ]

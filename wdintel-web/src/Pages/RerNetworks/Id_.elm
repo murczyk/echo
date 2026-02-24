@@ -3,65 +3,43 @@ module Pages.RerNetworks.Id_ exposing (Model, Msg, page)
 import Api
 import Auth
 import Bindings as B
-import Bytes exposing (Bytes)
-import Char
 import Core.Auth
-import Core.Types exposing (ApiError, GroupsActivityPerDayRsp, GroupsByDate)
-import Dict exposing (Dict)
+import Dict
 import Effect as E exposing (Effect)
-import File.Download as Download
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (..)
-import Html.Keyed
-import Html.Styled as Styled
-import Json.Encode as Encode
 import Layouts
-import List.Extra as ListX
 import Page exposing (Page)
-import Pages_.RerNetworks.Id_.CallsignsTables as CallsignsTables exposing (getDevelopingCallsigns, getRegularCallsigns)
+import Pages_.RerNetworks.Id_.CallsignsTables as CallsignsTables
 import Pages_.RerNetworks.Id_.Descriptions as Descriptions
 import Pages_.RerNetworks.Id_.FrequenciesTable as FrequenciesTable
 import Pages_.RerNetworks.Id_.KeysTable as KeysTable
-import Pages_.RerNetworks.Id_.Model as Types exposing (CallsignCreateMode(..), CallsignTableRow, FreqActivityFilter(..), Mode(..), ShowAllPopupFor(..))
+import Pages_.RerNetworks.Id_.Model as Types exposing (CallsignCreateMode(..), FreqActivityFilter(..), Mode(..), ShowAllPopupFor(..))
 import Pages_.RerNetworks.Id_.Msg as Msgs exposing (Msg(..))
 import Pages_.RerNetworks.Id_.NetworkInfo as NetworkInfo
 import Pages_.RerNetworks.ReportConfig as ReportConfig exposing (ReportTypeOption(..))
 import Pages_.RerNetworks.ReportModal as ReportModal
 import Pages_.RerNetworks.ReportUpdate as ReportUpdate
-import Pages_.RerNetworks.Utils as IdUtils
 import Route exposing (Route)
 import Route.Path
 import Select
-import Set exposing (Set)
+import Set
 import Shared
-import Shared.CallsignsPopup as CallsignsPopup exposing (PopupCallerOrigin(..))
+import Shared.CallsignsPopup exposing (PopupCallerOrigin(..))
 import Shared.Components.Button as Button
-import Shared.Components.Checkbox as Checkbox
 import String
 import Shared.Components.DateTime
-import Shared.Components.DropdownBadge as DropdownBadge exposing (DropdownAction(..))
+import Shared.Components.DropdownBadge exposing (DropdownAction(..))
 import Shared.Components.ModalDialog as ModalDialog
 import Shared.Components.Pager as Pager
-import Shared.Components.Popup as Popup
-import Shared.Components.SegmentedControl as SegmentedControl
-import Shared.Components.Sidebar as Sidebar
 import Shared.Components.Spinner
 import Shared.Components.Table as Table
-import Shared.Components.Table.Column as TableColumn
-import Shared.Components.Table.Config as TableConfig
-import Shared.Components.Table.Sorter as TableSorter
-import Shared.Model exposing (isDarkMode)
-import Time
-import Time.Extra
-import Url.Builder
 import Utils.Api.ErrorHandling
 import Utils.NetworksUtils as NetworksUtils
 import Utils.Modulations as Modulations
 import Utils.RemoteData as RD exposing (RemoteData(..))
 import Utils.Select
-import Utils.Time
-import Utils.Utils exposing (networkKindVHFMapping)
 import View exposing (View)
 
 
@@ -85,15 +63,15 @@ page user shared route =
 
 
 toLayout : Auth.User -> Model -> Layouts.Layout Msg
-toLayout user model =
+toLayout user _ =
     Layouts.Navbar
         { user = user
-        , activeName = "rer"
+        , activeName = "networks"
         }
 
 
 init : Route { id : String } -> Shared.Model -> () -> ( Model, Effect Msg )
-init route shared () =
+init route _ () =
     let
         networkId =
             String.toInt route.params.id
@@ -421,20 +399,19 @@ update shared msg model =
                                     keys
                                         |> List.filterMap
                                             (\key ->
-                                                case key.id of
-                                                    Just keyId ->
-                                                        if key.key == Just "🔑" then
-                                                            Nothing
+                                                key.id
+                                                    |> Maybe.andThen
+                                                        (\keyId ->
+                                                            if key.key == Just "🔑" then
+                                                                Nothing
 
-                                                        else
-                                                            Just <|
-                                                                Select.basicMenuItem
-                                                                    { item = keyId
-                                                                    , label = keyDisplay key.key key.keyHash
-                                                                    }
-
-                                                    Nothing ->
-                                                        Nothing
+                                                            else
+                                                                Just <|
+                                                                    Select.basicMenuItem
+                                                                        { item = keyId
+                                                                        , label = keyDisplay key.key key.keyHash
+                                                                        }
+                                                        )
                                             )
 
                                 freqEditKeySelect =
@@ -663,7 +640,7 @@ update shared msg model =
             in
             ( model, E.updateNetwork NetworkUpdatedByApi editWithAors )
 
-        NetworkUnitsUpdatedByApi editState (Err e) ->
+        NetworkUnitsUpdatedByApi _ (Err e) ->
             ( { model | editLoading = False }
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення підрозділів мережі" e
             )
@@ -818,7 +795,7 @@ update shared msg model =
 
                         aorSelect2 =
                             let
-                                sel0 =
+                                _ =
                                     model.editAorSelect
                             in
                             { state = imodel
@@ -1089,7 +1066,7 @@ update shared msg model =
 
 
 subscriptions : Model -> Sub Msg
-subscriptions model =
+subscriptions _ =
     Sub.none
 
 

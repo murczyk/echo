@@ -642,7 +642,7 @@ fn try_extract_jf_unit_and_location(
 ) -> Result<Option<UnitAndLoc>, AppError> {
     lazy_static! {
         static ref RE_JF_HEADER: Regex = RegexBuilder::new(
-            r#"(?iu)\d{2}\.\d{2}\.\d{4}\s+\d{2}:\d{2}.*?\b(?:противник\p{L}*|підрозділ\p{L}*|груп\p{L}*)\b\s+(?P<unit>.+?)\s+(?P<location>(?-i:[А-ЯІЇЄҐ][А-ЯІЇЄҐ.\s\-]*[А-ЯІЇЄҐ.]))(?:\b|$)"#
+            r#"(?iu)\d{2}\.\d{2}\.\d{4}\s+\d{2}:\d{2}.*?\b(?:противник\p{L}*|підрозділ\p{L}*|груп\p{L}*)\b\s+(?P<unit>.+?)\s+(?P<location>(?-i:[А-ЯІЇЄҐ][А-ЯІЇЄҐ.\s\-]*[А-ЯІЇЄҐ.]))\s*(?:$|\(.*$)"#
         )
         .build()
         .unwrap();
@@ -2533,7 +2533,6 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
         assert_eq!(res.locality.unwrap(), "СЕРЕДНЄ".to_string());
     }
 
-    #[ignore]
     #[test]
     fn extract_unit_jf_header_02() {
         let body = r#" 22.02.2026 13:00 противник зі складу гсадн 27 омсбр 1 ТА планує нанесення вогневого ураження по позиції СОУ в районі ТИЩЕНКІВКА (37U CR 95898 13939)
@@ -2555,6 +2554,22 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(res.unit.unwrap(), "гсадн 27 омсбр 1 ТА".to_string());
         assert_eq!(res.locality.unwrap(), "ТИЩЕНКІВКА".to_string());
+    }
+
+    #[test]
+    fn extract_unit_jf_header_03_rejects_non_coords_suffix() {
+        let body = r#" 22.02.2026 13:00 противник зі складу гсадн 27 омсбр 1 ТА планує нанесення вогневого ураження по позиції СОУ в районі ТИЩЕНКІВКА за маршрутом 37U CR 95898 13939"#;
+        let config = crate::config::read_config(Mode::Test).unwrap();
+        let settlements = Arc::new(RwLock::new(
+            crate::location::load_settlements_data_config(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
+        ));
+        let res =
+            try_extract_jf_unit_and_location(settlements, body, None).unwrap();
+        assert!(res.is_none());
     }
 
     #[test]

@@ -31,6 +31,7 @@ type alias Menu =
 
 type alias Props msg =
     { onToggleTheme : msg
+    , onLogout : msg
     , onThemeChange : ThemeMode -> msg
     , onNavbarVisibilityChange : msg
     , isRerDuty : Bool
@@ -55,15 +56,15 @@ navBar user shared activeName props =
             , Menu (Internal Route.Path.Admin_TagsNeo) "tags-neo" "теги"
             , Menu (Internal Route.Path.Admin_AorNeo) "aor-neo" "смуги"
             , Menu (Internal Route.Path.Admin_KeysNeo) "keys-neo" "ключі"
-            , Menu (Internal Route.Path.Admin_MessangerNeo) "messanger-neo" "месенджери"
+            , Menu (Internal Route.Path.Admin_MessengerNeo) "messenger-neo" "месенджери"
             , Menu (Internal Route.Path.Admin_ControlPanelNeo) "control-panel-neo" "панель керування"
-            , Menu (Internal Route.Path.AdminOld) "zones-old" "напрямки (старі)"
+            , Menu (Internal Route.Path.AdminOld) "zones-old" "напрямки (стара)"
             , Menu (Internal Route.Path.Admin_Users) "users" "користувачі (стара)"
             , Menu (Internal Route.Path.Admin_Organisms) "organisms" "організми (стара)"
             , Menu (Internal Route.Path.Admin_Tags) "tags" "теги (стара)"
             , Menu (Internal Route.Path.AreasOfResponsibility) "areasOfResponsibility" "смуги (стара)"
             , Menu (Internal Route.Path.Admin_Keys) "keys" "ключі (стара)"
-            , Menu (Internal Route.Path.Admin_Messanger) "messanger" "месенджери (стара)"
+            , Menu (Internal Route.Path.Admin_Messenger) "messenger" "месенджери (стара)"
             , Menu (Internal Route.Path.Admin_ControlPanel) "control-panel" "панель керування (стара)"
             ]
 
@@ -73,7 +74,8 @@ navBar user shared activeName props =
             , Menu (Internal Route.Path.RerUnits) "rer-units" "підрозділи"
             , Menu (Internal Route.Path.RerSignals) "signals" "сигнали"
             , Menu (Internal Route.Path.RerNetworks) "networks" "мережі"
-            , Menu (Internal Route.Path.RerPalitra) "palitra" "палітра"
+            , Menu (Internal Route.Path.RerPalitraNeo) "palitra-neo" "палітри"
+            , Menu (Internal Route.Path.RerPalitra) "palitra" "палітри (стара)"
             ]
 
         importSubs =
@@ -116,7 +118,7 @@ navBar user shared activeName props =
                 ++ ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Basic" user)
                     [ menuWithSubs "other" "інше" otherSubs ]
                 -- ++ ifOrEmpty (hasRole "Basic" user)
-                --     [ menu Route.Path.Settings "settings" "налаштування (старі)" ]
+                --     [ menu Route.Path.Settings "settings" "налаштування (стара)" ]
                 ++ ifOrEmpty (hasRole "Basic" user)
                     [ menu Route.Path.SettingsNeo "settings-neo" "налаштування" ]
                 ++ ifOrEmpty (hasRole "Admin" user)
@@ -173,12 +175,18 @@ navBar user shared activeName props =
                 , div [ class "flex items-center space-x-4" ]
                     [ ul [ class "flex items-center space-x-4" ] menuItems
                     ]
-                , div [ class "flex gap-1 items-center" ]
-                    [ span [ class "text-white" ]
-                        [ themeSwitcher
-                            { currentTheme = shared.themeMode
-                            , onThemeChange = props.onThemeChange
-                            }
+                , div [ class "flex gap-2 items-center" ]
+                    [ themeSwitcher
+                        { currentTheme = shared.themeMode
+                        , onThemeChange = props.onThemeChange
+                        , triggerClass = "block py-2 text-white hover:bg-black/10 px-2 rounded transition-all duration-200"
+                        }
+                    , button
+                        [ class "block py-2 text-white hover:bg-black/10 px-2 rounded transition-all duration-200 border-0 appearance-none flex items-center gap-1"
+                        , onClick props.onLogout
+                        ]
+                        [ i [ class "bi bi-box-arrow-right text-lg" ] []
+                        , span [] [ text ("(" ++ user.name ++ ")") ]
                         ]
                     , div
                         [ class "w-6 h-6 flex items-center justify-center"
@@ -245,19 +253,13 @@ menuItemWithSubs props activeName activeNameExp nameText subs =
             else
                 props.onDropdownToggle (Just activeNameExp)
 
-        dropdownTextClass =
-            "text-[var(--color-text)]"
-
-        dropdownBgClass =
-            "bg-[var(--color-card)]"
-
         dropdownItem : Menu -> Html msg
         dropdownItem sub =
             li []
                 [ case sub.link of
                     Internal path ->
                         a
-                            [ class ("flex items-center justify-between px-4 py-2 " ++ dropdownTextClass ++ " hover:bg-black/10 rounded transition-all duration-200")
+                            [ class "flex items-center justify-between px-4 py-2 text-[var(--color-text)] hover:bg-[var(--color-column)] rounded transition-all duration-200"
                             , classList [ ( "font-medium", sub.activeName == activeName ) ]
                             , attribute "role" "menuitem"
                             , Route.Path.href path
@@ -273,7 +275,7 @@ menuItemWithSubs props activeName activeNameExp nameText subs =
 
                     External link ->
                         a
-                            [ class ("flex items-center justify-between px-4 py-2 " ++ dropdownTextClass ++ " hover:bg-black/10 rounded transition-all duration-200")
+                            [ class "flex items-center justify-between px-4 py-2 text-[var(--color-text)] hover:bg-[var(--color-column)] rounded transition-all duration-200"
                             , classList [ ( "font-medium", sub.activeName == activeName ) ]
                             , attribute "role" "menuitem"
                             , href link
@@ -309,10 +311,10 @@ menuItemWithSubs props activeName activeNameExp nameText subs =
                 ]
                 []
             ]
-        , div [ class "absolute left-0 pt-2 z-500" ]
+        , div [ class "absolute left-0 pt-2 z-[3001]" ]
             [ ul
                 [ id dropdownMenuId
-                , class ("w-56 " ++ dropdownBgClass ++ " rounded-lg shadow-lg border border-black/15 transition-all duration-200")
+                , class "w-56 bg-[var(--color-card)] rounded-lg shadow-lg border border-[var(--color-border)] transition-all duration-200"
                 , attribute "role" "menu"
                 , classList
                     [ ( "hidden", not isOpen )

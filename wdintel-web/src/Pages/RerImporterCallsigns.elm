@@ -16,12 +16,11 @@ import Route exposing (Route)
 import Shared
 import Shared.Model exposing (isDarkMode)
 import Utils.Api.ErrorHandling
-import Utils.Views
 import View exposing (View)
 
 
 page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
-page user shared req =
+page user shared _ =
     Page.new
         { init = init
         , update = update
@@ -32,7 +31,7 @@ page user shared req =
 
 
 toLayout : Auth.User -> Model -> Layouts.Layout Msg
-toLayout user model =
+toLayout user _ =
     Layouts.Navbar
         { user = user
         , activeName = "rer"
@@ -142,7 +141,7 @@ update msg model =
 
 
 subscriptions : Model -> Sub Msg
-subscriptions model =
+subscriptions _ =
     Sub.none
 
 
@@ -346,7 +345,7 @@ mainBlock model =
 
 
 view : Bool -> Shared.Model -> B.User -> Model -> View Msg
-view dark shared user model =
+view _ _ _ model =
     { title = "позивні"
     , body =
         [ div [ class "w-4/5 mx-auto bd-gutter" ]
