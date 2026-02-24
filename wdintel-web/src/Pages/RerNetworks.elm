@@ -63,6 +63,9 @@ type alias Model =
     , to : Shared.Components.DateTime.Model
     , networksGroupsActivity : RemoteData ApiError GroupsActivityPerDayRsp
     , networks : RemoteData ApiError (List B.Network)
+    , loadingMore : Bool
+    , noMoreToLoad : Bool
+    , networksOffset : Int
     , currentRequestTracker : Maybe String
     , requestCounter : Int
     , networksMergeStatus : NetworksMergeStatus
@@ -118,6 +121,9 @@ init _ =
             , from = Shared.Components.DateTime.init ()
             , to = Shared.Components.DateTime.init ()
             , networks = NotAsked
+            , loadingMore = False
+            , noMoreToLoad = True
+            , networksOffset = 0
             , currentRequestTracker = Nothing
             , requestCounter = 0
             , networksMergeStatus = NotCalculatedSuggestionsYet
@@ -177,30 +183,60 @@ filterStateDebounceConfig =
     }
 
 
+networkListPageSize : Int
+networkListPageSize =
+    100
+
+
+resetNetworksPagination : Model -> Model
+resetNetworksPagination model =
+    { model
+        | networksOffset = 0
+        , loadingMore = False
+        , noMoreToLoad = True
+    }
+
+
+listNetworksReq : Model -> B.ListNetworksReq
+listNetworksReq model =
+    { filterFreq = emptySToNothing model.filterState.freq
+    , filterUnit = emptySToNothing model.filterState.unit
+    , sortBy = Nothing
+    , showOnlyFurtherInverstigation =
+        if model.showOnlyInvestigating then
+            Just True
+
+        else
+            Nothing
+    , showInactive = Just (not model.showOnlyActive)
+    , showOnlyDeleted = Just model.showArchived
+    , aorIds =
+        if List.isEmpty model.aorFilterSelect.selected then
+            Nothing
+
+        else
+            Just model.aorFilterSelect.selected
+    , ids = Nothing
+    , limit = Just networkListPageSize
+    , offset = Just model.networksOffset
+    }
+
+
+loadedNetworksCount : Model -> Int
+loadedNetworksCount model =
+    model.networks
+        |> RD.withDefault []
+        |> List.length
+
+
 loadNetworks : Model -> ( Model, Effect Msg )
 loadNetworks model =
-    ( { model | networks = Loading }
-    , E.getNetworksList NetworksReturnedByApi
-        { filterFreq = emptySToNothing model.filterState.freq
-        , filterUnit = emptySToNothing model.filterState.unit
-        , sortBy = Nothing
-        , showOnlyFurtherInverstigation =
-            if model.showOnlyInvestigating then
-                Just True
-
-            else
-                Nothing
-        , showInactive = Just (not model.showOnlyActive)
-        , showOnlyDeleted = Just model.showArchived
-        , aorIds =
-            if List.isEmpty model.aorFilterSelect.selected then
-                Nothing
-
-            else
-                Just model.aorFilterSelect.selected
-        , ids = Nothing
-        , limit = Nothing
-        }
+    let
+        model2 =
+            { model | networks = Loading, loadingMore = False }
+    in
+    ( model2
+    , E.getNetworksList NetworksReturnedByApi (listNetworksReq model2)
     )
 
 
@@ -208,31 +244,32 @@ loadNetworksWithTracker : Model -> String -> Cmd Msg
 loadNetworksWithTracker model tracker =
     Api.get_networks_list_with_tracker NetworksReturnedByApi
         tracker
-        { filterFreq = emptySToNothing model.filterState.freq
-        , filterUnit = emptySToNothing model.filterState.unit
-        , sortBy = Nothing
-        , showOnlyFurtherInverstigation =
-            if model.showOnlyInvestigating then
-                Just True
+        (listNetworksReq model)
 
-            else
-                Nothing
-        , showInactive = Just (not model.showOnlyActive)
-        , showOnlyDeleted = Just model.showArchived
-        , aorIds =
-            if List.isEmpty model.aorFilterSelect.selected then
-                Nothing
 
-            else
-                Just model.aorFilterSelect.selected
-        , ids = Nothing
-        , limit = Nothing
-        }
+loadNetworksFirstPage : Model -> ( Model, Effect Msg )
+loadNetworksFirstPage model =
+    loadNetworks (resetNetworksPagination model)
+
+
+loadMoreNetworks : Model -> ( Model, Effect Msg )
+loadMoreNetworks model =
+    let
+        model2 =
+            { model
+                | loadingMore = True
+                , networksOffset = loadedNetworksCount model
+            }
+    in
+    ( model2
+    , E.getNetworksList NetworksReturnedByApi (listNetworksReq model2)
+    )
 
 
 type Msg
     = GotTime Posix
     | NetworksReturnedByApi (Result ApiError (List B.Network))
+    | NetworksLoadMore
     | NetworksGroupsActivityReturnedByApi (Result ApiError GroupsActivityPerDayRsp)
     | NetworkPointsReturnedByApi Int (Result ApiError B.ListNetworkPointsRsp)
     | NetworksMergeStart
@@ -381,25 +418,48 @@ update shared msg model =
                         , reportToDate = reportToDate
                     }
             in
-            loadNetworks m2
+            loadNetworksFirstPage m2
 
         NetworksReturnedByApi (Err err) ->
-            ( { model | networks = Failure err, currentRequestTracker = Nothing }
+            ( { model
+                | networks =
+                    if model.loadingMore then
+                        model.networks
+
+                    else
+                        Failure err
+                , loadingMore = False
+                , currentRequestTracker = Nothing
+              }
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження мереж" err
             )
 
         NetworksReturnedByApi (Ok networks) ->
+            let
+                mergedNetworks =
+                    if model.loadingMore then
+                        RD.withDefault [] model.networks ++ networks
+
+                    else
+                        networks
+
+                nextOffset =
+                    List.length mergedNetworks
+            in
             ( { model
                 | networks =
-                    Success networks
+                    Success mergedNetworks
+                , loadingMore = False
+                , noMoreToLoad = List.length networks < networkListPageSize
+                , networksOffset = nextOffset
                 , currentRequestTracker = Nothing
-                , networksMergeStatus = CalculatedSuggestions (findSuggestedToMergeNetworks networks)
+                , networksMergeStatus = CalculatedSuggestions (findSuggestedToMergeNetworks mergedNetworks)
               }
             , case ( model.from.datePosix, model.to.datePosix ) of
                 ( Just _, Just dtToPosix ) ->
                     E.batch
                         [ E.getNetworksGroupsActivity NetworksGroupsActivityReturnedByApi
-                            { networkIds = networks |> List.map .id
+                            { networkIds = mergedNetworks |> List.map .id
                             , tillDateNoninclusiveMs = Just <| Time.posixToMillis dtToPosix
                             }
                         ]
@@ -407,6 +467,9 @@ update shared msg model =
                 _ ->
                     E.none
             )
+
+        NetworksLoadMore ->
+            loadMoreNetworks model
 
         NetworksGroupsActivityReturnedByApi (Err err) ->
             ( { model | networksGroupsActivity = Failure err }
@@ -487,6 +550,9 @@ update shared msg model =
 
         FilterStateDebounceMsg imsg ->
             let
+                paginatedModel =
+                    resetNetworksPagination model
+
                 tracker =
                     "networks-" ++ String.fromInt (model.requestCounter + 1)
 
@@ -501,12 +567,12 @@ update shared msg model =
                 ( debounce, debounceCmd ) =
                     Debounce.update
                         filterStateDebounceConfig
-                        (Debounce.takeLast (\_ -> loadNetworksWithTracker model tracker))
+                        (Debounce.takeLast (\_ -> loadNetworksWithTracker paginatedModel tracker))
                         imsg
-                        model.filterStateDebounce
+                        paginatedModel.filterStateDebounce
 
                 model2 =
-                    { model
+                    { paginatedModel
                         | filterStateDebounce = debounce
                         , networks = Loading
                         , currentRequestTracker = Just tracker
@@ -532,7 +598,7 @@ update shared msg model =
                         }
 
                 ( m3, eff3 ) =
-                    loadNetworks m2
+                    loadNetworksFirstPage m2
             in
             ( m3
             , E.batch
@@ -553,7 +619,7 @@ update shared msg model =
                         }
 
                 ( m3, eff3 ) =
-                    loadNetworks m2
+                    loadNetworksFirstPage m2
             in
             ( m3
             , E.batch
@@ -610,6 +676,7 @@ update shared msg model =
                             Just model.aorFilterSelect.selected
                     , ids = Nothing
                     , limit = Nothing
+                    , offset = Nothing
                     }
 
                 apiCall reportType ctx =
@@ -735,7 +802,7 @@ update shared msg model =
                     { model | showOnlyInvestigating = val, filterState = newFilterState }
 
                 ( m3, eff ) =
-                    loadNetworks m2
+                    loadNetworksFirstPage m2
             in
             ( m3, eff )
 
@@ -745,7 +812,7 @@ update shared msg model =
                     { model | showOnlyActive = val }
 
                 ( m3, eff ) =
-                    loadNetworks m2
+                    loadNetworksFirstPage m2
             in
             ( m3, eff )
 
@@ -755,7 +822,7 @@ update shared msg model =
                     { model | showArchived = val }
 
                 ( m3, eff ) =
-                    loadNetworks m2
+                    loadNetworksFirstPage m2
             in
             ( m3, eff )
 
@@ -933,7 +1000,7 @@ update shared msg model =
                     { model | filterState = newFilterState, showOnlyInvestigating = False }
 
                 ( m3, eff ) =
-                    loadNetworks m2
+                    loadNetworksFirstPage m2
             in
             ( m3, eff )
 
@@ -957,7 +1024,7 @@ update shared msg model =
                     }
 
                 ( m3, eff ) =
-                    loadNetworks m2
+                    loadNetworksFirstPage m2
             in
             ( m3, eff )
 
@@ -1048,7 +1115,7 @@ update shared msg model =
 
                 ( m3, eff ) =
                     if shouldReload && valueChanged then
-                        loadNetworks { m2 | aorFilterFocusedBefore = Nothing }
+                        loadNetworksFirstPage { m2 | aorFilterFocusedBefore = Nothing }
 
                     else if shouldReload then
                         ( { m2 | aorFilterFocusedBefore = Nothing }, E.none )
@@ -1563,11 +1630,30 @@ contentBlock user shared model =
             ]
         , case model.networks of
             Success networks ->
-                mainContent
-                    user
-                    networks
-                    shared
-                    model
+                div []
+                    [ mainContent
+                        user
+                        networks
+                        shared
+                        model
+                    , div [ class "flex justify-center mt-3 mb-3" ] <|
+                        if not model.noMoreToLoad then
+                            [ Button.new { label = "Завантажити ще", onClick = NetworksLoadMore }
+                                |> Button.withStyleSecondary
+                                |> Button.withDisabled model.loadingMore
+                                |> Button.withIcon
+                                    (if model.loadingMore then
+                                        [ Shared.Components.Spinner.loadingSpinner2Sm ]
+
+                                     else
+                                        []
+                                    )
+                                |> Button.view
+                            ]
+
+                        else
+                            []
+                    ]
 
             _ ->
                 div [ class "flex items-center justify-center w-full h-full" ] [ Shared.Components.Spinner.loadingSpinner ]

@@ -761,156 +761,28 @@ fn network_filter_expr(
     selected_networks: &Option<Vec<i64>>,
 ) -> Option<SimpleExpr> {
     if let Some(ids) = selected_networks.as_ref().filter(|v| !v.is_empty()) {
-        let smg = Alias::new("smg_network_filter");
-        let ga = Alias::new("ga"); // signal_group_aor
-        let gaor = Alias::new("gaor"); // area_of_responsibility for the group
-        let nf = Alias::new("nf"); // sigint_network_freq
-        let n = Alias::new("n"); // sigint_network
-        let na = Alias::new("na"); // sigint_network_aor
-        let naor = Alias::new("naor"); // area_of_responsibility for the network
-
-        // Build the correlated EXISTS subquery:
-        //
-        // EXISTS (
-        //   SELECT 1
-        //   FROM signal_group_aor ga
-        //   JOIN area_of_responsibility gaor ON gaor.id = ga.aor_id
-        //   JOIN sigint_network_freq nf      ON nf.freq = ii.freq             -- correlate to outer sigint_inbox_item ii
-        //   JOIN sigint_network n            ON n.id = nf.network_id
-        //   JOIN sigint_network_aor na       ON na.network_id = n.id
-        //   JOIN area_of_responsibility naor ON naor.id = na.aor_id
-        //   WHERE ga.master_key = m.group_master_key                           -- correlate to outer message
-        //     AND (
-        //          (gaor.left_bound >= naor.left_bound AND gaor.left_bound <= naor.right_bound)
-        //          OR (gaor.right_bound >= naor.left_bound AND gaor.right_bound <= naor.right_bound)
-        //          OR (gaor.left_bound <= naor.left_bound AND gaor.right_bound >= naor.right_bound)
-        //         )
-        //     AND gaor.left_bound  <= naor.left_bound
-        //     AND gaor.right_bound >= naor.right_bound
-        //     AND n.id = ANY($selected_networks)
-        //     AND n.deleted = false
-        //     AND nf.deleted = false
-        // )
-        let condition = Condition::any()
-            // (gaor.left_bound >= naor.left_bound AND gaor.left_bound <= naor.right_bound)
-            .add(
-                Condition::all()
-                    .add(
-                        Expr::col((gaor.clone(), "left_bound"))
-                            .gte(Expr::col((naor.clone(), "left_bound"))),
-                    )
-                    .add(
-                        Expr::col((gaor.clone(), "left_bound"))
-                            .lte(Expr::col((naor.clone(), "right_bound"))),
-                    ),
-            )
-            // (gaor.right_bound >= naor.left_bound AND gaor.right_bound <= naor.right_bound)
-            .add(
-                Condition::all()
-                    .add(
-                        Expr::col((gaor.clone(), "right_bound"))
-                            .gte(Expr::col((naor.clone(), "left_bound"))),
-                    )
-                    .add(
-                        Expr::col((gaor.clone(), "right_bound"))
-                            .lte(Expr::col((naor.clone(), "right_bound"))),
-                    ),
-            )
-            // (gaor.left_bound <= naor.left_bound AND gaor.right_bound >= naor.right_bound)
-            .add(
-                Condition::all()
-                    .add(
-                        Expr::col((gaor.clone(), "left_bound"))
-                            .lte(Expr::col((naor.clone(), "left_bound"))),
-                    )
-                    .add(
-                        Expr::col((gaor.clone(), "right_bound"))
-                            .gte(Expr::col((naor.clone(), "right_bound"))),
-                    ),
-            );
-
+        let iin = Alias::new("iin_network_filter");
+        let n = Alias::new("n_network_filter");
         let sub = Query::select()
             .expr(Expr::value(1))
-            .from_as(signal_message_group::Entity, smg.clone())
-            .join_as(
-                JoinType::InnerJoin,
-                signal_group_aor::Entity,
-                ga.clone(),
-                Condition::all().add(
-                    Expr::col((
-                        ga.clone(),
-                        signal_group_aor::Column::MasterKey,
-                    ))
-                    .equals((
-                        smg.clone(),
-                        signal_message_group::Column::GroupMasterKey,
-                    )),
-                ),
-            )
-            .join_as(
-                JoinType::InnerJoin,
-                area_of_responsibility::Entity,
-                gaor.clone(),
-                Condition::all().add(
-                    Expr::col((
-                        gaor.clone(),
-                        area_of_responsibility::Column::Id,
-                    ))
-                    .equals((ga.clone(), signal_group_aor::Column::AorId)),
-                ),
-            )
-            .join_as(
-                JoinType::InnerJoin,
-                sigint_network_freq::Entity,
-                nf.clone(),
-                // nf.freq = ii.freq  (correlates to outer SELECT)
-                Condition::all().add(
-                    Expr::col((nf.clone(), sigint_network_freq::Column::Freq))
-                        .equals((
-                            sigint_inbox_item::Entity,
-                            sigint_inbox_item::Column::Freq,
-                        )),
-                ),
-            )
+            .from_as(sigint_inbox_item_network::Entity, iin.clone())
             .join_as(
                 JoinType::InnerJoin,
                 sigint_network::Entity,
                 n.clone(),
                 Condition::all().add(
                     Expr::col((n.clone(), sigint_network::Column::Id)).equals(
-                        (nf.clone(), sigint_network_freq::Column::NetworkId),
+                        (
+                            iin.clone(),
+                            sigint_inbox_item_network::Column::SigintNetworkId,
+                        ),
                     ),
                 ),
             )
-            .join_as(
-                JoinType::InnerJoin,
-                sigint_network_aor::Entity,
-                na.clone(),
-                Condition::all().add(
-                    Expr::col((
-                        na.clone(),
-                        sigint_network_aor::Column::NetworkId,
-                    ))
-                    .equals((n.clone(), sigint_network::Column::Id)),
-                ),
-            )
-            .join_as(
-                JoinType::InnerJoin,
-                area_of_responsibility::Entity,
-                naor.clone(),
-                Condition::all().add(
-                    Expr::col((
-                        naor.clone(),
-                        area_of_responsibility::Column::Id,
-                    ))
-                    .equals((na.clone(), sigint_network_aor::Column::AorId)),
-                ),
-            )
-            // correlate group to outer message
             .and_where(
                 Expr::col((
-                    smg.clone(),
-                    signal_message_group::Column::SignalMessageId,
+                    iin.clone(),
+                    sigint_inbox_item_network::Column::SigintInboxItemId,
                 ))
                 .equals((signal_message::Entity, signal_message::Column::Id)),
             )
@@ -919,14 +791,9 @@ fn network_filter_expr(
                     .is_in(ids.clone()),
             )
             .and_where(
-                Expr::col((nf.clone(), sigint_network_freq::Column::Deleted))
-                    .eq(false),
-            )
-            .and_where(
                 Expr::col((n.clone(), sigint_network::Column::Deleted))
                     .eq(false),
             )
-            .and_where(condition.into())
             .to_owned();
 
         Some(Expr::exists(sub))

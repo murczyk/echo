@@ -179,6 +179,7 @@ where
             id: i.id,
             timestamp: i.datetime,
             freq: i.freq,
+            unit: i.unit_v2,
         })
         .collect::<Vec<_>>();
     let network_ids_per_item =

@@ -647,8 +647,14 @@ fn try_extract_jf_unit_and_location(
         .build()
         .unwrap();
         static ref RE_UNIT_CHAIN: Regex =
-            Regex::new(r#"(?iu)\d+\s*[а-яіїєґ]{1,6}(?:\s+\d+\s*[а-яіїєґ]{1,8})+"#)
+            Regex::new(r#"(?iu)\d+\s*\p{L}{1,10}(?:\s+\d+\s*\p{L}{1,12})*"#)
                 .unwrap();
+        static ref RE_JF_UNIT_PREFIX: Regex = RegexBuilder::new(
+            r#"^(?:зі|із)\s+складу\s+"#
+        )
+        .case_insensitive(true)
+        .build()
+        .unwrap();
     }
     let Some(first_line) = inp.lines().find(|line| !line.trim().is_empty())
     else {
@@ -660,19 +666,21 @@ fn try_extract_jf_unit_and_location(
     let Some(unit_raw) = m_cap_s(&capts, "unit") else {
         return Ok(None);
     };
-    let unit_raw = unit_raw.trim().to_string();
+    let unit_raw = RE_JF_UNIT_PREFIX
+        .replace(unit_raw.trim(), "")
+        .trim()
+        .to_string();
     let units = crate::unit::parse_library_unit(&unit_raw);
-    let unit = units
+    let parsed_unit = units
         .iter()
         .filter(|value| value.chars().any(|ch| ch.is_ascii_digit()))
         .max_by_key(|value| value.len())
-        .cloned()
-        .or_else(|| {
-            RE_UNIT_CHAIN
-                .find_iter(&unit_raw)
-                .max_by_key(|value| value.as_str().len())
-                .map(|value| value.as_str().trim().to_string())
-        })
+        .cloned();
+    let jf_chain_unit = extract_jf_unit_chain(&unit_raw, &RE_UNIT_CHAIN);
+    let unit = [parsed_unit, jf_chain_unit]
+        .into_iter()
+        .flatten()
+        .max_by_key(|value| value.len())
         .unwrap_or(unit_raw);
     let locality = m_cap_s(&capts, "location")
         .map(|value| value.trim().to_string())
@@ -688,6 +696,41 @@ fn try_extract_jf_unit_and_location(
         locality,
         locality_v2,
     }))
+}
+
+fn extract_jf_unit_chain(
+    unit_raw: &str,
+    re_unit_chain: &Regex,
+) -> Option<String> {
+    let unit_chain_match = re_unit_chain
+        .find_iter(unit_raw)
+        .max_by_key(|value| value.as_str().len())?;
+    let unit_chain = unit_chain_match.as_str().trim().to_string();
+    let m_prefix_unit = unit_raw[..unit_chain_match.start()]
+        .split_whitespace()
+        .last()
+        .map(|value| {
+            value
+                .trim_matches(|ch: char| !ch.is_alphanumeric())
+                .to_string()
+        })
+        .filter(|value| !value.is_empty())
+        .filter(|value| is_known_unit_token(&value.to_lowercase()));
+    Some(match m_prefix_unit {
+        Some(prefix_unit) => format!("{prefix_unit} {unit_chain}"),
+        None => unit_chain,
+    })
+}
+
+fn is_known_unit_token(unit_name: &str) -> bool {
+    crate::unit::const_units::list_companies().contains(unit_name)
+        || crate::unit::const_units::list_battalions().contains(unit_name)
+        || crate::unit::const_units::list_regiments().contains(unit_name)
+        || crate::unit::const_units::list_divisions().contains(unit_name)
+        || crate::unit::const_units::list_armies().contains(unit_name)
+        || crate::unit::const_units::list_standalone()
+            .iter()
+            .any(|value| value == unit_name)
 }
 
 fn try_extract_standard_unit_and_location(
@@ -2488,6 +2531,30 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(res.unit.unwrap(), "6 шр 2 мсб 283 мсп 144 мсд".to_string());
         assert_eq!(res.locality.unwrap(), "СЕРЕДНЄ".to_string());
+    }
+
+    #[ignore]
+    #[test]
+    fn extract_unit_jf_header_02() {
+        let body = r#" 22.02.2026 13:00 противник зі складу гсадн 27 омсбр 1 ТА планує нанесення вогневого ураження по позиції СОУ в районі ТИЩЕНКІВКА (37U CR 95898 13939)
+ 22.02.2026, 13:00:54
+ 150.7500
+ ГОЛЬФ
+ НЕВА
+ 1 — Нева я Гольф диктуй, диктуй.
+ 2 — цель 18 75 желтая, 18 75 желтая, 55 16 245, 55 16 245, 73 95 966, 73 95 966, 152, 152.
+ 1 — 18 75 желтая, 55 16 245, 73 95 966, 152"#;
+        let config = crate::config::read_config(Mode::Test).unwrap();
+        let settlements = Arc::new(RwLock::new(
+            crate::location::load_settlements_data_config(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
+        ));
+        let res = extract_unit(settlements, body, vec![]).unwrap();
+        assert_eq!(res.unit.unwrap(), "гсадн 27 омсбр 1 ТА".to_string());
+        assert_eq!(res.locality.unwrap(), "ТИЩЕНКІВКА".to_string());
     }
 
     #[test]

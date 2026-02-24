@@ -26,7 +26,7 @@ toLayout : Auth.User -> Model -> Layouts.Layout Msg
 toLayout user _ =
     Layouts.Navbar
         { user = user
-        , activeName = "duty"
+        , activeName = "rer-duty-neo"
         }
 
 
@@ -59,7 +59,7 @@ view : Model -> View Msg
 view _ =
     { title = "РЕР-оперативний (neo)"
     , body =
-        [ div [ class "bg-background flex rer-duty flex-1 mt-4 px-3 w-full" ]
+        [ div [ class "bg-background flex rer-duty flex-1 px-2 w-full" ]
             [ node "rer-duty-neo" [] [] ]
         ]
     }

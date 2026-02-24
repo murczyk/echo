@@ -5,13 +5,29 @@ import type {
   SignalGroupEntry,
   SignalProfileEntry,
 } from '../../../../Bindings';
-
-export const PAGE_ID = 'rer-duty-neo';
-export const LOAD_NEWER_INTERVAL_MS = 5000;
+import type { Network, Unit } from '../../../../Bindings';
 
 export type RerDutyState = {
-  messageFeeds: Array<[string, RerDutyFeedFilterState]> | null;
+  messageFeeds: [string, RerDutyFeedFilterState][];
 };
+
+/** Elm-style network display text: "р/м " + name + " " + unit names + optional " (LOCATION)". */
+export function createMasterUnitText(network: Network, unitsMap: Record<number, Unit>): string {
+  const unitIds = network.unitIds ?? [];
+  const unitNames = unitIds.map((id) => {
+    const u = unitsMap[id];
+    return u?.name ?? `Невідомий підрозділ (id=${id})`;
+  });
+  const locationPart =
+    network.location && network.location.trim() !== ''
+      ? ` (${network.location.trim().toUpperCase()})`
+      : '';
+  return `р/м ${network.name} ${unitNames.join(', ')}${locationPart}`;
+}
+
+export const PAGE_ID = 'rer-duty-neo';
+/** Poll get-inbox-count every 2s to show "Нових: N". get-inbox is not polled. */
+export const INBOX_COUNT_POLL_INTERVAL_MS = 2000;
 
 export function emptyFilter(): RerDutyFeedFilterState {
   return {
@@ -150,6 +166,25 @@ export function formatDateNoYear(date: string | null): string {
   return `${day}.${month.toString().padStart(2, '0')}`;
 }
 
+/** Relative time from event to now, same logic */
+export function messageRenderDistance(eventMs: number, nowMs: number): string {
+  const secsAgo = Math.floor((nowMs - eventMs) / 1000);
+  if (secsAgo < 5) return 'щойно';
+  if (secsAgo < 60) return `${secsAgo} сек`;
+  const minsAgo = Math.floor(secsAgo / 60);
+  if (minsAgo < 60) return `${minsAgo} хв`;
+  const hoursAgo = Math.floor(minsAgo / 60);
+  const eventDate = new Date(eventMs);
+  const nowDate = new Date(nowMs);
+  const sameDay =
+    eventDate.getFullYear() === nowDate.getFullYear() &&
+    eventDate.getMonth() === nowDate.getMonth() &&
+    eventDate.getDate() === nowDate.getDate();
+  if (sameDay || hoursAgo < 24) return `${hoursAgo} год`;
+  const daysAgo = Math.floor((nowMs - eventMs) / (24 * 60 * 60 * 1000));
+  return `${daysAgo} дн`;
+}
+
 export function toDateStr(d: Date): string {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -192,6 +227,29 @@ export function buildAnalysisHref(msg: InboxMessage, showMap: boolean): string {
 
 export type MessageItem = [number, InboxMessage];
 
+/** Sort message items by time ascending (oldest first), like Elm duty. Uses timestamp then id as tiebreaker. */
+export function sortMessageItemsByTime(items: MessageItem[]): MessageItem[] {
+  return [...items].sort(([idA, a], [idB, b]) => {
+    const tsA = a.timestamp ?? 0;
+    const tsB = b.timestamp ?? 0;
+    if (tsA !== tsB) return tsA - tsB;
+    return idA - idB;
+  });
+}
+
+/** Deduplicate by message id (first occurrence wins). Prevents duplicate key warnings when API or merge returns same id twice. */
+export function dedupeMessageItems(items: MessageItem[]): MessageItem[] {
+  const seen = new Set<number>();
+  return items.filter(([id]) => {
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+}
+
+/** Initial firstItemIndex for Virtuoso; decreased when we prepend so scroll position is preserved. */
+export const VIRTUOSO_FIRST_ITEM_INDEX_INITIAL = 10_000;
+
 export type MessageFeedState = {
   id: string;
   filter: RerDutyFeedFilterState;
@@ -200,6 +258,10 @@ export type MessageFeedState = {
   loadingEarlier: boolean;
   /** True after "load earlier" returned 0 new items — nothing older to fetch */
   hasReachedStart: boolean;
+  /** Virtuoso firstItemIndex: start at VIRTUOSO_FIRST_ITEM_INDEX_INITIAL, decrease by N when prepending N items (infinite scroll). */
+  firstItemIndex: number;
+  /** Reference time (ms) for relative "time ago" in message cards; set when feed items are loaded. */
+  referenceTimeMs: number | null;
 };
 
 export function toQueryState(messageFeeds: MessageFeedState[]): RerDutyState {

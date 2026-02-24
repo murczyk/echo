@@ -241,7 +241,7 @@ fn companies_arr() -> [&'static str; 169] {
     ]
 }
 
-fn regiments_arr() -> [&'static str; 119] {
+fn regiments_arr() -> [&'static str; 121] {
     [
         "аап",
         "абр",
@@ -314,6 +314,8 @@ fn regiments_arr() -> [&'static str; 119] {
         "мпомп",
         "мшісбр",
         "обвп",
+        "омбр",
+        "омсбр",
         "овп",
         "отбвп",
         "оллбр",
@@ -443,7 +445,7 @@ fn armies_arr() -> [&'static str; 32] {
     ]
 }
 
-fn battalions_arr() -> [&'static str; 105] {
+fn battalions_arr() -> [&'static str; 106] {
     [
         "автобат",
         "бар",
@@ -479,6 +481,7 @@ fn battalions_arr() -> [&'static str; 105] {
         "зобс",
         "адн",
         "гадн",
+        "гсадн",
         "зєнабатр",
         "зрабатр",
         "зраб",

@@ -46,9 +46,6 @@ navBar user shared activeName props =
         menu =
             menuItem props activeName
 
-        menuWithBadge =
-            menuItemWithBadge props activeName
-
         menuWithSubs =
             menuItemWithSubs props activeName
 
@@ -87,13 +84,20 @@ navBar user shared activeName props =
             ]
 
         otherSubs =
-            [ Menu (Internal Route.Path.Importer) "importer" "імпортер"
-            , Menu (Internal Route.Path.Delta) "kmz2geojson" "kmz в geojson"
-            , Menu (Internal Route.Path.AlpinequestKmz) "alpinequest-kmz" "alpinequest в kmz"
-            , Menu (Internal Route.Path.DeltaCsv2kmz) "csv2kmz" "delta csv в kmz"
-            , Menu (Internal Route.Path.DeltaFixkmz) "fixkmz" "очисник kmz"
-            , Menu (Internal Route.Path.CoordsConverter) "coords-converter" "конвертер координат"
-            ]
+            (if serverModeIs "live" shared.serverInfo && hasRole "Rer" user then
+                [ Menu (Internal Route.Path.RerDutyNeo) "rer-duty-neo" "оперативний (Alpha)"
+                ]
+
+             else
+                []
+            )
+                ++ [ Menu (Internal Route.Path.Importer) "importer" "імпортер"
+                   , Menu (Internal Route.Path.Delta) "kmz2geojson" "kmz в geojson"
+                   , Menu (Internal Route.Path.AlpinequestKmz) "alpinequest-kmz" "alpinequest в kmz"
+                   , Menu (Internal Route.Path.DeltaCsv2kmz) "csv2kmz" "delta csv в kmz"
+                   , Menu (Internal Route.Path.DeltaFixkmz) "fixkmz" "очисник kmz"
+                   , Menu (Internal Route.Path.CoordsConverter) "coords-converter" "конвертер координат"
+                   ]
                 ++ (if hasRole "Admin" user then
                         [ Menu (Internal Route.Path.RadiosConvert) "radios-convert" "радіо kmz конвертер" ]
 
@@ -104,9 +108,7 @@ navBar user shared activeName props =
         menuItems =
             menu Route.Path.Home_ "home" "головна"
                 :: ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Rer" user)
-                    [ menu Route.Path.RerDuty "duty" "оперативний"
-                    , menuWithBadge Route.Path.RerDutyNeo "rer-duty-neo" "оперативний" "Alpha" "Сторінка в розробці, потребує допрацювання"
-                    ]
+                    [ menu Route.Path.RerDuty "rer-duty" "оперативний" ]
                 ++ ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Rer" user)
                     [ menu Route.Path.RerAnalysis "analysis" "аналіз" ]
                 ++ ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Rer" user)
@@ -229,24 +231,6 @@ menuItem props activeName hrefLink activeNameExp nameText =
             , onClick (props.onDropdownToggle Nothing)
             ]
             [ text nameText ]
-        ]
-
-
-menuItemWithBadge props activeName hrefLink activeNameExp nameText badgeText badgeTitle =
-    li [ class "relative" ]
-        [ a
-            [ class "block py-2 pr-10 text-white hover:bg-black/10 px-2 rounded transition-all duration-200"
-            , Route.Path.href hrefLink
-            , classList [ ( "font-medium", activeName == activeNameExp ) ]
-            , onClick (props.onDropdownToggle Nothing)
-            ]
-            [ text nameText
-            , span
-                [ class "absolute -top-[5px] -right-[10px] text-[10px] font-normal px-1.5 py-0.5 rounded border border-amber-400 bg-amber-500/25 text-amber-200 z-[1]"
-                , attribute "title" badgeTitle
-                ]
-                [ text badgeText ]
-            ]
         ]
 
 

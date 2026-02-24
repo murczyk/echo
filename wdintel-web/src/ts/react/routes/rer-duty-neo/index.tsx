@@ -1,16 +1,16 @@
-import ExpandLessIcon from '@mui/icons-material/ExpandLess';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import { Box, Button, Chip, Paper, Typography } from '@mui/material';
+import { Box, Button, Paper, Typography } from '@mui/material';
 import React from 'react';
 
 import type {
   InboxMessage,
   InboxMessageTag,
   InboxMessagesReq,
+  Network,
   RerDutyQueryStateWf as RerDutyFeedFilterState,
   SavedFilterDuty,
   SignalGroupEntry,
   SignalProfileEntry,
+  Unit,
 } from '../../../../Bindings';
 import {
   bookmarkAdd,
@@ -32,22 +32,35 @@ import {
   savedFiltersList,
   savedFilterUpsert,
 } from '../../services/api/inbox';
+import { getNetworksByIds } from '../../services/api/networks';
+import { getUnitsList } from '../../services/api/units';
 import { CommentDialog, DeleteConfirmDialog } from './dialogs';
-import { FeedColumn } from './FeedColumn';
+import { FeedColumn, type FeedColumnHandle } from './FeedColumn';
 import {
   buildInboxReq,
+  createMasterUnitText,
+  dedupeMessageItems,
   emptyFilter,
   generateMessageFeedId,
-  LOAD_NEWER_INTERVAL_MS,
+  INBOX_COUNT_POLL_INTERVAL_MS,
   normalizeFeed,
+  VIRTUOSO_FIRST_ITEM_INDEX_INITIAL,
   parseStateFromUrl,
   profileLabel,
   pushStateToUrl,
+  sortMessageItemsByTime,
   toQueryState,
 } from './utils';
 import type { MessageFeedState } from './utils';
 
-export function RerDutyNeoPage() {
+const MAX_MESSAGE_FEEDS = 4;
+
+export type RerDutyNeoPageProps = {
+  /** Auth user display name from Elm layout (avoids duplicate /api/user request). */
+  authUserName?: string | null;
+};
+
+export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDutyNeoPageProps = {}) {
   const [messageFeeds, setMessageFeeds] = React.useState<MessageFeedState[]>(() => {
     const state = parseStateFromUrl();
     return (state.messageFeeds ?? [['mf-0', emptyFilter()]]).map(([id, filter]) => ({
@@ -57,6 +70,8 @@ export function RerDutyNeoPage() {
       loading: true,
       loadingEarlier: false,
       hasReachedStart: false,
+      firstItemIndex: VIRTUOSO_FIRST_ITEM_INDEX_INITIAL,
+      referenceTimeMs: null,
     }));
   });
   const [error, setError] = React.useState<string | null>(null);
@@ -65,7 +80,6 @@ export function RerDutyNeoPage() {
   const [groupInfos, setGroupInfos] = React.useState<Record<string, SignalGroupEntry>>({});
   const [groupsList, setGroupsList] = React.useState<string[]>([]);
   const [tagsMap, setTagsMap] = React.useState<Record<number, string>>({});
-  const [unfoldFilters, setUnfoldFilters] = React.useState(false);
   const [savedFilters, setSavedFilters] = React.useState<SavedFilterDuty[]>([]);
   const [selectedSavedId, setSelectedSavedId] = React.useState<number | null>(null);
   const [saveFilterName, setSaveFilterName] = React.useState('');
@@ -76,14 +90,42 @@ export function RerDutyNeoPage() {
   const [commentFeedId, setCommentFeedId] = React.useState<string | null>(null);
   const [commentText, setCommentText] = React.useState('');
   const [reloadFreqsLoading, setReloadFreqsLoading] = React.useState(false);
+  const [networkMap, setNetworkMap] = React.useState<Record<number, Network>>({});
+  const [unitsMap, setUnitsMap] = React.useState<Record<number, Unit>>({});
+  const authUserName = authUserNameProp ?? null;
   const loadNewerRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
   const refreshMessageCounterRef = React.useRef<() => Promise<void>>(() => Promise.resolve());
+  /** Time (ms) from which we count "new" messages for the digest badge; set once on mount */
+  const digestSinceMsRef = React.useRef<number | null>(null);
+  /** Feed IDs that currently have a get-inbox (load newer) request in flight; prevents duplicate requests from polling. */
+  const loadNewerInFlightRef = React.useRef<Set<string>>(new Set());
+  /** Which feed columns are in "watch mode" (auto-scroll to newest when new messages arrive). */
+  const [watchModeByFeedId, setWatchModeByFeedId] = React.useState<Record<string, boolean>>({});
+  /** Feed id currently loading newer messages (after arrow click). */
+  const [loadingNewerFeedId, setLoadingNewerFeedId] = React.useState<string | null>(null);
+  /** Brief per-feed message after arrow click ("Немає нових" / "Завантажено нові"), cleared after delay. */
+  const [arrowResultByFeedId, setArrowResultByFeedId] = React.useState<Record<string, string | null>>({});
+  const columnRefsRef = React.useRef<Record<string, FeedColumnHandle | null>>({});
+  const arrowResultTimeoutsRef = React.useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  /** Feed ID to scroll to end after next commit (used after load newer so we scroll once new items are rendered). */
+  const scrollToEndAfterNewerRef = React.useRef<string | null>(null);
 
   const mountedRef = React.useRef(true);
+  const showArrowResult = React.useCallback((feedId: string, message: string) => {
+    const key = feedId;
+    if (arrowResultTimeoutsRef.current[key]) clearTimeout(arrowResultTimeoutsRef.current[key]);
+    setArrowResultByFeedId((prev) => ({ ...prev, [feedId]: message }));
+    arrowResultTimeoutsRef.current[key] = setTimeout(() => {
+      delete arrowResultTimeoutsRef.current[key];
+      setArrowResultByFeedId((prev) => (prev[feedId] === message ? { ...prev, [feedId]: null } : prev));
+    }, 3000);
+  }, []);
+
   React.useEffect(() => {
     return () => {
       mountedRef.current = false;
       if (copiedFeedbackTimeoutRef.current) clearTimeout(copiedFeedbackTimeoutRef.current);
+      Object.values(arrowResultTimeoutsRef.current).forEach(clearTimeout);
     };
   }, []);
   const reloadLatestFrequencies = React.useCallback(async () => {
@@ -129,13 +171,20 @@ export function RerDutyNeoPage() {
     try {
       const req = buildInboxReq({ loadLatest: true, filter });
       const rsp = await fetchInboxMessages(req);
-      const seen = new Set<number>();
-      const deduped = rsp.inboxItems.filter(([id]) => {
-        if (seen.has(id)) return false;
-        seen.add(id);
-        return true;
-      });
-      setMessageFeeds((prev) => prev.map((x) => (x.id === feedId ? { ...x, items: deduped, loading: false } : x)));
+      const deduped = dedupeMessageItems(rsp.inboxItems);
+      setMessageFeeds((prev) =>
+        prev.map((x) =>
+          x.id === feedId
+            ? {
+                ...x,
+                items: sortMessageItemsByTime(deduped),
+                loading: false,
+                firstItemIndex: VIRTUOSO_FIRST_ITEM_INDEX_INITIAL,
+                referenceTimeMs: Date.now(),
+              }
+            : x,
+        ),
+      );
       if (rsp.signalProfiles) setProfiles((p) => ({ ...p, ...rsp.signalProfiles }));
       if (rsp.signalGroups?.length) {
         const map: Record<string, SignalGroupEntry> = {};
@@ -169,66 +218,96 @@ export function RerDutyNeoPage() {
             const existingIds = new Set(x.items.map(([id]) => id));
             const newItems = rsp.inboxItems.filter(([id]) => !existingIds.has(id));
             const hasReachedStart = newItems.length === 0;
+            const prevFirst = x.firstItemIndex ?? VIRTUOSO_FIRST_ITEM_INDEX_INITIAL;
+            const firstItemIndex = Math.max(0, prevFirst - newItems.length);
+            const combined = dedupeMessageItems([...newItems, ...x.items]);
             return {
               ...x,
-              items: [...newItems, ...x.items],
+              items: sortMessageItemsByTime(combined),
               loadingEarlier: false,
               hasReachedStart,
+              firstItemIndex,
             };
-          })
+          }),
         );
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
         setMessageFeeds((prev) => prev.map((x) => (x.id === feedId ? { ...x, loadingEarlier: false } : x)));
       }
     },
-    [messageFeeds]
+    [messageFeeds],
   );
 
   const loadFeedNewerMessages = React.useCallback(
     async (feedId: string) => {
-      const f = messageFeeds.find((x) => x.id === feedId);
-      if (!f || f.items.length === 0) return;
-      const lastId = f.items[f.items.length - 1][0];
+      // Prevent duplicate requests from polling
+      if (loadNewerInFlightRef.current.has(feedId)) return;
+      const feed = messageFeeds.find((x) => x.id === feedId);
+      if (!feed || feed.items.length === 0) return;
+      loadNewerInFlightRef.current.add(feedId);
+      const lastId = feed.items[feed.items.length - 1][0];
       try {
         const req = buildInboxReq({
           sinceIdNoninclusive: lastId,
-          filter: f.filter,
+          filter: feed.filter,
         });
         const rsp = await fetchInboxMessages(req);
         if (rsp.inboxItems.length > 0) {
-          setMessageFeeds((prev) =>
-            prev.map((x) => {
-              if (x.id !== feedId) return x;
-              const existingIds = new Set(x.items.map(([id]) => id));
-              const newItems = rsp.inboxItems.filter(([id]) => !existingIds.has(id));
-              if (newItems.length === 0) return x;
-              return { ...x, items: [...x.items, ...newItems] };
-            })
-          );
+          const feedNow = messageFeeds.find((x) => x.id === feedId);
+          if (feedNow) {
+            const newItems = rsp.inboxItems.filter(([id]) => !new Set(feedNow.items.map(([i]) => i)).has(id));
+            if (newItems.length > 0) {
+              setMessageFeeds((prev) =>
+                prev.map((x) => {
+                  if (x.id !== feedId) return x;
+                  const existingIds = new Set(x.items.map(([id]) => id));
+                  const toAdd = newItems.filter(([id]) => !existingIds.has(id));
+                  if (toAdd.length === 0) return x;
+                  const combined = dedupeMessageItems([...x.items, ...toAdd]);
+                  return { ...x, items: sortMessageItemsByTime(combined) };
+                }),
+              );
+              if (messageFeeds[0]?.id === feedId) {
+                digestSinceMsRef.current = Math.floor(Date.now() / 1000) * 1000;
+                setDigestCount(0);
+              }
+              scrollToEndAfterNewerRef.current = feedId;
+            }
+          }
         }
       } catch {
         // ignore single failure to keep polling and prev messages
+      } finally {
+        loadNewerInFlightRef.current.delete(feedId);
       }
     },
-    [messageFeeds]
+    [messageFeeds],
   );
 
   const refreshMessageCounter = React.useCallback(async () => {
     const w = messageFeeds[0];
     if (!w) return;
+    const sinceMs = digestSinceMsRef.current ?? Math.floor(Date.now() / 1000) * 1000;
+    if (digestSinceMsRef.current == null) digestSinceMsRef.current = sinceMs;
     try {
       const req = buildInboxReq({
         filter: w.filter,
-        sinceDateInclusiveMs: Math.floor(Date.now() / 1000) * 1000 - 60 * 60 * 1000,
+        sinceDateInclusiveMs: sinceMs,
         nolimit: true,
       });
       const d = await fetchInboxCount(req);
       setDigestCount(d.quantity);
+      if (d.quantity > 0) {
+        for (const feedId of Object.keys(watchModeByFeedId)) {
+          if (watchModeByFeedId[feedId]) {
+            await loadFeedNewerMessages(feedId);
+          }
+        }
+      }
     } catch {
       setDigestCount(null);
     }
-  }, [messageFeeds]);
+  }, [messageFeeds, watchModeByFeedId, loadFeedNewerMessages]);
   refreshMessageCounterRef.current = refreshMessageCounter;
 
   React.useEffect(() => {
@@ -236,6 +315,7 @@ export function RerDutyNeoPage() {
   }, [loadFilterOptions]);
 
   React.useEffect(() => {
+    digestSinceMsRef.current = Math.floor(Date.now() / 1000) * 1000;
     refreshMessageCounterRef.current();
   }, []);
 
@@ -246,7 +326,7 @@ export function RerDutyNeoPage() {
         .filter((w) => w.loading && w.items.length === 0)
         .map((w) => `${w.id}:${JSON.stringify(w.filter)}`)
         .join(';'),
-    [messageFeeds]
+    [messageFeeds],
   );
   React.useEffect(() => {
     messageFeeds.forEach((w) => {
@@ -254,21 +334,104 @@ export function RerDutyNeoPage() {
     });
   }, [feedIds, feedsNeedingLoadKey, loadFeedInitialMessages]);
 
-  // Poll for newer messages and message count every LOAD_NEWER_INTERVAL_MS
+  // Poll get-inbox-count every 2s
   React.useEffect(() => {
     loadNewerRef.current = setInterval(() => {
-      messageFeeds.forEach((w) => loadFeedNewerMessages(w.id));
       refreshMessageCounter();
-    }, LOAD_NEWER_INTERVAL_MS);
+    }, INBOX_COUNT_POLL_INTERVAL_MS);
     return () => {
       if (loadNewerRef.current) clearInterval(loadNewerRef.current);
     };
-  }, [messageFeeds, loadFeedNewerMessages, refreshMessageCounter]);
+  }, [refreshMessageCounter]);
+
+  // After we merged newer messages, scroll that feed to end once the new items are rendered
+  React.useEffect(() => {
+    const feedId = scrollToEndAfterNewerRef.current;
+    if (feedId == null) return;
+    scrollToEndAfterNewerRef.current = null;
+    const refs = columnRefsRef.current;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => refs[feedId]?.scrollToEnd());
+    });
+  }, [messageFeeds]);
+
+  // Fetch missing networks on demand - only IDs that appear in messages and are not yet loaded
+  const allNetworkIds = React.useMemo(() => {
+    const ids = new Set<number>();
+    messageFeeds.forEach((w) => {
+      w.items.forEach(([, msg]) => {
+        (msg.networkIds ?? []).forEach((id) => ids.add(id));
+      });
+    });
+    return Array.from(ids);
+  }, [messageFeeds]);
+
+  const networkMapRef = React.useRef(networkMap);
+  networkMapRef.current = networkMap;
+  React.useEffect(() => {
+    const missing = allNetworkIds.filter((id) => !(id in networkMapRef.current));
+    if (missing.length === 0) return;
+    let cancelled = false;
+    getNetworksByIds(missing)
+      .then((networks) => {
+        if (cancelled) return;
+        setNetworkMap((prev) => {
+          const next = { ...prev };
+          networks.forEach((n) => {
+            next[n.id] = n;
+          });
+          return next;
+        });
+      })
+      .catch((err) => console.error('Failed to load networks', err));
+    return () => {
+      cancelled = true;
+    };
+  }, [allNetworkIds.join(',')]);
+
+  // Fetch all units once for network display text
+  React.useEffect(() => {
+    let cancelled = false;
+    getUnitsList()
+      .then((units) => {
+        if (cancelled) return;
+        setUnitsMap((prev) => {
+          const next = { ...prev };
+          units.forEach((u) => {
+            next[u.id] = u;
+          });
+          return next;
+        });
+      })
+      .catch((err) => console.error('Failed to load units', err));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const networkDisplayMap = React.useMemo(() => {
+    const out: Record<number, string> = {};
+    Object.entries(networkMap).forEach(([idStr, n]) => {
+      const id = Number(idStr);
+      out[id] = createMasterUnitText(n, unitsMap);
+    });
+    return out;
+  }, [networkMap, unitsMap]);
 
   const applyFilter = React.useCallback((feedId: string, f: RerDutyFeedFilterState) => {
     setMessageFeeds((prev) => {
       const next = prev.map((w) =>
-        w.id === feedId ? { ...w, filter: f, items: [], loading: true, hasReachedStart: false } : w
+        w.id === feedId
+          ? {
+              ...w,
+              filter: f,
+              items: [],
+              loading: true,
+              hasReachedStart: false,
+              firstItemIndex: VIRTUOSO_FIRST_ITEM_INDEX_INITIAL,
+              referenceTimeMs: null,
+            }
+          : w,
       );
       pushStateToUrl(toQueryState(next));
       return next;
@@ -300,9 +463,11 @@ export function RerDutyNeoPage() {
       loading: true,
       loadingEarlier: false,
       hasReachedStart: false,
+      firstItemIndex: VIRTUOSO_FIRST_ITEM_INDEX_INITIAL,
+      referenceTimeMs: null,
     };
     setMessageFeeds((prev) => {
-      if (prev.some((w) => w.id === id)) return prev;
+      if (prev.length >= MAX_MESSAGE_FEEDS || prev.some((w) => w.id === id)) return prev;
       const next = [...prev, newFeed];
       pushStateToUrl(toQueryState(next));
       return next;
@@ -319,7 +484,7 @@ export function RerDutyNeoPage() {
         return next;
       });
     },
-    [messageFeeds.length]
+    [messageFeeds.length],
   );
 
   const handleSaveFilter = async (feedId: string) => {
@@ -360,11 +525,11 @@ export function RerDutyNeoPage() {
             ? {
                 ...w,
                 items: w.items.map(([msgId, msg]) =>
-                  msgId === id ? [msgId, { ...msg, bookmarked: !currentlyBookmarked }] : [msgId, msg]
+                  msgId === id ? [msgId, { ...msg, bookmarked: !currentlyBookmarked }] : [msgId, msg],
                 ),
               }
-            : w
-        )
+            : w,
+        ),
       );
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -381,11 +546,11 @@ export function RerDutyNeoPage() {
             ? {
                 ...w,
                 items: w.items.map(([msgId, msg]) =>
-                  msgId === id ? [msgId, { ...msg, important: !currentlyImportant }] : [msgId, msg]
+                  msgId === id ? [msgId, { ...msg, important: !currentlyImportant }] : [msgId, msg],
                 ),
               }
-            : w
-        )
+            : w,
+        ),
       );
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -413,8 +578,8 @@ export function RerDutyNeoPage() {
       await deleteMessage({ id: deleteConfirmId });
       setMessageFeeds((prev) =>
         prev.map((w) =>
-          w.id === deleteConfirmFeedId ? { ...w, items: w.items.filter(([id]) => id !== deleteConfirmId) } : w
-        )
+          w.id === deleteConfirmFeedId ? { ...w, items: w.items.filter(([id]) => id !== deleteConfirmId) } : w,
+        ),
       );
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -440,11 +605,11 @@ export function RerDutyNeoPage() {
             ? {
                 ...w,
                 items: w.items.map(([id, m]) =>
-                  id === commentMessageId ? [id, { ...m, extendedForm: trimmed }] : [id, m]
+                  id === commentMessageId ? [id, { ...m, extendedForm: trimmed }] : [id, m],
                 ),
               }
-            : w
-        )
+            : w,
+        ),
       );
       setCommentMessageId(null);
       setCommentFeedId(null);
@@ -466,7 +631,7 @@ export function RerDutyNeoPage() {
         .map(Number)
         .filter((n) => !Number.isNaN(n))
         .sort((a, b) => a - b),
-    [tagsMap]
+    [tagsMap],
   );
 
   function messageHasTag(msg: InboxMessage, tagId: number): boolean {
@@ -504,8 +669,8 @@ export function RerDutyNeoPage() {
         prev.map((x) =>
           x.id === feedId
             ? { ...x, items: x.items.map(([id, m]) => (id === msgId ? [id, updateMessage(m)] : [id, m])) }
-            : x
-        )
+            : x,
+        ),
       );
       try {
         if (hasTag) await inboxMessageTagsRm({ messageId: msgId, tagId });
@@ -514,39 +679,25 @@ export function RerDutyNeoPage() {
         setError(e instanceof Error ? e.message : String(e));
         setMessageFeeds((prev) =>
           prev.map((x) =>
-            x.id === feedId ? { ...x, items: x.items.map(([id, m]) => (id === msgId ? [id, pair[1]] : [id, m])) } : x
-          )
+            x.id === feedId ? { ...x, items: x.items.map(([id, m]) => (id === msgId ? [id, pair[1]] : [id, m])) } : x,
+          ),
         );
       }
     },
-    [messageFeeds]
+    [messageFeeds],
   );
 
   return (
-    <Box className="flex flex-col h-full min-h-[60vh]">
-      <Box className="flex items-center justify-between flex-wrap gap-2 mb-2">
-        {digestCount != null && digestCount > 0 && (
-          <Chip size="small" color="primary" label={`Нових: ${digestCount}`} />
-        )}
-      </Box>
+    <Box className="flex flex-col w-full" sx={{ height: 'calc(100vh - 80px)', minHeight: 0, overflow: 'hidden' }}>
+      <Box className="flex items-center justify-between flex-wrap gap-2 mb-2 shrink-0" />
 
       {error && (
-        <Paper elevation={0} className="p-2 mb-2" sx={{ bgcolor: 'error.light', color: 'error.contrastText' }}>
+        <Paper elevation={0} className="p-2 mb-2 shrink-0" sx={{ bgcolor: 'error.light', color: 'error.contrastText' }}>
           {error}
         </Paper>
       )}
 
-      <Paper variant="outlined" className="p-2 mb-2">
-        <Button
-          size="small"
-          startIcon={unfoldFilters ? <ExpandLessIcon /> : <ExpandMoreIcon />}
-          onClick={() => setUnfoldFilters((u) => !u)}
-        >
-          Фільтри
-        </Button>
-      </Paper>
-
-      <Box className="flex flex-nowrap gap-4 overflow-x-auto min-h-0">
+      <Box className="flex flex-1 flex-nowrap gap-2 overflow-x-auto justify-center w-full min-h-0">
         {messageFeeds.map((w) => {
           const filterStable = {
             groupsSelected: w.filter.groupsSelected ?? [],
@@ -558,8 +709,10 @@ export function RerDutyNeoPage() {
           return (
             <FeedColumn
               key={w.id}
+              ref={(el) => {
+                columnRefsRef.current[w.id] = el;
+              }}
               feed={w}
-              showFilters={unfoldFilters}
               filterStable={filterStable}
               groupsList={groupsList}
               groupInfos={groupInfos}
@@ -571,8 +724,18 @@ export function RerDutyNeoPage() {
               saveFilterName={saveFilterName}
               reloadFreqsLoading={reloadFreqsLoading}
               canRemove={messageFeeds.length > 1}
-              maxWidth={messageFeeds.length === 1 ? '100%' : '50%'}
+              maxWidth={
+                messageFeeds.length >= 4
+                  ? 'calc((100% - 2rem) / 4)'
+                  : messageFeeds.length === 3
+                    ? 'calc((100% - 2rem - 48px) / 3)'
+                    : messageFeeds.length === 2
+                      ? 'calc((90% - 2rem - 48px) / 2)'
+                      : '45%'
+              }
+              authUserName={authUserName}
               copiedFeedbackId={copiedFeedbackId}
+              networkDisplayMap={networkDisplayMap}
               tagsMap={tagsMap}
               tagIdsList={tagIdsList}
               messageHasTag={messageHasTag}
@@ -600,15 +763,61 @@ export function RerDutyNeoPage() {
               onMessageCopy={handleMessageCopy}
               onMessageComment={(msgId, currentComment) => openCommentDialog(msgId, w.id, currentComment)}
               onMessageToggleTag={(msgId, tagId) => handleToggleTag(w.id, msgId, tagId)}
+              onScrollToTop={() => setWatchModeByFeedId((prev) => ({ ...prev, [w.id]: false }))}
+              onReachedBottom={() => setWatchModeByFeedId((prev) => ({ ...prev, [w.id]: true }))}
+              onLeftBottom={() => setWatchModeByFeedId((prev) => ({ ...prev, [w.id]: false }))}
+              isWatchMode={watchModeByFeedId[w.id] ?? false}
+              digestCount={digestCount}
+              loadingNewer={loadingNewerFeedId === w.id}
+              arrowResultMessage={arrowResultByFeedId[w.id] ?? null}
+              onArrowClick={async () => {
+                setWatchModeByFeedId((prev) => ({ ...prev, [w.id]: true }));
+                const refs = columnRefsRef.current;
+                const scrollToEnd = () => {
+                  requestAnimationFrame(() => requestAnimationFrame(() => refs[w.id]?.scrollToEnd()));
+                };
+                scrollToEnd();
+                if (digestCount != null && digestCount > 0) {
+                  setLoadingNewerFeedId(w.id);
+                  try {
+                    if (w.items.length > 0) {
+                      await loadFeedNewerMessages(w.id);
+                    } else if (!w.loading) {
+                      await loadFeedInitialMessages(w.id, w.filter);
+                    }
+                    showArrowResult(w.id, 'Завантажено нові повідомлення');
+                  } finally {
+                    setLoadingNewerFeedId((prev) => (prev === w.id ? null : prev));
+                  }
+                } else {
+                  showArrowResult(w.id, 'Немає нових повідомлень');
+                }
+              }}
             />
           );
         })}
-        <Button
-          size="large"
-          className="p-0 self-start shrink-0"
-          startIcon={<i className="bi bi-plus-square" />}
-          onClick={createMessageFeed}
-        ></Button>
+        {messageFeeds.length < MAX_MESSAGE_FEEDS && (
+          <Button
+            size="large"
+            variant="text"
+            className="p-0 self-start shrink-0"
+            sx={{
+              width: 48,
+              minWidth: 48,
+              height: 32,
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+              backgroundColor: 'transparent',
+              '&:hover': { backgroundColor: 'background.default' },
+              '& .bi': { fontSize: 23 },
+            }}
+            onClick={createMessageFeed}
+            aria-label="Додати колонку"
+          >
+            <i className="bi bi-plus-square" />
+          </Button>
+        )}
       </Box>
 
       <CommentDialog

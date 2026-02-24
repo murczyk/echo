@@ -2136,6 +2136,7 @@ export type ListNetworksReq = {
   aorIds: Array<number> | null;
   ids: Array<number> | null;
   limit: number | null;
+  offset: number | null;
   sortBy: Array<ListNetworksSortBy> | null;
 };
 

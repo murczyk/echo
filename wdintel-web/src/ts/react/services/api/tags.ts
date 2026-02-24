@@ -2,6 +2,13 @@ import { TagAdmin, TagKeyword, TagKeywordAddReq, TagUpsertReq } from '../../../.
 
 import { deleteVoid, getJson, postJson, putJson, putVoid } from './client';
 
+export type TagModelErrorFE = {
+  id: number;
+  body: string;
+  removedAt: number;
+  removedByLogin: string;
+};
+
 type TagKeywordLike = {
   tagKeywordId?: number;
   tag_keyword_id?: number;
@@ -21,13 +28,6 @@ type TagModelErrorRaw = {
   removed_at?: number;
   removedByLogin?: string;
   removed_by_login?: string;
-};
-
-export type TagModelErrorFE = {
-  id: number;
-  body: string;
-  removedAt: number;
-  removedByLogin: string;
 };
 
 type TagAdminLike = {
@@ -68,21 +68,21 @@ function normalizeTagAdmin(raw: TagAdminLike): TagAdmin {
   };
 }
 
-function toTagModelErrorFE(raw: TagModelErrorRaw): TagModelErrorFE {
-  return {
-    id: raw.id ?? 0,
-    body: raw.body ?? '',
-    removedAt: raw.removedAt ?? raw.removed_at ?? 0,
-    removedByLogin: raw.removedByLogin ?? raw.removed_by_login ?? '',
-  };
-}
-
 function toTagKeywordAddReqBody(req: TagKeywordAddReq): TagKeywordAddReqBody {
   return {
     is_regex: req.isRegex,
     keyword: req.keyword,
     keyword_forms: req.keywordForms ?? null,
     keyword_negative_forms: req.keywordNegativeForms ?? null,
+  };
+}
+
+function normalizeTagModelError(raw: TagModelErrorRaw): TagModelErrorFE {
+  return {
+    id: raw.id ?? 0,
+    body: raw.body ?? '',
+    removedAt: raw.removedAt ?? raw.removed_at ?? 0,
+    removedByLogin: raw.removedByLogin ?? raw.removed_by_login ?? '',
   };
 }
 
@@ -93,7 +93,7 @@ export async function listTags(): Promise<TagAdmin[]> {
 
 export async function getTagModelErrors(tagId: number): Promise<TagModelErrorFE[]> {
   const data = await getJson<TagModelErrorRaw[]>(`/api/tags/${tagId}/model-errors`);
-  return data.map(toTagModelErrorFE);
+  return data.map(normalizeTagModelError);
 }
 
 export async function createTag(req: TagUpsertReq): Promise<TagAdmin> {

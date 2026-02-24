@@ -174,6 +174,13 @@ pub async fn network_list(
                 .try_into()
                 .unwrap_or(SIGINT_NETWORK_LIST_MAX_LIMIT),
         );
+    } else if let Some(limit) = req.limit {
+        networks = networks
+            .limit(limit.try_into().unwrap_or(SIGINT_NETWORK_LIST_MAX_LIMIT));
+    }
+
+    if let Some(offset) = req.offset {
+        networks = networks.offset(offset.try_into().unwrap_or(0));
     }
 
     // debug!(
@@ -751,6 +758,8 @@ pub async fn network_callsigns(
     .context(h!())?;
 
     let mut cutoff_since: Option<PrimitiveDateTime> = None;
+    let mut stats_since: Option<NaiveDateTime> = None;
+    let mut stats_till: Option<NaiveDateTime> = None;
     if let (Some(min_from), Some(max_to)) = (min_from, max_to) {
         let span_days = (max_to - min_from).whole_days();
         if span_days > NETWORK_CALLSIGNS_MAX_WINDOW_DAYS {
@@ -760,6 +769,28 @@ pub async fn network_callsigns(
             warn!(
                 "network-callsigns: active window {span_days} days > {NETWORK_CALLSIGNS_MAX_WINDOW_DAYS}, cutting since {cut}"
             );
+        }
+        let since = cutoff_since.unwrap_or(min_from);
+        stats_since = Some(primitive_to_naive_datetime(since)?);
+        stats_till = Some(primitive_to_naive_datetime(max_to)?);
+    }
+
+    if let (Some(stats_since), Some(stats_till)) = (stats_since, stats_till) {
+        if crate::stats::can_read_stats_aggregated(
+            &env.config,
+            stats_since,
+            stats_till,
+        ) {
+            let callsigns = load_network_callsigns_from_stats(
+                &env.dbx,
+                &groups,
+                &req.network_ids,
+                stats_since,
+                stats_till,
+            )
+            .await
+            .context(h!())?;
+            return Ok(Json(callsigns));
         }
     }
 
@@ -944,6 +975,21 @@ pub async fn network_freqs_activity_one(
     .await
     .context(h!())?;
 
+    if env
+        .config
+        .feature_group_stats_aggregated
+        .unwrap_or(FEATURE_GROUP_STATS_AGGREGATED_DEFAULT)
+    {
+        let res = load_network_freqs_activity_from_stats(
+            &env.dbx,
+            &groups,
+            req.network_id,
+        )
+        .await
+        .context(h!())?;
+        return Ok(Json(res));
+    }
+
     let main_query = Query::select()
     .expr_as(
         Expr::cust("(EXTRACT(EPOCH FROM DATE_TRUNC('day', sigint_inbox_item.datetime AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Kyiv')) * 1000)::BIGINT"),
@@ -1026,6 +1072,141 @@ pub async fn network_freqs_activity_one(
     }
 
     Ok(Json(res))
+}
+
+fn primitive_to_naive_datetime(
+    dt: PrimitiveDateTime,
+) -> Result<NaiveDateTime, AppError> {
+    let utc = dt.assume_utc();
+    let secs = utc.unix_timestamp();
+    let nanos = utc.nanosecond();
+    let res = DateTime::from_timestamp(secs, nanos).context(h!())?;
+    Ok(res.naive_utc())
+}
+
+async fn load_network_callsigns_from_stats(
+    dbx: &DatabaseConnection,
+    groups: &Vec<String>,
+    network_ids: &Vec<i64>,
+    since_ts: NaiveDateTime,
+    till_ts: NaiveDateTime,
+) -> Result<HashMap<String, Vec<String>>, AppError> {
+    #[derive(FromQueryResult)]
+    struct CallsignStatRow {
+        network_id: i64,
+        callsign: String,
+    }
+
+    let batches =
+        crate::stats::collect_signal_group_batches(groups.clone(), dbx)
+            .await
+            .c(h!())?;
+    let batch_ids = batches.iter().map(|b| b.id).collect::<Vec<i64>>();
+    if batch_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let since_date = crate::stats::get_local_date(since_ts);
+    let till_date = crate::stats::get_local_date(till_ts);
+    let active_network_ids = sigint_network::Entity::find()
+        .select_only()
+        .column(sigint_network::Column::Id)
+        .filter(sigint_network::Column::Id.eq_any(network_ids.clone()))
+        .filter(sigint_network::Column::Deleted.eq(false))
+        .into_tuple::<i64>()
+        .all(dbx)
+        .await
+        .c(h!())?;
+    if active_network_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let rows = stats_group_network_callsign_day::Entity::find()
+        .select_only()
+        .column(stats_group_network_callsign_day::Column::NetworkId)
+        .column(stats_group_network_callsign_day::Column::Callsign)
+        .filter(
+            stats_group_network_callsign_day::Column::SignalGroupBatchId
+                .eq_any(batch_ids),
+        )
+        .filter(
+            stats_group_network_callsign_day::Column::NetworkId
+                .eq_any(active_network_ids),
+        )
+        .filter(stats_group_network_callsign_day::Column::Dt.gte(since_date))
+        .filter(stats_group_network_callsign_day::Column::Dt.lte(till_date))
+        .group_by(stats_group_network_callsign_day::Column::NetworkId)
+        .group_by(stats_group_network_callsign_day::Column::Callsign)
+        .into_model::<CallsignStatRow>()
+        .all(dbx)
+        .await
+        .c(h!())?;
+
+    let mut callsigns: HashMap<String, Vec<String>> = HashMap::new();
+    for row in rows {
+        callsigns
+            .entry(row.network_id.to_string())
+            .or_default()
+            .push(row.callsign);
+    }
+    for list in callsigns.values_mut() {
+        list.sort();
+        list.dedup();
+    }
+    Ok(callsigns)
+}
+
+async fn load_network_freqs_activity_from_stats(
+    dbx: &DatabaseConnection,
+    groups: &Vec<String>,
+    network_id: i64,
+) -> Result<HashMap<String, HashMap<String, i64>>, AppError> {
+    #[derive(FromQueryResult)]
+    struct FreqStatRow {
+        dt: NaiveDate,
+        frequency: String,
+        quantity: i64,
+    }
+
+    let batches =
+        crate::stats::collect_signal_group_batches(groups.clone(), dbx)
+            .await
+            .c(h!())?;
+    let batch_ids = batches.iter().map(|b| b.id).collect::<Vec<i64>>();
+    if batch_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let rows = stats_group_network_freq_day::Entity::find()
+        .select_only()
+        .column(stats_group_network_freq_day::Column::Dt)
+        .column(stats_group_network_freq_day::Column::Frequency)
+        .expr_as(Expr::cust("SUM(quantity)"), "quantity")
+        .filter(
+            stats_group_network_freq_day::Column::SignalGroupBatchId
+                .eq_any(batch_ids),
+        )
+        .filter(stats_group_network_freq_day::Column::NetworkId.eq(network_id))
+        .group_by(stats_group_network_freq_day::Column::Dt)
+        .group_by(stats_group_network_freq_day::Column::Frequency)
+        .into_model::<FreqStatRow>()
+        .all(dbx)
+        .await
+        .c(h!())?;
+
+    let mut res: HashMap<String, HashMap<String, i64>> = HashMap::new();
+    for row in rows {
+        let day_ms = crate::stats::start_of_day(row.dt)
+            .c(h!())?
+            .and_utc()
+            .timestamp_millis()
+            .to_string();
+        res.entry(row.frequency)
+            .or_default()
+            .insert(day_ms, row.quantity);
+    }
+
+    Ok(res)
 }
 
 #[post("/api/sigint/network-points")]
@@ -2155,9 +2336,33 @@ pub async fn network_freqs_list(
     .await
     .context(h!())?;
 
-    let freqs = load_freqs(&env.dbx, &groups, req.network_id, None, &user_id)
+    let freqs = if env
+        .config
+        .feature_group_stats_aggregated
+        .unwrap_or(FEATURE_GROUP_STATS_AGGREGATED_DEFAULT)
+    {
+        let counts = load_network_freqs_counts_from_stats(
+            &env.dbx,
+            &groups,
+            req.network_id,
+        )
         .await
         .context(h!())?;
+        load_freqs_with_stats(
+            &env.dbx,
+            &groups,
+            req.network_id,
+            None,
+            &user_id,
+            counts,
+        )
+        .await
+        .context(h!())?
+    } else {
+        load_freqs(&env.dbx, &groups, req.network_id, None, &user_id)
+            .await
+            .context(h!())?
+    };
 
     let res = SingleNetworkFreqsListRsp { freqs };
 
