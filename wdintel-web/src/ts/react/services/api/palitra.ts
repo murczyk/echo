@@ -291,6 +291,17 @@ async function fetchMyScopeOptional(): Promise<MyScope | null> {
   }
 }
 
+async function fetchAdminReferenceOptional<T>(fetchReference: () => Promise<T>): Promise<T | null> {
+  try {
+    return await fetchReference();
+  } catch (error) {
+    if (isUnauthorizedError(error)) {
+      throw error;
+    }
+    return null;
+  }
+}
+
 export async function fetchPalitraReferenceData(user: User): Promise<{
   myScope: MyScope | null;
   logins: ListLoginsRsp | null;
@@ -301,9 +312,13 @@ export async function fetchPalitraReferenceData(user: User): Promise<{
 
   const [myScope, logins, organisms, aors] = await Promise.all([
     fetchMyScopeOptional(),
-    isAdmin ? listLogins({ sortBy: null, filterByRoles: null }) : Promise.resolve(null),
-    isAdmin ? listOrganisms({ sortBy: null }) : Promise.resolve(null),
-    isAdmin ? listAors({ sortBy: null }) : Promise.resolve(null),
+    isAdmin
+      ? fetchAdminReferenceOptional(() => listLogins({ sortBy: null, filterByRoles: null }))
+      : Promise.resolve(null),
+    isAdmin
+      ? fetchAdminReferenceOptional(() => listOrganisms({ sortBy: null }))
+      : Promise.resolve(null),
+    isAdmin ? fetchAdminReferenceOptional(() => listAors({ sortBy: null })) : Promise.resolve(null),
   ]);
 
   return { myScope, logins, organisms, aors };
