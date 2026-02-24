@@ -1,12 +1,15 @@
 import type {
   InboxMessage,
   InboxMessagesReq,
-  RerDutyState,
-  RerDutyFeedFilterState,
+  RerDutyQueryStateWf as RerDutyFeedFilterState,
   SignalGroupEntry,
   SignalProfileEntry,
 } from '../../../../Bindings';
 import type { Network, Unit } from '../../../../Bindings';
+
+export type RerDutyState = {
+  messageFeeds: [string, RerDutyFeedFilterState][];
+};
 
 /** Elm-style network display text: "р/м " + name + " " + unit names + optional " (LOCATION)". */
 export function createMasterUnitText(network: Network, unitsMap: Record<number, Unit>): string {

@@ -14,10 +14,11 @@ import {
 } from '@mui/material';
 import React from 'react';
 
-import { TagAdmin, TagKeyword, TagModelErrorFE, TagUpsertReq } from '../../../../Bindings';
+import { TagAdmin, TagKeyword, TagUpsertReq } from '../../../../Bindings';
 import { Info } from '../../components/info';
 import { Button } from '../../components/mui-customized/button';
 import { createTag, deleteTagKeyword, getTagModelErrors, listTags, updateTag } from '../../services/api/tags';
+import type { TagModelErrorFE } from '../../services/api/tags';
 import { navigateWithinSpa } from '../../utils/browser';
 import { formatDate } from '../../utils/misc';
 

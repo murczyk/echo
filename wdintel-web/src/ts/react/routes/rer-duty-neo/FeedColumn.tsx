@@ -4,7 +4,7 @@ import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 
 import type {
   InboxMessage,
-  RerDutyFeedFilterState,
+  RerDutyQueryStateWf as RerDutyFeedFilterState,
   SavedFilterDuty,
   SignalGroupEntry,
   SignalProfileEntry,

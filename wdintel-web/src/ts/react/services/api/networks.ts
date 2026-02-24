@@ -13,6 +13,7 @@ export async function getNetworksList(): Promise<Network[]> {
     aorIds: null,
     ids: null,
     limit: null,
+    offset: null,
     sortBy: ['NameAsc'],
   };
   const data = await postJson<Network[]>('/api/sigint/network-list', req);
