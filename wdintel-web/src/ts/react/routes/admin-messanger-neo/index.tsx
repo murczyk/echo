@@ -30,7 +30,6 @@ import {
   AccountStatusReq,
   AreaOfResponsibility,
   EchoAccountF1,
-  EchoAccount,
   LinkAccountReq,
   LinkEchoOperatorReq,
   Login,
@@ -669,38 +668,12 @@ function AdminMessangerNeoPageBody() {
     setAccountsError(null);
     try {
       const rsp = await listAccounts();
-      setAccounts(transformAccounts(rsp.accounts));
+      setAccounts(rsp.accounts);
       setAccountsStatus('success');
     } catch (error) {
       setAccountsStatus('error');
       setAccountsError(formatErrorMessage(error));
     }
-  }
-
-  function transformAccounts(accounts: EchoAccount[]): EchoAccountF1[] {
-    // transform objects from BE model to FE model
-    return accounts.map((account) => ({
-      id: account.id,
-      areaOfResponsibility: account.area_of_responsibility,
-      status: account.status,
-      createdAt: account.created_at,
-      clientId: account.client_id,
-      displayName: account.display_name,
-      systemServiceName: account.system_service_name,
-      description: account.description,
-      messenger: account.messenger,
-      phoneNumber: account.phone_number,
-      apiLogin: account.api_login,
-      apiEndpoint: account.api_endpoint,
-      isLinked: account.is_linked,
-      isImported: account.is_imported,
-      signalPort: account.signal_port,
-      processName: account.process_name,
-      attachmentsPath: account.attachments_path,
-      echoClientId: account.echo_client_id,
-      echoAccountId: account.echo_account_id,
-      echoClientLockId: account.echo_client_lock_id,
-    }));
   }
 
   async function loadAors() {
