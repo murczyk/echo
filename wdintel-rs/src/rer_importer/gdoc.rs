@@ -132,20 +132,28 @@ async fn rer_callsign_info_batch(
     crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
         .await
         .c(h!())?;
-    let res = load_callsigns(&env, req.callsigns.clone()).await.c(h!())?;
+    let network_callsigns = req
+        .callsigns
+        .iter()
+        .map(|c| CallsignNetworks {
+            network_ids: vec![],
+            callsign: c.clone(),
+        })
+        .collect_vec();
+    let res = load_callsigns(&env, network_callsigns).await.c(h!())?;
     Ok(Json(res))
 }
 
 pub async fn load_callsigns(
     env: &Data<Env>,
-    callsigns_txt: Vec<String>,
+    callsigns_data: Vec<CallsignNetworks>,
 ) -> Result<Vec<CallsignInfoRes>, AppError> {
     let dbx = &env.dbx.clone();
 
     let mut res: Vec<CallsignInfoRes> = Vec::new();
-    let mut lowercased = callsigns_txt
+    let mut lowercased = callsigns_data
         .iter()
-        .map(|c| c.to_lowercase())
+        .map(|c| c.callsign.to_lowercase())
         .unique()
         .collect::<Vec<String>>();
 
@@ -172,14 +180,31 @@ pub async fn load_callsigns(
             .for_each(|c| callsigns.push(c));
     }
 
-    let callsign_ids = callsigns.iter().map(|(x, _)| x.id).collect::<Vec<_>>();
+    let callsign_ids = callsigns.iter().map(|(c, _)| c.id).collect::<Vec<_>>();
+    let mut network_ids_reported_in: HashMap<i64, Vec<i64>> = HashMap::new();
+    sigint_network_callsign::Entity::find()
+        .filter(
+            sigint_network_callsign::Column::SigintCallsignId
+                .is_in(callsign_ids),
+        )
+        .filter(sigint_network_callsign::Column::Deleted.eq(false))
+        .select_only()
+        .column(sigint_network_callsign::Column::SigintCallsignId)
+        .column(sigint_network_callsign::Column::SigintNetworkId)
+        .into_tuple::<(i64, i64)>()
+        .all(dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .for_each(|(callsign_id, network_id)| {
+            network_ids_reported_in
+                .entry(callsign_id)
+                .and_modify(|e| e.push(network_id))
+                .or_insert(vec![network_id]);
+        });
 
-    let reported_networks_per_callsign =
-        collect_reported_networks_per_callsign(callsign_ids, dbx)
-            .await
-            .c(h!())?;
-
-    for c in callsigns_txt.iter() {
+    for rec in callsigns_data {
+        let c = rec.callsign;
         let mut res_single = CallsignInfoRes {
             callsign: c.clone(),
             res: Vec::new(),
@@ -187,6 +212,10 @@ pub async fn load_callsigns(
         for (callsign, is_unit) in callsigns.iter() {
             if callsign.callsign == c.to_lowercase() {
                 if let Some(unit) = is_unit {
+                    let network_ids_reported_in = network_ids_reported_in
+                        .get(&callsign.id)
+                        .cloned()
+                        .unwrap_or_default();
                     res_single.res.push(CallsignInfo {
                         id: callsign.id,
                         callsign: callsign.callsign.clone(),
@@ -200,10 +229,7 @@ pub async fn load_callsigns(
                         unit_1: unit.name.clone(),
                         unit_2: "".to_string(),
                         unit_id: Some(unit.id),
-                        network_ids_reported_in: reported_networks_per_callsign
-                            .get(&callsign.id)
-                            .cloned()
-                            .unwrap_or(vec![]),
+                        network_ids_reported_in,
                     });
                 }
             }

@@ -471,18 +471,42 @@ pub async fn load_inbox_callsigns(
     inbox_items: &Vec<(i64, InboxMessage)>,
     env: &Data<Env>,
 ) -> Result<Vec<CallsignInfoRes>, AppError> {
-    let callsigns = inbox_items
+    let mut callsigns: HashMap<String, Vec<i64>> = HashMap::new();
+    inbox_items
         .iter()
-        .flat_map(|x| {
-            x.1.callsigns
+        .map(|(_id, item)| {
+            let callsigns = item
+                .callsigns
                 .clone()
                 .into_iter()
-                .chain(x.1.callsigns_alg2.clone().into_iter())
+                .chain(item.callsigns_alg2.clone().into_iter())
+                .into_iter()
+                .unique()
+                .collect_vec();
+            (item.network_ids.clone(), callsigns)
         })
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect_vec();
-    let data = crate::rer_importer::gdoc::load_callsigns(env, callsigns)
+        .for_each(|(network_ids, callsigns_vec)| {
+            if let Some(network_ids) = network_ids {
+                for c in &callsigns_vec {
+                    callsigns
+                        .entry(c.clone())
+                        .and_modify(|ns| {
+                            for network_id in &network_ids {
+                                ns.push(*network_id)
+                            }
+                        })
+                        .or_insert(network_ids.clone());
+                }
+            }
+        });
+    let mut callsigns_data = vec![];
+    for (callsign, network_ids) in callsigns {
+        callsigns_data.push(CallsignNetworks {
+            network_ids: network_ids.into_iter().unique().collect_vec(),
+            callsign,
+        });
+    }
+    let data = crate::rer_importer::gdoc::load_callsigns(env, callsigns_data)
         .await
         .context(h!())?;
     Ok(data)
