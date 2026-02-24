@@ -80,12 +80,11 @@ type alias HintResult =
 -}
 getCallsignsForStrategy :
     HintStrategy
-    -> Maybe (List Int)
     -> Dict Int B.Unit
     -> Dict String (List B.CallsignInfo)
     -> String
     -> List B.CallsignInfo
-getCallsignsForStrategy strategy maybeMessageNetworkIds masterUnits callsignsInfo callsign =
+getCallsignsForStrategy strategy masterUnits callsignsInfo callsign =
     case Dict.get (String.toLower callsign) callsignsInfo of
         Just callsignInfo ->
             if List.length callsignInfo == 0 then
@@ -94,21 +93,9 @@ getCallsignsForStrategy strategy maybeMessageNetworkIds masterUnits callsignsInf
             else
                 case strategy of
                     NetworkBased { units } ->
-                        case maybeMessageNetworkIds of
-                            Just networkIds ->
-                                if List.isEmpty networkIds then
-                                    filterCallsignsByNetworkUnits callsignInfo masterUnits units
-
-                                else
-                                    callsignInfo
-                                        |> List.filter
-                                            (\info ->
-                                                info.networkIdsReportedIn
-                                                    |> List.any (\networkId -> List.member networkId networkIds)
-                                            )
-
-                            Nothing ->
-                                filterCallsignsByNetworkUnits callsignInfo masterUnits units
+                        -- For network-based hints we prioritize by unit/network relation only.
+                        -- This avoids showing unrelated hints based solely on reported network IDs.
+                        filterCallsignsByNetworkUnits callsignInfo masterUnits units
 
                     SystemWide ->
                         -- Для SystemWide просто повертаємо позивні для конкретного запиту
@@ -191,21 +178,6 @@ isCallsignRelatedToNetworks maybeCallsignInfo networks masterUnits =
                 isRelated
 
 
-hasCallsignInMessageNetworks : Maybe (List B.CallsignInfo) -> List Int -> Bool
-hasCallsignInMessageNetworks maybeCallsignInfo messageNetworkIds =
-    case maybeCallsignInfo of
-        Nothing ->
-            False
-
-        Just callsignInfoList ->
-            callsignInfoList
-                |> List.any
-                    (\callsignInfo ->
-                        callsignInfo.networkIdsReportedIn
-                            |> List.any (\networkId -> List.member networkId messageNetworkIds)
-                    )
-
-
 {-| Отримує клас іконки для стратегії
 -}
 getIconClass : HintStrategy -> String
@@ -244,20 +216,8 @@ getCallsignHints hintContext message context callsign =
         strategy =
             determineHintStrategyForCallsign hintContext message context callsignInfo networksByFreq
 
-        messageNetworkIdsForPriority =
-            case message.networkIds of
-                Just networkIds ->
-                    if List.isEmpty networkIds then
-                        Nothing
-
-                    else
-                        Just networkIds
-
-                Nothing ->
-                    Nothing
-
         prioritizedCallsigns =
-            getCallsignsForStrategy strategy messageNetworkIdsForPriority context.masterUnits context.callsignsInfo callsign
+            getCallsignsForStrategy strategy context.masterUnits context.callsignsInfo callsign
     in
     { strategy = strategy
     , prioritizedCallsigns = prioritizedCallsigns
@@ -303,14 +263,17 @@ determineHintStrategyForCallsign hintContext message context callsignInfo networ
         MessageContext ->
             case messageNetworkIds of
                 Just networkIds ->
-                    if hasCallsignInMessageNetworks callsignInfo networkIds then
-                        let
-                            networksFromMessage =
-                                getNetworksByIds networkIds context.networks
+                    let
+                        networksFromMessage =
+                            getNetworksByIds networkIds context.networks
 
-                            networkUnits =
-                                getUnitsInfoByIds (getAllUnitsIdsForNetworks networksFromMessage) context.masterUnits
-                        in
+                        networkUnits =
+                            getUnitsInfoByIds (getAllUnitsIdsForNetworks networksFromMessage) context.masterUnits
+
+                        isRelatedToMessageNetworks =
+                            isCallsignRelatedToNetworks callsignInfo networksFromMessage context.masterUnits
+                    in
+                    if isRelatedToMessageNetworks then
                         NetworkBased
                             { networks = networksFromMessage
                             , units = networkUnits
