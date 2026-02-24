@@ -223,6 +223,13 @@ listNetworksReq model =
     }
 
 
+loadedNetworksCount : Model -> Int
+loadedNetworksCount model =
+    model.networks
+        |> RD.withDefault []
+        |> List.length
+
+
 loadNetworks : Model -> ( Model, Effect Msg )
 loadNetworks model =
     let
@@ -252,6 +259,7 @@ loadMoreNetworks model =
         model2 =
             { model
                 | loadingMore = True
+                , networksOffset = loadedNetworksCount model
             }
     in
     ( model2
@@ -437,11 +445,7 @@ update shared msg model =
                         networks
 
                 nextOffset =
-                    if model.loadingMore then
-                        model.networksOffset + List.length networks
-
-                    else
-                        List.length networks
+                    List.length mergedNetworks
             in
             ( { model
                 | networks =
