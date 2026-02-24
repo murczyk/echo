@@ -1,7 +1,4 @@
-import datetime
 import multiprocessing
-import sys
-from typing import cast
 
 import fasttext
 import humanfriendly

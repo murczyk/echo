@@ -96,17 +96,18 @@ JOIN
 JOIN
     label l ON t.label = l.label_text
 WHERE
-    t.enabled = TRUE
-    AND (
-        mt.model IS NULL
-        OR EXISTS (
-            SELECT 1 FROM sigint_inbox_item_tag t
-            WHERE t.source = mt.source AND t.sigint_inbox_item_id = mt.sigint_inbox_item_id
-              AND t.model IS NULL
-        )
-        OR EXISTS (
-            SELECT 1 FROM sigint_inbox_tag_model_error e
-            WHERE e.source = mt.source AND e.sigint_inbox_item_id = mt.sigint_inbox_item_id
+    t.enabled = TRUE AND (
+    mt.model IS NULL OR (
+        mt.confidence >= 0.8 AND EXISTS (
+                SELECT 1 FROM sigint_inbox_item_tag t
+                WHERE t.source = mt.source
+                  AND t.sigint_inbox_item_id = mt.sigint_inbox_item_id
+                  AND t.model IS NULL
+                UNION ALL
+                SELECT 1 FROM sigint_inbox_tag_model_error e
+                WHERE e.source = mt.source
+                  AND e.sigint_inbox_item_id = mt.sigint_inbox_item_id
+            )
         )
     )
 GROUP BY mt.source, mt.sigint_inbox_item_id, l.label_id;

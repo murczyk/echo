@@ -18,21 +18,27 @@ def signal_handler(temp_dir, lake: Lake, signum, frame):
     sys.exit(1)
 
 
+def refresh(temp_dir: str, databases: str):
+    if databases:
+        databases_list = databases.split(None)
+        if databases_list:
+            print("creating connection to datalake", flush=True)
+            lake = Lake(temp_directory=temp_dir)
+            handler = partial(signal_handler, temp_dir, lake)
+            signal.signal(signal.SIGTERM, handler)
+            signal.signal(signal.SIGINT, handler)
+            try:
+                refresh_datalake(lake, databases_list)
+            finally:
+                lake.close()
+
+
 def real_main(unsupervised: str, databases: str):
     src = Path(__file__).parent
     project = str(src.parent)
 
-    databases_list = databases.split(None)
     with tempfile.TemporaryDirectory() as temp_dir:
-        print("creating connection to datalake", flush=True)
-        lake = Lake(temp_directory=temp_dir)
-        handler = partial(signal_handler, temp_dir, lake)
-        signal.signal(signal.SIGTERM, handler)
-        signal.signal(signal.SIGINT, handler)
-        try:
-            refresh_datalake(lake, databases_list)
-        finally:
-            lake.close()
+        refresh(temp_dir, databases)
 
     flag_unsupervised = False
     if unsupervised == "true":
@@ -104,15 +110,11 @@ def process_file(project: str, unsupervised: bool):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--unsupervised", type=str, default="false")
-    parser.add_argument("--databases", type=str, required=True)
+    parser.add_argument("--databases", type=str, required=False)
 
     args = vars(parser.parse_args())
 
     databases = args["databases"]
-    if not databases or not databases.strip():
-        print("provide at least one database", flush=True)
-        sys.exit(1)
-
     tags = {"task": "scheduled"}
     print(f"starting scheduled training with params: {args}", flush=True)
     with mlflow.start_run(tags=tags):
