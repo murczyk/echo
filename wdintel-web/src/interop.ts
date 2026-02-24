@@ -56,6 +56,7 @@ type AppliedTheme = 'light' | 'dark';
 
 let themeSwitchOverlay: HTMLDivElement | null = null;
 let themeSwitchStyleMounted = false;
+let themeApplyRequestToken = 0;
 
 function ensureThemeSwitchUi(): HTMLDivElement {
     if (!themeSwitchStyleMounted) {
@@ -127,6 +128,13 @@ html.theme-switching *, html.theme-switching *::before, html.theme-switching *::
     return themeSwitchOverlay;
 }
 
+function resetThemeSwitchUi() {
+    if (themeSwitchOverlay) {
+        themeSwitchOverlay.classList.remove('visible');
+    }
+    document.documentElement.classList.remove('theme-switching');
+}
+
 function getResolvedTheme(themeMode: string): AppliedTheme {
     if (themeMode === 'dark') return 'dark';
     if (themeMode === 'light') return 'light';
@@ -150,8 +158,11 @@ function applyResolvedTheme(theme: AppliedTheme) {
 }
 
 function applyTheme(themeMode: string, options?: { withLoader?: boolean }) {
+    const requestToken = ++themeApplyRequestToken;
     const nextTheme = getResolvedTheme(themeMode);
     const currentTheme = getCurrentAppliedTheme();
+
+    resetThemeSwitchUi();
 
     if (!options?.withLoader || nextTheme === currentTheme) {
         applyResolvedTheme(nextTheme);
@@ -163,8 +174,31 @@ function applyTheme(themeMode: string, options?: { withLoader?: boolean }) {
     const minVisibleMs = 500;
     let overlayShownAt = 0;
     let overlayVisible = false;
+    let hideTimer = 0;
+    let finished = false;
+
+    const finish = () => {
+        if (finished) {
+            return;
+        }
+        finished = true;
+        window.clearTimeout(showTimer);
+        window.clearTimeout(hideTimer);
+
+        if (themeApplyRequestToken !== requestToken) {
+            return;
+        }
+
+        if (overlayVisible) {
+            overlay.classList.remove('visible');
+        }
+        document.documentElement.classList.remove('theme-switching');
+    };
 
     const showTimer = window.setTimeout(() => {
+        if (themeApplyRequestToken !== requestToken) {
+            return;
+        }
         overlayVisible = true;
         overlayShownAt = performance.now();
         overlay.classList.add('visible');
@@ -173,15 +207,16 @@ function applyTheme(themeMode: string, options?: { withLoader?: boolean }) {
     document.documentElement.classList.add('theme-switching');
 
     requestAnimationFrame(() => {
+        if (themeApplyRequestToken !== requestToken) {
+            finish();
+            return;
+        }
         applyResolvedTheme(nextTheme);
         requestAnimationFrame(() => {
-            const finish = () => {
-                window.clearTimeout(showTimer);
-                if (overlayVisible) {
-                    overlay.classList.remove('visible');
-                }
-                document.documentElement.classList.remove('theme-switching');
-            };
+            if (themeApplyRequestToken !== requestToken) {
+                finish();
+                return;
+            }
 
             if (!overlayVisible) {
                 finish();
@@ -194,7 +229,7 @@ function applyTheme(themeMode: string, options?: { withLoader?: boolean }) {
                 return;
             }
 
-            window.setTimeout(finish, minVisibleMs - elapsed);
+            hideTimer = window.setTimeout(finish, minVisibleMs - elapsed);
         });
     });
 }
