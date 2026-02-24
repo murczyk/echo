@@ -6,9 +6,8 @@ import mlflow
 import mlflow.models
 import numpy as np
 import pandas as pd
-from fasttext.FastText import _FastText
 from mlflow.data.pandas_dataset import from_pandas
-from mlflow.data.sources import LocalArtifactDatasetSource
+from mlflow.data.sources import LocalArtifactDatasetSource  # pyright: ignore
 from mlflow.entities.logged_model_input import LoggedModelInput
 from mlflow.pyfunc import PyFuncModel
 from sklearn.metrics import average_precision_score, precision_recall_curve

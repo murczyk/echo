@@ -164,6 +164,11 @@ def train_supervised(
             )
             p.start()
             p.join()
+            if p.exitcode != 0:
+                raise RuntimeError(
+                    f"Training process for {label_name} failed with exit code {p.exitcode}"
+                )
+
             model_id = return_dict["model_id"]
             model_uri = return_dict["model_uri"]
 

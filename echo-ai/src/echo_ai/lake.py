@@ -22,6 +22,8 @@ class Lake:
         LOAD ducklake;
         ATTACH 'ducklake:datalake.ducklake.duckdb' AS datalake;
         USE datalake;
+        CALL ducklake_expire_snapshots('datalake', older_than => now() - INTERVAL '1 week');
+        CALL ducklake_cleanup_old_files('datalake', cleanup_all => true);
         """)
 
     def close(self):
@@ -139,8 +141,8 @@ class Lake:
     def split_for_label(
         self, label_column_name: str, split: str, shuffle_seed: int | None
     ) -> DuckDBPyRelation:
-        train_pct = 0.80
-        validation_pct = 0.10
+        train_pct = 0.90
+        validation_pct = 0.05
 
         self.conn.execute(f"""
         CREATE TEMPORARY TABLE IF NOT EXISTS tmp_{label_column_name}_splits AS
