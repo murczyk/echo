@@ -653,4 +653,64 @@ mod tests {
             parse_library_unit(&String::from(body))
         );
     }
+
+    #[ignore]
+    #[test]
+    fn parse_library_unit_parses_all_unit_names_files() {
+        let unit_names_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("data/unit_names");
+        let mut unit_name_files = std::fs::read_dir(&unit_names_dir)
+            .expect("failed to read unit names data dir")
+            .map(|entry| entry.expect("failed to read unit names file").path())
+            .filter(|path| path.is_file())
+            .collect::<Vec<_>>();
+        unit_name_files.sort();
+        assert!(
+            !unit_name_files.is_empty(),
+            "no files found in {}",
+            unit_names_dir.display()
+        );
+
+        let mut empty_parse_cases = Vec::new();
+        for file_path in unit_name_files {
+            let mut reader =
+                csv::Reader::from_path(&file_path).unwrap_or_else(|_| {
+                    panic!("failed to read csv {}", file_path.display())
+                });
+            for (idx, record_result) in reader.records().enumerate() {
+                let record = record_result.unwrap_or_else(|_| {
+                    panic!(
+                        "failed to read record {} in {}",
+                        idx + 2,
+                        file_path.display()
+                    )
+                });
+                let unit_name = record
+                    .get(0)
+                    .map(str::trim)
+                    .unwrap_or_default()
+                    .to_string();
+                if unit_name.is_empty() {
+                    continue;
+                }
+                if parse_library_unit(&unit_name).is_empty() {
+                    empty_parse_cases.push(format!(
+                        "{}:{}: {}",
+                        file_path.display(),
+                        idx + 2,
+                        unit_name
+                    ));
+                }
+            }
+        }
+
+        for case in &empty_parse_cases {
+            println!("{case}");
+        }
+        assert!(
+            empty_parse_cases.is_empty(),
+            "parse_library_unit returned empty for {} case(s)",
+            empty_parse_cases.len()
+        );
+    }
 }
