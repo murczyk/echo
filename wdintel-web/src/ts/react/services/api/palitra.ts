@@ -12,7 +12,7 @@ import {
 } from '../../../../Bindings';
 
 import { listAors } from './aor';
-import { HttpRequestError, postJson, postVoid } from './client';
+import { HttpRequestError, isUnauthorizedError, postJson, postVoid } from './client';
 import { listLogins } from './logins';
 import { listOrganisms } from './organisms';
 import { fetchCurrentUser } from './user';
@@ -57,6 +57,8 @@ type KmzColorInfoLike = {
   colorHex?: string;
   color_hex?: string;
   count?: number | string;
+  suggestedSuffix?: string | null;
+  suggested_suffix?: string | null;
 };
 
 type AnalyzeKmzResponseLike = {
@@ -158,6 +160,7 @@ function normalizeKmzColor(raw: KmzColorInfoLike | null | undefined): KmzColorIn
   return {
     colorHex: raw?.colorHex ?? raw?.color_hex ?? '#00bcd4',
     count: normalizeNumber(raw?.count),
+    suggestedSuffix: raw?.suggestedSuffix ?? raw?.suggested_suffix ?? null,
   };
 }
 
@@ -277,8 +280,19 @@ export async function fetchMyScope(): Promise<MyScope> {
   return normalizeMyScope(data);
 }
 
+async function fetchMyScopeOptional(): Promise<MyScope | null> {
+  try {
+    return await fetchMyScope();
+  } catch (error) {
+    if (isUnauthorizedError(error)) {
+      throw error;
+    }
+    return null;
+  }
+}
+
 export async function fetchPalitraReferenceData(user: User): Promise<{
-  myScope: MyScope;
+  myScope: MyScope | null;
   logins: ListLoginsRsp | null;
   organisms: Organism[] | null;
   aors: Awaited<ReturnType<typeof listAors>> | null;
@@ -286,7 +300,7 @@ export async function fetchPalitraReferenceData(user: User): Promise<{
   const isAdmin = user.roles.includes('Admin');
 
   const [myScope, logins, organisms, aors] = await Promise.all([
-    fetchMyScope(),
+    fetchMyScopeOptional(),
     isAdmin ? listLogins({ sortBy: null, filterByRoles: null }) : Promise.resolve(null),
     isAdmin ? listOrganisms({ sortBy: null }) : Promise.resolve(null),
     isAdmin ? listAors({ sortBy: null }) : Promise.resolve(null),
@@ -298,7 +312,7 @@ export async function fetchPalitraReferenceData(user: User): Promise<{
 export async function fetchPalitraBootstrapData(): Promise<{
   user: User;
   palitras: Palitra[];
-  myScope: MyScope;
+  myScope: MyScope | null;
   logins: ListLoginsRsp | null;
   organisms: Organism[] | null;
   aors: Awaited<ReturnType<typeof listAors>> | null;

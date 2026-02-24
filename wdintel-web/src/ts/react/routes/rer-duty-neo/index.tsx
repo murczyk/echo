@@ -7,7 +7,7 @@ import type {
   InboxMessage,
   InboxMessageTag,
   InboxMessagesReq,
-  RerDutyFeedFilterState,
+  RerDutyQueryStateWf as RerDutyFeedFilterState,
   SavedFilterDuty,
   SignalGroupEntry,
   SignalProfileEntry,

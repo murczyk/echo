@@ -3,7 +3,7 @@ import React from 'react';
 
 import type {
   InboxMessage,
-  RerDutyFeedFilterState,
+  RerDutyQueryStateWf as RerDutyFeedFilterState,
   SavedFilterDuty,
   SignalGroupEntry,
   SignalProfileEntry,

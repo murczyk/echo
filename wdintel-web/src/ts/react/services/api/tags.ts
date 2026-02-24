@@ -1,4 +1,4 @@
-import { TagAdmin, TagKeyword, TagKeywordAddReq, TagModelError, TagModelErrorFE, TagUpsertReq, toTagModelErrorFE } from '../../../../Bindings';
+import { TagAdmin, TagKeyword, TagKeywordAddReq, TagUpsertReq } from '../../../../Bindings';
 
 import { deleteVoid, getJson, postJson, putJson, putVoid } from './client';
 
@@ -12,6 +12,22 @@ type TagKeywordLike = {
   keyword_forms?: string[];
   keywordNegativeForms?: string[];
   keyword_negative_forms?: string[];
+};
+
+type TagModelErrorRaw = {
+  id?: number;
+  body?: string;
+  removedAt?: number;
+  removed_at?: number;
+  removedByLogin?: string;
+  removed_by_login?: string;
+};
+
+export type TagModelErrorFE = {
+  id: number;
+  body: string;
+  removedAt: number;
+  removedByLogin: string;
 };
 
 type TagAdminLike = {
@@ -52,6 +68,15 @@ function normalizeTagAdmin(raw: TagAdminLike): TagAdmin {
   };
 }
 
+function toTagModelErrorFE(raw: TagModelErrorRaw): TagModelErrorFE {
+  return {
+    id: raw.id ?? 0,
+    body: raw.body ?? '',
+    removedAt: raw.removedAt ?? raw.removed_at ?? 0,
+    removedByLogin: raw.removedByLogin ?? raw.removed_by_login ?? '',
+  };
+}
+
 function toTagKeywordAddReqBody(req: TagKeywordAddReq): TagKeywordAddReqBody {
   return {
     is_regex: req.isRegex,
@@ -67,7 +92,7 @@ export async function listTags(): Promise<TagAdmin[]> {
 }
 
 export async function getTagModelErrors(tagId: number): Promise<TagModelErrorFE[]> {
-  const data = await getJson<TagModelError[]>(`/api/tags/${tagId}/model-errors`);
+  const data = await getJson<TagModelErrorRaw[]>(`/api/tags/${tagId}/model-errors`);
   return data.map(toTagModelErrorFE);
 }
 

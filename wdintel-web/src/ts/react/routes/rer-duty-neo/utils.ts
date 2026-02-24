@@ -1,14 +1,17 @@
 import type {
   InboxMessage,
   InboxMessagesReq,
-  RerDutyState,
-  RerDutyFeedFilterState,
+  RerDutyQueryStateWf as RerDutyFeedFilterState,
   SignalGroupEntry,
   SignalProfileEntry,
 } from '../../../../Bindings';
 
 export const PAGE_ID = 'rer-duty-neo';
 export const LOAD_NEWER_INTERVAL_MS = 5000;
+
+export type RerDutyState = {
+  messageFeeds: Array<[string, RerDutyFeedFilterState]> | null;
+};
 
 export function emptyFilter(): RerDutyFeedFilterState {
   return {
