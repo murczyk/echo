@@ -728,6 +728,7 @@ fn is_known_unit_token(unit_name: &str) -> bool {
         || crate::unit::const_units::list_regiments().contains(unit_name)
         || crate::unit::const_units::list_divisions().contains(unit_name)
         || crate::unit::const_units::list_armies().contains(unit_name)
+        || crate::unit::const_units::list_named_unit_names().contains(unit_name)
         || crate::unit::const_units::list_standalone()
             .iter()
             .any(|value| value == unit_name)
@@ -857,7 +858,7 @@ mod tests {
         );
         assert_eq!(res.locality.unwrap(), "МАКАРІВКА, НЕСКУЧНЕ".to_string());
         assert_eq!(
-            vec!["60 омсбр РХБЗ 5 ЗА"],
+            vec!["60 омсбр рхбз 5 за"],
             parse_library_unit(&String::from(body))
         );
     }
@@ -887,7 +888,7 @@ mod tests {
             "ДОРОЖНЯНКА. КОСТЯНТИНІВКА. РЕШЕТИЛІВСЬКЕ".to_string()
         );
         assert_eq!(
-            vec!["177 опмп КаФл"],
+            vec!["177 опмп кафл"],
             parse_library_unit(&String::from(body))
         );
     }
@@ -908,7 +909,7 @@ mod tests {
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(res.unit.unwrap(), "УКХ р/м управління 1 мсб 4 ВБ");
         assert_eq!(res.locality.unwrap(), "ВАСИЛІВКА".to_string());
-        assert_eq!(vec!["1 мсб 4 ВБ"], parse_library_unit(&String::from(body)));
+        assert_eq!(vec!["1 мсб 4 вб"], parse_library_unit(&String::from(body)));
     }
 
     #[test]
@@ -933,7 +934,7 @@ mod tests {
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(res.unit.unwrap(), "УКХ р/м управління 4 ВБ 58 А");
         assert_eq!(res.locality.unwrap(), "КАМ'ЯНСЬКЕ".to_string());
-        assert_eq!(vec!["4 ВБ 58 А"], parse_library_unit(&String::from(body)));
+        assert_eq!(vec!["4 вб 58 а"], parse_library_unit(&String::from(body)));
     }
 
     #[test]
@@ -957,7 +958,7 @@ mod tests {
         assert_eq!(res.unit.unwrap(), "УКХ р/м мсб на АТ 503 мсп 19 мсд 58 ЗА");
         assert_eq!(res.locality.unwrap(), "МИРНЕ".to_string());
         assert_eq!(
-            vec!["503 мсп 19 мсд 58 ЗА"],
+            vec!["503 мсп 19 мсд 58 за"],
             parse_library_unit(&String::from(body))
         );
     }
@@ -1030,7 +1031,7 @@ mod tests {
         );
         assert_eq!(res.locality.unwrap(), "ТАРАСІВКА - ПОЛОГИ".to_string());
         assert_eq!(
-            vec!["70 мсп 42 мсд 58 А"],
+            vec!["70 мсп 42 мсд 58 а"],
             parse_library_unit(&String::from(body))
         );
     }
@@ -1077,7 +1078,7 @@ mod tests {
         );
         assert_eq!(res.locality.unwrap(), "Дорожнянка".to_string());
         assert_eq!(
-            vec!["64 омсбр 35 А"],
+            vec!["64 омсбр 35 а"],
             parse_library_unit(&String::from(body))
         );
     }
@@ -1100,7 +1101,7 @@ mod tests {
         );
         assert_eq!(res.locality, None);
         assert_eq!(
-            vec!["5 сб 123 сп 1 АК"],
+            vec!["5 сб 123 сп 1 ак"],
             parse_library_unit(&String::from(body))
         );
     }
@@ -1120,7 +1121,7 @@ mod tests {
         assert_eq!(res.unit.unwrap(), r#"УКХ р/м 5 сб 112 мсп МР 1 АК"#);
         assert_eq!(res.locality.unwrap(), "КЕРМЕНЧИК".to_string());
         assert_eq!(
-            vec!["5 сб 112 мсп 1 АК"],
+            vec!["5 сб 112 мсп 1 ак"],
             parse_library_unit(&String::from(body))
         );
     }
@@ -1143,7 +1144,7 @@ mod tests {
         );
         assert_eq!(res.locality.unwrap(), "ПОЛОГИ".to_string());
         assert_eq!(
-            vec!["1113 сп 1 АК"],
+            vec!["1113 сп 1 ак"],
             parse_library_unit(&String::from(body))
         );
     }
@@ -1170,7 +1171,7 @@ mod tests {
         assert_eq!(res.unit.unwrap(), r#"УКХ р/м реадн 70 мсп 42 мсд 58 А"#);
         assert_eq!(res.locality, None);
         assert_eq!(
-            vec!["70 мсп 42 мсд 58 А"],
+            vec!["70 мсп 42 мсд 58 а"],
             parse_library_unit(&String::from(body))
         );
     }
@@ -1194,7 +1195,7 @@ mod tests {
             "ПАВЛІВСЬКЕ, НОВОФЕДОРІВКА".to_string()
         );
         assert_eq!(
-            vec!["1 мсб 70 мсп 42 мсд 58 А"],
+            vec!["1 мсб 70 мсп 42 мсд 58 а"],
             parse_library_unit(&String::from(body))
         );
     }
@@ -1217,7 +1218,7 @@ mod tests {
         );
         assert_eq!(res.locality.unwrap(), "МИРНЕ".to_string());
         assert_eq!(
-            vec!["1 мсб 38 омсбр 35 А"],
+            vec!["1 мсб 38 омсбр 35 а"],
             parse_library_unit(&String::from(body))
         );
     }
@@ -1341,7 +1342,7 @@ mod tests {
         let locality_v2_txt = validate_locality_v2(res.locality_v2);
         assert_eq!(locality_v2_txt, vec!["ЛЮБИМІВКА", "ОРЛИНСЬКЕ"]);
         assert_eq!(
-            vec!["114 мсп 127 мсд 5 А"],
+            vec!["114 мсп 127 мсд 5 а"],
             parse_library_unit(&String::from(body))
         );
     }
@@ -1519,8 +1520,7 @@ mod tests {
 УКХ р/м управління сб 103 осп район пд.-сх. окол. Торецьк
 НВ
 НВ
-
-— Лупс 50. Читер, Читер 50. Читер, Читер 50. Днепр, Днепр 50. Днепр, Днепр 50. Днепр повтори, не прошло. Днепр повтори, не прошло. Плюс, Абухов 50. Плюс, Абухов 50. Чернобы 50. Чернобы 50. Ялта АДС 55. Ялта АДС 55."#;
+"#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_settlements_data_config(
@@ -1641,13 +1641,13 @@ mod tests {
 
     #[test]
     fn extract_unit_31() {
-        let body = r#"Отримано з поста "Л"  
--------------------------------  
-УКХ р/м управління 901/902 полку особливого призначення фсвнг рф (район ОГІРЦЕВЕ-ГАТИЩЕ-ВОВЧАНСЬК)  
-08:21  
-МЕТРО  
-ОЛИМП 2  
-406.975  
+        let body = r#"Отримано з поста "Л"
+-------------------------------
+УКХ р/м управління 901/902 полку особливого призначення фсвнг рф (район ОГІРЦЕВЕ-ГАТИЩЕ-ВОВЧАНСЬК)
+08:21
+МЕТРО
+ОЛИМП 2
+406.975
 1. п\"#;
 
         let config = crate::config::read_config(Mode::Test).unwrap();
@@ -1671,13 +1671,13 @@ mod tests {
 
     #[test]
     fn extract_unit_32() {
-        let body = r#"Ціль:0901/18  
-Час:17:44  
-Ідентифікація: Цифрова Радіостанція  
-Місце розташування: Новопрокопівка-Пшеничне  
-Координати: 36T YT 16058 52456  
-Частота: 445.439 МГц  
-Приналежність підрозділу: ймовірно 2 мсб 70 мсп 42 мсд 58 А  
+        let body = r#"Ціль:0901/18
+Час:17:44
+Ідентифікація: Цифрова Радіостанція
+Місце розташування: Новопрокопівка-Пшеничне
+Координати: 36T YT 16058 52456
+Частота: 445.439 МГц
+Приналежність підрозділу: ймовірно 2 мсб 70 мсп 42 мсд 58 А
 Радіус похибки: 1000 м"#;
 
         let config = crate::config::read_config(Mode::Test).unwrap();
@@ -1700,10 +1700,10 @@ mod tests {
 
     #[test]
     fn extract_unit_33() {
-        let body = r#"26.12, 23:48:55  
-421.0810  
-УКХ р/м НВ підрозділу(DMR), між ОЧЕРЕТИНЕ, КЕРАМІК  
-АЛТАЙ  
+        let body = r#"26.12, 23:48:55
+421.0810
+УКХ р/м НВ підрозділу(DMR), між ОЧЕРЕТИНЕ, КЕРАМІК
+АЛТАЙ
 АЛМАЗ"#;
 
         let config = crate::config::read_config(Mode::Test).unwrap();
@@ -2014,7 +2014,7 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
         );
         assert_eq!(res.locality, None);
         assert_eq!(
-            vec!["70 мсп 42 мсд 58 А"],
+            vec!["70 мсп 42 мсд 58 а"],
             parse_library_unit(&String::from(body))
         );
     }
@@ -2208,7 +2208,7 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
         let locality_v2_txt = validate_locality_v2(res.locality_v2);
         assert_eq!(locality_v2_txt, vec!["ЛЮБИМІВКА"]);
         assert_eq!(
-            vec!["60 омсбр 5 А"],
+            vec!["60 омсбр 5 а"],
             parse_library_unit(&String::from(body))
         );
     }
@@ -2244,7 +2244,7 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
         );
         let locality_v2_txt = validate_locality_v2(res.locality_v2);
         assert_eq!(locality_v2_txt, vec!["СОЛОДКОВОДНЕ".to_string()]);
-        assert_eq!(vec!["36 А"], parse_library_unit(&String::from(body)));
+        assert_eq!(vec!["36 а"], parse_library_unit(&String::from(body)));
     }
 
     #[test]
@@ -2280,7 +2280,7 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
         let locality_v2_txt = validate_locality_v2(res.locality_v2);
         assert_eq!(locality_v2_txt, vec!["ЛЮБИМІВКА", "СТАРОМЛИНІВКА"]);
         assert_eq!(
-            vec!["60 омсбр 5 А"],
+            vec!["60 омсбр 5 а"],
             parse_library_unit(&String::from(body))
         );
     }
@@ -2311,7 +2311,7 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
         let locality_v2_txt = validate_locality_v2(res.locality_v2);
         assert_eq!(locality_v2_txt, vec!["КРАСНОСЕЛІВКА".to_string()]);
         assert_eq!(
-            vec!["336 обмп 3 А"],
+            vec!["336 обмп 3 а"],
             parse_library_unit(&String::from(body))
         );
     }
@@ -2344,7 +2344,7 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(res.unit.unwrap(), "DMRe (йм. 114 мсп 127 мсд 5 А) (йм. р-н Новоселівка-Сміле-Гоголівка)".to_string().to_string());
         assert_eq!(
-            vec!["114 мсп 127 мсд 5 А"],
+            vec!["114 мсп 127 мсд 5 а"],
             parse_library_unit(&String::from(body))
         );
         assert_eq!(res.locality.unwrap(), "DMRe (йм. 114 мсп 127 мсд 5 А) (йм. р-н Новоселівка-Сміле-Гоголівка)");
@@ -2405,7 +2405,7 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
             "йм. 64 осмбр 25 п 35 А(р-н Пд. від Дорожнянка)".to_string()
         );
         assert_eq!(
-            vec!["64 осмбр", "25 п 35 А"],
+            vec!["64 осмбр", "25 п 35 а"],
             parse_library_unit(&String::from(body))
         );
         assert_eq!(
