@@ -32,8 +32,11 @@ models = {
 }
 pat_alnum_apostrophe = re.compile(r"[\w'`\u2019\u02BC]+", re.UNICODE)
 
-with models_root.joinpath("thresholds.json").open() as file:
-    thresholds = json.load(file)
+try:
+    with models_root.joinpath("thresholds.json").open() as file:
+        thresholds = json.load(file)
+except:
+    thresholds = {key: 0.5 for key in models}
 
 
 @app.route("/")
