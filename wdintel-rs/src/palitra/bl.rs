@@ -8,9 +8,84 @@ use chrono::{DateTime, Utc};
 use itertools::{Either, Itertools};
 use redis::AsyncCommands;
 use sea_orm::prelude::*;
+use sea_orm::sea_query::SimpleExpr;
 use sea_orm::*;
 use serde::de::DeserializeOwned;
 use std::collections::{HashMap, HashSet};
+
+#[derive(Debug, Clone)]
+enum LabelPattern {
+    Exact(String),
+    Prefix(String),
+    Suffix(String),
+    Contains(String),
+}
+
+impl LabelPattern {
+    fn parse(label: &str) -> Option<Self> {
+        let normalized = normalize_label_cache(label)?;
+        let has_prefix_star = normalized.starts_with('*');
+        let has_suffix_star = normalized.ends_with('*');
+
+        let trimmed = normalized
+            .trim_start_matches('*')
+            .trim_end_matches('*')
+            .trim()
+            .to_string();
+
+        let pattern = match (has_prefix_star, has_suffix_star) {
+            (false, false) => LabelPattern::Exact(normalized),
+            (true, false) => {
+                if trimmed.is_empty() {
+                    return None;
+                }
+                LabelPattern::Suffix(trimmed)
+            }
+            (false, true) => {
+                if trimmed.is_empty() {
+                    return None;
+                }
+                LabelPattern::Prefix(trimmed)
+            }
+            (true, true) => {
+                if trimmed.is_empty() {
+                    return None;
+                }
+                LabelPattern::Contains(trimmed)
+            }
+        };
+        Some(pattern)
+    }
+
+    fn to_expr(&self) -> SimpleExpr {
+        match self {
+            LabelPattern::Exact(value) => {
+                Expr::cust_with_values("lower(label) = $1", vec![value.clone()])
+            }
+            LabelPattern::Prefix(value) => Expr::cust_with_values(
+                "lower(label) LIKE $1 ESCAPE '\\'",
+                vec![format!("{}%", escape_like(value))],
+            ),
+            LabelPattern::Suffix(value) => Expr::cust_with_values(
+                "lower(label) LIKE $1 ESCAPE '\\'",
+                vec![format!("%{}", escape_like(value))],
+            ),
+            LabelPattern::Contains(value) => Expr::cust_with_values(
+                "lower(label) LIKE $1 ESCAPE '\\'",
+                vec![format!("%{}%", escape_like(value))],
+            ),
+        }
+    }
+
+    fn matches(&self, normalized_label: &str) -> bool {
+        match self {
+            LabelPattern::Exact(value) => normalized_label == value,
+            LabelPattern::Prefix(value) => normalized_label.starts_with(value),
+            LabelPattern::Suffix(value) => normalized_label.ends_with(value),
+            LabelPattern::Contains(value) => normalized_label.contains(value),
+        }
+    }
+}
 
 enum PalitraUpdateAction {
     Insert,
@@ -121,28 +196,18 @@ pub async fn search_palitra_points_by_labels(
     }
     dbg!("{:?}", &palitra_ids);
 
-    let mut normalized_labels: Vec<String> = req
+    let label_patterns: Vec<LabelPattern> = req
         .point_labels
         .iter()
-        .filter_map(|label| normalize_label_cache(label))
-        .map(|label| label.to_lowercase())
+        .filter_map(|point| LabelPattern::parse(point))
         .collect();
-    if normalized_labels.len() > 1 {
-        let combined_label = normalized_labels.join(" ");
-        if !normalized_labels.contains(&combined_label) {
-            normalized_labels.push(combined_label);
-        }
-    }
-    if normalized_labels.is_empty() {
+    if label_patterns.is_empty() {
         return Ok(vec![]);
     }
 
     let mut label_condition = Condition::any();
-    for label in &normalized_labels {
-        label_condition = label_condition.add(Expr::cust_with_values(
-            "lower(label) = $1",
-            vec![label.clone()],
-        ));
+    for pattern in &label_patterns {
+        label_condition = label_condition.add(pattern.to_expr());
     }
 
     let points = palitra_point::Entity::find()
@@ -161,7 +226,31 @@ pub async fn search_palitra_points_by_labels(
         .c(h!())?;
 
     let mut points_by_id: HashMap<i64, Vec<PalitraPoint>> = HashMap::new();
+    let mut matched_labels: HashMap<i64, HashSet<usize>> = HashMap::new();
     for (palitra_id, lat, lng, label) in points {
+        if let Some(label_value) = label.clone() {
+            if let Some(normalized_label) = normalize_label_cache(&label_value)
+            {
+                let mut matched_any = false;
+                for (idx, pattern) in label_patterns.iter().enumerate() {
+                    if pattern.matches(&normalized_label) {
+                        matched_labels
+                            .entry(palitra_id)
+                            .or_default()
+                            .insert(idx);
+                        matched_any = true;
+                    }
+                }
+                if !matched_any {
+                    continue;
+                }
+            } else {
+                continue;
+            }
+        } else {
+            continue;
+        }
+
         points_by_id
             .entry(palitra_id)
             .or_default()
@@ -173,9 +262,12 @@ pub async fn search_palitra_points_by_labels(
 
     let result = palitra_ids
         .into_iter()
-        .map(|palitra_id| PalitraPoints {
-            palitra_id,
-            points: points_by_id.remove(&palitra_id).unwrap_or_default(),
+        .filter_map(|palitra_id| {
+            let points = points_by_id.remove(&palitra_id).unwrap_or_default();
+            if points.is_empty() {
+                return None;
+            }
+            Some(PalitraPoints { palitra_id, points })
         })
         .collect();
     Ok(result)
@@ -214,7 +306,7 @@ pub async fn suggest_palitra_point_labels(
         .filter(palitra_point::Column::Deleted.eq(false))
         .filter(palitra_point::Column::Label.is_not_null())
         .filter(Expr::cust_with_values(
-            "lower(label) LIKE $1",
+            "lower(label) LIKE $1 ESCAPE '\\'",
             vec![prefix_pattern],
         ))
         .order_by_asc(palitra_point::Column::Label)
@@ -244,7 +336,7 @@ pub async fn suggest_palitra_point_labels(
             .filter(palitra_point::Column::Deleted.eq(false))
             .filter(palitra_point::Column::Label.is_not_null())
             .filter(Expr::cust_with_values(
-                "lower(label) LIKE $1",
+                "lower(label) LIKE $1 ESCAPE '\\'",
                 vec![similar_pattern],
             ))
             .order_by_asc(palitra_point::Column::Label)
@@ -288,10 +380,18 @@ fn normalize_label_cache(label: &str) -> Option<String> {
     }
 }
 
+fn escape_like(input: &str) -> String {
+    input
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
+}
+
 fn build_label_pattern(label: &str, surround: bool) -> String {
     let pattern = label
         .split_whitespace()
         .filter(|part| !part.is_empty())
+        .map(escape_like)
         .join("%");
     if surround {
         format!("%{}%", pattern)
@@ -967,4 +1067,137 @@ where
         }
     }
     Ok(palitra)
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::functest::tests::{
+        cleanup, find_test_login, find_test_palitra, mk_palitra_point,
+    };
+    use crate::palitra::bl::search_palitra_points_by_labels;
+    use crate::palitra::types::PalitraSearchPointsReq;
+    use serial_test::serial;
+
+    #[serial]
+    #[tokio::test]
+    async fn test_palitra_search_full_phrase() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+
+        let label = "лісосмуга 12".to_string();
+        let palitra = find_test_palitra(&env.dbx).await.unwrap();
+        mk_palitra_point(label.clone(), palitra.id, &env.dbx)
+            .await
+            .unwrap();
+
+        let req =
+            create_palitra_search_request(palitra.id, vec![label.clone()])
+                .await;
+        let res = search_palitra_points_by_labels(login.login, req, &env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(res.len(), 1);
+        assert_eq!(res[0].points.len(), 1);
+        assert_eq!(res[0].points[0].label.as_deref(), Some("лісосмуга 12"));
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_palitra_search_prefix() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+
+        let labels = ["1лісосмуга 12".to_string(), "2лісосмуга 12".to_string()];
+        let label_search = "*лісосмуга 12".to_string();
+        let palitra = find_test_palitra(&env.dbx).await.unwrap();
+        mk_palitra_point(labels[0].clone(), palitra.id, &env.dbx)
+            .await
+            .unwrap();
+        mk_palitra_point(labels[1].clone(), palitra.id, &env.dbx)
+            .await
+            .unwrap();
+
+        let req = create_palitra_search_request(
+            palitra.id,
+            vec![label_search.clone()],
+        )
+        .await;
+        let res = search_palitra_points_by_labels(login.login, req, &env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(res.len(), 1);
+        assert_eq!(res[0].points.len(), 2);
+        assert_eq!(res[0].points[0].label.as_deref(), Some("1лісосмуга 12"));
+        assert_eq!(res[0].points[1].label.as_deref(), Some("2лісосмуга 12"));
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_palitra_search_suffix() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+
+        let labels = ["лісосмуга 12".to_string(), "лісосмуга 13".to_string()];
+        let label_search = "лісосмуга 1*".to_string();
+        let palitra = find_test_palitra(&env.dbx).await.unwrap();
+        mk_palitra_point(labels[0].clone(), palitra.id, &env.dbx)
+            .await
+            .unwrap();
+        mk_palitra_point(labels[1].clone(), palitra.id, &env.dbx)
+            .await
+            .unwrap();
+
+        let req = create_palitra_search_request(
+            palitra.id,
+            vec![label_search.clone()],
+        )
+        .await;
+        let res = search_palitra_points_by_labels(login.login, req, &env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(res.len(), 1);
+        assert_eq!(res[0].points.len(), 2);
+        assert_eq!(res[0].points[0].label.as_deref(), Some("лісосмуга 12"));
+        assert_eq!(res[0].points[1].label.as_deref(), Some("лісосмуга 13"));
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_palitra_search_prefix_and_suffix() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+
+        let labels = ["1лісосмуга 12".to_string(), "2лісосмуга 13".to_string()];
+        let label_search = "*лісосмуга 1*".to_string();
+        let palitra = find_test_palitra(&env.dbx).await.unwrap();
+        mk_palitra_point(labels[0].clone(), palitra.id, &env.dbx)
+            .await
+            .unwrap();
+        mk_palitra_point(labels[1].clone(), palitra.id, &env.dbx)
+            .await
+            .unwrap();
+
+        let req = create_palitra_search_request(
+            palitra.id,
+            vec![label_search.clone()],
+        )
+        .await;
+        let res = search_palitra_points_by_labels(login.login, req, &env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(res.len(), 1);
+        assert_eq!(res[0].points.len(), 2);
+        assert_eq!(res[0].points[0].label.as_deref(), Some("1лісосмуга 12"));
+        assert_eq!(res[0].points[1].label.as_deref(), Some("2лісосмуга 13"));
+    }
+
+    async fn create_palitra_search_request(
+        palitra_id: i64,
+        labels: Vec<String>,
+    ) -> PalitraSearchPointsReq {
+        PalitraSearchPointsReq {
+            palitra_ids: vec![palitra_id],
+            point_labels: labels,
+        }
+    }
 }

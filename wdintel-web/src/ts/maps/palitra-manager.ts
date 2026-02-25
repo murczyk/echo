@@ -4,6 +4,11 @@ import "leaflet.markercluster/dist/leaflet.markercluster.js"
 import { PalitraDetails, PalitraManagerOptions, PalitraManagerCallbacks, Palitra, PalitraPoint, Coords } from './palitra-types';
 import { PalitraCacheManager } from './palitra-cache-manager';
 import { PalitrasControl } from './controls';
+import {
+  parseSearchQuery,
+  labelMatchesTerm,
+  termToApiString,
+} from './palitra-search';
 
 export class PalitraManager {
   private cacheManager: PalitraCacheManager;
@@ -100,10 +105,8 @@ export class PalitraManager {
       return;
     }
     this.callbacks.onSearchLoadingChanged(true);
-    
-    /** Split multiple points by comma or space */
-    const tokens = q.split(/[,\s]+/).filter(Boolean);
-    const tokensLower = tokens.map((t) => t.toLowerCase());
+
+    const searchTerms = parseSearchQuery(q);
 
     const fromCache = this.cacheManager.getCachedPointsForPalitras(palitraIds);
     const filteredFromCache = fromCache.map(({ palitra_id, points }) => ({
@@ -111,12 +114,12 @@ export class PalitraManager {
       points: points.filter(
         (p) =>
           p.label &&
-          tokensLower.some((t) => p.label!.toLowerCase().includes(t))
+          searchTerms.some((term) => labelMatchesTerm(p.label!.toLowerCase(), term))
       )
     }));
     this._showSearchResults(filteredFromCache);
 
-    const termsForApi = [...new Set(tokens)];
+    const termsForApi = [...new Set(searchTerms.map(termToApiString))];
     this.cacheManager
       .fetchSearchPoints(palitraIds, termsForApi)
       .then((backendData) => {
