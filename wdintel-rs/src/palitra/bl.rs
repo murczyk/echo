@@ -1134,7 +1134,7 @@ mod tests {
         let env = cleanup().await.unwrap();
         let login = find_test_login(&env.dbx).await.unwrap();
 
-        let labels = ["лісосмуга 12".to_string(), "лісосмуга 12".to_string()];
+        let labels = ["лісосмуга 12".to_string(), "лісосмуга 13".to_string()];
         let label_search = "лісосмуга 1*".to_string();
         let palitra = insert_palitra(login.login.clone(), &env.dbx).await;
         insert_palitra_access(palitra.id, login.login.clone(), &env.dbx).await;
