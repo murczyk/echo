@@ -47,9 +47,29 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "SSH tunnel 6432->5432",
+      "label": "Stop SSH tunnel",
       "type": "shell",
-      "command": "ssh -f -nNT -L 6432:localhost:5432 -o ExitOnForwardFailure=yes echo-pivnich-dev",
+      "command": "ssh -S .vscode/pg-tunnel.sock -O exit echo-pivnich-dev || true",
+      "problemMatcher": [],
+      "presentation": { "panel": "new", "reveal": "always" }
+    },
+    {
+      "label": "Force free dev ports",
+      "type": "shell",
+      "command": "bash -lc 'for p in 8081 1234 5000; do fuser -k $p/tcp 2>/dev/null || true; done'",
+      "problemMatcher": [],
+      "presentation": { "panel": "new", "reveal": "always" }
+    },
+    {
+      "label": "Stop everything",
+      "dependsOrder": "sequence",
+      "dependsOn": ["Stop SSH tunnel", "Force free dev ports"],
+      "problemMatcher": []
+    },
+    {
+      "label": "SSH tunnel 6432 -> 5432 (idempotent)",
+      "type": "shell",
+      "command": "bash -lc 'mkdir -p .vscode; if nc -z 127.0.0.1 6432; then echo \"Tunnel already up on :6432\"; else ssh -f -nNT -M -S .vscode/pg-tunnel.sock -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -L 6432:localhost:5432 echo-pivnich-dev; fi'",
       "isBackground": true,
       "problemMatcher": [],
       "presentation": { "panel": "new", "reveal": "always" }
@@ -68,7 +88,7 @@
       "presentation": { "panel": "new", "focus": true }
     },
     {
-      "label": "Dev server",
+      "label": "Dev server (8081)",
       "type": "shell",
       "command": "just dev-back",
       "isBackground": true,
@@ -76,7 +96,7 @@
       "presentation": { "panel": "new" }
     },
     {
-      "label": "Python",
+      "label": "Python (5000)",
       "type": "shell",
       "command": "just dev-py",
       "isBackground": true,
@@ -84,7 +104,7 @@
       "presentation": { "panel": "new" }
     },
     {
-      "label": "Front server",
+      "label": "Front server (1234)",
       "type": "shell",
       "command": "just dev-front",
       "isBackground": true,
@@ -94,13 +114,13 @@
     {
       "label": "Start apps (parallel)",
       "dependsOrder": "parallel",
-      "dependsOn": ["psql (interactive via :6432)", "Dev server", "Python", "Front server"],
+      "dependsOn": ["psql (interactive via :6432)", "Dev server (8081)", "Python (5000)", "Front server (1234)"],
       "problemMatcher": []
     },
     {
       "label": "Start everything",
       "dependsOrder": "sequence",
-      "dependsOn": ["SSH tunnel 6432->5432", "Wait for tunnel :6432", "Start apps (parallel)"],
+      "dependsOn": ["SSH tunnel 6432 -> 5432 (idempotent)", "Wait for tunnel :6432", "Start apps (parallel)"],
       "problemMatcher": [],
       "runOptions": {
         "runOn": "folderOpen"
@@ -113,3 +133,5 @@
 Крок 2: Перезапустити VS Code (Shift + Command + P > Developer: Reload Window)
 
 Крок 3: Погодитись на автоматичний запуск задач при запуску VS Code (застосунок спитає дозвіл при запуску)
+
+Якщо запит пропущено: Shift + Command + P > Tasks: Manage Automatic Tasks in Folder > Allow Automatic Tasks
