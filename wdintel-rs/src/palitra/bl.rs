@@ -1068,3 +1068,179 @@ where
     }
     Ok(palitra)
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::entities::{palitra, palitra_access_login, palitra_point};
+    use crate::functest::tests::{cleanup, find_test_login};
+    use crate::palitra::bl::search_palitra_points_by_labels;
+    use crate::palitra::types::PalitraSearchPointsReq;
+    use chrono::Utc;
+    use sea_orm::{ActiveModelTrait, DatabaseConnection, Set};
+    use serial_test::serial;
+
+    #[serial]
+    #[tokio::test]
+    async fn test_palitra_search_full_phrase() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+
+        let label = "лісосмуга 12".to_string();
+        let palitra = insert_palitra(login.login.clone(), &env.dbx).await;
+        insert_palitra_access(palitra.id, login.login.clone(), &env.dbx).await;
+        insert_palitra_point(label.clone(), palitra.id, &env.dbx).await;
+        let req =
+            create_palitra_search_request(palitra.id, vec![label.clone()])
+                .await;
+
+        let res = search_palitra_points_by_labels(login.login, req, &env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(res.len(), 1);
+        assert_eq!(res[0].points.len(), 1);
+        assert_eq!(res[0].points[0].label.as_deref(), Some("лісосмуга 12"));
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_palitra_search_prefix() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+
+        let labels = ["1лісосмуга 12".to_string(), "2лісосмуга 12".to_string()];
+        let label_search = "*лісосмуга 12".to_string();
+        let palitra = insert_palitra(login.login.clone(), &env.dbx).await;
+        insert_palitra_access(palitra.id, login.login.clone(), &env.dbx).await;
+        insert_palitra_point(labels[0].clone(), palitra.id, &env.dbx).await;
+        insert_palitra_point(labels[1].clone(), palitra.id, &env.dbx).await;
+        let req = create_palitra_search_request(
+            palitra.id,
+            vec![label_search.clone()],
+        )
+        .await;
+
+        let res = search_palitra_points_by_labels(login.login, req, &env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(res.len(), 1);
+        assert_eq!(res[0].points.len(), 2);
+        assert_eq!(res[0].points[0].label.as_deref(), Some("1лісосмуга 12"));
+        assert_eq!(res[0].points[1].label.as_deref(), Some("2лісосмуга 12"));
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_palitra_search_suffix() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+
+        let labels = ["лісосмуга 12".to_string(), "лісосмуга 12".to_string()];
+        let label_search = "лісосмуга 1*".to_string();
+        let palitra = insert_palitra(login.login.clone(), &env.dbx).await;
+        insert_palitra_access(palitra.id, login.login.clone(), &env.dbx).await;
+        insert_palitra_point(labels[0].clone(), palitra.id, &env.dbx).await;
+        insert_palitra_point(labels[1].clone(), palitra.id, &env.dbx).await;
+        let req = create_palitra_search_request(
+            palitra.id,
+            vec![label_search.clone()],
+        )
+        .await;
+
+        let res = search_palitra_points_by_labels(login.login, req, &env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(res.len(), 1);
+        assert_eq!(res[0].points.len(), 2);
+        assert_eq!(res[0].points[0].label.as_deref(), Some("лісосмуга 12"));
+        assert_eq!(res[0].points[1].label.as_deref(), Some("лісосмуга 13"));
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_palitra_search_prefix_and_suffix() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+
+        let labels = ["1лісосмуга 12".to_string(), "2лісосмуга 13".to_string()];
+        let label_search = "*лісосмуга 1*".to_string();
+        let palitra = insert_palitra(login.login.clone(), &env.dbx).await;
+        insert_palitra_access(palitra.id, login.login.clone(), &env.dbx).await;
+        insert_palitra_point(labels[0].clone(), palitra.id, &env.dbx).await;
+        insert_palitra_point(labels[1].clone(), palitra.id, &env.dbx).await;
+        let req = create_palitra_search_request(
+            palitra.id,
+            vec![label_search.clone()],
+        )
+        .await;
+
+        let res = search_palitra_points_by_labels(login.login, req, &env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(res.len(), 1);
+        assert_eq!(res[0].points.len(), 2);
+        assert_eq!(res[0].points[0].label.as_deref(), Some("1лісосмуга 12"));
+        assert_eq!(res[0].points[1].label.as_deref(), Some("2лісосмуга 13"));
+    }
+
+    async fn create_palitra_search_request(
+        palitra_id: i64,
+        labels: Vec<String>,
+    ) -> PalitraSearchPointsReq {
+        PalitraSearchPointsReq {
+            palitra_ids: vec![palitra_id],
+            point_labels: labels,
+        }
+    }
+
+    async fn insert_palitra_point(
+        label: String,
+        palitra_id: i64,
+        dbx: &DatabaseConnection,
+    ) {
+        palitra_point::ActiveModel {
+            palitra_id: Set(palitra_id),
+            lat: Set(10.0),
+            lng: Set(20.0),
+            deleted: Set(false),
+            created_at: Set(Utc::now().naive_utc()),
+            label: Set(Some(label)),
+            ..Default::default()
+        }
+        .insert(dbx)
+        .await
+        .unwrap();
+    }
+
+    async fn insert_palitra_access(
+        palitra_id: i64,
+        login: String,
+        dbx: &DatabaseConnection,
+    ) {
+        palitra_access_login::ActiveModel {
+            palitra_id: Set(palitra_id),
+            login: Set(login.clone()),
+            created_at: Set(Utc::now().naive_utc()),
+            ..Default::default()
+        }
+        .insert(dbx)
+        .await
+        .unwrap();
+    }
+
+    async fn insert_palitra(
+        login: String,
+        dbx: &DatabaseConnection,
+    ) -> palitra::Model {
+        palitra::ActiveModel {
+            name: Set("Test".into()),
+            hex: Set("#ffffff".into()),
+            author: Set(Some(login.clone())),
+            deleted: Set(false),
+            created_at: Set(Utc::now().naive_utc()),
+            ..Default::default()
+        }
+        .insert(dbx)
+        .await
+        .unwrap()
+    }
+}
