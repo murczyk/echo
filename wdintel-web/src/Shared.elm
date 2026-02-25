@@ -172,10 +172,7 @@ update req msg model =
 
         SetThemeMode themeMode ->
             ( { model | themeMode = themeMode }
-            , E.batch
-                [ E.sendCmd <| Ports.shared_saveThemeMode (Shared.Model.themeModeToString themeMode)
-                , E.sendCmd <| Ports.shared_toggleDarkMode ()
-                ]
+            , E.sendCmd <| Ports.shared_saveThemeMode (Shared.Model.themeModeToString themeMode)
             )
 
         ThemeModeLoaded themeModeStr ->
