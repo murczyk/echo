@@ -58,6 +58,9 @@ sinks:
     method: "post"
     encoding:
       codec: json
+      # Keep routing helper field out of Signoz payload body.
+      except_fields:
+        - "_signoz_logs_endpoint"
     # Signoz rollout is opt-in via SIGNOZ_LOGS_ENABLED.
     healthcheck:
       enabled: false
