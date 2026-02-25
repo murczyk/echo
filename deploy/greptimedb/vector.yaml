@@ -33,6 +33,16 @@ transforms:
       - signoz_filter
     source: |
       del(._send_to_signoz)
+
+      # Promote host into canonical OTel host.name attribute for SigNoz fast filters.
+      host_name = to_string(.host) ?? ""
+      if host_name == "" {
+        host_name = to_string(._HOSTNAME) ?? ""
+      }
+      if host_name != "" {
+        ."host.name" = host_name
+      }
+
       # Signoz JSON receiver expects either unix-nanos timestamp or no timestamp.
       del(.timestamp)
 
