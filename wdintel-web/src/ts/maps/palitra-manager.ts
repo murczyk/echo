@@ -119,7 +119,6 @@ export class PalitraManager {
     }));
     this._showSearchResults(filteredFromCache);
 
-    /** Send all terms to backend: exact as "40", prefix as "40*", suffix as "*40" */
     const termsForApi = [...new Set(searchTerms.map(termToApiString))];
     this.cacheManager
       .fetchSearchPoints(palitraIds, termsForApi)
