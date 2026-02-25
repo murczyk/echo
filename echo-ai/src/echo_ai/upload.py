@@ -148,7 +148,7 @@ def upload_artifacts(
             model_version = model.register()
             registered.append(model_version)
             print(f"new version {model_version.version} for {model.name} registered")
-            thresholds[label_name]["version"] = model_version.version
+            thresholds[label_name]["model_version"] = model_version.version
 
         key = prefix + "thresholds.json"
         print(f"uploading thresholds to bucket {bucket} at {key}")

@@ -25,7 +25,6 @@ fi
 
 if ! sudo grep -q echo-ai-train "$PG_HBA_CONF"; then
   echo "adding echo-ai-train to pg_hba.conf"
-  TRAIN_IP=$(tailscale ip -4)
   cat <<EOF | sudo tee -a "$PG_HBA_CONF"
 # echo-ai-train
 host    wd              wd              ${TRAIN_IP}/32            scram-sha-256
