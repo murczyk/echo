@@ -22,10 +22,10 @@ export function parseSearchTerm(token: string): SearchTerm {
 }
 
 /**
- * Parse full query into search terms (split by comma/space, then parse each token).
+ * Parse full query into search terms (split by comma, then parse each token).
  */
 export function parseSearchQuery(query: string): SearchTerm[] {
-  const tokens = query.trim().split(/[,\s]+/).filter(Boolean);
+  const tokens = query.split(',').map((s) => s.trim()).filter(Boolean);
   return tokens.map(parseSearchTerm);
 }
 

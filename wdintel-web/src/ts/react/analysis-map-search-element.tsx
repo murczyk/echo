@@ -5,8 +5,7 @@ import { createTheme, ThemeProvider } from '@mui/material/styles';
 import React, { useCallback, useRef, useState } from 'react';
 import { createRoot, Root } from 'react-dom/client';
 
-const DEBOUNCE_MS = 200;
-const MIN_LENGTH = 2;
+const DEBOUNCE_MS = 300;
 const SEARCH_TEXT = 'Пошук...';
 
 const SEARCH_WILDCARD_TOOLTIP = `Приклади пошуку:
@@ -46,10 +45,6 @@ export function SearchInput(props: SearchInputProps) {
       if (timerRef.current !== null) {
         clearTimeout(timerRef.current);
         timerRef.current = null;
-      }
-      if (inputValue.length < MIN_LENGTH) {
-        onSearch(inputValue);
-        return;
       }
       timerRef.current = setTimeout(() => {
         timerRef.current = null;
