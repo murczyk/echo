@@ -36,7 +36,7 @@ pub struct InboxMessage {
         Option<Vec<crate::rer_importer::highlight::CNCallsign>>,
     /// overwritten upon save (ignored upon submission)
     pub signal_tokens: Option<Vec<crate::rer_importer::signals::CNSignal>>,
-
+    pub point_tokens: Option<Vec<crate::rer_importer::highlight::CNPoint>>,
     pub no_headers_body:
         Option<crate::rer_importer::body_noheader::NoHeadersBody>,
     /// overwritten upon save (ignored upon submission)
@@ -218,6 +218,7 @@ pub struct InboxMessagesReq {
     pub highlight_keywords: Option<bool>,
     pub highlight_searchres: Option<bool>,
     pub highlight_signals: Option<bool>,
+    pub highlight_points: Option<bool>,
     pub selected_tags: Option<Vec<i64>>,
     pub selected_aors: Option<Vec<i64>>,
     pub selected_networks: Option<Vec<i64>>,

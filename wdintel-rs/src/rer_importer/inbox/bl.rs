@@ -41,6 +41,7 @@ pub struct InboxMessageDesc {
     pub callsigns: Option<serde_json::Value>,
     pub callsigns_alg2: Option<serde_json::Value>,
     pub callsign_tokens: Option<serde_json::Value>,
+    pub point_tokens: Option<serde_json::Value>,
     pub signal_tokens: Option<serde_json::Value>,
     pub keyword_tokens: Option<serde_json::Value>,
     pub location_v2: Option<String>,
@@ -231,6 +232,11 @@ pub async fn aggregate_to_inbox_messages(
                 None => None,
                 Some(jv) => Some(serde_json::from_value(jv).context(h!())?),
             };
+        let m_point_tokens: Option<Vec<CNPoint>> = match message.point_tokens
+        {
+            None => None,
+            Some(jv) => Some(serde_json::from_value(jv).context(h!())?),
+        };
         let m_signal_tokens: Option<Vec<CNSignal>> = match message.signal_tokens
         {
             None => None,
@@ -261,12 +267,14 @@ pub async fn aggregate_to_inbox_messages(
             &body,
             Some(&no_headers_body),
             &m_callsign_tokens.clone().unwrap_or_default(),
+            &m_point_tokens.clone().unwrap_or_default(),
             &m_keyword_tokens.clone().unwrap_or_default(),
             &m_signal_tokens.clone().unwrap_or_default(),
             ts_headline,
             crate::rer_importer::highlight::HighlightOpts {
                 highlight_callsigns: req.highlight_callsigns,
                 highlight_keywords: req.highlight_keywords,
+                highlight_points: req.highlight_points,
                 highlight_signals: req.highlight_signals,
                 highlight_searchres: req.highlight_searchres,
             },
@@ -328,6 +336,7 @@ pub async fn aggregate_to_inbox_messages(
                 unit: message.unit_v2.clone(),
                 no_headers_body: Some(no_headers_body),
                 callsign_tokens: m_callsign_tokens,
+                point_tokens: m_point_tokens,
                 keyword_tokens: m_keyword_tokens,
                 signal_tokens: m_signal_tokens,
                 text_marked: Some(text_marked),
@@ -794,6 +803,9 @@ pub async fn submit_upsert_inbox_item(
             unit: Set(message.unit.clone()),
             callsign_tokens: Set(Some(
                 serde_json::to_value(&message.callsign_tokens).context(h!())?,
+            )),
+            point_tokens: Set(Some(
+                serde_json::to_value(&message.point_tokens).context(h!())?,
             )),
             keyword_tokens: Set(Some(
                 serde_json::to_value(&message.keyword_tokens).context(h!())?,

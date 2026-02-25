@@ -628,6 +628,7 @@ where
         .column_as(sigint_inbox_item::Column::Callsigns, "callsigns")
         .column_as(sigint_inbox_item::Column::CallsignsAlg2, "callsigns_alg2")
         .column_as(sigint_inbox_item::Column::CallsignTokens, "callsign_tokens")
+        .column_as(sigint_inbox_item::Column::PointTokens, "point_tokens")
         .column_as(sigint_inbox_item::Column::SignalTokens, "signal_tokens")
         .column_as(sigint_inbox_item::Column::KeywordTokens, "keyword_tokens")
         .column_as(sigint_inbox_item::Column::LocationV2, "location_v2")

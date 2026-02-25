@@ -52,6 +52,8 @@ pub struct Model {
     pub unit_v2: Option<String>,
     pub parsed_unit_v2: bool,
     pub post_id: Option<i64>,
+    #[sea_orm(column_type = "JsonBinary", nullable)]
+    pub point_tokens: Option<Json>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

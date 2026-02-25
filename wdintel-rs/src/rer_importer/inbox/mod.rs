@@ -7,6 +7,9 @@ use crate::event_stream::fanout_mult;
 use crate::event_stream::types::{EventMsg, EventType};
 use crate::rer_importer::inbox::bl::*;
 use crate::rer_importer::inbox::query::*;
+use crate::rer_importer::points::{
+    find_all_palitra_by_author, find_points_by_palitra,
+};
 use crate::session::record_page_visit;
 use crate::types::*;
 use crate::utils::orm::ArrayColumnOps;
@@ -620,6 +623,11 @@ async fn do_submit_inbox(
         .context(h!())?;
     let txn = env.dbx.begin().await.c(h!())?;
 
+    let palitra_ids =
+        find_all_palitra_by_author(&env.dbx, &login).await.c(h!())?;
+    let points = find_points_by_palitra(&env.dbx, palitra_ids)
+        .await
+        .c(h!())?;
     for (id, message) in req.messages.iter() {
         let mut message = message.clone();
         let callsigns: Vec<String> = crate::utils::uniq_via_btreeset(
@@ -643,6 +651,15 @@ async fn do_submit_inbox(
         message.keyword_tokens = Some(
             crate::rer_importer::highlight::extract_keywords(&message.text)
                 .c(h!())?,
+        );
+        message.point_tokens = Some(
+            crate::rer_importer::points::highlight_points(
+                &env.rq,
+                &message.text,
+                &points,
+            )
+            .await
+            .c(h!())?,
         );
         let all_ids = find_all_duplicates(&txn, *id).await.c(h!())?;
         for id in all_ids {
