@@ -230,6 +230,11 @@ locally on the server as `postgres`).
 
 - Install vector: https://vector.dev/docs/setup/installation/package-managers/apt/
 - Allow echo-greptime machine access to your server
+- For Signoz dual-write (keep Greptime + Signoz together):
+  - set in `/etc/echo/config.toml`:
+    - `signoz_logs_enabled = true`
+    - `signoz_logs_endpoint = "http://signoz-echo.eagle-atria.ts.net:8082"`
+  - restart vector: `sudo systemctl restart echo-vector`
 
 ## При пререїзді на новий сервер
 
