@@ -20,6 +20,7 @@ use sea_query::{Expr, SimpleExpr};
 pub mod bl;
 pub mod bl_network_callsign;
 pub mod network_callsign;
+pub mod oneoff;
 pub mod types;
 
 #[derive(Serialize)]

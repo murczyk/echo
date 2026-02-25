@@ -618,6 +618,7 @@ enum Cmd {
     /// Calculates all group stats for last year (no recalculation).
     OneoffCalculateHistoricStats(OneoffCalculateHistoricStatsPs),
     OneoffDisableIm,
+    OneoffFixNetworkCallsigns,
     OneoffCountGroupBatches,
     OneoffGenerateStrongboxKey,
     OneoffFillSigintInboxItemTags,
@@ -1043,6 +1044,7 @@ async fn async_main(
             stats::oneoff_calculate_historic_stats(mode, ps).await
         }
         Cmd::OneoffDisableIm => datasource::oneoff_disable_im(mode).await,
+        Cmd::OneoffFixNetworkCallsigns => crate::sigint::callsign::oneoff::oneoff_fix_network_callsigns(mode).await,
         Cmd::OneoffCountGroupBatches => {
             stats::oneoff_count_group_batches(mode).await
         }
