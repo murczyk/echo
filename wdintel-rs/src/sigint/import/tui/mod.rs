@@ -54,7 +54,7 @@ pub async fn run_merge_unit_tui(mode: Mode) -> Result<(), AppError> {
         .as_os_str()
         .to_string_lossy()
         .to_string();
-    crate::sigint::import::oneoff_export_etalon_data(mode, path.clone())
+    crate::sigint::import::oneoff_export_etalon_data(mode, path.clone(), None)
         .await
         .c(h!())?;
     let db = new_pg_pool_from_mode(mode).await.c(h!())?;
@@ -94,7 +94,7 @@ pub async fn run_merge_network_tui(mode: Mode) -> Result<(), AppError> {
         .as_os_str()
         .to_string_lossy()
         .to_string();
-    crate::sigint::import::oneoff_export_etalon_data(mode, path.clone())
+    crate::sigint::import::oneoff_export_etalon_data(mode, path.clone(), None)
         .await
         .c(h!())?;
     let db = new_pg_pool_from_mode(mode).await.c(h!())?;

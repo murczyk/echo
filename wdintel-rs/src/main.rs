@@ -395,6 +395,8 @@ pub struct OneoffImportEtalonDataPs {
 pub struct OneoffExportEtalonDataPs {
     #[arg(long, value_enum)]
     pub destination_path: String,
+    #[arg(long, value_enum)]
+    pub only_sigint_unit_id: Option<i64>,
 }
 
 #[derive(clap::Parser, Debug)]
@@ -972,7 +974,7 @@ async fn async_main(
             sigint::unit::oneoff_reprocess_units_search_index(mode).await
         }
         Cmd::OneoffExportEtalonData(ps) => {
-            sigint::import::oneoff_export_etalon_data(mode, ps.destination_path)
+            sigint::import::oneoff_export_etalon_data(mode, ps.destination_path, ps.only_sigint_unit_id)
                 .await
         }
         Cmd::OneoffImportEtalonData(ps) => {
