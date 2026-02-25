@@ -101,7 +101,13 @@ class TrainingResults:
         self.models = [TrainedModel(run=run) for run in runs]
 
 
-def rollback(s3, versions, bucket: str, keys: list[str]):
+def rollback(
+    s3, versions, bucket: str, keys: list[str], registered: list[ModelVersion]
+):
+    client = mlflow.MlflowClient()
+    for version in registered:
+        client.delete_model_version(version.name, version.version)
+
     dict_versions = {ver["Key"]: ver for ver in versions["Versions"] if ver["IsLatest"]}
 
     for key in keys:
@@ -122,12 +128,13 @@ def rollback(s3, versions, bucket: str, keys: list[str]):
 def upload_artifacts(
     bucket: str,
     prefix: str,
-    thresholds: dict[str, float],
+    thresholds: dict[str, dict],
     models: list[TrainedModel],
 ):
     s3 = boto3.client("s3")
     versions = s3.list_object_versions(Bucket=bucket, Prefix=prefix)
     uploaded = []
+    registered = []
     try:
         for model in models:
             label_name = model.label_name
@@ -137,6 +144,11 @@ def upload_artifacts(
             s3.upload_file(str(model_path), bucket, object_name)
             print(f"uploaded {model.name}")
             uploaded.append(object_name)
+
+            model_version = model.register()
+            registered.append(model_version)
+            print(f"new version {model_version.version} for {model.name} registered")
+            thresholds[label_name]["version"] = model_version.version
 
         key = prefix + "thresholds.json"
         print(f"uploading thresholds to bucket {bucket} at {key}")
@@ -148,12 +160,8 @@ def upload_artifacts(
         )
         uploaded.append(key)
     except Exception:
-        rollback(s3, versions, bucket, uploaded)
+        rollback(s3, versions, bucket, uploaded, registered)
         raise
-
-    for model in models:
-        version = model.register()
-        print(f"new version {version.version} for {model.name} registered")
 
 
 def notify_success(
@@ -303,7 +311,7 @@ def upload_run(experiment_id: str, args: dict):
         threshold = model_metrics["threshold_at_recall"]
 
         registered_model = model.find_registered_model()
-        if registered_model:
+        if registered_model and registered_model.version:
             registered_metrics = registered_model.get_metrics()
             should_upload, stats = should_upload_model(
                 args, model, model_metrics, registered_model, registered_metrics
@@ -312,10 +320,13 @@ def upload_run(experiment_id: str, args: dict):
             if should_upload:
                 print(f"will attempt to upload {model.name}")
                 models_to_upload.append(model)
-                thresholds[label_name] = threshold
+                thresholds[label_name] = {"threshold": threshold}
             else:
                 print(f"skipping uploading of {model.name}, no improvement")
-                thresholds[label_name] = registered_metrics["threshold_at_recall"]
+                thresholds[label_name] = {
+                    "threshold": registered_metrics["threshold_at_recall"],
+                    "model_version": registered_model.version.version,
+                }
         else:
             print(f"no previous version of {model.name}, will attempt to upload")
             models_to_upload.append(model)

@@ -22,7 +22,7 @@ use sea_orm::*;
 use tokio_util::sync::CancellationToken;
 
 const KEYWORDS_REGEX_MODEL_NAME: &str = "bot-navara-v1";
-const NLP_MODEL_NAME: &str = "bot-willys-v1";
+const NLP_MODEL_NAME_PREFIX: &str = "bot-willys-v";
 
 #[derive(Default)]
 pub struct ProcessMessagesResult {
@@ -241,17 +241,18 @@ pub async fn process_messages<C: ConnectionTrait>(
 
     for (index, result) in response.iter().enumerate() {
         let message_id = inbox_items[index].id;
-        for (key, value) in &result.0 {
+        for (key, res) in &result.0 {
             let tag_id = tags_to_predict[key];
             if !skip_nlp_tag_id_message_id.contains(&(tag_id, message_id)) {
-                let confidence: f64 = *value;
+                let confidence: f64 = res.probability;
                 let login = Some(SYSTEM_LOGIN_NAME.to_string());
-                let model = Some(NLP_MODEL_NAME.to_owned());
+                let model =
+                    format!("{}{}", NLP_MODEL_NAME_PREFIX, &res.model_version);
                 let model = sigint_inbox_item_tag::ActiveModel {
                     tag_id: Set(tag_id),
                     sigint_inbox_item_id: Set(message_id),
                     login: Set(login),
-                    model: Set(model),
+                    model: Set(Some(model)),
                     confidence: Set(confidence),
                     ..Default::default()
                 };
