@@ -32,10 +32,11 @@ describe('parseSearchQuery', () => {
     ]);
   });
 
-  it('parses prefix and suffix terms', () => {
-    expect(parseSearchQuery('40*,*50')).toEqual([
+  it('parses prefix, suffix, and contains terms', () => {
+    expect(parseSearchQuery('40*,*50, *ab*')).toEqual([
       { kind: 'prefix', value: '40' },
       { kind: 'suffix', value: '50' },
+      { kind: 'contains', value: 'ab' },
     ]);
   });
 });
@@ -65,5 +66,16 @@ describe('labelMatchesTerm', () => {
     expect(labelMatchesTerm('840', term)).toBe(true);
     expect(labelMatchesTerm('400', term)).toBe(false);
     expect(labelMatchesTerm('4', term)).toBe(false);
+  });
+
+  it('contains: matches when label contains term value', () => {
+    const term: SearchTerm = { kind: 'contains', value: '40' };
+    expect(labelMatchesTerm('40', term)).toBe(true);
+    expect(labelMatchesTerm('400', term)).toBe(true);
+    expect(labelMatchesTerm('540', term)).toBe(true);
+    expect(labelMatchesTerm('840', term)).toBe(true);
+    expect(labelMatchesTerm('401', term)).toBe(true);
+    expect(labelMatchesTerm('4', term)).toBe(false);
+    expect(labelMatchesTerm('50', term)).toBe(false);
   });
 });
