@@ -366,11 +366,15 @@ async fn get_regex_sets_for_tag<C: ConnectionTrait>(
 }
 
 pub async fn refresh_models_worker_nofail(
-    storage_dir: String,
     config: ModelsConfig,
     cancel_token: CancellationToken,
 ) {
     let s3_config = S3Config::with_prefix(&config.s3_config, config.prefix);
+
+    let model_dir = config
+        .directory
+        .or_else(|| std::env::var("WD_FASTTEXT_MODELS").ok())
+        .unwrap_or_else(|| "/usr/share/wdintel-py/fasttext-models".to_string());
 
     loop {
         if cancel_token.is_cancelled() {
@@ -379,7 +383,7 @@ pub async fn refresh_models_worker_nofail(
         }
         let _loop_guard = worker_watch::loop_guard("refresh_models_worker");
 
-        if let Err(e) = do_refresh_models(&s3_config, &storage_dir).await {
+        if let Err(e) = do_refresh_models(&s3_config, &model_dir).await {
             error!("failed to refresh models: {:#}", e);
         }
 
@@ -389,14 +393,15 @@ pub async fn refresh_models_worker_nofail(
 
 async fn do_refresh_models(
     s3_config: &storage::S3Config,
-    storage_dir: &str,
+    model_dir: &str,
 ) -> Result<(), anyhow::Error> {
-    let mut destination_path = PathBuf::from(storage_dir);
-    destination_path.push("echo-ai-models");
+    let destination_path = PathBuf::from(model_dir);
+    std::fs::create_dir_all(&destination_path)?;
     let destination = destination_path.to_str().unwrap();
 
-    let mut temp_path = PathBuf::from(storage_dir);
-    temp_path.push("tmp-echo-ai-models");
+    let mut temp_path = PathBuf::from(model_dir);
+    temp_path.push(".tmp");
+    std::fs::create_dir_all(&temp_path)?;
     let temp_dir = temp_path.to_str().unwrap();
 
     let remote_operator = storage::build_s3_operator(s3_config).c(h!())?;

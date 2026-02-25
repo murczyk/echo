@@ -308,6 +308,7 @@ pub struct VaultConfig {
 pub struct ModelsConfig {
     pub s3_config: S3Config,
     pub prefix: String,
+    pub directory: Option<String>,
 }
 
 pub fn mk_s3(config: &Config) -> Result<Option<Operator>> {
