@@ -1027,6 +1027,16 @@ ai-mlflow-server:
     . .venv/bin/activate
     uv run mlflow server
 
+[arg("databases", long="databases")]
+[arg("unsupervised", long="unsupervised")]
+ai-mlflow-run databases='wd' unsupervised='false':
+    #!/bin/bash
+    cd echo-ai
+    set -a && . .env && set +a
+    [[ -d .venv ]] || uv venv --relocatable
+    . .venv/bin/activate
+    uv run src/scheduled.py --unsupervised "{{ unsupervised }}" --databases "{{ databases }}"
+
 deploy-echo-ai:
     #!/bin/bash
     set -euxo pipefail

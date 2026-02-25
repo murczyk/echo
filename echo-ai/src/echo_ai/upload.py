@@ -329,6 +329,7 @@ def upload_run(experiment_id: str, args: dict):
                 }
         else:
             print(f"no previous version of {model.name}, will attempt to upload")
+            thresholds[label_name] = {"threshold": threshold}
             models_to_upload.append(model)
 
         records.append(record)

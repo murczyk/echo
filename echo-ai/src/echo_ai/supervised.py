@@ -1,4 +1,5 @@
 import multiprocessing
+from typing import cast
 
 import fasttext
 import humanfriendly
@@ -97,9 +98,20 @@ def create_dataset(
     lake: Lake, label_column_name: str, label_name: str, split: str, shuffle_seed
 ) -> tuple[PandasDataset, str, int]:
     rel_split = lake.split_for_label(label_column_name, split, shuffle_seed)
-    split_stats = rel_split.aggregate("label, count(*) AS samples", "label")
+    split_stats = rel_split.aggregate(f"""
+        count(*) AS {split}_total_samples,
+        count(*) filter(label = 1) AS {split}_positive_samples,
+        count(*) filter(label = 0) AS {split}_negative_samples
+    """).to_df()
+
+    stats_dict = cast(dict[str, float], split_stats.iloc[0].to_dict())
+    stats_dict[f"{split}_pos_neg_ratio"] = float(
+        stats_dict[f"{split}_positive_samples"]
+    ) / float(stats_dict[f"{split}_negative_samples"])
+    mlflow.log_metrics(stats_dict)
+
     print(f"{split} samples for {label_name}: ", flush=True)
-    print(split_stats, flush=True)
+    print(stats_dict, flush=True)
     df_split = quack.to_df_arrow(rel_split.limit(1000))
     (len_split,) = rel_split.count("*").fetchone()  # pyright: ignore
     print(f"{len_split} rows for {label_name} {split} dataset", flush=True)

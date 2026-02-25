@@ -18,5 +18,5 @@ install -D -m 0644 -t "$HOME/.config/systemd/user" systemd/*
 systemctl --user daemon-reload
 sudo loginctl enable-linger "$(id -u -n)"
 systemctl --user enable mlflow.service
-systemctl --user enable --now mlflow-gc.timer
+systemctl --user enable --now mlflow-gc.timer echo-ai-train.timer
 systemctl --user restart mlflow.service

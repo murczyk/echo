@@ -1,0 +1,9 @@
+[Unit]
+Description=echo-ai-train daily at 06:01
+
+[Timer]
+OnCalendar=*-*-* 00:06:01 Europe/Kyiv
+Persistent=true
+
+[Install]
+WantedBy=default.target

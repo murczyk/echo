@@ -141,34 +141,92 @@ class Lake:
     def split_for_label(
         self, label_column_name: str, split: str, shuffle_seed: int | None
     ) -> DuckDBPyRelation:
-        train_pct = 0.90
-        validation_pct = 0.05
+        min_positive_samples = 1000
+        min_days_ago = 7
+        max_days_ago = 90
 
         self.conn.execute(f"""
         CREATE TEMPORARY TABLE IF NOT EXISTS tmp_{label_column_name}_splits AS
-        WITH ranked_data AS (
+        WITH target_data AS (
+            -- 1. Filter to your specific label and exclude pre-source records (NULLs)
             SELECT
                 *,
-                PERCENT_RANK() OVER (
-                    PARTITION BY {label_column_name}
-                    ORDER BY created_at ASC
-                ) as time_percentile
+                {label_column_name} AS is_positive
             FROM tmp_messages_labeled_onehot
             WHERE {label_column_name} IS NOT NULL
+        ),
+        test_stats AS (
+            -- 2. Calculate running positive totals backward from the most recent date
+            SELECT
+                *,
+                MAX(created_at) OVER () AS max_date,
+                SUM(is_positive) OVER (ORDER BY created_at DESC) AS test_running_positives,
+                MAX(created_at) OVER () - created_at AS test_time_diff
+            FROM target_data
+        ),
+        test_cutoff_cte AS (
+            -- 3. Find the exact Test cutoff date
+            -- Looks for the most recent date where >= {min_positive_samples} positives AND >= {min_days_ago} days are met.
+            -- Caps the lookback at {max_days_ago} days maximum.
+            SELECT
+                GREATEST(
+                    MAX(max_date) - INTERVAL {max_days_ago} DAYS,
+                    COALESCE(
+                        MAX(CASE
+                            WHEN test_running_positives >= {min_positive_samples}
+                             AND test_time_diff >= INTERVAL {min_days_ago} DAYS
+                            THEN created_at
+                        END),
+                        MAX(max_date) - INTERVAL {max_days_ago} DAYS
+                    )
+                ) AS test_cutoff
+            FROM test_stats
+        ),
+        val_stats AS (
+            -- 4. Calculate running positive totals backward from the new Test cutoff date
+            SELECT
+                t.*,
+                c.test_cutoff,
+                SUM(t.is_positive) OVER (ORDER BY t.created_at DESC) AS val_running_positives,
+                c.test_cutoff - t.created_at AS val_time_diff
+            FROM target_data t
+            CROSS JOIN test_cutoff_cte c
+            WHERE t.created_at < c.test_cutoff
+        ),
+        val_cutoff_cte AS (
+            -- 5. Find the exact Validation cutoff date using the same rules
+            SELECT
+                GREATEST(
+                    MAX(test_cutoff) - INTERVAL {max_days_ago} DAYS,
+                    COALESCE(
+                        MAX(CASE
+                            WHEN val_running_positives >= {min_positive_samples}
+                             AND val_time_diff >= INTERVAL {min_days_ago} DAYS
+                            THEN created_at
+                        END),
+                        MAX(test_cutoff) - INTERVAL {max_days_ago} DAYS
+                    )
+                ) AS val_cutoff
+            FROM val_stats
         )
+        -- 6. Assign final splits to the underlying data
         SELECT
-            *,
+            d.*,
             CASE
-                WHEN time_percentile <= {train_pct} THEN 'train'
-                WHEN time_percentile <= {train_pct + validation_pct} THEN 'validation'
-                ELSE 'test'
-            END as split_group
-        FROM ranked_data;
+                WHEN d.created_at >= tc.test_cutoff THEN 'test'
+                WHEN d.created_at >= vc.val_cutoff AND d.created_at < tc.test_cutoff THEN 'validation'
+                ELSE 'train'
+            END AS split_name
+        FROM target_data d
+        CROSS JOIN test_cutoff_cte tc
+        CROSS JOIN val_cutoff_cte vc;
         """)
 
         order_clause = "ORDER BY created_at"
         if shuffle_seed is not None:
             order_clause = f"ORDER BY hash(source, id, {shuffle_seed})"
+
+        split_clause = f"WHERE split_name = '{split}'" if split else ""
 
         return self.conn.query(f"""
         SELECT
@@ -176,8 +234,7 @@ class Lake:
              {label_column_name}::int AS label
         FROM
             tmp_{label_column_name}_splits
-        WHERE
-            split_group = '{split}'
+        {split_clause}
         {order_clause}
         """)
 
