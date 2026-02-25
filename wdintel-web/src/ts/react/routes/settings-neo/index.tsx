@@ -125,8 +125,8 @@ export function SettingsNeoPage() {
   }
 
   return (
-    <div className="w-full">
-      <Stack spacing={3}>
+    <Box className="w-full" sx={{ height: '100%', minHeight: 0, overflow: 'auto' }}>
+      <Stack spacing={3} useFlexGap sx={{ minHeight: '100%' }}>
         <PageHeader title="налаштування" />
 
         <div className="bg-[var(--card-color)] rounded-xl shadow-sm border border-[var(--border-color)] overflow-hidden">
@@ -206,6 +206,6 @@ export function SettingsNeoPage() {
           </Box>
         </div>
       </Stack>
-    </div>
+    </Box>
   );
 }

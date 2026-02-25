@@ -214,10 +214,6 @@ export function useRerPalitraNeoPage() {
 
   function requestDelete(palitra: Palitra) {
     if (inFlightDeleteId !== null || bulkDeleteInFlight || bulkDeleteDialogOpen) return;
-    const activeElement = document.activeElement;
-    if (activeElement instanceof HTMLElement) {
-      activeElement.blur();
-    }
     setDeleteDialogPalitra(palitra);
     setDeleteDialogOpen(true);
   }
@@ -300,11 +296,6 @@ export function useRerPalitraNeoPage() {
         inFlightUploadId !== palitra.id,
     );
     if (selected.length === 0) return;
-
-    const activeElement = document.activeElement;
-    if (activeElement instanceof HTMLElement) {
-      activeElement.blur();
-    }
 
     setBulkDeleteDialogPalitras(selected);
     setBulkDeleteDialogOpen(true);

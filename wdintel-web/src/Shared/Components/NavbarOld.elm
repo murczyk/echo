@@ -70,11 +70,12 @@ navBar user shared activeName props =
 
         etalonkaSubs =
             [ Menu (Internal Route.Path.RerFreqs) "freqs" "частоти"
-            , Menu (Internal Route.Path.RerCallsigns) "callsigns" "позивні"
+            , Menu (Internal Route.Path.RerCallsignsNeo) "callsigns-neo" "позивні"
             , Menu (Internal Route.Path.RerUnits) "rer-units" "підрозділи"
             , Menu (Internal Route.Path.RerSignals) "signals" "сигнали"
             , Menu (Internal Route.Path.RerNetworks) "networks" "мережі"
             , Menu (Internal Route.Path.RerPalitraNeo) "palitra-neo" "палітри"
+            , Menu (Internal Route.Path.RerCallsigns) "callsigns" "позивні (стара)"
             , Menu (Internal Route.Path.RerPalitra) "palitra" "палітри (стара)"
             ]
 

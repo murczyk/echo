@@ -24,8 +24,8 @@ export function RerPalitraNeoPage() {
   const page = useRerPalitraNeoPage();
 
   return (
-    <Box className="w-full">
-      <Stack spacing={3}>
+    <Box className="w-full" sx={{ height: '100%', minHeight: 0, overflow: 'hidden' }}>
+      <Stack spacing={3} useFlexGap sx={{ height: '100%', minHeight: 0, overflow: 'hidden' }}>
         <PageHeader
           title="палітри"
           actions={
@@ -56,26 +56,28 @@ export function RerPalitraNeoPage() {
 
         {page.error ? <Alert severity="error">{page.error.text}</Alert> : null}
 
-        <PalitraTable
-          loading={page.loading}
-          palitras={page.sortedPalitras}
-          sortColumn={page.sortColumn}
-          sortDirection={page.sortDirection}
-          onSortColumn={page.onSortColumn}
-          user={page.user}
-          myScope={page.myScope}
-          organisms={page.organisms}
-          aors={page.aors}
-          inFlightDeleteId={page.inFlightDeleteId}
-          inFlightUploadId={page.inFlightUploadId}
-          selectedPalitraIds={page.selectedPalitraIds}
-          onOpenEdit={page.openEdit}
-          onRequestUploadPoints={page.requestUploadPoints}
-          onDelete={page.requestDelete}
-          onSetPalitraSelected={page.setPalitraSelected}
-          onSetAllPalitrasSelected={page.setAllPalitrasSelected}
-          onClearSelectedPalitras={page.clearSelectedPalitras}
-        />
+        <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
+          <PalitraTable
+            loading={page.loading}
+            palitras={page.sortedPalitras}
+            sortColumn={page.sortColumn}
+            sortDirection={page.sortDirection}
+            onSortColumn={page.onSortColumn}
+            user={page.user}
+            myScope={page.myScope}
+            organisms={page.organisms}
+            aors={page.aors}
+            inFlightDeleteId={page.inFlightDeleteId}
+            inFlightUploadId={page.inFlightUploadId}
+            selectedPalitraIds={page.selectedPalitraIds}
+            onOpenEdit={page.openEdit}
+            onRequestUploadPoints={page.requestUploadPoints}
+            onDelete={page.requestDelete}
+            onSetPalitraSelected={page.setPalitraSelected}
+            onSetAllPalitrasSelected={page.setAllPalitrasSelected}
+            onClearSelectedPalitras={page.clearSelectedPalitras}
+          />
+        </Box>
       </Stack>
 
       <Dialog open={page.deleteDialogOpen} onClose={page.cancelDelete} TransitionProps={{ onExited: page.onDeleteDialogExited }}>

@@ -36,7 +36,7 @@
 
 `$ just dev-front`
 
-***Примітка:** усі команди (кроки 2-4 та 6-8) мають бути запущені в окремомих терміналах, що лишаються працювати в фоновому режимі.*
+***Примітка:** усі команди (кроки 2-4 та 6-8) мають бути запущені в окремих терміналах, що лишаються працювати в фоновому режимі.*
 
 ## Автоматичне налаштування запуску команд в терміналах для VS Code
 
@@ -47,27 +47,27 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Stop SSH tunnel",
+      "label": "stop-ssh-tunnel",
       "type": "shell",
       "command": "ssh -S .vscode/pg-tunnel.sock -O exit echo-pivnich-dev || true",
       "problemMatcher": [],
       "presentation": { "panel": "new", "reveal": "always" }
     },
     {
-      "label": "Force free dev ports",
+      "label": "force-free-dev-ports",
       "type": "shell",
       "command": "bash -lc 'for p in 8081 1234 5000; do fuser -k $p/tcp 2>/dev/null || true; done'",
       "problemMatcher": [],
       "presentation": { "panel": "new", "reveal": "always" }
     },
     {
-      "label": "Stop everything",
+      "label": "stop-everything",
       "dependsOrder": "sequence",
-      "dependsOn": ["Stop SSH tunnel", "Force free dev ports"],
+      "dependsOn": ["stop-ssh-tunnel", "force-free-dev-ports"],
       "problemMatcher": []
     },
     {
-      "label": "SSH tunnel 6432 -> 5432 (idempotent)",
+      "label": "ssh-tunnel-6432-to-5432-idempotent",
       "type": "shell",
       "command": "bash -lc 'mkdir -p .vscode; if nc -z 127.0.0.1 6432; then echo \"Tunnel already up on :6432\"; else ssh -f -nNT -M -S .vscode/pg-tunnel.sock -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -L 6432:localhost:5432 echo-pivnich-dev; fi'",
       "isBackground": true,
@@ -75,20 +75,20 @@
       "presentation": { "panel": "new", "reveal": "always" }
     },
     {
-      "label": "Wait for tunnel :6432",
+      "label": "wait-for-tunnel-6432",
       "type": "shell",
       "command": "until nc -z 127.0.0.1 6432; do sleep 0.2; done",
       "problemMatcher": []
     },
     {
-      "label": "psql (interactive via :6432)",
+      "label": "psql-interactive-via-6432",
       "type": "shell",
       "command": "PGPASSWORD=fee_-_-_-FnoeKFBeebu87bf psql -U wd -h 127.0.0.1 -p 6432 wd",
       "problemMatcher": [],
       "presentation": { "panel": "new", "focus": true }
     },
     {
-      "label": "Dev server (8081)",
+      "label": "dev-server-8081",
       "type": "shell",
       "command": "just dev-back",
       "isBackground": true,
@@ -96,7 +96,7 @@
       "presentation": { "panel": "new" }
     },
     {
-      "label": "Python (5000)",
+      "label": "python-5000",
       "type": "shell",
       "command": "just dev-py",
       "isBackground": true,
@@ -104,7 +104,7 @@
       "presentation": { "panel": "new" }
     },
     {
-      "label": "Front server (1234)",
+      "label": "front-server-1234",
       "type": "shell",
       "command": "just dev-front",
       "isBackground": true,
@@ -112,15 +112,15 @@
       "presentation": { "panel": "new" }
     },
     {
-      "label": "Start apps (parallel)",
+      "label": "start-apps-parallel",
       "dependsOrder": "parallel",
-      "dependsOn": ["psql (interactive via :6432)", "Dev server (8081)", "Python (5000)", "Front server (1234)"],
+      "dependsOn": ["psql-interactive-via-6432", "dev-server-8081", "python-5000", "front-server-1234"],
       "problemMatcher": []
     },
     {
-      "label": "Start everything",
+      "label": "start-everything",
       "dependsOrder": "sequence",
-      "dependsOn": ["SSH tunnel 6432 -> 5432 (idempotent)", "Wait for tunnel :6432", "Start apps (parallel)"],
+      "dependsOn": ["ssh-tunnel-6432-to-5432-idempotent", "wait-for-tunnel-6432", "start-apps-parallel"],
       "problemMatcher": [],
       "runOptions": {
         "runOn": "folderOpen"

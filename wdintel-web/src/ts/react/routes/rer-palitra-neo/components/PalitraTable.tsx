@@ -381,7 +381,7 @@ export function PalitraTable({
   }
 
   return (
-    <Paper variant="outlined">
+    <Paper variant="outlined" sx={{ height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
       <>
         <PalitraTableToolbar
           authorFilter={authorFilter}
@@ -395,7 +395,7 @@ export function PalitraTable({
           onResetFilters={resetFilters}
           onClearSelectedPalitras={onClearSelectedPalitras}
         />
-        <TableContainer sx={{ overflowX: 'auto' }}>
+        <TableContainer sx={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
           <Table sx={{ minWidth: 880 }}>
             <TableHead>
               <TableRow>

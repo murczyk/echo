@@ -1,9 +1,16 @@
 /* Base Styles */
 /* Description: Global styles, typography, and base element styles */
 
+html,
 body {
     font-size: 14px;
+    background-color: var(--background-color);
     overflow-x: hidden;
+}
+
+html:has(.app-shell--fixed-viewport),
+body:has(.app-shell--fixed-viewport) {
+    overflow-y: hidden;
 }
 
 @layer base {

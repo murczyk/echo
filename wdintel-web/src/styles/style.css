@@ -50,6 +50,11 @@
     max-height: calc(100vh - var(--app-shell-total-offset));
 }
 
+.app-shell--fixed-viewport {
+    height: 100vh;
+    overflow: hidden;
+}
+
 @supports (height: 100dvh) {
     .app-shell {
         min-height: 100dvh;
@@ -61,6 +66,10 @@
 
     .app-shell-fill-max-height {
         max-height: calc(100dvh - var(--app-shell-total-offset));
+    }
+
+    .app-shell--fixed-viewport {
+        height: 100dvh;
     }
 }
 
