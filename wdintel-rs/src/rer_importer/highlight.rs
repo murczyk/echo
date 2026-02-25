@@ -17,6 +17,7 @@ pub enum ContentNode {
     CNCallsignC(CNCallsign),
     CNHighlightC(CNHighlight),
     CNSignalC(CNSignal),
+    CNPointC(CNPoint),
 }
 
 #[derive(
@@ -45,6 +46,26 @@ pub struct CNCallsign {
     /// etalon, lowercase
     pub etalon: String,
     /// exact part of message being highlighed, == msg\[begin:end\]
+    pub text: String,
+}
+
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Clone,
+    PartialOrd,
+    Ord,
+    Eq,
+)]
+pub struct CNPoint {
+    pub begin: usize,
+    pub end: usize,
+    pub etalon: String,
     pub text: String,
 }
 
@@ -116,6 +137,7 @@ pub struct HighlightOpts {
     pub highlight_keywords: Option<bool>,
     pub highlight_signals: Option<bool>,
     pub highlight_searchres: Option<bool>,
+    pub highlight_points: Option<bool>,
 }
 
 impl HighlightOpts {
@@ -125,6 +147,7 @@ impl HighlightOpts {
             highlight_signals: Some(true),
             highlight_keywords: Some(true),
             highlight_searchres: Some(true),
+            highlight_points: Some(true),
         }
     }
 }
@@ -135,6 +158,7 @@ pub fn highlight(
     input: &str,
     input_no_header: Option<&NoHeadersBody>,
     callsigns: &Vec<CNCallsign>,
+    points: &Vec<CNPoint>,
     keywords: &Vec<CNHighlight>,
     signals: &Vec<CNSignal>,
     ts_headline: Option<String>,
@@ -148,6 +172,7 @@ pub fn highlight(
         Signal(CNSignal),
         Callsign(CNCallsign),
         Keyword(CNHighlight),
+        Point(CNPoint),
     }
     impl Special {
         pub fn begin(&self) -> usize {
@@ -155,6 +180,7 @@ pub fn highlight(
                 Special::Signal(x) => x.begin,
                 Special::Callsign(x) => x.begin,
                 Special::Keyword(x) => x.begin,
+                Special::Point(x) => x.begin,
             }
         }
         pub fn end(&self) -> usize {
@@ -162,6 +188,7 @@ pub fn highlight(
                 Special::Signal(x) => x.end,
                 Special::Callsign(x) => x.end,
                 Special::Keyword(x) => x.end,
+                Special::Point(x) => x.end,
             }
         }
         pub fn text(&self) -> String {
@@ -169,6 +196,7 @@ pub fn highlight(
                 Special::Signal(x) => x.text.clone(),
                 Special::Callsign(x) => x.text.clone(),
                 Special::Keyword(x) => x.text.clone(),
+                Special::Point(x) => x.text.clone(),
             }
         }
     }
@@ -179,6 +207,9 @@ pub fn highlight(
 
     if highlight_opts.highlight_callsigns == Some(true) {
         specials.extend(callsigns.iter().map(|x| Special::Callsign(x.clone())));
+    }
+    if highlight_opts.highlight_points == Some(true) {
+        specials.extend(points.iter().map(|x| Special::Point(x.clone())));
     }
     if highlight_opts.highlight_keywords == Some(true) {
         specials.extend(keywords.iter().map(|x| Special::Keyword(x.clone())));
@@ -249,6 +280,7 @@ pub fn highlight(
                 Special::Callsign(ref x) => ContentNode::CNCallsignC(x.clone()),
                 Special::Signal(ref x) => ContentNode::CNSignalC(x.clone()),
                 Special::Keyword(ref x) => ContentNode::CNHighlightC(x.clone()),
+                Special::Point(ref x) => ContentNode::CNPointC(x.clone()),
             });
             line_pos += cline_len(&special.text());
             // line_pos = callsign.end - msg_pos;
@@ -317,6 +349,7 @@ mod tests {
             &vec![],
             &vec![],
             &vec![],
+            &vec![],
             None,
             HighlightOpts::all(),
         )
@@ -347,6 +380,7 @@ mod tests {
             body,
             None,
             &callsigns,
+            &vec![],
             &vec![],
             &vec![],
             None,
@@ -419,6 +453,7 @@ mod tests {
             &callsigns,
             &vec![],
             &vec![],
+            &vec![],
             None,
             HighlightOpts::all(),
         )
@@ -477,6 +512,7 @@ mod tests {
             &callsigns,
             &vec![],
             &vec![],
+            &vec![],
             None,
             HighlightOpts::all(),
         )
@@ -524,6 +560,7 @@ mod tests {
             body,
             None,
             &callsigns,
+            &vec![],
             &keywords,
             &vec![],
             None,
@@ -618,6 +655,7 @@ mod tests {
             body,
             None,
             &callsigns,
+            &vec![],
             &keywords,
             &vec![],
             None,
@@ -687,6 +725,7 @@ mod tests {
             body,
             None,
             &callsigns,
+            &vec![],
             &keywords,
             &vec![],
             search,
@@ -733,6 +772,7 @@ mod tests {
             body,
             None,
             &callsigns,
+            &vec![],
             &keywords,
             &vec![],
             search,
@@ -851,6 +891,7 @@ mod tests {
             None,
             &vec![],
             &vec![],
+            &vec![],
             &vec![CNSignal {
                 begin: 165,
                 end: 175,
@@ -908,6 +949,7 @@ mod tests {
             body,
             Some(&body_noheader),
             &callsigns,
+            &vec![],
             &keywords,
             &vec![],
             search,
@@ -1017,6 +1059,7 @@ mod tests {
             &vec![],
             &vec![],
             &vec![],
+            &vec![],
             Some(ts_headline.to_string()),
             HighlightOpts::all(),
         )
@@ -1061,3 +1104,5 @@ mod tests {
         )
     }
 }
+
+// TODO: add tests for points

@@ -97,6 +97,10 @@ where
             .map(|x| x.etalon.clone())
             .collect::<Vec<String>>(),
     );
+    let point_tokens =
+        crate::rer_importer::points::find_known_points(txn, rq, &body)
+            .await
+            .c(h!())?;
     let checked = freq.is_some();
     let reviewed = false;
     let body_noheader =
@@ -199,6 +203,7 @@ where
         callsign_tokens: Set(Some(
             serde_json::to_value(callsign_tokens).c(h!())?,
         )),
+        point_tokens: Set(Some(serde_json::to_value(point_tokens).c(h!())?)),
         keyword_tokens: Set(Some(
             serde_json::to_value(keyword_tokens).c(h!())?,
         )),
