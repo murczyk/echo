@@ -6,7 +6,7 @@ import type {
   InboxMessageTag,
   InboxMessagesReq,
   Network,
-  RerDutyFeedFilterState,
+  RerDutyQueryStateWf as RerDutyFeedFilterState,
   SavedFilterDuty,
   SignalGroupEntry,
   SignalProfileEntry,
@@ -201,9 +201,6 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
 
   const loadFeedEarlierMessages = React.useCallback(
     async (feedId: string) => {
-      if (digestCount === 0) {
-        return;
-      }
       const w = messageFeeds.find((x) => x.id === feedId);
       if (!w || w.items.length === 0 || w.hasReachedStart) return;
       const firstId = w.items[0][0];
@@ -238,7 +235,7 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
         setMessageFeeds((prev) => prev.map((x) => (x.id === feedId ? { ...x, loadingEarlier: false } : x)));
       }
     },
-    [messageFeeds, digestCount],
+    [messageFeeds],
   );
 
   const loadFeedNewerMessages = React.useCallback(
@@ -255,8 +252,6 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
           filter: feed.filter,
         });
         const rsp = await fetchInboxMessages(req);
-        digestSinceMsRef.current = Math.floor(Date.now() / 1000) * 1000;
-        setDigestCount(0);
         if (rsp.inboxItems.length > 0) {
           const feedNow = messageFeeds.find((x) => x.id === feedId);
           if (feedNow) {
@@ -272,6 +267,10 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
                   return { ...x, items: sortMessageItemsByTime(combined) };
                 }),
               );
+              if (messageFeeds[0]?.id === feedId) {
+                digestSinceMsRef.current = Math.floor(Date.now() / 1000) * 1000;
+                setDigestCount(0);
+              }
               scrollToEndAfterNewerRef.current = feedId;
             }
           }

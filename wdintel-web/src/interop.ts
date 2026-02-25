@@ -30,7 +30,7 @@ import './ts/react/aor-neo-form-element'
 import './ts/react/control-panel-neo-element'
 import './ts/react/keys-neo-element'
 import './ts/react/location-config-neo-element'
-import './ts/react/messanger-neo-element'
+import './ts/react/messenger-neo-element'
 import './ts/react/organisms-neo-element'
 import './ts/react/organisms-neo-edit-element'
 import './ts/react/settings-neo-element'
@@ -39,6 +39,7 @@ import './ts/react/tags-neo-edit-element'
 import './ts/react/tags-neo-keyword-edit-element'
 import './ts/react/users-neo-element'
 import './ts/react/rer-duty-neo-element'
+import './ts/react/rer-palitra-neo-element'
 import { saveRerAnalysisQueryState } from "./ts/rer-analysis-query-state"
 import { setupCommentDraftTracker } from "./ts/comment-draft-tracker"
 
@@ -51,25 +52,186 @@ dayjs.extend(utc);
 dayjs.extend(timezone);
 
 // Theme management functions
-function applyTheme(themeMode: string) {
-    const htmlElement = document.documentElement;
+type AppliedTheme = 'light' | 'dark';
 
-    switch (themeMode) {
-        case 'dark':
-            htmlElement.setAttribute("data-bs-theme", "dark");
-            break;
-        case 'light':
-            htmlElement.removeAttribute("data-bs-theme");
-            break;
-        case 'system':
-            // Use system preference
-            const systemTheme = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-            applyTheme(systemTheme);
-            break;
-        default:
-            // Default to light
-            htmlElement.removeAttribute("data-bs-theme");
+let themeSwitchOverlay: HTMLDivElement | null = null;
+let themeSwitchStyleMounted = false;
+let themeApplyRequestToken = 0;
+
+function ensureThemeSwitchUi(): HTMLDivElement {
+    if (!themeSwitchStyleMounted) {
+        const style = document.createElement('style');
+        style.id = 'theme-switch-overlay-style';
+        style.textContent = `
+html.theme-switching *, html.theme-switching *::before, html.theme-switching *::after {
+  transition: none !important;
+}
+
+#theme-switch-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.2);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease-in-out;
+}
+
+#theme-switch-overlay.visible {
+  opacity: 1;
+}
+
+#theme-switch-overlay .theme-switch-overlay__card {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: rgba(16, 18, 21, 0.92);
+  color: #fff;
+  font-size: 14px;
+  line-height: 1;
+  font-weight: 500;
+}
+
+#theme-switch-overlay .theme-switch-overlay__spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: theme-switch-spin 0.75s linear infinite;
+}
+
+@keyframes theme-switch-spin {
+  to { transform: rotate(360deg); }
+}`;
+        document.head.appendChild(style);
+        themeSwitchStyleMounted = true;
     }
+
+    if (!themeSwitchOverlay) {
+        const overlay = document.createElement('div');
+        overlay.id = 'theme-switch-overlay';
+        overlay.innerHTML = `
+<div class="theme-switch-overlay__card">
+  <span class="theme-switch-overlay__spinner" aria-hidden="true"></span>
+  <span>Зміна теми...</span>
+</div>`;
+        document.body.appendChild(overlay);
+        themeSwitchOverlay = overlay;
+    }
+
+    return themeSwitchOverlay;
+}
+
+function resetThemeSwitchUi() {
+    if (themeSwitchOverlay) {
+        themeSwitchOverlay.classList.remove('visible');
+    }
+    document.documentElement.classList.remove('theme-switching');
+}
+
+function getResolvedTheme(themeMode: string): AppliedTheme {
+    if (themeMode === 'dark') return 'dark';
+    if (themeMode === 'light') return 'light';
+    if (themeMode === 'system') {
+        return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+    return 'light';
+}
+
+function getCurrentAppliedTheme(): AppliedTheme {
+    return document.documentElement.getAttribute('data-bs-theme') === 'dark' ? 'dark' : 'light';
+}
+
+function applyResolvedTheme(theme: AppliedTheme) {
+    const htmlElement = document.documentElement;
+    if (theme === 'dark') {
+        htmlElement.setAttribute("data-bs-theme", "dark");
+        return;
+    }
+    htmlElement.removeAttribute("data-bs-theme");
+}
+
+function applyTheme(themeMode: string, options?: { withLoader?: boolean }) {
+    const requestToken = ++themeApplyRequestToken;
+    const nextTheme = getResolvedTheme(themeMode);
+    const currentTheme = getCurrentAppliedTheme();
+
+    resetThemeSwitchUi();
+
+    if (!options?.withLoader || nextTheme === currentTheme) {
+        applyResolvedTheme(nextTheme);
+        return;
+    }
+
+    const overlay = ensureThemeSwitchUi();
+    const showDelayMs = 90;
+    const minVisibleMs = 500;
+    let overlayShownAt = 0;
+    let overlayVisible = false;
+    let hideTimer = 0;
+    let finished = false;
+
+    const finish = () => {
+        if (finished) {
+            return;
+        }
+        finished = true;
+        window.clearTimeout(showTimer);
+        window.clearTimeout(hideTimer);
+
+        if (themeApplyRequestToken !== requestToken) {
+            return;
+        }
+
+        if (overlayVisible) {
+            overlay.classList.remove('visible');
+        }
+        document.documentElement.classList.remove('theme-switching');
+    };
+
+    const showTimer = window.setTimeout(() => {
+        if (themeApplyRequestToken !== requestToken) {
+            return;
+        }
+        overlayVisible = true;
+        overlayShownAt = performance.now();
+        overlay.classList.add('visible');
+    }, showDelayMs);
+
+    document.documentElement.classList.add('theme-switching');
+
+    requestAnimationFrame(() => {
+        if (themeApplyRequestToken !== requestToken) {
+            finish();
+            return;
+        }
+        applyResolvedTheme(nextTheme);
+        requestAnimationFrame(() => {
+            if (themeApplyRequestToken !== requestToken) {
+                finish();
+                return;
+            }
+
+            if (!overlayVisible) {
+                finish();
+                return;
+            }
+
+            const elapsed = performance.now() - overlayShownAt;
+            if (elapsed >= minVisibleMs) {
+                finish();
+                return;
+            }
+
+            hideTimer = window.setTimeout(finish, minVisibleMs - elapsed);
+        });
+    });
 }
 
 function applyCurrentTheme() {
@@ -88,7 +250,7 @@ function setAppShellNavbarHeightVar(heightPx: number): void {
     if (!Number.isFinite(heightPx) || heightPx <= 0) {
         return;
     }
-    document.documentElement.style.setProperty('--app-shell-navbar-height', `${Math.round(heightPx)}px`);
+    document.documentElement.style.setProperty('--app-shell-navbar-height', `${Math.ceil(heightPx)}px`);
 }
 
 function createNavbarHeightSync() {
@@ -553,7 +715,7 @@ export const onReady = ({ app, env }) => {
             // Save theme mode to localStorage
             localStorage.setItem('echo-theme-mode', themeMode);
             // Apply the theme immediately
-            applyTheme(themeMode);
+            applyTheme(themeMode, { withLoader: true });
         });
     }
 

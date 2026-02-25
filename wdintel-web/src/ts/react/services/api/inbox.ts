@@ -13,7 +13,7 @@ import type {
   InboxMessageTagsRmReq,
   InboxMessagesReq,
   InboxMessagesRsp,
-  RerDutyFeedFilterState,
+  RerDutyQueryStateWf as RerDutyFeedFilterState,
   SavedFilterDuty,
   SavedFilterDutyUpsertReq,
   SignalGroupEntry,

@@ -12,13 +12,11 @@ import File.Select
 import Html exposing (..)
 import Html.Attributes as Attr exposing (..)
 import Html.Events exposing (..)
-import Html.Styled
 import Layouts
 import List.Extra as ListX
 import Page exposing (Page)
 import Process
 import Route exposing (Route)
-import Select
 import Shared
 import Shared.Components.Button as Button
 import Shared.Components.Checkbox as Checkbox
@@ -28,17 +26,14 @@ import Shared.Components.Spinner
 import Shared.Model exposing (isDarkMode)
 import Task
 import Time
-import TimeZone
 import Utils.Api.ErrorHandling
-import Utils.Select
 import Utils.Time
 import Utils.Utils exposing (..)
-import Utils.Views
 import View exposing (View)
 
 
 page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
-page user shared req =
+page user shared _ =
     Page.new
         { init = init
         , update = update
@@ -49,10 +44,10 @@ page user shared req =
 
 
 toLayout : Auth.User -> Model -> Layouts.Layout Msg
-toLayout user model =
+toLayout user _ =
     Layouts.Navbar
         { user = user
-        , activeName = "rer"
+        , activeName = "rer-units"
         }
 
 
@@ -581,7 +576,7 @@ potentialDuplicates model =
 
 
 subscriptions : Model -> Sub Msg
-subscriptions model =
+subscriptions _ =
     Sub.none
 
 
@@ -598,7 +593,7 @@ removeDuplicateConfirmationText unit unitToRemove =
 contentBlock : Shared.Model -> Model -> Html Msg
 contentBlock shared model =
     let
-        ( hasAdminRole, hasEditorOrAdminRole ) =
+        ( _, hasEditorOrAdminRole ) =
             case shared.user of
                 Just user ->
                     ( Core.Auth.hasRole "Admin" user, Core.Auth.hasRole "UnitsEditor" user )
@@ -1273,7 +1268,7 @@ contentBlock shared model =
 
 
 view : Bool -> Shared.Model -> B.User -> Model -> View Msg
-view dark shared user model =
+view _ shared _ model =
     { title = "підрозділи противника"
     , body =
         [ div [ class "page-rer-units w-5/6 mx-auto" ] <|

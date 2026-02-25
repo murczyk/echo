@@ -7,10 +7,8 @@ import Core.Types exposing (..)
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
 import Html exposing (..)
-import Html.Attributes as Attr exposing (..)
+import Html.Attributes exposing (..)
 import Html.Events exposing (..)
-import Html.Extra as HtmlX
-import Html.Keyed
 import Html.Styled as Styled exposing (fromUnstyled)
 import Layouts
 import List.Extra as ListX
@@ -26,15 +24,12 @@ import Shared.Components.Table as Table
 import Shared.Components.Table.Column as TableColumn
 import Shared.Components.Table.Config as TableConfig
 import Shared.Model exposing (isDarkMode)
-import Task
 import Time
-import TimeZone
 import Utils.Api.ErrorHandling
 import Utils.Components exposing (..)
 import Utils.Select
 import Utils.Time
 import Utils.Utils exposing (..)
-import Utils.Views
 import Validate
 import View exposing (View)
 
@@ -51,10 +46,10 @@ page user shared _ =
 
 
 toLayout : Auth.User -> Model -> Layouts.Layout Msg
-toLayout user model =
+toLayout user _ =
     Layouts.Navbar
         { user = user
-        , activeName = "admin"
+        , activeName = "users"
         }
 
 
@@ -896,7 +891,7 @@ viewDeletedStatus timeZone login =
 
 
 subscriptions : Model -> Sub Msg
-subscriptions model =
+subscriptions _ =
     Sub.none
 
 
@@ -1086,7 +1081,7 @@ getFilteredDataForRoleFilter model =
 
 
 view : Auth.User -> Shared.Model -> Model -> View Msg
-view user shared model =
+view _ shared model =
     { title = "Користувачі"
     , body =
         [ div
@@ -1655,7 +1650,7 @@ editLoginSidebarContent shared model loginId editState =
 
 
 usersTableConfig : Shared.Model -> Model -> Table.Config B.Login Msg
-usersTableConfig shared model =
+usersTableConfig shared _ =
     let
         defaultCustomizations =
             Table.defaultCustomizations

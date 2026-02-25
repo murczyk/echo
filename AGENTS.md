@@ -27,6 +27,15 @@
 - Always show the user what changes you've made and ask for permission before committing
 - Use `git status` and `git diff` to show what will be committed
 - Even for urgent fixes or reverts, always ask before committing/pushing. The user needs to be aware of what's being changed in their repository.
+- When proposing commit messages, use Conventional Commits with a past-simple summary (for example: `fix(navbar): redirected login correctly`).
+- Prefer deriving commit scope from the current branch name (see `.github/skills/conventional-commit-branch-scope/SKILL.md`).
+
+## CHANGELOG
+
+- Every new `CHANGELOG.md` entry must include a GitHub reference in the beginning: issue (`[#123](https://github.com/echoua/echo/issues/123)`).
+- Before asking the user for a GitHub issue number, try to extract it from the current git branch name. If the branch contains project key + number (for example `ABC-123`), use both when reporting the detected issue reference. If the branch contains only a number (for example `123`), use the number only.
+- Prefer following `.github/skills/changelog-next-update/SKILL.md` for exact `NEXT` formatting and phrasing style.
+- If the GitHub issue number is unknown, ask the user for it and do not add placeholder markers like `TODO` to `CHANGELOG.md`.
 
 ## Migrations
 

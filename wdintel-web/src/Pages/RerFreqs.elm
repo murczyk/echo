@@ -3,14 +3,11 @@ module Pages.RerFreqs exposing (Model, Msg, page)
 import Api
 import Auth
 import Bindings as B
-import Bytes exposing (Bytes)
 import Core.Auth
-import Core.Types as Types exposing (ApiError, GroupsActivityPerDayRsp)
 import Core.UnitHierarchy
-import Debounce exposing (Debounce)
+import Debounce
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
-import File.Download as Download
 import Html exposing (..)
 import Html.Attributes as Attr exposing (..)
 import Html.Events exposing (..)
@@ -25,11 +22,9 @@ import Pages_.RerFreqs.FilterPanel as FilterPanel
 import Pages_.RerFreqs.Model exposing (NetworkWorkflowStatus(..), NetworkWorkflowTab(..), ShowAllPopupFor(..), TextLocation(..))
 import Pages_.RerFreqs.Msg exposing (Msg(..))
 import Pages_.RerFreqs.NetworkWorkflow as NetworkWorkflow
-import Pages_.RerFreqs.UnitsFilterSidebar
 import Pages_.RerFreqs.Utils as Utils
 import Process
 import Route exposing (Route)
-import Route.Path
 import Select
 import Set
 import Shared
@@ -43,7 +38,7 @@ import Shared.Components.Spinner
 import Shared.Components.Table as Table
 import Shared.Components.Table.Column as TableColumn
 import Shared.Components.Table.Config as TableConfig
-import Shared.Components.Watermark as Watermark exposing (Watermark)
+import Shared.Components.Watermark as Watermark
 import Shared.Model exposing (isDarkMode)
 import Task
 import Time exposing (Posix)
@@ -298,9 +293,7 @@ loadFreqsWithTracker model paginating tracker =
             Cmd.none
 
 
-selFreqUnitId : String -> Maybe Int -> String
-selFreqUnitId freqS mNetworkId =
-    "sel-freq-units-" ++ freqS ++ "-" ++ (mmap String.fromInt mNetworkId |> def "add")
+
 
 
 callsignsForFilterParams : Posix -> Posix -> Model -> B.CallsignsForFreqReq
@@ -348,7 +341,7 @@ loadNetworksForFreqs shared model freqs =
 
 
 reloadFreqsIfSelectedChanged : Maybe (Select.Action String) -> List String -> Model -> ( Model, Effect Msg, Bool )
-reloadFreqsIfSelectedChanged mAction selectedItems model =
+reloadFreqsIfSelectedChanged mAction _ model =
     case mAction of
         Just Select.Blur ->
             ( model, E.none, False )
@@ -593,7 +586,7 @@ update shared msg model =
                                     case model.networkWorkflowStatus of
                                         SelectingNetwork freq _ ->
                                             case availableNetworks of
-                                                x :: xs ->
+                                                x :: _ ->
                                                     SelectingNetwork freq (Just x.id)
 
                                                 _ ->
@@ -1133,7 +1126,7 @@ update shared msg model =
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка додавання підтвердження мережі" e
             )
 
-        NetworkConfirmationAdded (Ok network) ->
+        NetworkConfirmationAdded (Ok _) ->
             ( { model | addConfirmationInp = Nothing }
             , E.none
             )
@@ -1172,16 +1165,14 @@ update shared msg model =
                             , activeFrom = model.addExistingActiveFrom
                             , activeTo = model.addExistingActiveTo
                             , description =
-                                case model.addExistingConfirmationInp of
-                                    Just inp ->
-                                        Just
+                                model.addExistingConfirmationInp
+                                    |> Maybe.map
+                                        (\inp ->
                                             { descrType = B.Confirmation
                                             , description = inp
                                             , freq = freq
                                             }
-
-                                    Nothing ->
-                                        Nothing
+                                        )
                             }
                         }
                     )
@@ -1270,7 +1261,7 @@ update shared msg model =
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення мережі" e
             )
 
-        NetworkUpdated freq (Ok network) ->
+        NetworkUpdated freq (Ok _) ->
             ( { model
                 | networkWorkflowStatus = SelectingNetwork freq Nothing
               }
@@ -1349,7 +1340,7 @@ update shared msg model =
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження активності груп частот" err
             )
 
-        NetworkPostsUpdated freq editState (Ok r) ->
+        NetworkPostsUpdated freq editState (Ok _) ->
             ( model
             , E.updateNetworkFreq (NetworkFreqUpdated freq editState)
                 { networkId = editState.id
@@ -1367,7 +1358,7 @@ update shared msg model =
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення постів мережі" err
             )
 
-        NetworkFreqUpdated freq editState (Ok r) ->
+        NetworkFreqUpdated freq editState (Ok _) ->
             ( model, E.updateNetwork (NetworkUpdated freq) editState )
 
         NetworkFreqUpdated _ _ (Err err) ->
@@ -2058,17 +2049,18 @@ dateAndPanelsBlock _ model =
                         }
                         |> Shared.Components.DateTime.view
                    )
-                ++ [ div
+                ++ ((div
                         [ class "me-2"
                         , style "font-size" "1rem"
                         ]
                         [ text "по" ]
-                   ]
-                ++ (Shared.Components.DateTime.new
-                        { model = model.to
-                        , toMsg = DateTimeToMsg
-                        }
-                        |> Shared.Components.DateTime.view
+                    )
+                        :: (Shared.Components.DateTime.new
+                                { model = model.to
+                                , toMsg = DateTimeToMsg
+                                }
+                                |> Shared.Components.DateTime.view
+                           )
                    )
         ]
 
@@ -2249,8 +2241,8 @@ page user shared _ =
 
 
 toLayout : Auth.User -> Model -> Layouts.Layout Msg
-toLayout user model =
+toLayout user _ =
     Layouts.Navbar
         { user = user
-        , activeName = "rer"
+        , activeName = "freqs"
         }

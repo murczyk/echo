@@ -1,4 +1,4 @@
-module Pages.Admin.Messanger exposing (Model, Msg, page)
+module Pages.Admin.Messenger exposing (Model, Msg, page)
 
 import Api
 import Auth
@@ -12,7 +12,7 @@ import Html.Events exposing (..)
 import Html.Styled as Styled
 import Layouts
 import Page exposing (Page)
-import Pages_.Admin.Messanger.LinkFlow as LinkFlow
+import Pages_.Admin.Messenger.LinkFlow as LinkFlow
 import Route exposing (Route)
 import Select
 import Shared
@@ -30,12 +30,11 @@ import Utils.Components exposing (..)
 import Utils.RemoteData as RD exposing (RemoteData(..))
 import Utils.Select
 import Utils.Utils exposing (..)
-import Utils.Views
 import View exposing (View)
 
 
 page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
-page user shared req =
+page user shared _ =
     Page.new
         { init = init
         , update = update
@@ -46,10 +45,10 @@ page user shared req =
 
 
 toLayout : Auth.User -> Model -> Layouts.Layout Msg
-toLayout user model =
+toLayout user _ =
     Layouts.Navbar
         { user = user
-        , activeName = "admin"
+        , activeName = "messenger"
         }
 
 
@@ -532,17 +531,16 @@ normalizeDescription description =
 
 findAorById : Maybe Int -> RemoteData ApiError (List B.AreaOfResponsibility) -> Maybe B.AreaOfResponsibility
 findAorById maybeAorId aorList =
-    case maybeAorId of
-        Just aorId ->
-            case aorList of
-                RD.Success aors ->
-                    List.filter (\aor -> aor.id == aorId) aors |> List.head
+    maybeAorId
+        |> Maybe.andThen
+            (\aorId ->
+                case aorList of
+                    RD.Success aors ->
+                        List.filter (\aor -> aor.id == aorId) aors |> List.head
 
-                _ ->
-                    Nothing
-
-        Nothing ->
-            Nothing
+                    _ ->
+                        Nothing
+            )
 
 
 
@@ -1004,7 +1002,7 @@ update msg model =
                         Just account ->
                             let
                                 -- Create a temporary QR data and update via LinkFlow API
-                                qrData =
+                                _ =
                                     { accountId = accountId, qrCode = "", account = account }
 
                                 newLinkFlow =
@@ -1057,7 +1055,7 @@ update msg model =
                     , E.none
                     )
 
-        GotDeleteResult (Err error) accountId ->
+        GotDeleteResult (Err error) _ ->
             ( { model | deleteConfirmDialog = Nothing, deleteLoading = False }
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення акаунту" error
             )
@@ -1125,7 +1123,7 @@ update msg model =
                 _ ->
                     ( model, E.none )
 
-        GotToggleStatusResult (Err error) accountId ->
+        GotToggleStatusResult (Err error) _ ->
             ( model
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка зміни статусу акаунту" error
             )
@@ -1319,7 +1317,7 @@ update msg model =
                 Nothing ->
                     ( clearEditForm model, E.none )
 
-        EditAccountResponse (Err error) accountId ->
+        EditAccountResponse (Err error) _ ->
             ( { model | editLoading = False }
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка редагування акаунту" error
             )
@@ -1380,7 +1378,7 @@ view dark shared user model =
 
 
 body : Bool -> Shared.Model -> B.User -> Model -> List (Html Msg)
-body dark shared user model =
+body dark shared _ model =
     let
         linkSidebarContent =
             linkAccountSidebarContent dark shared model
@@ -1400,7 +1398,7 @@ body dark shared user model =
 
 
 mainBlock : Bool -> Model -> List (Html Msg)
-mainBlock isDark model =
+mainBlock _ model =
     [ div []
         [ h1 [ class "py-4 text-2xl font-bold text-foreground" ] [ text "Месенджери" ]
         , div
@@ -1418,7 +1416,7 @@ mainBlock isDark model =
                 div [ class "text-center py-8" ]
                     [ text "Завантаження..." ]
 
-            RD.Failure error ->
+            RD.Failure _ ->
                 div [ class "text-center py-8 text-red-600" ]
                     [ text "Помилка завантаження" ]
 
@@ -1461,7 +1459,7 @@ mainBlock isDark model =
 
 
 linkAccountSidebarContent : Bool -> Shared.Model -> Model -> List (Html Msg)
-linkAccountSidebarContent isDark shared model =
+linkAccountSidebarContent isDark _ model =
     if LinkFlow.isInFormState model.linkFlow then
         [ div [ class "flex flex-col h-full" ]
             [ div [ class "p-6 border-b border-border" ]
@@ -1789,7 +1787,7 @@ linkAccountSidebarContent isDark shared model =
 
 
 editAccountSidebarContent : Bool -> Shared.Model -> Model -> List (Html Msg)
-editAccountSidebarContent isDark shared model =
+editAccountSidebarContent isDark _ model =
     case model.editForm of
         Just editForm ->
             [ div [ class "flex flex-col h-full" ]
@@ -1871,7 +1869,7 @@ editAccountSidebarContent isDark shared model =
 
 
 messengerAccountsTableConfig : Bool -> RemoteData ApiError (List B.AreaOfResponsibility) -> Table.Config B.EchoAccountF1 Msg
-messengerAccountsTableConfig isLoading aorList =
+messengerAccountsTableConfig isLoading _ =
     let
         defaultCustomizations =
             Table.defaultCustomizations

@@ -42,7 +42,6 @@ import Shared.Components.Table.Config as TableConfig
 import Shared.Model exposing (isDarkMode)
 import Task
 import Time exposing (Posix)
-import TimeZone
 import Utils.Api.ErrorHandling
 import Utils.NetworksUtils as EUtils
 import Utils.RemoteData as RD exposing (RemoteData(..))
@@ -223,6 +222,13 @@ listNetworksReq model =
     }
 
 
+loadedNetworksCount : Model -> Int
+loadedNetworksCount model =
+    model.networks
+        |> RD.withDefault []
+        |> List.length
+
+
 loadNetworks : Model -> ( Model, Effect Msg )
 loadNetworks model =
     let
@@ -252,6 +258,7 @@ loadMoreNetworks model =
         model2 =
             { model
                 | loadingMore = True
+                , networksOffset = loadedNetworksCount model
             }
     in
     ( model2
@@ -437,11 +444,7 @@ update shared msg model =
                         networks
 
                 nextOffset =
-                    if model.loadingMore then
-                        model.networksOffset + List.length networks
-
-                    else
-                        List.length networks
+                    List.length mergedNetworks
             in
             ( { model
                 | networks =
@@ -1784,7 +1787,7 @@ view _ shared user model =
                       div [ class "flex gap-[16px]" ] buttons
                     ]
                 , case model.networksMergeStatus of
-                    CalculatedSuggestions (_ :: xs) ->
+                    CalculatedSuggestions (_ :: _) ->
                         -- div [ class "w-full bg-[#F5F28A]/[40%] h-[70px] mb-[16px] border-1 border-[#F5F28A] rounded-lg flex justify-between items-center px-[16px] py-[8px] font-medium" ]
                         --     [ text <| (String.fromInt (List.length xs + 1) ++ " неопрацьованих пропозицій по злиттю мереж")
                         --     , Button.new { label = "Поєднати мережі", onClick = NetworksMergeStart }
@@ -1941,5 +1944,5 @@ toLayout : Auth.User -> Model -> Layouts.Layout Msg
 toLayout user _ =
     Layouts.Navbar
         { user = user
-        , activeName = "rer"
+        , activeName = "networks"
         }
