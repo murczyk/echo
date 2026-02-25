@@ -63,16 +63,16 @@ impl LabelPattern {
                 Expr::cust_with_values("lower(label) = $1", vec![value.clone()])
             }
             LabelPattern::Prefix(value) => Expr::cust_with_values(
-                "lower(label) LIKE $1",
-                vec![format!("{}%", value)],
+                "lower(label) LIKE $1 ESCAPE '\\'",
+                vec![format!("{}%", escape_like(value))],
             ),
             LabelPattern::Suffix(value) => Expr::cust_with_values(
-                "lower(label) LIKE $1",
-                vec![format!("%{}", value)],
+                "lower(label) LIKE $1 ESCAPE '\\'",
+                vec![format!("%{}", escape_like(value))],
             ),
             LabelPattern::Contains(value) => Expr::cust_with_values(
-                "lower(label) LIKE $1",
-                vec![format!("%{}%", value)],
+                "lower(label) LIKE $1 ESCAPE '\\'",
+                vec![format!("%{}%", escape_like(value))],
             ),
         }
     }
@@ -227,7 +227,6 @@ pub async fn search_palitra_points_by_labels(
 
     let mut points_by_id: HashMap<i64, Vec<PalitraPoint>> = HashMap::new();
     let mut matched_labels: HashMap<i64, HashSet<usize>> = HashMap::new();
-    let required_matches = label_patterns.len();
     for (palitra_id, lat, lng, label) in points {
         if let Some(label_value) = label.clone() {
             if let Some(normalized_label) = normalize_label_cache(&label_value)
@@ -266,13 +265,6 @@ pub async fn search_palitra_points_by_labels(
         .filter_map(|palitra_id| {
             let points = points_by_id.remove(&palitra_id).unwrap_or_default();
             if points.is_empty() {
-                return None;
-            }
-            let matched = matched_labels
-                .get(&palitra_id)
-                .map(|set| set.len())
-                .unwrap_or_default();
-            if matched < required_matches {
                 return None;
             }
             Some(PalitraPoints { palitra_id, points })
@@ -314,7 +306,7 @@ pub async fn suggest_palitra_point_labels(
         .filter(palitra_point::Column::Deleted.eq(false))
         .filter(palitra_point::Column::Label.is_not_null())
         .filter(Expr::cust_with_values(
-            "lower(label) LIKE $1",
+            "lower(label) LIKE $1 ESCAPE '\\'",
             vec![prefix_pattern],
         ))
         .order_by_asc(palitra_point::Column::Label)
@@ -344,7 +336,7 @@ pub async fn suggest_palitra_point_labels(
             .filter(palitra_point::Column::Deleted.eq(false))
             .filter(palitra_point::Column::Label.is_not_null())
             .filter(Expr::cust_with_values(
-                "lower(label) LIKE $1",
+                "lower(label) LIKE $1 ESCAPE '\\'",
                 vec![similar_pattern],
             ))
             .order_by_asc(palitra_point::Column::Label)
@@ -388,10 +380,18 @@ fn normalize_label_cache(label: &str) -> Option<String> {
     }
 }
 
+fn escape_like(input: &str) -> String {
+    input
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
+}
+
 fn build_label_pattern(label: &str, surround: bool) -> String {
     let pattern = label
         .split_whitespace()
         .filter(|part| !part.is_empty())
+        .map(escape_like)
         .join("%");
     if surround {
         format!("%{}%", pattern)
