@@ -57,6 +57,7 @@ pub mod palitra_access_aor;
 pub mod palitra_access_login;
 pub mod palitra_access_organism;
 pub mod palitra_point;
+pub mod palitra_point_lexeme;
 pub mod rer_gdoc_callsign;
 pub mod restream;
 pub mod restream_setup;

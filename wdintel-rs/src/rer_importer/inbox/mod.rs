@@ -657,6 +657,7 @@ async fn do_submit_inbox(
                 &env.rq,
                 &message.text,
                 &points,
+                &txn,
             )
             .await
             .c(h!())?,

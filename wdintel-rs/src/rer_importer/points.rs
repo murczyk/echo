@@ -1,4 +1,4 @@
-use crate::entities::{palitra, palitra_point};
+use crate::entities::{palitra, palitra_point, palitra_point_lexeme};
 use crate::error::AppError;
 use crate::h;
 use crate::rer_importer::highlight::CNPoint;
@@ -11,24 +11,24 @@ use sea_orm::{
 use std::collections::BTreeMap;
 // TODO: rename callsigns to points
 
-pub async fn highlight_points(
+pub async fn highlight_points<C>(
     rq: &reqwest::Client,
     body: &str,
     points: &Vec<String>,
-) -> Result<Vec<CNPoint>, AppError> {
+    txn: &C,
+) -> Result<Vec<CNPoint>, AppError>
+where
+    C: ConnectionTrait,
+{
+    if points.is_empty() {
+        return Ok(vec![]);
+    }
     let mut res = vec![];
     let tokens = crate::nlp::tokenize_words(rq, body).await.c(h!())?;
     // println!("> tokens: {tokens:?}");
-    let mut callsign_forms = BTreeMap::new();
-    for callsign in points.iter() {
-        callsign_forms.insert(callsign.clone(), callsign.clone());
-        for callsign_form in
-            crate::nlp::token_lexemes(rq, callsign).await.c(h!())?
-        {
-            callsign_forms.insert(callsign_form, callsign.clone());
-        }
-    }
-    // println!("> callsign_forms: {callsign_forms:?}");
+    let mut point_forms =
+        load_point_lexemes(txn, points.clone()).await.c(h!())?;
+    // println!("> point_forms: {point_forms:?}");
 
     let mut substrings_to_highlight: Vec<(String, String, usize, usize)> =
         vec![];
@@ -46,19 +46,21 @@ pub async fn highlight_points(
                 .join(" ");
             let text_lc = text.to_lowercase();
 
-            if let Some(etalon) = callsign_forms.get(&text_lc) {
+            if let Some(etalon) = point_forms.get(&text_lc) {
                 if let (Some(first), Some(last)) = (slice.first(), slice.last())
                 {
-                    substrings_to_highlight.push((
-                        etalon.clone(),
-                        slice
-                            .iter()
-                            .map(|t| t.text.clone())
-                            .collect::<Vec<_>>()
-                            .join(" "),
-                        first.start,
-                        last.end,
-                    ));
+                    for label in etalon {
+                        substrings_to_highlight.push((
+                            label.clone(),
+                            slice
+                                .iter()
+                                .map(|t| t.text.clone())
+                                .collect::<Vec<_>>()
+                                .join(" "),
+                            first.start,
+                            last.end,
+                        ));
+                    }
                 }
             }
         }
@@ -105,7 +107,7 @@ where
     if points.is_empty() {
         return Ok(vec![]);
     }
-    highlight_points(rq, body, &points).await
+    highlight_points(rq, body, &points, txn).await
 }
 
 pub async fn find_all_palitra_by_author(
@@ -138,4 +140,31 @@ pub async fn find_points_by_palitra(
         .into_iter()
         .flatten()
         .collect())
+}
+
+pub async fn load_point_lexemes<C>(
+    txn: &C,
+    points: Vec<String>,
+) -> Result<BTreeMap<String, Vec<String>>, AppError>
+where
+    C: ConnectionTrait,
+{
+    let rows = palitra_point::Entity::find()
+        .inner_join(palitra_point_lexeme::Entity)
+        .filter(palitra_point::Column::Deleted.eq(false))
+        .filter(palitra_point::Column::Label.eq_any(points))
+        .select_only()
+        .column(palitra_point::Column::Label)
+        .column(palitra_point_lexeme::Column::Lexeme)
+        .into_tuple::<(Option<String>, String)>()
+        .all(txn)
+        .await
+        .c(h!())?;
+
+    let mut map: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for (label, lexeme) in rows {
+        let Some(label) = label else { continue };
+        map.entry(lexeme).or_default().push(label);
+    }
+    Ok(map)
 }

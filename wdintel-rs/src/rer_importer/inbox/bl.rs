@@ -232,8 +232,7 @@ pub async fn aggregate_to_inbox_messages(
                 None => None,
                 Some(jv) => Some(serde_json::from_value(jv).context(h!())?),
             };
-        let m_point_tokens: Option<Vec<CNPoint>> = match message.point_tokens
-        {
+        let m_point_tokens: Option<Vec<CNPoint>> = match message.point_tokens {
             None => None,
             Some(jv) => Some(serde_json::from_value(jv).context(h!())?),
         };
