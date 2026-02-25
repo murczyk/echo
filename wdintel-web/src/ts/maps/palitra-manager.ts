@@ -223,7 +223,8 @@ export class PalitraManager {
     if (!this.enabled) {
       return;
     }
-    if (this._searchQuery) {
+    // Only fetch viewport points when search is active (points are only rendered when searching)
+    if (!this._searchQuery) {
       return;
     }
     if (this.visibleIds.length === 0) {
@@ -481,50 +482,13 @@ export class PalitraManager {
   }
 
   private updatePoints(): void {
-    if (this._searchQuery) {
+    // Points are only shown when search is active (via _showSearchResults). When not searching, show only palitra zones (polygons).
+    if (!this._searchQuery) {
+      this.pointsClusters.forEach((cluster) => this.map.removeLayer(cluster));
+      this.pointsClusters.clear();
       return;
     }
-
-    // Remove all existing point clusters from map
-    this.pointsClusters.forEach((cluster) => {
-      this.map.removeLayer(cluster);
-    });
-    this.pointsClusters.clear();
-
-    if (!this.enabled) {
-      return;
-    }
-
-    // Check zoom level - only show points at close zoom levels
-    const currentZoom = this.map.getZoom();
-    if (currentZoom < this.options.minZoomForPoints) {
-      // Too far out, don't show points
-      return;
-    }
-
-    const currentBounds = this.map.getBounds();
-    const bufferRatio = this.options.pointsViewportBufferRatio ?? 0.15;
-    const viewportWithBuffer = currentBounds.pad(bufferRatio);
-    const visiblePalitras = this.palitras.filter(pd =>
-      this.visibleIds.includes(pd.palitra.id)
-    );
-
-    visiblePalitras.forEach(palitraDetails => {
-      const points = this.cacheManager.getPointsForBounds(palitraDetails.palitra.id, currentBounds);
-      const pointsInView: typeof points = [];
-      // Filter points to only include those in current bounds + 15% buffer
-      for (let i = 0; i < points.length; i++) {
-        const p = points[i];
-        if (viewportWithBuffer.contains([p.coords.lat, p.coords.lng])) {
-          pointsInView.push(p);
-        }
-      }
-      const cluster = this.createPointsCluster(palitraDetails.palitra, pointsInView);
-      if (cluster) {
-        this.pointsClusters.set(palitraDetails.palitra.id, cluster);
-        this.map.addLayer(cluster);
-      }
-    });
+    // When search is active, points are rendered by _showSearchResults; nothing to do here
   }
 
   private updateControlVisibility(): void {
