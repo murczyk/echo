@@ -406,7 +406,7 @@ pub mod tests {
         let palitra = mk_palitra(
             dbx,
             palitra::ActiveModel {
-                name: Set("".into()),
+                name: Set(TEST_PALITRA_NAME.to_string()),
                 hex: Set("#ffffff".into()),
                 author: Set(Some(TEST_LOGIN.to_string())),
                 deleted: Set(false),
