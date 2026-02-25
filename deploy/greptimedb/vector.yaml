@@ -26,7 +26,7 @@ transforms:
     type: filter
     inputs:
       - signoz_gate
-    condition: ._send_to_signoz && ._signoz_logs_endpoint != ""
+    condition: (to_bool(._send_to_signoz) ?? false) && ((to_string(._signoz_logs_endpoint) ?? "") != "")
   signoz_prepare:
     type: remap
     inputs:
