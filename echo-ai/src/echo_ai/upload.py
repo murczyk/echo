@@ -216,7 +216,12 @@ Training run [{run_id}]({run_url}) completed:
 
 
 def get_report_record(params: dict, metrics: dict):
-    return {"label_name": params["label_name"], **metrics}
+    return {
+        "label_name": params["label_name"],
+        "ap_improvement": None,
+        "pr_improvement": None,
+        **metrics,
+    }
 
 
 def should_upload_model(
@@ -313,6 +318,7 @@ def upload_run(experiment_id: str, args: dict):
                 thresholds[label_name] = registered_metrics["threshold_at_recall"]
         else:
             print(f"no previous version of {model.name}, will attempt to upload")
+            models_to_upload.append(model)
 
         records.append(record)
 
