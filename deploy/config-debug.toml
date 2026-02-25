@@ -32,6 +32,9 @@ import_callsign_gdoc_worker = false
 #settlements_sources="kurska_oblast_rf, luhanska_oblast"
 settlements_sources = ""
 server_id = 37
+# Enable dual-write logs to Signoz (vector -> Signoz JSON receiver).
+# signoz_logs_enabled = true
+# signoz_logs_endpoint = "http://signoz-echo.eagle-atria.ts.net:8082"
 
 # Example replica entries for read-only workloads
 #
