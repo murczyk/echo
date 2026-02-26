@@ -11,6 +11,7 @@ use std::collections::HashSet;
 pub async fn oneoff_backfill_palitra_point_lexemes(
     mode: Mode,
 ) -> Result<(), AppError> {
+    let started_at = std::time::Instant::now();
     println!("> starting oneoff_backfill_palitra_point_lexemes");
     let dbx = new_pg_pool_from_mode(mode).await.c(h!())?;
     let rq = reqwest::Client::new();
@@ -49,8 +50,10 @@ pub async fn oneoff_backfill_palitra_point_lexemes(
     }
 
     println!(
-        "> backfill done: points={} lexemes={}",
-        total_points, total_lexemes
+        "> backfill done: points={} lexemes={} elapsed={:?}",
+        total_points,
+        total_lexemes,
+        started_at.elapsed()
     );
     Ok(())
 }
@@ -91,6 +94,11 @@ async fn insert_lexeme_batch(
         )
         .exec(dbx)
         .await
+        .map(|_| ())
+        .or_else(|err| match err {
+            DbErr::RecordNotInserted => Ok(()),
+            _ => Err(err),
+        })
         .c(h!())?;
     Ok(())
 }
