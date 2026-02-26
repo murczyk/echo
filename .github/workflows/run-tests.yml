@@ -160,7 +160,7 @@ jobs:
         run: bash deploy/ci/redis_mark_deploy.sh finished
 
       - name: Discord notification - CI failure
-        if: failure()
+        if: failure() && github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           DISCORD_WEBHOOK_URL_CI: ${{ secrets.DISCORD_WEBHOOK_URL_CI }}
         shell: "bash --noprofile --norc {0}"
