@@ -8,7 +8,7 @@ use crate::event_stream::types::{EventMsg, EventType};
 use crate::rer_importer::inbox::bl::*;
 use crate::rer_importer::inbox::query::*;
 use crate::rer_importer::points::{
-    find_all_palitra_by_author, find_points_by_palitra,
+    find_all_palitra_by_author, load_point_lexemes_by_palitra_ids,
 };
 use crate::session::record_page_visit;
 use crate::types::*;
@@ -625,7 +625,7 @@ async fn do_submit_inbox(
 
     let palitra_ids =
         find_all_palitra_by_author(&env.dbx, &login).await.c(h!())?;
-    let points = find_points_by_palitra(&env.dbx, palitra_ids)
+    let point_forms = load_point_lexemes_by_palitra_ids(&env.dbx, palitra_ids)
         .await
         .c(h!())?;
     for (id, message) in req.messages.iter() {
@@ -656,8 +656,7 @@ async fn do_submit_inbox(
             crate::rer_importer::points::highlight_points(
                 &env.rq,
                 &message.text,
-                &points,
-                &txn,
+                &point_forms,
             )
             .await
             .c(h!())?,

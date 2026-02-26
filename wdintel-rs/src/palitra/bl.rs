@@ -1,14 +1,15 @@
 use crate::entities::*;
-use crate::h;
 use crate::palitra::types::*;
 use crate::types::*;
 use crate::utils::orm::ArrayColumnOps;
+use crate::{h, nlp};
 use anyhow::Context;
 use chrono::{DateTime, Utc};
 use itertools::{Either, Itertools};
 use redis::AsyncCommands;
 use sea_orm::prelude::*;
 use sea_orm::sea_query::SimpleExpr;
+use sea_orm::sea_query::OnConflict;
 use sea_orm::*;
 use serde::de::DeserializeOwned;
 use std::collections::{HashMap, HashSet};
@@ -770,6 +771,7 @@ pub async fn rewrite_palitra_points(
     palitra_id: i64,
     coords: Vec<PalitraPoint>,
     txn: &DatabaseTransaction,
+    rq: &reqwest::Client,
 ) -> anyhow::Result<()> {
     let now = Utc::now().naive_utc();
     palitra::Entity::update_many()
@@ -796,8 +798,7 @@ pub async fn rewrite_palitra_points(
         });
         if points_batch.len() >= crate::config::PALITRA_POINTS_INSERT_BATCH_SIZE
         {
-            palitra_point::Entity::insert_many(points_batch)
-                .exec(txn)
+            insert_many_points(points_batch, txn, rq)
                 .await
                 .context(h!())?;
             points_batch = Vec::with_capacity(
@@ -806,13 +807,61 @@ pub async fn rewrite_palitra_points(
         }
     }
     if !points_batch.is_empty() {
-        palitra_point::Entity::insert_many(points_batch)
-            .exec(txn)
+        insert_many_points(points_batch, txn, rq)
             .await
             .context(h!())?;
     }
     recalculate_center(txn, palitra_id).await.c(h!())?;
     recalculate_convex_hull(txn, palitra_id).await.c(h!())?;
+    Ok(())
+}
+
+async fn insert_many_points(
+    points_batch: Vec<palitra_point::ActiveModel>,
+    txn: &DatabaseTransaction,
+    rq: &reqwest::Client,
+) -> anyhow::Result<()> {
+    let mut point_lexeme_actives: Vec<palitra_point_lexeme::ActiveModel> =
+        Vec::new();
+    for point in palitra_point::Entity::insert_many(points_batch)
+        .exec_with_returning_many(txn)
+        .await
+        .context(h!())?
+    {
+        if let Some(label) = &point.label {
+            let mut lexemes =
+                nlp::token_lexemes(rq, label).await.context(h!())?;
+            lexemes.push(label.clone());
+            let mut uniq = HashSet::new();
+            for lexeme in lexemes {
+                let lexeme = lexeme.to_lowercase().trim().to_string();
+                if uniq.insert(lexeme.clone()) {
+                    point_lexeme_actives.push(
+                        palitra_point_lexeme::ActiveModel {
+                            palitra_point_id: Set(point.id),
+                            lexeme: Set(lexeme),
+                            ..Default::default()
+                        },
+                    );
+                }
+            }
+        }
+    }
+    if point_lexeme_actives.is_empty() {
+        return Ok(());
+    }
+    palitra_point_lexeme::Entity::insert_many(point_lexeme_actives)
+        .on_conflict(
+            OnConflict::columns([
+                palitra_point_lexeme::Column::PalitraPointId,
+                palitra_point_lexeme::Column::Lexeme,
+            ])
+            .do_nothing()
+            .to_owned(),
+        )
+        .exec(txn)
+        .await
+        .context(h!())?;
     Ok(())
 }
 
