@@ -57,6 +57,8 @@ pub enum Relation {
     SigintCallsignChangelog,
     #[sea_orm(has_many = "super::sigint_comment::Entity")]
     SigintComment,
+    #[sea_orm(has_many = "super::sigint_inbox_item_point_tokens::Entity")]
+    SigintInboxItemPointTokens,
     #[sea_orm(has_many = "super::sigint_inbox_item_tag::Entity")]
     SigintInboxItemTag,
     #[sea_orm(has_many = "super::sigint_key_share_policy::Entity")]
@@ -134,6 +136,12 @@ impl Related<super::sigint_callsign_changelog::Entity> for Entity {
 impl Related<super::sigint_comment::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SigintComment.def()
+    }
+}
+
+impl Related<super::sigint_inbox_item_point_tokens::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintInboxItemPointTokens.def()
     }
 }
 

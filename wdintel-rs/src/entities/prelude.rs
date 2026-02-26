@@ -69,6 +69,7 @@ pub use super::sigint_comment::Entity as SigintComment;
 pub use super::sigint_important::Entity as SigintImportant;
 pub use super::sigint_inbox_item::Entity as SigintInboxItem;
 pub use super::sigint_inbox_item_network::Entity as SigintInboxItemNetwork;
+pub use super::sigint_inbox_item_point_tokens::Entity as SigintInboxItemPointTokens;
 pub use super::sigint_inbox_item_tag::Entity as SigintInboxItemTag;
 pub use super::sigint_inbox_tag_model_error::Entity as SigintInboxTagModelError;
 pub use super::sigint_key_share_policy::Entity as SigintKeySharePolicy;

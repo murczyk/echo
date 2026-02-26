@@ -30,7 +30,7 @@ use geoconvert::{LatLon, Mgrs};
 use itertools::Itertools;
 use log::*;
 use sea_orm::*;
-use sea_query::Expr;
+use sea_query::{Expr, OnConflict};
 use serde_json::json;
 use sqlx::Row;
 
@@ -197,6 +197,26 @@ pub async fn aggregate_to_inbox_messages(
     let point_forms = load_point_lexemes_by_palitra_ids(&env.dbx, palitra_ids)
         .await
         .context(h!())?;
+    let palitra_tag_id = tag::Entity::find()
+        .filter(tag::Column::Label.eq("палітра"))
+        .select_only()
+        .column(tag::Column::Id)
+        .into_tuple::<i64>()
+        .one(&env.dbx)
+        .await
+        .context(h!())?;
+
+    let per_user_tokens = sigint_inbox_item_point_tokens::Entity::find()
+        .filter(sigint_inbox_item_point_tokens::Column::Login.eq(login))
+        .filter(sigint_inbox_item_point_tokens::Column::SigintInboxItemId.eq_any(message_ids))
+        .all(&env.dbx)
+        .await
+        .context(h!())?;
+    let mut point_tokens_map: HashMap<i64, Vec<CNPoint>> = HashMap::new();
+    for row in per_user_tokens {
+        let point_tokens: Vec<CNPoint> = serde_json::from_value(row.point_tokens).context(h!())?;
+        point_tokens_map.insert(row.sigint_inbox_item_id, point_tokens);
+    }
     for message in messages {
         // for message in messages {
         // let m_inbox: Option<sigint_inbox_item::Model> =
@@ -243,12 +263,35 @@ pub async fn aggregate_to_inbox_messages(
                 None => None,
                 Some(jv) => Some(serde_json::from_value(jv).context(h!())?),
             };
-        let mut m_point_tokens: Option<Vec<CNPoint>> =
-            match message.point_tokens {
+        let without_model_tags = req.without_model_tags.unwrap_or(false);
+        let m_inbox_tags: Option<Vec<InboxMessageTag>> =
+            match message.inbox_tags {
                 None => None,
-                Some(jv) => Some(serde_json::from_value(jv).context(h!())?),
+                Some(jv) => Some(
+                    serde_json::from_value::<Vec<InboxMessageTag>>(jv)
+                        .context(h!())?
+                        .into_iter()
+                        .filter(|tag| {
+                            tag.confidence >= TAG_MINIMUM_CONFIDENCE
+                                && (!without_model_tags || tag.model.is_none())
+                        })
+                        .collect(),
+                ),
             };
+        let inbox_tag_ids = m_inbox_tags
+            .as_ref()
+            .map(|tags| tags.iter().map(|tag| tag.tag_id).collect::<Vec<_>>());
+        let has_palitra_tag = palitra_tag_id.map_or(false, |tag_id| {
+            inbox_tag_ids
+                .as_ref()
+                .map(|tags| tags.contains(&tag_id))
+                .unwrap_or(false)
+        });
+        let mut m_point_tokens: Option<Vec<CNPoint>> =
+            point_tokens_map.get(&message.id).cloned();
+
         if req.highlight_points.unwrap_or(false)
+            && has_palitra_tag
             && m_point_tokens.is_none()
             && !point_forms.is_empty()
         {
@@ -256,16 +299,28 @@ pub async fn aggregate_to_inbox_messages(
                 .await
                 .c(h!())?;
             if !tokens.is_empty() {
-                sigint_inbox_item::Entity::update_many()
-                    .filter(sigint_inbox_item::Column::Id.eq(message.id))
-                    .filter(sigint_inbox_item::Column::PointTokens.is_null())
-                    .col_expr(
-                        sigint_inbox_item::Column::PointTokens,
-                        Expr::value(json!(tokens)),
-                    )
-                    .exec(&env.dbx)
-                    .await
-                    .c(h!())?;
+                let point_tokens_active_model =
+                    sigint_inbox_item_point_tokens::ActiveModel {
+                        sigint_inbox_item_id: Set(message.id),
+                        login: Set(login.to_string()),
+                        point_tokens: Set(json!(tokens)),
+                        ..Default::default()
+                    };
+                sigint_inbox_item_point_tokens::Entity::insert(
+                    point_tokens_active_model,
+                )
+                .on_conflict(
+                    OnConflict::columns([
+                        sigint_inbox_item_point_tokens::Column::SigintInboxItemId,
+                        sigint_inbox_item_point_tokens::Column::Login,
+                    ])
+                    .do_nothing()
+                    .to_owned(),
+                )
+                .exec(&env.dbx)
+                .await
+                .c(h!())?;
+                point_tokens_map.insert(message.id, tokens.clone());
             }
             m_point_tokens = Some(tokens);
         }
@@ -322,24 +377,6 @@ pub async fn aggregate_to_inbox_messages(
             Some(location) => Some(to_location_list(&location).join(", ")),
         };
         let network_ids = messages_networks.get(&message.id).cloned();
-        let without_model_tags = req.without_model_tags.unwrap_or(false);
-        let m_inbox_tags: Option<Vec<InboxMessageTag>> =
-            match message.inbox_tags {
-                None => None,
-                Some(jv) => Some(
-                    serde_json::from_value::<Vec<InboxMessageTag>>(jv)
-                        .context(h!())?
-                        .into_iter()
-                        .filter(|tag| {
-                            tag.confidence >= TAG_MINIMUM_CONFIDENCE
-                                && (!without_model_tags || tag.model.is_none())
-                        })
-                        .collect(),
-                ),
-            };
-        let inbox_tag_ids = m_inbox_tags
-            .as_ref()
-            .map(|tags| tags.iter().map(|tag| tag.tag_id).collect::<Vec<_>>());
 
         res.push((
             message.id,
@@ -835,9 +872,6 @@ pub async fn submit_upsert_inbox_item(
             unit: Set(message.unit.clone()),
             callsign_tokens: Set(Some(
                 serde_json::to_value(&message.callsign_tokens).context(h!())?,
-            )),
-            point_tokens: Set(Some(
-                serde_json::to_value(&message.point_tokens).context(h!())?,
             )),
             keyword_tokens: Set(Some(
                 serde_json::to_value(&message.keyword_tokens).context(h!())?,
