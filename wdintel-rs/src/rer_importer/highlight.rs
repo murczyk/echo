@@ -1103,6 +1103,51 @@ mod tests {
             }]
         )
     }
+
+    #[test]
+    fn test_highlight_points_01() {
+        let body = "Передай на точке Альфа";
+        let points = vec![CNPoint {
+            begin: 11,
+            end: 16,
+            etalon: "точка".to_string(),
+            text: "точке".to_string(),
+        }];
+        let res = highlight(
+            body,
+            None,
+            &vec![],
+            &points,
+            &vec![],
+            &vec![],
+            None,
+            HighlightOpts {
+                highlight_callsigns: Some(false),
+                highlight_signals: Some(false),
+                highlight_keywords: Some(false),
+                highlight_searchres: Some(false),
+                highlight_points: Some(true),
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            res,
+            vec![
+                ContentNode::CNTextC(CNText {
+                    text: "Передай на ".to_string(),
+                }),
+                ContentNode::CNPointC(CNPoint {
+                    begin: 11,
+                    end: 16,
+                    etalon: "точка".to_string(),
+                    text: "точке".to_string(),
+                }),
+                ContentNode::CNTextC(CNText {
+                    text: " Альфа".to_string(),
+                }),
+            ]
+        );
+    }
 }
 
 // TODO: add tests for points
