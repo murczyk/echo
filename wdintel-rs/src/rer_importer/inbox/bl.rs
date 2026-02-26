@@ -295,7 +295,7 @@ pub async fn aggregate_to_inbox_messages(
             && m_point_tokens.is_none()
             && !point_forms.is_empty()
         {
-            let tokens = highlight_points(&env.rq, &body, &point_forms)
+            let tokens = highlight_points(&env.rq, &no_headers_body.body, &point_forms)
                 .await
                 .c(h!())?;
             if !tokens.is_empty() {
