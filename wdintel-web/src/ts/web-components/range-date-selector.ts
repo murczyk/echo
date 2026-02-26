@@ -1,4 +1,4 @@
-import { daysCountText } from "../maps/language-utils";
+import { daysCountText } from "../maps/utils/language-utils";
 
 const styles = `
 <style>

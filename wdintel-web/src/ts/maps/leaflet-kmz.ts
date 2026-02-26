@@ -1,5 +1,5 @@
 import L from 'leaflet';
-import * as _ from './leaflet-utils'
+import * as _ from './utils/leaflet-utils'
 
 interface KMZLayerOptions extends L.LayerOptions {
   interactive: boolean;
