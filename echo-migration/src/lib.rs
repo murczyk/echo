@@ -205,7 +205,7 @@ mod m20260212_164832_add_worker_status;
 mod m20260216_120000_add_network_group_stats;
 mod m20260218_120000_add_aor_location_config;
 mod m20260219_090000_add_aor_location_configs_json;
-mod m20260225_090001_add_point_tokens_sigint_inbox_item;
+mod m20260225_090001_add_table_sigint_inbox_item_point_tokens;
 mod m20260225_174500_add_palitra_point_lexeme;
 
 pub struct Migrator;
@@ -419,7 +419,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260218_120000_add_aor_location_config::Migration),
             Box::new(m20260219_090000_add_aor_location_configs_json::Migration),
             Box::new(m20260216_120000_add_network_group_stats::Migration),
-            Box::new(m20260225_090001_add_point_tokens_sigint_inbox_item::Migration),
+            Box::new(m20260225_090001_add_table_sigint_inbox_item_point_tokens::Migration),
             Box::new(m20260225_174500_add_palitra_point_lexeme::Migration),
         ]
     }

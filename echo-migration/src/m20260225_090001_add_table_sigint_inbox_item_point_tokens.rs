@@ -9,8 +9,13 @@ impl MigrationTrait for Migration {
         let db = manager.get_connection();
         db.execute_unprepared(
             r#"
-            alter table sigint_inbox_item
-                add column if not exists point_tokens JSONB;
+            create table if not exists sigint_inbox_item_point_tokens (
+                id bigserial primary key,
+                sigint_inbox_item_id int8 not null references sigint_inbox_item(id) on delete cascade,
+                login text not null references login(login) on delete cascade,
+                point_tokens jsonb not null,
+                unique (sigint_inbox_item_id, login)
+            );
             "#,
         )
         .await?;
@@ -21,8 +26,7 @@ impl MigrationTrait for Migration {
         let db = manager.get_connection();
         db.execute_unprepared(
             r#"
-            alter table sigint_inbox_item
-                drop column if exists point_tokens;
+            drop table if exists sigint_inbox_item_point_tokens;
             "#,
         )
         .await?;

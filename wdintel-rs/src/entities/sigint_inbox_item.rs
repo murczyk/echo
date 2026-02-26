@@ -52,8 +52,6 @@ pub struct Model {
     pub unit_v2: Option<String>,
     pub parsed_unit_v2: bool,
     pub post_id: Option<i64>,
-    #[sea_orm(column_type = "JsonBinary", nullable)]
-    pub point_tokens: Option<Json>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -68,6 +66,8 @@ pub enum Relation {
     Nominatimres,
     #[sea_orm(has_many = "super::sigint_inbox_item_network::Entity")]
     SigintInboxItemNetwork,
+    #[sea_orm(has_many = "super::sigint_inbox_item_point_tokens::Entity")]
+    SigintInboxItemPointTokens,
     #[sea_orm(has_many = "super::sigint_inbox_item_tag::Entity")]
     SigintInboxItemTag,
     #[sea_orm(has_many = "super::sigint_inbox_tag_model_error::Entity")]
@@ -101,6 +101,8 @@ pub enum Relation {
         on_delete = "NoAction"
     )]
     SigintNetworkFreq,
+
+
 }
 
 impl Related<super::nominatimres::Entity> for Entity {
@@ -112,6 +114,12 @@ impl Related<super::nominatimres::Entity> for Entity {
 impl Related<super::sigint_inbox_item_network::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SigintInboxItemNetwork.def()
+    }
+}
+
+impl Related<super::sigint_inbox_item_point_tokens::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintInboxItemPointTokens.def()
     }
 }
 
