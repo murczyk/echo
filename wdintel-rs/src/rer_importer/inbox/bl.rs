@@ -226,6 +226,7 @@ pub async fn aggregate_to_inbox_messages(
         //     SigintInboxItem::find_by_id(message.id)
         //         .one(&env.dbx)
         //         .await.c(h!())?;
+
         let media = media_by_message
             .get(&message.id)
             .cloned()
@@ -298,10 +299,12 @@ pub async fn aggregate_to_inbox_messages(
             && m_point_tokens.is_none()
             && !point_forms.is_empty()
         {
-            let tokens =
+            let tokens = crate::rer_importer::points::offset_point_tokens(
                 highlight_points(&env.rq, &no_headers_body.body, &point_forms)
                     .await
-                    .c(h!())?;
+                    .c(h!())?,
+                no_headers_body.start,
+            );
             if !tokens.is_empty() {
                 let point_tokens_active_model =
                     sigint_inbox_item_point_tokens::ActiveModel {
