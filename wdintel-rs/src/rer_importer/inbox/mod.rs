@@ -652,15 +652,20 @@ async fn do_submit_inbox(
             crate::rer_importer::highlight::extract_keywords(&message.text)
                 .c(h!())?,
         );
-        message.point_tokens = Some(
-            crate::rer_importer::points::highlight_points(
-                &env.rq,
-                &message.text,
-                &point_forms,
-            )
-            .await
-            .c(h!())?,
-        );
+        let no_headers_body =
+            crate::rer_importer::body_noheader::extract_text(&message.text)
+                .c(h!())?;
+        message.point_tokens =
+            Some(crate::rer_importer::points::offset_point_tokens(
+                crate::rer_importer::points::highlight_points(
+                    &env.rq,
+                    &no_headers_body.body,
+                    &point_forms,
+                )
+                .await
+                .c(h!())?,
+                no_headers_body.start,
+            ));
         let all_ids = find_all_duplicates(&txn, *id).await.c(h!())?;
         for id in all_ids {
             submit_upsert_inbox_item(

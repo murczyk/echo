@@ -77,6 +77,23 @@ pub async fn highlight_points(
     Ok(res)
 }
 
+pub fn offset_point_tokens(
+    tokens: Vec<CNPoint>,
+    offset: usize,
+) -> Vec<CNPoint> {
+    if offset == 0 {
+        return tokens;
+    }
+    tokens
+        .into_iter()
+        .map(|mut token| {
+            token.begin += offset;
+            token.end += offset;
+            token
+        })
+        .collect()
+}
+
 pub async fn find_known_points<C>(
     txn: &C,
     rq: &reqwest::Client,
