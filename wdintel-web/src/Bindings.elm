@@ -3885,6 +3885,7 @@ restartEchoRequestEncoder struct =
 
 type alias ReoReportSettings =
     { adjacentFreqsDistance : Float
+    , noComments : Bool
     }
 
 
@@ -3892,6 +3893,7 @@ reoReportSettingsEncoder : ReoReportSettings -> Json.Encode.Value
 reoReportSettingsEncoder struct =
     Json.Encode.object
         [ ( "adjacent_freqs_distance", Json.Encode.float struct.adjacentFreqsDistance )
+        , ( "no_comments", Json.Encode.bool struct.noComments )
         ]
 
 
@@ -8810,6 +8812,7 @@ reoReportSettingsDecoder : Json.Decode.Decoder ReoReportSettings
 reoReportSettingsDecoder =
     Json.Decode.succeed ReoReportSettings
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "adjacent_freqs_distance" Json.Decode.float))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "no_comments" Json.Decode.bool))
 
 
 activeNetworksReportSettingsDecoder : Json.Decode.Decoder ActiveNetworksReportSettings
