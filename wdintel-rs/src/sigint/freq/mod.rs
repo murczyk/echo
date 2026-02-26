@@ -1204,8 +1204,12 @@ where
         ));
     };
 
-    let needs_unit_join = filter_unit.as_ref().is_some_and(|s| !s.is_empty())
-        || filter_further_investigation.unwrap_or(false);
+    let filter_unit = filter_unit
+        .as_deref()
+        .map(str::trim)
+        .filter(|unit| !unit.is_empty());
+    let needs_unit_join =
+        filter_unit.is_some() || filter_further_investigation.unwrap_or(false);
 
     if needs_unit_join {
         q = q
