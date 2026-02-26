@@ -20,6 +20,7 @@ use tempfile::tempdir;
 
 mod bl;
 mod kmz;
+pub mod oneoff;
 pub mod types;
 
 #[derive(Clone)]

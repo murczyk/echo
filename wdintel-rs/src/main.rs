@@ -628,6 +628,7 @@ enum Cmd {
     OneoffImportSignalsCallsignsCsv(OneoffImportSignalsCallsignsCsvPs),
     OneoffFixWhatsappSenders,
     OneoffBackfillInboxNetworks(OneoffBackfillInboxNetworksPs),
+    OneoffBackfillPalitraPointLexemes,
     OneoffReprocessInboxPosts(OneoffReprocessInboxPostsPs),
     OneoffRestartEcho(OneoffRestartEchoPs),
 }
@@ -1072,6 +1073,10 @@ async fn async_main(
         }
         Cmd::OneoffBackfillInboxNetworks(ps) => {
             sigint::network::etalon_calc::oneoff::oneoff_backfill_inbox_networks(mode, ps)
+                .await
+        }
+        Cmd::OneoffBackfillPalitraPointLexemes => {
+            palitra::oneoff::oneoff_backfill_palitra_point_lexemes(mode)
                 .await
         }
         Cmd::OneoffReprocessInboxPosts(ps) => {
