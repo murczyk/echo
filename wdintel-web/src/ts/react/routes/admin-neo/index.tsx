@@ -958,9 +958,12 @@ function AdminNeoPageBody() {
   }
 
   function openAssignDialog(group: OrphanSignalGroupEntry) {
+    const preselectedZones =
+      zones.length === 1 ? zones : [];
+
     setAssignDialog({
       group,
-      selectedZones: [],
+      selectedZones: preselectedZones,
       isSecret: false,
       selectedUsers: [],
       isSaving: false,
