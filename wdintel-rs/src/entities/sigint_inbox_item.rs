@@ -101,8 +101,6 @@ pub enum Relation {
         on_delete = "NoAction"
     )]
     SigintNetworkFreq,
-
-
 }
 
 impl Related<super::nominatimres::Entity> for Entity {

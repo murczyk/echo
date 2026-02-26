@@ -46,7 +46,6 @@ pub struct InboxMessageDesc {
     pub callsigns: Option<serde_json::Value>,
     pub callsigns_alg2: Option<serde_json::Value>,
     pub callsign_tokens: Option<serde_json::Value>,
-    pub point_tokens: Option<serde_json::Value>,
     pub signal_tokens: Option<serde_json::Value>,
     pub keyword_tokens: Option<serde_json::Value>,
     pub location_v2: Option<String>,
@@ -208,13 +207,17 @@ pub async fn aggregate_to_inbox_messages(
 
     let per_user_tokens = sigint_inbox_item_point_tokens::Entity::find()
         .filter(sigint_inbox_item_point_tokens::Column::Login.eq(login))
-        .filter(sigint_inbox_item_point_tokens::Column::SigintInboxItemId.eq_any(message_ids))
+        .filter(
+            sigint_inbox_item_point_tokens::Column::SigintInboxItemId
+                .eq_any(message_ids),
+        )
         .all(&env.dbx)
         .await
         .context(h!())?;
     let mut point_tokens_map: HashMap<i64, Vec<CNPoint>> = HashMap::new();
     for row in per_user_tokens {
-        let point_tokens: Vec<CNPoint> = serde_json::from_value(row.point_tokens).context(h!())?;
+        let point_tokens: Vec<CNPoint> =
+            serde_json::from_value(row.point_tokens).context(h!())?;
         point_tokens_map.insert(row.sigint_inbox_item_id, point_tokens);
     }
     for message in messages {
@@ -281,7 +284,7 @@ pub async fn aggregate_to_inbox_messages(
         let inbox_tag_ids = m_inbox_tags
             .as_ref()
             .map(|tags| tags.iter().map(|tag| tag.tag_id).collect::<Vec<_>>());
-        let has_palitra_tag = palitra_tag_id.map_or(false, |tag_id| {
+        let has_palitra_tag = palitra_tag_id.is_some_and(|tag_id| {
             inbox_tag_ids
                 .as_ref()
                 .map(|tags| tags.contains(&tag_id))
@@ -295,9 +298,10 @@ pub async fn aggregate_to_inbox_messages(
             && m_point_tokens.is_none()
             && !point_forms.is_empty()
         {
-            let tokens = highlight_points(&env.rq, &no_headers_body.body, &point_forms)
-                .await
-                .c(h!())?;
+            let tokens =
+                highlight_points(&env.rq, &no_headers_body.body, &point_forms)
+                    .await
+                    .c(h!())?;
             if !tokens.is_empty() {
                 let point_tokens_active_model =
                     sigint_inbox_item_point_tokens::ActiveModel {
