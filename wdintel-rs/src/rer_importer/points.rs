@@ -19,6 +19,7 @@ pub async fn highlight_points(
         return Ok(vec![]);
     }
     let mut res = vec![];
+    let body_chars: Vec<char> = body.chars().collect();
     let tokens = crate::nlp::tokenize_words(rq, body).await.c(h!())?;
     // println!("> tokens: {tokens:?}");
 
@@ -61,12 +62,14 @@ pub async fn highlight_points(
     // println!("> substrings_to_highlight: {substrings_to_highlight:?}");
 
     for (etalon, sub, start, end) in substrings_to_highlight {
-        res.push(CNPoint {
-            begin: start,
-            end,
-            etalon: etalon.clone(),
-            text: sub.clone(),
-        });
+        if is_word_boundary(&body_chars, start, end) {
+            res.push(CNPoint {
+                begin: start,
+                end,
+                etalon: etalon.clone(),
+                text: sub.clone(),
+            });
+        }
     }
 
     // Deduplicate and sort
@@ -75,6 +78,21 @@ pub async fn highlight_points(
     res.dedup();
 
     Ok(res)
+}
+
+fn is_word_boundary(body_chars: &[char], start: usize, end: usize) -> bool {
+    let len = body_chars.len();
+    if start > len || end > len || start >= end {
+        return false;
+    }
+    let left_ok =
+        start == 0 || !is_word_char(body_chars.get(start - 1).copied());
+    let right_ok = end >= len || !is_word_char(body_chars.get(end).copied());
+    left_ok && right_ok
+}
+
+fn is_word_char(ch: Option<char>) -> bool {
+    ch.is_some_and(|c| c.is_alphanumeric() || c == '_')
 }
 
 pub fn offset_point_tokens(
