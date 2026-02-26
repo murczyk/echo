@@ -128,14 +128,15 @@ pub async fn report_docx_kind_revo(
         messages.len()
     );
 
-    let range_khz = match req.report_type {
+    let (range_khz, no_comments) = match req.report_type {
         Some(ReportType::Reo(
             ReoReportSettings {
                 adjacent_freqs_distance,
+                no_comments,
             },
             _,
-        )) => adjacent_freqs_distance * 1000.0,
-        _ => 0.0,
+        )) => (adjacent_freqs_distance * 1000.0, no_comments),
+        _ => (0.0, false),
     };
 
     let start = Instant::now();
@@ -146,6 +147,7 @@ pub async fn report_docx_kind_revo(
         &read_db,
         range_khz,
         report_tags_only_this_unit,
+        no_comments,
     )
     .await
     .context(h!())?;
@@ -171,9 +173,19 @@ pub async fn report_docx_kind_revo(
 
     let result = match req.report_type {
         Some(ReportType::Reo(_, ReoReportFileType::Xlsx)) => {
-            generate_xlsx_kind_revo(report, network_summary, outpath)
+            generate_xlsx_kind_revo(
+                report,
+                network_summary,
+                outpath,
+                no_comments,
+            )
         }
-        _ => generate_docx_kind_revo(report, network_summary, outpath),
+        _ => generate_docx_kind_revo(
+            report,
+            network_summary,
+            outpath,
+            no_comments,
+        ),
     };
 
     info!(
@@ -188,6 +200,7 @@ fn generate_xlsx_kind_revo(
     report: Report,
     network_summary: String,
     outpath: &Path,
+    no_comments: bool,
 ) -> Result<(), AppError> {
     let mut workbook = Workbook::new();
     let sheet = workbook
@@ -202,7 +215,7 @@ fn generate_xlsx_kind_revo(
         .set_font_size(12.0)
         .set_text_wrap();
 
-    let headers: Vec<(&str, i32)> = vec![
+    let mut headers: Vec<(&str, i32)> = vec![
         ("Назва радіомережі", 40),
         ("Місто/Населений пункт", 30),
         ("Частоти", 12),
@@ -212,8 +225,10 @@ fn generate_xlsx_kind_revo(
         ("Склад кореспондентів радіомережі та приналежність", 30),
         ("Характер радіообміну", 30),
         ("Особливості функціонування радіомереж", 30),
-        ("Що було виявлено", 40),
     ];
+    if !no_comments {
+        headers.push(("Що було виявлено", 40));
+    }
 
     let mut row_num: RowNum = 0;
     let max_col_num = (headers.len() as u32) as ColNum;
@@ -258,7 +273,13 @@ fn generate_xlsx_kind_revo(
     row_num += 1;
 
     for hostile_network in report.hostile_networks {
-        generate_networks_sheet(sheet, row_num, &coltitle, hostile_network)?;
+        generate_networks_sheet(
+            sheet,
+            row_num,
+            &coltitle,
+            hostile_network,
+            no_comments,
+        )?;
         row_num += 1;
     }
 
@@ -275,7 +296,13 @@ fn generate_xlsx_kind_revo(
     row_num += 1;
 
     for undefined_network in report.undefined_networks {
-        generate_networks_sheet(sheet, row_num, &coltitle, undefined_network)?;
+        generate_networks_sheet(
+            sheet,
+            row_num,
+            &coltitle,
+            undefined_network,
+            no_comments,
+        )?;
         row_num += 1;
     }
     let start = Instant::now();
@@ -290,6 +317,7 @@ fn generate_networks_sheet<'a>(
     row_num: RowNum,
     cell_format: &Format,
     network_row: NetworkRow,
+    no_comments: bool,
 ) -> Result<&'a mut Worksheet, AppError> {
     let mut col_num = 0;
     let date_cell_format = cell_format.clone().set_num_format("dd.mm.yy hh:mm");
@@ -405,17 +433,19 @@ fn generate_networks_sheet<'a>(
         .context(h!())?;
     col_num += 1;
 
-    let identified_details = network_row.identified_details.join("\n");
-    sheet
-        .write_string_with_format(
-            row_num,
-            col_num,
-            identified_details,
-            cell_format,
-        )
-        .context(h!())?
-        .set_column_width(col_num, 40)
-        .context(h!())?;
+    if !no_comments {
+        let identified_details = network_row.identified_details.join("\n");
+        sheet
+            .write_string_with_format(
+                row_num,
+                col_num,
+                identified_details,
+                cell_format,
+            )
+            .context(h!())?
+            .set_column_width(col_num, 40)
+            .context(h!())?;
+    }
 
     Ok(sheet)
 }
@@ -424,10 +454,11 @@ fn generate_docx_kind_revo(
     report: Report,
     network_summary: String,
     outpath: &Path,
+    no_comments: bool,
 ) -> Result<(), AppError> {
     let start = Instant::now();
     let config = DocxConfig {
-        columns_count: 6,
+        columns_count: if no_comments { 5 } else { 6 },
         width_unit: WIDTH_UNIT,
         highlight_color: "FF0000".to_string(),
         split_multiline_cells: true,
@@ -435,7 +466,7 @@ fn generate_docx_kind_revo(
     };
 
     let mut rows_amrp: Vec<TableRow> = vec![];
-    rows_amrp.push(TableRow::new(vec![
+    let mut header_cells = vec![
         mk_header_cell("Назва радіомережі", &config),
         mk_header_cell("Час роботи радіомережі", &config),
         mk_header_cell(
@@ -444,8 +475,11 @@ fn generate_docx_kind_revo(
         ),
         mk_header_cell("Характер радіообміну", &config),
         mk_header_cell("Особливості функціонування радіомереж", &config),
-        mk_header_cell("Що було виявлено", &config),
-    ]));
+    ];
+    if !no_comments {
+        header_cells.push(mk_header_cell("Що було виявлено", &config));
+    }
+    rows_amrp.push(TableRow::new(header_cells));
     rows_amrp.push(TableRow::new(vec![mk_merged_text_cell(
         "Російська Федерація",
         true,
@@ -453,7 +487,7 @@ fn generate_docx_kind_revo(
         &config,
     )]));
     for e in report.hostile_networks {
-        rows_amrp.push(render_network_row(e, &config));
+        rows_amrp.push(render_network_row(e, &config, no_comments));
     }
     rows_amrp.push(TableRow::new(vec![mk_merged_text_cell(
         "Невизначені",
@@ -462,7 +496,7 @@ fn generate_docx_kind_revo(
         &config,
     )]));
     for e in report.undefined_networks {
-        rows_amrp.push(render_network_row(e, &config));
+        rows_amrp.push(render_network_row(e, &config, no_comments));
     }
     let thin_border = TableBorder::new(TableBorderPosition::Top)
         .border_type(BorderType::Single)
@@ -493,7 +527,11 @@ fn generate_docx_kind_revo(
     Ok(())
 }
 
-fn render_network_row(row: NetworkRow, config: &DocxConfig) -> TableRow {
+fn render_network_row(
+    row: NetworkRow,
+    config: &DocxConfig,
+    no_comments: bool,
+) -> TableRow {
     let mut network_cell =
         mk_text_cell(&row.name, util::ParagraphStyle::Bold, config);
     if let Some(location) = row.location {
@@ -546,22 +584,22 @@ fn render_network_row(row: NetworkRow, config: &DocxConfig) -> TableRow {
         util::ParagraphStyle::Default,
         config,
     );
-    let identified_details_cell =
-        mk_bullet_list_cell(row.identified_details, config);
-
     let communication_kind_cell = mk_text_cell(
         &row.communication_kind.unwrap_or("".to_string()),
         util::ParagraphStyle::Default,
         config,
     );
-    TableRow::new(vec![
+    let mut cells = vec![
         network_cell,
         activity_cell,
         correspondents_cell,
         communication_kind_cell,
         functionality_details_cell,
-        identified_details_cell,
-    ])
+    ];
+    if !no_comments {
+        cells.push(mk_bullet_list_cell(row.identified_details, config));
+    }
+    TableRow::new(cells)
 }
 
 fn get_processed_correspondence(
@@ -589,6 +627,7 @@ async fn collect_report(
     dbx: &DatabaseConnection,
     range_khz: f64,
     report_tags_only_this_unit: bool,
+    no_comments: bool,
 ) -> anyhow::Result<Report> {
     let start_collect = Instant::now();
     info!("collect_report: extracting groups and freqs");
@@ -705,42 +744,24 @@ async fn collect_report(
 
     let message_ids: Vec<i64> = messages.iter().map(|(id, _)| *id).collect();
 
-    info!("collect_report: loading comments from DB");
-    let start = Instant::now();
     let mut comments = BTreeMap::new();
-    // Load all comments in a single query if possible, otherwise chunk
-    if message_ids.len() <= 20000 {
-        let mut query = sigint_comment::Entity::find()
-            .filter(sigint_comment::Column::SignalMessageId.eq_any(message_ids))
-            .select_only()
-            .column(sigint_comment::Column::SignalMessageId)
-            .column(sigint_comment::Column::Comment);
-        if report_tags_only_this_unit {
-            query = query.filter(sigint_comment::Column::Login.eq_any(logins));
-        }
-        query
-            .into_model::<CommentSummary>()
-            .all(dbx)
-            .await
-            .context(h!())?
-            .into_iter()
-            .for_each(|c| {
-                comments.insert(c.signal_message_id, c.comment);
-            });
+    if no_comments {
+        info!("collect_report: skipping comments loading due to no_comments");
     } else {
-        // For very large datasets, chunk to avoid query size limits
-        for ids in message_ids.chunks(20000) {
+        info!("collect_report: loading comments from DB");
+        let start = Instant::now();
+        // Load all comments in a single query if possible, otherwise chunk
+        if message_ids.len() <= 20000 {
             let mut query = sigint_comment::Entity::find()
                 .filter(
-                    sigint_comment::Column::SignalMessageId
-                        .eq_any(ids.to_vec()),
+                    sigint_comment::Column::SignalMessageId.eq_any(message_ids),
                 )
                 .select_only()
                 .column(sigint_comment::Column::SignalMessageId)
                 .column(sigint_comment::Column::Comment);
             if report_tags_only_this_unit {
                 query =
-                    query.filter(sigint_comment::Column::Login.is_in(&logins));
+                    query.filter(sigint_comment::Column::Login.eq_any(logins));
             }
             query
                 .into_model::<CommentSummary>()
@@ -751,13 +772,38 @@ async fn collect_report(
                 .for_each(|c| {
                     comments.insert(c.signal_message_id, c.comment);
                 });
+        } else {
+            // For very large datasets, chunk to avoid query size limits
+            for ids in message_ids.chunks(20000) {
+                let mut query = sigint_comment::Entity::find()
+                    .filter(
+                        sigint_comment::Column::SignalMessageId
+                            .eq_any(ids.to_vec()),
+                    )
+                    .select_only()
+                    .column(sigint_comment::Column::SignalMessageId)
+                    .column(sigint_comment::Column::Comment);
+                if report_tags_only_this_unit {
+                    query = query
+                        .filter(sigint_comment::Column::Login.is_in(&logins));
+                }
+                query
+                    .into_model::<CommentSummary>()
+                    .all(dbx)
+                    .await
+                    .context(h!())?
+                    .into_iter()
+                    .for_each(|c| {
+                        comments.insert(c.signal_message_id, c.comment);
+                    });
+            }
         }
+        info!(
+            "collect_report: loading comments took: {:?}, count: {}",
+            start.elapsed(),
+            comments.len()
+        );
     }
-    info!(
-        "collect_report: loading comments took: {:?}, count: {}",
-        start.elapsed(),
-        comments.len()
-    );
 
     info!("collect_report: merging all_networks into networks");
     let start = Instant::now();

@@ -1455,6 +1455,7 @@ export type RestartEchoRequest = {
 
 export type ReoReportSettings = {
   adjacentFreqsDistance: number;
+  noComments: boolean;
 };
 
 export type ReoReportFileType =

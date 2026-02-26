@@ -662,6 +662,24 @@ view user model shared route =
                                 options2
                         )
                     ]
+            , HtmlX.viewIf (model.reportTemplate == RTReo) <|
+                div [ class "p-3 bg-gray-100 text-gray-900 mb-4" ]
+                    [ div [ class "form-check" ]
+                        [ input
+                            [ class "form-check-input"
+                            , type_ "checkbox"
+                            , checked model.reportReoNoComments
+                            , id "report-reo-no-comments"
+                            , onClick ReportReoNoCommentsToggle
+                            ]
+                            []
+                        , label
+                            [ class "form-check-label"
+                            , for "report-reo-no-comments"
+                            ]
+                            [ text "Без коментарів" ]
+                        ]
+                    ]
 
             , HtmlX.viewIf (model.reportTemplate == ActiveNetworks) <|
                 let
