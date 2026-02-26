@@ -9,26 +9,18 @@ use sea_orm::{
     QuerySelect,
 };
 use std::collections::BTreeMap;
-// TODO: rename callsigns to points
 
-pub async fn highlight_points<C>(
+pub async fn highlight_points(
     rq: &reqwest::Client,
     body: &str,
-    points: &Vec<String>,
-    txn: &C,
-) -> Result<Vec<CNPoint>, AppError>
-where
-    C: ConnectionTrait,
-{
-    if points.is_empty() {
+    point_forms: &BTreeMap<String, Vec<String>>,
+) -> Result<Vec<CNPoint>, AppError> {
+    if point_forms.is_empty() {
         return Ok(vec![]);
     }
     let mut res = vec![];
     let tokens = crate::nlp::tokenize_words(rq, body).await.c(h!())?;
     // println!("> tokens: {tokens:?}");
-    let mut point_forms =
-        load_point_lexemes(txn, points.clone()).await.c(h!())?;
-    // println!("> point_forms: {point_forms:?}");
 
     let mut substrings_to_highlight: Vec<(String, String, usize, usize)> =
         vec![];
@@ -93,21 +85,8 @@ pub async fn find_known_points<C>(
 where
     C: ConnectionTrait,
 {
-    let points = palitra_point::Entity::find()
-        .filter(palitra_point::Column::Deleted.eq(false))
-        .select_only()
-        .column(palitra_point::Column::Label)
-        .into_tuple::<Option<String>>()
-        .all(txn)
-        .await
-        .c(h!())?
-        .into_iter()
-        .flatten()
-        .collect::<Vec<String>>();
-    if points.is_empty() {
-        return Ok(vec![]);
-    }
-    highlight_points(rq, body, &points, txn).await
+    let point_forms = load_point_lexemes_all(txn).await.c(h!())?;
+    highlight_points(rq, body, &point_forms).await
 }
 
 pub async fn find_all_palitra_by_author(
@@ -142,9 +121,38 @@ pub async fn find_points_by_palitra(
         .collect())
 }
 
-pub async fn load_point_lexemes<C>(
+pub async fn load_point_lexemes_by_palitra_ids<C>(
     txn: &C,
-    points: Vec<String>,
+    palitra_ids: Vec<i64>,
+) -> Result<BTreeMap<String, Vec<String>>, AppError>
+where
+    C: ConnectionTrait,
+{
+    if palitra_ids.is_empty() {
+        return Ok(BTreeMap::new());
+    }
+    let rows = palitra_point::Entity::find()
+        .inner_join(palitra_point_lexeme::Entity)
+        .filter(palitra_point::Column::Deleted.eq(false))
+        .filter(palitra_point::Column::PalitraId.eq_any(palitra_ids))
+        .select_only()
+        .column(palitra_point::Column::Label)
+        .column(palitra_point_lexeme::Column::Lexeme)
+        .into_tuple::<(Option<String>, String)>()
+        .all(txn)
+        .await
+        .c(h!())?;
+
+    let mut map: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for (label, lexeme) in rows {
+        let Some(label) = label else { continue };
+        map.entry(lexeme).or_default().push(label);
+    }
+    Ok(map)
+}
+
+pub async fn load_point_lexemes_all<C>(
+    txn: &C,
 ) -> Result<BTreeMap<String, Vec<String>>, AppError>
 where
     C: ConnectionTrait,
@@ -152,7 +160,6 @@ where
     let rows = palitra_point::Entity::find()
         .inner_join(palitra_point_lexeme::Entity)
         .filter(palitra_point::Column::Deleted.eq(false))
-        .filter(palitra_point::Column::Label.eq_any(points))
         .select_only()
         .column(palitra_point::Column::Label)
         .column(palitra_point_lexeme::Column::Lexeme)
