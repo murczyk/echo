@@ -1,4 +1,4 @@
-module Core.Callsigns.HintStrategy exposing (HintContext(..), HintResult, HintStrategy(..), determineHintStrategy, determineHintStrategyForCallsign, getCallsignHints, getCallsignsForStrategy, getIconClass, isCallsignRelatedToNetworks)
+module Core.Callsigns.HintStrategy exposing (HintContext(..), HintResult, HintStrategy(..), determineHintStrategyForCallsign, getCallsignHints, getCallsignsForStrategy, getIconClass, isCallsignRelatedToNetworks)
 
 import Bindings as B
 import Core.Unit as Unit
@@ -362,34 +362,3 @@ determineHintStrategyForCallsign hintContext message context callsignInfo networ
 
             else
                 SystemWide
-
-
-{-| Візначає стратегію підказок на основі повідомлення та контексту
-ЗАСТАРІЛА ФУНКЦІЯ - замінена на determineHintStrategyForCallsign
--}
-determineHintStrategy :
-    { message | freq : Maybe String, networkIds : Maybe (List Int) }
-    -> { context | networks : Dict Int B.Network, masterUnits : Dict Int B.Unit }
-    -> HintStrategy
-determineHintStrategy message context =
-    let
-        -- Спочатку перевіряємо чи є мережа за частотою
-        networksByFreq =
-            filterNetworksByFreq context.networks message.freq
-
-        -- Якщо є мережа за частотою - використовуємо її
-        hasNetworksByFreq =
-            not (List.isEmpty networksByFreq)
-    in
-    if Maybe.withDefault False (Maybe.map (not << List.isEmpty) message.networkIds) then
-        let
-            networksFromMessage =
-                getNetworksByIds (Maybe.withDefault [] message.networkIds) context.networks
-            networkUnits =
-                getUnitsInfoByIds (getAllUnitsIdsForNetworks networksFromMessage) context.masterUnits
-        in
-        NetworkBased
-            { networks = networksFromMessage
-            , units = networkUnits
-            }
-    else SystemWide

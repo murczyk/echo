@@ -10,12 +10,25 @@ pub async fn oneoff_backfill_inbox_networks(
     mode: Mode,
     ps: OneoffBackfillInboxNetworksPs,
 ) -> Result<(), AppError> {
-    let since_ts = parse_m_ts(ps.start).unwrap_or(
+    let db = new_pg_pool_from_mode(mode).await.c(h!())?;
+    let since_ts = parse_m_ts(ps.start).ok();
+    let till_ts = parse_m_ts(ps.end).ok();
+    backfill_inbox_networks(&db, since_ts, till_ts)
+        .await
+        .c(h!())?;
+    Ok(())
+}
+
+pub async fn backfill_inbox_networks(
+    db: &DatabaseConnection,
+    since_ts: Option<NaiveDateTime>,
+    till_ts: Option<NaiveDateTime>,
+) -> anyhow::Result<()> {
+    let since_ts = since_ts.unwrap_or(
         Utc::now().naive_utc()
             - chrono::Duration::days(GROUP_STATS_DAY_TTL_DAYS),
     );
-    let till_ts = parse_m_ts(ps.end).unwrap_or(Utc::now().naive_utc());
-    let db = new_pg_pool_from_mode(mode).await.c(h!())?;
+    let till_ts = till_ts.unwrap_or(Utc::now().naive_utc());
     network_invalidation_task::ActiveModel {
         since_ts: Set(since_ts),
         till_ts: Set(till_ts),
@@ -29,10 +42,9 @@ pub async fn oneoff_backfill_inbox_networks(
         group_master_key: NotSet,
         tag: NotSet,
     }
-    .insert(&db)
+    .insert(db)
     .await
     .c(h!())?;
-    // workers will pick up this work later on
     Ok(())
 }
 

@@ -152,6 +152,8 @@ pub const ENCRYPTION_KEY_PLACEHOLDER: &str = "🔑";
 pub const ENCRYPTION_KEY_DESCRIPTION_PLACEHOLDER: &str = "...";
 pub const NETWORKS_IMPORT_TUI_ROWS_NUM_PAGE_SIZE: usize = 10;
 
+pub const NETWORK_INVALIDATION_TASK_MAX_TASKS: u64 = 1_000_000;
+pub const NETWORK_INVALIDATION_TASK_WAIT_SLEEP_SEC: u64 = 600;
 pub const NETWORK_INVALIDATION_TASK_TAG_OLD: &str = "old";
 pub const NETWORK_INVALIDATION_TASK_TAG_RECENT: &str = "recent";
 pub const NETWORK_INVALIDATION_TASK_TAG_UNASSIGNED: &str = "unassigned";
@@ -195,6 +197,10 @@ pub struct Config {
     pub greptime_user: Option<String>,
     pub greptime_password: Option<String>,
     pub greptime_dbname: Option<String>,
+    /// Enable secondary logs stream to Signoz from Vector (journald -> Signoz JSON receiver).
+    pub signoz_logs_enabled: Option<bool>,
+    /// Signoz JSON receiver endpoint, e.g. http://signoz-echo.eagle-atria.ts.net:8082.
+    pub signoz_logs_endpoint: Option<String>,
     pub session_activity_queue_capacity: Option<usize>,
     pub session_activity_payload_max_bytes: Option<usize>,
     pub session_activity_greptime_get_timeout_ms: Option<u64>,

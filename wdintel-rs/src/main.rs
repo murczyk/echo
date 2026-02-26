@@ -395,6 +395,8 @@ pub struct OneoffImportEtalonDataPs {
 pub struct OneoffExportEtalonDataPs {
     #[arg(long, value_enum)]
     pub destination_path: String,
+    #[arg(long, value_enum)]
+    pub only_sigint_unit_id: Option<i64>,
 }
 
 #[derive(clap::Parser, Debug)]
@@ -618,6 +620,7 @@ enum Cmd {
     /// Calculates all group stats for last year (no recalculation).
     OneoffCalculateHistoricStats(OneoffCalculateHistoricStatsPs),
     OneoffDisableIm,
+    OneoffFixNetworkCallsigns,
     OneoffCountGroupBatches,
     OneoffGenerateStrongboxKey,
     OneoffFillSigintInboxItemTags,
@@ -971,7 +974,7 @@ async fn async_main(
             sigint::unit::oneoff_reprocess_units_search_index(mode).await
         }
         Cmd::OneoffExportEtalonData(ps) => {
-            sigint::import::oneoff_export_etalon_data(mode, ps.destination_path)
+            sigint::import::oneoff_export_etalon_data(mode, ps.destination_path, ps.only_sigint_unit_id)
                 .await
         }
         Cmd::OneoffImportEtalonData(ps) => {
@@ -1043,6 +1046,7 @@ async fn async_main(
             stats::oneoff_calculate_historic_stats(mode, ps).await
         }
         Cmd::OneoffDisableIm => datasource::oneoff_disable_im(mode).await,
+        Cmd::OneoffFixNetworkCallsigns => crate::sigint::callsign::oneoff::oneoff_fix_network_callsigns(mode).await,
         Cmd::OneoffCountGroupBatches => {
             stats::oneoff_count_group_batches(mode).await
         }

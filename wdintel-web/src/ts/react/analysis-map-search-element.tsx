@@ -1,13 +1,18 @@
 import CloseIcon from '@mui/icons-material/Close';
 import SearchIcon from '@mui/icons-material/Search';
-import { CircularProgress, IconButton, InputAdornment, TextField } from '@mui/material';
+import { CircularProgress, IconButton, InputAdornment, TextField, Tooltip } from '@mui/material';
 import { createTheme, ThemeProvider } from '@mui/material/styles';
 import React, { useCallback, useRef, useState } from 'react';
 import { createRoot, Root } from 'react-dom/client';
 
-const DEBOUNCE_MS = 200;
-const MIN_LENGTH = 2;
+const DEBOUNCE_MS = 300;
 const SEARCH_TEXT = 'Пошук...';
+
+const SEARCH_WILDCARD_TOOLTIP = `Приклади пошуку:
+ "40" — точний збіг
+ "40*" — пошук за префіксом (наприклад 40, 400, 401, ...)
+ "*40" — пошук за суфіксом (наприклад 40, 540, 840, ...)
+ "*40*" — пошук за входженням (наприклад 40, 400, 540, 840, ...)`;
 
 export type SearchInputProps = {
   placeholder?: string;
@@ -42,16 +47,12 @@ export function SearchInput(props: SearchInputProps) {
         clearTimeout(timerRef.current);
         timerRef.current = null;
       }
-      if (inputValue.length < MIN_LENGTH) {
-        onSearch(inputValue);
-        return;
-      }
       timerRef.current = setTimeout(() => {
         timerRef.current = null;
         onSearch(inputValue);
       }, DEBOUNCE_MS);
     },
-    [onSearch]
+    [onSearch],
   );
 
   const handleChange = useCallback(
@@ -60,7 +61,7 @@ export function SearchInput(props: SearchInputProps) {
       setValue(next);
       searchWithDebounce(next);
     },
-    [searchWithDebounce]
+    [searchWithDebounce],
   );
 
   const handleClear = useCallback(() => {
@@ -81,35 +82,35 @@ export function SearchInput(props: SearchInputProps) {
   return (
     <ThemeProvider theme={theme}>
       <div className="analysis-map-search-wrap">
-        <TextField
-          className={className}
-          placeholder={placeholder}
-          value={value}
-          onChange={handleChange}
-          size="small"
-          variant="outlined"
-          sx={{
-            minWidth: 300,
-            '& .MuiOutlinedInput-root': {
-              minHeight: 48,
-              height: 48,
-              borderRadius: 2,
-              backgroundColor: 'background.paper',
-              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
-              '& .MuiOutlinedInput-notchedOutline': {
-                borderColor: 'divider',
+        <div className="flex flex-row items-center">
+          <TextField
+            className={className}
+            placeholder={placeholder}
+            value={value}
+            onChange={handleChange}
+            size="small"
+            variant="outlined"
+            sx={{
+              minWidth: 300,
+              '& .MuiOutlinedInput-root': {
+                minHeight: 48,
+                height: 48,
+                borderRadius: 2,
+                backgroundColor: 'background.paper',
+                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
+                '& .MuiOutlinedInput-notchedOutline': {
+                  borderColor: 'divider',
+                },
+                '&:hover .MuiOutlinedInput-notchedOutline': {
+                  borderColor: 'divider',
+                },
+                '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+                  borderColor: 'primary.main',
+                  borderWidth: 1,
+                },
               },
-              '&:hover .MuiOutlinedInput-notchedOutline': {
-                borderColor: 'divider',
-              },
-              '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
-                borderColor: 'primary.main',
-                borderWidth: 1,
-              },
-            },
-          }}
-          slotProps={{
-            input: {
+            }}
+            InputProps={{
               sx: {
                 height: 48,
                 '& .MuiInputBase-input': {
@@ -148,11 +149,40 @@ export function SearchInput(props: SearchInputProps) {
                       <InputAdornment position="end">
                         <CircularProgress size={16} thickness={5} />
                       </InputAdornment>
-                    ) : undefined,
+                    ) : (
+                      <InputAdornment position="end">
+                        <Tooltip
+                          title={SEARCH_WILDCARD_TOOLTIP}
+                          placement="bottom"
+                          arrow
+                          slotProps={{
+                            tooltip: {
+                              sx: {
+                                maxWidth: 320,
+                                whiteSpace: 'pre-line',
+                                lineHeight: 1.4,
+                                fontSize: 13,
+                              },
+                            },
+                          }}
+                        >
+                          <span>
+                            <IconButton
+                              edge="end"
+                              size="small"
+                              aria-label={SEARCH_WILDCARD_TOOLTIP}
+                              sx={{ color: 'text.secondary' }}
+                            >
+                              <i className="bi bi-question-circle" />
+                            </IconButton>
+                          </span>
+                        </Tooltip>
+                      </InputAdornment>
+                    ),
                   }),
-            },
-          }}
-        />
+            }}
+          />
+        </div>
         {showResults ? (
           <div className="analysis-map-search-results-count" role="status" aria-live="polite" aria-atomic="true">
             {isSearchingLabel ? SEARCH_TEXT : `Знайдено: ${resultsCount}`}
@@ -212,7 +242,7 @@ class AnalysisMapSearchElement extends HTMLElement {
         onSearch={onSearch}
         resultsCount={this.resultsCount}
         isSearchLoading={this.isSearchLoading}
-      />
+      />,
     );
   }
 

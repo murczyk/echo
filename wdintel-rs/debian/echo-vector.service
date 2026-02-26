@@ -2,7 +2,7 @@
 Description=echo-vector
 
 [Service]
-ExecStart=/bin/bash -c "export GREPTIME_USER=$(grep '^greptime_user' /etc/echo/config.toml | cut -d'\"' -f2); export GREPTIME_PASSWORD=$(grep '^greptime_password' /etc/echo/config.toml | cut -d'\"' -f2); exec /usr/bin/vector -c /etc/echo/vector.yaml"
+ExecStart=/bin/bash -c "export GREPTIME_USER=$(grep '^greptime_user' /etc/echo/config.toml | cut -d'\"' -f2); export GREPTIME_PASSWORD=$(grep '^greptime_password' /etc/echo/config.toml | cut -d'\"' -f2); export SIGNOZ_LOGS_ENABLED=$(grep '^signoz_logs_enabled' /etc/echo/config.toml | cut -d'=' -f2 | tr -d '[:space:]'); export SIGNOZ_LOGS_ENDPOINT=$(grep '^signoz_logs_endpoint' /etc/echo/config.toml | cut -d'\"' -f2); if [ -z \"$SIGNOZ_LOGS_ENABLED\" ]; then export SIGNOZ_LOGS_ENABLED=false; fi; exec /usr/bin/vector -c /etc/echo/vector.yaml"
 Restart=always
 User=root
 Group=root

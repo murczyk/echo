@@ -15,6 +15,36 @@ transforms:
       - systemd
     source: |
       .
+  signoz_gate:
+    type: remap
+    inputs:
+      - parse_logs
+    source: |
+      ._send_to_signoz = downcase(get_env_var("SIGNOZ_LOGS_ENABLED") ?? "false") == "true"
+      ._signoz_logs_endpoint = strip_whitespace(get_env_var("SIGNOZ_LOGS_ENDPOINT") ?? "")
+  signoz_filter:
+    type: filter
+    inputs:
+      - signoz_gate
+    condition: (to_bool(._send_to_signoz) ?? false) && ((to_string(._signoz_logs_endpoint) ?? "") != "")
+  signoz_prepare:
+    type: remap
+    inputs:
+      - signoz_filter
+    source: |
+      del(._send_to_signoz)
+
+      # Promote host into canonical OTel host.name attribute for SigNoz fast filters.
+      host_name = to_string(.host) ?? ""
+      if host_name == "" {
+        host_name = to_string(._HOSTNAME) ?? ""
+      }
+      if host_name != "" {
+        ."host.name" = host_name
+      }
+
+      # Signoz JSON receiver expects either unix-nanos timestamp or no timestamp.
+      del(.timestamp)
 
 sinks:
   greptime:
@@ -29,10 +59,25 @@ sinks:
     username: "${GREPTIME_USER}"
     password: "${GREPTIME_PASSWORD}"
 
+  signoz:
+    type: http
+    inputs:
+      - signoz_prepare
+    # Signoz JSON receiver endpoint is resolved from event field `_signoz_logs_endpoint`.
+    uri: "{{ _signoz_logs_endpoint }}"
+    method: "post"
+    encoding:
+      codec: json
+      # Keep routing helper field out of Signoz payload body.
+      except_fields:
+        - "_signoz_logs_endpoint"
+    # Signoz rollout is opt-in via SIGNOZ_LOGS_ENABLED.
+    healthcheck:
+      enabled: false
+
   # stdout:
   #   type: console
   #   inputs:
   #     - parse_logs
   #   encoding:
   #     codec: json
-

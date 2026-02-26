@@ -9,7 +9,6 @@ use crate::sigint::network::bl::find_network;
 use crate::types::*;
 use crate::utils::orm::ArrayColumnOps;
 use chrono::*;
-use sea_orm::QuerySelect;
 use sea_orm::*;
 use sea_query::{Alias, Expr, JoinType};
 use std::collections::HashMap;
@@ -250,46 +249,11 @@ pub async fn bl_update_network_callsign(
 
     if flipped_to_developing {
         if let Some(unit_id) = req.unit_id {
-            let callsign_value = req.callsign.clone().trim().to_lowercase();
-
-            let existing_known_callsign = sigint_callsign::Entity::find()
-                .filter(sigint_callsign::Column::UnitId.eq(unit_id))
-                .filter(
-                    sigint_callsign::Column::Callsign
-                        .eq(callsign_value.clone()),
-                )
-                .filter(sigint_callsign::Column::Deleted.eq(false))
-                .one(txn)
-                .await
-                .context(h!())?;
-
-            let known_callsign = if let Some(known) = existing_known_callsign {
-                known
-            } else {
-                let known_callsign_req = CreateCallsignReq {
-                    callsign: req.callsign.clone(),
-                    position: req.position.clone().unwrap_or_default(),
-                    comment: req.comment.clone().unwrap_or_default(),
-                    unit_id,
-                    source_id: req.source_id.map(|v| v as i32),
-                    radio_freq: req.radio_freq.clone(),
-                    developing: req.developing,
-                };
-
-                bl_callsign_create(&known_callsign_req, user_id, txn)
+            let callsign_id =
+                ensure_callsign(req, user_id, txn, &network_callsign, unit_id)
                     .await
-                    .context(h!())?
-            };
-
-            return update_network_callsign_linked(
-                req,
-                user_id,
-                txn,
-                network_callsign,
-                known_callsign,
-                true,
-            )
-            .await;
+                    .c(h!())?;
+            return Ok(callsign_id);
         }
     }
 
@@ -322,6 +286,53 @@ pub async fn bl_update_network_callsign(
         };
 
     Ok(network_callsign_id)
+}
+
+pub(crate) async fn ensure_callsign(
+    req: &UpdateNetworkCallsignReq,
+    user_id: &str,
+    txn: &DatabaseTransaction,
+    network_callsign: &sigint_network_callsign::Model,
+    unit_id: i64,
+) -> anyhow::Result<i64> {
+    let callsign_value = req.callsign.clone().trim().to_lowercase();
+
+    let existing_known_callsign = sigint_callsign::Entity::find()
+        .filter(sigint_callsign::Column::UnitId.eq(unit_id))
+        .filter(sigint_callsign::Column::Callsign.eq(callsign_value.clone()))
+        .filter(sigint_callsign::Column::Deleted.eq(false))
+        .one(txn)
+        .await
+        .context(h!())?;
+
+    let known_callsign = if let Some(known) = existing_known_callsign {
+        known
+    } else {
+        let known_callsign_req = CreateCallsignReq {
+            callsign: req.callsign.clone(),
+            position: req.position.clone().unwrap_or_default(),
+            comment: req.comment.clone().unwrap_or_default(),
+            unit_id,
+            source_id: req.source_id.map(|v| v as i32),
+            radio_freq: req.radio_freq.clone(),
+            developing: req.developing,
+        };
+
+        bl_callsign_create(&known_callsign_req, user_id, txn)
+            .await
+            .context(h!())?
+    };
+
+    update_network_callsign_linked(
+        req,
+        user_id,
+        txn,
+        network_callsign.clone(),
+        known_callsign,
+        true,
+    )
+    .await
+    .c(h!())
 }
 
 async fn update_network_callsign_linked(
