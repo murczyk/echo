@@ -32,6 +32,8 @@ import { getContrastRatio } from '@mui/material/styles';
 import { ChangeEvent, useEffect, useMemo, useState } from 'react';
 
 import { AreaOfResponsibility, MyScope, Organism, Palitra, User } from '../../../../../Bindings';
+import { TableEmptyState } from '../../../components/TableEmptyState';
+import { TableLoadingRow } from '../../../components/TableLoadingRow';
 import { formatDateTime24 } from '../../../utils/misc';
 import { getAccessSummary, isAdmin } from '../helpers';
 import { SortColumn, SortDirection } from '../types';
@@ -97,6 +99,23 @@ const visuallyHiddenSx = {
   width: 1,
 };
 
+function updateUrlSearchParams(mutator: (params: URLSearchParams) => void) {
+  const url = new URL(window.location.href);
+  const params = new URLSearchParams(url.search);
+  mutator(params);
+  const nextSearch = params.toString();
+  const nextUrl = `${url.pathname}${nextSearch ? `?${nextSearch}` : ''}${url.hash}`;
+  window.history.replaceState({}, '', nextUrl);
+}
+
+function readInitialPalitraTableFilters(): { authorFilter: string; searchInput: string } {
+  const params = new URLSearchParams(window.location.search);
+  return {
+    authorFilter: params.get('pal_author') ?? allAuthorsFilterValue,
+    searchInput: params.get('pal_q') ?? '',
+  };
+}
+
 function canModifyPalitra(user: User | null, palitra: Palitra): boolean {
   return isAdmin(user) || palitra.author === user?.name;
 }
@@ -161,7 +180,7 @@ function PalitraTableToolbar({
       sx={{
         px: 2,
         pt: 2,
-        pb: 1,
+        pb: 2,
         display: 'flex',
         alignItems: 'center',
         justifyContent: selectedCount > 0 ? 'space-between' : 'flex-start',
@@ -261,10 +280,11 @@ export function PalitraTable({
   onSetAllPalitrasSelected,
   onClearSelectedPalitras,
 }: Props) {
+  const initialUrlFilters = useMemo(() => readInitialPalitraTableFilters(), []);
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(25);
-  const [authorFilter, setAuthorFilter] = useState(allAuthorsFilterValue);
-  const [searchInput, setSearchInput] = useState('');
+  const [authorFilter, setAuthorFilter] = useState(initialUrlFilters.authorFilter);
+  const [searchInput, setSearchInput] = useState(initialUrlFilters.searchInput);
   const searchQuery = useDebouncedSearchQuery(searchInput, searchDebounceMs);
   const authorFilterOptions = useMemo<AuthorFilterOptions>(() => {
     const authorSet = new Set<string>();
@@ -350,6 +370,22 @@ export function PalitraTable({
   }, [authorFilter, authorFilterOptions]);
 
   useEffect(() => {
+    updateUrlSearchParams((params) => {
+      if (authorFilter === allAuthorsFilterValue) {
+        params.delete('pal_author');
+      } else {
+        params.set('pal_author', authorFilter);
+      }
+
+      if (searchInput.trim() === '') {
+        params.delete('pal_q');
+      } else {
+        params.set('pal_q', searchInput);
+      }
+    });
+  }, [authorFilter, searchInput]);
+
+  useEffect(() => {
     if (rowsPerPage === -1) {
       if (page !== 0) {
         setPage(0);
@@ -383,21 +419,37 @@ export function PalitraTable({
   return (
     <Paper variant="outlined" sx={{ height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
       <>
-        <PalitraTableToolbar
-          authorFilter={authorFilter}
-          authorFilterOptions={authorFilterOptions}
-          searchInput={searchInput}
-          hasActiveFilters={hasActiveFiltersInput}
-          isSearchPending={isSearchPending}
-          selectedCount={selectedPalitraIds.length}
-          onAuthorFilterChange={setAuthorFilter}
-          onSearchInputChange={setSearchInput}
-          onResetFilters={resetFilters}
-          onClearSelectedPalitras={onClearSelectedPalitras}
-        />
-        <TableContainer sx={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
-          <Table sx={{ minWidth: 880 }}>
-            <TableHead>
+        <Box sx={{ borderBottom: '1px solid', borderColor: 'divider' }}>
+          <PalitraTableToolbar
+            authorFilter={authorFilter}
+            authorFilterOptions={authorFilterOptions}
+            searchInput={searchInput}
+            hasActiveFilters={hasActiveFiltersInput}
+            isSearchPending={isSearchPending}
+            selectedCount={selectedPalitraIds.length}
+            onAuthorFilterChange={setAuthorFilter}
+            onSearchInputChange={setSearchInput}
+            onResetFilters={resetFilters}
+            onClearSelectedPalitras={onClearSelectedPalitras}
+          />
+        </Box>
+        <TableContainer
+          sx={{
+            flex: 1,
+            minHeight: 0,
+            overflowY: 'auto',
+            overflowX: { xs: 'auto', lg: 'hidden' },
+            WebkitOverflowScrolling: 'touch',
+          }}
+        >
+          <Table stickyHeader size="small" sx={{ minWidth: 880, width: '100%' }}>
+            <TableHead
+              sx={{
+                '& .MuiTableCell-root': {
+                  py: 1.5,
+                },
+              }}
+            >
               <TableRow>
                 <TableCell padding="checkbox">
                   <Checkbox
@@ -463,26 +515,15 @@ export function PalitraTable({
             </TableHead>
             <TableBody>
               {loading ? (
-                <TableRow>
-                  <TableCell colSpan={tableColumnCount} sx={{ py: 6 }}>
-                    <Box sx={{ display: 'flex', justifyContent: 'center' }}>
-                      <CircularProgress size={28} />
-                    </Box>
-                  </TableCell>
-                </TableRow>
+                <TableLoadingRow colSpan={tableColumnCount} paddingY={6} />
               ) : filteredPalitras.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={tableColumnCount} sx={{ py: 6 }}>
-                    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
-                      <Typography variant="body2" color="text.secondary" align="center">
-                        {hasActiveFiltersApplied ? 'Немає палітр за обраними фільтрами' : 'Палітри відсутні'}
-                      </Typography>
-                      {hasActiveFiltersInput ? (
-                        <Button size="small" onClick={resetFilters} sx={{ px: 1.5 }}>
-                          Очистити фільтри
-                        </Button>
-                      ) : null}
-                    </Box>
+                    <TableEmptyState
+                      message={hasActiveFiltersApplied ? 'Немає палітр за обраними фільтрами' : 'Палітри відсутні'}
+                      actionLabel={hasActiveFiltersInput ? 'Очистити фільтри' : undefined}
+                      onAction={hasActiveFiltersInput ? resetFilters : undefined}
+                    />
                   </TableCell>
                 </TableRow>
               ) : (

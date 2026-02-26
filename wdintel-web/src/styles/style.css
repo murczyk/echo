@@ -73,6 +73,13 @@
     }
 }
 
+@media (max-width: 1199.98px) {
+    .app-shell--fixed-viewport {
+        height: auto;
+        overflow: visible;
+    }
+}
+
 /* Switcher styles - used in theme switching components */
 
 [data-tooltip] {

@@ -1,4 +1,4 @@
-import { Button, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle } from '@mui/material';
+import { Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle } from '@mui/material';
 
 import type { Callsign } from '../../../../../Bindings';
 
@@ -28,12 +28,18 @@ export function DeleteCallsignDialog({ target, submitting, onCancel, onConfirm }
           {target ? `Видалити позивний "${target.callsign}"?` : ''}
         </DialogContentText>
       </DialogContent>
-      <DialogActions>
+      <DialogActions sx={{ px: 3, pb: 3, pt: 3 }}>
         <Button onClick={onCancel} disabled={submitting}>
           Скасувати
         </Button>
-        <Button onClick={onConfirm} color="error" variant="contained" disabled={submitting || !target}>
-          {submitting ? 'Видалення…' : 'Видалити'}
+        <Button
+          onClick={onConfirm}
+          color="error"
+          variant="contained"
+          disabled={submitting || !target}
+          startIcon={submitting ? <CircularProgress color="inherit" size={16} /> : null}
+        >
+          Видалити
         </Button>
       </DialogActions>
     </Dialog>

@@ -20,7 +20,7 @@
 
 Крок 5 (опціонально): Зменшення кількості повідомлень від `just dev-back` в терміналі
 
-`$ cargo run -p wdintel-rs -- --mode=debug oneoff-disable-im ()`
+`$ cargo run -p wdintel-rs -- --mode=debug oneoff-disable-im`
 
 ***Примітка:** команда має бути запущена перед `just dev-back` в тому ж терміналі.*
 
@@ -54,20 +54,27 @@
       "presentation": { "panel": "new", "reveal": "always" }
     },
     {
-      "label": "force-free-dev-ports",
+      "label": "stop-nlp-ml-service",
       "type": "shell",
-      "command": "bash -lc 'for p in 8081 1234 5000; do fuser -k $p/tcp 2>/dev/null || true; done'",
+      "command": "bash -lc 'set -e; for i in {1..20}; do if ! lsof -tiTCP:5000 -sTCP:LISTEN >/dev/null 2>&1; then echo \"5000 is free\"; exit 0; fi; echo \"5000 busy, killing...\"; (fuser -k 5000/tcp 2>/dev/null || true); (lsof -tiTCP:5000 -sTCP:LISTEN | xargs -r kill -TERM) || true; sleep 0.2; done; echo \"Still busy, SIGKILL\"; (fuser -k -9 5000/tcp 2>/dev/null || true); (lsof -tiTCP:5000 -sTCP:LISTEN | xargs -r kill -KILL) || true; sleep 0.2; if lsof -tiTCP:5000 -sTCP:LISTEN >/dev/null 2>&1; then echo \"ERROR: port 5000 still in use\"; exit 1; fi'",
       "problemMatcher": [],
       "presentation": { "panel": "new", "reveal": "always" }
     },
     {
-      "label": "stop-everything",
+      "label": "stop-back-and-front-servers",
+      "type": "shell",
+      "command": "bash -lc 'for p in 8081 1234; do fuser -k $p/tcp 2>/dev/null || true; done'",
+      "problemMatcher": [],
+      "presentation": { "panel": "new", "reveal": "always" }
+    },
+    {
+      "label": "cleanup",
       "dependsOrder": "sequence",
-      "dependsOn": ["stop-ssh-tunnel", "force-free-dev-ports"],
+      "dependsOn": ["stop-ssh-tunnel", "stop-nlp-ml-service", "stop-back-and-front-servers"],
       "problemMatcher": []
     },
     {
-      "label": "ssh-tunnel-6432-to-5432-idempotent",
+      "label": "open-ssh-tunnel", // port 6432 to 5432
       "type": "shell",
       "command": "bash -lc 'mkdir -p .vscode; if nc -z 127.0.0.1 6432; then echo \"Tunnel already up on :6432\"; else ssh -f -nNT -M -S .vscode/pg-tunnel.sock -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -L 6432:localhost:5432 echo-pivnich-dev; fi'",
       "isBackground": true,
@@ -75,20 +82,20 @@
       "presentation": { "panel": "new", "reveal": "always" }
     },
     {
-      "label": "wait-for-tunnel-6432",
+      "label": "wait-for-ssh-tunnel", // on port 6432
       "type": "shell",
       "command": "until nc -z 127.0.0.1 6432; do sleep 0.2; done",
       "problemMatcher": []
     },
     {
-      "label": "psql-interactive-via-6432",
+      "label": "start-db-session", // via port 6432
       "type": "shell",
       "command": "PGPASSWORD=fee_-_-_-FnoeKFBeebu87bf psql -U wd -h 127.0.0.1 -p 6432 wd",
       "problemMatcher": [],
       "presentation": { "panel": "new", "focus": true }
     },
     {
-      "label": "dev-server-8081",
+      "label": "start-back-server", // port 8081
       "type": "shell",
       "command": "just dev-back",
       "isBackground": true,
@@ -96,7 +103,7 @@
       "presentation": { "panel": "new" }
     },
     {
-      "label": "python-5000",
+      "label": "start-nlp-ml-service", // port 5000
       "type": "shell",
       "command": "just dev-py",
       "isBackground": true,
@@ -104,7 +111,7 @@
       "presentation": { "panel": "new" }
     },
     {
-      "label": "front-server-1234",
+      "label": "start-front-server", // port 1234
       "type": "shell",
       "command": "just dev-front",
       "isBackground": true,
@@ -112,15 +119,15 @@
       "presentation": { "panel": "new" }
     },
     {
-      "label": "start-apps-parallel",
+      "label": "start-dev",
       "dependsOrder": "parallel",
-      "dependsOn": ["psql-interactive-via-6432", "dev-server-8081", "python-5000", "front-server-1234"],
+      "dependsOn": ["start-db-session", "start-back-server", "start-nlp-ml-service", "start-front-server"],
       "problemMatcher": []
     },
     {
-      "label": "start-everything",
+      "label": "start",
       "dependsOrder": "sequence",
-      "dependsOn": ["ssh-tunnel-6432-to-5432-idempotent", "wait-for-tunnel-6432", "start-apps-parallel"],
+      "dependsOn": ["open-ssh-tunnel", "wait-for-ssh-tunnel", "start-dev"],
       "problemMatcher": [],
       "runOptions": {
         "runOn": "folderOpen"

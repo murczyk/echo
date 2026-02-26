@@ -28,6 +28,49 @@ import {
 } from './helpers';
 import { KmzColorOption, PalitraFormState, SortColumn, SortDirection, UiError } from './types';
 
+function updateUrlSearchParams(mutator: (params: URLSearchParams) => void) {
+  const url = new URL(window.location.href);
+  const params = new URLSearchParams(url.search);
+  mutator(params);
+  const nextSearch = params.toString();
+  const nextUrl = `${url.pathname}${nextSearch ? `?${nextSearch}` : ''}${url.hash}`;
+  window.history.replaceState({}, '', nextUrl);
+}
+
+function readInitialPalitraSortFromUrl(): { sortColumn: SortColumn; sortDirection: SortDirection } {
+  const params = new URLSearchParams(window.location.search);
+  const sortColumnRaw = params.get('pal_sort_col');
+  const sortDirectionRaw = params.get('pal_sort_dir');
+
+  const sortColumn: SortColumn =
+    sortColumnRaw === 'name' ||
+    sortColumnRaw === 'colorHex' ||
+    sortColumnRaw === 'sourceFileName' ||
+    sortColumnRaw === 'author' ||
+    sortColumnRaw === 'lastUploadedAtTs'
+      ? sortColumnRaw
+      : 'lastUploadedAtTs';
+  const sortDirection: SortDirection = sortDirectionRaw === 'asc' || sortDirectionRaw === 'desc' ? sortDirectionRaw : 'desc';
+
+  return { sortColumn, sortDirection };
+}
+
+function syncPalitraSortToUrl(sortColumn: SortColumn, sortDirection: SortDirection) {
+  updateUrlSearchParams((params) => {
+    if (sortColumn === 'lastUploadedAtTs') {
+      params.delete('pal_sort_col');
+    } else {
+      params.set('pal_sort_col', sortColumn);
+    }
+
+    if (sortDirection === 'desc') {
+      params.delete('pal_sort_dir');
+    } else {
+      params.set('pal_sort_dir', sortDirection);
+    }
+  });
+}
+
 function fileNameToBaseName(fileName: string): string {
   const dotIndex = fileName.lastIndexOf('.');
   if (dotIndex <= 0) return fileName;
@@ -39,6 +82,7 @@ function canModifyPalitra(user: User | null, palitra: Palitra): boolean {
 }
 
 export function useRerPalitraNeoPage() {
+  const initialSort = React.useMemo(() => readInitialPalitraSortFromUrl(), []);
   const [user, setUser] = React.useState<User | null>(null);
   const [palitras, setPalitras] = React.useState<Palitra[]>([]);
   const [myScope, setMyScope] = React.useState<MyScope | null>(null);
@@ -57,8 +101,8 @@ export function useRerPalitraNeoPage() {
   const [bulkDeleteInFlight, setBulkDeleteInFlight] = React.useState(false);
   const [error, setError] = React.useState<UiError | null>(null);
 
-  const [sortColumn, setSortColumn] = React.useState<SortColumn>('lastUploadedAtTs');
-  const [sortDirection, setSortDirection] = React.useState<SortDirection>('desc');
+  const [sortColumn, setSortColumn] = React.useState<SortColumn>(initialSort.sortColumn);
+  const [sortDirection, setSortDirection] = React.useState<SortDirection>(initialSort.sortDirection);
 
   const [createOpen, setCreateOpen] = React.useState(false);
   const [createForm, setCreateForm] = React.useState<PalitraFormState>(getInitialCreateForm(null, null));
@@ -117,6 +161,10 @@ export function useRerPalitraNeoPage() {
 
     return sorted;
   }, [palitras, sortColumn, sortDirection]);
+
+  React.useEffect(() => {
+    syncPalitraSortToUrl(sortColumn, sortDirection);
+  }, [sortColumn, sortDirection]);
 
   const reloadPalitras = React.useCallback(async () => {
     const list = await listPalitras();

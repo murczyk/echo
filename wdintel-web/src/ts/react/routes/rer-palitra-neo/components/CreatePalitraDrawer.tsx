@@ -19,6 +19,7 @@ import {
 import React from 'react';
 
 import { AnalyzeKmzResponse, AreaOfResponsibility, MyScope, Organism, User } from '../../../../../Bindings';
+import { pageDrawerBackdropSx } from '../../../components/loadingOverlayStyles';
 import { isFormValid } from '../helpers';
 import { KmzColorOption, PalitraFormState } from '../types';
 import { AccessEditor } from './AccessEditor';
@@ -139,11 +140,10 @@ function CreatePalitraDrawerComponent({
           if (dismissBlocked) return;
           onClose();
         }}
-        sx={{
-          zIndex: (theme) => theme.zIndex.drawer - 1,
-          color: 'common.white',
-          backgroundColor: 'rgba(0, 0, 0, 0.24)',
-        }}
+        sx={(theme) => ({
+          ...pageDrawerBackdropSx(theme),
+          zIndex: theme.zIndex.drawer - 1,
+        })}
       />
       <Drawer
         anchor="right"

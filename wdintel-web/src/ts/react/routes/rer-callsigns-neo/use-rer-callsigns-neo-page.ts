@@ -38,6 +38,109 @@ import {
 } from './helpers';
 import type { CallsignDraftRow, CallsignEditForm, CallsignsFilterState, CallsignsSortState, DownloadKind, UiStatus } from './types';
 
+function updateUrlSearchParams(mutator: (params: URLSearchParams) => void) {
+  const url = new URL(window.location.href);
+  const params = new URLSearchParams(url.search);
+  mutator(params);
+  const nextSearch = params.toString();
+  const nextUrl = `${url.pathname}${nextSearch ? `?${nextSearch}` : ''}${url.hash}`;
+  window.history.replaceState({}, '', nextUrl);
+}
+
+function readInitialCallsignsFiltersFromUrl(): CallsignsFilterState {
+  const defaults = createDefaultFilters();
+  const params = new URLSearchParams(window.location.search);
+  const developing = params.get('developing');
+  const sortDateEnabled = params.get('date_filter') === '1';
+
+  return {
+    ...defaults,
+    filterCallsign: params.get('callsign') ?? defaults.filterCallsign,
+    filterPosition: params.get('position') ?? defaults.filterPosition,
+    filterComment: params.get('comment') ?? defaults.filterComment,
+    filterUnit: params.get('unit') ?? defaults.filterUnit,
+    filterDeveloping:
+      developing === 'OnlyDeveloping' || developing === 'OnlyNonDeveloping' || developing === 'All'
+        ? developing
+        : defaults.filterDeveloping,
+    isIgnoringDateFilter: !sortDateEnabled,
+    fromDateTimeLocal: sortDateEnabled ? (params.get('from') ?? defaults.fromDateTimeLocal) : defaults.fromDateTimeLocal,
+    toDateTimeLocal: sortDateEnabled ? (params.get('to') ?? defaults.toDateTimeLocal) : defaults.toDateTimeLocal,
+  };
+}
+
+function readInitialCallsignsSortFromUrl(): CallsignsSortState {
+  const params = new URLSearchParams(window.location.search);
+  const column = params.get('sort_col');
+  const direction = params.get('sort_dir');
+
+  const validColumn = column === 'callsign' || column === 'createdAt' || column === 'unit' ? column : DEFAULT_SORT.column;
+  const validDirection = direction === 'asc' || direction === 'desc' ? direction : DEFAULT_SORT.direction;
+
+  return {
+    column: validColumn,
+    direction: validDirection,
+  };
+}
+
+function readInitialSidebarOpenFromUrl(): boolean {
+  const params = new URLSearchParams(window.location.search);
+  const raw = params.get('units_sidebar');
+  if (raw === '0') return false;
+  if (raw === '1') return true;
+  return true;
+}
+
+function syncCallsignsStateToUrl(filters: CallsignsFilterState, sort: CallsignsSortState, sidebarOpen: boolean) {
+  updateUrlSearchParams((params) => {
+    const setOrDelete = (key: string, value: string | null | undefined) => {
+      if (value == null || value === '') {
+        params.delete(key);
+        return;
+      }
+      params.set(key, value);
+    };
+
+    setOrDelete('callsign', filters.filterCallsign.trim() || null);
+    setOrDelete('position', filters.filterPosition.trim() || null);
+    setOrDelete('comment', filters.filterComment.trim() || null);
+    setOrDelete('unit', filters.filterUnit.trim() || null);
+
+    if (filters.filterDeveloping !== 'OnlyNonDeveloping') {
+      params.set('developing', filters.filterDeveloping);
+    } else {
+      params.delete('developing');
+    }
+
+    if (!filters.isIgnoringDateFilter) {
+      params.set('date_filter', '1');
+      setOrDelete('from', filters.fromDateTimeLocal);
+      setOrDelete('to', filters.toDateTimeLocal);
+    } else {
+      params.delete('date_filter');
+      params.delete('from');
+      params.delete('to');
+    }
+
+    if (sort.column !== DEFAULT_SORT.column) {
+      params.set('sort_col', sort.column);
+    } else {
+      params.delete('sort_col');
+    }
+    if (sort.direction !== DEFAULT_SORT.direction) {
+      params.set('sort_dir', sort.direction);
+    } else {
+      params.delete('sort_dir');
+    }
+
+    if (sidebarOpen) {
+      params.delete('units_sidebar');
+    } else {
+      params.set('units_sidebar', '0');
+    }
+  });
+}
+
 function redirectToLogin() {
   window.location.assign('/login');
 }
@@ -62,9 +165,9 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
   const [refreshing, setRefreshing] = React.useState(false);
   const [status, setStatus] = React.useState<UiStatus>(null);
 
-  const [filters, setFilters] = React.useState<CallsignsFilterState>(() => createDefaultFilters());
-  const [sort, setSort] = React.useState<CallsignsSortState>(DEFAULT_SORT);
-  const [sidebarOpen, setSidebarOpen] = React.useState(true);
+  const [filters, setFilters] = React.useState<CallsignsFilterState>(() => readInitialCallsignsFiltersFromUrl());
+  const [sort, setSort] = React.useState<CallsignsSortState>(() => readInitialCallsignsSortFromUrl());
+  const [sidebarOpen, setSidebarOpen] = React.useState<boolean>(() => readInitialSidebarOpenFromUrl());
 
   const [addUnitId, setAddUnitId] = React.useState<number | null>(null);
   const [addSourceId, setAddSourceId] = React.useState<number | null>(null);
@@ -78,12 +181,16 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
   const [editValidationError, setEditValidationError] = React.useState<string | null>(null);
 
   const [deleteTarget, setDeleteTarget] = React.useState<Callsign | null>(null);
+  const [deleteInFlightId, setDeleteInFlightId] = React.useState<number | null>(null);
   const [deleteSubmitting, setDeleteSubmitting] = React.useState(false);
+  const [selectedCallsignIds, setSelectedCallsignIds] = React.useState<number[]>([]);
+  const [bulkDeleteDialogCallsigns, setBulkDeleteDialogCallsigns] = React.useState<Callsign[]>([]);
+  const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = React.useState(false);
+  const [bulkDeleteInFlight, setBulkDeleteInFlight] = React.useState(false);
 
   const [downloadInProgress, setDownloadInProgress] = React.useState<DownloadKind | null>(null);
 
   const initializedRef = React.useRef(false);
-  const skipAutoReloadRef = React.useRef(false);
   const listRequestSeqRef = React.useRef(0);
   const debounceTimerRef = React.useRef<number | null>(null);
   const activeListAbortRef = React.useRef<AbortController | null>(null);
@@ -196,7 +303,7 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
       setStatus(null);
       try {
         const bootstrap = await fetchCallsignsBootstrapData(
-          buildListCallsignsReq({ filters: createDefaultFilters(), sort: DEFAULT_SORT, query: { afterId: null, limit: getDefaultPageSize() } }),
+          buildListCallsignsReq({ filters, sort, query: { afterId: null, limit: getDefaultPageSize() } }),
         );
 
         if (cancelled) return;
@@ -209,7 +316,6 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
         setShowLoadMore(bootstrap.callsigns.showLoadMore);
         setAddSourceId(bootstrap.sources[0]?.id ?? null);
         initializedRef.current = true;
-        skipAutoReloadRef.current = true;
       } catch (error) {
         if (cancelled) return;
         try {
@@ -238,10 +344,6 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
 
   React.useEffect(() => {
     if (!initializedRef.current) return;
-    if (skipAutoReloadRef.current) {
-      skipAutoReloadRef.current = false;
-      return;
-    }
 
     if (debounceTimerRef.current !== null) {
       window.clearTimeout(debounceTimerRef.current);
@@ -249,7 +351,8 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
 
     debounceTimerRef.current = window.setTimeout(() => {
       setStatus((prev) => (prev?.kind === 'success' ? null : prev));
-      void runListFetch({ append: false, afterId: null, announceLoading: true });
+      setRefreshing(true);
+      void runListFetch({ append: false, afterId: null, announceLoading: false });
     }, 300);
 
     return () => {
@@ -259,6 +362,14 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
       }
     };
   }, [filters, sort]);
+
+  React.useEffect(() => {
+    syncCallsignsStateToUrl(filters, sort, sidebarOpen);
+  }, [filters, sort, sidebarOpen]);
+
+  React.useEffect(() => {
+    setSelectedCallsignIds((prev) => prev.filter((id) => callsigns.some((callsign) => callsign.id === id)));
+  }, [callsigns]);
 
   function onFiltersChange(updater: (prev: CallsignsFilterState) => CallsignsFilterState) {
     setFilters((prev) => updater(prev));
@@ -277,6 +388,42 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
   function onClearFilters() {
     setFilters(createDefaultFilters());
   }
+
+  function setCallsignSelected(callsignId: number, checked: boolean) {
+    setSelectedCallsignIds((prev) => {
+      if (checked) {
+        if (prev.includes(callsignId)) return prev;
+        return [...prev, callsignId];
+      }
+
+      return prev.filter((id) => id !== callsignId);
+    });
+  }
+
+  function setAllCallsignsSelected(callsignIds: number[], checked: boolean) {
+    if (callsignIds.length === 0) return;
+
+    setSelectedCallsignIds((prev) => {
+      if (checked) {
+        const selected = new Set(prev);
+        for (const callsignId of callsignIds) {
+          selected.add(callsignId);
+        }
+        return Array.from(selected);
+      }
+
+      const toRemove = new Set(callsignIds);
+      return prev.filter((id) => !toRemove.has(id));
+    });
+  }
+
+  const clearSelectedCallsigns = React.useCallback(() => {
+    setSelectedCallsignIds((prev) => (prev.length === 0 ? prev : []));
+  }, []);
+
+  React.useEffect(() => {
+    clearSelectedCallsigns();
+  }, [clearSelectedCallsigns, filters, sort]);
 
   function onAppendRow() {
     setAddRows((prev) => [...prev, createEmptyDraftRow()]);
@@ -403,22 +550,25 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
   }
 
   function onRequestDelete(callsign: Callsign) {
+    if (bulkDeleteInFlight || deleteInFlightId !== null) return;
     setDeleteTarget(callsign);
   }
 
   function onCancelDelete() {
-    if (deleteSubmitting) return;
+    if (deleteSubmitting || bulkDeleteInFlight || deleteInFlightId !== null) return;
     setDeleteTarget(null);
   }
 
   async function onConfirmDelete() {
     if (!deleteTarget) return;
     setDeleteSubmitting(true);
+    setDeleteInFlightId(deleteTarget.id);
     setStatus(null);
 
     try {
       const deleted = await deleteCallsign(deleteTarget.id);
       setCallsigns((prev) => prev.filter((item) => item.id !== deleted.id));
+      setSelectedCallsignIds((prev) => prev.filter((id) => id !== deleted.id));
       setDeleteTarget(null);
       setStatus({ kind: 'success', text: 'Позивний видалено' });
       await refreshLookupsAndStats();
@@ -430,7 +580,73 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
       }
     } finally {
       setDeleteSubmitting(false);
+      setDeleteInFlightId(null);
     }
+  }
+
+  function requestBulkDelete() {
+    if (bulkDeleteInFlight || deleteInFlightId !== null || deleteTarget !== null) return;
+
+    const selectedSet = new Set(selectedCallsignIds);
+    const selected = callsigns.filter((callsign) => selectedSet.has(callsign.id) && deleteInFlightId !== callsign.id);
+    if (selected.length === 0) return;
+
+    setBulkDeleteDialogCallsigns(selected);
+    setBulkDeleteDialogOpen(true);
+  }
+
+  function cancelBulkDelete() {
+    if (bulkDeleteInFlight || deleteInFlightId !== null) return;
+    setBulkDeleteDialogOpen(false);
+  }
+
+  async function confirmBulkDelete() {
+    if (bulkDeleteInFlight || deleteInFlightId !== null) return;
+
+    const callsignsToDelete = [...bulkDeleteDialogCallsigns];
+    if (callsignsToDelete.length === 0) return;
+
+    setBulkDeleteDialogOpen(false);
+    setBulkDeleteInFlight(true);
+    setStatus(null);
+
+    const failed: string[] = [];
+
+    try {
+      for (const callsign of callsignsToDelete) {
+        setDeleteInFlightId(callsign.id);
+
+        try {
+          await deleteCallsign(callsign.id);
+          setCallsigns((prev) => prev.filter((item) => item.id !== callsign.id));
+          setSelectedCallsignIds((prev) => prev.filter((id) => id !== callsign.id));
+        } catch (deleteError) {
+          try {
+            unauthorizedOrThrow(deleteError);
+          } catch (finalError) {
+            failed.push(`${callsign.callsign}: ${formatErrorMessage(finalError)}`);
+          }
+        } finally {
+          setDeleteInFlightId(null);
+        }
+      }
+
+      if (failed.length > 0) {
+        setStatus({ kind: 'error', text: `Не вдалося видалити деякі позивні: ${failed[0]}` });
+      } else {
+        setStatus({ kind: 'success', text: `Видалено позивних: ${callsignsToDelete.length}` });
+      }
+
+      await refreshLookupsAndStats();
+    } finally {
+      setBulkDeleteInFlight(false);
+      setBulkDeleteDialogCallsigns([]);
+    }
+  }
+
+  function onBulkDeleteDialogExited() {
+    if (bulkDeleteDialogOpen || bulkDeleteInFlight) return;
+    setBulkDeleteDialogCallsigns([]);
   }
 
   async function onDownload(kind: DownloadKind) {
@@ -482,6 +698,10 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
     onSort,
     onRefresh,
     onClearFilters,
+    selectedCallsignIds,
+    bulkDeleteDialogCallsigns,
+    bulkDeleteDialogOpen,
+    bulkDeleteInFlight,
     addUnitId,
     setAddUnitId,
     addSourceId,
@@ -506,10 +726,18 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
     onCloseEdit,
     onSaveEdit,
     deleteTarget,
+    deleteInFlightId,
     deleteSubmitting,
     onRequestDelete,
     onCancelDelete,
     onConfirmDelete,
+    setCallsignSelected,
+    setAllCallsignsSelected,
+    clearSelectedCallsigns,
+    requestBulkDelete,
+    cancelBulkDelete,
+    confirmBulkDelete,
+    onBulkDeleteDialogExited,
     downloadInProgress,
     onDownloadCsv: () => onDownload('csv'),
     onDownloadXlsx: () => onDownload('xlsx'),

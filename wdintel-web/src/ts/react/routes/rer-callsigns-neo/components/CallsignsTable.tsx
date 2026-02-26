@@ -5,6 +5,7 @@ import {
   Box,
   Button,
   ButtonGroup,
+  Checkbox,
   Chip,
   CircularProgress,
   Paper,
@@ -20,23 +21,42 @@ import {
   Typography,
 } from '@mui/material';
 
+import { loadingOverlayBackdropSx } from '../../../components/loadingOverlayStyles';
+import { TableEmptyState } from '../../../components/TableEmptyState';
+import { TableLoadingRow } from '../../../components/TableLoadingRow';
 import { formatDateTime } from '../helpers';
 import type { CallsignRowView, CallsignsSortState, SortColumn } from '../types';
 
 type Props = {
   rows: CallsignRowView[];
   loading: boolean;
+  refreshing: boolean;
   loadingMore: boolean;
+  hasActiveFilters: boolean;
+  embedded?: boolean;
+  inFlightDeleteId: number | null;
+  bulkDeleteInFlight: boolean;
+  selectedCallsignIds: number[];
   sort: CallsignsSortState;
   onSort: (column: SortColumn) => void;
+  onClearFilters: () => void;
+  onSetCallsignSelected: (callsignId: number, checked: boolean) => void;
+  onSetAllCallsignsSelected: (callsignIds: number[], checked: boolean) => void;
   onEdit: (row: CallsignRowView) => void;
   onDelete: (row: CallsignRowView) => void;
 };
 
 const actionsColumnSx = {
-  width: 96,
-  minWidth: 96,
+  width: 104,
+  minWidth: 104,
   pr: 2,
+};
+
+const selectionColumnSx = {
+  width: 52,
+  minWidth: 52,
+  pl: 1.5,
+  pr: 1,
 };
 
 function CommentCell({ comment }: { comment: string }) {
@@ -52,32 +72,68 @@ function CommentCell({ comment }: { comment: string }) {
   );
 }
 
-export function CallsignsTable({ rows, loading, loadingMore, sort, onSort, onEdit, onDelete }: Props) {
-  const tableBusy = loading || loadingMore;
+export function CallsignsTable({
+  rows,
+  loading,
+  refreshing,
+  loadingMore,
+  hasActiveFilters,
+  embedded = false,
+  inFlightDeleteId,
+  bulkDeleteInFlight,
+  selectedCallsignIds,
+  sort,
+  onSort,
+  onClearFilters,
+  onSetCallsignSelected,
+  onSetAllCallsignsSelected,
+  onEdit,
+  onDelete,
+}: Props) {
+  const tableBusy = loading || refreshing || loadingMore;
+  const showOverlay = (refreshing || loadingMore) && !loading;
+  const selectedCallsignIdSet = new Set(selectedCallsignIds);
+  const selectableCallsignIds = rows.filter((row) => inFlightDeleteId !== row.id && !bulkDeleteInFlight).map((row) => row.id);
+  const selectedSelectableCount = selectableCallsignIds.filter((callsignId) => selectedCallsignIdSet.has(callsignId)).length;
+  const allSelectableChecked = selectableCallsignIds.length > 0 && selectedSelectableCount === selectableCallsignIds.length;
+  const hasPartialSelectableChecked = selectedSelectableCount > 0 && !allSelectableChecked;
 
-  return (
-    <Paper variant="outlined" sx={{ height: '100%' }}>
-      <Box sx={{ position: 'relative', height: '100%' }} aria-busy={tableBusy}>
+  const tableContent = (
+    <Box sx={{ position: 'relative', height: { xs: 'auto', lg: '100%' }, minHeight: 0 }} aria-busy={tableBusy}>
         <Backdrop
-          open={loadingMore && !loading}
-          sx={{
-            position: 'absolute',
-            inset: 0,
-            zIndex: 10,
-            color: 'text.primary',
-            backgroundColor: 'rgba(255, 255, 255, 0.45)',
-          }}
+          open={showOverlay}
+          sx={loadingOverlayBackdropSx}
         >
-          <Stack direction="row" spacing={1.25} alignItems="center" role="status" aria-live="polite">
-            <CircularProgress size={20} color="inherit" />
-            <Typography variant="body2">Завантаження…</Typography>
-          </Stack>
+          <CircularProgress size={22} color="primary" role="status" aria-live="polite" aria-label={refreshing ? 'Оновлення' : 'Завантаження'} />
         </Backdrop>
 
-        <TableContainer sx={{ height: '100%', maxHeight: '100%' }} aria-label="Список позивних">
-          <Table stickyHeader size="small" aria-label="Таблиця позивних">
-          <TableHead>
+        <TableContainer
+          sx={{
+            height: { xs: 'auto', lg: '100%' },
+            maxHeight: { xs: '55vh', lg: '100%' },
+            overflow: 'auto',
+            WebkitOverflowScrolling: 'touch',
+          }}
+          aria-label="Список позивних"
+        >
+          <Table stickyHeader size="small" aria-label="Таблиця позивних" sx={{ minWidth: 980 }}>
+          <TableHead
+            sx={{
+              '& .MuiTableCell-root': {
+                py: 1.5,
+              },
+            }}
+          >
             <TableRow>
+              <TableCell padding="checkbox" sx={selectionColumnSx}>
+                <Checkbox
+                  slotProps={{ input: { 'aria-label': 'Вибрати всі позивні' } }}
+                  checked={allSelectableChecked}
+                  indeterminate={hasPartialSelectableChecked}
+                  disabled={selectableCallsignIds.length === 0}
+                  onChange={(_, checked) => onSetAllCallsignsSelected(selectableCallsignIds, checked)}
+                />
+              </TableCell>
               <TableCell sortDirection={sort.column === 'callsign' ? sort.direction : false}>
                 <TableSortLabel
                   active={sort.column === 'callsign'}
@@ -115,25 +171,29 @@ export function CallsignsTable({ rows, loading, loadingMore, sort, onSort, onEdi
           </TableHead>
           <TableBody>
             {loading ? (
-              <TableRow>
-                <TableCell colSpan={9}>
-                  <Stack direction="row" spacing={1} alignItems="center" justifyContent="center" sx={{ py: 4 }}>
-                    <CircularProgress size={28} />
-                  </Stack>
-                </TableCell>
-              </TableRow>
+              <TableLoadingRow colSpan={10} paddingY={4} />
             ) : rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={9}>
-                  <Typography variant="body2" color="text.secondary" sx={{ py: 3, textAlign: 'center' }}>
-                    Нічого не знайдено за поточними фільтрами
-                  </Typography>
+                <TableCell colSpan={10}>
+                  <TableEmptyState
+                    message={hasActiveFilters ? 'Немає позивних за обраними фільтрами' : 'Позивні відсутні'}
+                    actionLabel={hasActiveFilters ? 'Очистити фільтри' : undefined}
+                    onAction={hasActiveFilters ? onClearFilters : undefined}
+                  />
                 </TableCell>
               </TableRow>
             ) : (
               <>
                 {rows.map((row) => (
                   <TableRow key={row.id} hover>
+                    <TableCell padding="checkbox" sx={selectionColumnSx}>
+                      <Checkbox
+                        slotProps={{ input: { 'aria-label': `Вибрати позивний ${row.callsign}` } }}
+                        checked={selectedCallsignIdSet.has(row.id)}
+                        disabled={inFlightDeleteId === row.id || bulkDeleteInFlight}
+                        onChange={(_, checked) => onSetCallsignSelected(row.id, checked)}
+                      />
+                    </TableCell>
                     <TableCell>
                       <Typography variant="body2" fontWeight={600}>
                         {row.callsign}
@@ -167,6 +227,7 @@ export function CallsignsTable({ rows, loading, loadingMore, sort, onSort, onEdi
                               <Button
                                 aria-label={`Редагувати ${row.callsign}`}
                                 onClick={() => onEdit(row)}
+                                disabled={inFlightDeleteId === row.id || bulkDeleteInFlight}
                                 sx={{ minWidth: 36, px: 1 }}
                               >
                                 <EditIcon fontSize="small" />
@@ -178,6 +239,7 @@ export function CallsignsTable({ rows, loading, loadingMore, sort, onSort, onEdi
                               <Button
                                 aria-label={`Видалити ${row.callsign}`}
                                 onClick={() => onDelete(row)}
+                                disabled={inFlightDeleteId === row.id || bulkDeleteInFlight}
                                 sx={{ minWidth: 36, px: 1, color: 'error.main' }}
                               >
                                 <DeleteIcon fontSize="small" color="error" />
@@ -189,22 +251,11 @@ export function CallsignsTable({ rows, loading, loadingMore, sort, onSort, onEdi
                     </TableCell>
                   </TableRow>
                 ))}
-                {loadingMore ? (
+                {loadingMore && !refreshing ? (
                   <TableRow>
-                    <TableCell colSpan={9}>
-                      <Stack
-                        direction="row"
-                        spacing={1}
-                        alignItems="center"
-                        justifyContent="center"
-                        sx={{ py: 2 }}
-                        role="status"
-                        aria-live="polite"
-                      >
-                        <CircularProgress size={18} />
-                        <Typography variant="body2" color="text.secondary">
-                          Завантаження…
-                        </Typography>
+                    <TableCell colSpan={10}>
+                      <Stack direction="row" alignItems="center" justifyContent="center" sx={{ py: 2 }} role="status" aria-live="polite">
+                        <CircularProgress size={18} color="primary" aria-label="Завантаження" />
                       </Stack>
                     </TableCell>
                   </TableRow>
@@ -215,6 +266,15 @@ export function CallsignsTable({ rows, loading, loadingMore, sort, onSort, onEdi
           </Table>
         </TableContainer>
       </Box>
+  );
+
+  if (embedded) {
+    return tableContent;
+  }
+
+  return (
+    <Paper variant="outlined" sx={{ height: '100%' }}>
+      {tableContent}
     </Paper>
   );
 }

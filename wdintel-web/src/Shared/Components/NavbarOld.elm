@@ -132,9 +132,9 @@ navBar user shared activeName props =
     in
     header navbarStyles
         [ nav [ class "container mx-auto px-4" ]
-            [ div [ class "flex items-center justify-between" ]
+            [ div [ class "flex flex-wrap items-center justify-between gap-x-3 gap-y-2" ]
                 [ a
-                    [ class "flex items-center space-x-2"
+                    [ class "flex items-center space-x-2 shrink-0"
                     , href "/"
                     ]
                     [ div
@@ -169,14 +169,14 @@ navBar user shared activeName props =
                         ]
                     , img
                         [ src "/img/echo-logo.svg"
-                        , class "invert brightness-0 contrast-200 h-[16px]"
+                        , class "invert brightness-0 contrast-200 h-[16px] shrink-0"
                         ]
                         []
                     ]
-                , div [ class "flex items-center space-x-4" ]
-                    [ ul [ class "flex items-center space-x-4" ] menuItems
+                , div [ class "order-3 w-full min-w-0 min-[992px]:order-none min-[992px]:w-auto" ]
+                    [ ul [ class "flex flex-wrap items-center gap-x-4 gap-y-1 min-w-0 min-[992px]:flex-nowrap min-[992px]:whitespace-nowrap" ] menuItems
                     ]
-                , div [ class "flex gap-2 items-center" ]
+                , div [ class "flex gap-2 items-center shrink-0" ]
                     [ themeSwitcher
                         { currentTheme = shared.themeMode
                         , onThemeChange = props.onThemeChange
@@ -187,7 +187,7 @@ navBar user shared activeName props =
                         , onClick props.onLogout
                         ]
                         [ i [ class "bi bi-box-arrow-right text-lg" ] []
-                        , span [] [ text ("(" ++ user.name ++ ")") ]
+                        , span [ class "hidden sm:inline" ] [ text ("(" ++ user.name ++ ")") ]
                         ]
                     , div
                         [ class "w-6 h-6 flex items-center justify-center"

@@ -61,7 +61,7 @@ view : Auth.User -> Model -> View Msg
 view user _ =
     { title = "позивні"
     , body =
-        [ div [ class "app-shell-fill-height box-border min-h-0 pt-6 px-6 w-full overflow-hidden" ]
+        [ div [ class "app-shell-fill-height box-border min-h-0 pt-6 px-6 w-full overflow-visible lg:overflow-hidden" ]
             [ node "rer-callsigns-neo"
                 [ attribute "data-auth-user-roles" (String.join "," user.roles) ]
                 []

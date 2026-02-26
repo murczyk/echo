@@ -44,6 +44,43 @@ type CallsignUnitStatsRspLike = {
   units?: CallsignUnitStatRowLike[] | null;
 };
 
+type ListCallsignsReqBody = {
+  after_id: ListCallsignsReq['afterId'];
+  before_id: ListCallsignsReq['beforeId'];
+  filter_callsign: ListCallsignsReq['filterCallsign'];
+  filter_position: ListCallsignsReq['filterPosition'];
+  filter_comment: ListCallsignsReq['filterComment'];
+  filter_unit: ListCallsignsReq['filterUnit'];
+  filter_developing: ListCallsignsReq['filterDeveloping'];
+  since_date_inclusive_ms: ListCallsignsReq['sinceDateInclusiveMs'];
+  till_date_inclusive_ms: ListCallsignsReq['tillDateInclusiveMs'];
+  limit: ListCallsignsReq['limit'];
+  sort_by: ListCallsignsReq['sortBy'];
+};
+
+type CreateCallsignReqBody = {
+  callsign: CreateCallsignReq['callsign'];
+  position: CreateCallsignReq['position'];
+  comment: CreateCallsignReq['comment'];
+  unit_id: CreateCallsignReq['unitId'];
+  source_id: CreateCallsignReq['sourceId'];
+  developing: CreateCallsignReq['developing'];
+  radio_freq: CreateCallsignReq['radioFreq'];
+};
+
+type UpdateCallsignReqBody = {
+  id: Callsign['id'];
+  callsign: Callsign['callsign'];
+  position: Callsign['position'];
+  comment: Callsign['comment'];
+  unit_id: Callsign['unitId'];
+  active: Callsign['active'];
+  source_id: Callsign['sourceId'];
+  created_at: Callsign['createdAt'];
+  developing: Callsign['developing'];
+  radio_freq: Callsign['radioFreq'];
+};
+
 export type CallsignsBootstrapData = {
   user: User;
   units: Unit[];
@@ -139,18 +176,61 @@ async function postBytes(url: string, body: unknown): Promise<Blob> {
   return response.blob();
 }
 
+function toListCallsignsReqBody(req: ListCallsignsReq): ListCallsignsReqBody {
+  return {
+    after_id: req.afterId,
+    before_id: req.beforeId,
+    filter_callsign: req.filterCallsign,
+    filter_position: req.filterPosition,
+    filter_comment: req.filterComment,
+    filter_unit: req.filterUnit,
+    filter_developing: req.filterDeveloping,
+    since_date_inclusive_ms: req.sinceDateInclusiveMs,
+    till_date_inclusive_ms: req.tillDateInclusiveMs,
+    limit: req.limit,
+    sort_by: req.sortBy,
+  };
+}
+
+function toCreateCallsignReqBody(req: CreateCallsignReq): CreateCallsignReqBody {
+  return {
+    callsign: req.callsign,
+    position: req.position,
+    comment: req.comment,
+    unit_id: req.unitId,
+    source_id: req.sourceId,
+    developing: req.developing,
+    radio_freq: req.radioFreq,
+  };
+}
+
+function toUpdateCallsignReqBody(req: Callsign): UpdateCallsignReqBody {
+  return {
+    id: req.id,
+    callsign: req.callsign,
+    position: req.position,
+    comment: req.comment,
+    unit_id: req.unitId,
+    active: req.active,
+    source_id: req.sourceId,
+    created_at: req.createdAt,
+    developing: req.developing,
+    radio_freq: req.radioFreq,
+  };
+}
+
 export async function listCallsigns(req: ListCallsignsReq, signal?: AbortSignal): Promise<ListCallsignsRsp> {
-  const raw = await postJson<ListCallsignsRspLike>('/api/sigint/callsigns', req as any, { signal });
+  const raw = await postJson<ListCallsignsRspLike>('/api/sigint/callsigns', toListCallsignsReqBody(req) as any, { signal });
   return normalizeListCallsignsRsp(raw);
 }
 
 export async function createCallsign(req: CreateCallsignReq): Promise<Callsign> {
-  const raw = await postJson<CallsignLike>('/api/sigint/callsign/create', req as any);
+  const raw = await postJson<CallsignLike>('/api/sigint/callsign/create', toCreateCallsignReqBody(req) as any);
   return normalizeCallsign(raw);
 }
 
 export async function updateCallsign(req: Callsign): Promise<Callsign> {
-  const raw = await postJson<CallsignLike>('/api/sigint/callsign/update', req as any);
+  const raw = await postJson<CallsignLike>('/api/sigint/callsign/update', toUpdateCallsignReqBody(req) as any);
   return normalizeCallsign(raw);
 }
 
@@ -170,11 +250,11 @@ export async function getCallsignUnitStats(): Promise<CallsignUnitStatRow[]> {
 }
 
 export async function downloadCallsignsCsv(req: ListCallsignsReq): Promise<Blob> {
-  return postBytes('/api/sigint/callsigns/csv', req);
+  return postBytes('/api/sigint/callsigns/csv', toListCallsignsReqBody(req));
 }
 
 export async function downloadCallsignsXlsx(req: ListCallsignsReq): Promise<Blob> {
-  return postBytes('/api/sigint/callsigns/xlsx', req);
+  return postBytes('/api/sigint/callsigns/xlsx', toListCallsignsReqBody(req));
 }
 
 export async function fetchCallsignsBootstrapData(initialReq: ListCallsignsReq): Promise<CallsignsBootstrapData> {

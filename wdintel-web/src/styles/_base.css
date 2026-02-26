@@ -8,9 +8,11 @@ body {
     overflow-x: hidden;
 }
 
-html:has(.app-shell--fixed-viewport),
-body:has(.app-shell--fixed-viewport) {
-    overflow-y: hidden;
+@media (min-width: 1200px) {
+    html:has(.app-shell--fixed-viewport),
+    body:has(.app-shell--fixed-viewport) {
+        overflow-y: hidden;
+    }
 }
 
 @layer base {

@@ -99,3 +99,11 @@ incus exec "$MACHINE" -- /var/tmp/dev-post-clone.sh \
 Після виконання скрипт виведе банер:
 - готовий URL
 - готовий блок для `~/.ssh/config`
+
+## Troubleshoot
+
+**Вбити підвислі сервіси:**
+
+```
+pkill -f wdintel-rs
+```

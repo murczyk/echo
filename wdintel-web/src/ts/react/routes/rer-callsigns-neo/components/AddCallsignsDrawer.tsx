@@ -102,7 +102,9 @@ export function AddCallsignsDrawer({
 
           <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
             <FormControl sx={{ flex: 1 }} size="small" disabled={formDisabled}>
-              <InputLabel id={addUnitSelectLabelId}>Підрозділ</InputLabel>
+              <InputLabel id={addUnitSelectLabelId} shrink>
+                Підрозділ
+              </InputLabel>
               <Select
                 labelId={addUnitSelectLabelId}
                 label="Підрозділ"
@@ -126,7 +128,9 @@ export function AddCallsignsDrawer({
             </FormControl>
 
             <FormControl sx={{ flex: 1 }} size="small" disabled={formDisabled}>
-              <InputLabel id={addSourceSelectLabelId}>Джерело</InputLabel>
+              <InputLabel id={addSourceSelectLabelId} shrink>
+                Джерело
+              </InputLabel>
               <Select
                 labelId={addSourceSelectLabelId}
                 label="Джерело"
