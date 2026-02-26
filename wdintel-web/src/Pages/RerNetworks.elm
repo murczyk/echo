@@ -188,6 +188,62 @@ networkListPageSize =
     100
 
 
+noAorFilterId : Int
+noAorFilterId =
+    -1
+
+
+noAorFilterLabel : String
+noAorFilterLabel =
+    "—"
+
+
+selectedAorIdsForApi : List Int -> Maybe (List Int)
+selectedAorIdsForApi selectedAorIds =
+    let
+        hasNoAorSelected =
+            List.member noAorFilterId selectedAorIds
+
+        regularAorIds =
+            selectedAorIds |> List.filter (\aid -> aid /= noAorFilterId)
+    in
+    if hasNoAorSelected || List.isEmpty regularAorIds then
+        Nothing
+
+    else
+        Just regularAorIds
+
+
+filterNetworksByAorSelection : List Int -> List B.Network -> List B.Network
+filterNetworksByAorSelection selectedAorIds networks =
+    if List.isEmpty selectedAorIds then
+        networks
+
+    else
+        let
+            hasNoAorSelected =
+                List.member noAorFilterId selectedAorIds
+
+            regularAorIds =
+                selectedAorIds |> List.filter (\aid -> aid /= noAorFilterId)
+
+            isNoAorNetwork network =
+                List.isEmpty network.aorIds
+
+            hasRegularAor network =
+                network.aorIds |> List.any (\aid -> List.member aid regularAorIds)
+        in
+        networks
+            |> List.filter
+                (\network ->
+                    if hasNoAorSelected then
+                        isNoAorNetwork network || hasRegularAor network
+
+                    else
+                        hasRegularAor network
+                )
+
+
 resetNetworksPagination : Model -> Model
 resetNetworksPagination model =
     { model
@@ -210,12 +266,7 @@ listNetworksReq model =
             Nothing
     , showInactive = Just (not model.showOnlyActive)
     , showOnlyDeleted = Just model.showArchived
-    , aorIds =
-        if List.isEmpty model.aorFilterSelect.selected then
-            Nothing
-
-        else
-            Just model.aorFilterSelect.selected
+    , aorIds = selectedAorIdsForApi model.aorFilterSelect.selected
     , ids = Nothing
     , limit = Just networkListPageSize
     , offset = Just model.networksOffset
@@ -668,12 +719,7 @@ update shared msg model =
                             Nothing
                     , showInactive = Just (not model.showOnlyActive)
                     , showOnlyDeleted = Just model.showArchived
-                    , aorIds =
-                        if List.isEmpty model.aorFilterSelect.selected then
-                            Nothing
-
-                        else
-                            Just model.aorFilterSelect.selected
+                    , aorIds = selectedAorIdsForApi model.aorFilterSelect.selected
                     , ids = Nothing
                     , limit = Nothing
                     , offset = Nothing
@@ -1040,7 +1086,8 @@ update shared msg model =
                     aors |> List.filter .isTopLevel
 
                 items =
-                    topLevelAors |> List.map (\a -> Select.basicMenuItem { item = a.id, label = a.name })
+                    Select.basicMenuItem { item = noAorFilterId, label = noAorFilterLabel }
+                        :: (topLevelAors |> List.map (\a -> Select.basicMenuItem { item = a.id, label = a.name }))
 
                 oldAorSelect =
                     model.aorFilterSelect
@@ -1048,7 +1095,7 @@ update shared msg model =
                 -- keep only selected AORs that are top-level
                 selectedFiltered =
                     oldAorSelect.selected
-                        |> List.filter (\id -> List.any (\a -> a.id == id) topLevelAors)
+                        |> List.filter (\id -> id == noAorFilterId || List.any (\a -> a.id == id) topLevelAors)
 
                 newAorSelect =
                     { oldAorSelect | items = items, selected = selectedFiltered }
@@ -1531,15 +1578,19 @@ filterPanel user shared model =
                         model.aorFilterSelect.selected
                             |> List.filterMap
                                 (\aid ->
-                                    case model.aorList of
-                                        Success aors ->
-                                            aors
-                                                |> List.filter (\a -> a.id == aid)
-                                                |> List.head
-                                                |> Maybe.map (\a -> Select.basicMenuItem { item = a.id, label = a.name })
+                                    if aid == noAorFilterId then
+                                        Just (Select.basicMenuItem { item = noAorFilterId, label = noAorFilterLabel })
 
-                                        _ ->
-                                            Nothing
+                                    else
+                                        case model.aorList of
+                                            Success aors ->
+                                                aors
+                                                    |> List.filter (\a -> a.id == aid)
+                                                    |> List.head
+                                                    |> Maybe.map (\a -> Select.basicMenuItem { item = a.id, label = a.name })
+
+                                            _ ->
+                                                Nothing
                                 )
                 in
                 div [ style "min-width" "210px", style "width" "210px" ]
@@ -1630,10 +1681,14 @@ contentBlock user shared model =
             ]
         , case model.networks of
             Success networks ->
+                let
+                    filteredNetworks =
+                        filterNetworksByAorSelection model.aorFilterSelect.selected networks
+                in
                 div []
                     [ mainContent
                         user
-                        networks
+                        filteredNetworks
                         shared
                         model
                     , div [ class "flex justify-center mt-3 mb-3" ] <|
