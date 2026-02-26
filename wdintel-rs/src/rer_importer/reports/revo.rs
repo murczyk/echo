@@ -1251,17 +1251,17 @@ async fn collect_message_networks(
                 freq: freq.clone(),
                 master_key: message.group_master_key.clone(),
             };
-            if !network_summaries_dictionary.contains_key(&n_key) {
-                let (network_name, network_location) = match all_sigint_networks
-                    .get(&network_id)
-                {
-                    None => ("".to_string(), None),
-                    Some(network) => {
-                        (network.name.clone(), Some(network.location.clone()))
-                    }
-                };
-                network_summaries_dictionary.insert(
-                    n_key,
+            network_summaries_dictionary
+                .entry(n_key)
+                .or_insert_with(|| {
+                    let (network_name, network_location) =
+                        match all_sigint_networks.get(&network_id) {
+                            None => ("".to_string(), None),
+                            Some(network) => (
+                                network.name.clone(),
+                                Some(network.location.clone()),
+                            ),
+                        };
                     NetworkSummary {
                         id: network_id,
                         name: network_name,
@@ -1270,9 +1270,8 @@ async fn collect_message_networks(
                         unit_name: network_unit_names.get(&network_id).cloned(),
                         master_key: message.group_master_key.clone(),
                         message_ids: vec![],
-                    },
-                );
-            }
+                    }
+                });
         }
     }
 
