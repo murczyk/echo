@@ -269,6 +269,9 @@ export class PalitraManager {
     if (currentGen !== this._renderGeneration) {
       return;
     }
+    if (!this.enabled || !this._searchQuery || !this._lastSearchResult) {
+      return;
+    }
 
     clusters.forEach(({ palitra_id, cluster }) => {
       if (cluster) {
