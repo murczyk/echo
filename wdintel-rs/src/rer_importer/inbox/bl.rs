@@ -14,6 +14,10 @@ use crate::messenger::group::{collect_groups, CollectGroupsOpts};
 use crate::rer_importer::collect_profiles_data;
 use crate::rer_importer::highlight::*;
 use crate::rer_importer::inbox::query::build_inbox_query;
+use crate::rer_importer::points::{
+    find_all_palitra_by_author, highlight_points,
+    load_point_lexemes_by_palitra_ids,
+};
 use crate::rer_importer::signals::*;
 use crate::storage::mk_media_url;
 use crate::types::*;
@@ -27,6 +31,7 @@ use itertools::Itertools;
 use log::*;
 use sea_orm::*;
 use sea_query::Expr;
+use serde_json::json;
 use sqlx::Row;
 
 #[derive(Debug, FromQueryResult)]
@@ -186,6 +191,12 @@ pub async fn aggregate_to_inbox_messages(
             .push(media);
     }
 
+    let palitra_ids = find_all_palitra_by_author(&env.dbx, login)
+        .await
+        .context(h!())?;
+    let point_forms = load_point_lexemes_by_palitra_ids(&env.dbx, palitra_ids)
+        .await
+        .context(h!())?;
     for message in messages {
         // for message in messages {
         // let m_inbox: Option<sigint_inbox_item::Model> =
@@ -232,10 +243,32 @@ pub async fn aggregate_to_inbox_messages(
                 None => None,
                 Some(jv) => Some(serde_json::from_value(jv).context(h!())?),
             };
-        let m_point_tokens: Option<Vec<CNPoint>> = match message.point_tokens {
-            None => None,
-            Some(jv) => Some(serde_json::from_value(jv).context(h!())?),
-        };
+        let mut m_point_tokens: Option<Vec<CNPoint>> =
+            match message.point_tokens {
+                None => None,
+                Some(jv) => Some(serde_json::from_value(jv).context(h!())?),
+            };
+        if req.highlight_points.unwrap_or(false)
+            && m_point_tokens.is_none()
+            && !point_forms.is_empty()
+        {
+            let tokens = highlight_points(&env.rq, &body, &point_forms)
+                .await
+                .c(h!())?;
+            if !tokens.is_empty() {
+                sigint_inbox_item::Entity::update_many()
+                    .filter(sigint_inbox_item::Column::Id.eq(message.id))
+                    .filter(sigint_inbox_item::Column::PointTokens.is_null())
+                    .col_expr(
+                        sigint_inbox_item::Column::PointTokens,
+                        Expr::value(json!(tokens)),
+                    )
+                    .exec(&env.dbx)
+                    .await
+                    .c(h!())?;
+            }
+            m_point_tokens = Some(tokens);
+        }
         let m_signal_tokens: Option<Vec<CNSignal>> = match message.signal_tokens
         {
             None => None,
