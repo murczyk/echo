@@ -159,10 +159,11 @@ pub async fn invalidate_network_inbox(
 pub async fn calculate_sigint_inbox_item_networks<'a, 'async_trait, C>(
     sigint_inbox_items: Vec<sigint_inbox_item::Model>,
     dbx: &'a C,
-) -> anyhow::Result<()>
+) -> anyhow::Result<HashMap<i64, Vec<i64>>>
 where
     C: ConnectionTrait + 'async_trait,
 {
+    let mut result: HashMap<i64, Vec<i64>> = HashMap::new();
     let sigint_inbox_item_ids =
         sigint_inbox_items.iter().map(|i| i.id).collect::<Vec<_>>();
     sigint_inbox_item_network::Entity::delete_many()
@@ -197,7 +198,8 @@ where
             .insert(dbx)
             .await
             .c(h!())?;
+            result.entry(item_id).or_default().push(network_id);
         }
     }
-    Ok(())
+    Ok(result)
 }

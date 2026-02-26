@@ -2,7 +2,6 @@ use super::super::types::*;
 use super::types::*;
 use crate::entities::*;
 use crate::error::AppError;
-// Add this import if h!() uses anyhow::Context
 use crate::rer_importer::reports::util;
 use crate::rer_importer::reports::util::*;
 use crate::types::*;
@@ -56,6 +55,26 @@ pub struct NetworkCorrespondent {
     pub position: Option<String>,
 }
 
+pub struct NetworkSummaryData {
+    pub network_summaries_dictionary: HashMap<i64, NetworkSummary>,
+    pub undefined_network_summaries_dictionary: HashMap<i64, NetworkSummary>, // virtual "network summaries" for frequencies that do not have associated sigint networks
+    pub message_to_networks_map: HashMap<i64, Vec<i64>>,
+    pub message_to_undefined_networks_map: HashMap<i64, Vec<i64>>,
+}
+
+impl NetworkSummaryData {
+    pub fn list_network_ids(&self) -> Vec<i64> {
+        self.network_summaries_dictionary.keys().cloned().collect()
+    }
+    pub fn list_all_networks(&self) -> HashMap<i64, NetworkSummary> {
+        let mut result = self.network_summaries_dictionary.clone();
+        for (id, v) in self.undefined_network_summaries_dictionary.clone() {
+            result.insert(id, v);
+        }
+        result
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone, FromQueryResult)]
 pub struct NetworkSummary {
     pub id: i64,
@@ -63,6 +82,16 @@ pub struct NetworkSummary {
     pub location: Option<String>,
     pub freq: String,
     pub unit_name: Option<String>,
+    pub master_key: Option<String>,
+    pub message_ids: Vec<i64>,
+}
+
+#[derive(
+    Debug, Serialize, Deserialize, PartialEq, Clone, FromQueryResult, Hash, Eq,
+)]
+pub struct NetworkSummaryKey {
+    pub network_id: i64,
+    pub freq: String,
     pub master_key: Option<String>,
 }
 
@@ -630,118 +659,6 @@ async fn collect_report(
     no_comments: bool,
 ) -> anyhow::Result<Report> {
     let start_collect = Instant::now();
-    info!("collect_report: extracting groups and freqs");
-    let start = Instant::now();
-    let groups = messages
-        .iter()
-        .flat_map(|(_, m)| m.group_master_key.clone())
-        .unique()
-        .collect::<Vec<_>>();
-    let freqs = messages
-        .iter()
-        .flat_map(|(_, m)| m.freq.clone())
-        .unique()
-        .collect::<Vec<_>>();
-    info!("collect_report: extracting groups/freqs took: {:?}, groups: {}, freqs: {}", start.elapsed(), groups.len(), freqs.len());
-
-    info!("collect_report: loading all_networks from DB");
-    let start = Instant::now();
-    let all_networks = sigint_network::Entity::find()
-        .join(
-            JoinType::InnerJoin,
-            sigint_network::Relation::SigintNetworkFreq.def(),
-        )
-        .join(
-            JoinType::LeftJoin,
-            sigint_network::Relation::SigintNetworkUnit.def(),
-        )
-        .join(
-            JoinType::LeftJoin,
-            sigint_network_unit::Relation::SigintUnit.def(),
-        )
-        .filter(sigint_network_freq::Column::Freq.eq_any(freqs.clone()))
-        .filter(sigint_network::Column::Deleted.eq(false))
-        .filter(sigint_network::Column::Name.is_not_null())
-        .select_only()
-        .column(sigint_network::Column::Id)
-        .column(sigint_network::Column::Name)
-        .column(sigint_network::Column::Location)
-        .column(sigint_network_freq::Column::Freq)
-        .column_as(sigint_unit::Column::Name, "unit_name")
-        .into_model::<NetworkSummary>()
-        .all(dbx)
-        .await
-        .context(h!())?
-        .into_iter()
-        .map(|s| ((s.freq.clone(), None), s))
-        .collect::<HashMap<_, _>>();
-    info!(
-        "collect_report: loading all_networks took: {:?}, count: {}",
-        start.elapsed(),
-        all_networks.len()
-    );
-
-    info!("collect_report: loading filtered networks from DB");
-    let start = Instant::now();
-    let mut networks = sigint_network::Entity::find()
-        .join(
-            JoinType::LeftJoin,
-            sigint_network::Relation::SigintNetworkFreq.def(),
-        )
-        .join(
-            JoinType::LeftJoin,
-            sigint_network::Relation::SigintNetworkAor.def(),
-        )
-        .join(
-            JoinType::LeftJoin,
-            sigint_network_aor::Relation::AreaOfResponsibility.def(),
-        )
-        .join(
-            JoinType::LeftJoin,
-            area_of_responsibility::Relation::SignalGroupAor.def(),
-        )
-        .join(
-            JoinType::LeftJoin,
-            sigint_network::Relation::SigintNetworkUnit.def(),
-        )
-        .join(
-            JoinType::LeftJoin,
-            sigint_network_unit::Relation::SigintUnit.def(),
-        )
-        .filter(sigint_network_freq::Column::Freq.eq_any(freqs))
-        .filter(
-            signal_group_aor::Column::Id
-                .is_null()
-                .or(signal_group_aor::Column::MasterKey.eq_any(groups)),
-        )
-        .filter(sigint_network::Column::Deleted.eq(false))
-        .filter(
-            area_of_responsibility::Column::Id
-                .is_null()
-                .or(area_of_responsibility::Column::Deleted.eq(false)),
-        )
-        .filter(sigint_network::Column::Name.is_not_null())
-        .filter(sigint_network_freq::Column::Freq.is_not_null())
-        .select_only()
-        .column(sigint_network::Column::Id)
-        .column(sigint_network::Column::Name)
-        .column(sigint_network::Column::Location)
-        .column(sigint_network_freq::Column::Freq)
-        .column(signal_group_aor::Column::MasterKey)
-        .column_as(sigint_unit::Column::Name, "unit_name")
-        .into_model::<NetworkSummary>()
-        .all(dbx)
-        .await
-        .context(h!())?
-        .into_iter()
-        .map(|s| ((s.freq.clone(), s.master_key.clone()), s))
-        .collect::<HashMap<_, _>>();
-    info!(
-        "collect_report: loading filtered networks took: {:?}, count: {}",
-        start.elapsed(),
-        networks.len()
-    );
-
     let message_ids: Vec<i64> = messages.iter().map(|(id, _)| *id).collect();
 
     let mut comments = BTreeMap::new();
@@ -805,28 +722,9 @@ async fn collect_report(
         );
     }
 
-    info!("collect_report: merging all_networks into networks");
-    let start = Instant::now();
-    for (k, v) in all_networks {
-        networks.insert(k, v);
-    }
-    info!(
-        "collect_report: merging networks took: {:?}",
-        start.elapsed()
-    );
-
-    let mut networks_dictionary = {
-        let mut result = HashMap::new();
-        for n in networks.values() {
-            result.insert(n.id, n.clone());
-        }
-        result
-    };
-
-    let mut network_ids = HashSet::new();
-    for n in networks.values() {
-        network_ids.insert(n.id);
-    }
+    let networks = collect_message_networks(&messages, range_khz, dbx)
+        .await
+        .c(h!())?;
 
     let mut callsigns_set = HashSet::new();
     for (_id, message) in &messages {
@@ -853,7 +751,7 @@ async fn collect_report(
         .filter(sigint_callsign::Column::Callsign.eq_any(callsigns))
         .filter(
             sigint_network_unit::Column::NetworkId
-                .eq_any(network_ids.clone().into_iter().collect()),
+                .eq_any(networks.list_network_ids()),
         )
         .filter(sigint_unit::Column::Deleted.eq(false))
         .filter(sigint_callsign::Column::Deleted.eq(false))
@@ -883,97 +781,58 @@ async fn collect_report(
     let mut linked_callsigns_map = HashMap::new();
     let mut unlinked_callsigns_map = HashMap::new();
     let mut seances_map = HashMap::new();
-    let mut unmapped_freqs = HashMap::new();
     let mut messages = messages;
     messages.sort_by_key(|(_, v)| v.freq.clone().unwrap_or("0.0".to_string()));
-    for (_id, message) in messages {
+    for (id, message) in messages {
         let is_pure_peleng = message.coords.is_some()
             && message.callsign_tokens.unwrap_or(vec![]).is_empty();
         if is_pure_peleng {
             continue;
         }
-        let (Some(master_key), Some(freq)) =
-            (message.group_master_key, message.freq)
-        else {
+        let Some(freq) = message.freq.clone() else {
             continue;
         };
-        let m_network_summary = networks
-            .get(&(freq.clone(), Some(master_key)))
-            .or(networks.get(&(freq.clone(), None)))
-            .cloned();
-        let summary = match m_network_summary {
-            None => {
-                let Ok(freq_num) = freq.parse::<f64>() else {
-                    error!("[{}] bad freq: {freq}", h!());
-                    continue;
-                };
-                let id = -((freq_num * 10000.0).ceil() as i64);
-                if let Some(existing_id) = unmapped_freqs
-                    .keys()
-                    .copied()
-                    .find(|f: &i64| ((*f - id).abs() as f64) <= range_khz)
+
+        for summary in get_network_summaries_for_message_id(id, &networks) {
+            let network_key = (summary.name.clone(), summary.id, freq.clone());
+
+            if let Some(ts) = message.timestamp {
+                let mut data =
+                    seances_map.remove(&network_key).unwrap_or(vec![]);
+                let utc_datetime = DateTime::from_timestamp_millis(ts)
+                    .context(h!())?
+                    .with_timezone(&crate::config::get_tz())
+                    .naive_local();
+                data.push(utc_datetime);
+                seances_map.insert(network_key.clone(), data);
+            }
+
+            let mut data = unlinked_callsigns_map
+                .remove(&network_key)
+                .unwrap_or(HashSet::new());
+            for c in message.callsigns.clone() {
+                data.insert(c.clone());
+            }
+            for c in message.callsigns_alg2.clone() {
+                data.insert(c.clone());
+            }
+            let mut linked_callsigns = vec![];
+            for c in data.clone() {
+                if let Some(callsign) =
+                    unit_callsigns.get(&(summary.id, c.clone()))
                 {
-                    networks_dictionary
-                        .get(&existing_id)
-                        .cloned()
-                        .context(h!())?
-                } else {
-                    let mut freqs =
-                        unmapped_freqs.remove(&id).unwrap_or(vec![]);
-                    freqs.push(freq.clone());
-                    unmapped_freqs.insert(id, freqs);
-                    let new_summary = NetworkSummary {
-                        id,
-                        name: "".to_string(),
-                        freq: freq.clone(),
-                        unit_name: None,
-                        master_key: None,
-                        location: None,
-                    };
-                    networks_dictionary
-                        .insert(new_summary.id, new_summary.clone());
-                    network_ids.insert(new_summary.id);
-                    new_summary
+                    data.remove(&c);
+                    linked_callsigns.push(callsign.clone());
                 }
             }
-            Some(s) => s,
-        };
-        let network_key = (summary.name.clone(), summary.id, freq);
-
-        if let Some(ts) = message.timestamp {
-            let mut data = seances_map.remove(&network_key).unwrap_or(vec![]);
-            let utc_datetime = DateTime::from_timestamp_millis(ts)
-                .context(h!())?
-                .with_timezone(&crate::config::get_tz())
-                .naive_local();
-            data.push(utc_datetime);
-            seances_map.insert(network_key.clone(), data);
-        }
-
-        let mut data = unlinked_callsigns_map
-            .remove(&network_key)
-            .unwrap_or(HashSet::new());
-        for c in message.callsigns {
-            data.insert(c.clone());
-        }
-        for c in message.callsigns_alg2 {
-            data.insert(c.clone());
-        }
-        let mut linked_callsigns = vec![];
-        for c in data.clone() {
-            if let Some(callsign) = unit_callsigns.get(&(summary.id, c.clone()))
-            {
-                data.remove(&c);
-                linked_callsigns.push(callsign.clone());
+            linked_callsigns_map.insert(network_key.clone(), linked_callsigns);
+            unlinked_callsigns_map.insert(network_key, data);
+            if let Some(comment) = comments.remove(&id) {
+                let mut list =
+                    network_comments_map.remove(&summary.id).unwrap_or(vec![]);
+                list.push(comment);
+                network_comments_map.insert(summary.id, list);
             }
-        }
-        linked_callsigns_map.insert(network_key.clone(), linked_callsigns);
-        unlinked_callsigns_map.insert(network_key, data);
-        if let Some(comment) = comments.remove(&_id) {
-            let mut list =
-                network_comments_map.remove(&summary.id).unwrap_or(vec![]);
-            list.push(comment);
-            network_comments_map.insert(summary.id, list);
         }
     }
     info!(
@@ -988,7 +847,7 @@ async fn collect_report(
     let mut all_hostile_networks = vec![];
     let mut all_undefined_networks = vec![];
     let mut skipped_callsigns = HashSet::<String>::new();
-    for id in network_ids {
+    for (id, network) in networks.list_all_networks() {
         let comments = network_comments_map.remove(&id).unwrap_or(vec![]);
         let keys = seances_map
             .keys()
@@ -1029,7 +888,6 @@ async fn collect_report(
         let seances_qty = seances.len() as u64;
         let mut correspondents = vec![];
 
-        let network = networks_dictionary.get(&id).context(h!())?;
         let mut network_name = network.name.clone();
         if network_name.trim().is_empty() {
             network_name = "Радіомережа".to_string();
@@ -1041,7 +899,6 @@ async fn collect_report(
 
         let unmapped_network: bool = id < 0;
         if unmapped_network {
-            freqs = unmapped_freqs.remove(&id).context(h!())?;
             freqs.sort_unstable();
         }
         for c in linked_callsigns {
@@ -1298,4 +1155,246 @@ async fn message_ids_with_nonempty_comments_from_other_logins(
         }
     }
     Ok(other_ids)
+}
+
+async fn collect_message_networks(
+    messages: &Vec<(i64, InboxMessage)>,
+    range_khz: f64,
+    db: &DatabaseConnection,
+) -> anyhow::Result<NetworkSummaryData> {
+    info!("collect_report: loading all_networks from DB");
+
+    let mut message_to_networks_map = HashMap::<i64, Vec<i64>>::new();
+    let mut network_to_messages_map = HashMap::<i64, Vec<i64>>::new();
+
+    for (message_id, message) in messages {
+        let Some(network_ids) = &message.network_ids else {
+            continue;
+        };
+        for network_id in network_ids {
+            message_to_networks_map
+                .entry(*message_id)
+                .or_default()
+                .push(*network_id);
+            network_to_messages_map
+                .entry(*network_id)
+                .or_default()
+                .push(*message_id);
+        }
+    }
+
+    let sigint_network_ids = message_to_networks_map
+        .values()
+        .flat_map(|network_ids| network_ids.iter().copied())
+        .unique()
+        .collect::<Vec<_>>();
+
+    let all_sigint_networks = sigint_network::Entity::find()
+        .filter(sigint_network::Column::Id.is_in(sigint_network_ids.clone()))
+        .all(db)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|n| (n.id, n))
+        .collect::<HashMap<_, _>>();
+    let mut network_unit_names = HashMap::<i64, Vec<String>>::new();
+    sigint_network_unit::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            sigint_network_unit::Relation::SigintUnit.def(),
+        )
+        .filter(
+            sigint_network_unit::Column::NetworkId
+                .is_in(sigint_network_ids.clone()),
+        )
+        .select_only()
+        .column(sigint_network_unit::Column::NetworkId)
+        .column(sigint_unit::Column::Name)
+        .into_tuple::<(i64, String)>()
+        .all(db)
+        .await
+        .c(h!())?
+        .into_iter()
+        .for_each(|(network_id, unit_name)| {
+            network_unit_names
+                .entry(network_id)
+                .or_default()
+                .push(unit_name)
+        });
+
+    let network_unit_names = network_unit_names
+        .into_iter()
+        .map(|(id, names)| (id, names.into_iter().sorted().join(", ")))
+        .collect::<HashMap<i64, String>>();
+
+    let mut network_summaries_dictionary: HashMap<
+        NetworkSummaryKey,
+        NetworkSummary,
+    > = HashMap::new();
+
+    let mut messages_without_networks = HashMap::new();
+    for (message_id, message) in messages {
+        let Some(freq) = &message.freq else {
+            continue;
+        };
+        let Some(message_network_ids) = message_to_networks_map
+            .get(message_id)
+            .filter(|x| !x.is_empty())
+            .cloned()
+        else {
+            messages_without_networks.insert(*message_id, message.clone());
+            continue;
+        };
+        for network_id in message_network_ids {
+            let n_key = NetworkSummaryKey {
+                network_id,
+                freq: freq.clone(),
+                master_key: message.group_master_key.clone(),
+            };
+            if !network_summaries_dictionary.contains_key(&n_key) {
+                let (network_name, network_location) = match all_sigint_networks
+                    .get(&network_id)
+                {
+                    None => ("".to_string(), None),
+                    Some(network) => {
+                        (network.name.clone(), Some(network.location.clone()))
+                    }
+                };
+                network_summaries_dictionary.insert(
+                    n_key,
+                    NetworkSummary {
+                        id: network_id,
+                        name: network_name,
+                        location: network_location,
+                        freq: freq.clone(),
+                        unit_name: network_unit_names.get(&network_id).cloned(),
+                        master_key: message.group_master_key.clone(),
+                        message_ids: vec![],
+                    },
+                );
+            }
+        }
+    }
+
+    let network_summaries_dictionary = network_summaries_dictionary
+        .into_values()
+        .map(|x| (x.id, x))
+        .collect();
+
+    let (
+        undefined_network_summaries_dictionary,
+        message_to_undefined_networks_map,
+    ) = process_messages_without_networks(
+        range_khz,
+        &mut messages_without_networks,
+    )
+    .c(h!())?;
+    Ok(NetworkSummaryData {
+        network_summaries_dictionary,
+        undefined_network_summaries_dictionary,
+        message_to_networks_map,
+        message_to_undefined_networks_map,
+    })
+}
+
+fn process_messages_without_networks(
+    range_khz: f64,
+    messages_without_networks: &mut HashMap<i64, InboxMessage>,
+) -> anyhow::Result<(HashMap<i64, NetworkSummary>, HashMap<i64, Vec<i64>>)> {
+    let mut undefined_network_summaries_dictionary =
+        HashMap::<i64, NetworkSummary>::new();
+    let mut message_to_undefined_networks_map = HashMap::<i64, Vec<i64>>::new();
+
+    let mut unmapped_freqs = HashMap::<String, (i64, f64)>::new();
+    let mut new_freq_id = 0;
+    for (id, message) in messages_without_networks {
+        let Some(freq) = message.freq.clone() else {
+            continue;
+        };
+
+        let Ok(freq_num) = freq.parse::<f64>() else {
+            continue;
+        };
+
+        let mut freq_id = None;
+        if let Some((id1, _)) = unmapped_freqs.get(&freq) {
+            freq_id = Some(*id1);
+        }
+
+        if freq_id.is_none() {
+            for (id1, f) in unmapped_freqs.values() {
+                if ((*f - freq_num).abs()) <= range_khz {
+                    freq_id = Some(*id1);
+                    break;
+                }
+            }
+        }
+        if let Some(freq_id) = freq_id {
+            let rec = undefined_network_summaries_dictionary
+                .get_mut(&freq_id)
+                .context(h!())?;
+            rec.message_ids.push(*id);
+            message_to_undefined_networks_map
+                .entry(*id)
+                .or_default()
+                .push(freq_id);
+            continue;
+        }
+        let freq_id = new_freq_id;
+        new_freq_id += 1;
+        unmapped_freqs.insert(freq.clone(), (freq_id, freq_num));
+        let new_summary = NetworkSummary {
+            id: freq_id,
+            name: "".to_string(),
+            freq: freq.clone(),
+            unit_name: None,
+            master_key: None,
+            location: None,
+            message_ids: vec![*id],
+        };
+        undefined_network_summaries_dictionary
+            .insert(new_summary.id, new_summary.clone());
+        message_to_undefined_networks_map
+            .entry(*id)
+            .or_default()
+            .push(new_summary.id);
+    }
+    Ok((
+        undefined_network_summaries_dictionary,
+        message_to_undefined_networks_map,
+    ))
+}
+
+fn get_network_summaries_for_message_id(
+    message_id: i64,
+    networks: &NetworkSummaryData,
+) -> Vec<NetworkSummary> {
+    let message_network_ids = networks
+        .message_to_networks_map
+        .get(&message_id)
+        .filter(|s| !s.is_empty());
+    if let Some(network_ids) = message_network_ids {
+        let mut result = vec![];
+        for id in network_ids {
+            if let Some(network) = networks.network_summaries_dictionary.get(id)
+            {
+                result.push(network.clone());
+            }
+        }
+        return result;
+    }
+    let message_undefined_network_ids = networks
+        .message_to_undefined_networks_map
+        .get(&message_id)
+        .cloned()
+        .unwrap_or_default();
+    let mut result = vec![];
+    for id in message_undefined_network_ids {
+        if let Some(network) =
+            networks.undefined_network_summaries_dictionary.get(&id)
+        {
+            result.push(network.clone());
+        }
+    }
+    result
 }

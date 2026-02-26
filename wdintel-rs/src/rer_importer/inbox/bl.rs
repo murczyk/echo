@@ -396,57 +396,44 @@ pub async fn load_messages_networks(
         return Ok(HashMap::new());
     }
 
-    backfill_missing_messages_networks(&message_ids, dbx)
+    let result = backfill_missing_messages_networks(&message_ids, dbx)
         .await
         .context(h!())?;
-
-    let rows = sigint_inbox_item_network::Entity::find()
-        .inner_join(sigint_network::Entity)
-        .select_only()
-        .column(sigint_inbox_item_network::Column::SigintInboxItemId)
-        .column(sigint_inbox_item_network::Column::SigintNetworkId)
-        .filter(
-            sigint_inbox_item_network::Column::SigintInboxItemId
-                .is_in(message_ids),
-        )
-        .filter(sigint_network::Column::Deleted.eq(false))
-        .into_tuple::<(i64, i64)>()
-        .all(dbx)
-        .await
-        .context(h!())?;
-
-    let mut result: HashMap<i64, Vec<i64>> = HashMap::new();
-    for (message_id, network_id) in rows {
-        result.entry(message_id).or_default().push(network_id);
-    }
     Ok(result)
 }
 
 async fn backfill_missing_messages_networks(
     message_ids: &[i64],
     dbx: &DatabaseConnection,
-) -> Result<(), AppError> {
-    let existing_message_ids = sigint_inbox_item_network::Entity::find()
-        .select_only()
-        .column(sigint_inbox_item_network::Column::SigintInboxItemId)
-        .filter(
-            sigint_inbox_item_network::Column::SigintInboxItemId
-                .is_in(message_ids.to_vec()),
-        )
-        .into_tuple::<i64>()
-        .all(dbx)
-        .await
-        .context(h!())?;
-    let existing_message_ids =
-        existing_message_ids.into_iter().collect::<HashSet<_>>();
-
+) -> Result<HashMap<i64, Vec<i64>>, AppError> {
+    let mut result: HashMap<i64, Vec<i64>> = HashMap::new();
+    let mut existing_message_ids = HashSet::new();
+    for ids in message_ids.chunks(20000) {
+        sigint_inbox_item_network::Entity::find()
+            .select_only()
+            .column(sigint_inbox_item_network::Column::SigintInboxItemId)
+            .column(sigint_inbox_item_network::Column::SigintNetworkId)
+            .filter(
+                sigint_inbox_item_network::Column::SigintInboxItemId
+                    .is_in(ids.to_vec()),
+            )
+            .into_tuple::<(i64, i64)>()
+            .all(dbx)
+            .await
+            .context(h!())?
+            .into_iter()
+            .for_each(|(item_id, network_id)| {
+                existing_message_ids.insert(item_id);
+                result.entry(item_id).or_default().push(network_id);
+            });
+    }
     let missing_message_ids = message_ids
         .iter()
         .filter(|id| !existing_message_ids.contains(id))
         .copied()
         .collect_vec();
     if missing_message_ids.is_empty() {
-        return Ok(());
+        return Ok(HashMap::default());
     }
 
     let items_to_recalculate = sigint_inbox_item::Entity::find()
@@ -455,16 +442,19 @@ async fn backfill_missing_messages_networks(
         .await
         .context(h!())?;
     if items_to_recalculate.is_empty() {
-        return Ok(());
+        return Ok(HashMap::default());
     }
 
-    crate::sigint::network::etalon_calc::calculate_sigint_inbox_item_networks(
+    let new_entries = crate::sigint::network::etalon_calc::calculate_sigint_inbox_item_networks(
         items_to_recalculate,
         dbx,
     )
     .await
     .context(h!())?;
-    Ok(())
+    for (id, ids) in new_entries {
+        result.insert(id, ids);
+    }
+    Ok(result)
 }
 
 pub async fn load_inbox_callsigns(
