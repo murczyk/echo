@@ -9,19 +9,42 @@ import {
   labelMatchesTerm,
   termToApiString,
 } from './palitra-search';
+import { truncateToMaxRendered, cullSearchResultsToViewport } from './utils/palitra-render-utils';
+
+/** When search returns more than this many points, only markers in the current viewport are drawn. */
+const SEARCH_RESULTS_VIEWPORT_CULL_THRESHOLD = 1000;
+
+/** Never render more than this many point markers (viewport-culled or not) to avoid lockup. */
+const MAX_RENDERED_POINTS = 1000;
+
+/** When computing fitBounds, sample at most this many points to avoid O(n) with huge result sets. */
+const BOUNDS_SAMPLE_SIZE = 2000;
+
+/** Max markers to add per frame when building clusters (keeps UI responsive). */
+const MARKER_ADD_CHUNK_SIZE = 60;
+
+/** Debounce moveend before re-rendering viewport chunk (avoids work during pan). */
+const RENDER_VIEWPORT_DEBOUNCE_MS = 100;
 
 export class PalitraManager {
   private cacheManager: PalitraCacheManager;
   private layerGroup: L.LayerGroup;
   private pointsClusters: Map<number, L.MarkerClusterGroup> = new Map();
+  /** All point markers added (for viewport-based label visibility). Cleared when clusters are cleared. */
+  private pointMarkers: (L.CircleMarker & { _palitraTooltipLabel?: string })[] = [];
   private control: PalitrasControl | null = null;
-  
+
   private palitras: PalitraDetails[] = [];
   private visibleIds: number[] = [];
   private enabled = true;
   private boundsApplied = false;
   private requestTimer: number | null = null;
   private _searchQuery = '';
+  /** Full search result from BE. Only create markers for viewport chunk. */
+  private _lastSearchResult: { palitra_id: number; points: PalitraPoint[] }[] | null = null;
+  /** Incremented on each render start; used to discard stale async renders. */
+  private _renderGeneration = 0;
+  private _renderViewportTimer: number | null = null;
 
   constructor(
     private map: L.Map,
@@ -39,11 +62,24 @@ export class PalitraManager {
   private setupEventListeners(): void {
     this.map.on('zoomend', () => {
       this.updatePoints();
-      this.schedulePointsRequest();
+      this.scheduleRenderPointsInViewport();
+      this.updatePointLabelVisibility();
     });
     this.map.on('moveend', () => {
-      this.schedulePointsRequest();
+      this.scheduleRenderPointsInViewport(); 
+      this.updatePointLabelVisibility();
     });
+  }
+
+// debounced: cleanup outside viewport, re-render chunk
+  private scheduleRenderPointsInViewport(): void {
+    if (this._renderViewportTimer !== null) {
+      window.clearTimeout(this._renderViewportTimer);
+    }
+    this._renderViewportTimer = window.setTimeout(() => {
+      this._renderViewportTimer = null;
+      this.renderPointsInViewport();
+    }, RENDER_VIEWPORT_DEBOUNCE_MS);
   }
 
   updatePalitras(palitras: PalitraDetails[]): void {
@@ -74,7 +110,6 @@ export class PalitraManager {
     this.updateControlVisibility();
     this.boundsApplied = false;
     this.updatePolygons();
-    this.schedulePointsRequest();
   }
 
   setControl(control: PalitrasControl): void {
@@ -90,10 +125,11 @@ export class PalitraManager {
     const q = (query ?? '').trim();
     if (q === '') {
       this._searchQuery = '';
+      this._lastSearchResult = null;
+      this._renderGeneration++;
       this.callbacks.onSearchLoadingChanged(false);
       this.callbacks.onSearchResultsCountChanged(null);
       this.updatePoints();
-      this.schedulePointsRequest();
       return;
     }
     this._searchQuery = q;
@@ -159,45 +195,120 @@ export class PalitraManager {
     }));
   }
 
-  private _showSearchResults(data: { palitra_id: number; points: PalitraPoint[] }[]): void {
+  private async _showSearchResults(
+    data: { palitra_id: number; points: PalitraPoint[] }[]
+  ): Promise<void> {
     const resultsCount = data.reduce((acc, item) => acc + item.points.length, 0);
     this.callbacks.onSearchResultsCountChanged(resultsCount);
 
     this.pointsClusters.forEach((cluster) => this.map.removeLayer(cluster));
     this.pointsClusters.clear();
+    this.pointMarkers = [];
 
     if (!this.enabled) {
       return;
     }
 
-    const palitraById = new Map(this.palitras.map(p => [p.palitra.id, p.palitra]));
-    const boundsPoints: L.LatLng[] = [];
+    /** Keep full response in memory; we only create markers for the current viewport. */
+    this._lastSearchResult = data;
 
-    data.forEach(({ palitra_id, points }) => {
-      const palitra = palitraById.get(palitra_id);
-      if (!palitra || points.length === 0) {
-        return;
-      }
-      const cluster = this.createPointsCluster(palitra, points);
+    if (resultsCount > MAX_RENDERED_POINTS) {
+      this.callbacks.onSearchResultsTruncated?.(MAX_RENDERED_POINTS, resultsCount);
+    }
+
+    const fullBounds = this._boundsOfSearchResults(data);
+    if (fullBounds) {
+      this.map.fitBounds(fullBounds, { padding: [40, 40], maxZoom: 14 });
+    }
+
+    await this.renderPointsInViewport();
+  }
+
+  /**
+   * From _lastSearchResult (full BE response), take only the chunk in current viewport,
+   * create markers for that chunk only. Called on initial search and on moveend/zoomend (debounced).
+   */
+  private async renderPointsInViewport(): Promise<void> {
+    if (!this._searchQuery || !this.enabled || !this._lastSearchResult) {
+      return;
+    }
+
+    const currentGen = ++this._renderGeneration;
+
+    const data = this._lastSearchResult;
+    const resultsCount = data.reduce((acc, item) => acc + item.points.length, 0);
+
+    let toRender =
+      resultsCount > SEARCH_RESULTS_VIEWPORT_CULL_THRESHOLD
+        ? cullSearchResultsToViewport(data, this.getBufferedBounds())
+        : data;
+
+    const totalInView = toRender.reduce((acc, item) => acc + item.points.length, 0);
+    if (totalInView > MAX_RENDERED_POINTS) {
+      toRender = truncateToMaxRendered(toRender, MAX_RENDERED_POINTS);
+    }
+
+    this.pointsClusters.forEach((cluster) => this.map.removeLayer(cluster));
+    this.pointsClusters.clear();
+    this.pointMarkers = [];
+
+    const palitraById = new Map(this.palitras.map((p) => [p.palitra.id, p.palitra]));
+
+    const entries = toRender.filter(
+      ({ palitra_id, points }) => palitraById.get(palitra_id) && points.length > 0
+    );
+
+    const clusters = await Promise.all(
+      entries.map(async ({ palitra_id, points }) => {
+        const palitra = palitraById.get(palitra_id)!;
+        const cluster = await this.createPointsCluster(palitra, points);
+        return { palitra_id, cluster };
+      })
+    );
+
+    if (currentGen !== this._renderGeneration) {
+      return;
+    }
+
+    clusters.forEach(({ palitra_id, cluster }) => {
       if (cluster) {
         this.pointsClusters.set(palitra_id, cluster);
         this.map.addLayer(cluster);
-        cluster.eachLayer((layer) => {
-          const latLng = (layer as L.CircleMarker).getLatLng();
-          boundsPoints.push(latLng);
-        });
       }
     });
 
-    if (boundsPoints.length > 0) {
-      const bounds = L.latLngBounds(boundsPoints);
-      this.map.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 });
+    this.updatePointLabelVisibility();
+  }
+
+  private _boundsOfSearchResults(
+    data: { palitra_id: number; points: PalitraPoint[] }[]
+  ): L.LatLngBounds | null {
+    const total = data.reduce((acc, item) => acc + item.points.length, 0);
+    if (total === 0) return null;
+
+    const sampleStep =
+      total <= BOUNDS_SAMPLE_SIZE ? 1 : Math.max(1, Math.floor(total / BOUNDS_SAMPLE_SIZE));
+    const latLngs: L.LatLng[] = [];
+    let index = 0;
+    for (const { points } of data) {
+      for (const p of points) {
+        if (index % sampleStep === 0) {
+          latLngs.push(L.latLng(p.coords.lat, p.coords.lng));
+        }
+        index++;
+      }
     }
+    if (latLngs.length === 0) return null;
+    return L.latLngBounds(latLngs);
   }
 
   destroy(): void {
     if (this.requestTimer !== null) {
       window.clearTimeout(this.requestTimer);
+    }
+    if (this._renderViewportTimer !== null) {
+      window.clearTimeout(this._renderViewportTimer);
+      this._renderViewportTimer = null;
     }
     this.layerGroup.clearLayers();
     this.map.removeLayer(this.layerGroup);
@@ -223,10 +334,7 @@ export class PalitraManager {
     if (!this.enabled) {
       return;
     }
-    // Only fetch viewport points when search is active (points are only rendered when searching)
-    if (!this._searchQuery) {
-      return;
-    }
+    // Points requested only when visible palitra list change
     if (this.visibleIds.length === 0) {
       return;
     }
@@ -268,9 +376,10 @@ export class PalitraManager {
     }
   }
 
+  /** Visible viewport bounds with 10% padding. */
   private getBufferedBounds(): L.LatLngBounds {
     const bounds = this.map.getBounds();
-    return bounds.pad(0.2);
+    return bounds.pad(0.1);
   }
 
   private filterByBounds(bounds: L.LatLngBounds): number[] {
@@ -412,12 +521,78 @@ export class PalitraManager {
     return polygon;
   }
 
-  private createPointsCluster(palitra: Palitra, points: PalitraPoint[]): L.MarkerClusterGroup | null {
+  private addMarkerToCluster(
+    clusterGroup: L.MarkerClusterGroup,
+    palitra: Palitra,
+    point: PalitraPoint
+  ): void {
+    const marker = L.circleMarker([point.coords.lat, point.coords.lng], {
+      radius: 6,
+      fillColor: palitra.color_hex,
+      color: '#fff',
+      weight: 2,
+      opacity: 1,
+      fillOpacity: 0.8
+    });
+
+    const popupContent = `
+        <div style="padding: 8px;">
+          <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+            <span style="display: inline-block; width: 16px; height: 16px; background-color: ${palitra.color_hex}; border: 1px solid #ccc; border-radius: 50%;"></span>
+            <strong style="font-size: 14px;">${palitra.name}</strong>
+          </div>
+          ${point.label ? `<div style="font-size: 13px; margin-bottom: 4px;"><strong>Мітка:</strong> ${point.label}</div>` : ''}
+          <div style="font-size: 12px; color: #666;">
+            <div>Координати: ${point.coords.lat.toFixed(5)}, ${point.coords.lng.toFixed(5)}</div>
+          </div>
+        </div>
+      `;
+
+    marker.bindPopup(popupContent);
+
+    const tooltipLabel = point.label ?? palitra.name;
+    if (tooltipLabel) {
+      (marker as L.CircleMarker & { _palitraTooltipLabel?: string })._palitraTooltipLabel =
+        tooltipLabel;
+    }
+
+    this.pointMarkers.push(marker as L.CircleMarker & { _palitraTooltipLabel?: string });
+    clusterGroup.addLayer(marker);
+  }
+
+  /** Bind permanent tooltips only for markers in viewport; unbind for those outside. */
+  private updatePointLabelVisibility(): void {
+    const bounds = this.map.getBounds();
+    for (const marker of this.pointMarkers) {
+      const label = marker._palitraTooltipLabel;
+      if (!label) continue;
+
+      const inView = bounds.contains(marker.getLatLng());
+      const hasTooltip = marker.getTooltip();
+      const isPermanent = hasTooltip?.options?.permanent === true;
+
+      if (inView && !isPermanent) {
+        marker.unbindTooltip();
+        marker.bindTooltip(label, {
+          permanent: true,
+          direction: 'top',
+          offset: [0, -10],
+          className: 'palitra-point-label'
+        });
+      } else if (!inView && hasTooltip) {
+        marker.unbindTooltip();
+      }
+    }
+  }
+
+  private async createPointsCluster(
+    palitra: Palitra,
+    points: PalitraPoint[]
+  ): Promise<L.MarkerClusterGroup | null> {
     if (!points || points.length === 0) {
       return null;
     }
 
-    // Create cluster group with custom styling
     const clusterGroup = L.markerClusterGroup({
       maxClusterRadius: 40,
       animate: false,
@@ -437,46 +612,15 @@ export class PalitraManager {
       }
     });
 
-    // Add points to cluster
-    points.forEach(point => {
-      const marker = L.circleMarker([point.coords.lat, point.coords.lng], {
-        radius: 6,
-        fillColor: palitra.color_hex,
-        color: '#fff',
-        weight: 2,
-        opacity: 1,
-        fillOpacity: 0.8
-      });
-
-      // Add popup with point info
-      const popupContent = `
-        <div style="padding: 8px;">
-          <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
-            <span style="display: inline-block; width: 16px; height: 16px; background-color: ${palitra.color_hex}; border: 1px solid #ccc; border-radius: 50%;"></span>
-            <strong style="font-size: 14px;">${palitra.name}</strong>
-          </div>
-          ${point.label ? `<div style="font-size: 13px; margin-bottom: 4px;"><strong>Мітка:</strong> ${point.label}</div>` : ''}
-          <div style="font-size: 12px; color: #666;">
-            <div>Координати: ${point.coords.lat.toFixed(5)}, ${point.coords.lng.toFixed(5)}</div>
-          </div>
-        </div>
-      `;
-
-      marker.bindPopup(popupContent);
-
-      // Add tooltip with label if exists
-      const tooltipLabel = point.label ?? palitra.name;
-      if (tooltipLabel) {
-        marker.bindTooltip(tooltipLabel, {
-          permanent: true,
-          direction: 'top',
-          offset: [0, -10],
-          className: 'palitra-point-label'
-        });
+    for (let i = 0; i < points.length; i += MARKER_ADD_CHUNK_SIZE) {
+      const chunk = points.slice(i, i + MARKER_ADD_CHUNK_SIZE);
+      chunk.forEach((point) =>
+        this.addMarkerToCluster(clusterGroup, palitra, point)
+      );
+      if (i + MARKER_ADD_CHUNK_SIZE < points.length) {
+        await new Promise<void>((r) => requestAnimationFrame(() => r()));
       }
-
-      clusterGroup.addLayer(marker);
-    });
+    }
 
     return clusterGroup;
   }
