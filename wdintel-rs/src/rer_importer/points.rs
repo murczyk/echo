@@ -210,3 +210,40 @@ where
     }
     Ok(map)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{is_word_boundary, offset_point_tokens};
+    use crate::rer_importer::highlight::CNPoint;
+
+    #[test]
+    fn test_is_word_boundary_allows_whole_word() {
+        let body = "по точке идете";
+        let body_chars: Vec<char> = body.chars().collect();
+        let start = 3;
+        let end = 8;
+        assert!(is_word_boundary(&body_chars, start, end));
+    }
+
+    #[test]
+    fn test_is_word_boundary_rejects_substring() {
+        let body = "заточка";
+        let body_chars: Vec<char> = body.chars().collect();
+        let start = 1;
+        let end = 6;
+        assert!(!is_word_boundary(&body_chars, start, end));
+    }
+
+    #[test]
+    fn test_offset_point_tokens_shifts_positions() {
+        let tokens = vec![CNPoint {
+            begin: 2,
+            end: 5,
+            etalon: "ТОЧКА".to_string(),
+            text: "точ".to_string(),
+        }];
+        let shifted = offset_point_tokens(tokens, 10);
+        assert_eq!(shifted[0].begin, 12);
+        assert_eq!(shifted[0].end, 15);
+    }
+}
