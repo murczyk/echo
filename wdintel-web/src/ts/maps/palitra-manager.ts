@@ -630,9 +630,9 @@ export class PalitraManager {
     if (!this._searchQuery) {
       this.pointsClusters.forEach((cluster) => this.map.removeLayer(cluster));
       this.pointsClusters.clear();
+      this.pointMarkers = [];
       return;
     }
-    // When search is active, points are rendered by _showSearchResults; nothing to do here
   }
 
   private updateControlVisibility(): void {
