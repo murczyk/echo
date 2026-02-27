@@ -35,6 +35,13 @@ type Props = {
   submitting: boolean;
   disabled: boolean;
   validationError: string | null;
+  duplicateHints: Array<{
+    id: number;
+    callsign: string;
+    position: string;
+    comment: string;
+    unitName: string;
+  }>;
   onAddUnitIdChange: (unitId: number | null) => void;
   onAddSourceIdChange: (sourceId: number | null) => void;
   onRowChange: (index: number, row: CallsignDraftRow) => void;
@@ -56,6 +63,7 @@ export function AddCallsignsDrawer({
   submitting,
   disabled,
   validationError,
+  duplicateHints,
   onAddUnitIdChange,
   onAddSourceIdChange,
   onRowChange,
@@ -67,7 +75,6 @@ export function AddCallsignsDrawer({
 }: Props) {
   const formDisabled = disabled || submitting;
   const hasAtLeastOneCallsign = rows.some((row) => row.callsign.trim() !== '');
-  const hasRowWithEmptyCallsign = rows.some((row) => row.callsign.trim() === '');
   const drawerTitleId = 'callsigns-add-drawer-title';
   const addUnitSelectLabelId = 'callsigns-add-unit-label';
   const addSourceSelectLabelId = 'callsigns-add-source-label';
@@ -100,11 +107,21 @@ export function AddCallsignsDrawer({
       </Box>
       <Box sx={{ p: 2.5, flex: 1, overflowY: 'auto' }}>
         <Stack spacing={2.5}>
-          <Typography variant="body2" color="text.secondary">
-            Підтримується вставка табличних даних (TSV: позивний, посада, коментар)
-          </Typography>
-
           {validationError ? <Alert severity="error">{validationError}</Alert> : null}
+          {duplicateHints.length > 0 ? (
+            <Alert severity="warning">
+              <Stack spacing={0.5}>
+                <Typography variant="body2" fontWeight={600}>
+                  Можливо, такий позивний вже існує:
+                </Typography>
+                {duplicateHints.map((item) => (
+                  <Typography key={item.id} variant="caption" sx={{ display: 'block' }}>
+                    {item.callsign} | {item.position || '—'} | {item.unitName} | {item.comment || '—'}
+                  </Typography>
+                ))}
+              </Stack>
+            </Alert>
+          ) : null}
 
           <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
             <FormControl sx={{ flex: 1 }} size="small" disabled={formDisabled}>
@@ -160,6 +177,10 @@ export function AddCallsignsDrawer({
             </FormControl>
           </Stack>
 
+          <Typography variant="body2" color="text.secondary">
+            Підтримується вставка табличних даних (TSV: позивний, посада, коментар)
+          </Typography>
+
           <TextField
             label="Швидка вставка TSV"
             placeholder="Пакетно вставте рядки: позивний<TAB>посада<TAB>коментар"
@@ -214,7 +235,7 @@ export function AddCallsignsDrawer({
         <Button
           variant="contained"
           onClick={onSubmit}
-          disabled={formDisabled || addUnitId == null || !hasAtLeastOneCallsign || hasRowWithEmptyCallsign}
+          disabled={formDisabled || addUnitId == null || !hasAtLeastOneCallsign}
         >
           {submitting ? 'Збереження…' : 'Додати'}
         </Button>

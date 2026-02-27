@@ -26,6 +26,7 @@ import {
   getDefaultPageSize,
   getExportPermission,
   getExportPermissionFromRoles,
+  hasAnyDraftValue,
   isAbortError,
   makeCreatePayload,
   makeUpdatePayload,
@@ -36,6 +37,7 @@ import {
   validateDraftRows,
   validateEditForm,
 } from './helpers';
+import { readDenseTableFromUrl, setDenseTableQueryParam } from '../../utils/denseTableQuery';
 import type { CallsignDraftRow, CallsignEditForm, CallsignsFilterState, CallsignsSortState, DownloadKind, UiStatus } from './types';
 
 function updateUrlSearchParams(mutator: (params: URLSearchParams) => void) {
@@ -91,7 +93,7 @@ function readInitialSidebarOpenFromUrl(): boolean {
   return true;
 }
 
-function syncCallsignsStateToUrl(filters: CallsignsFilterState, sort: CallsignsSortState, sidebarOpen: boolean) {
+function syncCallsignsStateToUrl(filters: CallsignsFilterState, sort: CallsignsSortState, sidebarOpen: boolean, denseTable: boolean) {
   updateUrlSearchParams((params) => {
     const setOrDelete = (key: string, value: string | null | undefined) => {
       if (value == null || value === '') {
@@ -138,6 +140,8 @@ function syncCallsignsStateToUrl(filters: CallsignsFilterState, sort: CallsignsS
     } else {
       params.set('units_sidebar', '0');
     }
+
+    setDenseTableQueryParam(params, denseTable);
   });
 }
 
@@ -168,6 +172,7 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
   const [filters, setFilters] = React.useState<CallsignsFilterState>(() => readInitialCallsignsFiltersFromUrl());
   const [sort, setSort] = React.useState<CallsignsSortState>(() => readInitialCallsignsSortFromUrl());
   const [sidebarOpen, setSidebarOpen] = React.useState<boolean>(() => readInitialSidebarOpenFromUrl());
+  const [denseTable, setDenseTable] = React.useState<boolean>(() => readDenseTableFromUrl());
 
   const [addUnitId, setAddUnitId] = React.useState<number | null>(null);
   const [addSourceId, setAddSourceId] = React.useState<number | null>(null);
@@ -217,6 +222,34 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
     [sortedCallsigns, unitsById, sourcesById],
   );
   const unitStatsView = React.useMemo(() => mergeUnitStatsWithUnits(unitStats, unitsById), [unitStats, unitsById]);
+  const addPotentialDuplicates = React.useMemo(() => {
+    const firstRow = addRows[0];
+    if (!firstRow) return [];
+
+    const callsignInput = firstRow.callsign.trim().toLocaleLowerCase();
+    const positionInput = firstRow.position.trim().toLocaleLowerCase();
+    const hasInput = callsignInput !== '' || positionInput !== '' || addUnitId !== null;
+    if (!hasInput) return [];
+
+    return callsigns
+      .filter((callsign) => {
+        const callsignMatches =
+          callsignInput === '' || callsign.callsign.toLocaleLowerCase().includes(callsignInput);
+        const positionMatches =
+          positionInput === '' || callsign.position.toLocaleLowerCase().includes(positionInput);
+        const unitMatches = addUnitId == null || callsign.unitId === addUnitId;
+
+        return callsignMatches && positionMatches && unitMatches;
+      })
+      .slice(0, 10)
+      .map((callsign) => ({
+        id: callsign.id,
+        callsign: callsign.callsign,
+        position: callsign.position,
+        comment: callsign.comment,
+        unitName: unitsById.get(callsign.unitId)?.name ?? `#${callsign.unitId}`,
+      }));
+  }, [addRows, addUnitId, callsigns, unitsById]);
 
   function clearListRequest() {
     activeListAbortRef.current?.abort();
@@ -364,8 +397,8 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
   }, [filters, sort]);
 
   React.useEffect(() => {
-    syncCallsignsStateToUrl(filters, sort, sidebarOpen);
-  }, [filters, sort, sidebarOpen]);
+    syncCallsignsStateToUrl(filters, sort, sidebarOpen, denseTable);
+  }, [filters, sort, sidebarOpen, denseTable]);
 
   React.useEffect(() => {
     setSelectedCallsignIds((prev) => prev.filter((id) => callsigns.some((callsign) => callsign.id === id)));
@@ -442,6 +475,7 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
   }
 
   function onOpenAddDrawer() {
+    if (!permissions.canEdit) return;
     setAddDrawerOpen(true);
     setAddValidationError(null);
   }
@@ -465,6 +499,8 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
   }
 
   async function onSubmitAdd() {
+    if (!permissions.canEdit) return;
+
     setStatus(null);
     setAddValidationError(null);
 
@@ -475,10 +511,7 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
       setAddValidationError('Оберіть джерело');
       return;
     }
-    if (!addRows.some((row) => row.callsign.trim() !== '')) {
-      return;
-    }
-    if (addRows.some((row) => row.callsign.trim() === '')) {
+    if (!addRows.some((row) => hasAnyDraftValue(row))) {
       return;
     }
 
@@ -494,23 +527,46 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
     setAddSubmitting(true);
 
     try {
-      const nonEmptyRows = addRows.filter((row) => row.callsign.trim() !== '' || row.position.trim() !== '' || row.comment.trim() !== '' || row.radioFreq.trim() !== '' || row.developing);
+      const nonEmptyRows = addRows.filter((row) => hasAnyDraftValue(row));
       const created: Callsign[] = [];
+      const failed: Array<{ row: CallsignDraftRow; error: string }> = [];
+
       for (const row of nonEmptyRows) {
-        const item = await createCallsign(makeCreatePayload(row, addUnitId, addSourceId));
-        created.push(item);
+        try {
+          const item = await createCallsign(makeCreatePayload(row, addUnitId, addSourceId));
+          created.push(item);
+        } catch (error) {
+          if (isUnauthorizedError(error)) {
+            redirectToLogin();
+            return;
+          }
+          failed.push({ row, error: formatErrorMessage(error) });
+        }
       }
 
-      setCallsigns((prev) => [...created, ...prev]);
-      setAddRows([createEmptyDraftRow()]);
-      setAddDrawerOpen(false);
-      setStatus({ kind: 'success', text: `Додано позивних: ${created.length}` });
-      await refreshLookupsAndStats();
-    } catch (error) {
-      try {
-        unauthorizedOrThrow(error);
-      } catch (finalError) {
-        setAddValidationError(`Помилка створення позивного: ${formatErrorMessage(finalError)}`);
+      if (created.length > 0) {
+        setCallsigns((prev) => [...created, ...prev]);
+        await refreshLookupsAndStats();
+      }
+
+      if (failed.length === 0) {
+        setAddRows([createEmptyDraftRow()]);
+        setAddDrawerOpen(false);
+        setStatus({ kind: 'success', text: `Додано позивних: ${created.length}` });
+        return;
+      }
+
+      setAddRows(failed.map((item) => item.row));
+      setAddValidationError(
+        failed.length === 1
+          ? `Не вдалося додати 1 позивний: ${failed[0]?.error ?? 'Невідома помилка'}`
+          : `Не вдалося додати ${failed.length} позивних. Перша помилка: ${failed[0]?.error ?? 'Невідома помилка'}`,
+      );
+      if (created.length > 0) {
+        setStatus({
+          kind: 'error',
+          text: `Додано: ${created.length}, не вдалося: ${failed.length}`,
+        });
       }
     } finally {
       setAddSubmitting(false);
@@ -518,6 +574,7 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
   }
 
   function onOpenEdit(callsign: Callsign) {
+    if (!permissions.canEdit) return;
     setEditValidationError(null);
     setEditForm(callsignToEditForm(callsign));
   }
@@ -558,6 +615,7 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
   }
 
   function onRequestDelete(callsign: Callsign) {
+    if (!permissions.canEdit) return;
     if (bulkDeleteInFlight || deleteInFlightId !== null) return;
     setDeleteTarget(callsign);
   }
@@ -593,6 +651,7 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
   }
 
   function requestBulkDelete() {
+    if (!permissions.canEdit) return;
     if (bulkDeleteInFlight || deleteInFlightId !== null || deleteTarget !== null) return;
 
     const selectedSet = new Set(selectedCallsignIds);
@@ -700,7 +759,9 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
     showLoadMore,
     status,
     filters,
+    denseTable,
     sidebarOpen,
+    setDenseTable,
     setSidebarOpen,
     onFiltersChange,
     onSort,
@@ -718,6 +779,7 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
     onOpenAddDrawer,
     onCloseAddDrawer,
     addRows,
+    addPotentialDuplicates,
     addSubmitting,
     addValidationError,
     onRowChange,

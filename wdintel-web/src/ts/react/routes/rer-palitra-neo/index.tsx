@@ -58,6 +58,7 @@ export function RerPalitraNeoPage() {
         <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
           <PalitraTable
             loading={page.loading}
+            denseTable={page.denseTable}
             palitras={page.sortedPalitras}
             sortColumn={page.sortColumn}
             sortDirection={page.sortDirection}
@@ -75,6 +76,7 @@ export function RerPalitraNeoPage() {
             onSetPalitraSelected={page.setPalitraSelected}
             onSetAllPalitrasSelected={page.setAllPalitrasSelected}
             onClearSelectedPalitras={page.clearSelectedPalitras}
+            onDenseTableChange={page.setDenseTable}
           />
         </Box>
       </Stack>

@@ -37,7 +37,7 @@ export function RerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?: st
         <PageHeader
           className="px-4"
           title="позивні"
-          actions={
+          actions={page.permissions.canEdit ? (
             <Stack direction="row" spacing={2}>
               <Button
                 variant="outlined"
@@ -57,7 +57,7 @@ export function RerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?: st
                 Додати позивні
               </Button>
             </Stack>
-          }
+          ) : undefined}
         />
 
         {page.status ? <Alert severity={page.status.kind}>{page.status.text}</Alert> : null}
@@ -93,6 +93,7 @@ export function RerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?: st
                 <Box sx={{ p: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
                   <CallsignsFilters
                     filters={page.filters}
+                    denseTable={page.denseTable}
                     disabled={page.loading || page.addSubmitting || page.editSubmitting || page.deleteSubmitting}
                     sidebarOpen={page.sidebarOpen}
                     selectedCount={page.selectedCallsignIds.length}
@@ -102,6 +103,7 @@ export function RerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?: st
                     onClearFilters={page.onClearFilters}
                     onClearSelectedCallsigns={page.clearSelectedCallsigns}
                     onToggleSidebar={() => page.setSidebarOpen((prev: boolean) => !prev)}
+                    onToggleDenseTable={() => page.setDenseTable((prev: boolean) => !prev)}
                     onDownloadCsv={page.onDownloadCsv}
                     onDownloadXlsx={page.onDownloadXlsx}
                   />
@@ -109,6 +111,8 @@ export function RerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?: st
                 <Box sx={{ flex: 1, minHeight: { xs: 'auto', lg: 0 } }}>
                   <CallsignsTable
                     embedded
+                    canEdit={page.permissions.canEdit}
+                    denseTable={page.denseTable}
                     rows={page.rows}
                     loading={page.loading}
                     refreshing={page.refreshing}
@@ -154,8 +158,9 @@ export function RerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?: st
         addSourceId={page.addSourceId}
         rows={page.addRows}
         submitting={page.addSubmitting}
-        disabled={false}
+        disabled={!page.permissions.canEdit}
         validationError={page.addValidationError}
+        duplicateHints={page.addPotentialDuplicates}
         onAddUnitIdChange={page.setAddUnitId}
         onAddSourceIdChange={page.setAddSourceId}
         onRowChange={page.onRowChange}

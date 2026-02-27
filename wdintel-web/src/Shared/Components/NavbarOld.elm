@@ -65,7 +65,7 @@ navBar user shared activeName props =
             , Menu (Internal Route.Path.AreasOfResponsibility) "areasOfResponsibility" "смуги (стара)"
             , Menu (Internal Route.Path.Admin_Keys) "keys" "ключі (стара)"
             , Menu (Internal Route.Path.Admin_Messenger) "messenger" "месенджери (стара)"
-            , Menu (Internal Route.Path.Admin_ControlPanel) "control-panel" "панель керування (стара)"
+            , Menu (Internal Route.Path.Admin_ControlPanel) "control-panel" "панель (стара)"
             ]
 
         etalonkaSubs =
@@ -315,7 +315,7 @@ menuItemWithSubs props activeName activeNameExp nameText subs =
         , div [ class "absolute left-0 pt-2 z-[3001]" ]
             [ ul
                 [ id dropdownMenuId
-                , class "w-56 bg-[var(--color-card)] rounded-lg shadow-lg border border-[var(--color-border)] transition-all duration-200"
+                , class "w-56 py-2 bg-[var(--color-card)] rounded-lg shadow-lg border border-[var(--color-border)] transition-all duration-200"
                 , attribute "role" "menu"
                 , classList
                     [ ( "hidden", not isOpen )

@@ -26,6 +26,7 @@ import {
   isAdmin,
   toCreateReq,
 } from './helpers';
+import { readDenseTableFromUrl, setDenseTableQueryParam } from '../../utils/denseTableQuery';
 import { KmzColorOption, PalitraFormState, SortColumn, SortDirection, UiError } from './types';
 
 function updateUrlSearchParams(mutator: (params: URLSearchParams) => void) {
@@ -55,7 +56,7 @@ function readInitialPalitraSortFromUrl(): { sortColumn: SortColumn; sortDirectio
   return { sortColumn, sortDirection };
 }
 
-function syncPalitraSortToUrl(sortColumn: SortColumn, sortDirection: SortDirection) {
+function syncPalitraSortToUrl(sortColumn: SortColumn, sortDirection: SortDirection, denseTable: boolean) {
   updateUrlSearchParams((params) => {
     if (sortColumn === 'lastUploadedAtTs') {
       params.delete('pal_sort_col');
@@ -68,6 +69,8 @@ function syncPalitraSortToUrl(sortColumn: SortColumn, sortDirection: SortDirecti
     } else {
       params.set('pal_sort_dir', sortDirection);
     }
+
+    setDenseTableQueryParam(params, denseTable);
   });
 }
 
@@ -103,6 +106,7 @@ export function useRerPalitraNeoPage() {
 
   const [sortColumn, setSortColumn] = React.useState<SortColumn>(initialSort.sortColumn);
   const [sortDirection, setSortDirection] = React.useState<SortDirection>(initialSort.sortDirection);
+  const [denseTable, setDenseTable] = React.useState<boolean>(() => readDenseTableFromUrl());
 
   const [createOpen, setCreateOpen] = React.useState(false);
   const [createForm, setCreateForm] = React.useState<PalitraFormState>(getInitialCreateForm(null, null));
@@ -163,8 +167,8 @@ export function useRerPalitraNeoPage() {
   }, [palitras, sortColumn, sortDirection]);
 
   React.useEffect(() => {
-    syncPalitraSortToUrl(sortColumn, sortDirection);
-  }, [sortColumn, sortDirection]);
+    syncPalitraSortToUrl(sortColumn, sortDirection, denseTable);
+  }, [sortColumn, sortDirection, denseTable]);
 
   const reloadPalitras = React.useCallback(async () => {
     const list = await listPalitras();
@@ -581,6 +585,7 @@ export function useRerPalitraNeoPage() {
     sortedPalitras,
     sortColumn,
     sortDirection,
+    denseTable,
     inFlightDeleteId,
     inFlightUploadId,
     deleteDialogPalitra,
@@ -615,6 +620,7 @@ export function useRerPalitraNeoPage() {
     openEdit,
     closeEdit,
     onSortColumn,
+    setDenseTable,
     requestUploadPoints,
     requestDelete,
     cancelDelete,

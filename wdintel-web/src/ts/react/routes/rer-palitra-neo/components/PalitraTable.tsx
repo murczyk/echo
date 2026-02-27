@@ -32,6 +32,8 @@ import { getContrastRatio } from '@mui/material/styles';
 import { ChangeEvent, useEffect, useMemo, useState } from 'react';
 
 import { AreaOfResponsibility, MyScope, Organism, Palitra, User } from '../../../../../Bindings';
+import { commonDenseTableSx } from '../../../components/tableDensity';
+import { TableDensityToggleButton } from '../../../components/TableDensityToggleButton';
 import { TableEmptyState } from '../../../components/TableEmptyState';
 import { TableLoadingRow } from '../../../components/TableLoadingRow';
 import { formatDateTime24 } from '../../../utils/misc';
@@ -40,6 +42,7 @@ import { SortColumn, SortDirection } from '../types';
 
 type Props = {
   loading: boolean;
+  denseTable: boolean;
   palitras: Palitra[];
   sortColumn: SortColumn;
   sortDirection: SortDirection;
@@ -57,6 +60,7 @@ type Props = {
   onSetPalitraSelected: (palitraId: number, checked: boolean) => void;
   onSetAllPalitrasSelected: (palitraIds: number[], checked: boolean) => void;
   onClearSelectedPalitras: () => void;
+  onDenseTableChange: (dense: boolean) => void;
 };
 
 type AuthorFilterOptions = {
@@ -65,6 +69,7 @@ type AuthorFilterOptions = {
 };
 
 type PalitraTableToolbarProps = {
+  denseTable: boolean;
   authorFilter: string;
   authorFilterOptions: AuthorFilterOptions;
   searchInput: string;
@@ -75,6 +80,7 @@ type PalitraTableToolbarProps = {
   onSearchInputChange: (value: string) => void;
   onResetFilters: () => void;
   onClearSelectedPalitras: () => void;
+  onDenseTableChange: (dense: boolean) => void;
 };
 
 const actionsColumnSx = {
@@ -164,6 +170,7 @@ function useDebouncedSearchQuery(value: string, delayMs: number): string {
 }
 
 function PalitraTableToolbar({
+  denseTable,
   authorFilter,
   authorFilterOptions,
   searchInput,
@@ -174,6 +181,7 @@ function PalitraTableToolbar({
   onSearchInputChange,
   onResetFilters,
   onClearSelectedPalitras,
+  onDenseTableChange,
 }: PalitraTableToolbarProps) {
   return (
     <Box
@@ -183,7 +191,7 @@ function PalitraTableToolbar({
         pb: 2,
         display: 'flex',
         alignItems: 'center',
-        justifyContent: selectedCount > 0 ? 'space-between' : 'flex-start',
+        justifyContent: 'space-between',
         gap: 2,
         flexWrap: 'wrap',
       }}
@@ -249,19 +257,24 @@ function PalitraTableToolbar({
             Очистити фільтри
           </Button>
         ) : null}
+
       </Box>
 
-      {selectedCount > 0 ? (
-        <Button size="small" onClick={onClearSelectedPalitras} sx={{ px: 1.5 }}>
-          Очистити вибір
-        </Button>
-      ) : null}
+      <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexShrink: 0 }}>
+        {selectedCount > 0 ? (
+          <Button size="small" onClick={onClearSelectedPalitras} sx={{ px: 1.5 }}>
+            Очистити вибір
+          </Button>
+        ) : null}
+        <TableDensityToggleButton dense={denseTable} onToggle={() => onDenseTableChange(!denseTable)} />
+      </Box>
     </Box>
   );
 }
 
 export function PalitraTable({
   loading,
+  denseTable,
   palitras,
   sortColumn,
   sortDirection,
@@ -279,7 +292,14 @@ export function PalitraTable({
   onSetPalitraSelected,
   onSetAllPalitrasSelected,
   onClearSelectedPalitras,
+  onDenseTableChange,
 }: Props) {
+  const actionsColumnSxDense = denseTable
+    ? { width: 128, minWidth: 128, pr: 1.25 }
+    : actionsColumnSx;
+  const selectionColumnSx = denseTable
+    ? { width: 44, minWidth: 44, pl: 1, pr: 0.5 }
+    : { width: 52, minWidth: 52, pl: 1.5, pr: 1 };
   const initialUrlFilters = useMemo(() => readInitialPalitraTableFilters(), []);
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(25);
@@ -421,6 +441,7 @@ export function PalitraTable({
       <>
         <Box sx={{ borderBottom: '1px solid', borderColor: 'divider' }}>
           <PalitraTableToolbar
+            denseTable={denseTable}
             authorFilter={authorFilter}
             authorFilterOptions={authorFilterOptions}
             searchInput={searchInput}
@@ -431,6 +452,7 @@ export function PalitraTable({
             onSearchInputChange={setSearchInput}
             onResetFilters={resetFilters}
             onClearSelectedPalitras={onClearSelectedPalitras}
+            onDenseTableChange={onDenseTableChange}
           />
         </Box>
         <TableContainer
@@ -442,16 +464,18 @@ export function PalitraTable({
             WebkitOverflowScrolling: 'touch',
           }}
         >
-          <Table stickyHeader size="small" sx={{ minWidth: 880, width: '100%' }}>
-            <TableHead
-              sx={{
-                '& .MuiTableCell-root': {
-                  py: 1.5,
-                },
-              }}
-            >
+          <Table
+            stickyHeader
+            size={denseTable ? 'small' : 'medium'}
+            sx={{
+              minWidth: 880,
+              width: '100%',
+              ...(denseTable ? commonDenseTableSx : {}),
+            }}
+          >
+            <TableHead>
               <TableRow>
-                <TableCell padding="checkbox">
+                <TableCell padding="checkbox" sx={selectionColumnSx}>
                   <Checkbox
                     slotProps={{ input: { 'aria-label': 'Вибрати всі палітри' } }}
                     checked={allSelectableChecked}
@@ -464,6 +488,7 @@ export function PalitraTable({
                   <TableSortLabel
                     active={sortColumn === 'name'}
                     direction={sortColumn === 'name' ? sortDirection : 'asc'}
+                    disabled={loading}
                     onClick={() => onSortColumn('name')}
                   >
                     Назва
@@ -473,6 +498,7 @@ export function PalitraTable({
                   <TableSortLabel
                     active={sortColumn === 'colorHex'}
                     direction={sortColumn === 'colorHex' ? sortDirection : 'asc'}
+                    disabled={loading}
                     onClick={() => onSortColumn('colorHex')}
                   >
                     Колір
@@ -482,6 +508,7 @@ export function PalitraTable({
                   <TableSortLabel
                     active={sortColumn === 'sourceFileName'}
                     direction={sortColumn === 'sourceFileName' ? sortDirection : 'asc'}
+                    disabled={loading}
                     onClick={() => onSortColumn('sourceFileName')}
                   >
                     Файл
@@ -491,6 +518,7 @@ export function PalitraTable({
                   <TableSortLabel
                     active={sortColumn === 'lastUploadedAtTs'}
                     direction={sortColumn === 'lastUploadedAtTs' ? sortDirection : 'desc'}
+                    disabled={loading}
                     onClick={() => onSortColumn('lastUploadedAtTs')}
                   >
                     Додано
@@ -500,13 +528,14 @@ export function PalitraTable({
                   <TableSortLabel
                     active={sortColumn === 'author'}
                     direction={sortColumn === 'author' ? sortDirection : 'asc'}
+                    disabled={loading}
                     onClick={() => onSortColumn('author')}
                   >
                     Автор
                   </TableSortLabel>
                 </TableCell>
                 <TableCell>Доступ</TableCell>
-                <TableCell align="right" sx={actionsColumnSx}>
+                <TableCell align="right" sx={actionsColumnSxDense}>
                   <Box component="span" sx={visuallyHiddenSx}>
                     Дії
                   </Box>
@@ -535,7 +564,7 @@ export function PalitraTable({
 
                   return (
                     <TableRow key={palitra.id} hover>
-                      <TableCell padding="checkbox">
+                      <TableCell padding="checkbox" sx={selectionColumnSx}>
                         <Checkbox
                           slotProps={{ input: { 'aria-label': `Вибрати палітру ${palitra.name}` } }}
                           checked={selectedPalitraIdSet.has(palitra.id)}
@@ -560,11 +589,11 @@ export function PalitraTable({
                       <TableCell>{formatDateTime24(palitra.lastUploadedAtTs)}</TableCell>
                       <TableCell>{palitra.author ?? '—'}</TableCell>
                       <TableCell>
-                        <Typography variant="caption" color="text.secondary">
+                        <Typography variant="body2" color="text.secondary">
                           {getAccessSummary(palitra, user, myScope, organisms, aors)}
                         </Typography>
                       </TableCell>
-                      <TableCell align="right" sx={actionsColumnSx}>
+                      <TableCell align="right" sx={actionsColumnSxDense}>
                         <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
                           {canModify ? (
                             <ButtonGroup size="small" variant="outlined" aria-label="Дії з палітрою">

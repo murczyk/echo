@@ -52,7 +52,7 @@ export function createDefaultFilters(now = new Date()): CallsignsFilterState {
 export function getExportPermission(user: User | null): ExportPermission {
   const roles = new Set(user?.roles ?? []);
   return {
-    canEdit: roles.has('CallsignsEditor') || roles.has('UnitsEditor'),
+    canEdit: roles.has('Admin') || roles.has('CallsignsEditor') || roles.has('UnitsEditor'),
     canExport: roles.has('Admin') || roles.has('UnitsEditor'),
   };
 }
@@ -60,7 +60,7 @@ export function getExportPermission(user: User | null): ExportPermission {
 export function getExportPermissionFromRoles(rolesList: string[]): ExportPermission {
   const roles = new Set(rolesList);
   return {
-    canEdit: roles.has('CallsignsEditor') || roles.has('UnitsEditor'),
+    canEdit: roles.has('Admin') || roles.has('CallsignsEditor') || roles.has('UnitsEditor'),
     canExport: roles.has('Admin') || roles.has('UnitsEditor'),
   };
 }
@@ -203,7 +203,7 @@ export function callsignToEditForm(callsign: Callsign): CallsignEditForm {
   };
 }
 
-export function validateDraftRows(rows: CallsignDraftRow[], sourceId: number | null): CallsignDraftValidation {
+export function validateDraftRows(rows: CallsignDraftRow[], _sourceId: number | null): CallsignDraftValidation {
   if (rows.length === 0) return { valid: false, error: 'Немає рядків для додавання' };
 
   const nonEmptyRows = rows.filter((row) => hasAnyDraftValue(row));
@@ -211,13 +211,6 @@ export function validateDraftRows(rows: CallsignDraftRow[], sourceId: number | n
 
   const missingCallsign = nonEmptyRows.find((row) => row.callsign.trim() === '');
   if (missingCallsign) return { valid: false, error: 'Поле "Позивний" є обовʼязковим' };
-
-  if (sourceId === 2) {
-    const missingFreq = nonEmptyRows.find((row) => row.radioFreq.trim() === '');
-    if (missingFreq) {
-      return { valid: false, error: "При виборі джерела 'РО' необхідно вказати частоту" };
-    }
-  }
 
   return { valid: true, error: null };
 }
