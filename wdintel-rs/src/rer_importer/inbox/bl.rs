@@ -433,7 +433,7 @@ async fn backfill_missing_messages_networks(
         .copied()
         .collect_vec();
     if missing_message_ids.is_empty() {
-        return Ok(HashMap::default());
+        return Ok(result);
     }
 
     let items_to_recalculate = sigint_inbox_item::Entity::find()
@@ -442,7 +442,7 @@ async fn backfill_missing_messages_networks(
         .await
         .context(h!())?;
     if items_to_recalculate.is_empty() {
-        return Ok(HashMap::default());
+        return Ok(result);
     }
 
     let new_entries = crate::sigint::network::etalon_calc::calculate_sigint_inbox_item_networks(
