@@ -259,6 +259,7 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
   async function runListFetch({ append, afterId, announceLoading }: { append: boolean; afterId: number | null; announceLoading: boolean }) {
     const seq = ++listRequestSeqRef.current;
     if (!append) {
+      setLoadingMore(false);
       clearListRequest();
       const controller = new AbortController();
       activeListAbortRef.current = controller;

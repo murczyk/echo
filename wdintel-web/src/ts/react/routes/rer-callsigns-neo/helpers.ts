@@ -27,8 +27,8 @@ const DEFAULT_LIMIT = 100;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export const DEFAULT_SORT: CallsignsSortState = {
-  column: 'createdAt',
-  direction: 'desc',
+  column: 'unit',
+  direction: 'asc',
 };
 
 export const DEFAULT_FILTERS = createDefaultFilters();
