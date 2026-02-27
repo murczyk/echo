@@ -13,8 +13,6 @@ pub struct Model {
     pub palitra_point_id: i64,
     #[sea_orm(column_type = "Text")]
     pub lexeme: String,
-    #[sea_orm(column_type = "custom(\"tsvector\")", nullable)]
-    pub label_tsv: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
