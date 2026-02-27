@@ -125,8 +125,8 @@ def main(
         else:
             fail_count += 1
 
-        # Clear GPU memory after each file
-        if device == "gpu":
+        # Clear GPU memory after each file (only if OCR actually runs on GPU)
+        if getattr(ocr, "device", None) == "gpu":
             gc.collect()
             paddle.device.cuda.empty_cache()
 

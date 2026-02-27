@@ -42,8 +42,9 @@ def main(src: str, dst: str = "result.png", device: str = "gpu"):
             image = read_geotiff(data)
         logger.info(f"Image shape: {image.shape}")
 
-    logger.info(f"Running PaddleOCRDetector on {device}...")
+    logger.info(f"Running PaddleOCRDetector (requested device={device})...")
     ocr = PaddleOCRDetector(device=device)
+    logger.info(f"PaddleOCRDetector initialized on device={ocr.device}")
     detections = ocr.predict(image)
 
     logger.info(f"Detected {len(detections.texts)} text regions")

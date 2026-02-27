@@ -18,17 +18,17 @@ dependencies = [
     "matplotlib-inline>=0.2.1",
     "numpy>=2.3.5",
     "opencv-python>=4.11.0.86",
-    "paddleocr[all]==3.3.2",
+    "paddleocr[all]==3.4.0",
     "pillow>=11.1.0",
     "rasterio>=1.4.3",
     "tqdm>=4.67.1",
 ]
 
 [project.optional-dependencies]
-cpu = ["paddlepaddle==3.2.2"]
-cu130 = ["paddlepaddle-gpu==3.2.2"]
-cu129 = ["paddlepaddle-gpu==3.2.2"]
-cu118 = ["paddlepaddle-gpu==3.2.2"]
+cpu = ["paddlepaddle==3.3.0"]
+cu130 = ["paddlepaddle-gpu==3.3.0"]
+cu129 = ["paddlepaddle-gpu==3.3.0"]
+cu118 = ["paddlepaddle-gpu==3.3.0"]
 
 [dependency-groups]
 dev = ["pre-commit"]
