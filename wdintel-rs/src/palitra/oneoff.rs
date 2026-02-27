@@ -49,6 +49,13 @@ pub async fn oneoff_backfill_palitra_point_lexemes(
         insert_lexeme_batch(&dbx, &mut batch).await?;
     }
 
+    dbx.execute(Statement::from_string(
+        DatabaseBackend::Postgres,
+        "UPDATE palitra_point_lexeme SET label_tsv = to_tsvector('russian', lexeme) WHERE label_tsv IS NULL",
+    ))
+    .await
+    .c(h!())?;
+
     println!(
         "> backfill done: points={} lexemes={} elapsed={:?}",
         total_points,
