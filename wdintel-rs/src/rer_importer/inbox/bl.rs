@@ -11,12 +11,12 @@ use crate::location::utils;
 use crate::location::utils::to_location_list;
 use crate::messenger::group::types::SignalGroupEntry;
 use crate::messenger::group::{collect_groups, CollectGroupsOpts};
+use crate::palitra::bl::{group_palitra_ids_by_scope, PalitraScopeKey};
 use crate::rer_importer::collect_profiles_data;
 use crate::rer_importer::highlight::*;
 use crate::rer_importer::inbox::query::build_inbox_query;
 use crate::rer_importer::points::{
-    find_all_palitra_by_author, highlight_points,
-    load_point_lexemes_by_palitra_ids,
+    highlight_points, load_point_lexemes_by_palitra_ids,
 };
 use crate::rer_importer::signals::*;
 use crate::storage::mk_media_url;
@@ -190,12 +190,52 @@ pub async fn aggregate_to_inbox_messages(
             .push(media);
     }
 
-    let palitra_ids = find_all_palitra_by_author(&env.dbx, login)
+    let login_row = login::Entity::find()
+        .filter(login::Column::Login.eq(login))
+        .one(&env.dbx)
         .await
         .context(h!())?;
-    let point_forms = load_point_lexemes_by_palitra_ids(&env.dbx, palitra_ids)
-        .await
-        .context(h!())?;
+    let mut scope_keys = HashSet::new();
+    scope_keys.insert(PalitraScopeKey::User(login.to_string()));
+    if let Some(login_row) = login_row {
+        if let Some(organism_id) = login_row.organism_id {
+            scope_keys.insert(PalitraScopeKey::Organism(organism_id));
+        }
+    }
+    if let Some(selected_aors) = &req.selected_aors {
+        for &aor_id in selected_aors {
+            scope_keys.insert(PalitraScopeKey::Aor(aor_id));
+        }
+    }
+    let scope_groups = group_palitra_ids_by_scope(&env.dbx).await.c(h!())?;
+    let mut scope_point_forms = Vec::new();
+    let mut scope_pairs = Vec::new();
+    for scope_key in scope_keys {
+        let Some(palitra_ids) = scope_groups.get(&scope_key) else {
+            continue;
+        };
+        if palitra_ids.is_empty() {
+            continue;
+        }
+        let point_forms =
+            load_point_lexemes_by_palitra_ids(&env.dbx, palitra_ids.clone())
+                .await
+                .context(h!())?;
+        if point_forms.is_empty() {
+            continue;
+        }
+        let (scope_type, scope_id) = match scope_key {
+            PalitraScopeKey::User(login) => ("user".to_string(), Some(login)),
+            PalitraScopeKey::Organism(organism_id) => {
+                ("organism".to_string(), Some(organism_id.to_string()))
+            }
+            PalitraScopeKey::Aor(aor_id) => {
+                ("aor".to_string(), Some(aor_id.to_string()))
+            }
+        };
+        scope_pairs.push((scope_type.clone(), scope_id.clone()));
+        scope_point_forms.push((scope_type, scope_id, point_forms));
+    }
     let palitra_tag_id = tag::Entity::find()
         .filter(tag::Column::Label.eq("палітра"))
         .select_only()
@@ -205,8 +245,41 @@ pub async fn aggregate_to_inbox_messages(
         .await
         .context(h!())?;
 
-    let per_user_tokens = sigint_inbox_item_point_tokens::Entity::find()
-        .filter(sigint_inbox_item_point_tokens::Column::Login.eq(login))
+    let mut scope_condition = Condition::any();
+    for (scope_type, scope_id) in &scope_pairs {
+        let mut pair_condition = Condition::all().add(
+            sigint_inbox_item_point_tokens::Column::ScopeType.eq(scope_type),
+        );
+        pair_condition = match scope_id {
+            Some(scope_id) => pair_condition.add(
+                sigint_inbox_item_point_tokens::Column::ScopeId.eq(scope_id),
+            ),
+            None => pair_condition
+                .add(sigint_inbox_item_point_tokens::Column::ScopeId.is_null()),
+        };
+        scope_condition = scope_condition.add(pair_condition);
+    }
+    let highlight_scope = if scope_pairs.len() == 1 {
+        let (scope_type, scope_id) = &scope_pairs[0];
+        match scope_type.as_str() {
+            "user" => {
+                scope_id.clone().map(|login| HighlightScope::User { login })
+            }
+            "organism" => scope_id
+                .as_ref()
+                .and_then(|id| id.parse().ok())
+                .map(|organism_id| HighlightScope::Organism { organism_id }),
+            "aor" => scope_id
+                .as_ref()
+                .and_then(|id| id.parse().ok())
+                .map(|aor_id| HighlightScope::Aor { aor_id }),
+            _ => None,
+        }
+    } else {
+        None
+    };
+    let per_scope_tokens = sigint_inbox_item_point_tokens::Entity::find()
+        .filter(scope_condition)
         .filter(
             sigint_inbox_item_point_tokens::Column::SigintInboxItemId
                 .eq_any(message_ids),
@@ -215,10 +288,25 @@ pub async fn aggregate_to_inbox_messages(
         .await
         .context(h!())?;
     let mut point_tokens_map: HashMap<i64, Vec<CNPoint>> = HashMap::new();
-    for row in per_user_tokens {
+    let mut scope_tokens_map: HashMap<
+        (i64, String, Option<String>),
+        Vec<CNPoint>,
+    > = HashMap::new();
+    for row in per_scope_tokens {
         let point_tokens: Vec<CNPoint> =
             serde_json::from_value(row.point_tokens).context(h!())?;
-        point_tokens_map.insert(row.sigint_inbox_item_id, point_tokens);
+        scope_tokens_map.insert(
+            (
+                row.sigint_inbox_item_id,
+                row.scope_type.clone(),
+                row.scope_id.clone(),
+            ),
+            point_tokens.clone(),
+        );
+        point_tokens_map
+            .entry(row.sigint_inbox_item_id)
+            .or_default()
+            .extend(point_tokens);
     }
     for message in messages {
         // for message in messages {
@@ -294,22 +382,31 @@ pub async fn aggregate_to_inbox_messages(
         let mut m_point_tokens: Option<Vec<CNPoint>> =
             point_tokens_map.get(&message.id).cloned();
 
-        if req.highlight_points.unwrap_or(false)
-            && has_palitra_tag
-            && m_point_tokens.is_none()
-            && !point_forms.is_empty()
-        {
-            let tokens = crate::rer_importer::points::offset_point_tokens(
-                highlight_points(&env.rq, &no_headers_body.body, &point_forms)
+        if req.highlight_points.unwrap_or(false) && has_palitra_tag {
+            for (scope_type, scope_id, point_forms) in &scope_point_forms {
+                let scope_key =
+                    (message.id, scope_type.clone(), scope_id.clone());
+                if scope_tokens_map.contains_key(&scope_key) {
+                    continue;
+                }
+                let tokens = crate::rer_importer::points::offset_point_tokens(
+                    highlight_points(
+                        &env.rq,
+                        &no_headers_body.body,
+                        point_forms,
+                    )
                     .await
                     .c(h!())?,
-                no_headers_body.start,
-            );
-            if !tokens.is_empty() {
+                    no_headers_body.start,
+                );
+                if tokens.is_empty() {
+                    continue;
+                }
                 let point_tokens_active_model =
                     sigint_inbox_item_point_tokens::ActiveModel {
                         sigint_inbox_item_id: Set(message.id),
-                        login: Set(login.to_string()),
+                        scope_type: Set(scope_type.clone()),
+                        scope_id: Set(scope_id.clone()),
                         point_tokens: Set(json!(tokens)),
                         ..Default::default()
                     };
@@ -319,7 +416,8 @@ pub async fn aggregate_to_inbox_messages(
                 .on_conflict(
                     OnConflict::columns([
                         sigint_inbox_item_point_tokens::Column::SigintInboxItemId,
-                        sigint_inbox_item_point_tokens::Column::Login,
+                        sigint_inbox_item_point_tokens::Column::ScopeType,
+                        sigint_inbox_item_point_tokens::Column::ScopeId,
                     ])
                     .do_nothing()
                     .to_owned(),
@@ -327,9 +425,13 @@ pub async fn aggregate_to_inbox_messages(
                 .exec(&env.dbx)
                 .await
                 .c(h!())?;
-                point_tokens_map.insert(message.id, tokens.clone());
+                scope_tokens_map.insert(scope_key, tokens.clone());
+                point_tokens_map
+                    .entry(message.id)
+                    .or_default()
+                    .extend(tokens);
             }
-            m_point_tokens = Some(tokens);
+            m_point_tokens = point_tokens_map.get(&message.id).cloned();
         }
         let m_signal_tokens: Option<Vec<CNSignal>> = match message.signal_tokens
         {
@@ -413,6 +515,7 @@ pub async fn aggregate_to_inbox_messages(
                 no_headers_body: Some(no_headers_body),
                 callsign_tokens: m_callsign_tokens,
                 point_tokens: m_point_tokens,
+                highlight_scope: highlight_scope.clone(),
                 keyword_tokens: m_keyword_tokens,
                 signal_tokens: m_signal_tokens,
                 text_marked: Some(text_marked),

@@ -12,9 +12,10 @@ impl MigrationTrait for Migration {
             create table if not exists sigint_inbox_item_point_tokens (
                 id bigserial primary key,
                 sigint_inbox_item_id int8 not null references sigint_inbox_item(id) on delete cascade,
-                login text not null references login(login) on delete cascade,
+                scope_type text not null,
+                scope_id text,
                 point_tokens jsonb not null,
-                unique (sigint_inbox_item_id, login)
+                unique (sigint_inbox_item_id, scope_type, scope_id)
             );
             "#,
         )

@@ -12,21 +12,15 @@ pub struct Model {
     pub id: i64,
     pub sigint_inbox_item_id: i64,
     #[sea_orm(column_type = "Text")]
-    pub login: String,
+    pub scope_type: String,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub scope_id: Option<String>,
     #[sea_orm(column_type = "JsonBinary")]
     pub point_tokens: Json,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
-    #[sea_orm(
-        belongs_to = "super::login::Entity",
-        from = "Column::Login",
-        to = "super::login::Column::Login",
-        on_update = "NoAction",
-        on_delete = "Cascade"
-    )]
-    Login,
     #[sea_orm(
         belongs_to = "super::sigint_inbox_item::Entity",
         from = "Column::SigintInboxItemId",
@@ -35,12 +29,6 @@ pub enum Relation {
         on_delete = "Cascade"
     )]
     SigintInboxItem,
-}
-
-impl Related<super::login::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Login.def()
-    }
 }
 
 impl Related<super::sigint_inbox_item::Entity> for Entity {

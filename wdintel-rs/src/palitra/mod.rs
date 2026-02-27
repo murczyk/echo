@@ -18,7 +18,7 @@ use itertools::Itertools;
 use sea_orm::*;
 use tempfile::tempdir;
 
-mod bl;
+pub(crate) mod bl;
 mod kmz;
 pub mod oneoff;
 pub mod types;

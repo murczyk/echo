@@ -49,6 +49,17 @@ pub struct InboxMessage {
     pub tags: Option<Vec<i64>>,
     pub network_ids: Option<Vec<i64>>,
     pub inbox_tags: Option<Vec<InboxMessageTag>>,
+    pub highlight_scope: Option<HighlightScope>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub enum HighlightScope {
+    Bot,
+    User { login: String },
+    Organism { organism_id: i64 },
+    Aor { aor_id: i64 },
 }
 
 #[derive(
