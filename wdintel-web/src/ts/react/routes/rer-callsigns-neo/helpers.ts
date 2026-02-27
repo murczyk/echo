@@ -107,6 +107,10 @@ export function toBackendSort(sort: CallsignsSortState): ListCallsignsSortBy[] {
   return [sort.direction === 'asc' ? 'CallsignUnitAsc' : 'CallsignUnitDesc'];
 }
 
+export function isCursorPaginationSortCompatible(sort: CallsignsSortState): boolean {
+  return sort.column === 'unit' && sort.direction === 'asc';
+}
+
 export function nextSortState(current: CallsignsSortState, column: SortColumn): CallsignsSortState {
   if (current.column === column) {
     return {

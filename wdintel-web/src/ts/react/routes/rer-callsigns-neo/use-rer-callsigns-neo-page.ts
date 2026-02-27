@@ -27,6 +27,7 @@ import {
   getExportPermission,
   getExportPermissionFromRoles,
   hasAnyDraftValue,
+  isCursorPaginationSortCompatible,
   isAbortError,
   makeCreatePayload,
   makeUpdatePayload,
@@ -222,6 +223,7 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
     [sortedCallsigns, unitsById, sourcesById],
   );
   const unitStatsView = React.useMemo(() => mergeUnitStatsWithUnits(unitStats, unitsById), [unitStats, unitsById]);
+  const canUseCursorPagination = React.useMemo(() => isCursorPaginationSortCompatible(sort), [sort]);
   const addPotentialDuplicates = React.useMemo(() => {
     const firstRow = addRows[0];
     if (!firstRow) return [];
@@ -290,6 +292,14 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
     }
 
     if (announceLoading) setLoadingMore(true);
+
+    if (!canUseCursorPagination) {
+      setShowLoadMore(false);
+      if (listRequestSeqRef.current === seq) {
+        setLoadingMore(false);
+      }
+      return;
+    }
 
     try {
       const rsp = await listCallsigns(buildListCallsignsReq({ filters, sort, query: { afterId, limit: getDefaultPageSize() } }));
@@ -736,7 +746,7 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
   }
 
   async function onLoadMore() {
-    if (loadingMore || !showLoadMore || callsigns.length === 0) return;
+    if (!canUseCursorPagination || loadingMore || !showLoadMore || callsigns.length === 0) return;
     const last = callsigns[callsigns.length - 1];
     if (!last) return;
     await runListFetch({ append: true, afterId: last.id, announceLoading: true });
@@ -757,7 +767,7 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
     loading,
     loadingMore,
     refreshing,
-    showLoadMore,
+    showLoadMore: showLoadMore && canUseCursorPagination,
     status,
     filters,
     denseTable,
