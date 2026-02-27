@@ -23,6 +23,7 @@ export function EditCallsignDialog({ open, form, units, sources, submitting, err
     <Dialog
       open={open}
       onClose={submitting ? undefined : onClose}
+      disableRestoreFocus
       fullWidth
       maxWidth="md"
       aria-labelledby={titleId}
@@ -44,7 +45,7 @@ export function EditCallsignDialog({ open, form, units, sources, submitting, err
           ) : null}
         </Stack>
       </DialogContent>
-      <DialogActions>
+      <DialogActions sx={{ px: 3, py: 2 }}>
         <Button onClick={onClose} disabled={submitting}>
           Скасувати
         </Button>

@@ -92,6 +92,7 @@ function CreatePalitraDrawerComponent({
     !hasSuccessfulKmzAnalysis ||
     !isFormValid(createForm) ||
     (kmzColorOptions.length > 0 && !hasSelectedKmzColor);
+  const selectedKmzColorsCount = kmzColorOptions.filter((option) => option.selected).length;
 
   React.useEffect(() => {
     if (!open) return;
@@ -173,14 +174,20 @@ function CreatePalitraDrawerComponent({
 
           {activeStep === 0 ? (
             <Stack spacing={2}>
-              <Button
-                variant="outlined"
-                onClick={onRequestAnalyzeKmz}
-                disabled={kmzAnalyzing || createInFlight}
-                sx={{ alignSelf: 'center' }}
-              >
-                {kmzAnalyzing ? 'Аналіз...' : kmzFile ? 'Замінити KMZ файл' : 'Обрати KMZ файл'}
-              </Button>
+              {kmzAnalyzing ? (
+                <Stack direction="row" alignItems="center" justifyContent="center">
+                  <CircularProgress size={18} />
+                </Stack>
+              ) : (
+                <Button
+                  variant="outlined"
+                  onClick={onRequestAnalyzeKmz}
+                  disabled={createInFlight}
+                  sx={{ alignSelf: 'center' }}
+                >
+                  {kmzFile ? 'Замінити KMZ файл' : 'Обрати KMZ файл'}
+                </Button>
+              )}
 
               {kmzFile ? (
                 <Typography variant="caption" color="text.secondary">
@@ -195,24 +202,34 @@ function CreatePalitraDrawerComponent({
           {activeStep === 1 ? (
             <Stack spacing={2}>
               {kmzColorOptions.length > 0 ? (
-                <Stack spacing={1}>
-                  <Typography variant="subtitle2" sx={{ px: 1.5 }}>
-                    Кольори з KMZ
+                <Box sx={{ display: 'flex', flexDirection: 'column', rowGap: 1.5 }}>
+                  <Typography
+                    variant="subtitle2"
+                    sx={{ px: 1.5, pt: 1.25, pb: 2, textAlign: 'center', fontSize: '1rem', position: 'relative', zIndex: 1 }}
+                  >
+                    Оберіть кольори з KMZ (топ 20) *
                   </Typography>
-                  <Stack direction="row" spacing={2} sx={{ px: 1.5 }}>
-                    <Button
-                      size="small"
-                      onClick={() => onSetKmzColorOptions((prev) => prev.map((option) => ({ ...option, selected: true })))}
-                    >
-                      Обрати всі
-                    </Button>
-                    <Button
-                      size="small"
-                      onClick={() => onSetKmzColorOptions((prev) => prev.map((option) => ({ ...option, selected: false })))}
-                    >
-                      Зняти всі
-                    </Button>
-                  </Stack>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', px: 1.5 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', columnGap: 1 }}>
+                      <Button
+                        size="small"
+                        sx={{ px: '9px' }}
+                        onClick={() => onSetKmzColorOptions((prev) => prev.map((option) => ({ ...option, selected: true })))}
+                      >
+                        Обрати всі
+                      </Button>
+                      <Button
+                        size="small"
+                        sx={{ px: '9px' }}
+                        onClick={() => onSetKmzColorOptions((prev) => prev.map((option) => ({ ...option, selected: false })))}
+                      >
+                        Зняти всі
+                      </Button>
+                    </Box>
+                    <Typography variant="body2" color="text.secondary">
+                      {`Обрано ${selectedKmzColorsCount} з ${kmzColorOptions.length}`}
+                    </Typography>
+                  </Box>
                   {kmzColorOptions.map((option) => (
                     <Paper key={option.colorHex} variant="outlined" sx={{ p: 1.5 }}>
                       <Stack direction="row" spacing={2} alignItems="center" sx={{ width: '100%' }}>
@@ -258,7 +275,7 @@ function CreatePalitraDrawerComponent({
                       </Stack>
                     </Paper>
                   ))}
-                </Stack>
+                </Box>
               ) : (
                 <TextField
                   label="Колір"
@@ -312,7 +329,7 @@ function CreatePalitraDrawerComponent({
             </Button>
           ) : (
             <Button onClick={onCreate} variant="contained" disabled={canCreate}>
-              {createInFlight ? <CircularProgress size={16} /> : 'Створити'}
+              {createInFlight ? <CircularProgress size={16} /> : 'Додати'}
             </Button>
           )}
         </Box>

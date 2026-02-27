@@ -79,7 +79,12 @@ export function RerPalitraNeoPage() {
         </Box>
       </Stack>
 
-      <Dialog open={page.deleteDialogOpen} onClose={page.cancelDelete} TransitionProps={{ onExited: page.onDeleteDialogExited }}>
+      <Dialog
+        open={page.deleteDialogOpen}
+        onClose={page.cancelDelete}
+        disableRestoreFocus
+        TransitionProps={{ onExited: page.onDeleteDialogExited }}
+      >
         <DialogTitle>Підтвердження видалення</DialogTitle>
         <DialogContent>
           <DialogContentText>

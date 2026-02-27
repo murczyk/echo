@@ -45,6 +45,7 @@ export function BulkDeleteConfirmDialog({
     <Dialog
       open={open}
       onClose={onClose}
+      disableRestoreFocus
       TransitionProps={onExited ? { onExited } : undefined}
       fullWidth
       maxWidth="sm"

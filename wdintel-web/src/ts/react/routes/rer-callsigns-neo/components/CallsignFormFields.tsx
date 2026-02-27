@@ -132,7 +132,7 @@ export function CallsignFormFields<T extends CommonFormValue>({
             }}
           >
             <MenuItem value="">
-              <em>Не вибрано</em>
+              <em>Оберіть джерело</em>
             </MenuItem>
             {sources.map((source) => (
               <MenuItem key={source.id} value={source.id}>

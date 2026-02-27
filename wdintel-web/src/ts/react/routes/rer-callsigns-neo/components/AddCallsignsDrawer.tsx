@@ -20,6 +20,7 @@ import {
 } from '@mui/material';
 
 import type { Source, Unit } from '../../../../../Bindings';
+import { pageDrawerBackdropSx } from '../../../components/loadingOverlayStyles';
 import { CallsignFormFields } from './CallsignFormFields';
 import type { CallsignDraftRow } from '../types';
 
@@ -65,8 +66,9 @@ export function AddCallsignsDrawer({
   onSubmit,
 }: Props) {
   const formDisabled = disabled || submitting;
+  const hasAtLeastOneCallsign = rows.some((row) => row.callsign.trim() !== '');
+  const hasRowWithEmptyCallsign = rows.some((row) => row.callsign.trim() === '');
   const drawerTitleId = 'callsigns-add-drawer-title';
-  const drawerDescriptionId = 'callsigns-add-drawer-description';
   const addUnitSelectLabelId = 'callsigns-add-unit-label';
   const addSourceSelectLabelId = 'callsigns-add-source-label';
 
@@ -75,28 +77,32 @@ export function AddCallsignsDrawer({
       anchor="right"
       open={open}
       onClose={submitting ? undefined : onClose}
-      PaperProps={{ 'aria-labelledby': drawerTitleId, 'aria-describedby': drawerDescriptionId }}
+      ModalProps={{
+        BackdropProps: {
+          sx: (theme) => pageDrawerBackdropSx(theme),
+        },
+      }}
+      PaperProps={{
+        'aria-labelledby': drawerTitleId,
+        sx: {
+          width: { xs: '100vw', sm: 640 },
+          maxWidth: '100vw',
+          display: 'flex',
+          backgroundColor: 'background.default',
+          backgroundImage: 'none',
+        },
+      }}
     >
-      <Box sx={{ width: { xs: '100vw', sm: 640 }, maxWidth: '100vw', p: 2.5 }}>
+      <Box sx={{ p: 2.5, borderBottom: '1px solid', borderColor: 'divider' }}>
+        <Typography variant="h6" id={drawerTitleId}>
+          Додати позивні
+        </Typography>
+      </Box>
+      <Box sx={{ p: 2.5, flex: 1, overflowY: 'auto' }}>
         <Stack spacing={2.5}>
-          <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={2}>
-            <Box>
-              <Typography variant="h6" id={drawerTitleId}>
-                Додати позивні
-              </Typography>
-              <Typography variant="body2" color="text.secondary" id={drawerDescriptionId}>
-                Підтримується вставка табличних даних (TSV: позивний, посада, коментар)
-              </Typography>
-            </Box>
-            <Stack direction="row" spacing={1}>
-              <Button size="small" startIcon={<AddIcon />} onClick={onAppendRow} disabled={formDisabled}>
-                Рядок
-              </Button>
-              <Button size="small" startIcon={<ClearAllIcon />} onClick={onClearRows} disabled={formDisabled}>
-                Очистити
-              </Button>
-            </Stack>
-          </Stack>
+          <Typography variant="body2" color="text.secondary">
+            Підтримується вставка табличних даних (TSV: позивний, посада, коментар)
+          </Typography>
 
           {validationError ? <Alert severity="error">{validationError}</Alert> : null}
 
@@ -121,7 +127,7 @@ export function AddCallsignsDrawer({
                 </MenuItem>
                 {units.map((unit) => (
                   <MenuItem key={unit.id} value={unit.id}>
-                    {unit.name}
+                    {unit.name.trim() || `#${unit.id}`}
                   </MenuItem>
                 ))}
               </Select>
@@ -143,7 +149,7 @@ export function AddCallsignsDrawer({
                 }}
               >
                 <MenuItem value="">
-                  <em>Оберіть джерело</em>
+                  Оберіть джерело
                 </MenuItem>
                 {sources.map((source) => (
                   <MenuItem key={source.id} value={source.id}>
@@ -165,6 +171,15 @@ export function AddCallsignsDrawer({
               endAdornment: <UploadFileIcon fontSize="small" color="action" aria-hidden="true" focusable="false" />,
             }}
           />
+
+          <Stack direction="row" spacing={1}>
+            <Button size="small" startIcon={<AddIcon />} onClick={onAppendRow} disabled={formDisabled} sx={{ px: '9px' }}>
+              Рядок
+            </Button>
+            <Button size="small" startIcon={<ClearAllIcon />} onClick={onClearRows} disabled={formDisabled} sx={{ px: '9px' }}>
+              Очистити
+            </Button>
+          </Stack>
 
           <Stack spacing={2} divider={<Divider flexItem />}>
             {rows.map((row, index) => (
@@ -190,21 +205,19 @@ export function AddCallsignsDrawer({
               </Stack>
             ))}
           </Stack>
-
-          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} justifyContent="space-between">
-            <Button variant="text" onClick={onClose} disabled={submitting}>
-              Закрити
-            </Button>
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} justifyContent="flex-end">
-              <Button variant="outlined" onClick={onAppendRow} disabled={formDisabled}>
-                Додати ще рядок
-              </Button>
-              <Button variant="contained" onClick={onSubmit} disabled={formDisabled || rows.length === 0}>
-                {submitting ? 'Збереження…' : 'Додати позивні'}
-              </Button>
-            </Stack>
-          </Stack>
         </Stack>
+      </Box>
+      <Box sx={{ p: 2.5, borderTop: '1px solid', borderColor: 'divider', display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
+        <Button onClick={onClose} disabled={submitting}>
+          Скасувати
+        </Button>
+        <Button
+          variant="contained"
+          onClick={onSubmit}
+          disabled={formDisabled || addUnitId == null || !hasAtLeastOneCallsign || hasRowWithEmptyCallsign}
+        >
+          {submitting ? 'Збереження…' : 'Додати'}
+        </Button>
       </Box>
     </Drawer>
   );

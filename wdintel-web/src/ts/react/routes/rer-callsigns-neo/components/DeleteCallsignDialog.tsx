@@ -17,6 +17,7 @@ export function DeleteCallsignDialog({ target, submitting, onCancel, onConfirm }
     <Dialog
       open={target !== null}
       onClose={submitting ? undefined : onCancel}
+      disableRestoreFocus
       fullWidth
       maxWidth="xs"
       aria-labelledby={titleId}

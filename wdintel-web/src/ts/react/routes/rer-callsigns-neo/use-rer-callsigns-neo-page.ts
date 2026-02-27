@@ -469,16 +469,24 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
     setAddValidationError(null);
 
     if (addUnitId == null) {
-      setAddValidationError('Оберіть підрозділ');
       return;
     }
     if (addSourceId == null) {
       setAddValidationError('Оберіть джерело');
       return;
     }
+    if (!addRows.some((row) => row.callsign.trim() !== '')) {
+      return;
+    }
+    if (addRows.some((row) => row.callsign.trim() === '')) {
+      return;
+    }
 
     const validation = validateDraftRows(addRows, addSourceId);
     if (!validation.valid) {
+      if (validation.error === 'Заповніть хоча б один позивний') {
+        return;
+      }
       setAddValidationError(validation.error);
       return;
     }
