@@ -1,6 +1,8 @@
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import ClearIcon from '@mui/icons-material/Clear';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import { Backdrop, Chip, CircularProgress, Collapse, Divider, List, ListItemButton, ListItemText, Paper, Stack, Typography } from '@mui/material';
+import SearchIcon from '@mui/icons-material/Search';
+import { Backdrop, Chip, CircularProgress, Collapse, Divider, IconButton, InputAdornment, List, ListItemButton, ListItemText, Paper, Stack, TextField, Typography } from '@mui/material';
 import React from 'react';
 
 import { loadingOverlayBackdropSx } from '../../../components/loadingOverlayStyles';
@@ -33,6 +35,7 @@ type TreeGroupNode = {
 type TreeNode = TreeGroupNode | TreeLeafNode;
 
 const HIERARCHY_LABELS = ['Армія', 'Дивізія', 'Полк', 'Батальйон'] as const;
+const SIDEBAR_FILTER_DEBOUNCE_MS = 180;
 
 function normalizeHierarchyPart(part: string, level: number): string {
   const value = part.trim();
@@ -84,6 +87,45 @@ function buildUnitTree(stats: UnitStatView[]): TreeNode[] {
   }
 
   return root;
+}
+
+function collectGroupIds(nodes: TreeNode[]): string[] {
+  const ids: string[] = [];
+  for (const node of nodes) {
+    if (node.kind !== 'group') continue;
+    ids.push(node.id, ...collectGroupIds(node.children));
+  }
+  return ids;
+}
+
+function normalizeSearchQuery(value: string): string {
+  return value.trim().toLocaleLowerCase();
+}
+
+function matchesUnitSearch(row: UnitStatView, normalizedQuery: string): boolean {
+  if (normalizedQuery === '') return true;
+
+  const haystack = [row.unitName, row.army, row.division, row.regiment, row.battalion]
+    .join(' ')
+    .toLocaleLowerCase();
+
+  return haystack.includes(normalizedQuery);
+}
+
+function useDebouncedValue<T>(value: T, delayMs: number): T {
+  const [debouncedValue, setDebouncedValue] = React.useState(value);
+
+  React.useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setDebouncedValue(value);
+    }, delayMs);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [value, delayMs]);
+
+  return debouncedValue;
 }
 
 function collectPathToSelectedUnit(nodes: TreeNode[], selectedUnitFilter: string): string[] {
@@ -165,19 +207,35 @@ function UnitTreeItem({ node, depth, expandedIds, onToggle, onPickUnitFilter, se
 }
 
 export function UnitStatsSidebar({ stats, open, loading, onPickUnitFilter, selectedUnitFilter }: Props) {
-  const tree = React.useMemo(() => buildUnitTree(stats), [stats]);
+  const [searchInput, setSearchInput] = React.useState('');
+  const debouncedSearchInput = useDebouncedValue(searchInput, SIDEBAR_FILTER_DEBOUNCE_MS);
+  const normalizedSearchQuery = React.useMemo(() => normalizeSearchQuery(debouncedSearchInput), [debouncedSearchInput]);
+  const filteredStats = React.useMemo(
+    () => stats.filter((row) => matchesUnitSearch(row, normalizedSearchQuery)),
+    [stats, normalizedSearchQuery],
+  );
+  const tree = React.useMemo(() => buildUnitTree(filteredStats), [filteredStats]);
   const [expandedIds, setExpandedIds] = React.useState<Set<string>>(() => new Set());
-  const total = stats.reduce((sum, row) => sum + row.count, 0);
+  const total = filteredStats.reduce((sum, row) => sum + row.count, 0);
+  const totalOverall = stats.reduce((sum, row) => sum + row.count, 0);
 
   React.useEffect(() => {
     if (!open) return;
+    if (normalizedSearchQuery !== '') {
+      setExpandedIds(new Set(collectGroupIds(tree)));
+      return;
+    }
+
     const selectedUnit = selectedUnitFilter?.trim() ?? '';
 
-    if (!selectedUnit) return;
+    if (!selectedUnit) {
+      setExpandedIds(new Set());
+      return;
+    }
 
     const path = collectPathToSelectedUnit(tree, selectedUnit);
     setExpandedIds(new Set(path));
-  }, [open, tree, selectedUnitFilter]);
+  }, [open, tree, selectedUnitFilter, normalizedSearchQuery]);
 
   if (!open) return null;
 
@@ -211,12 +269,46 @@ export function UnitStatsSidebar({ stats, open, loading, onPickUnitFilter, selec
         <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
           <Typography variant="h6">Підрозділи</Typography>
         </Stack>
+        <TextField
+          size="small"
+          value={searchInput}
+          onChange={(event) => setSearchInput(event.target.value)}
+          placeholder="Пошук"
+          inputProps={{ 'aria-label': 'Пошук підрозділу у дереві статистики' }}
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <SearchIcon fontSize="small" />
+              </InputAdornment>
+            ),
+            endAdornment:
+              searchInput.trim() !== '' ? (
+                <InputAdornment position="end">
+                  <IconButton
+                    size="small"
+                    onClick={() => setSearchInput('')}
+                    aria-label="Очистити пошук підрозділу"
+                    edge="end"
+                  >
+                    <ClearIcon fontSize="small" />
+                  </IconButton>
+                </InputAdornment>
+              ) : undefined,
+          }}
+        />
         <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-          <Chip size="small" label={`Підрозділів: ${stats.length}`} />
-          <Chip size="small" label={`Позивних: ${total}`} variant="outlined" />
+          <Chip
+            size="small"
+            label={normalizedSearchQuery === '' ? `Підрозділів: ${stats.length}` : `Підрозділів: ${filteredStats.length} з ${stats.length}`}
+          />
+          <Chip
+            size="small"
+            label={normalizedSearchQuery === '' ? `Позивних: ${total}` : `Позивних: ${total} з ${totalOverall}`}
+            variant="outlined"
+          />
         </Stack>
         <Typography variant="body2" color="text.secondary">
-          Розгортайте групи та натискайте на підрозділ, щоб підставити його в текстовий фільтр.
+          Розгорніть групу та натисніть на підрозділ, щоб відфільтрувати по ньому
         </Typography>
       </Stack>
       <Divider />
@@ -253,6 +345,10 @@ export function UnitStatsSidebar({ stats, open, loading, onPickUnitFilter, selec
             {stats.length === 0 ? (
               <Typography variant="body2" sx={{ p: 2 }} color="text.secondary" role="status" aria-live="polite">
                 Статистика відсутня
+              </Typography>
+            ) : filteredStats.length === 0 ? (
+              <Typography variant="body2" sx={{ p: 2 }} color="text.secondary" role="status" aria-live="polite">
+                Нічого не знайдено за запитом
               </Typography>
             ) : null}
           </List>

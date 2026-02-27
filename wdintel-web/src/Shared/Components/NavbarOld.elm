@@ -132,9 +132,9 @@ navBar user shared activeName props =
     in
     header navbarStyles
         [ nav [ class "container mx-auto px-4" ]
-            [ div [ class "flex flex-wrap items-center justify-between gap-x-3 gap-y-2" ]
+            [ div [ class "app-navbar-row flex flex-wrap items-center justify-between gap-x-3 gap-y-2" ]
                 [ a
-                    [ class "flex items-center space-x-2 shrink-0"
+                    [ class "app-navbar-logo flex items-center space-x-2 shrink-0"
                     , href "/"
                     ]
                     [ div
@@ -173,10 +173,10 @@ navBar user shared activeName props =
                         ]
                         []
                     ]
-                , div [ class "order-3 w-full min-w-0 min-[992px]:order-none min-[992px]:w-auto" ]
-                    [ ul [ class "flex flex-wrap items-center gap-x-4 gap-y-1 min-w-0 min-[992px]:flex-nowrap min-[992px]:whitespace-nowrap" ] menuItems
+                , div [ class "app-navbar-links w-full min-w-0" ]
+                    [ ul [ class "app-navbar-links-list flex flex-wrap items-center gap-x-4 gap-y-1 min-w-0" ] menuItems
                     ]
-                , div [ class "flex gap-2 items-center shrink-0" ]
+                , div [ class "app-navbar-actions flex gap-2 items-center shrink-0" ]
                     [ themeSwitcher
                         { currentTheme = shared.themeMode
                         , onThemeChange = props.onThemeChange

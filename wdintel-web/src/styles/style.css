@@ -1014,3 +1014,55 @@ sl-tooltip {
     color: var(--color-error-hover) !important;
     background-color: var(--color-error-light) !important;
 }
+
+/* Navbar layout:
+   - mobile/tablet: first row logo(left) + actions(right), second row links
+   - desktop: logo(left) | links(center) | actions(right)
+*/
+.app-navbar-logo {
+    order: 1;
+}
+
+.app-navbar-actions {
+    order: 2;
+    margin-left: auto;
+}
+
+.app-navbar-links {
+    order: 3;
+    width: 100%;
+}
+
+.app-navbar-links-list {
+    justify-content: flex-start;
+}
+
+@media (min-width: 992px) {
+    .app-navbar-row {
+        flex-wrap: nowrap;
+    }
+
+    .app-navbar-logo {
+        order: 1;
+    }
+
+    .app-navbar-links {
+        order: 2;
+        width: auto;
+        min-width: 0;
+        flex: 1 1 auto;
+        display: flex;
+        justify-content: center;
+    }
+
+    .app-navbar-actions {
+        order: 3;
+        margin-left: 0;
+    }
+
+    .app-navbar-links-list {
+        justify-content: center;
+        flex-wrap: nowrap;
+        white-space: nowrap;
+    }
+}

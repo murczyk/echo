@@ -56,7 +56,7 @@
     {
       "label": "stop-nlp-ml-service",
       "type": "shell",
-      "command": "bash -lc 'set -e; for i in {1..20}; do if ! lsof -tiTCP:5000 -sTCP:LISTEN >/dev/null 2>&1; then echo \"5000 is free\"; exit 0; fi; echo \"5000 busy, killing...\"; (fuser -k 5000/tcp 2>/dev/null || true); (lsof -tiTCP:5000 -sTCP:LISTEN | xargs -r kill -TERM) || true; sleep 0.2; done; echo \"Still busy, SIGKILL\"; (fuser -k -9 5000/tcp 2>/dev/null || true); (lsof -tiTCP:5000 -sTCP:LISTEN | xargs -r kill -KILL) || true; sleep 0.2; if lsof -tiTCP:5000 -sTCP:LISTEN >/dev/null 2>&1; then echo \"ERROR: port 5000 still in use\"; exit 1; fi'",
+      "command": "bash -lc 'set -e; PIDS=$(lsof -tiTCP:5000 -sTCP:LISTEN 2>/dev/null || true); if [ -z \"$PIDS\" ]; then echo \"Flask:5000 already stopped\"; exit 0; fi; echo \"Stopping :5000 pids: $PIDS\"; kill -TERM $PIDS || true; for i in {1..25}; do sleep 0.2; PIDS=$(lsof -tiTCP:5000 -sTCP:LISTEN 2>/dev/null || true); [ -z \"$PIDS\" ] && { echo \"Stopped\"; exit 0; }; done; echo \"Escalating to SIGKILL\"; PIDS=$(lsof -tiTCP:5000 -sTCP:LISTEN 2>/dev/null || true); [ -n \"$PIDS\" ] && kill -KILL $PIDS || true; sleep 0.2; PIDS=$(lsof -tiTCP:5000 -sTCP:LISTEN 2>/dev/null || true); [ -n \"$PIDS\" ] && { echo \"ERROR: still listening: $PIDS\"; exit 1; } || echo \"Stopped\"'",
       "problemMatcher": [],
       "presentation": { "panel": "new", "reveal": "always" }
     },
@@ -136,9 +136,12 @@
   ]
 }
 ```
+Крок 2: Упевнитись, що в системі глобально встановлені наступні утиліти: lsof, fuser, nc
 
-Крок 2: Перезапустити VS Code (Shift + Command + P > Developer: Reload Window)
+Якщо ні, встановити їх: `$ npm i -g <util>`
 
-Крок 3: Погодитись на автоматичний запуск задач при запуску VS Code (застосунок спитає дозвіл при запуску)
+Крок 3: Перезапустити VS Code (Shift + Command + P > Developer: Reload Window)
+
+Крок 4: Погодитись на автоматичний запуск задач при запуску VS Code (застосунок спитає дозвіл при запуску)
 
 Якщо запит пропущено: Shift + Command + P > Tasks: Manage Automatic Tasks in Folder > Allow Automatic Tasks
