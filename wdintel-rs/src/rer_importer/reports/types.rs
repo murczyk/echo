@@ -45,6 +45,8 @@ pub struct ReportPreviewReq {
 )]
 pub struct ReoReportSettings {
     pub adjacent_freqs_distance: f64,
+    #[serde(default)]
+    pub no_comments: bool,
 }
 
 #[derive(

@@ -120,6 +120,7 @@ type alias Model =
         , items : List (Select.MenuItem B.ReoReportFileType)
         , selected : B.ReoReportFileType
         }
+    , reportReoNoComments : Bool
     , reportActiveNetworksAorsSelect :
         { state : Select.State
         , items : List (Select.MenuItem Int)
