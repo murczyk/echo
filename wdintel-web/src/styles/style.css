@@ -20,15 +20,16 @@
 /* App shell sizing: centralized offsets for navbar + global bottom gap */
 :root {
     --app-shell-navbar-height: 58px;
-    --app-shell-bottom-gap: 24px;
+    --app-shell-content-gap: 24px;
 }
 
 .app-shell {
     --app-shell-top-offset: 0px;
-    --app-shell-total-offset: calc(var(--app-shell-top-offset) + var(--app-shell-bottom-gap));
+    --app-shell-bottom-offset: 0px;
+    --app-shell-total-offset: calc(var(--app-shell-top-offset) + var(--app-shell-bottom-offset));
     box-sizing: border-box;
     background: var(--background-color);
-    padding-bottom: var(--app-shell-bottom-gap);
+    padding-bottom: 0;
     min-height: 100vh;
 }
 
@@ -40,6 +41,22 @@
 .app-shell--navbar-hidden {
     --app-shell-top-offset: 0px;
     padding-top: 0;
+}
+
+.app-shell--with-content-gap {
+    --app-shell-top-offset: var(--app-shell-content-gap);
+    --app-shell-bottom-offset: var(--app-shell-content-gap);
+    padding-bottom: var(--app-shell-content-gap);
+}
+
+.app-shell--with-content-gap.app-shell--navbar-visible {
+    --app-shell-top-offset: calc(var(--app-shell-navbar-height) + var(--app-shell-content-gap));
+    padding-top: calc(var(--app-shell-navbar-height) + var(--app-shell-content-gap));
+}
+
+.app-shell--with-content-gap.app-shell--navbar-hidden {
+    --app-shell-top-offset: var(--app-shell-content-gap);
+    padding-top: var(--app-shell-content-gap);
 }
 
 .app-shell-fill-height {
