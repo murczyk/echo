@@ -65,16 +65,17 @@ navBar user shared activeName props =
             , Menu (Internal Route.Path.AreasOfResponsibility) "areasOfResponsibility" "смуги (стара)"
             , Menu (Internal Route.Path.Admin_Keys) "keys" "ключі (стара)"
             , Menu (Internal Route.Path.Admin_Messenger) "messenger" "месенджери (стара)"
-            , Menu (Internal Route.Path.Admin_ControlPanel) "control-panel" "панель керування (стара)"
+            , Menu (Internal Route.Path.Admin_ControlPanel) "control-panel" "панель (стара)"
             ]
 
         etalonkaSubs =
             [ Menu (Internal Route.Path.RerFreqs) "freqs" "частоти"
-            , Menu (Internal Route.Path.RerCallsigns) "callsigns" "позивні"
+            , Menu (Internal Route.Path.RerCallsignsNeo) "callsigns-neo" "позивні"
             , Menu (Internal Route.Path.RerUnits) "rer-units" "підрозділи"
             , Menu (Internal Route.Path.RerSignals) "signals" "сигнали"
             , Menu (Internal Route.Path.RerNetworks) "networks" "мережі"
             , Menu (Internal Route.Path.RerPalitraNeo) "palitra-neo" "палітри"
+            , Menu (Internal Route.Path.RerCallsigns) "callsigns" "позивні (стара)"
             , Menu (Internal Route.Path.RerPalitra) "palitra" "палітри (стара)"
             ]
 
@@ -131,9 +132,9 @@ navBar user shared activeName props =
     in
     header navbarStyles
         [ nav [ class "container mx-auto px-4" ]
-            [ div [ class "flex items-center justify-between" ]
+            [ div [ class "app-navbar-row flex flex-wrap items-center justify-between gap-x-3 gap-y-2" ]
                 [ a
-                    [ class "flex items-center space-x-2"
+                    [ class "app-navbar-logo flex items-center space-x-2 shrink-0"
                     , href "/"
                     ]
                     [ div
@@ -168,14 +169,14 @@ navBar user shared activeName props =
                         ]
                     , img
                         [ src "/img/echo-logo.svg"
-                        , class "invert brightness-0 contrast-200 h-[16px]"
+                        , class "invert brightness-0 contrast-200 h-[16px] shrink-0"
                         ]
                         []
                     ]
-                , div [ class "flex items-center space-x-4" ]
-                    [ ul [ class "flex items-center space-x-4" ] menuItems
+                , div [ class "app-navbar-links w-full min-w-0" ]
+                    [ ul [ class "app-navbar-links-list flex flex-wrap items-center gap-x-4 gap-y-1 min-w-0" ] menuItems
                     ]
-                , div [ class "flex gap-2 items-center" ]
+                , div [ class "app-navbar-actions flex gap-2 items-center shrink-0" ]
                     [ themeSwitcher
                         { currentTheme = shared.themeMode
                         , onThemeChange = props.onThemeChange
@@ -186,7 +187,7 @@ navBar user shared activeName props =
                         , onClick props.onLogout
                         ]
                         [ i [ class "bi bi-box-arrow-right text-lg" ] []
-                        , span [] [ text ("(" ++ user.name ++ ")") ]
+                        , span [ class "hidden sm:inline" ] [ text ("(" ++ user.name ++ ")") ]
                         ]
                     , div
                         [ class "w-6 h-6 flex items-center justify-center"
@@ -314,7 +315,7 @@ menuItemWithSubs props activeName activeNameExp nameText subs =
         , div [ class "absolute left-0 pt-2 z-[3001]" ]
             [ ul
                 [ id dropdownMenuId
-                , class "w-56 bg-[var(--color-card)] rounded-lg shadow-lg border border-[var(--color-border)] transition-all duration-200"
+                , class "w-56 py-2 bg-[var(--color-card)] rounded-lg shadow-lg border border-[var(--color-border)] transition-all duration-200"
                 , attribute "role" "menu"
                 , classList
                     [ ( "hidden", not isOpen )

@@ -38,7 +38,7 @@ Here, you can provide logic on where to redirect if a user is not signed in. Her
 
 -}
 onPageLoad : Shared.Model -> Route () -> Auth.Action.Action User
-onPageLoad shared route =
+onPageLoad shared _ =
     case shared.user of
         Just user ->
             Auth.Action.loadPageWithUser user
@@ -55,5 +55,5 @@ onPageLoad shared route =
 {-| Used whenever `Auth.Action.loadCustomPage` is returned.
 -}
 viewCustomPage : Shared.Model -> Route () -> View Never
-viewCustomPage shared route =
+viewCustomPage _ _ =
     View.none

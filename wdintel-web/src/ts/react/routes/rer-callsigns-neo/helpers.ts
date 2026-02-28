@@ -1,0 +1,363 @@
+import type {
+  Callsign,
+  CallsignUnitStatRow,
+  CreateCallsignReq,
+  DevelopingFilter,
+  ListCallsignsReq,
+  ListCallsignsSortBy,
+  Source,
+  Unit,
+  User,
+} from '../../../../Bindings';
+
+import type {
+  BuildReqInput,
+  BuildRowsResult,
+  CallsignDraftRow,
+  CallsignDraftValidation,
+  CallsignEditForm,
+  CallsignsFilterState,
+  CallsignsSortState,
+  ExportPermission,
+  SortColumn,
+  SortDescriptor,
+} from './types';
+
+const DEFAULT_LIMIT = 100;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+export const DEFAULT_SORT: CallsignsSortState = {
+  column: 'unit',
+  direction: 'asc',
+};
+
+export const DEFAULT_FILTERS = createDefaultFilters();
+
+export function createDefaultFilters(now = new Date()): CallsignsFilterState {
+  const to = now;
+  const from = new Date(now.getTime() - 7 * DAY_MS);
+
+  return {
+    filterCallsign: '',
+    filterPosition: '',
+    filterComment: '',
+    filterUnit: '',
+    filterDeveloping: 'OnlyNonDeveloping',
+    isIgnoringDateFilter: true,
+    fromDateTimeLocal: toDateTimeLocalValue(from),
+    toDateTimeLocal: toDateTimeLocalValue(to),
+  };
+}
+
+export function getExportPermission(user: User | null): ExportPermission {
+  const roles = new Set(user?.roles ?? []);
+  return {
+    canEdit: roles.has('Admin') || roles.has('CallsignsEditor') || roles.has('UnitsEditor'),
+    canExport: roles.has('Admin') || roles.has('UnitsEditor'),
+  };
+}
+
+export function getExportPermissionFromRoles(rolesList: string[]): ExportPermission {
+  const roles = new Set(rolesList);
+  return {
+    canEdit: roles.has('Admin') || roles.has('CallsignsEditor') || roles.has('UnitsEditor'),
+    canExport: roles.has('Admin') || roles.has('UnitsEditor'),
+  };
+}
+
+export function buildListCallsignsReq(input: BuildReqInput): ListCallsignsReq {
+  const { filters, sort, query } = input;
+
+  return {
+    afterId: query.afterId,
+    beforeId: null,
+    filterCallsign: filters.filterCallsign,
+    filterPosition: filters.filterPosition,
+    filterComment: filters.filterComment,
+    filterUnit: filters.filterUnit,
+    filterDeveloping: filters.filterDeveloping,
+    sinceDateInclusiveMs: filters.isIgnoringDateFilter ? null : parseDateTimeLocalToMs(filters.fromDateTimeLocal),
+    tillDateInclusiveMs: filters.isIgnoringDateFilter ? null : parseDateTimeLocalToMs(filters.toDateTimeLocal),
+    limit: query.limit,
+    sortBy: toBackendSort(sort),
+  };
+}
+
+export function buildInitialListReq(): ListCallsignsReq {
+  return buildListCallsignsReq({
+    filters: DEFAULT_FILTERS,
+    sort: DEFAULT_SORT,
+    query: { afterId: null, limit: DEFAULT_LIMIT },
+  });
+}
+
+export function getDefaultPageSize() {
+  return DEFAULT_LIMIT;
+}
+
+export function toBackendSort(sort: CallsignsSortState): ListCallsignsSortBy[] {
+  if (sort.column === 'callsign') {
+    return [sort.direction === 'asc' ? 'CallsignAsc' : 'CallsignDesc'];
+  }
+
+  if (sort.column === 'createdAt') {
+    return [sort.direction === 'asc' ? 'CallsignCreatedAtAsc' : 'CallsignCreatedAtDesc'];
+  }
+
+  return [sort.direction === 'asc' ? 'CallsignUnitAsc' : 'CallsignUnitDesc'];
+}
+
+export function isCursorPaginationSortCompatible(sort: CallsignsSortState): boolean {
+  return sort.column === 'unit' && sort.direction === 'asc';
+}
+
+export function nextSortState(current: CallsignsSortState, column: SortColumn): CallsignsSortState {
+  if (current.column === column) {
+    return {
+      column,
+      direction: current.direction === 'asc' ? 'desc' : 'asc',
+    };
+  }
+
+  return {
+    column,
+    direction: column === 'createdAt' ? 'desc' : 'asc',
+  };
+}
+
+export function getSortDescriptor(sort: CallsignsSortState, column: SortColumn): SortDescriptor {
+  const active = sort.column === column;
+  const direction = active ? sort.direction : null;
+  return {
+    backend: active ? toBackendSort(sort) : [],
+    label: direction === 'asc' ? 'asc' : direction === 'desc' ? 'desc' : 'none',
+  };
+}
+
+export function toDateTimeLocalValue(value: Date): string {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, '0');
+  const day = String(value.getDate()).padStart(2, '0');
+  const hour = String(value.getHours()).padStart(2, '0');
+  const minute = String(value.getMinutes()).padStart(2, '0');
+  return `${year}-${month}-${day}T${hour}:${minute}`;
+}
+
+export function parseDateTimeLocalToMs(value: string): number | null {
+  if (!value.trim()) return null;
+  const parsed = new Date(value);
+  const ms = parsed.getTime();
+  return Number.isFinite(ms) ? ms : null;
+}
+
+export function formatDateTime(ms: number): string {
+  if (!Number.isFinite(ms)) return '—';
+  try {
+    return new Intl.DateTimeFormat('uk-UA', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(new Date(ms));
+  } catch (_) {
+    return new Date(ms).toLocaleString();
+  }
+}
+
+export function formatErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message.trim()) return error.message;
+  if (typeof error === 'string' && error.trim()) return error;
+  return 'Невідома помилка';
+}
+
+export function downloadBlob(blob: Blob, fileName: string) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = fileName;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
+export function createEmptyDraftRow(): CallsignDraftRow {
+  return {
+    callsign: '',
+    position: '',
+    comment: '',
+    developing: false,
+    radioFreq: '',
+  };
+}
+
+export function callsignToEditForm(callsign: Callsign): CallsignEditForm {
+  return {
+    id: callsign.id,
+    callsign: callsign.callsign,
+    position: callsign.position,
+    comment: callsign.comment,
+    unitId: callsign.unitId,
+    sourceId: callsign.sourceId,
+    developing: callsign.developing,
+    radioFreq: callsign.radioFreq ?? '',
+    createdAt: callsign.createdAt,
+    active: callsign.active,
+  };
+}
+
+export function validateDraftRows(rows: CallsignDraftRow[], _sourceId: number | null): CallsignDraftValidation {
+  if (rows.length === 0) return { valid: false, error: 'Немає рядків для додавання' };
+
+  const nonEmptyRows = rows.filter((row) => hasAnyDraftValue(row));
+  if (nonEmptyRows.length === 0) return { valid: false, error: 'Заповніть хоча б один позивний' };
+
+  const missingCallsign = nonEmptyRows.find((row) => row.callsign.trim() === '');
+  if (missingCallsign) return { valid: false, error: 'Поле "Позивний" є обовʼязковим' };
+
+  return { valid: true, error: null };
+}
+
+export function validateEditForm(form: CallsignEditForm | null): CallsignDraftValidation {
+  if (!form) return { valid: false, error: 'Не вибрано позивний для редагування' };
+  if (form.callsign.trim() === '') return { valid: false, error: 'Поле "Позивний" є обовʼязковим' };
+  if (form.sourceId === 2 && form.radioFreq.trim() === '') {
+    return { valid: false, error: "При виборі джерела 'РО' необхідно вказати частоту" };
+  }
+  return { valid: true, error: null };
+}
+
+export function hasAnyDraftValue(row: CallsignDraftRow): boolean {
+  return [row.callsign, row.position, row.comment, row.radioFreq].some((value) => value.trim() !== '') || row.developing;
+}
+
+export function parseTabDelimitedInput(input: string): CallsignDraftRow[] {
+  const trimmed = input.trimEnd();
+  if (!trimmed) return [];
+
+  return trimmed
+    .split(/\r?\n/)
+    .flatMap((line) => {
+      const cells = line.split('\t');
+      if (cells.length === 3) {
+        return [createDraftRow(cells[0], cells[1], cells[2])];
+      }
+      return chunkCellsToRows(cells);
+    });
+}
+
+function chunkCellsToRows(cells: string[]): CallsignDraftRow[] {
+  const rows: CallsignDraftRow[] = [];
+  for (let i = 0; i < cells.length; i += 3) {
+    rows.push(createDraftRow(cells[i] ?? '', cells[i + 1] ?? '', cells[i + 2] ?? ''));
+  }
+  return rows;
+}
+
+function createDraftRow(callsign: string, position: string, comment: string): CallsignDraftRow {
+  return {
+    callsign: callsign.trim(),
+    position: position.trim(),
+    comment: comment.trim(),
+    developing: false,
+    radioFreq: '',
+  };
+}
+
+export function mergeUnitStatsWithUnits(unitStats: CallsignUnitStatRow[], unitsById: Map<number, Unit>) {
+  return unitStats
+    .map((stat) => {
+      const unit = unitsById.get(stat.unitId);
+      return {
+        ...stat,
+        unitName: unit?.name ?? `#${stat.unitId}`,
+        army: unit?.army ?? '',
+        division: unit?.division ?? '',
+        regiment: unit?.regiment ?? '',
+        battalion: unit?.battalion ?? '',
+      };
+    })
+    .sort((a, b) => b.count - a.count || a.unitName.localeCompare(b.unitName, 'uk'));
+}
+
+export function buildRowViews(callsigns: Callsign[], unitsById: Map<number, Unit>, sourcesById: Map<number, Source>): BuildRowsResult {
+  const rows = callsigns.map((callsign) => ({
+    ...callsign,
+    unitName: unitsById.get(callsign.unitId)?.name ?? `#${callsign.unitId}`,
+    sourceName: callsign.sourceId == null ? '—' : (sourcesById.get(callsign.sourceId)?.name ?? `#${callsign.sourceId}`),
+  }));
+
+  return {
+    rows,
+    unitStats: [],
+  };
+}
+
+export function createUnitsById(units: Unit[]): Map<number, Unit> {
+  return new Map(units.map((unit) => [unit.id, unit]));
+}
+
+export function createSourcesById(sources: Source[]): Map<number, Source> {
+  return new Map(sources.map((source) => [source.id, source]));
+}
+
+export function makeUpdatePayload(form: CallsignEditForm): Callsign {
+  return {
+    id: form.id,
+    callsign: form.callsign.trim(),
+    position: form.position.trim(),
+    comment: form.comment.trim(),
+    unitId: form.unitId,
+    active: form.active,
+    sourceId: form.sourceId,
+    createdAt: form.createdAt,
+    developing: form.developing,
+    radioFreq: form.radioFreq.trim() === '' ? '' : form.radioFreq.trim(),
+  };
+}
+
+export function makeCreatePayload(row: CallsignDraftRow, unitId: number, sourceId: number): CreateCallsignReq {
+  return {
+    callsign: row.callsign.trim(),
+    position: row.position.trim(),
+    comment: row.comment.trim(),
+    unitId,
+    sourceId,
+    developing: row.developing,
+    radioFreq: row.radioFreq.trim() === '' ? '' : row.radioFreq.trim(),
+  };
+}
+
+export function sortRowsClientSide(callsigns: Callsign[], sort: CallsignsSortState, unitsById: Map<number, Unit>): Callsign[] {
+  const sorted = [...callsigns];
+  sorted.sort((left, right) => {
+    let result = 0;
+
+    if (sort.column === 'callsign') {
+      result = left.callsign.localeCompare(right.callsign, 'uk', { sensitivity: 'base' });
+    } else if (sort.column === 'createdAt') {
+      result = left.createdAt - right.createdAt;
+    } else {
+      const leftName = unitsById.get(left.unitId)?.name ?? '';
+      const rightName = unitsById.get(right.unitId)?.name ?? '';
+      result = leftName.localeCompare(rightName, 'uk', { sensitivity: 'base' });
+      if (result === 0) result = left.callsign.localeCompare(right.callsign, 'uk', { sensitivity: 'base' });
+    }
+
+    return sort.direction === 'asc' ? result : -result;
+  });
+  return sorted;
+}
+
+export function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === 'AbortError';
+}
+
+export function emptyIfNull<T>(value: T | null | undefined, fallback: T): T {
+  return value ?? fallback;
+}
+
+export function isDevelopingFilter(value: string): value is DevelopingFilter {
+  return value === 'OnlyDeveloping' || value === 'OnlyNonDeveloping' || value === 'All';
+}

@@ -2407,7 +2407,7 @@ processTabDelimitedInput input =
 
 view : Bool -> Shared.Model -> B.User -> Model -> View Msg
 view _ shared user model =
-    { title = "позивні"
+    { title = "позивні (стара)"
     , body =
         [ div [ class "flex justify-start items-start app-shell-fill-height" ]
             [ if model.showSidebar then
@@ -2435,7 +2435,7 @@ view _ shared user model =
                     )
                 ]
                 [ h1 [ class "py-2 ps-4" ]
-                    [ span [ class "me-2" ] [ text "позивні" ]
+                    [ span [ class "me-2" ] [ text "позивні (стара)" ]
                     , button
                         [ type_ "button"
                         , class "inline-block btn btn-outline-secondary me-2"

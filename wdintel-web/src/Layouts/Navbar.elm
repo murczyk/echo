@@ -157,6 +157,11 @@ subscriptions _ =
 view : Auth.User -> String -> Shared.Model -> Route () -> { toContentMsg : Msg -> contentMsg, content : View contentMsg, model : Model } -> View contentMsg
 view user activeName shared route { toContentMsg, model, content } =
     let
+        isNeoClippedRoute =
+            route.url.path == "/rer-palitra-neo"
+                || route.url.path == "/rer-callsigns-neo"
+                || route.url.path == "/settings-neo"
+
         navbarProps =
             { onToggleTheme = ToggleDarkTheme
             , onLogout = SignOutClicked
@@ -173,6 +178,7 @@ view user activeName shared route { toContentMsg, model, content } =
 
             else
                 Shared.Components.NavbarOld.navBar user shared activeName navbarProps
+
     in
     { title = content.title
     , body =
@@ -214,10 +220,19 @@ view user activeName shared route { toContentMsg, model, content } =
                  else
                     "app-shell--navbar-hidden"
                 )
+             , class
+                (if isNeoClippedRoute then
+                    "app-shell--fixed-viewport"
+
+                 else
+                    ""
+                )
              , onClick (toContentMsg (SetOpenDropdown Nothing))
              ]
-                ++ (if route.url.path == "/rer-duty-neo" then
-                        [ attribute "data-auth-user-name" user.name ]
+                ++ (if route.url.path == "/rer-duty-neo" || route.url.path == "/rer-callsigns-neo" then
+                        [ attribute "data-auth-user-name" user.name
+                        , attribute "data-auth-user-roles" (String.join "," user.roles)
+                        ]
 
                     else
                         []
