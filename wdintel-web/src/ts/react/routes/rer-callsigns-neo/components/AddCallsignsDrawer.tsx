@@ -81,6 +81,11 @@ export function AddCallsignsDrawer({
   const addSourceSelectLabelId = 'callsigns-add-source-label';
   const selectedUnit = units.find((unit) => unit.id === addUnitId) ?? null;
   const [unitSearchInput, setUnitSearchInput] = React.useState('');
+  const handleCloseDrawer = React.useCallback(() => {
+    setUnitSearchInput('');
+    onAddUnitIdChange(null);
+    onClose();
+  }, [onAddUnitIdChange, onClose]);
 
   const filterUnits = React.useCallback((options: Unit[], inputValue: string) => {
     const normalizedInput = inputValue.toLocaleLowerCase('uk-UA').replace(/\s+/g, ' ').trim();
@@ -97,14 +102,15 @@ export function AddCallsignsDrawer({
   React.useEffect(() => {
     if (!open) {
       setUnitSearchInput('');
+      onAddUnitIdChange(null);
     }
-  }, [open]);
+  }, [open, onAddUnitIdChange]);
 
   return (
     <Drawer
       anchor="right"
       open={open}
-      onClose={submitting ? undefined : onClose}
+      onClose={submitting ? undefined : handleCloseDrawer}
       ModalProps={{
         BackdropProps: {
           sx: (theme) => pageDrawerBackdropSx(theme),
@@ -243,7 +249,7 @@ export function AddCallsignsDrawer({
         </Stack>
       </Box>
       <Box sx={{ p: 2.5, borderTop: '1px solid', borderColor: 'divider', display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
-        <Button onClick={onClose} disabled={submitting}>
+        <Button onClick={handleCloseDrawer} disabled={submitting}>
           Скасувати
         </Button>
         <Button
