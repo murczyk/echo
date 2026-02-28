@@ -9,7 +9,6 @@ use crate::messenger::group::types::SignalGroupEntry;
 use crate::messenger::group::types::*;
 use crate::messenger::group::*;
 use crate::sigint::aor::bl::collect_group_aors;
-use crate::sigint::sender::message_ids_for_senders;
 use crate::types::*;
 use crate::users::*;
 use crate::utils::orm::ArrayColumnOps;
@@ -105,10 +104,7 @@ where
 {
     if let Some(selected_senders) = selected_senders.as_ref() {
         if !selected_senders.is_empty() {
-            let subquery = message_ids_for_senders(selected_senders);
-            return Ok(
-                q.filter(signal_message::Column::Id.in_subquery(subquery))
-            );
+            return Ok(q.filter(message_has_sender_exists(selected_senders)));
         }
     }
     Ok(q)
@@ -123,13 +119,33 @@ where
 {
     if let Some(denied_senders) = denied_senders.as_ref() {
         if !denied_senders.is_empty() {
-            let subquery = message_ids_for_senders(denied_senders);
             return Ok(
-                q.filter(signal_message::Column::Id.not_in_subquery(subquery))
+                q.filter(message_has_sender_exists(denied_senders).not())
             );
         }
     }
     Ok(q)
+}
+
+fn message_has_sender_exists(senders: &[String]) -> SimpleExpr {
+    if senders.is_empty() {
+        return Expr::cust("FALSE");
+    }
+
+    let subquery = signal_message_group::Entity::find()
+        .select_only()
+        .expr(Expr::value(1))
+        .filter(
+            Expr::col((
+                signal_message_group::Entity,
+                signal_message_group::Column::SignalMessageId,
+            ))
+            .equals((signal_message::Entity, signal_message::Column::Id)),
+        )
+        .filter(signal_message_group::Column::Sender.eq_any(senders.to_vec()))
+        .into_query();
+
+    Expr::exists(subquery)
 }
 
 pub fn filter_selected_posts<Q>(
