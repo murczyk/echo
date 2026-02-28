@@ -1173,7 +1173,7 @@ rightColumn ( messageId, message ) ps model =
                                                                     context
                                                                     callsign
                                                         in
-                                                        Dict.insert callsign hintResult dict
+                                                        Dict.insert (String.toLower callsign) hintResult dict
                                                     )
                                                     Dict.empty
                                     in
