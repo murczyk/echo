@@ -252,15 +252,14 @@ function PalitraTableToolbar({
           }}
         />
 
-        {hasActiveFilters ? (
-          <Button size="small" onClick={onResetFilters} sx={{ ml: 0.5, px: 1.5 }}>
-            Очистити фільтри
-          </Button>
-        ) : null}
-
       </Box>
 
       <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexShrink: 0 }}>
+        {hasActiveFilters ? (
+          <Button size="small" onClick={onResetFilters} sx={{ px: 1.5 }}>
+            Очистити фільтри
+          </Button>
+        ) : null}
         {selectedCount > 0 ? (
           <Button size="small" onClick={onClearSelectedPalitras} sx={{ px: 1.5 }}>
             Очистити вибір

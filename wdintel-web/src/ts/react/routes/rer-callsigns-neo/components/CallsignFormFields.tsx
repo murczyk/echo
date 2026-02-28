@@ -11,6 +11,7 @@ import {
 } from '@mui/material';
 
 import type { Source, Unit } from '../../../../../Bindings';
+import { toUpperCaseCallsign } from '../helpers';
 import type { CallsignDraftRow, CallsignEditForm } from '../types';
 
 type CommonFormValue = Pick<CallsignDraftRow, 'callsign' | 'position' | 'comment' | 'developing' | 'radioFreq'> & {
@@ -50,7 +51,7 @@ export function CallsignFormFields<T extends CommonFormValue>({
         <TextField
           label="Позивний"
           value={value.callsign}
-          onChange={(event) => onChange({ ...value, callsign: event.target.value })}
+          onChange={(event) => onChange({ ...value, callsign: toUpperCaseCallsign(event.target.value) })}
           disabled={disabled}
           fullWidth
           required

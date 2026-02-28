@@ -86,7 +86,7 @@ navBar user shared activeName props =
 
         otherSubs =
             (if serverModeIs "live" shared.serverInfo && hasRole "Rer" user then
-                [ Menu (Internal Route.Path.RerDutyNeo) "rer-duty-neo" "оперативний (Alpha)"
+                [ Menu (Internal Route.Path.RerDutyNeo) "rer-duty-neo" "оперативний"
                 ]
 
              else
@@ -260,13 +260,13 @@ menuItemWithSubs props activeName activeNameExp nameText subs =
                 [ case sub.link of
                     Internal path ->
                         a
-                            [ class "flex items-center justify-between px-4 py-2 text-[var(--color-text)] hover:bg-[var(--color-column)] rounded transition-all duration-200"
+                            [ class "flex items-center justify-between px-4 py-2 text-[var(--color-text)] hover:bg-black/10 dark:hover:bg-white/10 rounded transition-all duration-200"
                             , classList [ ( "font-medium", sub.activeName == activeName ) ]
                             , attribute "role" "menuitem"
                             , Route.Path.href path
                             , onClick (props.onDropdownToggle Nothing)
                             ]
-                            [ span [] [ text sub.label ]
+                            [ menuItemLabel sub
                             , if sub.activeName == activeName then
                                 i [ class "bi bi-check ml-2" ] []
 
@@ -276,17 +276,40 @@ menuItemWithSubs props activeName activeNameExp nameText subs =
 
                     External link ->
                         a
-                            [ class "flex items-center justify-between px-4 py-2 text-[var(--color-text)] hover:bg-[var(--color-column)] rounded transition-all duration-200"
+                            [ class "flex items-center justify-between px-4 py-2 text-[var(--color-text)] hover:bg-black/10 dark:hover:bg-white/10 rounded transition-all duration-200"
                             , classList [ ( "font-medium", sub.activeName == activeName ) ]
                             , attribute "role" "menuitem"
                             , href link
                             , target "_blank"
                             , onClick (props.onDropdownToggle Nothing)
                             ]
-                            [ span [] [ text sub.label ]
+                            [ menuItemLabel sub
                             , i [ class "bi bi-box-arrow-up-right text-[var(--color-icons)] ml-2 group-hover:text-[var(--color-text)]" ] []
                             ]
                 ]
+
+        menuItemLabel : Menu -> Html msg
+        menuItemLabel sub =
+            span [ class "inline-flex items-center gap-2" ]
+                ([ text sub.label ]
+                    ++ (if sub.activeName == "callsigns-neo" || sub.activeName == "rer-duty-neo" then
+                            [ span
+                                [ class "rounded-full border border-amber-500/40 bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase leading-none text-amber-700"
+                                ]
+                                [ text
+                                    (if sub.activeName == "callsigns-neo" then
+                                        "Beta"
+
+                                     else
+                                        "Alpha"
+                                    )
+                                ]
+                            ]
+
+                        else
+                            []
+                       )
+                )
     in
     li [ class "relative group" ]
         [ button
@@ -315,7 +338,7 @@ menuItemWithSubs props activeName activeNameExp nameText subs =
         , div [ class "absolute left-0 pt-2 z-[3001]" ]
             [ ul
                 [ id dropdownMenuId
-                , class "w-56 py-2 bg-[var(--color-card)] rounded-lg shadow-lg border border-[var(--color-border)] transition-all duration-200"
+                , class "w-56 p-2 bg-[var(--color-card)] rounded-lg shadow-lg border border-[var(--color-border)] transition-all duration-200"
                 , attribute "role" "menu"
                 , classList
                     [ ( "hidden", not isOpen )

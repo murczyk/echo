@@ -1,9 +1,11 @@
+import React from 'react';
 import AddIcon from '@mui/icons-material/Add';
 import ClearAllIcon from '@mui/icons-material/ClearAll';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import {
   Alert,
+  Autocomplete,
   Box,
   Button,
   Divider,
@@ -76,8 +78,27 @@ export function AddCallsignsDrawer({
   const formDisabled = disabled || submitting;
   const hasAtLeastOneCallsign = rows.some((row) => row.callsign.trim() !== '');
   const drawerTitleId = 'callsigns-add-drawer-title';
-  const addUnitSelectLabelId = 'callsigns-add-unit-label';
   const addSourceSelectLabelId = 'callsigns-add-source-label';
+  const selectedUnit = units.find((unit) => unit.id === addUnitId) ?? null;
+  const [unitSearchInput, setUnitSearchInput] = React.useState('');
+
+  const filterUnits = React.useCallback((options: Unit[], inputValue: string) => {
+    const normalizedInput = inputValue.toLocaleLowerCase('uk-UA').replace(/\s+/g, ' ').trim();
+    if (normalizedInput === '') return options;
+
+    const searchTokens = normalizedInput.split(' ');
+    return options.filter((unit) => {
+      const unitName = unit.name.toLocaleLowerCase('uk-UA').replace(/\s+/g, ' ').trim();
+      const unitId = String(unit.id);
+      return searchTokens.every((token) => unitName.includes(token) || unitId.includes(token));
+    });
+  }, []);
+
+  React.useEffect(() => {
+    if (!open) {
+      setUnitSearchInput('');
+    }
+  }, [open]);
 
   return (
     <Drawer
@@ -124,31 +145,24 @@ export function AddCallsignsDrawer({
           ) : null}
 
           <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
-            <FormControl sx={{ flex: 1 }} size="small" disabled={formDisabled}>
-              <InputLabel id={addUnitSelectLabelId} shrink>
-                Підрозділ
-              </InputLabel>
-              <Select
-                labelId={addUnitSelectLabelId}
-                label="Підрозділ"
-                fullWidth
-                displayEmpty
-                value={addUnitId ?? ''}
-                onChange={(event) => {
-                  const raw = event.target.value;
-                  onAddUnitIdChange(raw === '' ? null : Number(raw));
-                }}
-              >
-                <MenuItem value="">
-                  <em>Оберіть підрозділ</em>
-                </MenuItem>
-                {units.map((unit) => (
-                  <MenuItem key={unit.id} value={unit.id}>
-                    {unit.name.trim() || `#${unit.id}`}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
+            <Autocomplete
+              sx={{ flex: 1 }}
+              size="small"
+              options={units}
+              value={selectedUnit}
+              inputValue={unitSearchInput}
+              onInputChange={(_, value) => setUnitSearchInput(value)}
+              onChange={(_, value) => onAddUnitIdChange(value?.id ?? null)}
+              disabled={formDisabled}
+              isOptionEqualToValue={(option, value) => option.id === value.id}
+              getOptionLabel={(unit) => unit.name.trim() || `#${unit.id}`}
+              filterOptions={(options, state) => filterUnits(options, state.inputValue)}
+              clearOnBlur={false}
+              noOptionsText="Нічого не знайдено"
+              renderInput={(params) => (
+                <TextField {...params} label="Підрозділ" placeholder="Пошук підрозділу" required />
+              )}
+            />
 
             <FormControl sx={{ flex: 1 }} size="small" disabled={formDisabled}>
               <InputLabel id={addSourceSelectLabelId} shrink>
