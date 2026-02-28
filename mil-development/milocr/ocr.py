@@ -11,6 +11,54 @@ from tqdm import tqdm
 
 from milocr.datatypes import TextDetections
 
+
+def _cuda_device_available() -> bool:
+    """Return True if Paddle can see at least one CUDA device.
+
+    This is intentionally defensive: on some systems Paddle may be installed with CUDA
+    support but no NVIDIA GPU is present (or CUDA_VISIBLE_DEVICES hides it).
+    """
+
+    try:
+        import paddle
+
+        is_compiled_with_cuda = getattr(paddle, "is_compiled_with_cuda", None)
+        if callable(is_compiled_with_cuda) and not is_compiled_with_cuda():
+            return False
+
+        # Prefer paddle.device.cuda.device_count() when available
+        try:
+            from paddle.device import cuda as paddle_cuda
+
+            return paddle_cuda.device_count() > 0
+        except Exception:
+            pass
+
+        # Fallback for other Paddle versions
+        try:
+            return paddle.device.cuda.device_count() > 0
+        except Exception:
+            return False
+
+    except Exception:
+        return False
+
+
+def _resolve_device(requested: str) -> str:
+    requested_norm = (requested or "").lower().strip()
+    if requested_norm == "auto":
+        return "gpu" if _cuda_device_available() else "cpu"
+    if requested_norm in {"gpu", "cpu"}:
+        if requested_norm == "gpu" and not _cuda_device_available():
+            logger.warning(
+                "GPU requested but no CUDA device is available; falling back to CPU."
+            )
+            return "cpu"
+        return requested_norm
+
+    raise ValueError(f"Invalid device={requested!r}; expected 'gpu', 'cpu', or 'auto'")
+
+
 # Latin to Cyrillic mappings for normalization
 LATIN_TO_CYRILLIC = {
     "A": "А",
@@ -280,19 +328,40 @@ class PaddleOCRDetector(BaseTextDetector):
             max_size: Maximum tile size for large images
             overlap: Overlap between tiles
             normalize: Whether to apply text normalization
-            device: Device to use ("gpu" or "cpu")
+            device: Device to use ("gpu", "cpu", or "auto").
+                If "gpu" is requested but no CUDA device is available, this will
+                fall back to CPU at runtime.
         """
         super().__init__(max_size=max_size, overlap=overlap, normalize=normalize)
 
         from paddleocr import PaddleOCR as _PaddleOCR
 
-        self.ocr = _PaddleOCR(
-            lang=lang,
-            device=device,
-            use_doc_orientation_classify=False,
-            use_doc_unwarping=False,
-            use_textline_orientation=True,
-        )
+        self.requested_device = device
+        self.device = _resolve_device(device)
+
+        def _create_ocr(dev: str):
+            return _PaddleOCR(
+                lang=lang,
+                device=dev,
+                use_doc_orientation_classify=False,
+                use_doc_unwarping=False,
+                use_textline_orientation=True,
+            )
+
+        try:
+            self.ocr = _create_ocr(self.device)
+        except Exception as e:
+            # Even if Paddle reports CUDA support, runtime init can still fail
+            # (missing driver, incompatible runtime, etc.). Try CPU as last resort.
+            if self.device == "gpu":
+                logger.warning(
+                    "Failed to initialize PaddleOCR on GPU ({}). Falling back to CPU.",
+                    e,
+                )
+                self.device = "cpu"
+                self.ocr = _create_ocr("cpu")
+            else:
+                raise
 
     def _predict_tile(self, image: np.ndarray) -> TextDetections:
         """Predict text in a single tile using PaddleOCR."""

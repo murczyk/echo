@@ -9,7 +9,6 @@ use crate::messenger::group::types::SignalGroupEntry;
 use crate::messenger::group::types::*;
 use crate::messenger::group::*;
 use crate::sigint::aor::bl::collect_group_aors;
-use crate::sigint::sender::message_ids_for_senders;
 use crate::types::*;
 use crate::users::*;
 use crate::utils::orm::ArrayColumnOps;
@@ -105,10 +104,7 @@ where
 {
     if let Some(selected_senders) = selected_senders.as_ref() {
         if !selected_senders.is_empty() {
-            let subquery = message_ids_for_senders(selected_senders);
-            return Ok(
-                q.filter(signal_message::Column::Id.in_subquery(subquery))
-            );
+            return Ok(q.filter(message_has_sender_exists(selected_senders)));
         }
     }
     Ok(q)
@@ -123,13 +119,33 @@ where
 {
     if let Some(denied_senders) = denied_senders.as_ref() {
         if !denied_senders.is_empty() {
-            let subquery = message_ids_for_senders(denied_senders);
             return Ok(
-                q.filter(signal_message::Column::Id.not_in_subquery(subquery))
+                q.filter(message_has_sender_exists(denied_senders).not())
             );
         }
     }
     Ok(q)
+}
+
+fn message_has_sender_exists(senders: &[String]) -> SimpleExpr {
+    if senders.is_empty() {
+        return Expr::cust("FALSE");
+    }
+
+    let subquery = signal_message_group::Entity::find()
+        .select_only()
+        .expr(Expr::value(1))
+        .filter(
+            Expr::col((
+                signal_message_group::Entity,
+                signal_message_group::Column::SignalMessageId,
+            ))
+            .equals((signal_message::Entity, signal_message::Column::Id)),
+        )
+        .filter(signal_message_group::Column::Sender.eq_any(senders.to_vec()))
+        .into_query();
+
+    Expr::exists(subquery)
 }
 
 pub fn filter_selected_posts<Q>(
@@ -140,13 +156,36 @@ where
     Q: QueryFilter,
 {
     if let Some(selected_posts) = selected_posts.as_ref() {
-        return Ok(q.filter(
-            Expr::expr(
-                Expr::col((sigint_post::Entity, sigint_post::Column::Name))
-                    .if_null(""),
-            )
-            .is_in(selected_posts),
-        ));
+        let include_empty =
+            selected_posts.iter().any(|post| post.as_str().is_empty());
+        let selected_nonempty = selected_posts
+            .iter()
+            .filter(|post| !post.as_str().is_empty())
+            .cloned()
+            .collect_vec();
+        let post_name_col =
+            Expr::col((sigint_post::Entity, sigint_post::Column::Name));
+
+        if selected_nonempty.is_empty() {
+            if include_empty {
+                return Ok(q.filter(
+                    post_name_col.clone().is_null().or(post_name_col.eq("")),
+                ));
+            }
+            return Ok(q.filter(Expr::cust("FALSE")));
+        }
+
+        if include_empty {
+            return Ok(q.filter(
+                post_name_col
+                    .clone()
+                    .is_in(selected_nonempty)
+                    .or(post_name_col.clone().is_null())
+                    .or(post_name_col.eq("")),
+            ));
+        }
+
+        return Ok(q.filter(post_name_col.is_in(selected_nonempty)));
     }
     Ok(q)
 }
@@ -160,16 +199,38 @@ where
 {
     if let Some(selected_freqs) = selected_freqs.as_ref() {
         if !selected_freqs.is_empty() {
-            return Ok(q.filter(
-                Expr::expr(
-                    Expr::col((
-                        sigint_inbox_item::Entity,
-                        sigint_inbox_item::Column::Freq,
-                    ))
-                    .if_null(""),
-                )
-                .is_in(selected_freqs),
+            let include_empty =
+                selected_freqs.iter().any(|freq| freq.as_str().is_empty());
+            let selected_nonempty = selected_freqs
+                .iter()
+                .filter(|freq| !freq.as_str().is_empty())
+                .cloned()
+                .collect_vec();
+            let freq_col = Expr::col((
+                sigint_inbox_item::Entity,
+                sigint_inbox_item::Column::Freq,
             ));
+
+            if selected_nonempty.is_empty() {
+                if include_empty {
+                    return Ok(q.filter(
+                        freq_col.clone().is_null().or(freq_col.eq("")),
+                    ));
+                }
+                return Ok(q.filter(Expr::cust("FALSE")));
+            }
+
+            if include_empty {
+                return Ok(q.filter(
+                    freq_col
+                        .clone()
+                        .is_in(selected_nonempty)
+                        .or(freq_col.clone().is_null())
+                        .or(freq_col.eq("")),
+                ));
+            }
+
+            return Ok(q.filter(freq_col.is_in(selected_nonempty)));
         }
     }
     Ok(q)
@@ -184,15 +245,32 @@ where
 {
     if let Some(denied_freqs) = denied_freqs.as_ref() {
         if !denied_freqs.is_empty() {
+            let include_empty =
+                denied_freqs.iter().any(|freq| freq.as_str().is_empty());
+            let denied_nonempty = denied_freqs
+                .iter()
+                .filter(|freq| !freq.as_str().is_empty())
+                .cloned()
+                .collect_vec();
+            let freq_col = Expr::col((
+                sigint_inbox_item::Entity,
+                sigint_inbox_item::Column::Freq,
+            ));
+
+            if include_empty {
+                let mut filter =
+                    freq_col.clone().is_not_null().and(freq_col.clone().ne(""));
+                if !denied_nonempty.is_empty() {
+                    filter = filter.and(freq_col.is_not_in(denied_nonempty));
+                }
+                return Ok(q.filter(filter));
+            }
+
             return Ok(q.filter(
-                Expr::expr(
-                    Expr::col((
-                        sigint_inbox_item::Entity,
-                        sigint_inbox_item::Column::Freq,
-                    ))
-                    .if_null(""),
-                )
-                .is_not_in(denied_freqs),
+                freq_col
+                    .clone()
+                    .is_null()
+                    .or(freq_col.is_not_in(denied_nonempty)),
             ));
         }
     }
@@ -207,12 +285,33 @@ where
 {
     if let Some(denied_posts) = denied_posts.as_ref() {
         if !denied_posts.is_empty() {
+            let include_empty =
+                denied_posts.iter().any(|post| post.as_str().is_empty());
+            let denied_nonempty = denied_posts
+                .iter()
+                .filter(|post| !post.as_str().is_empty())
+                .cloned()
+                .collect_vec();
+            let post_name_col =
+                Expr::col((sigint_post::Entity, sigint_post::Column::Name));
+
+            if include_empty {
+                let mut filter = post_name_col
+                    .clone()
+                    .is_not_null()
+                    .and(post_name_col.clone().ne(""));
+                if !denied_nonempty.is_empty() {
+                    filter =
+                        filter.and(post_name_col.is_not_in(denied_nonempty));
+                }
+                return Ok(q.filter(filter));
+            }
+
             return Ok(q.filter(
-                Expr::expr(
-                    Expr::col((sigint_post::Entity, sigint_post::Column::Name))
-                        .if_null(""),
-                )
-                .is_not_in(denied_posts),
+                post_name_col
+                    .clone()
+                    .is_null()
+                    .or(post_name_col.is_not_in(denied_nonempty)),
             ));
         }
     }
