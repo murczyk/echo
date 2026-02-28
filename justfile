@@ -1040,14 +1040,14 @@ ziggy-echo-build-local builder="echo-build-local" server="echo-staging" branch="
     PADD='$HOME/.local/bin:$HOME/.cargo/bin'
 
     echo "🔄 Pulling latest code on ${BUILDER}..."
-    ssh "${BUILDER}" 'set -euxo pipefail; cd workspace/echo && git fetch origin '"${BRANCH}"' && git checkout '"${BRANCH}"' && git pull --ff-only origin '"${BRANCH}"' && PATH='"$PADD"':$PATH cargo build --release'
+    ssh -A "${BUILDER}" 'set -euxo pipefail; cd workspace/echo && git fetch origin '"${BRANCH}"' && git checkout '"${BRANCH}"' && git pull --ff-only origin '"${BRANCH}"' && PATH='"$PADD"':$PATH cargo build --release'
 
     echo "📦 Copying wdintel-rs binary from ${BUILDER} to ${TARGET}..."
     rsync --info=progress2 "${BUILDER}:workspace/echo/target/release/wdintel-rs" /var/tmp/
     rsync --info=progress2 /var/tmp/wdintel-rs "${TARGET}:/var/tmp/"
 
     echo "🚀 Updating binary on ${TARGET} and restarting wdintel-rs..."
-    ssh "${TARGET}" 'set -euxo pipefail; sudo mv /var/tmp/wdintel-rs /usr/bin/wdintel-rs && sudo systemctl restart wdintel-rs'
+    ssh -A "${TARGET}" 'set -euxo pipefail; sudo mv /var/tmp/wdintel-rs /usr/bin/wdintel-rs && sudo systemctl restart wdintel-rs'
 
 build-geo-screenshot:
     ssh {{ builder }} '(cd workspace/map-bot && git fetch origin && git clean -df && git checkout {{ branch }} && git pull)'
