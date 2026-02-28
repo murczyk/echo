@@ -1160,8 +1160,28 @@ rightColumn ( messageId, message ) ps model =
                                             -- Є мережа → показуємо тільки мережеві підказки
                                             }
 
+                                        callsignsForHints =
+                                            let
+                                                callsignsFromMarkedText =
+                                                    textMarked
+                                                        |> List.filterMap
+                                                            (\contentNode ->
+                                                                case contentNode of
+                                                                    B.CnCallsignC callsignContent ->
+                                                                        Just callsignContent.text
+
+                                                                    _ ->
+                                                                        Nothing
+                                                            )
+                                            in
+                                            if List.isEmpty callsignsFromMarkedText then
+                                                message.callsigns
+
+                                            else
+                                                callsignsFromMarkedText
+
                                         hintResultsDict =
-                                            message.callsigns
+                                            callsignsForHints
                                                 |> List.foldl
                                                     (\callsign dict ->
                                                         let
