@@ -180,38 +180,28 @@ navBar user shared activeName props =
                     [ ul [ class "app-navbar-links-list flex flex-wrap items-center gap-x-6 gap-y-1 min-w-0" ] menuItems
                     ]
                 , div [ class "app-navbar-actions flex gap-2 items-center shrink-0" ]
-                    [ button
-                        [ class "block py-2 hover:text-[var(--color-text)] hover:bg-[var(--color-column)] px-2 rounded transition-all duration-200 text-[var(--color-text)] border-0 appearance-none flex items-center"
-                        , onClick props.onNavbarVisibilityChange
-                        , title fullscreenToggleLabel
-                        , attribute "aria-label" fullscreenToggleLabel
-                        , attribute "aria-pressed"
-                            (if props.isNavbarVisible then
-                                "false"
-
-                             else
-                                "true"
-                            )
-                        ]
-                        [ i
-                            [ class "bi bi-arrows-fullscreen text-[var(--color-text)] cursor-pointer hover:text-[var(--color-text)] transition-colors duration-200"
-                            , style "opacity"
-                                (if props.supportsFullscreenToggle then
-                                    "1"
+                    [ if props.supportsFullscreenToggle then
+                        button
+                            [ class "block py-2 hover:text-[var(--color-text)] hover:bg-[var(--color-column)] px-2 rounded transition-all duration-200 text-[var(--color-text)] border-0 appearance-none flex items-center"
+                            , onClick props.onNavbarVisibilityChange
+                            , title fullscreenToggleLabel
+                            , attribute "aria-label" fullscreenToggleLabel
+                            , attribute "aria-pressed"
+                                (if props.isNavbarVisible then
+                                    "false"
 
                                  else
-                                    "0"
-                                )
-                            , style "pointer-events"
-                                (if props.supportsFullscreenToggle then
-                                    "auto"
-
-                                 else
-                                    "none"
+                                    "true"
                                 )
                             ]
-                            []
-                        ]
+                            [ i
+                                [ class "bi bi-arrows-fullscreen text-[var(--color-text)] cursor-pointer hover:text-[var(--color-text)] transition-colors duration-200"
+                                ]
+                                []
+                            ]
+
+                      else
+                        text ""
                     , themeSwitcher
                         { currentTheme = shared.themeMode
                         , onThemeChange = props.onThemeChange
