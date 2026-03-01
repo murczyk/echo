@@ -1,5 +1,5 @@
-use crate::location::SettlementDetails;
 use crate::messenger::group::types::SignalGroupEntry;
+use crate::{location::SettlementDetails, rer_importer::highlight::CNPoint};
 use chrono::NaiveDateTime;
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 use sea_orm::FromQueryResult;
@@ -49,17 +49,6 @@ pub struct InboxMessage {
     pub tags: Option<Vec<i64>>,
     pub network_ids: Option<Vec<i64>>,
     pub inbox_tags: Option<Vec<InboxMessageTag>>,
-    pub highlight_scope: Option<HighlightScope>,
-}
-
-#[derive(
-    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
-)]
-pub enum HighlightScope {
-    Bot,
-    User { login: String },
-    Organism { organism_id: i64 },
-    Aor { aor_id: i64 },
 }
 
 #[derive(
@@ -1137,4 +1126,17 @@ pub struct FreqPelengsActivityRsp {
 pub struct CallsignNetworks {
     pub callsign: String,
     pub network_ids: Vec<i64>,
+}
+
+#[derive(FromQueryResult, Clone)]
+pub struct PalitraLexeme {
+    pub palitra_id: i64,
+    pub palitra_point_id: i64,
+    pub label: String,
+    pub lexeme: String,
+}
+
+pub struct PalitraHighlight {
+    pub palitra_id: i64,
+    pub points: Vec<CNPoint>,
 }

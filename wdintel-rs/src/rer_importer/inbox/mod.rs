@@ -5,10 +5,9 @@ use crate::config::*;
 use crate::error::AppError;
 use crate::event_stream::fanout_mult;
 use crate::event_stream::types::{EventMsg, EventType};
-use crate::palitra::bl::{group_palitra_ids_by_scope, PalitraScopeKey};
+use crate::palitra::types::PalitraAccess;
 use crate::rer_importer::inbox::bl::*;
 use crate::rer_importer::inbox::query::*;
-use crate::rer_importer::points::load_point_lexemes_by_palitra_ids;
 use crate::session::record_page_visit;
 use crate::types::*;
 use crate::utils::orm::ArrayColumnOps;
@@ -19,9 +18,7 @@ use chrono::*;
 use echo_migration::{Expr, PostgresQueryBuilder};
 use itertools::Itertools;
 use log::*;
-use sea_orm::sea_query::OnConflict;
 use sea_orm::*;
-use serde_json::json;
 use std::collections::BTreeSet;
 
 pub(crate) mod bl;
@@ -623,31 +620,16 @@ async fn do_submit_inbox(
         .await
         .context(h!())?;
     let txn = env.dbx.begin().await.c(h!())?;
+    let access = PalitraAccess::ByLogins {
+        logins: vec![login.clone()],
+    };
+    let points =
+        crate::rer_importer::points::load_relevant_palitra_point_lexemes(
+            &txn, access, false,
+        )
+        .await
+        .context(h!())?;
 
-    let scope_groups = group_palitra_ids_by_scope(&env.dbx).await.c(h!())?;
-    let mut scope_point_forms = Vec::new();
-    for (scope_key, palitra_ids) in scope_groups {
-        if palitra_ids.is_empty() {
-            continue;
-        }
-        let point_forms =
-            load_point_lexemes_by_palitra_ids(&env.dbx, palitra_ids)
-                .await
-                .c(h!())?;
-        if point_forms.is_empty() {
-            continue;
-        }
-        let (scope_type, scope_id) = match scope_key {
-            PalitraScopeKey::User(login) => ("user".to_string(), Some(login)),
-            PalitraScopeKey::Organism(organism_id) => {
-                ("organism".to_string(), Some(organism_id.to_string()))
-            }
-            PalitraScopeKey::Aor(aor_id) => {
-                ("aor".to_string(), Some(aor_id.to_string()))
-            }
-        };
-        scope_point_forms.push((scope_type, scope_id, point_forms));
-    }
     for (id, message) in req.messages.iter() {
         let mut message = message.clone();
         let callsigns: Vec<String> = crate::utils::uniq_via_btreeset(
@@ -672,56 +654,23 @@ async fn do_submit_inbox(
             crate::rer_importer::highlight::extract_keywords(&message.text)
                 .c(h!())?,
         );
+
         let no_headers_body =
             crate::rer_importer::body_noheader::extract_text(&message.text)
                 .c(h!())?;
-        let mut scope_tokens = Vec::new();
-        for (scope_type, scope_id, point_forms) in &scope_point_forms {
-            let tokens = crate::rer_importer::points::offset_point_tokens(
-                crate::rer_importer::points::highlight_points(
-                    &env.rq,
-                    &no_headers_body.body,
-                    point_forms,
-                )
-                .await
-                .c(h!())?,
+
+        let message_palitra_points =
+            crate::rer_importer::points::highlight_points(
+                &env.rq,
+                &no_headers_body.body,
+                &points,
                 no_headers_body.start,
-            );
-            if !tokens.is_empty() {
-                scope_tokens.push((
-                    scope_type.clone(),
-                    scope_id.clone(),
-                    tokens,
-                ));
-            }
-        }
+            )
+            .await
+            .c(h!())?;
+
         let all_ids = find_all_duplicates(&txn, *id).await.c(h!())?;
         for id in all_ids {
-            for (scope_type, scope_id, tokens) in &scope_tokens {
-                let point_tokens_active_model =
-                    sigint_inbox_item_point_tokens::ActiveModel {
-                        sigint_inbox_item_id: Set(id),
-                        scope_type: Set(scope_type.clone()),
-                        scope_id: Set(scope_id.clone()),
-                        point_tokens: Set(json!(tokens)),
-                        ..Default::default()
-                    };
-                sigint_inbox_item_point_tokens::Entity::insert(
-                    point_tokens_active_model,
-                )
-                .on_conflict(
-                    OnConflict::columns([
-                        sigint_inbox_item_point_tokens::Column::SigintInboxItemId,
-                        sigint_inbox_item_point_tokens::Column::ScopeType,
-                        sigint_inbox_item_point_tokens::Column::ScopeId,
-                    ])
-                    .do_nothing()
-                    .to_owned(),
-                )
-                .exec(&txn)
-                .await
-                .c(h!())?;
-            }
             submit_upsert_inbox_item(
                 env.settlements.clone(),
                 &txn,
@@ -730,6 +679,25 @@ async fn do_submit_inbox(
                 &login,
                 &logins,
             )
+            .await
+            .c(h!())?;
+
+            let highlight_models: Vec<_> = message_palitra_points
+                .iter()
+                .map(|highlight| {
+                    let point_tokens = serde_json::json!(&highlight.points);
+                    sigint_inbox_item_point_tokens::ActiveModel {
+                        palitra_id: Set(highlight.palitra_id),
+                        point_tokens: Set(point_tokens),
+                        sigint_inbox_item_id: Set(id),
+                        ..Default::default()
+                    }
+                })
+                .collect();
+            sigint_inbox_item_point_tokens::Entity::insert_many(
+                highlight_models,
+            )
+            .exec_without_returning(&txn)
             .await
             .c(h!())?;
         }

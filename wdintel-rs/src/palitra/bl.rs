@@ -13,7 +13,6 @@ use sea_orm::sea_query::SimpleExpr;
 use sea_orm::*;
 use serde::de::DeserializeOwned;
 use std::collections::{HashMap, HashSet};
-use std::hash::Hash;
 
 #[derive(Debug, Clone)]
 enum LabelPattern {
@@ -109,72 +108,6 @@ where
         .all(txn)
         .await
         .c(h!())
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum PalitraScopeKey {
-    User(String),
-    Organism(i64),
-    Aor(i64),
-}
-
-pub async fn group_palitra_ids_by_scope<'a, 'async_trait, C>(
-    txn: &'a C,
-) -> anyhow::Result<HashMap<PalitraScopeKey, Vec<i64>>>
-where
-    C: ConnectionTrait + 'async_trait,
-{
-    let mut map: HashMap<PalitraScopeKey, HashSet<i64>> = HashMap::new();
-
-    let login_rows = palitra_access_login::Entity::find()
-        .select_only()
-        .column(palitra_access_login::Column::PalitraId)
-        .column(palitra_access_login::Column::Login)
-        .into_tuple::<(i64, String)>()
-        .all(txn)
-        .await
-        .c(h!())?;
-    for (palitra_id, login) in login_rows {
-        map.entry(PalitraScopeKey::User(login))
-            .or_default()
-            .insert(palitra_id);
-    }
-
-    let organism_rows = palitra_access_organism::Entity::find()
-        .select_only()
-        .column(palitra_access_organism::Column::PalitraId)
-        .column(palitra_access_organism::Column::OrganismId)
-        .into_tuple::<(i64, i64)>()
-        .all(txn)
-        .await
-        .c(h!())?;
-    for (palitra_id, organism_id) in organism_rows {
-        map.entry(PalitraScopeKey::Organism(organism_id))
-            .or_default()
-            .insert(palitra_id);
-    }
-
-    let aor_rows = palitra_access_aor::Entity::find()
-        .select_only()
-        .column(palitra_access_aor::Column::PalitraId)
-        .column(palitra_access_aor::Column::AorId)
-        .into_tuple::<(i64, i64)>()
-        .all(txn)
-        .await
-        .c(h!())?;
-    for (palitra_id, aor_id) in aor_rows {
-        map.entry(PalitraScopeKey::Aor(aor_id))
-            .or_default()
-            .insert(palitra_id);
-    }
-
-    let mut result = HashMap::new();
-    for (key, ids) in map {
-        let mut ids: Vec<i64> = ids.into_iter().collect();
-        ids.sort_unstable();
-        result.insert(key, ids);
-    }
-    Ok(result)
 }
 
 pub async fn collect_palitra_access_organisms<'a, 'async_trait, C>(

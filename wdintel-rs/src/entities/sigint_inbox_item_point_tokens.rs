@@ -11,16 +11,21 @@ pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
     pub sigint_inbox_item_id: i64,
-    #[sea_orm(column_type = "Text")]
-    pub scope_type: String,
-    #[sea_orm(column_type = "Text", nullable)]
-    pub scope_id: Option<String>,
+    pub palitra_id: i64,
     #[sea_orm(column_type = "JsonBinary")]
     pub point_tokens: Json,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
+    #[sea_orm(
+        belongs_to = "super::palitra::Entity",
+        from = "Column::PalitraId",
+        to = "super::palitra::Column::Id",
+        on_update = "NoAction",
+        on_delete = "Cascade"
+    )]
+    Palitra,
     #[sea_orm(
         belongs_to = "super::sigint_inbox_item::Entity",
         from = "Column::SigintInboxItemId",
@@ -29,6 +34,12 @@ pub enum Relation {
         on_delete = "Cascade"
     )]
     SigintInboxItem,
+}
+
+impl Related<super::palitra::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Palitra.def()
+    }
 }
 
 impl Related<super::sigint_inbox_item::Entity> for Entity {

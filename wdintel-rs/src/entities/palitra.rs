@@ -46,6 +46,8 @@ pub enum Relation {
     PalitraAccessOrganism,
     #[sea_orm(has_many = "super::palitra_point::Entity")]
     PalitraPoint,
+    #[sea_orm(has_many = "super::sigint_inbox_item_point_tokens::Entity")]
+    SigintInboxItemPointTokens,
 }
 
 impl Related<super::login::Entity> for Entity {
@@ -75,6 +77,12 @@ impl Related<super::palitra_access_organism::Entity> for Entity {
 impl Related<super::palitra_point::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::PalitraPoint.def()
+    }
+}
+
+impl Related<super::sigint_inbox_item_point_tokens::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintInboxItemPointTokens.def()
     }
 }
 

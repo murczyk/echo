@@ -1,30 +1,34 @@
-use crate::entities::{palitra, palitra_point, palitra_point_lexeme};
+use crate::entities::{
+    area_of_responsibility, login, organism, organism_aor, palitra,
+    palitra_access_aor, palitra_access_login, palitra_access_organism,
+    palitra_point, palitra_point_lexeme,
+};
 use crate::error::AppError;
 use crate::h;
+use crate::palitra::types::PalitraAccess;
 use crate::rer_importer::highlight::CNPoint;
+use crate::rer_importer::types::{PalitraHighlight, PalitraLexeme};
 use crate::types::ShortContext;
 use crate::utils::orm::ArrayColumnOps;
-use sea_orm::{
-    ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, QueryFilter,
-    QuerySelect,
-};
+use sea_orm::prelude::*;
+use sea_orm::query::*;
+use sea_orm::sea_query::{Query, UnionType};
 use std::collections::BTreeMap;
 
 pub async fn highlight_points(
     rq: &reqwest::Client,
     body: &str,
-    point_forms: &BTreeMap<String, Vec<String>>,
-) -> Result<Vec<CNPoint>, AppError> {
+    point_forms: &BTreeMap<String, Vec<PalitraLexeme>>,
+    offset: usize,
+) -> Result<Vec<PalitraHighlight>, AppError> {
     if point_forms.is_empty() {
         return Ok(vec![]);
     }
-    let mut res = vec![];
     let body_chars: Vec<char> = body.chars().collect();
     let tokens = crate::nlp::tokenize_words(rq, body).await.c(h!())?;
     // println!("> tokens: {tokens:?}");
 
-    let mut substrings_to_highlight: Vec<(String, String, usize, usize)> =
-        vec![];
+    let mut highlight: BTreeMap<i64, Vec<CNPoint>> = BTreeMap::new();
 
     // 🔹 Scan n-grams of length 1..=2 (single word, two-word)
     for n in 1..=2 {
@@ -34,48 +38,40 @@ pub async fn highlight_points(
             // Join token texts with spaces
             let text = slice
                 .iter()
-                .map(|t| t.text.clone())
+                .map(|t| t.text.as_str())
                 .collect::<Vec<_>>()
                 .join(" ");
             let text_lc = text.to_lowercase();
 
-            if let Some(etalon) = point_forms.get(&text_lc) {
+            if let Some(palitra_lexemes) = point_forms.get(&text_lc) {
                 if let (Some(first), Some(last)) = (slice.first(), slice.last())
                 {
-                    for label in etalon {
-                        substrings_to_highlight.push((
-                            label.clone(),
-                            slice
-                                .iter()
-                                .map(|t| t.text.clone())
-                                .collect::<Vec<_>>()
-                                .join(" "),
-                            first.start,
-                            last.end,
-                        ));
+                    if is_word_boundary(&body_chars, first.start, last.end) {
+                        for palitra_lexeme in palitra_lexemes {
+                            let point = CNPoint {
+                                etalon: palitra_lexeme.label.clone(),
+                                text: text.to_string(),
+                                begin: offset + first.start,
+                                end: offset + last.end,
+                            };
+                            highlight
+                                .entry(palitra_lexeme.palitra_id)
+                                .or_default()
+                                .push(point);
+                        }
                     }
                 }
             }
         }
     }
 
-    // println!("> substrings_to_highlight: {substrings_to_highlight:?}");
-
-    for (etalon, sub, start, end) in substrings_to_highlight {
-        if is_word_boundary(&body_chars, start, end) {
-            res.push(CNPoint {
-                begin: start,
-                end,
-                etalon: etalon.clone(),
-                text: sub.clone(),
-            });
-        }
+    let mut res = Vec::with_capacity(highlight.len());
+    for (palitra_id, mut points) in highlight {
+        points.sort();
+        points.dedup();
+        let highlight = PalitraHighlight { palitra_id, points };
+        res.push(highlight);
     }
-
-    // Deduplicate and sort
-    let mut res = res.clone();
-    res.sort();
-    res.dedup();
 
     Ok(res)
 }
@@ -112,103 +108,190 @@ pub fn offset_point_tokens(
         .collect()
 }
 
-pub async fn find_known_points<C>(
+pub fn build_palitra_access_filter(
+    access: PalitraAccess,
+    exact: bool,
+) -> Condition {
+    let mut parts = Vec::new();
+    match access {
+        PalitraAccess::ByLogins { logins } => {
+            let by_login = palitra_access_login::Entity::find()
+                .filter(
+                    palitra_access_login::Column::Login.eq_any(logins.clone()),
+                )
+                .filter(
+                    Expr::col((
+                        palitra_access_login::Entity,
+                        palitra_access_login::Column::PalitraId,
+                    ))
+                    .equals((palitra::Entity, palitra::Column::Id)),
+                )
+                .select_only()
+                .expr(1)
+                .into_query();
+            parts.push(by_login);
+            if !exact {
+                let by_login_organism = login::Entity::find()
+                    .filter(login::Column::Login.eq_any(logins.clone()))
+                    .join(JoinType::InnerJoin, login::Relation::Organism.def())
+                    .join(
+                        JoinType::InnerJoin,
+                        organism::Relation::PalitraAccessOrganism.def(),
+                    )
+                    .filter(
+                        Expr::col((
+                            palitra_access_organism::Entity,
+                            palitra_access_organism::Column::PalitraId,
+                        ))
+                        .equals((palitra::Entity, palitra::Column::Id)),
+                    )
+                    .select_only()
+                    .expr(1)
+                    .into_query();
+                parts.push(by_login_organism);
+
+                let by_login_aors = login::Entity::find()
+                    .filter(login::Column::Login.eq_any(logins.clone()))
+                    .join(JoinType::InnerJoin, login::Relation::Organism.def())
+                    .join(
+                        JoinType::InnerJoin,
+                        organism::Relation::OrganismAor.def(),
+                    )
+                    .join(
+                        JoinType::InnerJoin,
+                        organism_aor::Relation::AreaOfResponsibility.def(),
+                    )
+                    .join(
+                        JoinType::InnerJoin,
+                        area_of_responsibility::Relation::PalitraAccessAor
+                            .def(),
+                    )
+                    .filter(
+                        Expr::col((
+                            palitra_access_aor::Entity,
+                            palitra_access_aor::Column::PalitraId,
+                        ))
+                        .equals((palitra::Entity, palitra::Column::Id)),
+                    )
+                    .select_only()
+                    .expr(1)
+                    .into_query();
+                parts.push(by_login_aors);
+            }
+        }
+        PalitraAccess::ByOrganisms { organism_ids } => {
+            let by_organism = palitra_access_organism::Entity::find()
+                .filter(
+                    palitra_access_organism::Column::OrganismId
+                        .eq_any(organism_ids.clone()),
+                )
+                .filter(
+                    Expr::col((
+                        palitra_access_organism::Entity,
+                        palitra_access_organism::Column::PalitraId,
+                    ))
+                    .equals((palitra::Entity, palitra::Column::Id)),
+                )
+                .select_only()
+                .expr(1)
+                .into_query();
+            parts.push(by_organism);
+            if !exact {
+                let by_organism_aors = organism::Entity::find()
+                    .filter(organism::Column::Id.eq_any(organism_ids.clone()))
+                    .join(
+                        JoinType::InnerJoin,
+                        organism::Relation::OrganismAor.def(),
+                    )
+                    .join(
+                        JoinType::InnerJoin,
+                        organism_aor::Relation::AreaOfResponsibility.def(),
+                    )
+                    .join(
+                        JoinType::InnerJoin,
+                        area_of_responsibility::Relation::PalitraAccessAor
+                            .def(),
+                    )
+                    .filter(
+                        Expr::col((
+                            palitra_access_aor::Entity,
+                            palitra_access_aor::Column::PalitraId,
+                        ))
+                        .equals((palitra::Entity, palitra::Column::Id)),
+                    )
+                    .select_only()
+                    .expr(1)
+                    .into_query();
+                parts.push(by_organism_aors);
+            }
+        }
+        PalitraAccess::ByAor { aor_ids } => {
+            let by_aor = palitra_access_aor::Entity::find()
+                .filter(palitra_access_aor::Column::AorId.eq_any(aor_ids))
+                .filter(
+                    Expr::col((
+                        palitra_access_aor::Entity,
+                        palitra_access_aor::Column::PalitraId,
+                    ))
+                    .equals((palitra::Entity, palitra::Column::Id)),
+                )
+                .select_only()
+                .expr(1)
+                .into_query();
+            parts.push(by_aor);
+        }
+    };
+
+    let expr = if parts.len() == 1 {
+        let q = parts.pop().unwrap();
+        Expr::exists(q)
+    } else {
+        let mut q = Query::select();
+        for part in parts {
+            q.union(UnionType::All, part);
+        }
+        Expr::exists(q)
+    };
+
+    let cond = Condition::all().add(expr);
+
+    cond
+}
+
+pub async fn load_relevant_palitra_point_lexemes<C>(
     txn: &C,
-    rq: &reqwest::Client,
-    body: &str,
-) -> Result<Vec<CNPoint>, AppError>
+    access: PalitraAccess,
+    exact: bool,
+) -> Result<BTreeMap<String, Vec<PalitraLexeme>>, AppError>
 where
     C: ConnectionTrait,
 {
-    let point_forms = load_point_lexemes_all(txn).await.c(h!())?;
-    highlight_points(rq, body, &point_forms).await
-}
+    let palitra_filter = build_palitra_access_filter(access, exact);
 
-pub async fn find_all_palitra_by_author(
-    dbx: &DatabaseConnection,
-    login: &str,
-) -> Result<Vec<i64>, AppError> {
-    Ok(palitra::Entity::find()
+    let rows = palitra_point::Entity::find()
+        .inner_join(palitra_point_lexeme::Entity)
+        .inner_join(palitra::Entity)
+        .filter(palitra_point::Column::Deleted.eq(false))
         .filter(palitra::Column::Deleted.eq(false))
-        .filter(palitra::Column::Author.eq(login))
+        .filter(palitra_filter)
         .select_only()
-        .column(palitra::Column::Id)
-        .into_tuple::<i64>()
-        .all(dbx)
-        .await
-        .c(h!())?)
-}
-pub async fn find_points_by_palitra(
-    dbx: &DatabaseConnection,
-    palitra_ids: Vec<i64>,
-) -> Result<Vec<String>, AppError> {
-    Ok(palitra_point::Entity::find()
-        .filter(palitra_point::Column::Deleted.eq(false))
-        .filter(palitra_point::Column::PalitraId.eq_any(palitra_ids))
-        .select_only()
+        .column(palitra_point::Column::PalitraId)
         .column(palitra_point::Column::Label)
-        .into_tuple::<Option<String>>()
-        .all(dbx)
-        .await
-        .c(h!())?
-        .into_iter()
-        .flatten()
-        .collect())
-}
-
-pub async fn load_point_lexemes_by_palitra_ids<C>(
-    txn: &C,
-    palitra_ids: Vec<i64>,
-) -> Result<BTreeMap<String, Vec<String>>, AppError>
-where
-    C: ConnectionTrait,
-{
-    if palitra_ids.is_empty() {
-        return Ok(BTreeMap::new());
-    }
-    let rows = palitra_point::Entity::find()
-        .inner_join(palitra_point_lexeme::Entity)
-        .filter(palitra_point::Column::Deleted.eq(false))
-        .filter(palitra_point::Column::PalitraId.eq_any(palitra_ids))
-        .select_only()
-        .column(palitra_point::Column::Label)
+        .column(palitra_point_lexeme::Column::PalitraPointId)
         .column(palitra_point_lexeme::Column::Lexeme)
-        .into_tuple::<(Option<String>, String)>()
+        .into_model::<PalitraLexeme>()
         .all(txn)
         .await
         .c(h!())?;
 
-    let mut map: BTreeMap<String, Vec<String>> = BTreeMap::new();
-    for (label, lexeme) in rows {
-        let Some(label) = label else { continue };
-        map.entry(lexeme).or_default().push(label);
-    }
-    Ok(map)
-}
+    let mut res: BTreeMap<String, Vec<PalitraLexeme>> = BTreeMap::new();
 
-pub async fn load_point_lexemes_all<C>(
-    txn: &C,
-) -> Result<BTreeMap<String, Vec<String>>, AppError>
-where
-    C: ConnectionTrait,
-{
-    let rows = palitra_point::Entity::find()
-        .inner_join(palitra_point_lexeme::Entity)
-        .filter(palitra_point::Column::Deleted.eq(false))
-        .select_only()
-        .column(palitra_point::Column::Label)
-        .column(palitra_point_lexeme::Column::Lexeme)
-        .into_tuple::<(Option<String>, String)>()
-        .all(txn)
-        .await
-        .c(h!())?;
-
-    let mut map: BTreeMap<String, Vec<String>> = BTreeMap::new();
-    for (label, lexeme) in rows {
-        let Some(label) = label else { continue };
-        map.entry(lexeme).or_default().push(label);
+    for row in rows {
+        let lexeme = row.lexeme.clone();
+        res.entry(lexeme).or_default().push(row);
     }
-    Ok(map)
+
+    Ok(res)
 }
 
 #[cfg(test)]
