@@ -35,6 +35,7 @@ import {
   nextSortState,
   parseTabDelimitedInput,
   sortRowsClientSide,
+  toUpperCaseCallsign,
   validateDraftRows,
   validateEditForm,
 } from './helpers';
@@ -58,7 +59,7 @@ function readInitialCallsignsFiltersFromUrl(): CallsignsFilterState {
 
   return {
     ...defaults,
-    filterCallsign: params.get('callsign') ?? defaults.filterCallsign,
+    filterCallsign: toUpperCaseCallsign(params.get('callsign') ?? defaults.filterCallsign),
     filterPosition: params.get('position') ?? defaults.filterPosition,
     filterComment: params.get('comment') ?? defaults.filterComment,
     filterUnit: params.get('unit') ?? defaults.filterUnit,
@@ -155,6 +156,17 @@ function unauthorizedOrThrow(error: unknown): never {
     redirectToLogin();
   }
   throw error;
+}
+
+function normalizeCallsign(callsign: Callsign): Callsign {
+  return {
+    ...callsign,
+    callsign: toUpperCaseCallsign(callsign.callsign),
+  };
+}
+
+function normalizeCallsigns(callsigns: Callsign[]): Callsign[] {
+  return callsigns.map(normalizeCallsign);
 }
 
 export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?: string[] }) {
@@ -273,7 +285,7 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
           controller.signal,
         );
         if (listRequestSeqRef.current !== seq) return;
-        setCallsigns(rsp.callsigns);
+        setCallsigns(normalizeCallsigns(rsp.callsigns));
         setShowLoadMore(rsp.showLoadMore);
       } catch (error) {
         if (isAbortError(error)) return;
@@ -307,7 +319,7 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
       setCallsigns((prev) => {
         const byId = new Map<number, Callsign>();
         for (const item of prev) byId.set(item.id, item);
-        for (const item of rsp.callsigns) byId.set(item.id, item);
+        for (const item of normalizeCallsigns(rsp.callsigns)) byId.set(item.id, item);
         return Array.from(byId.values());
       });
       setShowLoadMore(rsp.showLoadMore);
@@ -356,7 +368,7 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
         setUnits(bootstrap.units);
         setSources(bootstrap.sources);
         setUnitStats(bootstrap.unitStats);
-        setCallsigns(bootstrap.callsigns.callsigns);
+        setCallsigns(normalizeCallsigns(bootstrap.callsigns.callsigns));
         setShowLoadMore(bootstrap.callsigns.showLoadMore);
         setAddSourceId(bootstrap.sources[0]?.id ?? null);
         initializedRef.current = true;
@@ -545,7 +557,7 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
       for (const row of nonEmptyRows) {
         try {
           const item = await createCallsign(makeCreatePayload(row, addUnitId, addSourceId));
-          created.push(item);
+          created.push(normalizeCallsign(item));
         } catch (error) {
           if (isUnauthorizedError(error)) {
             redirectToLogin();
@@ -609,7 +621,7 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
 
     setEditSubmitting(true);
     try {
-      const updated = await updateCallsign(makeUpdatePayload(editForm));
+      const updated = normalizeCallsign(await updateCallsign(makeUpdatePayload(editForm)));
       setCallsigns((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
       setEditForm(null);
       setStatus({ kind: 'success', text: 'Позивний оновлено' });

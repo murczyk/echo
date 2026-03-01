@@ -21,6 +21,7 @@ import {
 
 import type { DevelopingFilter } from '../../../../../Bindings';
 import { TableDensityToggleButton } from '../../../components/TableDensityToggleButton';
+import { toUpperCaseCallsign } from '../helpers';
 import type { CallsignsFilterState, DownloadKind } from '../types';
 
 type Props = {
@@ -108,7 +109,7 @@ export function CallsignsFilters({
           <TextField
             label="Позивний"
             value={filters.filterCallsign}
-            onChange={(event) => onFiltersChange((prev) => ({ ...prev, filterCallsign: event.target.value }))}
+            onChange={(event) => onFiltersChange((prev) => ({ ...prev, filterCallsign: toUpperCaseCallsign(event.target.value) }))}
             size="small"
             disabled={disabled}
             sx={{ minWidth: 200 }}
@@ -221,11 +222,6 @@ export function CallsignsFilters({
         </Stack>
 
         <Stack direction="row" spacing={1} alignItems="center" sx={{ ml: { lg: 'auto' } }} useFlexGap flexWrap="wrap">
-          <TableDensityToggleButton
-            dense={denseTable}
-            onToggle={onToggleDenseTable}
-            disabled={disabled}
-          />
           {hasActiveFilters ? (
             <Button size="small" onClick={onClearFilters} disabled={disabled} sx={{ px: 1.5 }}>
               Очистити фільтри
@@ -236,6 +232,11 @@ export function CallsignsFilters({
               Очистити вибір
             </Button>
           ) : null}
+          <TableDensityToggleButton
+            dense={denseTable}
+            onToggle={onToggleDenseTable}
+            disabled={disabled}
+          />
         </Stack>
       </Stack>
 

@@ -33,6 +33,10 @@ export const DEFAULT_SORT: CallsignsSortState = {
 
 export const DEFAULT_FILTERS = createDefaultFilters();
 
+export function toUpperCaseCallsign(value: string): string {
+  return value.toLocaleUpperCase('uk-UA');
+}
+
 export function createDefaultFilters(now = new Date()): CallsignsFilterState {
   const to = now;
   const from = new Date(now.getTime() - 7 * DAY_MS);
@@ -195,7 +199,7 @@ export function createEmptyDraftRow(): CallsignDraftRow {
 export function callsignToEditForm(callsign: Callsign): CallsignEditForm {
   return {
     id: callsign.id,
-    callsign: callsign.callsign,
+    callsign: toUpperCaseCallsign(callsign.callsign),
     position: callsign.position,
     comment: callsign.comment,
     unitId: callsign.unitId,
@@ -257,7 +261,7 @@ function chunkCellsToRows(cells: string[]): CallsignDraftRow[] {
 
 function createDraftRow(callsign: string, position: string, comment: string): CallsignDraftRow {
   return {
-    callsign: callsign.trim(),
+    callsign: toUpperCaseCallsign(callsign.trim()),
     position: position.trim(),
     comment: comment.trim(),
     developing: false,
@@ -305,7 +309,7 @@ export function createSourcesById(sources: Source[]): Map<number, Source> {
 export function makeUpdatePayload(form: CallsignEditForm): Callsign {
   return {
     id: form.id,
-    callsign: form.callsign.trim(),
+    callsign: toUpperCaseCallsign(form.callsign).trim(),
     position: form.position.trim(),
     comment: form.comment.trim(),
     unitId: form.unitId,
@@ -319,7 +323,7 @@ export function makeUpdatePayload(form: CallsignEditForm): Callsign {
 
 export function makeCreatePayload(row: CallsignDraftRow, unitId: number, sourceId: number): CreateCallsignReq {
   return {
-    callsign: row.callsign.trim(),
+    callsign: toUpperCaseCallsign(row.callsign).trim(),
     position: row.position.trim(),
     comment: row.comment.trim(),
     unitId,
