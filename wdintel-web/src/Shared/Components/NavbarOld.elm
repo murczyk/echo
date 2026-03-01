@@ -34,7 +34,8 @@ type alias Props msg =
     , onLogout : msg
     , onThemeChange : ThemeMode -> msg
     , onNavbarVisibilityChange : msg
-    , isRerDuty : Bool
+    , supportsFullscreenToggle : Bool
+    , isNavbarVisible : Bool
     , openDropdown : Maybe String
     , onDropdownToggle : Maybe String -> msg
     }
@@ -43,6 +44,13 @@ type alias Props msg =
 navBar : Auth.User -> Shared.Model -> String -> Props msg -> Html msg
 navBar user shared activeName props =
     let
+        fullscreenToggleLabel =
+            if props.isNavbarVisible then
+                "Повноекранний режим"
+
+            else
+                "Звичайний режим"
+
         menu =
             menuItem props activeName
 
@@ -177,7 +185,29 @@ navBar user shared activeName props =
                     [ ul [ class "app-navbar-links-list flex flex-wrap items-center gap-x-4 gap-y-1 min-w-0" ] menuItems
                     ]
                 , div [ class "app-navbar-actions flex gap-2 items-center shrink-0" ]
-                    [ themeSwitcher
+                    [ if props.supportsFullscreenToggle then
+                        button
+                            [ class "block py-2 text-white hover:bg-black/10 px-2 rounded transition-all duration-200 border-0 appearance-none flex items-center"
+                            , onClick props.onNavbarVisibilityChange
+                            , title fullscreenToggleLabel
+                            , attribute "aria-label" fullscreenToggleLabel
+                            , attribute "aria-pressed"
+                                (if props.isNavbarVisible then
+                                    "false"
+
+                                 else
+                                    "true"
+                                )
+                            ]
+                            [ i
+                                [ class "bi bi-arrows-fullscreen text-white cursor-pointer hover:text-white transition-colors duration-200"
+                                ]
+                                []
+                            ]
+
+                      else
+                        text ""
+                    , themeSwitcher
                         { currentTheme = shared.themeMode
                         , onThemeChange = props.onThemeChange
                         , triggerClass = "block py-2 text-white hover:bg-black/10 px-2 rounded transition-all duration-200"
@@ -188,29 +218,6 @@ navBar user shared activeName props =
                         ]
                         [ i [ class "bi bi-box-arrow-right text-lg" ] []
                         , span [ class "hidden sm:inline" ] [ text ("(" ++ user.name ++ ")") ]
-                        ]
-                    , div
-                        [ class "w-6 h-6 flex items-center justify-center"
-                        , onClick props.onNavbarVisibilityChange
-                        ]
-                        [ i
-                            [ class "bi bi-arrows-fullscreen text-white cursor-pointer hover:text-white transition-colors duration-200"
-                            , style "opacity"
-                                (if props.isRerDuty then
-                                    "1"
-
-                                 else
-                                    "0"
-                                )
-                            , style "pointer-events"
-                                (if props.isRerDuty then
-                                    "auto"
-
-                                 else
-                                    "none"
-                                )
-                            ]
-                            []
                         ]
                     ]
                 ]
