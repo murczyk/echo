@@ -890,30 +890,41 @@ async fn insert_many_points(
 ) -> anyhow::Result<()> {
     let mut point_lexeme_actives: Vec<palitra_point_lexeme::ActiveModel> =
         Vec::new();
-    for point in palitra_point::Entity::insert_many(points_batch)
+    let inserted_points = palitra_point::Entity::insert_many(points_batch)
         .exec_with_returning_many(txn)
         .await
-        .context(h!())?
+        .context(h!())?;
+
+    let mut palitra_point_ids = Vec::new();
+    let mut palitra_point_labels = Vec::new();
+
+    for point in inserted_points.into_iter() {
+        if let Some(label) = point.label {
+            palitra_point_ids.push(point.id);
+            palitra_point_labels.push(label);
+        }
+    }
+
+    let lexemes_batch = nlp::token_lexemes_batch(rq, palitra_point_labels)
+        .await
+        .context(h!())?;
+    let mut uniq = HashSet::new();
+
+    for (point_id, lexemes) in palitra_point_ids.into_iter().zip(lexemes_batch)
     {
-        if let Some(label) = &point.label {
-            let mut lexemes =
-                nlp::token_lexemes(rq, label).await.context(h!())?;
-            lexemes.push(label.clone());
-            let mut uniq = HashSet::new();
-            for lexeme in lexemes {
-                let lexeme = lexeme.to_lowercase().trim().to_string();
-                if uniq.insert(lexeme.clone()) {
-                    point_lexeme_actives.push(
-                        palitra_point_lexeme::ActiveModel {
-                            palitra_point_id: Set(point.id),
-                            lexeme: Set(lexeme),
-                            ..Default::default()
-                        },
-                    );
-                }
+        for lexeme in lexemes {
+            let lexeme = lexeme.to_lowercase().trim().to_string();
+            if !uniq.contains(&lexeme) {
+                uniq.insert(lexeme.clone());
+                point_lexeme_actives.push(palitra_point_lexeme::ActiveModel {
+                    palitra_point_id: Set(point_id),
+                    lexeme: Set(lexeme),
+                    ..Default::default()
+                });
             }
         }
     }
+
     if point_lexeme_actives.is_empty() {
         return Ok(());
     }
