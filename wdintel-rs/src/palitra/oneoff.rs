@@ -2,10 +2,10 @@ use crate::config::PALITRA_POINT_LEXEME_BACKFILL_BATCH_SIZE;
 use crate::entities::{palitra_point, palitra_point_lexeme};
 use crate::error::AppError;
 use crate::types::{Mode, ShortContext};
-use crate::{h, new_pg_pool_from_mode, nlp};
+use crate::{h, new_pg_pool_from_mode};
 use futures_util::TryStreamExt;
 use sea_orm::*;
-use sea_query::OnConflict;
+use sea_query::{Expr, OnConflict};
 use std::collections::HashSet;
 
 pub async fn oneoff_backfill_palitra_point_lexemes(
@@ -15,38 +15,40 @@ pub async fn oneoff_backfill_palitra_point_lexemes(
     println!("> starting oneoff_backfill_palitra_point_lexemes");
     let dbx = new_pg_pool_from_mode(mode).await.c(h!())?;
     let rq = reqwest::Client::new();
+    let filter = palitra_point_lexeme::Entity::find()
+        .filter(
+            Expr::col((
+                palitra_point_lexeme::Entity,
+                palitra_point_lexeme::Column::PalitraPointId,
+            ))
+            .equals((palitra_point::Entity, palitra_point::Column::Id)),
+        )
+        .select_only()
+        .expr(1)
+        .into_query();
+
     let mut points = palitra_point::Entity::find()
         .filter(palitra_point::Column::Deleted.eq(false))
         .filter(palitra_point::Column::Label.is_not_null())
+        .filter(palitra_point::Column::Label.ne(""))
+        .filter(Expr::exists(filter).not())
         .stream(&dbx)
         .await
         .c(h!())?;
-    let mut batch: Vec<palitra_point_lexeme::ActiveModel> =
+    let mut batch: Vec<palitra_point::Model> =
         Vec::with_capacity(PALITRA_POINT_LEXEME_BACKFILL_BATCH_SIZE);
-    let mut total_points = 0_u64;
-    let mut total_lexemes = 0_u64;
+    let mut total_points: u64 = 0;
+    let mut total_lexemes: u64 = 0;
 
     while let Some(point) = points.try_next().await.c(h!())? {
-        let Some(label) = point.label else { continue };
+        batch.push(point);
         total_points += 1;
-        let lexemes = build_lexemes_for_label(&rq, &label).await?;
-        if lexemes.is_empty() {
-            continue;
-        }
-        total_lexemes += lexemes.len() as u64;
-        for lexeme in lexemes {
-            batch.push(palitra_point_lexeme::ActiveModel {
-                palitra_point_id: Set(point.id),
-                lexeme: Set(lexeme),
-                ..Default::default()
-            });
-        }
         if batch.len() >= PALITRA_POINT_LEXEME_BACKFILL_BATCH_SIZE {
-            insert_lexeme_batch(&dbx, &mut batch).await?;
+            total_lexemes += insert_lexeme_batch(&rq, &dbx, &mut batch).await?;
         }
     }
     if !batch.is_empty() {
-        insert_lexeme_batch(&dbx, &mut batch).await?;
+        total_lexemes += insert_lexeme_batch(&rq, &dbx, &mut batch).await?;
     }
 
     println!(
@@ -58,32 +60,44 @@ pub async fn oneoff_backfill_palitra_point_lexemes(
     Ok(())
 }
 
-async fn build_lexemes_for_label(
+async fn insert_lexeme_batch(
     rq: &reqwest::Client,
-    label: &str,
-) -> Result<Vec<String>, AppError> {
-    let mut lexemes = nlp::token_lexemes(rq, label).await.c(h!())?;
-    lexemes.push(label.to_string());
-    let mut uniq = HashSet::new();
-    let mut out = Vec::new();
-    for lexeme in lexemes {
-        let lexeme = lexeme.to_lowercase().trim().to_string();
-        if lexeme.is_empty() {
-            continue;
-        }
-        if uniq.insert(lexeme.clone()) {
-            out.push(lexeme);
+    dbx: &DatabaseConnection,
+    batch: &mut Vec<palitra_point::Model>,
+) -> Result<u64, AppError> {
+    let batch = std::mem::take(batch);
+
+    let mut palitra_point_ids = Vec::with_capacity(batch.len());
+    let mut tokens = Vec::with_capacity(batch.len());
+    for point in batch {
+        if let Some(label) = point.label {
+            palitra_point_ids.push(point.id);
+            tokens.push(label);
         }
     }
-    Ok(out)
-}
 
-async fn insert_lexeme_batch(
-    dbx: &DatabaseConnection,
-    batch: &mut Vec<palitra_point_lexeme::ActiveModel>,
-) -> Result<(), AppError> {
-    let items = std::mem::take(batch);
-    palitra_point_lexeme::Entity::insert_many(items)
+    let lexemes_batch = crate::nlp::token_lexemes_batch(rq, tokens).await?;
+    let mut items = Vec::with_capacity(lexemes_batch.len());
+    let mut uniq = HashSet::new();
+
+    for (point_id, lexemes) in palitra_point_ids.into_iter().zip(lexemes_batch)
+    {
+        for lexeme in lexemes {
+            let lexeme = lexeme.to_lowercase().trim().to_string();
+            if !uniq.contains(&lexeme) {
+                uniq.insert(lexeme.clone());
+                let item = palitra_point_lexeme::ActiveModel {
+                    palitra_point_id: Set(point_id),
+                    lexeme: Set(lexeme),
+                    ..Default::default()
+                };
+                items.push(item);
+            }
+        }
+        uniq.clear();
+    }
+
+    let lexemes_inserted = palitra_point_lexeme::Entity::insert_many(items)
         .on_conflict(
             OnConflict::columns([
                 palitra_point_lexeme::Column::PalitraPointId,
@@ -92,13 +106,12 @@ async fn insert_lexeme_batch(
             .do_nothing()
             .to_owned(),
         )
-        .exec(dbx)
+        .exec_without_returning(dbx)
         .await
-        .map(|_| ())
         .or_else(|err| match err {
-            DbErr::RecordNotInserted => Ok(()),
+            DbErr::RecordNotInserted => Ok(0),
             _ => Err(err),
         })
         .c(h!())?;
-    Ok(())
+    Ok(lexemes_inserted)
 }

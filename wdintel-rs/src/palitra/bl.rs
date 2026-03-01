@@ -923,6 +923,7 @@ async fn insert_many_points(
                 });
             }
         }
+        uniq.clear();
     }
 
     if point_lexeme_actives.is_empty() {
