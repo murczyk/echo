@@ -26,7 +26,7 @@ export function createMasterUnitText(network: Network, unitsMap: Record<number, 
 }
 
 export const PAGE_ID = 'rer-duty-neo';
-/** Poll get-inbox-count every 2s to show "Нових: N". get-inbox is not polled. */
+/** Poll get-inbox-count every 2s; load newer (get-inbox) only when count > 0. */
 export const INBOX_COUNT_POLL_INTERVAL_MS = 2000;
 
 export function emptyFilter(): RerDutyFeedFilterState {
@@ -255,13 +255,16 @@ export type MessageFeedState = {
   filter: RerDutyFeedFilterState;
   items: MessageItem[];
   loading: boolean;
-  loadingEarlier: boolean;
-  /** True after "load earlier" returned 0 new items — nothing older to fetch */
+  loadingOlder: boolean;
+  /** True after "load older" returned 0 new items — nothing older to fetch */
   hasReachedStart: boolean;
   /** Virtuoso firstItemIndex: start at VIRTUOSO_FIRST_ITEM_INDEX_INITIAL, decrease by N when prepending N items (infinite scroll). */
   firstItemIndex: number;
   /** Reference time (ms) for relative "time ago" in message cards; set when feed items are loaded. */
   referenceTimeMs: number | null;
+  /** Message IDs that have been "read" (entered viewport). Unread count = items not in this set. */
+  readIds: Set<number>;
+  unreadCount: number;
 };
 
 export function toQueryState(messageFeeds: MessageFeedState[]): RerDutyState {

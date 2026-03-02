@@ -68,10 +68,12 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
       filter,
       items: [],
       loading: true,
-      loadingEarlier: false,
+      loadingOlder: false,
       hasReachedStart: false,
       firstItemIndex: VIRTUOSO_FIRST_ITEM_INDEX_INITIAL,
       referenceTimeMs: null,
+      readIds: new Set<number>(),
+      unreadCount: 0,
     }));
   });
   const [error, setError] = React.useState<string | null>(null);
@@ -83,7 +85,6 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
   const [savedFilters, setSavedFilters] = React.useState<SavedFilterDuty[]>([]);
   const [selectedSavedId, setSelectedSavedId] = React.useState<number | null>(null);
   const [saveFilterName, setSaveFilterName] = React.useState('');
-  const [digestCount, setDigestCount] = React.useState<number | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = React.useState<number | null>(null);
   const [deleteConfirmFeedId, setDeleteConfirmFeedId] = React.useState<string | null>(null);
   const [commentMessageId, setCommentMessageId] = React.useState<number | null>(null);
@@ -94,9 +95,6 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
   const [unitsMap, setUnitsMap] = React.useState<Record<number, Unit>>({});
   const authUserName = authUserNameProp ?? null;
   const loadNewerRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
-  const refreshMessageCounterRef = React.useRef<() => Promise<void>>(() => Promise.resolve());
-  /** Time (ms) from which we count "new" messages for the digest badge; set once on mount */
-  const digestSinceMsRef = React.useRef<number | null>(null);
   /** Feed IDs that currently have a get-inbox (load newer) request in flight; prevents duplicate requests from polling. */
   const loadNewerInFlightRef = React.useRef<Set<string>>(new Set());
   /** Which feed columns are in "watch mode" (auto-scroll to newest when new messages arrive). */
@@ -109,6 +107,8 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
   const arrowResultTimeoutsRef = React.useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   /** Feed ID to scroll to end after next commit (used after load newer so we scroll once new items are rendered). */
   const scrollToEndAfterNewerRef = React.useRef<string | null>(null);
+  /** Feeds whose viewport is currently within the "near bottom" buffer; when inbox-count > 0 we also load newer for these. */
+  const nearBottomByFeedIdRef = React.useRef<Record<string, boolean>>({});
 
   const mountedRef = React.useRef(true);
   const showArrowResult = React.useCallback((feedId: string, message: string) => {
@@ -172,6 +172,7 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
       const req = buildInboxReq({ loadLatest: true, filter });
       const rsp = await fetchInboxMessages(req);
       const deduped = dedupeMessageItems(rsp.inboxItems);
+      const initialReadIds = new Set<number>(deduped.map(([id]) => id));
       setMessageFeeds((prev) =>
         prev.map((x) =>
           x.id === feedId
@@ -181,6 +182,8 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
                 loading: false,
                 firstItemIndex: VIRTUOSO_FIRST_ITEM_INDEX_INITIAL,
                 referenceTimeMs: Date.now(),
+                readIds: initialReadIds,
+                unreadCount: 0,
               }
             : x,
         ),
@@ -199,12 +202,12 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
     }
   }, []);
 
-  const loadFeedEarlierMessages = React.useCallback(
+  const loadFeedOlderMessages = React.useCallback(
     async (feedId: string) => {
       const w = messageFeeds.find((x) => x.id === feedId);
       if (!w || w.items.length === 0 || w.hasReachedStart) return;
       const firstId = w.items[0][0];
-      setMessageFeeds((prev) => prev.map((x) => (x.id === feedId ? { ...x, loadingEarlier: true } : x)));
+      setMessageFeeds((prev) => prev.map((x) => (x.id === feedId ? { ...x, loadingOlder: true } : x)));
       setError(null);
       try {
         const req = buildInboxReq({
@@ -224,7 +227,7 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
             return {
               ...x,
               items: sortMessageItemsByTime(combined),
-              loadingEarlier: false,
+              loadingOlder: false,
               hasReachedStart,
               firstItemIndex,
             };
@@ -232,14 +235,14 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
         );
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
-        setMessageFeeds((prev) => prev.map((x) => (x.id === feedId ? { ...x, loadingEarlier: false } : x)));
+        setMessageFeeds((prev) => prev.map((x) => (x.id === feedId ? { ...x, loadingOlder: false } : x)));
       }
     },
     [messageFeeds],
   );
 
   const loadFeedNewerMessages = React.useCallback(
-    async (feedId: string) => {
+    async (feedId: string, opts?: { nolimit?: boolean; scrollToEndAfterLoad?: boolean }) => {
       // Prevent duplicate requests from polling
       if (loadNewerInFlightRef.current.has(feedId)) return;
       const feed = messageFeeds.find((x) => x.id === feedId);
@@ -250,6 +253,7 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
         const req = buildInboxReq({
           sinceIdNoninclusive: lastId,
           filter: feed.filter,
+          nolimit: opts?.nolimit ?? undefined,
         });
         const rsp = await fetchInboxMessages(req);
         if (rsp.inboxItems.length > 0) {
@@ -264,14 +268,17 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
                   const toAdd = newItems.filter(([id]) => !existingIds.has(id));
                   if (toAdd.length === 0) return x;
                   const combined = dedupeMessageItems([...x.items, ...toAdd]);
-                  return { ...x, items: sortMessageItemsByTime(combined) };
+
+                  return {
+                    ...x,
+                    items: sortMessageItemsByTime(combined),
+                    unreadCount: x.unreadCount + toAdd.length,
+                  };
                 }),
               );
-              if (messageFeeds[0]?.id === feedId) {
-                digestSinceMsRef.current = Math.floor(Date.now() / 1000) * 1000;
-                setDigestCount(0);
+              if (opts?.scrollToEndAfterLoad === true) {
+                scrollToEndAfterNewerRef.current = feedId;
               }
-              scrollToEndAfterNewerRef.current = feedId;
             }
           }
         }
@@ -284,40 +291,39 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
     [messageFeeds],
   );
 
-  const refreshMessageCounter = React.useCallback(async () => {
+  /** Poll get-inbox-count; only call get-inbox (load newer) when BE says there are new messages. */
+  const pollCountThenLoadNewerIfNeeded = React.useCallback(async () => {
     const w = messageFeeds[0];
     if (!w) return;
-    const sinceMs = digestSinceMsRef.current ?? Math.floor(Date.now() / 1000) * 1000;
-    if (digestSinceMsRef.current == null) digestSinceMsRef.current = sinceMs;
+    const lastItem = w.items[w.items.length - 1];
+    // BE count uses >= since; use lastTs+1 so we only count messages strictly newer than our newest
+    const sinceMs =
+      lastItem != null && lastItem[1].timestamp != null && lastItem[1].timestamp > 0 ? lastItem[1].timestamp + 1 : 0;
     try {
       const req = buildInboxReq({
         filter: w.filter,
         sinceDateInclusiveMs: sinceMs,
         nolimit: true,
       });
-      const d = await fetchInboxCount(req);
-      setDigestCount(d.quantity);
-      if (d.quantity > 0) {
-        for (const feedId of Object.keys(watchModeByFeedId)) {
-          if (watchModeByFeedId[feedId]) {
-            await loadFeedNewerMessages(feedId);
+      const { quantity } = await fetchInboxCount(req);
+      if (quantity > 0) {
+        const nearBottom = nearBottomByFeedIdRef.current;
+        for (const feedId of messageFeeds.map((x) => x.id)) {
+          if (watchModeByFeedId[feedId] || nearBottom[feedId]) {
+            await loadFeedNewerMessages(feedId, {
+              scrollToEndAfterLoad: watchModeByFeedId[feedId],
+            });
           }
         }
       }
     } catch {
-      setDigestCount(null);
+      // ignore count failure; next poll will retry
     }
   }, [messageFeeds, watchModeByFeedId, loadFeedNewerMessages]);
-  refreshMessageCounterRef.current = refreshMessageCounter;
 
   React.useEffect(() => {
     loadFilterOptions();
   }, [loadFilterOptions]);
-
-  React.useEffect(() => {
-    digestSinceMsRef.current = Math.floor(Date.now() / 1000) * 1000;
-    refreshMessageCounterRef.current();
-  }, []);
 
   const feedIds = React.useMemo(() => messageFeeds.map((w) => w.id).join(','), [messageFeeds]);
   const feedsNeedingLoadKey = React.useMemo(
@@ -334,15 +340,15 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
     });
   }, [feedIds, feedsNeedingLoadKey, loadFeedInitialMessages]);
 
-  // Poll get-inbox-count every 2s
+  // Poll get-inbox-count every 2s; only call get-inbox when count > 0
   React.useEffect(() => {
     loadNewerRef.current = setInterval(() => {
-      refreshMessageCounter();
+      pollCountThenLoadNewerIfNeeded();
     }, INBOX_COUNT_POLL_INTERVAL_MS);
     return () => {
       if (loadNewerRef.current) clearInterval(loadNewerRef.current);
     };
-  }, [refreshMessageCounter]);
+  }, [pollCountThenLoadNewerIfNeeded]);
 
   // After we merged newer messages, scroll that feed to end once the new items are rendered
   React.useEffect(() => {
@@ -430,6 +436,8 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
               hasReachedStart: false,
               firstItemIndex: VIRTUOSO_FIRST_ITEM_INDEX_INITIAL,
               referenceTimeMs: null,
+              readIds: new Set<number>(),
+              unreadCount: 0,
             }
           : w,
       );
@@ -461,10 +469,12 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
       filter: emptyFilter(),
       items: [],
       loading: true,
-      loadingEarlier: false,
+      loadingOlder: false,
       hasReachedStart: false,
       firstItemIndex: VIRTUOSO_FIRST_ITEM_INDEX_INITIAL,
       referenceTimeMs: null,
+      readIds: new Set<number>(),
+      unreadCount: 0,
     };
     setMessageFeeds((prev) => {
       if (prev.length >= MAX_MESSAGE_FEEDS || prev.some((w) => w.id === id)) return prev;
@@ -713,6 +723,7 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
                 columnRefsRef.current[w.id] = el;
               }}
               feed={w}
+              unreadCount={w.unreadCount}
               filterStable={filterStable}
               groupsList={groupsList}
               groupInfos={groupInfos}
@@ -739,7 +750,7 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
               tagsMap={tagsMap}
               tagIdsList={tagIdsList}
               messageHasTag={messageHasTag}
-              onLoadEarlier={() => loadFeedEarlierMessages(w.id)}
+              onLoadOlder={() => loadFeedOlderMessages(w.id)}
               onRemoveColumn={() => removeMessageFeed(w.id)}
               onApplyFilter={(f) => applyFilter(w.id, f)}
               onSelectAllGroups={() => selectAllGroups(w.id)}
@@ -766,8 +777,13 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
               onScrollToTop={() => setWatchModeByFeedId((prev) => ({ ...prev, [w.id]: false }))}
               onReachedBottom={() => setWatchModeByFeedId((prev) => ({ ...prev, [w.id]: true }))}
               onLeftBottom={() => setWatchModeByFeedId((prev) => ({ ...prev, [w.id]: false }))}
+              onNearBottomChange={(near) => {
+                nearBottomByFeedIdRef.current = {
+                  ...nearBottomByFeedIdRef.current,
+                  [w.id]: near,
+                };
+              }}
               isWatchMode={watchModeByFeedId[w.id] ?? false}
-              digestCount={digestCount}
               loadingNewer={loadingNewerFeedId === w.id}
               arrowResultMessage={arrowResultByFeedId[w.id] ?? null}
               onArrowClick={async () => {
@@ -777,21 +793,48 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
                   requestAnimationFrame(() => requestAnimationFrame(() => refs[w.id]?.scrollToEnd()));
                 };
                 scrollToEnd();
-                if (digestCount != null && digestCount > 0) {
-                  setLoadingNewerFeedId(w.id);
-                  try {
-                    if (w.items.length > 0) {
-                      await loadFeedNewerMessages(w.id);
-                    } else if (!w.loading) {
-                      await loadFeedInitialMessages(w.id, w.filter);
+                setLoadingNewerFeedId(w.id);
+                try {
+                  if (w.items.length > 0) {
+                    const lastItem = w.items[w.items.length - 1];
+                    const sinceMs =
+                      lastItem != null && lastItem[1].timestamp != null && lastItem[1].timestamp > 0
+                        ? lastItem[1].timestamp + 1
+                        : 0;
+                    const { quantity } = await fetchInboxCount(
+                      buildInboxReq({ filter: w.filter, sinceDateInclusiveMs: sinceMs, nolimit: true }),
+                    );
+                    if (quantity === 0) {
+                      showArrowResult(w.id, 'Немає нових повідомлень');
+                      return;
                     }
-                    showArrowResult(w.id, 'Завантажено нові повідомлення');
-                  } finally {
-                    setLoadingNewerFeedId((prev) => (prev === w.id ? null : prev));
+                    await loadFeedNewerMessages(w.id, { nolimit: true, scrollToEndAfterLoad: true });
+                  } else if (!w.loading) {
+                    await loadFeedInitialMessages(w.id, w.filter);
                   }
-                } else {
+                  showArrowResult(w.id, 'Завантажено нові повідомлення');
+                } catch {
                   showArrowResult(w.id, 'Немає нових повідомлень');
+                } finally {
+                  setLoadingNewerFeedId((prev) => (prev === w.id ? null : prev));
                 }
+              }}
+              onVisibleMessageIds={(ids) => {
+                if (ids.length === 0) return;
+                setMessageFeeds((prev) =>
+                  prev.map((f) => {
+                    if (f.id !== w.id) return f;
+                    // Only add everything to read on init; skip when viewport reports full list (e.g. after load older/newer)
+                    if (ids.length >= f.items.length) return f;
+                    const nextReadIds = new Set([...f.readIds, ...ids]);
+                    if (nextReadIds.size === f.readIds.size && ids.every((id) => f.readIds.has(id))) return f;
+                    return {
+                      ...f,
+                      readIds: nextReadIds,
+                      unreadCount: f.items.filter(([id]) => !nextReadIds.has(id)).length,
+                    };
+                  }),
+                );
               }}
             />
           );
