@@ -119,6 +119,12 @@ pub fn build_palitra_access_filter(
                 .filter(
                     palitra_access_login::Column::Login.eq_any(logins.clone()),
                 )
+                .join(
+                    JoinType::InnerJoin,
+                    palitra_access_login::Relation::Login.def(),
+                )
+                .filter(login::Column::Deleted.eq(false))
+                .filter(login::Column::DeletedPermanently.eq(false))
                 .filter(
                     Expr::col((
                         palitra_access_login::Entity,
@@ -133,7 +139,11 @@ pub fn build_palitra_access_filter(
             if !exact {
                 let by_login_organism = login::Entity::find()
                     .filter(login::Column::Login.eq_any(logins.clone()))
+                    .filter(login::Column::Deleted.eq(false))
+                    .filter(login::Column::DeletedPermanently.eq(false))
                     .join(JoinType::InnerJoin, login::Relation::Organism.def())
+                    .filter(organism::Column::DeletedPermanently.eq(false))
+                    .filter(organism::Column::Enabled.eq(true))
                     .join(
                         JoinType::InnerJoin,
                         organism::Relation::PalitraAccessOrganism.def(),
@@ -152,7 +162,11 @@ pub fn build_palitra_access_filter(
 
                 let by_login_aors = login::Entity::find()
                     .filter(login::Column::Login.eq_any(logins.clone()))
+                    .filter(login::Column::Deleted.eq(false))
+                    .filter(login::Column::DeletedPermanently.eq(false))
                     .join(JoinType::InnerJoin, login::Relation::Organism.def())
+                    .filter(organism::Column::DeletedPermanently.eq(false))
+                    .filter(organism::Column::Enabled.eq(true))
                     .join(
                         JoinType::InnerJoin,
                         organism::Relation::OrganismAor.def(),
@@ -161,6 +175,7 @@ pub fn build_palitra_access_filter(
                         JoinType::InnerJoin,
                         organism_aor::Relation::AreaOfResponsibility.def(),
                     )
+                    .filter(area_of_responsibility::Column::Deleted.eq(false))
                     .join(
                         JoinType::InnerJoin,
                         area_of_responsibility::Relation::PalitraAccessAor
@@ -185,6 +200,12 @@ pub fn build_palitra_access_filter(
                     palitra_access_organism::Column::OrganismId
                         .eq_any(organism_ids.clone()),
                 )
+                .join(
+                    JoinType::InnerJoin,
+                    palitra_access_organism::Relation::Organism.def(),
+                )
+                .filter(organism::Column::DeletedPermanently.eq(false))
+                .filter(organism::Column::Enabled.eq(true))
                 .filter(
                     Expr::col((
                         palitra_access_organism::Entity,
@@ -197,8 +218,35 @@ pub fn build_palitra_access_filter(
                 .into_query();
             parts.push(by_organism);
             if !exact {
+                let by_organism_logins = login::Entity::find()
+                    .filter(
+                        login::Column::OrganismId.eq_any(organism_ids.clone()),
+                    )
+                    .filter(login::Column::Deleted.eq(false))
+                    .filter(login::Column::DeletedPermanently.eq(false))
+                    .join(JoinType::InnerJoin, login::Relation::Organism.def())
+                    .filter(organism::Column::Enabled.eq(true))
+                    .filter(organism::Column::DeletedPermanently.eq(false))
+                    .join(
+                        JoinType::InnerJoin,
+                        login::Relation::PalitraAccessLogin.def(),
+                    )
+                    .filter(
+                        Expr::col((
+                            palitra_access_login::Entity,
+                            palitra_access_login::Column::PalitraId,
+                        ))
+                        .equals((palitra::Entity, palitra::Column::Id)),
+                    )
+                    .select_only()
+                    .expr(1)
+                    .into_query();
+                parts.push(by_organism_logins);
+
                 let by_organism_aors = organism::Entity::find()
                     .filter(organism::Column::Id.eq_any(organism_ids.clone()))
+                    .filter(organism::Column::Enabled.eq(true))
+                    .filter(organism::Column::DeletedPermanently.eq(false))
                     .join(
                         JoinType::InnerJoin,
                         organism::Relation::OrganismAor.def(),
@@ -207,6 +255,7 @@ pub fn build_palitra_access_filter(
                         JoinType::InnerJoin,
                         organism_aor::Relation::AreaOfResponsibility.def(),
                     )
+                    .filter(area_of_responsibility::Column::Deleted.eq(false))
                     .join(
                         JoinType::InnerJoin,
                         area_of_responsibility::Relation::PalitraAccessAor
@@ -227,7 +276,9 @@ pub fn build_palitra_access_filter(
         }
         PalitraAccess::ByAor { aor_ids } => {
             let by_aor = palitra_access_aor::Entity::find()
-                .filter(palitra_access_aor::Column::AorId.eq_any(aor_ids))
+                .filter(
+                    palitra_access_aor::Column::AorId.eq_any(aor_ids.clone()),
+                )
                 .filter(
                     Expr::col((
                         palitra_access_aor::Entity,
@@ -239,6 +290,75 @@ pub fn build_palitra_access_filter(
                 .expr(1)
                 .into_query();
             parts.push(by_aor);
+
+            if !exact {
+                let by_aor_logins = login::Entity::find()
+                    .filter(login::Column::Deleted.eq(false))
+                    .filter(login::Column::DeletedPermanently.eq(false))
+                    .join(JoinType::InnerJoin, login::Relation::Organism.def())
+                    .filter(organism::Column::Enabled.eq(true))
+                    .filter(organism::Column::DeletedPermanently.eq(false))
+                    .join(
+                        JoinType::InnerJoin,
+                        organism::Relation::OrganismAor.def(),
+                    )
+                    .join(
+                        JoinType::InnerJoin,
+                        organism_aor::Relation::AreaOfResponsibility.def(),
+                    )
+                    .filter(
+                        area_of_responsibility::Column::Id
+                            .eq_any(aor_ids.clone()),
+                    )
+                    .filter(area_of_responsibility::Column::Deleted.eq(false))
+                    .join(
+                        JoinType::InnerJoin,
+                        login::Relation::PalitraAccessLogin.def(),
+                    )
+                    .filter(
+                        Expr::col((
+                            palitra_access_login::Entity,
+                            palitra_access_login::Column::PalitraId,
+                        ))
+                        .equals((palitra::Entity, palitra::Column::Id)),
+                    )
+                    .select_only()
+                    .expr(1)
+                    .into_query();
+                parts.push(by_aor_logins);
+
+                let by_aor_organisms = organism::Entity::find()
+                    .filter(organism::Column::Enabled.eq(true))
+                    .filter(organism::Column::DeletedPermanently.eq(false))
+                    .join(
+                        JoinType::InnerJoin,
+                        organism::Relation::OrganismAor.def(),
+                    )
+                    .join(
+                        JoinType::InnerJoin,
+                        organism_aor::Relation::AreaOfResponsibility.def(),
+                    )
+                    .filter(
+                        area_of_responsibility::Column::Id
+                            .eq_any(aor_ids.clone()),
+                    )
+                    .filter(area_of_responsibility::Column::Deleted.eq(false))
+                    .join(
+                        JoinType::InnerJoin,
+                        organism::Relation::PalitraAccessOrganism.def(),
+                    )
+                    .filter(
+                        Expr::col((
+                            palitra_access_organism::Entity,
+                            palitra_access_organism::Column::PalitraId,
+                        ))
+                        .equals((palitra::Entity, palitra::Column::Id)),
+                    )
+                    .select_only()
+                    .expr(1)
+                    .into_query();
+                parts.push(by_aor_organisms);
+            }
         }
     };
 
