@@ -962,6 +962,7 @@ type alias InboxMessage =
     , unit : Maybe String
     , callsignTokens : Maybe (List CnCallsign)
     , signalTokens : Maybe (List CnSignal)
+    , pointTokens : Maybe (List CnPoint)
     , noHeadersBody : Maybe NoHeadersBody
     , keywordTokens : Maybe (List CnHighlight)
     , textMarked : Maybe (List ContentNode)
@@ -999,6 +1000,7 @@ inboxMessageEncoder struct =
         , ( "unit", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.unit )
         , ( "callsign_tokens", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list cnCallsignEncoder)) struct.callsignTokens )
         , ( "signal_tokens", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list cnSignalEncoder)) struct.signalTokens )
+        , ( "point_tokens", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list cnPointEncoder)) struct.pointTokens )
         , ( "no_headers_body", (Maybe.withDefault Json.Encode.null << Maybe.map noHeadersBodyEncoder) struct.noHeadersBody )
         , ( "keyword_tokens", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list cnHighlightEncoder)) struct.keywordTokens )
         , ( "text_marked", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list contentNodeEncoder)) struct.textMarked )
@@ -2969,6 +2971,24 @@ cnCallsignEncoder struct =
         ]
 
 
+type alias CnPoint =
+    { begin : Int
+    , end : Int
+    , etalon : String
+    , text : String
+    }
+
+
+cnPointEncoder : CnPoint -> Json.Encode.Value
+cnPointEncoder struct =
+    Json.Encode.object
+        [ ( "begin", Json.Encode.int struct.begin )
+        , ( "end", Json.Encode.int struct.end )
+        , ( "etalon", Json.Encode.string struct.etalon )
+        , ( "text", Json.Encode.string struct.text )
+        ]
+
+
 type alias CnHighlight =
     { text : String
     , begin : Int
@@ -2991,6 +3011,7 @@ type ContentNode
     | CnCallsignC CnCallsign
     | CnHighlightC CnHighlight
     | CnSignalC CnSignal
+    | CnPointC CnPoint
 
 
 contentNodeEncoder : ContentNode -> Json.Encode.Value
@@ -3010,6 +3031,9 @@ contentNodeEncoder enum =
 
         CnSignalC inner ->
             Json.Encode.object [ ( "CNSignalC", cnSignalEncoder inner ) ]
+
+        CnPointC inner ->
+            Json.Encode.object [ ( "CNPointC", cnPointEncoder inner ) ]
 
 
 type alias CnSignal =
@@ -7272,6 +7296,7 @@ inboxMessageDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsign_tokens" (Json.Decode.nullable (Json.Decode.list cnCallsignDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "signal_tokens" (Json.Decode.nullable (Json.Decode.list cnSignalDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "point_tokens" (Json.Decode.nullable (Json.Decode.list cnPointDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "no_headers_body" (Json.Decode.nullable noHeadersBodyDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "keyword_tokens" (Json.Decode.nullable (Json.Decode.list cnHighlightDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "text_marked" (Json.Decode.nullable (Json.Decode.list contentNodeDecoder))))
@@ -8302,6 +8327,15 @@ cnCallsignDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "text" Json.Decode.string))
 
 
+cnPointDecoder : Json.Decode.Decoder CnPoint
+cnPointDecoder =
+    Json.Decode.succeed CnPoint
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "begin" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "end" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "etalon" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "text" Json.Decode.string))
+
+
 cnHighlightDecoder : Json.Decode.Decoder CnHighlight
 cnHighlightDecoder =
     Json.Decode.succeed CnHighlight
@@ -8327,6 +8361,7 @@ contentNodeDecoder =
         , Json.Decode.map CnCallsignC (Json.Decode.field "CNCallsignC" cnCallsignDecoder)
         , Json.Decode.map CnHighlightC (Json.Decode.field "CNHighlightC" cnHighlightDecoder)
         , Json.Decode.map CnSignalC (Json.Decode.field "CNSignalC" cnSignalDecoder)
+        , Json.Decode.map CnPointC (Json.Decode.field "CNPointC" cnPointDecoder)
         ]
 
 
