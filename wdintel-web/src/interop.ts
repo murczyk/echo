@@ -40,6 +40,7 @@ import './ts/react/tags-neo-keyword-edit-element'
 import './ts/react/users-neo-element'
 import './ts/react/rer-duty-neo-element'
 import './ts/react/rer-palitra-neo-element'
+import './ts/react/rer-callsigns-neo-element'
 import { saveRerAnalysisQueryState } from "./ts/rer-analysis-query-state"
 import { setupCommentDraftTracker } from "./ts/comment-draft-tracker"
 
@@ -50,6 +51,8 @@ import timezone from 'dayjs/plugin/timezone';
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
+
+const RER_CALLSIGNS_NEO_BETA_BANNER_DISMISSED_KEY = 'rer-callsigns-neo-beta-banner-dismissed';
 
 // Theme management functions
 type AppliedTheme = 'light' | 'dark';
@@ -801,6 +804,25 @@ export const onReady = ({ app, env }) => {
     if (app.ports && app.ports.rer_analysis_saveQueryState) {
         app.ports.rer_analysis_saveQueryState.subscribe((queryState: unknown) => {
             saveRerAnalysisQueryState(queryState);
+        });
+    }
+
+    if (
+        app.ports &&
+        app.ports.rer_callsigns_neo_saveBetaBannerDismissed &&
+        app.ports.rer_callsigns_neo_loadBetaBannerDismissed &&
+        app.ports.rer_callsigns_neo_loadBetaBannerDismissedRes
+    ) {
+        app.ports.rer_callsigns_neo_saveBetaBannerDismissed.subscribe((isDismissed: boolean) => {
+            sessionStorage.setItem(
+                RER_CALLSIGNS_NEO_BETA_BANNER_DISMISSED_KEY,
+                isDismissed ? '1' : '0'
+            );
+        });
+
+        app.ports.rer_callsigns_neo_loadBetaBannerDismissed.subscribe(() => {
+            const storedValue = sessionStorage.getItem(RER_CALLSIGNS_NEO_BETA_BANNER_DISMISSED_KEY);
+            app.ports.rer_callsigns_neo_loadBetaBannerDismissedRes.send(storedValue === '1');
         });
     }
 

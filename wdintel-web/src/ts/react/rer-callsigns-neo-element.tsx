@@ -1,0 +1,57 @@
+import { ThemeProvider } from '@mui/material/styles';
+import { createRoot, Root } from 'react-dom/client';
+
+import { useNeoMuiTheme } from './mui-theme';
+import { RerCallsignsNeoPage } from './routes/rer-callsigns-neo';
+
+function getAuthUserRolesFromShell(el: Element): string[] {
+  const ownRaw = el.getAttribute('data-auth-user-roles') ?? '';
+  if (ownRaw.trim() !== '') {
+    return ownRaw
+      .split(',')
+      .map((role) => role.trim())
+      .filter((role) => role.length > 0);
+  }
+
+  const shell = el.closest('.app-shell');
+  const raw = shell?.getAttribute('data-auth-user-roles') ?? '';
+  return raw
+    .split(',')
+    .map((role) => role.trim())
+    .filter((role) => role.length > 0);
+}
+
+function RerCallsignsNeoRoot({ authUserRoles }: { authUserRoles: string[] }) {
+  const theme = useNeoMuiTheme();
+
+  return (
+    <ThemeProvider theme={theme}>
+      <RerCallsignsNeoPage authUserRoles={authUserRoles} />
+    </ThemeProvider>
+  );
+}
+
+class RerCallsignsNeoElement extends HTMLElement {
+  private root: Root | null = null;
+
+  connectedCallback() {
+    if (!this.root) {
+      this.style.display = 'block';
+      this.style.width = '100%';
+      this.style.height = '100%';
+      this.root = createRoot(this);
+    }
+
+    const authUserRoles = getAuthUserRolesFromShell(this);
+    this.root.render(<RerCallsignsNeoRoot authUserRoles={authUserRoles} />);
+  }
+
+  disconnectedCallback() {
+    this.root?.unmount();
+    this.root = null;
+  }
+}
+
+if (!customElements.get('rer-callsigns-neo')) {
+  customElements.define('rer-callsigns-neo', RerCallsignsNeoElement);
+}

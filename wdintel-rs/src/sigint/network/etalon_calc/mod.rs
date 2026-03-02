@@ -159,10 +159,11 @@ pub async fn invalidate_network_inbox(
 pub async fn calculate_sigint_inbox_item_networks<'a, 'async_trait, C>(
     sigint_inbox_items: Vec<sigint_inbox_item::Model>,
     dbx: &'a C,
-) -> anyhow::Result<Vec<sigint_inbox_item_network::Model>>
+) -> anyhow::Result<HashMap<i64, Vec<i64>>>
 where
     C: ConnectionTrait + 'async_trait,
 {
+    let mut result: HashMap<i64, Vec<i64>> = HashMap::new();
     let sigint_inbox_item_ids =
         sigint_inbox_items.iter().map(|i| i.id).collect::<Vec<_>>();
     sigint_inbox_item_network::Entity::delete_many()
@@ -186,7 +187,7 @@ where
         consistency::load_networks_for_inbox_items(dbx, &items_to_process)
             .await
             .c(h!())?;
-    let mut networks_to_insert = Vec::new();
+    let mut models_to_insert = Vec::new();
     for (item_id, network_ids) in network_ids_per_item {
         for network_id in network_ids {
             let active_model = sigint_inbox_item_network::ActiveModel {
@@ -195,15 +196,13 @@ where
                 sigint_network_id: Set(network_id),
                 created_at: NotSet,
             };
-            networks_to_insert.push(active_model);
+            models_to_insert.push(active_model);
+            result.entry(item_id).or_default().push(network_id);
         }
     }
-
-    let inserted_networks =
-        sigint_inbox_item_network::Entity::insert_many(networks_to_insert)
-            .exec_with_returning_many(dbx)
-            .await
-            .c(h!())?;
-
-    Ok(inserted_networks)
+    sigint_inbox_item_network::Entity::insert_many(models_to_insert)
+        .exec_without_returning(dbx)
+        .await
+        .c(h!())?;
+    Ok(result)
 }

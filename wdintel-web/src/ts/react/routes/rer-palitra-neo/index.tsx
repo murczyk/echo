@@ -8,12 +8,10 @@ import {
   DialogContent,
   DialogContentText,
   DialogTitle,
-  List,
-  ListItem,
-  ListItemText,
   Stack,
 } from '@mui/material';
 
+import { BulkDeleteConfirmDialog } from '../../components/BulkDeleteConfirmDialog';
 import { PageHeader } from '../../components/PageHeader';
 import { CreatePalitraDrawer } from './components/CreatePalitraDrawer';
 import { EditPalitraDrawer } from './components/EditPalitraDrawer';
@@ -24,9 +22,10 @@ export function RerPalitraNeoPage() {
   const page = useRerPalitraNeoPage();
 
   return (
-    <Box className="w-full">
-      <Stack spacing={3}>
+    <Box className="w-full" sx={{ height: '100%', minHeight: 0, overflow: 'hidden' }}>
+      <Stack spacing={3} useFlexGap sx={{ height: '100%', minHeight: 0, overflow: 'hidden' }}>
         <PageHeader
+          className="px-4"
           title="палітри"
           actions={
             <Stack direction="row" spacing={2}>
@@ -56,29 +55,38 @@ export function RerPalitraNeoPage() {
 
         {page.error ? <Alert severity="error">{page.error.text}</Alert> : null}
 
-        <PalitraTable
-          loading={page.loading}
-          palitras={page.sortedPalitras}
-          sortColumn={page.sortColumn}
-          sortDirection={page.sortDirection}
-          onSortColumn={page.onSortColumn}
-          user={page.user}
-          myScope={page.myScope}
-          organisms={page.organisms}
-          aors={page.aors}
-          inFlightDeleteId={page.inFlightDeleteId}
-          inFlightUploadId={page.inFlightUploadId}
-          selectedPalitraIds={page.selectedPalitraIds}
-          onOpenEdit={page.openEdit}
-          onRequestUploadPoints={page.requestUploadPoints}
-          onDelete={page.requestDelete}
-          onSetPalitraSelected={page.setPalitraSelected}
-          onSetAllPalitrasSelected={page.setAllPalitrasSelected}
-          onClearSelectedPalitras={page.clearSelectedPalitras}
-        />
+        <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
+          <PalitraTable
+            loading={page.loading}
+            denseTable={page.denseTable}
+            palitras={page.sortedPalitras}
+            sortColumn={page.sortColumn}
+            sortDirection={page.sortDirection}
+            onSortColumn={page.onSortColumn}
+            user={page.user}
+            myScope={page.myScope}
+            organisms={page.organisms}
+            aors={page.aors}
+            inFlightDeleteId={page.inFlightDeleteId}
+            inFlightUploadId={page.inFlightUploadId}
+            selectedPalitraIds={page.selectedPalitraIds}
+            onOpenEdit={page.openEdit}
+            onRequestUploadPoints={page.requestUploadPoints}
+            onDelete={page.requestDelete}
+            onSetPalitraSelected={page.setPalitraSelected}
+            onSetAllPalitrasSelected={page.setAllPalitrasSelected}
+            onClearSelectedPalitras={page.clearSelectedPalitras}
+            onDenseTableChange={page.setDenseTable}
+          />
+        </Box>
       </Stack>
 
-      <Dialog open={page.deleteDialogOpen} onClose={page.cancelDelete} TransitionProps={{ onExited: page.onDeleteDialogExited }}>
+      <Dialog
+        open={page.deleteDialogOpen}
+        onClose={page.cancelDelete}
+        disableRestoreFocus
+        TransitionProps={{ onExited: page.onDeleteDialogExited }}
+      >
         <DialogTitle>Підтвердження видалення</DialogTitle>
         <DialogContent>
           <DialogContentText>
@@ -101,41 +109,20 @@ export function RerPalitraNeoPage() {
         </DialogActions>
       </Dialog>
 
-      <Dialog
+      <BulkDeleteConfirmDialog
         open={page.bulkDeleteDialogOpen}
         onClose={page.cancelBulkDelete}
-        TransitionProps={{ onExited: page.onBulkDeleteDialogExited }}
-        fullWidth
-        maxWidth="sm"
-      >
-        <DialogTitle>Підтвердження видалення</DialogTitle>
-        <DialogContent dividers sx={{ maxHeight: 420 }}>
-          <DialogContentText sx={{ mb: 2 }}>
-            {`Видалити палітр: ${page.bulkDeleteDialogPalitras.length}?`}
-          </DialogContentText>
-          <List dense disablePadding sx={{ maxHeight: 260, overflowY: 'auto' }}>
-            {page.bulkDeleteDialogPalitras.map((palitra) => (
-              <ListItem key={palitra.id} disableGutters sx={{ py: 0.25 }}>
-                <ListItemText primary={palitra.name} secondary={palitra.author ?? undefined} />
-              </ListItem>
-            ))}
-          </List>
-        </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 3, pt: 3 }}>
-          <Button onClick={page.cancelBulkDelete} disabled={page.bulkDeleteInFlight || page.inFlightDeleteId !== null}>
-            Скасувати
-          </Button>
-          <Button
-            onClick={page.confirmBulkDelete}
-            color="error"
-            variant="contained"
-            disabled={page.bulkDeleteInFlight || page.inFlightDeleteId !== null}
-            startIcon={page.bulkDeleteInFlight ? <CircularProgress color="inherit" size={16} /> : null}
-          >
-            Видалити
-          </Button>
-        </DialogActions>
-      </Dialog>
+        onConfirm={page.confirmBulkDelete}
+        onExited={page.onBulkDeleteDialogExited}
+        summaryText={`Видалити палітр: ${page.bulkDeleteDialogPalitras.length}?`}
+        items={page.bulkDeleteDialogPalitras.map((palitra) => ({
+          id: palitra.id,
+          primary: palitra.name,
+          secondary: palitra.author ?? undefined,
+        }))}
+        submitting={page.bulkDeleteInFlight}
+        disabled={page.inFlightDeleteId !== null}
+      />
 
       <input
         ref={page.uploadPointsInputRef}

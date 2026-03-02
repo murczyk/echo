@@ -34,6 +34,34 @@ export function useNeoMuiTheme() {
         typography: {
           fontFamily: neoMuiFontFamily,
         },
+        components: {
+          MuiTableCell: {
+            styleOverrides: {
+              root: {
+                fontSize: '1rem',
+                '& .MuiTypography-body2, & .MuiTypography-caption': {
+                  fontSize: '1rem',
+                },
+              },
+              head: {
+                fontWeight: 600,
+              },
+              sizeSmall: {
+                paddingTop: 12,
+                paddingBottom: 12,
+                paddingLeft: 16,
+                paddingRight: 16,
+              },
+            },
+          },
+          MuiTableSortLabel: {
+            styleOverrides: {
+              root: {
+                fontSize: '1rem',
+              },
+            },
+          },
+        },
       }),
     [mode],
   );

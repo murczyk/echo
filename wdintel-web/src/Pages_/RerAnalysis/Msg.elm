@@ -124,6 +124,7 @@ type Msg
     | ReportTagsOnlyThisUnitForReportToggle
     | ReportTagsWithoutBotTagsToggle
     | ReportAdvancedSendersToggle
+    | ReportReoNoCommentsToggle
     | DeleteMessageConfirm
     | DeleteMessageCancel
     | DeleteMessageDone Int (Result ApiError ())

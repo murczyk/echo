@@ -26,7 +26,53 @@ import {
   isAdmin,
   toCreateReq,
 } from './helpers';
+import { readDenseTableFromUrl, setDenseTableQueryParam } from '../../utils/denseTableQuery';
 import { KmzColorOption, PalitraFormState, SortColumn, SortDirection, UiError } from './types';
+
+function updateUrlSearchParams(mutator: (params: URLSearchParams) => void) {
+  const url = new URL(window.location.href);
+  const params = new URLSearchParams(url.search);
+  mutator(params);
+  const nextSearch = params.toString();
+  const nextUrl = `${url.pathname}${nextSearch ? `?${nextSearch}` : ''}${url.hash}`;
+  window.history.replaceState({}, '', nextUrl);
+}
+
+function readInitialPalitraSortFromUrl(): { sortColumn: SortColumn; sortDirection: SortDirection } {
+  const params = new URLSearchParams(window.location.search);
+  const sortColumnRaw = params.get('pal_sort_col');
+  const sortDirectionRaw = params.get('pal_sort_dir');
+
+  const sortColumn: SortColumn =
+    sortColumnRaw === 'name' ||
+    sortColumnRaw === 'colorHex' ||
+    sortColumnRaw === 'sourceFileName' ||
+    sortColumnRaw === 'author' ||
+    sortColumnRaw === 'lastUploadedAtTs'
+      ? sortColumnRaw
+      : 'lastUploadedAtTs';
+  const sortDirection: SortDirection = sortDirectionRaw === 'asc' || sortDirectionRaw === 'desc' ? sortDirectionRaw : 'desc';
+
+  return { sortColumn, sortDirection };
+}
+
+function syncPalitraSortToUrl(sortColumn: SortColumn, sortDirection: SortDirection, denseTable: boolean) {
+  updateUrlSearchParams((params) => {
+    if (sortColumn === 'lastUploadedAtTs') {
+      params.delete('pal_sort_col');
+    } else {
+      params.set('pal_sort_col', sortColumn);
+    }
+
+    if (sortDirection === 'desc') {
+      params.delete('pal_sort_dir');
+    } else {
+      params.set('pal_sort_dir', sortDirection);
+    }
+
+    setDenseTableQueryParam(params, denseTable);
+  });
+}
 
 function fileNameToBaseName(fileName: string): string {
   const dotIndex = fileName.lastIndexOf('.');
@@ -39,6 +85,7 @@ function canModifyPalitra(user: User | null, palitra: Palitra): boolean {
 }
 
 export function useRerPalitraNeoPage() {
+  const initialSort = React.useMemo(() => readInitialPalitraSortFromUrl(), []);
   const [user, setUser] = React.useState<User | null>(null);
   const [palitras, setPalitras] = React.useState<Palitra[]>([]);
   const [myScope, setMyScope] = React.useState<MyScope | null>(null);
@@ -57,8 +104,9 @@ export function useRerPalitraNeoPage() {
   const [bulkDeleteInFlight, setBulkDeleteInFlight] = React.useState(false);
   const [error, setError] = React.useState<UiError | null>(null);
 
-  const [sortColumn, setSortColumn] = React.useState<SortColumn>('lastUploadedAtTs');
-  const [sortDirection, setSortDirection] = React.useState<SortDirection>('desc');
+  const [sortColumn, setSortColumn] = React.useState<SortColumn>(initialSort.sortColumn);
+  const [sortDirection, setSortDirection] = React.useState<SortDirection>(initialSort.sortDirection);
+  const [denseTable, setDenseTable] = React.useState<boolean>(() => readDenseTableFromUrl());
 
   const [createOpen, setCreateOpen] = React.useState(false);
   const [createForm, setCreateForm] = React.useState<PalitraFormState>(getInitialCreateForm(null, null));
@@ -117,6 +165,10 @@ export function useRerPalitraNeoPage() {
 
     return sorted;
   }, [palitras, sortColumn, sortDirection]);
+
+  React.useEffect(() => {
+    syncPalitraSortToUrl(sortColumn, sortDirection, denseTable);
+  }, [sortColumn, sortDirection, denseTable]);
 
   const reloadPalitras = React.useCallback(async () => {
     const list = await listPalitras();
@@ -214,10 +266,6 @@ export function useRerPalitraNeoPage() {
 
   function requestDelete(palitra: Palitra) {
     if (inFlightDeleteId !== null || bulkDeleteInFlight || bulkDeleteDialogOpen) return;
-    const activeElement = document.activeElement;
-    if (activeElement instanceof HTMLElement) {
-      activeElement.blur();
-    }
     setDeleteDialogPalitra(palitra);
     setDeleteDialogOpen(true);
   }
@@ -300,11 +348,6 @@ export function useRerPalitraNeoPage() {
         inFlightUploadId !== palitra.id,
     );
     if (selected.length === 0) return;
-
-    const activeElement = document.activeElement;
-    if (activeElement instanceof HTMLElement) {
-      activeElement.blur();
-    }
 
     setBulkDeleteDialogPalitras(selected);
     setBulkDeleteDialogOpen(true);
@@ -542,6 +585,7 @@ export function useRerPalitraNeoPage() {
     sortedPalitras,
     sortColumn,
     sortDirection,
+    denseTable,
     inFlightDeleteId,
     inFlightUploadId,
     deleteDialogPalitra,
@@ -576,6 +620,7 @@ export function useRerPalitraNeoPage() {
     openEdit,
     closeEdit,
     onSortColumn,
+    setDenseTable,
     requestUploadPoints,
     requestDelete,
     cancelDelete,

@@ -182,6 +182,7 @@ init route _ =
                     ]
                 , selected = B.Docx
                 }
+            , reportReoNoComments = False
 
             -- , reportIframeUrl = Nothing
             , reportActiveNetworksAorsSelect =
@@ -3110,6 +3111,11 @@ update user shared route msg model =
             , E.none
             )
 
+        ReportReoNoCommentsToggle ->
+            ( { model | reportReoNoComments = not model.reportReoNoComments }
+            , E.none
+            )
+
         ReportTagsWithoutBotTagsToggle ->
             ( if model.withoutModelTags then
                 { model | withoutModelTags = False }
@@ -3653,7 +3659,9 @@ reportTemplateToApiType model template =
         RTReo ->
             Just
                 (B.Reo
-                    { adjacentFreqsDistance = model.reportAdjacentFreqsRangeSelect.selected }
+                    { adjacentFreqsDistance = model.reportAdjacentFreqsRangeSelect.selected
+                    , noComments = model.reportReoNoComments
+                    }
                     model.reportReoFileTypeSelect.selected
                 )
 
