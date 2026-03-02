@@ -136,9 +136,10 @@ pub async fn load_coordinates_from_kml(
                 }
             }
             Node::Placemark(p) => {
+                let m_color = get_placemark_color(&p);
                 let label = p.name.or(p.description);
                 let point = p.point.and_then(|p| p.coordinates);
-                m_add_coordinates(&mut values, label.clone(), point);
+                m_add_coordinates(&mut values, label.clone(), point, m_color.clone());
 
                 let polygon_point = p
                     .polygon
@@ -146,7 +147,7 @@ pub async fn load_coordinates_from_kml(
                     .and_then(|o| o.linear_ring)
                     .and_then(|l| l.coordinates)
                     .and_then(|l| l.body);
-                m_add_coordinates(&mut values, label.clone(), polygon_point);
+                m_add_coordinates(&mut values, label.clone(), polygon_point, m_color.clone());
 
                 let mut line_strings =
                     p.multi_geometry.map(|p| p.line_strings).unwrap_or(vec![]);
@@ -157,7 +158,7 @@ pub async fn load_coordinates_from_kml(
                 for line_string in line_strings {
                     let coordinates =
                         line_string.coordinates.and_then(|c| c.body);
-                    m_add_coordinates(&mut values, label.clone(), coordinates);
+                    m_add_coordinates(&mut values, label.clone(), coordinates, m_color.clone());
                 }
             }
             _ => continue,
@@ -166,10 +167,30 @@ pub async fn load_coordinates_from_kml(
     Ok(values)
 }
 
+fn get_placemark_color(p: &Placemark) -> Option<String> {
+    let Some(style) = &p.style else {
+        return None;
+    };
+    if let Some(s) = &style.icon_style {
+        return s.color.clone().map(|c| c.body);
+    }
+    if let Some(s) = &style.poly_style {
+        return s.color.clone().map(|c| c.body);
+    }
+    if let Some(s) = &style.line_style {
+        return s.color.clone().map(|c| c.body);
+    }
+    if let Some(s) = &style.line_style {
+        return s.color.clone().map(|c| c.body);
+    }
+    None
+}
+
 fn m_add_coordinates(
     values: &mut Vec<PalitraPoint>,
     label: Option<String>,
     coordinates: Option<String>,
+    m_color: Option<String>,
 ) {
     if let Some(c) = coordinates {
         match Coords::list_from_kml_coordinates(&c) {
@@ -178,6 +199,7 @@ fn m_add_coordinates(
                     let point = PalitraPoint {
                         coords,
                         label: label.clone(),
+                        color: m_color.clone(),
                     };
                     values.push(point);
                 }
