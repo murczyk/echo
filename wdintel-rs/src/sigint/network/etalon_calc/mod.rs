@@ -187,7 +187,6 @@ where
         consistency::load_networks_for_inbox_items(dbx, &items_to_process)
             .await
             .c(h!())?;
-    let mut models_to_insert = Vec::new();
     for (item_id, network_ids) in network_ids_per_item {
         for network_id in network_ids {
             let active_model = sigint_inbox_item_network::ActiveModel {
@@ -196,13 +195,9 @@ where
                 sigint_network_id: Set(network_id),
                 created_at: NotSet,
             };
-            models_to_insert.push(active_model);
+            active_model.insert(dbx).await.c(h!())?;
             result.entry(item_id).or_default().push(network_id);
         }
     }
-    sigint_inbox_item_network::Entity::insert_many(models_to_insert)
-        .exec_without_returning(dbx)
-        .await
-        .c(h!())?;
     Ok(result)
 }
