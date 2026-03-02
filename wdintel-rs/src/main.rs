@@ -502,6 +502,16 @@ pub struct OneoffSuggestInboxMessageTagsPs {
     pub batch_size: Option<usize>,
 }
 
+#[derive(clap::Args, Debug, Clone)]
+pub struct OneoffHighlightInboxMessagePalitraPs {
+    /// Start datetime (inclusive). Example: `2023-04-17T00:00:00`
+    #[arg(long, value_enum)]
+    pub start: String,
+    /// Start datetime (non-inclusive). Example: `2023-04-18T00:00:00`
+    #[arg(long, value_enum)]
+    pub end: String,
+}
+
 #[derive(clap::Parser, Debug)]
 pub struct OneoffImportCallsignsCsvPs {
     #[arg(long)]
@@ -625,6 +635,7 @@ enum Cmd {
     OneoffGenerateStrongboxKey,
     OneoffFillSigintInboxItemTags,
     OneoffSuggestInboxMessageTags(OneoffSuggestInboxMessageTagsPs),
+    OneoffHighlightInboxMessagePalitra(OneoffHighlightInboxMessagePalitraPs),
     OneoffImportSignalsCallsignsCsv(OneoffImportSignalsCallsignsCsvPs),
     OneoffFixWhatsappSenders,
     OneoffBackfillInboxNetworks(OneoffBackfillInboxNetworksPs),
@@ -1105,6 +1116,9 @@ async fn async_main(
         }
         Cmd::TuiMergeNetworkFreq => {
             sigint::import::tui::run_merge_network_freq_tui(mode).await
+        },
+        Cmd::OneoffHighlightInboxMessagePalitra(ps) => {
+            palitra::oneoff::oneoff_highlight_inbox_message_palitra_points(mode, &ps).await
         }
     }
 }

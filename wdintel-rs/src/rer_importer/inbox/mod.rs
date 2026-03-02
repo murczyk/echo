@@ -682,7 +682,7 @@ async fn do_submit_inbox(
             .await
             .c(h!())?;
 
-            let highlight_models: Vec<_> = message_palitra_points
+            let tokens_to_insert: Vec<_> = message_palitra_points
                 .iter()
                 .map(|highlight| {
                     let point_tokens = serde_json::json!(&highlight.points);
@@ -694,21 +694,23 @@ async fn do_submit_inbox(
                     }
                 })
                 .collect();
-            sigint_inbox_item_point_tokens::Entity::insert_many(
-                highlight_models,
-            )
-            .on_conflict(
-                sea_query::OnConflict::columns([
-                    sigint_inbox_item_point_tokens::Column::SigintInboxItemId,
-                    sigint_inbox_item_point_tokens::Column::PalitraId,
-                ])
+            if !tokens_to_insert.is_empty() {
+                sigint_inbox_item_point_tokens::Entity::insert_many(
+                    tokens_to_insert,
+                )
+                .on_conflict(
+                    sea_query::OnConflict::columns([
+                        sigint_inbox_item_point_tokens::Column::SigintInboxItemId,
+                        sigint_inbox_item_point_tokens::Column::PalitraId,
+                    ])
+                    .do_nothing()
+                    .to_owned(),
+                )
                 .do_nothing()
-                .to_owned(),
-            )
-            .do_nothing()
-            .exec_without_returning(&txn)
-            .await
-            .c(h!())?;
+                .exec_without_returning(&txn)
+                .await
+                .c(h!())?;
+            }
         }
     }
     txn.commit().await.c(h!())?;

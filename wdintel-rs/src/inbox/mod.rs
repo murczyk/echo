@@ -335,12 +335,14 @@ where
             }
         })
         .collect();
-    sigint_inbox_item_point_tokens::Entity::insert_many(
-        inbox_item_point_tokens,
-    )
-    .exec_without_returning(txn)
-    .await
-    .c(h!())?;
+    if !inbox_item_point_tokens.is_empty() {
+        sigint_inbox_item_point_tokens::Entity::insert_many(
+            inbox_item_point_tokens,
+        )
+        .exec_without_returning(txn)
+        .await
+        .c(h!())?;
+    }
 
     let event = EventMsg::new(EventType::ETInboxChanged(message.id));
     fanout(redis, event).await.c(h!())?;
@@ -372,7 +374,7 @@ where
     Ok(m_unit)
 }
 
-async fn resolve_message_aor_ids_by_group<'a, 'async_trait, C>(
+pub async fn resolve_message_aor_ids_by_group<'a, 'async_trait, C>(
     txn: &'a C,
     message_id: i64,
 ) -> Result<Vec<i64>, AppError>
@@ -409,7 +411,7 @@ where
     Ok(m_aor_ids)
 }
 
-async fn resolve_aor_ids_by_networks<'a, 'async_trait, C>(
+pub async fn resolve_aor_ids_by_networks<'a, 'async_trait, C>(
     txn: &'a C,
     network_ids: Vec<i64>,
 ) -> Result<Vec<i64>, AppError>

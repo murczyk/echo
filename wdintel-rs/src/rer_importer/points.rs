@@ -12,7 +12,7 @@ use crate::types::ShortContext;
 use crate::utils::orm::ArrayColumnOps;
 use sea_orm::prelude::*;
 use sea_orm::query::*;
-use sea_orm::sea_query::{Query, UnionType};
+use sea_orm::sea_query::UnionType;
 use std::collections::BTreeMap;
 
 pub async fn highlight_points(
@@ -133,7 +133,7 @@ pub fn build_palitra_access_filter(
                     .equals((palitra::Entity, palitra::Column::Id)),
                 )
                 .select_only()
-                .expr(1)
+                .expr(Expr::cust("1"))
                 .into_query();
             parts.push(by_login);
             if !exact {
@@ -156,7 +156,7 @@ pub fn build_palitra_access_filter(
                         .equals((palitra::Entity, palitra::Column::Id)),
                     )
                     .select_only()
-                    .expr(1)
+                    .expr(Expr::cust("1"))
                     .into_query();
                 parts.push(by_login_organism);
 
@@ -189,7 +189,7 @@ pub fn build_palitra_access_filter(
                         .equals((palitra::Entity, palitra::Column::Id)),
                     )
                     .select_only()
-                    .expr(1)
+                    .expr(Expr::cust("1"))
                     .into_query();
                 parts.push(by_login_aors);
             }
@@ -214,7 +214,7 @@ pub fn build_palitra_access_filter(
                     .equals((palitra::Entity, palitra::Column::Id)),
                 )
                 .select_only()
-                .expr(1)
+                .expr(Expr::cust("1"))
                 .into_query();
             parts.push(by_organism);
             if !exact {
@@ -239,7 +239,7 @@ pub fn build_palitra_access_filter(
                         .equals((palitra::Entity, palitra::Column::Id)),
                     )
                     .select_only()
-                    .expr(1)
+                    .expr(Expr::cust("1"))
                     .into_query();
                 parts.push(by_organism_logins);
 
@@ -269,7 +269,7 @@ pub fn build_palitra_access_filter(
                         .equals((palitra::Entity, palitra::Column::Id)),
                     )
                     .select_only()
-                    .expr(1)
+                    .expr(Expr::cust("1"))
                     .into_query();
                 parts.push(by_organism_aors);
             }
@@ -287,7 +287,7 @@ pub fn build_palitra_access_filter(
                     .equals((palitra::Entity, palitra::Column::Id)),
                 )
                 .select_only()
-                .expr(1)
+                .expr(Expr::cust("1"))
                 .into_query();
             parts.push(by_aor);
 
@@ -323,7 +323,7 @@ pub fn build_palitra_access_filter(
                         .equals((palitra::Entity, palitra::Column::Id)),
                     )
                     .select_only()
-                    .expr(1)
+                    .expr(Expr::cust("1"))
                     .into_query();
                 parts.push(by_aor_logins);
 
@@ -355,23 +355,21 @@ pub fn build_palitra_access_filter(
                         .equals((palitra::Entity, palitra::Column::Id)),
                     )
                     .select_only()
-                    .expr(1)
+                    .expr(Expr::cust("1"))
                     .into_query();
                 parts.push(by_aor_organisms);
             }
         }
     };
 
-    let expr = if parts.len() == 1 {
-        let q = parts.pop().unwrap();
-        Expr::exists(q)
-    } else {
-        let mut q = Query::select();
-        for part in parts {
-            q.union(UnionType::All, part);
-        }
-        Expr::exists(q)
-    };
+    let q = parts.into_iter().reduce(|mut cur, next| {
+        cur.union(UnionType::All, next);
+        cur
+    });
+
+    let stmt = q.unwrap();
+
+    let expr = Expr::exists(stmt);
 
     Condition::all().add(expr)
 }
