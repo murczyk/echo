@@ -3,6 +3,7 @@ use crate::entities::*;
 use crate::event_stream::fanout;
 use crate::event_stream::types::EventMsg;
 use crate::event_stream::types::EventType;
+use crate::palitra::types::PalitraAccess;
 use crate::types::*;
 use chrono::prelude::*;
 use sea_orm::*;
@@ -41,6 +42,18 @@ where
         .c(h!())?
         .ok_or(format!("Couldn't find a message id={message_id}"))?;
     let m_aor_id = resolve_message_aor_id(txn, message_id).await.c(h!())?;
+    let palitra_point_lexemes = if let Some(aor_id) = m_aor_id {
+        let access = PalitraAccess::ByAor {
+            aor_ids: vec![aor_id],
+        };
+        crate::rer_importer::points::load_relevant_palitra_point_lexemes(
+            txn, access, false,
+        )
+        .await
+        .context(h!())?
+    } else {
+        Default::default()
+    };
 
     let body = message.body.clone().unwrap_or("".to_string());
     if crate::rer_importer::multimessage::should_try_split_message(&body) {
@@ -101,6 +114,15 @@ where
     let reviewed = false;
     let body_noheader =
         crate::rer_importer::body_noheader::extract_text(&body)?;
+    let message_palitra_points = crate::rer_importer::points::highlight_points(
+        rq,
+        &body_noheader.body,
+        &palitra_point_lexemes,
+        body_noheader.start,
+    )
+    .await
+    .c(h!())?;
+
     // let location = crate::rer_importer::location::extract_location(&body)?;
     let post = crate::rer_importer::post::extract_post(&body)?;
     let post_id = crate::sigint::post::get_or_create_post_id(txn, &post)
@@ -262,6 +284,23 @@ where
         signal_message.datasource_group_id = Set(Some(datasource_group_id));
         signal_message.update(txn).await.c(h!())?;
     }
+
+    let highlight_models: Vec<_> = message_palitra_points
+        .iter()
+        .map(|highlight| {
+            let point_tokens = serde_json::json!(&highlight.points);
+            sigint_inbox_item_point_tokens::ActiveModel {
+                palitra_id: Set(highlight.palitra_id),
+                point_tokens: Set(point_tokens),
+                sigint_inbox_item_id: Set(message.id),
+                ..Default::default()
+            }
+        })
+        .collect();
+    sigint_inbox_item_point_tokens::Entity::insert_many(highlight_models)
+        .exec_without_returning(txn)
+        .await
+        .c(h!())?;
 
     let job = tag_suggestion_worker_queue::ActiveModel {
         sigint_inbox_item_id: Set(message.id),
