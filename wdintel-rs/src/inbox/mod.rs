@@ -5,6 +5,7 @@ use crate::event_stream::types::EventMsg;
 use crate::event_stream::types::EventType;
 use crate::palitra::types::PalitraAccess;
 use crate::types::*;
+use crate::utils::orm::ArrayColumnOps;
 use chrono::prelude::*;
 use sea_orm::*;
 
@@ -41,18 +42,13 @@ where
         .await
         .c(h!())?
         .ok_or(format!("Couldn't find a message id={message_id}"))?;
-    let m_aor_id = resolve_message_aor_id(txn, message_id).await.c(h!())?;
-    let palitra_point_lexemes = if let Some(aor_id) = m_aor_id {
-        let access = PalitraAccess::ByAor {
-            aor_ids: vec![aor_id],
-        };
-        crate::rer_importer::points::load_relevant_palitra_point_lexemes(
-            txn, access, false,
-        )
+    let m_aor_ids = resolve_message_aor_ids_by_group(txn, message_id)
         .await
-        .context(h!())?
+        .c(h!())?;
+    let m_aor_id = if m_aor_ids.is_empty() {
+        None
     } else {
-        Default::default()
+        Some(m_aor_ids[0])
     };
 
     let body = message.body.clone().unwrap_or("".to_string());
@@ -114,14 +110,6 @@ where
     let reviewed = false;
     let body_noheader =
         crate::rer_importer::body_noheader::extract_text(&body)?;
-    let message_palitra_points = crate::rer_importer::points::highlight_points(
-        rq,
-        &body_noheader.body,
-        &palitra_point_lexemes,
-        body_noheader.start,
-    )
-    .await
-    .c(h!())?;
 
     // let location = crate::rer_importer::location::extract_location(&body)?;
     let post = crate::rer_importer::post::extract_post(&body)?;
@@ -227,7 +215,7 @@ where
         nominatimres_id: NotSet,
         location: Set(location),
         location_v2: Set(location_v2),
-        body_noheader: Set(Some(serde_json::to_value(body_noheader).c(h!())?)),
+        body_noheader: Set(Some(serde_json::to_value(&body_noheader).c(h!())?)),
         tags: NotSet,
         callsigns_alg1: Set(Some(
             serde_json::to_value(callsigns_alg1).c(h!())?,
@@ -285,7 +273,57 @@ where
         signal_message.update(txn).await.c(h!())?;
     }
 
-    let highlight_models: Vec<_> = message_palitra_points
+    let job = tag_suggestion_worker_queue::ActiveModel {
+        sigint_inbox_item_id: Set(message.id),
+    };
+    tag_suggestion_worker_queue::Entity::insert(job)
+        .on_conflict_do_nothing()
+        .exec(txn)
+        .await
+        .c(h!())?;
+
+    let item_networks = crate::sigint::network::etalon_calc::calculate_sigint_inbox_item_networks(
+        vec![result],
+        txn,
+    )
+    .await
+    .c(h!())?;
+
+    let network_ids: Vec<i64> =
+        item_networks.iter().map(|x| x.sigint_network_id).collect();
+
+    let network_aor_ids = resolve_aor_ids_by_networks(txn, network_ids)
+        .await
+        .context(h!())?;
+    let palitra_aor_ids = if !network_aor_ids.is_empty() {
+        network_aor_ids
+    } else {
+        m_aor_ids
+    };
+
+    let palitra_point_lexemes = if palitra_aor_ids.is_empty() {
+        let access = PalitraAccess::ByAor {
+            aor_ids: palitra_aor_ids,
+        };
+        crate::rer_importer::points::load_relevant_palitra_point_lexemes(
+            txn, access, false,
+        )
+        .await
+        .context(h!())?
+    } else {
+        Default::default()
+    };
+    let message_palitra_highlights =
+        crate::rer_importer::points::highlight_points(
+            rq,
+            &body_noheader.body,
+            &palitra_point_lexemes,
+            body_noheader.start,
+        )
+        .await
+        .c(h!())?;
+
+    let inbox_item_point_tokens: Vec<_> = message_palitra_highlights
         .iter()
         .map(|highlight| {
             let point_tokens = serde_json::json!(&highlight.points);
@@ -297,29 +335,16 @@ where
             }
         })
         .collect();
-    sigint_inbox_item_point_tokens::Entity::insert_many(highlight_models)
-        .exec_without_returning(txn)
-        .await
-        .c(h!())?;
-
-    let job = tag_suggestion_worker_queue::ActiveModel {
-        sigint_inbox_item_id: Set(message.id),
-    };
-    tag_suggestion_worker_queue::Entity::insert(job)
-        .on_conflict_do_nothing()
-        .exec(txn)
-        .await
-        .c(h!())?;
-
-    let event = EventMsg::new(EventType::ETInboxChanged(result.id));
-    fanout(redis, event).await.c(h!())?;
-
-    crate::sigint::network::etalon_calc::calculate_sigint_inbox_item_networks(
-        vec![result],
-        txn,
+    sigint_inbox_item_point_tokens::Entity::insert_many(
+        inbox_item_point_tokens,
     )
+    .exec_without_returning(txn)
     .await
     .c(h!())?;
+
+    let event = EventMsg::new(EventType::ETInboxChanged(message.id));
+    fanout(redis, event).await.c(h!())?;
+
     Ok(vec![])
 }
 
@@ -347,10 +372,10 @@ where
     Ok(m_unit)
 }
 
-async fn resolve_message_aor_id<'a, 'async_trait, C>(
+async fn resolve_message_aor_ids_by_group<'a, 'async_trait, C>(
     txn: &'a C,
     message_id: i64,
-) -> Result<Option<i64>, AppError>
+) -> Result<Vec<i64>, AppError>
 where
     C: ConnectionTrait + 'async_trait,
 {
@@ -365,9 +390,9 @@ where
         .await
         .c(h!())?;
     let Some(group_master_key) = m_group_master_key else {
-        return Ok(None);
+        return Ok(vec![]);
     };
-    let m_aor_id = signal_group_aor::Entity::find()
+    let m_aor_ids = signal_group_aor::Entity::find()
         .join(
             JoinType::InnerJoin,
             signal_group_aor::Relation::AreaOfResponsibility.def(),
@@ -378,10 +403,41 @@ where
         .select_only()
         .column(signal_group_aor::Column::AorId)
         .into_tuple::<i64>()
-        .one(txn)
+        .all(txn)
         .await
         .c(h!())?;
-    Ok(m_aor_id)
+    Ok(m_aor_ids)
+}
+
+async fn resolve_aor_ids_by_networks<'a, 'async_trait, C>(
+    txn: &'a C,
+    network_ids: Vec<i64>,
+) -> Result<Vec<i64>, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    if network_ids.is_empty() {
+        return Ok(vec![]);
+    };
+    let m_aor_ids = sigint_network::Entity::find()
+        .filter(sigint_network::Column::Id.eq_any(network_ids))
+        .filter(sigint_network::Column::Deleted.eq(false))
+        .join(
+            JoinType::InnerJoin,
+            sigint_network::Relation::SigintNetworkAor.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            sigint_network_aor::Relation::AreaOfResponsibility.def(),
+        )
+        .filter(area_of_responsibility::Column::Deleted.eq(false))
+        .select_only()
+        .column(area_of_responsibility::Column::Id)
+        .into_tuple::<i64>()
+        .all(txn)
+        .await
+        .c(h!())?;
+    Ok(m_aor_ids)
 }
 
 async fn try_set_commintify_sender<C>(
