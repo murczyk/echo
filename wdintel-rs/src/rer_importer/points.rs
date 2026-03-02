@@ -373,9 +373,7 @@ pub fn build_palitra_access_filter(
         Expr::exists(q)
     };
 
-    let cond = Condition::all().add(expr);
-
-    cond
+    Condition::all().add(expr)
 }
 
 pub async fn load_relevant_palitra_point_lexemes<C>(

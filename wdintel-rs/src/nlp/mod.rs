@@ -65,7 +65,7 @@ pub async fn token_lexemes_batch(
 ) -> Result<Vec<Vec<String>>, AppError> {
     let local_url =
         format!("{}/api/token/lexeme/batch", crate::config::NLP_ADDR);
-    let req = TokenNormalFormBatchPyReq { tokens: tokens };
+    let req = TokenNormalFormBatchPyReq { tokens };
     let rsp = rq
         .post(&local_url)
         .header("content-type", "application/json")
