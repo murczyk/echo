@@ -141,7 +141,7 @@ pub async fn oneoff_highlight_inbox_message_palitra_points(
             crate::rer_importer::points::highlight_points(
                 &rq,
                 &body_noheader.body,
-                &palitra_point_lexemes,
+                palitra_point_lexemes,
                 body_noheader.start,
             )
             .await

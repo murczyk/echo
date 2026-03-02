@@ -451,7 +451,7 @@ async fn get_palitra_points_by_message(
             .or_default()
             .append(&mut points);
     }
-    for (_key, points) in &mut palitra_points_by_message {
+    for points in palitra_points_by_message.values_mut() {
         points.sort();
         points.dedup();
     }
