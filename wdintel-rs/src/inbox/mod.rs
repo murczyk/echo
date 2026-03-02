@@ -282,7 +282,7 @@ where
         .await
         .c(h!())?;
 
-    let item_networks = crate::sigint::network::etalon_calc::calculate_sigint_inbox_item_networks(
+    let mut item_networks = crate::sigint::network::etalon_calc::calculate_sigint_inbox_item_networks(
         vec![result],
         txn,
     )
@@ -290,7 +290,7 @@ where
     .c(h!())?;
 
     let network_ids: Vec<i64> =
-        item_networks.iter().map(|x| x.sigint_network_id).collect();
+        item_networks.remove(&message.id).unwrap_or_default();
 
     let network_aor_ids = resolve_aor_ids_by_networks(txn, network_ids)
         .await
@@ -301,7 +301,7 @@ where
         m_aor_ids
     };
 
-    let palitra_point_lexemes = if palitra_aor_ids.is_empty() {
+    let palitra_point_lexemes = if !palitra_aor_ids.is_empty() {
         let access = PalitraAccess::ByAor {
             aor_ids: palitra_aor_ids,
         };

@@ -697,6 +697,15 @@ async fn do_submit_inbox(
             sigint_inbox_item_point_tokens::Entity::insert_many(
                 highlight_models,
             )
+            .on_conflict(
+                sea_query::OnConflict::columns([
+                    sigint_inbox_item_point_tokens::Column::SigintInboxItemId,
+                    sigint_inbox_item_point_tokens::Column::PalitraId,
+                ])
+                .do_nothing()
+                .to_owned(),
+            )
+            .do_nothing()
             .exec_without_returning(&txn)
             .await
             .c(h!())?;
