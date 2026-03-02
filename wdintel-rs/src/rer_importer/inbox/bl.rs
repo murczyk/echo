@@ -187,16 +187,6 @@ pub async fn aggregate_to_inbox_messages(
             .push(media);
     }
 
-    let palitra_tag_id = tag::Entity::find()
-        .filter(tag::Column::Label.eq("палітра"))
-        .filter(tag::Column::Enabled.eq(true))
-        .select_only()
-        .column(tag::Column::Id)
-        .into_tuple::<i64>()
-        .one(&env.dbx)
-        .await
-        .context(h!())?;
-
     let highlight_points = req.highlight_points.unwrap_or(false);
     let mut palitra_points_by_message = if highlight_points {
         get_palitra_points_by_message(
@@ -276,19 +266,11 @@ pub async fn aggregate_to_inbox_messages(
             .as_ref()
             .map(|tags| tags.iter().map(|tag| tag.tag_id).collect::<Vec<_>>());
 
-        let has_palitra_tag = palitra_tag_id.is_some_and(|tag_id| {
-            inbox_tag_ids
-                .as_ref()
-                .map(|tags| tags.contains(&tag_id))
-                .unwrap_or(false)
-        });
-
-        let m_point_tokens =
-            if req.highlight_points.unwrap_or(false) && has_palitra_tag {
-                palitra_points_by_message.remove(&message.id)
-            } else {
-                None
-            };
+        let m_point_tokens = if highlight_points {
+            palitra_points_by_message.remove(&message.id)
+        } else {
+            None
+        };
 
         let m_signal_tokens: Option<Vec<CNSignal>> = match message.signal_tokens
         {
@@ -468,6 +450,10 @@ async fn get_palitra_points_by_message(
             .entry(sigint_inbox_item_id)
             .or_default()
             .append(&mut points);
+    }
+    for (_key, points) in &mut palitra_points_by_message {
+        points.sort();
+        points.dedup();
     }
     Ok(palitra_points_by_message)
 }

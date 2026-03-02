@@ -1092,6 +1092,7 @@ type alias InboxMessagesReq =
     , highlightKeywords : Maybe Bool
     , highlightSearchres : Maybe Bool
     , highlightSignals : Maybe Bool
+    , highlightPoints : Maybe Bool
     , selectedTags : Maybe (List Int)
     , selectedAors : Maybe (List Int)
     , selectedNetworks : Maybe (List Int)
@@ -1140,6 +1141,7 @@ inboxMessagesReqEncoder struct =
         , ( "highlight_keywords", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.highlightKeywords )
         , ( "highlight_searchres", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.highlightSearchres )
         , ( "highlight_signals", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.highlightSignals )
+        , ( "highlight_points", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.highlightPoints )
         , ( "selected_tags", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.int)) struct.selectedTags )
         , ( "selected_aors", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.int)) struct.selectedAors )
         , ( "selected_networks", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.int)) struct.selectedNetworks )
