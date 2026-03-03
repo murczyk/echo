@@ -26,6 +26,7 @@ import Pages_.RerAnalysis.MainBody
 import Pages_.RerAnalysis.Model exposing (..)
 import Pages_.RerAnalysis.Msg exposing (..)
 import Pages_.RerAnalysis.Query as Query
+import Pages_.RerAnalysis.Utils as RerAnalysisUtils
 import Pages_.RerDuty.Waterfall.Filters
 import Process
 import Route exposing (Route)
@@ -314,6 +315,7 @@ getInboxReq model =
     , highlightKeywords = Nothing
     , highlightSignals = Nothing
     , highlightSearchres = Just True
+    , highlightPoints = Just True
     , sortBy = Nothing
     , reportTagsOnlyThisUnit = Just model.reportTagsOnlyThisUnit
     , ignoreImportedCoords = Nothing
@@ -1473,6 +1475,8 @@ update user shared route msg model =
                     , networks = networksForView shared model
                     , masterUnits = masterUnitsDict
                     , currentRoute = Just route
+                    , pointTokenClickUrl =
+                        Just (\etalon -> insertShowMapToQuery (RerAnalysisUtils.updateQueryWithSearch etalon route))
                     }
 
                 res =
@@ -1564,6 +1568,7 @@ update user shared route msg model =
                 , highlightSignals = Nothing
                 , highlightKeywords = Nothing
                 , highlightSearchres = Just True
+                , highlightPoints = Just True
                 , sortBy = Nothing
                 , reportTagsOnlyThisUnit = Just model.reportTagsOnlyThisUnit
                 , ignoreImportedCoords = Nothing

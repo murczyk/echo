@@ -20,10 +20,12 @@ export type SearchInputProps = {
   className?: string;
   resultsCount?: number | null;
   isSearchLoading?: boolean;
+  /** When set, fills the input and runs search once (e.g. from URL / point-token link). */
+  initialQuery?: string;
 };
 
 export function SearchInput(props: SearchInputProps) {
-  const { placeholder = SEARCH_TEXT, onSearch, className, resultsCount = null, isSearchLoading = false } = props;
+  const { placeholder = SEARCH_TEXT, onSearch, className, resultsCount = null, isSearchLoading = false, initialQuery } = props;
   const mode = useMuiPaletteMode();
   const theme = React.useMemo(
     () =>
@@ -36,9 +38,19 @@ export function SearchInput(props: SearchInputProps) {
       }),
     [mode],
   );
-  const [value, setValue] = useState('');
+  const [value, setValue] = useState(initialQuery ?? '');
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const appliedInitialRef = useRef(false);
   const showResults = value.trim().length > 0 && (isSearchLoading || resultsCount !== null);
+
+  React.useEffect(() => {
+    const q = (initialQuery ?? '').trim();
+    if (q && !appliedInitialRef.current) {
+      appliedInitialRef.current = true;
+      setValue(q);
+      onSearch(q);
+    }
+  }, [initialQuery, onSearch]);
   const isSearchingLabel = isSearchLoading && (resultsCount === null || resultsCount === 0);
 
   const searchWithDebounce = useCallback(
@@ -214,10 +226,11 @@ function useMuiPaletteMode() {
 
 // web-component wrapper for SearchInput react component
 class AnalysisMapSearchElement extends HTMLElement {
-  static observedAttributes = ['results-count', 'search-loading'];
+  static observedAttributes = ['results-count', 'search-loading', 'initial-query'];
   private root: Root | null = null;
   private resultsCount: number | null = null;
   private isSearchLoading = false;
+  private initialQuery = '';
 
   connectedCallback() {
     if (!this.root) {
@@ -226,6 +239,7 @@ class AnalysisMapSearchElement extends HTMLElement {
     }
     this.resultsCount = this.parseResultsCount(this.getAttribute('results-count'));
     this.isSearchLoading = this.getAttribute('search-loading') === 'true';
+    this.initialQuery = this.getAttribute('initial-query') ?? '';
     this.renderComponent();
   }
 
@@ -242,21 +256,24 @@ class AnalysisMapSearchElement extends HTMLElement {
         onSearch={onSearch}
         resultsCount={this.resultsCount}
         isSearchLoading={this.isSearchLoading}
+        initialQuery={this.initialQuery || undefined}
       />,
     );
   }
 
   attributeChangedCallback(name: string, _oldValue: string | null, newValue: string | null) {
-    if (name !== 'results-count' && name !== 'search-loading') {
-      return;
-    }
     if (name === 'results-count') {
       this.resultsCount = this.parseResultsCount(newValue);
     }
     if (name === 'search-loading') {
       this.isSearchLoading = newValue === 'true';
     }
-    this.renderComponent();
+    if (name === 'initial-query') {
+      this.initialQuery = newValue ?? '';
+    }
+    if (this.root) {
+      this.renderComponent();
+    }
   }
 
   setResultsCount(count: number | null) {

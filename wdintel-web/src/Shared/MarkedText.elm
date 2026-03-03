@@ -28,7 +28,7 @@ new contentNodes =
 -}
 view : Dict String ( List B.CallsignInfo, List B.CallsignInfo ) -> Maybe (List B.Signal) -> List B.Network -> Maybe String -> Model msg -> List (Html msg)
 view prioritizedCallsignsDict signals networks mFreq (Model config) =
-    viewWithHintResults (Dict.map (\_ -> createHintResultFromTuple) prioritizedCallsignsDict) signals networks mFreq (Model config)
+    viewWithHintResults (Dict.map (\_ -> createHintResultFromTuple) prioritizedCallsignsDict) signals networks mFreq Nothing (Model config)
 
 
 {-| Конвертує tuple (prioritized, nonPrioritized) в HintResult
@@ -46,10 +46,11 @@ createHintResultFromTuple ( prioritized, nonPrioritized ) =
     }
 
 
-{-| Нова функція для роботи з HintResult
+{-| Нова функція для роботи з HintResult.
+  pointTokenClickUrl: when Just, point tokens (etalon search) are rendered as links that open the analysis map with that search; when Nothing, rendered as plain highlighted span.
 -}
-viewWithHintResults : Dict String HintStrategy.HintResult -> Maybe (List B.Signal) -> List B.Network -> Maybe String -> Model msg -> List (Html msg)
-viewWithHintResults hintResultsDict signals networks mFreq (Model config) =
+viewWithHintResults : Dict String HintStrategy.HintResult -> Maybe (List B.Signal) -> List B.Network -> Maybe String -> Maybe (String -> String) -> Model msg -> List (Html msg)
+viewWithHintResults hintResultsDict signals networks mFreq pointTokenClickUrl (Model config) =
     let
         renderContentNode cn =
             case cn of
@@ -114,6 +115,19 @@ viewWithHintResults hintResultsDict signals networks mFreq (Model config) =
                 B.CnHighlightC obj ->
                     span [ class "badge-highlighed-token badge-highlighed-token--callsign" ]
                         [ text obj.text ]
+
+                B.CnPointC obj ->
+                    let
+                        baseAttrs =
+                            [ class "content-token--point badge-highlighed-token" ]
+                    in
+                    case pointTokenClickUrl of
+                        Just toUrl ->
+                            a (baseAttrs ++ [ href (toUrl obj.etalon) ])
+                                [ text obj.text ]
+
+                        Nothing ->
+                            span baseAttrs [ text obj.text ]
     in
     [ div [ class "text-marked" ] <|
         List.map renderContentNode config.contentNodes

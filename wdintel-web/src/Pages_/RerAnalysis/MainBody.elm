@@ -18,6 +18,7 @@ import Pages_.RerAnalysis.Graphs
 import Pages_.RerAnalysis.Model exposing (..)
 import Pages_.RerAnalysis.Msg exposing (..)
 import Pages_.RerAnalysis.SumTable
+import Pages_.RerAnalysis.Utils
 import Route exposing (Route)
 import Route.Path
 import Select
@@ -124,6 +125,8 @@ mainBody user model shared route =
                                 (RD.withDefault Dict.empty shared.networks)
                         , masterUnits = masterUnitsDict
                         , currentRoute = Just route
+                        , pointTokenClickUrl =
+                            Just (\etalon -> insertShowMapToQuery (Pages_.RerAnalysis.Utils.updateQueryWithSearch etalon route))
                         }
 
                     renderPs =
@@ -923,6 +926,7 @@ view user model shared route =
                                  else
                                     "false"
                                 )
+                            , attribute "search-query" model.searchInput
                             , Events.on "exit" (Decode.succeed MapClosed)
                             , Events.on "date-range-changed" (Decode.map MapPeriodChanged dateRangeDecoder)
                             , Events.on "load-messages-description" (Decode.map LoadMessagesForMap messagesIdsDecoder)

@@ -1198,7 +1198,7 @@ rightColumn ( messageId, message ) ps model =
                                                     Dict.empty
                                     in
                                     Shared.MarkedText.new textMarked
-                                        |> Shared.MarkedText.viewWithHintResults hintResultsDict (Just ps.signals) (Dict.values ps.networks) message.freq
+                                        |> Shared.MarkedText.viewWithHintResults hintResultsDict (Just ps.signals) (Dict.values ps.networks) message.freq Nothing
 
                                 Nothing ->
                                     msgToHtml message.text
