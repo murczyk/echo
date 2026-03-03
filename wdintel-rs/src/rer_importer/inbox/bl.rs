@@ -408,6 +408,7 @@ async fn backfill_missing_messages_networks(
 ) -> Result<HashMap<i64, Vec<i64>>, AppError> {
     let mut result: HashMap<i64, Vec<i64>> = HashMap::new();
     let mut existing_message_ids = HashSet::new();
+    let mut processed_message_networks = HashSet::new();
     for ids in message_ids.chunks(20000) {
         sigint_inbox_item_network::Entity::find()
             .select_only()
@@ -424,6 +425,9 @@ async fn backfill_missing_messages_networks(
             .into_iter()
             .for_each(|(item_id, network_id)| {
                 existing_message_ids.insert(item_id);
+                if !processed_message_networks.insert((item_id, network_id)) {
+                    return;
+                }
                 result.entry(item_id).or_default().push(network_id);
             });
     }
@@ -437,7 +441,7 @@ async fn backfill_missing_messages_networks(
     }
 
     let mut items_to_recalculate = vec![];
-    for ids in message_ids.chunks(20000) {
+    for ids in missing_message_ids.chunks(20000) {
         sigint_inbox_item::Entity::find()
             .filter(sigint_inbox_item::Column::Id.is_in(ids.to_vec()))
             .all(dbx)
@@ -458,7 +462,7 @@ async fn backfill_missing_messages_networks(
     .await
     .context(h!())?;
     for (id, ids) in new_entries {
-        result.insert(id, ids);
+        result.insert(id, ids.into_iter().unique().collect_vec());
     }
     Ok(result)
 }
