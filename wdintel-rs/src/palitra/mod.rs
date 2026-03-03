@@ -1,18 +1,16 @@
+use crate::config::{ORGANISM_GOI_PATH_DEFAULT, ORGANISM_GOI_SSH_PORT_DEFAULT};
 use crate::entities::*;
 use crate::error::AppError;
-use crate::config::{
-    ORGANISM_GOI_PATH_DEFAULT, ORGANISM_GOI_SSH_PORT_DEFAULT,
-};
-use crate::organism::types::CheckOrganismGoiConnectionReq;
 use crate::h;
+use crate::organism::types::CheckOrganismGoiConnectionReq;
 use crate::palitra::bl::{
     palitra_search_cache_key, palitra_suggest_cache_key, read_cached_json,
     write_cached_json,
 };
 use crate::palitra::types::*;
-use crate::utils::string::normalize_trimmed_or_default;
 use crate::types::*;
 use crate::utils::multipart;
+use crate::utils::string::normalize_trimmed_or_default;
 use actix_multipart::Multipart;
 use actix_web::post;
 use actix_web::web::{Data, Json};
@@ -21,8 +19,8 @@ use chrono::Utc;
 use futures_util::StreamExt;
 use itertools::Itertools;
 use sea_orm::*;
-use tempfile::tempdir;
 use std::path::Path;
+use tempfile::tempdir;
 
 mod bl;
 mod kmz;
@@ -159,10 +157,13 @@ pub async fn create_palitra_with_kmz(
     // Upload points from KMZ in a separate transaction
     let txn = env.dbx.begin().await.c(h!())?;
     let remote_filename = kmz_file_name_as_kmz(&filename);
-    let points =
-        kmz::load_coordinates_from_file(filename.clone(), kmz_data.clone(), &env)
-            .await
-            .c(h!())?;
+    let points = kmz::load_coordinates_from_file(
+        filename.clone(),
+        kmz_data.clone(),
+        &env,
+    )
+    .await
+    .c(h!())?;
 
     bl::rewrite_palitra_points(palitra.id, points, &txn)
         .await
@@ -303,10 +304,13 @@ pub async fn upload_palitra_points(
     let raw_filename = field.name().c(h!())?.to_string();
     let filename = kmz::sanitize_upload_filename(&raw_filename);
     let raw_kmz_data = val;
-    let points =
-        kmz::load_coordinates_from_file(filename.clone(), raw_kmz_data.clone(), &env)
-            .await
-            .c(h!())?;
+    let points = kmz::load_coordinates_from_file(
+        filename.clone(),
+        raw_kmz_data.clone(),
+        &env,
+    )
+    .await
+    .c(h!())?;
     let txn = env.dbx.begin().await.c(h!())?;
 
     let palitra_id = palitra.id;
@@ -822,7 +826,9 @@ async fn collect_connected_goi_targets(
 
         let Some(ssh_host) = ssh_host else { continue };
         let Some(ssh_user) = ssh_user else { continue };
-        let Some(ssh_password) = ssh_password else { continue };
+        let Some(ssh_password) = ssh_password else {
+            continue;
+        };
 
         let path = normalize_trimmed_or_default(
             organism.goi_path,

@@ -1,8 +1,8 @@
 use crate::config::{ORGANISM_GOI_SSH_LIST_LIMIT, ORGANISM_GOI_SSH_TIMEOUT_MS};
 use crate::organism::types::CheckOrganismGoiConnectionReq;
 use crate::types::*;
-use std::io::Write;
 use std::io::Read;
+use std::io::Write;
 use std::net::{SocketAddr, TcpStream, ToSocketAddrs};
 use std::time::Duration;
 
@@ -73,10 +73,8 @@ pub fn goi_delete_file_sync(
     let socket_addrs = goi_resolve_socket_addrs_ipv4_first(&addr)?;
     let timeout = Duration::from_millis(ORGANISM_GOI_SSH_TIMEOUT_MS.into());
 
-    let command = format!(
-        "rm -f -- {}",
-        goi_shell_quote_single(&remote_file_path)
-    );
+    let command =
+        format!("rm -f -- {}", goi_shell_quote_single(&remote_file_path));
     let mut errors = Vec::with_capacity(socket_addrs.len());
     for socket_addr in socket_addrs {
         match goi_try_exec_command_for_socket(
@@ -126,7 +124,8 @@ fn goi_try_check_connection_for_socket(
     ssh_password: &str,
     path: &str,
 ) -> anyhow::Result<Vec<String>> {
-    let session = goi_connect_for_socket(socket_addr, timeout, ssh_user, ssh_password)?;
+    let session =
+        goi_connect_for_socket(socket_addr, timeout, ssh_user, ssh_password)?;
 
     let command = format!("ls -1 {}", goi_shell_quote_single(path));
     goi_exec_command_for_session(session, &command)
@@ -140,7 +139,8 @@ fn goi_try_upload_file_for_socket(
     remote_file_path: &str,
     file_data: &[u8],
 ) -> anyhow::Result<()> {
-    let session = goi_connect_for_socket(socket_addr, timeout, ssh_user, ssh_password)?;
+    let session =
+        goi_connect_for_socket(socket_addr, timeout, ssh_user, ssh_password)?;
     let mut remote_file = session
         .scp_send(remote_file_path, 0o644, file_data.len() as u64, None)
         .c(h!())?;
@@ -158,7 +158,8 @@ fn goi_try_exec_command_for_socket(
     ssh_password: &str,
     command: &str,
 ) -> anyhow::Result<()> {
-    let session = goi_connect_for_socket(socket_addr, timeout, ssh_user, ssh_password)?;
+    let session =
+        goi_connect_for_socket(socket_addr, timeout, ssh_user, ssh_password)?;
     goi_exec_command_for_session(session, command)
 }
 
