@@ -92,16 +92,29 @@ pub async fn check_organism_goi_connection(
     crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin").await?;
 
     let req = req.into_inner();
-    goi_validate_connection_req(&req)?;
+    let (listed_entries, error) = match goi_validate_connection_req(&req) {
+        Ok(()) => {
+            match tokio::task::spawn_blocking(move || {
+                goi_ssh::goi_check_connection_sync(req)
+            })
+            .await
+            {
+                Ok(Ok(listed_entries)) => (listed_entries, None),
+                Ok(Err(err)) => {
+                    (Vec::new(), Some(format!("GOI SSH check failed: {err}")))
+                }
+                Err(err) => {
+                    (Vec::new(), Some(format!("GOI SSH check failed: {err}")))
+                }
+            }
+        }
+        Err(err) => (Vec::new(), Some(format!("GOI SSH check failed: {err}"))),
+    };
 
-    let listed_entries = tokio::task::spawn_blocking(move || {
-        goi_ssh::goi_check_connection_sync(req)
-    })
-    .await
-    .c(h!())?
-    .c(h!())?;
-
-    Ok(Json(CheckOrganismGoiConnectionRsp { listed_entries }))
+    Ok(Json(CheckOrganismGoiConnectionRsp {
+        listed_entries,
+        error,
+    }))
 }
 
 pub async fn goi_upload_file(

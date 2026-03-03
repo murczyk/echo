@@ -104,6 +104,7 @@ type CheckOrganismGoiConnectionReqBody = {
 type CheckOrganismGoiConnectionRspLike = {
   listedEntries?: string[];
   listed_entries?: string[];
+  error?: string | null;
 };
 
 export type OrganismGoiSettings = {
@@ -125,6 +126,7 @@ export type CheckOrganismGoiConnectionReq = {
 
 export type CheckOrganismGoiConnectionRsp = {
   listedEntries: string[];
+  error: string | null;
 };
 
 function toListOrganismsReqBody(req: ListOrganismsReq): ListOrganismsReqBody {
@@ -340,7 +342,11 @@ export async function checkOrganismGoiConnection(
     '/api/organism/goi-settings/check-connection',
     toCheckOrganismGoiConnectionReqBody(req),
   );
+  const error = (data && typeof data.error === 'string' && data.error.trim().length > 0)
+    ? data.error.trim()
+    : null;
   return {
     listedEntries: data?.listedEntries ?? data?.listed_entries ?? [],
+    error,
   };
 }

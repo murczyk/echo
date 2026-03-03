@@ -655,6 +655,13 @@ function AdminOrganismsNeoEditPageBody(props: AdminOrganismsNeoEditPageProps) {
         sshPort: form.goiSshPort,
         path: form.goiPath.trim() || GOI_PATH_DEFAULT,
       });
+      if (response.error) {
+        setGoiConnectionStatus({
+          kind: 'error',
+          message: `Помилка перевірки з'єднання: ${response.error}`,
+        });
+        return;
+      }
       const preview = response.listedEntries.slice(0, 5).join(', ');
       setGoiConnectionStatus({
         kind: 'success',

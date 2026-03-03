@@ -149,4 +149,5 @@ pub struct CheckOrganismGoiConnectionReq {
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct CheckOrganismGoiConnectionRsp {
     pub listed_entries: Vec<String>,
+    pub error: Option<String>,
 }
