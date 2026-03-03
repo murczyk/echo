@@ -1,7 +1,7 @@
 use crate::config::PALITRA_POINT_LEXEME_BACKFILL_BATCH_SIZE;
 use crate::entities::{
     palitra_point, palitra_point_lexeme, sigint_inbox_item,
-    sigint_inbox_item_network, sigint_inbox_item_point_tokens,
+    sigint_inbox_item_network, sigint_inbox_item_point_token,
 };
 use crate::error::AppError;
 use crate::inbox::{
@@ -89,7 +89,7 @@ pub async fn oneoff_highlight_inbox_message_palitra_points(
         .filter(sigint_inbox_item::Column::BodyNoheader.is_not_null())
         .filter(sigint_inbox_item::Column::Datetime.gte(start))
         .filter(sigint_inbox_item::Column::Datetime.lte(end))
-        .filter(sigint_inbox_item_point_tokens::Column::Id.is_null())
+        .filter(sigint_inbox_item_point_token::Column::Id.is_null())
         .find_with_related(sigint_inbox_item_network::Entity)
         .all(&dbx)
         .await
@@ -151,7 +151,7 @@ pub async fn oneoff_highlight_inbox_message_palitra_points(
             .iter()
             .map(|highlight| {
                 let point_tokens = serde_json::json!(&highlight.points);
-                sigint_inbox_item_point_tokens::ActiveModel {
+                sigint_inbox_item_point_token::ActiveModel {
                     palitra_id: Set(highlight.palitra_id),
                     point_tokens: Set(point_tokens),
                     sigint_inbox_item_id: Set(message.id),
@@ -162,7 +162,7 @@ pub async fn oneoff_highlight_inbox_message_palitra_points(
         if !inbox_item_point_tokens.is_empty() {
             total_palitra_points += inbox_item_point_tokens.len();
 
-            sigint_inbox_item_point_tokens::Entity::insert_many(
+            sigint_inbox_item_point_token::Entity::insert_many(
                 inbox_item_point_tokens,
             )
             .exec_without_returning(&dbx)

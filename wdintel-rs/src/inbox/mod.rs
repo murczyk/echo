@@ -327,7 +327,7 @@ where
         .iter()
         .map(|highlight| {
             let point_tokens = serde_json::json!(&highlight.points);
-            sigint_inbox_item_point_tokens::ActiveModel {
+            sigint_inbox_item_point_token::ActiveModel {
                 palitra_id: Set(highlight.palitra_id),
                 point_tokens: Set(point_tokens),
                 sigint_inbox_item_id: Set(message.id),
@@ -336,7 +336,7 @@ where
         })
         .collect();
     if !inbox_item_point_tokens.is_empty() {
-        sigint_inbox_item_point_tokens::Entity::insert_many(
+        sigint_inbox_item_point_token::Entity::insert_many(
             inbox_item_point_tokens,
         )
         .exec_without_returning(txn)

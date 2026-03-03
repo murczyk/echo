@@ -686,7 +686,7 @@ async fn do_submit_inbox(
                 .iter()
                 .map(|highlight| {
                     let point_tokens = serde_json::json!(&highlight.points);
-                    sigint_inbox_item_point_tokens::ActiveModel {
+                    sigint_inbox_item_point_token::ActiveModel {
                         palitra_id: Set(highlight.palitra_id),
                         point_tokens: Set(point_tokens),
                         sigint_inbox_item_id: Set(id),
@@ -695,15 +695,15 @@ async fn do_submit_inbox(
                 })
                 .collect();
             if !tokens_to_insert.is_empty() {
-                sigint_inbox_item_point_tokens::Entity::insert_many(
+                sigint_inbox_item_point_token::Entity::insert_many(
                     tokens_to_insert,
                 )
                 .on_conflict(
                     sea_query::OnConflict::columns([
-                        sigint_inbox_item_point_tokens::Column::SigintInboxItemId,
-                        sigint_inbox_item_point_tokens::Column::PalitraId,
+                        sigint_inbox_item_point_token::Column::SigintInboxItemId,
+                        sigint_inbox_item_point_token::Column::PalitraId,
                     ])
-                    .update_column(sigint_inbox_item_point_tokens::Column::PointTokens)
+                    .update_column(sigint_inbox_item_point_token::Column::PointTokens)
                     .to_owned(),
                 )
                 .exec_without_returning(&txn)

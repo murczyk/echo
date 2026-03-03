@@ -12,15 +12,15 @@ impl MigrationTrait for Migration {
             r#"
             drop table if exists sigint_inbox_item_point_tokens;
 
-            create table sigint_inbox_item_point_tokens (
+            create table sigint_inbox_item_point_token (
                 id bigserial primary key,
                 sigint_inbox_item_id int8 not null references sigint_inbox_item(id) on delete cascade,
                 palitra_id int8 not null references palitra(id) on delete cascade,
                 point_tokens jsonb not null,
-                constraint sigint_inbox_item_point_tokens_uq unique (sigint_inbox_item_id, palitra_id)
+                constraint sigint_inbox_item_point_token_uq unique (sigint_inbox_item_id, palitra_id)
             );
-            create index sigint_inbox_item_point_tokens_sigint_inbox_item_id_idx on sigint_inbox_item_point_tokens(sigint_inbox_item_id);
-            create index sigint_inbox_item_point_tokens_sigint_palitra_id_idx on sigint_inbox_item_point_tokens(palitra_id);
+            create index sigint_inbox_item_point_token_sigint_inbox_item_id_idx on sigint_inbox_item_point_token(sigint_inbox_item_id);
+            create index sigint_inbox_item_point_token_sigint_palitra_id_idx on sigint_inbox_item_point_token(palitra_id);
              "#,
         )
         .await?;
@@ -33,7 +33,7 @@ impl MigrationTrait for Migration {
 
         db.execute_unprepared(
             r#"
-            drop table if exists sigint_inbox_item_point_tokens;
+            drop table if exists sigint_inbox_item_point_token;
             create table sigint_inbox_item_point_tokens (
                 id bigserial primary key,
                 sigint_inbox_item_id int8 not null references sigint_inbox_item(id) on delete cascade,

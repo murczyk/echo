@@ -423,20 +423,20 @@ async fn get_palitra_points_by_message(
     };
     let exact = false;
     let palitra_cond = build_palitra_access_filter(access, exact);
-    let palitra_points = sigint_inbox_item_point_tokens::Entity::find()
+    let palitra_points = sigint_inbox_item_point_token::Entity::find()
         .filter(
-            sigint_inbox_item_point_tokens::Column::SigintInboxItemId
+            sigint_inbox_item_point_token::Column::SigintInboxItemId
                 .eq_any(message_ids),
         )
         .join(
             JoinType::InnerJoin,
-            sigint_inbox_item_point_tokens::Relation::Palitra.def(),
+            sigint_inbox_item_point_token::Relation::Palitra.def(),
         )
         .filter(palitra::Column::Deleted.eq(false))
         .filter(palitra_cond)
         .select_only()
-        .column(sigint_inbox_item_point_tokens::Column::SigintInboxItemId)
-        .column(sigint_inbox_item_point_tokens::Column::PointTokens)
+        .column(sigint_inbox_item_point_token::Column::SigintInboxItemId)
+        .column(sigint_inbox_item_point_token::Column::PointTokens)
         .into_tuple::<(i64, serde_json::Value)>()
         .all(dbx)
         .await
