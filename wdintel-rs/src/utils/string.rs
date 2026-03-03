@@ -74,6 +74,29 @@ pub fn m_str_trim(s: &Option<String>) -> Option<String> {
     }
 }
 
+pub fn normalize_optional_trimmed(value: Option<String>) -> Option<String> {
+    value.and_then(|value| {
+        let value = value.trim().to_string();
+        if value.is_empty() {
+            None
+        } else {
+            Some(value)
+        }
+    })
+}
+
+pub fn normalize_trimmed_or_default(
+    value: String,
+    default_value: &str,
+) -> String {
+    let value = value.trim().to_string();
+    if value.is_empty() {
+        default_value.to_string()
+    } else {
+        value
+    }
+}
+
 pub fn split_keep<'a>(r: &Regex, text: &'a str) -> Vec<&'a str> {
     let mut result = Vec::new();
     let mut last = 0;

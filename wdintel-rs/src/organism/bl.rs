@@ -239,6 +239,11 @@ pub async fn create_organism_in_txn(
         enabled: NotSet,
         parent_id: Set(parent_id),
         deleted_permanently: NotSet,
+        goi_ssh_host: NotSet,
+        goi_ssh_user: NotSet,
+        goi_ssh_password: NotSet,
+        goi_ssh_port: NotSet,
+        goi_path: NotSet,
     }
     .insert(txn)
     .await
@@ -398,6 +403,11 @@ mod tests {
             roles: Default::default(),
             enabled: true,
             deleted_permanently: false,
+            goi_ssh_host: None,
+            goi_ssh_user: None,
+            goi_ssh_password: None,
+            goi_ssh_port: crate::config::ORGANISM_GOI_SSH_PORT_DEFAULT,
+            goi_path: crate::config::ORGANISM_GOI_PATH_DEFAULT.to_string(),
         }
     }
 }

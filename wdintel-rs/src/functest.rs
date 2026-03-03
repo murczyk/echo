@@ -809,6 +809,23 @@ pub mod tests {
         if out.deleted_permanently == NotSet {
             out.deleted_permanently = Set(false);
         }
+        if out.goi_ssh_host == NotSet {
+            out.goi_ssh_host = Set(None);
+        }
+        if out.goi_ssh_user == NotSet {
+            out.goi_ssh_user = Set(None);
+        }
+        if out.goi_ssh_password == NotSet {
+            out.goi_ssh_password = Set(None);
+        }
+        if out.goi_ssh_port == NotSet {
+            out.goi_ssh_port =
+                Set(crate::config::ORGANISM_GOI_SSH_PORT_DEFAULT);
+        }
+        if out.goi_path == NotSet {
+            out.goi_path =
+                Set(crate::config::ORGANISM_GOI_PATH_DEFAULT.to_string());
+        }
         out
     }
 
