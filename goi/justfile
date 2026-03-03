@@ -7,6 +7,43 @@ default:
     @just --list
 
 [arg('server', long='server')]
+setup-dev-container-scripts server:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    SERVER="{{ server }}"
+    REMOTE_HOME="$(ssh "$SERVER" 'printf %s "$HOME"')"
+    TARGET_DIR="${REMOTE_HOME}/workspace/goi-container/deploy"
+    TARGET_SCRIPT="${TARGET_DIR}/goi-dev-post-clone.sh"
+    TARGET_BUNDLE_DIR="${TARGET_DIR}/goi-dev-container"
+
+    echo "Preparing ${SERVER}:${TARGET_DIR}..."
+    ssh "$SERVER" "mkdir -p '${TARGET_BUNDLE_DIR}'"
+
+    echo "Uploading GOI post-clone script to ${SERVER}:${TARGET_SCRIPT}..."
+    echo-install-utils ssh-sync-file --take-a "{{ goi_dir }}/deploy/goi-dev-post-clone.sh" "${SERVER}:${TARGET_SCRIPT}"
+    ssh "$SERVER" "chmod 0755 '${TARGET_SCRIPT}'"
+
+    echo "Uploading GOI bundle files to ${SERVER}:${TARGET_BUNDLE_DIR}..."
+    echo-install-utils ssh-sync-file --take-a "{{ goi_dir }}/deploy/goi.service" "${SERVER}:${TARGET_BUNDLE_DIR}/goi.service"
+    echo-install-utils ssh-sync-file --take-a "{{ goi_dir }}/deploy/goi-npm-start.sh" "${SERVER}:${TARGET_BUNDLE_DIR}/goi-npm-start.sh"
+    echo-install-utils ssh-sync-file --take-a "{{ goi_dir }}/deploy/goi-renew-tailscale-cert.sh" "${SERVER}:${TARGET_BUNDLE_DIR}/goi-renew-tailscale-cert.sh"
+    echo-install-utils ssh-sync-file --take-a "{{ goi_dir }}/deploy/goi-renew-tailscale-cert.service" "${SERVER}:${TARGET_BUNDLE_DIR}/goi-renew-tailscale-cert.service"
+    echo-install-utils ssh-sync-file --take-a "{{ goi_dir }}/deploy/goi-renew-tailscale-cert.timer" "${SERVER}:${TARGET_BUNDLE_DIR}/goi-renew-tailscale-cert.timer"
+    ssh "$SERVER" "set -euo pipefail
+      chmod 0755 '${TARGET_BUNDLE_DIR}/goi-npm-start.sh' '${TARGET_BUNDLE_DIR}/goi-renew-tailscale-cert.sh'
+      chmod 0644 '${TARGET_BUNDLE_DIR}/goi.service' '${TARGET_BUNDLE_DIR}/goi-renew-tailscale-cert.service' '${TARGET_BUNDLE_DIR}/goi-renew-tailscale-cert.timer'
+    "
+
+    echo "Done."
+    echo "Script path on ${SERVER}: ${TARGET_SCRIPT}"
+    echo "Bundle dir on ${SERVER}: ${TARGET_BUNDLE_DIR}"
+    echo "Example next step:"
+    echo "  incus file push ${TARGET_SCRIPT} \"\$MACHINE/var/tmp/goi-dev-post-clone.sh\""
+    echo "  incus exec \"\$MACHINE\" -- mkdir -p /var/tmp/goi-dev-container"
+    echo "  for f in goi.service goi-npm-start.sh goi-renew-tailscale-cert.sh goi-renew-tailscale-cert.service goi-renew-tailscale-cert.timer; do incus file push ${TARGET_BUNDLE_DIR}/\$f \"\$MACHINE/var/tmp/goi-dev-container/\$f\"; done"
+
+[arg('server', long='server')]
 setup server:
     #!/usr/bin/env bash
     set -euo pipefail
