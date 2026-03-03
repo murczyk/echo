@@ -31,7 +31,7 @@ updateQueryWithSearch searchQuery route =
             { route | query = updatedQuery }
 
         Nothing ->
-            route
+            { route | query = Dict.insert "search" searchQuery route.query }
 
 
 updateQueryWithSelectedFreq : String -> Route () -> Route ()

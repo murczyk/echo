@@ -25,7 +25,7 @@ import Pages_.RerAnalysis.FiltersReloading as FiltersReloading exposing (FilterD
 import Pages_.RerAnalysis.MainBody
 import Pages_.RerAnalysis.Model exposing (..)
 import Pages_.RerAnalysis.Msg exposing (..)
-import Pages_.RerAnalysis.Query as Query
+import Pages_.RerAnalysis.Query as Query exposing (emptyQueryState)
 import Pages_.RerAnalysis.Utils as RerAnalysisUtils
 import Pages_.RerDuty.Waterfall.Filters
 import Process
@@ -75,7 +75,17 @@ init route _ =
 
         initialQueryState : B.RerAnalysisQueryState
         initialQueryState =
-            Maybe.withDefault Query.emptyQueryState ms
+            case ms of
+                Just state ->
+                    state
+
+                Nothing ->
+                    case Dict.get "search" route.query of
+                        Just s ->
+                            { emptyQueryState | search = s }
+
+                        Nothing ->
+                            emptyQueryState
 
         model : Model
         model =
@@ -240,12 +250,7 @@ init route _ =
             }
 
         m2 =
-            case ms of
-                Just state ->
-                    Query.updModelFromQueryState model state
-
-                Nothing ->
-                    model
+            Query.updModelFromQueryState model initialQueryState
 
         m3 =
             case Dict.get "showMap" route.query of
@@ -2198,7 +2203,7 @@ update user shared route msg model =
                 Just now ->
                     let
                         m2 =
-                            Query.updModelFromQueryState model Query.emptyQueryState
+                            Query.updModelFromQueryState model emptyQueryState
 
                         ( from, to ) =
                             Shared.Components.DateTime.initAnalysisRanges
