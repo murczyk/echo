@@ -850,13 +850,23 @@ async fn collect_connected_goi_targets(
 
 fn kmz_file_name_as_kmz(source_file_name: &str) -> String {
     let safe_name = kmz::sanitize_upload_filename(source_file_name);
-    let stem = Path::new(&safe_name)
+    let path = Path::new(&safe_name);
+    let stem = path
         .file_stem()
         .and_then(|value| value.to_str())
         .map(|value| value.to_string())
         .filter(|value| !value.trim().is_empty())
         .unwrap_or_else(|| "palitra".to_string());
-    format!("{stem}.kmz")
+    let extension = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .map(|value| value.to_ascii_lowercase());
+
+    match extension.as_deref() {
+        Some("kml") => format!("{stem}.kml"),
+        Some("kmz") => format!("{stem}.kmz"),
+        _ => format!("{stem}.kmz"),
+    }
 }
 
 fn compose_goi_palette_remote_path(path: &str, file_name: &str) -> String {

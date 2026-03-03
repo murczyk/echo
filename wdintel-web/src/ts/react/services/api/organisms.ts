@@ -102,6 +102,7 @@ type CheckOrganismGoiConnectionReqBody = {
 };
 
 type CheckOrganismGoiConnectionRspLike = {
+  ok?: boolean;
   listedEntries?: string[];
   listed_entries?: string[];
   error?: string | null;
@@ -125,6 +126,7 @@ export type CheckOrganismGoiConnectionReq = {
 };
 
 export type CheckOrganismGoiConnectionRsp = {
+  ok: boolean;
   listedEntries: string[];
   error: string | null;
 };
@@ -342,10 +344,19 @@ export async function checkOrganismGoiConnection(
     '/api/organism/goi-settings/check-connection',
     toCheckOrganismGoiConnectionReqBody(req),
   );
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    return {
+      ok: false,
+      listedEntries: [],
+      error: 'Некоректна відповідь сервера',
+    };
+  }
+  const parsedOk = typeof data.ok === 'boolean' ? data.ok : null;
   const error = (data && typeof data.error === 'string' && data.error.trim().length > 0)
     ? data.error.trim()
     : null;
   return {
+    ok: parsedOk ?? (error === null),
     listedEntries: data?.listedEntries ?? data?.listed_entries ?? [],
     error,
   };

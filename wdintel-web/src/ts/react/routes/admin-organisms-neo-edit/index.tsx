@@ -655,10 +655,12 @@ function AdminOrganismsNeoEditPageBody(props: AdminOrganismsNeoEditPageProps) {
         sshPort: form.goiSshPort,
         path: form.goiPath.trim() || GOI_PATH_DEFAULT,
       });
-      if (response.error) {
+      if (!response.ok || response.error) {
         setGoiConnectionStatus({
           kind: 'error',
-          message: `Помилка перевірки з'єднання: ${response.error}`,
+          message: response.error
+            ? `Помилка перевірки з'єднання: ${response.error}`
+            : "Помилка перевірки з'єднання: Невідома помилка",
         });
         return;
       }

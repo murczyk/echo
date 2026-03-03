@@ -112,6 +112,7 @@ pub async fn check_organism_goi_connection(
     };
 
     Ok(Json(CheckOrganismGoiConnectionRsp {
+        ok: error.is_none(),
         listed_entries,
         error,
     }))
