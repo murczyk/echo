@@ -196,37 +196,6 @@ pub async fn create_palitra_with_kmz(
     Ok(Json(palitra_response))
 }
 
-fn parse_access(
-    access_type: &str,
-    access_values: &str,
-) -> anyhow::Result<PalitraAccess> {
-    match access_type {
-        "logins" => {
-            let logins: Vec<String> = access_values
-                .split(',')
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
-                .collect();
-            Ok(PalitraAccess::ByLogins { logins })
-        }
-        "organisms" => {
-            let organism_ids: Vec<i64> = access_values
-                .split(',')
-                .filter_map(|s| s.trim().parse().ok())
-                .collect();
-            Ok(PalitraAccess::ByOrganisms { organism_ids })
-        }
-        "aor" => {
-            let aor_ids: Vec<i64> = access_values
-                .split(',')
-                .filter_map(|s| s.trim().parse().ok())
-                .collect();
-            Ok(PalitraAccess::ByAor { aor_ids })
-        }
-        _ => bail!("Invalid access type: {}", access_type),
-    }
-}
-
 #[post("/api/palitra/analyze-kmz")]
 pub async fn analyze_kmz(
     user: actix_identity::Identity,
@@ -330,6 +299,216 @@ pub async fn upload_palitra_points(
     bl::rewrite_palitra_points(palitra_id, points, &txn)
         .await
         .c(h!())?;
+    txn.commit().await.c(h!())?;
+    Ok(Json(()))
+}
+
+#[post("/api/palitra/list")]
+pub async fn list_all_palitras(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+) -> Result<Json<Vec<Palitra>>, AppError> {
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
+        .await
+        .context(h!())?;
+    let palitra = bl::list_all_palitras(login, &env.dbx).await.context(h!())?;
+    Ok(Json(palitra))
+}
+
+#[post("/api/palitra/list-detailed")] // TODO implement filter
+pub async fn list_all_palitras_detailed(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+) -> Result<Json<Vec<PalitraDetails>>, AppError> {
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
+        .await
+        .context(h!())?;
+    let palitra = bl::list_all_palitras_detailed(login, &env.dbx)
+        .await
+        .context(h!())?;
+    Ok(Json(palitra))
+}
+
+#[post("/api/palitra/points")]
+pub async fn list_palitra_points(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<PalitraPointsReq>,
+) -> Result<Json<Vec<PalitraPoints>>, AppError> {
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
+        .await
+        .context(h!())?;
+    let req = req.into_inner();
+    let points =
+        bl::list_palitra_points_by_viewport_bounds(login, req, &env.dbx)
+            .await
+            .context(h!())?;
+    Ok(Json(points))
+}
+
+#[post("/api/palitra/points/label-suggest")]
+pub async fn suggest_palitra_point_labels(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<PalitraPointLabelSuggestReq>,
+) -> Result<Json<Vec<PalitraPointLabelSuggestRsp>>, AppError> {
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
+        .await
+        .context(h!())?;
+    let req = req.into_inner();
+    let cache_key = palitra_suggest_cache_key(&login, &req);
+    let mut redis = env.redis.clone();
+    if let Some(labels) =
+        read_cached_json(&mut redis, &cache_key).await.c(h!())?
+    {
+        return Ok(Json(labels));
+    }
+    let labels = bl::suggest_palitra_point_labels(login, req, &env.dbx)
+        .await
+        .context(h!())?;
+    write_cached_json(
+        &mut redis,
+        &cache_key,
+        crate::config::PALITRA_POINT_LABEL_SUGGEST_CACHE_TTL_SEC,
+        &labels,
+    )
+        .await
+        .c(h!())?;
+    Ok(Json(labels))
+}
+
+#[post("/api/palitra/points/search")]
+pub async fn search_palitra_points(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<PalitraSearchPointsReq>,
+) -> Result<Json<Vec<PalitraPoints>>, AppError> {
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
+        .await
+        .context(h!())?;
+    let req = req.into_inner();
+    let cache_key = palitra_search_cache_key(&login, &req);
+    let mut redis = env.redis.clone();
+    if let Some(points) =
+        read_cached_json(&mut redis, &cache_key).await.c(h!())?
+    {
+        return Ok(Json(points));
+    }
+    let points = bl::search_palitra_points_by_labels(login, req, &env.dbx)
+        .await
+        .context(h!())?;
+    write_cached_json(
+        &mut redis,
+        &cache_key,
+        crate::config::PALITRA_POINT_SEARCH_CACHE_TTL_SEC,
+        &points,
+    )
+        .await
+        .c(h!())?;
+    Ok(Json(points))
+}
+
+#[post("/api/palitra/create")]
+pub async fn create_palitra(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<CreatePalitraReq>,
+) -> Result<Json<Palitra>, AppError> {
+    let login = user.id().c(h!())?;
+    let req = req.into_inner();
+    let scope = load_user_scope(&env.dbx, &login).await.c(h!())?;
+    ensure_palitra_permissions(&env, &login, &req.access, &scope)
+        .await
+        .c(h!())?;
+    let palitra = bl::create_palitra(login, req, &env.dbx)
+        .await
+        .context(h!())?;
+    Ok(Json(palitra))
+}
+
+#[post("/api/palitra/update/{palitra_id}")]
+pub async fn update_palitra(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<CreatePalitraReq>,
+    path: actix_web::web::Path<i64>,
+) -> Result<Json<PalitraDetails>, AppError> {
+    let login = user.id().c(h!())?;
+    let req = req.into_inner();
+    let scope = load_user_scope(&env.dbx, &login).await.c(h!())?;
+    ensure_palitra_permissions(&env, &login, &req.access, &scope)
+        .await
+        .c(h!())?;
+    let palitra_id = path.into_inner();
+    let txn = (env.dbx).begin().await.c(h!())?;
+    let palitra = palitra::Entity::find_by_id(palitra_id)
+        .one(&env.dbx)
+        .await
+        .c(h!())?
+        .c(h!())?;
+    let is_admin = crate::users::has_role(&env.dbx, &login, "Admin")
+        .await
+        .is_ok();
+    if !is_admin {
+        match &palitra.author {
+            Some(author) if author == &login => {}
+            _ => {
+                return Err(AppError::Forbidden(
+                    "Only author or Admin may update palitra".into(),
+                ));
+            }
+        }
+    }
+
+    let existing_access =
+        read_palitra_access(&env.dbx, palitra_id).await.c(h!())?;
+    ensure_palitra_permissions(&env, &login, &existing_access, &scope)
+        .await
+        .c(h!())?;
+    let result = bl::update_palitra(palitra.id, req, &txn).await.c(h!())?;
+    txn.commit().await.c(h!())?;
+    Ok(Json(result))
+}
+
+#[post("/api/palitra/delete/{palitra_id}")]
+pub async fn delete_palitra(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    path: actix_web::web::Path<i64>,
+) -> Result<Json<()>, AppError> {
+    let login = user.id().c(h!())?;
+    let scope = load_user_scope(&env.dbx, &login).await.c(h!())?;
+    let palitra_id = path.into_inner();
+    let txn = (env.dbx).begin().await.c(h!())?;
+    let palitra = palitra::Entity::find_by_id(palitra_id)
+        .one(&env.dbx)
+        .await
+        .c(h!())?
+        .c(h!())?;
+    let is_admin = crate::users::has_role(&env.dbx, &login, "Admin")
+        .await
+        .is_ok();
+    if !is_admin {
+        match &palitra.author {
+            Some(author) if author == &login => {}
+            _ => {
+                return Err(AppError::Forbidden(
+                    "Only author or Admin may delete palitra".into(),
+                ));
+            }
+        }
+    }
+    let existing_access =
+        read_palitra_access(&env.dbx, palitra_id).await.c(h!())?;
+    ensure_palitra_permissions(&env, &login, &existing_access, &scope)
+        .await
+        .c(h!())?;
+    bl::delete_palitra(palitra.id, &txn).await.c(h!())?;
     txn.commit().await.c(h!())?;
     Ok(Json(()))
 }
@@ -479,212 +658,33 @@ fn pick_access(
     bail!("Palitra must have explicit access scope");
 }
 
-#[post("/api/palitra/list")]
-pub async fn list_all_palitras(
-    user: actix_identity::Identity,
-    env: actix_web::web::Data<Env>,
-) -> Result<Json<Vec<Palitra>>, AppError> {
-    let login = user.id().c(h!())?;
-    crate::users::has_role(&env.dbx, &login, "Rer")
-        .await
-        .context(h!())?;
-    let palitra = bl::list_all_palitras(login, &env.dbx).await.context(h!())?;
-    Ok(Json(palitra))
-}
-
-#[post("/api/palitra/list-detailed")] // TODO implement filter
-pub async fn list_all_palitras_detailed(
-    user: actix_identity::Identity,
-    env: actix_web::web::Data<Env>,
-) -> Result<Json<Vec<PalitraDetails>>, AppError> {
-    let login = user.id().c(h!())?;
-    crate::users::has_role(&env.dbx, &login, "Rer")
-        .await
-        .context(h!())?;
-    let palitra = bl::list_all_palitras_detailed(login, &env.dbx)
-        .await
-        .context(h!())?;
-    Ok(Json(palitra))
-}
-
-#[post("/api/palitra/points")]
-pub async fn list_palitra_points(
-    user: actix_identity::Identity,
-    env: actix_web::web::Data<Env>,
-    req: Json<PalitraPointsReq>,
-) -> Result<Json<Vec<PalitraPoints>>, AppError> {
-    let login = user.id().c(h!())?;
-    crate::users::has_role(&env.dbx, &login, "Rer")
-        .await
-        .context(h!())?;
-    let req = req.into_inner();
-    let points =
-        bl::list_palitra_points_by_viewport_bounds(login, req, &env.dbx)
-            .await
-            .context(h!())?;
-    Ok(Json(points))
-}
-
-#[post("/api/palitra/points/label-suggest")]
-pub async fn suggest_palitra_point_labels(
-    user: actix_identity::Identity,
-    env: actix_web::web::Data<Env>,
-    req: Json<PalitraPointLabelSuggestReq>,
-) -> Result<Json<Vec<PalitraPointLabelSuggestRsp>>, AppError> {
-    let login = user.id().c(h!())?;
-    crate::users::has_role(&env.dbx, &login, "Rer")
-        .await
-        .context(h!())?;
-    let req = req.into_inner();
-    let cache_key = palitra_suggest_cache_key(&login, &req);
-    let mut redis = env.redis.clone();
-    if let Some(labels) =
-        read_cached_json(&mut redis, &cache_key).await.c(h!())?
-    {
-        return Ok(Json(labels));
-    }
-    let labels = bl::suggest_palitra_point_labels(login, req, &env.dbx)
-        .await
-        .context(h!())?;
-    write_cached_json(
-        &mut redis,
-        &cache_key,
-        crate::config::PALITRA_POINT_LABEL_SUGGEST_CACHE_TTL_SEC,
-        &labels,
-    )
-    .await
-    .c(h!())?;
-    Ok(Json(labels))
-}
-
-#[post("/api/palitra/points/search")]
-pub async fn search_palitra_points(
-    user: actix_identity::Identity,
-    env: actix_web::web::Data<Env>,
-    req: Json<PalitraSearchPointsReq>,
-) -> Result<Json<Vec<PalitraPoints>>, AppError> {
-    let login = user.id().c(h!())?;
-    crate::users::has_role(&env.dbx, &login, "Rer")
-        .await
-        .context(h!())?;
-    let req = req.into_inner();
-    let cache_key = palitra_search_cache_key(&login, &req);
-    let mut redis = env.redis.clone();
-    if let Some(points) =
-        read_cached_json(&mut redis, &cache_key).await.c(h!())?
-    {
-        return Ok(Json(points));
-    }
-    let points = bl::search_palitra_points_by_labels(login, req, &env.dbx)
-        .await
-        .context(h!())?;
-    write_cached_json(
-        &mut redis,
-        &cache_key,
-        crate::config::PALITRA_POINT_SEARCH_CACHE_TTL_SEC,
-        &points,
-    )
-    .await
-    .c(h!())?;
-    Ok(Json(points))
-}
-
-#[post("/api/palitra/create")]
-pub async fn create_palitra(
-    user: actix_identity::Identity,
-    env: actix_web::web::Data<Env>,
-    req: Json<CreatePalitraReq>,
-) -> Result<Json<Palitra>, AppError> {
-    let login = user.id().c(h!())?;
-    let req = req.into_inner();
-    let scope = load_user_scope(&env.dbx, &login).await.c(h!())?;
-    ensure_palitra_permissions(&env, &login, &req.access, &scope)
-        .await
-        .c(h!())?;
-    let palitra = bl::create_palitra(login, req, &env.dbx)
-        .await
-        .context(h!())?;
-    Ok(Json(palitra))
-}
-
-#[post("/api/palitra/update/{palitra_id}")]
-pub async fn update_palitra(
-    user: actix_identity::Identity,
-    env: actix_web::web::Data<Env>,
-    req: Json<CreatePalitraReq>,
-    path: actix_web::web::Path<i64>,
-) -> Result<Json<PalitraDetails>, AppError> {
-    let login = user.id().c(h!())?;
-    let req = req.into_inner();
-    let scope = load_user_scope(&env.dbx, &login).await.c(h!())?;
-    ensure_palitra_permissions(&env, &login, &req.access, &scope)
-        .await
-        .c(h!())?;
-    let palitra_id = path.into_inner();
-    let txn = (env.dbx).begin().await.c(h!())?;
-    let palitra = palitra::Entity::find_by_id(palitra_id)
-        .one(&env.dbx)
-        .await
-        .c(h!())?
-        .c(h!())?;
-    let is_admin = crate::users::has_role(&env.dbx, &login, "Admin")
-        .await
-        .is_ok();
-    if !is_admin {
-        match &palitra.author {
-            Some(author) if author == &login => {}
-            _ => {
-                return Err(AppError::Forbidden(
-                    "Only author or Admin may update palitra".into(),
-                ));
-            }
+fn parse_access(
+    access_type: &str,
+    access_values: &str,
+) -> anyhow::Result<PalitraAccess> {
+    match access_type {
+        "logins" => {
+            let logins: Vec<String> = access_values
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
+            Ok(PalitraAccess::ByLogins { logins })
         }
-    }
-
-    let existing_access =
-        read_palitra_access(&env.dbx, palitra_id).await.c(h!())?;
-    ensure_palitra_permissions(&env, &login, &existing_access, &scope)
-        .await
-        .c(h!())?;
-    let result = bl::update_palitra(palitra.id, req, &txn).await.c(h!())?;
-    txn.commit().await.c(h!())?;
-    Ok(Json(result))
-}
-
-#[post("/api/palitra/delete/{palitra_id}")]
-pub async fn delete_palitra(
-    user: actix_identity::Identity,
-    env: actix_web::web::Data<Env>,
-    path: actix_web::web::Path<i64>,
-) -> Result<Json<()>, AppError> {
-    let login = user.id().c(h!())?;
-    let scope = load_user_scope(&env.dbx, &login).await.c(h!())?;
-    let palitra_id = path.into_inner();
-    let txn = (env.dbx).begin().await.c(h!())?;
-    let palitra = palitra::Entity::find_by_id(palitra_id)
-        .one(&env.dbx)
-        .await
-        .c(h!())?
-        .c(h!())?;
-    let is_admin = crate::users::has_role(&env.dbx, &login, "Admin")
-        .await
-        .is_ok();
-    if !is_admin {
-        match &palitra.author {
-            Some(author) if author == &login => {}
-            _ => {
-                return Err(AppError::Forbidden(
-                    "Only author or Admin may delete palitra".into(),
-                ));
-            }
+        "organisms" => {
+            let organism_ids: Vec<i64> = access_values
+                .split(',')
+                .filter_map(|s| s.trim().parse().ok())
+                .collect();
+            Ok(PalitraAccess::ByOrganisms { organism_ids })
         }
+        "aor" => {
+            let aor_ids: Vec<i64> = access_values
+                .split(',')
+                .filter_map(|s| s.trim().parse().ok())
+                .collect();
+            Ok(PalitraAccess::ByAor { aor_ids })
+        }
+        _ => bail!("Invalid access type: {}", access_type),
     }
-    let existing_access =
-        read_palitra_access(&env.dbx, palitra_id).await.c(h!())?;
-    ensure_palitra_permissions(&env, &login, &existing_access, &scope)
-        .await
-        .c(h!())?;
-    bl::delete_palitra(palitra.id, &txn).await.c(h!())?;
-    txn.commit().await.c(h!())?;
-    Ok(Json(()))
 }
