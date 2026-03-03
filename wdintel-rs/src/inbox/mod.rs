@@ -3,11 +3,11 @@ use crate::entities::*;
 use crate::event_stream::fanout;
 use crate::event_stream::types::EventMsg;
 use crate::event_stream::types::EventType;
-use crate::palitra::types::PalitraAccess;
 use crate::types::*;
-use crate::utils::orm::ArrayColumnOps;
 use chrono::prelude::*;
 use sea_orm::*;
+
+pub mod palitra;
 
 /// The main workhorse parsing [signal_message](crate::entities::signal_message) into [sigint_inbox_item](crate::entities::sigint_inbox_item)
 ///
@@ -292,57 +292,16 @@ where
     let network_ids: Vec<i64> =
         item_networks.remove(&message.id).unwrap_or_default();
 
-    let network_aor_ids = resolve_aor_ids_by_networks(txn, network_ids)
-        .await
-        .context(h!())?;
-    let palitra_aor_ids = if !network_aor_ids.is_empty() {
-        network_aor_ids
-    } else {
-        m_aor_ids
-    };
-
-    let palitra_point_lexemes = if !palitra_aor_ids.is_empty() {
-        let access = PalitraAccess::ByAor {
-            aor_ids: palitra_aor_ids,
-        };
-        crate::rer_importer::points::load_relevant_palitra_point_lexemes(
-            txn, access, false,
-        )
-        .await
-        .context(h!())?
-    } else {
-        Default::default()
-    };
-    let message_palitra_highlights =
-        crate::rer_importer::points::highlight_points(
-            rq,
-            &body_noheader.body,
-            &palitra_point_lexemes,
-            body_noheader.start,
-        )
-        .await
-        .c(h!())?;
-
-    let inbox_item_point_tokens: Vec<_> = message_palitra_highlights
-        .iter()
-        .map(|highlight| {
-            let point_tokens = serde_json::json!(&highlight.points);
-            sigint_inbox_item_point_token::ActiveModel {
-                palitra_id: Set(highlight.palitra_id),
-                point_tokens: Set(point_tokens),
-                sigint_inbox_item_id: Set(message.id),
-                ..Default::default()
-            }
-        })
-        .collect();
-    if !inbox_item_point_tokens.is_empty() {
-        sigint_inbox_item_point_token::Entity::insert_many(
-            inbox_item_point_tokens,
-        )
-        .exec_without_returning(txn)
-        .await
-        .c(h!())?;
-    }
+    palitra::add_message_point_tokens(
+        txn,
+        rq,
+        message.id,
+        &body_noheader,
+        network_ids,
+        m_aor_ids,
+    )
+    .await
+    .c(h!())?;
 
     let event = EventMsg::new(EventType::ETInboxChanged(message.id));
     fanout(redis, event).await.c(h!())?;
@@ -404,37 +363,6 @@ where
         .order_by_asc(signal_group_aor::Column::Id)
         .select_only()
         .column(signal_group_aor::Column::AorId)
-        .into_tuple::<i64>()
-        .all(txn)
-        .await
-        .c(h!())?;
-    Ok(m_aor_ids)
-}
-
-pub async fn resolve_aor_ids_by_networks<'a, 'async_trait, C>(
-    txn: &'a C,
-    network_ids: Vec<i64>,
-) -> Result<Vec<i64>, AppError>
-where
-    C: ConnectionTrait + 'async_trait,
-{
-    if network_ids.is_empty() {
-        return Ok(vec![]);
-    };
-    let m_aor_ids = sigint_network::Entity::find()
-        .filter(sigint_network::Column::Id.eq_any(network_ids))
-        .filter(sigint_network::Column::Deleted.eq(false))
-        .join(
-            JoinType::InnerJoin,
-            sigint_network::Relation::SigintNetworkAor.def(),
-        )
-        .join(
-            JoinType::InnerJoin,
-            sigint_network_aor::Relation::AreaOfResponsibility.def(),
-        )
-        .filter(area_of_responsibility::Column::Deleted.eq(false))
-        .select_only()
-        .column(area_of_responsibility::Column::Id)
         .into_tuple::<i64>()
         .all(txn)
         .await

@@ -5,7 +5,7 @@ use crate::entities::{
 };
 use crate::error::AppError;
 use crate::inbox::{
-    resolve_aor_ids_by_networks, resolve_message_aor_ids_by_group,
+    palitra::resolve_aor_ids_by_networks, resolve_message_aor_ids_by_group,
 };
 use crate::palitra::types::PalitraAccess;
 use crate::rer_importer::body_noheader::NoHeadersBody;
