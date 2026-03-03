@@ -2972,15 +2972,6 @@ type alias CnPoint =
     , text : String
     }
 
-cnPointEncoder : CnPoint -> Json.Encode.Value
-cnPointEncoder struct =
-    Json.Encode.object
-        [ ( "begin", (Json.Encode.int) struct.begin )
-        , ( "end", (Json.Encode.int) struct.end )
-        , ( "etalon", (Json.Encode.string) struct.etalon )
-        , ( "text", (Json.Encode.string) struct.text )
-        ]
-
 
 type alias CnHighlight =
     { text : String
