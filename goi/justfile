@@ -17,7 +17,9 @@ setup server:
     echo "Inspecting current state on ${SERVER}..."
     ssh "$SERVER" 'set -euo pipefail
       echo "host=$(hostname) user=$(whoami)"
-      sudo systemctl status goi.service --no-pager || true
+      if sudo systemctl list-unit-files goi.service >/dev/null 2>&1; then
+        echo "goi.service enabled=$(sudo systemctl is-enabled goi.service 2>/dev/null || true) active=$(sudo systemctl is-active goi.service 2>/dev/null || true)"
+      fi
       sudo ls -la /etc/goi || true
       command -v nginx >/dev/null 2>&1 && nginx -v || true
     '
@@ -30,6 +32,7 @@ setup server:
       fi
       sudo -u echo bash -lc '"'"'
         set -euo pipefail
+        export TERM=xterm
         if [[ ! -s "$HOME/.nvm/nvm.sh" ]]; then
           curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.4/install.sh | bash
         fi
@@ -76,10 +79,15 @@ setup server:
       sudo systemctl daemon-reload
       sudo systemctl enable --now goi-renew-tailscale-cert.timer
       sudo systemctl start goi-renew-tailscale-cert.service
-      sudo systemctl status goi-renew-tailscale-cert.service --no-pager || true
-      sudo systemctl status goi-renew-tailscale-cert.timer --no-pager || true
+      renew_active=\$(sudo systemctl is-active goi-renew-tailscale-cert.service 2>/dev/null || true)
+      renew_result=\$(sudo systemctl show goi-renew-tailscale-cert.service -p Result --value 2>/dev/null || true)
+      timer_active=\$(sudo systemctl is-active goi-renew-tailscale-cert.timer 2>/dev/null || true)
+      echo goi-renew-tailscale-cert.service active=\${renew_active} result=\${renew_result}
+      echo goi-renew-tailscale-cert.timer active=\${timer_active}
       sudo systemctl enable goi.service
-      sudo systemctl status goi.service --no-pager || true
+      goi_enabled=\$(sudo systemctl is-enabled goi.service 2>/dev/null || true)
+      goi_active=\$(sudo systemctl is-active goi.service 2>/dev/null || true)
+      echo goi.service enabled=\${goi_enabled} active=\${goi_active}
     "
 
 [arg('server', long='server')]
