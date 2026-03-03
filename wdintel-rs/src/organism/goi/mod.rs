@@ -119,7 +119,7 @@ pub async fn goi_upload_file(
         goi_ssh::goi_upload_file_sync(req, remote_file_path, file_data)
     })
     .await
-    .c(h!())??
+    .c(h!())?
 }
 
 pub async fn goi_delete_file(
@@ -132,7 +132,7 @@ pub async fn goi_delete_file(
         goi_ssh::goi_delete_file_sync(req, remote_file_path)
     })
     .await
-    .c(h!())??
+    .c(h!())?
 }
 
 fn goi_validate_ssh_port(port: i32) -> Result<(), AppError> {

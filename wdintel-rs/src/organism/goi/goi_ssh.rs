@@ -4,6 +4,7 @@ use crate::types::*;
 use std::io::Read;
 use std::io::Write;
 use std::net::{SocketAddr, TcpStream, ToSocketAddrs};
+use std::path::Path;
 use std::time::Duration;
 
 pub fn goi_check_connection_sync(
@@ -142,7 +143,7 @@ fn goi_try_upload_file_for_socket(
     let session =
         goi_connect_for_socket(socket_addr, timeout, ssh_user, ssh_password)?;
     let mut remote_file = session
-        .scp_send(remote_file_path, 0o644, file_data.len() as u64, None)
+        .scp_send(Path::new(remote_file_path), 0o644, file_data.len() as u64, None)
         .c(h!())?;
     remote_file.write_all(file_data).c(h!())?;
     remote_file.send_eof().c(h!())?;
@@ -160,11 +161,11 @@ fn goi_try_exec_command_for_socket(
 ) -> anyhow::Result<()> {
     let session =
         goi_connect_for_socket(socket_addr, timeout, ssh_user, ssh_password)?;
-    goi_exec_command_for_session(session, command)
+    goi_exec_command_for_session(session, command).map(|_| ())
 }
 
 fn goi_exec_command_for_session(
-    mut session: ssh2::Session,
+    session: ssh2::Session,
     command: &str,
 ) -> anyhow::Result<Vec<String>> {
     let mut channel = session.channel_session().c(h!())?;

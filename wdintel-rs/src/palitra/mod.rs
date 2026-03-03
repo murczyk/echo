@@ -144,7 +144,7 @@ pub async fn create_palitra_with_kmz(
     let req = CreatePalitraReq {
         name: name.clone(),
         color_hex,
-        access,
+        access: access.clone(),
         source_file_name: Some(filename.clone()),
         last_uploaded_at_ts: Some(Utc::now().timestamp_millis()),
     };
@@ -315,7 +315,7 @@ pub async fn upload_palitra_points(
 
     let palitra_id = palitra.id;
     let mut model = palitra.into_active_model();
-    model.source_file_name = Set(Some(filename));
+    model.source_file_name = Set(Some(filename.clone()));
     model.update(&txn).await.c(h!())?;
 
     bl::rewrite_palitra_points(palitra_id, points, &txn)
