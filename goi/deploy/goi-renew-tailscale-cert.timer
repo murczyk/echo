@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily GOI Tailscale certificate renewal
+
+[Timer]
+OnCalendar=*-*-* 03:17:00
+RandomizedDelaySec=30m
+Persistent=true
+Unit=goi-renew-tailscale-cert.service
+
+[Install]
+WantedBy=timers.target
