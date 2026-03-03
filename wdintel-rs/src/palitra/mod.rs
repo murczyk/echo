@@ -1,11 +1,16 @@
 use crate::entities::*;
 use crate::error::AppError;
+use crate::config::{
+    ORGANISM_GOI_PATH_DEFAULT, ORGANISM_GOI_SSH_PORT_DEFAULT,
+};
+use crate::organism::types::CheckOrganismGoiConnectionReq;
 use crate::h;
 use crate::palitra::bl::{
     palitra_search_cache_key, palitra_suggest_cache_key, read_cached_json,
     write_cached_json,
 };
 use crate::palitra::types::*;
+use crate::utils::string::normalize_trimmed_or_default;
 use crate::types::*;
 use crate::utils::multipart;
 use actix_multipart::Multipart;
@@ -17,6 +22,7 @@ use futures_util::StreamExt;
 use itertools::Itertools;
 use sea_orm::*;
 use tempfile::tempdir;
+use std::path::Path;
 
 mod bl;
 mod kmz;
@@ -152,14 +158,24 @@ pub async fn create_palitra_with_kmz(
 
     // Upload points from KMZ in a separate transaction
     let txn = env.dbx.begin().await.c(h!())?;
+    let remote_filename = kmz_file_name_as_kmz(&filename);
     let points =
-        kmz::load_coordinates_from_file(filename.clone(), kmz_data, &env)
+        kmz::load_coordinates_from_file(filename.clone(), kmz_data.clone(), &env)
             .await
             .c(h!())?;
 
     bl::rewrite_palitra_points(palitra.id, points, &txn)
         .await
         .c(h!())?;
+
+    sync_upload_palitra_to_connected_organisms(
+        &env.dbx,
+        &access,
+        &remote_filename,
+        kmz_data,
+    )
+    .await
+    .c(h!())?;
 
     txn.commit().await.c(h!())?;
 
@@ -286,9 +302,11 @@ pub async fn upload_palitra_points(
     let (field, val) = multipart::extract(&mut payload).await.c(h!())?;
     let raw_filename = field.name().c(h!())?.to_string();
     let filename = kmz::sanitize_upload_filename(&raw_filename);
-    let points = kmz::load_coordinates_from_file(filename.clone(), val, &env)
-        .await
-        .c(h!())?;
+    let raw_kmz_data = val;
+    let points =
+        kmz::load_coordinates_from_file(filename.clone(), raw_kmz_data.clone(), &env)
+            .await
+            .c(h!())?;
     let txn = env.dbx.begin().await.c(h!())?;
 
     let palitra_id = palitra.id;
@@ -299,6 +317,17 @@ pub async fn upload_palitra_points(
     bl::rewrite_palitra_points(palitra_id, points, &txn)
         .await
         .c(h!())?;
+
+    let remote_filename = kmz_file_name_as_kmz(&filename);
+    sync_upload_palitra_to_connected_organisms(
+        &env.dbx,
+        &existing_access,
+        &remote_filename,
+        raw_kmz_data,
+    )
+    .await
+    .c(h!())?;
+
     txn.commit().await.c(h!())?;
     Ok(Json(()))
 }
@@ -508,6 +537,13 @@ pub async fn delete_palitra(
     ensure_palitra_permissions(&env, &login, &existing_access, &scope)
         .await
         .c(h!())?;
+    sync_delete_palitra_from_connected_organisms(
+        &env.dbx,
+        &existing_access,
+        &palitra.source_file_name,
+    )
+    .await
+    .c(h!())?;
     bl::delete_palitra(palitra.id, &txn).await.c(h!())?;
     txn.commit().await.c(h!())?;
     Ok(Json(()))
@@ -687,4 +723,176 @@ fn parse_access(
         }
         _ => bail!("Invalid access type: {}", access_type),
     }
+}
+
+async fn sync_upload_palitra_to_connected_organisms(
+    dbx: &DatabaseConnection,
+    access: &PalitraAccess,
+    remote_file_name: &str,
+    file_data: Vec<u8>,
+) -> anyhow::Result<()> {
+    let PalitraAccess::ByOrganisms { organism_ids } = access else {
+        return Ok(());
+    };
+
+    let goi_targets =
+        collect_connected_goi_targets(dbx, organism_ids.as_slice())
+            .await
+            .c(h!())?;
+
+    for target in goi_targets {
+        let remote_file_path =
+            compose_goi_palette_remote_path(&target.path, remote_file_name);
+        crate::organism::goi::goi_upload_file(
+            target,
+            remote_file_path,
+            file_data.clone(),
+        )
+        .await
+        .c(h!())?;
+    }
+
+    Ok(())
+}
+
+async fn sync_delete_palitra_from_connected_organisms(
+    dbx: &DatabaseConnection,
+    access: &PalitraAccess,
+    source_file_name: &Option<String>,
+) -> anyhow::Result<()> {
+    let PalitraAccess::ByOrganisms { organism_ids } = access else {
+        return Ok(());
+    };
+
+    let Some(source_file_name) = source_file_name else {
+        return Ok(());
+    };
+    let source_file_name = kmz_file_name_as_kmz(source_file_name);
+    let goi_targets =
+        collect_connected_goi_targets(dbx, organism_ids.as_slice())
+            .await
+            .c(h!())?;
+
+    for target in goi_targets {
+        let remote_file_path =
+            compose_goi_palette_remote_path(&target.path, &source_file_name);
+        crate::organism::goi::goi_delete_file(target, remote_file_path)
+            .await
+            .c(h!())?;
+    }
+
+    Ok(())
+}
+
+async fn collect_connected_goi_targets(
+    dbx: &DatabaseConnection,
+    organism_ids: &[i64],
+) -> anyhow::Result<Vec<CheckOrganismGoiConnectionReq>> {
+    if organism_ids.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let organisms = organism::Entity::find()
+        .filter(organism::Column::Id.is_in(organism_ids.to_vec()))
+        .filter(organism::Column::DeletedPermanently.eq(false))
+        .all(dbx)
+        .await
+        .c(h!())?;
+
+    let mut goi_targets = Vec::with_capacity(organisms.len());
+    for organism in organisms {
+        let ssh_host = organism
+            .goi_ssh_host
+            .as_ref()
+            .map(|value| value.trim())
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
+        let ssh_user = organism
+            .goi_ssh_user
+            .as_ref()
+            .map(|value| value.trim())
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
+        let ssh_password = organism
+            .goi_ssh_password
+            .as_ref()
+            .map(|value| value.trim())
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
+
+        let Some(ssh_host) = ssh_host else { continue };
+        let Some(ssh_user) = ssh_user else { continue };
+        let Some(ssh_password) = ssh_password else { continue };
+
+        let path = normalize_trimmed_or_default(
+            organism.goi_path,
+            ORGANISM_GOI_PATH_DEFAULT,
+        );
+        if path.trim().is_empty() {
+            continue;
+        }
+
+        let ssh_port = if organism.goi_ssh_port > 0 {
+            organism.goi_ssh_port
+        } else {
+            ORGANISM_GOI_SSH_PORT_DEFAULT
+        };
+
+        let req = CheckOrganismGoiConnectionReq {
+            ssh_host,
+            ssh_user,
+            ssh_password,
+            ssh_port,
+            path,
+        };
+        goi_validate_connection_req(&req)?;
+        goi_targets.push(req);
+    }
+
+    Ok(goi_targets)
+}
+
+fn kmz_file_name_as_kmz(source_file_name: &str) -> String {
+    let safe_name = kmz::sanitize_upload_filename(source_file_name);
+    let stem = Path::new(&safe_name)
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .map(|value| value.to_string())
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| "palitra".to_string());
+    format!("{stem}.kmz")
+}
+
+fn compose_goi_palette_remote_path(path: &str, file_name: &str) -> String {
+    let trimmed_path = path.trim().trim_end_matches('/');
+    let trimmed_file = file_name.trim().trim_start_matches('/');
+    if trimmed_file.is_empty() {
+        return trimmed_path.to_string();
+    }
+    if trimmed_path.is_empty() {
+        format!("/{trimmed_file}")
+    } else {
+        format!("{trimmed_path}/{trimmed_file}")
+    }
+}
+
+fn goi_validate_connection_req(
+    req: &CheckOrganismGoiConnectionReq,
+) -> anyhow::Result<()> {
+    if req.ssh_host.trim().is_empty() {
+        bail!("SSH host is required");
+    }
+    if req.ssh_user.trim().is_empty() {
+        bail!("SSH user is required");
+    }
+    if req.ssh_password.trim().is_empty() {
+        bail!("SSH password is required");
+    }
+    if req.path.trim().is_empty() {
+        bail!("GOI path is required");
+    }
+    if !(1..=65535).contains(&req.ssh_port) {
+        bail!("invalid SSH port: {}", req.ssh_port);
+    }
+    Ok(())
 }

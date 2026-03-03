@@ -108,6 +108,33 @@ pub async fn check_organism_goi_connection(
     Ok(Json(CheckOrganismGoiConnectionRsp { listed_entries }))
 }
 
+pub async fn goi_upload_file(
+    req: CheckOrganismGoiConnectionReq,
+    remote_file_path: String,
+    file_data: Vec<u8>,
+) -> anyhow::Result<()> {
+    goi_validate_connection_req(&req)?;
+
+    tokio::task::spawn_blocking(move || {
+        goi_ssh::goi_upload_file_sync(req, remote_file_path, file_data)
+    })
+    .await
+    .c(h!())??
+}
+
+pub async fn goi_delete_file(
+    req: CheckOrganismGoiConnectionReq,
+    remote_file_path: String,
+) -> anyhow::Result<()> {
+    goi_validate_connection_req(&req)?;
+
+    tokio::task::spawn_blocking(move || {
+        goi_ssh::goi_delete_file_sync(req, remote_file_path)
+    })
+    .await
+    .c(h!())??
+}
+
 fn goi_validate_ssh_port(port: i32) -> Result<(), AppError> {
     if (1..=65535).contains(&port) {
         return Ok(());
