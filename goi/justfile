@@ -105,14 +105,22 @@ deploy server:
       sudo chown -R echo:echo '${APP_DIR}'
     "
 
+    echo "Cleaning stale prebuilt externals in ${APP_DIR}..."
+    ssh "$SERVER" "set -euo pipefail
+      sudo rm -rf '${APP_DIR}/.next/node_modules'
+    "
+
     echo "Syncing GOI source into ${SERVER}:${APP_DIR}..."
     rsync -az --delete \
+      --delete-after \
+      --force \
       --exclude '.git/' \
       --exclude '/node_modules/' \
       --exclude '.runtime/' \
       --exclude '.bootstrap/' \
       --exclude '.output/' \
       --exclude 'dist/' \
+      --filter 'P goi-npm-start.sh' \
       --exclude '*.log' \
       --exclude 'npm-debug.log*' \
       --exclude 'yarn-debug.log*' \
