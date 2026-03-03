@@ -63,6 +63,14 @@ where
         sigint_inbox_item_point_token::Entity::insert_many(
             inbox_item_point_tokens,
         )
+        .on_conflict(
+            sea_query::OnConflict::columns([
+                sigint_inbox_item_point_token::Column::SigintInboxItemId,
+                sigint_inbox_item_point_token::Column::PalitraId,
+            ])
+            .do_nothing()
+            .to_owned(),
+        )
         .exec_without_returning(txn)
         .await
         .c(h!())?;
