@@ -354,6 +354,7 @@ export type InboxMessage = {
   unit: string | null;
   callsignTokens: Array<CnCallsign> | null;
   signalTokens: Array<CnSignal> | null;
+  pointTokens: Array<CnPoint> | null;
   noHeadersBody: NoHeadersBody | null;
   keywordTokens: Array<CnHighlight> | null;
   textMarked: Array<ContentNode> | null;
@@ -413,6 +414,7 @@ export type InboxMessagesReq = {
   highlightKeywords: boolean | null;
   highlightSearchres: boolean | null;
   highlightSignals: boolean | null;
+  highlightPoints: boolean | null;
   selectedTags: Array<number> | null;
   selectedAors: Array<number> | null;
   selectedNetworks: Array<number> | null;
@@ -1108,6 +1110,13 @@ export type CnCallsign = {
   text: string;
 };
 
+export type CnPoint = {
+  begin: number;
+  end: number;
+  etalon: string;
+  text: string;
+};
+
 export type CnHighlight = {
   text: string;
   begin: number;
@@ -1120,6 +1129,7 @@ export type ContentNode =
   | { CNCallsignC: CnCallsign }
   | { CNHighlightC: CnHighlight }
   | { CNSignalC: CnSignal }
+  | { CNPointC: CnPoint }
 ;
 
 export type CnSignal = {
