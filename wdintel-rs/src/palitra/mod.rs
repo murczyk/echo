@@ -376,8 +376,8 @@ pub async fn suggest_palitra_point_labels(
         crate::config::PALITRA_POINT_LABEL_SUGGEST_CACHE_TTL_SEC,
         &labels,
     )
-        .await
-        .c(h!())?;
+    .await
+    .c(h!())?;
     Ok(Json(labels))
 }
 
@@ -408,8 +408,8 @@ pub async fn search_palitra_points(
         crate::config::PALITRA_POINT_SEARCH_CACHE_TTL_SEC,
         &points,
     )
-        .await
-        .c(h!())?;
+    .await
+    .c(h!())?;
     Ok(Json(points))
 }
 

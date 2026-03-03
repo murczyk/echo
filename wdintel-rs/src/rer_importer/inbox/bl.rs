@@ -436,11 +436,17 @@ async fn backfill_missing_messages_networks(
         return Ok(result);
     }
 
-    let items_to_recalculate = sigint_inbox_item::Entity::find()
-        .filter(sigint_inbox_item::Column::Id.is_in(missing_message_ids))
-        .all(dbx)
-        .await
-        .context(h!())?;
+    let mut items_to_recalculate = vec![];
+    for ids in message_ids.chunks(20000) {
+        sigint_inbox_item::Entity::find()
+            .filter(sigint_inbox_item::Column::Id.is_in(ids.to_vec()))
+            .all(dbx)
+            .await
+            .context(h!())?
+            .into_iter()
+            .for_each(|r| items_to_recalculate.push(r));
+    }
+
     if items_to_recalculate.is_empty() {
         return Ok(result);
     }
