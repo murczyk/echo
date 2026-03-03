@@ -2955,14 +2955,6 @@ cnCallsignEncoder struct =
         ]
 
 
-type alias CnPoint =
-    { begin : Int
-    , end : Int
-    , etalon : String
-    , text : String
-    }
-
-
 cnPointEncoder : CnPoint -> Json.Encode.Value
 cnPointEncoder struct =
     Json.Encode.object
@@ -2979,25 +2971,6 @@ type alias CnPoint =
     , etalon : String
     , text : String
     }
-
-
-cnPointEncoder : CnPoint -> Json.Encode.Value
-cnPointEncoder struct =
-    Json.Encode.object
-        [ ( "begin", (Json.Encode.int) struct.begin )
-        , ( "end", (Json.Encode.int) struct.end )
-        , ( "etalon", (Json.Encode.string) struct.etalon )
-        , ( "text", (Json.Encode.string) struct.text )
-        ]
-
-
-type alias CnPoint =
-    { begin : Int
-    , end : Int
-    , etalon : String
-    , text : String
-    }
-
 
 cnPointEncoder : CnPoint -> Json.Encode.Value
 cnPointEncoder struct =

@@ -703,10 +703,9 @@ async fn do_submit_inbox(
                         sigint_inbox_item_point_tokens::Column::SigintInboxItemId,
                         sigint_inbox_item_point_tokens::Column::PalitraId,
                     ])
-                    .do_nothing()
+                    .update_column(sigint_inbox_item_point_tokens::Column::PointTokens)
                     .to_owned(),
                 )
-                .do_nothing()
                 .exec_without_returning(&txn)
                 .await
                 .c(h!())?;
