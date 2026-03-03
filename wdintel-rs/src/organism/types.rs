@@ -125,7 +125,6 @@ pub struct OrganismGoiSettings {
     pub organism_id: i64,
     pub ssh_host: Option<String>,
     pub ssh_user: Option<String>,
-    pub ssh_password: Option<String>,
     pub ssh_port: i32,
     pub path: String,
 }
@@ -135,7 +134,6 @@ pub struct UpdateOrganismGoiSettingsReq {
     pub organism_id: i64,
     pub ssh_host: Option<String>,
     pub ssh_user: Option<String>,
-    pub ssh_password: Option<String>,
     pub ssh_port: i32,
     pub path: String,
 }
@@ -144,7 +142,6 @@ pub struct UpdateOrganismGoiSettingsReq {
 pub struct CheckOrganismGoiConnectionReq {
     pub ssh_host: String,
     pub ssh_user: String,
-    pub ssh_password: String,
     pub ssh_port: i32,
     pub path: String,
 }

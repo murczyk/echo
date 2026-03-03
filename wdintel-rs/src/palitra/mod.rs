@@ -817,18 +817,9 @@ async fn collect_connected_goi_targets(
             .map(|value| value.trim())
             .filter(|value| !value.is_empty())
             .map(str::to_string);
-        let ssh_password = organism
-            .goi_ssh_password
-            .as_ref()
-            .map(|value| value.trim())
-            .filter(|value| !value.is_empty())
-            .map(str::to_string);
 
         let Some(ssh_host) = ssh_host else { continue };
         let Some(ssh_user) = ssh_user else { continue };
-        let Some(ssh_password) = ssh_password else {
-            continue;
-        };
 
         let path = normalize_trimmed_or_default(
             organism.goi_path,
@@ -847,7 +838,6 @@ async fn collect_connected_goi_targets(
         let req = CheckOrganismGoiConnectionReq {
             ssh_host,
             ssh_user,
-            ssh_password,
             ssh_port,
             path,
         };
@@ -890,9 +880,6 @@ fn goi_validate_connection_req(
     }
     if req.ssh_user.trim().is_empty() {
         bail!("SSH user is required");
-    }
-    if req.ssh_password.trim().is_empty() {
-        bail!("SSH password is required");
     }
     if req.path.trim().is_empty() {
         bail!("GOI path is required");

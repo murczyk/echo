@@ -51,8 +51,6 @@ type OrganismGoiSettingsLike = {
   ssh_host?: string | null;
   sshUser?: string | null;
   ssh_user?: string | null;
-  sshPassword?: string | null;
-  ssh_password?: string | null;
   sshPort?: number | string;
   ssh_port?: number | string;
   path?: string;
@@ -92,7 +90,6 @@ type UpdateOrganismGoiSettingsReqBody = {
   organism_id: number;
   ssh_host: string | null;
   ssh_user: string | null;
-  ssh_password: string | null;
   ssh_port: number;
   path: string;
 };
@@ -100,7 +97,6 @@ type UpdateOrganismGoiSettingsReqBody = {
 type CheckOrganismGoiConnectionReqBody = {
   ssh_host: string;
   ssh_user: string;
-  ssh_password: string;
   ssh_port: number;
   path: string;
 };
@@ -114,7 +110,6 @@ export type OrganismGoiSettings = {
   organismId: number;
   sshHost: string;
   sshUser: string;
-  sshPassword: string;
   sshPort: number;
   path: string;
 };
@@ -124,7 +119,6 @@ export type UpdateOrganismGoiSettingsReq = OrganismGoiSettings;
 export type CheckOrganismGoiConnectionReq = {
   sshHost: string;
   sshUser: string;
-  sshPassword: string;
   sshPort: number;
   path: string;
 };
@@ -176,7 +170,6 @@ function toUpdateOrganismGoiSettingsReqBody(req: UpdateOrganismGoiSettingsReq): 
     organism_id: req.organismId,
     ssh_host: req.sshHost.trim() ? req.sshHost.trim() : null,
     ssh_user: req.sshUser.trim() ? req.sshUser.trim() : null,
-    ssh_password: req.sshPassword.trim() ? req.sshPassword : null,
     ssh_port: req.sshPort,
     path: req.path,
   };
@@ -186,7 +179,6 @@ function toCheckOrganismGoiConnectionReqBody(req: CheckOrganismGoiConnectionReq)
   return {
     ssh_host: req.sshHost,
     ssh_user: req.sshUser,
-    ssh_password: req.sshPassword,
     ssh_port: req.sshPort,
     path: req.path,
   };
@@ -251,7 +243,6 @@ function normalizeOrganismGoiSettings(raw: OrganismGoiSettingsLike): OrganismGoi
     organismId: normalizeNumber(raw.organismId ?? raw.organism_id),
     sshHost: (raw.sshHost ?? raw.ssh_host ?? '').trim(),
     sshUser: (raw.sshUser ?? raw.ssh_user ?? '').trim(),
-    sshPassword: raw.sshPassword ?? raw.ssh_password ?? '',
     sshPort: normalizeOptionalNumber(raw.sshPort ?? raw.ssh_port) ?? GOI_SSH_PORT_DEFAULT,
     path: (raw.path ?? GOI_PATH_DEFAULT).trim() || GOI_PATH_DEFAULT,
   };

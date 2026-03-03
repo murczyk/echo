@@ -34,7 +34,6 @@ pub async fn organism_goi_settings(
         organism_id: organism.id,
         ssh_host: organism.goi_ssh_host,
         ssh_user: organism.goi_ssh_user,
-        ssh_password: organism.goi_ssh_password,
         ssh_port: if organism.goi_ssh_port > 0 {
             organism.goi_ssh_port
         } else {
@@ -68,8 +67,6 @@ pub async fn update_organism_goi_settings(
     let mut organism: organism::ActiveModel = organism.into();
     organism.goi_ssh_host = Set(normalize_optional_trimmed(req.ssh_host));
     organism.goi_ssh_user = Set(normalize_optional_trimmed(req.ssh_user));
-    organism.goi_ssh_password =
-        Set(normalize_optional_trimmed(req.ssh_password));
     organism.goi_ssh_port = Set(req.ssh_port);
     organism.goi_path = Set(normalize_trimmed_or_default(
         req.path,
@@ -81,7 +78,6 @@ pub async fn update_organism_goi_settings(
         organism_id: organism.id,
         ssh_host: organism.goi_ssh_host,
         ssh_user: organism.goi_ssh_user,
-        ssh_password: organism.goi_ssh_password,
         ssh_port: organism.goi_ssh_port,
         path: organism.goi_path,
     }))
@@ -155,11 +151,6 @@ fn goi_validate_connection_req(
     if req.ssh_user.trim().is_empty() {
         return Err(AppError::BL {
             msg: "SSH user is required".to_string(),
-        });
-    }
-    if req.ssh_password.trim().is_empty() {
-        return Err(AppError::BL {
-            msg: "SSH password is required".to_string(),
         });
     }
     if req.path.trim().is_empty() {

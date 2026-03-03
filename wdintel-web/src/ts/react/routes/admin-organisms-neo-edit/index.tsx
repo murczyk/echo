@@ -45,7 +45,6 @@ type OrganismFormState = {
   groupIds: string[];
   goiSshHost: string;
   goiSshUser: string;
-  goiSshPassword: string;
   goiSshPort: number;
   goiPath: string;
 };
@@ -65,7 +64,6 @@ const emptyFormState: OrganismFormState = {
   groupIds: [],
   goiSshHost: '',
   goiSshUser: '',
-  goiSshPassword: '',
   goiSshPort: GOI_SSH_PORT_DEFAULT,
   goiPath: GOI_PATH_DEFAULT,
 };
@@ -395,16 +393,6 @@ function OrganismFormFields(props: OrganismFormFieldsProps) {
         />
 
         <TextField
-          label="SSH пароль"
-          type="password"
-          value={props.form.goiSshPassword}
-          onChange={(event) => props.onChange({ goiSshPassword: event.target.value })}
-          fullWidth
-          autoComplete="new-password"
-          disabled={props.isSubmitting || props.isCheckingGoiConnection}
-        />
-
-        <TextField
           label="SSH порт"
           type="number"
           value={props.form.goiSshPort}
@@ -539,7 +527,6 @@ function AdminOrganismsNeoEditPageBody(props: AdminOrganismsNeoEditPageProps) {
           groupIds: groupKeys,
           goiSshHost: goiSettings.sshHost,
           goiSshUser: goiSettings.sshUser,
-          goiSshPassword: goiSettings.sshPassword,
           goiSshPort: goiSettings.sshPort,
           goiPath: goiSettings.path,
         });
@@ -624,7 +611,6 @@ function AdminOrganismsNeoEditPageBody(props: AdminOrganismsNeoEditPageProps) {
     if (
       patch.goiSshHost !== undefined ||
       patch.goiSshUser !== undefined ||
-      patch.goiSshPassword !== undefined ||
       patch.goiSshPort !== undefined ||
       patch.goiPath !== undefined
     ) {
@@ -654,7 +640,6 @@ function AdminOrganismsNeoEditPageBody(props: AdminOrganismsNeoEditPageProps) {
       organismId,
       sshHost: nextForm.goiSshHost.trim(),
       sshUser: nextForm.goiSshUser.trim(),
-      sshPassword: nextForm.goiSshPassword,
       sshPort: nextForm.goiSshPort,
       path: nextForm.goiPath.trim() || GOI_PATH_DEFAULT,
     };
@@ -667,7 +652,6 @@ function AdminOrganismsNeoEditPageBody(props: AdminOrganismsNeoEditPageProps) {
       const response = await checkOrganismGoiConnection({
         sshHost: form.goiSshHost.trim(),
         sshUser: form.goiSshUser.trim(),
-        sshPassword: form.goiSshPassword,
         sshPort: form.goiSshPort,
         path: form.goiPath.trim() || GOI_PATH_DEFAULT,
       });
