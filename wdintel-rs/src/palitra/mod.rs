@@ -1,3 +1,4 @@
+use std::fs::exists;
 use crate::config::{ORGANISM_GOI_PATH_DEFAULT, ORGANISM_GOI_SSH_PORT_DEFAULT};
 use crate::entities::*;
 use crate::error::AppError;
@@ -165,7 +166,14 @@ pub async fn create_palitra_with_kmz(
     .await
     .c(h!())?;
 
-    bl::rewrite_palitra_points(palitra.id, points, &txn)
+    let palitra_geometry = palitra_geometry::Entity::find()
+        .filter(palitra_geometry::Column::PalitraId.eq(palitra.id))
+        .one(&env.dbx)
+        .await
+        .c(h!())?
+        .c(h!())?;
+
+    bl::rewrite_palitra_points(palitra_geometry.id, points, &txn)
         .await
         .c(h!())?;
 
@@ -190,10 +198,10 @@ pub async fn create_palitra_with_kmz(
     let palitra_response = Palitra {
         id: result.id,
         name: result.name,
-        color_hex: result.hex,
+        color_hex: palitra_geometry.hex,
         author: result.author,
-        source_file_name: result.source_file_name,
-        last_uploaded_at_ts: result
+        source_file_name: palitra_geometry.source_file_name,
+        last_uploaded_at_ts: palitra_geometry
             .last_uploaded_at
             .map(|ts| ts.and_utc().timestamp_millis()),
         geometry: None, // Will be calculated on next request
@@ -304,21 +312,23 @@ pub async fn upload_palitra_points(
     let raw_filename = field.name().c(h!())?.to_string();
     let filename = kmz::sanitize_upload_filename(&raw_filename);
     let raw_kmz_data = val;
-    let points = kmz::load_coordinates_from_file(
-        filename.clone(),
-        raw_kmz_data.clone(),
-        &env,
-    )
-    .await
-    .c(h!())?;
+    let points = kmz::load_coordinates_from_file(filename.clone(),  raw_kmz_data.clone(), &env)
+        .await
+        .c(h!())?;
+    let palitra_geometry = palitra_geometry::Entity::find()
+        .filter(palitra_geometry::Column::PalitraId.eq(palitra.id))
+        .one(&env.dbx)
+        .await
+        .c(h!())?
+        .c(h!())?;
     let txn = env.dbx.begin().await.c(h!())?;
 
-    let palitra_id = palitra.id;
-    let mut model = palitra.into_active_model();
+    let palitra_geometry_id = palitra_geometry.id;
+    let mut model = palitra_geometry.into_active_model();
     model.source_file_name = Set(Some(filename.clone()));
     model.update(&txn).await.c(h!())?;
 
-    bl::rewrite_palitra_points(palitra_id, points, &txn)
+    bl::rewrite_palitra_points(palitra_geometry_id, points, &txn)
         .await
         .c(h!())?;
 
@@ -541,14 +551,8 @@ pub async fn delete_palitra(
     ensure_palitra_permissions(&env, &login, &existing_access, &scope)
         .await
         .c(h!())?;
-    sync_delete_palitra_from_connected_organisms(
-        &env.dbx,
-        &existing_access,
-        &palitra.source_file_name,
-    )
-    .await
-    .c(h!())?;
-    bl::delete_palitra(palitra.id, &txn).await.c(h!())?;
+
+    bl::delete_palitra(palitra.id, &txn, existing_access, &env).await.c(h!())?; //deletes with all geometries, TODO add method for drop one geometry only
     txn.commit().await.c(h!())?;
     Ok(Json(()))
 }
