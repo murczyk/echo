@@ -1,7 +1,7 @@
 use crate::entities::{
     area_of_responsibility, login, organism, organism_aor, palitra,
     palitra_access_aor, palitra_access_login, palitra_access_organism,
-    palitra_point, palitra_point_lexeme,
+    palitra_geometry, palitra_point, palitra_point_lexeme,
 };
 use crate::error::AppError;
 use crate::h;
@@ -97,12 +97,13 @@ where
 {
     let lexemes = palitra_point::Entity::find()
         .inner_join(palitra_point_lexeme::Entity)
+        .inner_join(palitra_geometry::Entity)
         .inner_join(palitra::Entity)
         .filter(palitra_point::Column::Deleted.eq(false))
         .filter(palitra::Column::Deleted.eq(false))
         .filter(palitra::Column::Id.eq(palitra_id))
         .select_only()
-        .column(palitra_point::Column::PalitraId)
+        .column(palitra_geometry::Column::PalitraId)
         .column(palitra_point::Column::Label)
         .column(palitra_point_lexeme::Column::PalitraPointId)
         .column(palitra_point_lexeme::Column::Lexeme)
@@ -407,12 +408,13 @@ where
 
     let rows = palitra_point::Entity::find()
         .inner_join(palitra_point_lexeme::Entity)
+        .inner_join(palitra_geometry::Entity)
         .inner_join(palitra::Entity)
         .filter(palitra_point::Column::Deleted.eq(false))
         .filter(palitra::Column::Deleted.eq(false))
         .filter(palitra_filter)
         .select_only()
-        .column(palitra_point::Column::PalitraId)
+        .column(palitra_geometry::Column::PalitraId)
         .column(palitra_point::Column::Label)
         .column(palitra_point_lexeme::Column::PalitraPointId)
         .column(palitra_point_lexeme::Column::Lexeme)

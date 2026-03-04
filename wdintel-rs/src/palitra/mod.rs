@@ -172,7 +172,7 @@ pub async fn create_palitra_with_kmz(
             .await
             .c(h!())?;
 
-    bl::rewrite_palitra_points(palitra_geometry.id, points, &txn)
+    bl::rewrite_palitra_points(palitra_geometry.id, points, &txn, &env.rq)
         .await
         .c(h!())?;
 
@@ -329,7 +329,7 @@ pub async fn upload_palitra_points(
     model.source_file_name = Set(Some(filename.clone()));
     model.update(&txn).await.c(h!())?;
 
-    bl::rewrite_palitra_points(palitra_geometry_id, points, &txn)
+    bl::rewrite_palitra_points(palitra_geometry_id, points, &txn, &env.rq)
         .await
         .c(h!())?;
 

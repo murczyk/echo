@@ -1,13 +1,9 @@
 use crate::entities::*;
-use crate::palitra::types::*;
-use crate::types::*;
-use crate::utils::orm::ArrayColumnOps;
-use crate::{h, nlp};
-use crate::h;
 use crate::palitra::sync_delete_palitra_from_connected_organisms;
 use crate::palitra::types::*;
 use crate::types::*;
 use crate::utils::orm::ArrayColumnOps;
+use crate::{h, nlp};
 use actix_web::web::Data;
 use anyhow::Context;
 use chrono::{DateTime, Utc};
