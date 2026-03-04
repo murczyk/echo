@@ -16,6 +16,8 @@ use sea_orm::prelude::*;
 use sea_orm::*;
 use tokio::sync::RwLock;
 
+const PALITRA_WORKER_MESSAGES_PER_BATCH: usize = 50;
+
 #[derive(Default)]
 pub struct PalitraPatternCache {
     data: HashMap<i64, PalitraPattern>,
@@ -91,7 +93,7 @@ async fn palitra_highlight_worker_impl(
         SELECT "sigint_inbox_item_id" FROM "palitra_highlight_worker_job"
         ORDER BY "sigint_inbox_item_id"
         FOR UPDATE SKIP LOCKED
-        LIMIT 50
+        LIMIT {PALITRA_WORKER_MESSAGES_PER_BATCH}
         "#
     );
 
