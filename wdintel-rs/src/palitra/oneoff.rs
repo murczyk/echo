@@ -84,7 +84,7 @@ pub async fn oneoff_highlight_inbox_message_palitra_points(
     let messages_and_networks = sigint_inbox_item::Entity::find()
         .join(
             JoinType::LeftJoin,
-            sigint_inbox_item::Relation::SigintInboxItemPointTokens.def(),
+            sigint_inbox_item::Relation::SigintInboxItemPointToken.def(),
         )
         .filter(sigint_inbox_item::Column::BodyNoheader.is_not_null())
         .filter(sigint_inbox_item::Column::Datetime.gte(start))

@@ -26,6 +26,7 @@ pub(crate) mod bl;
 mod kmz;
 pub mod oneoff;
 pub mod types;
+pub mod worker;
 
 #[derive(Clone)]
 struct UserScope {

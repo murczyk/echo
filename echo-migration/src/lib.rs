@@ -209,6 +209,7 @@ mod m20260225_090001_add_table_sigint_inbox_item_point_tokens;
 mod m20260225_174500_add_palitra_point_lexeme;
 mod m20260301_123031_inbox_item_points_per_palitra;
 mod m20260303_200001_add_organism_goi_connection_fields;
+mod m20260304_124501_palitra_highlight_worker_job;
 
 pub struct Migrator;
 
@@ -424,8 +425,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20260225_090001_add_table_sigint_inbox_item_point_tokens::Migration),
             Box::new(m20260225_174500_add_palitra_point_lexeme::Migration),
             Box::new(m20260301_123031_inbox_item_points_per_palitra::Migration),
-            Box::new(m20260216_120000_add_network_group_stats::Migration),
             Box::new(m20260303_200001_add_organism_goi_connection_fields::Migration),
+            Box::new(m20260304_124501_palitra_highlight_worker_job::Migration),
         ]
     }
 }
