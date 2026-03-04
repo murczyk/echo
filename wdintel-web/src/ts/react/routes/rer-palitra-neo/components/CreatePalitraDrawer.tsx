@@ -94,11 +94,12 @@ function CreatePalitraDrawerComponent({
   const dismissBlocked = createInFlight || kmzAnalyzing;
   const canContinueFromKmzStep = Boolean(kmzFile) && hasSuccessfulKmzAnalysis && !kmzAnalyzing;
   const requiresKmzSelection = isAdvancedMode && kmzColorOptions.length > 0;
+  const isCreateFormValid = isAdvancedMode ? isFormValid(createForm) : createForm.name.trim().length > 0;
   const canCreate =
     createInFlight ||
     !kmzFile ||
     !hasSuccessfulKmzAnalysis ||
-    !isFormValid(createForm) ||
+    !isCreateFormValid ||
     (requiresKmzSelection && !hasSelectedKmzColor);
   const selectedKmzColorsCount = kmzColorOptions.filter((option) => option.selected).length;
 

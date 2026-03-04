@@ -477,7 +477,18 @@ export function useRerPalitraNeoPage() {
     if (!kmzFile || createInFlight) return;
 
     const normalizedForm = applyRestrictedAccess(createForm, user, myScope);
-    if (!isFormValid(normalizedForm)) return;
+    const createFormResolved =
+      mode === 'basic' && !isFormValid(normalizedForm) && user?.name
+        ? {
+            ...normalizedForm,
+            accessType: 'logins' as const,
+            logins: [user.name],
+            organismIds: [],
+            aorIds: [],
+          }
+        : normalizedForm;
+
+    if (!isFormValid(createFormResolved)) return;
 
     setCreateInFlight(true);
     setError(null);
@@ -493,9 +504,9 @@ export function useRerPalitraNeoPage() {
         const results = await Promise.allSettled(
           selectedOptions.map((option) => {
             const req = toCreateReq({
-              ...normalizedForm,
+              ...createFormResolved,
               colorHex: option.colorHex,
-              name: buildPalitraNameWithSuffix(normalizedForm.name, option.suffix),
+              name: buildPalitraNameWithSuffix(createFormResolved.name, option.suffix),
             });
             return createPalitraWithKmz(req, kmzFile);
           }),
@@ -526,7 +537,7 @@ export function useRerPalitraNeoPage() {
 
       const created = await createPalitraWithKmz(
         toCreateReq({
-          ...normalizedForm,
+          ...createFormResolved,
           colorHex: selectedColorFromKmz,
         }),
         kmzFile,
