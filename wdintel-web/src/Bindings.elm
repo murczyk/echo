@@ -2710,6 +2710,7 @@ palitraDetailsEncoder struct =
 type alias PalitraPoint =
     { coords : Coords
     , label : Maybe String
+    , color : Maybe String
     }
 
 
@@ -2718,6 +2719,7 @@ palitraPointEncoder struct =
     Json.Encode.object
         [ ( "coords", coordsEncoder struct.coords )
         , ( "label", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.label )
+        , ( "color", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.color )
         ]
 
 
@@ -8174,6 +8176,7 @@ palitraPointDecoder =
     Json.Decode.succeed PalitraPoint
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "coords" coordsDecoder))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "label" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "color" (Json.Decode.nullable Json.Decode.string)))
 
 
 palitraPointsReqDecoder : Json.Decode.Decoder PalitraPointsReq
