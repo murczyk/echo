@@ -167,7 +167,12 @@ pub async fn create_palitra_with_kmz(
     .await
     .c(h!())?;
 
-    bl::rewrite_palitra_points(palitra.id, points, &txn, &env.rq)
+    let palitra_geometry =
+        read_latest_palitra_geometry_with_warning(&env.dbx, palitra.id)
+            .await
+            .c(h!())?;
+
+    bl::rewrite_palitra_points(palitra_geometry.id, points, &txn)
         .await
         .c(h!())?;
 
@@ -192,10 +197,10 @@ pub async fn create_palitra_with_kmz(
     let palitra_response = Palitra {
         id: result.id,
         name: result.name,
-        color_hex: result.hex,
+        color_hex: palitra_geometry.hex,
         author: result.author,
-        source_file_name: result.source_file_name,
-        last_uploaded_at_ts: result
+        source_file_name: palitra_geometry.source_file_name,
+        last_uploaded_at_ts: palitra_geometry
             .last_uploaded_at
             .map(|ts| ts.and_utc().timestamp_millis()),
         geometry: None, // Will be calculated on next request
@@ -255,10 +260,10 @@ pub async fn analyze_kmz(
         }
     };
 
-    // Clean filename (remove extension)
-    let name_without_ext = filename
-        .strip_suffix(".kmz")
-        .or_else(|| filename.strip_suffix(".kml"))
+    // Clean filename (remove extension case-insensitively)
+    let name_without_ext = Path::new(&filename)
+        .file_stem()
+        .and_then(|stem| stem.to_str())
         .unwrap_or(&filename)
         .to_string();
 
@@ -313,14 +318,18 @@ pub async fn upload_palitra_points(
     )
     .await
     .c(h!())?;
+    let palitra_geometry =
+        read_latest_palitra_geometry_with_warning(&env.dbx, palitra.id)
+            .await
+            .c(h!())?;
     let txn = env.dbx.begin().await.c(h!())?;
 
-    let palitra_id = palitra.id;
-    let mut model = palitra.into_active_model();
+    let palitra_geometry_id = palitra_geometry.id;
+    let mut model = palitra_geometry.into_active_model();
     model.source_file_name = Set(Some(filename.clone()));
     model.update(&txn).await.c(h!())?;
 
-    bl::rewrite_palitra_points(palitra_id, points, &txn, &env.rq)
+    bl::rewrite_palitra_points(palitra_geometry_id, points, &txn)
         .await
         .c(h!())?;
 
@@ -545,14 +554,10 @@ pub async fn delete_palitra(
     ensure_palitra_permissions(&env, &login, &existing_access, &scope)
         .await
         .c(h!())?;
-    sync_delete_palitra_from_connected_organisms(
-        &env.dbx,
-        &existing_access,
-        &palitra.source_file_name,
-    )
-    .await
-    .c(h!())?;
-    bl::delete_palitra(palitra.id, &txn).await.c(h!())?;
+
+    bl::delete_palitra(palitra.id, &txn, existing_access, &env)
+        .await
+        .c(h!())?; //deletes with all geometries, TODO add method for drop one geometry only
     txn.commit().await.c(h!())?;
     env.palitra_worker_context.flush_cache(palitra_id).await;
     Ok(Json(()))
@@ -648,6 +653,28 @@ async fn ensure_palitra_permissions(
         }
     };
     Ok(())
+}
+
+async fn read_latest_palitra_geometry_with_warning(
+    dbx: &DatabaseConnection,
+    palitra_id: i64,
+) -> anyhow::Result<palitra_geometry::Model> {
+    let palitra_geometries = palitra_geometry::Entity::find()
+        .filter(palitra_geometry::Column::PalitraId.eq(palitra_id))
+        .filter(palitra_geometry::Column::Deleted.eq(false))
+        .order_by_desc(palitra_geometry::Column::UpdatedAt)
+        .all(dbx)
+        .await
+        .c(h!())?;
+
+    if palitra_geometries.len() > 1 {
+        warn!(
+            "palitra {palitra_id} has {} active geometries; using the latest one for a single-geometry flow",
+            palitra_geometries.len()
+        );
+    }
+
+    palitra_geometries.into_iter().next().c(h!())
 }
 
 async fn load_user_scope(

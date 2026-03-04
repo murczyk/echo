@@ -10,7 +10,7 @@
 
 Крок 3: Запуск клієнту PostgreSQL і підключення до бази даних
 
-`$ PGPASSWORD=fee_-_-_-FnoeKFBeebu87bf psql -U wd -h 127.0.0.1 -p 6432 wd`
+`$ PGPASSWORD=<password> psql -U wd -h 127.0.0.1 -p 6432 wd`
 
 Крок 4: Створення користувача
 
@@ -38,6 +38,8 @@
 
 ***Примітка:** усі команди (кроки 2-4 та 6-8) мають бути запущені в окремих терміналах, що лишаються працювати в фоновому режимі.*
 
+***Примітка:** візьміть \<password\> у довіреного розробника.*
+
 ## Автоматичне налаштування запуску команд в терміналах для VS Code
 
 Крок 1: Створити файл `.vscode/tasks.json` наступного змісту:
@@ -56,14 +58,14 @@
     {
       "label": "stop-nlp-ml-service",
       "type": "shell",
-      "command": "bash -lc 'set -e; PIDS=$(lsof -tiTCP:5000 -sTCP:LISTEN 2>/dev/null || true); if [ -z \"$PIDS\" ]; then echo \"Flask:5000 already stopped\"; exit 0; fi; echo \"Stopping :5000 pids: $PIDS\"; kill -TERM $PIDS || true; for i in {1..25}; do sleep 0.2; PIDS=$(lsof -tiTCP:5000 -sTCP:LISTEN 2>/dev/null || true); [ -z \"$PIDS\" ] && { echo \"Stopped\"; exit 0; }; done; echo \"Escalating to SIGKILL\"; PIDS=$(lsof -tiTCP:5000 -sTCP:LISTEN 2>/dev/null || true); [ -n \"$PIDS\" ] && kill -KILL $PIDS || true; sleep 0.2; PIDS=$(lsof -tiTCP:5000 -sTCP:LISTEN 2>/dev/null || true); [ -n \"$PIDS\" ] && { echo \"ERROR: still listening: $PIDS\"; exit 1; } || echo \"Stopped\"'",
+      "command": "bash -lc 'set -euo pipefail; if ! fuser 5000/tcp >/dev/null 2>&1 && ! pgrep -f \"wdintel-rs/wdintel-py/.venv/bin/flask --app service --debug run\" >/dev/null 2>&1; then echo \"Flask:5000 already stopped\"; exit 0; fi; echo \"Stopping Flask on :5000\"; fuser -k -TERM 5000/tcp >/dev/null 2>&1 || true; pkill -TERM -f \"wdintel-rs/wdintel-py/.venv/bin/flask --app service --debug run\" >/dev/null 2>&1 || true; for i in {1..25}; do sleep 0.2; if ! fuser 5000/tcp >/dev/null 2>&1 && ! pgrep -f \"wdintel-rs/wdintel-py/.venv/bin/flask --app service --debug run\" >/dev/null 2>&1; then echo \"Stopped\"; exit 0; fi; done; echo \"Escalating to SIGKILL\"; fuser -k -KILL 5000/tcp >/dev/null 2>&1 || true; pkill -KILL -f \"wdintel-rs/wdintel-py/.venv/bin/flask --app service --debug run\" >/dev/null 2>&1 || true; sleep 0.2; if fuser 5000/tcp >/dev/null 2>&1 || pgrep -f \"wdintel-rs/wdintel-py/.venv/bin/flask --app service --debug run\" >/dev/null 2>&1; then echo \"ERROR: Flask still active\"; exit 1; fi; echo \"Stopped\"'",
       "problemMatcher": [],
       "presentation": { "panel": "new", "reveal": "always" }
     },
     {
       "label": "stop-back-and-front-servers",
       "type": "shell",
-      "command": "bash -lc 'for p in 8081 1234; do fuser -k $p/tcp 2>/dev/null || true; done'",
+      "command": "bash -lc 'set -euo pipefail; pkill -TERM -f \"cargo watch -- cargo run -- --mode=debug server\" >/dev/null 2>&1 || true; pkill -TERM -f \"elm-land server\" >/dev/null 2>&1 || true; sleep 0.4; for p in 8081 1234; do fuser -k -TERM $p/tcp >/dev/null 2>&1 || true; done; sleep 0.2; for p in 8081 1234; do fuser -k -KILL $p/tcp >/dev/null 2>&1 || true; done'",
       "problemMatcher": [],
       "presentation": { "panel": "new", "reveal": "always" }
     },
@@ -76,7 +78,7 @@
     {
       "label": "open-ssh-tunnel", // port 6432 to 5432
       "type": "shell",
-      "command": "bash -lc 'mkdir -p .vscode; if nc -z 127.0.0.1 6432; then echo \"Tunnel already up on :6432\"; else ssh -f -nNT -M -S .vscode/pg-tunnel.sock -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -L 6432:localhost:5432 echo-pivnich-dev; fi'",
+      "command": "bash -lc 'mkdir -p .vscode; if nc -z 127.0.0.1 6432; then echo \"Tunnel already up on :6432\"; else if [ -S .vscode/pg-tunnel.sock ] && ! ssh -S .vscode/pg-tunnel.sock -O check echo-pivnich-dev >/dev/null 2>&1; then rm -f .vscode/pg-tunnel.sock; fi; ssh -f -nNT -M -S .vscode/pg-tunnel.sock -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -L 6432:localhost:5432 echo-pivnich-dev; fi'",
       "isBackground": true,
       "problemMatcher": [],
       "presentation": { "panel": "new", "reveal": "always" }
@@ -90,7 +92,7 @@
     {
       "label": "start-db-session", // via port 6432
       "type": "shell",
-      "command": "PGPASSWORD=fee_-_-_-FnoeKFBeebu87bf psql -U wd -h 127.0.0.1 -p 6432 wd",
+      "command": "PGPASSWORD=<password> psql -U wd -h 127.0.0.1 -p 6432 wd",
       "problemMatcher": [],
       "presentation": { "panel": "new", "focus": true }
     },
@@ -103,12 +105,30 @@
       "presentation": { "panel": "new" }
     },
     {
+      "label": "wait-for-back-server", // on port 8081
+      "type": "shell",
+      "command": "until nc -z 127.0.0.1 8081; do sleep 0.2; done",
+      "problemMatcher": []
+    },
+    {
       "label": "start-nlp-ml-service", // port 5000
       "type": "shell",
       "command": "just dev-py",
       "isBackground": true,
       "problemMatcher": [],
       "presentation": { "panel": "new" }
+    },
+    {
+      "label": "restart-nlp-ml-service",
+      "dependsOrder": "sequence",
+      "dependsOn": ["stop-nlp-ml-service", "start-nlp-ml-service"],
+      "problemMatcher": []
+    },
+    {
+      "label": "wait-for-nlp-ml-service", // on port 5000
+      "type": "shell",
+      "command": "until nc -z 127.0.0.1 5000; do sleep 0.2; done",
+      "problemMatcher": []
     },
     {
       "label": "start-front-server", // port 1234
@@ -119,9 +139,15 @@
       "presentation": { "panel": "new" }
     },
     {
+      "label": "wait-for-front-server", // on port 1234
+      "type": "shell",
+      "command": "until nc -z 127.0.0.1 1234; do sleep 0.2; done",
+      "problemMatcher": []
+    },
+    {
       "label": "start-dev",
       "dependsOrder": "parallel",
-      "dependsOn": ["start-db-session", "start-back-server", "start-nlp-ml-service", "start-front-server"],
+      "dependsOn": ["start-back-server", "restart-nlp-ml-service", "start-front-server", "wait-for-back-server", "wait-for-nlp-ml-service", "wait-for-front-server"],
       "problemMatcher": []
     },
     {

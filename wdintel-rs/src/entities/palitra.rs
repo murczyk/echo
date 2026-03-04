@@ -12,16 +12,16 @@ pub struct Model {
     pub id: i64,
     #[sea_orm(column_type = "Text")]
     pub name: String,
-    #[sea_orm(column_type = "Text")]
-    pub hex: String,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub hex_legacy: Option<String>,
     #[sea_orm(column_type = "Text", nullable)]
     pub author: Option<String>,
     #[sea_orm(column_type = "Text", nullable)]
-    pub source_file_name: Option<String>,
+    pub source_file_name_legacy: Option<String>,
     pub deleted: bool,
     pub deleted_at: Option<DateTime>,
     pub created_at: DateTime,
-    pub last_uploaded_at: Option<DateTime>,
+    pub last_uploaded_at_legacy: Option<DateTime>,
     //     #[sea_orm(column_type = "custom(\"geometry\")", nullable)]
     //     pub convex_hull: Option<String>,
     //     #[sea_orm(column_type = "custom(\"geometry\")", nullable)]
@@ -44,6 +44,8 @@ pub enum Relation {
     PalitraAccessLogin,
     #[sea_orm(has_many = "super::palitra_access_organism::Entity")]
     PalitraAccessOrganism,
+    #[sea_orm(has_many = "super::palitra_geometry::Entity")]
+    PalitraGeometry,
     #[sea_orm(has_many = "super::palitra_point::Entity")]
     PalitraPoint,
     #[sea_orm(has_many = "super::sigint_inbox_item_point_token::Entity")]
@@ -71,6 +73,12 @@ impl Related<super::palitra_access_login::Entity> for Entity {
 impl Related<super::palitra_access_organism::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::PalitraAccessOrganism.def()
+    }
+}
+
+impl Related<super::palitra_geometry::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::PalitraGeometry.def()
     }
 }
 

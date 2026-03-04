@@ -150,6 +150,7 @@ export function RerPalitraNeoPage() {
         kmzAnalysis={page.kmzAnalysis}
         kmzColorOptions={page.kmzColorOptions}
         selectedColorFromKmz={page.selectedColorFromKmz}
+        createMode={page.createMode}
         createForm={page.createForm}
         user={page.user}
         myScope={page.myScope}
@@ -160,6 +161,7 @@ export function RerPalitraNeoPage() {
         onRequestAnalyzeKmz={page.requestAnalyzeKmz}
         onSetKmzColorOptions={page.updateKmzColorOptions}
         onSetSelectedColorFromKmz={page.setSelectedColorFromKmz}
+        onSetCreateMode={page.setCreateMode}
         onSetCreateForm={page.updateCreateForm}
         onCreate={page.handleCreate}
       />
