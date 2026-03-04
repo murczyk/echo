@@ -22,6 +22,7 @@ setup-dev-container-scripts server:
 
     echo "Uploading GOI post-clone script to ${SERVER}:${TARGET_SCRIPT}..."
     echo-install-utils ssh-sync-file --take-a "{{ goi_dir }}/deploy/goi-dev-post-clone.sh" "${SERVER}:${TARGET_SCRIPT}"
+    echo-install-utils ssh-sync-file --take-a "{{ goi_dir }}/deploy/goi-dev-post-clone.sh" "${SERVER}:${TARGET_BUNDLE_DIR}/goi-dev-post-clone.sh"
     ssh "$SERVER" "chmod 0755 '${TARGET_SCRIPT}'"
 
     echo "Uploading GOI bundle files to ${SERVER}:${TARGET_BUNDLE_DIR}..."
@@ -31,7 +32,7 @@ setup-dev-container-scripts server:
     echo-install-utils ssh-sync-file --take-a "{{ goi_dir }}/deploy/goi-renew-tailscale-cert.service" "${SERVER}:${TARGET_BUNDLE_DIR}/goi-renew-tailscale-cert.service"
     echo-install-utils ssh-sync-file --take-a "{{ goi_dir }}/deploy/goi-renew-tailscale-cert.timer" "${SERVER}:${TARGET_BUNDLE_DIR}/goi-renew-tailscale-cert.timer"
     ssh "$SERVER" "set -euo pipefail
-      chmod 0755 '${TARGET_BUNDLE_DIR}/goi-npm-start.sh' '${TARGET_BUNDLE_DIR}/goi-renew-tailscale-cert.sh'
+      chmod 0755 '${TARGET_BUNDLE_DIR}/goi-dev-post-clone.sh' '${TARGET_BUNDLE_DIR}/goi-npm-start.sh' '${TARGET_BUNDLE_DIR}/goi-renew-tailscale-cert.sh'
       chmod 0644 '${TARGET_BUNDLE_DIR}/goi.service' '${TARGET_BUNDLE_DIR}/goi-renew-tailscale-cert.service' '${TARGET_BUNDLE_DIR}/goi-renew-tailscale-cert.timer'
     "
 
@@ -39,9 +40,9 @@ setup-dev-container-scripts server:
     echo "Script path on ${SERVER}: ${TARGET_SCRIPT}"
     echo "Bundle dir on ${SERVER}: ${TARGET_BUNDLE_DIR}"
     echo "Example next step:"
-    echo "  incus file push ${TARGET_SCRIPT} \"\$MACHINE/var/tmp/goi-dev-post-clone.sh\""
     echo "  incus exec \"\$MACHINE\" -- mkdir -p /var/tmp/goi-dev-container"
-    echo "  for f in goi.service goi-npm-start.sh goi-renew-tailscale-cert.sh goi-renew-tailscale-cert.service goi-renew-tailscale-cert.timer; do incus file push ${TARGET_BUNDLE_DIR}/\$f \"\$MACHINE/var/tmp/goi-dev-container/\$f\"; done"
+    echo "  for f in goi-dev-post-clone.sh goi.service goi-npm-start.sh goi-renew-tailscale-cert.sh goi-renew-tailscale-cert.service goi-renew-tailscale-cert.timer; do incus file push ${TARGET_BUNDLE_DIR}/\$f \"\$MACHINE/var/tmp/goi-dev-container/\$f\"; done"
+    echo "  incus exec \"\$MACHINE\" -- /var/tmp/goi-dev-container/goi-dev-post-clone.sh --ts-key \"\$TS_KEY\" --machine \"\$MACHINE\" --domain \"\$DOMAIN\""
 
 [arg('server', long='server')]
 setup server:

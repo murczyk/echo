@@ -54,13 +54,12 @@ ssh <INCUS_HOST>
 incus delete -f "$MACHINE" >/dev/null 2>&1 || true
 echo-install-utils incus-clone --tailscale "$TS_KEY" --clear-all -- "$TEMPLATE" "$MACHINE"
 
-incus file push ~/workspace/goi-container/deploy/goi-dev-post-clone.sh "$MACHINE/var/tmp/goi-dev-post-clone.sh"
 incus exec "$MACHINE" -- mkdir -p /var/tmp/goi-dev-container
-for f in goi.service goi-npm-start.sh goi-renew-tailscale-cert.sh goi-renew-tailscale-cert.service goi-renew-tailscale-cert.timer; do
+for f in goi-dev-post-clone.sh goi.service goi-npm-start.sh goi-renew-tailscale-cert.sh goi-renew-tailscale-cert.service goi-renew-tailscale-cert.timer; do
   incus file push "$HOME/workspace/goi-container/deploy/goi-dev-container/$f" "$MACHINE/var/tmp/goi-dev-container/$f"
 done
 
-incus exec "$MACHINE" -- /var/tmp/goi-dev-post-clone.sh \
+incus exec "$MACHINE" -- /var/tmp/goi-dev-container/goi-dev-post-clone.sh \
   --ts-key "$TS_KEY" \
   --machine "$MACHINE" \
   --domain "$DOMAIN"
