@@ -53,7 +53,8 @@ impl MigrationTrait for Migration {
             r#"
             alter table palitra_point rename column palitra_id_legacy to palitra_id;
             UPDATE palitra_point
-                SET palitra_id = palitra.id FROM palitra, palitra_geometry
+                SET palitra_id = palitra_geometry.palitra_id
+                FROM palitra_geometry
                 WHERE palitra_point.palitra_geometry_id = palitra_geometry.id;
 
             ALTER TABLE palitra_point DROP COLUMN palitra_geometry_id;

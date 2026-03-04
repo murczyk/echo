@@ -196,7 +196,6 @@ pub async fn search_palitra_points_by_labels(
     if palitra_ids.is_empty() {
         return Ok(vec![]);
     }
-    dbg!("{:?}", &palitra_ids);
 
     let label_patterns: Vec<LabelPattern> = req
         .point_labels
@@ -212,14 +211,27 @@ pub async fn search_palitra_points_by_labels(
         label_condition = label_condition.add(pattern.to_expr());
     }
 
-    let palitra_geometry_ids = palitra_geometry::Entity::find()
-        .filter(palitra_geometry::Column::Id.is_in(palitra_ids))
+    let palitra_geometries = palitra_geometry::Entity::find()
+        .filter(palitra_geometry::Column::PalitraId.is_in(palitra_ids.clone()))
+        .filter(palitra_geometry::Column::Deleted.eq(false))
         .select_only()
         .column(palitra_geometry::Column::Id)
-        .into_tuple::<i64>()
+        .column(palitra_geometry::Column::PalitraId)
+        .into_tuple::<(i64, i64)>()
         .all(dbx)
         .await
         .c(h!())?;
+    let palitra_geometry_id_to_palitra_id = palitra_geometries
+        .iter()
+        .copied()
+        .collect::<HashMap<_, _>>();
+    let palitra_geometry_ids = palitra_geometries
+        .into_iter()
+        .map(|(id, _)| id)
+        .collect_vec();
+    if palitra_geometry_ids.is_empty() {
+        return Ok(vec![]);
+    }
 
     let points = palitra_point::Entity::find()
         .select_only()
@@ -227,7 +239,10 @@ pub async fn search_palitra_points_by_labels(
         .column(palitra_point::Column::Lat)
         .column(palitra_point::Column::Lng)
         .column(palitra_point::Column::Label)
-        .filter(palitra_point::Column::PalitraGeometryId.is_in(palitra_geometry_ids.clone()))
+        .filter(
+            palitra_point::Column::PalitraGeometryId
+                .is_in(palitra_geometry_ids.clone()),
+        )
         .filter(palitra_point::Column::Deleted.eq(false))
         .filter(palitra_point::Column::Label.is_not_null())
         .filter(label_condition)
@@ -236,19 +251,25 @@ pub async fn search_palitra_points_by_labels(
         .await
         .c(h!())?;
 
-    let mut points_by_id: HashMap<i64, Vec<PalitraPoint>> = HashMap::new();
-    let mut matched_labels: HashMap<i64, HashSet<usize>> = HashMap::new();
+    let mut points_by_palitra_id: HashMap<i64, Vec<PalitraPoint>> =
+        HashMap::new();
     for (palitra_geometry_id, lat, lng, label) in points {
+        let Some(palitra_id) = palitra_geometry_id_to_palitra_id
+            .get(&palitra_geometry_id)
+            .copied()
+        else {
+            warn!(
+                "palitra_geometry {} is missing palitra_id mapping while searching points by labels",
+                palitra_geometry_id
+            );
+            continue;
+        };
         if let Some(label_value) = label.clone() {
             if let Some(normalized_label) = normalize_label_cache(&label_value)
             {
                 let mut matched_any = false;
-                for (idx, pattern) in label_patterns.iter().enumerate() {
+                for pattern in &label_patterns {
                     if pattern.matches(&normalized_label) {
-                        matched_labels
-                            .entry(palitra_geometry_id)
-                            .or_default()
-                            .insert(idx);
                         matched_any = true;
                     }
                 }
@@ -262,24 +283,24 @@ pub async fn search_palitra_points_by_labels(
             continue;
         }
 
-        points_by_id
-            .entry(palitra_geometry_id)
-            .or_default()
-            .push(PalitraPoint {
+        points_by_palitra_id.entry(palitra_id).or_default().push(
+            PalitraPoint {
                 label,
                 coords: Coords { lat, lng },
                 color: None,
-            });
+            },
+        );
     }
 
-    let result = palitra_geometry_ids
+    let result = palitra_ids
         .into_iter()
-        .filter_map(|palitra_geometry_id| {
-            let points = points_by_id.remove(&palitra_geometry_id).unwrap_or_default();
+        .filter_map(|palitra_id| {
+            let points =
+                points_by_palitra_id.remove(&palitra_id).unwrap_or_default();
             if points.is_empty() {
                 return None;
             }
-            Some(PalitraPoints { palitra_geometry_id, points })
+            Some(PalitraPoints { palitra_id, points })
         })
         .collect();
     Ok(result)
@@ -310,20 +331,36 @@ pub async fn suggest_palitra_point_labels(
     let normalized_prefix = prefix.to_lowercase();
     let prefix_pattern = build_label_pattern(&normalized_prefix, false);
 
-    let palitra_geometry_ids = palitra_geometry::Entity::find()
-        .filter(palitra_geometry::Column::Id.is_in(palitra_ids))
+    let palitra_geometries = palitra_geometry::Entity::find()
+        .filter(palitra_geometry::Column::PalitraId.is_in(palitra_ids))
+        .filter(palitra_geometry::Column::Deleted.eq(false))
         .select_only()
         .column(palitra_geometry::Column::Id)
-        .into_tuple::<i64>()
+        .column(palitra_geometry::Column::PalitraId)
+        .into_tuple::<(i64, i64)>()
         .all(dbx)
         .await
         .c(h!())?;
+    let palitra_geometry_id_to_palitra_id = palitra_geometries
+        .iter()
+        .copied()
+        .collect::<HashMap<_, _>>();
+    let palitra_geometry_ids = palitra_geometries
+        .into_iter()
+        .map(|(id, _)| id)
+        .collect_vec();
+    if palitra_geometry_ids.is_empty() {
+        return Ok(vec![]);
+    }
 
     let labels = palitra_point::Entity::find()
         .select_only()
         .column(palitra_point::Column::PalitraGeometryId)
         .column(palitra_point::Column::Label)
-        .filter(palitra_point::Column::PalitraGeometryId.is_in(palitra_geometry_ids.clone()))
+        .filter(
+            palitra_point::Column::PalitraGeometryId
+                .is_in(palitra_geometry_ids.clone()),
+        )
         .filter(palitra_point::Column::Deleted.eq(false))
         .filter(palitra_point::Column::Label.is_not_null())
         .filter(Expr::cust_with_values(
@@ -340,9 +377,14 @@ pub async fn suggest_palitra_point_labels(
 
     let mut labels: Vec<PalitraPointLabelSuggestRsp> = labels
         .into_iter()
-        .map(|(palitra_geometry_id, label)| PalitraPointLabelSuggestRsp {
-            palitra_geometry_id,
-            label: label.unwrap_or_default(),
+        .filter_map(|(palitra_geometry_id, label)| {
+            palitra_geometry_id_to_palitra_id
+                .get(&palitra_geometry_id)
+                .copied()
+                .map(|palitra_id| PalitraPointLabelSuggestRsp {
+                    palitra_id,
+                    label: label.unwrap_or_default(),
+                })
         })
         .collect();
 
@@ -353,7 +395,10 @@ pub async fn suggest_palitra_point_labels(
             .select_only()
             .column(palitra_point::Column::PalitraGeometryId)
             .column(palitra_point::Column::Label)
-            .filter(palitra_point::Column::PalitraGeometryId.is_in(palitra_geometry_ids))
+            .filter(
+                palitra_point::Column::PalitraGeometryId
+                    .is_in(palitra_geometry_ids),
+            )
             .filter(palitra_point::Column::Deleted.eq(false))
             .filter(palitra_point::Column::Label.is_not_null())
             .filter(Expr::cust_with_values(
@@ -377,14 +422,21 @@ pub async fn suggest_palitra_point_labels(
             .await
             .c(h!())?;
 
-        labels.extend(similar.into_iter().map(|(palitra_geometry_id, label)| {
-            PalitraPointLabelSuggestRsp {
-                palitra_geometry_id,
-                label: label.unwrap_or_default(),
-            }
-        }));
+        labels.extend(similar.into_iter().filter_map(
+            |(palitra_geometry_id, label)| {
+                palitra_geometry_id_to_palitra_id
+                    .get(&palitra_geometry_id)
+                    .copied()
+                    .map(|palitra_id| PalitraPointLabelSuggestRsp {
+                        palitra_id,
+                        label: label.unwrap_or_default(),
+                    })
+            },
+        ));
     }
 
+    let mut seen = HashSet::new();
+    labels.retain(|item| seen.insert((item.palitra_id, item.label.clone())));
     Ok(labels)
 }
 
@@ -499,15 +551,24 @@ pub async fn list_palitra_points_by_viewport_bounds(
         .filter(|id| allowed_palitra_ids.contains(id))
         .collect();
 
-    let palitra_geometry_ids = palitra_geometry::Entity::find()
-        .filter(palitra_geometry::Column::PalitraId.is_in(palitra_ids))
+    let palitra_geometries = palitra_geometry::Entity::find()
+        .filter(palitra_geometry::Column::PalitraId.is_in(palitra_ids.clone()))
         .filter(palitra_geometry::Column::Deleted.eq(false))
         .select_only()
         .column(palitra_geometry::Column::Id)
-        .into_tuple::<i64>()
+        .column(palitra_geometry::Column::PalitraId)
+        .into_tuple::<(i64, i64)>()
         .all(dbx)
         .await
         .c(h!())?;
+    let palitra_geometry_id_to_palitra_id = palitra_geometries
+        .iter()
+        .copied()
+        .collect::<HashMap<_, _>>();
+    let palitra_geometry_ids = palitra_geometries
+        .into_iter()
+        .map(|(id, _)| id)
+        .collect_vec();
 
     if palitra_geometry_ids.is_empty() {
         return Ok(vec![]);
@@ -515,7 +576,10 @@ pub async fn list_palitra_points_by_viewport_bounds(
 
     let viewport_bounds = normalize_viewport_bounds(req.viewport_bounds);
     let points = palitra_point::Entity::find()
-        .filter(palitra_point::Column::PalitraGeometryId.eq_any(palitra_geometry_ids.clone()))
+        .filter(
+            palitra_point::Column::PalitraGeometryId
+                .eq_any(palitra_geometry_ids.clone()),
+        )
         .filter(palitra_point::Column::Deleted.eq(false))
         .filter(palitra_point::Column::Lat.gte(viewport_bounds.min_lat))
         .filter(palitra_point::Column::Lat.lte(viewport_bounds.max_lat))
@@ -525,26 +589,38 @@ pub async fn list_palitra_points_by_viewport_bounds(
         .await
         .c(h!())?;
 
-    let mut points_by_id: HashMap<i64, Vec<PalitraPoint>> = HashMap::new();
+    let mut points_by_palitra_id: HashMap<i64, Vec<PalitraPoint>> =
+        HashMap::new();
     for point in points {
-        points_by_id
-            .entry(point.palitra_geometry_id)
-            .or_default()
-            .push(PalitraPoint {
+        let Some(palitra_id) = palitra_geometry_id_to_palitra_id
+            .get(&point.palitra_geometry_id)
+            .copied()
+        else {
+            warn!(
+                "palitra_geometry {} is missing palitra_id mapping while listing points by viewport",
+                point.palitra_geometry_id
+            );
+            continue;
+        };
+        points_by_palitra_id.entry(palitra_id).or_default().push(
+            PalitraPoint {
                 label: point.label,
                 coords: Coords {
                     lat: point.lat,
                     lng: point.lng,
                 },
                 color: None,
-            });
+            },
+        );
     }
 
-    let result = palitra_geometry_ids
+    let result = palitra_ids
         .into_iter()
-        .map(|palitra_geometry_id| PalitraPoints {
-            palitra_geometry_id,
-            points: points_by_id.remove(&palitra_geometry_id).unwrap_or_default(),
+        .map(|palitra_id| PalitraPoints {
+            palitra_id,
+            points: points_by_palitra_id
+                .remove(&palitra_id)
+                .unwrap_or_default(),
         })
         .collect();
     Ok(result)
@@ -590,12 +666,12 @@ pub async fn delete_palitra(
             &existing_access,
             &geometry.source_file_name,
         )
-            .await
-            .c(h!())?;
+        .await
+        .c(h!())?;
     }
 
     palitra_geometry::Entity::update_many()
-        .filter(palitra_geometry::Column::Id.eq(id))
+        .filter(palitra_geometry::Column::PalitraId.eq(id))
         .filter(palitra_geometry::Column::Deleted.eq(false))
         .col_expr(palitra_geometry::Column::Deleted, Expr::value(true))
         .exec(txn)
@@ -636,38 +712,87 @@ async fn render_palitra_details<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
-    let palitra_geometry_ids = palitra_geometry::Entity::find()
-        .filter(palitra_geometry::Column::Id.is_in(palitra_ids.clone()))
+    let palitra_geometries = palitra_geometry::Entity::find()
+        .filter(palitra_geometry::Column::PalitraId.is_in(palitra_ids.clone()))
+        .filter(palitra_geometry::Column::Deleted.eq(false))
         .select_only()
         .column(palitra_geometry::Column::Id)
         .column(palitra_geometry::Column::PalitraId)
         .into_tuple::<(i64, i64)>()
         .all(txn)
         .await
-        .c(h!())?
-        .into_iter()
-        .collect::<HashMap<_, _>>();
-    let points = palitra_point::Entity::find()
-        .filter(palitra_point::Column::PalitraGeometryId.is_in(palitra_ids))
-        .filter(palitra_point::Column::Deleted.eq(false))
-        .all(txn)
-        .await
         .c(h!())?;
-    let mut result = vec![];
-    for (palitra_geometry_id, palitra_id) in palitra_geometry_ids {
-        let points = points
-            .iter()
-            .filter(|p| p.palitra_geometry_id.eq(&palitra_geometry_id))
-            .map(|p| PalitraPoint {
-                label: p.label.clone(),
+    let palitra_geometry_id_to_palitra_id = palitra_geometries
+        .iter()
+        .copied()
+        .collect::<HashMap<_, _>>();
+    let mut palitra_geometry_ids_by_palitra_id: HashMap<i64, Vec<i64>> =
+        HashMap::new();
+    for (palitra_geometry_id, palitra_id) in palitra_geometries {
+        palitra_geometry_ids_by_palitra_id
+            .entry(palitra_id)
+            .or_default()
+            .push(palitra_geometry_id);
+    }
+    for (palitra_id, geometry_ids) in &palitra_geometry_ids_by_palitra_id {
+        if geometry_ids.len() > 1 {
+            warn!(
+                "palitra {palitra_id} has {} active geometries; list-detailed currently merges points into one palitra response",
+                geometry_ids.len()
+            );
+        }
+    }
+
+    let all_palitra_geometry_ids = palitra_geometry_id_to_palitra_id
+        .keys()
+        .copied()
+        .collect_vec();
+    let points = if all_palitra_geometry_ids.is_empty() {
+        vec![]
+    } else {
+        palitra_point::Entity::find()
+            .filter(
+                palitra_point::Column::PalitraGeometryId
+                    .is_in(all_palitra_geometry_ids),
+            )
+            .filter(palitra_point::Column::Deleted.eq(false))
+            .all(txn)
+            .await
+            .c(h!())?
+    };
+
+    let mut points_by_palitra_id: HashMap<i64, Vec<PalitraPoint>> =
+        HashMap::new();
+    for point in points {
+        let Some(palitra_id) = palitra_geometry_id_to_palitra_id
+            .get(&point.palitra_geometry_id)
+            .copied()
+        else {
+            warn!(
+                "palitra_geometry {} is missing palitra_id mapping while rendering palitra details",
+                point.palitra_geometry_id
+            );
+            continue;
+        };
+        points_by_palitra_id.entry(palitra_id).or_default().push(
+            PalitraPoint {
+                label: point.label,
                 coords: Coords {
-                    lat: p.lat,
-                    lng: p.lng,
+                    lat: point.lat,
+                    lng: point.lng,
                 },
                 color: None,
-            })
-            .collect_vec();
-        let palitra = render_palitra(Either::Right(palitra_id), txn).await.c(h!())?;
+            },
+        );
+    }
+
+    let mut result = vec![];
+    for palitra_id in palitra_ids {
+        let points =
+            points_by_palitra_id.remove(&palitra_id).unwrap_or_default();
+        let palitra = render_palitra(Either::Right(palitra_id), txn)
+            .await
+            .c(h!())?;
         result.push(PalitraDetails { palitra, points });
     }
     Ok(result)
@@ -861,11 +986,21 @@ pub async fn rewrite_palitra_points(
         .c(h!())?;
     let mut points_batch =
         Vec::with_capacity(crate::config::PALITRA_POINTS_INSERT_BATCH_SIZE);
+    let mut points_with_fallback_color = 0usize;
+    let mut skipped_points_with_unexpected_color = 0usize;
     for point in coords {
-        let Some(_color) = point.color.filter(|c| palitra_geometry.hex.eq(c))
-        else {
+        let point_color = point.color.unwrap_or_else(|| {
+            crate::config::PALITRA_POINT_FALLBACK_COLOR_HEX.to_string()
+        });
+        let is_fallback_color =
+            point_color == crate::config::PALITRA_POINT_FALLBACK_COLOR_HEX;
+        if is_fallback_color {
+            points_with_fallback_color += 1;
+        }
+        if !is_fallback_color && !palitra_geometry.hex.eq(&point_color) {
+            skipped_points_with_unexpected_color += 1;
             continue;
-        };
+        }
         points_batch.push(palitra_point::ActiveModel {
             id: NotSet,
             label: Set(point.label),
@@ -887,6 +1022,22 @@ pub async fn rewrite_palitra_points(
                 crate::config::PALITRA_POINTS_INSERT_BATCH_SIZE,
             );
         }
+    }
+    if points_with_fallback_color > 0 {
+        error!(
+            "palitra geometry {} received {} points with fallback color {} while mapping KMZ data",
+            palitra_geometry_id,
+            points_with_fallback_color,
+            crate::config::PALITRA_POINT_FALLBACK_COLOR_HEX
+        );
+    }
+    if skipped_points_with_unexpected_color > 0 {
+        warn!(
+            "skipped {} points in geometry {} due to color mismatch with selected geometry color {}",
+            skipped_points_with_unexpected_color,
+            palitra_geometry_id,
+            palitra_geometry.hex
+        );
     }
     if !points_batch.is_empty() {
         palitra_point::Entity::insert_many(points_batch)
@@ -919,6 +1070,29 @@ async fn delete_existing_palitra_points(
     Ok(())
 }
 
+async fn read_latest_palitra_geometry_with_warning<'a, 'async_trait, C>(
+    dbx: &'a C,
+    palitra_id: i64,
+) -> anyhow::Result<Option<palitra_geometry::Model>>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let palitra_geometries = palitra_geometry::Entity::find()
+        .filter(palitra_geometry::Column::PalitraId.eq(palitra_id))
+        .filter(palitra_geometry::Column::Deleted.eq(false))
+        .order_by_desc(palitra_geometry::Column::UpdatedAt)
+        .all(dbx)
+        .await
+        .c(h!())?;
+    if palitra_geometries.len() > 1 {
+        warn!(
+            "palitra {palitra_id} has {} active geometries; using latest one for single-geometry flow",
+            palitra_geometries.len()
+        );
+    }
+    Ok(palitra_geometries.into_iter().next())
+}
+
 async fn render_palitra<'a, 'async_trait, C>(
     e_palitra_model: Either<palitra::Model, i64>,
     dbx: &'a C,
@@ -940,9 +1114,7 @@ where
         source_file_name,
         last_uploaded_at_ts,
         m_palitra_geometry_id,
-    ) = match palitra_geometry::Entity::find()
-        .filter(palitra_geometry::Column::PalitraId.eq(palitra_id))
-        .one(dbx)
+    ) = match read_latest_palitra_geometry_with_warning(dbx, palitra_id)
         .await
         .c(h!())?
     {
@@ -1102,7 +1274,6 @@ where
     let palitra_id = palitra.id;
     let last_uploaded_at_ts = req
         .last_uploaded_at_ts
-        .clone()
         .map(parse_uploaded_at)
         .transpose()
         .c(h!())?;
@@ -1117,12 +1288,23 @@ where
         .c(h!())?,
         PalitraUpdateAction::Update => {
             let request = request.clone();
-            if let Some(palitra_geometry) = palitra_geometry::Entity::find()
+            let palitra_geometries = palitra_geometry::Entity::find()
                 .filter(palitra_geometry::Column::PalitraId.eq(palitra_id))
-                .filter(palitra_geometry::Column::Hex.eq(req.color_hex))
-                .one(txn)
+                .filter(palitra_geometry::Column::Hex.eq(req.color_hex.clone()))
+                .filter(palitra_geometry::Column::Deleted.eq(false))
+                .order_by_desc(palitra_geometry::Column::UpdatedAt)
+                .all(txn)
                 .await
-                .c(h!())?
+                .c(h!())?;
+            if palitra_geometries.len() > 1 {
+                warn!(
+                    "palitra {palitra_id} has {} active geometries with color {}; using latest for update",
+                    palitra_geometries.len(),
+                    req.color_hex
+                );
+            }
+            if let Some(palitra_geometry) =
+                palitra_geometries.into_iter().next()
             {
                 let mut palitra_geometry = palitra_geometry.into_active_model();
                 if let Some(source_file_name) = req.source_file_name {
@@ -1136,7 +1318,10 @@ where
                 }
                 palitra_geometry.update(txn).await.c(h!())?
             } else {
-                error!("unexpected: palitra geometry missing for {palitra_id}, creating new...");
+                warn!(
+                    "palitra {palitra_id} has no active geometry with color {}; creating a new geometry as fallback",
+                    req.color_hex
+                );
                 insert_new_palitra_geometry(
                     &request,
                     txn,

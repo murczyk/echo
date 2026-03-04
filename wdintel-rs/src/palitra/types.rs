@@ -110,7 +110,7 @@ pub struct PalitraPointLabelSuggestReq {
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub struct PalitraPointLabelSuggestRsp {
-    pub palitra_geometry_id: i64,
+    pub palitra_id: i64,
     pub label: String,
 }
 
@@ -118,7 +118,7 @@ pub struct PalitraPointLabelSuggestRsp {
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub struct PalitraPoints {
-    pub palitra_geometry_id: i64,
+    pub palitra_id: i64,
     pub points: Vec<PalitraPoint>,
 }
 

@@ -1,4 +1,3 @@
-use std::fs::exists;
 use crate::config::{ORGANISM_GOI_PATH_DEFAULT, ORGANISM_GOI_SSH_PORT_DEFAULT};
 use crate::entities::*;
 use crate::error::AppError;
@@ -166,12 +165,10 @@ pub async fn create_palitra_with_kmz(
     .await
     .c(h!())?;
 
-    let palitra_geometry = palitra_geometry::Entity::find()
-        .filter(palitra_geometry::Column::PalitraId.eq(palitra.id))
-        .one(&env.dbx)
-        .await
-        .c(h!())?
-        .c(h!())?;
+    let palitra_geometry =
+        read_latest_palitra_geometry_with_warning(&env.dbx, palitra.id)
+            .await
+            .c(h!())?;
 
     bl::rewrite_palitra_points(palitra_geometry.id, points, &txn)
         .await
@@ -312,15 +309,17 @@ pub async fn upload_palitra_points(
     let raw_filename = field.name().c(h!())?.to_string();
     let filename = kmz::sanitize_upload_filename(&raw_filename);
     let raw_kmz_data = val;
-    let points = kmz::load_coordinates_from_file(filename.clone(),  raw_kmz_data.clone(), &env)
-        .await
-        .c(h!())?;
-    let palitra_geometry = palitra_geometry::Entity::find()
-        .filter(palitra_geometry::Column::PalitraId.eq(palitra.id))
-        .one(&env.dbx)
-        .await
-        .c(h!())?
-        .c(h!())?;
+    let points = kmz::load_coordinates_from_file(
+        filename.clone(),
+        raw_kmz_data.clone(),
+        &env,
+    )
+    .await
+    .c(h!())?;
+    let palitra_geometry =
+        read_latest_palitra_geometry_with_warning(&env.dbx, palitra.id)
+            .await
+            .c(h!())?;
     let txn = env.dbx.begin().await.c(h!())?;
 
     let palitra_geometry_id = palitra_geometry.id;
@@ -552,7 +551,9 @@ pub async fn delete_palitra(
         .await
         .c(h!())?;
 
-    bl::delete_palitra(palitra.id, &txn, existing_access, &env).await.c(h!())?; //deletes with all geometries, TODO add method for drop one geometry only
+    bl::delete_palitra(palitra.id, &txn, existing_access, &env)
+        .await
+        .c(h!())?; //deletes with all geometries, TODO add method for drop one geometry only
     txn.commit().await.c(h!())?;
     Ok(Json(()))
 }
@@ -647,6 +648,28 @@ async fn ensure_palitra_permissions(
         }
     };
     Ok(())
+}
+
+async fn read_latest_palitra_geometry_with_warning(
+    dbx: &DatabaseConnection,
+    palitra_id: i64,
+) -> anyhow::Result<palitra_geometry::Model> {
+    let palitra_geometries = palitra_geometry::Entity::find()
+        .filter(palitra_geometry::Column::PalitraId.eq(palitra_id))
+        .filter(palitra_geometry::Column::Deleted.eq(false))
+        .order_by_desc(palitra_geometry::Column::UpdatedAt)
+        .all(dbx)
+        .await
+        .c(h!())?;
+
+    if palitra_geometries.len() > 1 {
+        warn!(
+            "palitra {palitra_id} has {} active geometries; using the latest one for a single-geometry flow",
+            palitra_geometries.len()
+        );
+    }
+
+    palitra_geometries.into_iter().next().c(h!())
 }
 
 async fn load_user_scope(

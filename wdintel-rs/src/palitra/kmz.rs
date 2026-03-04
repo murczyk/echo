@@ -1,4 +1,6 @@
-use crate::config::PALITRA_STORAGE_DIR_NAME;
+use crate::config::{
+    PALITRA_POINT_FALLBACK_COLOR_HEX, PALITRA_STORAGE_DIR_NAME,
+};
 use crate::h;
 use crate::kml::types::*;
 use crate::palitra::types::*;
@@ -187,16 +189,13 @@ fn get_placemark_color(p: &Placemark) -> Option<String> {
         return None;
     };
     if let Some(s) = &style.icon_style {
-        return s.color.clone().map(|c| c.body);
+        return s.color.clone().and_then(|c| kml_color_to_hex(&c.body).ok());
     }
     if let Some(s) = &style.poly_style {
-        return s.color.clone().map(|c| c.body);
+        return s.color.clone().and_then(|c| kml_color_to_hex(&c.body).ok());
     }
     if let Some(s) = &style.line_style {
-        return s.color.clone().map(|c| c.body);
-    }
-    if let Some(s) = &style.line_style {
-        return s.color.clone().map(|c| c.body);
+        return s.color.clone().and_then(|c| kml_color_to_hex(&c.body).ok());
     }
     None
 }
@@ -214,7 +213,9 @@ fn m_add_coordinates(
                     let point = PalitraPoint {
                         coords,
                         label: label.clone(),
-                        color: m_color.clone(),
+                        color: Some(m_color.clone().unwrap_or_else(|| {
+                            PALITRA_POINT_FALLBACK_COLOR_HEX.to_string()
+                        })),
                     };
                     values.push(point);
                 }
