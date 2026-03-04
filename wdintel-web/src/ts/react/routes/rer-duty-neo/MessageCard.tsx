@@ -47,6 +47,8 @@ export function MessageCard({
   onComment,
   onToggleTag,
 }: MessageCardProps) {
+  const networkIds = Array.from(new Set(msg.networkIds ?? []));
+
   return (
     <Box component="li" className="list-none flex pr-0 pl-2 rer-duty-message mb-3 font-size-[13px]">
       {/* Left column: date/time, actions, group, sender, freq */}
@@ -293,8 +295,8 @@ export function MessageCard({
           )}
           <div className="font-semibold inline-flex gap-1">
             <i className="bi bi-people text-icons" title="Еталонна прив'язка" />
-            {(msg.networkIds ?? []).length > 0 ? (
-              (msg.networkIds ?? []).map((networkId) => (
+            {networkIds.length > 0 ? (
+              networkIds.map((networkId) => (
                 <a
                   href={`/rer-networks/${networkId}`}
                   target="_blank"

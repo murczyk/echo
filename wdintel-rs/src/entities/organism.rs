@@ -18,6 +18,15 @@ pub struct Model {
     pub enabled: bool,
     pub parent_id: Option<i64>,
     pub deleted_permanently: bool,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub goi_ssh_host: Option<String>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub goi_ssh_user: Option<String>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub goi_ssh_password: Option<String>,
+    pub goi_ssh_port: i32,
+    #[sea_orm(column_type = "Text")]
+    pub goi_path: String,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
