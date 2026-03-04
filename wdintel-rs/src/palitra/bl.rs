@@ -1422,8 +1422,6 @@ where
         created_at: NotSet,
         last_uploaded_at: Set(last_uploaded_at_ts),
         updated_at: NotSet,
-        convex_hull: NotSet,
-        center: NotSet,
     }
     .insert(txn)
     .await

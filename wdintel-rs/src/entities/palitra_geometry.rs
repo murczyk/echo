@@ -19,10 +19,10 @@ pub struct Model {
     pub created_at: DateTime,
     pub last_uploaded_at: Option<DateTime>,
     pub updated_at: DateTime,
-    #[sea_orm(column_type = "custom(\"geometry\")", nullable)]
-    pub convex_hull: Option<String>,
-    #[sea_orm(column_type = "custom(\"geometry\")", nullable)]
-    pub center: Option<String>,
+    //     #[sea_orm(column_type = "custom(\"geometry\")", nullable)]
+    //     pub convex_hull: Option<String>,
+    //     #[sea_orm(column_type = "custom(\"geometry\")", nullable)]
+    //     pub center: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
