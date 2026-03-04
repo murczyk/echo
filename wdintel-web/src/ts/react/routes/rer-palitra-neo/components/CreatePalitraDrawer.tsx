@@ -313,16 +313,18 @@ function CreatePalitraDrawerComponent({
                   fullWidth
                 />
 
-                <AccessEditor
-                  form={createForm}
-                  onChange={(next) => onSetCreateForm(() => next)}
-                  user={user}
-                  myScope={myScope}
-                  organisms={organisms}
-                  aors={aors}
-                  allLogins={allLogins}
-                  availableAccessTypes={availableAccessTypes}
-                />
+                {isAdvancedMode ? (
+                  <AccessEditor
+                    form={createForm}
+                    onChange={(next) => onSetCreateForm(() => next)}
+                    user={user}
+                    myScope={myScope}
+                    organisms={organisms}
+                    aors={aors}
+                    allLogins={allLogins}
+                    availableAccessTypes={availableAccessTypes}
+                  />
+                ) : null}
               </Stack>
             </Stack>
           ) : null}
