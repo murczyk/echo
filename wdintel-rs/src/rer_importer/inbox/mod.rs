@@ -1,11 +1,11 @@
 use crate::entities::{prelude::*, *};
+use crate::palitra::worker::do_palitra_highlight;
 use crate::rer_importer::types::*;
 
 use crate::config::*;
 use crate::error::AppError;
 use crate::event_stream::fanout_mult;
 use crate::event_stream::types::{EventMsg, EventType};
-use crate::palitra::types::PalitraAccess;
 use crate::rer_importer::inbox::bl::*;
 use crate::rer_importer::inbox::query::*;
 use crate::session::record_page_visit;
@@ -620,15 +620,6 @@ async fn do_submit_inbox(
         .await
         .context(h!())?;
     let txn = env.dbx.begin().await.c(h!())?;
-    let access = PalitraAccess::ByLogins {
-        logins: vec![login.clone()],
-    };
-    let points =
-        crate::rer_importer::points::load_relevant_palitra_point_lexemes(
-            &txn, access, false,
-        )
-        .await
-        .context(h!())?;
 
     for (id, message) in req.messages.iter() {
         let mut message = message.clone();
@@ -655,62 +646,27 @@ async fn do_submit_inbox(
                 .c(h!())?,
         );
 
-        let no_headers_body =
-            crate::rer_importer::body_noheader::extract_text(&message.text)
-                .c(h!())?;
-
-        let message_palitra_points =
-            crate::rer_importer::points::highlight_points(
-                &env.rq,
-                &no_headers_body.body,
-                &points,
-                no_headers_body.start,
-            )
-            .await
-            .c(h!())?;
-
         let all_ids = find_all_duplicates(&txn, *id).await.c(h!())?;
-        for id in all_ids {
+        for id in &all_ids {
             submit_upsert_inbox_item(
                 env.settlements.clone(),
                 &txn,
-                id,
+                *id,
                 &message,
                 &login,
                 &logins,
             )
             .await
             .c(h!())?;
-
-            let tokens_to_insert: Vec<_> = message_palitra_points
-                .iter()
-                .map(|highlight| {
-                    let point_tokens = serde_json::json!(&highlight.points);
-                    sigint_inbox_item_point_token::ActiveModel {
-                        palitra_id: Set(highlight.palitra_id),
-                        point_tokens: Set(point_tokens),
-                        sigint_inbox_item_id: Set(id),
-                        ..Default::default()
-                    }
-                })
-                .collect();
-            if !tokens_to_insert.is_empty() {
-                sigint_inbox_item_point_token::Entity::insert_many(
-                    tokens_to_insert,
-                )
-                .on_conflict(
-                    sea_query::OnConflict::columns([
-                        sigint_inbox_item_point_token::Column::SigintInboxItemId,
-                        sigint_inbox_item_point_token::Column::PalitraId,
-                    ])
-                    .update_column(sigint_inbox_item_point_token::Column::PointTokens)
-                    .to_owned(),
-                )
-                .exec_without_returning(&txn)
-                .await
-                .c(h!())?;
-            }
         }
+        do_palitra_highlight(
+            all_ids,
+            &env.rq,
+            &txn,
+            &env.palitra_worker_context,
+        )
+        .await
+        .c(h!())?;
     }
     txn.commit().await.c(h!())?;
     Ok(())

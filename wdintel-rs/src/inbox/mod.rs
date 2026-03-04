@@ -7,8 +7,6 @@ use crate::types::*;
 use chrono::prelude::*;
 use sea_orm::*;
 
-pub mod palitra;
-
 /// The main workhorse parsing [signal_message](crate::entities::signal_message) into [sigint_inbox_item](crate::entities::sigint_inbox_item)
 ///
 /// It does not do any extremely-slow AI operations and such, those are done separately in TODO:link and an additional [ETInboxChanged](crate::event_stream::types::EventType::ETInboxChanged) event is fired
@@ -273,38 +271,35 @@ where
         signal_message.update(txn).await.c(h!())?;
     }
 
-    let job = tag_suggestion_worker_queue::ActiveModel {
-        sigint_inbox_item_id: Set(message.id),
-    };
-    tag_suggestion_worker_queue::Entity::insert(job)
-        .on_conflict_do_nothing()
-        .exec(txn)
-        .await
-        .c(h!())?;
+    let event = EventMsg::new(EventType::ETInboxChanged(message.id));
+    fanout(redis, event).await.c(h!())?;
 
-    let mut item_networks = crate::sigint::network::etalon_calc::calculate_sigint_inbox_item_networks(
+    tag_suggestion_worker_queue::Entity::insert(
+        tag_suggestion_worker_queue::ActiveModel {
+            sigint_inbox_item_id: Set(message.id),
+        },
+    )
+    .on_conflict_do_nothing()
+    .exec(txn)
+    .await
+    .c(h!())?;
+
+    crate::sigint::network::etalon_calc::calculate_sigint_inbox_item_networks(
         vec![result],
         txn,
     )
     .await
     .c(h!())?;
 
-    let network_ids: Vec<i64> =
-        item_networks.remove(&message.id).unwrap_or_default();
-
-    palitra::add_message_point_tokens(
-        txn,
-        rq,
-        message.id,
-        &body_noheader,
-        network_ids,
-        m_aor_ids,
+    palitra_highlight_worker_job::Entity::insert(
+        palitra_highlight_worker_job::ActiveModel {
+            sigint_inbox_item_id: Set(message.id),
+        },
     )
+    .on_conflict_do_nothing()
+    .exec(txn)
     .await
     .c(h!())?;
-
-    let event = EventMsg::new(EventType::ETInboxChanged(message.id));
-    fanout(redis, event).await.c(h!())?;
 
     Ok(vec![])
 }

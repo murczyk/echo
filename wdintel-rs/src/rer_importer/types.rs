@@ -5,6 +5,7 @@ use elm_rs::{Elm, ElmDecode, ElmEncode};
 use sea_orm::FromQueryResult;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
@@ -1134,6 +1135,13 @@ pub struct PalitraLexeme {
     pub palitra_point_id: i64,
     pub label: String,
     pub lexeme: String,
+}
+
+#[derive(Clone)]
+pub struct PalitraPattern {
+    pub palitra_id: i64,
+    pub matcher: aho_corasick::AhoCorasick,
+    pub lexemes: Arc<Vec<PalitraLexeme>>,
 }
 
 pub struct PalitraHighlight {

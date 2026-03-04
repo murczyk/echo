@@ -335,6 +335,8 @@ pub async fn upload_palitra_points(
     .c(h!())?;
 
     txn.commit().await.c(h!())?;
+    env.palitra_worker_context.flush_cache(palitra_id).await;
+
     Ok(Json(()))
 }
 
@@ -552,6 +554,7 @@ pub async fn delete_palitra(
     .c(h!())?;
     bl::delete_palitra(palitra.id, &txn).await.c(h!())?;
     txn.commit().await.c(h!())?;
+    env.palitra_worker_context.flush_cache(palitra_id).await;
     Ok(Json(()))
 }
 

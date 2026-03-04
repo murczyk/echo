@@ -7,70 +7,67 @@ use crate::error::AppError;
 use crate::h;
 use crate::palitra::types::PalitraAccess;
 use crate::rer_importer::highlight::CNPoint;
-use crate::rer_importer::types::{PalitraHighlight, PalitraLexeme};
+use crate::rer_importer::types::{
+    PalitraHighlight, PalitraLexeme, PalitraPattern,
+};
 use crate::types::ShortContext;
 use crate::utils::orm::ArrayColumnOps;
+use itertools::Itertools;
 use sea_orm::prelude::*;
 use sea_orm::query::*;
 use sea_orm::sea_query::UnionType;
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 pub async fn highlight_points(
     rq: &reqwest::Client,
     body: &str,
-    point_forms: &BTreeMap<String, Vec<PalitraLexeme>>,
+    patterns: &[PalitraPattern],
     offset: usize,
 ) -> Result<Vec<PalitraHighlight>, AppError> {
-    if point_forms.is_empty() {
+    if patterns.is_empty() {
         return Ok(vec![]);
     }
     let body_chars: Vec<char> = body.chars().collect();
     let tokens = crate::nlp::tokenize_words(rq, body).await.c(h!())?;
-    // println!("> tokens: {tokens:?}");
+    let tokens_concat = tokens.iter().map(|t| t.text.as_str()).join(" ");
+    let tokens_concat_lowercase = tokens_concat.to_lowercase();
 
-    let mut highlight: BTreeMap<i64, Vec<CNPoint>> = BTreeMap::new();
+    let mut res = Vec::with_capacity(patterns.len());
+    for pattern in patterns {
+        let mut points = Vec::new();
 
-    // 🔹 Scan n-grams of length 1..=2 (single word, two-word)
-    for n in 1..=2 {
-        for i in 0..tokens.len().saturating_sub(n - 1) {
-            let slice = &tokens[i..i + n];
-
-            // Join token texts with spaces
-            let text = slice
-                .iter()
-                .map(|t| t.text.as_str())
-                .collect::<Vec<_>>()
-                .join(" ");
-            let text_lc = text.to_lowercase();
-
-            if let Some(palitra_lexemes) = point_forms.get(&text_lc) {
-                if let (Some(first), Some(last)) = (slice.first(), slice.last())
-                {
-                    if is_word_boundary(&body_chars, first.start, last.end) {
-                        for palitra_lexeme in palitra_lexemes {
-                            let point = CNPoint {
-                                etalon: palitra_lexeme.label.clone(),
-                                text: text.to_string(),
-                                begin: offset + first.start,
-                                end: offset + last.end,
-                            };
-                            highlight
-                                .entry(palitra_lexeme.palitra_id)
-                                .or_default()
-                                .push(point);
-                        }
-                    }
-                }
+        for m in pattern
+            .matcher
+            .find_overlapping_iter(&tokens_concat_lowercase)
+            .filter(|x| !x.is_empty())
+        {
+            let pattern_id = m.pattern();
+            let palitra_lexeme = &pattern.lexemes[pattern_id.as_usize()];
+            let span = m.span();
+            let char_start =
+                tokens_concat_lowercase.floor_char_boundary(span.start);
+            let char_end = tokens_concat_lowercase.ceil_char_boundary(span.end);
+            if is_word_boundary(&body_chars, char_start, char_end) {
+                let text = &tokens_concat[span.start..span.end];
+                let point = CNPoint {
+                    etalon: palitra_lexeme.label.clone(),
+                    text: text.to_string(),
+                    begin: offset + char_start,
+                    end: offset + char_end,
+                };
+                points.push(point);
             }
         }
-    }
-
-    let mut res = Vec::with_capacity(highlight.len());
-    for (palitra_id, mut points) in highlight {
-        points.sort();
-        points.dedup();
-        let highlight = PalitraHighlight { palitra_id, points };
-        res.push(highlight);
+        if !points.is_empty() {
+            points.sort();
+            points.dedup();
+            let highlight = PalitraHighlight {
+                palitra_id: pattern.palitra_id,
+                points,
+            };
+            res.push(highlight);
+        }
     }
 
     Ok(res)
@@ -91,21 +88,45 @@ fn is_word_char(ch: Option<char>) -> bool {
     ch.is_some_and(|c| c.is_alphanumeric() || c == '_')
 }
 
-pub fn offset_point_tokens(
-    tokens: Vec<CNPoint>,
-    offset: usize,
-) -> Vec<CNPoint> {
-    if offset == 0 {
-        return tokens;
-    }
-    tokens
-        .into_iter()
-        .map(|mut token| {
-            token.begin += offset;
-            token.end += offset;
-            token
+pub async fn build_palitra_pattern<C>(
+    txn: &C,
+    palitra_id: i64,
+) -> anyhow::Result<PalitraPattern>
+where
+    C: ConnectionTrait,
+{
+    let lexemes = palitra_point::Entity::find()
+        .inner_join(palitra_point_lexeme::Entity)
+        .inner_join(palitra::Entity)
+        .filter(palitra_point::Column::Deleted.eq(false))
+        .filter(palitra::Column::Deleted.eq(false))
+        .filter(palitra::Column::Id.eq(palitra_id))
+        .select_only()
+        .column(palitra_point::Column::PalitraId)
+        .column(palitra_point::Column::Label)
+        .column(palitra_point_lexeme::Column::PalitraPointId)
+        .column(palitra_point_lexeme::Column::Lexeme)
+        .into_model::<PalitraLexeme>()
+        .all(txn)
+        .await
+        .c(h!())?;
+
+    let build_pattern_result = tokio::task::spawn_blocking(move || {
+        let builder = aho_corasick::AhoCorasickBuilder::new();
+
+        let patterns = lexemes.iter().map(|x| x.lexeme.as_str());
+
+        let matcher = builder.build(patterns)?;
+
+        Ok(PalitraPattern {
+            palitra_id,
+            matcher,
+            lexemes: Arc::new(lexemes),
         })
-        .collect()
+    })
+    .await?;
+
+    build_pattern_result
 }
 
 pub fn build_palitra_access_filter(
@@ -412,8 +433,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::{is_word_boundary, offset_point_tokens};
-    use crate::rer_importer::highlight::CNPoint;
+    use super::is_word_boundary;
 
     #[test]
     fn test_is_word_boundary_allows_whole_word() {
@@ -431,18 +451,5 @@ mod tests {
         let start = 1;
         let end = 6;
         assert!(!is_word_boundary(&body_chars, start, end));
-    }
-
-    #[test]
-    fn test_offset_point_tokens_shifts_positions() {
-        let tokens = vec![CNPoint {
-            begin: 2,
-            end: 5,
-            etalon: "ТОЧКА".to_string(),
-            text: "точ".to_string(),
-        }];
-        let shifted = offset_point_tokens(tokens, 10);
-        assert_eq!(shifted[0].begin, 12);
-        assert_eq!(shifted[0].end, 15);
     }
 }

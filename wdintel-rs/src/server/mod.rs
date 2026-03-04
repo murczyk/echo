@@ -177,6 +177,7 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
         session_activity_enqueued: Arc::new(std::sync::atomic::AtomicU64::new(
             0,
         )),
+        palitra_worker_context: Arc::new(Default::default()),
     };
     crate::location::aor_config::init_aor_location_config(
         &dbx,
@@ -320,6 +321,21 @@ fn spawn_background_workers(
             .await;
         });
     }
+
+    let rq3 = env.rq.clone();
+    let redis3 = env.redis.clone();
+    let dbx11 = env.dbx.clone();
+    let palitra_worker_context = env.palitra_worker_context.clone();
+    spawn_named_worker("palitra_highlight_worker", bg_set, async move {
+        let mut redis = redis3;
+        crate::palitra::worker::palitra_highlight_worker_nofail(
+            &rq3,
+            &dbx11,
+            &mut redis,
+            &palitra_worker_context,
+        )
+        .await;
+    });
 
     spawn_named_worker("signal_cli_verbose_logger", bg_set, async move {
         info!("Starting enable_signal_cli_verbose_logging");
