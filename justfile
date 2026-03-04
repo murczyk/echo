@@ -175,7 +175,15 @@ test-be:
     echo "Running cargo clippy..."
     # Lint all targets; fail on any warning. Use --release in CI to reuse artifacts.
     if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
-        cargo clippy --release --all-targets --all-features -- -D warnings
+        clippy_log="$(mktemp)"
+        if ! cargo clippy --release --all-targets --all-features -- -D warnings 2>&1 | tee "$clippy_log"; then
+            if grep -Eq "compiler unexpectedly panicked|thread 'rustc'.*panicked" "$clippy_log"; then
+                echo "cargo clippy --release hit a rustc/clippy panic, retrying without --release..."
+                cargo clippy --all-targets --all-features -- -D warnings
+            else
+                exit 1
+            fi
+        fi
     else
         cargo clippy --all-targets --all-features -- -D warnings
     fi

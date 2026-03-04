@@ -478,7 +478,7 @@ export function useRerPalitraNeoPage() {
 
     const normalizedForm = applyRestrictedAccess(createForm, user, myScope);
     const createFormResolved =
-      mode === 'basic' && !isFormValid(normalizedForm) && user?.name
+      mode === 'basic' && user?.name
         ? {
             ...normalizedForm,
             accessType: 'logins' as const,
