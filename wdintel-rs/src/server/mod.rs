@@ -699,6 +699,7 @@ pub async fn main_server(
             .service(crate::palitra::suggest_palitra_point_labels)
             .service(crate::palitra::search_palitra_points)
             .service(crate::palitra::create_palitra)
+            .service(crate::palitra::create_palitra_basic)
             .service(crate::palitra::create_palitra_with_kmz)
             .service(crate::palitra::update_palitra)
             .service(crate::palitra::delete_palitra)
