@@ -253,10 +253,10 @@ pub async fn analyze_kmz(
         }
     };
 
-    // Clean filename (remove extension)
-    let name_without_ext = filename
-        .strip_suffix(".kmz")
-        .or_else(|| filename.strip_suffix(".kml"))
+    // Clean filename (remove extension case-insensitively)
+    let name_without_ext = Path::new(&filename)
+        .file_stem()
+        .and_then(|stem| stem.to_str())
         .unwrap_or(&filename)
         .to_string();
 
