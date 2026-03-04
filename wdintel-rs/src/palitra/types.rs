@@ -68,6 +68,7 @@ pub struct PalitraDetails {
 pub struct PalitraPoint {
     pub coords: Coords,
     pub label: Option<String>,
+    pub color: Option<String>,
 }
 
 #[derive(

@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
-    pub palitra_id: i64,
+    pub palitra_id_legacy: Option<i64>,
     #[sea_orm(column_type = "Double")]
     pub lat: f64,
     #[sea_orm(column_type = "Double")]
@@ -20,23 +20,38 @@ pub struct Model {
     pub created_at: DateTime,
     #[sea_orm(column_type = "Text", nullable)]
     pub label: Option<String>,
+    pub palitra_geometry_id: i64,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
     #[sea_orm(
         belongs_to = "super::palitra::Entity",
-        from = "Column::PalitraId",
+        from = "Column::PalitraIdLegacy",
         to = "super::palitra::Column::Id",
         on_update = "NoAction",
         on_delete = "Cascade"
     )]
     Palitra,
+    #[sea_orm(
+        belongs_to = "super::palitra_geometry::Entity",
+        from = "Column::PalitraGeometryId",
+        to = "super::palitra_geometry::Column::Id",
+        on_update = "NoAction",
+        on_delete = "Cascade"
+    )]
+    PalitraGeometry,
 }
 
 impl Related<super::palitra::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Palitra.def()
+    }
+}
+
+impl Related<super::palitra_geometry::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::PalitraGeometry.def()
     }
 }
 

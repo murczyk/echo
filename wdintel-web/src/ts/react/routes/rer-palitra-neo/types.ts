@@ -17,6 +17,8 @@ export type KmzColorOption = {
   suffix: string;
 };
 
+export type PalitraCreateMode = 'basic' | 'advanced';
+
 export type UiError = {
   text: string;
 };

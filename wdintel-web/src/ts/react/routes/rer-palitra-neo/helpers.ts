@@ -153,7 +153,7 @@ export function kmzColorOptionsFromAnalysis(analysis: AnalyzeKmzResponse): KmzCo
     colorHex: color.colorHex,
     count: color.count,
     selected: true,
-    suffix: '',
+    suffix: color.suggestedSuffix?.trim() ?? '',
   }));
 }
 

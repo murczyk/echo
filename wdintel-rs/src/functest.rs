@@ -407,10 +407,21 @@ pub mod tests {
             dbx,
             palitra::ActiveModel {
                 name: Set(TEST_PALITRA_NAME.to_string()),
-                hex: Set("#ffffff".into()),
+                hex_legacy: Set(Some("#ffffff".into())),
                 author: Set(Some(TEST_LOGIN.to_string())),
                 deleted: Set(false),
                 created_at: Set(Utc::now().naive_utc()),
+                ..Default::default()
+            },
+        )
+        .await
+        .context(h!())?;
+        mk_palitra_geometry(
+            dbx,
+            palitra_geometry::ActiveModel {
+                palitra_id: Set(palitra.id),
+                hex: Set("#ffffff".into()),
+                deleted: Set(false),
                 ..Default::default()
             },
         )
@@ -648,12 +659,25 @@ pub mod tests {
         Ok(out)
     }
 
+    pub async fn mk_palitra_geometry<'a, 'async_trait, C>(
+        txn: &'a C,
+        inp: palitra_geometry::ActiveModel,
+    ) -> Result<palitra_geometry::Model, AppError>
+    where
+        C: ConnectionTrait + 'async_trait,
+    {
+        let out = inp.insert(txn).await.context(h!())?;
+        Ok(out)
+    }
+
     fn build_palitra_point(
         label: String,
         palitra_id: i64,
+        palitra_geometry_id: i64,
     ) -> palitra_point::ActiveModel {
         palitra_point::ActiveModel {
-            palitra_id: Set(palitra_id),
+            palitra_id_legacy: Set(Some(palitra_id)),
+            palitra_geometry_id: Set(palitra_geometry_id),
             lat: Set(10.0),
             lng: Set(20.0),
             deleted: Set(false),
@@ -671,7 +695,15 @@ pub mod tests {
     where
         C: ConnectionTrait + 'async_trait,
     {
-        let out = build_palitra_point(label, palitra_id)
+        let palitra_geometry = palitra_geometry::Entity::find()
+            .filter(palitra_geometry::Column::PalitraId.eq(palitra_id))
+            .filter(palitra_geometry::Column::Deleted.eq(false))
+            .order_by_desc(palitra_geometry::Column::UpdatedAt)
+            .one(txn)
+            .await
+            .context(h!())?
+            .context(h!())?;
+        let out = build_palitra_point(label, palitra_id, palitra_geometry.id)
             .insert(txn)
             .await
             .context(h!())?;

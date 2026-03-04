@@ -54,6 +54,7 @@ pub use super::palitra::Entity as Palitra;
 pub use super::palitra_access_aor::Entity as PalitraAccessAor;
 pub use super::palitra_access_login::Entity as PalitraAccessLogin;
 pub use super::palitra_access_organism::Entity as PalitraAccessOrganism;
+pub use super::palitra_geometry::Entity as PalitraGeometry;
 pub use super::palitra_point::Entity as PalitraPoint;
 pub use super::rer_gdoc_callsign::Entity as RerGdocCallsign;
 pub use super::restream::Entity as Restream;
