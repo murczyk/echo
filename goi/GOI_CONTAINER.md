@@ -51,6 +51,7 @@ ssh <INCUS_HOST>
 5) Вже на сервері з Incus виконайте клонування + post-clone:
 
 ```bash
+incus delete -f "$MACHINE" >/dev/null 2>&1 || true
 echo-install-utils incus-clone --tailscale "$TS_KEY" --clear-all -- "$TEMPLATE" "$MACHINE"
 
 incus file push ~/workspace/goi-container/deploy/goi-dev-post-clone.sh "$MACHINE/var/tmp/goi-dev-post-clone.sh"
