@@ -25,6 +25,8 @@ import type {
 
 const DEFAULT_LIMIT = 100;
 const DAY_MS = 24 * 60 * 60 * 1000;
+const CONFIRMATION_SOURCES_PREFIX = '[[sources:';
+const CONFIRMATION_SOURCES_SUFFIX = ']]';
 
 export const DEFAULT_SORT: CallsignsSortState = {
   column: 'unit',
@@ -196,12 +198,61 @@ export function createEmptyDraftRow(): CallsignDraftRow {
   };
 }
 
+export function parseCommentWithConfirmations(rawComment: string): { comment: string; confirmationSourceIds: number[] } {
+  const trimmed = rawComment.trim();
+  if (!trimmed.startsWith(CONFIRMATION_SOURCES_PREFIX)) {
+    return { comment: rawComment, confirmationSourceIds: [] };
+  }
+
+  const suffixIndex = trimmed.indexOf(CONFIRMATION_SOURCES_SUFFIX);
+  if (suffixIndex < 0) {
+    return { comment: rawComment, confirmationSourceIds: [] };
+  }
+
+  const idsRaw = trimmed.slice(CONFIRMATION_SOURCES_PREFIX.length, suffixIndex);
+  const confirmationSourceIds = Array.from(
+    new Set(
+      idsRaw
+        .split(',')
+        .map((item) => Number(item.trim()))
+        .filter((item) => Number.isInteger(item) && item > 0),
+    ),
+  ).sort((left, right) => left - right);
+
+  const comment = trimmed.slice(suffixIndex + CONFIRMATION_SOURCES_SUFFIX.length).trim();
+  return { comment, confirmationSourceIds };
+}
+
+function sanitizeConfirmationSourceIds(confirmationSourceIds: number[], primarySourceId: number | null | undefined): number[] {
+  const uniqueIds = Array.from(new Set(confirmationSourceIds.filter((item) => Number.isInteger(item) && item > 0))).sort(
+    (left, right) => left - right,
+  );
+  if (primarySourceId == null) return uniqueIds;
+  return uniqueIds.filter((sourceId) => sourceId !== primarySourceId);
+}
+
+export function composeCommentWithConfirmations(comment: string, confirmationSourceIds: number[]): string {
+  const cleanedComment = comment.trim();
+  const encodedIds = Array.from(new Set(confirmationSourceIds.filter((item) => Number.isInteger(item) && item > 0))).sort(
+    (left, right) => left - right,
+  );
+
+  if (encodedIds.length === 0) {
+    return cleanedComment;
+  }
+
+  const prefix = `${CONFIRMATION_SOURCES_PREFIX}${encodedIds.join(',')}${CONFIRMATION_SOURCES_SUFFIX}`;
+  return cleanedComment === '' ? prefix : `${prefix}\n${cleanedComment}`;
+}
+
 export function callsignToEditForm(callsign: Callsign): CallsignEditForm {
+  const parsed = parseCommentWithConfirmations(callsign.comment);
   return {
     id: callsign.id,
     callsign: toUpperCaseCallsign(callsign.callsign),
     position: callsign.position,
-    comment: callsign.comment,
+    comment: parsed.comment,
+    confirmationSourceIds: sanitizeConfirmationSourceIds(parsed.confirmationSourceIds, callsign.sourceId),
     unitId: callsign.unitId,
     sourceId: callsign.sourceId,
     developing: callsign.developing,
@@ -286,11 +337,21 @@ export function mergeUnitStatsWithUnits(unitStats: CallsignUnitStatRow[], unitsB
 }
 
 export function buildRowViews(callsigns: Callsign[], unitsById: Map<number, Unit>, sourcesById: Map<number, Source>): BuildRowsResult {
-  const rows = callsigns.map((callsign) => ({
-    ...callsign,
-    unitName: unitsById.get(callsign.unitId)?.name ?? `#${callsign.unitId}`,
-    sourceName: callsign.sourceId == null ? '—' : (sourcesById.get(callsign.sourceId)?.name ?? `#${callsign.sourceId}`),
-  }));
+  const rows = callsigns.map((callsign) => {
+    const parsed = parseCommentWithConfirmations(callsign.comment);
+    const confirmationSourceNames = parsed.confirmationSourceIds
+      .map((sourceId) => sourcesById.get(sourceId)?.name ?? `#${sourceId}`)
+      .sort((left, right) => left.localeCompare(right, 'uk'));
+
+    return {
+      ...callsign,
+      commentForView: parsed.comment,
+      confirmationSourceIds: parsed.confirmationSourceIds,
+      confirmationSourceNames,
+      unitName: unitsById.get(callsign.unitId)?.name ?? `#${callsign.unitId}`,
+      sourceName: callsign.sourceId == null ? '—' : (sourcesById.get(callsign.sourceId)?.name ?? `#${callsign.sourceId}`),
+    };
+  });
 
   return {
     rows,
@@ -307,11 +368,12 @@ export function createSourcesById(sources: Source[]): Map<number, Source> {
 }
 
 export function makeUpdatePayload(form: CallsignEditForm): Callsign {
+  const confirmationSourceIds = sanitizeConfirmationSourceIds(form.confirmationSourceIds, form.sourceId);
   return {
     id: form.id,
     callsign: toUpperCaseCallsign(form.callsign).trim(),
     position: form.position.trim(),
-    comment: form.comment.trim(),
+    comment: composeCommentWithConfirmations(form.comment, confirmationSourceIds),
     unitId: form.unitId,
     active: form.active,
     sourceId: form.sourceId,
@@ -321,11 +383,17 @@ export function makeUpdatePayload(form: CallsignEditForm): Callsign {
   };
 }
 
-export function makeCreatePayload(row: CallsignDraftRow, unitId: number, sourceId: number): CreateCallsignReq {
+export function makeCreatePayload(
+  row: CallsignDraftRow,
+  unitId: number,
+  sourceId: number,
+  confirmationSourceIds: number[],
+): CreateCallsignReq {
+  const safeConfirmationSourceIds = sanitizeConfirmationSourceIds(confirmationSourceIds, sourceId);
   return {
     callsign: toUpperCaseCallsign(row.callsign).trim(),
     position: row.position.trim(),
-    comment: row.comment.trim(),
+    comment: composeCommentWithConfirmations(row.comment, safeConfirmationSourceIds),
     unitId,
     sourceId,
     developing: row.developing,

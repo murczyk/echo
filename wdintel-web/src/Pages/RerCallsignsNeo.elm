@@ -75,6 +75,13 @@ subscriptions _ =
 view : Auth.User -> Model -> View Msg
 view user model =
     let
+        pageContainerClass =
+            if model.showBetaBanner then
+                "app-shell-fill-height box-border min-h-0 pt-6 px-6 w-full flex flex-col gap-4 overflow-visible lg:overflow-hidden"
+
+            else
+                "app-shell-fill-height box-border min-h-0 pt-0 px-6 w-full flex flex-col gap-4 overflow-visible lg:overflow-hidden"
+
         betaBannerNode =
             if model.showBetaBanner then
                 [ div
@@ -109,7 +116,7 @@ view user model =
     in
     { title = "позивні"
     , body =
-        [ div [ class "app-shell-fill-height box-border min-h-0 pt-6 px-6 w-full flex flex-col gap-4 overflow-visible lg:overflow-hidden" ]
+        [ div [ class pageContainerClass ]
             (betaBannerNode
                 ++ [ div [ class "flex-1 min-h-0 w-full" ]
                         [ node "rer-callsigns-neo"

@@ -160,7 +160,7 @@ export function CallsignsTable({
                   Підрозділ
                 </TableSortLabel>
               </TableCell>
-              <TableCell>Джерело</TableCell>
+              <TableCell>Основне джерело</TableCell>
               <TableCell>Частота</TableCell>
               <TableCell>Статус</TableCell>
               <TableCell sortDirection={sort.column === 'createdAt' ? sort.direction : false}>
@@ -210,14 +210,30 @@ export function CallsignsTable({
                     </TableCell>
                     <TableCell>{row.position || '—'}</TableCell>
                     <TableCell>
-                      <CommentCell comment={row.comment} />
+                      <CommentCell comment={row.commentForView} />
                     </TableCell>
                     <TableCell>
                       <Typography variant="body2" sx={{ maxWidth: 260 }} noWrap title={row.unitName}>
                         {row.unitName}
                       </Typography>
                     </TableCell>
-                    <TableCell>{row.sourceName}</TableCell>
+                    <TableCell>
+                      <Stack spacing={0.75}>
+                        <Typography variant="body2">{row.sourceName}</Typography>
+                        {row.confirmationSourceNames.length > 0 ? (
+                          <>
+                            <Typography variant="caption" color="text.secondary">
+                              Підтверджено:
+                            </Typography>
+                            <Stack direction="row" spacing={0.5} useFlexGap flexWrap="wrap">
+                              {row.confirmationSourceNames.map((sourceName) => (
+                                <Chip key={`${row.id}-${sourceName}`} size="small" label={sourceName} variant="outlined" />
+                              ))}
+                            </Stack>
+                          </>
+                        ) : null}
+                      </Stack>
+                    </TableCell>
                     <TableCell>{row.radioFreq?.trim() ? row.radioFreq : '—'}</TableCell>
                     <TableCell>
                       <Chip

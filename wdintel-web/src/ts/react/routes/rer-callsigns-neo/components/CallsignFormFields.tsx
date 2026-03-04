@@ -2,6 +2,7 @@ import React from 'react';
 import {
   Checkbox,
   FormControl,
+  FormHelperText,
   FormControlLabel,
   InputLabel,
   MenuItem,
@@ -26,6 +27,9 @@ type Props<T extends CommonFormValue> = {
   sources?: Source[];
   includeUnitSelect?: boolean;
   includeSourceSelect?: boolean;
+  includeConfirmationSources?: boolean;
+  confirmationSourceIds?: number[];
+  onConfirmationSourceIdsChange?: (sourceIds: number[]) => void;
   disabled?: boolean;
   compact?: boolean;
 };
@@ -37,6 +41,9 @@ export function CallsignFormFields<T extends CommonFormValue>({
   sources = [],
   includeUnitSelect = false,
   includeSourceSelect = false,
+  includeConfirmationSources = false,
+  confirmationSourceIds = [],
+  onConfirmationSourceIdsChange,
   disabled = false,
   compact = false,
 }: Props<T>) {
@@ -44,6 +51,7 @@ export function CallsignFormFields<T extends CommonFormValue>({
   const reactId = React.useId();
   const unitLabelId = `${reactId}-unit-label`;
   const sourceLabelId = `${reactId}-source-label`;
+  const confirmationSources = sources.filter((source) => source.id !== value.sourceId);
 
   return (
     <Stack spacing={spacing}>
@@ -122,14 +130,18 @@ export function CallsignFormFields<T extends CommonFormValue>({
 
       {includeSourceSelect ? (
         <FormControl fullWidth size={compact ? 'small' : 'medium'} disabled={disabled}>
-          <InputLabel id={sourceLabelId}>Джерело</InputLabel>
+          <InputLabel id={sourceLabelId}>Основне джерело</InputLabel>
           <Select
             labelId={sourceLabelId}
-            label="Джерело"
+            label="Основне джерело"
             value={value.sourceId ?? ''}
             onChange={(event) => {
               const raw = event.target.value;
-              onChange({ ...value, sourceId: raw === '' ? null : Number(raw) });
+              const nextSourceId = raw === '' ? null : Number(raw);
+              onChange({ ...value, sourceId: nextSourceId });
+              if (includeConfirmationSources && onConfirmationSourceIdsChange) {
+                onConfirmationSourceIdsChange(confirmationSourceIds.filter((sourceId) => sourceId !== nextSourceId));
+              }
             }}
           >
             <MenuItem value="">
@@ -141,6 +153,35 @@ export function CallsignFormFields<T extends CommonFormValue>({
               </MenuItem>
             ))}
           </Select>
+        </FormControl>
+      ) : null}
+
+      {includeConfirmationSources ? (
+        <FormControl fullWidth size={compact ? 'small' : 'medium'} disabled={disabled}>
+          <InputLabel id={`${sourceLabelId}-confirm`}>Підтвердження</InputLabel>
+          <Select
+            labelId={`${sourceLabelId}-confirm`}
+            label="Підтвердження"
+            multiple
+            value={confirmationSourceIds}
+            onChange={(event) => {
+              if (!onConfirmationSourceIdsChange) return;
+              const raw = event.target.value;
+              onConfirmationSourceIdsChange(typeof raw === 'string' ? raw.split(',').map(Number) : raw.map(Number));
+            }}
+            renderValue={(selected) => {
+              const names = selected
+                .map((sourceId) => sources.find((source) => source.id === Number(sourceId))?.name ?? `#${sourceId}`);
+              return names.length > 0 ? names.join(', ') : 'Оберіть підтвердження';
+            }}
+          >
+            {confirmationSources.map((source) => (
+              <MenuItem key={source.id} value={source.id}>
+                {source.name}
+              </MenuItem>
+            ))}
+          </Select>
+          <FormHelperText>Додаткові джерела підтвердження.</FormHelperText>
         </FormControl>
       ) : null}
     </Stack>

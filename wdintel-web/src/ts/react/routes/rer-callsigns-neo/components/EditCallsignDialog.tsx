@@ -40,6 +40,9 @@ export function EditCallsignDialog({ open, form, units, sources, submitting, err
               sources={sources}
               includeUnitSelect
               includeSourceSelect
+              includeConfirmationSources
+              confirmationSourceIds={form.confirmationSourceIds}
+              onConfirmationSourceIdsChange={(confirmationSourceIds) => onChange({ ...form, confirmationSourceIds })}
               disabled={submitting}
             />
           ) : null}

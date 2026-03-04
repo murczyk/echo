@@ -33,6 +33,7 @@ type Props = {
   sources: Source[];
   addUnitId: number | null;
   addSourceId: number | null;
+  addConfirmationSourceIds: number[];
   rows: CallsignDraftRow[];
   submitting: boolean;
   disabled: boolean;
@@ -46,6 +47,7 @@ type Props = {
   }>;
   onAddUnitIdChange: (unitId: number | null) => void;
   onAddSourceIdChange: (sourceId: number | null) => void;
+  onAddConfirmationSourceIdsChange: (sourceIds: number[]) => void;
   onRowChange: (index: number, row: CallsignDraftRow) => void;
   onAppendRow: () => void;
   onRemoveRow: (index: number) => void;
@@ -61,6 +63,7 @@ export function AddCallsignsDrawer({
   sources,
   addUnitId,
   addSourceId,
+  addConfirmationSourceIds,
   rows,
   submitting,
   disabled,
@@ -68,6 +71,7 @@ export function AddCallsignsDrawer({
   duplicateHints,
   onAddUnitIdChange,
   onAddSourceIdChange,
+  onAddConfirmationSourceIdsChange,
   onRowChange,
   onAppendRow,
   onRemoveRow,
@@ -80,6 +84,7 @@ export function AddCallsignsDrawer({
   const drawerTitleId = 'callsigns-add-drawer-title';
   const addSourceSelectLabelId = 'callsigns-add-source-label';
   const selectedUnit = units.find((unit) => unit.id === addUnitId) ?? null;
+  const confirmationSources = sources.filter((source) => source.id !== addSourceId);
   const [unitSearchInput, setUnitSearchInput] = React.useState('');
   const handleCloseDrawer = React.useCallback(() => {
     setUnitSearchInput('');
@@ -172,17 +177,19 @@ export function AddCallsignsDrawer({
 
             <FormControl sx={{ flex: 1 }} size="small" disabled={formDisabled}>
               <InputLabel id={addSourceSelectLabelId} shrink>
-                Джерело
+                Основне джерело
               </InputLabel>
               <Select
                 labelId={addSourceSelectLabelId}
-                label="Джерело"
+                label="Основне джерело"
                 fullWidth
                 displayEmpty
                 value={addSourceId ?? ''}
                 onChange={(event) => {
                   const raw = event.target.value;
-                  onAddSourceIdChange(raw === '' ? null : Number(raw));
+                  const nextSourceId = raw === '' ? null : Number(raw);
+                  onAddSourceIdChange(nextSourceId);
+                  onAddConfirmationSourceIdsChange(addConfirmationSourceIds.filter((sourceId) => sourceId !== nextSourceId));
                 }}
               >
                 <MenuItem value="">
@@ -196,6 +203,34 @@ export function AddCallsignsDrawer({
               </Select>
             </FormControl>
           </Stack>
+
+          <FormControl fullWidth size="small" disabled={formDisabled}>
+            <InputLabel id="callsigns-add-confirmation-sources-label">Підтвердження</InputLabel>
+            <Select
+              labelId="callsigns-add-confirmation-sources-label"
+              label="Підтвердження"
+              multiple
+              value={addConfirmationSourceIds}
+              onChange={(event) => {
+                const value = event.target.value;
+                onAddConfirmationSourceIdsChange(typeof value === 'string' ? value.split(',').map(Number) : value.map(Number));
+              }}
+              renderValue={(selected) => {
+                const names = selected
+                  .map((sourceId) => sources.find((source) => source.id === Number(sourceId))?.name ?? `#${sourceId}`);
+                return names.length > 0 ? names.join(', ') : 'Оберіть підтвердження';
+              }}
+            >
+              {confirmationSources.map((source) => (
+                <MenuItem key={source.id} value={source.id}>
+                  {source.name}
+                </MenuItem>
+              ))}
+            </Select>
+            <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5 }}>
+              Додаткові джерела підтвердження для всіх рядків цієї пачки.
+            </Typography>
+          </FormControl>
 
           <Typography variant="body2" color="text.secondary">
             Підтримується вставка табличних даних (TSV: позивний, посада, коментар)
