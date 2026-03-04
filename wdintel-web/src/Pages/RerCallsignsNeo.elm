@@ -4,7 +4,8 @@ import Auth
 import Effect as E exposing (Effect)
 import Html exposing (a, button, div, i, node, span, text)
 import Html.Attributes exposing (attribute, class, href, style, type_)
-import Html.Events exposing (onClick)
+import Html.Events exposing (preventDefaultOn)
+import Json.Decode as Decode
 import Layouts
 import Page exposing (Page)
 import PagePorts.RerCallsignsNeoPorts as Ports
@@ -75,9 +76,12 @@ subscriptions _ =
 view : Auth.User -> Model -> View Msg
 view user model =
     let
+        onCloseBannerClick =
+            preventDefaultOn "click" (Decode.succeed ( CloseBetaBanner, True ))
+
         pageContainerClass =
             if model.showBetaBanner then
-                "app-shell-fill-height box-border min-h-0 pt-6 px-6 w-full flex flex-col gap-4 overflow-visible lg:overflow-hidden"
+                "app-shell-fill-height box-border min-h-0 pt-4 px-6 w-full flex flex-col gap-4 overflow-visible lg:overflow-hidden"
 
             else
                 "app-shell-fill-height box-border min-h-0 pt-0 px-6 w-full flex flex-col gap-4 overflow-visible lg:overflow-hidden"
@@ -103,7 +107,7 @@ view user model =
                         , button
                             [ class "shrink-0 inline-flex items-center justify-center rounded-sm p-1 text-amber-900/80 hover:text-amber-900 hover:bg-amber-200/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-warning-dark)]"
                             , type_ "button"
-                            , onClick CloseBetaBanner
+                            , onCloseBannerClick
                             , attribute "aria-label" "Закрити бета-банер"
                             ]
                             [ i [ class "bi bi-x-lg text-sm" ] [] ]
