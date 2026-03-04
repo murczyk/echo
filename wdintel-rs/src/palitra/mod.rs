@@ -19,7 +19,7 @@ use chrono::{NaiveDateTime, Utc};
 use futures_util::StreamExt;
 use itertools::Itertools;
 use sea_orm::*;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::path::Path;
 use tempfile::tempdir;
 
@@ -291,27 +291,74 @@ pub async fn upload_palitra_points(
     let raw_filename = field.name().c(h!())?.to_string();
     let filename = kmz::sanitize_upload_filename(&raw_filename);
     let raw_kmz_data = val;
-    let points = kmz::load_coordinates_from_file(
-        filename.clone(),
-        raw_kmz_data.clone(),
-        &env,
-    )
-    .await
-    .c(h!())?;
-    let palitra_geometry =
-        read_latest_palitra_geometry_with_warning(&env.dbx, palitra.id)
-            .await
-            .c(h!())?;
+    let mut points_by_color = group_palitra_points_by_color(
+        kmz::load_coordinates_from_file(
+            filename.clone(),
+            raw_kmz_data.clone(),
+            &env,
+        )
+        .await
+        .c(h!())?,
+    );
+    let uploaded_at = Utc::now();
+    let mut geometry_colors = points_by_color.keys().cloned().collect_vec();
+    if geometry_colors.is_empty() {
+        geometry_colors
+            .push(crate::config::PALITRA_POINT_FALLBACK_COLOR_HEX.to_string());
+    }
+    let parsed_points_total =
+        points_by_color.values().map(Vec::len).sum::<usize>();
     let txn = env.dbx.begin().await.c(h!())?;
-
-    let palitra_geometry_id = palitra_geometry.id;
-    let mut model = palitra_geometry.into_active_model();
-    model.source_file_name = Set(Some(filename.clone()));
-    model.update(&txn).await.c(h!())?;
-
-    bl::rewrite_palitra_points(palitra_geometry_id, points, &txn)
+    let existing_palitra_geometries = palitra_geometry::Entity::find()
+        .filter(palitra_geometry::Column::PalitraId.eq(palitra.id))
+        .filter(palitra_geometry::Column::Deleted.eq(false))
+        .all(&txn)
         .await
         .c(h!())?;
+    let mut retained_geometry_ids: HashSet<i64> = HashSet::new();
+    for color_hex in geometry_colors {
+        let palitra_geometry = upsert_palitra_geometry_by_color(
+            &txn,
+            palitra.id,
+            &color_hex,
+            &filename,
+            uploaded_at.naive_utc(),
+        )
+        .await
+        .c(h!())?;
+        retained_geometry_ids.insert(palitra_geometry.id);
+        let color_points =
+            points_by_color.remove(&color_hex).unwrap_or_default();
+        bl::rewrite_palitra_points(palitra_geometry.id, color_points, &txn)
+            .await
+            .c(h!())?;
+    }
+    let stale_geometry_ids = existing_palitra_geometries
+        .into_iter()
+        .map(|geometry| geometry.id)
+        .filter(|id| !retained_geometry_ids.contains(id))
+        .collect_vec();
+    if !stale_geometry_ids.is_empty() {
+        error!(
+            "palitra {} upload-points missing {} existing colors; soft-deleting stale geometries: {:?}",
+            palitra.id,
+            stale_geometry_ids.len(),
+            stale_geometry_ids
+        );
+    }
+    for stale_geometry_id in stale_geometry_ids {
+        bl::soft_delete_palitra_geometry(stale_geometry_id, &txn)
+            .await
+            .c(h!())?;
+    }
+    if parsed_points_total > 0 {
+        info!(
+            "palitra {} upload-points parsed {} total points and distributed them across {} colors",
+            palitra.id,
+            parsed_points_total,
+            retained_geometry_ids.len()
+        );
+    }
 
     let remote_filename = kmz_file_name_as_kmz(&filename);
     sync_upload_palitra_to_connected_organisms(
@@ -340,6 +387,21 @@ pub async fn list_all_palitras(
     Ok(Json(palitra))
 }
 
+#[post("/api/palitra/v2/list")]
+pub async fn list_all_palitras_v2(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+) -> Result<Json<Vec<PalitraReadV2>>, AppError> {
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
+        .await
+        .context(h!())?;
+    let palitra = bl::list_all_palitras_v2(login, &env.dbx)
+        .await
+        .context(h!())?;
+    Ok(Json(palitra))
+}
+
 #[post("/api/palitra/list-detailed")] // TODO implement filter
 pub async fn list_all_palitras_detailed(
     user: actix_identity::Identity,
@@ -350,6 +412,23 @@ pub async fn list_all_palitras_detailed(
         .await
         .context(h!())?;
     let palitra = bl::list_all_palitras_detailed(login, &env.dbx)
+        .await
+        .context(h!())?;
+    Ok(Json(palitra))
+}
+
+#[post("/api/palitra/v2/read/{palitra_id}")]
+pub async fn read_palitra_v2(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    path: actix_web::web::Path<i64>,
+) -> Result<Json<PalitraReadV2>, AppError> {
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
+        .await
+        .context(h!())?;
+    let palitra_id = path.into_inner();
+    let palitra = bl::read_palitra_v2(login, palitra_id, &env.dbx)
         .await
         .context(h!())?;
     Ok(Json(palitra))
@@ -495,6 +574,50 @@ pub async fn update_palitra(
         .await
         .c(h!())?;
     let result = bl::update_palitra(palitra.id, req, &txn).await.c(h!())?;
+    txn.commit().await.c(h!())?;
+    Ok(Json(result))
+}
+
+#[post("/api/palitra/v2/update/{palitra_id}")]
+pub async fn update_palitra_v2(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<UpdatePalitraV2Req>,
+    path: actix_web::web::Path<i64>,
+) -> Result<Json<PalitraReadV2>, AppError> {
+    let login = user.id().c(h!())?;
+    let req = req.into_inner();
+    let scope = load_user_scope(&env.dbx, &login).await.c(h!())?;
+    ensure_palitra_permissions(&env, &login, &req.access, &scope)
+        .await
+        .c(h!())?;
+    let palitra_id = path.into_inner();
+    let txn = (env.dbx).begin().await.c(h!())?;
+    let palitra = palitra::Entity::find_by_id(palitra_id)
+        .one(&env.dbx)
+        .await
+        .c(h!())?
+        .c(h!())?;
+    let is_admin = crate::users::has_role(&env.dbx, &login, "Admin")
+        .await
+        .is_ok();
+    if !is_admin {
+        match &palitra.author {
+            Some(author) if author == &login => {}
+            _ => {
+                return Err(AppError::Forbidden(
+                    "Only author or Admin may update palitra".into(),
+                ));
+            }
+        }
+    }
+
+    let existing_access =
+        read_palitra_access(&env.dbx, palitra_id).await.c(h!())?;
+    ensure_palitra_permissions(&env, &login, &existing_access, &scope)
+        .await
+        .c(h!())?;
+    let result = bl::update_palitra_v2(palitra.id, req, &txn).await.c(h!())?;
     txn.commit().await.c(h!())?;
     Ok(Json(result))
 }
@@ -667,25 +790,21 @@ async fn upsert_palitra_geometry_by_color(
 ) -> anyhow::Result<palitra_geometry::Model> {
     let color_hex =
         normalize_color_hex_or_fallback(Some(color_hex.to_string()));
-    let palitra_geometries = palitra_geometry::Entity::find()
+    let palitra_geometry = palitra_geometry::Entity::find()
         .filter(palitra_geometry::Column::PalitraId.eq(palitra_id))
         .filter(palitra_geometry::Column::Hex.eq(color_hex.clone()))
         .filter(palitra_geometry::Column::Deleted.eq(false))
         .order_by_desc(palitra_geometry::Column::UpdatedAt)
-        .all(txn)
+        .order_by_desc(palitra_geometry::Column::Id)
+        .one(txn)
         .await
         .c(h!())?;
-    if palitra_geometries.len() > 1 {
-        warn!(
-            "palitra {palitra_id} has {} active geometries with color {color_hex}; using latest one",
-            palitra_geometries.len()
-        );
-    }
-    if let Some(palitra_geometry) = palitra_geometries.into_iter().next() {
+    if let Some(palitra_geometry) = palitra_geometry {
         let mut palitra_geometry = palitra_geometry.into_active_model();
         palitra_geometry.source_file_name =
             Set(Some(source_file_name.to_string()));
         palitra_geometry.last_uploaded_at = Set(Some(uploaded_at));
+        palitra_geometry.updated_at = Set(Utc::now().naive_utc());
         return palitra_geometry.update(txn).await.c(h!());
     }
     palitra_geometry::ActiveModel {
@@ -836,22 +955,15 @@ async fn read_latest_palitra_geometry_with_warning(
     dbx: &DatabaseConnection,
     palitra_id: i64,
 ) -> anyhow::Result<palitra_geometry::Model> {
-    let palitra_geometries = palitra_geometry::Entity::find()
+    palitra_geometry::Entity::find()
         .filter(palitra_geometry::Column::PalitraId.eq(palitra_id))
         .filter(palitra_geometry::Column::Deleted.eq(false))
         .order_by_desc(palitra_geometry::Column::UpdatedAt)
-        .all(dbx)
+        .order_by_desc(palitra_geometry::Column::Id)
+        .one(dbx)
         .await
-        .c(h!())?;
-
-    if palitra_geometries.len() > 1 {
-        warn!(
-            "palitra {palitra_id} has {} active geometries; using the latest one for a single-geometry flow",
-            palitra_geometries.len()
-        );
-    }
-
-    palitra_geometries.into_iter().next().c(h!())
+        .c(h!())?
+        .c(h!())
 }
 
 async fn load_user_scope(
@@ -1107,4 +1219,77 @@ fn goi_validate_connection_req(
         bail!("invalid SSH port: {}", req.ssh_port);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn groups_points_by_normalized_color_with_fallback() {
+        let points = vec![
+            PalitraPoint {
+                coords: Coords {
+                    lat: 50.0,
+                    lng: 30.0,
+                },
+                label: Some("A".to_string()),
+                color: Some(" #AABBCC ".to_string()),
+            },
+            PalitraPoint {
+                coords: Coords {
+                    lat: 50.1,
+                    lng: 30.1,
+                },
+                label: Some("B".to_string()),
+                color: Some("#aabbcc".to_string()),
+            },
+            PalitraPoint {
+                coords: Coords {
+                    lat: 50.2,
+                    lng: 30.2,
+                },
+                label: Some("C".to_string()),
+                color: None,
+            },
+        ];
+        let grouped = group_palitra_points_by_color(points);
+        assert_eq!(grouped.get("#aabbcc").map(Vec::len), Some(2));
+        assert_eq!(
+            grouped
+                .get(crate::config::PALITRA_POINT_FALLBACK_COLOR_HEX)
+                .map(Vec::len),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn picks_primary_color_by_largest_group() {
+        let grouped = BTreeMap::from([
+            (
+                "#111111".to_string(),
+                vec![PalitraPoint {
+                    coords: Coords { lat: 1.0, lng: 1.0 },
+                    label: None,
+                    color: Some("#111111".to_string()),
+                }],
+            ),
+            (
+                "#222222".to_string(),
+                vec![
+                    PalitraPoint {
+                        coords: Coords { lat: 2.0, lng: 2.0 },
+                        label: None,
+                        color: Some("#222222".to_string()),
+                    },
+                    PalitraPoint {
+                        coords: Coords { lat: 2.1, lng: 2.1 },
+                        label: None,
+                        color: Some("#222222".to_string()),
+                    },
+                ],
+            ),
+        ]);
+        assert_eq!(pick_primary_color_hex(&grouped), "#222222".to_string());
+    }
 }
