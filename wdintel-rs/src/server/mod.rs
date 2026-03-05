@@ -702,6 +702,7 @@ pub async fn main_server(
             .service(crate::palitra::search_palitra_points)
             .service(crate::palitra::create_palitra)
             .service(crate::palitra::create_palitra_basic)
+            .service(crate::palitra::create_palitra_basic_v2)
             .service(crate::palitra::create_palitra_with_kmz)
             .service(crate::palitra::update_palitra)
             .service(crate::palitra::update_palitra_v2)

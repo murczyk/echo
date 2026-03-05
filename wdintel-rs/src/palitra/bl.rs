@@ -735,11 +735,14 @@ pub async fn delete_palitra(
     Ok(())
 }
 
-pub async fn create_palitra(
+pub async fn create_palitra<'a, 'async_trait, C>(
     author_login: String,
     req: CreatePalitraReq,
-    dbx: &DatabaseConnection,
-) -> anyhow::Result<Palitra> {
+    dbx: &'a C,
+) -> anyhow::Result<Palitra>
+where
+    C: ConnectionTrait + 'async_trait,
+{
     let palitra_am = palitra::ActiveModel {
         author: Set(Some(author_login)),
         ..Default::default()

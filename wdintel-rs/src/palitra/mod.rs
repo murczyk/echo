@@ -138,6 +138,87 @@ pub async fn create_palitra_basic(
         .await
         .c(h!())?;
 
+    let uploaded_at = Utc::now();
+    let mut points_by_color = group_palitra_points_by_color(
+        kmz::load_coordinates_from_file(
+            multipart_payload.filename.clone(),
+            multipart_payload.kmz_data.clone(),
+            &env,
+        )
+        .await
+        .c(h!())?,
+    );
+    let primary_color_hex = pick_primary_color_hex(&points_by_color);
+    let mut geometry_colors = vec![primary_color_hex.clone()];
+    geometry_colors.extend(
+        points_by_color
+            .keys()
+            .filter(|color_hex| *color_hex != &primary_color_hex)
+            .cloned(),
+    );
+
+    let txn = env.dbx.begin().await.c(h!())?;
+    let mut created_palitra_ids = Vec::with_capacity(geometry_colors.len());
+    for color_hex in geometry_colors {
+        let req = CreatePalitraReq {
+            name: multipart_payload.name.clone(),
+            color_hex: color_hex.clone(),
+            access: access.clone(),
+            source_file_name: Some(multipart_payload.filename.clone()),
+            last_uploaded_at_ts: Some(uploaded_at.timestamp_millis()),
+        };
+        let palitra =
+            bl::create_palitra(login.clone(), req, &txn).await.c(h!())?;
+        created_palitra_ids.push(palitra.id);
+        let palitra_geometry =
+            read_latest_palitra_geometry_with_warning(&txn, palitra.id)
+                .await
+                .c(h!())?;
+        let color_points =
+            points_by_color.remove(&color_hex).unwrap_or_default();
+        bl::rewrite_palitra_points(palitra_geometry.id, color_points, &txn)
+            .await
+            .c(h!())?;
+    }
+
+    let remote_filename = kmz_file_name_as_kmz(&multipart_payload.filename);
+    sync_upload_palitra_to_connected_organisms(
+        &env.dbx,
+        &access,
+        &remote_filename,
+        multipart_payload.kmz_data,
+    )
+    .await
+    .c(h!())?;
+    txn.commit().await.c(h!())?;
+
+    let first_palitra_id = created_palitra_ids.first().copied().c(h!())?;
+    let palitra_response =
+        render_created_palitra_response(&env.dbx, first_palitra_id)
+            .await
+            .c(h!())?;
+    Ok(Json(palitra_response))
+}
+
+#[post("/api/palitra/v2/create-palitra-basic")]
+pub async fn create_palitra_basic_v2(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    mut payload: Multipart,
+) -> Result<Json<Palitra>, AppError> {
+    let login = user.id().c(h!())?;
+    let scope = load_user_scope(&env.dbx, &login).await.c(h!())?;
+    let multipart_payload =
+        parse_create_palitra_multipart(&mut payload).await.c(h!())?;
+    let access = parse_access(
+        &multipart_payload.access_type,
+        &multipart_payload.access_values,
+    )
+    .c(h!())?;
+    ensure_palitra_permissions(&env, &login, &access, &scope)
+        .await
+        .c(h!())?;
+
     let mut points_by_color = group_palitra_points_by_color(
         kmz::load_coordinates_from_file(
             multipart_payload.filename.clone(),
@@ -951,10 +1032,13 @@ async fn ensure_palitra_permissions(
     Ok(())
 }
 
-async fn read_latest_palitra_geometry_with_warning(
-    dbx: &DatabaseConnection,
+async fn read_latest_palitra_geometry_with_warning<'a, 'async_trait, C>(
+    dbx: &'a C,
     palitra_id: i64,
-) -> anyhow::Result<palitra_geometry::Model> {
+) -> anyhow::Result<palitra_geometry::Model>
+where
+    C: ConnectionTrait + 'async_trait,
+{
     palitra_geometry::Entity::find()
         .filter(palitra_geometry::Column::PalitraId.eq(palitra_id))
         .filter(palitra_geometry::Column::Deleted.eq(false))
