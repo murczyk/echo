@@ -400,7 +400,7 @@ async fn list_callsigns_impl(
     let callsigns = callsigns.limit(req.limit).all(dbx).await.c(h!())?;
     let mut res = vec![];
     for (callsign, unit) in callsigns {
-        let mut c = render_callsign(unit, callsign)?;
+        let mut c = render_callsign(unit, callsign, vec![])?;
         if let Some(changelog) = sigint_callsign_changelog::Entity::find()
             .filter(
                 sigint_callsign_changelog::Column::SigintCallsignId.eq(c.id),
@@ -415,6 +415,19 @@ async fn list_callsigns_impl(
 
         res.push(c);
     }
+
+    let callsign_ids =
+        res.iter().map(|callsign| callsign.id).collect::<Vec<_>>();
+    let mut source_ids_by_callsign =
+        list_callsign_additional_source_ids_batch(dbx, &callsign_ids)
+            .await
+            .c(h!())?;
+    for callsign in &mut res {
+        callsign.callsign_additional_sources = source_ids_by_callsign
+            .remove(&callsign.id)
+            .unwrap_or_default();
+    }
+
     Ok(res)
 }
 
@@ -578,6 +591,11 @@ pub async fn create_callsign(
     let event = EventMsg::new(EventType::ETCallsignChanged);
     fanout(&mut env.redis.clone(), event).await.context(h!())?;
 
+    let callsign_additional_sources =
+        list_callsign_additional_source_ids(&env.dbx, callsign.id)
+            .await
+            .context(h!())?;
+
     Ok(Json(
         render_callsign(
             sigint_unit::Entity::find_by_id(callsign.unit_id)
@@ -585,6 +603,7 @@ pub async fn create_callsign(
                 .await
                 .context(h!())?,
             callsign,
+            callsign_additional_sources,
         )
         .context(h!())?,
     ))
@@ -616,12 +635,18 @@ pub async fn update_callsign(
     let event = EventMsg::new(EventType::ETCallsignChanged);
     fanout(&mut env.redis.clone(), event).await.context(h!())?;
 
+    let callsign_additional_sources =
+        list_callsign_additional_source_ids(&env.dbx, callsign.id)
+            .await
+            .context(h!())?;
+
     Ok(Json(render_callsign(
         sigint_unit::Entity::find_by_id(callsign.unit_id)
             .one(&env.dbx)
             .await
             .c(h!())?,
         callsign,
+        callsign_additional_sources,
     )?))
 }
 
@@ -676,18 +701,25 @@ pub async fn delete_callsign(
     .await
     .c(h!())?;
 
+    let callsign_additional_sources =
+        list_callsign_additional_source_ids(&env.dbx, callsign.id)
+            .await
+            .c(h!())?;
+
     Ok(Json(render_callsign(
         sigint_unit::Entity::find_by_id(callsign.unit_id)
             .one(&env.dbx)
             .await
             .c(h!())?,
         callsign,
+        callsign_additional_sources,
     )?))
 }
 
 pub fn render_callsign(
     unit: Option<sigint_unit::Model>,
     callsign: sigint_callsign::Model,
+    callsign_additional_sources: Vec<i64>,
 ) -> Result<Callsign, AppError> {
     Ok(Callsign {
         id: callsign.id,
@@ -696,6 +728,7 @@ pub fn render_callsign(
         unit_id: callsign.unit_id,
         active: unit.is_none_or(|u| u.active),
         source_id: callsign.source_id,
+        callsign_additional_sources,
         comment: callsign.comment,
         created_at: callsign.created_at.and_utc().timestamp_millis(),
         developing: callsign.developing,

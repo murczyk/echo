@@ -67,6 +67,7 @@ pub async fn bl_create_network_callsign(
         comment: req.comment.clone().unwrap_or_default(),
         unit_id,
         source_id: req.source_id.map(|v| v as i32),
+        callsign_additional_sources: vec![],
         radio_freq: req.radio_freq.clone(),
         developing: req.developing,
     };
@@ -314,6 +315,7 @@ pub(crate) async fn ensure_callsign(
             comment: req.comment.clone().unwrap_or_default(),
             unit_id,
             source_id: req.source_id.map(|v| v as i32),
+            callsign_additional_sources: vec![],
             radio_freq: req.radio_freq.clone(),
             developing: req.developing,
         };
@@ -351,6 +353,7 @@ async fn update_network_callsign_linked(
         unit_id: req.unit_id.unwrap_or(known_callsign.unit_id),
         active: known_callsign.deleted,
         source_id: req.source_id.map(|v| v as i32),
+        callsign_additional_sources: vec![],
         created_at: known_callsign.created_at.and_utc().timestamp_millis(),
         developing: req.developing,
         radio_freq: req.radio_freq.clone(),
