@@ -11,14 +11,15 @@ use crate::palitra::types::*;
 use crate::types::*;
 use crate::utils::multipart;
 use crate::utils::string::normalize_trimmed_or_default;
-use actix_multipart::Multipart;
+use actix_multipart::{Field, Multipart};
 use actix_web::post;
 use actix_web::web::{Data, Json};
 use anyhow::{bail, Context};
-use chrono::Utc;
+use chrono::{NaiveDateTime, Utc};
 use futures_util::StreamExt;
 use itertools::Itertools;
 use sea_orm::*;
+use std::collections::{BTreeMap, HashSet};
 use std::path::Path;
 use tempfile::tempdir;
 
@@ -32,6 +33,15 @@ struct UserScope {
     aor_ids: Vec<i64>,
 }
 
+struct CreatePalitraMultipartPayload {
+    name: String,
+    color_hex: Option<String>,
+    access_type: String,
+    access_values: String,
+    filename: String,
+    kmz_data: Vec<u8>,
+}
+
 #[post("/api/palitra/create-with-kmz")]
 pub async fn create_palitra_with_kmz(
     user: actix_identity::Identity,
@@ -40,100 +50,18 @@ pub async fn create_palitra_with_kmz(
 ) -> Result<Json<Palitra>, AppError> {
     let login = user.id().c(h!())?;
     let scope = load_user_scope(&env.dbx, &login).await.c(h!())?;
-
-    // Extract multipart fields
-    let mut name: Option<String> = None;
-    let mut color_hex: Option<String> = None;
-    let mut access_type: Option<String> = None;
-    let mut access_values: Option<String> = None;
-    let mut kmz_file: Option<(String, Vec<u8>)> = None;
-
-    while let Some(item) = payload.next().await {
-        let mut field = item.map_err(|e| AppError::BL {
-            msg: format!("Multipart error: {e:?}"),
-        })?;
-        let content_disposition = field.content_disposition();
-        let field_name = content_disposition
-            .and_then(|cd| cd.get_name())
-            .map(|s| s.to_string())
-            .unwrap_or_default();
-
-        match field_name.as_str() {
-            "name" => {
-                let mut bytes = Vec::new();
-                while let Some(chunk) = field.next().await {
-                    let chunk = chunk.map_err(|e| AppError::BL {
-                        msg: format!("Field read error: {e:?}"),
-                    })?;
-                    bytes.extend_from_slice(&chunk);
-                }
-                name = Some(String::from_utf8(bytes).c(h!())?);
-            }
-            "color_hex" => {
-                let mut bytes = Vec::new();
-                while let Some(chunk) = field.next().await {
-                    let chunk = chunk.map_err(|e| AppError::BL {
-                        msg: format!("Field read error: {e:?}"),
-                    })?;
-                    bytes.extend_from_slice(&chunk);
-                }
-                color_hex = Some(String::from_utf8(bytes).c(h!())?);
-            }
-            "access_type" => {
-                let mut bytes = Vec::new();
-                while let Some(chunk) = field.next().await {
-                    let chunk = chunk.map_err(|e| AppError::BL {
-                        msg: format!("Field read error: {e:?}"),
-                    })?;
-                    bytes.extend_from_slice(&chunk);
-                }
-                access_type = Some(String::from_utf8(bytes).c(h!())?);
-            }
-            "access_values" => {
-                let mut bytes = Vec::new();
-                while let Some(chunk) = field.next().await {
-                    let chunk = chunk.map_err(|e| AppError::BL {
-                        msg: format!("Field read error: {e:?}"),
-                    })?;
-                    bytes.extend_from_slice(&chunk);
-                }
-                access_values = Some(String::from_utf8(bytes).c(h!())?);
-            }
-            "kmz" => {
-                let raw_filename = content_disposition
-                    .and_then(|cd| cd.get_filename())
-                    .map(|s| s.to_string())
-                    .unwrap_or_else(|| "file.kmz".to_string());
-                let filename = kmz::sanitize_upload_filename(&raw_filename);
-                let mut bytes = Vec::new();
-                while let Some(chunk) = field.next().await {
-                    let chunk = chunk.map_err(|e| AppError::BL {
-                        msg: format!("Field read error: {e:?}"),
-                    })?;
-                    bytes.extend_from_slice(&chunk);
-                }
-                kmz_file = Some((filename, bytes));
-            }
-            _ => {
-                // Skip unknown fields but consume their data to avoid blocking multipart parser
-                while let Some(chunk) = field.next().await {
-                    let _ = chunk.map_err(|e| AppError::BL {
-                        msg: format!("Field read error: {e:?}"),
-                    })?;
-                }
-            }
-        }
-    }
-
-    // Validate required fields
-    let name = name.c(h!())?;
-    let color_hex = color_hex.c(h!())?;
-    let access_type = access_type.c(h!())?;
-    let access_values = access_values.unwrap_or_default();
-    let (filename, kmz_data) = kmz_file.c(h!())?;
+    let multipart_payload =
+        parse_create_palitra_multipart(&mut payload).await.c(h!())?;
+    let color_hex = normalize_color_hex_or_fallback(Some(
+        multipart_payload.color_hex.c(h!())?,
+    ));
 
     // Parse access
-    let access = parse_access(&access_type, &access_values).c(h!())?;
+    let access = parse_access(
+        &multipart_payload.access_type,
+        &multipart_payload.access_values,
+    )
+    .c(h!())?;
 
     // Validate permissions
     ensure_palitra_permissions(&env, &login, &access, &scope)
@@ -142,10 +70,10 @@ pub async fn create_palitra_with_kmz(
 
     // Create palitra request
     let req = CreatePalitraReq {
-        name: name.clone(),
+        name: multipart_payload.name,
         color_hex,
         access: access.clone(),
-        source_file_name: Some(filename.clone()),
+        source_file_name: Some(multipart_payload.filename.clone()),
         last_uploaded_at_ts: Some(Utc::now().timestamp_millis()),
     };
 
@@ -156,10 +84,10 @@ pub async fn create_palitra_with_kmz(
 
     // Upload points from KMZ in a separate transaction
     let txn = env.dbx.begin().await.c(h!())?;
-    let remote_filename = kmz_file_name_as_kmz(&filename);
+    let remote_filename = kmz_file_name_as_kmz(&multipart_payload.filename);
     let points = kmz::load_coordinates_from_file(
-        filename.clone(),
-        kmz_data.clone(),
+        multipart_payload.filename.clone(),
+        multipart_payload.kmz_data.clone(),
         &env,
     )
     .await
@@ -178,43 +106,178 @@ pub async fn create_palitra_with_kmz(
         &env.dbx,
         &access,
         &remote_filename,
-        kmz_data,
+        multipart_payload.kmz_data,
     )
     .await
     .c(h!())?;
 
     txn.commit().await.c(h!())?;
+    let palitra_response =
+        render_created_palitra_response(&env.dbx, palitra.id)
+            .await
+            .c(h!())?;
+    Ok(Json(palitra_response))
+}
 
-    // Reload and return created palitra with all data
-    let result = palitra::Entity::find_by_id(palitra.id)
-        .one(&env.dbx)
+#[post("/api/palitra/create-palitra-basic")]
+pub async fn create_palitra_basic(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    mut payload: Multipart,
+) -> Result<Json<Palitra>, AppError> {
+    let login = user.id().c(h!())?;
+    let scope = load_user_scope(&env.dbx, &login).await.c(h!())?;
+    let multipart_payload =
+        parse_create_palitra_multipart(&mut payload).await.c(h!())?;
+    let access = parse_access(
+        &multipart_payload.access_type,
+        &multipart_payload.access_values,
+    )
+    .c(h!())?;
+    ensure_palitra_permissions(&env, &login, &access, &scope)
         .await
-        .c(h!())?
         .c(h!())?;
 
-    let palitra_response = Palitra {
-        id: result.id,
-        name: result.name,
-        color_hex: palitra_geometry.hex,
-        author: result.author,
-        source_file_name: palitra_geometry.source_file_name,
-        last_uploaded_at_ts: palitra_geometry
-            .last_uploaded_at
-            .map(|ts| ts.and_utc().timestamp_millis()),
-        geometry: None, // Will be calculated on next request
-        access_aor_id: bl::collect_palitra_access_aors(&env.dbx, palitra.id)
-            .await
-            .c(h!())?,
-        access_organism_ids: bl::collect_palitra_access_organisms(
-            &env.dbx, palitra.id,
+    let uploaded_at = Utc::now();
+    let mut points_by_color = group_palitra_points_by_color(
+        kmz::load_coordinates_from_file(
+            multipart_payload.filename.clone(),
+            multipart_payload.kmz_data.clone(),
+            &env,
         )
         .await
         .c(h!())?,
-        access_logins: bl::collect_palitra_access_logins(&env.dbx, palitra.id)
-            .await
-            .c(h!())?,
-    };
+    );
+    let primary_color_hex = pick_primary_color_hex(&points_by_color);
+    let mut geometry_colors = vec![primary_color_hex.clone()];
+    geometry_colors.extend(
+        points_by_color
+            .keys()
+            .filter(|color_hex| *color_hex != &primary_color_hex)
+            .cloned(),
+    );
 
+    let txn = env.dbx.begin().await.c(h!())?;
+    let mut created_palitra_ids = Vec::with_capacity(geometry_colors.len());
+    for color_hex in geometry_colors {
+        let req = CreatePalitraReq {
+            name: multipart_payload.name.clone(),
+            color_hex: color_hex.clone(),
+            access: access.clone(),
+            source_file_name: Some(multipart_payload.filename.clone()),
+            last_uploaded_at_ts: Some(uploaded_at.timestamp_millis()),
+        };
+        let palitra =
+            bl::create_palitra(login.clone(), req, &txn).await.c(h!())?;
+        created_palitra_ids.push(palitra.id);
+        let palitra_geometry =
+            read_latest_palitra_geometry_with_warning(&txn, palitra.id)
+                .await
+                .c(h!())?;
+        let color_points =
+            points_by_color.remove(&color_hex).unwrap_or_default();
+        bl::rewrite_palitra_points(palitra_geometry.id, color_points, &txn)
+            .await
+            .c(h!())?;
+    }
+
+    let remote_filename = kmz_file_name_as_kmz(&multipart_payload.filename);
+    sync_upload_palitra_to_connected_organisms(
+        &env.dbx,
+        &access,
+        &remote_filename,
+        multipart_payload.kmz_data,
+    )
+    .await
+    .c(h!())?;
+    txn.commit().await.c(h!())?;
+
+    let first_palitra_id = created_palitra_ids.first().copied().c(h!())?;
+    let palitra_response =
+        render_created_palitra_response(&env.dbx, first_palitra_id)
+            .await
+            .c(h!())?;
+    Ok(Json(palitra_response))
+}
+
+#[post("/api/palitra/v2/create-palitra-basic")]
+pub async fn create_palitra_basic_v2(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    mut payload: Multipart,
+) -> Result<Json<Palitra>, AppError> {
+    let login = user.id().c(h!())?;
+    let scope = load_user_scope(&env.dbx, &login).await.c(h!())?;
+    let multipart_payload =
+        parse_create_palitra_multipart(&mut payload).await.c(h!())?;
+    let access = parse_access(
+        &multipart_payload.access_type,
+        &multipart_payload.access_values,
+    )
+    .c(h!())?;
+    ensure_palitra_permissions(&env, &login, &access, &scope)
+        .await
+        .c(h!())?;
+
+    let mut points_by_color = group_palitra_points_by_color(
+        kmz::load_coordinates_from_file(
+            multipart_payload.filename.clone(),
+            multipart_payload.kmz_data.clone(),
+            &env,
+        )
+        .await
+        .c(h!())?,
+    );
+    let uploaded_at = Utc::now();
+    let primary_color_hex = pick_primary_color_hex(&points_by_color);
+    let req = CreatePalitraReq {
+        name: multipart_payload.name,
+        color_hex: primary_color_hex,
+        access: access.clone(),
+        source_file_name: Some(multipart_payload.filename.clone()),
+        last_uploaded_at_ts: Some(uploaded_at.timestamp_millis()),
+    };
+    let palitra = bl::create_palitra(login, req, &env.dbx).await.c(h!())?;
+
+    let mut geometry_colors = points_by_color.keys().cloned().collect_vec();
+    if geometry_colors.is_empty() {
+        geometry_colors
+            .push(crate::config::PALITRA_POINT_FALLBACK_COLOR_HEX.to_string());
+    }
+
+    let txn = env.dbx.begin().await.c(h!())?;
+    for color_hex in geometry_colors {
+        let palitra_geometry = upsert_palitra_geometry_by_color(
+            &txn,
+            palitra.id,
+            &color_hex,
+            &multipart_payload.filename,
+            uploaded_at.naive_utc(),
+        )
+        .await
+        .c(h!())?;
+        let color_points =
+            points_by_color.remove(&color_hex).unwrap_or_default();
+        bl::rewrite_palitra_points(palitra_geometry.id, color_points, &txn)
+            .await
+            .c(h!())?;
+    }
+
+    let remote_filename = kmz_file_name_as_kmz(&multipart_payload.filename);
+    sync_upload_palitra_to_connected_organisms(
+        &env.dbx,
+        &access,
+        &remote_filename,
+        multipart_payload.kmz_data,
+    )
+    .await
+    .c(h!())?;
+    txn.commit().await.c(h!())?;
+
+    let palitra_response =
+        render_created_palitra_response(&env.dbx, palitra.id)
+            .await
+            .c(h!())?;
     Ok(Json(palitra_response))
 }
 
@@ -309,27 +372,74 @@ pub async fn upload_palitra_points(
     let raw_filename = field.name().c(h!())?.to_string();
     let filename = kmz::sanitize_upload_filename(&raw_filename);
     let raw_kmz_data = val;
-    let points = kmz::load_coordinates_from_file(
-        filename.clone(),
-        raw_kmz_data.clone(),
-        &env,
-    )
-    .await
-    .c(h!())?;
-    let palitra_geometry =
-        read_latest_palitra_geometry_with_warning(&env.dbx, palitra.id)
-            .await
-            .c(h!())?;
+    let mut points_by_color = group_palitra_points_by_color(
+        kmz::load_coordinates_from_file(
+            filename.clone(),
+            raw_kmz_data.clone(),
+            &env,
+        )
+        .await
+        .c(h!())?,
+    );
+    let uploaded_at = Utc::now();
+    let mut geometry_colors = points_by_color.keys().cloned().collect_vec();
+    if geometry_colors.is_empty() {
+        geometry_colors
+            .push(crate::config::PALITRA_POINT_FALLBACK_COLOR_HEX.to_string());
+    }
+    let parsed_points_total =
+        points_by_color.values().map(Vec::len).sum::<usize>();
     let txn = env.dbx.begin().await.c(h!())?;
-
-    let palitra_geometry_id = palitra_geometry.id;
-    let mut model = palitra_geometry.into_active_model();
-    model.source_file_name = Set(Some(filename.clone()));
-    model.update(&txn).await.c(h!())?;
-
-    bl::rewrite_palitra_points(palitra_geometry_id, points, &txn)
+    let existing_palitra_geometries = palitra_geometry::Entity::find()
+        .filter(palitra_geometry::Column::PalitraId.eq(palitra.id))
+        .filter(palitra_geometry::Column::Deleted.eq(false))
+        .all(&txn)
         .await
         .c(h!())?;
+    let mut retained_geometry_ids: HashSet<i64> = HashSet::new();
+    for color_hex in geometry_colors {
+        let palitra_geometry = upsert_palitra_geometry_by_color(
+            &txn,
+            palitra.id,
+            &color_hex,
+            &filename,
+            uploaded_at.naive_utc(),
+        )
+        .await
+        .c(h!())?;
+        retained_geometry_ids.insert(palitra_geometry.id);
+        let color_points =
+            points_by_color.remove(&color_hex).unwrap_or_default();
+        bl::rewrite_palitra_points(palitra_geometry.id, color_points, &txn)
+            .await
+            .c(h!())?;
+    }
+    let stale_geometry_ids = existing_palitra_geometries
+        .into_iter()
+        .map(|geometry| geometry.id)
+        .filter(|id| !retained_geometry_ids.contains(id))
+        .collect_vec();
+    if !stale_geometry_ids.is_empty() {
+        error!(
+            "palitra {} upload-points missing {} existing colors; soft-deleting stale geometries: {:?}",
+            palitra.id,
+            stale_geometry_ids.len(),
+            stale_geometry_ids
+        );
+    }
+    for stale_geometry_id in stale_geometry_ids {
+        bl::soft_delete_palitra_geometry(stale_geometry_id, &txn)
+            .await
+            .c(h!())?;
+    }
+    if parsed_points_total > 0 {
+        info!(
+            "palitra {} upload-points parsed {} total points and distributed them across {} colors",
+            palitra.id,
+            parsed_points_total,
+            retained_geometry_ids.len()
+        );
+    }
 
     let remote_filename = kmz_file_name_as_kmz(&filename);
     sync_upload_palitra_to_connected_organisms(
@@ -358,6 +468,21 @@ pub async fn list_all_palitras(
     Ok(Json(palitra))
 }
 
+#[post("/api/palitra/v2/list")]
+pub async fn list_all_palitras_v2(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+) -> Result<Json<Vec<PalitraReadV2>>, AppError> {
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
+        .await
+        .context(h!())?;
+    let palitra = bl::list_all_palitras_v2(login, &env.dbx)
+        .await
+        .context(h!())?;
+    Ok(Json(palitra))
+}
+
 #[post("/api/palitra/list-detailed")] // TODO implement filter
 pub async fn list_all_palitras_detailed(
     user: actix_identity::Identity,
@@ -368,6 +493,23 @@ pub async fn list_all_palitras_detailed(
         .await
         .context(h!())?;
     let palitra = bl::list_all_palitras_detailed(login, &env.dbx)
+        .await
+        .context(h!())?;
+    Ok(Json(palitra))
+}
+
+#[post("/api/palitra/v2/read/{palitra_id}")]
+pub async fn read_palitra_v2(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    path: actix_web::web::Path<i64>,
+) -> Result<Json<PalitraReadV2>, AppError> {
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
+        .await
+        .context(h!())?;
+    let palitra_id = path.into_inner();
+    let palitra = bl::read_palitra_v2(login, palitra_id, &env.dbx)
         .await
         .context(h!())?;
     Ok(Json(palitra))
@@ -517,6 +659,50 @@ pub async fn update_palitra(
     Ok(Json(result))
 }
 
+#[post("/api/palitra/v2/update/{palitra_id}")]
+pub async fn update_palitra_v2(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<UpdatePalitraV2Req>,
+    path: actix_web::web::Path<i64>,
+) -> Result<Json<PalitraReadV2>, AppError> {
+    let login = user.id().c(h!())?;
+    let req = req.into_inner();
+    let scope = load_user_scope(&env.dbx, &login).await.c(h!())?;
+    ensure_palitra_permissions(&env, &login, &req.access, &scope)
+        .await
+        .c(h!())?;
+    let palitra_id = path.into_inner();
+    let txn = (env.dbx).begin().await.c(h!())?;
+    let palitra = palitra::Entity::find_by_id(palitra_id)
+        .one(&env.dbx)
+        .await
+        .c(h!())?
+        .c(h!())?;
+    let is_admin = crate::users::has_role(&env.dbx, &login, "Admin")
+        .await
+        .is_ok();
+    if !is_admin {
+        match &palitra.author {
+            Some(author) if author == &login => {}
+            _ => {
+                return Err(AppError::Forbidden(
+                    "Only author or Admin may update palitra".into(),
+                ));
+            }
+        }
+    }
+
+    let existing_access =
+        read_palitra_access(&env.dbx, palitra_id).await.c(h!())?;
+    ensure_palitra_permissions(&env, &login, &existing_access, &scope)
+        .await
+        .c(h!())?;
+    let result = bl::update_palitra_v2(palitra.id, req, &txn).await.c(h!())?;
+    txn.commit().await.c(h!())?;
+    Ok(Json(result))
+}
+
 #[post("/api/palitra/delete/{palitra_id}")]
 pub async fn delete_palitra(
     user: actix_identity::Identity,
@@ -556,6 +742,202 @@ pub async fn delete_palitra(
         .c(h!())?; //deletes with all geometries, TODO add method for drop one geometry only
     txn.commit().await.c(h!())?;
     Ok(Json(()))
+}
+
+async fn parse_create_palitra_multipart(
+    payload: &mut Multipart,
+) -> Result<CreatePalitraMultipartPayload, AppError> {
+    let mut name: Option<String> = None;
+    let mut color_hex: Option<String> = None;
+    let mut access_type: Option<String> = None;
+    let mut access_values: Option<String> = None;
+    let mut kmz_file: Option<(String, Vec<u8>)> = None;
+
+    while let Some(item) = payload.next().await {
+        let mut field = item.map_err(|e| AppError::BL {
+            msg: format!("Multipart error: {e:?}"),
+        })?;
+        let field_name = field
+            .content_disposition()
+            .and_then(|cd| cd.get_name())
+            .map(|s| s.to_string())
+            .unwrap_or_default();
+
+        match field_name.as_str() {
+            "name" => {
+                let bytes = read_multipart_field_bytes(&mut field).await?;
+                name = Some(String::from_utf8(bytes).c(h!())?);
+            }
+            "color_hex" => {
+                let bytes = read_multipart_field_bytes(&mut field).await?;
+                color_hex = Some(String::from_utf8(bytes).c(h!())?);
+            }
+            "access_type" => {
+                let bytes = read_multipart_field_bytes(&mut field).await?;
+                access_type = Some(String::from_utf8(bytes).c(h!())?);
+            }
+            "access_values" => {
+                let bytes = read_multipart_field_bytes(&mut field).await?;
+                access_values = Some(String::from_utf8(bytes).c(h!())?);
+            }
+            "kmz" => {
+                let raw_filename = field
+                    .content_disposition()
+                    .and_then(|cd| cd.get_filename())
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| "file.kmz".to_string());
+                let filename = kmz::sanitize_upload_filename(&raw_filename);
+                let kmz_data = read_multipart_field_bytes(&mut field).await?;
+                kmz_file = Some((filename, kmz_data));
+            }
+            _ => {
+                // Consume unknown fields to keep multipart stream in sync.
+                let _ = read_multipart_field_bytes(&mut field).await?;
+            }
+        }
+    }
+
+    let name = name.c(h!())?;
+    let access_type = access_type.c(h!())?;
+    let access_values = access_values.unwrap_or_default();
+    let (filename, kmz_data) = kmz_file.c(h!())?;
+    Ok(CreatePalitraMultipartPayload {
+        name,
+        color_hex,
+        access_type,
+        access_values,
+        filename,
+        kmz_data,
+    })
+}
+
+async fn read_multipart_field_bytes(
+    field: &mut Field,
+) -> Result<Vec<u8>, AppError> {
+    let mut bytes = Vec::new();
+    while let Some(chunk) = field.next().await {
+        let chunk = chunk.map_err(|e| AppError::BL {
+            msg: format!("Field read error: {e:?}"),
+        })?;
+        bytes.extend_from_slice(&chunk);
+    }
+    Ok(bytes)
+}
+
+fn normalize_color_hex_or_fallback(color_hex: Option<String>) -> String {
+    let normalized = color_hex.unwrap_or_default().trim().to_ascii_lowercase();
+    if normalized.is_empty() {
+        crate::config::PALITRA_POINT_FALLBACK_COLOR_HEX.to_string()
+    } else {
+        normalized
+    }
+}
+
+fn group_palitra_points_by_color(
+    points: Vec<PalitraPoint>,
+) -> BTreeMap<String, Vec<PalitraPoint>> {
+    let mut grouped: BTreeMap<String, Vec<PalitraPoint>> = BTreeMap::new();
+    for mut point in points {
+        let color_hex = normalize_color_hex_or_fallback(point.color.take());
+        point.color = Some(color_hex.clone());
+        grouped.entry(color_hex).or_default().push(point);
+    }
+    grouped
+}
+
+fn pick_primary_color_hex(
+    points_by_color: &BTreeMap<String, Vec<PalitraPoint>>,
+) -> String {
+    let mut selected_color_hex: Option<String> = None;
+    let mut selected_count = 0usize;
+    for (color_hex, points) in points_by_color {
+        let points_count = points.len();
+        if points_count > selected_count {
+            selected_count = points_count;
+            selected_color_hex = Some(color_hex.clone());
+        }
+    }
+    selected_color_hex.unwrap_or_else(|| {
+        crate::config::PALITRA_POINT_FALLBACK_COLOR_HEX.to_string()
+    })
+}
+
+async fn upsert_palitra_geometry_by_color(
+    txn: &DatabaseTransaction,
+    palitra_id: i64,
+    color_hex: &str,
+    source_file_name: &str,
+    uploaded_at: NaiveDateTime,
+) -> anyhow::Result<palitra_geometry::Model> {
+    let color_hex =
+        normalize_color_hex_or_fallback(Some(color_hex.to_string()));
+    let palitra_geometry = palitra_geometry::Entity::find()
+        .filter(palitra_geometry::Column::PalitraId.eq(palitra_id))
+        .filter(palitra_geometry::Column::Hex.eq(color_hex.clone()))
+        .filter(palitra_geometry::Column::Deleted.eq(false))
+        .order_by_desc(palitra_geometry::Column::UpdatedAt)
+        .order_by_desc(palitra_geometry::Column::Id)
+        .one(txn)
+        .await
+        .c(h!())?;
+    if let Some(palitra_geometry) = palitra_geometry {
+        let mut palitra_geometry = palitra_geometry.into_active_model();
+        palitra_geometry.source_file_name =
+            Set(Some(source_file_name.to_string()));
+        palitra_geometry.last_uploaded_at = Set(Some(uploaded_at));
+        palitra_geometry.updated_at = Set(Utc::now().naive_utc());
+        return palitra_geometry.update(txn).await.c(h!());
+    }
+    palitra_geometry::ActiveModel {
+        id: NotSet,
+        palitra_id: Set(palitra_id),
+        hex: Set(color_hex),
+        source_file_name: Set(Some(source_file_name.to_string())),
+        deleted: NotSet,
+        created_at: NotSet,
+        last_uploaded_at: Set(Some(uploaded_at)),
+        updated_at: NotSet,
+    }
+    .insert(txn)
+    .await
+    .c(h!())
+}
+
+async fn render_created_palitra_response(
+    dbx: &DatabaseConnection,
+    palitra_id: i64,
+) -> anyhow::Result<Palitra> {
+    let palitra = palitra::Entity::find_by_id(palitra_id)
+        .one(dbx)
+        .await
+        .c(h!())?
+        .c(h!())?;
+    let palitra_geometry =
+        read_latest_palitra_geometry_with_warning(dbx, palitra_id)
+            .await
+            .c(h!())?;
+    Ok(Palitra {
+        id: palitra.id,
+        name: palitra.name,
+        color_hex: palitra_geometry.hex,
+        author: palitra.author,
+        source_file_name: palitra_geometry.source_file_name,
+        last_uploaded_at_ts: palitra_geometry
+            .last_uploaded_at
+            .map(|ts| ts.and_utc().timestamp_millis()),
+        geometry: None,
+        access_aor_id: bl::collect_palitra_access_aors(dbx, palitra_id)
+            .await
+            .c(h!())?,
+        access_organism_ids: bl::collect_palitra_access_organisms(
+            dbx, palitra_id,
+        )
+        .await
+        .c(h!())?,
+        access_logins: bl::collect_palitra_access_logins(dbx, palitra_id)
+            .await
+            .c(h!())?,
+    })
 }
 
 async fn ensure_palitra_permissions(
@@ -650,26 +1032,22 @@ async fn ensure_palitra_permissions(
     Ok(())
 }
 
-async fn read_latest_palitra_geometry_with_warning(
-    dbx: &DatabaseConnection,
+async fn read_latest_palitra_geometry_with_warning<'a, 'async_trait, C>(
+    dbx: &'a C,
     palitra_id: i64,
-) -> anyhow::Result<palitra_geometry::Model> {
-    let palitra_geometries = palitra_geometry::Entity::find()
+) -> anyhow::Result<palitra_geometry::Model>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    palitra_geometry::Entity::find()
         .filter(palitra_geometry::Column::PalitraId.eq(palitra_id))
         .filter(palitra_geometry::Column::Deleted.eq(false))
         .order_by_desc(palitra_geometry::Column::UpdatedAt)
-        .all(dbx)
+        .order_by_desc(palitra_geometry::Column::Id)
+        .one(dbx)
         .await
-        .c(h!())?;
-
-    if palitra_geometries.len() > 1 {
-        warn!(
-            "palitra {palitra_id} has {} active geometries; using the latest one for a single-geometry flow",
-            palitra_geometries.len()
-        );
-    }
-
-    palitra_geometries.into_iter().next().c(h!())
+        .c(h!())?
+        .c(h!())
 }
 
 async fn load_user_scope(
@@ -925,4 +1303,77 @@ fn goi_validate_connection_req(
         bail!("invalid SSH port: {}", req.ssh_port);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn groups_points_by_normalized_color_with_fallback() {
+        let points = vec![
+            PalitraPoint {
+                coords: Coords {
+                    lat: 50.0,
+                    lng: 30.0,
+                },
+                label: Some("A".to_string()),
+                color: Some(" #AABBCC ".to_string()),
+            },
+            PalitraPoint {
+                coords: Coords {
+                    lat: 50.1,
+                    lng: 30.1,
+                },
+                label: Some("B".to_string()),
+                color: Some("#aabbcc".to_string()),
+            },
+            PalitraPoint {
+                coords: Coords {
+                    lat: 50.2,
+                    lng: 30.2,
+                },
+                label: Some("C".to_string()),
+                color: None,
+            },
+        ];
+        let grouped = group_palitra_points_by_color(points);
+        assert_eq!(grouped.get("#aabbcc").map(Vec::len), Some(2));
+        assert_eq!(
+            grouped
+                .get(crate::config::PALITRA_POINT_FALLBACK_COLOR_HEX)
+                .map(Vec::len),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn picks_primary_color_by_largest_group() {
+        let grouped = BTreeMap::from([
+            (
+                "#111111".to_string(),
+                vec![PalitraPoint {
+                    coords: Coords { lat: 1.0, lng: 1.0 },
+                    label: None,
+                    color: Some("#111111".to_string()),
+                }],
+            ),
+            (
+                "#222222".to_string(),
+                vec![
+                    PalitraPoint {
+                        coords: Coords { lat: 2.0, lng: 2.0 },
+                        label: None,
+                        color: Some("#222222".to_string()),
+                    },
+                    PalitraPoint {
+                        coords: Coords { lat: 2.1, lng: 2.1 },
+                        label: None,
+                        color: Some("#222222".to_string()),
+                    },
+                ],
+            ),
+        ]);
+        assert_eq!(pick_primary_color_hex(&grouped), "#222222".to_string());
+    }
 }

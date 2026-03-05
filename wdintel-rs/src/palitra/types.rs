@@ -65,6 +65,38 @@ pub struct PalitraDetails {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub struct PalitraGeometryDetails {
+    pub id: i64,
+    pub color_hex: String,
+    pub source_file_name: Option<String>,
+    pub last_uploaded_at_ts: Option<i64>,
+    pub geometry: Option<Geometry>,
+    pub points: Vec<PalitraPoint>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct PalitraReadV2 {
+    pub palitra: Palitra,
+    pub geometries: Vec<PalitraGeometryDetails>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct UpdatePalitraV2Req {
+    pub geometry_id: i64,
+    pub name: String,
+    pub color_hex: String,
+    pub access: PalitraAccess,
+    pub source_file_name: Option<String>,
+    pub last_uploaded_at_ts: Option<i64>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct PalitraPoint {
     pub coords: Coords,
     pub label: Option<String>,
