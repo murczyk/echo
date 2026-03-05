@@ -10,11 +10,11 @@ impl MigrationTrait for Migration {
         db.execute_unprepared(
             r#"
                 alter table organism
-                    add column goi_ssh_host text,
-                    add column goi_ssh_user text,
-                    add column goi_ssh_password text,
-                    add column goi_ssh_port int4 not null default 22,
-                    add column goi_path text not null default '/etc/goi/data/palettes';
+                    add column if not exists goi_ssh_host text,
+                    add column if not exists goi_ssh_user text,
+                    add column if not exists goi_ssh_password text,
+                    add column if not exists goi_ssh_port int4 not null default 22,
+                    add column if not exists goi_path text not null default '/etc/goi/data/palettes';
             "#,
         )
         .await?;
