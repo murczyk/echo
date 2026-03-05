@@ -3764,6 +3764,7 @@ type alias Tag =
     , extra : Maybe Bool
     , ord : Maybe Float
     , keywords : Maybe (List TagKeyword)
+    , isPalitra : Bool
     }
 
 
@@ -3774,6 +3775,7 @@ tagEncoder struct =
         , ( "extra", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.extra )
         , ( "ord", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.float) struct.ord )
         , ( "keywords", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list tagKeywordEncoder)) struct.keywords )
+        , ( "is_palitra", Json.Encode.bool struct.isPalitra )
         ]
 
 
@@ -3822,6 +3824,7 @@ type alias TagAdmin =
     , ord : Maybe Float
     , enabled : Bool
     , keywords : List TagKeyword
+    , isPalitra : Bool
     }
 
 
@@ -3834,6 +3837,7 @@ tagAdminEncoder struct =
         , ( "ord", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.float) struct.ord )
         , ( "enabled", Json.Encode.bool struct.enabled )
         , ( "keywords", Json.Encode.list tagKeywordEncoder struct.keywords )
+        , ( "is_palitra", Json.Encode.bool struct.isPalitra )
         ]
 
 
@@ -3842,6 +3846,7 @@ type alias TagUpsertReq =
     , extra : Maybe Bool
     , ord : Maybe Float
     , enabled : Bool
+    , isPalitra : Bool
     }
 
 
@@ -3852,6 +3857,7 @@ tagUpsertReqEncoder struct =
         , ( "extra", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.extra )
         , ( "ord", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.float) struct.ord )
         , ( "enabled", Json.Encode.bool struct.enabled )
+        , ( "is_palitra", Json.Encode.bool struct.isPalitra )
         ]
 
 
@@ -8794,6 +8800,7 @@ tagDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "extra" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ord" (Json.Decode.nullable Json.Decode.float)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "keywords" (Json.Decode.nullable (Json.Decode.list tagKeywordDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_palitra" Json.Decode.bool))
 
 
 tagKeywordDecoder : Json.Decode.Decoder TagKeyword
@@ -8824,6 +8831,7 @@ tagAdminDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ord" (Json.Decode.nullable Json.Decode.float)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enabled" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "keywords" (Json.Decode.list tagKeywordDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_palitra" Json.Decode.bool))
 
 
 tagUpsertReqDecoder : Json.Decode.Decoder TagUpsertReq
@@ -8833,6 +8841,7 @@ tagUpsertReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "extra" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ord" (Json.Decode.nullable Json.Decode.float)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enabled" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_palitra" Json.Decode.bool))
 
 
 inboxMessageTagsAddReqDecoder : Json.Decode.Decoder InboxMessageTagsAddReq
