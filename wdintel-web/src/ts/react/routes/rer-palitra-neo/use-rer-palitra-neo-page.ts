@@ -4,6 +4,7 @@ import { AnalyzeKmzResponse, AreaOfResponsibility, MyScope, Organism, Palitra, U
 import { isUnauthorizedError } from '../../services/api/client';
 import {
   analyzePalitraKmz,
+  createPalitraBasicWithKmz,
   createPalitraWithKmz,
   deletePalitra,
   fetchPalitraBootstrapData,
@@ -535,14 +536,14 @@ export function useRerPalitraNeoPage() {
         return;
       }
 
-      const created = await createPalitraWithKmz(
+      await createPalitraBasicWithKmz(
         toCreateReq({
           ...createFormResolved,
           colorHex: selectedColorFromKmz,
         }),
         kmzFile,
       );
-      setPalitras((prev) => [created, ...prev]);
+      await reloadPalitras();
       resetCreateFlow();
     } catch (createError) {
       if (isUnauthorizedError(createError)) {

@@ -238,7 +238,6 @@ struct StyleIndexes {
 }
 
 /// Extracts colors from KML placemarks and counts items per color.
-/// Also suggests suffix by taking the dominant parent folder for each color.
 pub async fn extract_top_colors_from_kmz(
     kmz_path: &Path,
 ) -> anyhow::Result<Vec<KmzColorInfo>> {
@@ -643,12 +642,8 @@ fn extract_top_colors_from_aggregates(
 fn pick_suggested_suffix(
     parent_folder_counts: &HashMap<String, i32>,
 ) -> Option<String> {
-    let mut folder_vec: Vec<(&String, &i32)> =
-        parent_folder_counts.iter().collect();
-    folder_vec.sort_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
-    folder_vec
-        .first()
-        .map(|(folder_name, _)| (*folder_name).clone())
+    let _ = parent_folder_counts;
+    None
 }
 
 #[cfg(test)]

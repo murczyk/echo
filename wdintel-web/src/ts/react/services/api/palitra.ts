@@ -255,6 +255,14 @@ export async function analyzePalitraKmz(file: File): Promise<AnalyzeKmzResponse>
 }
 
 export async function createPalitraWithKmz(req: CreatePalitraReq, file: File): Promise<Palitra> {
+  return createPalitraWithKmzVia('/api/palitra/create-with-kmz', req, file);
+}
+
+export async function createPalitraBasicWithKmz(req: CreatePalitraReq, file: File): Promise<Palitra> {
+  return createPalitraWithKmzVia('/api/palitra/create-palitra-basic', req, file);
+}
+
+async function createPalitraWithKmzVia(url: string, req: CreatePalitraReq, file: File): Promise<Palitra> {
   const formData = new FormData();
   formData.append('name', req.name);
   formData.append('color_hex', req.colorHex);
@@ -272,7 +280,7 @@ export async function createPalitraWithKmz(req: CreatePalitraReq, file: File): P
 
   formData.append('kmz', file);
 
-  return postMultipart('/api/palitra/create-with-kmz', formData, normalizePalitra);
+  return postMultipart(url, formData, normalizePalitra);
 }
 
 export async function fetchMyScope(): Promise<MyScope> {
