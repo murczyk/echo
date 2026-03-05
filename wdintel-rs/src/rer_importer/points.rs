@@ -28,6 +28,10 @@ pub async fn highlight_points(
     if patterns.is_empty() {
         return Ok(vec![]);
     }
+    let body_trim = body.trim_end();
+    if body_trim.is_empty() {
+        return Ok(vec![]);
+    }
     let (body, offset) = cut_body(body);
     let body_chars: Vec<char> = body.chars().collect();
     let tokens = crate::nlp::tokenize_words(rq, body).await.c(h!())?;
