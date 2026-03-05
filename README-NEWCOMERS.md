@@ -127,14 +127,23 @@ server {
     location /api {
         proxy_pass http://localhost:8081;
         proxy_set_header Host $host;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection  "upgrade";
     }
     location /api-public {
         proxy_pass http://localhost:8081/api-public;
         proxy_set_header Host $host;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection  "upgrade";
     }
     location / {
         proxy_pass http://localhost:1234;
         proxy_set_header Host $host;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection  "upgrade";
     }
 }
 ```
