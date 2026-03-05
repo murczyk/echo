@@ -16,7 +16,7 @@ use itertools::Itertools;
 use sea_orm::prelude::*;
 use sea_orm::query::*;
 use sea_orm::sea_query::UnionType;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
 pub async fn highlight_points(
@@ -30,43 +30,48 @@ pub async fn highlight_points(
     }
     let body_chars: Vec<char> = body.chars().collect();
     let tokens = crate::nlp::tokenize_words(rq, body).await.c(h!())?;
-    let tokens_concat = tokens.iter().map(|t| t.text.as_str()).join(" ");
-    let tokens_concat_lowercase = tokens_concat.to_lowercase();
 
-    let mut res = Vec::with_capacity(patterns.len());
-    for pattern in patterns {
-        let mut points = Vec::new();
+    let mut res = Vec::new();
 
-        for m in pattern
-            .matcher
-            .find_overlapping_iter(&tokens_concat_lowercase)
-            .filter(|x| !x.is_empty())
-        {
-            let pattern_id = m.pattern();
-            let palitra_lexeme = &pattern.lexemes[pattern_id.as_usize()];
-            let span = m.span();
-            let char_start =
-                tokens_concat_lowercase.floor_char_boundary(span.start);
-            let char_end = tokens_concat_lowercase.ceil_char_boundary(span.end);
-            if is_word_boundary(&body_chars, char_start, char_end) {
-                let text = &tokens_concat[span.start..span.end];
-                let point = CNPoint {
-                    etalon: palitra_lexeme.label.clone(),
-                    text: text.to_string(),
-                    begin: offset + char_start,
-                    end: offset + char_end,
-                };
-                points.push(point);
-            }
-        }
-        if !points.is_empty() {
-            points.sort();
-            points.dedup();
-            let highlight = PalitraHighlight {
-                palitra_id: pattern.palitra_id,
-                points,
+    for n in 1..=2 {
+        for i in 0..tokens.len().saturating_sub(n - 1) {
+            let slice = &tokens[i..i + n];
+            let Some(first) = slice.first() else {
+                continue;
             };
-            res.push(highlight);
+            let Some(last) = slice.last() else {
+                continue;
+            };
+            if !is_word_boundary(&body_chars, first.start, last.end) {
+                continue;
+            }
+            // Join token texts with spaces
+            let text = slice.iter().map(|t| t.text.as_str()).join(" ");
+            let text_lc = text.to_lowercase();
+
+            for pattern in patterns {
+                if let Some(etalon) = pattern.matcher.get(&text_lc) {
+                    let mut points = Vec::new();
+                    for lexeme in etalon {
+                        let point = CNPoint {
+                            etalon: lexeme.label.clone(),
+                            text: text.clone(),
+                            begin: offset + first.start,
+                            end: offset + last.end,
+                        };
+                        points.push(point);
+                    }
+                    if !points.is_empty() {
+                        points.sort();
+                        points.dedup();
+                        let highlight = PalitraHighlight {
+                            palitra_id: pattern.palitra_id,
+                            points,
+                        };
+                        res.push(highlight);
+                    }
+                }
+            }
         }
     }
 
@@ -113,16 +118,18 @@ where
         .c(h!())?;
 
     let build_pattern_result = tokio::task::spawn_blocking(move || {
-        let builder = aho_corasick::AhoCorasickBuilder::new();
-
-        let patterns = lexemes.iter().map(|x| x.lexeme.as_str());
-
-        let matcher = builder.build(patterns)?;
+        let mut matcher: HashMap<String, Vec<PalitraLexeme>> =
+            Default::default();
+        for palitra_lexeme in lexemes {
+            matcher
+                .entry(palitra_lexeme.lexeme.clone())
+                .or_default()
+                .push(palitra_lexeme);
+        }
 
         Ok(PalitraPattern {
             palitra_id,
-            matcher,
-            lexemes: Arc::new(lexemes),
+            matcher: Arc::new(matcher),
         })
     })
     .await?;

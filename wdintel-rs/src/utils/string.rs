@@ -5,7 +5,7 @@ use regex::Regex;
 use unicode_segmentation::UnicodeSegmentation;
 
 pub fn cline_len(inp: &str) -> usize {
-    inp.chars().collect::<Vec<char>>().len()
+    inp.chars().count()
 }
 
 /// Searches for words, returns char-indices

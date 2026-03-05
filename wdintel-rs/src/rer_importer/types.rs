@@ -4,7 +4,7 @@ use chrono::NaiveDateTime;
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 use sea_orm::FromQueryResult;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
 #[derive(
@@ -1140,8 +1140,7 @@ pub struct PalitraLexeme {
 #[derive(Clone)]
 pub struct PalitraPattern {
     pub palitra_id: i64,
-    pub matcher: aho_corasick::AhoCorasick,
-    pub lexemes: Arc<Vec<PalitraLexeme>>,
+    pub matcher: Arc<HashMap<String, Vec<PalitraLexeme>>>,
 }
 
 pub struct PalitraHighlight {
