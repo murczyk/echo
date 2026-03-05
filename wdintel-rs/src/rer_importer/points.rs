@@ -85,17 +85,17 @@ fn cut_body(body: &str) -> (&str, usize) {
 
     lazy_static! {
         static ref RE_PREFIX: Vec<Regex> = vec![
-            Regex::new(r"^\s*[-\u{2010}-\u{2015}][^-\u{2010}-\u{2015}]")
+            Regex::new(r"(?m)^\s*[-\u{2010}-\u{2015}][^-\u{2010}-\u{2015}]")
                 .unwrap(),
-            Regex::new(r"^[0-9]+\W?\s+").unwrap(),
-            Regex::new(r"^$").unwrap()
+            Regex::new(r"(?m)^[0-9]+\W?\s+").unwrap(),
+            Regex::new(r"(?m-u)^$").unwrap()
         ];
     }
 
     let mut result_body = body;
     let mut offset_chars = 0;
 
-    if let Some(m) = RE_PREFIX.iter().find_map(|r| r.find(body)) {
+    for m in RE_PREFIX.iter().flat_map(|r| r.find(body)) {
         let start = m.start();
         let new_body = &body[start..];
         if !new_body.is_empty() && new_body.len() < result_body.len() {
@@ -471,7 +471,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::is_word_boundary;
+    use super::{cut_body, is_word_boundary};
 
     #[test]
     fn test_is_word_boundary_allows_whole_word() {
@@ -489,5 +489,52 @@ mod tests {
         let start = 1;
         let end = 6;
         assert!(!is_word_boundary(&body_chars, start, end));
+    }
+
+    #[test]
+    fn test_cut_body_first_dash() {
+        let body = r#"06.10.25 08:32:18
+148,30000
+УКХ р/м підр. обласних управлінь МНС РБ
+МЧС РБ
+МОЗЫРЬ
+ДРУЖБА
+35U PT 33878 06028
+
+-Дружба Мозырь связь
+"#;
+        let (cut, offset) = cut_body(body);
+        assert_eq!(cut, "\n-Дружба Мозырь связь\n");
+        assert_eq!(offset, 108);
+    }
+
+    #[test]
+    fn test_cut_body_empty_line() {
+        let body = r#"06.10.25 13:55:32
+148,35000
+УКХ р/м не визначеного підрозділу
+БОБРУЙСК
+61-Й
+
+61-й, передайте информацию 065-му, пусть возьмет данные хозяева этого участка
+"#;
+        let (cut, offset) = cut_body(body);
+        assert_eq!(cut, "\n61-й, передайте информацию 065-му, пусть возьмет данные хозяева этого участка\n");
+        assert_eq!(offset, 76);
+    }
+
+    #[test]
+    fn test_cut_body_numbered() {
+        let body = r#"Отримано з поста "Пост 3" Цифра
+--------------------------------------
+11.04.2025 14:08:30
+147.5250
+УКХ радіомережі імовірно управління Пінського прикордонного загону (ВЧ1235)
+52-й
+1. Принял. 52 принял.
+"#;
+        let (cut, offset) = cut_body(body);
+        assert_eq!(cut, "1. Принял. 52 принял.\n");
+        assert_eq!(offset, 181);
     }
 }
