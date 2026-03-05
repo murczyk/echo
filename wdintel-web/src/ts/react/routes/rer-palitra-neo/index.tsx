@@ -23,7 +23,7 @@ export function RerPalitraNeoPage() {
 
   return (
     <Box className="w-full" sx={{ height: '100%', minHeight: 0, overflow: 'hidden' }}>
-      <Stack spacing={3} useFlexGap sx={{ height: '100%', minHeight: 0, overflow: 'hidden' }}>
+      <Stack spacing={2.5} useFlexGap sx={{ height: '100%', minHeight: 0, overflow: 'hidden' }}>
         <PageHeader
           className="px-4"
           title="палітри"
