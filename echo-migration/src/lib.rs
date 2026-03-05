@@ -428,7 +428,6 @@ impl MigratorTrait for Migrator {
             Box::new(m20260301_123031_inbox_item_points_per_palitra::Migration),
             Box::new(m20260303_200001_add_organism_goi_connection_fields::Migration),
             Box::new(m20260304_124501_palitra_highlight_worker_job::Migration),
-            Box::new(m20260303_200001_add_organism_goi_connection_fields::Migration),
             Box::new(m20260303_171130_add_palitra_polygon::Migration),
         ]
     }
