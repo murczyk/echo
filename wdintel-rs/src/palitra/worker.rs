@@ -5,7 +5,6 @@ use crate::event_stream::fanout_mult;
 use crate::event_stream::types::{EventMsg, EventType};
 use crate::inbox::resolve_message_aor_ids_by_group;
 use crate::palitra::types::PalitraAccess;
-use crate::rer_importer::body_noheader::NoHeadersBody;
 use crate::rer_importer::points::{
     build_palitra_access_filter, build_palitra_pattern, highlight_points,
 };
@@ -137,31 +136,69 @@ pub async fn do_palitra_highlight<'a, C>(
 where
     C: ConnectionTrait + 'a,
 {
-    let message_and_networks = sigint_inbox_item::Entity::find()
+    let messages = signal_message::Entity::find()
+        .filter(signal_message::Column::Id.eq_any(message_ids.clone()))
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::SigintInboxItem.def(),
+        )
         .join(
             JoinType::LeftJoin,
             sigint_inbox_item::Relation::SigintInboxItemPointToken.def(),
         )
-        .filter(sigint_inbox_item::Column::Id.eq_any(message_ids))
-        .filter(sigint_inbox_item::Column::BodyNoheader.is_not_null())
+        .filter(signal_message::Column::Body.is_not_null())
+        .filter(signal_message::Column::Body.ne(""))
         .filter(sigint_inbox_item_point_token::Column::Id.is_null())
-        .find_with_related(sigint_inbox_item_network::Entity)
+        .select_only()
+        .column(signal_message::Column::Id)
+        .column(signal_message::Column::Body)
+        .into_tuple::<(i64, Option<String>)>()
         .all(txn)
         .await
         .c(h!())?;
 
+    let message_networks = sigint_inbox_item_network::Entity::find()
+        .filter(
+            sigint_inbox_item_network::Column::SigintInboxItemId
+                .eq_any(message_ids),
+        )
+        .join(
+            JoinType::InnerJoin,
+            sigint_inbox_item_network::Relation::SigintNetwork.def(),
+        )
+        .filter(sigint_network::Column::Deleted.eq(false))
+        .select_only()
+        .column(sigint_inbox_item_network::Column::SigintInboxItemId)
+        .column(sigint_inbox_item_network::Column::SigintNetworkId)
+        .into_tuple::<(i64, i64)>()
+        .all(txn)
+        .await
+        .c(h!())?;
+
+    let mut message_networks_map: HashMap<i64, Vec<i64>> = HashMap::new();
+    for (message_id, network_id) in message_networks {
+        message_networks_map
+            .entry(message_id)
+            .or_default()
+            .push(network_id);
+    }
+
     let mut changed_message_ids = Vec::new();
     let mut total = 0;
-    for (message, networks) in message_and_networks {
+    for (message_id, message_body) in messages {
+        let Some(body) = message_body else {
+            continue;
+        };
+
         let network_ids: Vec<i64> =
-            networks.iter().map(|x| x.sigint_network_id).collect();
+            message_networks_map.remove(&message_id).unwrap_or_default();
 
         let mut palitra_aor_ids =
             resolve_aor_ids_by_networks(txn, network_ids).await?;
 
         if palitra_aor_ids.is_empty() {
             palitra_aor_ids =
-                resolve_message_aor_ids_by_group(txn, message.id).await?;
+                resolve_message_aor_ids_by_group(txn, message_id).await?;
         }
 
         let exact = false;
@@ -184,17 +221,8 @@ where
             patterns.push(pattern);
         }
 
-        let body_noheader: NoHeadersBody = serde_json::from_value(
-            message.body_noheader.expect("body_noheader is null"),
-        )?;
-
-        let message_palitra_highlights = highlight_points(
-            rq,
-            &body_noheader.body,
-            &patterns,
-            body_noheader.start,
-        )
-        .await?;
+        let message_palitra_highlights =
+            highlight_points(rq, &body, &patterns).await?;
         let inbox_item_point_tokens: Vec<_> = message_palitra_highlights
             .iter()
             .map(|highlight| {
@@ -202,7 +230,7 @@ where
                 sigint_inbox_item_point_token::ActiveModel {
                     palitra_id: Set(highlight.palitra_id),
                     point_tokens: Set(point_tokens),
-                    sigint_inbox_item_id: Set(message.id),
+                    sigint_inbox_item_id: Set(message_id),
                     ..Default::default()
                 }
             })
@@ -224,7 +252,7 @@ where
             .c(h!())?;
             total += count;
             if count > 0 {
-                changed_message_ids.push(message.id);
+                changed_message_ids.push(message_id);
             }
         }
     }

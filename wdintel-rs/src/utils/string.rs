@@ -28,7 +28,7 @@ pub fn byte_to_char_index(inp: &str, b_index: usize) -> usize {
         if pos >= b_index {
             return chars;
         }
-        pos += c.to_string().len();
+        pos += c.len_utf8();
         chars += 1;
     }
     chars

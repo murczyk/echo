@@ -12,6 +12,7 @@ use crate::rer_importer::types::{
 };
 use crate::types::ShortContext;
 use crate::utils::orm::ArrayColumnOps;
+use crate::utils::string::byte_to_char_index;
 use itertools::Itertools;
 use sea_orm::prelude::*;
 use sea_orm::query::*;
@@ -23,11 +24,11 @@ pub async fn highlight_points(
     rq: &reqwest::Client,
     body: &str,
     patterns: &[PalitraPattern],
-    offset: usize,
 ) -> Result<Vec<PalitraHighlight>, AppError> {
     if patterns.is_empty() {
         return Ok(vec![]);
     }
+    let (body, offset) = cut_body(body);
     let body_chars: Vec<char> = body.chars().collect();
     let tokens = crate::nlp::tokenize_words(rq, body).await.c(h!())?;
 
@@ -76,6 +77,34 @@ pub async fn highlight_points(
     }
 
     Ok(res)
+}
+
+fn cut_body(body: &str) -> (&str, usize) {
+    use lazy_static::lazy_static;
+    use regex::Regex;
+
+    lazy_static! {
+        static ref RE_PREFIX: Vec<Regex> = vec![
+            Regex::new(r"^\s*[-\u{2010}-\u{2015}][^-\u{2010}-\u{2015}]")
+                .unwrap(),
+            Regex::new(r"^[0-9]+\W?\s+").unwrap(),
+            Regex::new(r"^$").unwrap()
+        ];
+    }
+
+    let mut result_body = body;
+    let mut offset_chars = 0;
+
+    if let Some(m) = RE_PREFIX.iter().find_map(|r| r.find(body)) {
+        let start = m.start();
+        let new_body = &body[start..];
+        if !new_body.is_empty() && new_body.len() < result_body.len() {
+            result_body = new_body;
+            offset_chars = byte_to_char_index(body, start);
+        }
+    }
+
+    (result_body, offset_chars)
 }
 
 fn is_word_boundary(body_chars: &[char], start: usize, end: usize) -> bool {
