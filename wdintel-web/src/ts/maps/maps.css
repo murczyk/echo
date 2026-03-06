@@ -434,7 +434,6 @@ div [id='map-container-analysis'] {
 .palitras-control-list {
 	overflow-y: auto;
 	max-height: 430px;
-	padding-bottom: 20px;
 	transition: opacity 0.15s ease;
 }
 
@@ -539,6 +538,7 @@ div [id='map-container-analysis'] {
 
 .palitra-more-button {
 	margin-top: 12px;
+	margin-bottom: 12px;
 	padding: 0;
 	border: none;
 	background: transparent;

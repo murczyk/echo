@@ -73,6 +73,119 @@ function perimeterPointsCount(palitraDetails: PalitraDetails): number {
   return palitraDetails.palitra.geometry?.perimeter_linear_ring.length ?? 0;
 }
 
+type PalitraGroupRowProps = {
+  group: PalitraGroup;
+  visibleIdsSet: Set<number>;
+  onToggleGroup: (group: PalitraGroup) => void;
+  onToggleColor: (palitraId: number) => void;
+};
+
+function isGroupSelectionEqual(group: PalitraGroup, prevSet: Set<number>, nextSet: Set<number>): boolean {
+  for (let index = 0; index < group.colors.length; index += 1) {
+    const colorId = group.colors[index].palitra.id;
+    if (prevSet.has(colorId) !== nextSet.has(colorId)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+const PalitraGroupRow = React.memo(function PalitraGroupRow(props: PalitraGroupRowProps) {
+  const { group, visibleIdsSet, onToggleGroup, onToggleColor } = props;
+  const [expanded, setExpanded] = React.useState(false);
+
+  const groupIds = React.useMemo(
+    () => group.colors.map((palitraDetails) => palitraDetails.palitra.id),
+    [group.colors],
+  );
+  const selectedColorsCount = groupIds.filter((id) => visibleIdsSet.has(id)).length;
+  const groupSelected = selectedColorsCount > 0;
+  const hasExtraColors = group.colors.length > MAX_VISIBLE_COLORS;
+  const colorsToShow = expanded ? group.colors : group.colors.slice(0, MAX_VISIBLE_COLORS);
+
+  return (
+    <Box className="palitra-item">
+      <Box className="palitra-main-row" onClick={() => onToggleGroup(group)}>
+        <Checkbox
+          className="palitra-checkbox"
+          checked={groupSelected}
+          onClick={(event) => {
+            event.stopPropagation();
+          }}
+          onChange={() => onToggleGroup(group)}
+          size="small"
+        />
+        <Box className="palitra-title-button" title={group.sourceFileName ? `${group.name} (${group.sourceFileName})` : group.name}>
+          <Typography className="palitra-name">{group.name}</Typography>
+          {group.sourceFileName ? <Typography className="palitra-file-name">{group.sourceFileName}</Typography> : null}
+        </Box>
+      </Box>
+
+      <Box className="palitra-content">
+        <Box className="palitra-colors-row">
+          {colorsToShow.map((palitraDetails, index) => {
+            const palitra = palitraDetails.palitra;
+            const palitraId = palitra.id;
+            const selected = visibleIdsSet.has(palitraId);
+            const colorKey = `${group.key}-${palitraId}-${palitra.color_hex}-${index}`;
+
+            return (
+              <PowerChip
+                key={colorKey}
+                label={String(perimeterPointsCount(palitraDetails))}
+                selected={selected}
+                onClick={() => {
+                  onToggleColor(palitraId);
+                }}
+                backgroundColor={palitra.color_hex}
+                autoTextContrast
+                interactive
+                size="medium"
+                minWidth={40}
+                labelPaddingX={0.8}
+                fontWeight={700}
+                selectedBorderColor="rgba(255,255,255,0.9)"
+                unselectedBorderColor="rgba(255,255,255,0.45)"
+                unselectedOpacity={0.7}
+                title={palitra.color_hex}
+                sx={{
+                  transition: 'box-shadow 0.15s ease, transform 0.15s ease, opacity 0.15s ease',
+                  boxShadow: selected
+                    ? '0 0 0 2px rgba(255,255,255,0.95), 0 0 0 4px rgba(13,110,253,0.55)'
+                    : 'none',
+                  transform: selected ? 'translateY(-1px)' : 'none',
+                }}
+              />
+            );
+          })}
+        </Box>
+
+        {hasExtraColors ? (
+          <button
+            type="button"
+            className="palitra-more-button"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              setExpanded((prev) => !prev);
+            }}
+          >
+            {expanded ? 'Показати основні' : `Показати всі (${group.colors.length})`}
+          </button>
+        ) : null}
+      </Box>
+    </Box>
+  );
+}, (prevProps, nextProps) => {
+  if (prevProps.group !== nextProps.group) {
+    return false;
+  }
+  if (prevProps.onToggleGroup !== nextProps.onToggleGroup || prevProps.onToggleColor !== nextProps.onToggleColor) {
+    return false;
+  }
+  return isGroupSelectionEqual(prevProps.group, prevProps.visibleIdsSet, nextProps.visibleIdsSet);
+});
+
 function PalitrasOverlay(props: PalitrasOverlayProps) {
   const { palitras, visibleIds, loadState, onVisibleIdsChange } = props;
   const [isCollapsed, setCollapsed] = React.useState<boolean>(() => {
@@ -83,11 +196,12 @@ function PalitrasOverlay(props: PalitrasOverlayProps) {
     }
   });
   const [filterValue, setFilterValue] = React.useState('');
-  const [expandedGroupKeys, setExpandedGroupKeys] = React.useState<Set<string>>(new Set());
   const [localVisibleIds, setLocalVisibleIds] = React.useState<number[]>(visibleIds);
+  const localVisibleIdsRef = React.useRef<number[]>(visibleIds);
 
   React.useEffect(() => {
     setLocalVisibleIds(visibleIds);
+    localVisibleIdsRef.current = visibleIds;
   }, [visibleIds]);
 
   const visibleIdsSet = React.useMemo(() => new Set(localVisibleIds), [localVisibleIds]);
@@ -95,6 +209,7 @@ function PalitrasOverlay(props: PalitrasOverlayProps) {
   const applyVisibleIdsChange = React.useCallback(
     (nextVisibleIds: number[]) => {
       const normalized = Array.from(new Set(nextVisibleIds));
+      localVisibleIdsRef.current = normalized;
       setLocalVisibleIds(normalized);
       onVisibleIdsChange(normalized);
     },
@@ -143,40 +258,33 @@ function PalitrasOverlay(props: PalitrasOverlayProps) {
   const toggleGroup = React.useCallback(
     (group: PalitraGroup) => {
       const groupIds = group.colors.map((palitraDetails) => palitraDetails.palitra.id);
-      const hasSelected = groupIds.some((id) => visibleIdsSet.has(id));
+      const groupIdsSet = new Set(groupIds);
+      const currentVisibleIds = localVisibleIdsRef.current;
+      const currentVisibleSet = new Set(currentVisibleIds);
+      const hasSelected = groupIds.some((id) => currentVisibleSet.has(id));
       if (hasSelected) {
-        const next = localVisibleIds.filter((id) => !groupIds.includes(id));
+        const next = currentVisibleIds.filter((id) => !groupIdsSet.has(id));
         applyVisibleIdsChange(next);
         return;
       }
-      const next = Array.from(new Set([...localVisibleIds, ...groupIds]));
+      const next = Array.from(new Set([...currentVisibleIds, ...groupIds]));
       applyVisibleIdsChange(next);
     },
-    [applyVisibleIdsChange, localVisibleIds, visibleIdsSet],
+    [applyVisibleIdsChange],
   );
 
   const toggleColor = React.useCallback(
     (palitraId: number) => {
-      if (visibleIdsSet.has(palitraId)) {
-        applyVisibleIdsChange(localVisibleIds.filter((id) => id !== palitraId));
+      const currentVisibleIds = localVisibleIdsRef.current;
+      const currentVisibleSet = new Set(currentVisibleIds);
+      if (currentVisibleSet.has(palitraId)) {
+        applyVisibleIdsChange(currentVisibleIds.filter((id) => id !== palitraId));
         return;
       }
-      applyVisibleIdsChange(Array.from(new Set([...localVisibleIds, palitraId])));
+      applyVisibleIdsChange(Array.from(new Set([...currentVisibleIds, palitraId])));
     },
-    [applyVisibleIdsChange, localVisibleIds, visibleIdsSet],
+    [applyVisibleIdsChange],
   );
-
-  const toggleGroupExpansion = React.useCallback((groupKey: string) => {
-    setExpandedGroupKeys((prev) => {
-      const next = new Set(prev);
-      if (next.has(groupKey)) {
-        next.delete(groupKey);
-      } else {
-        next.add(groupKey);
-      }
-      return next;
-    });
-  }, []);
 
   const canInteract = loadState === 'success' && palitras.length > 0;
 
@@ -261,86 +369,15 @@ function PalitrasOverlay(props: PalitrasOverlayProps) {
         {filteredGroups.length === 0 ? (
           <Typography className="palitras-control-empty">Палітри не знайдено</Typography>
         ) : (
-          filteredGroups.map((group) => {
-            const groupIds = group.colors.map((palitraDetails) => palitraDetails.palitra.id);
-            const selectedColorsCount = groupIds.filter((id) => visibleIdsSet.has(id)).length;
-            const groupSelected = selectedColorsCount > 0;
-            const expanded = expandedGroupKeys.has(group.key);
-            const hasExtraColors = group.colors.length > MAX_VISIBLE_COLORS;
-            const colorsToShow = expanded ? group.colors : group.colors.slice(0, MAX_VISIBLE_COLORS);
-
-            return (
-              <Box key={group.key} className="palitra-item">
-                <Box className="palitra-main-row" onClick={() => toggleGroup(group)}>
-                  <Checkbox
-                    className="palitra-checkbox"
-                    checked={groupSelected}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                    }}
-                    onChange={() => toggleGroup(group)}
-                    size="small"
-                  />
-                  <Box className="palitra-title-button" title={group.sourceFileName ? `${group.name} (${group.sourceFileName})` : group.name}>
-                    <Typography className="palitra-name">{group.name}</Typography>
-                    {group.sourceFileName ? <Typography className="palitra-file-name">{group.sourceFileName}</Typography> : null}
-                  </Box>
-                </Box>
-
-                <Box className="palitra-content">
-                  <Box className="palitra-colors-row">
-                    {colorsToShow.map((palitraDetails, index) => {
-                      const palitra = palitraDetails.palitra;
-                      const palitraId = palitra.id;
-                      const selected = visibleIdsSet.has(palitraId);
-                      const colorKey = `${group.key}-${palitraId}-${palitra.color_hex}-${index}`;
-
-                      return (
-                        <PowerChip
-                          key={colorKey}
-                          label={String(perimeterPointsCount(palitraDetails))}
-                          selected={selected}
-                          onClick={() => {
-                            toggleColor(palitraId);
-                          }}
-                          backgroundColor={palitra.color_hex}
-                          autoTextContrast
-                          interactive
-                          size="medium"
-                          minWidth={40}
-                          labelPaddingX={0.8}
-                          fontWeight={700}
-                          selectedBorderColor="rgba(255,255,255,0.9)"
-                          unselectedBorderColor="rgba(255,255,255,0.45)"
-                          unselectedOpacity={0.7}
-                          title={palitra.color_hex}
-                          sx={{
-                            transition: 'box-shadow 0.15s ease, transform 0.15s ease, opacity 0.15s ease',
-                            boxShadow: selected
-                              ? '0 0 0 2px rgba(255,255,255,0.95), 0 0 0 4px rgba(13,110,253,0.55)'
-                              : 'none',
-                            transform: selected ? 'translateY(-1px)' : 'none',
-                          }}
-                        />
-                      );
-                    })}
-                  </Box>
-
-                  {hasExtraColors ? (
-                    <button
-                      type="button"
-                      className="palitra-more-button"
-                      onClick={() => {
-                        toggleGroupExpansion(group.key);
-                      }}
-                    >
-                      {expanded ? 'Показати основні' : `Показати всі (${group.colors.length})`}
-                    </button>
-                  ) : null}
-                </Box>
-              </Box>
-            );
-          })
+          filteredGroups.map((group) => (
+            <PalitraGroupRow
+              key={group.key}
+              group={group}
+              visibleIdsSet={visibleIdsSet}
+              onToggleGroup={toggleGroup}
+              onToggleColor={toggleColor}
+            />
+          ))
         )}
       </Box>
     </Box>

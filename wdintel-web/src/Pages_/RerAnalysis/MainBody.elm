@@ -935,7 +935,7 @@ view user model shared route =
                                             , accessLogins = palitraReadV2.palitra.accessLogins
                                             }
                                             palitraReadV2.palitra.id
-                                            geometry.points
+                                            []
                                     )
                                     palitraReadV2.geometries
                         
