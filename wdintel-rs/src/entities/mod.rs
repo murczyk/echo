@@ -7,6 +7,7 @@ pub mod aor_location_config;
 pub mod area_of_responsibility;
 pub mod bgtask;
 pub mod bgtask_res;
+pub mod callsign_additional_source;
 pub mod callsign_lexeme;
 pub mod comp_freq;
 pub mod comp_freq_callsign;

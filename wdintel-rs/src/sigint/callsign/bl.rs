@@ -3,6 +3,7 @@ use crate::entities::*;
 use crate::sigint::etalonka::types::{KnownCallsignRes, KnownCallsignShortRes};
 use crate::types::*;
 use sea_orm::*;
+use std::collections::{HashMap, HashSet};
 
 pub async fn bl_callsign_create(
     req: &CreateCallsignReq,
@@ -24,6 +25,14 @@ pub async fn bl_callsign_create(
         original_id: NotSet,
     }
     .insert(txn)
+    .await
+    .context(h!())?;
+
+    sync_callsign_additional_source_ids(
+        txn,
+        callsign.id,
+        &req.callsign_additional_sources,
+    )
     .await
     .context(h!())?;
 
@@ -74,6 +83,15 @@ pub async fn bl_callsign_update(
     callsign.developing = Set(req.developing);
     callsign.radio_freq = Set(req.radio_freq.clone().unwrap_or("".to_string()));
     let callsign = callsign.update(txn).await.context(h!())?;
+
+    sync_callsign_additional_source_ids(
+        txn,
+        callsign.id,
+        &req.callsign_additional_sources,
+    )
+    .await
+    .context(h!())?;
+
     let callsign_json_new = sigint_callsign::Entity::find_by_id(callsign.id)
         .into_json()
         .one(txn)
@@ -97,6 +115,144 @@ pub async fn bl_callsign_update(
     .context(h!())?;
 
     Ok(callsign)
+}
+
+fn normalize_callsign_additional_source_ids(source_ids: &[i64]) -> Vec<i64> {
+    let mut source_ids_set = HashSet::new();
+    for source_id in source_ids.iter().copied().filter(|id| *id > 0) {
+        source_ids_set.insert(source_id);
+    }
+
+    let mut source_ids = source_ids_set.into_iter().collect::<Vec<_>>();
+    source_ids.sort_unstable();
+    source_ids
+}
+
+pub async fn list_callsign_additional_source_ids<'a, 'async_trait, C>(
+    txn: &'a C,
+    callsign_id: i64,
+) -> Result<Vec<i64>, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let source_ids = callsign_additional_source::Entity::find()
+        .filter(
+            callsign_additional_source::Column::SigintCallsignId
+                .eq(callsign_id),
+        )
+        .order_by_asc(callsign_additional_source::Column::Id)
+        .all(txn)
+        .await
+        .context(h!())?
+        .into_iter()
+        .map(|source| source.source_id)
+        .collect::<Vec<_>>();
+
+    Ok(source_ids)
+}
+
+pub async fn list_callsign_additional_source_ids_batch<'a, 'async_trait, C>(
+    txn: &'a C,
+    callsign_ids: &[i64],
+) -> Result<HashMap<i64, Vec<i64>>, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    if callsign_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let rows = callsign_additional_source::Entity::find()
+        .filter(
+            callsign_additional_source::Column::SigintCallsignId
+                .is_in(callsign_ids.to_vec()),
+        )
+        .order_by_asc(callsign_additional_source::Column::SigintCallsignId)
+        .order_by_asc(callsign_additional_source::Column::Id)
+        .all(txn)
+        .await
+        .context(h!())?;
+
+    let mut source_ids_by_callsign = HashMap::<i64, Vec<i64>>::new();
+    for row in rows {
+        source_ids_by_callsign
+            .entry(row.sigint_callsign_id)
+            .or_default()
+            .push(row.source_id);
+    }
+
+    Ok(source_ids_by_callsign)
+}
+
+pub async fn sync_callsign_additional_source_ids(
+    txn: &DatabaseTransaction,
+    callsign_id: i64,
+    source_ids_req: &[i64],
+) -> Result<(), AppError> {
+    let source_ids_req =
+        normalize_callsign_additional_source_ids(source_ids_req);
+    let source_ids_existing = callsign_additional_source::Entity::find()
+        .filter(
+            callsign_additional_source::Column::SigintCallsignId
+                .eq(callsign_id),
+        )
+        .all(txn)
+        .await
+        .context(h!())?
+        .into_iter()
+        .map(|source| source.source_id)
+        .collect::<Vec<_>>();
+
+    let source_ids_req_set =
+        source_ids_req.into_iter().collect::<HashSet<i64>>();
+    let source_ids_existing_set =
+        source_ids_existing.into_iter().collect::<HashSet<i64>>();
+
+    let mut source_ids_to_insert = source_ids_req_set
+        .difference(&source_ids_existing_set)
+        .copied()
+        .collect::<Vec<_>>();
+    source_ids_to_insert.sort_unstable();
+
+    let mut source_ids_to_delete = source_ids_existing_set
+        .difference(&source_ids_req_set)
+        .copied()
+        .collect::<Vec<_>>();
+    source_ids_to_delete.sort_unstable();
+
+    if !source_ids_to_delete.is_empty() {
+        callsign_additional_source::Entity::delete_many()
+            .filter(
+                callsign_additional_source::Column::SigintCallsignId
+                    .eq(callsign_id),
+            )
+            .filter(
+                callsign_additional_source::Column::SourceId
+                    .is_in(source_ids_to_delete),
+            )
+            .exec(txn)
+            .await
+            .context(h!())?;
+    }
+
+    if !source_ids_to_insert.is_empty() {
+        let models = source_ids_to_insert
+            .into_iter()
+            .map(|source_id| callsign_additional_source::ActiveModel {
+                id: NotSet,
+                sigint_callsign_id: Set(callsign_id),
+                source_id: Set(source_id),
+                created_at: NotSet,
+            })
+            .collect::<Vec<_>>();
+
+        callsign_additional_source::Entity::insert_many(models)
+            .exec(txn)
+            .await
+            .context(h!())?;
+    }
+
+    Ok(())
 }
 
 pub fn match_known_callsigns(

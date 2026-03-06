@@ -207,6 +207,8 @@ mod m20260218_120000_add_aor_location_config;
 mod m20260219_090000_add_aor_location_configs_json;
 mod m20260303_171130_add_palitra_polygon;
 mod m20260303_200001_add_organism_goi_connection_fields;
+mod m20260305_115200_add_callsign_additional_source;
+mod m20260306_101500_palitra_v2_indexes;
 
 pub struct Migrator;
 
@@ -419,8 +421,10 @@ impl MigratorTrait for Migrator {
             Box::new(m20260216_120000_add_network_group_stats::Migration),
             Box::new(m20260218_120000_add_aor_location_config::Migration),
             Box::new(m20260219_090000_add_aor_location_configs_json::Migration),
-            Box::new(m20260303_200001_add_organism_goi_connection_fields::Migration),
             Box::new(m20260303_171130_add_palitra_polygon::Migration),
+            Box::new(m20260303_200001_add_organism_goi_connection_fields::Migration),
+            Box::new(m20260305_115200_add_callsign_additional_source::Migration),
+            Box::new(m20260306_101500_palitra_v2_indexes::Migration),
         ]
     }
 }
