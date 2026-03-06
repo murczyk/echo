@@ -4332,6 +4332,7 @@ type alias Callsign =
     , unitId : Int
     , active : Bool
     , sourceId : Maybe Int
+    , callsignAdditionalSources : List Int
     , createdAt : Int
     , developing : Bool
     , radioFreq : Maybe String
@@ -4348,6 +4349,7 @@ callsignEncoder struct =
         , ( "unit_id", Json.Encode.int struct.unitId )
         , ( "active", Json.Encode.bool struct.active )
         , ( "source_id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.sourceId )
+        , ( "callsign_additional_sources", Json.Encode.list Json.Encode.int struct.callsignAdditionalSources )
         , ( "created_at", Json.Encode.int struct.createdAt )
         , ( "developing", Json.Encode.bool struct.developing )
         , ( "radio_freq", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.radioFreq )
@@ -4563,6 +4565,7 @@ type alias CreateCallsignReq =
     , comment : String
     , unitId : Int
     , sourceId : Maybe Int
+    , callsignAdditionalSources : List Int
     , developing : Bool
     , radioFreq : Maybe String
     }
@@ -4576,6 +4579,7 @@ createCallsignReqEncoder struct =
         , ( "comment", Json.Encode.string struct.comment )
         , ( "unit_id", Json.Encode.int struct.unitId )
         , ( "source_id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.sourceId )
+        , ( "callsign_additional_sources", Json.Encode.list Json.Encode.int struct.callsignAdditionalSources )
         , ( "developing", Json.Encode.bool struct.developing )
         , ( "radio_freq", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.radioFreq )
         ]
@@ -9145,6 +9149,7 @@ callsignDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_id" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source_id" (Json.Decode.nullable Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsign_additional_sources" (Json.Decode.list Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "developing" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "radio_freq" (Json.Decode.nullable Json.Decode.string)))
@@ -9371,6 +9376,7 @@ createCallsignReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "comment" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_id" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source_id" (Json.Decode.nullable Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsign_additional_sources" (Json.Decode.list Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "developing" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "radio_freq" (Json.Decode.nullable Json.Decode.string)))
 

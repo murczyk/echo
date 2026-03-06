@@ -18,6 +18,7 @@ import { fetchCurrentUser } from './user';
 type CallsignLike = Partial<Callsign> & {
   unit_id?: number | string;
   source_id?: number | string | null;
+  callsign_additional_sources?: Array<number | string> | null;
   created_at?: number | string;
   radio_freq?: string | null;
 };
@@ -64,6 +65,7 @@ type CreateCallsignReqBody = {
   comment: CreateCallsignReq['comment'];
   unit_id: CreateCallsignReq['unitId'];
   source_id: CreateCallsignReq['sourceId'];
+  callsign_additional_sources: CreateCallsignReq['callsignAdditionalSources'];
   developing: CreateCallsignReq['developing'];
   radio_freq: CreateCallsignReq['radioFreq'];
 };
@@ -76,6 +78,7 @@ type UpdateCallsignReqBody = {
   unit_id: Callsign['unitId'];
   active: Callsign['active'];
   source_id: Callsign['sourceId'];
+  callsign_additional_sources: Callsign['callsignAdditionalSources'];
   created_at: Callsign['createdAt'];
   developing: Callsign['developing'];
   radio_freq: Callsign['radioFreq'];
@@ -105,6 +108,10 @@ function toNullableNumber(value: number | string | null | undefined): number | n
 }
 
 function normalizeCallsign(raw: CallsignLike | null | undefined): Callsign {
+  const callsignAdditionalSources = (raw?.callsignAdditionalSources ?? raw?.callsign_additional_sources ?? [])
+    .map((value) => toNumber(value, Number.NaN))
+    .filter(Number.isFinite);
+
   return {
     id: toNumber(raw?.id),
     callsign: raw?.callsign ?? '',
@@ -113,6 +120,7 @@ function normalizeCallsign(raw: CallsignLike | null | undefined): Callsign {
     unitId: toNumber(raw?.unitId ?? raw?.unit_id),
     active: raw?.active ?? true,
     sourceId: toNullableNumber(raw?.sourceId ?? raw?.source_id),
+    callsignAdditionalSources,
     createdAt: toNumber(raw?.createdAt ?? raw?.created_at),
     developing: raw?.developing ?? false,
     radioFreq: raw?.radioFreq ?? raw?.radio_freq ?? null,
@@ -199,6 +207,7 @@ function toCreateCallsignReqBody(req: CreateCallsignReq): CreateCallsignReqBody 
     comment: req.comment,
     unit_id: req.unitId,
     source_id: req.sourceId,
+    callsign_additional_sources: req.callsignAdditionalSources,
     developing: req.developing,
     radio_freq: req.radioFreq,
   };
@@ -213,6 +222,7 @@ function toUpdateCallsignReqBody(req: Callsign): UpdateCallsignReqBody {
     unit_id: req.unitId,
     active: req.active,
     source_id: req.sourceId,
+    callsign_additional_sources: req.callsignAdditionalSources,
     created_at: req.createdAt,
     developing: req.developing,
     radio_freq: req.radioFreq,
