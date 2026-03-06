@@ -1411,6 +1411,7 @@ export type Tag = {
   extra: boolean | null;
   ord: number | null;
   keywords: Array<TagKeyword> | null;
+  isPalitra: boolean;
 };
 
 export type TagKeyword = {
@@ -1434,8 +1435,8 @@ export type TagAdmin = {
   extra: boolean | null;
   ord: number | null;
   enabled: boolean;
-  isPalitra: boolean;
   keywords: Array<TagKeyword>;
+  isPalitra: boolean;
 };
 
 export type TagUpsertReq = {

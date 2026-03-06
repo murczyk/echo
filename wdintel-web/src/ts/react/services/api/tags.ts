@@ -37,6 +37,7 @@ type TagAdminLike = {
   extra?: boolean | null;
   ord?: number | null;
   enabled?: boolean;
+  isPalitra?: boolean;
   is_palitra?: boolean;
   keywords?: TagKeywordLike[] | null;
 };
@@ -98,7 +99,7 @@ export async function getTagModelErrors(tagId: number): Promise<TagModelErrorFE[
   return data.map(normalizeTagModelError);
 }
 
-function toTagUpsertReqBody(req: TagUpsertReq): Record<string, unknown> {
+function toTagUpsertReqBody(req: TagUpsertReq): Record<string, any> {
   return {
     label: req.label,
     extra: req.extra,
