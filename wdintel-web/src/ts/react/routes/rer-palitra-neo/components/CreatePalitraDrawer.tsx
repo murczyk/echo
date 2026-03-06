@@ -94,7 +94,7 @@ function CreatePalitraDrawerComponent({
   const dismissBlocked = createInFlight || kmzAnalyzing;
   const canContinueFromKmzStep = Boolean(kmzFile) && hasSuccessfulKmzAnalysis && !kmzAnalyzing;
   const requiresKmzSelection = isAdvancedMode && kmzColorOptions.length > 0;
-  const isCreateFormValid = isAdvancedMode ? isFormValid(createForm) : createForm.name.trim().length > 0;
+  const isCreateFormValid = isFormValid(createForm);
   const canCreate =
     createInFlight ||
     !kmzFile ||
@@ -321,18 +321,16 @@ function CreatePalitraDrawerComponent({
                   fullWidth
                 />
 
-                {isAdvancedMode ? (
-                  <AccessEditor
-                    form={createForm}
-                    onChange={(next) => onSetCreateForm(() => next)}
-                    user={user}
-                    myScope={myScope}
-                    organisms={organisms}
-                    aors={aors}
-                    allLogins={allLogins}
-                    availableAccessTypes={availableAccessTypes}
-                  />
-                ) : null}
+                <AccessEditor
+                  form={createForm}
+                  onChange={(next) => onSetCreateForm(() => next)}
+                  user={user}
+                  myScope={myScope}
+                  organisms={organisms}
+                  aors={aors}
+                  allLogins={allLogins}
+                  availableAccessTypes={availableAccessTypes}
+                />
               </Stack>
             </Stack>
           ) : null}

@@ -478,16 +478,7 @@ export function useRerPalitraNeoPage() {
     if (!kmzFile || createInFlight) return;
 
     const normalizedForm = applyRestrictedAccess(createForm, user, myScope);
-    const createFormResolved =
-      mode === 'basic' && user?.name
-        ? {
-            ...normalizedForm,
-            accessType: 'logins' as const,
-            logins: [user.name],
-            organismIds: [],
-            aorIds: [],
-          }
-        : normalizedForm;
+    const createFormResolved = normalizedForm;
 
     if (!isFormValid(createFormResolved)) return;
 

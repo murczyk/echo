@@ -17,6 +17,7 @@ import {
   applyRestrictedAccess,
   isAccessRestricted,
   normalizeLogins,
+  withDefaultOrganismAccess,
 } from '../helpers';
 import { AccessType, PalitraFormState } from '../types';
 
@@ -72,7 +73,7 @@ function AccessEditorComponent({
           value={form.accessType}
           onChange={(event) => {
             const nextType = event.target.value as AccessType;
-            onChange(applyRestrictedAccess({ ...form, accessType: nextType }, user, myScope));
+            onChange(applyRestrictedAccess(withDefaultOrganismAccess(form, nextType, myScope), user, myScope));
           }}
         >
           {availableAccessTypes.map((accessType) => (
