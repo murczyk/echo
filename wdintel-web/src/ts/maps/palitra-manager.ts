@@ -326,9 +326,13 @@ export class PalitraManager {
       palitras.forEach((palitra) => {
         pointsByPalitraId.set(palitra.id, []);
       });
+      const fallbackPalitra = this.pickFallbackPalitraForUnmatched(palitras);
 
       points.forEach((point) => {
-        const matchedPalitra = this.findPalitraForPoint(palitras, point) ?? palitras[0];
+        const matchedPalitra = this.findPalitraForPoint(palitras, point) ?? fallbackPalitra;
+        if (!matchedPalitra) {
+          return;
+        }
         const bucket = pointsByPalitraId.get(matchedPalitra.id);
         if (!bucket) {
           return;
@@ -357,6 +361,19 @@ export class PalitraManager {
       if (this.isPointInPerimeter(point.coords, perimeter)) {
         return palitra;
       }
+    }
+
+    return null;
+  }
+
+  private pickFallbackPalitraForUnmatched(palitras: Palitra[]): Palitra | null {
+    const palitrasWithoutPerimeter = palitras.filter((palitra) => {
+      const perimeter = palitra.geometry?.perimeter_linear_ring;
+      return !perimeter || perimeter.length < 3;
+    });
+
+    if (palitrasWithoutPerimeter.length === 1) {
+      return palitrasWithoutPerimeter[0];
     }
 
     return null;

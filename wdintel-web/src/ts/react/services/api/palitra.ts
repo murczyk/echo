@@ -120,13 +120,13 @@ function toCreatePalitraReqBody(req: CreatePalitraReq): CreatePalitraReqBody {
 }
 
 type UpdatePalitraReqBody = CreatePalitraReqBody & {
-  geometry_id: number;
+  geometry_id?: number;
 };
 
-function toUpdatePalitraReqBody(req: CreatePalitraReq, geometryId: number): UpdatePalitraReqBody {
+function toUpdatePalitraReqBody(req: CreatePalitraReq, geometryId: number | null): UpdatePalitraReqBody {
   return {
     ...toCreatePalitraReqBody(req),
-    geometry_id: geometryId,
+    ...(geometryId === null ? {} : { geometry_id: geometryId }),
   };
 }
 
@@ -250,7 +250,7 @@ export async function listPalitras(): Promise<Palitra[]> {
   return (data ?? []).map((entry) => normalizePalitra(entry));
 }
 
-async function getPrimaryGeometryIdForUpdate(palitraId: number): Promise<number> {
+async function getPrimaryGeometryIdForUpdate(palitraId: number): Promise<number | null> {
   const cached = primaryGeometryIdByPalitraId.get(palitraId);
   if (cached !== undefined) {
     return cached;
@@ -259,11 +259,10 @@ async function getPrimaryGeometryIdForUpdate(palitraId: number): Promise<number>
   const data = await postJson<PalitraReadWithGeometriesLike>(`/api/palitra/v2/read/${palitraId}`);
   const geometryId = normalizeOptionalNumber(data?.geometries?.[0]?.id);
 
-  if (geometryId === null) {
-    throw new Error('Не вдалося знайти geometry_id палітри для оновлення. Перевірте, що палітра містить геометрію.');
+  if (geometryId !== null) {
+    primaryGeometryIdByPalitraId.set(palitraId, geometryId);
   }
 
-  primaryGeometryIdByPalitraId.set(palitraId, geometryId);
   return geometryId;
 }
 
@@ -287,6 +286,8 @@ export async function updatePalitra(palitraId: number, req: CreatePalitraReq): P
   const updatedGeometryId = normalizeOptionalNumber(data?.geometries?.[0]?.id);
   if (updatedGeometryId !== null) {
     primaryGeometryIdByPalitraId.set(palitraId, updatedGeometryId);
+  } else {
+    primaryGeometryIdByPalitraId.delete(palitraId);
   }
 
   return normalizePalitraDetails({
