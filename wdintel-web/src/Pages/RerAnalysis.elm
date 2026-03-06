@@ -25,7 +25,8 @@ import Pages_.RerAnalysis.FiltersReloading as FiltersReloading exposing (FilterD
 import Pages_.RerAnalysis.MainBody
 import Pages_.RerAnalysis.Model exposing (..)
 import Pages_.RerAnalysis.Msg exposing (..)
-import Pages_.RerAnalysis.Query as Query
+import Pages_.RerAnalysis.Query as Query exposing (emptyQueryState)
+import Pages_.RerAnalysis.Utils as RerAnalysisUtils
 import Pages_.RerDuty.Waterfall.Filters
 import Process
 import Route exposing (Route)
@@ -74,7 +75,17 @@ init route _ =
 
         initialQueryState : B.RerAnalysisQueryState
         initialQueryState =
-            Maybe.withDefault Query.emptyQueryState ms
+            case ms of
+                Just state ->
+                    state
+
+                Nothing ->
+                    case Dict.get "search" route.query of
+                        Just s ->
+                            { emptyQueryState | search = s }
+
+                        Nothing ->
+                            emptyQueryState
 
         model : Model
         model =
@@ -239,12 +250,7 @@ init route _ =
             }
 
         m2 =
-            case ms of
-                Just state ->
-                    Query.updModelFromQueryState model state
-
-                Nothing ->
-                    model
+            Query.updModelFromQueryState model initialQueryState
 
         m3 =
             case Dict.get "showMap" route.query of
@@ -314,6 +320,7 @@ getInboxReq model =
     , highlightKeywords = Nothing
     , highlightSignals = Nothing
     , highlightSearchres = Just True
+    , highlightPoints = Just True
     , sortBy = Nothing
     , reportTagsOnlyThisUnit = Just model.reportTagsOnlyThisUnit
     , ignoreImportedCoords = Nothing
@@ -1473,6 +1480,27 @@ update user shared route msg model =
                     , networks = networksForView shared model
                     , masterUnits = masterUnitsDict
                     , currentRoute = Just route
+                    , pointTokenClickUrlFor =
+                        let
+                            palitraTagIds =
+                                model.tags
+                                    |> List.filterMap
+                                        (\( id, t ) ->
+                                            if t.isPalitra then
+                                                Just id
+                                            else
+                                                Nothing
+                                        )
+                            messageTagIds m =
+                                m.tags |> Maybe.withDefault []
+                            hasPalitraTag m =
+                                List.any (\tid -> List.member tid palitraTagIds) (messageTagIds m)
+                        in
+                        \message ->
+                            if hasPalitraTag message then
+                                Just (\etalon -> insertShowMapToQuery (RerAnalysisUtils.updateQueryWithSearch etalon route))
+                            else
+                                Nothing
                     }
 
                 res =
@@ -1564,6 +1592,7 @@ update user shared route msg model =
                 , highlightSignals = Nothing
                 , highlightKeywords = Nothing
                 , highlightSearchres = Just True
+                , highlightPoints = Just True
                 , sortBy = Nothing
                 , reportTagsOnlyThisUnit = Just model.reportTagsOnlyThisUnit
                 , ignoreImportedCoords = Nothing
@@ -2193,7 +2222,7 @@ update user shared route msg model =
                 Just now ->
                     let
                         m2 =
-                            Query.updModelFromQueryState model Query.emptyQueryState
+                            Query.updModelFromQueryState model emptyQueryState
 
                         ( from, to ) =
                             Shared.Components.DateTime.initAnalysisRanges

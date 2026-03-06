@@ -59,6 +59,32 @@ pub async fn token_lexemes(
     Ok(rsp_data.lexeme)
 }
 
+pub async fn token_lexemes_batch(
+    rq: &reqwest::Client,
+    tokens: Vec<String>,
+) -> Result<Vec<Vec<String>>, AppError> {
+    let local_url =
+        format!("{}/api/token/lexeme/batch", crate::config::NLP_ADDR);
+    let req = TokenNormalFormBatchPyReq { tokens };
+    let rsp = rq
+        .post(&local_url)
+        .header("content-type", "application/json")
+        .body(serde_json::to_string(&req).c(h!())?)
+        .send()
+        .await
+        .c(h!())?;
+    let rsp_t = rsp.text().await.c(h!())?;
+    let rsp_e: Result<Vec<TokenNormalFormPyRsp>, serde_json::Error> =
+        serde_json::from_str(&rsp_t);
+    if let Err(ref e) = rsp_e {
+        println!("> error: {e:?}\nrsp_t: {rsp_t}");
+    }
+    let rsp_data = rsp_e.c(h!())?;
+    let result: Vec<Vec<String>> =
+        rsp_data.into_iter().map(|x| x.lexeme).collect();
+    Ok(result)
+}
+
 pub async fn predict_tags(
     rq: &reqwest::Client,
     texts: Vec<String>,

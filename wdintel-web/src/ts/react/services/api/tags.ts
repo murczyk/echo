@@ -37,6 +37,8 @@ type TagAdminLike = {
   extra?: boolean | null;
   ord?: number | null;
   enabled?: boolean;
+  isPalitra?: boolean;
+  is_palitra?: boolean;
   keywords?: TagKeywordLike[] | null;
 };
 
@@ -64,6 +66,7 @@ function normalizeTagAdmin(raw: TagAdminLike): TagAdmin {
     extra: raw.extra ?? null,
     ord: raw.ord ?? null,
     enabled: raw.enabled ?? false,
+    isPalitra: raw.isPalitra ?? raw.is_palitra ?? false,
     keywords: (raw.keywords ?? []).map(normalizeTagKeyword),
   };
 }
@@ -96,13 +99,23 @@ export async function getTagModelErrors(tagId: number): Promise<TagModelErrorFE[
   return data.map(normalizeTagModelError);
 }
 
+function toTagUpsertReqBody(req: TagUpsertReq): Record<string, any> {
+  return {
+    label: req.label,
+    extra: req.extra,
+    ord: req.ord,
+    enabled: req.enabled,
+    is_palitra: req.isPalitra,
+  };
+}
+
 export async function createTag(req: TagUpsertReq): Promise<TagAdmin> {
-  const data = await postJson<TagAdminLike>('/api/admin/tags', req);
+  const data = await postJson<TagAdminLike>('/api/admin/tags', toTagUpsertReqBody(req));
   return normalizeTagAdmin(data);
 }
 
 export async function updateTag(tagId: number, req: TagUpsertReq): Promise<TagAdmin> {
-  const data = await putJson<TagAdminLike>(`/api/admin/tags/${tagId}`, req);
+  const data = await putJson<TagAdminLike>(`/api/admin/tags/${tagId}`, toTagUpsertReqBody(req));
   return normalizeTagAdmin(data);
 }
 

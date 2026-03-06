@@ -1,15 +1,16 @@
 use crate::entities::*;
-use crate::h;
 use crate::palitra::sync_delete_palitra_from_connected_organisms;
 use crate::palitra::types::*;
 use crate::types::*;
 use crate::utils::orm::ArrayColumnOps;
+use crate::{h, nlp};
 use actix_web::web::Data;
 use anyhow::Context;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use itertools::{Either, Itertools};
 use redis::AsyncCommands;
 use sea_orm::prelude::*;
+use sea_orm::sea_query::OnConflict;
 use sea_orm::sea_query::SimpleExpr;
 use sea_orm::*;
 use serde::de::DeserializeOwned;
@@ -1042,6 +1043,7 @@ pub async fn rewrite_palitra_points(
     palitra_geometry_id: i64,
     coords: Vec<PalitraPoint>,
     txn: &DatabaseTransaction,
+    rq: &reqwest::Client,
 ) -> anyhow::Result<()> {
     let palitra_geometry =
         palitra_geometry::Entity::find_by_id(palitra_geometry_id)
@@ -1085,8 +1087,7 @@ pub async fn rewrite_palitra_points(
         });
         if points_batch.len() >= crate::config::PALITRA_POINTS_INSERT_BATCH_SIZE
         {
-            palitra_point::Entity::insert_many(points_batch)
-                .exec(txn)
+            insert_many_points(points_batch, txn, rq)
                 .await
                 .context(h!())?;
             points_batch = Vec::with_capacity(
@@ -1111,8 +1112,7 @@ pub async fn rewrite_palitra_points(
         );
     }
     if !points_batch.is_empty() {
-        palitra_point::Entity::insert_many(points_batch)
-            .exec(txn)
+        insert_many_points(points_batch, txn, rq)
             .await
             .context(h!())?;
     }
@@ -1120,6 +1120,68 @@ pub async fn rewrite_palitra_points(
     recalculate_convex_hull(txn, palitra_geometry_id)
         .await
         .c(h!())?;
+    Ok(())
+}
+
+async fn insert_many_points(
+    points_batch: Vec<palitra_point::ActiveModel>,
+    txn: &DatabaseTransaction,
+    rq: &reqwest::Client,
+) -> anyhow::Result<()> {
+    let mut point_lexeme_actives: Vec<palitra_point_lexeme::ActiveModel> =
+        Vec::new();
+    let inserted_points = palitra_point::Entity::insert_many(points_batch)
+        .exec_with_returning_many(txn)
+        .await
+        .context(h!())?;
+
+    let mut palitra_point_ids = Vec::new();
+    let mut palitra_point_labels = Vec::new();
+
+    for point in inserted_points.into_iter() {
+        if let Some(label) = point.label {
+            palitra_point_ids.push(point.id);
+            palitra_point_labels.push(label);
+        }
+    }
+
+    let lexemes_batch = nlp::token_lexemes_batch(rq, palitra_point_labels)
+        .await
+        .context(h!())?;
+    let mut uniq = HashSet::new();
+
+    for (point_id, lexemes) in palitra_point_ids.into_iter().zip(lexemes_batch)
+    {
+        for lexeme in lexemes {
+            let lexeme = lexeme.to_lowercase().trim().to_string();
+            if !uniq.contains(&lexeme) {
+                uniq.insert(lexeme.clone());
+                point_lexeme_actives.push(palitra_point_lexeme::ActiveModel {
+                    palitra_point_id: Set(point_id),
+                    lexeme: Set(lexeme),
+                    ..Default::default()
+                });
+            }
+        }
+        uniq.clear();
+    }
+
+    if point_lexeme_actives.is_empty() {
+        return Ok(());
+    }
+    palitra_point_lexeme::Entity::insert_many(point_lexeme_actives)
+        .on_conflict(
+            OnConflict::columns([
+                palitra_point_lexeme::Column::PalitraPointId,
+                palitra_point_lexeme::Column::Lexeme,
+            ])
+            .do_nothing()
+            .to_owned(),
+        )
+        .exec(txn)
+        .await
+        .context(h!())?;
+
     Ok(())
 }
 

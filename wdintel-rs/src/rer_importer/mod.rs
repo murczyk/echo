@@ -38,6 +38,7 @@ pub mod inbox;
 pub mod keywords;
 pub mod location;
 pub mod multimessage;
+pub mod points;
 pub mod post;
 pub mod reports;
 pub mod search;

@@ -1,10 +1,11 @@
-use crate::location::SettlementDetails;
 use crate::messenger::group::types::SignalGroupEntry;
+use crate::{location::SettlementDetails, rer_importer::highlight::CNPoint};
 use chrono::NaiveDateTime;
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 use sea_orm::FromQueryResult;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
+use std::sync::Arc;
 
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
@@ -36,7 +37,7 @@ pub struct InboxMessage {
         Option<Vec<crate::rer_importer::highlight::CNCallsign>>,
     /// overwritten upon save (ignored upon submission)
     pub signal_tokens: Option<Vec<crate::rer_importer::signals::CNSignal>>,
-
+    pub point_tokens: Option<Vec<crate::rer_importer::highlight::CNPoint>>,
     pub no_headers_body:
         Option<crate::rer_importer::body_noheader::NoHeadersBody>,
     /// overwritten upon save (ignored upon submission)
@@ -218,6 +219,7 @@ pub struct InboxMessagesReq {
     pub highlight_keywords: Option<bool>,
     pub highlight_searchres: Option<bool>,
     pub highlight_signals: Option<bool>,
+    pub highlight_points: Option<bool>,
     pub selected_tags: Option<Vec<i64>>,
     pub selected_aors: Option<Vec<i64>>,
     pub selected_networks: Option<Vec<i64>>,
@@ -1125,4 +1127,23 @@ pub struct FreqPelengsActivityRsp {
 pub struct CallsignNetworks {
     pub callsign: String,
     pub network_ids: Vec<i64>,
+}
+
+#[derive(FromQueryResult, Clone)]
+pub struct PalitraLexeme {
+    pub palitra_id: i64,
+    pub palitra_point_id: i64,
+    pub label: String,
+    pub lexeme: String,
+}
+
+#[derive(Clone)]
+pub struct PalitraPattern {
+    pub palitra_id: i64,
+    pub matcher: Arc<HashMap<String, Vec<PalitraLexeme>>>,
+}
+
+pub struct PalitraHighlight {
+    pub palitra_id: i64,
+    pub points: Vec<CNPoint>,
 }
