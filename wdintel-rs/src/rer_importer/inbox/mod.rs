@@ -252,8 +252,10 @@ async fn messages_by_id_bl(
     .all(&env.dbx)
     .await
     .context(h!())?;
-    let mut req = InboxMessagesReq::default();
-    req.highlight_points = Some(true);
+    let req = InboxMessagesReq {
+        highlight_points: Some(true),
+        ..Default::default()
+    };
     let messages =
         aggregate_to_inbox_messages(login, messages, logins, &&req, &env)
             .await
