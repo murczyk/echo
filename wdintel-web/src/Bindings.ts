@@ -1434,6 +1434,7 @@ export type TagAdmin = {
   extra: boolean | null;
   ord: number | null;
   enabled: boolean;
+  isPalitra: boolean;
   keywords: Array<TagKeyword>;
 };
 
@@ -1442,6 +1443,7 @@ export type TagUpsertReq = {
   extra: boolean | null;
   ord: number | null;
   enabled: boolean;
+  isPalitra: boolean;
 };
 
 export type InboxMessageTagsAddReq = {

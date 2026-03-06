@@ -1480,8 +1480,27 @@ update user shared route msg model =
                     , networks = networksForView shared model
                     , masterUnits = masterUnitsDict
                     , currentRoute = Just route
-                    , pointTokenClickUrl =
-                        Just (\etalon -> insertShowMapToQuery (RerAnalysisUtils.updateQueryWithSearch etalon route))
+                    , pointTokenClickUrlFor =
+                        let
+                            palitraTagIds =
+                                model.tags
+                                    |> List.filterMap
+                                        (\( id, t ) ->
+                                            if t.isPalitra then
+                                                Just id
+                                            else
+                                                Nothing
+                                        )
+                            messageTagIds m =
+                                m.tags |> Maybe.withDefault []
+                            hasPalitraTag m =
+                                List.any (\tid -> List.member tid palitraTagIds) (messageTagIds m)
+                        in
+                        \message ->
+                            if hasPalitraTag message then
+                                Just (\etalon -> insertShowMapToQuery (RerAnalysisUtils.updateQueryWithSearch etalon route))
+                            else
+                                Nothing
                     }
 
                 res =
