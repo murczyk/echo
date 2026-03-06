@@ -244,17 +244,27 @@ async function postMultipartVoid(url: string, formData: FormData): Promise<void>
 }
 
 export async function listPalitras(): Promise<Palitra[]> {
-  const data = await postJson<PalitraReadV2Like[]>('/api/palitra/v2/list');
+  const data = await postJson<PalitraLike[]>('/api/palitra/list');
   primaryGeometryIdByPalitraId.clear();
 
-  return (data ?? []).map((entry) => {
-    const palitra = normalizePalitra(entry.palitra);
-    const geometryId = normalizeOptionalNumber(entry.geometries?.[0]?.id);
-    if (geometryId !== null) {
-      primaryGeometryIdByPalitraId.set(palitra.id, geometryId);
-    }
-    return palitra;
-  });
+  return (data ?? []).map((entry) => normalizePalitra(entry));
+}
+
+async function getPrimaryGeometryIdForUpdate(palitraId: number): Promise<number> {
+  const cached = primaryGeometryIdByPalitraId.get(palitraId);
+  if (cached !== undefined) {
+    return cached;
+  }
+
+  const data = await postJson<PalitraReadV2Like>(`/api/palitra/v2/read/${palitraId}`);
+  const geometryId = normalizeOptionalNumber(data?.geometries?.[0]?.id);
+
+  if (geometryId === null) {
+    throw new Error('Не вдалося знайти geometry_id палітри для оновлення. Перевірте, що палітра містить геометрію.');
+  }
+
+  primaryGeometryIdByPalitraId.set(palitraId, geometryId);
+  return geometryId;
 }
 
 export async function deletePalitra(palitraId: number): Promise<void> {
@@ -267,10 +277,7 @@ export async function createPalitra(req: CreatePalitraReq): Promise<Palitra> {
 }
 
 export async function updatePalitra(palitraId: number, req: CreatePalitraReq): Promise<PalitraDetails> {
-  const geometryId = primaryGeometryIdByPalitraId.get(palitraId);
-  if (geometryId === undefined) {
-    throw new Error('Не вдалося знайти geometry_id палітри для оновлення. Оновіть список палітр.');
-  }
+  const geometryId = await getPrimaryGeometryIdForUpdate(palitraId);
 
   const data = await postJson<PalitraReadV2Like>(
     `/api/palitra/v2/update/${palitraId}`,
