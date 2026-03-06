@@ -99,10 +99,10 @@ fn cut_body(body: &str) -> (&str, usize) {
     let mut result_body = body;
     let mut offset_chars = 0;
 
-    for m in RE_PREFIX.iter().flat_map(|r| r.find(body)) {
+    if let Some(m) = RE_PREFIX.iter().find_map(|r| r.find(body)) {
         let start = m.start();
         let new_body = &body[start..];
-        if !new_body.is_empty() && new_body.len() < result_body.len() {
+        if !new_body.is_empty() {
             result_body = new_body;
             offset_chars = byte_to_char_index(body, start);
         }
