@@ -1632,6 +1632,7 @@ export type Callsign = {
   unitId: number;
   active: boolean;
   sourceId: number | null;
+  callsignAdditionalSources: Array<number>;
   createdAt: number;
   developing: boolean;
   radioFreq: string | null;
@@ -1714,6 +1715,7 @@ export type CreateCallsignReq = {
   comment: string;
   unitId: number;
   sourceId: number | null;
+  callsignAdditionalSources: Array<number>;
   developing: boolean;
   radioFreq: string | null;
 };

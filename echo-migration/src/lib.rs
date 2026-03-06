@@ -212,6 +212,8 @@ mod m20260303_171130_add_palitra_polygon;
 mod m20260303_200001_add_organism_goi_connection_fields;
 mod m20260304_124501_palitra_highlight_worker_job;
 mod m20260305_100926_palitra_tag_flag;
+mod m20260305_115200_add_callsign_additional_source;
+mod m20260306_101500_palitra_v2_indexes;
 
 pub struct Migrator;
 
@@ -431,6 +433,10 @@ impl MigratorTrait for Migrator {
             Box::new(m20260303_200001_add_organism_goi_connection_fields::Migration),
             Box::new(m20260304_124501_palitra_highlight_worker_job::Migration),
             Box::new(m20260305_100926_palitra_tag_flag::Migration),
+            Box::new(m20260303_171130_add_palitra_polygon::Migration),
+            Box::new(m20260303_200001_add_organism_goi_connection_fields::Migration),
+            Box::new(m20260305_115200_add_callsign_additional_source::Migration),
+            Box::new(m20260306_101500_palitra_v2_indexes::Migration),
         ]
     }
 }
