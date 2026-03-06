@@ -3,7 +3,7 @@ import "leaflet.markercluster/dist/MarkerCluster.css"
 import "leaflet.markercluster/dist/leaflet.markercluster.js"
 import { PalitraDetails, PalitraManagerOptions, PalitraManagerCallbacks, Palitra, PalitraPoint, Coords } from './palitra-types';
 import { PalitraCacheManager } from './palitra-cache-manager';
-import { PalitrasControl } from './controls';
+import { PalitrasControl, PalitrasLoadState } from './controls';
 import {
   parseSearchQuery,
   labelMatchesTerm,
@@ -37,6 +37,7 @@ export class PalitraManager {
   private palitras: PalitraDetails[] = [];
   private visibleIds: number[] = [];
   private enabled = true;
+  private loadState: PalitrasLoadState = 'idle';
   private boundsApplied = false;
   private requestTimer: number | null = null;
   private _searchQuery = '';
@@ -69,6 +70,10 @@ export class PalitraManager {
       this.scheduleRenderPointsInViewport(); 
       this.updatePointLabelVisibility();
     });
+  }
+
+  private apiPalitraId(palitra: Palitra): number {
+    return palitra.api_palitra_id ?? palitra.id;
   }
 
 // debounced: cleanup outside viewport, re-render chunk
@@ -114,11 +119,20 @@ export class PalitraManager {
 
   setControl(control: PalitrasControl): void {
     this.control = control;
+    this.control.setLoadState(this.loadState);
     this.updateControlVisibility();
     // If we already have palitras, update the control
     if (this.palitras.length > 0) {
       this.control.updatePalitras(this.palitras, this.visibleIds);
     }
+  }
+
+  setLoadState(loadState: PalitrasLoadState): void {
+    this.loadState = loadState;
+    if (this.control) {
+      this.control.setLoadState(loadState);
+    }
+    this.updateControlVisibility();
   }
 
   setSearchQuery(query: string): void {
@@ -134,7 +148,9 @@ export class PalitraManager {
     }
     this._searchQuery = q;
     // search in all palitras, not only visible ones
-    const palitraIds = this.palitras.map(p => p.palitra.id);
+    const palitraIds = Array.from(
+      new Set(this.palitras.map((entry) => this.apiPalitraId(entry.palitra)))
+    );
     if (palitraIds.length === 0) {
       this.callbacks.onSearchLoadingChanged(false);
       this._showSearchResults([]);
@@ -252,7 +268,13 @@ export class PalitraManager {
     this.pointsClusters.clear();
     this.pointMarkers = [];
 
-    const palitraById = new Map(this.palitras.map((p) => [p.palitra.id, p.palitra]));
+    const palitraById = new Map<number, Palitra>();
+    this.palitras.forEach((entry) => {
+      const apiId = this.apiPalitraId(entry.palitra);
+      if (!palitraById.has(apiId)) {
+        palitraById.set(apiId, entry.palitra);
+      }
+    });
 
     const entries = toRender.filter(
       ({ palitra_id, points }) => palitraById.get(palitra_id) && points.length > 0
@@ -386,7 +408,9 @@ export class PalitraManager {
   }
 
   private filterByBounds(bounds: L.LatLngBounds): number[] {
-    return this.palitras
+    return Array.from(
+      new Set(
+        this.palitras
       .filter(palitraDetails => this.visibleIds.includes(palitraDetails.palitra.id))
       .filter(palitraDetails => {
         const geometry = palitraDetails.palitra.geometry;
@@ -400,7 +424,9 @@ export class PalitraManager {
         const palitraBounds = this.buildBounds(ring);
         return bounds.intersects(palitraBounds);
       })
-      .map(palitraDetails => palitraDetails.palitra.id);
+      .map(palitraDetails => this.apiPalitraId(palitraDetails.palitra))
+      )
+    );
   }
 
   private buildBounds(coords: Coords[]): L.LatLngBounds {
@@ -646,16 +672,16 @@ export class PalitraManager {
     const isControlOnMap = (this.control as any)._map === this.map;
     const hasPalitras = this.palitras.length > 0;
     console.log('[PalitraManager] updateControlVisibility: enabled:', this.enabled, 'isControlOnMap:', isControlOnMap, 'hasPalitras:', hasPalitras);
+    const shouldShowControl =
+      this.enabled && (this.palitras.length > 0 || this.loadState === 'loading' || this.loadState === 'error');
 
-    // Don't show control if disabled OR no palitras
-    if (!this.enabled || !hasPalitras) {
+    if (!shouldShowControl) {
       if (isControlOnMap) {
         this.map.removeControl(this.control);
       }
       return;
     }
 
-    // Show control only if enabled AND has palitras
     if (!isControlOnMap) {
       this.map.addControl(this.control);
     }

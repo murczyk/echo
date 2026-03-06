@@ -1,7 +1,8 @@
-import { Box, Chip, Tooltip } from '@mui/material';
+import { Box, Tooltip } from '@mui/material';
 import React from 'react';
 
 import type { InboxMessage } from '../../../../Bindings';
+import { PowerChip } from '../../components/PowerChip';
 import { buildAnalysisHref, formatDateNoYear, formatTime, messageRenderDistance } from './utils';
 
 export type MessageCardProps = {
@@ -342,28 +343,12 @@ export function MessageCard({
             return (
               <Tooltip key={tagId} title={tip} placement="top">
                 <Box component="span" className="relative inline-flex">
-                  <Chip
-                    size="small"
+                  <PowerChip
                     label={label}
+                    selected={isSet}
                     onClick={() => onToggleTag(tagId)}
-                    variant="filled"
-                    className="text-sm h-5 cursor-pointer"
-                    sx={{
-                      '& .MuiChip-label': { px: 0.75 },
-                      ...(isSet
-                        ? {
-                            bgcolor: 'var(--color-tag-selected)',
-                            color: 'black',
-                            border: '1px solid var(--color-border-selected)',
-                          }
-                        : {
-                            bgcolor: 'var(--color-tag)',
-                            color: 'var(--color-text)',
-                            border: '1px solid var(--color-border)',
-                            opacity: 0.75,
-                            '&:hover': { opacity: 1 },
-                          }),
-                    }}
+                    size="small"
+                    fontSize="0.875rem"
                   />
                   {showBadge && (
                     <span

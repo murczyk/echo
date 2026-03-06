@@ -7,6 +7,7 @@ export type Geometry = {
 
 export type Palitra = {
   id: number;
+  api_palitra_id?: number;
   name: string;
   color_hex: string;
   geometry: Geometry | null;

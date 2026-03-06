@@ -1,5 +1,6 @@
 import {
   Autocomplete,
+  Chip,
   FormControl,
   FormControlLabel,
   FormLabel,
@@ -116,6 +117,16 @@ function AccessEditorComponent({
           getOptionLabel={(option) => option.name}
           onChange={(_, selected) => onChange({ ...form, organismIds: selected.map((entry) => entry.id) })}
           disabled={restricted}
+          renderOption={(props, option) => (
+            <li {...props} key={option.id}>
+              {option.name}
+            </li>
+          )}
+          renderTags={(value, getTagProps) =>
+            value.map((option, index) => (
+              <Chip {...getTagProps({ index })} key={option.id} label={option.name} size="small" />
+            ))
+          }
           renderInput={(params) => (
             <TextField
               {...params}
@@ -136,6 +147,16 @@ function AccessEditorComponent({
           getOptionLabel={(option) => option.name}
           onChange={(_, selected) => onChange({ ...form, aorIds: selected.map((entry) => entry.id) })}
           disabled={restricted}
+          renderOption={(props, option) => (
+            <li {...props} key={option.id}>
+              {option.name}
+            </li>
+          )}
+          renderTags={(value, getTagProps) =>
+            value.map((option, index) => (
+              <Chip {...getTagProps({ index })} key={option.id} label={option.name} size="small" />
+            ))
+          }
           renderInput={(params) => (
             <TextField
               {...params}

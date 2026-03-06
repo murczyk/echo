@@ -172,7 +172,7 @@ type alias Model =
     , eventLastId : Maybe String
     
     -- палітри
-    , palitras : RemoteData ApiError (List B.PalitraDetails)
+    , palitras : RemoteData ApiError (List B.PalitraReadV2)
     }
 
 

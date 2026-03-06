@@ -7,7 +7,7 @@ import { KMZLayer, kmzLayerFactory } from '../maps/leaflet-kmz'
 import { MapPointDetailed } from '../maps/types';
 import { messagesCountText } from '../maps/utils/language-utils';
 import { loadRerAnalysisQueryState, RerAnalysisQueryState, saveRerAnalysisQueryState } from '../rer-analysis-query-state';
-import { TimeswitchControl, FeatureToggleState, createLayerSwitchControl, createTimeswitchControl, createAttributionControl, createPalitrasControl, FeatureName, LayerSwitchControl, createSearchControl, createMapZoomControl, SearchControl, createMapWindowControl, MapWindowControl } from '../maps/controls';
+import { TimeswitchControl, FeatureToggleState, createLayerSwitchControl, createTimeswitchControl, createAttributionControl, createPalitrasControl, FeatureName, LayerSwitchControl, createSearchControl, createMapZoomControl, SearchControl, createMapWindowControl, MapWindowControl, PalitrasLoadState } from '../maps/controls';
 import { AnalysisMapStateStore, AnalysisMapStoredState } from '../maps/analysis-map-state';
 import { parseCoordinateInput } from '../maps/coordinate-search';
 import { PalitraManager } from '../maps/palitra-manager';
@@ -27,6 +27,7 @@ type Message = [
     network_ids?: number[] | null;
   }
 ]
+
 
 export class DataCircleMarker extends L.CircleMarker {
   data: { messageId: number };
@@ -107,7 +108,7 @@ function getPointPopupTemplate(sortedMessages: Message[], networkUnits: NetworkU
 
 
 class AnalysisMap extends HTMLElement {
-  static observedAttributes = ["points", "daterange", "messages", "visibility", "network-units", "selected-units", "palitras", "palitras-loaded"]
+  static observedAttributes = ["points", "daterange", "messages", "visibility", "network-units", "selected-units", "palitras", "palitras-loaded", "palitras-load-state"]
 
   private _map: L.Map | null = null;
   private _daterange: { startDate: number, endDate: number } = { startDate: new Date().getDate(), endDate: new Date().getDate() };
@@ -129,6 +130,7 @@ class AnalysisMap extends HTMLElement {
   private _palitras: PalitraDetails[] = [];
   private _visiblePalitraIds: number[] = [];
   private _palitrasLoaded = false;
+  private _palitrasLoadState: PalitrasLoadState = 'idle';
   private _palitrasEnabled = true;
   private _kmzEnabled = true;
   private _pelengsEnabled = true;
@@ -161,6 +163,13 @@ class AnalysisMap extends HTMLElement {
     super();
     this._stateStore = new AnalysisMapStateStore();
     this._applyState(this._stateStore.getState());
+  }
+
+  private _sameVisibleIds(left: number[], right: number[]): boolean {
+    if (left.length !== right.length) {
+      return false;
+    }
+    return left.every((value, index) => value === right[index]);
   }
 
   connectedCallback() {
@@ -288,11 +297,19 @@ class AnalysisMap extends HTMLElement {
       }
     }
     if (name === 'palitras-loaded') {
+      const prevVisibleIds = [...this._visiblePalitraIds];
       this._palitrasLoaded = JSON.parse(newValue);
       this._syncVisiblePalitraIds();
       if (this._palitraManager) {
-        this._palitraManager.updatePalitras(this._palitras);
-        this._palitraManager.updateVisibleIds(this._visiblePalitraIds);
+        if (!this._sameVisibleIds(prevVisibleIds, this._visiblePalitraIds)) {
+          this._palitraManager.updateVisibleIds(this._visiblePalitraIds);
+        }
+      }
+    }
+    if (name === 'palitras-load-state') {
+      this._palitrasLoadState = this._parsePalitrasLoadState(newValue);
+      if (this._palitraManager) {
+        this._palitraManager.setLoadState(this._palitrasLoadState);
       }
     }
   }
@@ -360,6 +377,7 @@ class AnalysisMap extends HTMLElement {
      // Set the control after manager is created
      console.log('[AnalysisMap] Setting control, _palitrasEnabled:', this._palitrasEnabled, 'stored palitras:', this._palitras.length, 'visible IDs:', this._visiblePalitraIds.length);
      this._palitraManager.setControl(result.palitrasControl);
+     this._palitraManager.setLoadState(this._palitrasLoadState);
      
      // Update manager with any palitras that arrived before initialization
      if (this._palitras.length > 0) {
@@ -378,6 +396,13 @@ class AnalysisMap extends HTMLElement {
     }
   }
 
+  private _parsePalitrasLoadState(value: string | null): PalitrasLoadState {
+    if (value === 'loading' || value === 'success' || value === 'error') {
+      return value;
+    }
+    return 'idle';
+  }
+
   private _initializeControls(map: L.Map, tileLayers: { openStreetMap: L.TileLayer, googleHybrid: L.TileLayer }) {
     const exitCallback = () => {
       this._setFullscreen(false);
@@ -390,8 +415,12 @@ class AnalysisMap extends HTMLElement {
       this.dispatchEvent(event);
     }
 
-    const palitraToggleCallback = (palitraId: number) => {
-      this._togglePalitraVisibility(palitraId);
+    const palitrasVisibleIdsCallback = (visibleIds: number[]) => {
+      const state = this._stateStore.setVisiblePalitraIds(visibleIds);
+      this._applyState(state);
+      if (this._palitraManager) {
+        this._palitraManager.updateVisibleIds(this._visiblePalitraIds);
+      }
     }
 
     const featureToggleCallback = (feature: FeatureName, enabled: boolean) => {
@@ -413,7 +442,7 @@ class AnalysisMap extends HTMLElement {
     map.addControl(createMapZoomControl());
     map.addControl(createAttributionControl());
 
-    const palitrasControl = createPalitrasControl([], [], palitraToggleCallback);
+    const palitrasControl = createPalitrasControl([], [], palitrasVisibleIdsCallback);
 
     return { map, switchTimeControl, palitrasControl };
   }
@@ -597,14 +626,6 @@ class AnalysisMap extends HTMLElement {
     this._updateLayerSwitchControl();
   }
 
-  private _togglePalitraVisibility(palitraId: number) {
-    const state = this._stateStore.toggleVisiblePalitraId(palitraId);
-    this._applyState(state);
-    if (this._palitraManager) {
-      this._palitraManager.updateVisibleIds(this._visiblePalitraIds);
-    }
-  }
-
   private _syncVisiblePalitraIds() {
     const state = this._stateStore.syncVisiblePalitraIds(this._palitras, this._palitrasLoaded);
     this._applyState(state);
@@ -649,6 +670,9 @@ class AnalysisMap extends HTMLElement {
     this._kmzLoading = (async () => {
       try {
         const kmzData = await loadKmzData();
+        if (!kmzData) {
+          return;
+        }
         this._kmzLayer = kmzLayerFactory(null, { bindTooltip: true, bindPopup: false, permanentTooltip: true });
         if (this._map && this._kmzEnabled) {
           this._kmzLayer.addTo(this._map);

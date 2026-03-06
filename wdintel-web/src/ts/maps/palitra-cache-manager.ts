@@ -58,7 +58,7 @@ export class PalitraCacheManager {
     if (cachedCount > 0) {
       console.log(`[Palitra Cache] Using cached data for ${cachedCount} palitras in tile ${tileKey}`);
     }
-    
+
     return filtered;
   }
 

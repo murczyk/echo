@@ -4,7 +4,6 @@ import EditIcon from '@mui/icons-material/Edit';
 import {
   Alert,
   Autocomplete,
-  Chip,
   CircularProgress,
   Dialog,
   DialogActions,
@@ -36,6 +35,7 @@ import {
 } from '../../../../Bindings';
 import { Button } from '../../components/mui-customized/button';
 import { IconButton } from '../../components/mui-customized/icon-button';
+import { PowerChip } from '../../components/PowerChip';
 import { CUSTOM_STYLES } from '../../components/mui-customized/table/custom-styles';
 import { TableTopToolbar } from '../../components/mui-customized/table/components/table-top-toolbar';
 import {
@@ -476,7 +476,15 @@ function ZoneGroupsTable(props: {
                   <span>{groupName}</span>
                 </Tooltip>
                 {row.original.group.isGroupSecret ? (
-                  <Chip size="small" color="warning" label="прихована" />
+                  <PowerChip
+                    size="small"
+                    label="прихована"
+                    interactive={false}
+                    unselectedOpacity={1}
+                    unselectedBackgroundColor="warning.main"
+                    unselectedTextColor="warning.contrastText"
+                    unselectedBorderColor="warning.main"
+                  />
                 ) : null}
               </div>
             </div>

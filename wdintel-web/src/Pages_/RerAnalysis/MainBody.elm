@@ -890,14 +890,68 @@ view user model shared route =
 
                         encodedSelectedUnits =
                             Encode.list Encode.string model.unitsSelected
+
+                        encodePalitraForMap palitra apiPalitraId palitraPoints =
+                            Encode.object
+                                [ ( "palitra"
+                                  , Encode.object
+                                        [ ( "id", Encode.int palitra.id )
+                                        , ( "api_palitra_id", Encode.int apiPalitraId )
+                                        , ( "name", Encode.string palitra.name )
+                                        , ( "color_hex", Encode.string palitra.colorHex )
+                                        , ( "author", (Maybe.withDefault Encode.null << Maybe.map Encode.string) palitra.author )
+                                        , ( "source_file_name", (Maybe.withDefault Encode.null << Maybe.map Encode.string) palitra.sourceFileName )
+                                        , ( "last_uploaded_at_ts", (Maybe.withDefault Encode.null << Maybe.map Encode.int) palitra.lastUploadedAtTs )
+                                        , ( "geometry", (Maybe.withDefault Encode.null << Maybe.map B.geometryEncoder) palitra.geometry )
+                                        , ( "access_aor_id", Encode.list Encode.int palitra.accessAorId )
+                                        , ( "access_organism_ids", Encode.list Encode.int palitra.accessOrganismIds )
+                                        , ( "access_logins", Encode.list Encode.string palitra.accessLogins )
+                                        ]
+                                  )
+                                , ( "points", Encode.list B.palitraPointEncoder palitraPoints )
+                                ]
+
+                        palitraReadV2ToMapValues palitraReadV2 =
+                            if List.isEmpty palitraReadV2.geometries then
+                                [ encodePalitraForMap
+                                    palitraReadV2.palitra
+                                    palitraReadV2.palitra.id
+                                    []
+                                ]
+
+                            else
+                                List.map
+                                    (\geometry ->
+                                        encodePalitraForMap
+                                            { id = geometry.id
+                                            , name = palitraReadV2.palitra.name
+                                            , colorHex = geometry.colorHex
+                                            , author = palitraReadV2.palitra.author
+                                            , sourceFileName = geometry.sourceFileName
+                                            , lastUploadedAtTs = geometry.lastUploadedAtTs
+                                            , geometry = geometry.geometry
+                                            , accessAorId = palitraReadV2.palitra.accessAorId
+                                            , accessOrganismIds = palitraReadV2.palitra.accessOrganismIds
+                                            , accessLogins = palitraReadV2.palitra.accessLogins
+                                            }
+                                            palitraReadV2.palitra.id
+                                            geometry.points
+                                    )
+                                    palitraReadV2.geometries
                         
-                        ( encodedPalitras, palitrasLoaded ) =
+                        ( encodedPalitras, palitrasLoaded, palitrasLoadState ) =
                             case model.palitras of
                                 Success palitras ->
-                                    ( Encode.list B.palitraDetailsEncoder palitras, True )
+                                    ( Encode.list identity (List.concatMap palitraReadV2ToMapValues palitras), True, "success" )
+
+                                Loading ->
+                                    ( Encode.list identity [], False, "loading" )
+
+                                Failure _ ->
+                                    ( Encode.list identity [], False, "error" )
 
                                 _ ->
-                                    ( Encode.list B.palitraDetailsEncoder [], False )
+                                    ( Encode.list identity [], False, "idle" )
                     in
                     div
                         (class "h-full min-h-0 relative"
@@ -916,6 +970,7 @@ view user model shared route =
                             , attribute "selected-units" (Encode.encode 0 encodedSelectedUnits)
                             , attribute "palitras" (Encode.encode 0 encodedPalitras)
                             , attribute "palitras-loaded" (Encode.encode 0 (Encode.bool palitrasLoaded))
+                            , attribute "palitras-load-state" palitrasLoadState
                             , attribute "visibility"
                                 (if model.unfoldMapBlock then
                                     "true"
@@ -957,13 +1012,14 @@ view user model shared route =
                 [ class "col-span-19 flex flex-col h-full min-h-0 relative overflow-auto"
                 , id "messages-div"
                 ]
-                [ div
-                    [ class "fixed bottom-[20px] right-[30px] opacity-50 z-55"
-                    , onClick <| ScrollMessagesToTop
-                    ]
-                    [ span [ class "text-[2rem] cursor-pointer" ]
-                        [ i [ class "bi bi-arrow-up-circle" ] [] ]
-                    ]
+                [ viewIf (not model.unfoldMapBlock) <|
+                    div
+                        [ class "fixed bottom-[20px] right-[30px] opacity-50 z-55"
+                        , onClick <| ScrollMessagesToTop
+                        ]
+                        [ span [ class "text-[2rem] cursor-pointer" ]
+                            [ i [ class "bi bi-arrow-up-circle" ] [] ]
+                        ]
                 , div
                     [ class "sticky top-0 z-50 bg-[var(--background-color)] pt-4 pb-6" ]
                     [ div [ class "flex items-center justify-between px-4" ]

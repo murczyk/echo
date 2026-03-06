@@ -1016,6 +1016,20 @@ export type PalitraDetails = {
   points: Array<PalitraPoint>;
 };
 
+export type PalitraGeometryDetails = {
+  id: number;
+  colorHex: string;
+  sourceFileName: string | null;
+  lastUploadedAtTs: number | null;
+  geometry: Geometry | null;
+  points: Array<PalitraPoint>;
+};
+
+export type PalitraReadV2 = {
+  palitra: Palitra;
+  geometries: Array<PalitraGeometryDetails>;
+};
+
 export type PalitraPoint = {
   coords: Coords;
   label: string | null;

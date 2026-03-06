@@ -133,10 +133,21 @@ export function toggleMapSize(map: L.Map, mapContainer: HTMLElement, bounds: L.L
 
 //MAIN
 let cachedKmzData: string | null = null;
+let kmzResponseResolved = false;
 
 export async function loadKmzData() {
-	if (!cachedKmzData) {
+	if (!kmzResponseResolved) {
 		const response = await fetch('/api/delta/kml/latest');
+		if (!response.ok) {
+			if (response.status === 404) {
+				kmzResponseResolved = true;
+				console.info('[Map] /api/delta/kml/latest returned 404. KMZ layer will be skipped.');
+				cachedKmzData = null;
+				return null;
+			}
+			throw new Error(`Failed to load KMZ: HTTP ${response.status}`);
+		}
+		kmzResponseResolved = true;
 		cachedKmzData = await response.text();
 	}
 	return cachedKmzData;
@@ -161,7 +172,7 @@ export async function setupMap(data: { points: MapPointShort[], containerId: str
 			map.addControl(new (createExitControl(exitCallback))({ position: 'topright' }));
 			map.addControl(fullScreenControl);
 
-			if (!window.location.hostname.includes('echo-soledarnist')) {
+			if (!window.location.hostname.includes('echo-soledarnist') && kmzData) {
 
 				const kmz = kmzLayerFactory(null, { bindTooltip: true, bindPopup: false })
 				kmz.addTo(map);

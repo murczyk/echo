@@ -4,7 +4,6 @@ import {
   Box,
   Button,
   Checkbox,
-  Chip,
   CircularProgress,
   Drawer,
   FormControlLabel,
@@ -22,6 +21,7 @@ import React from 'react';
 
 import { AnalyzeKmzResponse, AreaOfResponsibility, MyScope, Organism, User } from '../../../../../Bindings';
 import { pageDrawerBackdropSx } from '../../../components/loadingOverlayStyles';
+import { PowerChip } from '../../../components/PowerChip';
 import { isFormValid } from '../helpers';
 import { KmzColorOption, PalitraCreateMode, PalitraFormState } from '../types';
 import { AccessEditor } from './AccessEditor';
@@ -277,10 +277,17 @@ function CreatePalitraDrawerComponent({
                             }
                             label={
                               <Stack direction="row" spacing={1} alignItems="center">
-                                <Chip
-                                  size="small"
+                                <PowerChip
                                   label={option.colorHex}
-                                  sx={{ backgroundColor: option.colorHex, color: '#fff', fontFamily: 'monospace' }}
+                                  size="small"
+                                  fontSize="0.875rem"
+                                  fontWeight={600}
+                                  backgroundColor={option.colorHex}
+                                  autoTextContrast
+                                  interactive={false}
+                                  unselectedOpacity={1}
+                                  fontFamily="monospace"
+                                  unselectedBorderColor="transparent"
                                 />
                                 <Typography variant="caption">топ #{option.rank} ({option.count})</Typography>
                               </Stack>
