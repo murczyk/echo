@@ -536,14 +536,14 @@ export function useRerPalitraNeoPage() {
         return;
       }
 
-      const created = await createPalitraBasicWithKmz(
+      await createPalitraBasicWithKmz(
         toCreateReq({
           ...createFormResolved,
           colorHex: selectedColorFromKmz,
         }),
         kmzFile,
       );
-      setPalitras((prev) => [created, ...prev]);
+      await reloadPalitras();
       resetCreateFlow();
     } catch (createError) {
       if (isUnauthorizedError(createError)) {
