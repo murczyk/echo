@@ -97,7 +97,8 @@ const PalitraGroupRow = React.memo(function PalitraGroupRow(props: PalitraGroupR
     [group.colors],
   );
   const selectedColorsCount = groupIds.filter((id) => visibleIdsSet.has(id)).length;
-  const groupSelected = selectedColorsCount > 0;
+  const groupSelected = selectedColorsCount === groupIds.length && groupIds.length > 0;
+  const groupPartiallySelected = selectedColorsCount > 0 && selectedColorsCount < groupIds.length;
   const hasExtraColors = group.colors.length > MAX_VISIBLE_COLORS;
   const colorsToShow = expanded ? group.colors : group.colors.slice(0, MAX_VISIBLE_COLORS);
 
@@ -107,6 +108,7 @@ const PalitraGroupRow = React.memo(function PalitraGroupRow(props: PalitraGroupR
         <Checkbox
           className="palitra-checkbox"
           checked={groupSelected}
+          indeterminate={groupPartiallySelected}
           onClick={(event) => {
             event.stopPropagation();
           }}
@@ -259,8 +261,8 @@ function PalitrasOverlay(props: PalitrasOverlayProps) {
       const groupIdsSet = new Set(groupIds);
       const currentVisibleIds = localVisibleIdsRef.current;
       const currentVisibleSet = new Set(currentVisibleIds);
-      const hasSelected = groupIds.some((id) => currentVisibleSet.has(id));
-      if (hasSelected) {
+      const allSelectedInGroup = groupIds.every((id) => currentVisibleSet.has(id));
+      if (allSelectedInGroup) {
         const next = currentVisibleIds.filter((id) => !groupIdsSet.has(id));
         applyVisibleIdsChange(next);
         return;
@@ -352,15 +354,18 @@ function PalitrasOverlay(props: PalitrasOverlayProps) {
         )}
       </Box>
 
-      {!isCollapsed ? (
-        <Box className="palitras-control-filter-wrap">
-          <SearchInput
-            placeholder="Пошук"
-            onSearch={setFilterValue}
-            minWidth={260}
-          />
-        </Box>
-      ) : null}
+      <Box
+        className="palitras-control-filter-wrap"
+        sx={{
+          display: isCollapsed ? 'none' : 'block',
+        }}
+      >
+        <SearchInput
+          placeholder="Пошук"
+          onSearch={setFilterValue}
+          minWidth={260}
+        />
+      </Box>
 
       <Box className="palitras-control-list">
         {filteredGroups.length === 0 ? (
