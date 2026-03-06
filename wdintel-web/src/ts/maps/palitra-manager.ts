@@ -268,23 +268,23 @@ export class PalitraManager {
     this.pointsClusters.clear();
     this.pointMarkers = [];
 
-    const palitraById = new Map<number, Palitra>();
+    const palitrasByApiId = new Map<number, Palitra[]>();
     this.palitras.forEach((entry) => {
       const apiId = this.apiPalitraId(entry.palitra);
-      if (!palitraById.has(apiId)) {
-        palitraById.set(apiId, entry.palitra);
-      }
+      const current = palitrasByApiId.get(apiId) ?? [];
+      current.push(entry.palitra);
+      palitrasByApiId.set(apiId, current);
     });
 
-    const entries = toRender.filter(
-      ({ palitra_id, points }) => palitraById.get(palitra_id) && points.length > 0
+    const entries = this.splitSearchEntriesByGeometry(
+      toRender.filter(({ points }) => points.length > 0),
+      palitrasByApiId
     );
 
     const clusters = await Promise.all(
-      entries.map(async ({ palitra_id, points }) => {
-        const palitra = palitraById.get(palitra_id)!;
+      entries.map(async ({ palitra, points }) => {
         const cluster = await this.createPointsCluster(palitra, points);
-        return { palitra_id, cluster };
+        return { palitraId: palitra.id, cluster };
       })
     );
 
@@ -295,14 +295,91 @@ export class PalitraManager {
       return;
     }
 
-    clusters.forEach(({ palitra_id, cluster }) => {
+    clusters.forEach(({ palitraId, cluster }) => {
       if (cluster) {
-        this.pointsClusters.set(palitra_id, cluster);
+        this.pointsClusters.set(palitraId, cluster);
         this.map.addLayer(cluster);
       }
     });
 
     this.updatePointLabelVisibility();
+  }
+
+  private splitSearchEntriesByGeometry(
+    entries: { palitra_id: number; points: PalitraPoint[] }[],
+    palitrasByApiId: Map<number, Palitra[]>
+  ): Array<{ palitra: Palitra; points: PalitraPoint[] }> {
+    const splitEntries: Array<{ palitra: Palitra; points: PalitraPoint[] }> = [];
+
+    entries.forEach(({ palitra_id, points }) => {
+      const palitras = palitrasByApiId.get(palitra_id);
+      if (!palitras || palitras.length === 0) {
+        return;
+      }
+
+      if (palitras.length === 1) {
+        splitEntries.push({ palitra: palitras[0], points });
+        return;
+      }
+
+      const pointsByPalitraId = new Map<number, PalitraPoint[]>();
+      palitras.forEach((palitra) => {
+        pointsByPalitraId.set(palitra.id, []);
+      });
+
+      points.forEach((point) => {
+        const matchedPalitra = this.findPalitraForPoint(palitras, point) ?? palitras[0];
+        const bucket = pointsByPalitraId.get(matchedPalitra.id);
+        if (!bucket) {
+          return;
+        }
+        bucket.push(point);
+      });
+
+      palitras.forEach((palitra) => {
+        const palitraPoints = pointsByPalitraId.get(palitra.id);
+        if (!palitraPoints || palitraPoints.length === 0) {
+          return;
+        }
+        splitEntries.push({ palitra, points: palitraPoints });
+      });
+    });
+
+    return splitEntries;
+  }
+
+  private findPalitraForPoint(palitras: Palitra[], point: PalitraPoint): Palitra | null {
+    for (const palitra of palitras) {
+      const perimeter = palitra.geometry?.perimeter_linear_ring;
+      if (!perimeter || perimeter.length < 3) {
+        continue;
+      }
+      if (this.isPointInPerimeter(point.coords, perimeter)) {
+        return palitra;
+      }
+    }
+
+    return null;
+  }
+
+  private isPointInPerimeter(point: Coords, perimeter: Coords[]): boolean {
+    let inside = false;
+    for (let i = 0, j = perimeter.length - 1; i < perimeter.length; j = i++) {
+      const latI = perimeter[i].lat;
+      const lngI = perimeter[i].lng;
+      const latJ = perimeter[j].lat;
+      const lngJ = perimeter[j].lng;
+
+      const intersects =
+        lngI > point.lng !== lngJ > point.lng &&
+        point.lat < ((latJ - latI) * (point.lng - lngI)) / (lngJ - lngI) + latI;
+
+      if (intersects) {
+        inside = !inside;
+      }
+    }
+
+    return inside;
   }
 
   private _boundsOfSearchResults(

@@ -911,11 +911,11 @@ view user model shared route =
                                 , ( "points", Encode.list B.palitraPointEncoder palitraPoints )
                                 ]
 
-                        palitraReadV2ToMapValues palitraReadV2 =
-                            if List.isEmpty palitraReadV2.geometries then
+                        palitraReadToMapValues palitraRead =
+                            if List.isEmpty palitraRead.geometries then
                                 [ encodePalitraForMap
-                                    palitraReadV2.palitra
-                                    palitraReadV2.palitra.id
+                                    palitraRead.palitra
+                                    palitraRead.palitra.id
                                     []
                                 ]
 
@@ -924,25 +924,25 @@ view user model shared route =
                                     (\geometry ->
                                         encodePalitraForMap
                                             { id = geometry.id
-                                            , name = palitraReadV2.palitra.name
+                                            , name = palitraRead.palitra.name
                                             , colorHex = geometry.colorHex
-                                            , author = palitraReadV2.palitra.author
+                                            , author = palitraRead.palitra.author
                                             , sourceFileName = geometry.sourceFileName
                                             , lastUploadedAtTs = geometry.lastUploadedAtTs
                                             , geometry = geometry.geometry
-                                            , accessAorId = palitraReadV2.palitra.accessAorId
-                                            , accessOrganismIds = palitraReadV2.palitra.accessOrganismIds
-                                            , accessLogins = palitraReadV2.palitra.accessLogins
+                                            , accessAorId = palitraRead.palitra.accessAorId
+                                            , accessOrganismIds = palitraRead.palitra.accessOrganismIds
+                                            , accessLogins = palitraRead.palitra.accessLogins
                                             }
-                                            palitraReadV2.palitra.id
+                                            palitraRead.palitra.id
                                             []
                                     )
-                                    palitraReadV2.geometries
+                                    palitraRead.geometries
                         
                         ( encodedPalitras, palitrasLoaded, palitrasLoadState ) =
                             case model.palitras of
                                 Success palitras ->
-                                    ( Encode.list identity (List.concatMap palitraReadV2ToMapValues palitras), True, "success" )
+                                    ( Encode.list identity (List.concatMap palitraReadToMapValues palitras), True, "success" )
 
                                 Loading ->
                                     ( Encode.list identity [], False, "loading" )

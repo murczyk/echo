@@ -1,7 +1,7 @@
 import React from 'react';
 import { createRoot, Root } from 'react-dom/client';
 
-import { SearchInput } from './components/SearchInput';
+import { MapSearchInput } from './components/MapSearchInput';
 
 class AnalysisMapSearchElement extends HTMLElement {
   static observedAttributes = ['results-count', 'search-loading'];
@@ -27,7 +27,7 @@ class AnalysisMapSearchElement extends HTMLElement {
       this.dispatchEvent(new CustomEvent('search-points', { detail: value, bubbles: true, composed: true }));
     };
     this.root.render(
-      <SearchInput
+      <MapSearchInput
         placeholder="Точка, лісосмуга або координати"
         onSearch={onSearch}
         resultsCount={this.resultsCount}

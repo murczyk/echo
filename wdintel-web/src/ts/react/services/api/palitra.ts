@@ -53,7 +53,7 @@ type PalitraDetailsLike = {
   points?: PalitraDetails['points'] | null;
 };
 
-type PalitraReadV2Like = {
+type PalitraReadWithGeometriesLike = {
   palitra: PalitraLike;
   geometries?: Array<{
     id?: number | string;
@@ -119,11 +119,11 @@ function toCreatePalitraReqBody(req: CreatePalitraReq): CreatePalitraReqBody {
   };
 }
 
-type UpdatePalitraV2ReqBody = CreatePalitraReqBody & {
+type UpdatePalitraReqBody = CreatePalitraReqBody & {
   geometry_id: number;
 };
 
-function toUpdatePalitraV2ReqBody(req: CreatePalitraReq, geometryId: number): UpdatePalitraV2ReqBody {
+function toUpdatePalitraReqBody(req: CreatePalitraReq, geometryId: number): UpdatePalitraReqBody {
   return {
     ...toCreatePalitraReqBody(req),
     geometry_id: geometryId,
@@ -256,7 +256,7 @@ async function getPrimaryGeometryIdForUpdate(palitraId: number): Promise<number>
     return cached;
   }
 
-  const data = await postJson<PalitraReadV2Like>(`/api/palitra/v2/read/${palitraId}`);
+  const data = await postJson<PalitraReadWithGeometriesLike>(`/api/palitra/v2/read/${palitraId}`);
   const geometryId = normalizeOptionalNumber(data?.geometries?.[0]?.id);
 
   if (geometryId === null) {
@@ -279,9 +279,9 @@ export async function createPalitra(req: CreatePalitraReq): Promise<Palitra> {
 export async function updatePalitra(palitraId: number, req: CreatePalitraReq): Promise<PalitraDetails> {
   const geometryId = await getPrimaryGeometryIdForUpdate(palitraId);
 
-  const data = await postJson<PalitraReadV2Like>(
+  const data = await postJson<PalitraReadWithGeometriesLike>(
     `/api/palitra/v2/update/${palitraId}`,
-    toUpdatePalitraV2ReqBody(req, geometryId),
+    toUpdatePalitraReqBody(req, geometryId),
   );
 
   const updatedGeometryId = normalizeOptionalNumber(data?.geometries?.[0]?.id);

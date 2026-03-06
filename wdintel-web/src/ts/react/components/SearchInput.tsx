@@ -1,17 +1,11 @@
 import CloseIcon from '@mui/icons-material/Close';
 import SearchIcon from '@mui/icons-material/Search';
-import { CircularProgress, IconButton, InputAdornment, TextField, Tooltip } from '@mui/material';
+import { CircularProgress, IconButton, InputAdornment, TextField } from '@mui/material';
 import { createTheme, ThemeProvider } from '@mui/material/styles';
 import React, { useCallback, useRef, useState } from 'react';
 
 const DEFAULT_DEBOUNCE_MS = 300;
 const SEARCH_TEXT = 'Пошук...';
-
-const SEARCH_WILDCARD_TOOLTIP = `Приклади пошуку:
- "40" — точний збіг
- "40*" — пошук за префіксом (наприклад 40, 400, 401, ...)
- "*40" — пошук за суфіксом (наприклад 40, 540, 840, ...)
- "*40*" — пошук за входженням (наприклад 40, 400, 540, 840, ...)`;
 
 export type SearchInputProps = {
   placeholder?: string;
@@ -20,9 +14,9 @@ export type SearchInputProps = {
   resultsCount?: number | null;
   isSearchLoading?: boolean;
   debounceMs?: number;
-  showWildcardHelp?: boolean;
   minWidth?: number;
   clearOnEscape?: boolean;
+  emptyEndAdornment?: React.ReactNode;
 };
 
 export function SearchInput(props: SearchInputProps) {
@@ -33,9 +27,9 @@ export function SearchInput(props: SearchInputProps) {
     resultsCount = null,
     isSearchLoading = false,
     debounceMs = DEFAULT_DEBOUNCE_MS,
-    showWildcardHelp = true,
     minWidth = 300,
     clearOnEscape = true,
+    emptyEndAdornment,
   } = props;
 
   const mode = useMuiPaletteMode();
@@ -182,35 +176,8 @@ export function SearchInput(props: SearchInputProps) {
                       <InputAdornment position="end">
                         <CircularProgress size={16} thickness={5} />
                       </InputAdornment>
-                    ) : showWildcardHelp ? (
-                      <InputAdornment position="end">
-                        <Tooltip
-                          title={SEARCH_WILDCARD_TOOLTIP}
-                          placement="bottom"
-                          arrow
-                          slotProps={{
-                            tooltip: {
-                              sx: {
-                                maxWidth: 320,
-                                whiteSpace: 'pre-line',
-                                lineHeight: 1.4,
-                                fontSize: 13,
-                              },
-                            },
-                          }}
-                        >
-                          <span>
-                            <IconButton
-                              edge="end"
-                              size="small"
-                              aria-label={SEARCH_WILDCARD_TOOLTIP}
-                              sx={{ color: 'text.secondary' }}
-                            >
-                              <i className="bi bi-question-circle" />
-                            </IconButton>
-                          </span>
-                        </Tooltip>
-                      </InputAdornment>
+                    ) : emptyEndAdornment ? (
+                      <InputAdornment position="end">{emptyEndAdornment}</InputAdornment>
                     ) : undefined,
                   }),
             }}

@@ -39,12 +39,10 @@ function normalizeText(raw: string): string {
 
 function buildGroupKey(palitraDetails: PalitraDetails): string {
   const palitra = palitraDetails.palitra;
-  const normalizedName = normalizeText(palitra.name);
-  const normalizedSource = normalizeText(palitra.source_file_name ?? '');
-  if (normalizedSource !== '') {
-    return `${normalizedSource}::${normalizedName}`;
+  if (typeof palitra.api_palitra_id === 'number') {
+    return `api:${palitra.api_palitra_id}`;
   }
-  return `name::${normalizedName}`;
+  return `id:${palitra.id}`;
 }
 
 function groupPalitras(palitras: PalitraDetails[]): PalitraGroup[] {
@@ -359,7 +357,6 @@ function PalitrasOverlay(props: PalitrasOverlayProps) {
           <SearchInput
             placeholder="Пошук"
             onSearch={setFilterValue}
-            showWildcardHelp={false}
             minWidth={260}
           />
         </Box>
