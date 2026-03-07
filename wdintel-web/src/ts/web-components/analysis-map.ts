@@ -173,6 +173,7 @@ class AnalysisMap extends HTMLElement {
   }
 
   connectedCallback() {
+    this._palitrasLoadState = this._parsePalitrasLoadState(this.getAttribute('palitras-load-state'));
     this.addEventListener('search-points', this._searchPointsHandler);
     window.addEventListener('keydown', this._escapeHandler);
   }
@@ -308,6 +309,10 @@ class AnalysisMap extends HTMLElement {
     }
     if (name === 'search-query') {
       this._applySearchQuery(newValue ?? '');
+    }
+    if (name === 'palitras-load-state') {
+      this._palitrasLoadState = this._parsePalitrasLoadState(newValue);
+      this._palitraManager?.setLoadState(this._palitrasLoadState);
     }
   }
 
