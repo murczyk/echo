@@ -112,7 +112,8 @@ export function SearchInput(props: SearchInputProps) {
       return;
     }
     setValue(initialValue);
-  }, [initialValue]);
+    onSearch(initialValue);
+  }, [initialValue, onSearch]);
 
   return (
     <ThemeProvider theme={theme}>
