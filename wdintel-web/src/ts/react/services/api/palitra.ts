@@ -53,11 +53,15 @@ type PalitraDetailsLike = {
   points?: PalitraDetails['points'] | null;
 };
 
+type PalitraGeometryDetailsLike = {
+  id?: number | string;
+  lastUploadedAtTs?: number | string | null;
+  last_uploaded_at_ts?: number | string | null;
+};
+
 type PalitraReadWithGeometriesLike = {
   palitra: PalitraLike;
-  geometries?: Array<{
-    id?: number | string;
-  }> | null;
+  geometries?: PalitraGeometryDetailsLike[] | null;
 };
 
 const primaryGeometryIdByPalitraId = new Map<number, number>();
@@ -257,13 +261,39 @@ async function getPrimaryGeometryIdForUpdate(palitraId: number): Promise<number 
   }
 
   const data = await postJson<PalitraReadWithGeometriesLike>(`/api/palitra/v2/read/${palitraId}`);
-  const geometryId = normalizeOptionalNumber(data?.geometries?.[0]?.id);
+  const geometryId = pickPrimaryGeometryIdForUpdate(data?.geometries);
 
   if (geometryId !== null) {
     primaryGeometryIdByPalitraId.set(palitraId, geometryId);
   }
 
   return geometryId;
+}
+
+function pickPrimaryGeometryIdForUpdate(geometries: PalitraGeometryDetailsLike[] | null | undefined): number | null {
+  if (!Array.isArray(geometries) || geometries.length === 0) {
+    return null;
+  }
+
+  let selectedId: number | null = null;
+  let selectedTs = Number.NEGATIVE_INFINITY;
+
+  geometries.forEach((geometry) => {
+    const geometryId = normalizeOptionalNumber(geometry?.id);
+    if (geometryId === null) {
+      return;
+    }
+
+    const rawTs = geometry?.lastUploadedAtTs ?? geometry?.last_uploaded_at_ts;
+    const ts = normalizeOptionalNumber(rawTs) ?? Number.NEGATIVE_INFINITY;
+
+    if (selectedId === null || ts > selectedTs || (ts === selectedTs && geometryId > selectedId)) {
+      selectedId = geometryId;
+      selectedTs = ts;
+    }
+  });
+
+  return selectedId;
 }
 
 export async function deletePalitra(palitraId: number): Promise<void> {

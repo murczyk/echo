@@ -1882,7 +1882,18 @@ update user shared route msg model =
             )
 
         GotPalitras (Ok palitras) ->
-            ( { model | palitras = Success palitras }
+            let
+                palitrasNoPoints =
+                    List.map
+                        (\palitraRead ->
+                            { palitraRead
+                                | geometries =
+                                    List.map (\geometry -> { geometry | points = [] }) palitraRead.geometries
+                            }
+                        )
+                        palitras
+            in
+            ( { model | palitras = Success palitrasNoPoints }
             , E.none
             )
 
