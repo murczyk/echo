@@ -327,9 +327,13 @@ export class PalitraManager {
         pointsByPalitraId.set(palitra.id, []);
       });
       const fallbackPalitra = this.pickFallbackPalitraForUnmatched(palitras);
+      const preserveUnmatchedPalitra = palitras[0] ?? null;
 
       points.forEach((point) => {
-        const matchedPalitra = this.findPalitraForPoint(palitras, point) ?? fallbackPalitra;
+        const matchedPalitra =
+          this.findPalitraForPoint(palitras, point) ??
+          fallbackPalitra ??
+          preserveUnmatchedPalitra;
         if (!matchedPalitra) {
           return;
         }

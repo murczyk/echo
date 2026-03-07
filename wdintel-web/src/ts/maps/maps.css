@@ -452,7 +452,7 @@ div [id='map-container-analysis'] {
 	display: flex;
 	flex-direction: column;
 	gap: 0;
-	padding: 0;
+	padding: 0 0 12px 0;
 }
 
 .palitra-item + .palitra-item {
@@ -538,7 +538,7 @@ div [id='map-container-analysis'] {
 
 .palitra-more-button {
 	margin-top: 12px;
-	margin-bottom: 12px;
+	margin-bottom: 0;
 	padding: 0;
 	border: none;
 	background: transparent;

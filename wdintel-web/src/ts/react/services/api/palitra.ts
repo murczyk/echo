@@ -120,13 +120,13 @@ function toCreatePalitraReqBody(req: CreatePalitraReq): CreatePalitraReqBody {
 }
 
 type UpdatePalitraReqBody = CreatePalitraReqBody & {
-  geometry_id?: number;
+  geometry_id: number;
 };
 
-function toUpdatePalitraReqBody(req: CreatePalitraReq, geometryId: number | null): UpdatePalitraReqBody {
+function toUpdatePalitraReqBody(req: CreatePalitraReq, geometryId: number): UpdatePalitraReqBody {
   return {
     ...toCreatePalitraReqBody(req),
-    ...(geometryId === null ? {} : { geometry_id: geometryId }),
+    geometry_id: geometryId,
   };
 }
 
@@ -277,6 +277,11 @@ export async function createPalitra(req: CreatePalitraReq): Promise<Palitra> {
 
 export async function updatePalitra(palitraId: number, req: CreatePalitraReq): Promise<PalitraDetails> {
   const geometryId = await getPrimaryGeometryIdForUpdate(palitraId);
+  if (geometryId === null) {
+    primaryGeometryIdByPalitraId.delete(palitraId);
+    const data = await postJson<PalitraDetailsLike>(`/api/palitra/update/${palitraId}`, toCreatePalitraReqBody(req));
+    return normalizePalitraDetails(data);
+  }
 
   const data = await postJson<PalitraReadWithGeometriesLike>(
     `/api/palitra/v2/update/${palitraId}`,
