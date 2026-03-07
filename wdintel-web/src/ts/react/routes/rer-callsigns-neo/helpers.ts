@@ -315,6 +315,7 @@ export function makeUpdatePayload(form: CallsignEditForm): Callsign {
     unitId: form.unitId,
     active: form.active,
     sourceId: form.sourceId,
+    callsignAdditionalSources: [],
     createdAt: form.createdAt,
     developing: form.developing,
     radioFreq: form.radioFreq.trim() === '' ? '' : form.radioFreq.trim(),
@@ -328,6 +329,7 @@ export function makeCreatePayload(row: CallsignDraftRow, unitId: number, sourceI
     comment: row.comment.trim(),
     unitId,
     sourceId,
+    callsignAdditionalSources: [],
     developing: row.developing,
     radioFreq: row.radioFreq.trim() === '' ? '' : row.radioFreq.trim(),
   };

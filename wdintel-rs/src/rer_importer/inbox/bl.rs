@@ -11,9 +11,11 @@ use crate::location::utils;
 use crate::location::utils::to_location_list;
 use crate::messenger::group::types::SignalGroupEntry;
 use crate::messenger::group::{collect_groups, CollectGroupsOpts};
+use crate::palitra::types::PalitraAccess;
 use crate::rer_importer::collect_profiles_data;
 use crate::rer_importer::highlight::*;
 use crate::rer_importer::inbox::query::build_inbox_query;
+use crate::rer_importer::points::build_palitra_access_filter;
 use crate::rer_importer::signals::*;
 use crate::storage::mk_media_url;
 use crate::types::*;
@@ -185,12 +187,26 @@ pub async fn aggregate_to_inbox_messages(
             .push(media);
     }
 
+    let highlight_points = req.highlight_points.unwrap_or(false);
+    let mut palitra_points_by_message = if highlight_points {
+        get_palitra_points_by_message(
+            &env.dbx,
+            login.to_string(),
+            message_ids.clone(),
+        )
+        .await
+        .context(h!())?
+    } else {
+        Default::default()
+    };
+
     for message in messages {
         // for message in messages {
         // let m_inbox: Option<sigint_inbox_item::Model> =
         //     SigintInboxItem::find_by_id(message.id)
         //         .one(&env.dbx)
         //         .await.c(h!())?;
+
         let media = media_by_message
             .get(&message.id)
             .cloned()
@@ -231,6 +247,31 @@ pub async fn aggregate_to_inbox_messages(
                 None => None,
                 Some(jv) => Some(serde_json::from_value(jv).context(h!())?),
             };
+        let without_model_tags = req.without_model_tags.unwrap_or(false);
+        let m_inbox_tags: Option<Vec<InboxMessageTag>> =
+            match message.inbox_tags {
+                None => None,
+                Some(jv) => Some(
+                    serde_json::from_value::<Vec<InboxMessageTag>>(jv)
+                        .context(h!())?
+                        .into_iter()
+                        .filter(|tag| {
+                            tag.confidence >= TAG_MINIMUM_CONFIDENCE
+                                && (!without_model_tags || tag.model.is_none())
+                        })
+                        .collect(),
+                ),
+            };
+        let inbox_tag_ids = m_inbox_tags
+            .as_ref()
+            .map(|tags| tags.iter().map(|tag| tag.tag_id).collect::<Vec<_>>());
+
+        let m_point_tokens = if highlight_points {
+            palitra_points_by_message.remove(&message.id)
+        } else {
+            None
+        };
+
         let m_signal_tokens: Option<Vec<CNSignal>> = match message.signal_tokens
         {
             None => None,
@@ -261,12 +302,14 @@ pub async fn aggregate_to_inbox_messages(
             &body,
             Some(&no_headers_body),
             &m_callsign_tokens.clone().unwrap_or_default(),
+            &m_point_tokens.clone().unwrap_or_default(),
             &m_keyword_tokens.clone().unwrap_or_default(),
             &m_signal_tokens.clone().unwrap_or_default(),
             ts_headline,
             crate::rer_importer::highlight::HighlightOpts {
                 highlight_callsigns: req.highlight_callsigns,
                 highlight_keywords: req.highlight_keywords,
+                highlight_points: req.highlight_points,
                 highlight_signals: req.highlight_signals,
                 highlight_searchres: req.highlight_searchres,
             },
@@ -282,24 +325,6 @@ pub async fn aggregate_to_inbox_messages(
             Some(location) => Some(to_location_list(&location).join(", ")),
         };
         let network_ids = messages_networks.get(&message.id).cloned();
-        let without_model_tags = req.without_model_tags.unwrap_or(false);
-        let m_inbox_tags: Option<Vec<InboxMessageTag>> =
-            match message.inbox_tags {
-                None => None,
-                Some(jv) => Some(
-                    serde_json::from_value::<Vec<InboxMessageTag>>(jv)
-                        .context(h!())?
-                        .into_iter()
-                        .filter(|tag| {
-                            tag.confidence >= TAG_MINIMUM_CONFIDENCE
-                                && (!without_model_tags || tag.model.is_none())
-                        })
-                        .collect(),
-                ),
-            };
-        let inbox_tag_ids = m_inbox_tags
-            .as_ref()
-            .map(|tags| tags.iter().map(|tag| tag.tag_id).collect::<Vec<_>>());
 
         res.push((
             message.id,
@@ -328,6 +353,7 @@ pub async fn aggregate_to_inbox_messages(
                 unit: message.unit_v2.clone(),
                 no_headers_body: Some(no_headers_body),
                 callsign_tokens: m_callsign_tokens,
+                point_tokens: m_point_tokens,
                 keyword_tokens: m_keyword_tokens,
                 signal_tokens: m_signal_tokens,
                 text_marked: Some(text_marked),
@@ -387,6 +413,51 @@ pub async fn fill_callsigns(
     Ok(())
 }
 
+async fn get_palitra_points_by_message(
+    dbx: &DatabaseConnection,
+    login: String,
+    message_ids: Vec<i64>,
+) -> Result<HashMap<i64, Vec<CNPoint>>, AppError> {
+    let access = PalitraAccess::ByLogins {
+        logins: vec![login],
+    };
+    let exact = false;
+    let palitra_cond = build_palitra_access_filter(access, exact);
+    let palitra_points = sigint_inbox_item_point_token::Entity::find()
+        .filter(
+            sigint_inbox_item_point_token::Column::SigintInboxItemId
+                .eq_any(message_ids),
+        )
+        .join(
+            JoinType::InnerJoin,
+            sigint_inbox_item_point_token::Relation::Palitra.def(),
+        )
+        .filter(palitra::Column::Deleted.eq(false))
+        .filter(palitra_cond)
+        .select_only()
+        .column(sigint_inbox_item_point_token::Column::SigintInboxItemId)
+        .column(sigint_inbox_item_point_token::Column::PointTokens)
+        .into_tuple::<(i64, serde_json::Value)>()
+        .all(dbx)
+        .await
+        .context(h!())?;
+    let mut palitra_points_by_message: HashMap<i64, Vec<CNPoint>> =
+        HashMap::new();
+    for (sigint_inbox_item_id, points) in palitra_points {
+        let mut points: Vec<CNPoint> = serde_json::from_value(points)
+            .map_err(|e| anyhow::anyhow!("json convert error: {e}"))?;
+        palitra_points_by_message
+            .entry(sigint_inbox_item_id)
+            .or_default()
+            .append(&mut points);
+    }
+    for points in palitra_points_by_message.values_mut() {
+        points.sort();
+        points.dedup();
+    }
+    Ok(palitra_points_by_message)
+}
+
 pub async fn load_messages_networks(
     messages: &Vec<InboxMessageDesc>,
     dbx: &DatabaseConnection,
@@ -408,6 +479,7 @@ async fn backfill_missing_messages_networks(
 ) -> Result<HashMap<i64, Vec<i64>>, AppError> {
     let mut result: HashMap<i64, Vec<i64>> = HashMap::new();
     let mut existing_message_ids = HashSet::new();
+    let mut processed_message_networks = HashSet::new();
     for ids in message_ids.chunks(20000) {
         sigint_inbox_item_network::Entity::find()
             .select_only()
@@ -424,6 +496,9 @@ async fn backfill_missing_messages_networks(
             .into_iter()
             .for_each(|(item_id, network_id)| {
                 existing_message_ids.insert(item_id);
+                if !processed_message_networks.insert((item_id, network_id)) {
+                    return;
+                }
                 result.entry(item_id).or_default().push(network_id);
             });
     }
@@ -436,11 +511,17 @@ async fn backfill_missing_messages_networks(
         return Ok(result);
     }
 
-    let items_to_recalculate = sigint_inbox_item::Entity::find()
-        .filter(sigint_inbox_item::Column::Id.is_in(missing_message_ids))
-        .all(dbx)
-        .await
-        .context(h!())?;
+    let mut items_to_recalculate = vec![];
+    for ids in missing_message_ids.chunks(20000) {
+        sigint_inbox_item::Entity::find()
+            .filter(sigint_inbox_item::Column::Id.is_in(ids.to_vec()))
+            .all(dbx)
+            .await
+            .context(h!())?
+            .into_iter()
+            .for_each(|r| items_to_recalculate.push(r));
+    }
+
     if items_to_recalculate.is_empty() {
         return Ok(result);
     }
@@ -452,7 +533,7 @@ async fn backfill_missing_messages_networks(
     .await
     .context(h!())?;
     for (id, ids) in new_entries {
-        result.insert(id, ids);
+        result.insert(id, ids.into_iter().unique().collect_vec());
     }
     Ok(result)
 }

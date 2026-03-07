@@ -11,6 +11,9 @@ import {
 
 import { postJson, postVoid } from './client';
 
+const GOI_SSH_PORT_DEFAULT = 22;
+const GOI_PATH_DEFAULT = '/etc/goi/data/palettes';
+
 type OrganismLike = {
   id?: number | string;
   parentId?: number | string | null;
@@ -41,6 +44,18 @@ type OrganismGroupLike = {
   organism_id?: number | string;
 };
 
+type OrganismGoiSettingsLike = {
+  organismId?: number | string;
+  organism_id?: number | string;
+  sshHost?: string | null;
+  ssh_host?: string | null;
+  sshUser?: string | null;
+  ssh_user?: string | null;
+  sshPort?: number | string;
+  ssh_port?: number | string;
+  path?: string;
+};
+
 type ListOrganismsReqBody = {
   sort_by: ListOrganismsReq['sortBy'];
 };
@@ -69,6 +84,51 @@ type AddGroupToOrganismReqBody = {
 type RemoveGroupFromOrganismReqBody = {
   organism_id: number;
   group_name: string;
+};
+
+type UpdateOrganismGoiSettingsReqBody = {
+  organism_id: number;
+  ssh_host: string | null;
+  ssh_user: string | null;
+  ssh_port: number;
+  path: string;
+};
+
+type CheckOrganismGoiConnectionReqBody = {
+  ssh_host: string;
+  ssh_user: string;
+  ssh_port: number;
+  path: string;
+};
+
+type CheckOrganismGoiConnectionRspLike = {
+  ok?: boolean;
+  listedEntries?: string[];
+  listed_entries?: string[];
+  error?: string | null;
+};
+
+export type OrganismGoiSettings = {
+  organismId: number;
+  sshHost: string;
+  sshUser: string;
+  sshPort: number;
+  path: string;
+};
+
+export type UpdateOrganismGoiSettingsReq = OrganismGoiSettings;
+
+export type CheckOrganismGoiConnectionReq = {
+  sshHost: string;
+  sshUser: string;
+  sshPort: number;
+  path: string;
+};
+
+export type CheckOrganismGoiConnectionRsp = {
+  ok: boolean;
+  listedEntries: string[];
+  error: string | null;
 };
 
 function toListOrganismsReqBody(req: ListOrganismsReq): ListOrganismsReqBody {
@@ -106,6 +166,25 @@ function toRemoveGroupReqBody(req: RemoveGroupFromOrganismReq): RemoveGroupFromO
   return {
     organism_id: req.organismId,
     group_name: req.groupName,
+  };
+}
+
+function toUpdateOrganismGoiSettingsReqBody(req: UpdateOrganismGoiSettingsReq): UpdateOrganismGoiSettingsReqBody {
+  return {
+    organism_id: req.organismId,
+    ssh_host: req.sshHost.trim() ? req.sshHost.trim() : null,
+    ssh_user: req.sshUser.trim() ? req.sshUser.trim() : null,
+    ssh_port: req.sshPort,
+    path: req.path,
+  };
+}
+
+function toCheckOrganismGoiConnectionReqBody(req: CheckOrganismGoiConnectionReq): CheckOrganismGoiConnectionReqBody {
+  return {
+    ssh_host: req.sshHost,
+    ssh_user: req.sshUser,
+    ssh_port: req.sshPort,
+    path: req.path,
   };
 }
 
@@ -160,6 +239,16 @@ function normalizeOrganismGroup(raw: OrganismGroupLike): OrganismGroup {
   return {
     masterKey: raw.masterKey ?? raw.master_key ?? '',
     organismId: normalizeNumber(raw.organismId ?? raw.organism_id),
+  };
+}
+
+function normalizeOrganismGoiSettings(raw: OrganismGoiSettingsLike): OrganismGoiSettings {
+  return {
+    organismId: normalizeNumber(raw.organismId ?? raw.organism_id),
+    sshHost: (raw.sshHost ?? raw.ssh_host ?? '').trim(),
+    sshUser: (raw.sshUser ?? raw.ssh_user ?? '').trim(),
+    sshPort: normalizeOptionalNumber(raw.sshPort ?? raw.ssh_port) ?? GOI_SSH_PORT_DEFAULT,
+    path: (raw.path ?? GOI_PATH_DEFAULT).trim() || GOI_PATH_DEFAULT,
   };
 }
 
@@ -233,4 +322,42 @@ export async function addGroupToOrganism(req: AddGroupToOrganismReq): Promise<vo
 
 export async function removeGroupFromOrganism(req: RemoveGroupFromOrganismReq): Promise<void> {
   await postVoid('/api/organism/remove-group', toRemoveGroupReqBody(req));
+}
+
+export async function getOrganismGoiSettings(organismId: number): Promise<OrganismGoiSettings> {
+  const data = await postJson<OrganismGoiSettingsLike>('/api/organism/goi-settings', organismId);
+  return normalizeOrganismGoiSettings(data || {});
+}
+
+export async function updateOrganismGoiSettings(req: UpdateOrganismGoiSettingsReq): Promise<OrganismGoiSettings> {
+  const data = await postJson<OrganismGoiSettingsLike>(
+    '/api/organism/goi-settings/update',
+    toUpdateOrganismGoiSettingsReqBody(req),
+  );
+  return normalizeOrganismGoiSettings(data || {});
+}
+
+export async function checkOrganismGoiConnection(
+  req: CheckOrganismGoiConnectionReq,
+): Promise<CheckOrganismGoiConnectionRsp> {
+  const data = await postJson<CheckOrganismGoiConnectionRspLike>(
+    '/api/organism/goi-settings/check-connection',
+    toCheckOrganismGoiConnectionReqBody(req),
+  );
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    return {
+      ok: false,
+      listedEntries: [],
+      error: 'Некоректна відповідь сервера',
+    };
+  }
+  const parsedOk = typeof data.ok === 'boolean' ? data.ok : null;
+  const error = (data && typeof data.error === 'string' && data.error.trim().length > 0)
+    ? data.error.trim()
+    : null;
+  return {
+    ok: parsedOk ?? (error === null),
+    listedEntries: data?.listedEntries ?? data?.listed_entries ?? [],
+    error,
+  };
 }

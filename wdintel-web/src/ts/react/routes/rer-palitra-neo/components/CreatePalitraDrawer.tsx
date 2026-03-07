@@ -13,6 +13,8 @@ import {
   Step,
   StepButton,
   Stepper,
+  Tab,
+  Tabs,
   TextField,
   Typography,
 } from '@mui/material';
@@ -21,7 +23,7 @@ import React from 'react';
 import { AnalyzeKmzResponse, AreaOfResponsibility, MyScope, Organism, User } from '../../../../../Bindings';
 import { pageDrawerBackdropSx } from '../../../components/loadingOverlayStyles';
 import { isFormValid } from '../helpers';
-import { KmzColorOption, PalitraFormState } from '../types';
+import { KmzColorOption, PalitraCreateMode, PalitraFormState } from '../types';
 import { AccessEditor } from './AccessEditor';
 
 type Props = {
@@ -34,6 +36,7 @@ type Props = {
   kmzAnalysis: AnalyzeKmzResponse | null;
   kmzColorOptions: KmzColorOption[];
   selectedColorFromKmz: string;
+  createMode: PalitraCreateMode;
   createForm: PalitraFormState;
   user: User | null;
   myScope: MyScope | null;
@@ -44,8 +47,9 @@ type Props = {
   onRequestAnalyzeKmz: () => void;
   onSetKmzColorOptions: (updater: (prev: KmzColorOption[]) => KmzColorOption[]) => void;
   onSetSelectedColorFromKmz: (value: string) => void;
+  onSetCreateMode: (mode: PalitraCreateMode) => void;
   onSetCreateForm: (updater: (prev: PalitraFormState) => PalitraFormState) => void;
-  onCreate: () => void;
+  onCreate: (mode: PalitraCreateMode) => void;
 };
 
 const steps = [ 'KMZ файл', 'Параметри і доступ' ];
@@ -60,6 +64,7 @@ function CreatePalitraDrawerComponent({
   kmzAnalysis,
   kmzColorOptions,
   selectedColorFromKmz,
+  createMode,
   createForm,
   user,
   myScope,
@@ -70,6 +75,7 @@ function CreatePalitraDrawerComponent({
   onRequestAnalyzeKmz,
   onSetKmzColorOptions,
   onSetSelectedColorFromKmz,
+  onSetCreateMode,
   onSetCreateForm,
   onCreate,
 }: Props) {
@@ -83,15 +89,18 @@ function CreatePalitraDrawerComponent({
   }, [open]);
 
   const hasSelectedKmzColor = kmzColorOptions.some((option) => option.selected);
+  const isAdvancedMode = createMode === 'advanced';
   const hasSuccessfulKmzAnalysis = Boolean(kmzAnalysis);
   const dismissBlocked = createInFlight || kmzAnalyzing;
   const canContinueFromKmzStep = Boolean(kmzFile) && hasSuccessfulKmzAnalysis && !kmzAnalyzing;
+  const requiresKmzSelection = isAdvancedMode && kmzColorOptions.length > 0;
+  const isCreateFormValid = isAdvancedMode ? isFormValid(createForm) : createForm.name.trim().length > 0;
   const canCreate =
     createInFlight ||
     !kmzFile ||
     !hasSuccessfulKmzAnalysis ||
-    !isFormValid(createForm) ||
-    (kmzColorOptions.length > 0 && !hasSelectedKmzColor);
+    !isCreateFormValid ||
+    (requiresKmzSelection && !hasSelectedKmzColor);
   const selectedKmzColorsCount = kmzColorOptions.filter((option) => option.selected).length;
 
   React.useEffect(() => {
@@ -201,115 +210,123 @@ function CreatePalitraDrawerComponent({
 
           {activeStep === 1 ? (
             <Stack spacing={2}>
-              {kmzColorOptions.length > 0 ? (
-                <Box sx={{ display: 'flex', flexDirection: 'column', rowGap: 1.5 }}>
-                  <Typography
-                    variant="subtitle2"
-                    sx={{ px: 1.5, pt: 1.25, pb: 2, textAlign: 'center', fontSize: '1rem', position: 'relative', zIndex: 1 }}
-                  >
-                    Оберіть кольори з KMZ (топ 20) *
-                  </Typography>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', px: 1.5 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', columnGap: 1 }}>
-                      <Button
-                        size="small"
-                        sx={{ px: '9px' }}
-                        onClick={() => onSetKmzColorOptions((prev) => prev.map((option) => ({ ...option, selected: true })))}
-                      >
-                        Обрати всі
-                      </Button>
-                      <Button
-                        size="small"
-                        sx={{ px: '9px' }}
-                        onClick={() => onSetKmzColorOptions((prev) => prev.map((option) => ({ ...option, selected: false })))}
-                      >
-                        Зняти всі
-                      </Button>
-                    </Box>
-                    <Typography variant="body2" color="text.secondary">
-                      {`Обрано ${selectedKmzColorsCount} з ${kmzColorOptions.length}`}
-                    </Typography>
-                  </Box>
-                  {kmzColorOptions.map((option) => (
-                    <Paper key={option.colorHex} variant="outlined" sx={{ p: 1.5 }}>
-                      <Stack direction="row" spacing={2} alignItems="center" sx={{ width: '100%' }}>
-                        <FormControlLabel
-                          sx={{ m: 0, flex: 1 }}
-                          control={
-                            <Checkbox
-                              size="small"
-                              checked={option.selected}
-                              onChange={() =>
-                                onSetKmzColorOptions((prev) =>
-                                  prev.map((entry) =>
-                                    entry.colorHex === option.colorHex ? { ...entry, selected: !entry.selected } : entry,
-                                  ),
-                                )
-                              }
-                            />
-                          }
-                          label={
-                            <Stack direction="row" spacing={1} alignItems="center">
-                              <Chip
-                                size="small"
-                                label={option.colorHex}
-                                sx={{ backgroundColor: option.colorHex, color: '#fff', fontFamily: 'monospace' }}
-                              />
-                              <Typography variant="caption">топ #{option.rank} ({option.count})</Typography>
-                            </Stack>
-                          }
-                        />
-                        <TextField
+              <Tabs
+                value={createMode}
+                onChange={(_, value: PalitraCreateMode) => onSetCreateMode(value)}
+                variant="fullWidth"
+                sx={{ mb: 0.5 }}
+              >
+                <Tab value="basic" label="Базовий" disabled={dismissBlocked} />
+                <Tab value="advanced" label="Розширений" disabled={dismissBlocked} />
+              </Tabs>
+
+              <Stack spacing={2} sx={{ pt: 1.5 }}>
+                {!isAdvancedMode ? null : kmzColorOptions.length === 0 ? (
+                  <TextField
+                    label="Колір"
+                    type="color"
+                    size="small"
+                    value={selectedColorFromKmz}
+                    onChange={(event) => {
+                      onSetSelectedColorFromKmz(event.target.value);
+                      onSetCreateForm((prev) => ({ ...prev, colorHex: event.target.value }));
+                    }}
+                    disabled={createInFlight}
+                    sx={{ width: '140px' }}
+                  />
+                ) : (
+                  <Box sx={{ display: 'flex', flexDirection: 'column', rowGap: 1.5 }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', px: 1.5 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', columnGap: 1 }}>
+                        <Button
                           size="small"
-                          label="Суфікс"
-                          value={option.suffix}
-                          onChange={(event) =>
-                            onSetKmzColorOptions((prev) =>
-                              prev.map((entry) =>
-                                entry.colorHex === option.colorHex ? { ...entry, suffix: event.target.value } : entry,
-                              ),
-                            )
-                          }
-                          sx={{ minWidth: '220px', ml: 'auto' }}
-                        />
-                      </Stack>
-                    </Paper>
-                  ))}
-                </Box>
-              ) : (
+                          sx={{ px: '9px' }}
+                          onClick={() => onSetKmzColorOptions((prev) => prev.map((option) => ({ ...option, selected: true })))}
+                        >
+                          Обрати всі
+                        </Button>
+                        <Button
+                          size="small"
+                          sx={{ px: '9px' }}
+                          onClick={() => onSetKmzColorOptions((prev) => prev.map((option) => ({ ...option, selected: false })))}
+                        >
+                          Зняти всі
+                        </Button>
+                      </Box>
+                      <Typography variant="body2" color="text.secondary">
+                        {`Обрано ${selectedKmzColorsCount} з ${kmzColorOptions.length}`}
+                      </Typography>
+                    </Box>
+                    {kmzColorOptions.map((option) => (
+                      <Paper key={option.colorHex} variant="outlined" sx={{ p: 1.5 }}>
+                        <Stack direction="row" spacing={2} alignItems="center" sx={{ width: '100%' }}>
+                          <FormControlLabel
+                            sx={{ m: 0, flex: 1 }}
+                            control={
+                              <Checkbox
+                                size="small"
+                                checked={option.selected}
+                                onChange={() =>
+                                  onSetKmzColorOptions((prev) =>
+                                    prev.map((entry) =>
+                                      entry.colorHex === option.colorHex ? { ...entry, selected: !entry.selected } : entry,
+                                    ),
+                                  )
+                                }
+                              />
+                            }
+                            label={
+                              <Stack direction="row" spacing={1} alignItems="center">
+                                <Chip
+                                  size="small"
+                                  label={option.colorHex}
+                                  sx={{ backgroundColor: option.colorHex, color: '#fff', fontFamily: 'monospace' }}
+                                />
+                                <Typography variant="caption">топ #{option.rank} ({option.count})</Typography>
+                              </Stack>
+                            }
+                          />
+                          <TextField
+                            size="small"
+                            label="Суфікс"
+                            value={option.suffix}
+                            onChange={(event) =>
+                              onSetKmzColorOptions((prev) =>
+                                prev.map((entry) =>
+                                  entry.colorHex === option.colorHex ? { ...entry, suffix: event.target.value } : entry,
+                                ),
+                              )
+                            }
+                            sx={{ minWidth: '220px', ml: 'auto' }}
+                          />
+                        </Stack>
+                      </Paper>
+                    ))}
+                  </Box>
+                )}
+
                 <TextField
-                  label="Колір"
-                  type="color"
+                  label="Назва"
                   size="small"
-                  value={selectedColorFromKmz}
-                  onChange={(event) => {
-                    onSetSelectedColorFromKmz(event.target.value);
-                    onSetCreateForm((prev) => ({ ...prev, colorHex: event.target.value }));
-                  }}
+                  value={createForm.name}
+                  onChange={(event) => onSetCreateForm((prev) => ({ ...prev, name: event.target.value }))}
                   disabled={createInFlight}
-                  sx={{ width: '140px' }}
+                  fullWidth
                 />
-              )}
 
-              <TextField
-                label="Назва"
-                size="small"
-                value={createForm.name}
-                onChange={(event) => onSetCreateForm((prev) => ({ ...prev, name: event.target.value }))}
-                disabled={createInFlight}
-                fullWidth
-              />
-
-              <AccessEditor
-                form={createForm}
-                onChange={(next) => onSetCreateForm(() => next)}
-                user={user}
-                myScope={myScope}
-                organisms={organisms}
-                aors={aors}
-                allLogins={allLogins}
-                availableAccessTypes={availableAccessTypes}
-              />
+                {isAdvancedMode ? (
+                  <AccessEditor
+                    form={createForm}
+                    onChange={(next) => onSetCreateForm(() => next)}
+                    user={user}
+                    myScope={myScope}
+                    organisms={organisms}
+                    aors={aors}
+                    allLogins={allLogins}
+                    availableAccessTypes={availableAccessTypes}
+                  />
+                ) : null}
+              </Stack>
             </Stack>
           ) : null}
           </Stack>
@@ -328,7 +345,7 @@ function CreatePalitraDrawerComponent({
               Далі
             </Button>
           ) : (
-            <Button onClick={onCreate} variant="contained" disabled={canCreate}>
+            <Button onClick={() => onCreate(createMode)} variant="contained" disabled={canCreate}>
               {createInFlight ? <CircularProgress size={16} /> : 'Додати'}
             </Button>
           )}

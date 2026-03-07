@@ -18,6 +18,7 @@ pub struct Model {
     #[sea_orm(column_type = "Text", nullable)]
     pub title: Option<String>,
     pub enabled: bool,
+    pub is_palitra: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

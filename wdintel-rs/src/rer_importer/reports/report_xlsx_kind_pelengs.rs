@@ -296,6 +296,7 @@ pub async fn get_inbox_messages_report(
                     extended_form: None,
                     unit: m.unit.clone(),
                     callsign_tokens: None,
+                    point_tokens: None,
                     keyword_tokens: None,
                     signal_tokens: None,
                     text_marked: None,

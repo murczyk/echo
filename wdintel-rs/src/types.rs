@@ -1,5 +1,6 @@
 pub use crate::error::AppError;
 pub use crate::h;
+use crate::palitra::worker::PalitraWorkerContext;
 pub use anyhow::{anyhow, bail, Context};
 pub use chrono::prelude::Utc;
 pub use chrono::NaiveDateTime;
@@ -125,6 +126,7 @@ pub struct Env {
     >,
     pub session_activity_dropped: Arc<std::sync::atomic::AtomicU64>,
     pub session_activity_enqueued: Arc<std::sync::atomic::AtomicU64>,
+    pub palitra_worker_context: Arc<PalitraWorkerContext>,
 }
 
 #[derive(Debug)]

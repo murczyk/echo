@@ -81,6 +81,7 @@ export function buildInboxReq(opts: {
     highlightKeywords: true,
     highlightSearchres: true,
     highlightSignals: false,
+    highlightPoints: true,
     selectedTags: null,
     selectedAors: null,
     selectedNetworks: null,

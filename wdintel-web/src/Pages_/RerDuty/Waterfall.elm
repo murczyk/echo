@@ -419,6 +419,7 @@ getBasicInboxParams model =
     , highlightSignals = Just model.highlightSignalsEnabled
     , highlightKeywords = Just True
     , highlightSearchres = Just True
+    , highlightPoints = Just False
     , sortBy = Just B.ImsTimestamp
     , reportTagsOnlyThisUnit = Nothing
     , ignoreImportedCoords = Just True
@@ -2133,7 +2134,7 @@ update shared user msg model =
                                 messageNetworkIds =
                                     case message_.networkIds of
                                         Just networkIds ->
-                                            networkIds
+                                            ListX.unique networkIds
 
                                         Nothing ->
                                             []
@@ -2491,7 +2492,7 @@ waterfallDiv user isDarkMode duplicates datasources serverInfo masterUnits model
                                                 messageNetworkIds =
                                                     case message.networkIds of
                                                         Just networkIds ->
-                                                            networkIds
+                                                            ListX.unique networkIds
 
                                                         Nothing ->
                                                             []

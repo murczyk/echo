@@ -11,6 +11,7 @@ use sea_orm::*;
 use std::collections::{HashMap, HashSet};
 
 pub mod bl;
+pub mod goi;
 pub mod oneoff;
 pub mod types;
 

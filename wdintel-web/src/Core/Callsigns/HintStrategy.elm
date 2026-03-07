@@ -316,6 +316,9 @@ determineHintStrategyForCallsign hintContext message context callsignInfo networ
                             , units = networkUnits
                             }
 
+                    else if hasCatalogMatch then
+                        SystemWide
+
                     else
                         NoHints
 

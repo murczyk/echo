@@ -31,6 +31,7 @@ type TagFormState = {
   extra: boolean;
   ordInput: string;
   enabled: boolean;
+  isPalitra: boolean;
 };
 
 const emptyForm: TagFormState = {
@@ -38,6 +39,7 @@ const emptyForm: TagFormState = {
   extra: false,
   ordInput: '',
   enabled: true,
+  isPalitra: false,
 };
 
 function formatErrorMessage(error: unknown): string {
@@ -83,6 +85,7 @@ function buildUpsertRequest(form: TagFormState): {
       extra: form.extra ? true : null,
       ord: ordValue,
       enabled: form.enabled,
+      isPalitra: form.isPalitra,
     },
   };
 }
@@ -93,6 +96,7 @@ function applyTagToForm(tag: TagAdmin): TagFormState {
     extra: tag.extra === true,
     ordInput: tag.ord === null ? '' : String(tag.ord),
     enabled: tag.enabled,
+    isPalitra: tag.isPalitra,
   };
 }
 
@@ -199,24 +203,37 @@ function TagForm(props: {
         }
         label="Додатковий тег"
       />
-      <FormField
-        label="Ord (опційно)"
-        value={props.form.ordInput}
-        onChange={(value) => update({ ordInput: value })}
-        error={props.errors.ord}
-        placeholder="напр., 10.5"
-        disabled={props.disabled}
-      />
-      <FormControlLabel
-        control={
-          <MuiCheckbox
-            checked={props.form.enabled}
-            onChange={(event) => update({ enabled: event.target.checked })}
-            disabled={props.disabled}
-          />
-        }
-        label="Активний"
-      />
+      <div className="inline">
+        <FormField
+          label="Ord (опційно)"
+          value={props.form.ordInput}
+          onChange={(value) => update({ ordInput: value })}
+          error={props.errors.ord}
+          placeholder="напр., 10.5"
+          disabled={props.disabled}
+        />
+        <FormControlLabel
+          control={
+            <MuiCheckbox
+              checked={props.form.enabled}
+              onChange={(event) => update({ enabled: event.target.checked })}
+              disabled={props.disabled}
+            />
+          }
+          label="Активний"
+        />
+        <FormControlLabel
+          className="pl-4"
+          control={
+            <MuiCheckbox
+              checked={props.form.isPalitra}
+              onChange={(event) => update({ isPalitra: event.target.checked })}
+              disabled={props.disabled}
+            />
+          }
+          label="Палітра"
+        />
+      </div>
     </div>
   );
 }

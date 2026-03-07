@@ -354,6 +354,7 @@ export type InboxMessage = {
   unit: string | null;
   callsignTokens: Array<CnCallsign> | null;
   signalTokens: Array<CnSignal> | null;
+  pointTokens: Array<CnPoint> | null;
   noHeadersBody: NoHeadersBody | null;
   keywordTokens: Array<CnHighlight> | null;
   textMarked: Array<ContentNode> | null;
@@ -413,6 +414,7 @@ export type InboxMessagesReq = {
   highlightKeywords: boolean | null;
   highlightSearchres: boolean | null;
   highlightSignals: boolean | null;
+  highlightPoints: boolean | null;
   selectedTags: Array<number> | null;
   selectedAors: Array<number> | null;
   selectedNetworks: Array<number> | null;
@@ -1019,6 +1021,7 @@ export type PalitraDetails = {
 export type PalitraPoint = {
   coords: Coords;
   label: string | null;
+  color: string | null;
 };
 
 export type PalitraPointsReq = {
@@ -1108,6 +1111,13 @@ export type CnCallsign = {
   text: string;
 };
 
+export type CnPoint = {
+  begin: number;
+  end: number;
+  etalon: string;
+  text: string;
+};
+
 export type CnHighlight = {
   text: string;
   begin: number;
@@ -1120,6 +1130,7 @@ export type ContentNode =
   | { CNCallsignC: CnCallsign }
   | { CNHighlightC: CnHighlight }
   | { CNSignalC: CnSignal }
+  | { CNPointC: CnPoint }
 ;
 
 export type CnSignal = {
@@ -1400,6 +1411,7 @@ export type Tag = {
   extra: boolean | null;
   ord: number | null;
   keywords: Array<TagKeyword> | null;
+  isPalitra: boolean;
 };
 
 export type TagKeyword = {
@@ -1424,6 +1436,7 @@ export type TagAdmin = {
   ord: number | null;
   enabled: boolean;
   keywords: Array<TagKeyword>;
+  isPalitra: boolean;
 };
 
 export type TagUpsertReq = {
@@ -1431,6 +1444,7 @@ export type TagUpsertReq = {
   extra: boolean | null;
   ord: number | null;
   enabled: boolean;
+  isPalitra: boolean;
 };
 
 export type InboxMessageTagsAddReq = {
@@ -1619,6 +1633,7 @@ export type Callsign = {
   unitId: number;
   active: boolean;
   sourceId: number | null;
+  callsignAdditionalSources: Array<number>;
   createdAt: number;
   developing: boolean;
   radioFreq: string | null;
@@ -1701,6 +1716,7 @@ export type CreateCallsignReq = {
   comment: string;
   unitId: number;
   sourceId: number | null;
+  callsignAdditionalSources: Array<number>;
   developing: boolean;
   radioFreq: string | null;
 };

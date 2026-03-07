@@ -172,6 +172,28 @@ function formatErrorMessage(error: unknown): string {
   return 'Невідома помилка. Спробуйте ще раз.';
 }
 
+function extractQrCodeBase64(response: unknown): string {
+  if (!response || typeof response !== 'object') return '';
+  const qrCode =
+    (response as { qrCodeBase64?: unknown }).qrCodeBase64 ??
+    (response as { qr_code_base64?: unknown }).qr_code_base64;
+  return typeof qrCode === 'string' ? qrCode : '';
+}
+
+function extractIsLinked(response: unknown): boolean {
+  if (!response || typeof response !== 'object') return false;
+  const isLinked =
+    (response as { isLinked?: unknown }).isLinked ??
+    (response as { is_linked?: unknown }).is_linked;
+  return typeof isLinked === 'boolean' ? isLinked : false;
+}
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+}
+
 function normalizeDescription(description: string): string | null {
   if (!description.trim()) return null;
   return description.trim();
@@ -773,7 +795,7 @@ function AdminMessengerNeoPageBody() {
     const intervalId = window.setInterval(async () => {
       try {
         const rsp = await isLinked({ accountId: qrData.accountId });
-        if (rsp.isLinked) {
+        if (extractIsLinked(rsp)) {
           setAccounts((prev) =>
             updateAccountInList(prev, qrData.accountId, (account) => ({
               ...account,
@@ -831,17 +853,44 @@ function AdminMessengerNeoPageBody() {
   }
 
   async function fetchQrCode(accountId: number) {
-    try {
-      const qrRsp = await getQrCode({ accountId });
-      setQrData((prev) =>
-        prev ? { ...prev, qrCode: qrRsp.qrCodeBase64 } : prev
-      );
-    } catch (error) {
-      setLinkStatus({
-        kind: 'error',
-        message: `Помилка отримання QR коду: ${formatErrorMessage(error)}`,
-      });
+    const maxAttempts = 2;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      try {
+        const qrRsp = await getQrCode({ accountId });
+        const qrCode = extractQrCodeBase64(qrRsp);
+
+        if (qrCode.trim().length > 0) {
+          setQrData((prev) =>
+            prev && prev.accountId === accountId
+              ? { ...prev, qrCode }
+              : prev
+          );
+          return;
+        }
+
+        if (attempt < maxAttempts - 1) {
+          await wait(1000);
+          continue;
+        }
+      } catch (error) {
+        if (attempt < maxAttempts - 1) {
+          await wait(1000);
+          continue;
+        }
+
+        setLinkStatus({
+          kind: 'error',
+          message: `Помилка отримання QR коду: ${formatErrorMessage(error)}`,
+        });
+        return;
+      }
     }
+
+    setLinkStatus({
+      kind: 'error',
+      message: 'Помилка отримання QR коду: порожня відповідь сервера.',
+    });
   }
 
   async function submitLinkForm() {

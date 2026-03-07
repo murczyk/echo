@@ -4,6 +4,7 @@ import { AnalyzeKmzResponse, AreaOfResponsibility, MyScope, Organism, Palitra, U
 import { isUnauthorizedError } from '../../services/api/client';
 import {
   analyzePalitraKmz,
+  createPalitraBasicWithKmz,
   createPalitraWithKmz,
   deletePalitra,
   fetchPalitraBootstrapData,
@@ -27,7 +28,7 @@ import {
   toCreateReq,
 } from './helpers';
 import { readDenseTableFromUrl, setDenseTableQueryParam } from '../../utils/denseTableQuery';
-import { KmzColorOption, PalitraFormState, SortColumn, SortDirection, UiError } from './types';
+import { KmzColorOption, PalitraCreateMode, PalitraFormState, SortColumn, SortDirection, UiError } from './types';
 
 function updateUrlSearchParams(mutator: (params: URLSearchParams) => void) {
   const url = new URL(window.location.href);
@@ -74,12 +75,6 @@ function syncPalitraSortToUrl(sortColumn: SortColumn, sortDirection: SortDirecti
   });
 }
 
-function fileNameToBaseName(fileName: string): string {
-  const dotIndex = fileName.lastIndexOf('.');
-  if (dotIndex <= 0) return fileName;
-  return fileName.slice(0, dotIndex);
-}
-
 function canModifyPalitra(user: User | null, palitra: Palitra): boolean {
   return isAdmin(user) || palitra.author === user?.name;
 }
@@ -109,6 +104,7 @@ export function useRerPalitraNeoPage() {
   const [denseTable, setDenseTable] = React.useState<boolean>(() => readDenseTableFromUrl());
 
   const [createOpen, setCreateOpen] = React.useState(false);
+  const [createMode, setCreateMode] = React.useState<PalitraCreateMode>('basic');
   const [createForm, setCreateForm] = React.useState<PalitraFormState>(getInitialCreateForm(null, null));
   const [createInFlight, setCreateInFlight] = React.useState(false);
 
@@ -217,6 +213,7 @@ export function useRerPalitraNeoPage() {
 
   function clearCreateFlow(clearError: boolean) {
     if (clearError) setError(null);
+    setCreateMode('basic');
     setCreateForm(getInitialCreateForm(user, myScope));
     setCreateInFlight(false);
     setKmzFile(null);
@@ -463,7 +460,7 @@ export function useRerPalitraNeoPage() {
       setCreateForm((prev) => ({
         ...prev,
         colorHex: firstColor,
-        name: fileNameToBaseName(analysis.filename) || prev.name,
+        name: analysis.filename || prev.name,
       }));
     } catch (analysisError) {
       if (isUnauthorizedError(analysisError)) {
@@ -477,17 +474,28 @@ export function useRerPalitraNeoPage() {
     }
   }
 
-  async function handleCreate() {
+  async function handleCreate(mode: PalitraCreateMode) {
     if (!kmzFile || createInFlight) return;
 
     const normalizedForm = applyRestrictedAccess(createForm, user, myScope);
-    if (!isFormValid(normalizedForm)) return;
+    const createFormResolved =
+      mode === 'basic' && user?.name
+        ? {
+            ...normalizedForm,
+            accessType: 'logins' as const,
+            logins: [user.name],
+            organismIds: [],
+            aorIds: [],
+          }
+        : normalizedForm;
+
+    if (!isFormValid(createFormResolved)) return;
 
     setCreateInFlight(true);
     setError(null);
 
     try {
-      if (kmzColorOptions.length > 0) {
+      if (mode === 'advanced' && kmzColorOptions.length > 0) {
         const selectedOptions = kmzColorOptions.filter((option) => option.selected);
         if (selectedOptions.length === 0) {
           setError({ text: 'Оберіть хоча б один колір з KMZ.' });
@@ -497,9 +505,9 @@ export function useRerPalitraNeoPage() {
         const results = await Promise.allSettled(
           selectedOptions.map((option) => {
             const req = toCreateReq({
-              ...normalizedForm,
+              ...createFormResolved,
               colorHex: option.colorHex,
-              name: buildPalitraNameWithSuffix(normalizedForm.name, option.suffix),
+              name: buildPalitraNameWithSuffix(createFormResolved.name, option.suffix),
             });
             return createPalitraWithKmz(req, kmzFile);
           }),
@@ -528,14 +536,14 @@ export function useRerPalitraNeoPage() {
         return;
       }
 
-      const created = await createPalitraWithKmz(
+      await createPalitraBasicWithKmz(
         toCreateReq({
-          ...normalizedForm,
+          ...createFormResolved,
           colorHex: selectedColorFromKmz,
         }),
         kmzFile,
       );
-      setPalitras((prev) => [created, ...prev]);
+      await reloadPalitras();
       resetCreateFlow();
     } catch (createError) {
       if (isUnauthorizedError(createError)) {
@@ -595,6 +603,7 @@ export function useRerPalitraNeoPage() {
     bulkDeleteDialogOpen,
     bulkDeleteInFlight,
     createOpen,
+    createMode,
     createForm,
     createInFlight,
     kmzFile,
@@ -613,6 +622,7 @@ export function useRerPalitraNeoPage() {
     setKmzColorOptions,
     setSelectedColorFromKmz,
     updateCreateForm,
+    setCreateMode,
     updateKmzColorOptions,
     updateEditForm,
     openCreate,

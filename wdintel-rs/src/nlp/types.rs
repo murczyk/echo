@@ -25,6 +25,11 @@ pub struct TokenNormalFormPyReq {
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct TokenNormalFormBatchPyReq {
+    pub tokens: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct TokenNormalFormPyRsp {
     pub lexeme: Vec<String>,
 }

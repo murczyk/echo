@@ -1,0 +1,19 @@
+[Unit]
+Description=goi service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=echo
+WorkingDirectory=/etc/goi
+ExecStart=/etc/goi/goi-npm-start.sh
+Restart=on-failure
+RestartSec=5s
+Environment=NODE_ENV=production
+Environment=NVM_DIR=/home/echo/.nvm
+Environment=PORT=4000
+Environment=GOI_APP_DIR=/etc/goi
+
+[Install]
+WantedBy=multi-user.target
