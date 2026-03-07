@@ -137,18 +137,26 @@ let kmzResponseResolved = false;
 
 export async function loadKmzData() {
 	if (!kmzResponseResolved) {
-		const response = await fetch('/api/delta/kml/latest');
-		if (!response.ok) {
-			if (response.status === 404) {
-				kmzResponseResolved = true;
-				console.info('[Map] /api/delta/kml/latest returned 404. KMZ layer will be skipped.');
+		try {
+			const response = await fetch('/api/delta/kml/latest');
+			if (!response.ok) {
+				if (response.status === 404) {
+					kmzResponseResolved = true;
+					console.info('[Map] /api/delta/kml/latest returned 404. KMZ layer will be skipped.');
+					cachedKmzData = null;
+					return null;
+				}
+				console.warn(`[Map] Failed to load KMZ: HTTP ${response.status}. KMZ layer will be skipped.`);
 				cachedKmzData = null;
 				return null;
 			}
-			throw new Error(`Failed to load KMZ: HTTP ${response.status}`);
+			kmzResponseResolved = true;
+			cachedKmzData = await response.text();
+		} catch (error) {
+			console.warn('[Map] Failed to fetch KMZ data. KMZ layer will be skipped.', error);
+			cachedKmzData = null;
+			return null;
 		}
-		kmzResponseResolved = true;
-		cachedKmzData = await response.text();
 	}
 	return cachedKmzData;
 }
