@@ -140,6 +140,7 @@ class AnalysisMap extends HTMLElement {
   private _coordinateSearchMarker: L.CircleMarker | null = null;
   private _isFullscreen = false;
   private _mapWindowControl: MapWindowControl | null = null;
+  private _backgroundPointsLoading = false;
   private _searchPointsHandler = (e: CustomEvent<string>) => {
     const value = (e.detail ?? '').trim();
     const coords = parseCoordinateInput(value);
@@ -299,7 +300,6 @@ class AnalysisMap extends HTMLElement {
       }
     }
     if (name === 'palitras-loaded') {
-      const prevVisibleIds = [...this._visiblePalitraIds];
       this._palitrasLoaded = JSON.parse(newValue);
       this._syncVisiblePalitraIds();
       if (this._palitraManager) {
@@ -313,6 +313,7 @@ class AnalysisMap extends HTMLElement {
     if (name === 'palitras-load-state') {
       this._palitrasLoadState = this._parsePalitrasLoadState(newValue);
       this._palitraManager?.setLoadState(this._palitrasLoadState);
+      this._updateSearchControlState();
     }
   }
 
@@ -389,6 +390,10 @@ class AnalysisMap extends HTMLElement {
          },
          onSearchLoadingChanged: (isLoading) => {
            this._searchControl?.updateSearchLoading(isLoading);
+         },
+         onBackgroundPointsLoadingChanged: (isLoading) => {
+           this._backgroundPointsLoading = isLoading;
+           this._updateSearchControlState();
          }
        }
      );
@@ -455,6 +460,7 @@ class AnalysisMap extends HTMLElement {
     const searchControl = createSearchControl();
     map.addControl(searchControl);
     this._searchControl = searchControl;
+    this._updateSearchControlState();
     map.addControl(switchTimeControl)
 
     const mapWindowControl = createMapWindowControl(exitCallback, () => this._toggleFullscreen(), this._isFullscreen);
@@ -525,6 +531,28 @@ class AnalysisMap extends HTMLElement {
 
     keyboardHandler._onMouseDown = patchedOnMouseDown;
     L.DomEvent.on(mapContainer, 'mousedown', patchedOnMouseDown, keyboardHandler);
+  }
+
+  private _updateSearchControlState() {
+    if (!this._searchControl) {
+      return;
+    }
+
+    const isPalitrasLoading = this._palitrasLoadState === 'loading';
+    const canSearch = this._palitrasLoadState === 'success' && !this._backgroundPointsLoading;
+    this._searchControl.updateSearchDisabled(!canSearch);
+
+    if (this._backgroundPointsLoading) {
+      this._searchControl.updatePlaceholder('Завантаження точок...');
+      return;
+    }
+
+    if (isPalitrasLoading) {
+      this._searchControl.updatePlaceholder('Завантаження палітр...');
+      return;
+    }
+
+    this._searchControl.updatePlaceholder('Точка, лісосмуга або координати');
   }
 
   private _replacePointsOnMap(points: MapPointDetailed[]) {

@@ -318,7 +318,7 @@ export async function updatePalitra(palitraId: number, req: CreatePalitraReq): P
     toUpdatePalitraReqBody(req, geometryId),
   );
 
-  const updatedGeometryId = normalizeOptionalNumber(data?.geometries?.[0]?.id);
+  const updatedGeometryId = pickPrimaryGeometryIdForUpdate(data?.geometries);
   if (updatedGeometryId !== null) {
     primaryGeometryIdByPalitraId.set(palitraId, updatedGeometryId);
   } else {

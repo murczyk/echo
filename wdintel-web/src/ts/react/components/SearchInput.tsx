@@ -14,6 +14,8 @@ export type SearchInputProps = {
   className?: string;
   resultsCount?: number | null;
   isSearchLoading?: boolean;
+  isInputLoading?: boolean;
+  disabled?: boolean;
   debounceMs?: number;
   minWidth?: number;
   clearOnEscape?: boolean;
@@ -28,6 +30,8 @@ export function SearchInput(props: SearchInputProps) {
     className,
     resultsCount = null,
     isSearchLoading = false,
+    isInputLoading = false,
+    disabled = false,
     debounceMs = DEFAULT_DEBOUNCE_MS,
     minWidth = 300,
     clearOnEscape = true,
@@ -49,7 +53,6 @@ export function SearchInput(props: SearchInputProps) {
 
   const [value, setValue] = useState(initialValue ?? '');
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const onSearchRef = useRef(onSearch);
   const lastAppliedInitialValueRef = useRef<string | undefined>(undefined);
   const showResults = value.trim().length > 0 && (isSearchLoading || resultsCount !== null);
   const isSearchingLabel = isSearchLoading && (resultsCount === null || resultsCount === 0);
@@ -110,10 +113,6 @@ export function SearchInput(props: SearchInputProps) {
   }, []);
 
   React.useEffect(() => {
-    onSearchRef.current = onSearch;
-  }, [onSearch]);
-
-  React.useEffect(() => {
     if (initialValue === undefined) {
       return;
     }
@@ -122,7 +121,6 @@ export function SearchInput(props: SearchInputProps) {
     }
     lastAppliedInitialValueRef.current = initialValue;
     setValue(initialValue);
-    onSearchRef.current(initialValue);
   }, [initialValue]);
 
   return (
@@ -137,6 +135,7 @@ export function SearchInput(props: SearchInputProps) {
             onKeyDown={handleKeyDown}
             size="small"
             variant="outlined"
+            disabled={disabled}
             sx={{
               minWidth,
               '& .MuiOutlinedInput-root': {
@@ -172,7 +171,11 @@ export function SearchInput(props: SearchInputProps) {
               },
               startAdornment: (
                 <InputAdornment position="start">
-                  <SearchIcon sx={{ color: value ? 'text.primary' : 'text.secondary' }} />
+                  {isInputLoading ? (
+                    <CircularProgress size={16} thickness={5} />
+                  ) : (
+                    <SearchIcon sx={{ color: value ? 'text.primary' : 'text.secondary' }} />
+                  )}
                 </InputAdornment>
               ),
               ...(value
@@ -184,6 +187,7 @@ export function SearchInput(props: SearchInputProps) {
                           onClick={handleClear}
                           aria-label="Очистити"
                           size="small"
+                          disabled={disabled}
                           sx={{ color: 'text.secondary' }}
                         >
                           <CloseIcon fontSize="small" />

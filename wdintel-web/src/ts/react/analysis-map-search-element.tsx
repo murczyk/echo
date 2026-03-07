@@ -6,14 +6,19 @@ import { MapSearchInput } from './components/MapSearchInput';
 const ATTR_RESULTS_COUNT = 'results-count';
 const ATTR_SEARCH_LOADING = 'search-loading';
 const ATTR_INITIAL_QUERY = 'initial-query';
+const ATTR_DISABLED = 'disabled';
+const ATTR_PLACEHOLDER = 'placeholder';
+const DEFAULT_PLACEHOLDER = 'Точка, лісосмуга або координати';
 
 class AnalysisMapSearchElement extends HTMLElement {
-  static observedAttributes = [ATTR_RESULTS_COUNT, ATTR_SEARCH_LOADING, ATTR_INITIAL_QUERY];
+  static observedAttributes = [ATTR_RESULTS_COUNT, ATTR_SEARCH_LOADING, ATTR_INITIAL_QUERY, ATTR_DISABLED, ATTR_PLACEHOLDER];
 
   private root: Root | null = null;
   private resultsCount: number | null = null;
   private isSearchLoading = false;
   private initialQuery = '';
+  private isDisabled = false;
+  private placeholder = DEFAULT_PLACEHOLDER;
 
   connectedCallback() {
     if (!this.root) {
@@ -24,6 +29,8 @@ class AnalysisMapSearchElement extends HTMLElement {
     this.resultsCount = this.parseResultsCount(this.getAttribute(ATTR_RESULTS_COUNT));
     this.isSearchLoading = this.getAttribute(ATTR_SEARCH_LOADING) === 'true';
     this.initialQuery = this.getAttribute(ATTR_INITIAL_QUERY) ?? '';
+    this.isDisabled = this.getAttribute(ATTR_DISABLED) === 'true';
+    this.placeholder = this.getAttribute(ATTR_PLACEHOLDER) ?? DEFAULT_PLACEHOLDER;
     this.renderComponent();
   }
 
@@ -38,10 +45,12 @@ class AnalysisMapSearchElement extends HTMLElement {
 
     this.root.render(
       <MapSearchInput
-        placeholder="Точка, лісосмуга або координати"
+        placeholder={this.placeholder}
         onSearch={onSearch}
         resultsCount={this.resultsCount}
         isSearchLoading={this.isSearchLoading}
+        isInputLoading={this.isDisabled}
+        disabled={this.isDisabled}
         initialValue={this.initialQuery || undefined}
       />,
     );
@@ -58,6 +67,12 @@ class AnalysisMapSearchElement extends HTMLElement {
 
     if (name === ATTR_INITIAL_QUERY) {
       this.initialQuery = newValue ?? '';
+    }
+    if (name === ATTR_DISABLED) {
+      this.isDisabled = newValue === 'true';
+    }
+    if (name === ATTR_PLACEHOLDER) {
+      this.placeholder = newValue ?? DEFAULT_PLACEHOLDER;
     }
 
     if (this.root) {
@@ -81,6 +96,22 @@ class AnalysisMapSearchElement extends HTMLElement {
     }
 
     this.removeAttribute(ATTR_SEARCH_LOADING);
+  }
+
+  setSearchDisabled(isDisabled: boolean) {
+    if (isDisabled) {
+      this.setAttribute(ATTR_DISABLED, 'true');
+      return;
+    }
+    this.removeAttribute(ATTR_DISABLED);
+  }
+
+  setPlaceholder(placeholder: string) {
+    if (!placeholder.trim()) {
+      this.removeAttribute(ATTR_PLACEHOLDER);
+      return;
+    }
+    this.setAttribute(ATTR_PLACEHOLDER, placeholder);
   }
 
   disconnectedCallback() {

@@ -25,6 +25,8 @@ const MARKER_ADD_CHUNK_SIZE = 60;
 
 /** Debounce moveend before re-rendering viewport chunk (avoids work during pan). */
 const RENDER_VIEWPORT_DEBOUNCE_MS = 100;
+const BACKGROUND_PRELOAD_ZOOM = 13;
+const WORLD_BOUNDS = L.latLngBounds(L.latLng(-85, -180), L.latLng(85, 180));
 
 export class PalitraManager {
   private cacheManager: PalitraCacheManager;
@@ -39,6 +41,7 @@ export class PalitraManager {
   private enabled = true;
   private loadState: PalitrasLoadState = 'idle';
   private boundsApplied = false;
+  private fitOnNextPolygonUpdate = false;
   private requestTimer: number | null = null;
   private _searchQuery = '';
   /** Full search result from BE. Only create markers for viewport chunk. */
@@ -46,6 +49,8 @@ export class PalitraManager {
   /** Incremented on each render start; used to discard stale async renders. */
   private _renderGeneration = 0;
   private _renderViewportTimer: number | null = null;
+  private _backgroundPreloadKey: string | null = null;
+  private _backgroundPreloadInFlight = false;
 
   constructor(
     private map: L.Map,
@@ -89,6 +94,7 @@ export class PalitraManager {
 
   updatePalitras(palitras: PalitraDetails[]): void {
     this.palitras = palitras;
+    this.scheduleBackgroundPointsPreload();
     if (this.control) {
       this.control.updatePalitras(palitras, this.visibleIds);
     }
@@ -99,13 +105,19 @@ export class PalitraManager {
   }
 
   updateVisibleIds(ids: number[]): void {
+    const previousVisibleIds = this.visibleIds;
     this.visibleIds = ids;
     if (this.control) {
       this.control.updatePalitras(this.palitras, ids);
     }
     // Update control visibility (in case it's the first update)
     this.updateControlVisibility();
-    this.boundsApplied = false;
+    const previousVisibleSet = new Set(previousVisibleIds);
+    const hasAddedVisibleIds = ids.some((id) => !previousVisibleSet.has(id));
+    if (hasAddedVisibleIds) {
+      this.boundsApplied = false;
+      this.fitOnNextPolygonUpdate = true;
+    }
     this.updatePolygons();
     this.schedulePointsRequest();
   }
@@ -114,6 +126,7 @@ export class PalitraManager {
     this.enabled = enabled;
     this.updateControlVisibility();
     this.boundsApplied = false;
+    this.fitOnNextPolygonUpdate = enabled;
     this.updatePolygons();
   }
 
@@ -240,6 +253,50 @@ export class PalitraManager {
     await this.renderPointsInViewport();
   }
 
+  private scheduleBackgroundPointsPreload(): void {
+    const palitraIds = Array.from(new Set(this.palitras.map((entry) => this.apiPalitraId(entry.palitra)))).sort(
+      (left, right) => left - right,
+    );
+
+    if (palitraIds.length === 0) {
+      this._backgroundPreloadKey = null;
+      this.setBackgroundPointsLoading(false);
+      return;
+    }
+
+    const preloadKey = palitraIds.join(',');
+    if (this._backgroundPreloadInFlight || this._backgroundPreloadKey === preloadKey) {
+      return;
+    }
+
+    this._backgroundPreloadKey = preloadKey;
+    void this.preloadAllPoints(palitraIds);
+  }
+
+  private async preloadAllPoints(palitraIds: number[]): Promise<void> {
+    this._backgroundPreloadInFlight = true;
+    this.setBackgroundPointsLoading(true);
+    const tileKey = this.cacheManager.buildTileKey(WORLD_BOUNDS, BACKGROUND_PRELOAD_ZOOM);
+
+    this.cacheManager.markPending(palitraIds, tileKey);
+    this.cacheManager.markRequested(palitraIds, tileKey);
+
+    try {
+      await this.cacheManager.fetchPoints(palitraIds, WORLD_BOUNDS, tileKey, () => {
+        this.updatePoints();
+      });
+    } finally {
+      this.cacheManager.clearPending(palitraIds, tileKey);
+      this._backgroundPreloadInFlight = false;
+      this.setBackgroundPointsLoading(false);
+      this.updatePoints();
+    }
+  }
+
+  private setBackgroundPointsLoading(isLoading: boolean): void {
+    this.callbacks.onBackgroundPointsLoadingChanged?.(isLoading);
+  }
+
   /**
    * From _lastSearchResult (full BE response), take only the chunk in current viewport,
    * create markers for that chunk only. Called on initial search and on moveend/zoomend (debounced).
@@ -264,10 +321,6 @@ export class PalitraManager {
       toRender = truncateToMaxRendered(toRender, MAX_RENDERED_POINTS);
     }
 
-    this.pointsClusters.forEach((cluster) => this.map.removeLayer(cluster));
-    this.pointsClusters.clear();
-    this.pointMarkers = [];
-
     const palitrasByApiId = new Map<number, Palitra[]>();
     this.palitras.forEach((entry) => {
       const apiId = this.apiPalitraId(entry.palitra);
@@ -278,12 +331,14 @@ export class PalitraManager {
 
     const entries = this.splitSearchEntriesByGeometry(
       toRender.filter(({ points }) => points.length > 0),
-      palitrasByApiId
+      palitrasByApiId,
+      new Set(this.visibleIds),
     );
 
+    const nextPointMarkers: (L.CircleMarker & { _palitraTooltipLabel?: string })[] = [];
     const clusters = await Promise.all(
       entries.map(async ({ palitra, points }) => {
-        const cluster = await this.createPointsCluster(palitra, points);
+        const cluster = await this.createPointsCluster(palitra, points, nextPointMarkers);
         return { palitraId: palitra.id, cluster };
       })
     );
@@ -295,19 +350,31 @@ export class PalitraManager {
       return;
     }
 
-    clusters.forEach(({ palitraId, cluster }) => {
+    this.replacePointClusters(clusters, nextPointMarkers);
+
+    this.updatePointLabelVisibility();
+  }
+
+  private replacePointClusters(
+    nextClusters: Array<{ palitraId: number; cluster: L.MarkerClusterGroup | null }>,
+    nextPointMarkers: (L.CircleMarker & { _palitraTooltipLabel?: string })[],
+  ): void {
+    this.pointsClusters.forEach((cluster) => this.map.removeLayer(cluster));
+    this.pointsClusters.clear();
+    this.pointMarkers = nextPointMarkers;
+
+    nextClusters.forEach(({ palitraId, cluster }) => {
       if (cluster) {
         this.pointsClusters.set(palitraId, cluster);
         this.map.addLayer(cluster);
       }
     });
-
-    this.updatePointLabelVisibility();
   }
 
   private splitSearchEntriesByGeometry(
     entries: { palitra_id: number; points: PalitraPoint[] }[],
-    palitrasByApiId: Map<number, Palitra[]>
+    palitrasByApiId: Map<number, Palitra[]>,
+    visiblePalitraIdsSet: Set<number>,
   ): Array<{ palitra: Palitra; points: PalitraPoint[] }> {
     const splitEntries: Array<{ palitra: Palitra; points: PalitraPoint[] }> = [];
 
@@ -318,7 +385,9 @@ export class PalitraManager {
       }
 
       if (palitras.length === 1) {
-        splitEntries.push({ palitra: palitras[0], points });
+        if (visiblePalitraIdsSet.has(palitras[0].id)) {
+          splitEntries.push({ palitra: palitras[0], points });
+        }
         return;
       }
 
@@ -328,12 +397,13 @@ export class PalitraManager {
       });
       const fallbackPalitra = this.pickFallbackPalitraForUnmatched(palitras);
       const preserveUnmatchedPalitra = palitras[0] ?? null;
+      const hasHiddenPalitras = palitras.some((palitra) => !visiblePalitraIdsSet.has(palitra.id));
 
       points.forEach((point) => {
         const matchedPalitra =
           this.findPalitraForPoint(palitras, point) ??
           fallbackPalitra ??
-          preserveUnmatchedPalitra;
+          (hasHiddenPalitras ? null : preserveUnmatchedPalitra);
         if (!matchedPalitra) {
           return;
         }
@@ -345,6 +415,9 @@ export class PalitraManager {
       });
 
       palitras.forEach((palitra) => {
+        if (!visiblePalitraIdsSet.has(palitra.id)) {
+          return;
+        }
         const palitraPoints = pointsByPalitraId.get(palitra.id);
         if (!palitraPoints || palitraPoints.length === 0) {
           return;
@@ -581,14 +654,14 @@ export class PalitraManager {
     this.updatePoints();
 
     // Fit map bounds to show all visible palitras
-    const currentZoom = this.map.getZoom();
-    if (!this.boundsApplied && polygons.length > 0 && currentZoom < this.options.minZoomForPoints) {
+    if (this.fitOnNextPolygonUpdate && polygons.length > 0) {
       const group = L.featureGroup(polygons);
       this.map.fitBounds(group.getBounds(), {
         padding: [50, 50],
         maxZoom: 10
       });
       this.boundsApplied = true;
+      this.fitOnNextPolygonUpdate = false;
     }
   }
 
@@ -651,7 +724,8 @@ export class PalitraManager {
   private addMarkerToCluster(
     clusterGroup: L.MarkerClusterGroup,
     palitra: Palitra,
-    point: PalitraPoint
+    point: PalitraPoint,
+    markerSink: (L.CircleMarker & { _palitraTooltipLabel?: string })[],
   ): void {
     const marker = L.circleMarker([point.coords.lat, point.coords.lng], {
       radius: 6,
@@ -683,7 +757,7 @@ export class PalitraManager {
         tooltipLabel;
     }
 
-    this.pointMarkers.push(marker as L.CircleMarker & { _palitraTooltipLabel?: string });
+    markerSink.push(marker as L.CircleMarker & { _palitraTooltipLabel?: string });
     clusterGroup.addLayer(marker);
   }
 
@@ -714,7 +788,8 @@ export class PalitraManager {
 
   private async createPointsCluster(
     palitra: Palitra,
-    points: PalitraPoint[]
+    points: PalitraPoint[],
+    markerSink: (L.CircleMarker & { _palitraTooltipLabel?: string })[],
   ): Promise<L.MarkerClusterGroup | null> {
     if (!points || points.length === 0) {
       return null;
@@ -742,7 +817,7 @@ export class PalitraManager {
     for (let i = 0; i < points.length; i += MARKER_ADD_CHUNK_SIZE) {
       const chunk = points.slice(i, i + MARKER_ADD_CHUNK_SIZE);
       chunk.forEach((point) =>
-        this.addMarkerToCluster(clusterGroup, palitra, point)
+        this.addMarkerToCluster(clusterGroup, palitra, point, markerSink)
       );
       if (i + MARKER_ADD_CHUNK_SIZE < points.length) {
         await new Promise<void>((r) => requestAnimationFrame(() => r()));
@@ -753,13 +828,74 @@ export class PalitraManager {
   }
 
   private updatePoints(): void {
-    // Points are only shown when search is active (via _showSearchResults). When not searching, show only palitra zones (polygons).
     if (!this._searchQuery) {
+      void this.renderVisiblePointsFromCache();
+    }
+  }
+
+  private async renderVisiblePointsFromCache(): Promise<void> {
+    if (!this.enabled) {
       this.pointsClusters.forEach((cluster) => this.map.removeLayer(cluster));
       this.pointsClusters.clear();
       this.pointMarkers = [];
       return;
     }
+
+    const currentZoom = this.map.getZoom();
+    if (currentZoom < this.options.minZoomForPoints) {
+      this.pointsClusters.forEach((cluster) => this.map.removeLayer(cluster));
+      this.pointsClusters.clear();
+      this.pointMarkers = [];
+      return;
+    }
+
+    const currentGen = ++this._renderGeneration;
+    const bounds = this.getBufferedBounds();
+    const visiblePalitras = this.palitras.filter((palitraDetails) => this.visibleIds.includes(palitraDetails.palitra.id));
+    const pointsByApiId = new Map<number, PalitraPoint[]>();
+
+    visiblePalitras.forEach((palitraDetails) => {
+      const apiId = this.apiPalitraId(palitraDetails.palitra);
+      const points = this.cacheManager.getPointsForBounds(apiId, bounds);
+      if (points.length > 0) {
+        pointsByApiId.set(apiId, points);
+      }
+    });
+
+    if (pointsByApiId.size === 0) {
+      this.replacePointClusters([], []);
+      return;
+    }
+
+    const palitrasByApiId = new Map<number, Palitra[]>();
+    this.palitras.forEach((entry) => {
+      const apiId = this.apiPalitraId(entry.palitra);
+      const current = palitrasByApiId.get(apiId) ?? [];
+      current.push(entry.palitra);
+      palitrasByApiId.set(apiId, current);
+    });
+
+    const splitEntries = this.splitSearchEntriesByGeometry(
+      Array.from(pointsByApiId.entries()).map(([palitra_id, points]) => ({ palitra_id, points })),
+      palitrasByApiId,
+      new Set(this.visibleIds),
+    );
+
+    const nextPointMarkers: (L.CircleMarker & { _palitraTooltipLabel?: string })[] = [];
+    const clusters = await Promise.all(
+      splitEntries.map(async ({ palitra, points }) => {
+        const cluster = await this.createPointsCluster(palitra, points, nextPointMarkers);
+        return { palitraId: palitra.id, cluster };
+      }),
+    );
+
+    if (currentGen !== this._renderGeneration || !!this._searchQuery) {
+      return;
+    }
+
+    this.replacePointClusters(clusters, nextPointMarkers);
+
+    this.updatePointLabelVisibility();
   }
 
   private updateControlVisibility(): void {

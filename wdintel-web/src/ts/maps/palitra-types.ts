@@ -28,6 +28,7 @@ export interface PalitraManagerCallbacks {
   onVisibilityToggle: (palitraId: number) => void;
   onSearchResultsCountChanged: (count: number | null) => void;
   onSearchLoadingChanged: (isLoading: boolean) => void;
+  onBackgroundPointsLoadingChanged?: (isLoading: boolean) => void;
   /** When result set is huge, we cap rendered markers */
   onSearchResultsTruncated?: (rendered: number, total: number) => void;
 }

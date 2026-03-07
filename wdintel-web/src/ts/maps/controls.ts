@@ -19,6 +19,8 @@ export interface PalitrasControl extends L.Control {
 export interface SearchControl extends L.Control {
   updateResultsCount: (count: number | null) => void
   updateSearchLoading: (isLoading: boolean) => void
+  updateSearchDisabled: (isDisabled: boolean) => void
+  updatePlaceholder: (placeholder: string) => void
 }
 
 export interface MapWindowControl extends L.Control {
@@ -38,10 +40,20 @@ export type PalitrasLoadState = 'idle' | 'loading' | 'success' | 'error';
 /** Creates a map control that hosts <analysis-map-search>. */
 export function createSearchControl(): SearchControl {
   const SearchControlClass = L.Control.extend({
-    _searchElement: null as (HTMLElement & { setResultsCount?: (count: number | null) => void; setSearchLoading?: (isLoading: boolean) => void }) | null,
+    _searchElement: null as (HTMLElement & {
+      setResultsCount?: (count: number | null) => void;
+      setSearchLoading?: (isLoading: boolean) => void;
+      setSearchDisabled?: (isDisabled: boolean) => void;
+      setPlaceholder?: (placeholder: string) => void;
+    }) | null,
     onAdd: function (_map: L.Map) {
       this._container = L.DomUtil.create('div', 'leaflet-bar leaflet-control search-control');
-      const searchEl = document.createElement('analysis-map-search') as HTMLElement & { setResultsCount?: (count: number | null) => void; setSearchLoading?: (isLoading: boolean) => void };
+      const searchEl = document.createElement('analysis-map-search') as HTMLElement & {
+        setResultsCount?: (count: number | null) => void;
+        setSearchLoading?: (isLoading: boolean) => void;
+        setSearchDisabled?: (isDisabled: boolean) => void;
+        setPlaceholder?: (placeholder: string) => void;
+      };
       this._searchElement = searchEl;
       this._container.appendChild(searchEl);
       L.DomEvent.disableClickPropagation(this._container);
@@ -53,6 +65,12 @@ export function createSearchControl(): SearchControl {
     },
     updateSearchLoading: function (isLoading: boolean) {
       this._searchElement?.setSearchLoading?.(isLoading);
+    },
+    updateSearchDisabled: function (isDisabled: boolean) {
+      this._searchElement?.setSearchDisabled?.(isDisabled);
+    },
+    updatePlaceholder: function (placeholder: string) {
+      this._searchElement?.setPlaceholder?.(placeholder);
     }
   });
 
