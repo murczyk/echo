@@ -3,6 +3,7 @@ import React from 'react';
 
 import type { InboxMessage } from '../../../../Bindings';
 import { buildAnalysisHref, formatDateNoYear, formatTime, messageRenderDistance } from './utils';
+import { renderMarkedText } from './MarkedText';
 
 export type MessageCardProps = {
   id: number;
@@ -324,7 +325,11 @@ export function MessageCard({
             <i className="bi bi-geo text-icons" title="Локація" /> {msg.location ?? 'Не встановлена'}
           </div>
         </div>
-        <div className="whitespace-pre-wrap break-words mt-1 mb-3">{msg.text || '—'}</div>
+        <div className="whitespace-pre-wrap break-words mt-1 mb-3 text-marked">
+          {msg.textMarked && msg.textMarked.length > 0
+            ? renderMarkedText(msg.textMarked, msg.text ?? '')
+            : (msg.text || '—')}
+        </div>
         <Box className="flex flex-wrap gap-1 mt-1">
           {tagIdsList.map((tagId) => {
             const label = tagsMap[tagId] ?? `#${tagId}`;

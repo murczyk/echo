@@ -42,12 +42,18 @@ export type FeedColumnProps = {
     deniedSenders: string[];
     freqsSelected: string[];
     freqsDenied: string[];
+    postsSelected: string[];
+    postsDenied: string[];
   };
   groupsList: string[];
   groupInfos: Record<string, SignalGroupEntry>;
   profiles: Record<string, SignalProfileEntry | null>;
   senderOptions: Array<{ id: string; label: string }>;
   freqs: string[];
+  postsList: string[];
+  adjacentFreqsRange: number;
+  highlightSignalsEnabled: boolean;
+  onlyMyUnitTagsEnabled: boolean;
   savedFilters: SavedFilterDuty[];
   selectedSavedId: number | null;
   saveFilterName: string;
@@ -70,6 +76,11 @@ export type FeedColumnProps = {
   onDeniedSendersChange: (v: string[]) => void;
   onFreqsChange: (v: string[]) => void;
   onFreqsDeniedChange: (v: string[]) => void;
+  onPostsChange: (v: string[]) => void;
+  onPostsDeniedChange: (v: string[]) => void;
+  onAdjacentFreqsRangeChange: (v: number) => void;
+  onHighlightSignalsChange: (v: boolean) => void;
+  onOnlyMyUnitTagsChange: (v: boolean) => void;
   onReloadFreqs: () => void;
   onSavedFilterSelect: (id: number | '') => void;
   onSaveFilterNameChange: (value: string) => void;
@@ -112,6 +123,10 @@ export const FeedColumn = React.forwardRef<FeedColumnHandle, FeedColumnProps>(fu
     profiles,
     senderOptions,
     freqs,
+    postsList,
+    adjacentFreqsRange,
+    highlightSignalsEnabled,
+    onlyMyUnitTagsEnabled,
     savedFilters,
     selectedSavedId,
     saveFilterName,
@@ -133,6 +148,11 @@ export const FeedColumn = React.forwardRef<FeedColumnHandle, FeedColumnProps>(fu
     onDeniedSendersChange,
     onFreqsChange,
     onFreqsDeniedChange,
+    onPostsChange,
+    onPostsDeniedChange,
+    onAdjacentFreqsRangeChange,
+    onHighlightSignalsChange,
+    onOnlyMyUnitTagsChange,
     onReloadFreqs,
     onSavedFilterSelect,
     onSaveFilterNameChange,
@@ -306,6 +326,10 @@ export const FeedColumn = React.forwardRef<FeedColumnHandle, FeedColumnProps>(fu
           profiles={profiles}
           senderOptions={senderOptions}
           freqs={freqs}
+          postsList={postsList}
+          adjacentFreqsRange={adjacentFreqsRange}
+          highlightSignalsEnabled={highlightSignalsEnabled}
+          onlyMyUnitTagsEnabled={onlyMyUnitTagsEnabled}
           savedFilters={savedFilters}
           selectedSavedId={selectedSavedId}
           saveFilterName={saveFilterName}
@@ -316,6 +340,11 @@ export const FeedColumn = React.forwardRef<FeedColumnHandle, FeedColumnProps>(fu
           onDeniedSendersChange={applyDeniedSenders}
           onFreqsChange={applyFreqs}
           onFreqsDeniedChange={applyFreqsDenied}
+          onPostsChange={onPostsChange}
+          onPostsDeniedChange={onPostsDeniedChange}
+          onAdjacentFreqsRangeChange={onAdjacentFreqsRangeChange}
+          onHighlightSignalsChange={onHighlightSignalsChange}
+          onOnlyMyUnitTagsChange={onOnlyMyUnitTagsChange}
           onReloadFreqs={onReloadFreqs}
           onSavedFilterSelect={onSavedFilterSelect}
           onSaveFilterNameChange={onSaveFilterNameChange}
@@ -475,6 +504,7 @@ export const FeedColumn = React.forwardRef<FeedColumnHandle, FeedColumnProps>(fu
                       fontWeight: 600,
                       zIndex: 2,
                       pointerEvents: 'none',
+                      maxWidth: 40,
                     }}
                   />
                 )}

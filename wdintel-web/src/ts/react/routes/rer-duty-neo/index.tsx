@@ -22,6 +22,7 @@ import {
   fetchInboxMessages,
   getLatestFrequencies,
   getLatestSenders,
+  getPostsList,
   getTagsList,
   getUserSigintGroups,
   importantAdd,
@@ -37,10 +38,12 @@ import { getUnitsList } from '../../services/api/units';
 import { CommentDialog, DeleteConfirmDialog } from './dialogs';
 import { FeedColumn, type FeedColumnHandle } from './FeedColumn';
 import {
+  ADJACENT_FREQS_RANGE_OPTIONS,
   buildInboxReq,
   createMasterUnitText,
   dedupeMessageItems,
   emptyFilter,
+  findAllAdjacentFreqs,
   generateMessageFeedId,
   INBOX_COUNT_POLL_INTERVAL_MS,
   normalizeFeed,
@@ -75,11 +78,15 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
       readIds: new Set<number>(),
       unreadCount: 0,
       leftSideCollapsed: true,
+      adjacentFreqsRange: 0,
+      highlightSignalsEnabled: false,
+      onlyMyUnitTagsEnabled: false,
     }));
   });
   const [error, setError] = React.useState<string | null>(null);
   const [profiles, setProfiles] = React.useState<Record<string, SignalProfileEntry | null>>({});
   const [freqs, setFreqs] = React.useState<string[]>([]);
+  const [postsList, setPostsList] = React.useState<string[]>([]);
   const [groupInfos, setGroupInfos] = React.useState<Record<string, SignalGroupEntry>>({});
   const [groupsList, setGroupsList] = React.useState<string[]>([]);
   const [tagsMap, setTagsMap] = React.useState<Record<number, string>>({});
@@ -141,14 +148,16 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
 
   const loadFilterOptions = React.useCallback(async () => {
     try {
-      const [sendersRsp, freqsList, groupKeys, tagsList] = await Promise.all([
+      const [sendersRsp, freqsList, posts, groupKeys, tagsList] = await Promise.all([
         getLatestSenders(),
         getLatestFrequencies(),
+        getPostsList(),
         getUserSigintGroups(Date.now() - 2 * 24 * 60 * 60 * 1000),
         getTagsList(),
       ]);
       setProfiles(sendersRsp.data ?? {});
       setFreqs(freqsList);
+      setPostsList(posts);
       setTagsMap(tagsList);
       if (groupKeys.length > 0) {
         const infos = await getGroupInfosBatch(groupKeys);
@@ -166,42 +175,80 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
     }
   }, []);
 
-  const loadFeedInitialMessages = React.useCallback(async (feedId: string, filter: RerDutyFeedFilterState) => {
-    setMessageFeeds((prev) => prev.map((x) => (x.id === feedId ? { ...x, loading: true } : x)));
-    setError(null);
-    try {
-      const req = buildInboxReq({ loadLatest: true, filter });
-      const rsp = await fetchInboxMessages(req);
-      const deduped = dedupeMessageItems(rsp.inboxItems);
-      const initialReadIds = new Set<number>(deduped.map(([id]) => id));
-      setMessageFeeds((prev) =>
-        prev.map((x) =>
-          x.id === feedId
-            ? {
-                ...x,
-                items: sortMessageItemsByTime(deduped),
-                loading: false,
-                firstItemIndex: VIRTUOSO_FIRST_ITEM_INDEX_INITIAL,
-                referenceTimeMs: Date.now(),
-                readIds: initialReadIds,
-                unreadCount: 0,
-              }
-            : x,
-        ),
-      );
-      if (rsp.signalProfiles) setProfiles((p) => ({ ...p, ...rsp.signalProfiles }));
-      if (rsp.signalGroups?.length) {
-        const map: Record<string, SignalGroupEntry> = {};
-        rsp.signalGroups.forEach((g) => {
-          map[g.masterKey] = g;
-        });
-        setGroupInfos((prev) => ({ ...prev, ...map }));
+  const buildReqForFeed = React.useCallback(
+    (
+      feed: MessageFeedState,
+      opts: Omit<
+        Parameters<typeof buildInboxReq>[0],
+        'filter' | 'expandedFreqsSelected' | 'expandedFreqsDenied' | 'highlightSignals' | 'reportTagsOnlyThisUnit'
+      >,
+    ) => {
+      const range = feed.adjacentFreqsRange ?? 0;
+      const expandedSelected =
+        range > 0 && freqs.length > 0
+          ? [
+              ...(feed.filter.freqsSelected ?? []),
+              ...findAllAdjacentFreqs(freqs, feed.filter.freqsSelected ?? [], range),
+            ]
+          : undefined;
+      const expandedDenied =
+        range > 0 && freqs.length > 0
+          ? [...(feed.filter.freqsDenied ?? []), ...findAllAdjacentFreqs(freqs, feed.filter.freqsDenied ?? [], range)]
+          : undefined;
+      return buildInboxReq({
+        ...opts,
+        filter: feed.filter,
+        expandedFreqsSelected: expandedSelected,
+        expandedFreqsDenied: expandedDenied,
+        highlightSignals: feed.highlightSignalsEnabled ?? false,
+        reportTagsOnlyThisUnit: feed.onlyMyUnitTagsEnabled ? true : null,
+      });
+    },
+    [freqs],
+  );
+
+  const loadFeedInitialMessages = React.useCallback(
+    async (feedId: string, overrides?: { highlightSignalsEnabled?: boolean; onlyMyUnitTagsEnabled?: boolean }) => {
+      const feed = messageFeeds.find((x) => x.id === feedId);
+      if (!feed) return;
+      const effectiveFeed = overrides ? { ...feed, ...overrides } : feed;
+      setMessageFeeds((prev) => prev.map((x) => (x.id === feedId ? { ...x, loading: true } : x)));
+      setError(null);
+      try {
+        const req = buildReqForFeed(effectiveFeed, { loadLatest: true });
+        const rsp = await fetchInboxMessages(req);
+        const deduped = dedupeMessageItems(rsp.inboxItems);
+        const initialReadIds = new Set<number>(deduped.map(([id]) => id));
+        setMessageFeeds((prev) =>
+          prev.map((x) =>
+            x.id === feedId
+              ? {
+                  ...x,
+                  items: sortMessageItemsByTime(deduped),
+                  loading: false,
+                  firstItemIndex: VIRTUOSO_FIRST_ITEM_INDEX_INITIAL,
+                  referenceTimeMs: Date.now(),
+                  readIds: initialReadIds,
+                  unreadCount: 0,
+                }
+              : x,
+          ),
+        );
+        if (rsp.signalProfiles) setProfiles((p) => ({ ...p, ...rsp.signalProfiles }));
+        if (rsp.signalGroups?.length) {
+          const map: Record<string, SignalGroupEntry> = {};
+          rsp.signalGroups.forEach((g) => {
+            map[g.masterKey] = g;
+          });
+          setGroupInfos((prev) => ({ ...prev, ...map }));
+        }
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+        setMessageFeeds((prev) => prev.map((x) => (x.id === feedId ? { ...x, loading: false } : x)));
       }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-      setMessageFeeds((prev) => prev.map((x) => (x.id === feedId ? { ...x, loading: false } : x)));
-    }
-  }, []);
+    },
+    [messageFeeds, buildReqForFeed],
+  );
 
   const loadFeedOlderMessages = React.useCallback(
     async (feedId: string) => {
@@ -211,10 +258,7 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
       setMessageFeeds((prev) => prev.map((x) => (x.id === feedId ? { ...x, loadingOlder: true } : x)));
       setError(null);
       try {
-        const req = buildInboxReq({
-          beforeIdNoninclusive: firstId,
-          filter: w.filter,
-        });
+        const req = buildReqForFeed(w, { beforeIdNoninclusive: firstId });
         const rsp = await fetchInboxMessages(req);
         setMessageFeeds((prev) =>
           prev.map((x) => {
@@ -243,7 +287,10 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
   );
 
   const loadFeedNewerMessages = React.useCallback(
-    async (feedId: string, opts?: { nolimit?: boolean; scrollToEndAfterLoad?: boolean }) => {
+    async (
+      feedId: string,
+      opts?: { nolimit?: boolean; scrollToEndAfterLoad?: boolean; markAllReadAfterAppend?: boolean },
+    ) => {
       if (loadNewerInFlightRef.current.has(feedId)) return;
       const feed = messageFeeds.find((x) => x.id === feedId);
       if (!feed || feed.items.length === 0) return;
@@ -251,9 +298,8 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
       setLoadingNewerFeedId(feedId);
       const lastId = feed.items[feed.items.length - 1][0];
       try {
-        const req = buildInboxReq({
+        const req = buildReqForFeed(feed, {
           sinceIdNoninclusive: lastId,
-          filter: feed.filter,
           nolimit: opts?.nolimit ?? undefined,
         });
         const rsp = await fetchInboxMessages(req);
@@ -269,9 +315,10 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
                   const toAdd = newItems.filter(([id]) => !existingIds.has(id));
                   if (toAdd.length === 0) return x;
                   const combined = dedupeMessageItems([...x.items, ...toAdd]);
-                  const atBottomAfterLoad = opts?.scrollToEndAfterLoad === true;
-                  const readIds = atBottomAfterLoad ? new Set(combined.map(([id]) => id)) : x.readIds;
-                  const unreadCount = atBottomAfterLoad ? 0 : combined.length - x.readIds.size;
+                  const markAllRead =
+                    opts?.scrollToEndAfterLoad === true || opts?.markAllReadAfterAppend === true;
+                  const readIds = markAllRead ? new Set(combined.map(([id]) => id)) : x.readIds;
+                  const unreadCount = markAllRead ? 0 : combined.length - x.readIds.size;
 
                   return {
                     ...x,
@@ -316,7 +363,7 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
               : 0;
           try {
             const { quantity } = await fetchInboxCount(
-              buildInboxReq({ filter: w.filter, sinceDateInclusiveMs: sinceMs, nolimit: true }),
+              buildReqForFeed(w, { sinceDateInclusiveMs: sinceMs, nolimit: true }),
             );
             return { feedId: w.id, quantity };
           } catch {
@@ -335,6 +382,8 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
         if (quantity > 0 && (watchModeByFeedId[feedId] || nearBottom[feedId])) {
           await loadFeedNewerMessages(feedId, {
             scrollToEndAfterLoad: watchModeByFeedId[feedId],
+            // Mark all as read when appending from poll (user was near bottom); atBottomStateChange often doesn't fire after append
+            markAllReadAfterAppend: true,
           });
         }
       }
@@ -356,11 +405,23 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
         .join(';'),
     [messageFeeds],
   );
+  const loadFeedInitialMessagesRef = React.useRef(loadFeedInitialMessages);
+  loadFeedInitialMessagesRef.current = loadFeedInitialMessages;
+  const initialLoadStartedRef = React.useRef<Set<string>>(new Set());
   React.useEffect(() => {
-    messageFeeds.forEach((w) => {
-      if (w.loading && w.items.length === 0) loadFeedInitialMessages(w.id, w.filter);
+    const needingLoad = messageFeeds.filter((w) => w.loading && w.items.length === 0);
+    const needingIds = new Set(needingLoad.map((w) => w.id));
+    const started = initialLoadStartedRef.current;
+    [...started].forEach((id) => {
+      if (!needingIds.has(id)) started.delete(id);
     });
-  }, [feedIds, feedsNeedingLoadKey, loadFeedInitialMessages]);
+    needingLoad.forEach((w) => {
+      if (!started.has(w.id)) {
+        started.add(w.id);
+        loadFeedInitialMessagesRef.current(w.id);
+      }
+    });
+  }, [feedIds, feedsNeedingLoadKey]);
 
   // Poll get-inbox-count every 2s; only call get-inbox when count > 0
   React.useEffect(() => {
@@ -461,6 +522,9 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
               readIds: new Set<number>(),
               unreadCount: 0,
               leftSideCollapsed: w.leftSideCollapsed,
+              adjacentFreqsRange: w.adjacentFreqsRange,
+              highlightSignalsEnabled: w.highlightSignalsEnabled,
+              onlyMyUnitTagsEnabled: w.onlyMyUnitTagsEnabled,
             }
           : w,
       );
@@ -499,6 +563,9 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
       readIds: new Set<number>(),
       unreadCount: 0,
       leftSideCollapsed: true,
+      adjacentFreqsRange: 0,
+      highlightSignalsEnabled: false,
+      onlyMyUnitTagsEnabled: false,
     };
     setMessageFeeds((prev) => {
       if (prev.length >= MAX_MESSAGE_FEEDS || prev.some((w) => w.id === id)) return prev;
@@ -740,7 +807,7 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
               ? lastItem[1].timestamp + 1
               : 0;
           const { quantity } = await fetchInboxCount(
-            buildInboxReq({ filter: feed.filter, sinceDateInclusiveMs: sinceMs, nolimit: true }),
+            buildReqForFeed(feed, { sinceDateInclusiveMs: sinceMs, nolimit: true }),
           );
           if (quantity === 0) {
             showArrowResult(feedId, 'Немає нових повідомлень');
@@ -751,7 +818,7 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
           );
           await loadFeedNewerMessages(feedId, { nolimit: true, scrollToEndAfterLoad: true });
         } else if (!feed.loading) {
-          await loadFeedInitialMessages(feedId, feed.filter);
+          await loadFeedInitialMessages(feedId);
         }
         showArrowResult(feedId, 'Завантажено нові повідомлення');
       } catch {
@@ -807,6 +874,8 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
             deniedSenders: w.filter.deniedSenders ?? [],
             freqsSelected: w.filter.freqsSelected ?? [],
             freqsDenied: w.filter.freqsDenied ?? [],
+            postsSelected: w.filter.postsSelected ?? [],
+            postsDenied: w.filter.postsDenied ?? [],
           };
           return (
             <FeedColumn
@@ -828,6 +897,10 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
               profiles={profiles}
               senderOptions={senderOptions}
               freqs={freqs}
+              postsList={postsList}
+              adjacentFreqsRange={w.adjacentFreqsRange}
+              highlightSignalsEnabled={w.highlightSignalsEnabled}
+              onlyMyUnitTagsEnabled={w.onlyMyUnitTagsEnabled}
               savedFilters={savedFilters}
               selectedSavedId={selectedSavedId}
               saveFilterName={saveFilterName}
@@ -857,6 +930,19 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
               onDeniedSendersChange={(v) => applyFilter(w.id, { ...w.filter, deniedSenders: v.length ? v : null })}
               onFreqsChange={(v) => applyFilter(w.id, { ...w.filter, freqsSelected: v.length ? v : null })}
               onFreqsDeniedChange={(v) => applyFilter(w.id, { ...w.filter, freqsDenied: v.length ? v : null })}
+              onPostsChange={(v) => applyFilter(w.id, { ...w.filter, postsSelected: v.length ? v : null })}
+              onPostsDeniedChange={(v) => applyFilter(w.id, { ...w.filter, postsDenied: v.length ? v : null })}
+              onAdjacentFreqsRangeChange={(v) =>
+                setMessageFeeds((prev) => prev.map((f) => (f.id === w.id ? { ...f, adjacentFreqsRange: v } : f)))
+              }
+              onHighlightSignalsChange={(v) => {
+                setMessageFeeds((prev) => prev.map((f) => (f.id === w.id ? { ...f, highlightSignalsEnabled: v } : f)));
+                loadFeedInitialMessages(w.id, { highlightSignalsEnabled: v });
+              }}
+              onOnlyMyUnitTagsChange={(v) => {
+                setMessageFeeds((prev) => prev.map((f) => (f.id === w.id ? { ...f, onlyMyUnitTagsEnabled: v } : f)));
+                loadFeedInitialMessages(w.id, { onlyMyUnitTagsEnabled: v });
+              }}
               onReloadFreqs={reloadLatestFrequencies}
               onSavedFilterSelect={(id) => setSelectedSavedId(id === '' ? null : id)}
               onSaveFilterNameChange={setSaveFilterName}

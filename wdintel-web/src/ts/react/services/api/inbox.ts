@@ -1,4 +1,5 @@
 import type {
+  AnalysisStatsReq,
   AreaOfResponsibility,
   BookmarkAddReq,
   BookmarkRmReq,
@@ -13,6 +14,7 @@ import type {
   InboxMessageTagsRmReq,
   InboxMessagesReq,
   InboxMessagesRsp,
+  PostStatsRsp,
   RerDutyQueryStateWf as RerDutyFeedFilterState,
   SavedFilterDuty,
   SavedFilterDutyUpsertReq,
@@ -162,6 +164,7 @@ function inboxMsgtoSnakeBody(req: InboxMessagesReq): Object {
     highlight_keywords: req.highlightKeywords,
     highlight_searchres: req.highlightSearchres,
     highlight_signals: req.highlightSignals,
+    highlight_points: req.highlightPoints,
     selected_tags: req.selectedTags,
     selected_aors: req.selectedAors,
     selected_networks: req.selectedNetworks,
@@ -340,6 +343,40 @@ export async function getLatestSenders(): Promise<SignalProfilesRsp> {
 export async function getLatestFrequencies(): Promise<string[]> {
   const raw = await postJson<string[]>('/api/sigint/latest-frequencies', {});
   return Array.isArray(raw) ? raw : [];
+}
+
+/** Posts list for duty filter (from analysis stats). */
+export async function getPostsList(): Promise<string[]> {
+  const now = Date.now();
+  const sinceMs = now - 14 * 24 * 60 * 60 * 1000;
+  const tillMs = now + 24 * 60 * 60 * 1000;
+  const body: AnalysisStatsReq = {
+    sinceDateInclusiveMs: sinceMs,
+    tillDateNoninclusiveMs: tillMs,
+    selectedGroups: null,
+    selectedSenders: null,
+    selectedFreqs: null,
+    selectedPosts: null,
+    selectedCallsigns: null,
+    selectedUnits: null,
+    selectedLocations: null,
+    selectedAors: null,
+    orWithExtendedForm: null,
+    orBookmarked: null,
+    orImportant: null,
+    orWithCoords: null,
+    search: null,
+    selectedTags: null,
+    selectedNetworks: null,
+    includePelengLocations: null,
+    unitsExactMatchOnly: null,
+    filterTagsOption: null,
+    withoutModelTags: null,
+    reportTagsOnlyThisUnit: null,
+  };
+  const raw = await postJson<PostStatsRsp>('/api/rer/analysis/stats/posts', body);
+  const posts = raw?.posts ?? [];
+  return posts.map((p) => p.post);
 }
 
 /** User's sigint group keys (e.g. for filter dropdown). sinceDateInclusiveMs: optional ms, e.g. 2 days ago. */
