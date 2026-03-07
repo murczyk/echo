@@ -5,7 +5,7 @@ use regex::Regex;
 use unicode_segmentation::UnicodeSegmentation;
 
 pub fn cline_len(inp: &str) -> usize {
-    inp.chars().collect::<Vec<char>>().len()
+    inp.chars().count()
 }
 
 /// Searches for words, returns char-indices
@@ -28,7 +28,7 @@ pub fn byte_to_char_index(inp: &str, b_index: usize) -> usize {
         if pos >= b_index {
             return chars;
         }
-        pos += c.to_string().len();
+        pos += c.len_utf8();
         chars += 1;
     }
     chars

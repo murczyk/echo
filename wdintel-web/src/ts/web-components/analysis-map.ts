@@ -108,7 +108,7 @@ function getPointPopupTemplate(sortedMessages: Message[], networkUnits: NetworkU
 
 
 class AnalysisMap extends HTMLElement {
-  static observedAttributes = ["points", "daterange", "messages", "visibility", "network-units", "selected-units", "palitras", "palitras-loaded", "palitras-load-state"]
+  static observedAttributes = ["points", "daterange", "messages", "visibility", "network-units", "selected-units", "palitras", "palitras-loaded", "search-query", "palitras-load-state"]
 
   private _map: L.Map | null = null;
   private _daterange: { startDate: number, endDate: number } = { startDate: new Date().getDate(), endDate: new Date().getDate() };
@@ -294,6 +294,7 @@ class AnalysisMap extends HTMLElement {
       if (this._palitraManager) {
         this._palitraManager.updatePalitras(palitras);
         this._palitraManager.updateVisibleIds(this._visiblePalitraIds);
+        this._runSearchQueryIfSet();
       }
     }
     if (name === 'palitras-loaded') {
@@ -301,17 +302,30 @@ class AnalysisMap extends HTMLElement {
       this._palitrasLoaded = JSON.parse(newValue);
       this._syncVisiblePalitraIds();
       if (this._palitraManager) {
-        if (!this._sameVisibleIds(prevVisibleIds, this._visiblePalitraIds)) {
-          this._palitraManager.updateVisibleIds(this._visiblePalitraIds);
-        }
+        this._palitraManager.updatePalitras(this._palitras);
+        this._palitraManager.updateVisibleIds(this._visiblePalitraIds);
       }
     }
-    if (name === 'palitras-load-state') {
-      this._palitrasLoadState = this._parsePalitrasLoadState(newValue);
-      if (this._palitraManager) {
-        this._palitraManager.setLoadState(this._palitrasLoadState);
-      }
+    if (name === 'search-query') {
+      this._applySearchQuery(newValue ?? '');
     }
+  }
+
+  private _applySearchQuery(query: string) {
+    const trimmed = query.trim();
+    if (!trimmed) return;
+    const searchEl = this.querySelector('analysis-map-search');
+    if (searchEl) {
+      searchEl.setAttribute('initial-query', trimmed);
+    }
+    this._runSearchQueryIfSet();
+  }
+
+  /** Run search when we have a search-query attribute. */
+  private _runSearchQueryIfSet() {
+    const query = (this.getAttribute('search-query') ?? '').trim();
+    if (!query || !this._palitraManager) return;
+    this._palitraManager.setSearchQuery(query);
   }
 
 
@@ -393,6 +407,11 @@ class AnalysisMap extends HTMLElement {
 
      this._pelengsLayerGroup = L.layerGroup();
      this._applyPelengVisibility();
+
+    const searchQuery = this.getAttribute('search-query');
+    if (searchQuery) {
+      this._applySearchQuery(searchQuery);
+    }
     }
   }
 

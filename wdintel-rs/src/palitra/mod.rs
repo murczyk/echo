@@ -23,9 +23,11 @@ use std::collections::{BTreeMap, HashSet};
 use std::path::Path;
 use tempfile::tempdir;
 
-mod bl;
+pub(crate) mod bl;
 mod kmz;
+pub mod oneoff;
 pub mod types;
+pub mod worker;
 
 #[derive(Clone)]
 struct UserScope {
@@ -98,7 +100,7 @@ pub async fn create_palitra_with_kmz(
             .await
             .c(h!())?;
 
-    bl::rewrite_palitra_points(palitra_geometry.id, points, &txn)
+    bl::rewrite_palitra_points(palitra_geometry.id, points, &txn, &env.rq)
         .await
         .c(h!())?;
 
@@ -176,9 +178,14 @@ pub async fn create_palitra_basic(
                 .c(h!())?;
         let color_points =
             points_by_color.remove(&color_hex).unwrap_or_default();
-        bl::rewrite_palitra_points(palitra_geometry.id, color_points, &txn)
-            .await
-            .c(h!())?;
+        bl::rewrite_palitra_points(
+            palitra_geometry.id,
+            color_points,
+            &txn,
+            &env.rq,
+        )
+        .await
+        .c(h!())?;
     }
 
     let remote_filename = kmz_file_name_as_kmz(&multipart_payload.filename);
@@ -258,9 +265,14 @@ pub async fn create_palitra_basic_v2(
         .c(h!())?;
         let color_points =
             points_by_color.remove(&color_hex).unwrap_or_default();
-        bl::rewrite_palitra_points(palitra_geometry.id, color_points, &txn)
-            .await
-            .c(h!())?;
+        bl::rewrite_palitra_points(
+            palitra_geometry.id,
+            color_points,
+            &txn,
+            &env.rq,
+        )
+        .await
+        .c(h!())?;
     }
 
     let remote_filename = kmz_file_name_as_kmz(&multipart_payload.filename);
@@ -410,9 +422,14 @@ pub async fn upload_palitra_points(
         retained_geometry_ids.insert(palitra_geometry.id);
         let color_points =
             points_by_color.remove(&color_hex).unwrap_or_default();
-        bl::rewrite_palitra_points(palitra_geometry.id, color_points, &txn)
-            .await
-            .c(h!())?;
+        bl::rewrite_palitra_points(
+            palitra_geometry.id,
+            color_points,
+            &txn,
+            &env.rq,
+        )
+        .await
+        .c(h!())?;
     }
     let stale_geometry_ids = existing_palitra_geometries
         .into_iter()
@@ -452,6 +469,8 @@ pub async fn upload_palitra_points(
     .c(h!())?;
 
     txn.commit().await.c(h!())?;
+    env.palitra_worker_context.flush_cache(palitra_id).await;
+
     Ok(Json(()))
 }
 
@@ -741,6 +760,7 @@ pub async fn delete_palitra(
         .await
         .c(h!())?; //deletes with all geometries, TODO add method for drop one geometry only
     txn.commit().await.c(h!())?;
+    env.palitra_worker_context.flush_cache(palitra_id).await;
     Ok(Json(()))
 }
 

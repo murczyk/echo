@@ -8,6 +8,7 @@ const DEFAULT_DEBOUNCE_MS = 300;
 const SEARCH_TEXT = 'Пошук...';
 
 export type SearchInputProps = {
+  initialValue?: string;
   placeholder?: string;
   onSearch: (value: string) => void;
   className?: string;
@@ -21,6 +22,7 @@ export type SearchInputProps = {
 
 export function SearchInput(props: SearchInputProps) {
   const {
+    initialValue,
     placeholder = SEARCH_TEXT,
     onSearch,
     className,
@@ -45,7 +47,7 @@ export function SearchInput(props: SearchInputProps) {
     [mode],
   );
 
-  const [value, setValue] = useState('');
+  const [value, setValue] = useState(initialValue ?? '');
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const showResults = value.trim().length > 0 && (isSearchLoading || resultsCount !== null);
   const isSearchingLabel = isSearchLoading && (resultsCount === null || resultsCount === 0);
@@ -104,6 +106,13 @@ export function SearchInput(props: SearchInputProps) {
       }
     };
   }, []);
+
+  React.useEffect(() => {
+    if (initialValue === undefined) {
+      return;
+    }
+    setValue(initialValue);
+  }, [initialValue]);
 
   return (
     <ThemeProvider theme={theme}>

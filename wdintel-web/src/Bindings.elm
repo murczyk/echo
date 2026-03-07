@@ -962,6 +962,7 @@ type alias InboxMessage =
     , unit : Maybe String
     , callsignTokens : Maybe (List CnCallsign)
     , signalTokens : Maybe (List CnSignal)
+    , pointTokens : Maybe (List CnPoint)
     , noHeadersBody : Maybe NoHeadersBody
     , keywordTokens : Maybe (List CnHighlight)
     , textMarked : Maybe (List ContentNode)
@@ -999,6 +1000,7 @@ inboxMessageEncoder struct =
         , ( "unit", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.unit )
         , ( "callsign_tokens", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list cnCallsignEncoder)) struct.callsignTokens )
         , ( "signal_tokens", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list cnSignalEncoder)) struct.signalTokens )
+        , ( "point_tokens", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list cnPointEncoder)) struct.pointTokens )
         , ( "no_headers_body", (Maybe.withDefault Json.Encode.null << Maybe.map noHeadersBodyEncoder) struct.noHeadersBody )
         , ( "keyword_tokens", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list cnHighlightEncoder)) struct.keywordTokens )
         , ( "text_marked", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list contentNodeEncoder)) struct.textMarked )
@@ -1092,6 +1094,7 @@ type alias InboxMessagesReq =
     , highlightKeywords : Maybe Bool
     , highlightSearchres : Maybe Bool
     , highlightSignals : Maybe Bool
+    , highlightPoints : Maybe Bool
     , selectedTags : Maybe (List Int)
     , selectedAors : Maybe (List Int)
     , selectedNetworks : Maybe (List Int)
@@ -1140,6 +1143,7 @@ inboxMessagesReqEncoder struct =
         , ( "highlight_keywords", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.highlightKeywords )
         , ( "highlight_searchres", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.highlightSearchres )
         , ( "highlight_signals", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.highlightSignals )
+        , ( "highlight_points", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.highlightPoints )
         , ( "selected_tags", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.int)) struct.selectedTags )
         , ( "selected_aors", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.int)) struct.selectedAors )
         , ( "selected_networks", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.int)) struct.selectedNetworks )
@@ -3005,6 +3009,24 @@ cnCallsignEncoder struct =
         ]
 
 
+type alias CnPoint =
+    { begin : Int
+    , end : Int
+    , etalon : String
+    , text : String
+    }
+
+
+cnPointEncoder : CnPoint -> Json.Encode.Value
+cnPointEncoder struct =
+    Json.Encode.object
+        [ ( "begin", Json.Encode.int struct.begin )
+        , ( "end", Json.Encode.int struct.end )
+        , ( "etalon", Json.Encode.string struct.etalon )
+        , ( "text", Json.Encode.string struct.text )
+        ]
+
+
 type alias CnHighlight =
     { text : String
     , begin : Int
@@ -3027,6 +3049,7 @@ type ContentNode
     | CnCallsignC CnCallsign
     | CnHighlightC CnHighlight
     | CnSignalC CnSignal
+    | CnPointC CnPoint
 
 
 contentNodeEncoder : ContentNode -> Json.Encode.Value
@@ -3046,6 +3069,9 @@ contentNodeEncoder enum =
 
         CnSignalC inner ->
             Json.Encode.object [ ( "CNSignalC", cnSignalEncoder inner ) ]
+
+        CnPointC inner ->
+            Json.Encode.object [ ( "CNPointC", cnPointEncoder inner ) ]
 
 
 type alias CnSignal =
@@ -3774,6 +3800,7 @@ type alias Tag =
     , extra : Maybe Bool
     , ord : Maybe Float
     , keywords : Maybe (List TagKeyword)
+    , isPalitra : Bool
     }
 
 
@@ -3784,6 +3811,7 @@ tagEncoder struct =
         , ( "extra", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.extra )
         , ( "ord", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.float) struct.ord )
         , ( "keywords", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list tagKeywordEncoder)) struct.keywords )
+        , ( "is_palitra", Json.Encode.bool struct.isPalitra )
         ]
 
 
@@ -3832,6 +3860,7 @@ type alias TagAdmin =
     , ord : Maybe Float
     , enabled : Bool
     , keywords : List TagKeyword
+    , isPalitra : Bool
     }
 
 
@@ -3844,6 +3873,7 @@ tagAdminEncoder struct =
         , ( "ord", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.float) struct.ord )
         , ( "enabled", Json.Encode.bool struct.enabled )
         , ( "keywords", Json.Encode.list tagKeywordEncoder struct.keywords )
+        , ( "is_palitra", Json.Encode.bool struct.isPalitra )
         ]
 
 
@@ -3852,6 +3882,7 @@ type alias TagUpsertReq =
     , extra : Maybe Bool
     , ord : Maybe Float
     , enabled : Bool
+    , isPalitra : Bool
     }
 
 
@@ -3862,6 +3893,7 @@ tagUpsertReqEncoder struct =
         , ( "extra", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.extra )
         , ( "ord", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.float) struct.ord )
         , ( "enabled", Json.Encode.bool struct.enabled )
+        , ( "is_palitra", Json.Encode.bool struct.isPalitra )
         ]
 
 
@@ -7312,6 +7344,7 @@ inboxMessageDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsign_tokens" (Json.Decode.nullable (Json.Decode.list cnCallsignDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "signal_tokens" (Json.Decode.nullable (Json.Decode.list cnSignalDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "point_tokens" (Json.Decode.nullable (Json.Decode.list cnPointDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "no_headers_body" (Json.Decode.nullable noHeadersBodyDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "keyword_tokens" (Json.Decode.nullable (Json.Decode.list cnHighlightDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "text_marked" (Json.Decode.nullable (Json.Decode.list contentNodeDecoder))))
@@ -7417,6 +7450,7 @@ inboxMessagesReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "highlight_keywords" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "highlight_searchres" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "highlight_signals" (Json.Decode.nullable Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "highlight_points" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_tags" (Json.Decode.nullable (Json.Decode.list Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_aors" (Json.Decode.nullable (Json.Decode.list Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_networks" (Json.Decode.nullable (Json.Decode.list Json.Decode.int))))
@@ -8368,6 +8402,15 @@ cnHighlightDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "end" Json.Decode.int))
 
 
+cnPointDecoder : Json.Decode.Decoder CnPoint
+cnPointDecoder =
+    Json.Decode.succeed CnPoint
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "begin" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "end" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "etalon" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "text" Json.Decode.string))
+
+
 contentNodeDecoder : Json.Decode.Decoder ContentNode
 contentNodeDecoder =
     Json.Decode.oneOf
@@ -8385,6 +8428,7 @@ contentNodeDecoder =
         , Json.Decode.map CnCallsignC (Json.Decode.field "CNCallsignC" cnCallsignDecoder)
         , Json.Decode.map CnHighlightC (Json.Decode.field "CNHighlightC" cnHighlightDecoder)
         , Json.Decode.map CnSignalC (Json.Decode.field "CNSignalC" cnSignalDecoder)
+        , Json.Decode.map CnPointC (Json.Decode.field "CNPointC" cnPointDecoder)
         ]
 
 
@@ -8814,6 +8858,7 @@ tagDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "extra" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ord" (Json.Decode.nullable Json.Decode.float)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "keywords" (Json.Decode.nullable (Json.Decode.list tagKeywordDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_palitra" Json.Decode.bool))
 
 
 tagKeywordDecoder : Json.Decode.Decoder TagKeyword
@@ -8844,6 +8889,7 @@ tagAdminDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ord" (Json.Decode.nullable Json.Decode.float)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enabled" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "keywords" (Json.Decode.list tagKeywordDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_palitra" Json.Decode.bool))
 
 
 tagUpsertReqDecoder : Json.Decode.Decoder TagUpsertReq
@@ -8853,6 +8899,7 @@ tagUpsertReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "extra" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ord" (Json.Decode.nullable Json.Decode.float)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enabled" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_palitra" Json.Decode.bool))
 
 
 inboxMessageTagsAddReqDecoder : Json.Decode.Decoder InboxMessageTagsAddReq

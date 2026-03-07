@@ -33,6 +33,8 @@ pub enum Relation {
         on_delete = "Cascade"
     )]
     Palitra,
+    #[sea_orm(has_many = "super::palitra_point_lexeme::Entity")]
+    PalitraPointLexeme,
     #[sea_orm(
         belongs_to = "super::palitra_geometry::Entity",
         from = "Column::PalitraGeometryId",
@@ -46,6 +48,12 @@ pub enum Relation {
 impl Related<super::palitra::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Palitra.def()
+    }
+}
+
+impl Related<super::palitra_point_lexeme::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::PalitraPointLexeme.def()
     }
 }
 
