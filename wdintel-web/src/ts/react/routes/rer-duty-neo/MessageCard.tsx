@@ -25,6 +25,8 @@ export type MessageCardProps = {
   onCopyFreq: () => void;
   onComment: () => void;
   onToggleTag: (tagId: number) => void;
+  /** When true, hide the left column (date/time, actions, freq, etc.). Set per feed. */
+  leftSideCollapsed?: boolean;
 };
 
 export function MessageCard({
@@ -46,190 +48,195 @@ export function MessageCard({
   onCopyFreq,
   onComment,
   onToggleTag,
+  leftSideCollapsed = true,
 }: MessageCardProps) {
   const networkIds = Array.from(new Set(msg.networkIds ?? []));
 
   return (
     <Box component="li" className="list-none flex pr-0 pl-2 rer-duty-message mb-3 font-size-[13px]">
-      {/* Left column: date/time, actions, group, sender, freq */}
-      <div
-        className="min-w-[120px] mr-2 basis-1/4 mb-[8px]"
-        style={{ minWidth: 120, marginRight: 8, flex: '0 0 25%', marginBottom: 8 }}
-      >
+      {/* Left column: date/time, actions, group, sender, freq — hidden when leftSideCollapsed */}
+      {!leftSideCollapsed && (
         <div
-          className="flex justify-around w-full text-center mb-1"
-          style={{
-            fontSize: '.75rem',
-            display: 'flex',
-            justifyContent: 'space-around',
-            width: '100%',
-            textAlign: 'center',
-            marginBottom: 4,
-          }}
+          className="min-w-[120px] mr-2 basis-1/4 mb-[8px]"
+          style={{ minWidth: 120, marginRight: 8, flex: '0 0 25%', marginBottom: 8 }}
         >
-          <span>
-            <i className="bi bi-clock mr-1 text-icons" style={{ marginRight: 4 }} />
-            {formatTime(msg.time)}
-          </span>
-          {msg.date != null && (
+          <div
+            className="flex justify-around w-full text-center mb-1"
+            style={{
+              fontSize: '.75rem',
+              display: 'flex',
+              justifyContent: 'space-around',
+              width: '100%',
+              textAlign: 'center',
+              marginBottom: 4,
+            }}
+          >
             <span>
-              <i className="bi bi-calendar mr-1 text-icons" style={{ marginRight: 4 }} />
-              {formatDateNoYear(msg.date)}
+              <i className="bi bi-clock mr-1 text-icons" style={{ marginRight: 4 }} />
+              {formatTime(msg.time)}
             </span>
-          )}
-        </div>
-        <div
-          className="flex justify-around mb-2"
-          style={{ display: 'flex', justifyContent: 'space-around', marginBottom: 8 }}
-        >
-          <span
-            role="button"
-            tabIndex={0}
-            title={msg.bookmarked ? 'Прибрати закладку' : 'Додати в закладки'}
-            className="me-1 cursor-pointer"
-            style={{ fontSize: '1rem' }}
-            onClick={onBookmark}
-            onKeyDown={(e) => e.key === 'Enter' && onBookmark()}
-          >
-            <i
-              className={
-                msg.bookmarked ? 'bi bi-bookmark-fill text-action' : 'bi bi-bookmark text-action cursor-pointer'
-              }
-            />
-          </span>
-          <span
-            role="button"
-            tabIndex={0}
-            title={msg.important ? 'Прибрати важливе' : 'Помітити як важливе'}
-            className="me-1 cursor-pointer"
-            style={{ fontSize: '1rem' }}
-            onClick={onImportant}
-            onKeyDown={(e) => e.key === 'Enter' && onImportant()}
-          >
-            <i
-              className={
-                msg.important ? 'bi bi-exclamation-triangle-fill text-action' : 'bi bi-exclamation-triangle text-action'
-              }
-            />
-          </span>
-          <span
-            role="button"
-            tabIndex={0}
-            title="редагувати коментар"
-            className="me-1 cursor-pointer"
-            style={{ fontSize: '1rem' }}
-            onClick={onComment}
-            onKeyDown={(e) => e.key === 'Enter' && onComment()}
-          >
-            <i className="bi bi-chat-square text-action" />
-          </span>
-          <span
-            role="button"
-            tabIndex={0}
-            title="Копіювати"
-            className="cursor-pointer text-normal"
-            onClick={onCopyText}
-            onKeyDown={(e) => e.key === 'Enter' && onCopyText()}
-          >
-            <i
-              className={
-                copiedFeedbackId === `text-${id}`
-                  ? 'bi bi-clipboard-check-fill text-action cursor-pointer'
-                  : 'bi bi-clipboard text-action cursor-pointer'
-              }
-            />
-          </span>
-        </div>
-        {groupName != null && (
-          <div className="bg-card rounded-sm text-sm">
-            <div className="flex items-center px-2 py-1 border-b-2 border-border">
-              <i className="bi bi-signal mr-1 text-icons leading-none" title="Група" />
-              <span>{groupName}</span>
-            </div>
-          </div>
-        )}
-        {senderName != null && (
-          <div className="py-1 px-2 flex items-center bg-card rounded-sm text-sm mb-2">
-            <i className="bi bi-person-circle mr-1 text-icons leading-none" title="Відправник" />
-            <span>{senderName}</span>
-          </div>
-        )}
-        {msg.freq != null && (
-          <div className="bg-card text-sm mb-2 rounded-sm">
-            <div className="flex justify-between items-center py-1 px-2 border-b-2 border-border">
-              <div className="flex items-center">
-                <i className="bi bi-broadcast mr-1 text-icons leading-none" title="Частота" />
-                <span className="font-semibold">{msg.freq}</span>
-              </div>
-              <span
-                role="button"
-                tabIndex={0}
-                title="Копіювати частоту"
-                className="cursor-pointer text-action text-sm"
-                onClick={onCopyFreq}
-                onKeyDown={(e) => e.key === 'Enter' && onCopyFreq()}
-              >
-                <i
-                  className={
-                    copiedFeedbackId === `freq-${id}`
-                      ? 'bi bi-clipboard-check-fill cursor-pointer'
-                      : 'bi bi-clipboard cursor-pointer'
-                  }
-                />
+            {msg.date != null && (
+              <span>
+                <i className="bi bi-calendar mr-1 text-icons" style={{ marginRight: 4 }} />
+                {formatDateNoYear(msg.date)}
               </span>
+            )}
+          </div>
+          <div
+            className="flex justify-around mb-2"
+            style={{ display: 'flex', justifyContent: 'space-around', marginBottom: 8 }}
+          >
+            <span
+              role="button"
+              tabIndex={0}
+              title={msg.bookmarked ? 'Прибрати закладку' : 'Додати в закладки'}
+              className="me-1 cursor-pointer"
+              style={{ fontSize: '1rem' }}
+              onClick={onBookmark}
+              onKeyDown={(e) => e.key === 'Enter' && onBookmark()}
+            >
+              <i
+                className={
+                  msg.bookmarked ? 'bi bi-bookmark-fill text-action' : 'bi bi-bookmark text-action cursor-pointer'
+                }
+              />
+            </span>
+            <span
+              role="button"
+              tabIndex={0}
+              title={msg.important ? 'Прибрати важливе' : 'Помітити як важливе'}
+              className="me-1 cursor-pointer"
+              style={{ fontSize: '1rem' }}
+              onClick={onImportant}
+              onKeyDown={(e) => e.key === 'Enter' && onImportant()}
+            >
+              <i
+                className={
+                  msg.important
+                    ? 'bi bi-exclamation-triangle-fill text-action'
+                    : 'bi bi-exclamation-triangle text-action'
+                }
+              />
+            </span>
+            <span
+              role="button"
+              tabIndex={0}
+              title="редагувати коментар"
+              className="me-1 cursor-pointer"
+              style={{ fontSize: '1rem' }}
+              onClick={onComment}
+              onKeyDown={(e) => e.key === 'Enter' && onComment()}
+            >
+              <i className="bi bi-chat-square text-action" />
+            </span>
+            <span
+              role="button"
+              tabIndex={0}
+              title="Копіювати"
+              className="cursor-pointer text-normal"
+              onClick={onCopyText}
+              onKeyDown={(e) => e.key === 'Enter' && onCopyText()}
+            >
+              <i
+                className={
+                  copiedFeedbackId === `text-${id}`
+                    ? 'bi bi-clipboard-check-fill text-action cursor-pointer'
+                    : 'bi bi-clipboard text-action cursor-pointer'
+                }
+              />
+            </span>
+          </div>
+          {groupName != null && (
+            <div className="bg-card rounded-sm text-sm">
+              <div className="flex items-center px-2 py-1 border-b-2 border-border">
+                <i className="bi bi-signal mr-1 text-icons leading-none" title="Група" />
+                <span>{groupName}</span>
+              </div>
             </div>
-            <div className="flex justify-between items-center py-1 px-2 border-b-2 border-border">
-              <div className="flex items-center">
-                <i className="bi bi-bar-chart-line mr-1 text-icons leading-none" title="Аналіз" />
-                <span>Аналіз</span>
+          )}
+          {senderName != null && (
+            <div className="py-1 px-2 flex items-center bg-card rounded-sm text-sm mb-2">
+              <i className="bi bi-person-circle mr-1 text-icons leading-none" title="Відправник" />
+              <span>{senderName}</span>
+            </div>
+          )}
+          {msg.freq != null && (
+            <div className="bg-card text-sm mb-2 rounded-sm">
+              <div className="flex justify-between items-center py-1 px-2 border-b-2 border-border">
+                <div className="flex items-center">
+                  <i className="bi bi-broadcast mr-1 text-icons leading-none" title="Частота" />
+                  <span className="font-semibold">{msg.freq}</span>
+                </div>
+                <span
+                  role="button"
+                  tabIndex={0}
+                  title="Копіювати частоту"
+                  className="cursor-pointer text-action text-sm"
+                  onClick={onCopyFreq}
+                  onKeyDown={(e) => e.key === 'Enter' && onCopyFreq()}
+                >
+                  <i
+                    className={
+                      copiedFeedbackId === `freq-${id}`
+                        ? 'bi bi-clipboard-check-fill cursor-pointer'
+                        : 'bi bi-clipboard cursor-pointer'
+                    }
+                  />
+                </span>
+              </div>
+              <div className="flex justify-between items-center py-1 px-2 border-b-2 border-border">
+                <div className="flex items-center">
+                  <i className="bi bi-bar-chart-line mr-1 text-icons leading-none" title="Аналіз" />
+                  <span>Аналіз</span>
+                </div>
+                <a
+                  href={buildAnalysisHref(msg, false)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title="Відкрити повідомлення в Аналізі"
+                  className="text-action text-sm text-inherit"
+                >
+                  <i className="bi bi-box-arrow-up-right cursor-pointer" />
+                </a>
               </div>
               <a
-                href={buildAnalysisHref(msg, false)}
+                href={buildAnalysisHref(msg, true)}
                 target="_blank"
                 rel="noopener noreferrer"
-                title="Відкрити повідомлення в Аналізі"
+                title="Відкрити повідомлення на карті в аналізі"
                 className="text-action text-sm text-inherit"
               >
-                <i className="bi bi-box-arrow-up-right cursor-pointer" />
+                <div className="flex justify-between py-1 px-2 w-full">
+                  <div>
+                    <i
+                      className="bi bi-map text-icons leading-none mr-2 text-sm"
+                      title="Відкрити повідомлення на карті"
+                    />
+                    <span className="text-xs">Карта</span>
+                  </div>
+                  <i className="bi bi-box-arrow-up-right cursor-pointer leading-none" />
+                </div>
               </a>
             </div>
-            <a
-              href={buildAnalysisHref(msg, true)}
-              target="_blank"
-              rel="noopener noreferrer"
-              title="Відкрити повідомлення на карті в аналізі"
-              className="text-action text-sm text-inherit"
-            >
-              <div className="flex justify-between py-1 px-2 w-full">
-                <div>
-                  <i
-                    className="bi bi-map text-icons leading-none mr-2 text-sm"
-                    title="Відкрити повідомлення на карті"
-                  />
-                  <span className="text-xs">Карта</span>
-                </div>
-                <i className="bi bi-box-arrow-up-right cursor-pointer leading-none" />
-              </div>
-            </a>
-          </div>
-        )}
+          )}
 
-        {msg.extendedForm != null && msg.extendedForm.trim() !== '' && (
-          <div className="bg-card text-sm rounded-sm">
-            <div className="flex justify-between items-center py-1 px-2 border-border">
-              <div className="flex items-center">
-                <i className="bi bi-chat-text mr-1 text-icons leading-none" title="Коментар" />
-                <span className="text-xs">Коментар</span>
+          {msg.extendedForm != null && msg.extendedForm.trim() !== '' && (
+            <div className="bg-card text-sm rounded-sm">
+              <div className="flex justify-between items-center py-1 px-2 border-border">
+                <div className="flex items-center">
+                  <i className="bi bi-chat-text mr-1 text-icons leading-none" title="Коментар" />
+                  <span className="text-xs">Коментар</span>
+                </div>
+              </div>
+              <div className="flex justify-between items-center py-1 pl-6 pr-2">
+                <div className="flex items-center">
+                  <span className="font-semibold text-xs">{msg.extendedForm}</span>
+                </div>
               </div>
             </div>
-            <div className="flex justify-between items-center py-1 pl-6 pr-2">
-              <div className="flex items-center">
-                <span className="font-semibold text-xs">{msg.extendedForm}</span>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
 
       {/* Right column: message card */}
       <div className="mb-2 rounded-sm px-2 pt-2 pb-2 basis-3/4 flex-1 message-div bg-card relative min-w-0 break-words overflow-hidden">

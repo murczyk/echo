@@ -266,6 +266,8 @@ export type MessageFeedState = {
   /** Message IDs that have been "read" (entered viewport). Unread count = items not in this set. */
   readIds: Set<number>;
   unreadCount: number;
+  /** When true, the left column (freq, date/time, buttons) is hidden for all messages in this feed. */
+  leftSideCollapsed: boolean;
 };
 
 export function toQueryState(messageFeeds: MessageFeedState[]): RerDutyState {

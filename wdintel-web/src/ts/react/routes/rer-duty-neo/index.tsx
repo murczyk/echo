@@ -74,6 +74,7 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
       referenceTimeMs: null,
       readIds: new Set<number>(),
       unreadCount: 0,
+      leftSideCollapsed: true,
     }));
   });
   const [error, setError] = React.useState<string | null>(null);
@@ -459,6 +460,7 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
               referenceTimeMs: null,
               readIds: new Set<number>(),
               unreadCount: 0,
+              leftSideCollapsed: w.leftSideCollapsed,
             }
           : w,
       );
@@ -496,6 +498,7 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
       referenceTimeMs: null,
       readIds: new Set<number>(),
       unreadCount: 0,
+      leftSideCollapsed: true,
     };
     setMessageFeeds((prev) => {
       if (prev.length >= MAX_MESSAGE_FEEDS || prev.some((w) => w.id === id)) return prev;
@@ -757,12 +760,7 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
         setLoadingNewerFeedId((prev) => (prev === feedId ? null : prev));
       }
     },
-    [
-      messageFeeds,
-      loadFeedNewerMessages,
-      loadFeedInitialMessages,
-      showArrowResult,
-    ],
+    [messageFeeds, loadFeedNewerMessages, loadFeedInitialMessages, showArrowResult],
   );
 
   const handleVisibleMessageIds = React.useCallback(
@@ -784,6 +782,12 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
     },
     [],
   );
+
+  const handleToggleLeftSide = React.useCallback((feedId: string) => {
+    setMessageFeeds((prev) =>
+      prev.map((f) => (f.id === feedId ? { ...f, leftSideCollapsed: !f.leftSideCollapsed } : f)),
+    );
+  }, []);
 
   return (
     <Box className="flex flex-col w-full" sx={{ height: 'calc(100vh - 80px)', minHeight: 0, overflow: 'hidden' }}>
@@ -811,12 +815,11 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
                 columnRefsRef.current[w.id] = el;
               }}
               feed={w}
+              leftSideCollapsed={w.leftSideCollapsed}
+              onToggleLeftSide={() => handleToggleLeftSide(w.id)}
               unreadCount={
                 w.items.length > 0
-                  ? Math.max(
-                      w.unreadCount,
-                      w.items.filter(([id]) => !w.readIds.has(id)).length,
-                    )
+                  ? Math.max(w.unreadCount, w.items.filter(([id]) => !w.readIds.has(id)).length)
                   : w.unreadCount
               }
               filterStable={filterStable}

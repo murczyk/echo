@@ -96,6 +96,9 @@ export type FeedColumnProps = {
   onVisibleMessageIds?: (ids: number[], opts?: { atBottom?: boolean }) => void;
   /** Unread count (items not in readIds); shown as badge when > 0. */
   unreadCount?: number;
+  /** When true, message cards hide the left column (freq, date/time, buttons). Toggle is per feed. */
+  leftSideCollapsed?: boolean;
+  onToggleLeftSide?: () => void;
 };
 
 export type FeedColumnHandle = { scrollToEnd: () => void };
@@ -151,6 +154,8 @@ export const FeedColumn = React.forwardRef<FeedColumnHandle, FeedColumnProps>(fu
     onArrowClick,
     onVisibleMessageIds,
     unreadCount = 0,
+    leftSideCollapsed = true,
+    onToggleLeftSide,
   },
   ref,
 ) {
@@ -233,28 +238,48 @@ export const FeedColumn = React.forwardRef<FeedColumnHandle, FeedColumnProps>(fu
   return (
     <Box
       className="flex flex-col flex-1 min-w-0 gap-1 min-h-0"
-      sx={{ maxWidth: maxWidth ?? '100%', minWidth: 0, minHeight: 0, position: 'relative' }}
+      sx={{ maxWidth: maxWidth ?? '100%', position: 'relative' }}
     >
       <Box
-        className="flex justify-between gap-2 flex-wrap text-sm items-stretch h-8 shrink-0"
+        className="flex justify-between gap-2 flex-wrap text-sm items-stretch h-[32px] shrink-0"
         sx={{
           position: 'sticky',
           top: 0,
           zIndex: 1,
           backgroundColor: 'background.paper',
-          '& .MuiButton-root': { minHeight: 0, height: '100%' },
+          '& .MuiButton-root': {
+            minHeight: 0,
+            height: 32,
+            maxHeight: 32,
+            overflow: 'hidden',
+          },
         }}
       >
-        <Button
-          size="small"
-          variant="text"
-          className="self-stretch px-4"
-          startIcon={<i className="bi bi-gear" />}
-          endIcon={showFilters ? <i className="bi bi-chevron-up" /> : <i className="bi bi-chevron-down" />}
-          onClick={() => setShowFilters((s) => !s)}
-        >
-          Фільтри
-        </Button>
+        <div>
+          <Button
+            size="small"
+            variant="text"
+            className="self-stretch px-4"
+            startIcon={<i className="bi bi-gear" />}
+            endIcon={showFilters ? <i className="bi bi-chevron-up" /> : <i className="bi bi-chevron-down" />}
+            onClick={() => setShowFilters((s) => !s)}
+          >
+            Фільтри
+          </Button>
+          {onToggleLeftSide != null && (
+            <Button
+              size="medium"
+              variant="text"
+              className="self-stretch"
+              aria-label={leftSideCollapsed ? 'Розгорнути ліву колонку' : 'Згорнути ліву колонку'}
+              title={leftSideCollapsed ? 'Розгорнути ліву колонку' : 'Згорнути ліву колонку'}
+              onClick={onToggleLeftSide}
+              sx={{ minWidth: 40 }}
+            >
+              <i className={leftSideCollapsed ? 'bi bi-layout-sidebar-inset-reverse' : 'bi bi-layout-sidebar-inset'} />
+            </Button>
+          )}
+        </div>
         {canRemove && !showFilters && (
           <Button
             size="small"
@@ -382,6 +407,7 @@ export const FeedColumn = React.forwardRef<FeedColumnHandle, FeedColumnProps>(fu
                   tagsMap={tagsMap}
                   tagIdsList={tagIdsList}
                   messageHasTag={messageHasTag}
+                  leftSideCollapsed={leftSideCollapsed}
                   onBookmark={() => onMessageBookmark(id, msg.bookmarked)}
                   onImportant={() => onMessageImportant(id, msg.important)}
                   onCopyText={() => onMessageCopy(msg.text || '', `text-${id}`)}
