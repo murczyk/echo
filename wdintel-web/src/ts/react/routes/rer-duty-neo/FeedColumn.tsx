@@ -92,8 +92,8 @@ export type FeedColumnProps = {
   loadingNewer?: boolean;
   arrowResultMessage?: string | null;
   onArrowClick?: () => void;
-  /** Called when the visible range changes; pass message IDs in view so parent can add them to readIds. */
-  onVisibleMessageIds?: (ids: number[]) => void;
+  /** Called when the visible range changes; pass message IDs in view so parent can add them to readIds. When user reaches bottom, called with all IDs and atBottom: true so badge clears. */
+  onVisibleMessageIds?: (ids: number[], opts?: { atBottom?: boolean }) => void;
   /** Unread count (items not in readIds); shown as badge when > 0. */
   unreadCount?: number;
 };
@@ -211,7 +211,7 @@ export const FeedColumn = React.forwardRef<FeedColumnHandle, FeedColumnProps>(fu
         for (let dataIndex = 0; dataIndex <= endDataIndex && dataIndex < len; dataIndex++) {
           ids.push(feed.items[dataIndex][0]);
         }
-        if (ids.length > 0) onVisibleMessageIds(ids);
+        if (ids.length > 0) onVisibleMessageIds(ids, { atBottom: false });
       }
     },
     [firstItemIndex, feed.items, feed.items.length, onNearBottomChange, onVisibleMessageIds],
@@ -329,6 +329,12 @@ export const FeedColumn = React.forwardRef<FeedColumnHandle, FeedColumnProps>(fu
               setIsAtBottom(atBottom);
               if (atBottom && hasSeenNotAtBottomRef.current) onReachedBottom?.();
               if (!atBottom && wasAtBottom) onLeftBottom?.();
+              if (atBottom && onVisibleMessageIds != null && feed.items.length > 0) {
+                onVisibleMessageIds(
+                  feed.items.map(([id]) => id),
+                  { atBottom: true },
+                );
+              }
             }}
             components={{
               Scroller: FeedScroller,

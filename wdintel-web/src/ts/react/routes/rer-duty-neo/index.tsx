@@ -243,11 +243,11 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
 
   const loadFeedNewerMessages = React.useCallback(
     async (feedId: string, opts?: { nolimit?: boolean; scrollToEndAfterLoad?: boolean }) => {
-      // Prevent duplicate requests from polling
       if (loadNewerInFlightRef.current.has(feedId)) return;
       const feed = messageFeeds.find((x) => x.id === feedId);
       if (!feed || feed.items.length === 0) return;
       loadNewerInFlightRef.current.add(feedId);
+      setLoadingNewerFeedId(feedId);
       const lastId = feed.items[feed.items.length - 1][0];
       try {
         const req = buildInboxReq({
@@ -268,17 +268,26 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
                   const toAdd = newItems.filter(([id]) => !existingIds.has(id));
                   if (toAdd.length === 0) return x;
                   const combined = dedupeMessageItems([...x.items, ...toAdd]);
+                  const atBottomAfterLoad = opts?.scrollToEndAfterLoad === true;
+                  const readIds = atBottomAfterLoad ? new Set(combined.map(([id]) => id)) : x.readIds;
+                  const unreadCount = atBottomAfterLoad ? 0 : combined.length - x.readIds.size;
 
                   return {
                     ...x,
                     items: sortMessageItemsByTime(combined),
-                    unreadCount: x.unreadCount + toAdd.length,
+                    readIds,
+                    unreadCount,
                   };
                 }),
               );
               if (opts?.scrollToEndAfterLoad === true) {
                 scrollToEndAfterNewerRef.current = feedId;
               }
+              // After appending newer items, list grows and viewport may no longer be "near bottom"; keep treating this feed as near bottom so next poll still loads until user scrolls away
+              nearBottomByFeedIdRef.current = {
+                ...nearBottomByFeedIdRef.current,
+                [feedId]: true,
+              };
             }
           }
         }
@@ -286,38 +295,50 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
         // ignore single failure to keep polling and prev messages
       } finally {
         loadNewerInFlightRef.current.delete(feedId);
+        setLoadingNewerFeedId((prev) => (prev === feedId ? null : prev));
       }
     },
     [messageFeeds],
   );
 
-  /** Poll get-inbox-count; only call get-inbox (load newer) when BE says there are new messages. */
+  /** Poll get-inbox-count per feed; load newer when count>0 and (watchMode or nearBottom). */
   const pollCountThenLoadNewerIfNeeded = React.useCallback(async () => {
-    const w = messageFeeds[0];
-    if (!w) return;
-    const lastItem = w.items[w.items.length - 1];
-    // BE count uses >= since; use lastTs+1 so we only count messages strictly newer than our newest
-    const sinceMs =
-      lastItem != null && lastItem[1].timestamp != null && lastItem[1].timestamp > 0 ? lastItem[1].timestamp + 1 : 0;
+    if (!messageFeeds.length) return;
+    const nearBottom = nearBottomByFeedIdRef.current;
     try {
-      const req = buildInboxReq({
-        filter: w.filter,
-        sinceDateInclusiveMs: sinceMs,
-        nolimit: true,
-      });
-      const { quantity } = await fetchInboxCount(req);
-      if (quantity > 0) {
-        const nearBottom = nearBottomByFeedIdRef.current;
-        for (const feedId of messageFeeds.map((x) => x.id)) {
-          if (watchModeByFeedId[feedId] || nearBottom[feedId]) {
-            await loadFeedNewerMessages(feedId, {
-              scrollToEndAfterLoad: watchModeByFeedId[feedId],
-            });
+      const counts = await Promise.all(
+        messageFeeds.map(async (w) => {
+          const lastItem = w.items[w.items.length - 1];
+          const sinceMs =
+            lastItem != null && lastItem[1].timestamp != null && lastItem[1].timestamp > 0
+              ? lastItem[1].timestamp + 1
+              : 0;
+          try {
+            const { quantity } = await fetchInboxCount(
+              buildInboxReq({ filter: w.filter, sinceDateInclusiveMs: sinceMs, nolimit: true }),
+            );
+            return { feedId: w.id, quantity };
+          } catch {
+            return { feedId: w.id, quantity: 0 };
           }
+        }),
+      );
+      setMessageFeeds((prev) =>
+        prev.map((f) => {
+          const entry = counts.find((c) => c.feedId === f.id);
+          const quantity = entry?.quantity ?? 0;
+          return { ...f, unreadCount: Math.max(f.unreadCount, quantity) };
+        }),
+      );
+      for (const { feedId, quantity } of counts) {
+        if (quantity > 0 && (watchModeByFeedId[feedId] || nearBottom[feedId])) {
+          await loadFeedNewerMessages(feedId, {
+            scrollToEndAfterLoad: watchModeByFeedId[feedId],
+          });
         }
       }
     } catch {
-      // ignore count failure; next poll will retry
+      // ignore; next poll will retry
     }
   }, [messageFeeds, watchModeByFeedId, loadFeedNewerMessages]);
 
@@ -697,6 +718,73 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
     [messageFeeds],
   );
 
+  const handleArrowClick = React.useCallback(
+    async (feedId: string) => {
+      const feed = messageFeeds.find((x) => x.id === feedId);
+      if (!feed) return;
+      setWatchModeByFeedId((prev) => ({ ...prev, [feedId]: true }));
+      const refs = columnRefsRef.current;
+      const scrollToEnd = () => {
+        requestAnimationFrame(() => requestAnimationFrame(() => refs[feedId]?.scrollToEnd()));
+      };
+      scrollToEnd();
+      setLoadingNewerFeedId(feedId);
+      try {
+        if (feed.items.length > 0) {
+          const lastItem = feed.items[feed.items.length - 1];
+          const sinceMs =
+            lastItem != null && lastItem[1].timestamp != null && lastItem[1].timestamp > 0
+              ? lastItem[1].timestamp + 1
+              : 0;
+          const { quantity } = await fetchInboxCount(
+            buildInboxReq({ filter: feed.filter, sinceDateInclusiveMs: sinceMs, nolimit: true }),
+          );
+          if (quantity === 0) {
+            showArrowResult(feedId, 'Немає нових повідомлень');
+            return;
+          }
+          setMessageFeeds((prev) =>
+            prev.map((f) => (f.id === feedId ? { ...f, unreadCount: Math.max(f.unreadCount, quantity) } : f)),
+          );
+          await loadFeedNewerMessages(feedId, { nolimit: true, scrollToEndAfterLoad: true });
+        } else if (!feed.loading) {
+          await loadFeedInitialMessages(feedId, feed.filter);
+        }
+        showArrowResult(feedId, 'Завантажено нові повідомлення');
+      } catch {
+        showArrowResult(feedId, 'Немає нових повідомлень');
+      } finally {
+        setLoadingNewerFeedId((prev) => (prev === feedId ? null : prev));
+      }
+    },
+    [
+      messageFeeds,
+      loadFeedNewerMessages,
+      loadFeedInitialMessages,
+      showArrowResult,
+    ],
+  );
+
+  const handleVisibleMessageIds = React.useCallback(
+    (feedId: string) => (ids: number[], opts?: { atBottom?: boolean }) => {
+      if (ids.length === 0) return;
+      setMessageFeeds((prev) =>
+        prev.map((f) => {
+          if (f.id !== feedId) return f;
+          if (ids.length >= f.items.length && !opts?.atBottom) return f;
+          const nextReadIds = new Set([...f.readIds, ...ids]);
+          if (nextReadIds.size === f.readIds.size && ids.every((id) => f.readIds.has(id))) return f;
+          return {
+            ...f,
+            readIds: nextReadIds,
+            unreadCount: f.items.filter(([id]) => !nextReadIds.has(id)).length,
+          };
+        }),
+      );
+    },
+    [],
+  );
+
   return (
     <Box className="flex flex-col w-full" sx={{ height: 'calc(100vh - 80px)', minHeight: 0, overflow: 'hidden' }}>
       <Box className="flex items-center justify-between flex-wrap gap-2 mb-2 shrink-0" />
@@ -723,7 +811,14 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
                 columnRefsRef.current[w.id] = el;
               }}
               feed={w}
-              unreadCount={w.unreadCount}
+              unreadCount={
+                w.items.length > 0
+                  ? Math.max(
+                      w.unreadCount,
+                      w.items.filter(([id]) => !w.readIds.has(id)).length,
+                    )
+                  : w.unreadCount
+              }
               filterStable={filterStable}
               groupsList={groupsList}
               groupInfos={groupInfos}
@@ -786,56 +881,8 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
               isWatchMode={watchModeByFeedId[w.id] ?? false}
               loadingNewer={loadingNewerFeedId === w.id}
               arrowResultMessage={arrowResultByFeedId[w.id] ?? null}
-              onArrowClick={async () => {
-                setWatchModeByFeedId((prev) => ({ ...prev, [w.id]: true }));
-                const refs = columnRefsRef.current;
-                const scrollToEnd = () => {
-                  requestAnimationFrame(() => requestAnimationFrame(() => refs[w.id]?.scrollToEnd()));
-                };
-                scrollToEnd();
-                setLoadingNewerFeedId(w.id);
-                try {
-                  if (w.items.length > 0) {
-                    const lastItem = w.items[w.items.length - 1];
-                    const sinceMs =
-                      lastItem != null && lastItem[1].timestamp != null && lastItem[1].timestamp > 0
-                        ? lastItem[1].timestamp + 1
-                        : 0;
-                    const { quantity } = await fetchInboxCount(
-                      buildInboxReq({ filter: w.filter, sinceDateInclusiveMs: sinceMs, nolimit: true }),
-                    );
-                    if (quantity === 0) {
-                      showArrowResult(w.id, 'Немає нових повідомлень');
-                      return;
-                    }
-                    await loadFeedNewerMessages(w.id, { nolimit: true, scrollToEndAfterLoad: true });
-                  } else if (!w.loading) {
-                    await loadFeedInitialMessages(w.id, w.filter);
-                  }
-                  showArrowResult(w.id, 'Завантажено нові повідомлення');
-                } catch {
-                  showArrowResult(w.id, 'Немає нових повідомлень');
-                } finally {
-                  setLoadingNewerFeedId((prev) => (prev === w.id ? null : prev));
-                }
-              }}
-              onVisibleMessageIds={(ids) => {
-                if (ids.length === 0) return;
-                setMessageFeeds((prev) =>
-                  prev.map((f) => {
-                    if (f.id !== w.id) return f;
-                    // Only add everything to read on init; skip when viewport reports full list (e.g. after load older/newer)
-                    if (ids.length >= f.items.length) return f;
-                    const nextReadIds = new Set([...f.readIds, ...ids]);
-                    if (nextReadIds.size === f.readIds.size && ids.every((id) => f.readIds.has(id))) return f;
-                    return {
-                      ...f,
-                      readIds: nextReadIds,
-                      unreadCount: f.items.filter(([id]) => !nextReadIds.has(id)).length,
-                    };
-                  }),
-                );
-              }}
+              onArrowClick={() => handleArrowClick(w.id)}
+              onVisibleMessageIds={handleVisibleMessageIds(w.id)}
             />
           );
         })}
