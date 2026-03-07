@@ -933,10 +933,19 @@ view user model shared route =
                                 , ( "points", Encode.list B.palitraPointEncoder palitraPoints )
                                 ]
 
+                        fallbackGeometryScopedId palitraId =
+                            -palitraId
+
                         palitraReadToMapValues palitraRead =
                             if List.isEmpty palitraRead.geometries then
+                                let
+                                    fallbackPalitra =
+                                        palitraRead.palitra
+                                in
                                 [ encodePalitraForMap
-                                    palitraRead.palitra
+                                    { fallbackPalitra
+                                        | id = fallbackGeometryScopedId palitraRead.palitra.id
+                                    }
                                     palitraRead.palitra.id
                                     []
                                 ]
