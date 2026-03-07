@@ -50,6 +50,7 @@ export class PalitraManager {
   private _renderGeneration = 0;
   private _renderViewportTimer: number | null = null;
   private _backgroundPreloadKey: string | null = null;
+  private _backgroundPreloadRequestedKey: string | null = null;
   private _backgroundPreloadInFlight = false;
 
   constructor(
@@ -260,20 +261,22 @@ export class PalitraManager {
 
     if (palitraIds.length === 0) {
       this._backgroundPreloadKey = null;
+      this._backgroundPreloadRequestedKey = null;
       this.setBackgroundPointsLoading(false);
       return;
     }
 
     const preloadKey = palitraIds.join(',');
+    this._backgroundPreloadRequestedKey = preloadKey;
     if (this._backgroundPreloadInFlight || this._backgroundPreloadKey === preloadKey) {
       return;
     }
 
     this._backgroundPreloadKey = preloadKey;
-    void this.preloadAllPoints(palitraIds);
+    void this.preloadAllPoints(palitraIds, preloadKey);
   }
 
-  private async preloadAllPoints(palitraIds: number[]): Promise<void> {
+  private async preloadAllPoints(palitraIds: number[], preloadKey: string): Promise<void> {
     this._backgroundPreloadInFlight = true;
     this.setBackgroundPointsLoading(true);
 
@@ -285,6 +288,9 @@ export class PalitraManager {
       this._backgroundPreloadInFlight = false;
       this.setBackgroundPointsLoading(false);
       this.updatePoints();
+      if (this._backgroundPreloadRequestedKey !== preloadKey) {
+        this.scheduleBackgroundPointsPreload();
+      }
     }
   }
 
