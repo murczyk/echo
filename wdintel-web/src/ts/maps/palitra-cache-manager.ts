@@ -107,6 +107,31 @@ export class PalitraCacheManager {
     }
   }
 
+  async fetchPointsForBounds(
+    palitraIds: number[],
+    bounds: L.LatLngBounds,
+  ): Promise<{ palitra_id: number; points: PalitraPoint[] }[]> {
+    const response = await fetch('/api/palitra/points', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        palitra_ids: palitraIds,
+        viewport_bounds: {
+          min_lat: bounds.getSouth(),
+          min_lng: bounds.getWest(),
+          max_lat: bounds.getNorth(),
+          max_lng: bounds.getEast(),
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    return response.json();
+  }
+
   /** All cached points for given palitras (from all tiles), deduped, for local search */
   getCachedPointsForPalitras(palitraIds: number[]): { palitra_id: number; points: PalitraPoint[] }[] {
     const result: { palitra_id: number; points: PalitraPoint[] }[] = [];
@@ -190,6 +215,40 @@ export class PalitraCacheManager {
     this.logStats();
     
     // Evict old entries if needed
+    this.evict();
+  }
+
+  storePointsByGrid(data: { palitra_id: number; points: PalitraPoint[] }[], zoom: number): void {
+    const now = Date.now();
+    data.forEach((item) => {
+      if (!item || typeof item.palitra_id !== 'number') {
+        return;
+      }
+
+      let tiles = this.tiles.get(item.palitra_id);
+      if (!tiles) {
+        tiles = new Map();
+        this.tiles.set(item.palitra_id, tiles);
+      }
+
+      const pointsByTile = new Map<string, PalitraPoint[]>();
+      (item.points || []).forEach((point) => {
+        const tileKey = this.buildTileKeyForPoint(point, zoom);
+        const list = pointsByTile.get(tileKey) ?? [];
+        list.push(point);
+        pointsByTile.set(tileKey, list);
+      });
+
+      pointsByTile.forEach((points, tileKey) => {
+        const existing = tiles!.get(tileKey) ?? [];
+        const dedup = new Map<string, PalitraPoint>();
+        existing.forEach((point) => dedup.set(PalitraCacheManager.pointKey(point), point));
+        points.forEach((point) => dedup.set(PalitraCacheManager.pointKey(point), point));
+        tiles!.set(tileKey, Array.from(dedup.values()));
+        this.cache.set(`${item.palitra_id}:${tileKey}`, now);
+      });
+    });
+
     this.evict();
   }
 
@@ -328,6 +387,19 @@ export class PalitraCacheManager {
     const factor = Math.pow(10, precision);
     const rounded = Math.round(value * factor) / factor;
     return rounded.toFixed(precision);
+  }
+
+  private buildTileKeyForPoint(point: PalitraPoint, zoom: number): string {
+    const precision = this.getPrecision(zoom);
+    const zoomBucket = this.getZoomBucket(zoom);
+    const step = Math.pow(10, -precision);
+
+    const minLat = Math.floor(point.coords.lat / step) * step;
+    const minLng = Math.floor(point.coords.lng / step) * step;
+    const maxLat = minLat + step;
+    const maxLng = minLng + step;
+
+    return `${zoomBucket}:${this.roundCoord(minLat, precision)},${this.roundCoord(minLng, precision)},${this.roundCoord(maxLat, precision)},${this.roundCoord(maxLng, precision)}`;
   }
 
   private parseTileKeyBounds(tileKey: string): L.LatLngBounds | null {

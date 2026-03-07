@@ -276,17 +276,12 @@ export class PalitraManager {
   private async preloadAllPoints(palitraIds: number[]): Promise<void> {
     this._backgroundPreloadInFlight = true;
     this.setBackgroundPointsLoading(true);
-    const tileKey = this.cacheManager.buildTileKey(WORLD_BOUNDS, BACKGROUND_PRELOAD_ZOOM);
-
-    this.cacheManager.markPending(palitraIds, tileKey);
-    this.cacheManager.markRequested(palitraIds, tileKey);
 
     try {
-      await this.cacheManager.fetchPoints(palitraIds, WORLD_BOUNDS, tileKey, () => {
-        this.updatePoints();
-      });
+      const data = await this.cacheManager.fetchPointsForBounds(palitraIds, WORLD_BOUNDS);
+      this.cacheManager.storePointsByGrid(data, BACKGROUND_PRELOAD_ZOOM);
+      this.updatePoints();
     } finally {
-      this.cacheManager.clearPending(palitraIds, tileKey);
       this._backgroundPreloadInFlight = false;
       this.setBackgroundPointsLoading(false);
       this.updatePoints();
@@ -880,10 +875,11 @@ export class PalitraManager {
       palitrasByApiId,
       new Set(this.visibleIds),
     );
+    const cappedSplitEntries = this.truncateSplitEntriesToMaxRendered(splitEntries, MAX_RENDERED_POINTS);
 
     const nextPointMarkers: (L.CircleMarker & { _palitraTooltipLabel?: string })[] = [];
     const clusters = await Promise.all(
-      splitEntries.map(async ({ palitra, points }) => {
+      cappedSplitEntries.map(async ({ palitra, points }) => {
         const cluster = await this.createPointsCluster(palitra, points, nextPointMarkers);
         return { palitraId: palitra.id, cluster };
       }),
@@ -896,6 +892,31 @@ export class PalitraManager {
     this.replacePointClusters(clusters, nextPointMarkers);
 
     this.updatePointLabelVisibility();
+  }
+
+  private truncateSplitEntriesToMaxRendered(
+    entries: Array<{ palitra: Palitra; points: PalitraPoint[] }>,
+    maxPoints: number,
+  ): Array<{ palitra: Palitra; points: PalitraPoint[] }> {
+    let remaining = maxPoints;
+    const result: Array<{ palitra: Palitra; points: PalitraPoint[] }> = [];
+
+    for (const entry of entries) {
+      if (remaining <= 0) {
+        break;
+      }
+      const take = Math.min(entry.points.length, remaining);
+      if (take <= 0) {
+        continue;
+      }
+      result.push({
+        palitra: entry.palitra,
+        points: entry.points.slice(0, take),
+      });
+      remaining -= take;
+    }
+
+    return result;
   }
 
   private updateControlVisibility(): void {
