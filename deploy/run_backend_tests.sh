@@ -6,8 +6,12 @@ echo "Running backend tests with Python service..."
 ensure_postgres_running() {
     local pg_host="${PG_HOST:-localhost}"
     local pg_port="${PG_PORT:-5432}"
+    local pg_user="${PG_USER:-wd}"
+    local pg_db="${PG_DATABASE:-postgres}"
+    local wait_secs="${POSTGRES_BOOT_WAIT_SECS:-300}"
+    local i
 
-    if psql -h "$pg_host" -p "$pg_port" -U "${PG_USER:-wd}" -d "${PG_DATABASE:-postgres}" -tAc "SELECT 1" >/dev/null 2>&1; then
+    if psql -h "$pg_host" -p "$pg_port" -U "$pg_user" -d "$pg_db" -tAc "SELECT 1" >/dev/null 2>&1; then
         echo "PostgreSQL is already reachable at ${pg_host}:${pg_port}"
         return 0
     fi
@@ -39,11 +43,53 @@ ensure_postgres_running() {
     fi
 
     if command -v pg_isready >/dev/null 2>&1; then
-        pg_isready -h "$pg_host" -p "$pg_port" -U "${PG_USER:-wd}" || true
+        pg_isready -h "$pg_host" -p "$pg_port" -U "$pg_user" || true
+    fi
+
+    echo "Waiting for PostgreSQL to become query-ready (up to ${wait_secs}s)..."
+    for ((i = 1; i <= wait_secs; i++)); do
+        if psql -h "$pg_host" -p "$pg_port" -U "$pg_user" -d "$pg_db" -tAc "SELECT 1" >/dev/null 2>&1; then
+            echo "PostgreSQL became query-ready"
+            return 0
+        fi
+        sleep 1
+    done
+
+    echo "PostgreSQL is still not query-ready after initial start attempt; retrying one restart..."
+    if command -v systemctl >/dev/null 2>&1; then
+        if command -v sudo >/dev/null 2>&1; then
+            sudo systemctl restart postgresql || true
+            sudo systemctl --no-pager --full status postgresql || true
+        else
+            systemctl restart postgresql || true
+            systemctl --no-pager --full status postgresql || true
+        fi
+    elif command -v pg_ctlcluster >/dev/null 2>&1; then
+        if command -v sudo >/dev/null 2>&1; then
+            sudo pg_ctlcluster 14 main restart || true
+        else
+            pg_ctlcluster 14 main restart || true
+        fi
+    fi
+
+    for ((i = 1; i <= wait_secs; i++)); do
+        if psql -h "$pg_host" -p "$pg_port" -U "$pg_user" -d "$pg_db" -tAc "SELECT 1" >/dev/null 2>&1; then
+            echo "PostgreSQL became query-ready after restart"
+            return 0
+        fi
+        sleep 1
+    done
+
+    echo "Warning: PostgreSQL remains not query-ready after restart attempts"
+    if command -v pg_isready >/dev/null 2>&1; then
+        pg_isready -h "$pg_host" -p "$pg_port" -U "$pg_user" || true
     fi
 }
 
 ensure_postgres_running
+
+# CI boxes may require extra time while PostgreSQL replays WAL / crash-recovery.
+export POSTGRES_STARTUP_TIMEOUT_SECS="${POSTGRES_STARTUP_TIMEOUT_SECS:-600}"
 
 # Set up branch-specific test database
 echo "Setting up test database..."

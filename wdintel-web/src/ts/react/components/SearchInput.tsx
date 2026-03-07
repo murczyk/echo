@@ -49,6 +49,8 @@ export function SearchInput(props: SearchInputProps) {
 
   const [value, setValue] = useState(initialValue ?? '');
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onSearchRef = useRef(onSearch);
+  const lastAppliedInitialValueRef = useRef<string | undefined>(undefined);
   const showResults = value.trim().length > 0 && (isSearchLoading || resultsCount !== null);
   const isSearchingLabel = isSearchLoading && (resultsCount === null || resultsCount === 0);
 
@@ -108,12 +110,20 @@ export function SearchInput(props: SearchInputProps) {
   }, []);
 
   React.useEffect(() => {
+    onSearchRef.current = onSearch;
+  }, [onSearch]);
+
+  React.useEffect(() => {
     if (initialValue === undefined) {
       return;
     }
+    if (lastAppliedInitialValueRef.current === initialValue) {
+      return;
+    }
+    lastAppliedInitialValueRef.current = initialValue;
     setValue(initialValue);
-    onSearch(initialValue);
-  }, [initialValue, onSearch]);
+    onSearchRef.current(initialValue);
+  }, [initialValue]);
 
   return (
     <ThemeProvider theme={theme}>
