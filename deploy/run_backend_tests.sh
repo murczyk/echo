@@ -28,7 +28,7 @@ ensure_postgres_running() {
 
     if command -v systemctl >/dev/null 2>&1; then
         if command -v sudo >/dev/null 2>&1; then
-            sudo systemctl start postgresql || true
+            sudo -n systemctl start postgresql || true
         else
             systemctl start postgresql || true
         fi
@@ -37,7 +37,7 @@ ensure_postgres_running() {
     if ! psql -w -h "$pg_host" -p "$pg_port" -U "${PG_USER:-wd}" -d "${PG_DATABASE:-postgres}" -tAc "SELECT 1" >/dev/null 2>&1; then
         if command -v pg_ctlcluster >/dev/null 2>&1; then
             if command -v sudo >/dev/null 2>&1; then
-                sudo pg_ctlcluster 14 main start || true
+                sudo -n pg_ctlcluster 14 main start || true
             else
                 pg_ctlcluster 14 main start || true
             fi
@@ -60,15 +60,15 @@ ensure_postgres_running() {
     echo "PostgreSQL is still not query-ready after initial start attempt; retrying one restart..."
     if command -v systemctl >/dev/null 2>&1; then
         if command -v sudo >/dev/null 2>&1; then
-            sudo systemctl restart postgresql || true
-            sudo systemctl --no-pager --full status postgresql || true
+            sudo -n systemctl restart postgresql || true
+            sudo -n systemctl --no-pager --full status postgresql || true
         else
             systemctl restart postgresql || true
             systemctl --no-pager --full status postgresql || true
         fi
     elif command -v pg_ctlcluster >/dev/null 2>&1; then
         if command -v sudo >/dev/null 2>&1; then
-            sudo pg_ctlcluster 14 main restart || true
+            sudo -n pg_ctlcluster 14 main restart || true
         else
             pg_ctlcluster 14 main restart || true
         fi

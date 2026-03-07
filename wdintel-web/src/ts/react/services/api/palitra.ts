@@ -275,25 +275,13 @@ function pickPrimaryGeometryIdForUpdate(geometries: PalitraGeometryDetailsLike[]
     return null;
   }
 
-  let selectedId: number | null = null;
-  let selectedTs = Number.NEGATIVE_INFINITY;
-
-  geometries.forEach((geometry) => {
+  for (const geometry of geometries) {
     const geometryId = normalizeOptionalNumber(geometry?.id);
-    if (geometryId === null) {
-      return;
+    if (geometryId !== null) {
+      return geometryId;
     }
-
-    const rawTs = geometry?.lastUploadedAtTs ?? geometry?.last_uploaded_at_ts;
-    const ts = normalizeOptionalNumber(rawTs) ?? Number.NEGATIVE_INFINITY;
-
-    if (selectedId === null || ts > selectedTs || (ts === selectedTs && geometryId > selectedId)) {
-      selectedId = geometryId;
-      selectedTs = ts;
-    }
-  });
-
-  return selectedId;
+  }
+  return null;
 }
 
 export async function deletePalitra(palitraId: number): Promise<void> {
