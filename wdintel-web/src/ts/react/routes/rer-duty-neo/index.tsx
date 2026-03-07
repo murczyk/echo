@@ -269,9 +269,12 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
             const prevFirst = x.firstItemIndex ?? VIRTUOSO_FIRST_ITEM_INDEX_INITIAL;
             const firstItemIndex = Math.max(0, prevFirst - newItems.length);
             const combined = dedupeMessageItems([...newItems, ...x.items]);
+            const olderIds = newItems.map(([id]) => id);
+            const nextReadIds = new Set([...x.readIds, ...olderIds]);
             return {
               ...x,
               items: sortMessageItemsByTime(combined),
+              readIds: nextReadIds,
               loadingOlder: false,
               hasReachedStart,
               firstItemIndex,
@@ -315,8 +318,7 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
                   const toAdd = newItems.filter(([id]) => !existingIds.has(id));
                   if (toAdd.length === 0) return x;
                   const combined = dedupeMessageItems([...x.items, ...toAdd]);
-                  const markAllRead =
-                    opts?.scrollToEndAfterLoad === true || opts?.markAllReadAfterAppend === true;
+                  const markAllRead = opts?.scrollToEndAfterLoad === true || opts?.markAllReadAfterAppend === true;
                   const readIds = markAllRead ? new Set(combined.map(([id]) => id)) : x.readIds;
                   const unreadCount = markAllRead ? 0 : combined.length - x.readIds.size;
 
@@ -375,15 +377,20 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
         prev.map((f) => {
           const entry = counts.find((c) => c.feedId === f.id);
           const quantity = entry?.quantity ?? 0;
-          return { ...f, unreadCount: Math.max(f.unreadCount, quantity) };
+          const allItemsRead =
+            f.items.length > 0 &&
+            f.items.length === f.readIds.size &&
+            f.items.every(([id]) => f.readIds.has(id));
+          const unreadCount =
+            quantity === 0 && allItemsRead ? 0 : Math.max(f.unreadCount, quantity);
+          return { ...f, unreadCount };
         }),
       );
       for (const { feedId, quantity } of counts) {
         if (quantity > 0 && (watchModeByFeedId[feedId] || nearBottom[feedId])) {
           await loadFeedNewerMessages(feedId, {
             scrollToEndAfterLoad: watchModeByFeedId[feedId],
-            // Mark all as read when appending from poll (user was near bottom); atBottomStateChange often doesn't fire after append
-            markAllReadAfterAppend: true,
+            // Do not mark all read when loading from poll; only mark read when user reaches bottom or clicks arrow
           });
         }
       }
@@ -726,14 +733,20 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
     }));
   }, [profiles]);
 
-  const tagIdsList = React.useMemo(
-    () =>
+  const tagIdsList = React.useMemo(() => {
+    const fromMap = new Set(
       Object.keys(tagsMap)
         .map(Number)
-        .filter((n) => !Number.isNaN(n))
-        .sort((a, b) => a - b),
-    [tagsMap],
-  );
+        .filter((n) => !Number.isNaN(n)),
+    );
+    messageFeeds.forEach((w) => {
+      w.items.forEach(([, msg]) => {
+        (msg.tags ?? []).forEach((id) => fromMap.add(id));
+        (msg.inboxTags ?? []).forEach((t) => fromMap.add(t.tagId));
+      });
+    });
+    return Array.from(fromMap).sort((a, b) => a - b);
+  }, [tagsMap, messageFeeds]);
 
   function messageHasTag(msg: InboxMessage, tagId: number): boolean {
     if ((msg.inboxTags ?? []).length > 0) return (msg.inboxTags ?? []).some((t) => t.tagId === tagId);
@@ -959,7 +972,15 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
               onMessageComment={(msgId, currentComment) => openCommentDialog(msgId, w.id, currentComment)}
               onMessageToggleTag={(msgId, tagId) => handleToggleTag(w.id, msgId, tagId)}
               onScrollToTop={() => setWatchModeByFeedId((prev) => ({ ...prev, [w.id]: false }))}
-              onReachedBottom={() => setWatchModeByFeedId((prev) => ({ ...prev, [w.id]: true }))}
+              onReachedBottom={() => {
+                setWatchModeByFeedId((prev) => ({ ...prev, [w.id]: true }));
+                if (w.items.length > 0) {
+                  handleVisibleMessageIds(w.id)(
+                    w.items.map(([id]) => id),
+                    { atBottom: true },
+                  );
+                }
+              }}
               onLeftBottom={() => setWatchModeByFeedId((prev) => ({ ...prev, [w.id]: false }))}
               onNearBottomChange={(near) => {
                 nearBottomByFeedIdRef.current = {

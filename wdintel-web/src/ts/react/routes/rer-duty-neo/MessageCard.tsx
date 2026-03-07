@@ -328,7 +328,7 @@ export function MessageCard({
         <div className="whitespace-pre-wrap break-words mt-1 mb-3 text-marked">
           {msg.textMarked && msg.textMarked.length > 0
             ? renderMarkedText(msg.textMarked, msg.text ?? '')
-            : (msg.text || '—')}
+            : msg.text || '—'}
         </div>
         <Box className="flex flex-wrap gap-1 mt-1">
           {tagIdsList.map((tagId) => {

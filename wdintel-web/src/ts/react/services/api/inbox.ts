@@ -83,6 +83,7 @@ function normalizeInboxMessage(
     location?: string | null;
     extended_form?: string | null;
     inbox_tags?: InboxMessageTagRaw[] | null;
+    text_marked?: InboxMessageType['textMarked'];
   }
 ): InboxMessageType {
   const raw = m as Record<string, unknown>;
@@ -95,7 +96,8 @@ function normalizeInboxMessage(
     rawInboxTags != null && Array.isArray(rawInboxTags)
       ? rawInboxTags.map(normalizeInboxMessageTag)
       : null;
-  return { ...m, groupMasterKey, networkIds, location, extendedForm, inboxTags };
+  const textMarked = (raw.text_marked ?? m.textMarked ?? null) as InboxMessageType['textMarked'];
+  return { ...m, groupMasterKey, networkIds, location, extendedForm, inboxTags, textMarked };
 }
 
 function normalizeSignalGroupEntry(g: InboxMessagesRspRaw['signal_groups'][number]): SignalGroupEntry {
@@ -298,21 +300,36 @@ export async function savedFilterDelete(filterId: number): Promise<void> {
 
 /** Tags list for display (tagId -> label). Fetched from POST /api/tags/tags-list. */
 export async function getTagsList(): Promise<Record<number, string>> {
-  const raw = await postJson<Array<[number, Tag]> | Array<{ tag_id: number; label: string }>>(
-    '/api/tags/tags-list',
-    {}
-  );
+  const raw = await postJson<unknown>('/api/tags/tags-list', {});
   const map: Record<number, string> = {};
-  if (Array.isArray(raw)) {
-    raw.forEach((entry) => {
-      if (Array.isArray(entry)) {
-        const [id, tag] = entry;
-        map[Number(id)] = (tag as Tag)?.label ?? `#${id}`;
-      } else if (entry && typeof entry === 'object' && 'tag_id' in entry) {
-        map[entry.tag_id] = entry.label ?? `#${entry.tag_id}`;
-      }
-    });
-  }
+  const arr = Array.isArray(raw)
+    ? raw
+    : (raw && typeof raw === 'object' && (Array.isArray((raw as any).data)
+        ? (raw as any).data
+        : Array.isArray((raw as any).tags)
+          ? (raw as any).tags
+          : null));
+  if (!Array.isArray(arr)) return map;
+  arr.forEach((entry: unknown) => {
+    let id: number;
+    let tagObj: Record<string, unknown> | null = null;
+    if (Array.isArray(entry)) {
+      id = Number(entry[0]);
+      tagObj = entry[1] != null && typeof entry[1] === 'object' ? (entry[1] as Record<string, unknown>) : null;
+    } else if (entry && typeof entry === 'object' && (typeof (entry as any).tag_id === 'number' || typeof (entry as any).tagId === 'number')) {
+      const e = entry as Record<string, unknown>;
+      id = Number(e.tag_id ?? e.tagId);
+      tagObj = e as Record<string, unknown>;
+    } else if (entry && typeof entry === 'object' && ('0' in entry || 0 in (entry as object))) {
+      const e = entry as Record<string, unknown>;
+      id = Number(e[0] ?? e['0']);
+      tagObj = (e[1] ?? e['1']) != null && typeof (e[1] ?? e['1']) === 'object' ? ((e[1] ?? e['1']) as Record<string, unknown>) : null;
+    } else {
+      return;
+    }
+    const label = tagObj && typeof tagObj.label === 'string' ? tagObj.label : null;
+    map[id] = label ?? `#${id}`;
+  });
   return map;
 }
 

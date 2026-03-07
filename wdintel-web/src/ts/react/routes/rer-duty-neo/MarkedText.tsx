@@ -21,10 +21,17 @@ export function renderMarkedText(
     }
     if ('CNCallsignC' in node) {
       const { text } = node.CNCallsignC;
+      const href = `/rer-callsigns?callsign=${encodeURIComponent(text)}`;
       return (
-        <span key={i} className="content-token--ADP hover:cursor-pointer">
+        <a
+          key={i}
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="content-token--ADP hover:cursor-pointer"
+        >
           {text}
-        </span>
+        </a>
       );
     }
     if ('CNHighlightC' in node) {
