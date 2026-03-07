@@ -124,7 +124,15 @@ export function PowerChip({
             alignItems: 'center',
             lineHeight: 'normal',
           },
-          ...(isInteractive && !selected ? { '&:hover': { opacity: 1 } } : {}),
+          ...(isInteractive
+            ? {
+                '&:hover': {
+                  opacity: 1,
+                  backgroundColor: activeBackgroundColor,
+                  filter: 'brightness(0.95)',
+                },
+              }
+            : {}),
         },
         ...(Array.isArray(sx) ? sx : [sx]),
       ]}

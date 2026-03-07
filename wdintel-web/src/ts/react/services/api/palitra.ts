@@ -313,10 +313,17 @@ export async function updatePalitra(palitraId: number, req: CreatePalitraReq): P
     primaryGeometryIdByPalitraId.delete(palitraId);
   }
 
-  return normalizePalitraDetails({
+  const normalizedDetails = normalizePalitraDetails({
     palitra: data?.palitra,
     points: [],
   });
+  return {
+    ...normalizedDetails,
+    palitra: {
+      ...normalizedDetails.palitra,
+      colorHex: req.colorHex,
+    },
+  };
 }
 
 export async function uploadPalitraPoints(palitraId: number, file: File): Promise<void> {

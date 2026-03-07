@@ -539,8 +539,7 @@ class AnalysisMap extends HTMLElement {
     }
 
     const isPalitrasLoading = this._palitrasLoadState === 'loading';
-    const canSearch = this._palitrasLoadState === 'success' && !this._backgroundPointsLoading;
-    this._searchControl.updateSearchDisabled(!canSearch);
+    this._searchControl.updateSearchDisabled(this._backgroundPointsLoading);
 
     if (this._backgroundPointsLoading) {
       this._searchControl.updatePlaceholder('Завантаження точок...');
