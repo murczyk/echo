@@ -10,6 +10,7 @@ import type {
   SavedFilterDuty,
   SignalGroupEntry,
   SignalProfileEntry,
+  Tag,
   Unit,
 } from '../../../../Bindings';
 import {
@@ -23,7 +24,7 @@ import {
   getLatestFrequencies,
   getLatestSenders,
   getPostsList,
-  getTagsList,
+  getTagsMapForDisplay,
   getUserSigintGroups,
   importantAdd,
   importantRemove,
@@ -89,7 +90,7 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
   const [postsList, setPostsList] = React.useState<string[]>([]);
   const [groupInfos, setGroupInfos] = React.useState<Record<string, SignalGroupEntry>>({});
   const [groupsList, setGroupsList] = React.useState<string[]>([]);
-  const [tagsMap, setTagsMap] = React.useState<Record<number, string>>({});
+  const [tagsMap, setTagsMap] = React.useState<Record<number, Tag>>({});
   const [savedFilters, setSavedFilters] = React.useState<SavedFilterDuty[]>([]);
   const [selectedSavedId, setSelectedSavedId] = React.useState<number | null>(null);
   const [saveFilterName, setSaveFilterName] = React.useState('');
@@ -147,31 +148,44 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
   }, []);
 
   const loadFilterOptions = React.useCallback(async () => {
-    try {
-      const [sendersRsp, freqsList, posts, groupKeys, tagsList] = await Promise.all([
+    const [sendersResult, freqsResult, postsResult, groupKeysResult, tagsResult] =
+      await Promise.allSettled([
         getLatestSenders(),
         getLatestFrequencies(),
         getPostsList(),
         getUserSigintGroups(Date.now() - 2 * 24 * 60 * 60 * 1000),
-        getTagsList(),
+        getTagsMapForDisplay(),
       ]);
-      setProfiles(sendersRsp.data ?? {});
-      setFreqs(freqsList);
-      setPostsList(posts);
-      setTagsMap(tagsList);
+    if (sendersResult.status === 'fulfilled') setProfiles(sendersResult.value.data ?? {});
+    else console.warn('loadFilterOptions: getLatestSenders failed', sendersResult.reason);
+    if (freqsResult.status === 'fulfilled') setFreqs(freqsResult.value);
+    else console.warn('loadFilterOptions: getLatestFrequencies failed', freqsResult.reason);
+    if (postsResult.status === 'fulfilled') setPostsList(postsResult.value);
+    else console.warn('loadFilterOptions: getPostsList failed', postsResult.reason);
+    if (groupKeysResult.status === 'fulfilled') {
+      const groupKeys = groupKeysResult.value;
       if (groupKeys.length > 0) {
-        const infos = await getGroupInfosBatch(groupKeys);
-        const map: Record<string, SignalGroupEntry> = {};
-        infos.forEach((g) => {
-          map[g.masterKey] = g;
-        });
-        setGroupInfos(map);
-        setGroupsList(groupKeys);
+        try {
+          const infos = await getGroupInfosBatch(groupKeys);
+          const map: Record<string, SignalGroupEntry> = {};
+          infos.forEach((g) => {
+            map[g.masterKey] = g;
+          });
+          setGroupInfos(map);
+          setGroupsList(groupKeys);
+        } catch (e) {
+          console.warn('loadFilterOptions: getGroupInfosBatch failed', e);
+        }
       }
+    } else console.warn('loadFilterOptions: getUserSigintGroups failed', groupKeysResult.reason);
+    if (tagsResult.status === 'fulfilled') setTagsMap(tagsResult.value);
+    else console.warn('loadFilterOptions: getTagsMapForDisplay failed', tagsResult.reason);
+
+    try {
       const saved = await savedFiltersList();
       setSavedFilters(saved);
-    } catch {
-      // non-fatal
+    } catch (e) {
+      console.warn('loadFilterOptions: savedFiltersList failed', e);
     }
   }, []);
 
@@ -378,11 +392,8 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
           const entry = counts.find((c) => c.feedId === f.id);
           const quantity = entry?.quantity ?? 0;
           const allItemsRead =
-            f.items.length > 0 &&
-            f.items.length === f.readIds.size &&
-            f.items.every(([id]) => f.readIds.has(id));
-          const unreadCount =
-            quantity === 0 && allItemsRead ? 0 : Math.max(f.unreadCount, quantity);
+            f.items.length > 0 && f.items.length === f.readIds.size && f.items.every(([id]) => f.readIds.has(id));
+          const unreadCount = quantity === 0 && allItemsRead ? 0 : Math.max(f.unreadCount, quantity);
           return { ...f, unreadCount };
         }),
       );
@@ -401,7 +412,7 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
 
   React.useEffect(() => {
     loadFilterOptions();
-  }, [loadFilterOptions]);
+  }, []);
 
   const feedIds = React.useMemo(() => messageFeeds.map((w) => w.id).join(','), [messageFeeds]);
   const feedsNeedingLoadKey = React.useMemo(
@@ -733,25 +744,14 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
     }));
   }, [profiles]);
 
-  const tagIdsList = React.useMemo(() => {
-    const fromMap = new Set(
+  const tagIdsList = React.useMemo(
+    () =>
       Object.keys(tagsMap)
         .map(Number)
-        .filter((n) => !Number.isNaN(n)),
-    );
-    messageFeeds.forEach((w) => {
-      w.items.forEach(([, msg]) => {
-        (msg.tags ?? []).forEach((id) => fromMap.add(id));
-        (msg.inboxTags ?? []).forEach((t) => fromMap.add(t.tagId));
-      });
-    });
-    return Array.from(fromMap).sort((a, b) => a - b);
-  }, [tagsMap, messageFeeds]);
-
-  function messageHasTag(msg: InboxMessage, tagId: number): boolean {
-    if ((msg.inboxTags ?? []).length > 0) return (msg.inboxTags ?? []).some((t) => t.tagId === tagId);
-    return (msg.tags ?? []).includes(tagId);
-  }
+        .filter((n) => !Number.isNaN(n))
+        .sort((a, b) => a - b),
+    [tagsMap],
+  );
 
   const handleToggleTag = React.useCallback(
     async (feedId: string, msgId: number, tagId: number) => {
@@ -760,30 +760,26 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
       const pair = w.items.find(([id]) => id === msgId);
       if (!pair) return;
       const [, msg] = pair;
-      const hasTag = messageHasTag(msg, tagId);
-      const updateMessage = (m: InboxMessage): InboxMessage => {
-        if (hasTag) {
-          const nextInbox = (m.inboxTags ?? []).filter((t) => t.tagId !== tagId);
-          const nextTags = (m.tags ?? []).filter((id) => id !== tagId);
-          return { ...m, inboxTags: nextInbox.length ? nextInbox : null, tags: nextTags.length ? nextTags : null };
-        }
-        const newEntry: InboxMessageTag = {
-          id: 0,
-          tagId,
-          confidence: 1,
-          login: null,
-          model: null,
-          organismId: null,
-        };
-        const nextInbox = [...(m.inboxTags ?? []), newEntry];
-        const tagIds = [...new Set([...(m.tags ?? []), ...nextInbox.map((t) => t.tagId)])];
-        return { ...m, inboxTags: nextInbox, tags: tagIds };
+      const hasTag = (msg.tags ?? []).includes(tagId);
+      const nextTags = hasTag ? (msg.tags ?? []).filter((id) => id !== tagId) : [...(msg.tags ?? []), tagId];
+      let nextInboxTags: InboxMessageTag[] | null;
+      if (hasTag) {
+        const filtered = (msg.inboxTags ?? []).filter((t) => t.tagId !== tagId);
+        nextInboxTags = filtered.length ? filtered : null;
+      } else {
+        nextInboxTags = [
+          ...(msg.inboxTags ?? []),
+          { id: 0, tagId, confidence: 1, login: authUserName, model: null, organismId: null },
+        ];
+      }
+      const updated: InboxMessage = {
+        ...msg,
+        tags: nextTags.length ? nextTags : null,
+        inboxTags: nextInboxTags?.length ? nextInboxTags : null,
       };
       setMessageFeeds((prev) =>
         prev.map((x) =>
-          x.id === feedId
-            ? { ...x, items: x.items.map(([id, m]) => (id === msgId ? [id, updateMessage(m)] : [id, m])) }
-            : x,
+          x.id === feedId ? { ...x, items: x.items.map(([id, m]) => (id === msgId ? [id, updated] : [id, m])) } : x,
         ),
       );
       try {
@@ -793,12 +789,12 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
         setError(e instanceof Error ? e.message : String(e));
         setMessageFeeds((prev) =>
           prev.map((x) =>
-            x.id === feedId ? { ...x, items: x.items.map(([id, m]) => (id === msgId ? [id, pair[1]] : [id, m])) } : x,
+            x.id === feedId ? { ...x, items: x.items.map(([id, m]) => (id === msgId ? [id, msg] : [id, m])) } : x,
           ),
         );
       }
     },
-    [messageFeeds],
+    [messageFeeds, authUserName],
   );
 
   const handleArrowClick = React.useCallback(
@@ -933,7 +929,6 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
               networkDisplayMap={networkDisplayMap}
               tagsMap={tagsMap}
               tagIdsList={tagIdsList}
-              messageHasTag={messageHasTag}
               onLoadOlder={() => loadFeedOlderMessages(w.id)}
               onRemoveColumn={() => removeMessageFeed(w.id)}
               onApplyFilter={(f) => applyFilter(w.id, f)}

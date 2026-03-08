@@ -8,6 +8,7 @@ import type {
   SavedFilterDuty,
   SignalGroupEntry,
   SignalProfileEntry,
+  Tag,
 } from '../../../../Bindings';
 import { profileLabel } from './utils';
 import type { MessageFeedState } from './utils';
@@ -64,9 +65,8 @@ export type FeedColumnProps = {
   authUserName: string | null;
   copiedFeedbackId: string | null;
   networkDisplayMap: Record<number, string>;
-  tagsMap: Record<number, string>;
+  tagsMap: Record<number, Tag>;
   tagIdsList: number[];
-  messageHasTag: (msg: InboxMessage, tagId: number) => boolean;
   onLoadOlder: () => void;
   onRemoveColumn: () => void;
   onApplyFilter: (f: RerDutyFeedFilterState) => void;
@@ -137,7 +137,6 @@ export const FeedColumn = React.forwardRef<FeedColumnHandle, FeedColumnProps>(fu
     networkDisplayMap,
     tagsMap,
     tagIdsList,
-    messageHasTag,
     onLoadOlder,
     onRemoveColumn,
     maxWidth,
@@ -434,8 +433,6 @@ export const FeedColumn = React.forwardRef<FeedColumnHandle, FeedColumnProps>(fu
                   copiedFeedbackId={copiedFeedbackId}
                   networkDisplayMap={networkDisplayMap}
                   tagsMap={tagsMap}
-                  tagIdsList={tagIdsList}
-                  messageHasTag={messageHasTag}
                   leftSideCollapsed={leftSideCollapsed}
                   onBookmark={() => onMessageBookmark(id, msg.bookmarked)}
                   onImportant={() => onMessageImportant(id, msg.important)}

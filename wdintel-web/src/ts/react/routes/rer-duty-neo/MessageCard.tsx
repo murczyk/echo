@@ -1,7 +1,7 @@
 import { Box, Chip, Tooltip } from '@mui/material';
 import React from 'react';
 
-import type { InboxMessage } from '../../../../Bindings';
+import type { InboxMessage, Tag } from '../../../../Bindings';
 import { buildAnalysisHref, formatDateNoYear, formatTime, messageRenderDistance } from './utils';
 import { renderMarkedText } from './MarkedText';
 
@@ -17,9 +17,7 @@ export type MessageCardProps = {
   senderName: string | null;
   copiedFeedbackId: string | null;
   networkDisplayMap: Record<number, string>;
-  tagsMap: Record<number, string>;
-  tagIdsList: number[];
-  messageHasTag: (msg: InboxMessage, tagId: number) => boolean;
+  tagsMap: Record<number, Tag>;
   onBookmark: () => void;
   onImportant: () => void;
   onCopyText: () => void;
@@ -41,8 +39,6 @@ export function MessageCard({
   copiedFeedbackId,
   networkDisplayMap,
   tagsMap,
-  tagIdsList,
-  messageHasTag,
   onBookmark,
   onImportant,
   onCopyText,
@@ -331,10 +327,11 @@ export function MessageCard({
             : msg.text || '—'}
         </div>
         <Box className="flex flex-wrap gap-1 mt-1">
-          {tagIdsList.map((tagId) => {
-            const label = tagsMap[tagId] ?? `#${tagId}`;
-            const isSet = messageHasTag(msg, tagId);
-            const contribs = (msg.inboxTags ?? []).filter((t) => t.tagId === tagId);
+          {Object.keys(tagsMap).map((tagId) => {
+            const tag = tagsMap[tagId];
+            const label = tag.label ?? `#${tagId}`;
+            const isSet = (msg.tags ?? []).includes(Number(tagId));
+            const contribs = (msg.inboxTags ?? []).filter((t) => t.tagId === Number(tagId));
             const humanContribs = contribs.filter((t) => !t.model);
             const botContribs = contribs.filter((t) => t.model);
             const humanLogins = humanContribs.map((t) => t.login).filter(Boolean) as string[];
@@ -357,7 +354,7 @@ export function MessageCard({
                   <Chip
                     size="small"
                     label={label}
-                    onClick={() => onToggleTag(tagId)}
+                    onClick={() => onToggleTag(Number(tagId))}
                     variant="filled"
                     className="text-sm h-5 cursor-pointer"
                     sx={{

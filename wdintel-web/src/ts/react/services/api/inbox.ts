@@ -28,6 +28,7 @@ const defaultGroupStats: SignalGroupStats = {
   activityLastDay: 0,
   activityLastWeek: 0,
 };
+import { snakeToCamelBody } from '../../../snake-to-camel';
 import { postJson, postVoid } from './client';
 
 /** Raw API response (snake_case) */
@@ -299,37 +300,16 @@ export async function savedFilterDelete(filterId: number): Promise<void> {
 // --- Filter metadata (tags, senders, frequencies, groups) ---
 
 /** Tags list for display (tagId -> label). Fetched from POST /api/tags/tags-list. */
-export async function getTagsList(): Promise<Record<number, string>> {
-  const raw = await postJson<unknown>('/api/tags/tags-list', {});
-  const map: Record<number, string> = {};
-  const arr = Array.isArray(raw)
-    ? raw
-    : (raw && typeof raw === 'object' && (Array.isArray((raw as any).data)
-        ? (raw as any).data
-        : Array.isArray((raw as any).tags)
-          ? (raw as any).tags
-          : null));
-  if (!Array.isArray(arr)) return map;
-  arr.forEach((entry: unknown) => {
-    let id: number;
-    let tagObj: Record<string, unknown> | null = null;
-    if (Array.isArray(entry)) {
-      id = Number(entry[0]);
-      tagObj = entry[1] != null && typeof entry[1] === 'object' ? (entry[1] as Record<string, unknown>) : null;
-    } else if (entry && typeof entry === 'object' && (typeof (entry as any).tag_id === 'number' || typeof (entry as any).tagId === 'number')) {
-      const e = entry as Record<string, unknown>;
-      id = Number(e.tag_id ?? e.tagId);
-      tagObj = e as Record<string, unknown>;
-    } else if (entry && typeof entry === 'object' && ('0' in entry || 0 in (entry as object))) {
-      const e = entry as Record<string, unknown>;
-      id = Number(e[0] ?? e['0']);
-      tagObj = (e[1] ?? e['1']) != null && typeof (e[1] ?? e['1']) === 'object' ? ((e[1] ?? e['1']) as Record<string, unknown>) : null;
-    } else {
-      return;
-    }
-    const label = tagObj && typeof tagObj.label === 'string' ? tagObj.label : null;
-    map[id] = label ?? `#${id}`;
-  });
+export async function getTagsMapForDisplay(): Promise<Record<number, Tag>> {
+  const raw = await postJson<Array<[number, Tag]>>('/api/tags/tags-list', {});
+  const map: Record<number, Tag> = {};
+  for (const [i, tagRecord] of Object.entries(raw)) {
+    const nTag = snakeToCamelBody<Tag>(tagRecord[1]);
+    map[Number(tagRecord[0])] = nTag;
+  }
+
+  console.log(map);
+
   return map;
 }
 
