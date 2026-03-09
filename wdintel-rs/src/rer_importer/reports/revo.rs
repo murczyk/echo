@@ -13,6 +13,7 @@ use docx_rs::*;
 use rust_xlsxwriter::{
     ColNum, ExcelDateTime, Format, FormatAlign, RowNum, Workbook, Worksheet,
 };
+use sea_orm::sea_query::{Expr, SimpleExpr};
 use sea_orm::*;
 use std::collections::*;
 use std::path::Path;
@@ -105,6 +106,13 @@ pub struct CallsignSummary {
 struct CommentSummary {
     pub signal_message_id: i64,
     pub comment: String,
+}
+
+fn non_empty_comment_filter() -> SimpleExpr {
+    Expr::cust_with_expr(
+        "length(trim($1)) > 0",
+        Expr::col(sigint_comment::Column::Comment),
+    )
 }
 
 pub async fn report_docx_kind_revo(
@@ -656,7 +664,7 @@ async fn collect_report(
     let start_collect = Instant::now();
     let message_ids: Vec<i64> = messages.iter().map(|(id, _)| *id).collect();
 
-    let mut comments = BTreeMap::new();
+    let mut comments = HashMap::<i64, Vec<String>>::new();
     if no_comments {
         info!("collect_report: skipping comments loading due to no_comments");
     } else {
@@ -668,9 +676,12 @@ async fn collect_report(
                 .filter(
                     sigint_comment::Column::SignalMessageId.eq_any(message_ids),
                 )
+                .filter(non_empty_comment_filter())
                 .select_only()
                 .column(sigint_comment::Column::SignalMessageId)
-                .column(sigint_comment::Column::Comment);
+                .column(sigint_comment::Column::Comment)
+                .order_by_asc(sigint_comment::Column::SignalMessageId)
+                .order_by_asc(sigint_comment::Column::CreatedAt);
             if report_tags_only_this_unit {
                 query =
                     query.filter(sigint_comment::Column::Login.eq_any(logins));
@@ -682,7 +693,10 @@ async fn collect_report(
                 .context(h!())?
                 .into_iter()
                 .for_each(|c| {
-                    comments.insert(c.signal_message_id, c.comment);
+                    comments
+                        .entry(c.signal_message_id)
+                        .or_default()
+                        .push(c.comment);
                 });
         } else {
             // For very large datasets, chunk to avoid query size limits
@@ -692,9 +706,12 @@ async fn collect_report(
                         sigint_comment::Column::SignalMessageId
                             .eq_any(ids.to_vec()),
                     )
+                    .filter(non_empty_comment_filter())
                     .select_only()
                     .column(sigint_comment::Column::SignalMessageId)
-                    .column(sigint_comment::Column::Comment);
+                    .column(sigint_comment::Column::Comment)
+                    .order_by_asc(sigint_comment::Column::SignalMessageId)
+                    .order_by_asc(sigint_comment::Column::CreatedAt);
                 if report_tags_only_this_unit {
                     query = query
                         .filter(sigint_comment::Column::Login.is_in(&logins));
@@ -706,14 +723,18 @@ async fn collect_report(
                     .context(h!())?
                     .into_iter()
                     .for_each(|c| {
-                        comments.insert(c.signal_message_id, c.comment);
+                        comments
+                            .entry(c.signal_message_id)
+                            .or_default()
+                            .push(c.comment);
                     });
             }
         }
+        let comments_count: usize = comments.values().map(|v| v.len()).sum();
         info!(
             "collect_report: loading comments took: {:?}, count: {}",
             start.elapsed(),
-            comments.len()
+            comments_count
         );
     }
 
@@ -829,10 +850,10 @@ async fn collect_report(
 
             linked_callsigns_map.insert(network_key.clone(), linked_callsigns);
             unlinked_callsigns_map.insert(network_key.clone(), data);
-            if let Some(comment) = comments.remove(&id) {
+            if let Some(message_comments) = comments.get(&id) {
                 let mut list =
                     network_comments_map.remove(&network_key).unwrap_or(vec![]);
-                list.push(comment);
+                list.extend(message_comments.iter().cloned());
                 network_comments_map.insert(network_key, list);
             }
         }
@@ -1048,7 +1069,7 @@ async fn filter_messages_by_logins(
         sigint_comment::Entity::find()
             .filter(sigint_comment::Column::SignalMessageId.eq_any(message_ids))
             .filter(sigint_comment::Column::Login.is_in(logins))
-            .filter(sigint_comment::Column::Comment.eq("").not())
+            .filter(non_empty_comment_filter())
             .select_only()
             .column(sigint_comment::Column::SignalMessageId)
             .into_tuple::<i64>()
@@ -1067,7 +1088,7 @@ async fn filter_messages_by_logins(
                         .eq_any(ids.to_vec()),
                 )
                 .filter(sigint_comment::Column::Login.is_in(logins))
-                .filter(sigint_comment::Column::Comment.eq("").not())
+                .filter(non_empty_comment_filter())
                 .select_only()
                 .column(sigint_comment::Column::SignalMessageId)
                 .into_tuple::<i64>()
@@ -1156,7 +1177,7 @@ async fn message_ids_with_nonempty_comments_from_other_logins(
         sigint_comment::Entity::find()
             .filter(sigint_comment::Column::SignalMessageId.eq_any(message_ids))
             .filter(sigint_comment::Column::Login.is_not_in(logins))
-            .filter(sigint_comment::Column::Comment.eq("").not())
+            .filter(non_empty_comment_filter())
             .select_only()
             .column(sigint_comment::Column::SignalMessageId)
             .into_tuple::<i64>()
@@ -1175,7 +1196,7 @@ async fn message_ids_with_nonempty_comments_from_other_logins(
                         .eq_any(ids.to_vec()),
                 )
                 .filter(sigint_comment::Column::Login.is_not_in(logins))
-                .filter(sigint_comment::Column::Comment.eq("").not())
+                .filter(non_empty_comment_filter())
                 .select_only()
                 .column(sigint_comment::Column::SignalMessageId)
                 .into_tuple::<i64>()
