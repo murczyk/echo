@@ -132,6 +132,20 @@ pub async fn goi_upload_file(
     .c(h!())?
 }
 
+pub async fn goi_upload_file_loose(
+    req: CheckOrganismGoiConnectionReq,
+    remote_file_path: String,
+    file_data: Vec<u8>,
+) {
+    let ssh_target = format!("{}:{}", req.ssh_host, req.ssh_port);
+    let remote_file_path_for_log = remote_file_path.clone();
+    if let Err(err) = goi_upload_file(req, remote_file_path, file_data).await {
+        log::warn!(
+            "Skipping GOI file upload for {ssh_target} {remote_file_path_for_log}: {err:#}"
+        );
+    }
+}
+
 pub async fn goi_delete_file(
     req: CheckOrganismGoiConnectionReq,
     remote_file_path: String,
@@ -143,6 +157,19 @@ pub async fn goi_delete_file(
     })
     .await
     .c(h!())?
+}
+
+pub async fn goi_delete_file_loose(
+    req: CheckOrganismGoiConnectionReq,
+    remote_file_path: String,
+) {
+    let ssh_target = format!("{}:{}", req.ssh_host, req.ssh_port);
+    let remote_file_path_for_log = remote_file_path.clone();
+    if let Err(err) = goi_delete_file(req, remote_file_path).await {
+        log::warn!(
+            "Skipping GOI file delete for {ssh_target} {remote_file_path_for_log}: {err:#}"
+        );
+    }
 }
 
 fn goi_validate_ssh_port(port: i32) -> Result<(), AppError> {

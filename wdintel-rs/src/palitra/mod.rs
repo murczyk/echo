@@ -1172,13 +1172,12 @@ async fn sync_upload_palitra_to_connected_organisms(
     for target in goi_targets {
         let remote_file_path =
             compose_goi_palette_remote_path(&target.path, remote_file_name);
-        crate::organism::goi::goi_upload_file(
+        crate::organism::goi::goi_upload_file_loose(
             target,
             remote_file_path,
             file_data.clone(),
         )
-        .await
-        .c(h!())?;
+        .await;
     }
 
     Ok(())
@@ -1205,9 +1204,11 @@ async fn sync_delete_palitra_from_connected_organisms(
     for target in goi_targets {
         let remote_file_path =
             compose_goi_palette_remote_path(&target.path, &source_file_name);
-        crate::organism::goi::goi_delete_file(target, remote_file_path)
-            .await
-            .c(h!())?;
+        crate::organism::goi::goi_delete_file_loose(
+            target,
+            remote_file_path,
+        )
+        .await;
     }
 
     Ok(())
@@ -1230,6 +1231,7 @@ async fn collect_connected_goi_targets(
 
     let mut goi_targets = Vec::with_capacity(organisms.len());
     for organism in organisms {
+        let organism_id = organism.id;
         let ssh_host = organism
             .goi_ssh_host
             .as_ref()
@@ -1266,8 +1268,14 @@ async fn collect_connected_goi_targets(
             ssh_port,
             path,
         };
-        goi_validate_connection_req(&req)?;
-        goi_targets.push(req);
+        match goi_validate_connection_req(&req) {
+            Ok(()) => goi_targets.push(req),
+            Err(err) => {
+                log::warn!(
+                    "Skipping GOI sync target for organism {organism_id}: {err:#}"
+                );
+            }
+        }
     }
 
     Ok(goi_targets)
