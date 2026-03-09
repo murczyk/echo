@@ -219,7 +219,11 @@ export const FeedColumn = React.forwardRef<FeedColumnHandle, FeedColumnProps>(fu
       const len = feed.items.length;
       // Range indices are in Virtuoso's total space (offset by firstItemIndex); convert to data indices
       const endDataIndex = range.endIndex - firstItemIndex;
-      const nearBottom = len >= LOAD_OLDER_BUFFER_ITEMS && endDataIndex >= len - LOAD_OLDER_BUFFER_ITEMS;
+      // Short feeds (< buffer size): treat "last item visible" as near-bottom so poll still auto-loads newer
+      const nearBottom =
+        len <= LOAD_OLDER_BUFFER_ITEMS
+          ? len > 0 && endDataIndex >= len - 1
+          : endDataIndex >= len - LOAD_OLDER_BUFFER_ITEMS;
       if (nearBottom) {
         tryLoadOlder();
       } else if (len >= LOAD_OLDER_RESET_MARGIN && endDataIndex < len - LOAD_OLDER_RESET_MARGIN) {

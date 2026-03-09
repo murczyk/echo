@@ -106,6 +106,8 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
   const loadNewerRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
   /** Feed IDs that currently have a get-inbox (load newer) request in flight; prevents duplicate requests from polling. */
   const loadNewerInFlightRef = React.useRef<Set<string>>(new Set());
+  /** Feed IDs that currently have an inbox-count request in flight; skip that feed in the next poll tick. */
+  const countInFlightByFeedIdRef = React.useRef<Set<string>>(new Set());
   /** Which feed columns are in "watch mode" (auto-scroll to newest when new messages arrive). */
   const [watchModeByFeedId, setWatchModeByFeedId] = React.useState<Record<string, boolean>>({});
   /** Feed id currently loading newer messages (after arrow click). */
@@ -148,14 +150,13 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
   }, []);
 
   const loadFilterOptions = React.useCallback(async () => {
-    const [sendersResult, freqsResult, postsResult, groupKeysResult, tagsResult] =
-      await Promise.allSettled([
-        getLatestSenders(),
-        getLatestFrequencies(),
-        getPostsList(),
-        getUserSigintGroups(Date.now() - 2 * 24 * 60 * 60 * 1000),
-        getTagsMapForDisplay(),
-      ]);
+    const [sendersResult, freqsResult, postsResult, groupKeysResult, tagsResult] = await Promise.allSettled([
+      getLatestSenders(),
+      getLatestFrequencies(),
+      getPostsList(),
+      getUserSigintGroups(Date.now() - 2 * 24 * 60 * 60 * 1000),
+      getTagsMapForDisplay(),
+    ]);
     if (sendersResult.status === 'fulfilled') setProfiles(sendersResult.value.data ?? {});
     else console.warn('loadFilterOptions: getLatestSenders failed', sendersResult.reason);
     if (freqsResult.status === 'fulfilled') setFreqs(freqsResult.value);
@@ -365,48 +366,59 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
     [messageFeeds],
   );
 
-  /** Poll get-inbox-count per feed; load newer when count>0 and (watchMode or nearBottom). */
+  /** Poll get-inbox-count per feed; load newer when count>0 and (watchMode or nearBottom). Per-feed: skip only feeds that have count or get-inbox in flight. */
   const pollCountThenLoadNewerIfNeeded = React.useCallback(async () => {
     if (!messageFeeds.length) return;
     const nearBottom = nearBottomByFeedIdRef.current;
-    try {
-      const counts = await Promise.all(
-        messageFeeds.map(async (w) => {
+    const counts = await Promise.all(
+      messageFeeds.map(async (w) => {
+        if (loadNewerInFlightRef.current.has(w.id) || countInFlightByFeedIdRef.current.has(w.id)) {
+          return { feedId: w.id, quantity: null as number | null, hasItems: w.items.length > 0, skipped: true };
+        }
+        countInFlightByFeedIdRef.current.add(w.id);
+        try {
           const lastItem = w.items[w.items.length - 1];
           const sinceMs =
             lastItem != null && lastItem[1].timestamp != null && lastItem[1].timestamp > 0
               ? lastItem[1].timestamp + 1
               : 0;
-          try {
-            const { quantity } = await fetchInboxCount(
-              buildReqForFeed(w, { sinceDateInclusiveMs: sinceMs, nolimit: true }),
-            );
-            return { feedId: w.id, quantity };
-          } catch {
-            return { feedId: w.id, quantity: 0 };
-          }
-        }),
-      );
-      setMessageFeeds((prev) =>
-        prev.map((f) => {
-          const entry = counts.find((c) => c.feedId === f.id);
-          const quantity = entry?.quantity ?? 0;
-          const allItemsRead =
-            f.items.length > 0 && f.items.length === f.readIds.size && f.items.every(([id]) => f.readIds.has(id));
-          const unreadCount = quantity === 0 && allItemsRead ? 0 : Math.max(f.unreadCount, quantity);
-          return { ...f, unreadCount };
-        }),
-      );
-      for (const { feedId, quantity } of counts) {
-        if (quantity > 0 && (watchModeByFeedId[feedId] || nearBottom[feedId])) {
-          await loadFeedNewerMessages(feedId, {
-            scrollToEndAfterLoad: watchModeByFeedId[feedId],
-            // Do not mark all read when loading from poll; only mark read when user reaches bottom or clicks arrow
-          });
+          const hasItems = w.items.length > 0; // only use quantity when feed has items
+          const { quantity } = await fetchInboxCount(
+            buildReqForFeed(w, { sinceDateInclusiveMs: sinceMs, nolimit: true }),
+          );
+          return { feedId: w.id, quantity, hasItems, skipped: false };
+        } catch {
+          return { feedId: w.id, quantity: 0, hasItems: w.items.length > 0, skipped: false };
+        } finally {
+          countInFlightByFeedIdRef.current.delete(w.id);
         }
+      }),
+    );
+    setMessageFeeds((prev) =>
+      prev.map((f) => {
+        const entry = counts.find((c) => c.feedId === f.id);
+        if (entry?.skipped) return f;
+        const quantity = entry?.quantity ?? 0;
+        const hasItems = entry?.hasItems ?? f.items.length > 0;
+        // When feed has no items yet (initial load), quantity is total inbox size
+        const allItemsRead =
+          f.items.length > 0 && f.items.length === f.readIds.size && f.items.every(([id]) => f.readIds.has(id));
+        const unreadCount = !hasItems
+          ? f.unreadCount
+          : quantity === 0 && allItemsRead
+            ? 0
+            : Math.max(f.unreadCount, quantity);
+        return { ...f, unreadCount };
+      }),
+    );
+    for (const entry of counts) {
+      if (entry.skipped || entry.quantity == null || entry.quantity <= 0) continue;
+      const { feedId, quantity } = entry;
+      if (watchModeByFeedId[feedId] || nearBottom[feedId]) {
+        await loadFeedNewerMessages(feedId, {
+          scrollToEndAfterLoad: watchModeByFeedId[feedId],
+        });
       }
-    } catch {
-      // ignore; next poll will retry
     }
   }, [messageFeeds, watchModeByFeedId, loadFeedNewerMessages]);
 
@@ -441,7 +453,7 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
     });
   }, [feedIds, feedsNeedingLoadKey]);
 
-  // Poll get-inbox-count every 2s; only call get-inbox when count > 0
+  // Poll get-inbox-count periodically; per-feed skip if that feed's count or get-inbox still in progress
   React.useEffect(() => {
     loadNewerRef.current = setInterval(() => {
       pollCountThenLoadNewerIfNeeded();

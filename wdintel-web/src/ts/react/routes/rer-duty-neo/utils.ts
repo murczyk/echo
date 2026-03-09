@@ -27,7 +27,7 @@ export function createMasterUnitText(network: Network, unitsMap: Record<number, 
 
 export const PAGE_ID = 'rer-duty-neo';
 /** Poll get-inbox-count every 2s; load newer (get-inbox) only when count > 0. */
-export const INBOX_COUNT_POLL_INTERVAL_MS = 2000;
+export const INBOX_COUNT_POLL_INTERVAL_MS = 1000;
 
 export function emptyFilter(): RerDutyFeedFilterState {
   return {

@@ -189,7 +189,12 @@ export function FeedFilterPanel({
             <ToggleButtonGroup
               value={senderMode}
               exclusive
-              onChange={(_, v) => v != null && setSenderMode(v)}
+              onChange={(_, v) => {
+                if (v == null) return;
+                setSenderMode(v);
+                if (v === 'include') onDeniedSendersChange([]);
+                else onSendersChange([]);
+              }}
               size="small"
               sx={{
                 flexShrink: 0,
@@ -249,7 +254,12 @@ export function FeedFilterPanel({
             <ToggleButtonGroup
               value={freqMode}
               exclusive
-              onChange={(_, v) => v != null && setFreqMode(v)}
+              onChange={(_, v) => {
+                if (v == null) return;
+                setFreqMode(v);
+                if (v === 'include') onFreqsDeniedChange([]);
+                else onFreqsChange([]);
+              }}
               size="small"
               sx={{
                 flexShrink: 0,
@@ -310,7 +320,12 @@ export function FeedFilterPanel({
             <ToggleButtonGroup
               value={postMode}
               exclusive
-              onChange={(_, v) => v != null && setPostMode(v)}
+              onChange={(_, v) => {
+                if (v == null) return;
+                setPostMode(v);
+                if (v === 'include') onPostsDeniedChange?.([]);
+                else onPostsChange?.([]);
+              }}
               size="small"
               sx={{
                 flexShrink: 0,
