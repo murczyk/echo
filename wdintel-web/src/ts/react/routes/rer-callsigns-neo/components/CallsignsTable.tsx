@@ -226,8 +226,13 @@ export function CallsignsTable({
                               Підтверджено:
                             </Typography>
                             <Stack direction="row" spacing={0.5} useFlexGap flexWrap="wrap">
-                              {row.callsignAdditionalSourceNames.map((sourceName) => (
-                                <Chip key={`${row.id}-${sourceName}`} size="small" label={sourceName} variant="outlined" />
+                              {row.callsignAdditionalSourceIds.map((sourceId, index) => (
+                                <Chip
+                                  key={`${row.id}-${sourceId}`}
+                                  size="small"
+                                  label={row.callsignAdditionalSourceNames[index] ?? `#${sourceId}`}
+                                  variant="outlined"
+                                />
                               ))}
                             </Stack>
                           </>
