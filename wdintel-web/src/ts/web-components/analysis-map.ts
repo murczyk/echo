@@ -140,7 +140,7 @@ class AnalysisMap extends HTMLElement {
   private _coordinateSearchMarker: L.CircleMarker | null = null;
   private _isFullscreen = false;
   private _mapWindowControl: MapWindowControl | null = null;
-  private _backgroundPointsLoading = false;
+  private _isBackgroundPointsLoading = false;
   private _searchPointsHandler = (e: CustomEvent<string>) => {
     const value = (e.detail ?? '').trim();
     const coords = parseCoordinateInput(value);
@@ -392,7 +392,7 @@ class AnalysisMap extends HTMLElement {
            this._searchControl?.updateSearchLoading(isLoading);
          },
          onBackgroundPointsLoadingChanged: (isLoading) => {
-           this._backgroundPointsLoading = isLoading;
+           this._isBackgroundPointsLoading = isLoading;
            this._updateSearchControlState();
          }
        }
@@ -539,9 +539,10 @@ class AnalysisMap extends HTMLElement {
     }
 
     const isPalitrasLoading = this._palitrasLoadState === 'loading';
-    this._searchControl.updateSearchDisabled(this._backgroundPointsLoading);
+    const isSearchDisabled = this._isBackgroundPointsLoading || isPalitrasLoading;
+    this._searchControl.updateSearchDisabled(isSearchDisabled);
 
-    if (this._backgroundPointsLoading) {
+    if (this._isBackgroundPointsLoading) {
       this._searchControl.updatePlaceholder('Завантаження точок...');
       return;
     }

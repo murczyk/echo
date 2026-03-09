@@ -51,6 +51,7 @@ class AnalysisMapSearchElement extends HTMLElement {
         isSearchLoading={this.isSearchLoading}
         isInputLoading={this.isDisabled}
         disabled={this.isDisabled}
+        minWidth={320}
         initialValue={this.initialQuery || undefined}
       />,
     );
