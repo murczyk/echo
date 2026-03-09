@@ -214,6 +214,8 @@ export function useRerPalitraNeoPage() {
           if (cancelled) return;
 
           if (isUnauthorizedError(referencesError)) {
+            await palitrasPromise.catch(() => null);
+            if (cancelled) return;
             window.location.assign('/login');
             return;
           }

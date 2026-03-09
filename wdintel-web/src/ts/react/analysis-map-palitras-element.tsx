@@ -286,13 +286,19 @@ function PalitrasOverlay(props: PalitrasOverlayProps) {
     [applyVisibleIdsChange],
   );
 
-  const canInteract = loadState === 'success' && palitras.length > 0;
+  const hasPalitras = palitras.length > 0;
+  const canInteract = loadState === 'success' && hasPalitras;
 
   if (!canInteract) {
-    const hintText =
-      loadState === 'loading'
-        ? 'Палітри завантажуються...'
-        : 'Палітри недоступні: не вдалося завантажити список';
+    const hintText = (() => {
+      if (loadState === 'loading') {
+        return 'Палітри завантажуються...';
+      }
+      if (loadState === 'success' && !hasPalitras) {
+        return 'Доступних палітр немає';
+      }
+      return 'Палітри недоступні: не вдалося завантажити список';
+    })();
 
     return (
       <Box className="palitras-control collapsed">
