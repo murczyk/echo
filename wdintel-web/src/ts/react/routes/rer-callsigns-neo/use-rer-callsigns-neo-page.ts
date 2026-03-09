@@ -511,6 +511,7 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
 
   function onCloseAddDrawer() {
     if (addSubmitting) return;
+    resetAddDrawerState();
     setAddDrawerOpen(false);
   }
 
