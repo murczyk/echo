@@ -121,7 +121,8 @@ export function SearchInput(props: SearchInputProps) {
     }
     lastAppliedInitialValueRef.current = initialValue;
     setValue(initialValue);
-  }, [initialValue]);
+    searchWithDebounce(initialValue);
+  }, [initialValue, searchWithDebounce]);
 
   return (
     <ThemeProvider theme={theme}>
