@@ -220,13 +220,13 @@ export function CallsignsTable({
                     <TableCell>
                       <Stack spacing={0.75}>
                         <Typography variant="body2">{row.sourceName}</Typography>
-                        {row.confirmationSourceNames.length > 0 ? (
+                        {row.callsignAdditionalSourceNames.length > 0 ? (
                           <>
                             <Typography variant="caption" color="text.secondary">
                               Підтверджено:
                             </Typography>
                             <Stack direction="row" spacing={0.5} useFlexGap flexWrap="wrap">
-                              {row.confirmationSourceNames.map((sourceName) => (
+                              {row.callsignAdditionalSourceNames.map((sourceName) => (
                                 <Chip key={`${row.id}-${sourceName}`} size="small" label={sourceName} variant="outlined" />
                               ))}
                             </Stack>

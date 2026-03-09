@@ -41,7 +41,7 @@ export type CallsignEditForm = {
   callsign: string;
   position: string;
   comment: string;
-  confirmationSourceIds: number[];
+  callsignAdditionalSourceIds: number[];
   unitId: number;
   sourceId: number | null;
   developing: boolean;
@@ -59,8 +59,8 @@ export type CallsignRowView = Callsign & {
   unitName: string;
   sourceName: string;
   commentForView: string;
-  confirmationSourceIds: number[];
-  confirmationSourceNames: string[];
+  callsignAdditionalSourceIds: number[];
+  callsignAdditionalSourceNames: string[];
 };
 
 export type UnitStatView = CallsignUnitStatRow & {
@@ -110,7 +110,7 @@ export type CallsignsPageState = {
   sort: CallsignsSortState;
   addUnitId: number | null;
   addSourceId: number | null;
-  addConfirmationSourceIds: number[];
+  addCallsignAdditionalSourceIds: number[];
   addRows: CallsignDraftRow[];
   addSubmitting: boolean;
   editForm: CallsignEditForm | null;

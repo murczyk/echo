@@ -33,7 +33,7 @@ type Props = {
   sources: Source[];
   addUnitId: number | null;
   addSourceId: number | null;
-  addConfirmationSourceIds: number[];
+  addCallsignAdditionalSourceIds: number[];
   rows: CallsignDraftRow[];
   submitting: boolean;
   disabled: boolean;
@@ -47,7 +47,7 @@ type Props = {
   }>;
   onAddUnitIdChange: (unitId: number | null) => void;
   onAddSourceIdChange: (sourceId: number | null) => void;
-  onAddConfirmationSourceIdsChange: (sourceIds: number[]) => void;
+  onAddCallsignAdditionalSourceIdsChange: (sourceIds: number[]) => void;
   onRowChange: (index: number, row: CallsignDraftRow) => void;
   onAppendRow: () => void;
   onRemoveRow: (index: number) => void;
@@ -63,7 +63,7 @@ export function AddCallsignsDrawer({
   sources,
   addUnitId,
   addSourceId,
-  addConfirmationSourceIds,
+  addCallsignAdditionalSourceIds,
   rows,
   submitting,
   disabled,
@@ -71,7 +71,7 @@ export function AddCallsignsDrawer({
   duplicateHints,
   onAddUnitIdChange,
   onAddSourceIdChange,
-  onAddConfirmationSourceIdsChange,
+  onAddCallsignAdditionalSourceIdsChange,
   onRowChange,
   onAppendRow,
   onRemoveRow,
@@ -189,7 +189,7 @@ export function AddCallsignsDrawer({
                   const raw = event.target.value;
                   const nextSourceId = raw === '' ? null : Number(raw);
                   onAddSourceIdChange(nextSourceId);
-                  onAddConfirmationSourceIdsChange(addConfirmationSourceIds.filter((sourceId) => sourceId !== nextSourceId));
+                  onAddCallsignAdditionalSourceIdsChange(addCallsignAdditionalSourceIds.filter((sourceId) => sourceId !== nextSourceId));
                 }}
               >
                 <MenuItem value="">
@@ -210,10 +210,10 @@ export function AddCallsignsDrawer({
               labelId="callsigns-add-confirmation-sources-label"
               label="Підтвердження"
               multiple
-              value={addConfirmationSourceIds}
+              value={addCallsignAdditionalSourceIds}
               onChange={(event) => {
                 const value = event.target.value;
-                onAddConfirmationSourceIdsChange(typeof value === 'string' ? value.split(',').map(Number) : value.map(Number));
+                onAddCallsignAdditionalSourceIdsChange(typeof value === 'string' ? value.split(',').map(Number) : value.map(Number));
               }}
               renderValue={(selected) => {
                 const names = selected

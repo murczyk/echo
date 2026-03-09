@@ -28,8 +28,8 @@ type Props<T extends CommonFormValue> = {
   includeUnitSelect?: boolean;
   includeSourceSelect?: boolean;
   includeConfirmationSources?: boolean;
-  confirmationSourceIds?: number[];
-  onConfirmationSourceIdsChange?: (sourceIds: number[]) => void;
+  callsignAdditionalSourceIds?: number[];
+  onCallsignAdditionalSourceIdsChange?: (sourceIds: number[]) => void;
   disabled?: boolean;
   compact?: boolean;
 };
@@ -42,8 +42,8 @@ export function CallsignFormFields<T extends CommonFormValue>({
   includeUnitSelect = false,
   includeSourceSelect = false,
   includeConfirmationSources = false,
-  confirmationSourceIds = [],
-  onConfirmationSourceIdsChange,
+  callsignAdditionalSourceIds = [],
+  onCallsignAdditionalSourceIdsChange,
   disabled = false,
   compact = false,
 }: Props<T>) {
@@ -139,8 +139,8 @@ export function CallsignFormFields<T extends CommonFormValue>({
               const raw = event.target.value;
               const nextSourceId = raw === '' ? null : Number(raw);
               onChange({ ...value, sourceId: nextSourceId });
-              if (includeConfirmationSources && onConfirmationSourceIdsChange) {
-                onConfirmationSourceIdsChange(confirmationSourceIds.filter((sourceId) => sourceId !== nextSourceId));
+              if (includeConfirmationSources && onCallsignAdditionalSourceIdsChange) {
+                onCallsignAdditionalSourceIdsChange(callsignAdditionalSourceIds.filter((sourceId) => sourceId !== nextSourceId));
               }
             }}
           >
@@ -163,11 +163,11 @@ export function CallsignFormFields<T extends CommonFormValue>({
             labelId={`${sourceLabelId}-confirm`}
             label="Підтвердження"
             multiple
-            value={confirmationSourceIds}
+            value={callsignAdditionalSourceIds}
             onChange={(event) => {
-              if (!onConfirmationSourceIdsChange) return;
+              if (!onCallsignAdditionalSourceIdsChange) return;
               const raw = event.target.value;
-              onConfirmationSourceIdsChange(typeof raw === 'string' ? raw.split(',').map(Number) : raw.map(Number));
+              onCallsignAdditionalSourceIdsChange(typeof raw === 'string' ? raw.split(',').map(Number) : raw.map(Number));
             }}
             renderValue={(selected) => {
               const names = selected
