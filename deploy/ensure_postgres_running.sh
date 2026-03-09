@@ -9,6 +9,7 @@ pg_db="${PG_DATABASE:-postgres}"
 wait_secs="${POSTGRES_BOOT_WAIT_SECS:-300}"
 
 export PGPASSWORD="$pg_password"
+last_psql_error=""
 
 run_with_optional_sudo() {
     if command -v sudo >/dev/null 2>&1; then
@@ -45,7 +46,23 @@ run_pg_ctlcluster_action() {
     run_with_optional_sudo pg_ctlcluster 14 main "$action"
 }
 
-if psql -w -h "$pg_host" -p "$pg_port" -U "$pg_user" -d "$pg_db" -tAc "SELECT 1" >/dev/null 2>&1; then
+check_query_ready() {
+    if psql -w -h "$pg_host" -p "$pg_port" -U "$pg_user" -d "$pg_db" -tAc "SELECT 1" >/dev/null 2>&1; then
+        last_psql_error=""
+        return 0
+    fi
+    last_psql_error="$(psql -w -h "$pg_host" -p "$pg_port" -U "$pg_user" -d "$pg_db" -tAc "SELECT 1" 2>&1 >/dev/null || true)"
+    return 1
+}
+
+is_non_retryable_auth_error() {
+    local error_text="$1"
+    [[ "$error_text" == *"password authentication failed"* ]] || \
+        [[ "$error_text" == *"role \""* && "$error_text" == *"does not exist"* ]] || \
+        [[ "$error_text" == *"no pg_hba.conf entry"* ]]
+}
+
+if check_query_ready; then
     echo "PostgreSQL is already reachable at ${pg_host}:${pg_port}"
     exit 0
 fi
@@ -62,7 +79,7 @@ if command -v systemctl >/dev/null 2>&1; then
     run_with_optional_sudo systemctl start postgresql
 fi
 
-if ! psql -w -h "$pg_host" -p "$pg_port" -U "${PG_USER:-wd}" -d "${PG_DATABASE:-postgres}" -tAc "SELECT 1" >/dev/null 2>&1; then
+if ! check_query_ready; then
     if command -v pg_ctlcluster >/dev/null 2>&1; then
         run_pg_ctlcluster_action start
     fi
@@ -74,9 +91,14 @@ fi
 
 echo "Waiting for PostgreSQL to become query-ready (up to ${wait_secs}s)..."
 for ((i = 1; i <= wait_secs; i++)); do
-    if psql -w -h "$pg_host" -p "$pg_port" -U "$pg_user" -d "$pg_db" -tAc "SELECT 1" >/dev/null 2>&1; then
+    if check_query_ready; then
         echo "PostgreSQL became query-ready"
         exit 0
+    fi
+    if is_non_retryable_auth_error "$last_psql_error"; then
+        echo "Error: PostgreSQL connection failed with a non-retryable auth/config error:"
+        echo "$last_psql_error"
+        exit 1
     fi
     sleep 1
 done
@@ -90,9 +112,14 @@ elif command -v pg_ctlcluster >/dev/null 2>&1; then
 fi
 
 for ((i = 1; i <= wait_secs; i++)); do
-    if psql -w -h "$pg_host" -p "$pg_port" -U "$pg_user" -d "$pg_db" -tAc "SELECT 1" >/dev/null 2>&1; then
+    if check_query_ready; then
         echo "PostgreSQL became query-ready after restart"
         exit 0
+    fi
+    if is_non_retryable_auth_error "$last_psql_error"; then
+        echo "Error: PostgreSQL connection failed with a non-retryable auth/config error:"
+        echo "$last_psql_error"
+        exit 1
     fi
     sleep 1
 done

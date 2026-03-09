@@ -400,14 +400,16 @@ export class PalitraManager {
         pointsByPalitraId.set(palitra.id, []);
       });
       const fallbackPalitra = this.pickFallbackPalitraForUnmatched(palitras);
-      const preserveUnmatchedPalitra = palitras[0] ?? null;
-      const hasHiddenPalitras = palitras.some((palitra) => !visiblePalitraIdsSet.has(palitra.id));
+      const visibleFallbackPalitra =
+        fallbackPalitra && visiblePalitraIdsSet.has(fallbackPalitra.id) ? fallbackPalitra : null;
+      const preserveUnmatchedPalitra =
+        palitras.find((palitra) => visiblePalitraIdsSet.has(palitra.id)) ?? palitras[0] ?? null;
 
       points.forEach((point) => {
         const matchedPalitra =
           this.findPalitraForPoint(palitras, point) ??
-          fallbackPalitra ??
-          (hasHiddenPalitras ? null : preserveUnmatchedPalitra);
+          visibleFallbackPalitra ??
+          preserveUnmatchedPalitra;
         if (!matchedPalitra) {
           return;
         }
