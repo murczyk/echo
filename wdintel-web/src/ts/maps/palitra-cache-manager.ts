@@ -34,6 +34,7 @@ export class PalitraCacheManager {
   ): number[] {
     const now = Date.now();
     const tileKey = this.buildTileKey(bounds, zoom);
+    const zoomBucket = this.getZoomBucket(zoom);
     let expiredCount = 0;
     let cachedCount = 0;
     
@@ -50,6 +51,20 @@ export class PalitraCacheManager {
       }
       cachedCount++;
       return false;
+
+      // For background-preloaded data we may have multiple cached grid tiles
+      // intersecting the viewport instead of one exact viewport key.
+    }).filter((palitraId) => {
+      const cacheKey = `${palitraId}:${tileKey}`;
+      if (this.cache.has(cacheKey)) {
+        return false;
+      }
+
+      const hasCoverage = this.hasFreshIntersectingTile(palitraId, bounds, zoomBucket, now);
+      if (hasCoverage) {
+        cachedCount++;
+      }
+      return !hasCoverage;
     });
     
     if (expiredCount > 0) {
@@ -233,7 +248,7 @@ export class PalitraCacheManager {
 
       const pointsByTile = new Map<string, PalitraPoint[]>();
       (item.points || []).forEach((point) => {
-        const tileKey = this.buildTileKeyForPoint(point, zoom);
+        const tileKey = this.buildTileKey(this.boundsForPointTile(point, zoom), zoom);
         const list = pointsByTile.get(tileKey) ?? [];
         list.push(point);
         pointsByTile.set(tileKey, list);
@@ -389,17 +404,54 @@ export class PalitraCacheManager {
     return rounded.toFixed(precision);
   }
 
-  private buildTileKeyForPoint(point: PalitraPoint, zoom: number): string {
+  private boundsForPointTile(point: PalitraPoint, zoom: number): L.LatLngBounds {
     const precision = this.getPrecision(zoom);
-    const zoomBucket = this.getZoomBucket(zoom);
     const step = Math.pow(10, -precision);
 
     const minLat = Math.floor(point.coords.lat / step) * step;
     const minLng = Math.floor(point.coords.lng / step) * step;
     const maxLat = minLat + step;
     const maxLng = minLng + step;
+    return L.latLngBounds([minLat, minLng], [maxLat, maxLng]);
+  }
 
-    return `${zoomBucket}:${this.roundCoord(minLat, precision)},${this.roundCoord(minLng, precision)},${this.roundCoord(maxLat, precision)},${this.roundCoord(maxLng, precision)}`;
+  private hasFreshIntersectingTile(
+    palitraId: number,
+    bounds: L.LatLngBounds,
+    zoomBucket: number,
+    now: number,
+  ): boolean {
+    const tiles = this.tiles.get(palitraId);
+    if (!tiles) {
+      return false;
+    }
+
+    for (const tileKey of tiles.keys()) {
+      const [tileZoomBucket] = tileKey.split(':');
+      if (Number(tileZoomBucket) !== zoomBucket) {
+        continue;
+      }
+
+      const cacheKey = `${palitraId}:${tileKey}`;
+      const cachedAt = this.cache.get(cacheKey);
+      if (cachedAt === undefined) {
+        continue;
+      }
+      if (now - cachedAt > this.ttlMs) {
+        this.cache.delete(cacheKey);
+        continue;
+      }
+
+      const tileBounds = this.parseTileKeyBounds(tileKey);
+      if (!tileBounds) {
+        continue;
+      }
+      if (bounds.intersects(tileBounds)) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   private parseTileKeyBounds(tileKey: string): L.LatLngBounds | null {

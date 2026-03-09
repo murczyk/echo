@@ -116,6 +116,12 @@ export class AnalysisMapStateStore {
               migrated.push(geometryId);
             }
           });
+          return;
+        }
+
+        if (existingIds.has(storedId) && !seen.has(storedId)) {
+          seen.add(storedId);
+          migrated.push(storedId);
         }
       });
 
