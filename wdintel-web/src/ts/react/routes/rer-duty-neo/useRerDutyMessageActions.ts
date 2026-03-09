@@ -195,9 +195,13 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
     try {
       await deleteMessage({ id: deleteConfirmId });
       setMessageFeeds((prev) =>
-        prev.map((w) =>
-          w.id === deleteConfirmFeedId ? { ...w, items: w.items.filter(([id]) => id !== deleteConfirmId) } : w,
-        ),
+        prev.map((w) => {
+          if (w.id !== deleteConfirmFeedId) return w;
+          const newItems = w.items.filter(([id]) => id !== deleteConfirmId);
+          const newReadIds = new Set([...w.readIds].filter((id) => id !== deleteConfirmId));
+          const unreadCount = newItems.filter(([id]) => !newReadIds.has(id)).length;
+          return { ...w, items: newItems, readIds: newReadIds, unreadCount };
+        }),
       );
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
