@@ -218,17 +218,24 @@ export const FeedColumn = React.forwardRef<FeedColumnHandle, FeedColumnProps>(fu
     (range: { startIndex: number; endIndex: number }) => {
       const len = feed.items.length;
       // Range indices are in Virtuoso's total space (offset by firstItemIndex); convert to data indices
+      const startDataIndex = range.startIndex - firstItemIndex;
       const endDataIndex = range.endIndex - firstItemIndex;
-      // Short feeds (< buffer size): treat "last item visible" as near-bottom so poll still auto-loads newer
+      // Near top: viewport top is within buffer of list start → trigger load older (paginate backward)
+      const nearTop =
+        len <= LOAD_OLDER_BUFFER_ITEMS
+          ? len > 0 && startDataIndex <= 0
+          : startDataIndex < LOAD_OLDER_BUFFER_ITEMS;
+      if (nearTop) {
+        tryLoadOlder();
+      } else if (startDataIndex > LOAD_OLDER_RESET_MARGIN) {
+        // User scrolled away from top; allow load older to trigger again when they scroll back up
+        loadOlderTriggeredRef.current = false;
+      }
+      // Near bottom: viewport bottom is within buffer of list end → tell parent for poll/load-newer
       const nearBottom =
         len <= LOAD_OLDER_BUFFER_ITEMS
           ? len > 0 && endDataIndex >= len - 1
           : endDataIndex >= len - LOAD_OLDER_BUFFER_ITEMS;
-      if (nearBottom) {
-        tryLoadOlder();
-      } else if (len >= LOAD_OLDER_RESET_MARGIN && endDataIndex < len - LOAD_OLDER_RESET_MARGIN) {
-        loadOlderTriggeredRef.current = false;
-      }
       if (nearBottomRef.current !== nearBottom) {
         nearBottomRef.current = nearBottom;
         onNearBottomChange?.(nearBottom);
@@ -242,7 +249,7 @@ export const FeedColumn = React.forwardRef<FeedColumnHandle, FeedColumnProps>(fu
         if (ids.length > 0) onVisibleMessageIds(ids, { atBottom: false });
       }
     },
-    [firstItemIndex, feed.items, feed.items.length, onNearBottomChange, onVisibleMessageIds],
+    [firstItemIndex, feed.items, feed.items.length, onNearBottomChange, onVisibleMessageIds, tryLoadOlder],
   );
 
   const applySenders = (v: string[]) => {
