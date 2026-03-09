@@ -2,7 +2,6 @@ import {
   Box,
   Button,
   Checkbox,
-  Chip,
   CircularProgress,
   FormControl,
   FormControlLabel,
@@ -20,6 +19,7 @@ import {
 import React from 'react';
 import type { SavedFilterDuty, SignalGroupEntry, SignalProfileEntry } from '../../../../Bindings';
 import { ADJACENT_FREQS_RANGE_OPTIONS } from './utils';
+import { PowerChip } from '../../components/PowerChip';
 import { profileLabel } from './utils';
 
 export type FeedFilterPanelProps = {
@@ -159,23 +159,17 @@ export function FeedFilterPanel({
             Групи
           </Typography>
           <Box className="flex flex-wrap gap-1 items-center">
-            <Chip
-              size="small"
+            <PowerChip
               label="всі"
-              color={filterStable.groupsSelected.length === 0 ? 'primary' : 'default'}
+              size="small"
+              selected={filterStable.groupsSelected.length === 0}
               onClick={onSelectAllGroups}
             />
             {groupsList.map((key) => {
               const name = groupInfos[key]?.name ?? key;
               const selected = filterStable.groupsSelected.includes(key);
               return (
-                <Chip
-                  key={key}
-                  size="small"
-                  label={name}
-                  color={selected ? 'primary' : 'default'}
-                  onClick={() => onToggleGroup(key)}
-                />
+                <PowerChip key={key} label={name} size="small" selected={selected} onClick={() => onToggleGroup(key)} />
               );
             })}
           </Box>

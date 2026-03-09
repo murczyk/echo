@@ -7,7 +7,6 @@ import {
   Button,
   ButtonGroup,
   Checkbox,
-  Chip,
   CircularProgress,
   FormControl,
   IconButton,
@@ -28,10 +27,10 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
-import { getContrastRatio } from '@mui/material/styles';
 import { ChangeEvent, useEffect, useMemo, useState } from 'react';
 
 import { AreaOfResponsibility, MyScope, Organism, Palitra, User } from '../../../../../Bindings';
+import { PowerChip } from '../../../components/PowerChip';
 import { commonDenseTableSx } from '../../../components/tableDensity';
 import { TableDensityToggleButton } from '../../../components/TableDensityToggleButton';
 import { TableEmptyState } from '../../../components/TableEmptyState';
@@ -124,16 +123,6 @@ function readInitialPalitraTableFilters(): { authorFilter: string; searchInput: 
 
 function canModifyPalitra(user: User | null, palitra: Palitra): boolean {
   return isAdmin(user) || palitra.author === user?.name;
-}
-
-function getReadableTextColor(backgroundColor: string): string {
-  try {
-    const whiteContrast = getContrastRatio(backgroundColor, '#ffffff');
-    const blackContrast = getContrastRatio(backgroundColor, '#000000');
-    return whiteContrast >= blackContrast ? '#ffffff' : '#000000';
-  } catch (_) {
-    return '#000000';
-  }
 }
 
 function normalizeFilterText(value: string | null): string {
@@ -559,7 +548,6 @@ export function PalitraTable({
                   const canModify = canModifyPalitra(user, palitra);
                   const deleting = inFlightDeleteId === palitra.id;
                   const uploading = inFlightUploadId === palitra.id;
-                  const chipTextColor = getReadableTextColor(palitra.colorHex);
 
                   return (
                     <TableRow key={palitra.id} hover>
@@ -573,15 +561,18 @@ export function PalitraTable({
                       </TableCell>
                       <TableCell>{palitra.name}</TableCell>
                       <TableCell>
-                        <Chip
-                          size="small"
+                        <PowerChip
                           label={palitra.colorHex}
-                          sx={{
-                            color: chipTextColor,
-                            backgroundColor: palitra.colorHex,
-                            minWidth: '90px',
-                            fontFamily: 'monospace',
-                          }}
+                          size="small"
+                          fontSize="0.875rem"
+                          fontWeight={600}
+                          backgroundColor={palitra.colorHex}
+                          autoTextContrast
+                          interactive={false}
+                          unselectedOpacity={1}
+                          minWidth="90px"
+                          fontFamily="monospace"
+                          unselectedBorderColor="transparent"
                         />
                       </TableCell>
                       <TableCell>{palitra.sourceFileName ?? '—'}</TableCell>

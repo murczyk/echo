@@ -3,11 +3,17 @@ set -euo pipefail
 
 echo "Running backend tests with Python service..."
 
-# Set up branch-specific test database
-echo "Setting up test database..."
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO_ROOT"
+
+bash "$SCRIPT_DIR/ensure_postgres_running.sh"
+
+# CI boxes may require extra time while PostgreSQL replays WAL / crash-recovery.
+export POSTGRES_STARTUP_TIMEOUT_SECS="${POSTGRES_STARTUP_TIMEOUT_SECS:-600}"
+
+# Set up branch-specific test database
+echo "Setting up test database..."
 source "$SCRIPT_DIR/setup_test_database.sh"
 
 # Export the database name for tests

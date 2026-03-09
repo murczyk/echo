@@ -10,7 +10,7 @@
 
 Крок 3: Запуск клієнту PostgreSQL і підключення до бази даних
 
-`$ PGPASSWORD=<password> psql -U wd -h 127.0.0.1 -p 6432 wd`
+`$ PGPASSWORD=fee_-_-_-FnoeKFBeebu87bf psql -U wd -h 127.0.0.1 -p 6432 wd`
 
 Крок 4: Створення користувача
 
@@ -37,8 +37,6 @@
 `$ just dev-front`
 
 ***Примітка:** усі команди (кроки 2-4 та 6-8) мають бути запущені в окремих терміналах, що лишаються працювати в фоновому режимі.*
-
-***Примітка:** візьміть \<password\> у довіреного розробника.*
 
 ## Автоматичне налаштування запуску команд в терміналах для VS Code
 
@@ -92,7 +90,7 @@
     {
       "label": "start-db-session", // via port 6432
       "type": "shell",
-      "command": "PGPASSWORD=<password> psql -U wd -h 127.0.0.1 -p 6432 wd",
+      "command": "PGPASSWORD=fee_-_-_-FnoeKFBeebu87bf psql -U wd -h 127.0.0.1 -p 6432 wd",
       "problemMatcher": [],
       "presentation": { "panel": "new", "focus": true }
     },

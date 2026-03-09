@@ -2,10 +2,11 @@ import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import ClearIcon from '@mui/icons-material/Clear';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import SearchIcon from '@mui/icons-material/Search';
-import { Backdrop, Chip, CircularProgress, Collapse, Divider, IconButton, InputAdornment, List, ListItemButton, ListItemText, Paper, Stack, TextField, Typography } from '@mui/material';
+import { Backdrop, CircularProgress, Collapse, Divider, IconButton, InputAdornment, List, ListItemButton, ListItemText, Paper, Stack, TextField, Typography } from '@mui/material';
 import React from 'react';
 
 import { loadingOverlayBackdropSx } from '../../../components/loadingOverlayStyles';
+import { PowerChip } from '../../../components/PowerChip';
 import type { UnitStatView } from '../types';
 
 type Props = {
@@ -168,7 +169,16 @@ function UnitTreeItem({ node, depth, expandedIds, onToggle, onPickUnitFilter, se
           primary={node.unitName}
           primaryTypographyProps={{ noWrap: true, title: node.unitName }}
         />
-        <Chip size="small" label={node.count} sx={{ ml: 1 }} />
+        <PowerChip
+          size="small"
+          label={node.count}
+          interactive={false}
+          unselectedOpacity={1}
+          unselectedBackgroundColor="action.selected"
+          unselectedTextColor="text.primary"
+          unselectedBorderColor="transparent"
+          sx={{ ml: 1 }}
+        />
       </ListItemButton>
     );
   }
@@ -185,7 +195,16 @@ function UnitTreeItem({ node, depth, expandedIds, onToggle, onPickUnitFilter, se
       >
         {isExpanded ? <ExpandMoreIcon fontSize="small" sx={{ mr: 0.5 }} /> : <ChevronRightIcon fontSize="small" sx={{ mr: 0.5 }} />}
         <ListItemText primary={node.label} primaryTypographyProps={{ noWrap: true, title: node.label }} />
-        <Chip size="small" label={node.count} sx={{ ml: 1 }} />
+        <PowerChip
+          size="small"
+          label={node.count}
+          interactive={false}
+          unselectedOpacity={1}
+          unselectedBackgroundColor="action.selected"
+          unselectedTextColor="text.primary"
+          unselectedBorderColor="transparent"
+          sx={{ ml: 1 }}
+        />
       </ListItemButton>
       <Collapse in={isExpanded} timeout="auto" unmountOnExit>
         <List dense disablePadding>
@@ -297,14 +316,23 @@ export function UnitStatsSidebar({ stats, open, loading, onPickUnitFilter, selec
           }}
         />
         <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-          <Chip
+          <PowerChip
             size="small"
             label={normalizedSearchQuery === '' ? `Підрозділів: ${stats.length}` : `Підрозділів: ${filteredStats.length} з ${stats.length}`}
+            interactive={false}
+            unselectedOpacity={1}
+            unselectedBackgroundColor="action.selected"
+            unselectedTextColor="text.primary"
+            unselectedBorderColor="transparent"
           />
-          <Chip
+          <PowerChip
             size="small"
             label={normalizedSearchQuery === '' ? `Позивних: ${total}` : `Позивних: ${total} з ${totalOverall}`}
-            variant="outlined"
+            interactive={false}
+            unselectedOpacity={1}
+            unselectedBackgroundColor="transparent"
+            unselectedTextColor="text.primary"
+            unselectedBorderColor="divider"
           />
         </Stack>
         <Typography variant="body2" color="text.secondary">
