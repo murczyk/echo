@@ -50,7 +50,7 @@ export function MessageCard({
   const networkIds = Array.from(new Set(msg.networkIds ?? []));
 
   return (
-    <Box component="li" className="list-none flex pr-0 pl-2 rer-duty-message mb-3 font-size-[13px]">
+    <Box component="li" className="list-none flex pr-0 pl-2 rer-duty-message mb-2 font-size-[13px]">
       {/* Left column: date/time, actions, group, sender, freq — hidden when leftSideCollapsed */}
       {!leftSideCollapsed && (
         <div

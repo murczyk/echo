@@ -308,8 +308,6 @@ export async function getTagsMapForDisplay(): Promise<Record<number, Tag>> {
     map[Number(tagRecord[0])] = nTag;
   }
 
-  console.log(map);
-
   return map;
 }
 
