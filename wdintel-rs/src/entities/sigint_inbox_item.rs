@@ -66,6 +66,8 @@ pub enum Relation {
     Nominatimres,
     #[sea_orm(has_many = "super::sigint_inbox_item_network::Entity")]
     SigintInboxItemNetwork,
+    #[sea_orm(has_many = "super::sigint_inbox_item_point_token::Entity")]
+    SigintInboxItemPointToken,
     #[sea_orm(has_many = "super::sigint_inbox_item_tag::Entity")]
     SigintInboxItemTag,
     #[sea_orm(has_many = "super::sigint_inbox_tag_model_error::Entity")]
@@ -110,6 +112,12 @@ impl Related<super::nominatimres::Entity> for Entity {
 impl Related<super::sigint_inbox_item_network::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SigintInboxItemNetwork.def()
+    }
+}
+
+impl Related<super::sigint_inbox_item_point_token::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintInboxItemPointToken.def()
     }
 }
 

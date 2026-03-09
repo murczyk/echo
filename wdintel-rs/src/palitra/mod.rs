@@ -23,9 +23,11 @@ use std::collections::{BTreeMap, HashSet};
 use std::path::Path;
 use tempfile::tempdir;
 
-mod bl;
+pub(crate) mod bl;
 mod kmz;
+pub mod oneoff;
 pub mod types;
+pub mod worker;
 
 #[derive(Clone)]
 struct UserScope {
@@ -98,7 +100,7 @@ pub async fn create_palitra_with_kmz(
             .await
             .c(h!())?;
 
-    bl::rewrite_palitra_points(palitra_geometry.id, points, &txn)
+    bl::rewrite_palitra_points(palitra_geometry.id, points, &txn, &env.rq)
         .await
         .c(h!())?;
 
@@ -176,9 +178,14 @@ pub async fn create_palitra_basic(
                 .c(h!())?;
         let color_points =
             points_by_color.remove(&color_hex).unwrap_or_default();
-        bl::rewrite_palitra_points(palitra_geometry.id, color_points, &txn)
-            .await
-            .c(h!())?;
+        bl::rewrite_palitra_points(
+            palitra_geometry.id,
+            color_points,
+            &txn,
+            &env.rq,
+        )
+        .await
+        .c(h!())?;
     }
 
     let remote_filename = kmz_file_name_as_kmz(&multipart_payload.filename);
@@ -258,9 +265,14 @@ pub async fn create_palitra_basic_v2(
         .c(h!())?;
         let color_points =
             points_by_color.remove(&color_hex).unwrap_or_default();
-        bl::rewrite_palitra_points(palitra_geometry.id, color_points, &txn)
-            .await
-            .c(h!())?;
+        bl::rewrite_palitra_points(
+            palitra_geometry.id,
+            color_points,
+            &txn,
+            &env.rq,
+        )
+        .await
+        .c(h!())?;
     }
 
     let remote_filename = kmz_file_name_as_kmz(&multipart_payload.filename);
@@ -410,9 +422,14 @@ pub async fn upload_palitra_points(
         retained_geometry_ids.insert(palitra_geometry.id);
         let color_points =
             points_by_color.remove(&color_hex).unwrap_or_default();
-        bl::rewrite_palitra_points(palitra_geometry.id, color_points, &txn)
-            .await
-            .c(h!())?;
+        bl::rewrite_palitra_points(
+            palitra_geometry.id,
+            color_points,
+            &txn,
+            &env.rq,
+        )
+        .await
+        .c(h!())?;
     }
     let stale_geometry_ids = existing_palitra_geometries
         .into_iter()
@@ -452,6 +469,8 @@ pub async fn upload_palitra_points(
     .c(h!())?;
 
     txn.commit().await.c(h!())?;
+    env.palitra_worker_context.flush_cache(palitra_id).await;
+
     Ok(Json(()))
 }
 
@@ -741,6 +760,7 @@ pub async fn delete_palitra(
         .await
         .c(h!())?; //deletes with all geometries, TODO add method for drop one geometry only
     txn.commit().await.c(h!())?;
+    env.palitra_worker_context.flush_cache(palitra_id).await;
     Ok(Json(()))
 }
 
@@ -1152,13 +1172,12 @@ async fn sync_upload_palitra_to_connected_organisms(
     for target in goi_targets {
         let remote_file_path =
             compose_goi_palette_remote_path(&target.path, remote_file_name);
-        crate::organism::goi::goi_upload_file(
+        crate::organism::goi::goi_upload_file_loose(
             target,
             remote_file_path,
             file_data.clone(),
         )
-        .await
-        .c(h!())?;
+        .await;
     }
 
     Ok(())
@@ -1185,9 +1204,11 @@ async fn sync_delete_palitra_from_connected_organisms(
     for target in goi_targets {
         let remote_file_path =
             compose_goi_palette_remote_path(&target.path, &source_file_name);
-        crate::organism::goi::goi_delete_file(target, remote_file_path)
-            .await
-            .c(h!())?;
+        crate::organism::goi::goi_delete_file_loose(
+            target,
+            remote_file_path,
+        )
+        .await;
     }
 
     Ok(())
@@ -1210,6 +1231,7 @@ async fn collect_connected_goi_targets(
 
     let mut goi_targets = Vec::with_capacity(organisms.len());
     for organism in organisms {
+        let organism_id = organism.id;
         let ssh_host = organism
             .goi_ssh_host
             .as_ref()
@@ -1246,8 +1268,14 @@ async fn collect_connected_goi_targets(
             ssh_port,
             path,
         };
-        goi_validate_connection_req(&req)?;
-        goi_targets.push(req);
+        match goi_validate_connection_req(&req) {
+            Ok(()) => goi_targets.push(req),
+            Err(err) => {
+                log::warn!(
+                    "Skipping GOI sync target for organism {organism_id}: {err:#}"
+                );
+            }
+        }
     }
 
     Ok(goi_targets)

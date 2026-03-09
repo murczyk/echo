@@ -118,6 +118,7 @@ pub const ONEOFF_COUNT_BATCHES_SIZE: u64 = 10000;
 pub const PALITRA_STORAGE_DIR_NAME: &str = "palitra_assets";
 pub const PALITRA_KMZ_TOP_COLORS_LIMIT: usize = 20;
 pub const PALITRA_POINTS_INSERT_BATCH_SIZE: usize = 10_000;
+pub const PALITRA_POINT_LEXEME_BACKFILL_BATCH_SIZE: usize = 5_000;
 pub const PALITRA_POINT_FALLBACK_COLOR_HEX: &str = "#060606";
 /// Global limit when since_id_noninclusive and since_date_inclusive_ms is not set, safety measure
 pub const RER_DUTY_MAX_DAYS: i64 = 3;

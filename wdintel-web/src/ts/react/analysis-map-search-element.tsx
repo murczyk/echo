@@ -8,6 +8,10 @@ import { createRoot, Root } from 'react-dom/client';
 const DEBOUNCE_MS = 300;
 const SEARCH_TEXT = 'Пошук...';
 
+const ATTR_RESULTS_COUNT = 'results-count';
+const ATTR_SEARCH_LOADING = 'search-loading';
+const ATTR_INITIAL_QUERY = 'initial-query';
+
 const SEARCH_WILDCARD_TOOLTIP = `Приклади пошуку:
  "40" — точний збіг
  "40*" — пошук за префіксом (наприклад 40, 400, 401, ...)
@@ -20,10 +24,12 @@ export type SearchInputProps = {
   className?: string;
   resultsCount?: number | null;
   isSearchLoading?: boolean;
+  /** When set, fills the input and runs search once (e.g. from URL / point-token link). */
+  initialQuery?: string;
 };
 
 export function SearchInput(props: SearchInputProps) {
-  const { placeholder = SEARCH_TEXT, onSearch, className, resultsCount = null, isSearchLoading = false } = props;
+  const { placeholder = SEARCH_TEXT, onSearch, className, resultsCount = null, isSearchLoading = false, initialQuery } = props;
   const mode = useMuiPaletteMode();
   const theme = React.useMemo(
     () =>
@@ -36,9 +42,19 @@ export function SearchInput(props: SearchInputProps) {
       }),
     [mode],
   );
-  const [value, setValue] = useState('');
+  const [value, setValue] = useState(initialQuery ?? '');
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const appliedInitialRef = useRef(false);
   const showResults = value.trim().length > 0 && (isSearchLoading || resultsCount !== null);
+
+  React.useEffect(() => {
+    const q = (initialQuery ?? '').trim();
+    if (q && !appliedInitialRef.current) {
+      appliedInitialRef.current = true;
+      setValue(q);
+      onSearch(q);
+    }
+  }, [initialQuery, onSearch]);
   const isSearchingLabel = isSearchLoading && (resultsCount === null || resultsCount === 0);
 
   const searchWithDebounce = useCallback(
@@ -214,18 +230,20 @@ function useMuiPaletteMode() {
 
 // web-component wrapper for SearchInput react component
 class AnalysisMapSearchElement extends HTMLElement {
-  static observedAttributes = ['results-count', 'search-loading'];
+  static observedAttributes = [ATTR_RESULTS_COUNT, ATTR_SEARCH_LOADING, ATTR_INITIAL_QUERY];
   private root: Root | null = null;
   private resultsCount: number | null = null;
   private isSearchLoading = false;
+  private initialQuery = '';
 
   connectedCallback() {
     if (!this.root) {
       this.style.display = 'block';
       this.root = createRoot(this);
     }
-    this.resultsCount = this.parseResultsCount(this.getAttribute('results-count'));
-    this.isSearchLoading = this.getAttribute('search-loading') === 'true';
+    this.resultsCount = this.parseResultsCount(this.getAttribute(ATTR_RESULTS_COUNT));
+    this.isSearchLoading = this.getAttribute(ATTR_SEARCH_LOADING) === 'true';
+    this.initialQuery = this.getAttribute(ATTR_INITIAL_QUERY) ?? '';
     this.renderComponent();
   }
 
@@ -242,37 +260,40 @@ class AnalysisMapSearchElement extends HTMLElement {
         onSearch={onSearch}
         resultsCount={this.resultsCount}
         isSearchLoading={this.isSearchLoading}
+        initialQuery={this.initialQuery || undefined}
       />,
     );
   }
 
   attributeChangedCallback(name: string, _oldValue: string | null, newValue: string | null) {
-    if (name !== 'results-count' && name !== 'search-loading') {
-      return;
-    }
-    if (name === 'results-count') {
+    if (name === ATTR_RESULTS_COUNT) {
       this.resultsCount = this.parseResultsCount(newValue);
     }
-    if (name === 'search-loading') {
+    if (name === ATTR_SEARCH_LOADING) {
       this.isSearchLoading = newValue === 'true';
     }
-    this.renderComponent();
+    if (name === ATTR_INITIAL_QUERY) {
+      this.initialQuery = newValue ?? '';
+    }
+    if (this.root) {
+      this.renderComponent();
+    }
   }
 
   setResultsCount(count: number | null) {
     if (count === null || Number.isNaN(count)) {
-      this.removeAttribute('results-count');
+      this.removeAttribute(ATTR_RESULTS_COUNT);
       return;
     }
-    this.setAttribute('results-count', String(count));
+    this.setAttribute(ATTR_RESULTS_COUNT, String(count));
   }
 
   setSearchLoading(isLoading: boolean) {
     if (isLoading) {
-      this.setAttribute('search-loading', 'true');
+      this.setAttribute(ATTR_SEARCH_LOADING, 'true');
       return;
     }
-    this.removeAttribute('search-loading');
+    this.removeAttribute(ATTR_SEARCH_LOADING);
   }
 
   disconnectedCallback() {

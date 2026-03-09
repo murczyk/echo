@@ -2,13 +2,14 @@ import os
 
 feature_callsign_autocomplete = False
 
+import re
+from pathlib import Path
+
+import fasttext
 import pymorphy3
 import spacy
 from flask import Flask, json, jsonify, request
 from words2numsrus import NumberExtractor
-from pathlib import Path
-import fasttext
-import re
 
 # import ha.attention as hat
 # import sentencepiece as spm
@@ -23,15 +24,20 @@ morph = pymorphy3.MorphAnalyzer()
 app = Flask(__name__)
 json.provider.DefaultJSONProvider.ensure_ascii = False
 
-models_root = Path(os.environ.get('WD_FASTTEXT_MODELS', 'fasttext-models'))
-models = {item.stem: fasttext.load_model(str(item.absolute())) for item in models_root.glob('*.bin') if item.is_file()}
+models_root = Path(os.environ.get("WD_FASTTEXT_MODELS", "fasttext-models"))
+models = {
+    item.stem: fasttext.load_model(str(item.absolute()))
+    for item in models_root.glob("*.bin")
+    if item.is_file()
+}
 pat_alnum_apostrophe = re.compile(r"[\w'`\u2019\u02BC]+", re.UNICODE)
 
 try:
-    with models_root.joinpath('thresholds.json').open() as file:
+    with models_root.joinpath("thresholds.json").open() as file:
         thresholds = json.load(file)
 except FileNotFoundError:
     thresholds = {key: 0.5 for key in models.keys()}
+
 
 @app.route("/")
 def hello_world():
@@ -44,20 +50,32 @@ def tokenize_words():
     doc = nlp(req["sentence"])
     words = []
     for token in doc:
-        words.append({
-            "text": token.text,
-            "start": token.idx,       
-            "end": token.idx + len(token.text)
-        })
+        words.append(
+            {"text": token.text, "start": token.idx, "end": token.idx + len(token.text)}
+        )
     return jsonify({"words": words})
+
+
+def token_normal_form_impl(token: str):
+    res = morph.parse(token)[0]
+    return {"lexeme": [x.word for x in res.lexeme]}
 
 
 @app.post("/api/token/lexeme")
 def token_normal_form():
     req = request.get_json()
     token = req["token"]
-    res = morph.parse(token)[0]
-    return jsonify({"lexeme": [x.word for x in res.lexeme]})
+    res = token_normal_form_impl(token)
+    return jsonify(res)
+
+
+@app.post("/api/token/lexeme/batch")
+def token_normal_form_batch():
+    req = request.get_json()
+    tokens = req["tokens"]
+
+    res = [token_normal_form_impl(token) for token in tokens]
+    return jsonify(res)
 
 
 @app.post("/api/extract/numbers")
@@ -66,9 +84,11 @@ def extract_numbers():
         {"sentance": (NumberExtractor().replace_groups(request.get_json()["sentence"]))}
     )
 
+
 def preprocess_text(text):
     words = pat_alnum_apostrophe.findall(text)
-    return ' '.join(words)
+    return " ".join(words)
+
 
 def process_predict(model, texts):
     all_labels, all_probs = model.predict(texts, k=1)
@@ -81,6 +101,7 @@ def process_predict(model, texts):
 
     return res
 
+
 @app.post("/api/tags/predict")
 def predict_tags():
     req = request.get_json()
@@ -88,7 +109,11 @@ def predict_tags():
     tags = req["tags"]
 
     texts = list(map(preprocess_text, texts))
-    output = {tag: process_predict(model, texts) for tag, model in models.items() if not tags or tag in tags}
+    output = {
+        tag: process_predict(model, texts)
+        for tag, model in models.items()
+        if not tags or tag in tags
+    }
     res = []
     for index, _ in enumerate(texts):
         row = {}
@@ -129,5 +154,5 @@ def predict_tags():
 #     completions = sp.decode(generated_tokens)
 #     return jsonify({"completions": [completions]})
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     app.run(debug=True)

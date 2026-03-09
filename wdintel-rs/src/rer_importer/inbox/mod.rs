@@ -1,4 +1,5 @@
 use crate::entities::{prelude::*, *};
+use crate::palitra::worker::do_palitra_highlight;
 use crate::rer_importer::types::*;
 
 use crate::config::*;
@@ -251,7 +252,10 @@ async fn messages_by_id_bl(
     .all(&env.dbx)
     .await
     .context(h!())?;
-    let req = InboxMessagesReq::default();
+    let req = InboxMessagesReq {
+        highlight_points: Some(true),
+        ..Default::default()
+    };
     let messages =
         aggregate_to_inbox_messages(login, messages, logins, &&req, &env)
             .await
@@ -644,12 +648,13 @@ async fn do_submit_inbox(
             crate::rer_importer::highlight::extract_keywords(&message.text)
                 .c(h!())?,
         );
+
         let all_ids = find_all_duplicates(&txn, *id).await.c(h!())?;
-        for id in all_ids {
+        for id in &all_ids {
             submit_upsert_inbox_item(
                 env.settlements.clone(),
                 &txn,
-                id,
+                *id,
                 &message,
                 &login,
                 &logins,
@@ -657,6 +662,14 @@ async fn do_submit_inbox(
             .await
             .c(h!())?;
         }
+        do_palitra_highlight(
+            all_ids,
+            &env.rq,
+            &txn,
+            &env.palitra_worker_context,
+        )
+        .await
+        .c(h!())?;
     }
     txn.commit().await.c(h!())?;
     Ok(())

@@ -419,6 +419,7 @@ getBasicInboxParams model =
     , highlightSignals = Just model.highlightSignalsEnabled
     , highlightKeywords = Just True
     , highlightSearchres = Just True
+    , highlightPoints = Just False
     , sortBy = Just B.ImsTimestamp
     , reportTagsOnlyThisUnit = Nothing
     , ignoreImportedCoords = Just True
