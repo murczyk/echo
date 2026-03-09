@@ -298,8 +298,7 @@ export function buildRowViews(callsigns: Callsign[], unitsById: Map<number, Unit
   const rows = callsigns.map((callsign) => {
     const callsignAdditionalSourceIds = sanitizeCallsignAdditionalSourceIds(callsign.callsignAdditionalSources, callsign.sourceId);
     const callsignAdditionalSourceNames = callsignAdditionalSourceIds
-      .map((sourceId) => sourcesById.get(sourceId)?.name ?? `#${sourceId}`)
-      .sort((left, right) => left.localeCompare(right, 'uk'));
+      .map((sourceId) => sourcesById.get(sourceId)?.name ?? `#${sourceId}`);
 
     return {
       ...callsign,
