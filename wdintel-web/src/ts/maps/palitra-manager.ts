@@ -73,6 +73,7 @@ export class PalitraManager {
       this.updatePointLabelVisibility();
     });
     this.map.on('moveend', () => {
+      this.updatePoints();
       this.scheduleRenderPointsInViewport(); 
       this.updatePointLabelVisibility();
     });
@@ -273,7 +274,9 @@ export class PalitraManager {
     }
 
     this._backgroundPreloadKey = preloadKey;
-    void this.preloadAllPoints(palitraIds, preloadKey);
+    void this.preloadAllPoints(palitraIds, preloadKey).catch((error) => {
+      console.error('[PalitraManager] Background points preload failed:', error);
+    });
   }
 
   private async preloadAllPoints(palitraIds: number[], preloadKey: string): Promise<void> {
@@ -830,6 +833,7 @@ export class PalitraManager {
 
   private updatePoints(): void {
     if (!this._searchQuery) {
+      this.schedulePointsRequest();
       void this.renderVisiblePointsFromCache();
     }
   }
