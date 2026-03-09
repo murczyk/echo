@@ -417,6 +417,7 @@ class AnalysisMap extends HTMLElement {
 
      this._pelengsLayerGroup = L.layerGroup();
      this._applyPelengVisibility();
+     this._map.on('zoomend', () => this._replacePointsOnMap(this._points));
 
     const searchQuery = this.getAttribute('search-query');
     if (searchQuery) {
@@ -562,17 +563,34 @@ class AnalysisMap extends HTMLElement {
       this._pelengsLayerGroup?.removeLayer(this._markersGroup);
       this._map?.removeLayer(this._markersGroup)
     }
+    if (!this._shouldRenderPointsAtCurrentZoom()) {
+      this._markersGroup = null;
+      return;
+    }
     const { bounds, markersGroup } = this._addPointsMarkersGroup(points);
     this._markersGroup = markersGroup;
 
     this._pelengsLayerGroup?.addLayer(this._markersGroup);
     this._applyPelengVisibility();
 
-    if (bounds.isValid() && !this._boundedAlready) {
-      this._map?.fitBounds(bounds);
+    if (bounds.isValid() && !this._boundedAlready && this._map) {
+      // Only auto-fit on initial coarse zoom to avoid jump when user zooms in
+      // and points become visible on penultimate/max zoom levels.
+      if (this._map.getZoom() <= 10) {
+        this._map.fitBounds(bounds);
+      }
       this._boundedAlready = true;
     }
 
+  }
+
+  private _shouldRenderPointsAtCurrentZoom(): boolean {
+    if (!this._map) {
+      return false;
+    }
+    const maxZoom = this._map.getMaxZoom();
+    const minVisibleZoom = Number.isFinite(maxZoom) ? maxZoom - 1 : 16;
+    return this._map.getZoom() >= minVisibleZoom;
   }
 
   private _addPointsMarkersGroup(points: MapPointDetailed[]) {
