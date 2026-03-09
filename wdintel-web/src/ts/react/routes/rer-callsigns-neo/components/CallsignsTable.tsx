@@ -6,7 +6,6 @@ import {
   Button,
   ButtonGroup,
   Checkbox,
-  Chip,
   CircularProgress,
   Paper,
   Stack,
@@ -22,6 +21,7 @@ import {
 } from '@mui/material';
 
 import { loadingOverlayBackdropSx } from '../../../components/loadingOverlayStyles';
+import { PowerChip } from '../../../components/PowerChip';
 import { commonDenseTableSx } from '../../../components/tableDensity';
 import { TableEmptyState } from '../../../components/TableEmptyState';
 import { TableLoadingRow } from '../../../components/TableLoadingRow';
@@ -220,11 +220,14 @@ export function CallsignsTable({
                     <TableCell>{row.sourceName}</TableCell>
                     <TableCell>{row.radioFreq?.trim() ? row.radioFreq : '—'}</TableCell>
                     <TableCell>
-                      <Chip
-                        size="small"
+                      <PowerChip
                         label={row.developing ? 'Дорозвідка' : 'Відомий'}
-                        color={row.developing ? 'warning' : 'default'}
-                        variant={row.developing ? 'filled' : 'outlined'}
+                        size="small"
+                        interactive={false}
+                        unselectedOpacity={1}
+                        unselectedBackgroundColor={row.developing ? 'warning.main' : 'transparent'}
+                        unselectedTextColor={row.developing ? 'warning.contrastText' : 'text.primary'}
+                        unselectedBorderColor={row.developing ? 'warning.main' : 'divider'}
                       />
                     </TableCell>
                     <TableCell>{formatDateTime(row.createdAt)}</TableCell>

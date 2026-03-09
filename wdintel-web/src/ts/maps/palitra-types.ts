@@ -7,6 +7,7 @@ export type Geometry = {
 
 export type Palitra = {
   id: number;
+  api_palitra_id?: number;
   name: string;
   color_hex: string;
   geometry: Geometry | null;
@@ -27,6 +28,7 @@ export interface PalitraManagerCallbacks {
   onVisibilityToggle: (palitraId: number) => void;
   onSearchResultsCountChanged: (count: number | null) => void;
   onSearchLoadingChanged: (isLoading: boolean) => void;
+  onBackgroundPointsLoadingChanged?: (isLoading: boolean) => void;
   /** When result set is huge, we cap rendered markers */
   onSearchResultsTruncated?: (rendered: number, total: number) => void;
 }

@@ -503,9 +503,17 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
     setAddValidationError(null);
   }
 
+  function resetAddDrawerState() {
+    setAddRows([createEmptyDraftRow()]);
+    setAddUnitId(null);
+    setAddSourceId(sources[0]?.id ?? null);
+    setAddValidationError(null);
+  }
+
   function onCloseAddDrawer() {
     if (addSubmitting) return;
     setAddDrawerOpen(false);
+    resetAddDrawerState();
   }
 
   function onRowChange(index: number, next: CallsignDraftRow) {
@@ -573,8 +581,8 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
       }
 
       if (failed.length === 0) {
-        setAddRows([createEmptyDraftRow()]);
         setAddDrawerOpen(false);
+        resetAddDrawerState();
         setStatus({ kind: 'success', text: `Додано позивних: ${created.length}` });
         return;
       }

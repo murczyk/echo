@@ -76,9 +76,16 @@ view : Auth.User -> Model -> View Msg
 view user model =
     let
         betaBannerNode =
-            if model.showBetaBanner then
+            div
+                [ class <|
+                    if model.showBetaBanner then
+                        "shrink-0"
+
+                    else
+                        "hidden"
+                ]
                 [ div
-                    [ class "rounded-lg border border-amber-500/40 bg-amber-100 px-4 py-3 text-amber-900 shrink-0" ]
+                    [ class "rounded-lg border border-amber-500/40 bg-amber-100 px-4 py-3 text-amber-900" ]
                     [ div [ class "flex items-start justify-between gap-4" ]
                         [ div [ class "min-w-0" ]
                             [ span [ class "font-semibold" ] [ text "Бета-версія: " ]
@@ -103,22 +110,18 @@ view user model =
                         ]
                     ]
                 ]
-
-            else
-                []
     in
     { title = "позивні"
     , body =
-        [ div [ class "app-shell-fill-height box-border min-h-0 pt-6 px-6 w-full flex flex-col gap-4 overflow-visible lg:overflow-hidden" ]
-            (betaBannerNode
-                ++ [ div [ class "flex-1 min-h-0 w-full" ]
-                        [ node "rer-callsigns-neo"
-                            [ attribute "data-auth-user-roles" (String.join "," user.roles)
-                            , class "block w-full h-full"
-                            ]
-                            []
-                        ]
-                   ]
-            )
+        [ div [ class "app-shell-fill-height box-border min-h-0 px-6 w-full flex flex-col gap-4 overflow-visible lg:overflow-hidden" ]
+            [ betaBannerNode
+            , div [ class "flex-1 min-h-0 w-full" ]
+                [ node "rer-callsigns-neo"
+                    [ attribute "data-auth-user-roles" (String.join "," user.roles)
+                    , class "block w-full h-full"
+                    ]
+                    []
+                ]
+            ]
         ]
     }

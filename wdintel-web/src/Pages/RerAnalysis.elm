@@ -409,7 +409,7 @@ loadPalitrasIfNeeded model =
         case model.palitras of
             NotAsked ->
                 ( { model | palitras = Loading }
-                , E.sendCmd <| Api.palitra_list GotPalitras
+                , E.sendCmd <| Api.palitra_list_v2 GotPalitras
                 )
 
             _ ->
@@ -417,13 +417,6 @@ loadPalitrasIfNeeded model =
 
     else
         ( model, E.none )
-
-
-palitraToDetails : B.Palitra -> B.PalitraDetails
-palitraToDetails palitra =
-    { palitra = palitra
-    , points = []
-    }
 
 
 loadSumTableOnly : Model -> ( Model, Effect Msg )
@@ -1889,7 +1882,18 @@ update user shared route msg model =
             )
 
         GotPalitras (Ok palitras) ->
-            ( { model | palitras = Success (List.map palitraToDetails palitras) }
+            let
+                palitrasNoPoints =
+                    List.map
+                        (\palitraRead ->
+                            { palitraRead
+                                | geometries =
+                                    List.map (\geometry -> { geometry | points = [] }) palitraRead.geometries
+                            }
+                        )
+                        palitras
+            in
+            ( { model | palitras = Success palitrasNoPoints }
             , E.none
             )
 

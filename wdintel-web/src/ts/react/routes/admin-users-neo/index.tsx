@@ -20,6 +20,7 @@ import React from 'react';
 import { CreateLoginReq, DeactivationReasonType, Login, Organism, SigintZone, UpdateLoginReq } from '../../../../Bindings';
 import { Button } from '../../components/mui-customized/button';
 import { IconButton } from '../../components/mui-customized/icon-button';
+import { PowerChip } from '../../components/PowerChip';
 import { CUSTOM_CELL_STYLES, CUSTOM_STYLES } from '../../components/mui-customized/table/custom-styles';
 import { TableTopToolbar } from '../../components/mui-customized/table/components/table-top-toolbar';
 import {
@@ -296,9 +297,22 @@ function useUsersColumns(): MRT_ColumnDef<Login>[] {
           return (
             <div className="flex flex-wrap gap-1">
               {row.original.roles.map((role) => (
-                <span key={role} className="badge badge--neutral" title={role}>
-                  {role}
-                </span>
+                <PowerChip
+                  key={role}
+                  size="small"
+                  label={role}
+                  title={role}
+                  interactive={false}
+                  unselectedOpacity={1}
+                  fontSize="0.75rem"
+                  fontWeight={500}
+                  labelPaddingX={0.5}
+                  labelPaddingY={0.25}
+                  unselectedBackgroundColor="#f1f5f9"
+                  unselectedTextColor="#475569"
+                  unselectedBorderColor="#cbd5e1"
+                  sx={{ lineHeight: 1 }}
+                />
               ))}
             </div>
           );

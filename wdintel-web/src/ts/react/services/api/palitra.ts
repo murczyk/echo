@@ -53,6 +53,19 @@ type PalitraDetailsLike = {
   points?: PalitraDetails['points'] | null;
 };
 
+type PalitraGeometryDetailsLike = {
+  id?: number | string;
+  lastUploadedAtTs?: number | string | null;
+  last_uploaded_at_ts?: number | string | null;
+};
+
+type PalitraReadWithGeometriesLike = {
+  palitra: PalitraLike;
+  geometries?: PalitraGeometryDetailsLike[] | null;
+};
+
+const primaryGeometryIdByPalitraId = new Map<number, number>();
+
 type KmzColorInfoLike = {
   colorHex?: string;
   color_hex?: string;
@@ -107,6 +120,17 @@ function toCreatePalitraReqBody(req: CreatePalitraReq): CreatePalitraReqBody {
     access: toAccessBody(req.access),
     source_file_name: req.sourceFileName,
     last_uploaded_at_ts: req.lastUploadedAtTs,
+  };
+}
+
+type UpdatePalitraReqBody = CreatePalitraReqBody & {
+  geometry_id: number;
+};
+
+function toUpdatePalitraReqBody(req: CreatePalitraReq, geometryId: number): UpdatePalitraReqBody {
+  return {
+    ...toCreatePalitraReqBody(req),
+    geometry_id: geometryId,
   };
 }
 
@@ -225,7 +249,39 @@ async function postMultipartVoid(url: string, formData: FormData): Promise<void>
 
 export async function listPalitras(): Promise<Palitra[]> {
   const data = await postJson<PalitraLike[]>('/api/palitra/list');
-  return (data ?? []).map(normalizePalitra);
+  primaryGeometryIdByPalitraId.clear();
+
+  return (data ?? []).map((entry) => normalizePalitra(entry));
+}
+
+async function getPrimaryGeometryIdForUpdate(palitraId: number): Promise<number | null> {
+  const cached = primaryGeometryIdByPalitraId.get(palitraId);
+  if (cached !== undefined) {
+    return cached;
+  }
+
+  const data = await postJson<PalitraReadWithGeometriesLike>(`/api/palitra/v2/read/${palitraId}`);
+  const geometryId = pickPrimaryGeometryIdForUpdate(data?.geometries);
+
+  if (geometryId !== null) {
+    primaryGeometryIdByPalitraId.set(palitraId, geometryId);
+  }
+
+  return geometryId;
+}
+
+function pickPrimaryGeometryIdForUpdate(geometries: PalitraGeometryDetailsLike[] | null | undefined): number | null {
+  if (!Array.isArray(geometries) || geometries.length === 0) {
+    return null;
+  }
+
+  for (const geometry of geometries) {
+    const geometryId = normalizeOptionalNumber(geometry?.id);
+    if (geometryId !== null) {
+      return geometryId;
+    }
+  }
+  return null;
 }
 
 export async function deletePalitra(palitraId: number): Promise<void> {
@@ -238,8 +294,36 @@ export async function createPalitra(req: CreatePalitraReq): Promise<Palitra> {
 }
 
 export async function updatePalitra(palitraId: number, req: CreatePalitraReq): Promise<PalitraDetails> {
-  const data = await postJson<PalitraDetailsLike>(`/api/palitra/update/${palitraId}`, toCreatePalitraReqBody(req));
-  return normalizePalitraDetails(data);
+  const geometryId = await getPrimaryGeometryIdForUpdate(palitraId);
+  if (geometryId === null) {
+    primaryGeometryIdByPalitraId.delete(palitraId);
+    const data = await postJson<PalitraDetailsLike>(`/api/palitra/update/${palitraId}`, toCreatePalitraReqBody(req));
+    return normalizePalitraDetails(data);
+  }
+
+  const data = await postJson<PalitraReadWithGeometriesLike>(
+    `/api/palitra/v2/update/${palitraId}`,
+    toUpdatePalitraReqBody(req, geometryId),
+  );
+
+  const updatedGeometryId = pickPrimaryGeometryIdForUpdate(data?.geometries);
+  if (updatedGeometryId !== null) {
+    primaryGeometryIdByPalitraId.set(palitraId, updatedGeometryId);
+  } else {
+    primaryGeometryIdByPalitraId.delete(palitraId);
+  }
+
+  const normalizedDetails = normalizePalitraDetails({
+    palitra: data?.palitra,
+    points: [],
+  });
+  return {
+    ...normalizedDetails,
+    palitra: {
+      ...normalizedDetails.palitra,
+      colorHex: req.colorHex,
+    },
+  };
 }
 
 export async function uploadPalitraPoints(palitraId: number, file: File): Promise<void> {
@@ -259,7 +343,7 @@ export async function createPalitraWithKmz(req: CreatePalitraReq, file: File): P
 }
 
 export async function createPalitraBasicWithKmz(req: CreatePalitraReq, file: File): Promise<Palitra> {
-  return createPalitraWithKmzVia('/api/palitra/create-palitra-basic', req, file);
+  return createPalitraWithKmzVia('/api/palitra/v2/create-palitra-basic', req, file);
 }
 
 async function createPalitraWithKmzVia(url: string, req: CreatePalitraReq, file: File): Promise<Palitra> {

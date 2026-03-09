@@ -207,7 +207,7 @@ pub async fn list_all_palitras_v2(
     let mut result = Vec::with_capacity(palitra_ids.len());
     for palitra_id in palitra_ids {
         result.push(
-            render_palitra_v2(Either::Right(palitra_id), dbx)
+            render_palitra_v2_without_points(Either::Right(palitra_id), dbx)
                 .await
                 .c(h!())?,
         );
@@ -1337,6 +1337,31 @@ async fn render_palitra_v2<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
+    render_palitra_v2_inner(e_palitra_model, dbx, true)
+        .await
+        .c(h!())
+}
+
+async fn render_palitra_v2_without_points<'a, 'async_trait, C>(
+    e_palitra_model: Either<palitra::Model, i64>,
+    dbx: &'a C,
+) -> anyhow::Result<PalitraReadV2>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    render_palitra_v2_inner(e_palitra_model, dbx, false)
+        .await
+        .c(h!())
+}
+
+async fn render_palitra_v2_inner<'a, 'async_trait, C>(
+    e_palitra_model: Either<palitra::Model, i64>,
+    dbx: &'a C,
+    include_points: bool,
+) -> anyhow::Result<PalitraReadV2>
+where
+    C: ConnectionTrait + 'async_trait,
+{
     let palitra = render_palitra(e_palitra_model, dbx).await.c(h!())?;
     let palitra_geometry_models =
         order_by_primary_geometry(palitra_geometry::Entity::find())
@@ -1349,7 +1374,7 @@ where
         .iter()
         .map(|palitra_geometry| palitra_geometry.id)
         .collect_vec();
-    let points = if palitra_geometry_ids.is_empty() {
+    let points = if !include_points || palitra_geometry_ids.is_empty() {
         vec![]
     } else {
         palitra_point::Entity::find()

@@ -19,7 +19,7 @@ describe('transformData', () => {
         });
     });
 
-    it('should aggregate data into 3-day periods for 28 to 120 days', () => {
+    it('should bucket sparse data into 3-day period starts for 28 to 120 days', () => {
 const stubData28To120Days: Data = {
     data_per_date: {
         "2025-01-01": { count_by_group_name: { groupA: 10, groupB: 20 } },
@@ -44,44 +44,34 @@ const stubData28To120Days: Data = {
 };
 
         const result = transformData(stubData28To120Days);
-     expect(result).toEqual({
-            "2025-01-01": { count_by_group_name: { groupA: 10, groupB: 20 } }, // Aggregated for 01-03
-            "2025-01-04": { count_by_group_name: { groupA: 5 + 8 + 7, groupB: 15 + 12 + 14 } }, // Aggregated for 04-06
-            "2025-01-10": { count_by_group_name: { groupA: 6 + 9 + 12, groupB: 13 + 11 + 18 } }, // Aggregated for 10-12
-            "2025-02-01": { count_by_group_name: { groupA: 11 + 14 + 13, groupB: 19 + 22 + 21 } }, // Aggregated for 01-03
-            "2025-02-28": { count_by_group_name: { groupA: 16, groupB: 24 } }, // Single day
-            "2025-03-01": { count_by_group_name: { groupA: 17, groupB: 25 } }, // Single day
-            "2025-03-07": { count_by_group_name: { groupA: 18, groupB: 26 } }, // Single day
-            "2025-03-15": { count_by_group_name: { groupA: 19, groupB: 27 } }, // Single day
-        });
+
+        // Known dates are shifted to their period start (1st/4th/7th/etc day of month)
+        expect(result["2025-01-01"]).toEqual({ count_by_group_name: { groupA: 10, groupB: 20 } });
+        expect(result["2025-01-04"]).toEqual({ count_by_group_name: { groupA: 5, groupB: 15 } });
+        expect(result["2025-01-10"]).toEqual({ count_by_group_name: { groupA: 8, groupB: 12 } });
+        expect(result["2025-02-01"]).toEqual({ count_by_group_name: { groupA: 12, groupB: 18 } });
+        expect(result["2025-03-01"]).toEqual({ count_by_group_name: { groupA: 16, groupB: 24 } });
+
+        // Empty synthetic buckets are present for gap-filling
+        expect(result["2025-01-07"]).toEqual({ count_by_group_name: {} });
+        expect(result["2025-02-04"]).toEqual({ count_by_group_name: {} });
     });
 
-    it('should aggregate data into weekly periods for 120 days or more', () => {
+    it('should aggregate into weekly buckets for 120+ day ranges', () => {
         const stubData: Data = {
             data_per_date: {
                 "2025-01-01": { count_by_group_name: { groupA: 10, groupB: 20 } },
-                "2025-01-08": { count_by_group_name: { groupA: 5, groupB: 15 } },
-                "2025-01-15": { count_by_group_name: { groupA: 8, groupB: 12 } },
-                "2025-01-22": { count_by_group_name: { groupA: 7, groupB: 14 } },
-                "2025-02-01": { count_by_group_name: { groupA: 6, groupB: 13 } },
-                "2025-02-08": { count_by_group_name: { groupA: 9, groupB: 11 } },
-                "2025-02-15": { count_by_group_name: { groupA: 12, groupB: 18 } },
-                "2025-03-01": { count_by_group_name: { groupA: 10, groupB: 20 } },
+                "2025-01-05": { count_by_group_name: { groupA: 2, groupB: 3 } },
                 "2025-03-08": { count_by_group_name: { groupA: 5, groupB: 15 } },
+                "2025-05-20": { count_by_group_name: { groupA: 7, groupB: 11 } },
             }
         };
 
         const result = transformData(stubData);
-        expect(result).toEqual({
-            "2025-01-01": { count_by_group_name: { groupA: 10, groupB: 20 } }, // Week starting on Jan 1
-            "2025-01-08": { count_by_group_name: { groupA: 5, groupB: 15 } }, // Week starting on Jan 8
-            "2025-01-15": { count_by_group_name: { groupA: 8, groupB: 12 } }, // Week starting on Jan 15
-            "2025-01-22": { count_by_group_name: { groupA: 7, groupB: 14 } }, // Week starting on Jan 22
-            "2025-02-01": { count_by_group_name: { groupA: 6, groupB: 13 } }, // Week starting on Feb 1
-            "2025-02-08": { count_by_group_name: { groupA: 9, groupB: 11 } }, // Week starting on Feb 8
-            "2025-02-15": { count_by_group_name: { groupA: 12, groupB: 18 } }, // Week starting on Feb 15
-            "2025-03-01": { count_by_group_name: { groupA: 10, groupB: 20 } }, // Week starting on Mar 1
-            "2025-03-08": { count_by_group_name: { groupA: 5, groupB: 15 } }, // Week starting on Mar 8
-        });
+
+        expect(result["2024-12-29"]).toEqual({ count_by_group_name: { groupA: 10, groupB: 20 } });
+        expect(result["2025-01-05"]).toEqual({ count_by_group_name: { groupA: 2, groupB: 3 } });
+        expect(result["2025-03-02"]).toEqual({ count_by_group_name: { groupA: 5, groupB: 15 } });
+        expect(result["2025-05-18"]).toEqual({ count_by_group_name: { groupA: 7, groupB: 11 } });
     });
 });

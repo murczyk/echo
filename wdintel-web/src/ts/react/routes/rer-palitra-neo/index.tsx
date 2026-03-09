@@ -145,6 +145,7 @@ export function RerPalitraNeoPage() {
         onClose={page.resetCreateFlow}
         onExited={page.onCreateDrawerExited}
         createInFlight={page.createInFlight}
+        referenceDataReady={page.referenceDataReady}
         kmzAnalyzing={page.kmzAnalyzing}
         kmzFile={page.kmzFile}
         kmzAnalysis={page.kmzAnalysis}

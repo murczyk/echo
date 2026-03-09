@@ -4,7 +4,6 @@ import {
   Box,
   Button,
   Checkbox,
-  Chip,
   CircularProgress,
   Drawer,
   FormControlLabel,
@@ -22,6 +21,7 @@ import React from 'react';
 
 import { AnalyzeKmzResponse, AreaOfResponsibility, MyScope, Organism, User } from '../../../../../Bindings';
 import { pageDrawerBackdropSx } from '../../../components/loadingOverlayStyles';
+import { PowerChip } from '../../../components/PowerChip';
 import { isFormValid } from '../helpers';
 import { KmzColorOption, PalitraCreateMode, PalitraFormState } from '../types';
 import { AccessEditor } from './AccessEditor';
@@ -31,6 +31,7 @@ type Props = {
   onClose: () => void;
   onExited: () => void;
   createInFlight: boolean;
+  referenceDataReady: boolean;
   kmzAnalyzing: boolean;
   kmzFile: File | null;
   kmzAnalysis: AnalyzeKmzResponse | null;
@@ -59,6 +60,7 @@ function CreatePalitraDrawerComponent({
   onClose,
   onExited,
   createInFlight,
+  referenceDataReady,
   kmzAnalyzing,
   kmzFile,
   kmzAnalysis,
@@ -94,9 +96,10 @@ function CreatePalitraDrawerComponent({
   const dismissBlocked = createInFlight || kmzAnalyzing;
   const canContinueFromKmzStep = Boolean(kmzFile) && hasSuccessfulKmzAnalysis && !kmzAnalyzing;
   const requiresKmzSelection = isAdvancedMode && kmzColorOptions.length > 0;
-  const isCreateFormValid = isAdvancedMode ? isFormValid(createForm) : createForm.name.trim().length > 0;
+  const isCreateFormValid = isFormValid(createForm);
   const canCreate =
     createInFlight ||
+    !referenceDataReady ||
     !kmzFile ||
     !hasSuccessfulKmzAnalysis ||
     !isCreateFormValid ||
@@ -205,6 +208,7 @@ function CreatePalitraDrawerComponent({
               ) : null}
 
               {kmzAnalysis ? <Alert severity="success">KMZ проаналізовано, кольорів: {kmzAnalysis.topColors.length}</Alert> : null}
+              {!referenceDataReady ? <Alert severity="info">Завантажуємо довідники (логіни, підрозділи, смуги)…</Alert> : null}
             </Stack>
           ) : null}
 
@@ -277,10 +281,17 @@ function CreatePalitraDrawerComponent({
                             }
                             label={
                               <Stack direction="row" spacing={1} alignItems="center">
-                                <Chip
-                                  size="small"
+                                <PowerChip
                                   label={option.colorHex}
-                                  sx={{ backgroundColor: option.colorHex, color: '#fff', fontFamily: 'monospace' }}
+                                  size="small"
+                                  fontSize="0.875rem"
+                                  fontWeight={600}
+                                  backgroundColor={option.colorHex}
+                                  autoTextContrast
+                                  interactive={false}
+                                  unselectedOpacity={1}
+                                  fontFamily="monospace"
+                                  unselectedBorderColor="transparent"
                                 />
                                 <Typography variant="caption">топ #{option.rank} ({option.count})</Typography>
                               </Stack>
@@ -314,18 +325,16 @@ function CreatePalitraDrawerComponent({
                   fullWidth
                 />
 
-                {isAdvancedMode ? (
-                  <AccessEditor
-                    form={createForm}
-                    onChange={(next) => onSetCreateForm(() => next)}
-                    user={user}
-                    myScope={myScope}
-                    organisms={organisms}
-                    aors={aors}
-                    allLogins={allLogins}
-                    availableAccessTypes={availableAccessTypes}
-                  />
-                ) : null}
+                <AccessEditor
+                  form={createForm}
+                  onChange={(next) => onSetCreateForm(() => next)}
+                  user={user}
+                  myScope={myScope}
+                  organisms={organisms}
+                  aors={aors}
+                  allLogins={allLogins}
+                  availableAccessTypes={availableAccessTypes}
+                />
               </Stack>
             </Stack>
           ) : null}

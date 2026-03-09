@@ -2711,6 +2711,42 @@ palitraDetailsEncoder struct =
         ]
 
 
+type alias PalitraGeometryDetails =
+    { id : Int
+    , colorHex : String
+    , sourceFileName : Maybe String
+    , lastUploadedAtTs : Maybe Int
+    , geometry : Maybe Geometry
+    , points : List PalitraPoint
+    }
+
+
+palitraGeometryDetailsEncoder : PalitraGeometryDetails -> Json.Encode.Value
+palitraGeometryDetailsEncoder struct =
+    Json.Encode.object
+        [ ( "id", Json.Encode.int struct.id )
+        , ( "color_hex", Json.Encode.string struct.colorHex )
+        , ( "source_file_name", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.sourceFileName )
+        , ( "last_uploaded_at_ts", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.lastUploadedAtTs )
+        , ( "geometry", (Maybe.withDefault Json.Encode.null << Maybe.map geometryEncoder) struct.geometry )
+        , ( "points", Json.Encode.list palitraPointEncoder struct.points )
+        ]
+
+
+type alias PalitraReadV2 =
+    { palitra : Palitra
+    , geometries : List PalitraGeometryDetails
+    }
+
+
+palitraReadV2Encoder : PalitraReadV2 -> Json.Encode.Value
+palitraReadV2Encoder struct =
+    Json.Encode.object
+        [ ( "palitra", palitraEncoder struct.palitra )
+        , ( "geometries", Json.Encode.list palitraGeometryDetailsEncoder struct.geometries )
+        ]
+
+
 type alias PalitraPoint =
     { coords : Coords
     , label : Maybe String
@@ -8207,6 +8243,24 @@ palitraDetailsDecoder =
     Json.Decode.succeed PalitraDetails
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "palitra" palitraDecoder))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "points" (Json.Decode.list palitraPointDecoder)))
+
+
+palitraGeometryDetailsDecoder : Json.Decode.Decoder PalitraGeometryDetails
+palitraGeometryDetailsDecoder =
+    Json.Decode.succeed PalitraGeometryDetails
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "color_hex" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source_file_name" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_uploaded_at_ts" (Json.Decode.nullable Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "geometry" (Json.Decode.nullable geometryDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "points" (Json.Decode.list palitraPointDecoder)))
+
+
+palitraReadV2Decoder : Json.Decode.Decoder PalitraReadV2
+palitraReadV2Decoder =
+    Json.Decode.succeed PalitraReadV2
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "palitra" palitraDecoder))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "geometries" (Json.Decode.list palitraGeometryDetailsDecoder)))
 
 
 palitraPointDecoder : Json.Decode.Decoder PalitraPoint
