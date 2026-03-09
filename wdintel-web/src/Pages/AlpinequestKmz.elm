@@ -187,7 +187,7 @@ pageBlock model =
                   :: List.intersperse (text " ") (List.map renderExtension extensions)
               )
         , blockquote [ class "mb-3 text-sm text-yellow-600 border-l-4 border-yellow-600 pl-4" ]
-              [ p [] [ text "ⓘ Формат .pgd наразі не підтримується" ] ]
+              [ p [] [ text "ⓘ Формат .pgd наразі підтримується в експериментальному режимі" ] ]
         , Button.new { label = " додати файл", onClick = UploadAlpinequestFile }
             |> Button.withIcon [ buttonIcon ]
             |> Button.view
