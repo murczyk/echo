@@ -31,6 +31,7 @@ type Props = {
   onClose: () => void;
   onExited: () => void;
   createInFlight: boolean;
+  referenceDataReady: boolean;
   kmzAnalyzing: boolean;
   kmzFile: File | null;
   kmzAnalysis: AnalyzeKmzResponse | null;
@@ -59,6 +60,7 @@ function CreatePalitraDrawerComponent({
   onClose,
   onExited,
   createInFlight,
+  referenceDataReady,
   kmzAnalyzing,
   kmzFile,
   kmzAnalysis,
@@ -97,6 +99,7 @@ function CreatePalitraDrawerComponent({
   const isCreateFormValid = isFormValid(createForm);
   const canCreate =
     createInFlight ||
+    !referenceDataReady ||
     !kmzFile ||
     !hasSuccessfulKmzAnalysis ||
     !isCreateFormValid ||
@@ -205,6 +208,7 @@ function CreatePalitraDrawerComponent({
               ) : null}
 
               {kmzAnalysis ? <Alert severity="success">KMZ проаналізовано, кольорів: {kmzAnalysis.topColors.length}</Alert> : null}
+              {!referenceDataReady ? <Alert severity="info">Завантажуємо довідники (логіни, підрозділи, смуги)…</Alert> : null}
             </Stack>
           ) : null}
 

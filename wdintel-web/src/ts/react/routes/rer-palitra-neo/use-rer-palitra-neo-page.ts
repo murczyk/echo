@@ -7,11 +7,12 @@ import {
   createPalitraBasicWithKmz,
   createPalitraWithKmz,
   deletePalitra,
-  fetchPalitraBootstrapData,
+  fetchPalitraReferenceData,
   listPalitras,
   updatePalitra,
   uploadPalitraPoints,
 } from '../../services/api/palitra';
+import { fetchCurrentUser } from '../../services/api/user';
 import {
   applyRestrictedAccess,
   buildPalitraNameWithSuffix,
@@ -89,6 +90,7 @@ export function useRerPalitraNeoPage() {
   const [allLogins, setAllLogins] = React.useState<string[]>([]);
 
   const [loading, setLoading] = React.useState(true);
+  const [referenceDataReady, setReferenceDataReady] = React.useState(false);
   const [inFlightDeleteId, setInFlightDeleteId] = React.useState<number | null>(null);
   const [inFlightUploadId, setInFlightUploadId] = React.useState<number | null>(null);
   const [deleteDialogPalitra, setDeleteDialogPalitra] = React.useState<Palitra | null>(null);
@@ -177,19 +179,63 @@ export function useRerPalitraNeoPage() {
 
     async function loadData() {
       setLoading(true);
+      setReferenceDataReady(false);
       setError(null);
 
       try {
-        const data = await fetchPalitraBootstrapData();
+        const currentUser = await fetchCurrentUser();
         if (cancelled) return;
 
-        setUser(data.user);
-        setPalitras(data.palitras);
-        setMyScope(data.myScope);
-        setAllLogins(data.logins?.users.map((entry) => entry.login) ?? []);
-        setOrganisms(data.organisms ?? []);
-        setAors(data.aors ?? []);
-        setCreateForm(getInitialCreateForm(data.user, data.myScope));
+        setUser(currentUser);
+
+        const palitrasPromise = listPalitras();
+        const referencesPromise = fetchPalitraReferenceData(currentUser);
+
+        try {
+          const references = await referencesPromise;
+          if (cancelled) return;
+
+          setMyScope(references.myScope);
+          setAllLogins(references.logins?.users.map((entry) => entry.login) ?? []);
+          setOrganisms(references.organisms ?? []);
+          setAors(references.aors ?? []);
+          setReferenceDataReady(true);
+          setCreateForm((createForm) => {
+            const initialCreateForm = getInitialCreateForm(currentUser, references.myScope);
+
+            return {
+              ...createForm,
+              ...initialCreateForm,
+              name: createForm.name,
+              colorHex: createForm.colorHex,
+            };
+          });
+        } catch (referencesError) {
+          if (cancelled) return;
+
+          if (isUnauthorizedError(referencesError)) {
+            window.location.assign('/login');
+            return;
+          }
+
+          setError({ text: `Не вдалося завантажити довідники палітр: ${formatErrorMessage(referencesError)}` });
+        }
+
+        try {
+          const palitras = await palitrasPromise;
+          if (cancelled) return;
+
+          setPalitras(palitras);
+        } catch (palitrasError) {
+          if (cancelled) return;
+
+          if (isUnauthorizedError(palitrasError)) {
+            window.location.assign('/login');
+            return;
+          }
+
+          setError({ text: `Не вдалося завантажити палітри: ${formatErrorMessage(palitrasError)}` });
+        }
       } catch (loadError) {
         if (cancelled) return;
 
@@ -525,14 +571,14 @@ export function useRerPalitraNeoPage() {
         return;
       }
 
-      await createPalitraBasicWithKmz(
+      const createdPalitra = await createPalitraBasicWithKmz(
         toCreateReq({
           ...normalizedForm,
           colorHex: selectedColorFromKmz,
         }),
         kmzFile,
       );
-      await reloadPalitras();
+      setPalitras((prev) => [createdPalitra, ...prev]);
       resetCreateFlow();
     } catch (createError) {
       if (isUnauthorizedError(createError)) {
@@ -595,6 +641,7 @@ export function useRerPalitraNeoPage() {
     createMode,
     createForm,
     createInFlight,
+    referenceDataReady,
     kmzFile,
     kmzAnalysis,
     kmzAnalyzing,
