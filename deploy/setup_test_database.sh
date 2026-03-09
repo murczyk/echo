@@ -12,17 +12,36 @@ wait_for_postgres() {
     local pg_port="$2"
     local pg_user="$3"
     local maintenance_db="$4"
-    local timeout_secs="${POSTGRES_STARTUP_TIMEOUT_SECS:-60}"
+    local timeout_secs="${POSTGRES_STARTUP_TIMEOUT_SECS:-180}"
     local i
+    local last_error=""
 
-    echo "Waiting for PostgreSQL to accept connections..."
+    echo "Waiting for PostgreSQL to accept connections (host=$pg_host port=$pg_port user=$pg_user db=$maintenance_db timeout=${timeout_secs}s)..."
     for ((i = 1; i <= timeout_secs; i++)); do
         if psql -h "$pg_host" -p "$pg_port" -U "$pg_user" -d "$maintenance_db" -tAc "SELECT 1" >/dev/null 2>&1; then
             echo "PostgreSQL is ready"
             return 0
         fi
+
+        last_error="$(psql -h "$pg_host" -p "$pg_port" -U "$pg_user" -d "$maintenance_db" -tAc "SELECT 1" 2>&1 || true)"
+        if [[ "$last_error" == *"password authentication failed"* ]] || \
+           [[ "$last_error" == *"role \""* && "$last_error" == *"does not exist"* ]] || \
+           [[ "$last_error" == *"no pg_hba.conf entry"* ]]; then
+            echo "Error: PostgreSQL connection failed with a non-retryable auth/config error:"
+            echo "$last_error"
+            return 1
+        fi
+
         if [ "$i" -eq "$timeout_secs" ]; then
             echo "Error: PostgreSQL did not become ready within ${timeout_secs} seconds"
+            if [ -n "$last_error" ]; then
+                echo "Last connection error:"
+                echo "$last_error"
+            fi
+            if command -v pg_isready >/dev/null 2>&1; then
+                echo "pg_isready output:"
+                pg_isready -h "$pg_host" -p "$pg_port" -U "$pg_user" || true
+            fi
             return 1
         fi
         sleep 1

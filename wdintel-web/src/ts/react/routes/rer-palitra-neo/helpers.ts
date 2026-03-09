@@ -84,7 +84,9 @@ export function toCreateReq(form: PalitraFormState): CreatePalitraReq {
 
 export function getInitialCreateForm(user: User | null, myScope: MyScope | null): PalitraFormState {
   const available = getAvailableAccessTypes(user, myScope);
-  const defaultAccessType = available[0] ?? 'logins';
+  const defaultOrganismIds = myScope?.organism ? [myScope.organism.id] : [];
+  const defaultAccessType =
+    defaultOrganismIds.length > 0 && available.includes('organisms') ? 'organisms' : (available[0] ?? 'logins');
 
   if (isAdmin(user)) {
     return {
@@ -92,7 +94,7 @@ export function getInitialCreateForm(user: User | null, myScope: MyScope | null)
       colorHex: DEFAULT_COLOR_HEX,
       accessType: defaultAccessType,
       logins: [],
-      organismIds: [],
+      organismIds: defaultOrganismIds,
       aorIds: [],
     };
   }
@@ -102,8 +104,24 @@ export function getInitialCreateForm(user: User | null, myScope: MyScope | null)
     colorHex: DEFAULT_COLOR_HEX,
     accessType: defaultAccessType,
     logins: user?.name ? [user.name] : [],
-    organismIds: myScope?.organism ? [myScope.organism.id] : [],
+    organismIds: defaultOrganismIds,
     aorIds: myScope?.aorIds ?? [],
+  };
+}
+
+export function withDefaultOrganismAccess(
+  form: PalitraFormState,
+  accessType: AccessType,
+  myScope: MyScope | null,
+): PalitraFormState {
+  if (accessType !== 'organisms') return { ...form, accessType };
+  if (form.organismIds.length > 0) return { ...form, accessType };
+  if (!myScope?.organism) return { ...form, accessType };
+
+  return {
+    ...form,
+    accessType,
+    organismIds: [myScope.organism.id],
   };
 }
 

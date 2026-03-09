@@ -1,4 +1,4 @@
-import { Box, Button, Chip, CircularProgress, Fab, Paper, Typography } from '@mui/material';
+import { Box, Button, CircularProgress, Fab, Paper, Typography } from '@mui/material';
 import React from 'react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 
@@ -13,6 +13,7 @@ import { profileLabel } from './utils';
 import type { MessageFeedState } from './utils';
 import { FeedFilterPanel } from './FeedFilterPanel';
 import { MessageCard } from './MessageCard';
+import { PowerChip } from '../../components/PowerChip';
 
 /** When the first visible item is within this many items of the top, trigger load earlier (so user doesn't hit top and wait). */
 const LOAD_EARLIER_BUFFER_ITEMS = 6;
@@ -375,7 +376,14 @@ export const FeedColumn = React.forwardRef<FeedColumnHandle, FeedColumnProps>(fu
               }}
             >
               {!loadingNewer && arrowResultMessage != null && (
-                <Chip size="small" color="default" label={arrowResultMessage} sx={{ fontWeight: 500 }} />
+                <PowerChip
+                  size="small"
+                  label={arrowResultMessage}
+                  interactive={false}
+                  unselectedOpacity={1}
+                  color="default"
+                  sx={{ fontWeight: 500 }}
+                />
               )}
               <Box sx={{ position: 'relative', display: 'inline-flex' }}>
                 <Fab
@@ -414,10 +422,12 @@ export const FeedColumn = React.forwardRef<FeedColumnHandle, FeedColumnProps>(fu
                   digestCount > 0 &&
                   !isWatchMode &&
                   arrowResultMessage == null && (
-                    <Chip
+                    <PowerChip
                       size="small"
-                      color="primary"
                       label={digestCount}
+                      selected
+                      interactive={false}
+                      unselectedOpacity={1}
                       sx={{
                         position: 'absolute',
                         top: -6,

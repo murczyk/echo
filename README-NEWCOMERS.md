@@ -57,7 +57,7 @@ sudo -u postgres psql -c "CREATE USER wd WITH PASSWORD 'fee_-_-_-FnoeKFBeebu87bf
 sudo -u postgres psql -c "CREATE DATABASE wd OWNER wd;"
 sudo -u postgres psql -c "CREATE EXTENSION IF NOT EXISTS postgis WITH SCHEMA public;" wd
 sudo -u postgres psql -c "ALTER TABLE public.spatial_ref_sys OWNER TO wd;" wd
-sudo -u postgres pg_restore --verbose -d wd < deploy/wd-init.pgrestore 
+sudo -u postgres pg_restore --verbose -d wd < deploy/wd-init.pgrestore
 ```
 
 ## Build and start backend (dev-back)

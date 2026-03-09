@@ -4,8 +4,7 @@ import Auth
 import Effect as E exposing (Effect)
 import Html exposing (a, button, div, i, node, span, text)
 import Html.Attributes exposing (attribute, class, href, style, type_)
-import Html.Events exposing (preventDefaultOn)
-import Json.Decode as Decode
+import Html.Events exposing (onClick)
 import Layouts
 import Page exposing (Page)
 import PagePorts.RerCallsignsNeoPorts as Ports
@@ -76,20 +75,17 @@ subscriptions _ =
 view : Auth.User -> Model -> View Msg
 view user model =
     let
-        onCloseBannerClick =
-            preventDefaultOn "click" (Decode.succeed ( CloseBetaBanner, True ))
-
-        pageContainerClass =
-            if model.showBetaBanner then
-                "app-shell-fill-height box-border min-h-0 pt-4 px-6 w-full flex flex-col gap-4 overflow-visible lg:overflow-hidden"
-
-            else
-                "app-shell-fill-height box-border min-h-0 pt-0 px-6 w-full flex flex-col gap-4 overflow-visible lg:overflow-hidden"
-
         betaBannerNode =
-            if model.showBetaBanner then
+            div
+                [ class <|
+                    if model.showBetaBanner then
+                        "shrink-0"
+
+                    else
+                        "hidden"
+                ]
                 [ div
-                    [ class "rounded-lg border border-amber-500/40 bg-amber-100 px-4 py-3 text-amber-900 shrink-0" ]
+                    [ class "rounded-lg border border-amber-500/40 bg-amber-100 px-4 py-3 text-amber-900" ]
                     [ div [ class "flex items-start justify-between gap-4" ]
                         [ div [ class "min-w-0" ]
                             [ span [ class "font-semibold" ] [ text "Бета-версія: " ]
@@ -107,29 +103,25 @@ view user model =
                         , button
                             [ class "shrink-0 inline-flex items-center justify-center rounded-sm p-1 text-amber-900/80 hover:text-amber-900 hover:bg-amber-200/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-warning-dark)]"
                             , type_ "button"
-                            , onCloseBannerClick
+                            , onClick CloseBetaBanner
                             , attribute "aria-label" "Закрити бета-банер"
                             ]
                             [ i [ class "bi bi-x-lg text-sm" ] [] ]
                         ]
                     ]
                 ]
-
-            else
-                []
     in
     { title = "позивні"
     , body =
-        [ div [ class pageContainerClass ]
-            (betaBannerNode
-                ++ [ div [ class "flex-1 min-h-0 w-full" ]
-                        [ node "rer-callsigns-neo"
-                            [ attribute "data-auth-user-roles" (String.join "," user.roles)
-                            , class "block w-full h-full"
-                            ]
-                            []
-                        ]
-                   ]
-            )
+        [ div [ class "app-shell-fill-height box-border min-h-0 px-6 w-full flex flex-col gap-4 overflow-visible lg:overflow-hidden" ]
+            [ betaBannerNode
+            , div [ class "flex-1 min-h-0 w-full" ]
+                [ node "rer-callsigns-neo"
+                    [ attribute "data-auth-user-roles" (String.join "," user.roles)
+                    , class "block w-full h-full"
+                    ]
+                    []
+                ]
+            ]
         ]
     }

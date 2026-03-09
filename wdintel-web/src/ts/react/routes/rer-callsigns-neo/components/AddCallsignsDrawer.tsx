@@ -88,9 +88,8 @@ export function AddCallsignsDrawer({
   const [unitSearchInput, setUnitSearchInput] = React.useState('');
   const handleCloseDrawer = React.useCallback(() => {
     setUnitSearchInput('');
-    onAddUnitIdChange(null);
     onClose();
-  }, [onAddUnitIdChange, onClose]);
+  }, [onClose]);
 
   const filterUnits = React.useCallback((options: Unit[], inputValue: string) => {
     const normalizedInput = inputValue.toLocaleLowerCase('uk-UA').replace(/\s+/g, ' ').trim();
@@ -107,9 +106,8 @@ export function AddCallsignsDrawer({
   React.useEffect(() => {
     if (!open) {
       setUnitSearchInput('');
-      onAddUnitIdChange(null);
     }
-  }, [open, onAddUnitIdChange]);
+  }, [open]);
 
   return (
     <Drawer

@@ -9,7 +9,10 @@ export type AnalysisMapFeaturesState = {
 export type AnalysisMapStoredState = {
   features: AnalysisMapFeaturesState;
   visiblePalitraIds: number[];
+  visiblePalitraIdsNamespace: VisiblePalitraIdsNamespace;
 };
+
+type VisiblePalitraIdsNamespace = 'legacy_palitra_id' | 'geometry_id';
 
 const DEFAULT_FEATURES_STATE: AnalysisMapFeaturesState = {
   palitras: true,
@@ -19,7 +22,8 @@ const DEFAULT_FEATURES_STATE: AnalysisMapFeaturesState = {
 
 const DEFAULT_STATE: AnalysisMapStoredState = {
   features: DEFAULT_FEATURES_STATE,
-  visiblePalitraIds: []
+  visiblePalitraIds: [],
+  visiblePalitraIdsNamespace: 'geometry_id'
 };
 
 export class AnalysisMapStateStore {
@@ -47,7 +51,8 @@ export class AnalysisMapStateStore {
   setVisiblePalitraIds(ids: number[]): AnalysisMapStoredState {
     const next: AnalysisMapStoredState = {
       ...this.state,
-      visiblePalitraIds: normalizeVisibleIds(ids)
+      visiblePalitraIds: normalizeVisibleIds(ids),
+      visiblePalitraIdsNamespace: 'geometry_id'
     };
     return this.commit(next);
   }
@@ -59,7 +64,8 @@ export class AnalysisMapStateStore {
       : [palitraId, ...visibleIds];
     return this.commit({
       ...this.state,
-      visiblePalitraIds: nextVisible
+      visiblePalitraIds: nextVisible,
+      visiblePalitraIdsNamespace: 'geometry_id'
     });
   }
 
@@ -69,18 +75,72 @@ export class AnalysisMapStateStore {
     }
 
     if (palitras.length === 0) {
-      if (this.state.visiblePalitraIds.length > 0) {
-        return this.commit({ ...this.state, visiblePalitraIds: [] });
+      if (
+        this.state.visiblePalitraIds.length > 0 ||
+        this.state.visiblePalitraIdsNamespace !== 'geometry_id'
+      ) {
+        return this.commit({
+          ...this.state,
+          visiblePalitraIds: [],
+          visiblePalitraIdsNamespace: 'geometry_id',
+        });
       }
       return this.state;
     }
 
     const existingIds = new Set(palitras.map(palitraDetails => palitraDetails.palitra.id));
-    const filtered = this.state.visiblePalitraIds.filter(id => existingIds.has(id));
-    if (arraysEqual(filtered, this.state.visiblePalitraIds)) {
+    let visibleIds = this.state.visiblePalitraIds;
+    let namespace = this.state.visiblePalitraIdsNamespace;
+
+    if (namespace === 'legacy_palitra_id') {
+      const geometryIdsByApiPalitraId = new Map<number, number[]>();
+      palitras.forEach((palitraDetails) => {
+        const apiPalitraId = palitraDetails.palitra.api_palitra_id;
+        if (typeof apiPalitraId !== 'number') {
+          return;
+        }
+
+        const list = geometryIdsByApiPalitraId.get(apiPalitraId) ?? [];
+        list.push(palitraDetails.palitra.id);
+        geometryIdsByApiPalitraId.set(apiPalitraId, list);
+      });
+
+      const migrated: number[] = [];
+      const seen = new Set<number>();
+      this.state.visiblePalitraIds.forEach((storedId) => {
+        const mappedGeometryIds = geometryIdsByApiPalitraId.get(storedId);
+        if (mappedGeometryIds && mappedGeometryIds.length > 0) {
+          mappedGeometryIds.forEach((geometryId) => {
+            if (!seen.has(geometryId)) {
+              seen.add(geometryId);
+              migrated.push(geometryId);
+            }
+          });
+          return;
+        }
+
+        if (existingIds.has(storedId) && !seen.has(storedId)) {
+          seen.add(storedId);
+          migrated.push(storedId);
+        }
+      });
+
+      visibleIds = migrated;
+      namespace = 'geometry_id';
+    }
+
+    const filtered = visibleIds.filter(id => existingIds.has(id));
+    if (
+      arraysEqual(filtered, this.state.visiblePalitraIds) &&
+      namespace === this.state.visiblePalitraIdsNamespace
+    ) {
       return this.state;
     }
-    return this.commit({ ...this.state, visiblePalitraIds: filtered });
+    return this.commit({
+      ...this.state,
+      visiblePalitraIds: filtered,
+      visiblePalitraIdsNamespace: namespace,
+    });
   }
 
   private commit(next: AnalysisMapStoredState): AnalysisMapStoredState {
@@ -101,7 +161,8 @@ function loadStoredState(storageKey: string): AnalysisMapStoredState {
     const parsed = JSON.parse(stored);
     return {
       features: parseFeaturesState(parsed?.features),
-      visiblePalitraIds: parseVisiblePalitraIds(parsed?.visiblePalitraIds)
+      visiblePalitraIds: parseVisiblePalitraIds(parsed?.visiblePalitraIds),
+      visiblePalitraIdsNamespace: parseVisiblePalitraIdsNamespace(parsed?.visiblePalitraIdsNamespace)
     };
   } catch (e) {
     console.warn('[AnalysisMap] Failed to load state, using defaults:', e);
@@ -145,6 +206,13 @@ function normalizeVisibleIds(input: number[]): number[] {
   return parseVisiblePalitraIds(input);
 }
 
+function parseVisiblePalitraIdsNamespace(input: unknown): VisiblePalitraIdsNamespace {
+  if (input === 'geometry_id' || input === 'legacy_palitra_id') {
+    return input;
+  }
+  return 'legacy_palitra_id';
+}
+
 function isRecord(input: unknown): input is Record<string, unknown> {
   return !!input && typeof input === 'object' && !Array.isArray(input);
 }
@@ -166,5 +234,9 @@ function featuresEqual(a: AnalysisMapFeaturesState, b: AnalysisMapFeaturesState)
 }
 
 function stateEquals(a: AnalysisMapStoredState, b: AnalysisMapStoredState): boolean {
-  return featuresEqual(a.features, b.features) && arraysEqual(a.visiblePalitraIds, b.visiblePalitraIds);
+  return (
+    featuresEqual(a.features, b.features) &&
+    arraysEqual(a.visiblePalitraIds, b.visiblePalitraIds) &&
+    a.visiblePalitraIdsNamespace === b.visiblePalitraIdsNamespace
+  );
 }
