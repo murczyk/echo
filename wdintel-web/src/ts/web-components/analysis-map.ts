@@ -281,7 +281,8 @@ class AnalysisMap extends HTMLElement {
         const restoredPoint =
           clickedMessageId !== undefined ? this._findPointMarkerByMessageId(clickedMessageId) : null;
 
-        if (restoredPoint) {
+        const canOpenOnRestoredPoint = restoredPoint ? restoredPoint.getElement() !== null : false;
+        if (restoredPoint && canOpenOnRestoredPoint) {
           this._clickedPoint = restoredPoint;
           this._clickedLatLng = restoredPoint.getLatLng();
           this._clickedPoint.bindPopup(popupContent)
