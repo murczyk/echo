@@ -214,6 +214,7 @@ mod m20260304_124501_palitra_highlight_worker_job;
 mod m20260305_100926_palitra_tag_flag;
 mod m20260305_115200_add_callsign_additional_source;
 mod m20260306_101500_palitra_v2_indexes;
+mod m20260310_091035_add_sigint_inbox_item_metadata;
 
 pub struct Migrator;
 
@@ -435,6 +436,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260305_100926_palitra_tag_flag::Migration),
             Box::new(m20260305_115200_add_callsign_additional_source::Migration),
             Box::new(m20260306_101500_palitra_v2_indexes::Migration),
+            Box::new(m20260310_091035_add_sigint_inbox_item_metadata::Migration),
         ]
     }
 }

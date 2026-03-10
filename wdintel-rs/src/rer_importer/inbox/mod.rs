@@ -22,6 +22,7 @@ use sea_orm::*;
 use std::collections::BTreeSet;
 
 pub(crate) mod bl;
+mod metadata;
 pub mod query;
 
 #[post("/api/rer-importer/get-inbox-map")]
