@@ -1,3 +1,4 @@
+import React from 'react';
 import { Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, Stack } from '@mui/material';
 
 import type { Source, Unit } from '../../../../../Bindings';
@@ -18,6 +19,30 @@ type Props = {
 
 export function EditCallsignDialog({ open, form, units, sources, submitting, error, onClose, onChange, onSave }: Props) {
   const titleId = 'callsigns-edit-dialog-title';
+  const latestFormRef = React.useRef<CallsignEditForm | null>(form);
+
+  React.useEffect(() => {
+    latestFormRef.current = form;
+  }, [form]);
+
+  const handleFormChange = React.useCallback(
+    (next: CallsignEditForm) => {
+      latestFormRef.current = next;
+      onChange(next);
+    },
+    [onChange],
+  );
+
+  const handleCallsignAdditionalSourceIdsChange = React.useCallback(
+    (callsignAdditionalSourceIds: number[]) => {
+      const current = latestFormRef.current;
+      if (!current) return;
+      const next = { ...current, callsignAdditionalSourceIds };
+      latestFormRef.current = next;
+      onChange(next);
+    },
+    [onChange],
+  );
 
   return (
     <Dialog
@@ -35,11 +60,14 @@ export function EditCallsignDialog({ open, form, units, sources, submitting, err
           {form ? (
             <CallsignFormFields
               value={form}
-              onChange={onChange}
+              onChange={handleFormChange}
               units={units}
               sources={sources}
               includeUnitSelect
               includeSourceSelect
+              includeConfirmationSources
+              callsignAdditionalSourceIds={form.callsignAdditionalSourceIds}
+              onCallsignAdditionalSourceIdsChange={handleCallsignAdditionalSourceIdsChange}
               disabled={submitting}
             />
           ) : null}

@@ -196,12 +196,21 @@ export function createEmptyDraftRow(): CallsignDraftRow {
   };
 }
 
+function sanitizeCallsignAdditionalSourceIds(callsignAdditionalSourceIds: number[], primarySourceId: number | null | undefined): number[] {
+  const uniqueIds = Array.from(new Set(callsignAdditionalSourceIds.filter((item) => Number.isInteger(item) && item > 0))).sort(
+    (left, right) => left - right,
+  );
+  if (primarySourceId == null) return uniqueIds;
+  return uniqueIds.filter((sourceId) => sourceId !== primarySourceId);
+}
+
 export function callsignToEditForm(callsign: Callsign): CallsignEditForm {
   return {
     id: callsign.id,
     callsign: toUpperCaseCallsign(callsign.callsign),
     position: callsign.position,
     comment: callsign.comment,
+    callsignAdditionalSourceIds: sanitizeCallsignAdditionalSourceIds(callsign.callsignAdditionalSources, callsign.sourceId),
     unitId: callsign.unitId,
     sourceId: callsign.sourceId,
     developing: callsign.developing,
@@ -286,11 +295,20 @@ export function mergeUnitStatsWithUnits(unitStats: CallsignUnitStatRow[], unitsB
 }
 
 export function buildRowViews(callsigns: Callsign[], unitsById: Map<number, Unit>, sourcesById: Map<number, Source>): BuildRowsResult {
-  const rows = callsigns.map((callsign) => ({
-    ...callsign,
-    unitName: unitsById.get(callsign.unitId)?.name ?? `#${callsign.unitId}`,
-    sourceName: callsign.sourceId == null ? '—' : (sourcesById.get(callsign.sourceId)?.name ?? `#${callsign.sourceId}`),
-  }));
+  const rows = callsigns.map((callsign) => {
+    const callsignAdditionalSourceIds = sanitizeCallsignAdditionalSourceIds(callsign.callsignAdditionalSources, callsign.sourceId);
+    const callsignAdditionalSourceNames = callsignAdditionalSourceIds
+      .map((sourceId) => sourcesById.get(sourceId)?.name ?? `#${sourceId}`);
+
+    return {
+      ...callsign,
+      commentForView: callsign.comment,
+      callsignAdditionalSourceIds,
+      callsignAdditionalSourceNames,
+      unitName: unitsById.get(callsign.unitId)?.name ?? `#${callsign.unitId}`,
+      sourceName: callsign.sourceId == null ? '—' : (sourcesById.get(callsign.sourceId)?.name ?? `#${callsign.sourceId}`),
+    };
+  });
 
   return {
     rows,
@@ -307,6 +325,7 @@ export function createSourcesById(sources: Source[]): Map<number, Source> {
 }
 
 export function makeUpdatePayload(form: CallsignEditForm): Callsign {
+  const callsignAdditionalSourceIds = sanitizeCallsignAdditionalSourceIds(form.callsignAdditionalSourceIds, form.sourceId);
   return {
     id: form.id,
     callsign: toUpperCaseCallsign(form.callsign).trim(),
@@ -315,21 +334,27 @@ export function makeUpdatePayload(form: CallsignEditForm): Callsign {
     unitId: form.unitId,
     active: form.active,
     sourceId: form.sourceId,
-    callsignAdditionalSources: [],
+    callsignAdditionalSources: callsignAdditionalSourceIds,
     createdAt: form.createdAt,
     developing: form.developing,
     radioFreq: form.radioFreq.trim() === '' ? '' : form.radioFreq.trim(),
   };
 }
 
-export function makeCreatePayload(row: CallsignDraftRow, unitId: number, sourceId: number): CreateCallsignReq {
+export function makeCreatePayload(
+  row: CallsignDraftRow,
+  unitId: number,
+  sourceId: number,
+  callsignAdditionalSourceIds: number[],
+): CreateCallsignReq {
+  const safeCallsignAdditionalSourceIds = sanitizeCallsignAdditionalSourceIds(callsignAdditionalSourceIds, sourceId);
   return {
     callsign: toUpperCaseCallsign(row.callsign).trim(),
     position: row.position.trim(),
     comment: row.comment.trim(),
     unitId,
     sourceId,
-    callsignAdditionalSources: [],
+    callsignAdditionalSources: safeCallsignAdditionalSourceIds,
     developing: row.developing,
     radioFreq: row.radioFreq.trim() === '' ? '' : row.radioFreq.trim(),
   };
