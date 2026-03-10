@@ -263,7 +263,8 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
       const pair = w.items.find(([id]) => id === msgId);
       if (!pair) return;
       const [, msg] = pair;
-      const hasTag = (msg.tags ?? []).includes(tagId);
+      const hasTag =
+        (msg.tags ?? []).includes(tagId) || (msg.inboxTags ?? []).some((t) => t.tagId === tagId);
       const nextTags = hasTag ? (msg.tags ?? []).filter((id) => id !== tagId) : [...(msg.tags ?? []), tagId];
       let nextInboxTags: InboxMessageTag[] | null;
       if (hasTag) {

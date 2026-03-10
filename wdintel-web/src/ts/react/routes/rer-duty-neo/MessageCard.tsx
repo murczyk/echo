@@ -331,8 +331,12 @@ export function MessageCard({
           {Object.keys(tagsMap).map((tagId) => {
             const tag = tagsMap[tagId];
             const label = tag.label ?? `#${tagId}`;
-            const isSet = (msg.tags ?? []).includes(Number(tagId));
-            const contribs = (msg.inboxTags ?? []).filter((t) => t.tagId === Number(tagId));
+            const inboxTagList = msg.inboxTags ?? [];
+            const isSet =
+              inboxTagList.length > 0
+                ? inboxTagList.some((t) => t.tagId === Number(tagId))
+                : (msg.tags ?? []).includes(Number(tagId));
+            const contribs = inboxTagList.filter((t) => t.tagId === Number(tagId));
             const humanContribs = contribs.filter((t) => !t.model);
             const botContribs = contribs.filter((t) => t.model);
             const humanLogins = humanContribs.map((t) => t.login).filter(Boolean) as string[];
