@@ -11,6 +11,7 @@ Use when preparing commit messages for this repo.
 ## When to use / When NOT to use
 - Use: Any request to draft or perform a commit.
 - Do not use: Code implementation with no commit preparation.
+- Priority rule: When user asks for a commit message, always apply this skill before suggesting any header.
 
 ## Inputs the agent should request or derive
 - Derive current branch name via `git branch --show-current`.
@@ -25,12 +26,15 @@ Use when preparing commit messages for this repo.
 - Scope parser from branch name:
 - Take substring after first `/`.
 - From that substring, extract ticket token:
-- project tag + ticket id (for example `proj-1234` or `ABC-1234`) when present
+- project tag + ticket id (for example `echo-1234`) when present
 - otherwise number-only token (for example `1234`)
 - Recommended regex on substring (case-insensitive): `^(([a-z]+-\d+)|(\d+))`
+- If ticket token exists, it MUST be used as `scope`.
+- If extracted token is number-only, normalize scope by prefixing `echo-` (for example `1234` -> `echo-1234`).
+- Do NOT replace branch-derived ticket scope with module/component scopes like `analysis-map`, `callsigns`, `ui`, etc.
 - Example:
-- `feature/proj-1234-add-navbar` -> scope `proj-1234`
-- `feature/1234-add-navbar` -> scope `1234`
+- `feature/echo-1234-add-navbar` -> scope `echo-1234`
+- `feature/1234-add-navbar` -> scope `echo-1234`
 - If parser fails:
 - Use known repo scope convention if present in task context.
 - Otherwise omit scope: `type: summary`.
@@ -48,8 +52,8 @@ Use when preparing commit messages for this repo.
 
 ## Tiny examples
 ```txt
-Branch: feature/proj-1234-add-navbar
-Commit: feat(proj-1234): improved navbar keyboard handling
+Branch: feature/echo-1234-add-navbar
+Commit: feat(echo-1234): added navbar
 ```
 
 ```txt
@@ -59,6 +63,7 @@ Commit: fix: prevented menu from staying open after route change
 
 ## Self-check
 - Re-parse branch name and verify scope extraction.
+- If branch token was found, verify commit scope exactly matches it.
 - Ensure summary matches actual diff, not planned work.
 - Ensure summary tense is past simple, not imperative/present.
 - Confirm no commit/push command is executed without user approval.

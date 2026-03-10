@@ -153,7 +153,10 @@ export class PalitraPointsController {
     // Reframe to search results once; subsequent move/zoom uses viewport rendering only.
     const fullBounds = boundsOfSearchResults(data, BOUNDS_SAMPLE_SIZE);
     if (fullBounds) {
-      this.map.fitBounds(fullBounds, { padding: [40, 40], maxZoom: 14 });
+      this.map.fitBounds(fullBounds, {
+        padding: [40, 40],
+        maxZoom: this.getPointsVisibleFromZoom(),
+      });
     }
 
     await this.renderPointsInViewport();
@@ -211,11 +214,15 @@ export class PalitraPointsController {
 
   private shouldRenderPointsAtCurrentZoom(): boolean {
     const currentZoom = this.map.getZoom();
+    return currentZoom >= this.getPointsVisibleFromZoom();
+  }
+
+  private getPointsVisibleFromZoom(): number {
     const maxZoom = this.map.getMaxZoom();
     if (Number.isFinite(maxZoom)) {
-      return currentZoom >= maxZoom - 1;
+      return Math.max(0, maxZoom - 1);
     }
-    return currentZoom >= this.options.minZoomForPoints;
+    return this.options.minZoomForPoints;
   }
 
   private async renderVisiblePointsFromCache(): Promise<void> {
