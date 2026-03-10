@@ -78,6 +78,16 @@ export class PalitraPointsController {
   }
 
   onEnabledChanged(): void {
+    if (!this.stateAccessor.getEnabled()) {
+      this.pointClustersRenderer.clear();
+      return;
+    }
+
+    if (this.searchState.hasActiveSearch()) {
+      void this.renderPointsInViewport();
+      return;
+    }
+
     this.updatePoints();
   }
 

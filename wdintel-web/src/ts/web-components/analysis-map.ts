@@ -564,6 +564,7 @@ class AnalysisMap extends HTMLElement {
       this._map?.removeLayer(this._markersGroup)
     }
     if (!this._shouldRenderPointsAtCurrentZoom()) {
+      this._fitBoundsOnInitialLowZoom(points);
       this._markersGroup = null;
       return;
     }
@@ -582,6 +583,20 @@ class AnalysisMap extends HTMLElement {
       this._boundedAlready = true;
     }
 
+  }
+
+  private _fitBoundsOnInitialLowZoom(points: MapPointDetailed[]): void {
+    if (!this._map || this._boundedAlready || this._map.getZoom() > 10 || points.length === 0) {
+      return;
+    }
+
+    const bounds = L.latLngBounds(points.map((point) => [point.lat, point.lng] as [number, number]));
+    if (!bounds.isValid()) {
+      return;
+    }
+
+    this._map.fitBounds(bounds);
+    this._boundedAlready = true;
   }
 
   private _shouldRenderPointsAtCurrentZoom(): boolean {
