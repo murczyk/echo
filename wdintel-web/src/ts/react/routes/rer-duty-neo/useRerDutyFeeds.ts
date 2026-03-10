@@ -1,3 +1,5 @@
+import React from 'react';
+
 import { useRerDutyFeedState } from './useRerDutyFeedState';
 import { useRerDutyFilterOptions } from './useRerDutyFilterOptions';
 import { useRerDutyMessageActions } from './useRerDutyMessageActions';
@@ -5,6 +7,18 @@ import { useRerDutyMessageActions } from './useRerDutyMessageActions';
 const MAX_MESSAGE_FEEDS = 4;
 
 export { MAX_MESSAGE_FEEDS };
+
+/** Merge API freqs with frequencies from loaded messages (same as Elm RerDuty Waterfall). */
+function mergeFreqsFromMessages(apiFreqs: string[], messageFeeds: { items: [number, { freq?: string | null }][] }[]): string[] {
+  const fromMsgs = new Set<string>();
+  messageFeeds.forEach((feed) =>
+    feed.items.forEach(([, msg]) => {
+      if (msg.freq && msg.freq.trim() !== '') fromMsgs.add(msg.freq.trim());
+    })
+  );
+  const merged = new Set<string>([...apiFreqs, ...fromMsgs]);
+  return [...merged].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+}
 
 export function useRerDutyFeeds(authUserName: string | null) {
   const filterOpts = useRerDutyFilterOptions();
@@ -35,6 +49,11 @@ export function useRerDutyFeeds(authUserName: string | null) {
     saveFilterName: filterOpts.saveFilterName,
     setSaveFilterName: filterOpts.setSaveFilterName,
   });
+
+  const freqs = React.useMemo(
+    () => mergeFreqsFromMessages(filterOpts.freqs, feedState.messageFeeds),
+    [filterOpts.freqs, feedState.messageFeeds]
+  );
 
   return {
     messageFeeds: feedState.messageFeeds,
@@ -74,7 +93,7 @@ export function useRerDutyFeeds(authUserName: string | null) {
     deleteConfirmFeedId: actions.deleteConfirmFeedId,
     profiles: filterOpts.profiles,
     senderOptions: actions.senderOptions,
-    freqs: filterOpts.freqs,
+    freqs,
     postsList: filterOpts.postsList,
     groupsList: filterOpts.groupsList,
     groupInfos: filterOpts.groupInfos,

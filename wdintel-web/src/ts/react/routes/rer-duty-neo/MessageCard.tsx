@@ -358,6 +358,12 @@ export function MessageCard({
                     onClick={() => onToggleTag(Number(tagId))}
                     size="small"
                     fontSize="0.875rem"
+                    unselectedBackgroundColor="var(--color-background)"
+                    unselectedBorderColor="var(--text-color)"
+                    unselectedTextColor="var(--text-color)"
+                    selectedBackgroundColor="var(--color-tag-selected)"
+                    selectedBorderColor="var(--color-border-selected)"
+                    selectedTextColor="var(--neutral-900)"
                   />
                   {showBadge && (
                     <span
