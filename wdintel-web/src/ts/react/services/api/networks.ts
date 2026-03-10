@@ -1,6 +1,6 @@
 import type { ListNetworksReq, Network } from '../../../../Bindings';
 import { postJson } from './client';
-import { snakeToCamel } from '../../../snake-to-camel';
+import { transformSnakeToCamel } from '../../../snake-to-camel';
 
 /** Fetch all networks. Uses a filter so the backend returns full list without default limit. */
 export async function getNetworksList(): Promise<Network[]> {
@@ -18,7 +18,7 @@ export async function getNetworksList(): Promise<Network[]> {
   };
   const data = await postJson<Network[]>('/api/sigint/network-list', req);
   // add model normalization here
-  const normalizedData = snakeToCamel(data);
+  const normalizedData = transformSnakeToCamel(data);
   return Array.isArray(normalizedData) ? normalizedData : []; 
 }
 

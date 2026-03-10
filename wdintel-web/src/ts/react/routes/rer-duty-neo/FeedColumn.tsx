@@ -8,6 +8,7 @@ import type {
   SavedFilterDuty,
   SignalGroupEntry,
   SignalProfileEntry,
+  Tag,
 } from '../../../../Bindings';
 import { profileLabel } from './utils';
 import type { MessageFeedState } from './utils';
@@ -15,8 +16,10 @@ import { FeedFilterPanel } from './FeedFilterPanel';
 import { MessageCard } from './MessageCard';
 import { PowerChip } from '../../components/PowerChip';
 
-/** When the first visible item is within this many items of the top, trigger load earlier (so user doesn't hit top and wait). */
-const LOAD_EARLIER_BUFFER_ITEMS = 6;
+/** When the visible range enters this many items from the bottom (oldest at top, newest at bottom), load 20 older messages to keep scroll position and unread count. */
+const LOAD_OLDER_BUFFER_ITEMS = 10;
+/** After loading older, don't trigger again until the user scrolls back up so the visible range is at least this far from the bottom. */
+const LOAD_OLDER_RESET_MARGIN = 20;
 
 const FeedScroller = React.forwardRef<HTMLDivElement, React.ComponentProps<'div'>>(function FeedScroller(
   { style, className, ...props },
@@ -41,12 +44,18 @@ export type FeedColumnProps = {
     deniedSenders: string[];
     freqsSelected: string[];
     freqsDenied: string[];
+    postsSelected: string[];
+    postsDenied: string[];
   };
   groupsList: string[];
   groupInfos: Record<string, SignalGroupEntry>;
   profiles: Record<string, SignalProfileEntry | null>;
   senderOptions: Array<{ id: string; label: string }>;
   freqs: string[];
+  postsList: string[];
+  adjacentFreqsRange: number;
+  highlightSignalsEnabled: boolean;
+  onlyMyUnitTagsEnabled: boolean;
   savedFilters: SavedFilterDuty[];
   selectedSavedId: number | null;
   saveFilterName: string;
@@ -57,10 +66,9 @@ export type FeedColumnProps = {
   authUserName: string | null;
   copiedFeedbackId: string | null;
   networkDisplayMap: Record<number, string>;
-  tagsMap: Record<number, string>;
+  tagsMap: Record<number, Tag>;
   tagIdsList: number[];
-  messageHasTag: (msg: InboxMessage, tagId: number) => boolean;
-  onLoadEarlier: () => void;
+  onLoadOlder: () => void;
   onRemoveColumn: () => void;
   onApplyFilter: (f: RerDutyFeedFilterState) => void;
   onSelectAllGroups: () => void;
@@ -69,6 +77,11 @@ export type FeedColumnProps = {
   onDeniedSendersChange: (v: string[]) => void;
   onFreqsChange: (v: string[]) => void;
   onFreqsDeniedChange: (v: string[]) => void;
+  onPostsChange: (v: string[]) => void;
+  onPostsDeniedChange: (v: string[]) => void;
+  onAdjacentFreqsRangeChange: (v: number) => void;
+  onHighlightSignalsChange: (v: boolean) => void;
+  onOnlyMyUnitTagsChange: (v: boolean) => void;
   onReloadFreqs: () => void;
   onSavedFilterSelect: (id: number | '') => void;
   onSaveFilterNameChange: (value: string) => void;
@@ -85,11 +98,19 @@ export type FeedColumnProps = {
   onReachedBottom?: () => void;
   /** Called when user scrolls away from bottom; use to disable watch mode so we don't load new messages. */
   onLeftBottom?: () => void;
+  /** Called when the visible range enters or leaves the "near bottom" zone (within LOAD_OLDER_BUFFER_ITEMS of the end). Used so the poll can load newer when count > 0 and user is below buffer. */
+  onNearBottomChange?: (near: boolean) => void;
   isWatchMode?: boolean;
-  digestCount?: number | null;
   loadingNewer?: boolean;
   arrowResultMessage?: string | null;
   onArrowClick?: () => void;
+  /** Called when the visible range changes; pass message IDs in view so parent can add them to readIds. When user reaches bottom, called with all IDs and atBottom: true so badge clears. */
+  onVisibleMessageIds?: (ids: number[], opts?: { atBottom?: boolean }) => void;
+  /** Unread count (items not in readIds); shown as badge when > 0. */
+  unreadCount?: number;
+  /** When true, message cards hide the left column (freq, date/time, buttons). Toggle is per feed. */
+  leftSideCollapsed?: boolean;
+  onToggleLeftSide?: () => void;
 };
 
 export type FeedColumnHandle = { scrollToEnd: () => void };
@@ -103,6 +124,10 @@ export const FeedColumn = React.forwardRef<FeedColumnHandle, FeedColumnProps>(fu
     profiles,
     senderOptions,
     freqs,
+    postsList,
+    adjacentFreqsRange,
+    highlightSignalsEnabled,
+    onlyMyUnitTagsEnabled,
     savedFilters,
     selectedSavedId,
     saveFilterName,
@@ -113,8 +138,7 @@ export const FeedColumn = React.forwardRef<FeedColumnHandle, FeedColumnProps>(fu
     networkDisplayMap,
     tagsMap,
     tagIdsList,
-    messageHasTag,
-    onLoadEarlier,
+    onLoadOlder,
     onRemoveColumn,
     maxWidth,
     onApplyFilter,
@@ -124,6 +148,11 @@ export const FeedColumn = React.forwardRef<FeedColumnHandle, FeedColumnProps>(fu
     onDeniedSendersChange,
     onFreqsChange,
     onFreqsDeniedChange,
+    onPostsChange,
+    onPostsDeniedChange,
+    onAdjacentFreqsRangeChange,
+    onHighlightSignalsChange,
+    onOnlyMyUnitTagsChange,
     onReloadFreqs,
     onSavedFilterSelect,
     onSaveFilterNameChange,
@@ -138,27 +167,30 @@ export const FeedColumn = React.forwardRef<FeedColumnHandle, FeedColumnProps>(fu
     onScrollToTop,
     onReachedBottom,
     onLeftBottom,
+    onNearBottomChange,
     isWatchMode = false,
-    digestCount = null,
     loadingNewer = false,
     arrowResultMessage = null,
     onArrowClick,
+    onVisibleMessageIds,
+    unreadCount = 0,
+    leftSideCollapsed = true,
+    onToggleLeftSide,
   },
   ref,
 ) {
   const feedId = feed.id;
   const [showFilters, setShowFilters] = React.useState(false);
   const [isAtBottom, setIsAtBottom] = React.useState(true);
-  const loadEarlierTriggeredRef = React.useRef(false);
+  const loadOlderTriggeredRef = React.useRef(false);
   const virtuosoRef = React.useRef<VirtuosoHandle | null>(null);
   /** Only enable watch mode when user has scrolled to bottom, not when we're at bottom on initial render. */
   const hasSeenNotAtBottomRef = React.useRef(false);
   /** Last at-bottom value from Virtuoso; use for transition detection so we don't rely on stale state. */
   const atBottomRef = React.useRef(true);
-
   React.useEffect(() => {
-    if (!feed.loadingEarlier) loadEarlierTriggeredRef.current = false;
-  }, [feed.loadingEarlier]);
+    if (!feed.loadingOlder) loadOlderTriggeredRef.current = false;
+  }, [feed.loadingOlder]);
 
   React.useImperativeHandle(
     ref,
@@ -175,21 +207,48 @@ export const FeedColumn = React.forwardRef<FeedColumnHandle, FeedColumnProps>(fu
     [feed.items.length],
   );
 
-  const tryLoadEarlier = React.useCallback(() => {
-    if (loadEarlierTriggeredRef.current || feed.loadingEarlier || feed.hasReachedStart) return;
-    loadEarlierTriggeredRef.current = true;
-    onLoadEarlier();
-  }, [feed.loadingEarlier, feed.hasReachedStart, onLoadEarlier]);
+  const tryLoadOlder = React.useCallback(() => {
+    if (loadOlderTriggeredRef.current || feed.loadingOlder || feed.hasReachedStart) return;
+    loadOlderTriggeredRef.current = true;
+    onLoadOlder();
+  }, [feed.loadingOlder, feed.hasReachedStart, onLoadOlder]);
 
+  const nearBottomRef = React.useRef<boolean | null>(null);
+  const firstItemIndex = feed.firstItemIndex ?? 0;
   const handleRangeChanged = React.useCallback(
-    (range: { startIndex: number }) => {
-      if (range.startIndex <= LOAD_EARLIER_BUFFER_ITEMS) {
-        tryLoadEarlier();
-      } else if (range.startIndex > LOAD_EARLIER_BUFFER_ITEMS * 2) {
-        loadEarlierTriggeredRef.current = false;
+    (range: { startIndex: number; endIndex: number }) => {
+      const len = feed.items.length;
+      // Range indices are in Virtuoso's total space (offset by firstItemIndex); convert to data indices
+      const startDataIndex = range.startIndex - firstItemIndex;
+      const endDataIndex = range.endIndex - firstItemIndex;
+      // Near top: viewport top is within buffer of list start → trigger load older (paginate backward)
+      const nearTop =
+        len <= LOAD_OLDER_BUFFER_ITEMS ? len > 0 && startDataIndex <= 0 : startDataIndex < LOAD_OLDER_BUFFER_ITEMS;
+      if (nearTop) {
+        tryLoadOlder();
+      } else if (startDataIndex > LOAD_OLDER_RESET_MARGIN) {
+        // User scrolled away from top; allow load older to trigger again when they scroll back up
+        loadOlderTriggeredRef.current = false;
+      }
+      // Near bottom: viewport bottom is within buffer of list end → tell parent for poll/load-newer
+      const nearBottom =
+        len <= LOAD_OLDER_BUFFER_ITEMS
+          ? len > 0 && endDataIndex >= len - 1
+          : endDataIndex >= len - LOAD_OLDER_BUFFER_ITEMS;
+      if (nearBottomRef.current !== nearBottom) {
+        nearBottomRef.current = nearBottom;
+        onNearBottomChange?.(nearBottom);
+      }
+      // Report as read: all messages from start through bottom of viewport (everything "above" viewport is read by default)
+      if (onVisibleMessageIds != null && len > 0) {
+        const ids: number[] = [];
+        for (let dataIndex = 0; dataIndex <= endDataIndex && dataIndex < len; dataIndex++) {
+          ids.push(feed.items[dataIndex][0]);
+        }
+        if (ids.length > 0) onVisibleMessageIds(ids, { atBottom: false });
       }
     },
-    [tryLoadEarlier],
+    [firstItemIndex, feed.items, feed.items.length, onNearBottomChange, onVisibleMessageIds, tryLoadOlder],
   );
 
   const applySenders = (v: string[]) => {
@@ -205,33 +264,51 @@ export const FeedColumn = React.forwardRef<FeedColumnHandle, FeedColumnProps>(fu
     onApplyFilter({ ...feed.filter, freqsDenied: v.length ? v : null });
   };
 
-  const hasNewMessages = (digestCount ?? 0) > 0;
-
   return (
     <Box
       className="flex flex-col flex-1 min-w-0 gap-1 min-h-0"
-      sx={{ maxWidth: maxWidth ?? '100%', minWidth: 0, minHeight: 0, position: 'relative' }}
+      sx={{ maxWidth: maxWidth ?? '100%', position: 'relative' }}
     >
       <Box
-        className="flex justify-between gap-2 flex-wrap text-sm items-stretch h-8 shrink-0"
+        className="flex justify-between gap-2 flex-wrap text-sm items-stretch h-[32px] shrink-0"
         sx={{
           position: 'sticky',
           top: 0,
           zIndex: 1,
           backgroundColor: 'background.paper',
-          '& .MuiButton-root': { minHeight: 0, height: '100%' },
+          '& .MuiButton-root': {
+            minHeight: 0,
+            height: 32,
+            maxHeight: 32,
+            overflow: 'hidden',
+          },
         }}
       >
-        <Button
-          size="small"
-          variant="text"
-          className="self-stretch px-4"
-          startIcon={<i className="bi bi-gear" />}
-          endIcon={showFilters ? <i className="bi bi-chevron-up" /> : <i className="bi bi-chevron-down" />}
-          onClick={() => setShowFilters((s) => !s)}
-        >
-          Фільтри
-        </Button>
+        <div>
+          <Button
+            size="small"
+            variant="text"
+            className="self-stretch px-4"
+            startIcon={<i className="bi bi-gear" />}
+            endIcon={showFilters ? <i className="bi bi-chevron-up" /> : <i className="bi bi-chevron-down" />}
+            onClick={() => setShowFilters((s) => !s)}
+          >
+            Фільтри
+          </Button>
+          {onToggleLeftSide != null && (
+            <Button
+              size="medium"
+              variant="text"
+              className="self-stretch"
+              aria-label={leftSideCollapsed ? 'Розгорнути ліву колонку' : 'Згорнути ліву колонку'}
+              title={leftSideCollapsed ? 'Розгорнути ліву колонку' : 'Згорнути ліву колонку'}
+              onClick={onToggleLeftSide}
+              sx={{ minWidth: 40 }}
+            >
+              <i className={leftSideCollapsed ? 'bi bi-layout-sidebar-inset-reverse' : 'bi bi-layout-sidebar-inset'} />
+            </Button>
+          )}
+        </div>
         {canRemove && !showFilters && (
           <Button
             size="small"
@@ -258,6 +335,10 @@ export const FeedColumn = React.forwardRef<FeedColumnHandle, FeedColumnProps>(fu
           profiles={profiles}
           senderOptions={senderOptions}
           freqs={freqs}
+          postsList={postsList}
+          adjacentFreqsRange={adjacentFreqsRange}
+          highlightSignalsEnabled={highlightSignalsEnabled}
+          onlyMyUnitTagsEnabled={onlyMyUnitTagsEnabled}
           savedFilters={savedFilters}
           selectedSavedId={selectedSavedId}
           saveFilterName={saveFilterName}
@@ -268,6 +349,11 @@ export const FeedColumn = React.forwardRef<FeedColumnHandle, FeedColumnProps>(fu
           onDeniedSendersChange={applyDeniedSenders}
           onFreqsChange={applyFreqs}
           onFreqsDeniedChange={applyFreqsDenied}
+          onPostsChange={onPostsChange}
+          onPostsDeniedChange={onPostsDeniedChange}
+          onAdjacentFreqsRangeChange={onAdjacentFreqsRangeChange}
+          onHighlightSignalsChange={onHighlightSignalsChange}
+          onOnlyMyUnitTagsChange={onOnlyMyUnitTagsChange}
           onReloadFreqs={onReloadFreqs}
           onSavedFilterSelect={onSavedFilterSelect}
           onSaveFilterNameChange={onSaveFilterNameChange}
@@ -290,12 +376,12 @@ export const FeedColumn = React.forwardRef<FeedColumnHandle, FeedColumnProps>(fu
             firstItemIndex={feed.firstItemIndex ?? 0}
             computeItemKey={(_index, [id]) => String(id)}
             initialTopMostItemIndex={Math.max(0, Math.floor(feed.items.length / 2) - 1)}
-            startReached={tryLoadEarlier}
+            startReached={tryLoadOlder}
             rangeChanged={handleRangeChanged}
             atTopStateChange={(atTop) => {
               if (atTop) {
                 onScrollToTop?.();
-                tryLoadEarlier();
+                tryLoadOlder();
               }
             }}
             atBottomThreshold={300}
@@ -306,11 +392,17 @@ export const FeedColumn = React.forwardRef<FeedColumnHandle, FeedColumnProps>(fu
               setIsAtBottom(atBottom);
               if (atBottom && hasSeenNotAtBottomRef.current) onReachedBottom?.();
               if (!atBottom && wasAtBottom) onLeftBottom?.();
+              if (atBottom && onVisibleMessageIds != null && feed.items.length > 0) {
+                onVisibleMessageIds(
+                  feed.items.map(([id]) => id),
+                  { atBottom: true },
+                );
+              }
             }}
             components={{
               Scroller: FeedScroller,
               Header: () =>
-                feed.loadingEarlier ? (
+                feed.loadingOlder ? (
                   <Box
                     sx={{
                       display: 'flex',
@@ -324,7 +416,7 @@ export const FeedColumn = React.forwardRef<FeedColumnHandle, FeedColumnProps>(fu
                     <CircularProgress size={18} />
                     <Typography variant="body2">Завантаження старіших…</Typography>
                   </Box>
-                ) : feed.hasReachedStart || digestCount === 0 ? (
+                ) : feed.hasReachedStart ? (
                   <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', py: 1.5 }}>
                     Немає старіших повідомлень
                   </Typography>
@@ -339,7 +431,7 @@ export const FeedColumn = React.forwardRef<FeedColumnHandle, FeedColumnProps>(fu
             itemContent={(_index, [id, msg]) => {
               const senderName = msg.sender != null ? profileLabel(msg.sender, profiles[msg.sender] ?? null) : null;
               const groupName = msg.groupMasterKey != null ? (groupInfos[msg.groupMasterKey]?.name ?? null) : null;
-              return (
+              const card = (
                 <MessageCard
                   id={id}
                   msg={msg}
@@ -351,8 +443,7 @@ export const FeedColumn = React.forwardRef<FeedColumnHandle, FeedColumnProps>(fu
                   copiedFeedbackId={copiedFeedbackId}
                   networkDisplayMap={networkDisplayMap}
                   tagsMap={tagsMap}
-                  tagIdsList={tagIdsList}
-                  messageHasTag={messageHasTag}
+                  leftSideCollapsed={leftSideCollapsed}
                   onBookmark={() => onMessageBookmark(id, msg.bookmarked)}
                   onImportant={() => onMessageImportant(id, msg.important)}
                   onCopyText={() => onMessageCopy(msg.text || '', `text-${id}`)}
@@ -361,9 +452,10 @@ export const FeedColumn = React.forwardRef<FeedColumnHandle, FeedColumnProps>(fu
                   onToggleTag={(tagId) => onMessageToggleTag(id, tagId)}
                 />
               );
+              return card;
             }}
           />
-          {onArrowClick != null && (!isAtBottom || loadingNewer) && (
+          {onArrowClick != null && (!isAtBottom || loadingNewer || unreadCount > 0) && (
             <Box
               sx={{
                 position: 'absolute',
@@ -387,7 +479,7 @@ export const FeedColumn = React.forwardRef<FeedColumnHandle, FeedColumnProps>(fu
               )}
               <Box sx={{ position: 'relative', display: 'inline-flex' }}>
                 <Fab
-                  color={(digestCount ?? 0) > 0 ? 'primary' : 'default'}
+                  color={unreadCount > 0 ? 'primary' : 'default'}
                   size="small"
                   sx={{
                     width: 35,
@@ -398,7 +490,7 @@ export const FeedColumn = React.forwardRef<FeedColumnHandle, FeedColumnProps>(fu
                     backgroundColor: 'transparent',
                     zIndex: 0,
                     border: '2px solid',
-                    borderColor: (digestCount ?? 0) > 0 ? 'primary.main' : 'grey.400',
+                    borderColor: unreadCount > 0 ? 'primary.main' : 'grey.400',
                   }}
                   aria-label={isWatchMode ? 'Режим перегляду нових' : 'Завантажити нові та перейти вниз'}
                   onClick={onArrowClick}
@@ -410,34 +502,27 @@ export const FeedColumn = React.forwardRef<FeedColumnHandle, FeedColumnProps>(fu
                     <Box
                       component="i"
                       className="bi bi-arrow-down"
-                      sx={{
-                        fontSize: 20,
-                        color: (digestCount ?? 0) > 0 ? 'primary.main' : 'grey.400',
-                      }}
+                      sx={{ fontSize: 20, color: unreadCount > 0 ? 'primary.main' : 'grey.400' }}
                     />
                   )}
                 </Fab>
-                {!loadingNewer &&
-                  digestCount != null &&
-                  digestCount > 0 &&
-                  !isWatchMode &&
-                  arrowResultMessage == null && (
-                    <PowerChip
-                      size="small"
-                      label={digestCount}
-                      selected
-                      interactive={false}
-                      unselectedOpacity={1}
-                      sx={{
-                        position: 'absolute',
-                        top: -6,
-                        right: -6,
-                        fontWeight: 600,
-                        zIndex: 2,
-                        pointerEvents: 'none',
-                      }}
-                    />
-                  )}
+                {!loadingNewer && unreadCount > 0 && !isWatchMode && arrowResultMessage == null && (
+                  <PowerChip
+                    size="small"
+                    label={unreadCount}
+                    selected
+                    interactive={false}
+                    unselectedOpacity={1}
+                    sx={{
+                      position: 'absolute',
+                      top: -6,
+                      right: -6,
+                      fontWeight: 600,
+                      zIndex: 2,
+                      pointerEvents: 'none',
+                    }}
+                  />
+                )}
               </Box>
             </Box>
           )}
