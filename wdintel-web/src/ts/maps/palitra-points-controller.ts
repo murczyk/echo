@@ -200,6 +200,9 @@ export class PalitraPointsController {
     const splitEntries = splitEntriesByGeometry(
       entriesToRender.filter(({ points }) => points.length > 0),
       this.buildPalitrasByApiId(),
+      // Intentionally do not pass visible palette IDs:
+      // search points must stay independent from palette/color selection.
+      // Visibility toggles affect contour polygons only.
     );
 
     const nextPointMarkers: (L.CircleMarker & { _palitraTooltipLabel?: string })[] = [];
@@ -252,6 +255,8 @@ export class PalitraPointsController {
     const pointsByApiId = new Map<number, PalitraPoint[]>();
 
     this.stateAccessor.getPalitras().forEach((palitraDetails) => {
+      // Intentionally iterate all palitras:
+      // point rendering is independent from selected contour visibility.
       const apiId = this.apiAccessor.apiPalitraId(palitraDetails.palitra);
       const points = this.cacheManager.getPointsForBounds(apiId, bounds);
       if (points.length > 0) {
