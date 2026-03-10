@@ -33,11 +33,18 @@ import {
   ZoneDatasourceGroupAddReq,
   ZoneDatasourceGroupUpdateReq,
 } from '../../../../Bindings';
+import { PageErrorState } from '../../components/PageErrorState';
+import { PageLoadingState } from '../../components/PageLoadingState';
+import { SectionEmptyState } from '../../components/SectionEmptyState';
+import { TablePageToolbar } from '../../components/TablePageToolbar';
 import { Button } from '../../components/mui-customized/button';
 import { IconButton } from '../../components/mui-customized/icon-button';
 import { PowerChip } from '../../components/PowerChip';
-import { CUSTOM_STYLES } from '../../components/mui-customized/table/custom-styles';
-import { TableTopToolbar } from '../../components/mui-customized/table/components/table-top-toolbar';
+import {
+  CUSTOM_STYLES,
+  FULL_WIDTH_TABLE_PAPER_SX,
+  PAGE_SCROLL_TABLE_CONTAINER_SX,
+} from '../../components/mui-customized/table/custom-styles';
 import {
   getDefaultMRTOptions,
   renderColumnActionsMenuItems,
@@ -157,7 +164,6 @@ const DEFAULT_ZONE_COLUMN_ORDER = [
   'notes',
 ];
 
-const ORPHAN_GROUPS_TABLE_MAX_HEIGHT = 500;
 const DEFAULT_ACTIVITY_DAY_SORTING: MRT_SortingState = [
   { id: 'activityDay', desc: true },
 ];
@@ -411,21 +417,14 @@ function OrphanGroupsTable(props: {
         ...baseProps,
         sx: {
           ...(baseProps as any)?.sx,
-          minWidth: 0,
-          maxWidth: '100%',
-          width: '100%',
+          ...FULL_WIDTH_TABLE_PAPER_SX,
         },
       };
     },
     muiTableContainerProps: {
       sx: {
         ...(CUSTOM_STYLES.muiTableContainerProps as any)?.sx,
-        minWidth: 0,
-        maxWidth: '100%',
-        width: '100%',
-        maxHeight: ORPHAN_GROUPS_TABLE_MAX_HEIGHT,
-        overflowX: 'auto',
-        overflowY: 'auto',
+        ...PAGE_SCROLL_TABLE_CONTAINER_SX,
       },
     },
     state,
@@ -704,21 +703,14 @@ function ZoneGroupsTable(props: {
         ...baseProps,
         sx: {
           ...(baseProps as any)?.sx,
-          minWidth: 0,
-          maxWidth: '100%',
-          width: '100%',
+          ...FULL_WIDTH_TABLE_PAPER_SX,
         },
       };
     },
     muiTableContainerProps: {
       sx: {
         ...(CUSTOM_STYLES.muiTableContainerProps as any)?.sx,
-        minWidth: 0,
-        maxWidth: '100%',
-        width: '100%',
-        maxHeight: 'none',
-        overflowX: 'auto',
-        overflowY: 'visible',
+        ...PAGE_SCROLL_TABLE_CONTAINER_SX,
       },
     },
     state,
@@ -745,7 +737,7 @@ function OrphanGroupsSection(props: {
       defaultColumnVisibility={DEFAULT_ORPHAN_COLUMNS_VISIBILITY}
       defaultSorting={DEFAULT_ACTIVITY_DAY_SORTING}
     >
-      <div className="table-responsive-modern w-full min-w-0">
+      <div className="w-full min-w-0">
         <OrphanGroupsTable
           data={props.data}
           datasourceById={props.datasourceById}
@@ -782,7 +774,7 @@ function ZoneGroupsSection(props: {
       defaultColumnVisibility={DEFAULT_ZONE_COLUMNS_VISIBILITY}
       defaultSorting={DEFAULT_ACTIVITY_DAY_SORTING}
     >
-      <div className="table-responsive-modern w-full min-w-0">
+      <div className="w-full min-w-0">
         <ZoneGroupsTable
           rows={props.rows}
           datasourceById={props.datasourceById}
@@ -1217,11 +1209,7 @@ function AdminNeoPageBody() {
 
   const renderOrphanGroups = () => {
     if (orphanGroups.length === 0) {
-      return (
-        <div className="text-sm text-muted-foreground">
-          Орфан групи відсутні
-        </div>
-      );
+      return <SectionEmptyState message="Орфан групи відсутні" />;
     }
     return (
       <OrphanGroupsSection
@@ -1272,13 +1260,9 @@ function AdminNeoPageBody() {
           </span>
         </div>
         {datasourceIds.length === 0 ? (
-          <div className="mt-3 text-sm text-muted-foreground">
-            Немає джерел даних
-          </div>
+          <SectionEmptyState message="Немає джерел даних" />
         ) : filteredRows.length === 0 ? (
-          <div className="mt-3 text-sm text-muted-foreground">
-            Немає груп для цього напрямку
-          </div>
+          <SectionEmptyState message="Немає груп для цього напрямку" />
         ) : (
           <div className="mt-4">
             <ZoneGroupsSection
@@ -1297,38 +1281,25 @@ function AdminNeoPageBody() {
   };
 
   if (status === 'loading') {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <CircularProgress size={28} />
-      </div>
-    );
+    return <PageLoadingState />;
   }
 
   if (status === 'error') {
-    return (
-      <div className="text-center py-8 text-red-600">
-        {error || 'Помилка завантаження'}
-      </div>
-    );
+    return <PageErrorState message={error || 'Помилка завантаження'} />;
   }
 
   return (
-    <div className="mt-2 w-full space-y-4 min-w-0">
+    <div className="flex w-full min-w-0 flex-col gap-6">
       {error ? (
         <Alert severity="error" onClose={() => setError(null)}>
           {error}
         </Alert>
       ) : null}
 
-      <TableTopToolbar
-        header={
-          <Typography variant="h5" className="!font-semibold">
-            Напрямки
-          </Typography>
-        }
-        withDatePicker={false}
+      <TablePageToolbar
+        title="Напрямки"
         withGlobalTextFilter={false}
-        additionalNoTableActions={
+        actions={
           <Button variant="outlined" onClick={loadData}>
             Оновити
           </Button>

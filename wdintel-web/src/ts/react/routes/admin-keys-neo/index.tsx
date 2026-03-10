@@ -2,6 +2,7 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import {
   Alert,
   Autocomplete,
+  Box,
   CircularProgress,
   Dialog,
   DialogActions,
@@ -15,10 +16,16 @@ import { MRT_ColumnDef, MaterialReactTable, useMaterialReactTable } from 'materi
 import React from 'react';
 
 import { ListOrganismsReq, Organism } from '../../../../Bindings';
+import { PageErrorState } from '../../components/PageErrorState';
+import { PageLoadingState } from '../../components/PageLoadingState';
+import { TablePageToolbar } from '../../components/TablePageToolbar';
 import { Button } from '../../components/mui-customized/button';
 import { IconButton } from '../../components/mui-customized/icon-button';
-import { CUSTOM_STYLES } from '../../components/mui-customized/table/custom-styles';
-import { TableTopToolbar } from '../../components/mui-customized/table/components/table-top-toolbar';
+import {
+  CUSTOM_STYLES,
+  FULL_WIDTH_TABLE_PAPER_SX,
+  PAGE_SCROLL_TABLE_CONTAINER_SX,
+} from '../../components/mui-customized/table/custom-styles';
 import {
   getDefaultMRTOptions,
   renderColumnActionsMenuItems,
@@ -31,7 +38,6 @@ import {
   listKeySharePolicies,
   SigintKeySharePolicy,
 } from '../../services/api/keys';
-
 
 type LoadingStatus = 'idle' | 'loading' | 'success' | 'error';
 
@@ -194,21 +200,14 @@ function KeyPoliciesTable(props: {
         ...baseProps,
         sx: {
           ...(baseProps as any)?.sx,
-          minWidth: 0,
-          maxWidth: '100%',
-          width: '100%',
+          ...FULL_WIDTH_TABLE_PAPER_SX,
         },
       };
     },
     muiTableContainerProps: {
       sx: {
         ...(CUSTOM_STYLES.muiTableContainerProps as any)?.sx,
-        minWidth: 0,
-        maxWidth: '100%',
-        width: '100%',
-        maxHeight: 'none',
-        overflowX: 'auto',
-        overflowY: 'visible',
+        ...PAGE_SCROLL_TABLE_CONTAINER_SX,
       },
     },
     state,
@@ -333,17 +332,13 @@ function AdminKeysNeoPageBody() {
 
   const renderTable = () => {
     if (status === 'loading') {
-      return (
-        <div className="flex h-full items-center justify-center">
-          <CircularProgress size={28} />
-        </div>
-      );
+      return <PageLoadingState />;
     }
     if (status === 'error') {
-      return <div className="text-center py-8 text-red-600">{error || 'Помилка завантаження'}</div>;
+      return <PageErrorState message={error || 'Помилка завантаження'} />;
     }
     return (
-      <div className="table-responsive-modern w-full min-w-0">
+      <div className="w-full min-w-0">
         <KeyPoliciesTable
           data={policies}
           organismNames={organismNames}
@@ -354,22 +349,27 @@ function AdminKeysNeoPageBody() {
   };
 
   return (
-    <div className="mt-2 w-full space-y-4 min-w-0">
+    <div className="flex w-full min-w-0 flex-col gap-6">
       {organismsStatus === 'error' ? (
         <Alert severity="error" onClose={() => setOrganismsError(null)}>
           {organismsError || 'Помилка завантаження організацій'}
         </Alert>
       ) : null}
 
-      <TableTopToolbar
-        header={
-          <Typography variant="h5" className="!font-semibold">
-            Політики доступу до ключів
-          </Typography>
+      <TablePageToolbar
+        title="Політики доступу до ключів"
+        titleInfo={
+          <Box sx={{ maxWidth: 360 }}>
+            Додайте нову політику, щоби користувачі організму-отримувача бачили всі ключі шифрування, створені
+            користувачами організму-власника.
+            <br />
+            <br />
+            Політика надає односторонній доступ лише до ключів, якими володіє організм. Для доступу до ключів,
+            переданих власнику іншими організмами, створіть окремі політики.
+          </Box>
         }
-        withDatePicker={false}
         withGlobalTextFilter={false}
-        additionalActions={
+        actions={
           <div className="flex gap-2">
             <Button variant="outlined" onClick={loadPolicies}>
               Оновити
@@ -380,17 +380,6 @@ function AdminKeysNeoPageBody() {
           </div>
         }
       />
-
-      <div className="rounded-lg border bg-[var(--bs-tertiary-bg)] p-4 text-sm text-muted-foreground space-y-2">
-        <p>
-          Додайте нову політику щоби користувачі з організму що є отримувачем прав на перегляд мали можливість бачити
-          усі ключі шифрування які створили користувачі з організму - Власника ключів.
-        </p>
-        <p>
-          Ця політика надає доступ до ключів в односторонньому порядку, і лише до тих ключів якими володіє організм;
-          для надання прав до ключів якимим поділилися із Власником інші організми створіть окремі політики.
-        </p>
-      </div>
 
       {renderTable()}
 

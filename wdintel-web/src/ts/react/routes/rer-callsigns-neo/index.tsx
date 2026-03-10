@@ -30,13 +30,12 @@ export function RerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?: st
   return (
     <Box className="w-full" sx={{ height: { xs: 'auto', lg: '100%' }, minHeight: 0, overflow: { xs: 'visible', lg: 'hidden' } }}>
       <Stack
-        spacing={2.5}
+        spacing={3}
         useFlexGap
         sx={{ height: { xs: 'auto', lg: '100%' }, minHeight: 0, overflow: { xs: 'visible', lg: 'hidden' } }}
       >
         <PageHeader
-          className="px-4"
-          title="позивні"
+          title="Позивні"
           actions={page.permissions.canEdit ? (
             <Stack direction="row" spacing={2}>
               <Button

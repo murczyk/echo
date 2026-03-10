@@ -77,9 +77,9 @@ subscriptions _ =
 
 view : Model -> View Msg
 view _ =
-    { title = "Адмін: користувачі (neo)"
+    { title = "Адмін: користувачі"
     , body =
-        [ div [ class "mt-4 px-4 w-full" ]
+        [ div [ class "w-full px-6 pt-6" ]
             [ node "users-neo" [] [] ]
         ]
     }

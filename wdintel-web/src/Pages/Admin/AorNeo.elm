@@ -77,9 +77,9 @@ subscriptions _ =
 
 view : Model -> View Msg
 view _ =
-    { title = "Адмін: смуги відповідальності (neo)"
+    { title = "Адмін: смуги відповідальності"
     , body =
-        [ div [ class "mt-4 px-3 w-full" ]
+        [ div [ class "w-full px-6 pt-6" ]
             [ node "aor-neo" [] [] ]
         ]
     }

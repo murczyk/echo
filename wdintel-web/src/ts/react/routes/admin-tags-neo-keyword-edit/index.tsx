@@ -1,4 +1,3 @@
-import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import {
   CircularProgress,
   FormControlLabel,
@@ -9,7 +8,11 @@ import {
 import React from 'react';
 
 import { TagKeyword, TagKeywordAddReq } from '../../../../Bindings';
+import { FormPageHeader } from '../../components/FormPageHeader';
+import { FormPageLayout } from '../../components/FormPageLayout';
 import { Info } from '../../components/info';
+import { PageErrorState } from '../../components/PageErrorState';
+import { PageLoadingState } from '../../components/PageLoadingState';
 import { Button } from '../../components/mui-customized/button';
 import { addTagKeywords, listTags, updateTagKeyword } from '../../services/api/tags';
 import { navigateWithinSpa } from '../../utils/browser';
@@ -164,42 +167,15 @@ function KeywordForm(props: {
 }
 
 function LoadingState() {
-  return (
-    <div className="flex items-center justify-center py-12">
-      <CircularProgress size={28} />
-    </div>
-  );
+  return <PageLoadingState />;
 }
 
 function ErrorState(props: { error: string; onBack: () => void }) {
-  return (
-    <div className="space-y-4">
-      <Button variant="outlined" startIcon={<ArrowBackIcon />} onClick={props.onBack}>
-        Назад
-      </Button>
-      <div className="text-red-600">{props.error}</div>
-    </div>
-  );
+  return <PageErrorState message={props.error} actionLabel="Назад" onAction={props.onBack} />;
 }
 
 function FormHeader(props: { title: string; subtitle?: string | null; onBack: () => void }) {
-  return (
-    <div className="flex items-center justify-between gap-4">
-      <div>
-        <Typography variant="h5" className="!font-semibold">
-          {props.title}
-        </Typography>
-        {props.subtitle ? (
-          <Typography variant="body2" className="text-muted-foreground">
-            {props.subtitle}
-          </Typography>
-        ) : null}
-      </div>
-      <Button variant="outlined" startIcon={<ArrowBackIcon />} onClick={props.onBack}>
-        Назад
-      </Button>
-    </div>
-  );
+  return <FormPageHeader title={props.title} subtitle={props.subtitle} onBack={props.onBack} />;
 }
 
 function FormActions(props: { saving: boolean; isNew: boolean; onSave: () => void; onBack: () => void }) {
@@ -328,8 +304,8 @@ function AdminTagsNeoKeywordEditPageBody(props: AdminTagsNeoKeywordEditPageProps
   }
 
   return (
-    <div className="flex flex-col items-center">
-      <div className="w-full md:max-w-screen-lg space-y-6">
+    <FormPageLayout>
+      <div className="w-full space-y-6">
         <FormHeader
           title={isNew ? 'Створити ключове слово' : 'Редагувати ключове слово'}
           subtitle={tagLabel ? `Тег: ${tagLabel}` : null}
@@ -342,7 +318,7 @@ function AdminTagsNeoKeywordEditPageBody(props: AdminTagsNeoKeywordEditPageProps
 
         {actionStatus?.kind === 'error' ? <Info text={actionStatus.message} color="error" /> : null}
       </div>
-    </div>
+    </FormPageLayout>
   );
 }
 

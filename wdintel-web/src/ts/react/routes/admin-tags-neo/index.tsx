@@ -1,13 +1,20 @@
 import EditIcon from '@mui/icons-material/Edit';
-import { CircularProgress, Tooltip, Typography } from '@mui/material';
+import { CircularProgress, Tooltip } from '@mui/material';
 import { MRT_ColumnDef, MaterialReactTable, useMaterialReactTable } from 'material-react-table';
 import React from 'react';
 
 import { TagAdmin } from '../../../../Bindings';
+import { PageErrorState } from '../../components/PageErrorState';
+import { PageLoadingState } from '../../components/PageLoadingState';
+import { TablePageToolbar } from '../../components/TablePageToolbar';
 import { Button } from '../../components/mui-customized/button';
 import { IconButton } from '../../components/mui-customized/icon-button';
-import { CUSTOM_CELL_STYLES, CUSTOM_STYLES } from '../../components/mui-customized/table/custom-styles';
-import { TableTopToolbar } from '../../components/mui-customized/table/components/table-top-toolbar';
+import {
+  CUSTOM_CELL_STYLES,
+  CUSTOM_STYLES,
+  FULL_WIDTH_TABLE_PAPER_SX,
+  PAGE_SCROLL_TABLE_CONTAINER_SX,
+} from '../../components/mui-customized/table/custom-styles';
 import {
   getDefaultMRTOptions,
   renderColumnActionsMenuItems,
@@ -113,6 +120,8 @@ function RowActions(props: { tag: TagAdmin }) {
 function TagsTable(props: { data: TagAdmin[] }) {
   const tableStateContext = useTableStateContext();
   const columns = useTagColumns();
+  const basePaperProps = CUSTOM_STYLES.muiTablePaperProps;
+  const resolvedPaperProps = typeof basePaperProps === 'function' ? basePaperProps : () => basePaperProps || {};
 
   const state = {
     showAlertBanner: false,
@@ -169,6 +178,22 @@ function TagsTable(props: { data: TagAdmin[] }) {
         }),
       },
     },
+    muiTablePaperProps: ({ table }) => {
+      const baseProps = resolvedPaperProps({ table });
+      return {
+        ...baseProps,
+        sx: {
+          ...(baseProps as any)?.sx,
+          ...FULL_WIDTH_TABLE_PAPER_SX,
+        },
+      };
+    },
+    muiTableContainerProps: {
+      sx: {
+        ...(CUSTOM_STYLES.muiTableContainerProps as any)?.sx,
+        ...PAGE_SCROLL_TABLE_CONTAINER_SX,
+      },
+    },
     state,
   });
 
@@ -203,18 +228,14 @@ function AdminTagsNeoPageBody() {
 
   const renderTable = () => {
     if (status === 'loading') {
-      return (
-        <div className="flex items-center justify-center py-12">
-          <CircularProgress size={28} />
-        </div>
-      );
+      return <PageLoadingState />;
     }
     if (status === 'error') {
-      return <div className="text-center py-8 text-red-600">{error || 'Помилка завантаження'}</div>;
+      return <PageErrorState message={error || 'Помилка завантаження'} />;
     }
     if (status === 'success') {
       return (
-        <div className="table-responsive-modern">
+        <div className="w-full min-w-0">
           <TagsTable data={tags} />
         </div>
       );
@@ -223,16 +244,11 @@ function AdminTagsNeoPageBody() {
   };
 
   return (
-    <div className="mt-2 w-full space-y-4">
-      <TableTopToolbar
-        header={
-          <Typography variant="h5" className="!font-semibold">
-            Теги
-          </Typography>
-        }
-        withDatePicker={false}
+    <div className="flex w-full min-w-0 flex-col gap-6">
+      <TablePageToolbar
+        title="Теги"
         withGlobalTextFilter
-        additionalActions={
+        actions={
           <div className="flex gap-2">
             <Button variant="outlined" onClick={loadTags}>
               Оновити

@@ -12,17 +12,23 @@ import {
   MenuItem,
   TextField,
   Tooltip,
-  Typography,
 } from '@mui/material';
 import { MRT_ColumnDef, MaterialReactTable, useMaterialReactTable } from 'material-react-table';
 import React from 'react';
 
 import { CreateLoginReq, DeactivationReasonType, Login, Organism, SigintZone, UpdateLoginReq } from '../../../../Bindings';
+import { PageErrorState } from '../../components/PageErrorState';
+import { PageLoadingState } from '../../components/PageLoadingState';
+import { TablePageToolbar } from '../../components/TablePageToolbar';
 import { Button } from '../../components/mui-customized/button';
 import { IconButton } from '../../components/mui-customized/icon-button';
 import { PowerChip } from '../../components/PowerChip';
-import { CUSTOM_CELL_STYLES, CUSTOM_STYLES } from '../../components/mui-customized/table/custom-styles';
-import { TableTopToolbar } from '../../components/mui-customized/table/components/table-top-toolbar';
+import {
+  CUSTOM_CELL_STYLES,
+  CUSTOM_STYLES,
+  FULL_WIDTH_TABLE_PAPER_SX,
+  PAGE_SCROLL_TABLE_CONTAINER_SX,
+} from '../../components/mui-customized/table/custom-styles';
 import {
   getDefaultMRTOptions,
   renderColumnActionsMenuItems,
@@ -944,21 +950,14 @@ function UsersTable(props: { data: Login[]; onEdit: (login: Login) => void }) {
         ...baseProps,
         sx: {
           ...(baseProps as any)?.sx,
-          minWidth: 0,
-          maxWidth: '100%',
-          width: '100%',
+          ...FULL_WIDTH_TABLE_PAPER_SX,
         },
       };
     },
     muiTableContainerProps: {
       sx: {
         ...(CUSTOM_STYLES.muiTableContainerProps as any)?.sx,
-        minWidth: 0,
-        maxWidth: '100%',
-        width: '100%',
-        maxHeight: 'none',
-        overflowX: 'auto',
-        overflowY: 'visible',
+        ...PAGE_SCROLL_TABLE_CONTAINER_SX,
       },
     },
     state,
@@ -1049,18 +1048,14 @@ function AdminUsersNeoPageBody() {
 
   const renderTable = () => {
     if (status === 'loading') {
-      return (
-        <div className="flex items-center justify-center py-12">
-          <CircularProgress size={28} />
-        </div>
-      );
+      return <PageLoadingState />;
     }
     if (status === 'error') {
-      return <div className="text-center py-8 text-red-600">{error || 'Помилка завантаження'}</div>;
+      return <PageErrorState message={error || 'Помилка завантаження'} />;
     }
     if (status === 'success') {
       return (
-        <div className="table-responsive-modern w-full min-w-0">
+        <div className="w-full min-w-0">
           <UsersTable data={logins} onEdit={(login) => setEditingLogin(login)} />
         </div>
       );
@@ -1069,16 +1064,11 @@ function AdminUsersNeoPageBody() {
   };
 
   return (
-    <div className="mt-2 w-full space-y-4">
-      <TableTopToolbar
-        header={
-          <Typography variant="h5" className="!font-semibold">
-            Користувачі
-          </Typography>
-        }
-        withDatePicker={false}
+    <div className="flex w-full min-w-0 flex-col gap-6">
+      <TablePageToolbar
+        title="Користувачі"
         withGlobalTextFilter
-        additionalActions={
+        actions={
           <div className="flex gap-2">
             <Button variant="outlined" onClick={loadLogins}>
               Оновити

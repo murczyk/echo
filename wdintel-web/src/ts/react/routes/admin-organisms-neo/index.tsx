@@ -7,10 +7,17 @@ import { MRT_ColumnDef, MaterialReactTable, useMaterialReactTable } from 'materi
 import React from 'react';
 
 import { AreaOfResponsibility, Organism, OrganismGroup, SignalGroupFull, UpdateOrganismReq } from '../../../../Bindings';
+import { PageErrorState } from '../../components/PageErrorState';
+import { PageLoadingState } from '../../components/PageLoadingState';
+import { TablePageToolbar } from '../../components/TablePageToolbar';
 import { Button } from '../../components/mui-customized/button';
 import { IconButton } from '../../components/mui-customized/icon-button';
-import { CUSTOM_CELL_STYLES, CUSTOM_STYLES } from '../../components/mui-customized/table/custom-styles';
-import { TableTopToolbar } from '../../components/mui-customized/table/components/table-top-toolbar';
+import {
+  CUSTOM_CELL_STYLES,
+  CUSTOM_STYLES,
+  FULL_WIDTH_TABLE_PAPER_SX,
+  PAGE_SCROLL_TABLE_CONTAINER_SX,
+} from '../../components/mui-customized/table/custom-styles';
 import {
   getDefaultMRTOptions,
   renderColumnActionsMenuItems,
@@ -388,22 +395,14 @@ function OrganismsTable(props: {
         ...baseProps,
         sx: {
           ...(baseProps as any)?.sx,
-          height: '100%',
-          minHeight: 0,
-          minWidth: 0,
-          maxWidth: '100%',
-          width: '100%',
+          ...FULL_WIDTH_TABLE_PAPER_SX,
         },
       };
     },
     muiTableContainerProps: {
       sx: {
         ...(CUSTOM_STYLES.muiTableContainerProps as any)?.sx,
-        minWidth: 0,
-        maxWidth: '100%',
-        width: '100%',
-        overflowX: 'auto',
-        overflowY: 'auto',
+        ...PAGE_SCROLL_TABLE_CONTAINER_SX,
       },
     },
     state,
@@ -648,22 +647,14 @@ function AdminOrganismsNeoPageBody() {
 
   const renderTable = () => {
     if (organismsStatus === 'loading') {
-      return (
-        <div className="flex h-full items-center justify-center">
-          <CircularProgress size={28} />
-        </div>
-      );
+      return <PageLoadingState />;
     }
     if (organismsStatus === 'error') {
-      return (
-        <div className="flex h-full items-center justify-center text-center text-red-600">
-          {organismsError || 'Помилка завантаження'}
-        </div>
-      );
+      return <PageErrorState message={organismsError || 'Помилка завантаження'} />;
     }
     if (organismsStatus === 'success') {
       return (
-        <div className="table-responsive-modern h-full min-h-0 w-full min-w-0">
+        <div className="w-full min-w-0">
           <OrganismsTable
             data={organisms}
             lookup={lookup}
@@ -678,22 +669,17 @@ function AdminOrganismsNeoPageBody() {
   };
 
   return (
-    <div className="w-full flex app-shell-fill-height flex-col gap-4 pt-2 min-w-0">
+    <div className="flex w-full min-w-0 flex-col gap-6">
       {referenceStatus === 'error' ? (
         <Alert severity="error" onClose={() => setReferenceError(null)}>
           {referenceError || 'Помилка завантаження довідників'}
         </Alert>
       ) : null}
 
-      <TableTopToolbar
-        header={
-          <Typography variant="h5" className="!font-semibold">
-            Організми
-          </Typography>
-        }
-        withDatePicker={false}
+      <TablePageToolbar
+        title="Організми"
         withGlobalTextFilter
-        additionalActions={
+        actions={
           <div className="flex gap-2">
             <Button variant="outlined" onClick={reloadAll}>
               Оновити
@@ -705,7 +691,7 @@ function AdminOrganismsNeoPageBody() {
         }
       />
 
-      <div className="flex-1 min-h-0 min-w-0">{renderTable()}</div>
+      <div className="w-full min-w-0">{renderTable()}</div>
 
       <DeleteOrganismDialog
         organism={deleteTarget}
