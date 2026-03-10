@@ -11,7 +11,13 @@ const ATTR_PLACEHOLDER = 'placeholder';
 const DEFAULT_PLACEHOLDER = 'Точка, лісосмуга або координати';
 
 class AnalysisMapSearchElement extends HTMLElement {
-  static observedAttributes = [ATTR_RESULTS_COUNT, ATTR_SEARCH_LOADING, ATTR_INITIAL_QUERY, ATTR_DISABLED, ATTR_PLACEHOLDER];
+  static observedAttributes = [
+    ATTR_RESULTS_COUNT,
+    ATTR_SEARCH_LOADING,
+    ATTR_INITIAL_QUERY,
+    ATTR_DISABLED,
+    ATTR_PLACEHOLDER,
+  ];
 
   private root: Root | null = null;
   private resultsCount: number | null = null;

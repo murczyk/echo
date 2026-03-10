@@ -28,7 +28,7 @@ const defaultGroupStats: SignalGroupStats = {
   activityLastDay: 0,
   activityLastWeek: 0,
 };
-import { snakeToCamelBody } from '../../../snake-to-camel';
+import { transformSnakeToCamel, transformCamelToSnake } from '../../../snake-to-camel';
 import { postJson, postVoid } from './client';
 
 /** Raw API response (snake_case) */
@@ -304,7 +304,7 @@ export async function getTagsMapForDisplay(): Promise<Record<number, Tag>> {
   const raw = await postJson<Array<[number, Tag]>>('/api/tags/tags-list', {});
   const map: Record<number, Tag> = {};
   for (const [i, tagRecord] of Object.entries(raw)) {
-    const nTag = snakeToCamelBody<Tag>(tagRecord[1]);
+    const nTag = transformSnakeToCamel<Tag>(tagRecord[1]);
     map[Number(tagRecord[0])] = nTag;
   }
 
@@ -369,7 +369,8 @@ export async function getPostsList(): Promise<string[]> {
     withoutModelTags: null,
     reportTagsOnlyThisUnit: null,
   };
-  const raw = await postJson<PostStatsRsp>('/api/rer/analysis/stats/posts', body);
+  const snakeBody = transformCamelToSnake<AnalysisStatsReq>(body);
+  const raw = await postJson<PostStatsRsp>('/api/rer/analysis/stats/posts', snakeBody);
   const posts = raw?.posts ?? [];
   return posts.map((p) => p.post);
 }
