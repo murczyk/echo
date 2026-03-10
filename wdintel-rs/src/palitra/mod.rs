@@ -1204,11 +1204,8 @@ async fn sync_delete_palitra_from_connected_organisms(
     for target in goi_targets {
         let remote_file_path =
             compose_goi_palette_remote_path(&target.path, &source_file_name);
-        crate::organism::goi::goi_delete_file_loose(
-            target,
-            remote_file_path,
-        )
-        .await;
+        crate::organism::goi::goi_delete_file_loose(target, remote_file_path)
+            .await;
     }
 
     Ok(())

@@ -358,16 +358,19 @@ pub async fn report_docx_kind_babak(
                     let d_tz = Utc.from_utc_datetime(&d).with_timezone(&tz);
                     doc = doc
                         .add_paragraph(
-                            Paragraph::new()
-                                .add_run(Run::new().add_text(format!(
+                            add_multiline_text(
+                                Paragraph::new(),
+                                &format!(
                                     "{} {}",
                                     d_tz.format("%d/%m %H:%M"),
                                     c
-                                )))
-                                .numbering(
-                                    NumberingId::new(1),
-                                    IndentLevel::new(0),
                                 ),
+                                false,
+                            )
+                            .numbering(
+                                NumberingId::new(1),
+                                IndentLevel::new(0),
+                            ),
                         )
                         .add_paragraph(Paragraph::new());
                 }
@@ -417,20 +420,22 @@ pub async fn report_docx_kind_babak(
             if let Some(c) = comment.comment {
                 if let Some(d) = comment.datetime {
                     let d_tz = Utc.from_utc_datetime(&d).with_timezone(&tz);
+                    let mut paragraph = add_multiline_text(
+                        Paragraph::new(),
+                        &format!("{} {}", d_tz.format("%d/%m %H:%M"), c),
+                        false,
+                    );
+                    if let Some(text) = comment.text.as_deref() {
+                        paragraph = paragraph.add_run(
+                            Run::new().add_break(BreakType::TextWrapping),
+                        );
+                        paragraph = add_multiline_text(paragraph, text, false);
+                    }
                     doc = doc
-                        .add_paragraph(
-                            Paragraph::new()
-                                .add_run(Run::new().add_text(format!(
-                                    "{} {}\n\r{}",
-                                    d_tz.format("%d/%m %H:%M"),
-                                    c,
-                                    comment.text.unwrap_or("".to_string()),
-                                )))
-                                .numbering(
-                                    NumberingId::new(1),
-                                    IndentLevel::new(0),
-                                ),
-                        )
+                        .add_paragraph(paragraph.numbering(
+                            NumberingId::new(1),
+                            IndentLevel::new(0),
+                        ))
                         .add_paragraph(Paragraph::new());
                 }
             }
@@ -495,27 +500,20 @@ pub async fn report_docx_kind_babak(
             if let Some(text) = comment.text {
                 if let Some(d) = comment.datetime {
                     let d_tz = Utc.from_utc_datetime(&d).with_timezone(&tz);
+                    let mut paragraph = Paragraph::new().add_run(
+                        Run::new()
+                            .add_text(d_tz.format("%d/%m %H:%M").to_string()),
+                    );
+                    if let Some(comment_text) = comment.comment.as_deref() {
+                        paragraph =
+                            add_multiline_text(paragraph, comment_text, true);
+                    }
+                    paragraph = add_multiline_text(paragraph, &text, false);
                     doc = doc
-                        .add_paragraph(
-                            Paragraph::new()
-                                .add_run(Run::new().add_text(
-                                    d_tz.format("%d/%m %H:%M").to_string(),
-                                ))
-                                .add_run(
-                                    Run::new()
-                                        .add_text(
-                                            comment
-                                                .comment
-                                                .unwrap_or("".to_string()),
-                                        )
-                                        .bold(),
-                                )
-                                .add_run(Run::new().add_text(text))
-                                .numbering(
-                                    NumberingId::new(1),
-                                    IndentLevel::new(0),
-                                ),
-                        )
+                        .add_paragraph(paragraph.numbering(
+                            NumberingId::new(1),
+                            IndentLevel::new(0),
+                        ))
                         .add_paragraph(Paragraph::new());
                 }
             }
@@ -546,6 +544,31 @@ struct BabakComment {
     datetime: Option<chrono::NaiveDateTime>,
     comment: Option<String>,
     text: Option<String>,
+}
+
+fn add_multiline_text(
+    paragraph: Paragraph,
+    text: &str,
+    is_bold: bool,
+) -> Paragraph {
+    let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
+    let mut lines = normalized.split('\n').peekable();
+    let mut paragraph = paragraph;
+
+    while let Some(line) = lines.next() {
+        let mut run = Run::new().add_text(line.to_string());
+        if is_bold {
+            run = run.bold();
+        }
+        paragraph = paragraph.add_run(run);
+
+        if lines.peek().is_some() {
+            paragraph = paragraph
+                .add_run(Run::new().add_break(BreakType::TextWrapping));
+        }
+    }
+
+    paragraph
 }
 
 fn dedup_babak_comments_across_units(units: &mut [StatsPerUnitReport]) {
