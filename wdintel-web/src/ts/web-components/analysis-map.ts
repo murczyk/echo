@@ -119,6 +119,7 @@ class AnalysisMap extends HTMLElement {
 
   private _markersGroup: L.MarkerClusterGroup | null = null;
   private _clickedPoint: DataCircleMarker | null = null;
+  private _clickedLatLng: L.LatLng | null = null;
   private _boundedAlready = false;
   private _initialized = false;
   private _kmzLayer: KMZLayer | null = null;
@@ -250,7 +251,7 @@ class AnalysisMap extends HTMLElement {
       const parsed = JSON.parse(newValue);
       this._messages = parsed['messages']
       this._networkUnits = parsed['networkUnits']
-      if (this._clickedPoint && this._messages.length > 0) {
+      if ((this._clickedPoint || this._clickedLatLng) && this._messages.length > 0) {
 
         const unitClickedCallback = (element: Element) => {
           const event = new CustomEvent('message-unit-clicked', {
@@ -261,8 +262,13 @@ class AnalysisMap extends HTMLElement {
             composed: true
           });
           this.dispatchEvent(event);
-          this._clickedPoint?.closePopup();
+          if (this._clickedPoint) {
+            this._clickedPoint.closePopup();
+          } else {
+            this._map?.closePopup();
+          }
           this._clickedPoint = null;
+          this._clickedLatLng = null;
         }
         const sortedMessages = [...this._messages].sort((message1, message2) => {
           const datetime1 = new Date(`${message1[1].date}T${message1[1].time} `);
@@ -271,10 +277,24 @@ class AnalysisMap extends HTMLElement {
         });
 
         const popupContent = getPointPopupTemplate(sortedMessages, this._networkUnits, this._selectedUnits)
-        this._clickedPoint.bindPopup(popupContent)
-        this._clickedPoint.openPopup()
+        const clickedMessageId = sortedMessages[0]?.[0];
+        const restoredPoint =
+          clickedMessageId !== undefined ? this._findPointMarkerByMessageId(clickedMessageId) : null;
 
-        //this._markersGroup.refreshClusters(this._clickedPoint)
+        if (restoredPoint) {
+          this._clickedPoint = restoredPoint;
+          this._clickedLatLng = restoredPoint.getLatLng();
+          this._clickedPoint.bindPopup(popupContent)
+          this._clickedPoint.openPopup()
+        } else if (this._map && this._clickedLatLng) {
+          L.popup()
+            .setLatLng(this._clickedLatLng)
+            .setContent(popupContent)
+            .openOn(this._map);
+          this._clickedPoint = null;
+        } else {
+          return;
+        }
 
         const a = document.querySelectorAll('[id^="map-message-id-"]')
         const handlersMap = new Map<string, () => void>();
@@ -284,7 +304,7 @@ class AnalysisMap extends HTMLElement {
           handlersMap.set(x.id, handleClick)
         })
 
-        this._clickedPoint.once('popupclose', () => {
+        const clearPopupHandlers = () => {
           a.forEach(x => {
             const handler = handlersMap.get(x.id)
             if (handler) {
@@ -292,7 +312,15 @@ class AnalysisMap extends HTMLElement {
               handlersMap.delete(x.id)
             }
           })
-        })
+          this._clickedPoint = null;
+          this._clickedLatLng = null;
+        };
+
+        if (this._clickedPoint) {
+          this._clickedPoint.once('popupclose', clearPopupHandlers);
+        } else if (this._map) {
+          this._map.once('popupclose', clearPopupHandlers);
+        }
       }
     }
     if (name === 'selected-units') {
@@ -677,6 +705,7 @@ class AnalysisMap extends HTMLElement {
       })
 
       circle.on('click', () => {
+        this._clickedLatLng = circle.getLatLng();
         this._emitLoadMessagesDescriptions([point.message_id])
         this._clickedPoint = circle;
       })
@@ -694,7 +723,13 @@ class AnalysisMap extends HTMLElement {
       const allChildMarkers = leafletEvent.layer.getAllChildMarkers();
       const messageIds = allChildMarkers.map(dataCircle => dataCircle.data.messageId)
       console.log(leafletEvent, 'leafletEvent')
-      this._clickedPoint = leafletEvent.propagatedFrom
+      this._clickedPoint = null
+      const clusterLatLng =
+        (leafletEvent as L.LeafletMouseEvent).latlng ??
+        (typeof (leafletEvent.layer as { getLatLng?: () => L.LatLng }).getLatLng === 'function'
+          ? (leafletEvent.layer as { getLatLng: () => L.LatLng }).getLatLng()
+          : null);
+      this._clickedLatLng = clusterLatLng;
       this._emitLoadMessagesDescriptions(messageIds)
     });
     return {
@@ -713,6 +748,22 @@ class AnalysisMap extends HTMLElement {
     });
     this.dispatchEvent(event);
 
+  }
+
+  private _findPointMarkerByMessageId(messageId: number): DataCircleMarker | null {
+    if (!this._markersGroup) {
+      return null;
+    }
+    let found: DataCircleMarker | null = null;
+    this._markersGroup.eachLayer((layer: L.Layer) => {
+      if (found) {
+        return;
+      }
+      if (layer instanceof DataCircleMarker && layer.getData().messageId === messageId) {
+        found = layer;
+      }
+    });
+    return found;
   }
 
   private _getFeatureToggleState(): FeatureToggleState {
