@@ -71,10 +71,10 @@
     background-color: #6b7280 !important;
 }
 
-/* RER duty neo feed column - compact scrollbar */
+/* RER duty neo feed column - thin scrollbar */
 .rer-duty-feed-scroll::-webkit-scrollbar {
-    width: 4px;
-    height: 4px;
+    width: 2px;
+    height: 2px;
 }
 
 .rer-duty-feed-scroll::-webkit-scrollbar-track {

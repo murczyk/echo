@@ -26,8 +26,8 @@ export function createMasterUnitText(network: Network, unitsMap: Record<number, 
 }
 
 export const PAGE_ID = 'rer-duty-neo';
-/** Poll get-inbox-count every 2s to show "Нових: N". get-inbox is not polled. */
-export const INBOX_COUNT_POLL_INTERVAL_MS = 2000;
+/** Poll get-inbox-count every 2s; load newer (get-inbox) only when count > 0. */
+export const INBOX_COUNT_POLL_INTERVAL_MS = 1000;
 
 export function emptyFilter(): RerDutyFeedFilterState {
   return {
@@ -42,6 +42,30 @@ export function emptyFilter(): RerDutyFeedFilterState {
   };
 }
 
+/** Options for "автоматично додавати частоти в діапазоні" (MHz). */
+export const ADJACENT_FREQS_RANGE_OPTIONS = [0, 0.0005, 0.002, 0.005] as const;
+
+function isInRange(selectedS: string, freqS: string, range: number): boolean {
+  const selected = parseFloat(selectedS);
+  const freq = parseFloat(freqS);
+  if (Number.isNaN(selected) || Number.isNaN(freq)) return false;
+  return freq >= selected - range && freq <= selected + range;
+}
+
+/** Expand selected freqs with adjacent within range (MHz). */
+export function findAllAdjacentFreqs(
+  allFrequencies: string[],
+  selectedFrequencies: string[],
+  range: number
+): string[] {
+  if (range <= 0) return [];
+  return allFrequencies.filter(
+    (freq) =>
+      !selectedFrequencies.includes(freq) &&
+      selectedFrequencies.some((selected) => isInRange(selected, freq, range))
+  );
+}
+
 export function buildInboxReq(opts: {
   loadLatest?: boolean;
   beforeIdNoninclusive?: number | null;
@@ -49,8 +73,15 @@ export function buildInboxReq(opts: {
   sinceDateInclusiveMs?: number | null;
   nolimit?: boolean;
   filter: RerDutyFeedFilterState;
+  /** Expanded freqs (selected + adjacent); if not set, filter.freqsSelected is used. */
+  expandedFreqsSelected?: string[] | null;
+  expandedFreqsDenied?: string[] | null;
+  highlightSignals?: boolean | null;
+  reportTagsOnlyThisUnit?: boolean | null;
 }): InboxMessagesReq {
   const f = opts.filter;
+  const selectedFreqs = opts.expandedFreqsSelected ?? f.freqsSelected ?? null;
+  const deniedFreqs = opts.expandedFreqsDenied ?? f.freqsDenied ?? null;
   return {
     sinceIdNoninclusive: opts.sinceIdNoninclusive ?? null,
     beforeIdNoninclusive: opts.beforeIdNoninclusive ?? null,
@@ -61,10 +92,10 @@ export function buildInboxReq(opts: {
     selectedGroups: f.groupsSelected ?? null,
     selectedSenders: f.sendersSelected ?? null,
     deniedSenders: f.deniedSenders ?? null,
-    selectedFreqs: f.freqsSelected ?? null,
+    selectedFreqs,
     selectedPosts: f.postsSelected ?? null,
     deniedPosts: f.postsDenied ?? null,
-    deniedFreqs: f.freqsDenied ?? null,
+    deniedFreqs,
     selectedCallsigns: null,
     selectedUnits: null,
     selectedLocations: null,
@@ -77,16 +108,17 @@ export function buildInboxReq(opts: {
     orWithCoords: null,
     newestFirst: null,
     search: null,
+    // Match Elm Waterfall: highlightCallsigns/Keywords/Searchres always true; highlightSignals from opts; highlightPoints false
     highlightCallsigns: true,
     highlightKeywords: true,
     highlightSearchres: true,
-    highlightSignals: false,
-    highlightPoints: true,
+    highlightSignals: opts.highlightSignals ?? false,
+    highlightPoints: false,
     selectedTags: null,
     selectedAors: null,
     selectedNetworks: null,
     sortBy: 'IMSTimestamp',
-    reportTagsOnlyThisUnit: null,
+    reportTagsOnlyThisUnit: opts.reportTagsOnlyThisUnit ?? null,
     ignoreImportedCoords: true,
     includePelengLocations: null,
     unitsExactMatchOnly: null,
@@ -256,13 +288,24 @@ export type MessageFeedState = {
   filter: RerDutyFeedFilterState;
   items: MessageItem[];
   loading: boolean;
-  loadingEarlier: boolean;
-  /** True after "load earlier" returned 0 new items — nothing older to fetch */
+  loadingOlder: boolean;
+  /** True after "load older" returned 0 new items — nothing older to fetch */
   hasReachedStart: boolean;
   /** Virtuoso firstItemIndex: start at VIRTUOSO_FIRST_ITEM_INDEX_INITIAL, decrease by N when prepending N items (infinite scroll). */
   firstItemIndex: number;
   /** Reference time (ms) for relative "time ago" in message cards; set when feed items are loaded. */
   referenceTimeMs: number | null;
+  /** Message IDs that have been "read" (entered viewport). Unread count = items not in this set. */
+  readIds: Set<number>;
+  unreadCount: number;
+  /** When true, the left column (freq, date/time, buttons) is hidden for all messages in this feed. */
+  leftSideCollapsed: boolean;
+  /** Auto-add freqs in range (MHz); 0 = off. */
+  adjacentFreqsRange: number;
+  /** Підсвічувати сигнали (додатково). */
+  highlightSignalsEnabled: boolean;
+  /** Лише теги мого підрозділу (додатково). */
+  onlyMyUnitTagsEnabled: boolean;
 };
 
 export function toQueryState(messageFeeds: MessageFeedState[]): RerDutyState {
