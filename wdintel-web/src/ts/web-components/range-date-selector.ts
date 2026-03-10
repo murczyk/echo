@@ -61,14 +61,19 @@ const styles = `
     transform: translateY(-1px);
   }
 
-  .icon-button:hover {
+  .icon-button:not(:disabled):hover {
     background-color: var(--bs-secondary-bg);
     color: var(--bs-primary);
   }
 
-  .icon-button:focus {
+  .icon-button:not(:disabled):focus {
     outline: 2px solid var(--bs-primary);
     outline-offset: 2px;
+  }
+
+  .icon-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
   }
 
   .jump-button {
@@ -85,12 +90,26 @@ const styles = `
     transition: background-color 0.2s, color 0.2s;
   }
 
-  .jump-button:hover {
+  .jump-button:not(:disabled):hover {
     background-color: var(--bs-secondary-bg);
   }
 
-  .jump-button:focus {
+  .jump-button:not(:disabled):focus {
     outline: none;
+  }
+
+  .jump-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  /* Loading state uses explicit high-contrast colors instead of generic disabled fading. */
+  .jump-button.is-loading {
+    opacity: 1;
+    background-color: var(--bs-dark, #212529);
+    color: var(--bs-light, #f8f9fa);
+    border-color: var(--bs-dark, #212529);
+    cursor: progress;
   }
 </style>
 
@@ -103,11 +122,12 @@ class DateRangeSelector extends HTMLElement {
   private daysJumpOption = [1, 3, 7, 30]
   private currentJumpIndex = 0;
   private selectedJumpValue = 1;
+  private isLoading = false;
   private onJumpClick = (event: MouseEvent) => this.setRangeDays(event);
   private onMoveBackward = () => this.moveRange(-1);
   private onMoveForward = () => this.moveRange(1);
 
-  static observedAttributes = ["dates"];
+  static observedAttributes = ["dates", "loading"];
 
   constructor() {
     super();
@@ -122,6 +142,7 @@ class DateRangeSelector extends HTMLElement {
       this.shadowRoot.querySelector('.jump-button')?.addEventListener('click', this.onJumpClick);
       this.shadowRoot.getElementById('backward')?.addEventListener('click', this.onMoveBackward);
       this.shadowRoot.getElementById('forward')?.addEventListener('click', this.onMoveForward);
+      this.syncControlsState();
     }
   }
 
@@ -136,6 +157,10 @@ class DateRangeSelector extends HTMLElement {
   attributeChangedCallback(name: string, oldValue: string, newValue: string) {
     if (name === 'dates') {
       this.initializeDates(newValue);
+      return;
+    }
+    if (name === 'loading') {
+      this.setLoading(newValue === 'true');
     }
   }
 
@@ -166,6 +191,9 @@ class DateRangeSelector extends HTMLElement {
   }
 
   private moveRange(direction: number) {
+    if (this.isLoading) {
+      return;
+    }
     this.currentStartDate.setDate(this.currentStartDate.getDate() + direction * this.selectedJumpValue);
     this.currentEndDate.setDate(this.currentEndDate.getDate() + direction * this.selectedJumpValue);
     this.updateDisplay();
@@ -173,6 +201,9 @@ class DateRangeSelector extends HTMLElement {
   }
 
   private setRangeDays(event: MouseEvent) {
+    if (this.isLoading) {
+      return;
+    }
     const button = event.currentTarget as HTMLButtonElement;
 
     this.currentJumpIndex = (this.currentJumpIndex + 1) % this.daysJumpOption.length;
@@ -180,8 +211,17 @@ class DateRangeSelector extends HTMLElement {
     this.selectedJumpValue = this.daysJumpOption[this.currentJumpIndex];
 
     button.textContent = daysCountText(this.selectedJumpValue);
+    this.applySelectedRangeLength();
+    this.updateDisplay();
+    this.emitDateChangeEvent();
 
+  }
 
+  private applySelectedRangeLength() {
+    const nextStart = new Date(this.currentEndDate);
+    // Keep current end date and adjust the range length to N days (inclusive).
+    nextStart.setDate(nextStart.getDate() - this.selectedJumpValue + 1);
+    this.currentStartDate = nextStart;
   }
 
   private updateDisplay() {
@@ -192,6 +232,7 @@ class DateRangeSelector extends HTMLElement {
   }
 
   private emitDateChangeEvent() {
+    this.setLoading(true);
     const event = new CustomEvent('date-range-changed', {
       detail: {
         startDate: this.currentStartDate.getTime(), // Get start date in POSIX format
@@ -201,6 +242,32 @@ class DateRangeSelector extends HTMLElement {
       composed: true
     });
     this.dispatchEvent(event); // Dispatch the event
+  }
+
+  private setLoading(value: boolean) {
+    if (this.isLoading === value) {
+      return;
+    }
+    this.isLoading = value;
+    this.syncControlsState();
+  }
+
+  private syncControlsState() {
+    if (!this.shadowRoot) {
+      return;
+    }
+    const backward = this.shadowRoot.getElementById('backward') as HTMLButtonElement | null;
+    const forward = this.shadowRoot.getElementById('forward') as HTMLButtonElement | null;
+    const jump = this.shadowRoot.querySelector('.jump-button') as HTMLButtonElement | null;
+
+    if (backward) backward.disabled = this.isLoading;
+    if (forward) forward.disabled = this.isLoading;
+    if (jump) {
+      jump.disabled = this.isLoading;
+      jump.classList.toggle('is-loading', this.isLoading);
+      jump.textContent = this.isLoading ? 'Завантаження...' : daysCountText(this.selectedJumpValue);
+      jump.setAttribute('aria-busy', this.isLoading ? 'true' : 'false');
+    }
   }
 }
 

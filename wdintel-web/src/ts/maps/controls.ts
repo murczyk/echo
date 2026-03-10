@@ -4,7 +4,7 @@ import { PalitraDetails } from './palitra-types';
 
 export interface TimeswitchControl extends L.Control {
   updateDates: (newDates: { startDate: number; endDate: number }) => void
-
+  updateLoading: (isLoading: boolean) => void
 }
 
 export interface LayerSwitchControl extends L.Control {
@@ -14,6 +14,7 @@ export interface LayerSwitchControl extends L.Control {
 export interface PalitrasControl extends L.Control {
   updatePalitras: (palitras: PalitraDetails[], visibleIds: number[]) => void
   setLoadState: (loadState: PalitrasLoadState) => void
+  setInteractionDisabled: (disabled: boolean) => void
 }
 
 export interface SearchControl extends L.Control {
@@ -351,7 +352,7 @@ export function createAttributionControl() {
   return L.control.attribution({ position: 'bottomleft' });
 }
 
-export function createTimeswitchControl(dates: { startDate: number; endDate: number }) {
+export function createTimeswitchControl(dates: { startDate: number; endDate: number }, isLoading = false) {
   const TimeswitchControl = L.Control.extend({
     onAdd: function(map: L.Map) {
       this._container = L.DomUtil.create('div', 'control-container');
@@ -359,6 +360,7 @@ export function createTimeswitchControl(dates: { startDate: number; endDate: num
       this._dateRangeSelector = L.DomUtil.create('date-range-selector')
 
       this._dateRangeSelector.setAttribute('dates', JSON.stringify({ startDate: dates.startDate, endDate: dates.endDate }))
+      this._dateRangeSelector.setAttribute('loading', isLoading ? 'true' : 'false')
 
       this._container.appendChild(this._dateRangeSelector)
 
@@ -372,6 +374,9 @@ export function createTimeswitchControl(dates: { startDate: number; endDate: num
     },
     updateDates: function(newDates: { startDate: number, endDate: number }) {
       this._dateRangeSelector.setAttribute('dates', JSON.stringify({ startDate: newDates.startDate, endDate: newDates.endDate }))
+    },
+    updateLoading: function(nextLoading: boolean) {
+      this._dateRangeSelector.setAttribute('loading', nextLoading ? 'true' : 'false')
     }
   });
   return new TimeswitchControl({ position: 'topleft' })
@@ -478,12 +483,14 @@ export function createPalitrasControl(
     setPalitras?: (palitras: PalitraDetails[]) => void;
     setVisibleIds?: (visibleIds: number[]) => void;
     setLoadState?: (loadState: PalitrasLoadState) => void;
+    setInteractionDisabled?: (disabled: boolean) => void;
   };
 
   const PalitrasControl = L.Control.extend({
     _palitras: palitras,
     _visibleIds: visibleIds,
     _loadState: 'idle' as PalitrasLoadState,
+    _interactionDisabled: false,
     _palitrasElement: null as PalitrasElementApi | null,
 
     onAdd: function(_map: L.Map) {
@@ -498,6 +505,9 @@ export function createPalitrasControl(
         const customEvent = event as CustomEvent<{ visibleIds?: number[] }>;
         const ids = customEvent.detail?.visibleIds;
         if (!Array.isArray(ids)) {
+          return;
+        }
+        if (this._interactionDisabled) {
           return;
         }
         const normalizedIds = normalizeVisibleIds(ids);
@@ -522,6 +532,7 @@ export function createPalitrasControl(
       this._palitrasElement.setPalitras?.(this._palitras);
       this._palitrasElement.setVisibleIds?.(this._visibleIds);
       this._palitrasElement.setLoadState?.(this._loadState);
+      this._palitrasElement.setInteractionDisabled?.(this._interactionDisabled);
     },
 
     updatePalitras: function(palitras: PalitraDetails[], visibleIds: number[]) {
@@ -532,6 +543,11 @@ export function createPalitrasControl(
 
     setLoadState: function(loadState: PalitrasLoadState) {
       this._loadState = loadState;
+      this._syncElementState();
+    },
+
+    setInteractionDisabled: function(disabled: boolean) {
+      this._interactionDisabled = disabled;
       this._syncElementState();
     }
   });

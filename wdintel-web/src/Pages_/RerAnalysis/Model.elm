@@ -158,6 +158,7 @@ type alias Model =
     , mapPoints : RemoteData ApiError (List B.FreqDetailedPoint)
     , mapNetworkUnits : List B.NetworkUnit
     , mapOpenMessages : RemoteData ApiError (List ( Int, B.InboxMessage ))
+    , mapOpenMessagesRequestId : Int
     , adjacentFreqsRangeSelect :
         { state : Select.State
         , items : List (Select.MenuItem Float)

@@ -27,6 +27,7 @@ type PalitrasOverlayProps = {
   palitras: PalitraDetails[];
   visibleIds: number[];
   loadState: 'idle' | 'loading' | 'success' | 'error';
+  interactionDisabled: boolean;
   onVisibleIdsChange: (visibleIds: number[]) => void;
 };
 
@@ -74,6 +75,7 @@ function perimeterPointsCount(palitraDetails: PalitraDetails): number {
 type PalitraGroupRowProps = {
   group: PalitraGroup;
   visibleIdsSet: Set<number>;
+  interactionDisabled: boolean;
   onToggleGroup: (group: PalitraGroup) => void;
   onToggleColor: (palitraId: number) => void;
 };
@@ -109,6 +111,7 @@ const PalitraGroupRow = React.memo(function PalitraGroupRow(props: PalitraGroupR
           className="palitra-checkbox"
           checked={groupSelected}
           indeterminate={groupPartiallySelected}
+          disabled={props.interactionDisabled}
           onClick={(event) => {
             event.stopPropagation();
           }}
@@ -139,7 +142,7 @@ const PalitraGroupRow = React.memo(function PalitraGroupRow(props: PalitraGroupR
                 }}
                 backgroundColor={palitra.color_hex}
                 autoTextContrast
-                interactive
+                interactive={!props.interactionDisabled}
                 size="medium"
                 minWidth={40}
                 labelPaddingX={0.8}
@@ -180,6 +183,9 @@ const PalitraGroupRow = React.memo(function PalitraGroupRow(props: PalitraGroupR
   if (prevProps.group !== nextProps.group) {
     return false;
   }
+  if (prevProps.interactionDisabled !== nextProps.interactionDisabled) {
+    return false;
+  }
   if (prevProps.onToggleGroup !== nextProps.onToggleGroup || prevProps.onToggleColor !== nextProps.onToggleColor) {
     return false;
   }
@@ -187,7 +193,7 @@ const PalitraGroupRow = React.memo(function PalitraGroupRow(props: PalitraGroupR
 });
 
 function PalitrasOverlay(props: PalitrasOverlayProps) {
-  const { palitras, visibleIds, loadState, onVisibleIdsChange } = props;
+  const { palitras, visibleIds, loadState, interactionDisabled, onVisibleIdsChange } = props;
   const [isCollapsed, setCollapsed] = React.useState<boolean>(() => {
     try {
       return localStorage.getItem(COLLAPSE_STORAGE_KEY) === 'true';
@@ -248,15 +254,21 @@ function PalitrasOverlay(props: PalitrasOverlayProps) {
   }, []);
 
   const toggleSelectAll = React.useCallback(() => {
+    if (interactionDisabled) {
+      return;
+    }
     if (allSelected) {
       applyVisibleIdsChange([]);
       return;
     }
     applyVisibleIdsChange(allColorIds);
-  }, [allColorIds, allSelected, applyVisibleIdsChange]);
+  }, [allColorIds, allSelected, applyVisibleIdsChange, interactionDisabled]);
 
   const toggleGroup = React.useCallback(
     (group: PalitraGroup) => {
+      if (interactionDisabled) {
+        return;
+      }
       const groupIds = group.colors.map((palitraDetails) => palitraDetails.palitra.id);
       const groupIdsSet = new Set(groupIds);
       const currentVisibleIds = localVisibleIdsRef.current;
@@ -270,11 +282,14 @@ function PalitrasOverlay(props: PalitrasOverlayProps) {
       const next = Array.from(new Set([...currentVisibleIds, ...groupIds]));
       applyVisibleIdsChange(next);
     },
-    [applyVisibleIdsChange],
+    [applyVisibleIdsChange, interactionDisabled],
   );
 
   const toggleColor = React.useCallback(
     (palitraId: number) => {
+      if (interactionDisabled) {
+        return;
+      }
       const currentVisibleIds = localVisibleIdsRef.current;
       const currentVisibleSet = new Set(currentVisibleIds);
       if (currentVisibleSet.has(palitraId)) {
@@ -283,7 +298,7 @@ function PalitrasOverlay(props: PalitrasOverlayProps) {
       }
       applyVisibleIdsChange(Array.from(new Set([...currentVisibleIds, palitraId])));
     },
-    [applyVisibleIdsChange],
+    [applyVisibleIdsChange, interactionDisabled],
   );
 
   const hasPalitras = palitras.length > 0;
@@ -339,6 +354,7 @@ function PalitrasOverlay(props: PalitrasOverlayProps) {
                 className="palitra-checkbox"
                 checked={allSelected}
                 indeterminate={!allSelected && someSelected}
+                disabled={interactionDisabled}
                 onClick={(event) => {
                   event.stopPropagation();
                 }}
@@ -370,6 +386,7 @@ function PalitrasOverlay(props: PalitrasOverlayProps) {
           placeholder="Пошук"
           onSearch={setFilterValue}
           minWidth={260}
+          disabled={interactionDisabled}
         />
       </Box>
 
@@ -382,6 +399,7 @@ function PalitrasOverlay(props: PalitrasOverlayProps) {
               key={group.key}
               group={group}
               visibleIdsSet={visibleIdsSet}
+              interactionDisabled={interactionDisabled}
               onToggleGroup={toggleGroup}
               onToggleColor={toggleColor}
             />
@@ -406,6 +424,7 @@ class AnalysisMapPalitrasElement extends HTMLElement {
   private palitras: PalitraDetails[] = [];
   private visibleIds: number[] = [];
   private loadState: 'idle' | 'loading' | 'success' | 'error' = 'idle';
+  private interactionDisabled = false;
 
   connectedCallback() {
     if (!this.root) {
@@ -436,6 +455,11 @@ class AnalysisMapPalitrasElement extends HTMLElement {
     this.renderComponent();
   }
 
+  setInteractionDisabled(disabled: boolean) {
+    this.interactionDisabled = disabled;
+    this.renderComponent();
+  }
+
   private renderComponent() {
     if (!this.root) {
       return;
@@ -446,6 +470,7 @@ class AnalysisMapPalitrasElement extends HTMLElement {
         palitras={this.palitras}
         visibleIds={this.visibleIds}
         loadState={this.loadState}
+        interactionDisabled={this.interactionDisabled}
         onVisibleIdsChange={(visibleIds) => {
           this.dispatchEvent(
             new CustomEvent('palitras-visible-ids-change', {

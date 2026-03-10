@@ -170,6 +170,10 @@ function normalizeCallsigns(callsigns: Callsign[]): Callsign[] {
   return callsigns.map(normalizeCallsign);
 }
 
+function hasAnyCallsignInput(rows: CallsignDraftRow[]): boolean {
+  return rows.some((row) => row.callsign.trim() !== '');
+}
+
 export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?: string[] }) {
   const [user, setUser] = React.useState<User | null>(null);
   const [units, setUnits] = React.useState<Unit[]>([]);
@@ -195,6 +199,7 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
   const [addSubmitting, setAddSubmitting] = React.useState(false);
   const [addValidationError, setAddValidationError] = React.useState<string | null>(null);
   const [addDrawerOpen, setAddDrawerOpen] = React.useState(false);
+  const [addDuplicateHintsEnabled, setAddDuplicateHintsEnabled] = React.useState(false);
 
   const [editForm, setEditForm] = React.useState<CallsignEditForm | null>(null);
   const [editSubmitting, setEditSubmitting] = React.useState(false);
@@ -234,23 +239,29 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
   const unitStatsView = React.useMemo(() => mergeUnitStatsWithUnits(unitStats, unitsById), [unitStats, unitsById]);
   const canUseCursorPagination = React.useMemo(() => isCursorPaginationSortCompatible(sort), [sort]);
   const addPotentialDuplicates = React.useMemo(() => {
-    const firstRow = addRows[0];
-    if (!firstRow) return [];
+    if (!addDuplicateHintsEnabled || addSubmitting) return [];
 
-    const callsignInput = firstRow.callsign.trim().toLocaleLowerCase();
-    const positionInput = firstRow.position.trim().toLocaleLowerCase();
-    const hasInput = callsignInput !== '' || positionInput !== '' || addUnitId !== null;
-    if (!hasInput) return [];
+    const draftInputs = addRows
+      .map((row) => ({
+        callsignInput: row.callsign.trim().toLocaleLowerCase(),
+        positionInput: row.position.trim().toLocaleLowerCase(),
+      }))
+      .filter((row) => row.callsignInput !== '');
+    if (draftInputs.length === 0) return [];
 
     return callsigns
       .filter((callsign) => {
-        const callsignMatches =
-          callsignInput === '' || callsign.callsign.toLocaleLowerCase().includes(callsignInput);
-        const positionMatches =
-          positionInput === '' || callsign.position.toLocaleLowerCase().includes(positionInput);
+        const callsignValue = callsign.callsign.toLocaleLowerCase();
+        const positionValue = callsign.position.toLocaleLowerCase();
+        const rowMatches = draftInputs.some((draftInput) => {
+          const callsignMatches = callsignValue.includes(draftInput.callsignInput);
+          const positionMatches =
+            draftInput.positionInput === '' || positionValue.includes(draftInput.positionInput);
+          return callsignMatches && positionMatches;
+        });
         const unitMatches = addUnitId == null || callsign.unitId === addUnitId;
 
-        return callsignMatches && positionMatches && unitMatches;
+        return rowMatches && unitMatches;
       })
       .slice(0, 10)
       .map((callsign) => ({
@@ -260,7 +271,7 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
         comment: callsign.comment,
         unitName: unitsById.get(callsign.unitId)?.name ?? `#${callsign.unitId}`,
       }));
-  }, [addRows, addUnitId, callsigns, unitsById]);
+  }, [addDuplicateHintsEnabled, addSubmitting, addRows, addUnitId, callsigns, unitsById]);
 
   function clearListRequest() {
     activeListAbortRef.current?.abort();
@@ -483,15 +494,22 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
   }
 
   function onRemoveRow(index: number) {
+    setAddValidationError(null);
     setAddRows((prev) => {
-      if (prev.length <= 1) return prev;
-      return prev.filter((_, rowIndex) => rowIndex !== index);
+      if (prev.length <= 1) {
+        setAddDuplicateHintsEnabled(false);
+        return prev;
+      }
+      const nextRows = prev.filter((_, rowIndex) => rowIndex !== index);
+      setAddDuplicateHintsEnabled(hasAnyCallsignInput(nextRows));
+      return nextRows;
     });
   }
 
   function onClearRows() {
     setAddRows([createEmptyDraftRow()]);
     setAddValidationError(null);
+    setAddDuplicateHintsEnabled(false);
   }
 
   function onOpenAddDrawer() {
@@ -507,6 +525,7 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
     setAddSourceId(sources[0]?.id ?? null);
     setAddCallsignAdditionalSourceIds([]);
     setAddValidationError(null);
+    setAddDuplicateHintsEnabled(false);
   }
 
   function onCloseAddDrawer() {
@@ -517,7 +536,11 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
 
   function onRowChange(index: number, next: CallsignDraftRow) {
     setAddValidationError(null);
-    setAddRows((prev) => prev.map((row, rowIndex) => (rowIndex === index ? next : row)));
+    setAddRows((prev) => {
+      const nextRows = prev.map((row, rowIndex) => (rowIndex === index ? next : row));
+      setAddDuplicateHintsEnabled(hasAnyCallsignInput(nextRows));
+      return nextRows;
+    });
   }
 
   function onApplyPastedRows(value: string) {
@@ -526,6 +549,7 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
     if (parsed.length === 0) return;
     setAddRows(parsed);
     setAddValidationError(null);
+    setAddDuplicateHintsEnabled(hasAnyCallsignInput(parsed));
   }
 
   async function onSubmitAdd() {
@@ -555,6 +579,7 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
     }
 
     setAddSubmitting(true);
+    setAddDuplicateHintsEnabled(false);
 
     try {
       const nonEmptyRows = addRows.filter((row) => hasAnyDraftValue(row));
@@ -589,7 +614,9 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
         return;
       }
 
-      setAddRows(failed.map((item) => item.row));
+      const failedRows = failed.map((item) => item.row);
+      setAddRows(failedRows);
+      setAddDuplicateHintsEnabled(hasAnyCallsignInput(failedRows));
       setAddValidationError(
         failed.length === 1
           ? `Не вдалося додати 1 позивний: ${failed[0]?.error ?? 'Невідома помилка'}`
