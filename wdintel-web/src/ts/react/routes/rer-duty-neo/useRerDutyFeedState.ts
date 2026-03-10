@@ -321,17 +321,19 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   );
   const loadFeedInitialMessagesRef = React.useRef(loadFeedInitialMessages);
   loadFeedInitialMessagesRef.current = loadFeedInitialMessages;
+  /** Keys are `${feedId}:${JSON.stringify(filter)}` so a filter change on the same feed triggers a new load. */
   const initialLoadStartedRef = React.useRef<Set<string>>(new Set());
   React.useEffect(() => {
     const needingLoad = messageFeeds.filter((w) => w.loading && w.items.length === 0);
-    const needingIds = new Set(needingLoad.map((w) => w.id));
+    const needingKeys = new Set(needingLoad.map((w) => `${w.id}:${JSON.stringify(w.filter)}`));
     const started = initialLoadStartedRef.current;
-    [...started].forEach((id) => {
-      if (!needingIds.has(id)) started.delete(id);
+    [...started].forEach((key) => {
+      if (!needingKeys.has(key)) started.delete(key);
     });
     needingLoad.forEach((w) => {
-      if (!started.has(w.id)) {
-        started.add(w.id);
+      const key = `${w.id}:${JSON.stringify(w.filter)}`;
+      if (!started.has(key)) {
+        started.add(key);
         loadFeedInitialMessagesRef.current(w.id);
       }
     });
