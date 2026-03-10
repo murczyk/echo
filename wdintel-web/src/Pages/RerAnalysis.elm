@@ -234,6 +234,7 @@ init route _ =
             , mapPoints = NotAsked
             , mapNetworkUnits = []
             , mapOpenMessages = NotAsked
+            , mapOpenMessagesRequestId = 0
             , adjacentFreqsRangeSelect =
                 { state = Select.initState (Select.selectIdentifier "selectAdjacentFreqsRange")
                 , items = Config.adjacentFreqsRangeOptions |> List.map (\x -> Select.basicMenuItem { item = x, label = String.fromFloat (x * 1000) ++ " кГц" })
@@ -3406,20 +3407,31 @@ update user shared route msg model =
 
         LoadMessagesForMap ids ->
             let
+                requestId =
+                    model.mapOpenMessagesRequestId + 1
+
                 m2 =
-                    { model | mapOpenMessages = Loading }
+                    { model | mapOpenMessages = Loading, mapOpenMessagesRequestId = requestId }
             in
-            ( m2, E.getMessagesByIds GotMessagesForMap { messageIds = ids } )
+            ( m2, E.getMessagesByIds (GotMessagesForMap requestId) { messageIds = ids } )
 
-        GotMessagesForMap (Ok rsp) ->
-            ( { model | mapOpenMessages = Success rsp.messages }
-            , loadNetworksForMessages shared model rsp.messages
-            )
+        GotMessagesForMap requestId (Ok rsp) ->
+            if requestId /= model.mapOpenMessagesRequestId then
+                ( model, E.none )
 
-        GotMessagesForMap (Err err) ->
-            ( model
-            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження повідомлень для карти" err
-            )
+            else
+                ( { model | mapOpenMessages = Success rsp.messages }
+                , loadNetworksForMessages shared model rsp.messages
+                )
+
+        GotMessagesForMap requestId (Err err) ->
+            if requestId /= model.mapOpenMessagesRequestId then
+                ( model, E.none )
+
+            else
+                ( model
+                , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження повідомлень для карти" err
+                )
 
         GotFreqActivityDaily (Ok r) ->
             ( { model | groupsMessageCountByDay = Success r }, E.none )
