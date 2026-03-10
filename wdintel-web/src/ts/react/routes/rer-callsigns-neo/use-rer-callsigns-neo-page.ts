@@ -15,6 +15,7 @@ import {
 } from '../../services/api/callsigns';
 import {
   buildListCallsignsReq,
+  buildRowViews,
   callsignToEditForm,
   createDefaultFilters,
   createEmptyDraftRow,
@@ -189,6 +190,7 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
 
   const [addUnitId, setAddUnitId] = React.useState<number | null>(null);
   const [addSourceId, setAddSourceId] = React.useState<number | null>(null);
+  const [addCallsignAdditionalSourceIds, setAddCallsignAdditionalSourceIds] = React.useState<number[]>([]);
   const [addRows, setAddRows] = React.useState<CallsignDraftRow[]>([createEmptyDraftRow()]);
   const [addSubmitting, setAddSubmitting] = React.useState(false);
   const [addValidationError, setAddValidationError] = React.useState<string | null>(null);
@@ -226,12 +228,7 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
 
   const sortedCallsigns = React.useMemo(() => sortRowsClientSide(callsigns, sort, unitsById), [callsigns, sort, unitsById]);
   const rows = React.useMemo(
-    () =>
-      sortedCallsigns.map((callsign) => ({
-        ...callsign,
-        unitName: unitsById.get(callsign.unitId)?.name ?? `#${callsign.unitId}`,
-        sourceName: callsign.sourceId == null ? '—' : (sourcesById.get(callsign.sourceId)?.name ?? `#${callsign.sourceId}`),
-      })),
+    () => buildRowViews(sortedCallsigns, unitsById, sourcesById).rows,
     [sortedCallsigns, unitsById, sourcesById],
   );
   const unitStatsView = React.useMemo(() => mergeUnitStatsWithUnits(unitStats, unitsById), [unitStats, unitsById]);
@@ -501,19 +498,21 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
     if (!permissions.canEdit) return;
     setAddDrawerOpen(true);
     setAddValidationError(null);
+    setAddCallsignAdditionalSourceIds([]);
   }
 
   function resetAddDrawerState() {
     setAddRows([createEmptyDraftRow()]);
     setAddUnitId(null);
     setAddSourceId(sources[0]?.id ?? null);
+    setAddCallsignAdditionalSourceIds([]);
     setAddValidationError(null);
   }
 
   function onCloseAddDrawer() {
     if (addSubmitting) return;
-    setAddDrawerOpen(false);
     resetAddDrawerState();
+    setAddDrawerOpen(false);
   }
 
   function onRowChange(index: number, next: CallsignDraftRow) {
@@ -564,7 +563,9 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
 
       for (const row of nonEmptyRows) {
         try {
-          const item = await createCallsign(makeCreatePayload(row, addUnitId, addSourceId));
+          const item = await createCallsign(
+            makeCreatePayload(row, addUnitId, addSourceId, addCallsignAdditionalSourceIds),
+          );
           created.push(normalizeCallsign(item));
         } catch (error) {
           if (isUnauthorizedError(error)) {
@@ -581,6 +582,7 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
       }
 
       if (failed.length === 0) {
+        setAddRows([createEmptyDraftRow()]);
         setAddDrawerOpen(false);
         resetAddDrawerState();
         setStatus({ kind: 'success', text: `Додано позивних: ${created.length}` });
@@ -806,6 +808,8 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
     setAddUnitId,
     addSourceId,
     setAddSourceId,
+    addCallsignAdditionalSourceIds,
+    setAddCallsignAdditionalSourceIds,
     addDrawerOpen,
     onOpenAddDrawer,
     onCloseAddDrawer,
