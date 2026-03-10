@@ -161,11 +161,11 @@ export class PalitraPointsController {
     }
 
     // Reframe to search results once; subsequent move/zoom uses viewport rendering only.
+    // Search markers are intentionally allowed at any zoom level.
     const fullBounds = boundsOfSearchResults(data, BOUNDS_SAMPLE_SIZE);
     if (fullBounds) {
       this.map.fitBounds(fullBounds, {
         padding: [40, 40],
-        maxZoom: this.getPointsVisibleFromZoom(),
       });
     }
 
@@ -177,11 +177,6 @@ export class PalitraPointsController {
     if (!this.searchState.hasActiveSearch() || !this.stateAccessor.getEnabled() || !searchResult) {
       return;
     }
-    if (!this.shouldRenderPointsAtCurrentZoom()) {
-      this.pointClustersRenderer.replace([], []);
-      return;
-    }
-
     const currentGen = this.searchState.nextRenderGeneration();
     const data = searchResult;
     const resultsCount = data.reduce((acc, item) => acc + item.points.length, 0);

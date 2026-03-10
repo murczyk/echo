@@ -71,7 +71,10 @@ export class PalitraSearchState {
         (point) => point.label && searchTerms.some((term) => labelMatchesTerm(point.label!.toLowerCase(), term)),
       ),
     }));
-    await onSearchResults(filteredFromCache);
+    // Do not block backend request on cache rendering (fitBounds + cluster build can be expensive).
+    void onSearchResults(filteredFromCache).catch((error) => {
+      console.error('[PalitraManager] Failed to render cached search results:', error);
+    });
 
     const termsForApi = [...new Set(searchTerms.map(termToApiString))];
     // Phase 2: request backend search and merge with cached points.

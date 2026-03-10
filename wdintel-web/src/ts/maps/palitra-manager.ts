@@ -18,6 +18,7 @@ export class PalitraManager {
   private visibleIds: number[] = [];
   private enabled = true;
   private loadState: PalitrasLoadState = 'idle';
+  private interactionDisabled = false;
   // We request an auto-fit when visible palitras changed, but skip it if user
   // already moved/zoomed manually after the request.
   private fitOnNextPolygonUpdate = false;
@@ -87,6 +88,7 @@ export class PalitraManager {
   setControl(control: PalitrasControl): void {
     this.control = control;
     this.control.setLoadState(this.loadState);
+    this.control.setInteractionDisabled(this.interactionDisabled);
     this.updateControlVisibility();
     if (this.palitras.length > 0) {
       this.control.updatePalitras(this.palitras, this.visibleIds);
@@ -97,6 +99,11 @@ export class PalitraManager {
     this.loadState = loadState;
     this.control?.setLoadState(loadState);
     this.updateControlVisibility();
+  }
+
+  setInteractionDisabled(disabled: boolean): void {
+    this.interactionDisabled = disabled;
+    this.control?.setInteractionDisabled(disabled);
   }
 
   setSearchQuery(query: string): void {

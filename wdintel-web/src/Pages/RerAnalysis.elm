@@ -3382,7 +3382,7 @@ update user shared route msg model =
             )
 
         GotMapPoints (Err err) ->
-            ( model
+            ( { model | mapPoints = Failure err }
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження точок карти" err
             )
 

@@ -996,6 +996,7 @@ view user model shared route =
                         (Html.node "analysis-map"
                             [ class "h-full block z-10"
                             , attribute "daterange" (Encode.encode 0 encodedDates)
+                            , attribute "daterange-loading" (Encode.encode 0 (Encode.bool (model.mapPoints == Loading)))
                             , attribute "points" (Encode.encode 0 encodedPoints)
                             , attribute "messages" (Encode.encode 0 encodedMessagesAndUnits)
                             , attribute "selected-units" (Encode.encode 0 encodedSelectedUnits)
@@ -1017,10 +1018,10 @@ view user model shared route =
                             ]
                             []
                             :: (if model.mapPoints == Loading || model.mapOpenMessages == Loading then
-                                    [ div [ class "absolute z-10 top-0 left-0 right-0 bottom-0 flex justify-center items-center" ]
+                                    [ div [ class "absolute z-10 top-0 left-0 right-0 bottom-0 flex justify-center items-center pointer-events-none" ]
                                         [ div [ class "animate-spin border-4 border-gray-300 border-t-blue-600 rounded-full w-8 h-8 relative z-20" ] []
                                         ]
-                                    , div [ class "absolute z-20 top-0 left-0 right-0 bottom-0 bg-gray-100 opacity-25" ] []
+                                    , div [ class "absolute z-20 top-0 left-0 right-0 bottom-0 bg-gray-100 opacity-25 pointer-events-none" ] []
                                     ]
 
                                 else

@@ -108,7 +108,7 @@ function getPointPopupTemplate(sortedMessages: Message[], networkUnits: NetworkU
 
 
 class AnalysisMap extends HTMLElement {
-  static observedAttributes = ["points", "daterange", "messages", "visibility", "network-units", "selected-units", "palitras", "palitras-loaded", "search-query", "palitras-load-state"]
+  static observedAttributes = ["points", "daterange", "daterange-loading", "messages", "visibility", "network-units", "selected-units", "palitras", "palitras-loaded", "search-query", "palitras-load-state"]
 
   private _map: L.Map | null = null;
   private _daterange: { startDate: number, endDate: number } = { startDate: new Date().getDate(), endDate: new Date().getDate() };
@@ -141,7 +141,12 @@ class AnalysisMap extends HTMLElement {
   private _isFullscreen = false;
   private _mapWindowControl: MapWindowControl | null = null;
   private _isBackgroundPointsLoading = false;
+  private _isDateRangeLoading = false;
+  private _isSearchLoading = false;
   private _searchPointsHandler = (e: CustomEvent<string>) => {
+    if (this._isSearchInteractionLocked()) {
+      return;
+    }
     const value = (e.detail ?? '').trim();
     const coords = parseCoordinateInput(value);
     if (coords && this._map) {
@@ -175,6 +180,7 @@ class AnalysisMap extends HTMLElement {
 
   connectedCallback() {
     this._palitrasLoadState = this._parsePalitrasLoadState(this.getAttribute('palitras-load-state'));
+    this._isDateRangeLoading = this._parseBooleanAttribute(this.getAttribute('daterange-loading'));
     this.addEventListener('search-points', this._searchPointsHandler);
     window.addEventListener('keydown', this._escapeHandler);
   }
@@ -235,6 +241,10 @@ class AnalysisMap extends HTMLElement {
       if (this._switchTimeControl && this._daterange) {
         this._switchTimeControl.updateDates(this._daterange);
       }
+    }
+    if (name === 'daterange-loading') {
+      this._isDateRangeLoading = this._parseBooleanAttribute(newValue);
+      this._syncAsyncInteractionState();
     }
     if (name === 'messages') {
       const parsed = JSON.parse(newValue);
@@ -313,7 +323,7 @@ class AnalysisMap extends HTMLElement {
     if (name === 'palitras-load-state') {
       this._palitrasLoadState = this._parsePalitrasLoadState(newValue);
       this._palitraManager?.setLoadState(this._palitrasLoadState);
-      this._updateSearchControlState();
+      this._syncAsyncInteractionState();
     }
   }
 
@@ -390,10 +400,12 @@ class AnalysisMap extends HTMLElement {
          },
          onSearchLoadingChanged: (isLoading) => {
            this._searchControl?.updateSearchLoading(isLoading);
+           this._isSearchLoading = isLoading;
+           this._syncAsyncInteractionState();
          },
          onBackgroundPointsLoadingChanged: (isLoading) => {
            this._isBackgroundPointsLoading = isLoading;
-           this._updateSearchControlState();
+           this._syncAsyncInteractionState();
          }
        }
      );
@@ -402,6 +414,7 @@ class AnalysisMap extends HTMLElement {
      console.log('[AnalysisMap] Setting control, _palitrasEnabled:', this._palitrasEnabled, 'stored palitras:', this._palitras.length, 'visible IDs:', this._visiblePalitraIds.length);
      this._palitraManager.setControl(result.palitrasControl);
      this._palitraManager.setLoadState(this._palitrasLoadState);
+     this._syncAsyncInteractionState();
      
      // Update manager with any palitras that arrived before initialization
      if (this._palitras.length > 0) {
@@ -433,6 +446,10 @@ class AnalysisMap extends HTMLElement {
     return 'idle';
   }
 
+  private _parseBooleanAttribute(value: string | null): boolean {
+    return value === 'true';
+  }
+
   private _initializeControls(map: L.Map, tileLayers: { openStreetMap: L.TileLayer, googleHybrid: L.TileLayer }) {
     const exitCallback = () => {
       this._setFullscreen(false);
@@ -457,11 +474,11 @@ class AnalysisMap extends HTMLElement {
       this._setFeatureEnabled(feature, enabled);
     }
 
-    const switchTimeControl = createTimeswitchControl(this._daterange);
+    const switchTimeControl = createTimeswitchControl(this._daterange, this._isDateRangeInteractionLocked());
     const searchControl = createSearchControl();
     map.addControl(searchControl);
     this._searchControl = searchControl;
-    this._updateSearchControlState();
+    this._syncAsyncInteractionState();
     map.addControl(switchTimeControl)
 
     const mapWindowControl = createMapWindowControl(exitCallback, () => this._toggleFullscreen(), this._isFullscreen);
@@ -540,8 +557,13 @@ class AnalysisMap extends HTMLElement {
     }
 
     const isPalitrasLoading = this._palitrasLoadState === 'loading';
-    const isSearchDisabled = this._isBackgroundPointsLoading || isPalitrasLoading;
+    const isSearchDisabled = this._isSearchInteractionLocked();
     this._searchControl.updateSearchDisabled(isSearchDisabled);
+
+    if (this._isDateRangeLoading) {
+      this._searchControl.updatePlaceholder('Оновлення інтервалу...');
+      return;
+    }
 
     if (this._isBackgroundPointsLoading) {
       this._searchControl.updatePlaceholder('Завантаження точок...');
@@ -554,6 +576,24 @@ class AnalysisMap extends HTMLElement {
     }
 
     this._searchControl.updatePlaceholder('Точка, лісосмуга або координати');
+  }
+
+  private _isDateRangeInteractionLocked(): boolean {
+    return this._isDateRangeLoading || this._isSearchLoading || this._palitrasLoadState === 'loading';
+  }
+
+  private _isSearchInteractionLocked(): boolean {
+    return this._isDateRangeLoading || this._isBackgroundPointsLoading || this._palitrasLoadState === 'loading';
+  }
+
+  private _isPalitraSelectionInteractionLocked(): boolean {
+    return this._isDateRangeLoading || this._isSearchLoading;
+  }
+
+  private _syncAsyncInteractionState(): void {
+    this._updateSearchControlState();
+    this._switchTimeControl?.updateLoading(this._isDateRangeInteractionLocked());
+    this._palitraManager?.setInteractionDisabled(this._isPalitraSelectionInteractionLocked());
   }
 
   private _replacePointsOnMap(points: MapPointDetailed[]) {
