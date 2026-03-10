@@ -614,7 +614,9 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
         return;
       }
 
-      setAddRows(failed.map((item) => item.row));
+      const failedRows = failed.map((item) => item.row);
+      setAddRows(failedRows);
+      setAddDuplicateHintsEnabled(hasAnyCallsignInput(failedRows));
       setAddValidationError(
         failed.length === 1
           ? `Не вдалося додати 1 позивний: ${failed[0]?.error ?? 'Невідома помилка'}`
