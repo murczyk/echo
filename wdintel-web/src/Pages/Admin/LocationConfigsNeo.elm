@@ -77,9 +77,9 @@ subscriptions model =
 
 view : Model -> View Msg
 view _ =
-    { title = "Адмін: конфігурації локацій (neo)"
+    { title = "Адмін: конфігурації локацій"
     , body =
-        [ div [ class "mt-4 px-4 w-full" ]
+        [ div [ class "w-full px-6 pt-6" ]
             [ node "location-config-neo" [] [] ]
         ]
     }

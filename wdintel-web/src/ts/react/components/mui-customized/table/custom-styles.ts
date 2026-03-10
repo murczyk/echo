@@ -9,6 +9,21 @@ export const CUSTOM_CELL_STYLES = {
   transitionDuration: '0s',
 };
 
+export const FULL_WIDTH_TABLE_PAPER_SX = {
+  minWidth: 0,
+  maxWidth: '100%',
+  width: '100%',
+};
+
+export const PAGE_SCROLL_TABLE_CONTAINER_SX = {
+  minWidth: 0,
+  maxWidth: '100%',
+  width: '100%',
+  maxHeight: 'none',
+  overflowX: 'visible',
+  overflowY: 'visible',
+};
+
 export const CUSTOM_STYLES = {
   muiTableHeadCellProps: {
     sx: {

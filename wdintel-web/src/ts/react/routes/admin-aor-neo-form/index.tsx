@@ -1,4 +1,3 @@
-import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import {
   Box,
@@ -21,7 +20,11 @@ import {
   DeleteAreaOfResponsibilityReq,
   UpdateAreaOfResponsibilityReq,
 } from '../../../../Bindings';
+import { FormPageHeader } from '../../components/FormPageHeader';
+import { FormPageLayout } from '../../components/FormPageLayout';
+import { PageErrorState } from '../../components/PageErrorState';
 import { Info } from '../../components/info';
+import { PageLoadingState } from '../../components/PageLoadingState';
 import { Button } from '../../components/mui-customized/button';
 import { createAor, deleteAor, listAors, updateAor } from '../../services/api/aor';
 import { navigateWithinSpa } from '../../utils/browser';
@@ -231,40 +234,11 @@ function AorFormFields(props: { form: AorFormState; onChange: (next: AorFormStat
 }
 
 function LoadingState() {
-  return (
-    <div className="flex items-center justify-center py-12">
-      <CircularProgress size={28} />
-    </div>
-  );
+  return <PageLoadingState />;
 }
 
 function ErrorState(props: { message: string; onBack: () => void }) {
-  return (
-    <div className="space-y-4">
-      <Button variant="outlined" startIcon={<ArrowBackIcon />} onClick={props.onBack}>
-        Назад
-      </Button>
-      <div className="text-red-600">{props.message}</div>
-    </div>
-  );
-}
-
-function FormHeader(props: { isNew: boolean; onBack: () => void }) {
-  return (
-    <div className="flex items-center justify-between gap-4 mb-6">
-      <div>
-        <Typography variant="h5" className="!font-semibold">
-          {props.isNew ? 'Створити смугу' : 'Редагувати смугу'}
-        </Typography>
-        <Typography variant="body2" className="text-muted-foreground">
-          {props.isNew ? 'Додайте нову смугу відповідальності' : 'Оновіть параметри смуги відповідальності'}
-        </Typography>
-      </div>
-      <Button variant="outlined" startIcon={<ArrowBackIcon />} onClick={props.onBack}>
-        Назад
-      </Button>
-    </div>
-  );
+  return <PageErrorState message={props.message} actionLabel="Назад" onAction={props.onBack} />;
 }
 
 function FormActions(props: {
@@ -425,9 +399,13 @@ function AdminAorNeoFormPageBody(props: AdminAorNeoFormPageProps) {
   if (loadStatus === 'error') return <ErrorState message={loadError || 'Помилка завантаження'} onBack={navigateBack} />;
 
   return (
-    <div className="flex flex-col items-center">
-      <div className="w-full md:max-w-screen-lg">
-        <FormHeader isNew={isNew} onBack={navigateBack} />
+    <FormPageLayout>
+      <Box className="space-y-6">
+        <FormPageHeader
+          title={isNew ? 'Створити смугу' : 'Редагувати смугу'}
+          subtitle={isNew ? 'Додайте нову смугу відповідальності' : 'Оновіть параметри смуги відповідальності'}
+          onBack={navigateBack}
+        />
 
         <Box className="space-y-6">
           <AorFormFields form={form} onChange={setForm} />
@@ -441,15 +419,14 @@ function AdminAorNeoFormPageBody(props: AdminAorNeoFormPageProps) {
         </Box>
 
         {actionStatus?.kind === 'error' ? <Info text={actionStatus.message} color="error" className="mt-4" /> : null}
-      </div>
-
+      </Box>
       <DeleteDialog
         open={deleteDialogOpen}
         onClose={() => setDeleteDialogOpen(false)}
         onConfirm={handleDeleteConfirm}
         disabled={isMutating}
       />
-    </div>
+    </FormPageLayout>
   );
 }
 

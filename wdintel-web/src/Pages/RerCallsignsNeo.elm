@@ -111,9 +111,9 @@ view user model =
                     ]
                 ]
     in
-    { title = "позивні"
+    { title = "Позивні"
     , body =
-        [ div [ class "app-shell-fill-height box-border min-h-0 px-6 w-full flex flex-col gap-4 overflow-visible lg:overflow-hidden" ]
+        [ div [ class "app-shell-fill-height box-border min-h-0 px-6 pt-6 w-full flex flex-col gap-6 overflow-visible lg:overflow-hidden" ]
             [ betaBannerNode
             , div [ class "flex-1 min-h-0 w-full" ]
                 [ node "rer-callsigns-neo"

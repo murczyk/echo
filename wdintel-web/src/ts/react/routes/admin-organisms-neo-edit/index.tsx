@@ -1,4 +1,3 @@
-import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import {
   Alert,
   Autocomplete,
@@ -13,6 +12,12 @@ import {
 import React from 'react';
 
 import { AreaOfResponsibility, CreateOrganismReq, Organism, OrganismGroup, SignalGroupFull, UpdateOrganismReq } from '../../../../Bindings';
+import { FormPageHeader } from '../../components/FormPageHeader';
+import { FormPageLayout } from '../../components/FormPageLayout';
+import { PageErrorState } from '../../components/PageErrorState';
+import { PageLoadingState } from '../../components/PageLoadingState';
+import { SectionEmptyState } from '../../components/SectionEmptyState';
+import { SectionErrorState } from '../../components/SectionErrorState';
 import { Button } from '../../components/mui-customized/button';
 import { listAors } from '../../services/api/aor';
 import {
@@ -269,14 +274,10 @@ function OrganismFormFields(props: OrganismFormFieldsProps) {
               </Typography>
             </div>
           ) : props.computeError ? (
-            <Typography variant="body2" className="text-red-600">
-              {props.computeError}
-            </Typography>
+            <SectionErrorState message={props.computeError} />
           ) : props.computedGroups ? (
             props.computedGroups.length === 0 ? (
-              <Typography variant="body2" className="text-muted-foreground italic">
-                Немає доступних груп
-              </Typography>
+              <SectionEmptyState message="Немає доступних груп" />
             ) : (
               <div className="flex flex-wrap gap-1">
                 {props.computedGroups.map((group) => (
@@ -766,42 +767,21 @@ function AdminOrganismsNeoEditPageBody(props: AdminOrganismsNeoEditPageProps) {
   }
 
   if (loadStatus === 'loading') {
-    return (
-      <div className="flex items-center justify-center py-16">
-        <CircularProgress size={28} />
-      </div>
-    );
+    return <PageLoadingState />;
   }
 
   if (loadStatus === 'error') {
-    return (
-      <div className="space-y-4 py-10">
-        <Alert severity="error">{loadError || 'Помилка завантаження'}</Alert>
-        <Button variant="outlined" onClick={navigateBack}>
-          Назад
-        </Button>
-      </div>
-    );
+    return <PageErrorState message={loadError || 'Помилка завантаження'} actionLabel="Назад" onAction={navigateBack} />;
   }
 
   return (
-    <div className="flex flex-col items-center">
-      <div className="w-full md:max-w-screen-lg space-y-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <Typography variant="h5" className="!font-semibold">
-              {isNew ? 'Створити організм' : 'Редагувати організм'}
-            </Typography>
-            {!isNew && props.organismId ? (
-              <Typography variant="body2" className="text-muted-foreground">
-                ID: {props.organismId}
-              </Typography>
-            ) : null}
-          </div>
-          <Button variant="outlined" startIcon={<ArrowBackIcon />} onClick={navigateBack}>
-            Назад
-          </Button>
-        </div>
+    <FormPageLayout>
+      <div className="w-full space-y-6">
+        <FormPageHeader
+          title={isNew ? 'Створити організм' : 'Редагувати організм'}
+          subtitle={!isNew && props.organismId ? `ID: ${props.organismId}` : undefined}
+          onBack={navigateBack}
+        />
 
         {status ? (
           <Alert severity={status.kind} onClose={() => setStatus(null)}>
@@ -837,7 +817,7 @@ function AdminOrganismsNeoEditPageBody(props: AdminOrganismsNeoEditPageProps) {
           </Button>
         </div>
       </div>
-    </div>
+    </FormPageLayout>
   );
 }
 

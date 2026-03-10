@@ -34,19 +34,22 @@ import {
   LinkEchoOperatorReq,
   Login,
 } from '../../../../Bindings';
+import { PageErrorState } from '../../components/PageErrorState';
+import { PageLoadingState } from '../../components/PageLoadingState';
+import { TablePageToolbar } from '../../components/TablePageToolbar';
 import { Info } from '../../components/info';
-import { PageHeader } from '../../components/PageHeader';
 import { Button } from '../../components/mui-customized/button';
 import { IconButton } from '../../components/mui-customized/icon-button';
 import {
   CUSTOM_CELL_STYLES,
   CUSTOM_STYLES,
+  FULL_WIDTH_TABLE_PAPER_SX,
+  PAGE_SCROLL_TABLE_CONTAINER_SX,
 } from '../../components/mui-customized/table/custom-styles';
 import {
   getDefaultMRTOptions,
   renderColumnActionsMenuItems,
 } from '../../components/mui-customized/table/get-default-table-options';
-import { TableTopToolbar } from '../../components/mui-customized/table/components/table-top-toolbar';
 import {
   TableStateProvider,
   useTableStateContext,
@@ -602,6 +605,8 @@ const defaultMRTOptions = getDefaultMRTOptions<EchoAccountF1>();
 function MessengerAccountsTable(props: MessengerAccountsTableProps) {
   const columns = useMessengerColumns();
   const tableStateContext = useTableStateContext();
+  const basePaperProps = CUSTOM_STYLES.muiTablePaperProps;
+  const resolvedPaperProps = typeof basePaperProps === 'function' ? basePaperProps : () => basePaperProps || {};
 
   const state = {
     showAlertBanner: false,
@@ -664,6 +669,22 @@ function MessengerAccountsTable(props: MessengerAccountsTableProps) {
             ...CUSTOM_CELL_STYLES,
           },
         }),
+      },
+    },
+    muiTablePaperProps: ({ table }) => {
+      const baseProps = resolvedPaperProps({ table });
+      return {
+        ...baseProps,
+        sx: {
+          ...(baseProps as any)?.sx,
+          ...FULL_WIDTH_TABLE_PAPER_SX,
+        },
+      };
+    },
+    muiTableContainerProps: {
+      sx: {
+        ...(CUSTOM_STYLES.muiTableContainerProps as any)?.sx,
+        ...PAGE_SCROLL_TABLE_CONTAINER_SX,
       },
     },
     state,
@@ -1155,22 +1176,14 @@ function AdminMessengerNeoPageBody() {
 
   const renderAccountsTable = () => {
     if (accountsStatus === 'loading') {
-      return (
-        <div className="flex items-center justify-center py-12">
-          <CircularProgress size={28} />
-        </div>
-      );
+      return <PageLoadingState />;
     }
     if (accountsStatus === 'error') {
-      return (
-        <div className="text-center py-8 text-red-600">
-          {accountsError || 'Помилка завантаження'}
-        </div>
-      );
+      return <PageErrorState message={accountsError || 'Помилка завантаження'} />;
     }
     if (accountsStatus === 'success') {
       return (
-        <div className="table-responsive-modern">
+        <div className="w-full min-w-0">
           <MessengerAccountsTable
             data={accounts}
             actionsDisabled={isMutating}
@@ -1560,8 +1573,17 @@ function AdminMessengerNeoPageBody() {
   );
 
   return (
-    <div className="mt-2 w-full space-y-4">
-      <PageHeader title="Месенджери" />
+    <div className="flex w-full min-w-0 flex-col gap-6">
+      <TablePageToolbar
+        title="Месенджери"
+        titleInfo="Управління прив'язаними акаунтами месенджерів"
+        withGlobalTextFilter
+        actions={
+          <Button variant="contained" onClick={openLinkSidebar}>
+            Прив'язати новий
+          </Button>
+        }
+      />
 
       {actionStatus?.kind === 'error' ? (
         <Info text={actionStatus.message} color="error" />
@@ -1571,25 +1593,6 @@ function AdminMessengerNeoPageBody() {
           {actionStatus.message}
         </Alert>
       ) : null}
-
-      <div className="border border-border rounded-lg mb-4 p-4 bg-[var(--bs-tertiary-bg)] flex items-center justify-between">
-        <div className="text-sm text-muted-foreground">
-          Управління прив'язаними акаунтами месенджерів
-        </div>
-        <Button variant="contained" onClick={openLinkSidebar}>
-          Прив'язати новий
-        </Button>
-      </div>
-
-      <TableTopToolbar
-        withDatePicker={false}
-        withGlobalTextFilter
-        header={
-          <span className="text-sm text-muted-foreground">
-            Усього: {accounts.length}
-          </span>
-        }
-      />
       {renderAccountsTable()}
       {renderDeleteDialog()}
       {renderLinkSidebar()}
