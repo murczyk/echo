@@ -61,7 +61,7 @@ view : Model -> View Msg
 view _ =
     { title = "палітри"
     , body =
-        [ div [ class "app-shell-fill-height box-border min-h-0 pt-6 px-6 w-5/6 mx-auto overflow-hidden" ]
+        [ div [ class "app-shell-fill-height box-border min-h-0 px-6 w-5/6 mx-auto overflow-hidden" ]
             [ node "rer-palitra-neo" [] [] ]
         ]
     }
