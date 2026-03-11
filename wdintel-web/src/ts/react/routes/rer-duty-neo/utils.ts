@@ -108,12 +108,12 @@ export function buildInboxReq(opts: {
     orWithCoords: null,
     newestFirst: null,
     search: null,
-    // Match Elm Waterfall: highlightCallsigns/Keywords/Searchres always true; highlightSignals from opts; highlightPoints false
+    // Match Elm Waterfall: highlightCallsigns/Keywords/Searchres always true; highlightSignals from opts; highlightPoints true for point-token links
     highlightCallsigns: true,
     highlightKeywords: true,
     highlightSearchres: true,
     highlightSignals: opts.highlightSignals ?? false,
-    highlightPoints: false,
+    highlightPoints: true,
     selectedTags: null,
     selectedAors: null,
     selectedNetworks: null,
@@ -256,6 +256,32 @@ export function buildAnalysisHref(msg: InboxMessage, showMap: boolean): string {
   const stateEnc = encodeURIComponent(JSON.stringify(stateSnake));
   const base = `/rer-analysis?state=${stateEnc}`;
   return showMap ? `${base}&showMap=true` : base;
+}
+
+export function buildAnalysisMapHrefWithSearch(etalons: string | string[]): string {
+  const searchStr = Array.isArray(etalons)
+    ? [...new Set(etalons)].filter(Boolean).join(',')
+    : etalons;
+  if (!searchStr.trim()) return '/rer-analysis?showMap=true';
+  const stateEnc = encodeURIComponent(JSON.stringify({ "search-query": searchStr }));
+  return `/rer-analysis?state=${stateEnc}&showMap=true`;
+}
+
+/** Collect all point etalons from a message (from pointTokens or textMarked). Used so "open with map" and inline point links fill the map search with comma-separated points. */
+export function getPointEtalonsFromMessage(msg: InboxMessage): string[] {
+  const fromTokens = (msg.pointTokens ?? [])
+    .map((p) => p.etalon)
+    .filter((e) => e != null && String(e).trim() !== '');
+  if (fromTokens.length > 0) return fromTokens;
+  const nodes = msg.textMarked ?? [];
+  const etalons: string[] = [];
+  for (const n of nodes) {
+    if (typeof n !== 'string' && 'CNPointC' in n && (n as { CNPointC?: { etalon?: string } }).CNPointC?.etalon != null) {
+      const e = String((n as { CNPointC: { etalon: string } }).CNPointC.etalon).trim();
+      if (e !== '') etalons.push(e);
+    }
+  }
+  return etalons;
 }
 
 export type MessageItem = [number, InboxMessage];
