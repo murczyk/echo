@@ -377,7 +377,7 @@ buildAnalysisMapUrlWithSearch etalons =
         stateStr =
             Encode.encode 0
                 (Encode.object
-                    [ ( "search-query", Encode.string (String.join "," etalons) )
+                    [ ( "search", Encode.string (String.join "," etalons) )
                     ]
                 )
     in

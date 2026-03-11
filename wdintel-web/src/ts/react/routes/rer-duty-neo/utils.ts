@@ -263,7 +263,7 @@ export function buildAnalysisMapHrefWithSearch(etalons: string | string[]): stri
     ? [...new Set(etalons)].filter(Boolean).join(',')
     : etalons;
   if (!searchStr.trim()) return '/rer-analysis?showMap=true';
-  const stateEnc = encodeURIComponent(JSON.stringify({ "search-query": searchStr }));
+  const stateEnc = encodeURIComponent(JSON.stringify({ search: searchStr }));
   return `/rer-analysis?state=${stateEnc}&showMap=true`;
 }
 

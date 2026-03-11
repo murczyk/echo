@@ -108,7 +108,7 @@ function getPointPopupTemplate(sortedMessages: Message[], networkUnits: NetworkU
 
 
 class AnalysisMap extends HTMLElement {
-  static observedAttributes = ["points", "daterange", "daterange-loading", "messages", "visibility", "network-units", "selected-units", "palitras", "palitras-loaded", "search-query", "palitras-load-state"]
+  static observedAttributes = ["points", "daterange", "daterange-loading", "messages", "visibility", "network-units", "selected-units", "palitras", "palitras-loaded", "search", "palitras-load-state"]
 
   private _map: L.Map | null = null;
   private _daterange: { startDate: number, endDate: number } = { startDate: new Date().getDate(), endDate: new Date().getDate() };
@@ -345,7 +345,7 @@ class AnalysisMap extends HTMLElement {
         this._palitraManager.updateVisibleIds(this._visiblePalitraIds);
       }
     }
-    if (name === 'search-query') {
+    if (name === 'search') {
       this._applySearchQueryFromUrl();
     }
     if (name === 'palitras-load-state') {
@@ -916,14 +916,14 @@ function parseStateFromUrl(stateParam: string | null): RerAnalysisQueryState | n
   return null;
 }
 
-/** Read search query from current page URL: top-level search-query param, or state["search-query"] inside state param. */
+/** Read search query from current page URL: top-level search param or state.search. */
 function getSearchQueryFromCurrentUrl(): string | null {
   if (typeof window === 'undefined') return null;
   const params = new URL(window.location.href).searchParams;
-  const fromParam = params.get('search-query');
+  const fromParam = params.get('search');
   if (fromParam != null && String(fromParam).trim() !== '') return String(fromParam).trim();
   const state = parseStateFromUrl(params.get('state'));
-  const fromState = state?.['search-query'];
+  const fromState = state?.['search'];
   if (fromState != null && String(fromState).trim() !== '') return String(fromState).trim();
   return null;
 }
