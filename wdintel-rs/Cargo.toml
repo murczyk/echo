@@ -89,7 +89,7 @@ time = "0.3.41"
 deadpool-redis = { version = "0.22.0", features = ["json", "serde", "streams"] }
 tokio-stream = "0.1.17"
 rustls = { version = "0.23.31", default-features = false, features = ["ring", "std", "logging", "tls12"] }
-ssh2 = "0.9.5"
+ssh2 = { version = "0.9.5", features = ["vendored-openssl"] }
 demoji = "0.0.3"
 dialoguer = "0.11.0"
 ratatui = { version = "0.27.0", default-features = false, features = ["crossterm"] }
