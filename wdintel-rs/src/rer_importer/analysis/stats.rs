@@ -83,9 +83,10 @@ where
 {
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
-    let query = filter_selected_groups_with_access(
+    let query = filter_selected_groups_and_senders_with_access(
         query,
         &req.selected_groups,
+        &req.selected_senders,
         &master_keys,
     )
     .context(h!())?;
@@ -440,9 +441,10 @@ fn build_senders_query(
         // .filter(sigint_inbox_item::Column::Checked.eq(Some(true)))
         .group_by(preferred_sender_expr(None));
     // .group_by(SimpleExpr::Custom("(SELECT signal_profile.given_name FROM signal_profile WHERE signal_profile.uuid = signal_message.sender)".to_string()));
-    let senders_res = filter_selected_groups_with_access(
+    let senders_res = filter_selected_groups_and_senders_with_access(
         senders_res,
         &req.selected_groups,
+        &req.selected_senders,
         &master_keys,
     )
     .context(h!())?;
@@ -583,14 +585,13 @@ fn build_posts_query(
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
         // .filter(sigint_inbox_item::Column::Checked.eq(Some(true)))
         .group_by(Expr::cust("1"));
-    let post_res = filter_selected_groups_with_access(
+    let post_res = filter_selected_groups_and_senders_with_access(
         post_res,
         &req.selected_groups,
+        &req.selected_senders,
         &master_keys,
     )
     .context(h!())?;
-    let post_res = filter_selected_senders(post_res, &req.selected_senders)
-        .context(h!())?;
     let post_res = filter_selected_units(
         post_res,
         &req.selected_units,
@@ -781,14 +782,13 @@ fn build_freqs_query(
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
         // .filter(sigint_inbox_item::Column::Checked.eq(Some(true)))
         .group_by(Expr::cust("1"));
-    let freqs_res = filter_selected_groups_with_access(
+    let freqs_res = filter_selected_groups_and_senders_with_access(
         freqs_res,
         &req.selected_groups,
+        &req.selected_senders,
         &master_keys,
     )
     .context(h!())?;
-    let freqs_res = filter_selected_senders(freqs_res, &req.selected_senders)
-        .context(h!())?;
     let freqs_res = filter_selected_units(
         freqs_res,
         &req.selected_units,
@@ -924,13 +924,12 @@ fn build_callsigns_query(
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
         // .filter(sigint_inbox_item::Column::Checked.eq(Some(true)))
         .group_by(SimpleExpr::Custom("callsign".to_string()));
-    let callsigns_res = filter_selected_groups_with_access(
+    let callsigns_res = filter_selected_groups_and_senders_with_access(
         callsigns_res,
         &req.selected_groups,
+        &req.selected_senders,
         &master_keys,
     )?;
-    let callsigns_res =
-        filter_selected_senders(callsigns_res, &req.selected_senders)?;
     let callsigns_res =
         filter_selected_freqs(callsigns_res, &req.selected_freqs)?;
     let callsigns_res =
@@ -1066,12 +1065,12 @@ fn build_tags_query(
         tags_res =
             tags_res.filter(sigint_inbox_item_tag::Column::Model.is_null());
     }
-    let tags_res = filter_selected_groups_with_access(
+    let tags_res = filter_selected_groups_and_senders_with_access(
         tags_res,
         &req.selected_groups,
+        &req.selected_senders,
         &master_keys,
     )?;
-    let tags_res = filter_selected_senders(tags_res, &req.selected_senders)?;
     let tags_res = filter_selected_freqs(tags_res, &req.selected_freqs)?;
     let tags_res = filter_selected_posts(tags_res, &req.selected_posts)?;
     let tags_res = filter_selected_units(
@@ -1195,14 +1194,13 @@ fn build_units_query(
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
         // .filter(sigint_inbox_item::Column::Checked.eq(Some(true)))
         .group_by(Expr::cust("1"));
-    let units_res = filter_selected_groups_with_access(
+    let units_res = filter_selected_groups_and_senders_with_access(
         units_res,
         &req.selected_groups,
+        &req.selected_senders,
         &master_keys,
     )
     .context(h!())?;
-    let units_res = filter_selected_senders(units_res, &req.selected_senders)
-        .context(h!())?;
     let units_res =
         filter_selected_freqs(units_res, &req.selected_freqs).context(h!())?;
     let units_res =
@@ -1340,15 +1338,13 @@ fn build_locations_query(
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
         // .filter(sigint_inbox_item::Column::Checked.eq(Some(true)))
         .group_by(Expr::cust("1"));
-    let locations_res = filter_selected_groups_with_access(
+    let locations_res = filter_selected_groups_and_senders_with_access(
         locations_res,
         &req.selected_groups,
+        &req.selected_senders,
         &master_keys,
     )
     .context(h!())?;
-    let locations_res =
-        filter_selected_senders(locations_res, &req.selected_senders)
-            .context(h!())?;
     let locations_res = filter_selected_units(
         locations_res,
         &req.selected_units,
@@ -1504,14 +1500,13 @@ fn build_aors_query(
         .filter(area_of_responsibility::Column::Deleted.eq(false))
         .filter(area_of_responsibility::Column::IsTopLevel.eq(true))
         .group_by(Expr::cust("1"));
-    let aors_res = filter_selected_groups_with_access(
+    let aors_res = filter_selected_groups_and_senders_with_access(
         aors_res,
         &req.selected_groups,
+        &req.selected_senders,
         &master_keys,
     )
     .context(h!())?;
-    let aors_res = filter_selected_senders(aors_res, &req.selected_senders)
-        .context(h!())?;
     let aors_res =
         filter_selected_freqs(aors_res, &req.selected_freqs).context(h!())?;
     let aors_res =
@@ -1967,15 +1962,13 @@ async fn fetch_counts_for_login_with_conn(
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
     // .filter(sigint_inbox_item::Column::Checked.eq(Some(true)));
-    let selected_count_res = filter_selected_groups_with_access(
+    let selected_count_res = filter_selected_groups_and_senders_with_access(
         selected_count_res,
         &req.selected_groups,
+        &req.selected_senders,
         &master_keys,
     )
     .context(h!())?;
-    let selected_count_res =
-        filter_selected_senders(selected_count_res, &req.selected_senders)
-            .context(h!())?;
     let selected_count_res =
         filter_selected_freqs(selected_count_res, &req.selected_freqs)
             .context(h!())?;

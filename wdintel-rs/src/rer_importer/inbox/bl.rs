@@ -148,6 +148,14 @@ pub async fn aggregate_to_inbox_messages(
             );
         }
     }
+    if let Some(selected_senders) = req.selected_senders.as_ref() {
+        if !selected_senders.is_empty() {
+            group_query = group_query.filter(
+                signal_message_group::Column::Sender
+                    .eq_any(selected_senders.clone()),
+            );
+        }
+    }
 
     let group_rows = group_query
         .find_with_related(datasource_group::Entity)

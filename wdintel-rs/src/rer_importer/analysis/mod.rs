@@ -74,6 +74,42 @@ where
     Ok(q)
 }
 
+pub fn filter_selected_groups_and_senders_with_access<Q>(
+    q: Q,
+    selected_groups: &Option<Vec<String>>,
+    selected_senders: &Option<Vec<String>>,
+    allowed_groups: &[String],
+) -> Result<Q, AppError>
+where
+    Q: QueryFilter,
+{
+    let allowed: HashSet<&String> =
+        allowed_groups.iter().collect::<HashSet<_>>();
+    let selected_groups = selected_groups.as_ref().map(|groups| {
+        groups
+            .iter()
+            .filter(|key| allowed.contains(key))
+            .cloned()
+            .collect::<Vec<_>>()
+    });
+    let selected_groups = selected_groups.filter(|groups| !groups.is_empty());
+    let selected_senders = selected_senders
+        .as_ref()
+        .filter(|senders| !senders.is_empty())
+        .cloned();
+
+    match (selected_groups, selected_senders) {
+        (Some(groups), Some(senders)) => Ok(
+            q.filter(message_in_groups_with_senders_exists(&groups, &senders))
+        ),
+        (Some(groups), None) => Ok(q.filter(message_in_groups_exists(groups))),
+        (None, Some(senders)) => Ok(q.filter(
+            message_has_sender_in_groups_exists(&senders, allowed_groups),
+        )),
+        (None, None) => Ok(q),
+    }
+}
+
 pub fn message_in_groups_exists(keys: Vec<String>) -> SimpleExpr {
     if keys.is_empty() {
         return Expr::cust("FALSE");
@@ -90,6 +126,33 @@ pub fn message_in_groups_exists(keys: Vec<String>) -> SimpleExpr {
             .equals((signal_message::Entity, signal_message::Column::Id)),
         )
         .filter(signal_message_group::Column::GroupMasterKey.eq_any(keys))
+        .into_query();
+
+    Expr::exists(subquery)
+}
+
+fn message_in_groups_with_senders_exists(
+    keys: &[String],
+    senders: &[String],
+) -> SimpleExpr {
+    if keys.is_empty() || senders.is_empty() {
+        return Expr::cust("FALSE");
+    }
+
+    let subquery = signal_message_group::Entity::find()
+        .select_only()
+        .expr(Expr::value(1))
+        .filter(
+            Expr::col((
+                signal_message_group::Entity,
+                signal_message_group::Column::SignalMessageId,
+            ))
+            .equals((signal_message::Entity, signal_message::Column::Id)),
+        )
+        .filter(
+            signal_message_group::Column::GroupMasterKey.eq_any(keys.to_vec()),
+        )
+        .filter(signal_message_group::Column::Sender.eq_any(senders.to_vec()))
         .into_query();
 
     Expr::exists(subquery)
@@ -125,6 +188,34 @@ where
         }
     }
     Ok(q)
+}
+
+fn message_has_sender_in_groups_exists(
+    senders: &[String],
+    allowed_groups: &[String],
+) -> SimpleExpr {
+    if senders.is_empty() || allowed_groups.is_empty() {
+        return Expr::cust("FALSE");
+    }
+
+    let subquery = signal_message_group::Entity::find()
+        .select_only()
+        .expr(Expr::value(1))
+        .filter(
+            Expr::col((
+                signal_message_group::Entity,
+                signal_message_group::Column::SignalMessageId,
+            ))
+            .equals((signal_message::Entity, signal_message::Column::Id)),
+        )
+        .filter(
+            signal_message_group::Column::GroupMasterKey
+                .eq_any(allowed_groups.to_vec()),
+        )
+        .filter(signal_message_group::Column::Sender.eq_any(senders.to_vec()))
+        .into_query();
+
+    Expr::exists(subquery)
 }
 
 fn message_has_sender_exists(senders: &[String]) -> SimpleExpr {
@@ -1044,13 +1135,12 @@ pub async fn summary_table_freq_1(
         filter_selected_freqs(dedup_subquery, &req.selected_freqs)?;
     let dedup_subquery =
         filter_selected_posts(dedup_subquery, &req.selected_posts)?;
-    let dedup_subquery = filter_selected_groups_with_access(
+    let dedup_subquery = filter_selected_groups_and_senders_with_access(
         dedup_subquery,
         &req.selected_groups,
+        &req.selected_senders,
         &master_keys,
     )?;
-    let dedup_subquery =
-        filter_selected_senders(dedup_subquery, &req.selected_senders)?;
     let dedup_subquery = filter_selected_units(
         dedup_subquery,
         &req.selected_units,
@@ -1646,12 +1736,12 @@ pub async fn edit_freq_unit_name(
         .filter(sigint_inbox_item::Column::UnitV2.eq(req.unit.clone()));
     let rows_res = filter_selected_freqs(rows_res, &reqan.selected_freqs)?;
     let rows_res = filter_selected_posts(rows_res, &reqan.selected_posts)?;
-    let rows_res = filter_selected_groups_with_access(
+    let rows_res = filter_selected_groups_and_senders_with_access(
         rows_res,
         &reqan.selected_groups,
+        &reqan.selected_senders,
         &sigint_groups,
     )?;
-    let rows_res = filter_selected_senders(rows_res, &reqan.selected_senders)?;
     let rows_res = filter_selected_units(
         rows_res,
         &reqan.selected_units,
