@@ -136,7 +136,7 @@ pub async fn report_docx_kind_revo(
     let only_comments_from_current_organism =
         req.report_tags_only_this_unit.unwrap_or(false);
     let mut current_req = req.req.clone();
-    current_req.report_tags_only_this_unit = req.report_tags_only_this_unit;
+    current_req.report_tags_only_this_unit = Some(false);
     let messages: Vec<(i64, InboxMessage)> =
         crate::rer_importer::inbox::get_inbox_messages_with_conn(
             &read_db,
