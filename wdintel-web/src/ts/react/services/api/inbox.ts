@@ -85,6 +85,7 @@ function normalizeInboxMessage(
     extended_form?: string | null;
     inbox_tags?: InboxMessageTagRaw[] | null;
     text_marked?: InboxMessageType['textMarked'];
+    point_tokens?: InboxMessageType['pointTokens'];
   }
 ): InboxMessageType {
   const raw = m as Record<string, unknown>;
@@ -98,7 +99,10 @@ function normalizeInboxMessage(
       ? rawInboxTags.map(normalizeInboxMessageTag)
       : null;
   const textMarked = (raw.text_marked ?? m.textMarked ?? null) as InboxMessageType['textMarked'];
-  return { ...m, groupMasterKey, networkIds, location, extendedForm, inboxTags, textMarked };
+  const rawPointTokens = (raw.point_tokens ?? m.pointTokens ?? null) as InboxMessageType['pointTokens'];
+  const pointTokens =
+    rawPointTokens != null && Array.isArray(rawPointTokens) ? rawPointTokens : null;
+  return { ...m, groupMasterKey, networkIds, location, extendedForm, inboxTags, textMarked, pointTokens };
 }
 
 function normalizeSignalGroupEntry(g: InboxMessagesRspRaw['signal_groups'][number]): SignalGroupEntry {

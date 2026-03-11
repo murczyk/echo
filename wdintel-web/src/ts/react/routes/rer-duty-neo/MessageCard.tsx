@@ -3,7 +3,14 @@ import React from 'react';
 
 import type { InboxMessage, Tag } from '../../../../Bindings';
 import { PowerChip } from '../../components/PowerChip';
-import { buildAnalysisHref, formatDateNoYear, formatTime, messageRenderDistance } from './utils';
+import {
+  buildAnalysisHref,
+  buildAnalysisMapHrefWithSearch,
+  formatDateNoYear,
+  getPointEtalonsFromMessage,
+  formatTime,
+  messageRenderDistance,
+} from './utils';
 import { renderMarkedText } from './MarkedText';
 
 export type MessageCardProps = {
@@ -49,6 +56,9 @@ export function MessageCard({
   leftSideCollapsed = true,
 }: MessageCardProps) {
   const networkIds = Array.from(new Set(msg.networkIds ?? []));
+  const pointEtalons = getPointEtalonsFromMessage(msg);
+  const mapHref =
+    pointEtalons.length > 0 ? buildAnalysisMapHrefWithSearch(pointEtalons) : buildAnalysisHref(msg, true);
 
   return (
     <Box component="li" className="list-none flex pr-0 pl-2 rer-duty-message mb-2 font-size-[13px]">
@@ -198,7 +208,7 @@ export function MessageCard({
                 </a>
               </div>
               <a
-                href={buildAnalysisHref(msg, true)}
+                href={mapHref}
                 target="_blank"
                 rel="noopener noreferrer"
                 title="Відкрити повідомлення на карті в аналізі"
@@ -324,7 +334,7 @@ export function MessageCard({
         </div>
         <div className="whitespace-pre-wrap break-words mt-1 mb-3 text-marked">
           {msg.textMarked && msg.textMarked.length > 0
-            ? renderMarkedText(msg.textMarked, msg.text ?? '')
+            ? renderMarkedText(msg.textMarked, msg.text ?? '', getPointEtalonsFromMessage(msg))
             : msg.text || '—'}
         </div>
         <Box className="flex flex-wrap gap-1 mt-1">
