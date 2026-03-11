@@ -31,7 +31,7 @@ entry_points:
       python src/supervised.py --dim {dim} --epoch {epoch} --wordNgrams {wordNgrams}
       --pretrainedVectors {pretrainedVectors}
       --autotuneModelSize {autotuneModelSize}
-      # --autotuneMetric {autotuneMetric} --autotunePredictions {autotunePredictions} --autotuneDuration {autotuneDuration}
+      --autotuneMetric {autotuneMetric} --autotunePredictions {autotunePredictions} --autotuneDuration {autotuneDuration}
   unsupervised:
     parameters:
       dim: { type: int, default: 100 }

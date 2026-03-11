@@ -18,14 +18,12 @@ def train_unsupervised(lake: Lake, **kwargs):
     seed = kwargs.get("seed", 4507)
     shuffle = kwargs.get("shuffle", True)
     rel = lake.messages_including_unlabeled(shuffle=shuffle, seed=seed)
-    count = quack.count_star(rel)
-    print(f"found {count} training rows", flush=True)
     df = quack.to_df_arrow(rel.select("text").limit(1000))
     print(df.head(), flush=True)
     dataset = from_pandas(
         df,
         name="corpus",
-        digest=arrow.digest(df, str(count)),
+        digest=arrow.digest(df, "unsupervised"),
     )
     corpus = lake.to_plain_text(rel, dataset)
 

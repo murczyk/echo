@@ -11,10 +11,10 @@ class Lake:
         self.conn = duckdb.connect(
             config={
                 "temp_directory": temp_directory,
-                "memory_limit": "8GB",
+                "memory_limit": "10GB",
                 "allocator_background_threads": True,
                 "parquet_metadata_cache": True,
-                "preserve_insertion_order": True,
+                "preserve_insertion_order": False,
             }
         )
         self.conn.execute("""
@@ -107,10 +107,9 @@ class Lake:
     def messages_including_unlabeled(
         self, shuffle: bool = True, seed: int = 4507
     ) -> DuckDBPyRelation:
-        order_clause = ""
-        if shuffle:
-            order_clause = f"ORDER BY hash(source, id, {seed})"
-        query = self.conn.query(rf"""
+
+        self.conn.execute(r"""
+        CREATE TEMPORARY TABLE IF NOT EXISTS tmp_messages_including_unlabeled AS
         SELECT DISTINCT ON (text)
             source,
             id,
@@ -126,8 +125,17 @@ class Lake:
         ) AS x
         WHERE
             text <> ''
-            {order_clause}
         """)
+
+        order_clause = ""
+        if shuffle:
+            order_clause = f"ORDER BY hash(source, id, {seed})"
+
+        query = self.conn.query(f"""
+        SELECT * FROM tmp_messages_including_unlabeled
+        {order_clause}
+        """)
+
         return query
 
     def create_messages_labeled_onehot(self) -> DuckDBPyRelation:
