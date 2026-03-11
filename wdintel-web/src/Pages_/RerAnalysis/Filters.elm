@@ -90,6 +90,27 @@ filterMenuBlockCountOutOf config content =
         ]
 
 
+filterMenuBlock : { unfold : Bool, toggleMsg : msg, label : String } -> Html msg -> Html msg
+filterMenuBlock config content =
+    div [ class "bg-[var(--color-card)] border border-[var(--color-border)] rounded mb-2 shadow-sm hover:shadow transition-shadow duration-150" ]
+        [ div
+            [ class "flex items-center px-3 py-2 cursor-pointer hover:bg-[var(--color-bg-muted)] transition-colors duration-150"
+            , onClick config.toggleMsg
+            ]
+            [ div [ class "flex items-center gap-2 flex-grow" ]
+                [ span [ classList [ ( "font-medium text-[var(--color-text)] text-sm", config.unfold ), ( "font-normal text-[var(--color-text)] text-sm", not config.unfold ) ] ] [ text config.label ]
+                ]
+            , i
+                [ class "bi text-xs transition-transform duration-150 ml-2 text-[var(--color-text)]"
+                , classList [ ( "bi-chevron-up", config.unfold ) ]
+                , classList [ ( "bi-chevron-down", not config.unfold ) ]
+                ]
+                []
+            ]
+        , HtmlX.viewIf config.unfold content
+        ]
+
+
 view : Bool -> B.User -> Model -> Html Msg
 view isDark user model =
     let
@@ -270,6 +291,57 @@ view isDark user model =
 
                         _ ->
                             ""
+
+                metadataField labelText value_ onValue exactValue onExact =
+                    let
+                        isDisabled =
+                            model.withoutMetadata
+                    in
+                    div [ class "mb-3" ]
+                        [ div [ class "mb-1 text-xs font-medium text-[var(--color-text)] uppercase tracking-wide" ] [ text labelText ]
+                        , div [ class "flex flex-col gap-2 lg:flex-row lg:items-center" ]
+                            [ input
+                                [ type_ "text"
+                                , value value_
+                                , onInput onValue
+                                , disabled isDisabled
+                                , spellcheck False
+                                , class "w-full rounded border border-[var(--color-border)] bg-[var(--color-card)] px-2 py-1.5 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                                ]
+                                []
+                            , label [ class "flex items-center gap-2 text-sm text-[var(--color-text)] whitespace-nowrap" ]
+                                [ input
+                                    [ type_ "checkbox"
+                                    , checked exactValue
+                                    , onCheck onExact
+                                    , disabled isDisabled
+                                    , class "accent-toggle-selected"
+                                    ]
+                                    []
+                                , text "точний збіг"
+                                ]
+                            ]
+                        ]
+
+                tabFiltersMetadata =
+                    div [ class "py-2 px-3" ]
+                        [ metadataField "cc" model.metadataCc MetadataCcChanged model.metadataCcExact MetadataCcExactChanged
+                        , metadataField "відправник" model.metadataSender MetadataSenderChanged model.metadataSenderExact MetadataSenderExactChanged
+                        , metadataField "отримувач" model.metadataReceiver MetadataReceiverChanged model.metadataReceiverExact MetadataReceiverExactChanged
+                        , metadataField "хеш" model.metadataHash MetadataHashChanged model.metadataHashExact MetadataHashExactChanged
+                        , div [ class "pt-1" ]
+                            [ label [ class "flex items-center gap-2 text-sm text-[var(--color-text)]" ]
+                                [ input
+                                    [ type_ "checkbox"
+                                    , checked model.withoutMetadata
+                                    , onCheck WithoutMetadataChanged
+                                    , class "accent-toggle-selected"
+                                    ]
+                                    []
+                                , text "без метаданих"
+                                ]
+                            ]
+                        ]
             in
             filterMenuBlockCountOutOf
                 { unfold = model.unfoldAorsFilter
@@ -352,6 +424,12 @@ view isDark user model =
                         , withGreenCircle = False
                         }
                         tabFiltersNetworks
+                   , filterMenuBlock
+                        { unfold = model.unfoldMetadataFilter
+                        , toggleMsg = ToggleUnfoldMetadataFilter
+                        , label = "метадані"
+                        }
+                        tabFiltersMetadata
                    , filterMenuBlockCountOutOf
                         { unfold = model.unfoldTagsFilter
                         , toggleMsg = ToggleUnfoldTagsFilter

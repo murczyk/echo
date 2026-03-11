@@ -66,6 +66,15 @@ pub async fn bl_babak_report(
         search: inbox_req.search,
         selected_tags: inbox_req.selected_tags,
         selected_networks: inbox_req.selected_networks,
+        metadata_cc: inbox_req.metadata_cc,
+        metadata_cc_exact: inbox_req.metadata_cc_exact,
+        metadata_sender: inbox_req.metadata_sender,
+        metadata_sender_exact: inbox_req.metadata_sender_exact,
+        metadata_receiver: inbox_req.metadata_receiver,
+        metadata_receiver_exact: inbox_req.metadata_receiver_exact,
+        metadata_hash: inbox_req.metadata_hash,
+        metadata_hash_exact: inbox_req.metadata_hash_exact,
+        without_metadata: inbox_req.without_metadata,
         include_peleng_locations: inbox_req.include_peleng_locations,
         units_exact_match_only: inbox_req.units_exact_match_only,
         filter_tags_option: inbox_req.filter_tags_option,
@@ -774,6 +783,7 @@ pub async fn get_inbox_messages_report_unit(
     let q = filter_selected_callsigns(q, &req.selected_callsigns)?;
     let q =
         filter_selected_networks(q, &req.selected_networks).context(h!())?;
+    let q = filter_selected_metadata_for_inbox_messages(q, req)?;
     let q = filter_search(q, &req.search)?;
     let q = filter_selected_units(
         q,

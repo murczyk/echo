@@ -130,6 +130,7 @@ init route _ =
             , unfoldLocationsFilter = False
             , unfoldTagsFilter = False
             , unfoldNetworksFilter = False
+            , unfoldMetadataFilter = False
             , unfoldPostsFilter = False
             , unfoldSumTable = False
             , unfoldCallsignGraph = False
@@ -152,6 +153,15 @@ init route _ =
             , savedFilterEditInp = Dict.empty
             , savedFilterMenuOpen = Nothing
             , searchInput = ""
+            , metadataCc = ""
+            , metadataCcExact = False
+            , metadataSender = ""
+            , metadataSenderExact = False
+            , metadataReceiver = ""
+            , metadataReceiverExact = False
+            , metadataHash = ""
+            , metadataHashExact = False
+            , withoutMetadata = False
             , nolimitShown = False
             , menuTab = TabFilters
             , selAorState = Select.initState (Select.selectIdentifier "selAorState")
@@ -317,6 +327,15 @@ getInboxReq model =
     , orWithCoords = Just model.orWithCoords
     , newestFirst = Just model.newestFirst
     , search = emptySToNothing model.searchInput
+    , metadataCc = emptySToNothing model.metadataCc
+    , metadataCcExact = Just model.metadataCcExact
+    , metadataSender = emptySToNothing model.metadataSender
+    , metadataSenderExact = Just model.metadataSenderExact
+    , metadataReceiver = emptySToNothing model.metadataReceiver
+    , metadataReceiverExact = Just model.metadataReceiverExact
+    , metadataHash = emptySToNothing model.metadataHash
+    , metadataHashExact = Just model.metadataHashExact
+    , withoutMetadata = Just model.withoutMetadata
     , highlightCallsigns = Nothing
     , highlightKeywords = Nothing
     , highlightSignals = Nothing
@@ -384,6 +403,15 @@ cmdLoadCallsignGraph model { dtFromPosix, dtToPosix } =
             , orWithCoords = Just model.orWithCoords
             , nolimit = Just model.callsignGraphNolimit
             , search = Just model.searchInput
+            , metadataCc = emptySToNothing model.metadataCc
+            , metadataCcExact = Just model.metadataCcExact
+            , metadataSender = emptySToNothing model.metadataSender
+            , metadataSenderExact = Just model.metadataSenderExact
+            , metadataReceiver = emptySToNothing model.metadataReceiver
+            , metadataReceiverExact = Just model.metadataReceiverExact
+            , metadataHash = emptySToNothing model.metadataHash
+            , metadataHashExact = Just model.metadataHashExact
+            , withoutMetadata = Just model.withoutMetadata
             , selectedTags = emptyToNothing model.tagsSelected
             , filterTagsOption = Just model.filterTagsOption
             , unitsExactMatchOnly = Just model.unitsExactMatchOnly
@@ -418,6 +446,21 @@ loadPalitrasIfNeeded model =
 
     else
         ( model, E.none )
+
+
+invalidateOptionFilters : Model -> Model
+invalidateOptionFilters model =
+    { model
+        | locations = NeedsReload (RD.withDefault [] model.locations)
+        , senders = NeedsReload (RD.withDefault [] model.senders)
+        , units = NeedsReload (RD.withDefault [] model.units)
+        , freqs = NeedsReload (RD.withDefault [] model.freqs)
+        , posts = NeedsReload (RD.withDefault [] model.posts)
+        , callsigns = NeedsReload (RD.withDefault [] model.callsigns)
+        , groups = NeedsReload (RD.withDefault [] model.groups)
+        , aors = NeedsReload (RD.withDefault [] model.aors)
+        , networksStats = NeedsReload (RD.withDefault [] model.networksStats)
+    }
 
 
 loadSumTableOnly : Model -> ( Model, Effect Msg )
@@ -1545,67 +1588,17 @@ update user shared route msg model =
             )
 
         LoadMessagesNolimit ->
+            let
+                inboxReq =
+                    getInboxReq model
+            in
             ( { model
                 | loadingInboxMessages = True
                 , nolimitShown = True
               }
             , E.getInboxMessages Nothing
                 GotInbox
-                { sinceIdNoninclusive = Nothing
-                , beforeIdNoninclusive = Nothing
-                , sinceDateInclusiveMs = Maybe.map Time.posixToMillis model.from.datePosix
-                , tillDateInclusiveMs = Maybe.map Time.posixToMillis model.to.datePosix
-                , onlyShowUnprocessed = Nothing
-                , checkedOnly = Just False
-                , selectedGroups = emptyToNothing model.groupsSelected
-                , selectedSenders = emptyToNothing model.sendersSelected
-                , deniedSenders = Nothing
-                , selectedFreqs = emptyToNothing (model.freqsSelected ++ model.filterSelectedAdjacentFreqs)
-                , deniedFreqs = Nothing
-                , selectedPosts = emptyToNothing model.postsSelected
-                , deniedPosts = Nothing
-                , selectedAors =
-                    model.aorsSelected
-                        |> List.filterMap String.toInt
-                        |> emptyToNothing
-                , selectedCallsigns = emptyToNothing model.callsignsSelected
-                , selectedUnits = emptyToNothing model.unitsSelected
-                , selectedLocations = emptyToNothing model.locationsSelected
-                , includePelengLocations = Just model.includePelengLocations
-                , selectedTags = emptyToNothing model.tagsSelected
-                , nolimit = Just True
-                , orWithExtendedForm = Just model.orWithExtendedForm
-                , loadLatest = Nothing
-                , returnDuplicates = Nothing
-                , orBookmarked = Just model.orBookmarked
-                , orImportant = Just model.orImportant
-                , orWithCoords = Just model.orWithCoords
-                , newestFirst = Just model.newestFirst
-                , search = emptySToNothing model.searchInput
-                , highlightCallsigns = Nothing
-                , highlightSignals = Nothing
-                , highlightKeywords = Nothing
-                , highlightSearchres = Just True
-                , highlightPoints = Just True
-                , sortBy = Nothing
-                , reportTagsOnlyThisUnit = Just model.reportTagsOnlyThisUnit
-                , ignoreImportedCoords = Nothing
-                , calculateFreqPelengsSummary = Nothing
-                , skipGroupStats = Just True
-                , filterTagsOption = Just model.filterTagsOption
-                , pageId = Just "rer-analysis"
-                , unitsExactMatchOnly = Just model.unitsExactMatchOnly
-                , selectedNetworks =
-                    model.networksSelected
-                        |> List.filterMap String.toInt
-                        |> emptyToNothing
-                , withoutModelTags =
-                    if model.withoutModelTags then
-                        Just True
-
-                    else
-                        Nothing
-                }
+                { inboxReq | nolimit = Just True }
             )
 
         ToggleSortBySenders ->
@@ -1915,6 +1908,11 @@ update user shared route msg model =
 
         ToggleUnfoldNetworksFilter ->
             ( { model | unfoldNetworksFilter = not model.unfoldNetworksFilter }
+            , E.none
+            )
+
+        ToggleUnfoldMetadataFilter ->
+            ( { model | unfoldMetadataFilter = not model.unfoldMetadataFilter }
             , E.none
             )
 
@@ -2523,19 +2521,44 @@ update user shared route msg model =
             , E.none
             )
 
+        MetadataCcChanged str ->
+            loadCoreStatsAndPushUrl <|
+                invalidateOptionFilters { model | metadataCc = str }
+
+        MetadataCcExactChanged checked ->
+            loadCoreStatsAndPushUrl <|
+                invalidateOptionFilters { model | metadataCcExact = checked }
+
+        MetadataSenderChanged str ->
+            loadCoreStatsAndPushUrl <|
+                invalidateOptionFilters { model | metadataSender = str }
+
+        MetadataSenderExactChanged checked ->
+            loadCoreStatsAndPushUrl <|
+                invalidateOptionFilters { model | metadataSenderExact = checked }
+
+        MetadataReceiverChanged str ->
+            loadCoreStatsAndPushUrl <|
+                invalidateOptionFilters { model | metadataReceiver = str }
+
+        MetadataReceiverExactChanged checked ->
+            loadCoreStatsAndPushUrl <|
+                invalidateOptionFilters { model | metadataReceiverExact = checked }
+
+        MetadataHashChanged str ->
+            loadCoreStatsAndPushUrl <|
+                invalidateOptionFilters { model | metadataHash = str }
+
+        MetadataHashExactChanged checked ->
+            loadCoreStatsAndPushUrl <|
+                invalidateOptionFilters { model | metadataHashExact = checked }
+
+        WithoutMetadataChanged checked ->
+            loadCoreStatsAndPushUrl <|
+                invalidateOptionFilters { model | withoutMetadata = checked }
+
         SearchDo ->
-            loadCoreStatsAndPushUrl
-                { model
-                    | locations = NeedsReload (RD.withDefault [] model.locations)
-                    , senders = NeedsReload (RD.withDefault [] model.senders)
-                    , units = NeedsReload (RD.withDefault [] model.units)
-                    , freqs = NeedsReload (RD.withDefault [] model.freqs)
-                    , posts = NeedsReload (RD.withDefault [] model.posts)
-                    , callsigns = NeedsReload (RD.withDefault [] model.callsigns)
-                    , groups = NeedsReload (RD.withDefault [] model.groups)
-                    , aors = NeedsReload (RD.withDefault [] model.aors)
-                    , networksStats = NeedsReload (RD.withDefault [] model.networksStats)
-                }
+            loadCoreStatsAndPushUrl (invalidateOptionFilters model)
 
         SearchInputKeyDown key ->
             if key == 13 then
@@ -2549,18 +2572,7 @@ update user shared route msg model =
                 m2 =
                     { model | searchInput = "" }
             in
-            loadCoreStatsAndPushUrl
-                { m2
-                    | locations = NeedsReload (RD.withDefault [] model.locations)
-                    , senders = NeedsReload (RD.withDefault [] model.senders)
-                    , units = NeedsReload (RD.withDefault [] model.units)
-                    , freqs = NeedsReload (RD.withDefault [] model.freqs)
-                    , posts = NeedsReload (RD.withDefault [] model.posts)
-                    , callsigns = NeedsReload (RD.withDefault [] model.callsigns)
-                    , groups = NeedsReload (RD.withDefault [] model.groups)
-                    , aors = NeedsReload (RD.withDefault [] model.aors)
-                    , networksStats = NeedsReload (RD.withDefault [] model.networksStats)
-                }
+            loadCoreStatsAndPushUrl (invalidateOptionFilters m2)
 
         SelectTab tab ->
             ( { model | menuTab = tab }
@@ -3120,18 +3132,10 @@ update user shared route msg model =
         ReportTagsOnlyThisUnitToggle ->
             let
                 m2 =
-                    { model
-                        | reportTagsOnlyThisUnit = not model.reportTagsOnlyThisUnit
-                        , locations = NeedsReload (RD.withDefault [] model.locations)
-                        , senders = NeedsReload (RD.withDefault [] model.senders)
-                        , units = NeedsReload (RD.withDefault [] model.units)
-                        , posts = NeedsReload (RD.withDefault [] model.posts)
-                        , freqs = NeedsReload (RD.withDefault [] model.freqs)
-                        , callsigns = NeedsReload (RD.withDefault [] model.callsigns)
-                        , groups = NeedsReload (RD.withDefault [] model.groups)
-                        , aors = NeedsReload (RD.withDefault [] model.aors)
-                        , networksStats = NeedsReload (RD.withDefault [] model.networksStats)
-                    }
+                    invalidateOptionFilters
+                        { model
+                            | reportTagsOnlyThisUnit = not model.reportTagsOnlyThisUnit
+                        }
             in
             loadCoreStatsAndPushUrl m2
 

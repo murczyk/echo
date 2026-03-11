@@ -54,6 +54,7 @@ type Msg
     | ToggleUnfoldLocationsFilter
     | ToggleUnfoldTagsFilter
     | ToggleUnfoldNetworksFilter
+    | ToggleUnfoldMetadataFilter
     | ToggleUnfoldPostsFilter
     | ToggleUnfoldSumTable
     | ToggleUnfoldGraphs
@@ -94,6 +95,15 @@ type Msg
     | SavedFilterDeleteDone (Result ApiError ())
     | SavedFilterSelect Int
     | SearchInput String
+    | MetadataCcChanged String
+    | MetadataCcExactChanged Bool
+    | MetadataSenderChanged String
+    | MetadataSenderExactChanged Bool
+    | MetadataReceiverChanged String
+    | MetadataReceiverExactChanged Bool
+    | MetadataHashChanged String
+    | MetadataHashExactChanged Bool
+    | WithoutMetadataChanged Bool
     | SearchDo
     | SearchInputKeyDown Int
     | SearchReset

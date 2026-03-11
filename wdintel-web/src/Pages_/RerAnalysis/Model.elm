@@ -58,6 +58,7 @@ type alias Model =
     , unfoldLocationsFilter : Bool
     , unfoldTagsFilter : Bool
     , unfoldNetworksFilter : Bool
+    , unfoldMetadataFilter : Bool
     , unfoldSumTable : Bool
     , unfoldCallsignGraph : Bool
     , unfoldGraphs : Bool
@@ -82,6 +83,15 @@ type alias Model =
     , savedFilterEditInp : Dict Int String
     , savedFilterMenuOpen : Maybe Int
     , searchInput : String
+    , metadataCc : String
+    , metadataCcExact : Bool
+    , metadataSender : String
+    , metadataSenderExact : Bool
+    , metadataReceiver : String
+    , metadataReceiverExact : Bool
+    , metadataHash : String
+    , metadataHashExact : Bool
+    , withoutMetadata : Bool
     , nolimitShown : Bool
     , menuTab : MenuTab
     , selAorState : Select.State

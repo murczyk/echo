@@ -249,6 +249,7 @@ async fn get_inbox_messages_report(
     let q = filter_selected_aors(q, &req.selected_aors).context(h!())?;
     let q =
         filter_selected_networks(q, &req.selected_networks).context(h!())?;
+    let q = filter_selected_metadata_for_inbox_messages(q, req)?;
 
     let inbox_cte_alias = Alias::new("inbox_items_cte");
     let inbox_cte = CommonTableExpression::new()

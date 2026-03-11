@@ -992,6 +992,211 @@ fn network_filter_expr(
     }
 }
 
+fn metadata_text_match_expr<C>(
+    column: C,
+    value: &str,
+    exact: bool,
+) -> SimpleExpr
+where
+    C: IntoColumnRef,
+{
+    if exact {
+        Expr::col(column).eq(value.to_string())
+    } else {
+        Expr::col(column).like(format!("%{value}%"))
+    }
+}
+
+fn metadata_sender_match_expr(
+    alias: Alias,
+    value: &str,
+    exact: bool,
+) -> SimpleExpr {
+    metadata_text_match_expr(
+        (alias.clone(), sigint_inbox_item_metadata::Column::SenderId),
+        value,
+        exact,
+    )
+    .or(metadata_text_match_expr(
+        (alias, sigint_inbox_item_metadata::Column::SenderName),
+        value,
+        exact,
+    ))
+}
+
+fn metadata_receiver_match_expr(
+    alias: Alias,
+    value: &str,
+    exact: bool,
+) -> SimpleExpr {
+    metadata_text_match_expr(
+        (
+            alias.clone(),
+            sigint_inbox_item_metadata::Column::CallGroupId,
+        ),
+        value,
+        exact,
+    )
+    .or(metadata_text_match_expr(
+        (alias, sigint_inbox_item_metadata::Column::CallGroupName),
+        value,
+        exact,
+    ))
+}
+
+pub fn filter_selected_metadata<Q>(
+    q: Q,
+    metadata_cc: &Option<String>,
+    metadata_cc_exact: &Option<bool>,
+    metadata_sender: &Option<String>,
+    metadata_sender_exact: &Option<bool>,
+    metadata_receiver: &Option<String>,
+    metadata_receiver_exact: &Option<bool>,
+    metadata_hash: &Option<String>,
+    metadata_hash_exact: &Option<bool>,
+    without_metadata: &Option<bool>,
+) -> Result<Q, AppError>
+where
+    Q: QueryFilter,
+{
+    let without_metadata = without_metadata.unwrap_or(false);
+    let metadata_cc = m_str_trim(metadata_cc);
+    let metadata_sender = m_str_trim(metadata_sender);
+    let metadata_receiver = m_str_trim(metadata_receiver);
+    let metadata_hash = m_str_trim(metadata_hash);
+
+    if !without_metadata
+        && metadata_cc.is_none()
+        && metadata_sender.is_none()
+        && metadata_receiver.is_none()
+        && metadata_hash.is_none()
+    {
+        return Ok(q);
+    }
+
+    let metadata_alias = Alias::new("metadata_filter");
+    let mut subquery = Query::select();
+    subquery
+        .expr(Expr::value(1))
+        .from_as(sigint_inbox_item_metadata::Entity, metadata_alias.clone())
+        .and_where(
+            Expr::col((
+                metadata_alias.clone(),
+                sigint_inbox_item_metadata::Column::SigintInboxItemId,
+            ))
+            .equals((signal_message::Entity, signal_message::Column::Id)),
+        );
+
+    if let Some(metadata_cc) = metadata_cc.as_ref() {
+        subquery.and_where(metadata_text_match_expr(
+            (
+                metadata_alias.clone(),
+                sigint_inbox_item_metadata::Column::ColorCode,
+            ),
+            metadata_cc,
+            metadata_cc_exact.unwrap_or(false),
+        ));
+    }
+
+    if let Some(metadata_sender) = metadata_sender.as_ref() {
+        subquery.and_where(metadata_sender_match_expr(
+            metadata_alias.clone(),
+            metadata_sender,
+            metadata_sender_exact.unwrap_or(false),
+        ));
+    }
+
+    if let Some(metadata_receiver) = metadata_receiver.as_ref() {
+        subquery.and_where(metadata_receiver_match_expr(
+            metadata_alias.clone(),
+            metadata_receiver,
+            metadata_receiver_exact.unwrap_or(false),
+        ));
+    }
+
+    if let Some(metadata_hash) = metadata_hash.as_ref() {
+        subquery.and_where(metadata_text_match_expr(
+            (
+                metadata_alias.clone(),
+                sigint_inbox_item_metadata::Column::HashId,
+            ),
+            metadata_hash,
+            metadata_hash_exact.unwrap_or(false),
+        ));
+    }
+
+    let metadata_exists = Expr::exists(subquery.to_owned());
+
+    if without_metadata {
+        Ok(q.filter(metadata_exists.not()))
+    } else {
+        Ok(q.filter(metadata_exists))
+    }
+}
+
+pub fn filter_selected_metadata_for_analysis_stats<Q>(
+    q: Q,
+    req: &AnalysisStatsReq,
+) -> Result<Q, AppError>
+where
+    Q: QueryFilter,
+{
+    filter_selected_metadata(
+        q,
+        &req.metadata_cc,
+        &req.metadata_cc_exact,
+        &req.metadata_sender,
+        &req.metadata_sender_exact,
+        &req.metadata_receiver,
+        &req.metadata_receiver_exact,
+        &req.metadata_hash,
+        &req.metadata_hash_exact,
+        &req.without_metadata,
+    )
+}
+
+pub fn filter_selected_metadata_for_inbox_messages<Q>(
+    q: Q,
+    req: &InboxMessagesReq,
+) -> Result<Q, AppError>
+where
+    Q: QueryFilter,
+{
+    filter_selected_metadata(
+        q,
+        &req.metadata_cc,
+        &req.metadata_cc_exact,
+        &req.metadata_sender,
+        &req.metadata_sender_exact,
+        &req.metadata_receiver,
+        &req.metadata_receiver_exact,
+        &req.metadata_hash,
+        &req.metadata_hash_exact,
+        &req.without_metadata,
+    )
+}
+
+pub fn filter_selected_metadata_for_callsigns_graph<Q>(
+    q: Q,
+    req: &CallsignsGraphReq,
+) -> Result<Q, AppError>
+where
+    Q: QueryFilter,
+{
+    filter_selected_metadata(
+        q,
+        &req.metadata_cc,
+        &req.metadata_cc_exact,
+        &req.metadata_sender,
+        &req.metadata_sender_exact,
+        &req.metadata_receiver,
+        &req.metadata_receiver_exact,
+        &req.metadata_hash,
+        &req.metadata_hash_exact,
+        &req.without_metadata,
+    )
+}
+
 pub fn filter_search<Q>(q: Q, search: &Option<String>) -> Result<Q, AppError>
 where
     Q: QueryFilter + QuerySelect,
@@ -1171,6 +1376,8 @@ pub async fn summary_table_freq_1(
     let dedup_subquery =
         filter_selected_networks(dedup_subquery, &req.selected_networks)
             .context(h!())?;
+    let dedup_subquery =
+        filter_selected_metadata_for_analysis_stats(dedup_subquery, req)?;
     let dedup_subquery = filter_search(dedup_subquery, &req.search)?;
     // println!(
     //     "> summary table dedup_subquery sql: {}",
@@ -1609,6 +1816,7 @@ async fn correlated_freqs(
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
     let q = filter_selected_freqs(q, &req.selected_freqs)?;
+    let q = filter_selected_metadata_for_analysis_stats(q, &req)?;
     let q = q.into_model::<Res>().all(&env.dbx).await.c(h!())?;
     let mut selected_freq_callsigns: Vec<String> = vec![];
     for x in q.iter() {
@@ -1652,6 +1860,7 @@ async fn correlated_freqs(
             ))
             .select_only()
             .column_as(sigint_inbox_item::Column::Freq, "freq");
+        let q = filter_selected_metadata_for_analysis_stats(q, &req)?;
         let res = q.into_model::<Res2>().all(&env.dbx).await.c(h!())?;
         for r in res {
             let Some(freq): Option<String> = r.freq else {
@@ -1763,6 +1972,8 @@ pub async fn edit_freq_unit_name(
     )?;
     let rows_res = filter_selected_networks(rows_res, &reqan.selected_networks)
         .context(h!())?;
+    let rows_res =
+        filter_selected_metadata_for_analysis_stats(rows_res, &reqan)?;
     let rows_res = filter_search(rows_res, &req.search)?;
     // println!(
     //     "> freq edit query: {}",
@@ -2133,6 +2344,7 @@ pub async fn bi_new_callsigns(
         filter_selected_aors(rows_res, &req.selected_aors).context(h!())?;
     let rows_res = filter_selected_networks(rows_res, &req.selected_networks)
         .context(h!())?;
+    let rows_res = filter_selected_metadata_for_analysis_stats(rows_res, req)?;
     let mut rows_res = rows_res
         .into_model::<Row>()
         .stream(&env.dbx)
@@ -2210,6 +2422,7 @@ pub async fn bi_new_callsigns(
     )?;
     let rows_res = filter_selected_networks(rows_res, &req.selected_networks)
         .context(h!())?;
+    let rows_res = filter_selected_metadata_for_analysis_stats(rows_res, req)?;
     let mut rows_res = rows_res
         .into_model::<Row>()
         .stream(&env.dbx)

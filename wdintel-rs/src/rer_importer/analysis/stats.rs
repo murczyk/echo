@@ -123,6 +123,7 @@ where
     .context(h!())?;
     let query = filter_selected_networks(query, &req.selected_networks)
         .context(h!())?;
+    let query = apply_metadata_filters(query, &req.0)?;
     let query = filter_search(query, &req.search).context(h!())?;
     let query =
         filter_selected_aors(query, &req.selected_aors).context(h!())?;
@@ -130,6 +131,19 @@ where
         return Ok(query.filter(message_in_groups_exists(master_keys)));
     }
     Ok(query)
+}
+
+fn apply_metadata_filters<E>(
+    query: Select<E>,
+    req: &AnalysisStatsReq,
+) -> Result<Select<E>, AppError>
+where
+    E: EntityTrait,
+{
+    Ok(
+        filter_selected_metadata_for_analysis_stats(query, req)
+            .context(h!())?,
+    )
 }
 
 pub async fn count_groups(
@@ -218,6 +232,7 @@ fn build_groups_query(
     let groups_res =
         filter_selected_networks(groups_res, &req.selected_networks)
             .context(h!())?;
+    let groups_res = apply_metadata_filters(groups_res, &req.0)?;
     let groups_res = filter_search(groups_res, &req.search).context(h!())?;
     let groups_res = filter_selected_tags(
         groups_res,
@@ -483,6 +498,7 @@ fn build_senders_query(
     let senders_res =
         filter_selected_networks(senders_res, &req.selected_networks)
             .context(h!())?;
+    let senders_res = apply_metadata_filters(senders_res, &req.0)?;
     let senders_res = filter_search(senders_res, &req.search).context(h!())?;
     let senders_res =
         filter_selected_aors(senders_res, &req.selected_aors).context(h!())?;
@@ -625,6 +641,7 @@ fn build_posts_query(
     .context(h!())?;
     let post_res = filter_selected_networks(post_res, &req.selected_networks)
         .context(h!())?;
+    let post_res = apply_metadata_filters(post_res, &req.0)?;
     let post_res = filter_search(post_res, &req.search).context(h!())?;
     let post_res =
         filter_selected_aors(post_res, &req.selected_aors).context(h!())?;
@@ -820,6 +837,7 @@ fn build_freqs_query(
     .context(h!())?;
     let freqs_res = filter_selected_networks(freqs_res, &req.selected_networks)
         .context(h!())?;
+    let freqs_res = apply_metadata_filters(freqs_res, &req.0)?;
     let freqs_res = filter_search(freqs_res, &req.search).context(h!())?;
     let freqs_res =
         filter_selected_aors(freqs_res, &req.selected_aors).context(h!())?;
@@ -947,6 +965,7 @@ fn build_callsigns_query(
     let callsigns_res =
         filter_selected_networks(callsigns_res, &req.selected_networks)
             .context(h!())?;
+    let callsigns_res = apply_metadata_filters(callsigns_res, &req.0)?;
     let callsigns_res = filter_search(callsigns_res, &req.search)?;
     let callsigns_res = filter_selected_aors(callsigns_res, &req.selected_aors)
         .context(h!())?;
@@ -1085,6 +1104,7 @@ fn build_tags_query(
     )?;
     let tags_res = filter_selected_networks(tags_res, &req.selected_networks)
         .context(h!())?;
+    let tags_res = apply_metadata_filters(tags_res, &req.0)?;
     let tags_res = filter_search(tags_res, &req.search)?;
     let tags_res =
         filter_selected_aors(tags_res, &req.selected_aors).context(h!())?;
@@ -1229,6 +1249,7 @@ fn build_units_query(
     .context(h!())?;
     let units_res = filter_selected_networks(units_res, &req.selected_networks)
         .context(h!())?;
+    let units_res = apply_metadata_filters(units_res, &req.0)?;
     let units_res = filter_search(units_res, &req.search).context(h!())?;
     let units_res =
         filter_selected_aors(units_res, &req.selected_aors).context(h!())?;
@@ -1376,6 +1397,7 @@ fn build_locations_query(
     let locations_res =
         filter_selected_networks(locations_res, &req.selected_networks)
             .context(h!())?;
+    let locations_res = apply_metadata_filters(locations_res, &req.0)?;
     let locations_res =
         filter_search(locations_res, &req.search).context(h!())?;
     let locations_res = filter_selected_aors(locations_res, &req.selected_aors)
@@ -1533,6 +1555,7 @@ fn build_aors_query(
     )
     .context(h!())?;
     let aors_res = filter_search(aors_res, &req.search).context(h!())?;
+    let aors_res = apply_metadata_filters(aors_res, &req.0)?;
     let aors_res =
         filter_selected_aors(aors_res, &req.selected_aors).context(h!())?;
     Ok(aors_res)
@@ -1763,6 +1786,7 @@ fn build_networks_query_for_login(
     let messages_q =
         filter_selected_networks(messages_q, &req.selected_networks)
             .context(h!())?;
+    let messages_q = apply_metadata_filters(messages_q, req)?;
     let messages_q = filter_search(messages_q, &req.search).context(h!())?;
     let messages_q = filter_selected_tags(
         messages_q,
@@ -2006,6 +2030,8 @@ async fn fetch_counts_for_login_with_conn(
     let selected_count_res =
         filter_selected_networks(selected_count_res, &req.selected_networks)
             .context(h!())?;
+    let selected_count_res =
+        apply_metadata_filters(selected_count_res, &req.0)?;
     let selected_count_res =
         filter_search(selected_count_res, &req.search).context(h!())?;
     let selected_count_res =

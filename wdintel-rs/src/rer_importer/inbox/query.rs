@@ -103,6 +103,7 @@ pub(crate) async fn build_inbox_query(
         &req.selected_locations,
         include_peleng_locations,
     )?;
+    q = filter_selected_metadata_for_inbox_messages(q, req)?;
 
     if req.since_id_noninclusive.is_none()
         && req.since_date_inclusive_ms.is_none()

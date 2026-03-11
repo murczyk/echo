@@ -1122,6 +1122,15 @@ pub async fn callsigns_graph(
         or_with_coords: req.or_with_coords,
         search: req.search.clone(),
         selected_tags: req.selected_tags.clone(),
+        metadata_cc: req.metadata_cc.clone(),
+        metadata_cc_exact: req.metadata_cc_exact,
+        metadata_sender: req.metadata_sender.clone(),
+        metadata_sender_exact: req.metadata_sender_exact,
+        metadata_receiver: req.metadata_receiver.clone(),
+        metadata_receiver_exact: req.metadata_receiver_exact,
+        metadata_hash: req.metadata_hash.clone(),
+        metadata_hash_exact: req.metadata_hash_exact,
+        without_metadata: req.without_metadata,
         include_peleng_locations: req.include_peleng_locations,
         units_exact_match_only: req.units_exact_match_only,
         filter_tags_option: req.filter_tags_option,
@@ -1292,6 +1301,7 @@ pub async fn callsigns_graph(
         &req.units_exact_match_only,
     )?;
     let q = filter_selected_callsigns(q, &req.selected_callsigns)?;
+    let q = filter_selected_metadata_for_callsigns_graph(q, &req)?;
     // println!(
     //     "> callsigns_graph q: {}",
     //     q.build(DbBackend::Postgres).to_string()
