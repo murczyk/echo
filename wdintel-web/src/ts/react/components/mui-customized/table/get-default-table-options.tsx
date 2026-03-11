@@ -1,6 +1,6 @@
 import { Theme } from '@mui/material';
 import { TableRowProps } from '@mui/material/TableRow';
-import { MRT_Row, MRT_RowData, MRT_TableInstance, MRT_TableOptions } from 'material-react-table';
+import { MRT_ColumnOrderState, MRT_Row, MRT_RowData, MRT_TableInstance, MRT_TableOptions } from 'material-react-table';
 import { MRT_Localization_UK } from 'material-react-table/locales/uk';
 
 import { CUSTOM_STYLES } from './custom-styles';
@@ -20,6 +20,32 @@ export const getDefaultMRTOptions = <TData extends MRT_RowData>(): Partial<MRT_T
   positionToolbarAlertBanner: 'bottom',
   ...CUSTOM_STYLES,
 });
+
+export function buildDefaultColumnOrder({
+  dataColumnIds,
+  withRowSelection = false,
+  withRowActions = false,
+  withRowNumbers = false,
+}: {
+  dataColumnIds: string[];
+  withRowSelection?: boolean;
+  withRowActions?: boolean;
+  withRowNumbers?: boolean;
+}): MRT_ColumnOrderState {
+  const leading: string[] = [];
+
+  if (withRowSelection) {
+    leading.push('mrt-row-select');
+  }
+  if (withRowNumbers) {
+    leading.push('mrt-row-numbers');
+  }
+  if (withRowActions) {
+    leading.push('mrt-row-actions');
+  }
+
+  return [...leading, ...dataColumnIds];
+}
 
 export function renderColumnActionsMenuItems({
   internalColumnMenuItems,

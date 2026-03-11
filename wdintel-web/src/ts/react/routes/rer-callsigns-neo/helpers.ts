@@ -42,10 +42,7 @@ export function createDefaultFilters(now = new Date()): CallsignsFilterState {
   const from = new Date(now.getTime() - 7 * DAY_MS);
 
   return {
-    filterCallsign: '',
-    filterPosition: '',
-    filterComment: '',
-    filterUnit: '',
+    filterText: '',
     filterDeveloping: 'OnlyNonDeveloping',
     isIgnoringDateFilter: true,
     fromDateTimeLocal: toDateTimeLocalValue(from),
@@ -75,10 +72,11 @@ export function buildListCallsignsReq(input: BuildReqInput): ListCallsignsReq {
   return {
     afterId: query.afterId,
     beforeId: null,
-    filterCallsign: filters.filterCallsign,
-    filterPosition: filters.filterPosition,
-    filterComment: filters.filterComment,
-    filterUnit: filters.filterUnit,
+    filterText: filters.filterText,
+    filterCallsign: null,
+    filterPosition: null,
+    filterComment: null,
+    filterUnit: null,
     filterDeveloping: filters.filterDeveloping,
     sinceDateInclusiveMs: filters.isIgnoringDateFilter ? null : parseDateTimeLocalToMs(filters.fromDateTimeLocal),
     tillDateInclusiveMs: filters.isIgnoringDateFilter ? null : parseDateTimeLocalToMs(filters.toDateTimeLocal),

@@ -47,6 +47,7 @@ pub enum DevelopingFilter {
 pub struct ListCallsignsReq {
     pub after_id: Option<i64>,
     pub before_id: Option<i64>,
+    pub filter_text: Option<String>,
     pub filter_callsign: Option<String>,
     pub filter_position: Option<String>,
     pub filter_comment: Option<String>,

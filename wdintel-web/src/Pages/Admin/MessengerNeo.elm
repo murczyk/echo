@@ -61,7 +61,9 @@ view : Shared.Model -> Model -> View Msg
 view _ _ =
     { title = "Адмін: месенджери"
     , body =
-        [ div [ class "w-full px-6 pt-6" ]
-            [ node "messenger-neo" [] [] ]
+        [ div [ class "app-shell-fill-height box-border min-h-0 px-6 pt-6 pb-6 w-full flex flex-col overflow-hidden" ]
+            [ div [ class "flex-1 min-h-0 w-full" ]
+                [ node "messenger-neo" [ class "block w-full h-full" ] [] ]
+            ]
         ]
     }

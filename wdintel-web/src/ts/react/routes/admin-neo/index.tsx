@@ -1,5 +1,5 @@
 import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
-import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import {
   Alert,
@@ -33,12 +33,12 @@ import {
   ZoneDatasourceGroupAddReq,
   ZoneDatasourceGroupUpdateReq,
 } from '../../../../Bindings';
+import { MrtRowActionButton, MrtRowActions, mrtRowActionsColumnSize } from '../../components/MrtRowActionButton';
 import { PageErrorState } from '../../components/PageErrorState';
 import { PageLoadingState } from '../../components/PageLoadingState';
 import { SectionEmptyState } from '../../components/SectionEmptyState';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
 import { Button } from '../../components/mui-customized/button';
-import { IconButton } from '../../components/mui-customized/icon-button';
 import { PowerChip } from '../../components/PowerChip';
 import {
   CUSTOM_STYLES,
@@ -133,6 +133,7 @@ const DEFAULT_ORPHAN_COLUMNS_VISIBILITY = {
 };
 
 const DEFAULT_ORPHAN_COLUMN_ORDER = [
+  'mrt-row-numbers',
   'mrt-row-actions',
   'group',
   'datasource',
@@ -154,6 +155,7 @@ const DEFAULT_ZONE_COLUMNS_VISIBILITY = {
 };
 
 const DEFAULT_ZONE_COLUMN_ORDER = [
+  'mrt-row-numbers',
   'mrt-row-actions',
   'group',
   'datasource',
@@ -372,7 +374,7 @@ function OrphanGroupsTable(props: {
     ...orphanDefaultMRTOptions,
     enableSorting: true,
     enableColumnActions: true,
-    enableRowNumbers: false,
+    enableRowNumbers: true,
     enableColumnFilters: true,
     enableColumnFilterModes: true,
     enableFacetedValues: true,
@@ -391,18 +393,18 @@ function OrphanGroupsTable(props: {
     enableRowActions: true,
     positionActionsColumn: 'first',
     renderRowActions: ({ row }) => (
-      <div className="flex items-center gap-1">
-        <Tooltip title="Додати до напрямку">
-          <IconButton size="small" onClick={() => props.onAssign(row.original)}>
-            <AddCircleOutlineIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
-        <Tooltip title="Редагувати">
-          <IconButton size="small" onClick={() => props.onEdit(row.original)}>
-            <EditIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
-      </div>
+      <MrtRowActions>
+        <MrtRowActionButton
+          label="Додати до напрямку"
+          onClick={() => props.onAssign(row.original)}
+          icon={<AddCircleOutlineIcon fontSize="small" />}
+        />
+        <MrtRowActionButton
+          label="Редагувати"
+          onClick={() => props.onEdit(row.original)}
+          icon={<EditIcon fontSize="small" />}
+        />
+      </MrtRowActions>
     ),
     defaultColumn: {
       size: 200,
@@ -410,6 +412,10 @@ function OrphanGroupsTable(props: {
     },
     displayColumnDefOptions: {
       ...CUSTOM_STYLES.displayColumnDefOptions,
+      'mrt-row-actions': {
+        ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-actions'],
+        size: mrtRowActionsColumnSize(2),
+      },
     },
     muiTablePaperProps: ({ table }) => {
       const baseProps = resolvedPaperProps({ table });
@@ -640,7 +646,7 @@ function ZoneGroupsTable(props: {
     ...zoneDefaultMRTOptions,
     enableSorting: true,
     enableColumnActions: true,
-    enableRowNumbers: false,
+    enableRowNumbers: true,
     enableColumnFilters: true,
     enableColumnFilterModes: true,
     enableFacetedValues: true,
@@ -659,36 +665,31 @@ function ZoneGroupsTable(props: {
     enableRowActions: true,
     positionActionsColumn: 'first',
     renderRowActions: ({ row }) => (
-      <div className="flex items-center gap-1">
-        <Tooltip title="Редагувати">
-          <IconButton
-            size="small"
-            onClick={() =>
-              props.onEdit(
-                row.original.zoneId,
-                row.original.datasourceId,
-                row.original.group
-              )
-            }
-          >
-            <EditIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
-        <Tooltip title="Видалити">
-          <IconButton
-            size="small"
-            onClick={() =>
-              props.onDelete(
-                row.original.zoneId,
-                row.original.datasourceId,
-                row.original.group
-              )
-            }
-          >
-            <DeleteOutlineIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
-      </div>
+      <MrtRowActions>
+        <MrtRowActionButton
+          label="Редагувати"
+          onClick={() =>
+            props.onEdit(
+              row.original.zoneId,
+              row.original.datasourceId,
+              row.original.group
+            )
+          }
+          icon={<EditIcon fontSize="small" />}
+        />
+        <MrtRowActionButton
+          label="Видалити"
+          onClick={() =>
+            props.onDelete(
+              row.original.zoneId,
+              row.original.datasourceId,
+              row.original.group
+            )
+          }
+          icon={<DeleteIcon fontSize="small" />}
+          tone="danger"
+        />
+      </MrtRowActions>
     ),
     defaultColumn: {
       size: 200,
@@ -696,6 +697,10 @@ function ZoneGroupsTable(props: {
     },
     displayColumnDefOptions: {
       ...CUSTOM_STYLES.displayColumnDefOptions,
+      'mrt-row-actions': {
+        ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-actions'],
+        size: mrtRowActionsColumnSize(2),
+      },
     },
     muiTablePaperProps: ({ table }) => {
       const baseProps = resolvedPaperProps({ table });
@@ -1247,10 +1252,7 @@ function AdminNeoPageBody() {
     });
 
     return (
-      <div
-        key={zoneId}
-        className="bg-[var(--bs-body-bg)] rounded-lg border p-4"
-      >
+      <div key={zoneId} className="bg-[var(--bs-body-bg)] border p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <Typography variant="h6" className="!font-semibold">
             Напрямок: {zone.name}
@@ -1280,13 +1282,28 @@ function AdminNeoPageBody() {
     );
   };
 
-  if (status === 'loading') {
-    return <PageLoadingState />;
-  }
+  const renderContent = () => {
+    if (status === 'loading') {
+      return <PageLoadingState />;
+    }
 
-  if (status === 'error') {
-    return <PageErrorState message={error || 'Помилка завантаження'} />;
-  }
+    if (status === 'error') {
+      return <PageErrorState message={error || 'Помилка завантаження'} />;
+    }
+
+    return (
+      <div className="space-y-6">
+        <div className="bg-[var(--bs-body-bg)] border p-4">
+          <Typography variant="h6" className="!font-semibold mb-3">
+            Орфан групи
+          </Typography>
+          {renderOrphanGroups()}
+        </div>
+
+        {zones.map((zoneEntry) => renderZoneSection(zoneEntry))}
+      </div>
+    );
+  };
 
   return (
     <div className="flex w-full min-w-0 flex-col gap-6">
@@ -1299,23 +1316,15 @@ function AdminNeoPageBody() {
       <TablePageToolbar
         title="Напрямки"
         withGlobalTextFilter={false}
+        internalActionsDisabled={status === 'loading'}
         actions={
-          <Button variant="outlined" onClick={loadData}>
+          <Button variant="outlined" onClick={loadData} disabled={status === 'loading'}>
             Оновити
           </Button>
         }
       />
 
-      <div className="space-y-6">
-        <div className="bg-[var(--bs-body-bg)] rounded-lg border p-4">
-          <Typography variant="h6" className="!font-semibold mb-3">
-            Орфан групи
-          </Typography>
-          {renderOrphanGroups()}
-        </div>
-
-        {zones.map((zoneEntry) => renderZoneSection(zoneEntry))}
-      </div>
+      {renderContent()}
 
       <Dialog
         open={Boolean(editDialog)}

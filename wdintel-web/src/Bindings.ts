@@ -1719,6 +1719,7 @@ export type DevelopingFilter =
 export type ListCallsignsReq = {
   afterId: number | null;
   beforeId: number | null;
+  filterText: string | null;
   filterCallsign: string | null;
   filterPosition: string | null;
   filterComment: string | null;

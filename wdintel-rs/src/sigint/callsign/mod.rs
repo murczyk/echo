@@ -294,6 +294,27 @@ async fn list_callsigns_impl(
             ])),
         );
     }
+    if let Some(filter_text) = &req.filter_text {
+        if !filter_text.is_empty() {
+            let pattern = format!("%{}%", filter_text.to_lowercase());
+            callsigns = callsigns.filter(Condition::any().add(Expr::cust_with_values(
+                "lower(sigint_callsign.callsign collate \"ru-x-icu\") ilike $1",
+                vec![pattern.clone()],
+            ))
+            .add(Expr::cust_with_values(
+                "lower(sigint_callsign.position collate \"ru-x-icu\") ilike $1",
+                vec![pattern.clone()],
+            ))
+            .add(Expr::cust_with_values(
+                "lower(sigint_callsign.comment collate \"ru-x-icu\") ilike $1",
+                vec![pattern.clone()],
+            ))
+            .add(Expr::cust_with_values(
+                "lower(sigint_unit.name collate \"ru-x-icu\") ilike $1",
+                vec![pattern],
+            )));
+        }
+    }
     if let Some(filter_callsign) = &req.filter_callsign {
         if !filter_callsign.is_empty() {
             callsigns = callsigns.filter(Expr::cust_with_values(

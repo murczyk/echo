@@ -71,8 +71,10 @@ view : Model -> View Msg
 view _ =
     { title = "Адмін: організми"
     , body =
-        [ div [ class "w-full px-6 pt-6" ]
-            [ node "organisms-neo" [] [] ]
+        [ div [ class "app-shell-fill-height box-border min-h-0 px-6 pt-6 pb-6 w-full flex flex-col overflow-hidden" ]
+            [ div [ class "flex-1 min-h-0 w-full" ]
+                [ node "organisms-neo" [ class "block w-full h-full" ] [] ]
+            ]
         ]
     }
 

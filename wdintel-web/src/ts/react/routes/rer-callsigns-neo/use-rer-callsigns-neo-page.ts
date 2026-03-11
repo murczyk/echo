@@ -40,7 +40,6 @@ import {
   validateDraftRows,
   validateEditForm,
 } from './helpers';
-import { readDenseTableFromUrl, setDenseTableQueryParam } from '../../utils/denseTableQuery';
 import type { CallsignDraftRow, CallsignEditForm, CallsignsFilterState, CallsignsSortState, DownloadKind, UiStatus } from './types';
 
 function updateUrlSearchParams(mutator: (params: URLSearchParams) => void) {
@@ -57,13 +56,15 @@ function readInitialCallsignsFiltersFromUrl(): CallsignsFilterState {
   const params = new URLSearchParams(window.location.search);
   const developing = params.get('developing');
   const sortDateEnabled = params.get('date_filter') === '1';
+  const legacyFilterText =
+    params.get('callsign') ??
+    params.get('position') ??
+    params.get('comment') ??
+    params.get('unit');
 
   return {
     ...defaults,
-    filterCallsign: toUpperCaseCallsign(params.get('callsign') ?? defaults.filterCallsign),
-    filterPosition: params.get('position') ?? defaults.filterPosition,
-    filterComment: params.get('comment') ?? defaults.filterComment,
-    filterUnit: params.get('unit') ?? defaults.filterUnit,
+    filterText: params.get('filter') ?? legacyFilterText ?? defaults.filterText,
     filterDeveloping:
       developing === 'OnlyDeveloping' || developing === 'OnlyNonDeveloping' || developing === 'All'
         ? developing
@@ -96,7 +97,18 @@ function readInitialSidebarOpenFromUrl(): boolean {
   return true;
 }
 
-function syncCallsignsStateToUrl(filters: CallsignsFilterState, sort: CallsignsSortState, sidebarOpen: boolean, denseTable: boolean) {
+function readInitialSidebarSelectedUnitFromUrl(): string | null {
+  const params = new URLSearchParams(window.location.search);
+  const unit = params.get('unit')?.trim() ?? '';
+  return unit || null;
+}
+
+function syncCallsignsStateToUrl(
+  filters: CallsignsFilterState,
+  sort: CallsignsSortState,
+  sidebarOpen: boolean,
+  selectedSidebarUnitName: string | null,
+) {
   updateUrlSearchParams((params) => {
     const setOrDelete = (key: string, value: string | null | undefined) => {
       if (value == null || value === '') {
@@ -106,10 +118,14 @@ function syncCallsignsStateToUrl(filters: CallsignsFilterState, sort: CallsignsS
       params.set(key, value);
     };
 
-    setOrDelete('callsign', filters.filterCallsign.trim() || null);
-    setOrDelete('position', filters.filterPosition.trim() || null);
-    setOrDelete('comment', filters.filterComment.trim() || null);
-    setOrDelete('unit', filters.filterUnit.trim() || null);
+    setOrDelete('filter', filters.filterText.trim() || null);
+    params.delete('callsign');
+    params.delete('position');
+    params.delete('comment');
+    setOrDelete(
+      'unit',
+      selectedSidebarUnitName && selectedSidebarUnitName === filters.filterText.trim() ? selectedSidebarUnitName : null,
+    );
 
     if (filters.filterDeveloping !== 'OnlyNonDeveloping') {
       params.set('developing', filters.filterDeveloping);
@@ -143,8 +159,6 @@ function syncCallsignsStateToUrl(filters: CallsignsFilterState, sort: CallsignsS
     } else {
       params.set('units_sidebar', '0');
     }
-
-    setDenseTableQueryParam(params, denseTable);
   });
 }
 
@@ -190,7 +204,9 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
   const [filters, setFilters] = React.useState<CallsignsFilterState>(() => readInitialCallsignsFiltersFromUrl());
   const [sort, setSort] = React.useState<CallsignsSortState>(() => readInitialCallsignsSortFromUrl());
   const [sidebarOpen, setSidebarOpen] = React.useState<boolean>(() => readInitialSidebarOpenFromUrl());
-  const [denseTable, setDenseTable] = React.useState<boolean>(() => readDenseTableFromUrl());
+  const [selectedSidebarUnitName, setSelectedSidebarUnitName] = React.useState<string | null>(() =>
+    readInitialSidebarSelectedUnitFromUrl(),
+  );
 
   const [addUnitId, setAddUnitId] = React.useState<number | null>(null);
   const [addSourceId, setAddSourceId] = React.useState<number | null>(null);
@@ -428,15 +444,21 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
   }, [filters, sort]);
 
   React.useEffect(() => {
-    syncCallsignsStateToUrl(filters, sort, sidebarOpen, denseTable);
-  }, [filters, sort, sidebarOpen, denseTable]);
+    syncCallsignsStateToUrl(filters, sort, sidebarOpen, selectedSidebarUnitName);
+  }, [filters, sort, sidebarOpen, selectedSidebarUnitName]);
 
   React.useEffect(() => {
     setSelectedCallsignIds((prev) => prev.filter((id) => callsigns.some((callsign) => callsign.id === id)));
   }, [callsigns]);
 
   function onFiltersChange(updater: (prev: CallsignsFilterState) => CallsignsFilterState) {
-    setFilters((prev) => updater(prev));
+    setFilters((prev) => {
+      const next = updater(prev);
+      if (selectedSidebarUnitName && next.filterText.trim() !== selectedSidebarUnitName) {
+        setSelectedSidebarUnitName(null);
+      }
+      return next;
+    });
   }
 
   function onSort(column: 'callsign' | 'createdAt' | 'unit') {
@@ -450,6 +472,7 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
   }
 
   function onClearFilters() {
+    setSelectedSidebarUnitName(null);
     setFilters(createDefaultFilters());
   }
 
@@ -802,7 +825,8 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
   }
 
   function onPickUnitFilter(unitName: string) {
-    setFilters((prev) => ({ ...prev, filterUnit: unitName }));
+    setSelectedSidebarUnitName(unitName);
+    setFilters((prev) => ({ ...prev, filterText: unitName }));
   }
 
   return {
@@ -816,18 +840,19 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
     loading,
     loadingMore,
     refreshing,
-    showLoadMore: showLoadMore && canUseCursorPagination,
+    showLoadMore,
+    canUseCursorPagination,
     status,
     filters,
-    denseTable,
     sidebarOpen,
-    setDenseTable,
     setSidebarOpen,
+    selectedSidebarUnitName,
     onFiltersChange,
     onSort,
     onRefresh,
     onClearFilters,
     selectedCallsignIds,
+    setSelectedCallsignIds,
     bulkDeleteDialogCallsigns,
     bulkDeleteDialogOpen,
     bulkDeleteInFlight,

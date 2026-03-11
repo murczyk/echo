@@ -2,6 +2,7 @@ import EditIcon from '@mui/icons-material/Edit';
 import {
   Alert,
   Autocomplete,
+  Box,
   Checkbox,
   CircularProgress,
   Dialog,
@@ -10,6 +11,7 @@ import {
   DialogTitle,
   FormControlLabel,
   MenuItem,
+  Stack,
   TextField,
   Tooltip,
 } from '@mui/material';
@@ -17,11 +19,11 @@ import { MRT_ColumnDef, MaterialReactTable, useMaterialReactTable } from 'materi
 import React from 'react';
 
 import { CreateLoginReq, DeactivationReasonType, Login, Organism, SigintZone, UpdateLoginReq } from '../../../../Bindings';
+import { MrtRowActionButton, mrtRowActionsColumnSize } from '../../components/MrtRowActionButton';
 import { PageErrorState } from '../../components/PageErrorState';
-import { PageLoadingState } from '../../components/PageLoadingState';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
+import { TableContentState } from '../../components/TableContentState';
 import { Button } from '../../components/mui-customized/button';
-import { IconButton } from '../../components/mui-customized/icon-button';
 import { PowerChip } from '../../components/PowerChip';
 import {
   CUSTOM_CELL_STYLES,
@@ -874,15 +876,15 @@ function EditUserDialog(props: {
 
 function RowActions(props: { login: Login; onEdit: (login: Login) => void }) {
   return (
-    <Tooltip title="Редагувати">
-      <IconButton size="small" onClick={() => props.onEdit(props.login)}>
-        <EditIcon fontSize="small" />
-      </IconButton>
-    </Tooltip>
+    <MrtRowActionButton
+      label="Редагувати"
+      onClick={() => props.onEdit(props.login)}
+      icon={<EditIcon fontSize="small" />}
+    />
   );
 }
 
-function UsersTable(props: { data: Login[]; onEdit: (login: Login) => void }) {
+function UsersTable(props: { data: Login[]; loading: boolean; onEdit: (login: Login) => void }) {
   const tableStateContext = useTableStateContext();
   const columns = useUsersColumns();
   const basePaperProps = CUSTOM_STYLES.muiTablePaperProps;
@@ -890,6 +892,8 @@ function UsersTable(props: { data: Login[]; onEdit: (login: Login) => void }) {
 
   const state = {
     showAlertBanner: false,
+    showLoadingOverlay: false,
+    showSkeletons: props.loading,
     globalFilter: tableStateContext.globalFilter,
     columnVisibility: tableStateContext.columnVisibility,
     columnFilters: tableStateContext.columnFilters,
@@ -932,7 +936,7 @@ function UsersTable(props: { data: Login[]; onEdit: (login: Login) => void }) {
       ...CUSTOM_STYLES.displayColumnDefOptions,
       'mrt-row-actions': {
         ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-actions'],
-        size: 60,
+        size: mrtRowActionsColumnSize(1),
       },
       'mrt-row-numbers': {
         ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-numbers'],
@@ -1047,30 +1051,30 @@ function AdminUsersNeoPageBody() {
   };
 
   const renderTable = () => {
-    if (status === 'loading') {
-      return <PageLoadingState />;
-    }
-    if (status === 'error') {
-      return <PageErrorState message={error || 'Помилка завантаження'} />;
-    }
-    if (status === 'success') {
-      return (
-        <div className="w-full min-w-0">
-          <UsersTable data={logins} onEdit={(login) => setEditingLogin(login)} />
+    return (
+      <TableContentState status={status} errorMessage={error || 'Помилка завантаження'}>
+        <div className="flex w-full min-w-0 flex-1 min-h-0">
+          <UsersTable
+            data={logins}
+            loading={false}
+            onEdit={(login) => setEditingLogin(login)}
+          />
         </div>
-      );
-    }
-    return null;
+      </TableContentState>
+    );
   };
 
   return (
-    <div className="flex w-full min-w-0 flex-col gap-6">
+    <Box className="w-full" sx={{ height: { xs: 'auto', lg: '100%' }, minHeight: 0, overflow: { xs: 'visible', lg: 'hidden' } }}>
+      <Stack spacing={3} useFlexGap sx={{ height: { xs: 'auto', lg: '100%' }, minHeight: 0, overflow: { xs: 'visible', lg: 'hidden' } }}>
       <TablePageToolbar
         title="Користувачі"
         withGlobalTextFilter
+        hideGlobalTextFilter={status === 'loading'}
+        internalActionsDisabled={status === 'loading'}
         actions={
-          <div className="flex gap-2">
-            <Button variant="outlined" onClick={loadLogins}>
+          <div className="flex gap-3">
+            <Button variant="outlined" onClick={loadLogins} disabled={status === 'loading'}>
               Оновити
             </Button>
             <Button variant="contained" onClick={() => setCreateOpen(true)}>
@@ -1080,7 +1084,7 @@ function AdminUsersNeoPageBody() {
         }
       />
 
-      {renderTable()}
+      <Box sx={{ flex: 1, minHeight: { xs: 'auto', lg: 0 }, minWidth: 0, display: 'flex' }}>{renderTable()}</Box>
 
       <AddUserDialog
         open={createOpen}
@@ -1097,7 +1101,8 @@ function AdminUsersNeoPageBody() {
         }
         lookups={lookups}
       />
-    </div>
+      </Stack>
+    </Box>
   );
 }
 

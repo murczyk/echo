@@ -1,4 +1,4 @@
-import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import LinkIcon from '@mui/icons-material/Link';
 import PauseCircleOutlineIcon from '@mui/icons-material/PauseCircleOutline';
@@ -15,6 +15,7 @@ import {
   DialogTitle,
   Drawer,
   MenuItem,
+  Stack,
   TextField,
   Tooltip,
   Typography,
@@ -34,12 +35,12 @@ import {
   LinkEchoOperatorReq,
   Login,
 } from '../../../../Bindings';
+import { MrtRowActionButton, MrtRowActions, mrtRowActionsColumnSize } from '../../components/MrtRowActionButton';
 import { PageErrorState } from '../../components/PageErrorState';
-import { PageLoadingState } from '../../components/PageLoadingState';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
+import { TableContentState } from '../../components/TableContentState';
 import { Info } from '../../components/info';
 import { Button } from '../../components/mui-customized/button';
-import { IconButton } from '../../components/mui-customized/icon-button';
 import {
   CUSTOM_CELL_STYLES,
   CUSTOM_STYLES,
@@ -516,82 +517,48 @@ function TableRowActions(props: TableActionsProps) {
   const { account } = props;
 
   return (
-    <div className="grid grid-cols-2 gap-1">
-      <Tooltip title="Перезапустити">
-        <span>
-          <IconButton
-            size="small"
-            disabled={props.disabled}
-            onClick={() => props.onRestart(account.id)}
-            className="table-action-btn"
-          >
-            <RestartAltIcon fontSize="small" />
-          </IconButton>
-        </span>
-      </Tooltip>
-      <Tooltip title="Редагувати">
-        <span>
-          <IconButton
-            size="small"
-            disabled={props.disabled}
-            onClick={() => props.onEdit(account.id)}
-            className="table-action-btn"
-          >
-            <EditIcon fontSize="small" />
-          </IconButton>
-        </span>
-      </Tooltip>
+    <MrtRowActions layout="grid">
+      <MrtRowActionButton
+        label="Перезапустити"
+        disabled={props.disabled}
+        onClick={() => props.onRestart(account.id)}
+        icon={<RestartAltIcon fontSize="small" />}
+      />
+      <MrtRowActionButton
+        label="Редагувати"
+        disabled={props.disabled}
+        onClick={() => props.onEdit(account.id)}
+        icon={<EditIcon fontSize="small" />}
+      />
       {account.isLinked ? (
-        <Tooltip
-          title={account.status === 'active' ? 'Відвʼязати' : 'Активувати'}
-        >
-          <span>
-            <IconButton
-              size="small"
-              disabled={props.disabled}
-              onClick={() => props.onToggleStatus(account.id)}
-              className="table-action-btn"
-            >
-              {account.status === 'active' ? (
-                <PauseCircleOutlineIcon />
-              ) : (
-                <PlayCircleOutlineIcon />
-              )}
-            </IconButton>
-          </span>
-        </Tooltip>
+        <MrtRowActionButton
+          label={account.status === 'active' ? 'Відвʼязати' : 'Активувати'}
+          disabled={props.disabled}
+          onClick={() => props.onToggleStatus(account.id)}
+          icon={account.status === 'active' ? <PauseCircleOutlineIcon /> : <PlayCircleOutlineIcon />}
+        />
       ) : (
-        <Tooltip title="Підключити">
-          <span>
-            <IconButton
-              size="small"
-              disabled={props.disabled}
-              onClick={() => props.onConnect(account.id)}
-              className="table-action-btn"
-            >
-              <LinkIcon fontSize="small" />
-            </IconButton>
-          </span>
-        </Tooltip>
+        <MrtRowActionButton
+          label="Підключити"
+          disabled={props.disabled}
+          onClick={() => props.onConnect(account.id)}
+          icon={<LinkIcon fontSize="small" />}
+        />
       )}
-      <Tooltip title="Видалити">
-        <span>
-          <IconButton
-            size="small"
-            disabled={props.disabled}
-            onClick={() => props.onDelete(account.id)}
-            className="icon-btn icon-btn-danger"
-          >
-            <DeleteOutlineIcon fontSize="small" />
-          </IconButton>
-        </span>
-      </Tooltip>
-    </div>
+      <MrtRowActionButton
+        label="Видалити"
+        disabled={props.disabled}
+        onClick={() => props.onDelete(account.id)}
+        icon={<DeleteIcon fontSize="small" />}
+        tone="danger"
+      />
+    </MrtRowActions>
   );
 }
 
 type MessengerAccountsTableProps = {
   data: EchoAccountF1[];
+  loading: boolean;
   actionsDisabled: boolean;
   onRestart: (accountId: number) => void;
   onEdit: (accountId: number) => void;
@@ -610,6 +577,8 @@ function MessengerAccountsTable(props: MessengerAccountsTableProps) {
 
   const state = {
     showAlertBanner: false,
+    showLoadingOverlay: false,
+    showSkeletons: props.loading,
     globalFilter: tableStateContext.globalFilter,
     columnVisibility: tableStateContext.columnVisibility,
     columnFilters: tableStateContext.columnFilters,
@@ -659,7 +628,7 @@ function MessengerAccountsTable(props: MessengerAccountsTableProps) {
       ...CUSTOM_STYLES.displayColumnDefOptions,
       'mrt-row-actions': {
         ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-actions'],
-        size: 90,
+        size: mrtRowActionsColumnSize(4, 'grid'),
       },
       'mrt-row-numbers': {
         ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-numbers'],
@@ -1175,17 +1144,12 @@ function AdminMessengerNeoPageBody() {
   ));
 
   const renderAccountsTable = () => {
-    if (accountsStatus === 'loading') {
-      return <PageLoadingState />;
-    }
-    if (accountsStatus === 'error') {
-      return <PageErrorState message={accountsError || 'Помилка завантаження'} />;
-    }
-    if (accountsStatus === 'success') {
-      return (
-        <div className="w-full min-w-0">
+    return (
+      <TableContentState status={accountsStatus} errorMessage={accountsError || 'Помилка завантаження'}>
+        <div className="flex w-full min-w-0 flex-1 min-h-0">
           <MessengerAccountsTable
             data={accounts}
+            loading={false}
             actionsDisabled={isMutating}
             onRestart={handleRestartDatasource}
             onEdit={openEditSidebar}
@@ -1194,9 +1158,8 @@ function AdminMessengerNeoPageBody() {
             onConnect={handleConnectExisting}
           />
         </div>
-      );
-    }
-    return null;
+      </TableContentState>
+    );
   };
 
   const renderDeleteDialog = () => (
@@ -1573,11 +1536,14 @@ function AdminMessengerNeoPageBody() {
   );
 
   return (
-    <div className="flex w-full min-w-0 flex-col gap-6">
+    <Box className="w-full" sx={{ height: { xs: 'auto', lg: '100%' }, minHeight: 0, overflow: { xs: 'visible', lg: 'hidden' } }}>
+      <Stack spacing={3} useFlexGap sx={{ height: { xs: 'auto', lg: '100%' }, minHeight: 0, overflow: { xs: 'visible', lg: 'hidden' } }}>
       <TablePageToolbar
         title="Месенджери"
         titleInfo="Управління прив'язаними акаунтами месенджерів"
         withGlobalTextFilter
+        hideGlobalTextFilter={accountsStatus === 'loading'}
+        internalActionsDisabled={accountsStatus === 'loading'}
         actions={
           <Button variant="contained" onClick={openLinkSidebar}>
             Прив'язати новий
@@ -1593,11 +1559,12 @@ function AdminMessengerNeoPageBody() {
           {actionStatus.message}
         </Alert>
       ) : null}
-      {renderAccountsTable()}
+      <Box sx={{ flex: 1, minHeight: { xs: 'auto', lg: 0 }, minWidth: 0, display: 'flex' }}>{renderAccountsTable()}</Box>
       {renderDeleteDialog()}
       {renderLinkSidebar()}
       {renderEditSidebar()}
-    </div>
+      </Stack>
+    </Box>
   );
 }
 
