@@ -13,11 +13,11 @@ impl MigrationTrait for Migration {
             create table sigint_inbox_item_metadata (
                 id bigserial primary key,
                 sigint_inbox_item_id bigint not null REFERENCES sigint_inbox_item(id) ON DELETE CASCADE,
-                cc bigint,
-                cgid bigint,
-                mid bigint,
-                cgid_name text,
-                mid_name text,
+                color_code text,
+                call_group_id text,
+                call_group_name text,
+                sender_id text,
+                sender_name text,
                 created_at timestamp without time zone default (now() at time zone 'utc') not null
             );
             ",
