@@ -919,6 +919,9 @@ pub async fn submit_upsert_inbox_item(
         .await
         .c(h!())?;
     let inbox_id = insert_res.last_insert_id;
+    crate::rer_importer::inbox::metadata::refresh_metadata(inbox_id, txn)
+        .await
+        .c(h!())?;
     crate::tags::modify::upsert_tags(login, inbox_id, message, txn)
         .await
         .c(h!())?;

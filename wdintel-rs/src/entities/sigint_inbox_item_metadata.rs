@@ -18,9 +18,11 @@ pub struct Model {
     #[sea_orm(column_type = "Text", nullable)]
     pub call_group_name: Option<String>,
     #[sea_orm(column_type = "Text", nullable)]
-    pub identifier_id: Option<String>,
+    pub sender_id: Option<String>,
     #[sea_orm(column_type = "Text", nullable)]
-    pub identifier_name: Option<String>,
+    pub sender_name: Option<String>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub hash_id: Option<String>,
     pub created_at: DateTime,
 }
 
