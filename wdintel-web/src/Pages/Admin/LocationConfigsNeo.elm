@@ -79,7 +79,7 @@ view : Model -> View Msg
 view _ =
     { title = "Адмін: конфігурації локацій"
     , body =
-        [ div [ class "w-full px-6 pt-6" ]
+        [ div [ class "w-full px-6 pt-6 pb-6" ]
             [ node "location-config-neo" [] [] ]
         ]
     }

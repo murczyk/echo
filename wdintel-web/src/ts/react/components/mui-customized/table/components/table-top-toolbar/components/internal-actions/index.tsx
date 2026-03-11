@@ -1,4 +1,4 @@
-import { MRT_RowData, MRT_TableInstance } from 'material-react-table';
+import { MRT_RowData } from 'material-react-table';
 import React from 'react';
 
 import { ClearFiltersButton } from './components/clear-filters-button';
@@ -6,7 +6,7 @@ import { ColumnsVisibilityButton } from './components/columns-visibility-button'
 import { DensityToggleButton } from './components/density-toggle-button';
 
 type IntrernalTableActionsProps<T extends MRT_RowData> = {
-  table: MRT_TableInstance<T>;
+  table?: unknown;
   children?: React.ReactNode;
   densityDisabled?: boolean;
   densityHidden?: boolean;

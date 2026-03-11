@@ -4507,6 +4507,7 @@ developingFilterEncoder enum =
 type alias ListCallsignsReq =
     { afterId : Maybe Int
     , beforeId : Maybe Int
+    , filterText : Maybe String
     , filterCallsign : Maybe String
     , filterPosition : Maybe String
     , filterComment : Maybe String
@@ -4524,6 +4525,7 @@ listCallsignsReqEncoder struct =
     Json.Encode.object
         [ ( "after_id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.afterId )
         , ( "before_id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.beforeId )
+        , ( "filter_text", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterText )
         , ( "filter_callsign", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterCallsign )
         , ( "filter_position", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterPosition )
         , ( "filter_comment", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterComment )
@@ -9378,6 +9380,7 @@ listCallsignsReqDecoder =
     Json.Decode.succeed ListCallsignsReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "after_id" (Json.Decode.nullable Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "before_id" (Json.Decode.nullable Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_text" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_callsign" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_position" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_comment" (Json.Decode.nullable Json.Decode.string)))

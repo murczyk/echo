@@ -2,11 +2,11 @@ import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import ClearIcon from '@mui/icons-material/Clear';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import SearchIcon from '@mui/icons-material/Search';
-import { Backdrop, CircularProgress, Collapse, Divider, IconButton, InputAdornment, List, ListItemButton, ListItemText, Paper, Stack, TextField, Typography } from '@mui/material';
+import { CircularProgress, Collapse, Divider, IconButton, InputAdornment, List, ListItemButton, ListItemText, Paper, Stack, TextField, Typography } from '@mui/material';
 import React from 'react';
 
-import { loadingOverlayBackdropSx } from '../../../components/loadingOverlayStyles';
 import { PowerChip } from '../../../components/PowerChip';
+import { SectionLoadingOverlay } from '../../../components/SectionLoadingOverlay';
 import type { UnitStatView } from '../types';
 
 type Props = {
@@ -281,6 +281,7 @@ export function UnitStatsSidebar({ stats, open, loading, onPickUnitFilter, selec
         overflow: 'hidden',
         display: 'flex',
         flexDirection: 'column',
+        borderRadius: 0,
       }}
       aria-busy={loading}
     >
@@ -293,6 +294,7 @@ export function UnitStatsSidebar({ stats, open, loading, onPickUnitFilter, selec
           value={searchInput}
           onChange={(event) => setSearchInput(event.target.value)}
           placeholder="Пошук"
+          disabled={loading}
           inputProps={{ 'aria-label': 'Пошук підрозділу у дереві статистики' }}
           InputProps={{
             startAdornment: (
@@ -308,6 +310,7 @@ export function UnitStatsSidebar({ stats, open, loading, onPickUnitFilter, selec
                     onClick={() => setSearchInput('')}
                     aria-label="Очистити пошук підрозділу"
                     edge="end"
+                    disabled={loading}
                   >
                     <ClearIcon fontSize="small" />
                   </IconButton>
@@ -346,12 +349,10 @@ export function UnitStatsSidebar({ stats, open, loading, onPickUnitFilter, selec
         </Stack>
       ) : (
         <Stack sx={{ position: 'relative', flex: 1, minHeight: 0 }}>
-          <Backdrop
+          <SectionLoadingOverlay
             open={loading && stats.length > 0}
-            sx={loadingOverlayBackdropSx}
-          >
-            <CircularProgress size={22} color="primary" role="status" aria-live="polite" aria-label="Оновлення статистики" />
-          </Backdrop>
+            ariaLabel="Оновлення статистики"
+          />
 
           <List
             dense

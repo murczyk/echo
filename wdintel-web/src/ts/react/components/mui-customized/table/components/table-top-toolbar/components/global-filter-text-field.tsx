@@ -10,6 +10,7 @@ type GlobalFilterTextFieldProps = {
   className?: string;
   globalFilter: string;
   setGlobalFilter: (value: string) => void;
+  disabled?: boolean;
 };
 
 export function GlobalFilterTextField(props: GlobalFilterTextFieldProps) {
@@ -21,11 +22,21 @@ export function GlobalFilterTextField(props: GlobalFilterTextFieldProps) {
       placeholder="Пошук"
       sx={{
         backgroundColor: theme.palette.mode === 'dark' ? 'background.default' : 'background.paper',
+        '& .MuiOutlinedInput-root': {
+          borderRadius: 0,
+          ...(props.disabled
+            ? {
+                pointerEvents: 'none',
+              }
+            : {}),
+        },
       }}
+      disabled={props.disabled}
       onChange={(event) => props.setGlobalFilter(event.target.value)}
       value={props.globalFilter}
       slotProps={{
         input: {
+          readOnly: props.disabled,
           startAdornment: (
             <InputAdornment position="start">
               <FilterAltIcon
@@ -38,7 +49,7 @@ export function GlobalFilterTextField(props: GlobalFilterTextFieldProps) {
           endAdornment: (
             <InputAdornment position="end">
               <IconButton
-                disabled={!props.globalFilter}
+                disabled={props.disabled || !props.globalFilter}
                 size="small"
                 aria-label="clear-filter"
                 onClick={() => props.setGlobalFilter('')}

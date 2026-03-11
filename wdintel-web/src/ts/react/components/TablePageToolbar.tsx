@@ -12,6 +12,10 @@ type Props = {
   actions?: React.ReactNode;
   withGlobalTextFilter?: boolean;
   filter?: React.ReactNode;
+  hideGlobalTextFilter?: boolean;
+  trailingActionsBeforeInternal?: React.ReactNode;
+  internalActionsHidden?: boolean;
+  internalActionsDisabled?: boolean;
   densityDisabled?: boolean;
   densityHidden?: boolean;
   filtersHidden?: boolean;
@@ -25,7 +29,24 @@ type Props = {
 
 export function TablePageToolbar(props: Props) {
   const tableStateContext = useTableStateContext();
-  const hasControls = Boolean(props.withGlobalTextFilter || props.filter);
+  const shouldRenderInternalActions = !props.internalActionsHidden && (tableStateContext.tableInstance || props.internalActionsDisabled);
+  const internalActions =
+    shouldRenderInternalActions ? (
+      <InternalTableActions
+        table={tableStateContext.tableInstance}
+        densityDisabled={props.internalActionsDisabled || props.densityDisabled}
+        densityHidden={props.densityHidden}
+        filtersHidden={props.filtersHidden}
+        colOrderHidden={props.colOrderHidden}
+        columnsVisibilityDisabled={props.internalActionsDisabled || props.columnsVisibilityDisabled}
+        colOrderDisabled={props.internalActionsDisabled || props.colOrderDisabled}
+        filtersDisabled={props.internalActionsDisabled || props.filtersDisabled}
+        rowNumberAppearanceControl={props.rowNumberAppearanceControl}
+      >
+        {props.additionalInternalActions}
+      </InternalTableActions>
+    ) : null;
+  const hasControls = Boolean(props.withGlobalTextFilter || props.filter || internalActions);
 
   const headerActions = (
     <Stack
@@ -36,28 +57,21 @@ export function TablePageToolbar(props: Props) {
       flexWrap="wrap"
     >
       {props.actions}
-      {tableStateContext.tableInstance ? (
-        <InternalTableActions
-          table={tableStateContext.tableInstance}
-          densityDisabled={props.densityDisabled}
-          densityHidden={props.densityHidden}
-          filtersHidden={props.filtersHidden}
-          colOrderHidden={props.colOrderHidden}
-          columnsVisibilityDisabled={props.columnsVisibilityDisabled}
-          colOrderDisabled={props.colOrderDisabled}
-          filtersDisabled={props.filtersDisabled}
-          rowNumberAppearanceControl={props.rowNumberAppearanceControl}
-        >
-          {props.additionalInternalActions}
-        </InternalTableActions>
-      ) : null}
     </Stack>
   );
 
   return (
     <Stack spacing={hasControls ? 2 : 0}>
       <PageHeader title={props.title} titleInfo={props.titleInfo} actions={headerActions} />
-      {hasControls ? <TableToolbarControls withGlobalTextFilter={props.withGlobalTextFilter} filter={props.filter} /> : null}
+      {hasControls ? (
+        <TableToolbarControls
+          hideGlobalTextFilter={props.hideGlobalTextFilter}
+          withGlobalTextFilter={props.withGlobalTextFilter}
+          filter={props.filter}
+          trailingActionsBeforeInternal={props.trailingActionsBeforeInternal}
+          trailingActions={internalActions}
+        />
+      ) : null}
     </Stack>
   );
 }

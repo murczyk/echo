@@ -1,53 +1,86 @@
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import {
-  Backdrop,
   Box,
   Button,
-  ButtonGroup,
-  Checkbox,
   CircularProgress,
-  Paper,
   Stack,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  TableSortLabel,
   Tooltip,
   Typography,
 } from '@mui/material';
+import {
+  MRT_ColumnDef,
+  MRT_ColumnFiltersState,
+  MRT_SortingState,
+  MaterialReactTable,
+  useMaterialReactTable,
+} from 'material-react-table';
+import React from 'react';
 
-import { loadingOverlayBackdropSx } from '../../../components/loadingOverlayStyles';
+import { MrtRowActionButton, MrtRowActions, mrtRowActionsColumnSize } from '../../../components/MrtRowActionButton';
+import type { DevelopingFilter } from '../../../../../Bindings';
 import { PowerChip } from '../../../components/PowerChip';
-import { commonDenseTableSx } from '../../../components/tableDensity';
+import { SectionLoadingOverlay } from '../../../components/SectionLoadingOverlay';
 import { TableEmptyState } from '../../../components/TableEmptyState';
-import { TableLoadingRow } from '../../../components/TableLoadingRow';
-import { formatDateTime } from '../helpers';
+import {
+  CUSTOM_STYLES,
+  FULL_WIDTH_TABLE_PAPER_SX,
+  PAGE_SCROLL_TABLE_CONTAINER_SX,
+} from '../../../components/mui-customized/table/custom-styles';
+import {
+  buildDefaultColumnOrder,
+  getDefaultMRTOptions,
+  renderColumnActionsMenuItems,
+} from '../../../components/mui-customized/table/get-default-table-options';
+import { useTableStateContext } from '../../../components/mui-customized/table/table-state-provider';
 import type { CallsignRowView, CallsignsSortState, SortColumn } from '../types';
+import { formatDateTime } from '../helpers';
+
+const defaultMRTOptions = getDefaultMRTOptions<CallsignRowView>();
+const STATUS_FILTER_OPTIONS = ['Відомий', 'В дорозвідці', 'Усі'] as const;
+
+export const DEFAULT_CALLSIGNS_TABLE_COLUMN_VISIBILITY = {
+  callsign: true,
+  position: true,
+  commentForView: true,
+  unit: true,
+  sourceName: true,
+  radioFreq: true,
+  developing: true,
+  createdAt: true,
+};
+
+export const DEFAULT_CALLSIGNS_TABLE_COLUMN_ORDER = buildDefaultColumnOrder({
+  dataColumnIds: ['callsign', 'position', 'commentForView', 'unit', 'sourceName', 'radioFreq', 'developing', 'createdAt'],
+  withRowSelection: true,
+  withRowNumbers: true,
+  withRowActions: true,
+});
 
 type Props = {
   canEdit: boolean;
-  denseTable: boolean;
   rows: CallsignRowView[];
   loading: boolean;
   refreshing: boolean;
   loadingMore: boolean;
+  showLoadMore: boolean;
+  canUseCursorPagination: boolean;
   hasActiveFilters: boolean;
-  embedded?: boolean;
   inFlightDeleteId: number | null;
   bulkDeleteInFlight: boolean;
   selectedCallsignIds: number[];
   sort: CallsignsSortState;
+  statusFilter: DevelopingFilter;
   onSort: (column: SortColumn) => void;
+  onStatusFilterChange: (value: DevelopingFilter) => void;
   onClearFilters: () => void;
-  onSetCallsignSelected: (callsignId: number, checked: boolean) => void;
-  onSetAllCallsignsSelected: (callsignIds: number[], checked: boolean) => void;
+  onSetSelectedCallsignIds: (callsignIds: number[]) => void;
+  onLoadMore: () => void;
   onEdit: (row: CallsignRowView) => void;
   onDelete: (row: CallsignRowView) => void;
 };
+
+type Updater<T> = T | ((prev: T) => T);
 
 function CommentCell({ comment }: { comment: string }) {
   if (!comment) return <Typography variant="body2">—</Typography>;
@@ -62,258 +95,413 @@ function CommentCell({ comment }: { comment: string }) {
   );
 }
 
+function toMrtSorting(sort: CallsignsSortState): MRT_SortingState {
+  return [{ id: sort.column, desc: sort.direction === 'desc' }];
+}
+
+function toStatusFilterValue(filter: DevelopingFilter): string[] {
+  if (filter === 'OnlyDeveloping') return ['В дорозвідці'];
+  if (filter === 'All') return ['Усі'];
+  return ['Відомий'];
+}
+
+function fromStatusFilterValue(value: unknown): DevelopingFilter {
+  if (Array.isArray(value)) {
+    return fromStatusFilterValue(value[0]);
+  }
+  if (value === 'В дорозвідці') return 'OnlyDeveloping';
+  if (value === 'Усі') return 'All';
+  return 'OnlyNonDeveloping';
+}
+
+function resolveUpdater<T>(value: Updater<T>, current: T): T {
+  return typeof value === 'function' ? (value as (prev: T) => T)(current) : value;
+}
+
 export function CallsignsTable({
   canEdit,
-  denseTable,
   rows,
   loading,
   refreshing,
   loadingMore,
+  showLoadMore,
+  canUseCursorPagination,
   hasActiveFilters,
-  embedded = false,
   inFlightDeleteId,
   bulkDeleteInFlight,
   selectedCallsignIds,
   sort,
+  statusFilter,
   onSort,
+  onStatusFilterChange,
   onClearFilters,
-  onSetCallsignSelected,
-  onSetAllCallsignsSelected,
+  onSetSelectedCallsignIds,
+  onLoadMore,
   onEdit,
   onDelete,
 }: Props) {
-  const showEditColumns = canEdit || loading;
-  const actionsColumnSx = denseTable
-    ? { width: 92, minWidth: 92, pr: 1.25 }
-    : { width: 104, minWidth: 104, pr: 2 };
-  const selectionColumnSx = denseTable
-    ? { width: 44, minWidth: 44, pl: 1, pr: 0.5 }
-    : { width: 52, minWidth: 52, pl: 1.5, pr: 1 };
-  const totalColumns = showEditColumns ? 10 : 8;
-  const tableBusy = loading || refreshing || loadingMore;
-  const showOverlay = (refreshing || loadingMore) && !loading;
-  const selectedCallsignIdSet = new Set(selectedCallsignIds);
-  const selectableCallsignIds = rows.filter((row) => inFlightDeleteId !== row.id && !bulkDeleteInFlight).map((row) => row.id);
-  const selectedSelectableCount = selectableCallsignIds.filter((callsignId) => selectedCallsignIdSet.has(callsignId)).length;
-  const allSelectableChecked = selectableCallsignIds.length > 0 && selectedSelectableCount === selectableCallsignIds.length;
-  const hasPartialSelectableChecked = selectedSelectableCount > 0 && !allSelectableChecked;
+  const tableStateContext = useTableStateContext();
 
-  const tableContent = (
-    <Box sx={{ position: 'relative', height: { xs: 'auto', lg: '100%' }, minHeight: 0 }} aria-busy={tableBusy}>
-        <Backdrop
-          open={showOverlay}
-          sx={loadingOverlayBackdropSx}
-        >
-          <CircularProgress size={22} color="primary" role="status" aria-live="polite" aria-label={refreshing ? 'Оновлення' : 'Завантаження'} />
-        </Backdrop>
-
-        <TableContainer
-          sx={{
-            height: { xs: 'auto', lg: '100%' },
-            maxHeight: { xs: '55vh', lg: '100%' },
-            overflow: 'auto',
-            WebkitOverflowScrolling: 'touch',
-          }}
-          aria-label="Список позивних"
-        >
-          <Table
-            stickyHeader
-            size={denseTable ? 'small' : 'medium'}
-            aria-label="Таблиця позивних"
-            sx={{
-              minWidth: 980,
-              ...(denseTable ? commonDenseTableSx : {}),
-            }}
-          >
-          <TableHead>
-            <TableRow>
-              {showEditColumns ? (
-                <TableCell padding="checkbox" sx={selectionColumnSx}>
-                  <Checkbox
-                    slotProps={{ input: { 'aria-label': 'Вибрати всі позивні' } }}
-                    checked={allSelectableChecked}
-                    indeterminate={hasPartialSelectableChecked}
-                    disabled={!canEdit || selectableCallsignIds.length === 0}
-                    onChange={(_, checked) => onSetAllCallsignsSelected(selectableCallsignIds, checked)}
-                  />
-                </TableCell>
-              ) : null}
-              <TableCell sortDirection={sort.column === 'callsign' ? sort.direction : false}>
-                <TableSortLabel
-                  active={sort.column === 'callsign'}
-                  direction={sort.column === 'callsign' ? sort.direction : 'asc'}
-                  disabled={loading}
-                  onClick={() => onSort('callsign')}
-                >
-                  Позивний
-                </TableSortLabel>
-              </TableCell>
-              <TableCell>Посада</TableCell>
-              <TableCell>Коментар</TableCell>
-              <TableCell sortDirection={sort.column === 'unit' ? sort.direction : false}>
-                <TableSortLabel
-                  active={sort.column === 'unit'}
-                  direction={sort.column === 'unit' ? sort.direction : 'asc'}
-                  disabled={loading}
-                  onClick={() => onSort('unit')}
-                >
-                  Підрозділ
-                </TableSortLabel>
-              </TableCell>
-              <TableCell>Основне джерело</TableCell>
-              <TableCell>Частота</TableCell>
-              <TableCell>Статус</TableCell>
-              <TableCell sortDirection={sort.column === 'createdAt' ? sort.direction : false}>
-                <TableSortLabel
-                  active={sort.column === 'createdAt'}
-                  direction={sort.column === 'createdAt' ? sort.direction : 'desc'}
-                  disabled={loading}
-                  onClick={() => onSort('createdAt')}
-                >
-                  Додано
-                </TableSortLabel>
-              </TableCell>
-              {showEditColumns ? <TableCell align="right" sx={actionsColumnSx} aria-label="Дії" /> : null}
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {loading ? (
-              <TableLoadingRow colSpan={totalColumns} paddingY={4} />
-            ) : rows.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={totalColumns}>
-                  <TableEmptyState
-                    message={hasActiveFilters ? 'Немає позивних за обраними фільтрами' : 'Позивні відсутні'}
-                    actionLabel={hasActiveFilters ? 'Очистити фільтри' : undefined}
-                    onAction={hasActiveFilters ? onClearFilters : undefined}
-                  />
-                </TableCell>
-              </TableRow>
-            ) : (
+  const columns = React.useMemo<MRT_ColumnDef<CallsignRowView>[]>(
+    () => [
+      {
+        header: 'Позивний',
+        accessorKey: 'callsign',
+        id: 'callsign',
+        enableColumnFilter: false,
+        size: 160,
+        Cell: ({ row }) => (
+          <Typography variant="body2" fontWeight={600}>
+            {row.original.callsign}
+          </Typography>
+        ),
+      },
+      {
+        header: 'Посада',
+        accessorKey: 'position',
+        id: 'position',
+        enableColumnFilter: false,
+        size: 170,
+        Cell: ({ row }) => row.original.position || '—',
+      },
+      {
+        header: 'Коментар',
+        accessorKey: 'commentForView',
+        id: 'commentForView',
+        enableColumnFilter: false,
+        size: 240,
+        Cell: ({ row }) => <CommentCell comment={row.original.commentForView} />,
+      },
+      {
+        header: 'Підрозділ',
+        accessorKey: 'unitName',
+        id: 'unit',
+        enableColumnFilter: false,
+        size: 240,
+        Cell: ({ row }) => (
+          <Typography variant="body2" sx={{ maxWidth: 260 }} noWrap title={row.original.unitName}>
+            {row.original.unitName}
+          </Typography>
+        ),
+      },
+      {
+        header: 'Основне джерело',
+        accessorKey: 'sourceName',
+        id: 'sourceName',
+        enableColumnFilter: false,
+        size: 260,
+        Cell: ({ row }) => (
+          <Stack spacing={0.75}>
+            <Typography variant="body2">{row.original.sourceName}</Typography>
+            {row.original.callsignAdditionalSourceNames.length > 0 ? (
               <>
-                {rows.map((row) => (
-                  <TableRow key={row.id} hover>
-                    {canEdit ? (
-                      <TableCell padding="checkbox" sx={selectionColumnSx}>
-                        <Checkbox
-                          slotProps={{ input: { 'aria-label': `Вибрати позивний ${row.callsign}` } }}
-                          checked={selectedCallsignIdSet.has(row.id)}
-                          disabled={inFlightDeleteId === row.id || bulkDeleteInFlight}
-                          onChange={(_, checked) => onSetCallsignSelected(row.id, checked)}
-                        />
-                      </TableCell>
-                    ) : null}
-                    <TableCell>
-                      <Typography variant="body2" fontWeight={600}>
-                        {row.callsign}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>{row.position || '—'}</TableCell>
-                    <TableCell>
-                      <CommentCell comment={row.commentForView} />
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="body2" sx={{ maxWidth: 260 }} noWrap title={row.unitName}>
-                        {row.unitName}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Stack spacing={0.75}>
-                        <Typography variant="body2">{row.sourceName}</Typography>
-                        {row.callsignAdditionalSourceNames.length > 0 ? (
-                          <>
-                            <Typography variant="caption" color="text.secondary">
-                              Підтверджено:
-                            </Typography>
-                            <Stack direction="row" spacing={0.5} useFlexGap flexWrap="wrap">
-                              {row.callsignAdditionalSourceIds.map((sourceId, index) => (
-                                <PowerChip
-                                  key={`${row.id}-${sourceId}`}
-                                  label={row.callsignAdditionalSourceNames[index] ?? `#${sourceId}`}
-                                  size="small"
-                                  interactive={false}
-                                  unselectedOpacity={1}
-                                  unselectedBackgroundColor="transparent"
-                                  unselectedTextColor="text.primary"
-                                  unselectedBorderColor="divider"
-                                />
-                              ))}
-                            </Stack>
-                          </>
-                        ) : null}
-                      </Stack>
-                    </TableCell>
-                    <TableCell>{row.radioFreq?.trim() ? row.radioFreq : '—'}</TableCell>
-                    <TableCell>
-                      <PowerChip
-                        label={row.developing ? 'Дорозвідка' : 'Відомий'}
-                        size="small"
-                        interactive={false}
-                        unselectedOpacity={1}
-                        unselectedBackgroundColor={row.developing ? 'warning.main' : 'transparent'}
-                        unselectedTextColor={row.developing ? 'warning.contrastText' : 'text.primary'}
-                        unselectedBorderColor={row.developing ? 'warning.main' : 'divider'}
-                      />
-                    </TableCell>
-                    <TableCell>{formatDateTime(row.createdAt)}</TableCell>
-                    {canEdit ? (
-                      <TableCell align="right" sx={actionsColumnSx}>
-                        <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
-                          <ButtonGroup size="small" variant="outlined" aria-label={`Дії з позивним ${row.callsign}`}>
-                            <Tooltip title="Редагувати">
-                              <span>
-                                <Button
-                                  aria-label={`Редагувати ${row.callsign}`}
-                                  onClick={() => onEdit(row)}
-                                  disabled={inFlightDeleteId === row.id || bulkDeleteInFlight}
-                                  sx={{ minWidth: 36, px: 1 }}
-                                >
-                                  <EditIcon fontSize="small" />
-                                </Button>
-                              </span>
-                            </Tooltip>
-                            <Tooltip title="Видалити">
-                              <span>
-                                <Button
-                                  aria-label={`Видалити ${row.callsign}`}
-                                  onClick={() => onDelete(row)}
-                                  disabled={inFlightDeleteId === row.id || bulkDeleteInFlight}
-                                  sx={{ minWidth: 36, px: 1, color: 'error.main' }}
-                                >
-                                  <DeleteIcon fontSize="small" color="error" />
-                                </Button>
-                              </span>
-                            </Tooltip>
-                          </ButtonGroup>
-                        </Box>
-                      </TableCell>
-                    ) : null}
-                  </TableRow>
-                ))}
-                {loadingMore && !refreshing ? (
-                  <TableRow>
-                    <TableCell colSpan={totalColumns}>
-                      <Stack direction="row" alignItems="center" justifyContent="center" sx={{ py: 2 }} role="status" aria-live="polite">
-                        <CircularProgress size={18} color="primary" aria-label="Завантаження" />
-                      </Stack>
-                    </TableCell>
-                  </TableRow>
-                ) : null}
+                <Typography variant="caption" color="text.secondary">
+                  Підтверджено:
+                </Typography>
+                <Stack direction="row" spacing={0.5} useFlexGap flexWrap="wrap">
+                  {row.original.callsignAdditionalSourceIds.map((sourceId, index) => (
+                    <PowerChip
+                      key={`${row.original.id}-${sourceId}`}
+                      label={row.original.callsignAdditionalSourceNames[index] ?? `#${sourceId}`}
+                      size="small"
+                      interactive={false}
+                      unselectedOpacity={1}
+                      unselectedBackgroundColor="transparent"
+                      unselectedTextColor="text.primary"
+                      unselectedBorderColor="divider"
+                    />
+                  ))}
+                </Stack>
               </>
-            )}
-          </TableBody>
-          </Table>
-        </TableContainer>
-      </Box>
+            ) : null}
+          </Stack>
+        ),
+      },
+      {
+        header: 'Частота',
+        accessorKey: 'radioFreq',
+        id: 'radioFreq',
+        enableColumnFilter: false,
+        size: 130,
+        Cell: ({ row }) => row.original.radioFreq?.trim() ? row.original.radioFreq : '—',
+      },
+      {
+        header: 'Статус',
+        accessorFn: (row) => (row.developing ? 'В дорозвідці' : 'Відомий'),
+        id: 'developing',
+        filterVariant: 'select',
+        filterSelectOptions: [...STATUS_FILTER_OPTIONS],
+        enableSorting: false,
+        size: 170,
+        Cell: ({ row }) => (
+          <PowerChip
+            label={row.original.developing ? 'Дорозвідка' : 'Відомий'}
+            size="small"
+            interactive={false}
+            unselectedOpacity={1}
+            unselectedBackgroundColor={row.original.developing ? 'warning.main' : 'transparent'}
+            unselectedTextColor={row.original.developing ? 'warning.contrastText' : 'text.primary'}
+            unselectedBorderColor={row.original.developing ? 'warning.main' : 'divider'}
+          />
+        ),
+      },
+      {
+        header: 'Додано',
+        accessorKey: 'createdAt',
+        id: 'createdAt',
+        enableColumnFilter: false,
+        sortDescFirst: true,
+        size: 150,
+        Cell: ({ row }) => formatDateTime(row.original.createdAt),
+      },
+    ],
+    [],
   );
 
-  if (embedded) {
-    return tableContent;
-  }
+  const basePaperProps = CUSTOM_STYLES.muiTablePaperProps;
+  const resolvedPaperProps = typeof basePaperProps === 'function' ? basePaperProps : () => basePaperProps || {};
+  const rowSelection = React.useMemo(
+    () =>
+      rows.reduce<Record<string, boolean>>((acc, row) => {
+        if (selectedCallsignIds.includes(row.id)) {
+          acc[String(row.id)] = true;
+        }
+        return acc;
+      }, {}),
+    [rows, selectedCallsignIds],
+  );
+  const columnFilters = React.useMemo<MRT_ColumnFiltersState>(
+    () => [{ id: 'developing', value: toStatusFilterValue(statusFilter) }],
+    [statusFilter],
+  );
+  const showTableOverlay = loading || refreshing || loadingMore;
+
+  const table = useMaterialReactTable({
+    columns,
+    data: rows,
+    ...defaultMRTOptions,
+    enableSorting: true,
+    enableSortingRemoval: false,
+    manualSorting: true,
+    manualFiltering: true,
+    enableColumnActions: true,
+    enableColumnFilters: true,
+    enableColumnFilterModes: false,
+    enableFacetedValues: false,
+    enableRowVirtualization: false,
+    enablePagination: false,
+    enableBottomToolbar: false,
+    enableTopToolbar: false,
+    enableDensityToggle: false,
+    enableHiding: true,
+    enableRowNumbers: true,
+    enableColumnOrdering: tableStateContext.enableColumnOrdering,
+    enableColumnResizing: tableStateContext.enableColumnResizing,
+    enableRowSelection: (row) => canEdit && !bulkDeleteInFlight && inFlightDeleteId !== row.original.id,
+    enableMultiRowSelection: canEdit,
+    enableSelectAll: canEdit,
+    enableRowActions: true,
+    positionActionsColumn: 'first',
+    columnFilterDisplayMode: 'popover',
+    onColumnVisibilityChange: tableStateContext.onColumnVisibilityChange,
+    onColumnOrderChange: tableStateContext.onColumnOrderChange,
+    onColumnSizingChange: tableStateContext.onColumnSizingChange,
+    onSortingChange: (updater) => {
+      const nextSorting = resolveUpdater(updater, toMrtSorting(sort));
+      const next = nextSorting[0];
+      if (!next) return;
+      const nextColumn = next.id === 'callsign' || next.id === 'unit' || next.id === 'createdAt' ? next.id : sort.column;
+      const nextDirection = next.desc ? 'desc' : 'asc';
+      if (nextColumn === sort.column && nextDirection === sort.direction) return;
+      onSort(nextColumn);
+    },
+    onColumnFiltersChange: (updater) => {
+      const nextFilters = resolveUpdater(updater, columnFilters);
+      const nextStatusFilter = nextFilters.find((item) => item.id === 'developing');
+      onStatusFilterChange(fromStatusFilterValue(nextStatusFilter?.value));
+    },
+    onRowSelectionChange: (updater) => {
+      const nextSelection = resolveUpdater(updater, rowSelection);
+      const nextIds = rows
+        .filter((row) => nextSelection[String(row.id)])
+        .map((row) => row.id);
+      onSetSelectedCallsignIds(nextIds);
+    },
+    renderRowActions: ({ row }) => (
+      <Box sx={{ display: 'flex', justifyContent: 'center' }}>
+        <MrtRowActions>
+          <MrtRowActionButton
+            label="Редагувати"
+            onClick={() => onEdit(row.original)}
+            disabled={!canEdit || inFlightDeleteId === row.original.id || bulkDeleteInFlight}
+            icon={<EditIcon fontSize="small" />}
+          />
+          <MrtRowActionButton
+            label="Видалити"
+            onClick={() => onDelete(row.original)}
+            disabled={!canEdit || inFlightDeleteId === row.original.id || bulkDeleteInFlight}
+            icon={<DeleteIcon fontSize="small" />}
+            tone="danger"
+          />
+        </MrtRowActions>
+      </Box>
+    ),
+    renderEmptyRowsFallback: () => (
+      <Box sx={{ py: 6 }}>
+        <TableEmptyState
+          message={hasActiveFilters ? 'Немає позивних за обраними фільтрами' : 'Позивні відсутні'}
+          actionLabel={hasActiveFilters ? 'Очистити фільтри' : undefined}
+          onAction={hasActiveFilters ? onClearFilters : undefined}
+        />
+      </Box>
+    ),
+    defaultColumn: {
+      size: 180,
+      renderColumnActionsMenuItems,
+    },
+    localization: {
+      ...defaultMRTOptions.localization,
+      select: '',
+      toggleSelectAll: 'Вибрати всі рядки',
+      toggleSelectRow: 'Вибрати рядок',
+    },
+    displayColumnDefOptions: {
+      ...CUSTOM_STYLES.displayColumnDefOptions,
+      'mrt-row-actions': {
+        ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-actions'],
+        size: mrtRowActionsColumnSize(2),
+      },
+    },
+    muiTablePaperProps: ({ table }) => {
+      const baseProps = resolvedPaperProps({ table });
+      return {
+        ...baseProps,
+        sx: {
+          ...(baseProps as { sx?: object })?.sx,
+          ...FULL_WIDTH_TABLE_PAPER_SX,
+          height: 'auto',
+          overflow: 'visible',
+        },
+      };
+    },
+    muiTableContainerProps: {
+      sx: {
+        ...(CUSTOM_STYLES.muiTableContainerProps as { sx?: object })?.sx,
+        ...PAGE_SCROLL_TABLE_CONTAINER_SX,
+        border: 0,
+        height: 'auto',
+        maxHeight: 'none',
+        overflowX: 'visible',
+        overflowY: 'visible',
+        overflow: 'visible',
+      },
+    },
+    muiTableBodyRowProps: ({ row }) => ({
+      hover: true,
+      sx: {
+        opacity: inFlightDeleteId === row.original.id ? 0.6 : 1,
+      },
+    }),
+    muiTableHeadCellProps: ({ column }) => ({
+      sx: {
+        ...CUSTOM_STYLES.muiTableHeadCellProps.sx,
+        backgroundColor: 'inherit !important',
+        ...(column.id === 'developing'
+          ? {
+              '& .Mui-TableHeadCell-FilterLabel': {
+                display: 'inline-flex',
+              },
+            }
+          : {}),
+      },
+    }),
+    state: {
+      showAlertBanner: false,
+      showLoadingOverlay: false,
+      density: tableStateContext.density,
+      columnVisibility: tableStateContext.columnVisibility,
+      columnOrder: tableStateContext.columnOrder,
+      columnSizing: tableStateContext.columnSizing,
+      sorting: toMrtSorting(sort),
+      columnFilters,
+      rowSelection,
+      isLoading: loading,
+      showProgressBars: !loading && (refreshing || loadingMore),
+    },
+  });
+
+  React.useEffect(() => {
+    tableStateContext.onTableInitialized(table);
+  }, [table, tableStateContext]);
 
   return (
-    <Paper variant="outlined" sx={{ height: '100%' }}>
-      {tableContent}
-    </Paper>
+    <Box
+      sx={{
+        position: 'relative',
+        height: '100%',
+        minHeight: 0,
+        overflowY: 'auto',
+        overflowX: 'auto',
+        border: '1px solid',
+        borderColor: 'var(--bs-border-color)',
+        backgroundColor: 'var(--bs-body-bg)',
+        '& .MuiTableHead-root': {
+          position: 'sticky !important',
+          top: '0 !important',
+          zIndex: '4 !important',
+          backgroundColor: 'var(--bs-body-bg) !important',
+        },
+        '& .MuiTableHead-root .MuiTableRow-root': {
+          backgroundColor: 'inherit !important',
+          borderBottom: '1px solid',
+          borderColor: 'var(--bs-border-color)',
+        },
+        '& .MuiTableHead-root .MuiTableCell-head': {
+          backgroundColor: 'inherit !important',
+          borderBottom: '0 !important',
+        },
+        '& .MuiTableBody-root .MuiTableRow-root:last-of-type td': {
+          borderBottom: showLoadMore ? '0 !important' : undefined,
+        },
+      }}
+    >
+      <Box sx={{ position: 'relative', minHeight: '100%' }}>
+        {showTableOverlay ? (
+          <SectionLoadingOverlay
+            open={showTableOverlay}
+            ariaLabel={loading ? 'Завантаження позивних' : loadingMore ? 'Завантаження позивних' : 'Оновлення позивних'}
+            spinnerMode="sticky"
+            sx={{ zIndex: 12 }}
+          />
+        ) : null}
+
+        <MaterialReactTable table={table} />
+
+        {showLoadMore ? (
+          <Box
+            sx={{
+              borderTop: '1px solid',
+              borderColor: 'var(--bs-border-color)',
+              display: 'flex',
+              justifyContent: 'center',
+              p: '10px',
+            }}
+          >
+            <Tooltip title={!canUseCursorPagination ? 'Доступно лише при сортуванні Підрозділ за зростанням' : ''}>
+              <span>
+                <Button
+                  variant="outlined"
+                  onClick={onLoadMore}
+                  disabled={loading || loadingMore || !canUseCursorPagination}
+                  startIcon={loadingMore ? <CircularProgress color="inherit" size={16} /> : null}
+                >
+                  {loadingMore ? 'Завантаження…' : 'Завантажити ще'}
+                </Button>
+              </span>
+            </Tooltip>
+          </Box>
+        ) : null}
+      </Box>
+    </Box>
   );
 }

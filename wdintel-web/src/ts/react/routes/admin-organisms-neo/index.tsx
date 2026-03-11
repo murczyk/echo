@@ -1,17 +1,17 @@
 import CancelIcon from '@mui/icons-material/Cancel';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
-import { Alert, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Tooltip, Typography } from '@mui/material';
+import { Alert, Box, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Stack, Tooltip, Typography } from '@mui/material';
 import { MRT_ColumnDef, MaterialReactTable, useMaterialReactTable } from 'material-react-table';
 import React from 'react';
 
 import { AreaOfResponsibility, Organism, OrganismGroup, SignalGroupFull, UpdateOrganismReq } from '../../../../Bindings';
+import { MrtRowActionButton, MrtRowActions, mrtRowActionsColumnSize } from '../../components/MrtRowActionButton';
 import { PageErrorState } from '../../components/PageErrorState';
-import { PageLoadingState } from '../../components/PageLoadingState';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
+import { TableContentState } from '../../components/TableContentState';
 import { Button } from '../../components/mui-customized/button';
-import { IconButton } from '../../components/mui-customized/icon-button';
 import {
   CUSTOM_CELL_STYLES,
   CUSTOM_STYLES,
@@ -66,6 +66,7 @@ const DEFAULT_COLUMNS_VISIBILITY = {
 };
 
 const DEFAULT_COLUMN_ORDER = [
+  'mrt-row-numbers',
   'mrt-row-actions',
   'id',
   'name',
@@ -178,7 +179,7 @@ function useOrganismColumns(lookup: OrganismLookup, computedGroupsStatus: Loadin
         {
           header: 'Смуги',
           id: 'aors',
-          accessorFn: (row) => row.aorIds.map((id) => formatAorLabel(lookup.aorById.get(id), id)),
+          accessorFn: (row) => (row.aorIds ?? []).map((id) => formatAorLabel(lookup.aorById.get(id), id)),
           Cell: ({ row }) => {
             if (row.original.aorIds.length === 0) return <span>—</span>;
             const labels = row.original.aorIds
@@ -229,7 +230,7 @@ function useOrganismColumns(lookup: OrganismLookup, computedGroupsStatus: Loadin
         {
           header: 'Ролі',
           id: 'roles',
-          accessorFn: (row) => row.roles,
+          accessorFn: (row) => row.roles ?? [],
           Cell: ({ row }) => <span>{row.original.roles.length > 0 ? row.original.roles.join(', ') : '—'}</span>,
           filterVariant: 'multi-select',
           filterSelectOptions: ROLE_OPTIONS,
@@ -304,23 +305,25 @@ function useOrganismColumns(lookup: OrganismLookup, computedGroupsStatus: Loadin
 
 function RowActions(props: { organism: Organism; onEdit: (organism: Organism) => void; onDelete: (organism: Organism) => void }) {
   return (
-    <div className="flex items-center gap-1">
-      <Tooltip title="Редагувати">
-        <IconButton size="small" onClick={() => props.onEdit(props.organism)}>
-          <EditIcon fontSize="small" />
-        </IconButton>
-      </Tooltip>
-      <Tooltip title="Видалити">
-        <IconButton size="small" onClick={() => props.onDelete(props.organism)}>
-          <DeleteOutlineIcon fontSize="small" />
-        </IconButton>
-      </Tooltip>
-    </div>
+    <MrtRowActions>
+      <MrtRowActionButton
+        label="Редагувати"
+        onClick={() => props.onEdit(props.organism)}
+        icon={<EditIcon fontSize="small" />}
+      />
+      <MrtRowActionButton
+        label="Видалити"
+        onClick={() => props.onDelete(props.organism)}
+        icon={<DeleteIcon fontSize="small" />}
+        tone="danger"
+      />
+    </MrtRowActions>
   );
 }
 
 function OrganismsTable(props: {
   data: Organism[];
+  loading: boolean;
   lookup: OrganismLookup;
   computedGroupsStatus: LoadingStatus;
   onEdit: (organism: Organism) => void;
@@ -334,6 +337,8 @@ function OrganismsTable(props: {
 
   const state = {
     showAlertBanner: false,
+    showLoadingOverlay: false,
+    showSkeletons: props.loading,
     globalFilter: tableStateContext.globalFilter,
     columnVisibility: tableStateContext.columnVisibility,
     columnFilters: tableStateContext.columnFilters,
@@ -349,6 +354,7 @@ function OrganismsTable(props: {
     ...defaultMRTOptions,
     enableSorting: true,
     enableColumnActions: true,
+    enableRowNumbers: true,
     enableColumnFilters: true,
     enableColumnFilterModes: true,
     enableFacetedValues: true,
@@ -377,7 +383,7 @@ function OrganismsTable(props: {
       ...CUSTOM_STYLES.displayColumnDefOptions,
       'mrt-row-actions': {
         ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-actions'],
-        size: 90,
+        size: mrtRowActionsColumnSize(2),
       },
       'mrt-row-numbers': {
         ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-numbers'],
@@ -646,30 +652,25 @@ function AdminOrganismsNeoPageBody() {
   }
 
   const renderTable = () => {
-    if (organismsStatus === 'loading') {
-      return <PageLoadingState />;
-    }
-    if (organismsStatus === 'error') {
-      return <PageErrorState message={organismsError || 'Помилка завантаження'} />;
-    }
-    if (organismsStatus === 'success') {
-      return (
-        <div className="w-full min-w-0">
+    return (
+      <TableContentState status={organismsStatus} errorMessage={organismsError || 'Помилка завантаження'}>
+        <div className="flex w-full min-w-0 flex-1 min-h-0">
           <OrganismsTable
             data={organisms}
+            loading={false}
             lookup={lookup}
             computedGroupsStatus={computedGroupsStatus}
             onEdit={openEdit}
             onDelete={openDelete}
           />
         </div>
-      );
-    }
-    return null;
+      </TableContentState>
+    );
   };
 
   return (
-    <div className="flex w-full min-w-0 flex-col gap-6">
+    <Box className="w-full" sx={{ height: { xs: 'auto', lg: '100%' }, minHeight: 0, overflow: { xs: 'visible', lg: 'hidden' } }}>
+      <Stack spacing={3} useFlexGap sx={{ height: { xs: 'auto', lg: '100%' }, minHeight: 0, overflow: { xs: 'visible', lg: 'hidden' } }}>
       {referenceStatus === 'error' ? (
         <Alert severity="error" onClose={() => setReferenceError(null)}>
           {referenceError || 'Помилка завантаження довідників'}
@@ -679,9 +680,11 @@ function AdminOrganismsNeoPageBody() {
       <TablePageToolbar
         title="Організми"
         withGlobalTextFilter
+        hideGlobalTextFilter={organismsStatus === 'loading'}
+        internalActionsDisabled={organismsStatus === 'loading'}
         actions={
-          <div className="flex gap-2">
-            <Button variant="outlined" onClick={reloadAll}>
+          <div className="flex gap-3">
+            <Button variant="outlined" onClick={reloadAll} disabled={organismsStatus === 'loading'}>
               Оновити
             </Button>
             <Button variant="contained" onClick={() => navigateWithinSpa(buildCreateHref())}>
@@ -691,7 +694,7 @@ function AdminOrganismsNeoPageBody() {
         }
       />
 
-      <div className="w-full min-w-0">{renderTable()}</div>
+      <Box sx={{ flex: 1, minHeight: { xs: 'auto', lg: 0 }, minWidth: 0, display: 'flex' }}>{renderTable()}</Box>
 
       <DeleteOrganismDialog
         organism={deleteTarget}
@@ -699,7 +702,8 @@ function AdminOrganismsNeoPageBody() {
         onClose={() => setDeleteTarget(null)}
         onReload={reloadAll}
       />
-    </div>
+      </Stack>
+    </Box>
   );
 }
 

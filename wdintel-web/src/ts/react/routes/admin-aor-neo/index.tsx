@@ -1,16 +1,16 @@
 import CancelIcon from '@mui/icons-material/Cancel';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import EditIcon from '@mui/icons-material/Edit';
-import { CircularProgress, Tooltip } from '@mui/material';
+import { CircularProgress } from '@mui/material';
 import { MRT_ColumnDef, MaterialReactTable, useMaterialReactTable } from 'material-react-table';
 import React from 'react';
 
 import { AorCoordinates, AreaOfResponsibility } from '../../../../Bindings';
 import { PageErrorState } from '../../components/PageErrorState';
-import { PageLoadingState } from '../../components/PageLoadingState';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
+import { MrtRowActionButton, mrtRowActionsColumnSize } from '../../components/MrtRowActionButton';
+import { TableContentState } from '../../components/TableContentState';
 import { Button } from '../../components/mui-customized/button';
-import { IconButton } from '../../components/mui-customized/icon-button';
 import {
   CUSTOM_CELL_STYLES,
   CUSTOM_STYLES,
@@ -142,16 +142,17 @@ type RowActionsProps = {
 
 function RowActions(props: RowActionsProps) {
   return (
-    <Tooltip title="Редагувати">
-      <IconButton size="small" onClick={() => navigateWithinSpa(buildEditHref(props.aor.id))}>
-        <EditIcon fontSize="small" />
-      </IconButton>
-    </Tooltip>
+    <MrtRowActionButton
+      label="Редагувати"
+      onClick={() => navigateWithinSpa(buildEditHref(props.aor.id))}
+      icon={<EditIcon fontSize="small" />}
+    />
   );
 }
 
 type AorTableProps = {
   data: AreaOfResponsibility[];
+  loading: boolean;
 };
 
 function AorTable(props: AorTableProps) {
@@ -162,6 +163,8 @@ function AorTable(props: AorTableProps) {
 
   const state = {
     showAlertBanner: false,
+    showLoadingOverlay: false,
+    showSkeletons: props.loading,
     globalFilter: tableStateContext.globalFilter,
     columnVisibility: tableStateContext.columnVisibility,
     columnFilters: tableStateContext.columnFilters,
@@ -203,7 +206,7 @@ function AorTable(props: AorTableProps) {
       ...CUSTOM_STYLES.displayColumnDefOptions,
       'mrt-row-actions': {
         ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-actions'],
-        size: 80,
+        size: mrtRowActionsColumnSize(1),
       },
       'mrt-row-numbers': {
         ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-numbers'],
@@ -264,20 +267,17 @@ function AdminAorNeoPageBody() {
   }, []);
 
   const renderTable = () => {
-    if (loadStatus === 'loading') {
-      return <PageLoadingState />;
-    }
-    if (loadStatus === 'error') {
-      return <PageErrorState message={loadError || 'Помилка завантаження'} />;
-    }
-    if (loadStatus === 'success') {
-      return (
-        <div className="w-full min-w-0">
-          <AorTable data={aors} />
+    return (
+      <TableContentState
+        status={loadStatus}
+        errorMessage={loadError || 'Помилка завантаження'}
+        fillAvailableHeight={false}
+      >
+        <div className="flex w-full min-w-0 flex-1 min-h-0">
+          <AorTable data={aors} loading={false} />
         </div>
-      );
-    }
-    return null;
+      </TableContentState>
+    );
   };
 
   return (
@@ -285,6 +285,8 @@ function AdminAorNeoPageBody() {
       <TablePageToolbar
         title="Смуги відповідальності"
         withGlobalTextFilter
+        hideGlobalTextFilter={loadStatus === 'loading'}
+        internalActionsDisabled={loadStatus === 'loading'}
         actions={
           <Button variant="contained" onClick={() => navigateWithinSpa(buildCreateHref())}>
             Додати смугу
@@ -292,7 +294,7 @@ function AdminAorNeoPageBody() {
         }
       />
 
-      {renderTable()}
+      <div className="w-full min-w-0">{renderTable()}</div>
       <AdminLocationConfigsNeoPage />
     </div>
   );

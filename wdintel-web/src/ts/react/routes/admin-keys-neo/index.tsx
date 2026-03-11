@@ -1,4 +1,4 @@
-import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import DeleteIcon from '@mui/icons-material/Delete';
 import {
   Alert,
   Autocomplete,
@@ -16,11 +16,11 @@ import { MRT_ColumnDef, MaterialReactTable, useMaterialReactTable } from 'materi
 import React from 'react';
 
 import { ListOrganismsReq, Organism } from '../../../../Bindings';
+import { MrtRowActionButton, mrtRowActionsColumnSize } from '../../components/MrtRowActionButton';
 import { PageErrorState } from '../../components/PageErrorState';
-import { PageLoadingState } from '../../components/PageLoadingState';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
+import { TableContentState } from '../../components/TableContentState';
 import { Button } from '../../components/mui-customized/button';
-import { IconButton } from '../../components/mui-customized/icon-button';
 import {
   CUSTOM_STYLES,
   FULL_WIDTH_TABLE_PAPER_SX,
@@ -59,7 +59,7 @@ const DEFAULT_COLUMNS_VISIBILITY = {
   createdAt: true,
 };
 
-const DEFAULT_COLUMN_ORDER = ['mrt-row-actions', 'grantFrom', 'grantTo', 'author', 'createdAt'];
+const DEFAULT_COLUMN_ORDER = ['mrt-row-numbers', 'mrt-row-actions', 'grantFrom', 'grantTo', 'author', 'createdAt'];
 
 const defaultMRTOptions = getDefaultMRTOptions<SigintKeySharePolicy>();
 
@@ -136,6 +136,7 @@ function usePolicyColumns(organismNames: Map<number, string>): MRT_ColumnDef<Sig
 
 function KeyPoliciesTable(props: {
   data: SigintKeySharePolicy[];
+  loading: boolean;
   organismNames: Map<number, string>;
   onDelete: (policy: SigintKeySharePolicy) => void;
 }) {
@@ -147,6 +148,8 @@ function KeyPoliciesTable(props: {
 
   const state = {
     showAlertBanner: false,
+    showLoadingOverlay: false,
+    showSkeletons: props.loading,
     globalFilter: tableStateContext.globalFilter,
     columnVisibility: tableStateContext.columnVisibility,
     columnFilters: tableStateContext.columnFilters,
@@ -162,7 +165,7 @@ function KeyPoliciesTable(props: {
     ...defaultMRTOptions,
     enableSorting: true,
     enableColumnActions: true,
-    enableRowNumbers: false,
+    enableRowNumbers: true,
     enableColumnFilters: true,
     enableColumnFilterModes: true,
     enableFacetedValues: true,
@@ -181,11 +184,12 @@ function KeyPoliciesTable(props: {
     enableRowActions: true,
     positionActionsColumn: 'first',
     renderRowActions: ({ row }) => (
-      <Tooltip title="Видалити">
-        <IconButton size="small" onClick={() => props.onDelete(row.original)}>
-          <DeleteOutlineIcon fontSize="small" />
-        </IconButton>
-      </Tooltip>
+      <MrtRowActionButton
+        label="Видалити"
+        onClick={() => props.onDelete(row.original)}
+        icon={<DeleteIcon fontSize="small" />}
+        tone="danger"
+      />
     ),
     defaultColumn: {
       size: 200,
@@ -193,6 +197,10 @@ function KeyPoliciesTable(props: {
     },
     displayColumnDefOptions: {
       ...CUSTOM_STYLES.displayColumnDefOptions,
+      'mrt-row-actions': {
+        ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-actions'],
+        size: mrtRowActionsColumnSize(1),
+      },
     },
     muiTablePaperProps: ({ table }) => {
       const baseProps = resolvedPaperProps({ table });
@@ -331,20 +339,17 @@ function AdminKeysNeoPageBody() {
   }
 
   const renderTable = () => {
-    if (status === 'loading') {
-      return <PageLoadingState />;
-    }
-    if (status === 'error') {
-      return <PageErrorState message={error || 'Помилка завантаження'} />;
-    }
     return (
-      <div className="w-full min-w-0">
-        <KeyPoliciesTable
-          data={policies}
-          organismNames={organismNames}
-          onDelete={(policy) => setDeleteState({ policy, isDeleting: false, error: null })}
-        />
-      </div>
+      <TableContentState status={status} errorMessage={error || 'Помилка завантаження'} fillAvailableHeight={false}>
+        <div className="flex w-full min-w-0 flex-1 min-h-0">
+          <KeyPoliciesTable
+            data={policies}
+            loading={false}
+            organismNames={organismNames}
+            onDelete={(policy) => setDeleteState({ policy, isDeleting: false, error: null })}
+          />
+        </div>
+      </TableContentState>
     );
   };
 
@@ -368,10 +373,12 @@ function AdminKeysNeoPageBody() {
             переданих власнику іншими організмами, створіть окремі політики.
           </Box>
         }
-        withGlobalTextFilter={false}
+        withGlobalTextFilter
+        hideGlobalTextFilter={status === 'loading'}
+        internalActionsDisabled={status === 'loading'}
         actions={
-          <div className="flex gap-2">
-            <Button variant="outlined" onClick={loadPolicies}>
+          <div className="flex gap-3">
+            <Button variant="outlined" onClick={loadPolicies} disabled={status === 'loading'}>
               Оновити
             </Button>
             <Button variant="contained" onClick={openCreateDialog}>
@@ -381,7 +388,7 @@ function AdminKeysNeoPageBody() {
         }
       />
 
-      {renderTable()}
+      <div className="w-full min-w-0">{renderTable()}</div>
 
       <Dialog open={createOpen} onClose={closeCreateDialog} maxWidth="sm" fullWidth>
         <DialogTitle>Додати політику доступу</DialogTitle>

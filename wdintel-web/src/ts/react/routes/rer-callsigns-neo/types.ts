@@ -18,10 +18,7 @@ export type CallsignsSortState = {
 };
 
 export type CallsignsFilterState = {
-  filterCallsign: string;
-  filterPosition: string;
-  filterComment: string;
-  filterUnit: string;
+  filterText: string;
   filterDeveloping: DevelopingFilter;
   isIgnoringDateFilter: boolean;
   fromDateTimeLocal: string;
@@ -102,6 +99,7 @@ export type CallsignsPageState = {
   lookups: BootstrapLookups;
   callsigns: Callsign[];
   showLoadMore: boolean;
+  canUseCursorPagination: boolean;
   loading: boolean;
   loadingMore: boolean;
   refreshing: boolean;

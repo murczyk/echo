@@ -3,27 +3,38 @@ import {
   Box,
   Button,
   CircularProgress,
-  Paper,
   Stack,
 } from '@mui/material';
+import DownloadIcon from '@mui/icons-material/Download';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 
 import { BulkDeleteConfirmDialog } from '../../components/BulkDeleteConfirmDialog';
-import { PageHeader } from '../../components/PageHeader';
+import { TablePageToolbar } from '../../components/TablePageToolbar';
+import { TableToolbarControls } from '../../components/TableToolbarControls';
+import { InternalTableActions } from '../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions';
+import { TableStateProvider } from '../../components/mui-customized/table/table-state-provider';
 import { AddCallsignsDrawer } from './components/AddCallsignsDrawer';
 import { CallsignsFilters } from './components/CallsignsFilters';
-import { CallsignsTable } from './components/CallsignsTable';
+import {
+  CallsignsTable,
+  DEFAULT_CALLSIGNS_TABLE_COLUMN_ORDER,
+  DEFAULT_CALLSIGNS_TABLE_COLUMN_VISIBILITY,
+} from './components/CallsignsTable';
 import { DeleteCallsignDialog } from './components/DeleteCallsignDialog';
 import { EditCallsignDialog } from './components/EditCallsignDialog';
 import { UnitStatsSidebar } from './components/UnitStatsSidebar';
+import { getExportPermissionFromRoles } from './helpers';
 import { useRerCallsignsNeoPage } from './use-rer-callsigns-neo-page';
 
-export function RerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?: string[] }) {
+function RerCallsignsNeoPageBody({ authUserRoles = [] }: { authUserRoles?: string[] }) {
   const page = useRerCallsignsNeoPage({ authUserRoles });
+  const shellPermissions = getExportPermissionFromRoles(authUserRoles);
+  const controlsDisabled =
+    page.loading || page.refreshing || page.loadingMore || page.addSubmitting || page.editSubmitting || page.deleteSubmitting;
+  const showExportButtons = page.permissions.canExport || (page.loading && shellPermissions.canExport);
   const hasActiveFilters =
-    page.filters.filterCallsign.trim() !== '' ||
-    page.filters.filterPosition.trim() !== '' ||
-    page.filters.filterComment.trim() !== '' ||
-    page.filters.filterUnit.trim() !== '' ||
+    page.filters.filterText.trim() !== '' ||
     page.filters.filterDeveloping !== 'OnlyNonDeveloping' ||
     !page.filters.isIgnoringDateFilter;
 
@@ -34,8 +45,9 @@ export function RerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?: st
         useFlexGap
         sx={{ height: { xs: 'auto', lg: '100%' }, minHeight: 0, overflow: { xs: 'visible', lg: 'hidden' } }}
       >
-        <PageHeader
+        <TablePageToolbar
           title="Позивні"
+          internalActionsHidden
           actions={page.permissions.canEdit ? (
             <Stack direction="row" spacing={2}>
               <Button
@@ -75,75 +87,83 @@ export function RerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?: st
             open={page.sidebarOpen}
             loading={page.refreshing || (page.loading && page.unitStatsView.length === 0)}
             onPickUnitFilter={page.onPickUnitFilter}
-            selectedUnitFilter={page.filters.filterUnit}
+            selectedUnitFilter={page.selectedSidebarUnitName ?? undefined}
           />
 
-          <Stack spacing={2} useFlexGap sx={{ flex: 1, minWidth: 0, minHeight: { xs: 'auto', lg: 0 }, height: { lg: '100%' } }}>
+          <Stack spacing={2} useFlexGap sx={{ flex: 1, minWidth: 0, minHeight: { xs: 'auto', lg: 0 } }}>
+            <TableToolbarControls
+              filter={
+                <CallsignsFilters
+                  filters={page.filters}
+                  filtersDisabled={controlsDisabled}
+                  onFiltersChange={page.onFiltersChange}
+                />
+              }
+              trailingActionsBeforeInternal={
+                <Stack direction="row" spacing={1.5} alignItems="center" useFlexGap>
+                  <Button
+                    startIcon={page.sidebarOpen ? <ChevronLeftIcon /> : <ChevronRightIcon />}
+                    onClick={() => page.setSidebarOpen((prev: boolean) => !prev)}
+                    variant="outlined"
+                    aria-pressed={page.sidebarOpen}
+                    sx={{ whiteSpace: 'nowrap' }}
+                  >
+                    {page.sidebarOpen ? 'Сховати підрозділи' : 'Показати підрозділи'}
+                  </Button>
+                  {showExportButtons ? (
+                    <>
+                      <Button
+                        startIcon={page.downloadInProgress === 'csv' ? <CircularProgress size={16} color="inherit" /> : <DownloadIcon />}
+                        onClick={page.onDownloadCsv}
+                        disabled={controlsDisabled || page.downloadInProgress !== null}
+                        variant="outlined"
+                      >
+                        {page.downloadInProgress === 'csv' ? 'Завантаження CSV…' : 'Завантажити CSV'}
+                      </Button>
+                      <Button
+                        startIcon={page.downloadInProgress === 'xlsx' ? <CircularProgress size={16} color="inherit" /> : <DownloadIcon />}
+                        onClick={page.onDownloadXlsx}
+                        disabled={controlsDisabled || page.downloadInProgress !== null}
+                        variant="outlined"
+                      >
+                        {page.downloadInProgress === 'xlsx' ? 'Завантаження XLSX…' : 'Завантажити XLSX'}
+                      </Button>
+                    </>
+                  ) : null}
+                </Stack>
+              }
+              trailingActions={
+                <InternalTableActions
+                  densityDisabled={page.loading}
+                  columnsVisibilityDisabled={page.loading}
+                  filtersHidden
+                />
+              }
+            />
             <Box sx={{ flex: 1, minHeight: { xs: 'auto', lg: 0 } }}>
-              <Paper
-                variant="outlined"
-                sx={{
-                  height: { xs: 'auto', lg: '100%' },
-                  display: 'flex',
-                  flexDirection: 'column',
-                  overflow: 'hidden',
-                }}
-              >
-                <Box sx={{ p: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
-                  <CallsignsFilters
-                    filters={page.filters}
-                    denseTable={page.denseTable}
-                    disabled={page.loading || page.addSubmitting || page.editSubmitting || page.deleteSubmitting}
-                    sidebarOpen={page.sidebarOpen}
-                    selectedCount={page.selectedCallsignIds.length}
-                    canExport={page.permissions.canExport}
-                    downloadInProgress={page.downloadInProgress}
-                    onFiltersChange={page.onFiltersChange}
-                    onClearFilters={page.onClearFilters}
-                    onClearSelectedCallsigns={page.clearSelectedCallsigns}
-                    onToggleSidebar={() => page.setSidebarOpen((prev: boolean) => !prev)}
-                    onToggleDenseTable={() => page.setDenseTable((prev: boolean) => !prev)}
-                    onDownloadCsv={page.onDownloadCsv}
-                    onDownloadXlsx={page.onDownloadXlsx}
-                  />
-                </Box>
-                <Box sx={{ flex: 1, minHeight: { xs: 'auto', lg: 0 } }}>
-                  <CallsignsTable
-                    embedded
-                    canEdit={page.permissions.canEdit}
-                    denseTable={page.denseTable}
-                    rows={page.rows}
-                    loading={page.loading}
-                    refreshing={page.refreshing}
-                    loadingMore={page.loadingMore}
-                    hasActiveFilters={hasActiveFilters}
-                    inFlightDeleteId={page.deleteInFlightId}
-                    bulkDeleteInFlight={page.bulkDeleteInFlight}
-                    selectedCallsignIds={page.selectedCallsignIds}
-                    sort={page.sort}
-                    onSort={page.onSort}
-                    onClearFilters={page.onClearFilters}
-                    onSetCallsignSelected={page.setCallsignSelected}
-                    onSetAllCallsignsSelected={page.setAllCallsignsSelected}
-                    onEdit={page.onOpenEdit}
-                    onDelete={page.onRequestDelete}
-                  />
-                </Box>
-              </Paper>
+              <CallsignsTable
+                canEdit={page.permissions.canEdit}
+                rows={page.rows}
+                loading={page.loading}
+                refreshing={page.refreshing}
+                loadingMore={page.loadingMore}
+                showLoadMore={page.showLoadMore}
+                canUseCursorPagination={page.canUseCursorPagination}
+                hasActiveFilters={hasActiveFilters}
+                inFlightDeleteId={page.deleteInFlightId}
+                bulkDeleteInFlight={page.bulkDeleteInFlight}
+                selectedCallsignIds={page.selectedCallsignIds}
+                sort={page.sort}
+                statusFilter={page.filters.filterDeveloping}
+                onSort={page.onSort}
+                onStatusFilterChange={(filterDeveloping) => page.onFiltersChange((prev) => ({ ...prev, filterDeveloping }))}
+                onClearFilters={page.onClearFilters}
+                onSetSelectedCallsignIds={page.setSelectedCallsignIds}
+                onLoadMore={page.onLoadMore}
+                onEdit={page.onOpenEdit}
+                onDelete={page.onRequestDelete}
+              />
             </Box>
-
-            {page.showLoadMore ? (
-              <Stack direction="row" justifyContent="center" sx={{ mb: { xs: 3, lg: 0 } }}>
-                <Button
-                  variant="outlined"
-                  onClick={page.onLoadMore}
-                  disabled={page.loadingMore || page.loading}
-                  startIcon={page.loadingMore ? <CircularProgress color="inherit" size={16} /> : null}
-                >
-                  {page.loadingMore ? 'Завантаження…' : 'Завантажити ще'}
-                </Button>
-              </Stack>
-            ) : null}
           </Stack>
         </Stack>
       </Stack>
@@ -206,5 +226,17 @@ export function RerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?: st
         disabled={page.deleteInFlightId !== null}
       />
     </Box>
+  );
+}
+
+export function RerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?: string[] }) {
+  return (
+    <TableStateProvider
+      tableId="rer-callsigns-neo"
+      defaultColumnVisibility={DEFAULT_CALLSIGNS_TABLE_COLUMN_VISIBILITY}
+      defaultColumnOrder={DEFAULT_CALLSIGNS_TABLE_COLUMN_ORDER}
+    >
+      <RerCallsignsNeoPageBody authUserRoles={authUserRoles} />
+    </TableStateProvider>
   );
 }
