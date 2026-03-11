@@ -120,6 +120,7 @@ type alias Model =
         , items : List (Select.MenuItem B.ReoReportFileType)
         , selected : B.ReoReportFileType
         }
+    , reportReoNoComments : Bool
     , reportActiveNetworksAorsSelect :
         { state : Select.State
         , items : List (Select.MenuItem Int)
@@ -157,6 +158,7 @@ type alias Model =
     , mapPoints : RemoteData ApiError (List B.FreqDetailedPoint)
     , mapNetworkUnits : List B.NetworkUnit
     , mapOpenMessages : RemoteData ApiError (List ( Int, B.InboxMessage ))
+    , mapOpenMessagesRequestId : Int
     , adjacentFreqsRangeSelect :
         { state : Select.State
         , items : List (Select.MenuItem Float)
@@ -171,7 +173,7 @@ type alias Model =
     , eventLastId : Maybe String
     
     -- палітри
-    , palitras : RemoteData ApiError (List B.PalitraDetails)
+    , palitras : RemoteData ApiError (List B.PalitraReadV2)
     }
 
 

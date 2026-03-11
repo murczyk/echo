@@ -249,7 +249,7 @@ subscriptions model =
 
 
 body : Bool -> Bool -> Shared.Components.Toast.Model -> Model -> List (Html Msg)
-body isDarkMode deltaLoginFlag sharedToasts model =
+body _ deltaLoginFlag sharedToasts model =
     [ Shared.Components.Toast.overlay SharedToastMsg sharedToasts
     , Shared.Components.Toast.view ToastMsg model.toasts <|
         div
@@ -308,13 +308,7 @@ body isDarkMode deltaLoginFlag sharedToasts model =
                             ]
                         , div []
                             [ img
-                                [ src
-                                    (if isDarkMode then
-                                        "/img/echo-logo-white.svg"
-
-                                     else
-                                        "/img/echo-logo.svg"
-                                    )
+                                [ src "/img/echo-logo-white.svg"
                                 , class "h-[50px]"
                                 ]
                                 []

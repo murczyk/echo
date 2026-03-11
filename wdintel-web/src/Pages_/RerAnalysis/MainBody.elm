@@ -18,6 +18,7 @@ import Pages_.RerAnalysis.Graphs
 import Pages_.RerAnalysis.Model exposing (..)
 import Pages_.RerAnalysis.Msg exposing (..)
 import Pages_.RerAnalysis.SumTable
+import Pages_.RerAnalysis.Utils
 import Route exposing (Route)
 import Route.Path
 import Select
@@ -124,6 +125,27 @@ mainBody user model shared route =
                                 (RD.withDefault Dict.empty shared.networks)
                         , masterUnits = masterUnitsDict
                         , currentRoute = Just route
+                        , pointTokenClickUrlFor =
+                            let
+                                palitraTagIds =
+                                    model.tags
+                                        |> List.filterMap
+                                            (\( id, t ) ->
+                                                if t.isPalitra then
+                                                    Just id
+                                                else
+                                                    Nothing
+                                            )
+                                messageTagIds m =
+                                    m.tags |> Maybe.withDefault []
+                                hasPalitraTag m =
+                                    List.any (\tid -> List.member tid palitraTagIds) (messageTagIds m)
+                            in
+                            \message ->
+                                if hasPalitraTag message then
+                                    Just (\etalon -> insertShowMapToQuery (Pages_.RerAnalysis.Utils.updateQueryWithSearch etalon route))
+                                else
+                                    Nothing
                         }
 
                     renderPs =
@@ -662,6 +684,24 @@ view user model shared route =
                                 options2
                         )
                     ]
+            , HtmlX.viewIf (model.reportTemplate == RTReo) <|
+                div [ class "p-3 bg-gray-100 text-gray-900 mb-4" ]
+                    [ div [ class "form-check" ]
+                        [ input
+                            [ class "form-check-input"
+                            , type_ "checkbox"
+                            , checked model.reportReoNoComments
+                            , id "report-reo-no-comments"
+                            , onClick ReportReoNoCommentsToggle
+                            ]
+                            []
+                        , label
+                            [ class "form-check-label"
+                            , for "report-reo-no-comments"
+                            ]
+                            [ text "Без коментарів" ]
+                        ]
+                    ]
 
             , HtmlX.viewIf (model.reportTemplate == ActiveNetworks) <|
                 let
@@ -872,14 +912,77 @@ view user model shared route =
 
                         encodedSelectedUnits =
                             Encode.list Encode.string model.unitsSelected
+
+                        encodePalitraForMap palitra apiPalitraId palitraPoints =
+                            Encode.object
+                                [ ( "palitra"
+                                  , Encode.object
+                                        [ ( "id", Encode.int palitra.id )
+                                        , ( "api_palitra_id", Encode.int apiPalitraId )
+                                        , ( "name", Encode.string palitra.name )
+                                        , ( "color_hex", Encode.string palitra.colorHex )
+                                        , ( "author", (Maybe.withDefault Encode.null << Maybe.map Encode.string) palitra.author )
+                                        , ( "source_file_name", (Maybe.withDefault Encode.null << Maybe.map Encode.string) palitra.sourceFileName )
+                                        , ( "last_uploaded_at_ts", (Maybe.withDefault Encode.null << Maybe.map Encode.int) palitra.lastUploadedAtTs )
+                                        , ( "geometry", (Maybe.withDefault Encode.null << Maybe.map B.geometryEncoder) palitra.geometry )
+                                        , ( "access_aor_id", Encode.list Encode.int palitra.accessAorId )
+                                        , ( "access_organism_ids", Encode.list Encode.int palitra.accessOrganismIds )
+                                        , ( "access_logins", Encode.list Encode.string palitra.accessLogins )
+                                        ]
+                                  )
+                                , ( "points", Encode.list B.palitraPointEncoder palitraPoints )
+                                ]
+
+                        fallbackGeometryScopedId palitraId =
+                            -palitraId
+
+                        palitraReadToMapValues palitraRead =
+                            if List.isEmpty palitraRead.geometries then
+                                let
+                                    fallbackPalitra =
+                                        palitraRead.palitra
+                                in
+                                [ encodePalitraForMap
+                                    { fallbackPalitra
+                                        | id = fallbackGeometryScopedId palitraRead.palitra.id
+                                    }
+                                    palitraRead.palitra.id
+                                    []
+                                ]
+
+                            else
+                                List.map
+                                    (\geometry ->
+                                        encodePalitraForMap
+                                            { id = geometry.id
+                                            , name = palitraRead.palitra.name
+                                            , colorHex = geometry.colorHex
+                                            , author = palitraRead.palitra.author
+                                            , sourceFileName = geometry.sourceFileName
+                                            , lastUploadedAtTs = geometry.lastUploadedAtTs
+                                            , geometry = geometry.geometry
+                                            , accessAorId = palitraRead.palitra.accessAorId
+                                            , accessOrganismIds = palitraRead.palitra.accessOrganismIds
+                                            , accessLogins = palitraRead.palitra.accessLogins
+                                            }
+                                            palitraRead.palitra.id
+                                            []
+                                    )
+                                    palitraRead.geometries
                         
-                        ( encodedPalitras, palitrasLoaded ) =
+                        ( encodedPalitras, palitrasLoaded, palitrasLoadState ) =
                             case model.palitras of
                                 Success palitras ->
-                                    ( Encode.list B.palitraDetailsEncoder palitras, True )
+                                    ( Encode.list identity (List.concatMap palitraReadToMapValues palitras), True, "success" )
+
+                                Loading ->
+                                    ( Encode.list identity [], False, "loading" )
+
+                                Failure _ ->
+                                    ( Encode.list identity [], False, "error" )
 
                                 _ ->
-                                    ( Encode.list B.palitraDetailsEncoder [], False )
+                                    ( Encode.list identity [], False, "idle" )
                     in
                     div
                         (class "h-full min-h-0 relative"
@@ -893,11 +996,13 @@ view user model shared route =
                         (Html.node "analysis-map"
                             [ class "h-full block z-10"
                             , attribute "daterange" (Encode.encode 0 encodedDates)
+                            , attribute "daterange-loading" (Encode.encode 0 (Encode.bool (model.mapPoints == Loading)))
                             , attribute "points" (Encode.encode 0 encodedPoints)
                             , attribute "messages" (Encode.encode 0 encodedMessagesAndUnits)
                             , attribute "selected-units" (Encode.encode 0 encodedSelectedUnits)
                             , attribute "palitras" (Encode.encode 0 encodedPalitras)
                             , attribute "palitras-loaded" (Encode.encode 0 (Encode.bool palitrasLoaded))
+                            , attribute "palitras-load-state" palitrasLoadState
                             , attribute "visibility"
                                 (if model.unfoldMapBlock then
                                     "true"
@@ -905,6 +1010,7 @@ view user model shared route =
                                  else
                                     "false"
                                 )
+                            , attribute "search-query" model.searchInput
                             , Events.on "exit" (Decode.succeed MapClosed)
                             , Events.on "date-range-changed" (Decode.map MapPeriodChanged dateRangeDecoder)
                             , Events.on "load-messages-description" (Decode.map LoadMessagesForMap messagesIdsDecoder)
@@ -912,10 +1018,10 @@ view user model shared route =
                             ]
                             []
                             :: (if model.mapPoints == Loading || model.mapOpenMessages == Loading then
-                                    [ div [ class "absolute z-10 top-0 left-0 right-0 bottom-0 flex justify-center items-center" ]
+                                    [ div [ class "absolute z-10 top-0 left-0 right-0 bottom-0 flex justify-center items-center pointer-events-none" ]
                                         [ div [ class "animate-spin border-4 border-gray-300 border-t-blue-600 rounded-full w-8 h-8 relative z-20" ] []
                                         ]
-                                    , div [ class "absolute z-20 top-0 left-0 right-0 bottom-0 bg-gray-100 opacity-25" ] []
+                                    , div [ class "absolute z-20 top-0 left-0 right-0 bottom-0 bg-gray-100 opacity-25 pointer-events-none" ] []
                                     ]
 
                                 else
@@ -936,20 +1042,20 @@ view user model shared route =
                 ]
                 [ Pages_.RerAnalysis.Filters.view (isDarkMode shared.themeMode) user model ]
             , div
-                [ class "col-span-19 flex flex-col h-full min-h-0 relative overflow-auto pt-4"
+                [ class "col-span-19 flex flex-col h-full min-h-0 relative overflow-auto"
                 , id "messages-div"
                 ]
-                [ div
-                    [ class "fixed bottom-[20px] right-[30px] opacity-50 z-55"
-                    , onClick <| ScrollMessagesToTop
-                    ]
-                    [ span [ class "text-[2rem] cursor-pointer" ]
-                        [ i [ class "bi bi-arrow-up-circle" ] [] ]
-                    ]
+                [ viewIf (not model.unfoldMapBlock) <|
+                    div
+                        [ class "fixed bottom-[20px] right-[30px] opacity-50 z-55"
+                        , onClick <| ScrollMessagesToTop
+                        ]
+                        [ span [ class "text-[2rem] cursor-pointer" ]
+                            [ i [ class "bi bi-arrow-up-circle" ] [] ]
+                        ]
                 , div
-                    [ class "sticky top-0 z-50 bg-[var(--background-color)]"
-                    ]
-                    [ div [ class "flex items-center justify-between px-4 mb-6" ]
+                    [ class "sticky top-0 z-50 bg-[var(--background-color)] pt-4 pb-6" ]
+                    [ div [ class "flex items-center justify-between px-4" ]
                         [ div [ class "flex items-center" ]
                             [ h1 [ class "text-xl font-semibold" ] [ text "аналіз" ]
                             , headerControls

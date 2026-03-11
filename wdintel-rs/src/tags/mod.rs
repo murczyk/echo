@@ -38,6 +38,7 @@ fn map_tag_admin(
         ord: tag.ord,
         enabled: tag.enabled,
         keywords: keywords.into_iter().map(map_tag_keyword).collect(),
+        is_palitra: tag.is_palitra,
     }
 }
 
@@ -64,6 +65,7 @@ async fn tags_list(
                 extra: tag.extra,
                 ord: tag.ord,
                 keywords: Some(keywords),
+                is_palitra: tag.is_palitra,
             },
         ));
     }
@@ -117,6 +119,7 @@ async fn create_tag(
         extra: Set(req.extra),
         ord: Set(req.ord),
         enabled: Set(req.enabled),
+        is_palitra: Set(req.is_palitra),
         ..Default::default()
     }
     .insert(&env.dbx)
@@ -153,6 +156,7 @@ async fn update_tag(
     tag.extra = Set(req.extra);
     tag.ord = Set(req.ord);
     tag.enabled = Set(req.enabled);
+    tag.is_palitra = Set(req.is_palitra);
 
     let tag = tag.update(&env.dbx).await.c(h!())?;
     expire_tags_to_predict_cache(&env.tag_keyword_regex_cache);

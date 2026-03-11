@@ -23,3 +23,17 @@ export function formatDate(value: number | null | undefined, timeFormat?: Intl.D
   if (Number.isNaN(date.getTime())) return '—';
   return date.toLocaleDateString('uk-UA', timeFormat)
 }
+
+export function formatDateTime24(value: number | null | undefined): string {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  return date.toLocaleString('uk-UA', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+}

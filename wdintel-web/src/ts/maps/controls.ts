@@ -1,10 +1,10 @@
 
 import * as L from 'leaflet';
-import { Palitra, PalitraDetails } from './palitra-types';
+import { PalitraDetails } from './palitra-types';
 
 export interface TimeswitchControl extends L.Control {
   updateDates: (newDates: { startDate: number; endDate: number }) => void
-
+  updateLoading: (isLoading: boolean) => void
 }
 
 export interface LayerSwitchControl extends L.Control {
@@ -13,11 +13,15 @@ export interface LayerSwitchControl extends L.Control {
 
 export interface PalitrasControl extends L.Control {
   updatePalitras: (palitras: PalitraDetails[], visibleIds: number[]) => void
+  setLoadState: (loadState: PalitrasLoadState) => void
+  setInteractionDisabled: (disabled: boolean) => void
 }
 
 export interface SearchControl extends L.Control {
   updateResultsCount: (count: number | null) => void
   updateSearchLoading: (isLoading: boolean) => void
+  updateSearchDisabled: (isDisabled: boolean) => void
+  updatePlaceholder: (placeholder: string) => void
 }
 
 export interface MapWindowControl extends L.Control {
@@ -32,13 +36,25 @@ export type FeatureToggleState = {
   pelengsEnabled: boolean;
 };
 
+export type PalitrasLoadState = 'idle' | 'loading' | 'success' | 'error';
+
 /** Creates a map control that hosts <analysis-map-search>. */
 export function createSearchControl(): SearchControl {
   const SearchControlClass = L.Control.extend({
-    _searchElement: null as (HTMLElement & { setResultsCount?: (count: number | null) => void; setSearchLoading?: (isLoading: boolean) => void }) | null,
+    _searchElement: null as (HTMLElement & {
+      setResultsCount?: (count: number | null) => void;
+      setSearchLoading?: (isLoading: boolean) => void;
+      setSearchDisabled?: (isDisabled: boolean) => void;
+      setPlaceholder?: (placeholder: string) => void;
+    }) | null,
     onAdd: function (_map: L.Map) {
       this._container = L.DomUtil.create('div', 'leaflet-bar leaflet-control search-control');
-      const searchEl = document.createElement('analysis-map-search') as HTMLElement & { setResultsCount?: (count: number | null) => void; setSearchLoading?: (isLoading: boolean) => void };
+      const searchEl = document.createElement('analysis-map-search') as HTMLElement & {
+        setResultsCount?: (count: number | null) => void;
+        setSearchLoading?: (isLoading: boolean) => void;
+        setSearchDisabled?: (isDisabled: boolean) => void;
+        setPlaceholder?: (placeholder: string) => void;
+      };
       this._searchElement = searchEl;
       this._container.appendChild(searchEl);
       L.DomEvent.disableClickPropagation(this._container);
@@ -50,6 +66,12 @@ export function createSearchControl(): SearchControl {
     },
     updateSearchLoading: function (isLoading: boolean) {
       this._searchElement?.setSearchLoading?.(isLoading);
+    },
+    updateSearchDisabled: function (isDisabled: boolean) {
+      this._searchElement?.setSearchDisabled?.(isDisabled);
+    },
+    updatePlaceholder: function (placeholder: string) {
+      this._searchElement?.setPlaceholder?.(placeholder);
     }
   });
 
@@ -330,7 +352,7 @@ export function createAttributionControl() {
   return L.control.attribution({ position: 'bottomleft' });
 }
 
-export function createTimeswitchControl(dates: { startDate: number; endDate: number }) {
+export function createTimeswitchControl(dates: { startDate: number; endDate: number }, isLoading = false) {
   const TimeswitchControl = L.Control.extend({
     onAdd: function(map: L.Map) {
       this._container = L.DomUtil.create('div', 'control-container');
@@ -338,6 +360,7 @@ export function createTimeswitchControl(dates: { startDate: number; endDate: num
       this._dateRangeSelector = L.DomUtil.create('date-range-selector')
 
       this._dateRangeSelector.setAttribute('dates', JSON.stringify({ startDate: dates.startDate, endDate: dates.endDate }))
+      this._dateRangeSelector.setAttribute('loading', isLoading ? 'true' : 'false')
 
       this._container.appendChild(this._dateRangeSelector)
 
@@ -351,6 +374,9 @@ export function createTimeswitchControl(dates: { startDate: number; endDate: num
     },
     updateDates: function(newDates: { startDate: number, endDate: number }) {
       this._dateRangeSelector.setAttribute('dates', JSON.stringify({ startDate: newDates.startDate, endDate: newDates.endDate }))
+    },
+    updateLoading: function(nextLoading: boolean) {
+      this._dateRangeSelector.setAttribute('loading', nextLoading ? 'true' : 'false')
     }
   });
   return new TimeswitchControl({ position: 'topleft' })
@@ -451,244 +477,93 @@ export function createMapWindowControl(
 export function createPalitrasControl(
   palitras: PalitraDetails[], 
   visibleIds: number[],
-  onToggle: (palitraId: number) => void
+  onVisibleIdsChange: (visibleIds: number[]) => void
 ): PalitrasControl {
-  const STORAGE_KEY = 'palitras-control-collapsed';
-  
+  type PalitrasElementApi = HTMLElement & {
+    setPalitras?: (palitras: PalitraDetails[]) => void;
+    setVisibleIds?: (visibleIds: number[]) => void;
+    setLoadState?: (loadState: PalitrasLoadState) => void;
+    setInteractionDisabled?: (disabled: boolean) => void;
+  };
+
   const PalitrasControl = L.Control.extend({
     _palitras: palitras,
     _visibleIds: visibleIds,
-    _onToggle: onToggle,
-    _isCollapsed: false,
-    _renderedPalitrasSignature: null as string | null,
+    _loadState: 'idle' as PalitrasLoadState,
+    _interactionDisabled: false,
+    _palitrasElement: null as PalitrasElementApi | null,
 
-    onAdd: function(map: L.Map) {
-      this._container = L.DomUtil.create('div', 'palitras-control');
-      
-      // Load collapsed state from localStorage (default: expanded)
-      try {
-        const saved = localStorage.getItem(STORAGE_KEY);
-        this._isCollapsed = saved === 'true';
-      } catch (e) {
-        this._isCollapsed = false;
-      }
-      
-      // Don't render immediately - wait for palitras data
-      if (this._palitras && this._palitras.length > 0) {
-        this._render();
-      }
-      
-      // Prevent map events from bubbling through the control
+    onAdd: function(_map: L.Map) {
+      this._container = L.DomUtil.create('div', 'leaflet-control palitras-control-host');
+      const palitrasElement = document.createElement('analysis-map-palitras') as PalitrasElementApi;
+      this._palitrasElement = palitrasElement;
+      this._container.appendChild(palitrasElement);
+
+      this._syncElementState();
+
+      palitrasElement.addEventListener('palitras-visible-ids-change', (event: Event) => {
+        const customEvent = event as CustomEvent<{ visibleIds?: number[] }>;
+        const ids = customEvent.detail?.visibleIds;
+        if (!Array.isArray(ids)) {
+          return;
+        }
+        if (this._interactionDisabled) {
+          return;
+        }
+        const normalizedIds = normalizeVisibleIds(ids);
+        this._visibleIds = normalizedIds;
+        onVisibleIdsChange(normalizedIds);
+      });
+
       L.DomEvent.disableClickPropagation(this._container);
       L.DomEvent.disableScrollPropagation(this._container);
-      
+
       return this._container;
     },
 
-    onRemove: function(map: L.Map) {
-      // Cleanup if needed
-    },
-    
-    _toggleCollapsed: function() {
-      this._isCollapsed = !this._isCollapsed;
-      
-      // Save state to localStorage
-      try {
-        localStorage.setItem(STORAGE_KEY, this._isCollapsed.toString());
-      } catch (e) {
-        console.warn('Failed to save palitras control state:', e);
-      }
-      
-      // Re-render to update header structure
-      this._render();
+    onRemove: function(_map: L.Map) {
+      this._palitrasElement = null;
     },
 
-    _getPalitrasSignature: function(palitrasState: PalitraDetails[]) {
-      return palitrasState
-        .map((palitraDetails: PalitraDetails) => {
-          const palitra = palitraDetails.palitra;
-          const geometry = palitra.geometry;
-          const geometrySignature = geometry
-            ? `${geometry.center.lat}:${geometry.center.lng}:${geometry.perimeter_linear_ring.length}`
-            : 'none';
-          return `${palitra.id}|${palitra.name}|${palitra.color_hex}|${geometrySignature}|${palitraDetails.points.length}`;
-        })
-        .join(';');
-    },
-
-    _render: function() {
-      if (!this._container) {
+    _syncElementState: function() {
+      if (!this._palitrasElement) {
         return;
       }
-
-      const previousList = this._container.querySelector('.palitras-control-list') as HTMLDivElement | null;
-      const previousScrollTop = previousList?.scrollTop ?? 0;
-      
-      if (!this._palitras || this._palitras.length === 0) {
-        this._container.innerHTML = '';
-        return;
-      }
-
-      // Create header with title and toggle button
-      const header = document.createElement('div');
-      header.className = 'palitras-control-header';
-      
-      if (this._isCollapsed) {
-        // Collapsed state: only palette icon
-        const paletteIcon = document.createElement('button');
-        paletteIcon.className = 'palitras-palette-icon';
-        paletteIcon.innerHTML = '<i class="bi bi-palette"></i>';
-        paletteIcon.type = 'button';
-        paletteIcon.setAttribute('aria-label', 'Розгорнути список палітр');
-        paletteIcon.title = 'Розгорнути список палітр';
-        paletteIcon.addEventListener('click', (e) => {
-          e.stopPropagation();
-          this._toggleCollapsed();
-        });
-        header.appendChild(paletteIcon);
-      } else {
-        // Expanded state: title and collapse button
-        const title = document.createElement('h3');
-        title.textContent = 'Палітри';
-        
-        const toggleButton = document.createElement('button');
-        toggleButton.className = 'palitras-toggle-button';
-        toggleButton.innerHTML = '<i class="bi bi-chevron-down"></i>';
-        toggleButton.type = 'button';
-        toggleButton.setAttribute('aria-label', 'Згорнути список палітр');
-        toggleButton.title = 'Згорнути список палітр';
-        
-        // Store reference to update icon later
-        this._toggleButton = toggleButton;
-        
-        toggleButton.addEventListener('click', (e) => {
-          e.stopPropagation();
-          this._toggleCollapsed();
-        });
-        
-        header.appendChild(title);
-        header.appendChild(toggleButton);
-      }
-
-      const listContainer = document.createElement('div');
-      listContainer.className = 'palitras-control-list';
-
-      this._palitras.forEach((palitraDetails: PalitraDetails) => {
-        if (palitraDetails && palitraDetails.palitra && palitraDetails.palitra.id !== undefined) {
-          const item = this._createPalitraItem(palitraDetails);
-          listContainer.appendChild(item);
-        }
-      });
-
-      this._container.innerHTML = '';
-      this._container.appendChild(header);
-      this._container.appendChild(listContainer);
-      this._renderedPalitrasSignature = this._getPalitrasSignature(this._palitras);
-
-      if (previousScrollTop > 0) {
-        listContainer.scrollTop = previousScrollTop;
-      }
-      
-      // Apply collapsed class if needed
-      if (this._isCollapsed) {
-        this._container.classList.add('collapsed');
-      } else {
-        this._container.classList.remove('collapsed');
-      }
-    },
-
-    _createPalitraItem: function(palitraDetails: PalitraDetails) {
-      const palitra = palitraDetails.palitra;
-      const points = palitraDetails.points;
-      
-      const item = document.createElement('div');
-      item.className = 'palitra-item';
-      item.dataset.palitraId = String(palitra.id);
-      
-      const isVisible = this._visibleIds.includes(palitra.id);
-      
-      const checkbox = document.createElement('input');
-      checkbox.type = 'checkbox';
-      checkbox.checked = isVisible;
-      checkbox.className = 'palitra-checkbox';
-      
-      const colorBox = document.createElement('span');
-      colorBox.className = 'palitra-color';
-      colorBox.style.backgroundColor = palitra.color_hex;
-      
-      const nameSpan = document.createElement('span');
-      nameSpan.className = 'palitra-name';
-      nameSpan.textContent = palitra.name;
-      
-      const infoDiv = document.createElement('div');
-      infoDiv.className = 'palitra-info';
-      
-      if (palitra.geometry && palitra.geometry.center && palitra.geometry.perimeter_linear_ring) {
-        const centerText = `Центр: ${palitra.geometry.center.lat.toFixed(4)}, ${palitra.geometry.center.lng.toFixed(4)}`;
-        const perimeterPointsText = `Точок периметру: ${palitra.geometry.perimeter_linear_ring.length}`;
-        const dataPointsText = points.length > 0 ? `Точок даних: ${points.length}` : '';
-        infoDiv.innerHTML = `<div>${centerText}</div><div>${perimeterPointsText}</div>${dataPointsText ? `<div>${dataPointsText}</div>` : ''}`;
-      } else {
-        const dataPointsText = points.length > 0 ? `Точок даних: ${points.length}` : '';
-        infoDiv.innerHTML = dataPointsText ? `<div>${dataPointsText}</div>` : '<div>Без геометрії</div>';
-      }
-      
-      const contentDiv = document.createElement('div');
-      contentDiv.className = 'palitra-content';
-      
-      const titleDiv = document.createElement('div');
-      titleDiv.className = 'palitra-title';
-      titleDiv.appendChild(colorBox);
-      titleDiv.appendChild(nameSpan);
-      
-      contentDiv.appendChild(titleDiv);
-      contentDiv.appendChild(infoDiv);
-      
-      item.appendChild(checkbox);
-      item.appendChild(contentDiv);
-      
-      // Handle click on entire item
-      item.addEventListener('click', (e) => {
-        if (e.target !== checkbox) {
-          checkbox.checked = !checkbox.checked;
-        }
-        this._onToggle(palitra.id);
-      });
-      
-      return item;
-    },
-
-    _syncVisibleCheckboxes: function() {
-      if (!this._container) {
-        return;
-      }
-      const visibleIdsSet = new Set(this._visibleIds);
-      const items = this._container.querySelectorAll('.palitra-item');
-      items.forEach((itemEl) => {
-        const item = itemEl as HTMLDivElement;
-        const palitraId = Number(item.dataset.palitraId);
-        if (!Number.isFinite(palitraId)) {
-          return;
-        }
-        const checkbox = item.querySelector('.palitra-checkbox') as HTMLInputElement | null;
-        if (checkbox) {
-          checkbox.checked = visibleIdsSet.has(palitraId);
-        }
-      });
+      this._palitrasElement.setPalitras?.(this._palitras);
+      this._palitrasElement.setVisibleIds?.(this._visibleIds);
+      this._palitrasElement.setLoadState?.(this._loadState);
+      this._palitrasElement.setInteractionDisabled?.(this._interactionDisabled);
     },
 
     updatePalitras: function(palitras: PalitraDetails[], visibleIds: number[]) {
-      const nextSignature = this._getPalitrasSignature(palitras);
-      const shouldFullRender = this._renderedPalitrasSignature !== nextSignature;
       this._palitras = palitras;
-      this._visibleIds = visibleIds;
-      if (shouldFullRender) {
-        this._render();
-        return;
-      }
-      this._syncVisibleCheckboxes();
+      this._visibleIds = normalizeVisibleIds(visibleIds);
+      this._syncElementState();
+    },
+
+    setLoadState: function(loadState: PalitrasLoadState) {
+      this._loadState = loadState;
+      this._syncElementState();
+    },
+
+    setInteractionDisabled: function(disabled: boolean) {
+      this._interactionDisabled = disabled;
+      this._syncElementState();
     }
   });
 
   return new PalitrasControl({ position: 'topright' });
+}
+
+function normalizeVisibleIds(input: number[]): number[] {
+  const result: number[] = [];
+  const seen = new Set<number>();
+  input.forEach((value) => {
+    if (!Number.isFinite(value) || seen.has(value)) {
+      return;
+    }
+    seen.add(value);
+    result.push(value);
+  });
+  return result;
 }

@@ -395,6 +395,8 @@ pub struct OneoffImportEtalonDataPs {
 pub struct OneoffExportEtalonDataPs {
     #[arg(long, value_enum)]
     pub destination_path: String,
+    #[arg(long, value_enum)]
+    pub only_sigint_unit_id: Option<i64>,
 }
 
 #[derive(clap::Parser, Debug)]
@@ -498,6 +500,16 @@ pub struct OneoffSuggestInboxMessageTagsPs {
     pub end: String,
     #[arg(long)]
     pub batch_size: Option<usize>,
+}
+
+#[derive(clap::Args, Debug, Clone)]
+pub struct OneoffHighlightInboxMessagePalitraPs {
+    /// Start datetime (inclusive). Example: `2023-04-17T00:00:00`
+    #[arg(long, value_enum)]
+    pub start: String,
+    /// Start datetime (non-inclusive). Example: `2023-04-18T00:00:00`
+    #[arg(long, value_enum)]
+    pub end: String,
 }
 
 #[derive(clap::Parser, Debug)]
@@ -618,13 +630,16 @@ enum Cmd {
     /// Calculates all group stats for last year (no recalculation).
     OneoffCalculateHistoricStats(OneoffCalculateHistoricStatsPs),
     OneoffDisableIm,
+    OneoffFixNetworkCallsigns,
     OneoffCountGroupBatches,
     OneoffGenerateStrongboxKey,
     OneoffFillSigintInboxItemTags,
     OneoffSuggestInboxMessageTags(OneoffSuggestInboxMessageTagsPs),
+    OneoffHighlightInboxMessagePalitra(OneoffHighlightInboxMessagePalitraPs),
     OneoffImportSignalsCallsignsCsv(OneoffImportSignalsCallsignsCsvPs),
     OneoffFixWhatsappSenders,
     OneoffBackfillInboxNetworks(OneoffBackfillInboxNetworksPs),
+    OneoffBackfillPalitraPointLexemes,
     OneoffReprocessInboxPosts(OneoffReprocessInboxPostsPs),
     OneoffRestartEcho(OneoffRestartEchoPs),
 }
@@ -971,7 +986,7 @@ async fn async_main(
             sigint::unit::oneoff_reprocess_units_search_index(mode).await
         }
         Cmd::OneoffExportEtalonData(ps) => {
-            sigint::import::oneoff_export_etalon_data(mode, ps.destination_path)
+            sigint::import::oneoff_export_etalon_data(mode, ps.destination_path, ps.only_sigint_unit_id)
                 .await
         }
         Cmd::OneoffImportEtalonData(ps) => {
@@ -1043,6 +1058,7 @@ async fn async_main(
             stats::oneoff_calculate_historic_stats(mode, ps).await
         }
         Cmd::OneoffDisableIm => datasource::oneoff_disable_im(mode).await,
+        Cmd::OneoffFixNetworkCallsigns => crate::sigint::callsign::oneoff::oneoff_fix_network_callsigns(mode).await,
         Cmd::OneoffCountGroupBatches => {
             stats::oneoff_count_group_batches(mode).await
         }
@@ -1068,6 +1084,10 @@ async fn async_main(
         }
         Cmd::OneoffBackfillInboxNetworks(ps) => {
             sigint::network::etalon_calc::oneoff::oneoff_backfill_inbox_networks(mode, ps)
+                .await
+        }
+        Cmd::OneoffBackfillPalitraPointLexemes => {
+            palitra::oneoff::oneoff_backfill_palitra_point_lexemes(mode)
                 .await
         }
         Cmd::OneoffReprocessInboxPosts(ps) => {
@@ -1096,6 +1116,9 @@ async fn async_main(
         }
         Cmd::TuiMergeNetworkFreq => {
             sigint::import::tui::run_merge_network_freq_tui(mode).await
+        },
+        Cmd::OneoffHighlightInboxMessagePalitra(ps) => {
+            palitra::oneoff::oneoff_highlight_inbox_message_palitra_points(mode, &ps).await
         }
     }
 }

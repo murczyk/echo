@@ -24,7 +24,7 @@ port module Effect exposing
 
 -}
 
-import Bindings as B exposing (AnalysisStatsReq, EditFreqUnitNameReq)
+import Bindings as B exposing (AnalysisStatsReq)
 import Browser.Dom
 import Browser.Navigation
 import Bytes exposing (Bytes)

@@ -10,13 +10,31 @@ use regex::{Regex, RegexBuilder};
 use std::slice::Iter;
 
 pub fn extract_unit(
-    settlements: Arc<RwLock<crate::location::SettlementsData>>,
+    settlements: Arc<RwLock<crate::location::SettlementsDataConfig>>,
     inp: &str,
     callsigns: Vec<String>,
 ) -> Result<UnitAndLoc, AppError> {
+    extract_unit_with_aor(settlements, inp, callsigns, None)
+}
+
+pub fn extract_unit_with_aor(
+    settlements: Arc<RwLock<crate::location::SettlementsDataConfig>>,
+    inp: &str,
+    callsigns: Vec<String>,
+    m_aor_id: Option<i64>,
+) -> Result<UnitAndLoc, AppError> {
     // log::trace!("> extract_unit: inp={inp}");
+    if let Some(value) = try_extract_standard_unit_and_location(
+        settlements.clone(),
+        inp,
+        m_aor_id,
+    )
+    .c(h!())?
+    {
+        return Ok(value);
+    }
     if let Some(value) =
-        try_extract_standard_unit_and_location(settlements.clone(), inp)
+        try_extract_jf_unit_and_location(settlements.clone(), inp, m_aor_id)
             .c(h!())?
     {
         return Ok(value);
@@ -40,9 +58,13 @@ pub fn extract_unit(
         if let Some(loc) =
             maybe_single_locality(line.clone(), false, &callsigns)
         {
-            (locality, locality_v2) =
-                extract_locality(settlements.clone(), line.clone(), Some(loc))
-                    .c(h!())?;
+            (locality, locality_v2) = extract_locality(
+                settlements.clone(),
+                line.clone(),
+                Some(loc),
+                m_aor_id,
+            )
+            .c(h!())?;
             continue;
         }
 
@@ -57,7 +79,7 @@ pub fn extract_unit(
                 .and_then(|x| if !x.is_empty() { Some(x) } else { None });
 
             let (mut locality, mut locality_v2) =
-                extract_locality(settlements.clone(), line, locality)
+                extract_locality(settlements.clone(), line, locality, m_aor_id)
                     .c(h!())?;
 
             if locality_v2.clone().unwrap_or(vec![]).is_empty() {
@@ -67,6 +89,7 @@ pub fn extract_unit(
                     locality,
                     locality_v2,
                     &callsigns,
+                    m_aor_id,
                 )
                 .c(h!())?
             }
@@ -92,11 +115,12 @@ pub fn extract_unit(
 }
 
 fn try_lookup_next_line_loc_with_prefix(
-    settlements: Arc<RwLock<crate::location::SettlementsData>>,
+    settlements: Arc<RwLock<crate::location::SettlementsDataConfig>>,
     remaining_lines: &mut Iter<String>,
     locality: Option<String>,
     locality_v2: Option<Vec<SettlementDetails>>,
     callsigns: &Vec<String>,
+    m_aor_id: Option<i64>,
 ) -> Result<(Option<String>, Option<Vec<SettlementDetails>>), AppError> {
     let location_line = remaining_lines.next().cloned();
     if let Some(location_line) = location_line {
@@ -107,6 +131,7 @@ fn try_lookup_next_line_loc_with_prefix(
                 settlements.clone(),
                 location_line,
                 Some(loc),
+                m_aor_id,
             );
         }
     }
@@ -123,21 +148,30 @@ fn cleanup_line(ltrim: &str) -> String {
 }
 
 fn extract_locality(
-    settlements: Arc<RwLock<crate::location::SettlementsData>>,
+    settlements: Arc<RwLock<crate::location::SettlementsDataConfig>>,
     line: String,
     locality: Option<String>,
+    m_aor_id: Option<i64>,
 ) -> Result<(Option<String>, Option<Vec<SettlementDetails>>), AppError> {
     let mut locality = locality;
     let mut locality_v2 = None;
     if let Some(local) = locality.clone() {
-        let data = crate::location::parse_location(settlements.clone(), local)
-            .c(h!())?;
+        let data = crate::location::parse_location_with_aor(
+            settlements.clone(),
+            local,
+            m_aor_id,
+        )
+        .c(h!())?;
         locality_v2 = Some(data);
     }
     if locality_v2.clone().filter(|x| !x.is_empty()).is_none() {
         locality_v2 = Some(
-            crate::location::parse_location(settlements.clone(), line.clone())
-                .c(h!())?,
+            crate::location::parse_location_with_aor(
+                settlements.clone(),
+                line.clone(),
+                m_aor_id,
+            )
+            .c(h!())?,
         );
         if locality_v2.clone().filter(|x| !x.is_empty()).is_some() {
             locality = Some(line.clone());
@@ -601,9 +635,109 @@ fn try_remove_commintify_header(lines: Vec<String>) -> Vec<String> {
     lines
 }
 
-fn try_extract_standard_unit_and_location(
-    settlements: Arc<RwLock<crate::location::SettlementsData>>,
+fn try_extract_jf_unit_and_location(
+    settlements: Arc<RwLock<crate::location::SettlementsDataConfig>>,
     inp: &str,
+    m_aor_id: Option<i64>,
+) -> Result<Option<UnitAndLoc>, AppError> {
+    lazy_static! {
+        static ref RE_JF_HEADER: Regex = RegexBuilder::new(
+            r#"(?iu)\d{2}\.\d{2}\.\d{4}\s+\d{2}:\d{2}.*?\b(?:противник\p{L}*|підрозділ\p{L}*|груп\p{L}*)\b\s+(?P<unit>.+?)\s+(?P<location>(?-i:[А-ЯІЇЄҐ][А-ЯІЇЄҐ.\s\-]*[А-ЯІЇЄҐ.]))\s*(?:$|\(.*$)"#
+        )
+        .build()
+        .unwrap();
+        static ref RE_UNIT_CHAIN: Regex =
+            Regex::new(r#"(?iu)\d+\s*\p{L}{1,10}(?:\s+\d+\s*\p{L}{1,12})*"#)
+                .unwrap();
+        static ref RE_JF_UNIT_PREFIX: Regex = RegexBuilder::new(
+            r#"^(?:зі|із)\s+складу\s+"#
+        )
+        .case_insensitive(true)
+        .build()
+        .unwrap();
+    }
+    let Some(first_line) = inp.lines().find(|line| !line.trim().is_empty())
+    else {
+        return Ok(None);
+    };
+    let Some(capts) = RE_JF_HEADER.captures(first_line) else {
+        return Ok(None);
+    };
+    let Some(unit_raw) = m_cap_s(&capts, "unit") else {
+        return Ok(None);
+    };
+    let unit_raw = RE_JF_UNIT_PREFIX
+        .replace(unit_raw.trim(), "")
+        .trim()
+        .to_string();
+    let units = crate::unit::parse_library_unit(&unit_raw);
+    let parsed_unit = units
+        .iter()
+        .filter(|value| value.chars().any(|ch| ch.is_ascii_digit()))
+        .max_by_key(|value| value.len())
+        .cloned();
+    let jf_chain_unit = extract_jf_unit_chain(&unit_raw, &RE_UNIT_CHAIN);
+    let unit = [parsed_unit, jf_chain_unit]
+        .into_iter()
+        .flatten()
+        .max_by_key(|value| value.len())
+        .unwrap_or(unit_raw);
+    let locality = m_cap_s(&capts, "location")
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    let (locality, locality_v2) = extract_locality(
+        settlements.clone(),
+        inp.to_string(),
+        locality,
+        m_aor_id,
+    )?;
+    Ok(Some(UnitAndLoc {
+        unit: Some(unit),
+        locality,
+        locality_v2,
+    }))
+}
+
+fn extract_jf_unit_chain(
+    unit_raw: &str,
+    re_unit_chain: &Regex,
+) -> Option<String> {
+    let unit_chain_match = re_unit_chain
+        .find_iter(unit_raw)
+        .max_by_key(|value| value.as_str().len())?;
+    let unit_chain = unit_chain_match.as_str().trim().to_string();
+    let m_prefix_unit = unit_raw[..unit_chain_match.start()]
+        .split_whitespace()
+        .last()
+        .map(|value| {
+            value
+                .trim_matches(|ch: char| !ch.is_alphanumeric())
+                .to_string()
+        })
+        .filter(|value| !value.is_empty())
+        .filter(|value| is_known_unit_token(&value.to_lowercase()));
+    Some(match m_prefix_unit {
+        Some(prefix_unit) => format!("{prefix_unit} {unit_chain}"),
+        None => unit_chain,
+    })
+}
+
+fn is_known_unit_token(unit_name: &str) -> bool {
+    crate::unit::const_units::list_companies().contains(unit_name)
+        || crate::unit::const_units::list_battalions().contains(unit_name)
+        || crate::unit::const_units::list_regiments().contains(unit_name)
+        || crate::unit::const_units::list_divisions().contains(unit_name)
+        || crate::unit::const_units::list_armies().contains(unit_name)
+        || crate::unit::const_units::list_named_unit_names().contains(unit_name)
+        || crate::unit::const_units::list_standalone()
+            .iter()
+            .any(|value| value == unit_name)
+}
+
+fn try_extract_standard_unit_and_location(
+    settlements: Arc<RwLock<crate::location::SettlementsDataConfig>>,
+    inp: &str,
+    m_aor_id: Option<i64>,
 ) -> Result<Option<UnitAndLoc>, AppError> {
     '_if: {
         // parses format like: Підрозділ: УКХ р/м невизначеного підрозділу;
@@ -627,8 +761,12 @@ fn try_extract_standard_unit_and_location(
         let locality = REL.captures(inp).map(|capts| {
             m_cap_s(&capts, "location").unwrap().trim().to_string()
         });
-        let (locality, locality_v2) =
-            extract_locality(settlements.clone(), inp.to_string(), locality)?;
+        let (locality, locality_v2) = extract_locality(
+            settlements.clone(),
+            inp.to_string(),
+            locality,
+            m_aor_id,
+        )?;
         return Ok(Some(UnitAndLoc {
             unit: Some(unit.trim().to_string()),
             locality,
@@ -707,7 +845,7 @@ mod tests {
 "#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(
+            crate::location::load_settlements_data_config(
                 config.settlement_paths().unwrap(),
                 Mode::Test,
             )
@@ -720,7 +858,7 @@ mod tests {
         );
         assert_eq!(res.locality.unwrap(), "МАКАРІВКА, НЕСКУЧНЕ".to_string());
         assert_eq!(
-            vec!["60 омсбр РХБЗ 5 ЗА"],
+            vec!["60 омсбр рхбз 5 за"],
             parse_library_unit(&String::from(body))
         );
     }
@@ -734,7 +872,7 @@ mod tests {
 "#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(
+            crate::location::load_settlements_data_config(
                 config.settlement_paths().unwrap(),
                 Mode::Test,
             )
@@ -750,7 +888,7 @@ mod tests {
             "ДОРОЖНЯНКА. КОСТЯНТИНІВКА. РЕШЕТИЛІВСЬКЕ".to_string()
         );
         assert_eq!(
-            vec!["177 опмп КаФл"],
+            vec!["177 опмп кафл"],
             parse_library_unit(&String::from(body))
         );
     }
@@ -762,7 +900,7 @@ mod tests {
 "#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(
+            crate::location::load_settlements_data_config(
                 config.settlement_paths().unwrap(),
                 Mode::Test,
             )
@@ -771,7 +909,7 @@ mod tests {
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(res.unit.unwrap(), "УКХ р/м управління 1 мсб 4 ВБ");
         assert_eq!(res.locality.unwrap(), "ВАСИЛІВКА".to_string());
-        assert_eq!(vec!["1 мсб 4 ВБ"], parse_library_unit(&String::from(body)));
+        assert_eq!(vec!["1 мсб 4 вб"], parse_library_unit(&String::from(body)));
     }
 
     #[test]
@@ -787,7 +925,7 @@ mod tests {
 "#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(
+            crate::location::load_settlements_data_config(
                 config.settlement_paths().unwrap(),
                 Mode::Test,
             )
@@ -796,7 +934,7 @@ mod tests {
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(res.unit.unwrap(), "УКХ р/м управління 4 ВБ 58 А");
         assert_eq!(res.locality.unwrap(), "КАМ'ЯНСЬКЕ".to_string());
-        assert_eq!(vec!["4 ВБ 58 А"], parse_library_unit(&String::from(body)));
+        assert_eq!(vec!["4 вб 58 а"], parse_library_unit(&String::from(body)));
     }
 
     #[test]
@@ -810,7 +948,7 @@ mod tests {
 1.- михалыч михалыч - вышел на 71й  вот и он сказал - я не знаю вы все делали ? или нет вы "#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(
+            crate::location::load_settlements_data_config(
                 config.settlement_paths().unwrap(),
                 Mode::Test,
             )
@@ -820,7 +958,7 @@ mod tests {
         assert_eq!(res.unit.unwrap(), "УКХ р/м мсб на АТ 503 мсп 19 мсд 58 ЗА");
         assert_eq!(res.locality.unwrap(), "МИРНЕ".to_string());
         assert_eq!(
-            vec!["503 мсп 19 мсд 58 ЗА"],
+            vec!["503 мсп 19 мсд 58 за"],
             parse_library_unit(&String::from(body))
         );
     }
@@ -832,7 +970,7 @@ mod tests {
 - Рубеж-1, Рубеж-2 по нулям"	(перевірка обстановки)"#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(
+            crate::location::load_settlements_data_config(
                 config.settlement_paths().unwrap(),
                 Mode::Test,
             )
@@ -856,7 +994,7 @@ mod tests {
 - Искра Байкалу прием"#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(
+            crate::location::load_settlements_data_config(
                 config.settlement_paths().unwrap(),
                 Mode::Test,
             )
@@ -880,7 +1018,7 @@ mod tests {
             r#"УКХ р/м гсабатр гсадн 70 мсп 42 мсд 58 А (ТАРАСІВКА - ПОЛОГИ)"#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(
+            crate::location::load_settlements_data_config(
                 config.settlement_paths().unwrap(),
                 Mode::Test,
             )
@@ -893,7 +1031,7 @@ mod tests {
         );
         assert_eq!(res.locality.unwrap(), "ТАРАСІВКА - ПОЛОГИ".to_string());
         assert_eq!(
-            vec!["70 мсп 42 мсд 58 А"],
+            vec!["70 мсп 42 мсд 58 а"],
             parse_library_unit(&String::from(body))
         );
     }
@@ -903,7 +1041,7 @@ mod tests {
         let body = r#"УКХ радіомережа невизначеного підрозділу в районі населених пунктів       БЛАГОДАТНЕ - УРОЖАЙНЕ   -если человека одного ос"#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(
+            crate::location::load_settlements_data_config(
                 config.settlement_paths().unwrap(),
                 Mode::Test,
             )
@@ -927,7 +1065,7 @@ mod tests {
             r#"УКХ р/м підрозділу із складу 64 омсбр 35 А (н.п. Дорожнянка)"#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(
+            crate::location::load_settlements_data_config(
                 config.settlement_paths().unwrap(),
                 Mode::Test,
             )
@@ -940,7 +1078,7 @@ mod tests {
         );
         assert_eq!(res.locality.unwrap(), "Дорожнянка".to_string());
         assert_eq!(
-            vec!["64 омсбр 35 А"],
+            vec!["64 омсбр 35 а"],
             parse_library_unit(&String::from(body))
         );
     }
@@ -950,7 +1088,7 @@ mod tests {
         let body = r#"УКХ р/м управління мсб зі складу 5сб 123сп МР 1 АК"#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(
+            crate::location::load_settlements_data_config(
                 config.settlement_paths().unwrap(),
                 Mode::Test,
             )
@@ -963,7 +1101,7 @@ mod tests {
         );
         assert_eq!(res.locality, None);
         assert_eq!(
-            vec!["5 сб 123 сп 1 АК"],
+            vec!["5 сб 123 сп 1 ак"],
             parse_library_unit(&String::from(body))
         );
     }
@@ -973,7 +1111,7 @@ mod tests {
         let body = r#"УКХ р/м 5 сб 112 мсп МР 1 АК КЕРМЕНЧИК"#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(
+            crate::location::load_settlements_data_config(
                 config.settlement_paths().unwrap(),
                 Mode::Test,
             )
@@ -983,7 +1121,7 @@ mod tests {
         assert_eq!(res.unit.unwrap(), r#"УКХ р/м 5 сб 112 мсп МР 1 АК"#);
         assert_eq!(res.locality.unwrap(), "КЕРМЕНЧИК".to_string());
         assert_eq!(
-            vec!["5 сб 112 мсп 1 АК"],
+            vec!["5 сб 112 мсп 1 ак"],
             parse_library_unit(&String::from(body))
         );
     }
@@ -993,7 +1131,7 @@ mod tests {
         let body = r#"УКХ р/м управління стрілецькими підрозділами припустимо зі складу 1113 сп МР 1 АК (північніше ПОЛОГИ)"#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(
+            crate::location::load_settlements_data_config(
                 config.settlement_paths().unwrap(),
                 Mode::Test,
             )
@@ -1006,7 +1144,7 @@ mod tests {
         );
         assert_eq!(res.locality.unwrap(), "ПОЛОГИ".to_string());
         assert_eq!(
-            vec!["1113 сп 1 АК"],
+            vec!["1113 сп 1 ак"],
             parse_library_unit(&String::from(body))
         );
     }
@@ -1023,7 +1161,7 @@ mod tests {
 — Борный 34. Просто скажи."#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(
+            crate::location::load_settlements_data_config(
                 config.settlement_paths().unwrap(),
                 Mode::Test,
             )
@@ -1033,7 +1171,7 @@ mod tests {
         assert_eq!(res.unit.unwrap(), r#"УКХ р/м реадн 70 мсп 42 мсд 58 А"#);
         assert_eq!(res.locality, None);
         assert_eq!(
-            vec!["70 мсп 42 мсд 58 А"],
+            vec!["70 мсп 42 мсд 58 а"],
             parse_library_unit(&String::from(body))
         );
     }
@@ -1044,7 +1182,7 @@ mod tests {
             r#"УКХ р/м 1 мсб 70 мсп 42 мсд 58 А (ПАВЛІВСЬКЕ, НОВОФЕДОРІВКА)"#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(
+            crate::location::load_settlements_data_config(
                 config.settlement_paths().unwrap(),
                 Mode::Test,
             )
@@ -1057,7 +1195,7 @@ mod tests {
             "ПАВЛІВСЬКЕ, НОВОФЕДОРІВКА".to_string()
         );
         assert_eq!(
-            vec!["1 мсб 70 мсп 42 мсд 58 А"],
+            vec!["1 мсб 70 мсп 42 мсд 58 а"],
             parse_library_unit(&String::from(body))
         );
     }
@@ -1067,7 +1205,7 @@ mod tests {
         let body = r#"УКХ р/м управління 1 мсб 38 омсбр 35 А (півд. МИРНЕ);"#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(
+            crate::location::load_settlements_data_config(
                 config.settlement_paths().unwrap(),
                 Mode::Test,
             )
@@ -1080,7 +1218,7 @@ mod tests {
         );
         assert_eq!(res.locality.unwrap(), "МИРНЕ".to_string());
         assert_eq!(
-            vec!["1 мсб 38 омсбр 35 А"],
+            vec!["1 мсб 38 омсбр 35 а"],
             parse_library_unit(&String::from(body))
         );
     }
@@ -1090,7 +1228,7 @@ mod tests {
         let body = r#"30.05.23 13:11 \\ 438.500 УКХ р/м управління 5 сб 112 осп (131 сп) МР, 4 осб ТрО 110 омсбр (район н.п. Новодонецьке – Новомайорське		"#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(
+            crate::location::load_settlements_data_config(
                 config.settlement_paths().unwrap(),
                 Mode::Test,
             )
@@ -1130,7 +1268,7 @@ mod tests {
 "#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(
+            crate::location::load_settlements_data_config(
                 config.settlement_paths().unwrap(),
                 Mode::Test,
             )
@@ -1154,7 +1292,7 @@ mod tests {
 1. Да, да, плюс"#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(
+            crate::location::load_settlements_data_config(
                 config.settlement_paths().unwrap(),
                 Mode::Test,
             )
@@ -1185,7 +1323,7 @@ mod tests {
 --И короче, я там круги делал, там вышка есть высокая, прям такая, ее прям в темноте, прям четко видно было.  "#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(
+            crate::location::load_settlements_data_config(
                 config.settlement_paths().unwrap(),
                 Mode::Test,
             )
@@ -1204,7 +1342,7 @@ mod tests {
         let locality_v2_txt = validate_locality_v2(res.locality_v2);
         assert_eq!(locality_v2_txt, vec!["ЛЮБИМІВКА", "ОРЛИНСЬКЕ"]);
         assert_eq!(
-            vec!["114 мсп 127 мсд 5 А"],
+            vec!["114 мсп 127 мсд 5 а"],
             parse_library_unit(&String::from(body))
         );
     }
@@ -1222,7 +1360,7 @@ mod tests {
 — По полю, откуда, с севера? Если что, светлячки запускай Андрюха сразу."#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(
+            crate::location::load_settlements_data_config(
                 config.settlement_paths().unwrap(),
                 Mode::Test,
             )
@@ -1253,7 +1391,7 @@ mod tests {
 "#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(
+            crate::location::load_settlements_data_config(
                 config.settlement_paths().unwrap(),
                 Mode::Test,
             )
@@ -1289,7 +1427,7 @@ mod tests {
 — 75й, я Коробка, у нас 0 3."#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(
+            crate::location::load_settlements_data_config(
                 config.settlement_paths().unwrap(),
                 Mode::Test,
             )
@@ -1324,7 +1462,7 @@ mod tests {
 — Если вызываю я тебя, то я говорю Второй Первому."#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(
+            crate::location::load_settlements_data_config(
                 config.settlement_paths().unwrap(),
                 Mode::Test,
             )
@@ -1354,7 +1492,7 @@ mod tests {
 Коментар: T4"#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(
+            crate::location::load_settlements_data_config(
                 config.settlement_paths().unwrap(),
                 Mode::Test,
             )
@@ -1382,11 +1520,10 @@ mod tests {
 УКХ р/м управління сб 103 осп район пд.-сх. окол. Торецьк
 НВ
 НВ
-
-— Лупс 50. Читер, Читер 50. Читер, Читер 50. Днепр, Днепр 50. Днепр, Днепр 50. Днепр повтори, не прошло. Днепр повтори, не прошло. Плюс, Абухов 50. Плюс, Абухов 50. Чернобы 50. Чернобы 50. Ялта АДС 55. Ялта АДС 55."#;
+"#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(
+            crate::location::load_settlements_data_config(
                 config.settlement_paths().unwrap(),
                 Mode::Test,
             )
@@ -1423,7 +1560,7 @@ mod tests {
 1. Колодец, Барвиха да, 119-й да"#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(
+            crate::location::load_settlements_data_config(
                 config.settlement_paths().unwrap(),
                 Mode::Test,
             )
@@ -1453,7 +1590,7 @@ mod tests {
 1. 80, 80, я 24. 05, 43, 2, 238 (баба-яга). Я 24, прием."#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(
+            crate::location::load_settlements_data_config(
                 config.settlement_paths().unwrap(),
                 Mode::Test,
             )
@@ -1485,7 +1622,7 @@ mod tests {
 — Сколько там метров?"#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(
+            crate::location::load_settlements_data_config(
                 config.settlement_paths().unwrap(),
                 Mode::Test,
             )
@@ -1504,18 +1641,18 @@ mod tests {
 
     #[test]
     fn extract_unit_31() {
-        let body = r#"Отримано з поста "Л"  
--------------------------------  
-УКХ р/м управління 901/902 полку особливого призначення фсвнг рф (район ОГІРЦЕВЕ-ГАТИЩЕ-ВОВЧАНСЬК)  
-08:21  
-МЕТРО  
-ОЛИМП 2  
-406.975  
+        let body = r#"Отримано з поста "Л"
+-------------------------------
+УКХ р/м управління 901/902 полку особливого призначення фсвнг рф (район ОГІРЦЕВЕ-ГАТИЩЕ-ВОВЧАНСЬК)
+08:21
+МЕТРО
+ОЛИМП 2
+406.975
 1. п\"#;
 
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(
+            crate::location::load_settlements_data_config(
                 config.settlement_paths().unwrap(),
                 Mode::Test,
             )
@@ -1534,18 +1671,18 @@ mod tests {
 
     #[test]
     fn extract_unit_32() {
-        let body = r#"Ціль:0901/18  
-Час:17:44  
-Ідентифікація: Цифрова Радіостанція  
-Місце розташування: Новопрокопівка-Пшеничне  
-Координати: 36T YT 16058 52456  
-Частота: 445.439 МГц  
-Приналежність підрозділу: ймовірно 2 мсб 70 мсп 42 мсд 58 А  
+        let body = r#"Ціль:0901/18
+Час:17:44
+Ідентифікація: Цифрова Радіостанція
+Місце розташування: Новопрокопівка-Пшеничне
+Координати: 36T YT 16058 52456
+Частота: 445.439 МГц
+Приналежність підрозділу: ймовірно 2 мсб 70 мсп 42 мсд 58 А
 Радіус похибки: 1000 м"#;
 
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(
+            crate::location::load_settlements_data_config(
                 config.settlement_paths().unwrap(),
                 Mode::Test,
             )
@@ -1563,15 +1700,15 @@ mod tests {
 
     #[test]
     fn extract_unit_33() {
-        let body = r#"26.12, 23:48:55  
-421.0810  
-УКХ р/м НВ підрозділу(DMR), між ОЧЕРЕТИНЕ, КЕРАМІК  
-АЛТАЙ  
+        let body = r#"26.12, 23:48:55
+421.0810
+УКХ р/м НВ підрозділу(DMR), між ОЧЕРЕТИНЕ, КЕРАМІК
+АЛТАЙ
 АЛМАЗ"#;
 
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(
+            crate::location::load_settlements_data_config(
                 config.settlement_paths().unwrap(),
                 Mode::Test,
             )
@@ -1597,7 +1734,7 @@ mod tests {
 
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(
+            crate::location::load_settlements_data_config(
                 config.settlement_paths().unwrap(),
                 Mode::Test,
             )
@@ -1627,7 +1764,7 @@ mod tests {
 
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(
+            crate::location::load_settlements_data_config(
                 config.settlement_paths().unwrap(),
                 Mode::Test,
             )
@@ -1656,7 +1793,7 @@ mod tests {
 
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(
+            crate::location::load_settlements_data_config(
                 config.settlement_paths().unwrap(),
                 Mode::Test,
             )
@@ -1679,7 +1816,7 @@ mod tests {
 
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(
+            crate::location::load_settlements_data_config(
                 config.settlement_paths().unwrap(),
                 Mode::Test,
             )
@@ -1707,7 +1844,7 @@ mod tests {
 
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(
+            crate::location::load_settlements_data_config(
                 config.settlement_paths().unwrap(),
                 Mode::Test,
             )
@@ -1738,7 +1875,7 @@ Az-155
 
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(
+            crate::location::load_settlements_data_config(
                 config.settlement_paths().unwrap(),
                 Mode::Test,
             )
@@ -1770,7 +1907,7 @@ Az-155
 
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(
+            crate::location::load_settlements_data_config(
                 config.settlement_paths().unwrap(),
                 Mode::Test,
             )
@@ -1800,7 +1937,7 @@ Az-155
 Коментар: ( запит на зв'язок );"#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(
+            crate::location::load_settlements_data_config(
                 config.settlement_paths().unwrap(),
                 Mode::Test,
             )
@@ -1833,7 +1970,7 @@ Az-155
 ( Запит на звязок)"#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(
+            crate::location::load_settlements_data_config(
                 config.settlement_paths().unwrap(),
                 Mode::Test,
             )
@@ -1864,7 +2001,7 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
 - ...спасибо"#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(
+            crate::location::load_settlements_data_config(
                 config.settlement_paths().unwrap(),
                 Mode::Test,
             )
@@ -1877,7 +2014,7 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
         );
         assert_eq!(res.locality, None);
         assert_eq!(
-            vec!["70 мсп 42 мсд 58 А"],
+            vec!["70 мсп 42 мсд 58 а"],
             parse_library_unit(&String::from(body))
         );
     }
@@ -1894,7 +2031,7 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
             БАЙКАЛ"#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(
+            crate::location::load_settlements_data_config(
                 config.settlement_paths().unwrap(),
                 Mode::Test,
             )
@@ -1923,7 +2060,7 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
 
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(
+            crate::location::load_settlements_data_config(
                 config.settlement_paths().unwrap(),
                 Mode::Test,
             )
@@ -1952,7 +2089,7 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
 
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(
+            crate::location::load_settlements_data_config(
                 config.settlement_paths().unwrap(),
                 Mode::Test,
             )
@@ -1978,7 +2115,7 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
 
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(
+            crate::location::load_settlements_data_config(
                 config.settlement_paths().unwrap(),
                 Mode::Test,
             )
@@ -2002,7 +2139,7 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
 
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(
+            crate::location::load_settlements_data_config(
                 config.settlement_paths().unwrap(),
                 Mode::Test,
             )
@@ -2027,7 +2164,7 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
 
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(
+            crate::location::load_settlements_data_config(
                 config.settlement_paths().unwrap(),
                 Mode::Test,
             )
@@ -2056,7 +2193,7 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
 
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(
+            crate::location::load_settlements_data_config(
                 config.settlement_paths().unwrap(),
                 Mode::Test,
             )
@@ -2071,7 +2208,7 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
         let locality_v2_txt = validate_locality_v2(res.locality_v2);
         assert_eq!(locality_v2_txt, vec!["ЛЮБИМІВКА"]);
         assert_eq!(
-            vec!["60 омсбр 5 А"],
+            vec!["60 омсбр 5 а"],
             parse_library_unit(&String::from(body))
         );
     }
@@ -2089,7 +2226,7 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
 
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(
+            crate::location::load_settlements_data_config(
                 config.settlement_paths().unwrap(),
                 Mode::Test,
             )
@@ -2107,7 +2244,7 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
         );
         let locality_v2_txt = validate_locality_v2(res.locality_v2);
         assert_eq!(locality_v2_txt, vec!["СОЛОДКОВОДНЕ".to_string()]);
-        assert_eq!(vec!["36 А"], parse_library_unit(&String::from(body)));
+        assert_eq!(vec!["36 а"], parse_library_unit(&String::from(body)));
     }
 
     #[test]
@@ -2124,7 +2261,7 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
 
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(
+            crate::location::load_settlements_data_config(
                 config.settlement_paths().unwrap(),
                 Mode::Test,
             )
@@ -2143,7 +2280,7 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
         let locality_v2_txt = validate_locality_v2(res.locality_v2);
         assert_eq!(locality_v2_txt, vec!["ЛЮБИМІВКА", "СТАРОМЛИНІВКА"]);
         assert_eq!(
-            vec!["60 омсбр 5 А"],
+            vec!["60 омсбр 5 а"],
             parse_library_unit(&String::from(body))
         );
     }
@@ -2159,7 +2296,7 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
 
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(
+            crate::location::load_settlements_data_config(
                 config.settlement_paths().unwrap(),
                 Mode::Test,
             )
@@ -2174,7 +2311,7 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
         let locality_v2_txt = validate_locality_v2(res.locality_v2);
         assert_eq!(locality_v2_txt, vec!["КРАСНОСЕЛІВКА".to_string()]);
         assert_eq!(
-            vec!["336 обмп 3 А"],
+            vec!["336 обмп 3 а"],
             parse_library_unit(&String::from(body))
         );
     }
@@ -2198,7 +2335,7 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
 
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(
+            crate::location::load_settlements_data_config(
                 config.settlement_paths().unwrap(),
                 Mode::Test,
             )
@@ -2207,7 +2344,7 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(res.unit.unwrap(), "DMRe (йм. 114 мсп 127 мсд 5 А) (йм. р-н Новоселівка-Сміле-Гоголівка)".to_string().to_string());
         assert_eq!(
-            vec!["114 мсп 127 мсд 5 А"],
+            vec!["114 мсп 127 мсд 5 а"],
             parse_library_unit(&String::from(body))
         );
         assert_eq!(res.locality.unwrap(), "DMRe (йм. 114 мсп 127 мсд 5 А) (йм. р-н Новоселівка-Сміле-Гоголівка)");
@@ -2229,7 +2366,7 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
 
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(
+            crate::location::load_settlements_data_config(
                 config.settlement_paths().unwrap(),
                 Mode::Test,
             )
@@ -2256,7 +2393,7 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
 
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(
+            crate::location::load_settlements_data_config(
                 config.settlement_paths().unwrap(),
                 Mode::Test,
             )
@@ -2268,7 +2405,7 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
             "йм. 64 осмбр 25 п 35 А(р-н Пд. від Дорожнянка)".to_string()
         );
         assert_eq!(
-            vec!["64 осмбр", "25 п 35 А"],
+            vec!["64 осмбр", "25 п 35 а"],
             parse_library_unit(&String::from(body))
         );
         assert_eq!(
@@ -2297,7 +2434,7 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
 
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(
+            crate::location::load_settlements_data_config(
                 config.settlement_paths().unwrap(),
                 Mode::Test,
             )
@@ -2321,7 +2458,7 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
 
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(
+            crate::location::load_settlements_data_config(
                 config.settlement_paths().unwrap(),
                 Mode::Test,
             )
@@ -2352,7 +2489,7 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
 
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(
+            crate::location::load_settlements_data_config(
                 config.settlement_paths().unwrap(),
                 Mode::Test,
             )
@@ -2367,6 +2504,72 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
         );
         let locality_v2_txt = validate_locality_v2(res.locality_v2);
         assert_eq!(locality_v2_txt, vec!["ОБУХІВКА", "СНАГОСТЬ", "СУДЖА"]);
+    }
+
+    #[test]
+    fn extract_unit_jf_header_01() {
+        let body = r#" 19.02.2026 09:08 противник зі складу 6 шр 2 мсб 283 мсп 144 мсд здійснє переміщення групи в районі південніше СЕРЕДНЄ (за маршрутом: 37U DQ 05770 40609, 37U DQ 05730 40657)
+
+ 19.02.2026, 09:08:31
+ 155.0250
+ МИНСК
+ БОБ, СЕНЯ
+ — Боб, Боб, Боб, им скажи, что им сейчас, скоро нужно будет повернуть направо, направо. Так, Сеня, Сеня, Сеня, смотри, им нужно в район 8 26, чтоб они повернули, и двигались в район 160-й, фиолетовой.
+ -Да, принял, принял,
+ — Минск, Минск, я Сеня. Назад, назад, возвращается 1.
+ - Я тебя принял, принял. 1, 1, продолжает движение?
+ - Нет, нет, первый который зашел до 8 1 6, развернулся, пошел назад. Обратно на 8 1 5.
+ - Боб, Боб, слышишь информацию? Пихай их дальше, блядь, пускай пиздуют."#;
+        let config = crate::config::read_config(Mode::Test).unwrap();
+        let settlements = Arc::new(RwLock::new(
+            crate::location::load_settlements_data_config(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
+        ));
+        let res = extract_unit(settlements, body, vec![]).unwrap();
+        assert_eq!(res.unit.unwrap(), "6 шр 2 мсб 283 мсп 144 мсд".to_string());
+        assert_eq!(res.locality.unwrap(), "СЕРЕДНЄ".to_string());
+    }
+
+    #[test]
+    fn extract_unit_jf_header_02() {
+        let body = r#" 22.02.2026 13:00 противник зі складу гсадн 27 омсбр 1 ТА планує нанесення вогневого ураження по позиції СОУ в районі ТИЩЕНКІВКА (37U CR 95898 13939)
+ 22.02.2026, 13:00:54
+ 150.7500
+ ГОЛЬФ
+ НЕВА
+ 1 — Нева я Гольф диктуй, диктуй.
+ 2 — цель 18 75 желтая, 18 75 желтая, 55 16 245, 55 16 245, 73 95 966, 73 95 966, 152, 152.
+ 1 — 18 75 желтая, 55 16 245, 73 95 966, 152"#;
+        let config = crate::config::read_config(Mode::Test).unwrap();
+        let settlements = Arc::new(RwLock::new(
+            crate::location::load_settlements_data_config(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
+        ));
+        let res = extract_unit(settlements, body, vec![]).unwrap();
+        assert_eq!(res.unit.unwrap(), "гсадн 27 омсбр 1 ТА".to_string());
+        assert_eq!(res.locality.unwrap(), "ТИЩЕНКІВКА".to_string());
+    }
+
+    #[test]
+    fn extract_unit_jf_header_03_rejects_non_coords_suffix() {
+        let body = r#" 22.02.2026 13:00 противник зі складу гсадн 27 омсбр 1 ТА планує нанесення вогневого ураження по позиції СОУ в районі ТИЩЕНКІВКА за маршрутом 37U CR 95898 13939"#;
+        let config = crate::config::read_config(Mode::Test).unwrap();
+        let settlements = Arc::new(RwLock::new(
+            crate::location::load_settlements_data_config(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
+        ));
+        let res =
+            try_extract_jf_unit_and_location(settlements, body, None).unwrap();
+        assert!(res.is_none());
     }
 
     #[test]

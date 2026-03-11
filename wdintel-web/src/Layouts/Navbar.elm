@@ -5,7 +5,7 @@ import Auth
 import Core.Types exposing (ApiError)
 import Effect as E exposing (Effect)
 import Html exposing (..)
-import Html.Attributes exposing (class, id)
+import Html.Attributes exposing (attribute, class, id, title)
 import Html.Events exposing (onClick, stopPropagationOn)
 import Layout exposing (Layout)
 import Process
@@ -68,6 +68,7 @@ keepAliveInterval =
 
 type Msg
     = ToggleDarkTheme
+    | SignOutClicked
     | SetThemeMode Shared.Model.ThemeMode
     | KeyPressed String
     | NoOp
@@ -84,6 +85,11 @@ update route msg model =
         ToggleDarkTheme ->
             ( model
             , E.toggleDarkMode
+            )
+
+        SignOutClicked ->
+            ( model
+            , E.logout
             )
 
         SetThemeMode themeMode ->
@@ -109,7 +115,7 @@ update route msg model =
                 ]
             )
 
-        KeepAliveDone (Err e) ->
+        KeepAliveDone (Err _) ->
             ( model, E.none )
 
         KeepAliveDone (Ok _) ->
@@ -151,11 +157,24 @@ subscriptions _ =
 view : Auth.User -> String -> Shared.Model -> Route () -> { toContentMsg : Msg -> contentMsg, content : View contentMsg, model : Model } -> View contentMsg
 view user activeName shared route { toContentMsg, model, content } =
     let
+        supportsFullscreenToggle =
+            route.url.path == "/rer-duty" || route.url.path == "/rer-duty-neo"
+
+        usesShellContentGap =
+            route.url.path == "/rer-palitra-neo"
+                || route.url.path == "/rer-callsigns-neo"
+                || route.url.path == "/settings-neo"
+
+        usesFixedViewportLayout =
+            usesShellContentGap || supportsFullscreenToggle
+
         navbarProps =
             { onToggleTheme = ToggleDarkTheme
+            , onLogout = SignOutClicked
             , onThemeChange = SetThemeMode
             , onNavbarVisibilityChange = ToggleNavbarVisibility
-            , isRerDuty = route.url.path == "/rer-duty" || route.url.path == "/rer-duty-neo"
+            , supportsFullscreenToggle = supportsFullscreenToggle
+            , isNavbarVisible = model.isNavbarVisible
             , openDropdown = model.openDropdown
             , onDropdownToggle = SetOpenDropdown
             }
@@ -166,13 +185,14 @@ view user activeName shared route { toContentMsg, model, content } =
 
             else
                 Shared.Components.NavbarOld.navBar user shared activeName navbarProps
+
     in
     { title = content.title
     , body =
         [ div [ onClick (SetOpenDropdown Nothing) ]
             [ div
                 [ id "app-navbar-shell"
-                , class "fixed top-0 left-0 right-0 z-500 transition-all duration-300 ease-in-out"
+                , class "fixed top-0 left-0 right-0 z-[1200] transition-all duration-300 ease-in-out"
                 , class
                     (if model.isNavbarVisible then
                         "translate-y-0"
@@ -183,12 +203,15 @@ view user activeName shared route { toContentMsg, model, content } =
                 , stopPropagationOn "click" (Json.Decode.succeed ( NoOp, True ))
                 ]
                 [ navbarHtml ]
-            , if (route.url.path == "/rer-duty" || route.url.path == "/rer-duty-neo") && not model.isNavbarVisible then
+            , if supportsFullscreenToggle && not model.isNavbarVisible then
                 div
-                    [ class "fixed top-4 right-4 z-500 transition-opacity duration-300 ease-in-out opacity-100" ]
+                    [ class "fixed top-4 right-4 z-[1200] transition-opacity duration-300 ease-in-out opacity-100" ]
                     [ div
                         [ class "cursor-pointer p-2 rounded-full bg-[var(--color-card)] hover:bg-[var(--color-column)] transition-all duration-200"
                         , onClick ToggleNavbarVisibility
+                        , title "Звичайний режим"
+                        , attribute "aria-label" "Звичайний режим"
+                        , attribute "aria-pressed" "true"
                         ]
                         [ i [ class "bi bi-arrows-fullscreen text-xl" ] [] ]
                     ]
@@ -199,16 +222,38 @@ view user activeName shared route { toContentMsg, model, content } =
             ]
             |> Html.map toContentMsg
         , div
-            [ class "transition-all duration-300 ease-in-out app-shell"
-            , class
+            ([ class "transition-all duration-300 ease-in-out app-shell"
+             , class
                 (if model.isNavbarVisible then
                     "app-shell--navbar-visible"
 
                  else
                     "app-shell--navbar-hidden"
                 )
-            , onClick (toContentMsg (SetOpenDropdown Nothing))
+             , class
+                (if usesFixedViewportLayout then
+                    "app-shell--fixed-viewport"
+
+                 else
+                    ""
+                )
+             , onClick (toContentMsg (SetOpenDropdown Nothing))
             ]
+                ++ (if route.url.path == "/rer-duty-neo" || route.url.path == "/rer-callsigns-neo" then
+                        [ attribute "data-auth-user-name" user.name
+                        , attribute "data-auth-user-roles" (String.join "," user.roles)
+                        ]
+
+                    else
+                        []
+                   )
+                ++ (if usesShellContentGap then
+                        [ class "app-shell--with-content-gap" ]
+
+                    else
+                        []
+                   )
+            )
             content.body
         ]
     }

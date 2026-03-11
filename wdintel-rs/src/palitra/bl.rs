@@ -1,16 +1,94 @@
 use crate::entities::*;
-use crate::h;
+use crate::palitra::sync_delete_palitra_from_connected_organisms;
 use crate::palitra::types::*;
 use crate::types::*;
 use crate::utils::orm::ArrayColumnOps;
+use crate::{h, nlp};
+use actix_web::web::Data;
 use anyhow::Context;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDateTime, Utc};
 use itertools::{Either, Itertools};
 use redis::AsyncCommands;
 use sea_orm::prelude::*;
+use sea_orm::sea_query::OnConflict;
+use sea_orm::sea_query::SimpleExpr;
 use sea_orm::*;
 use serde::de::DeserializeOwned;
 use std::collections::{HashMap, HashSet};
+
+#[derive(Debug, Clone)]
+enum LabelPattern {
+    Exact(String),
+    Prefix(String),
+    Suffix(String),
+    Contains(String),
+}
+
+impl LabelPattern {
+    fn parse(label: &str) -> Option<Self> {
+        let normalized = normalize_label_cache(label)?;
+        let has_prefix_star = normalized.starts_with('*');
+        let has_suffix_star = normalized.ends_with('*');
+
+        let trimmed = normalized
+            .trim_start_matches('*')
+            .trim_end_matches('*')
+            .trim()
+            .to_string();
+
+        let pattern = match (has_prefix_star, has_suffix_star) {
+            (false, false) => LabelPattern::Exact(normalized),
+            (true, false) => {
+                if trimmed.is_empty() {
+                    return None;
+                }
+                LabelPattern::Suffix(trimmed)
+            }
+            (false, true) => {
+                if trimmed.is_empty() {
+                    return None;
+                }
+                LabelPattern::Prefix(trimmed)
+            }
+            (true, true) => {
+                if trimmed.is_empty() {
+                    return None;
+                }
+                LabelPattern::Contains(trimmed)
+            }
+        };
+        Some(pattern)
+    }
+
+    fn to_expr(&self) -> SimpleExpr {
+        match self {
+            LabelPattern::Exact(value) => {
+                Expr::cust_with_values("lower(label) = $1", vec![value.clone()])
+            }
+            LabelPattern::Prefix(value) => Expr::cust_with_values(
+                "lower(label) LIKE $1 ESCAPE '\\'",
+                vec![format!("{}%", escape_like(value))],
+            ),
+            LabelPattern::Suffix(value) => Expr::cust_with_values(
+                "lower(label) LIKE $1 ESCAPE '\\'",
+                vec![format!("%{}", escape_like(value))],
+            ),
+            LabelPattern::Contains(value) => Expr::cust_with_values(
+                "lower(label) LIKE $1 ESCAPE '\\'",
+                vec![format!("%{}%", escape_like(value))],
+            ),
+        }
+    }
+
+    fn matches(&self, normalized_label: &str) -> bool {
+        match self {
+            LabelPattern::Exact(value) => normalized_label == value,
+            LabelPattern::Prefix(value) => normalized_label.starts_with(value),
+            LabelPattern::Suffix(value) => normalized_label.ends_with(value),
+            LabelPattern::Contains(value) => normalized_label.contains(value),
+        }
+    }
+}
 
 enum PalitraUpdateAction {
     Insert,
@@ -94,6 +172,24 @@ pub async fn update_palitra(
     Ok(result)
 }
 
+pub async fn update_palitra_v2(
+    palitra_id: i64,
+    req: UpdatePalitraV2Req,
+    txn: &DatabaseTransaction,
+) -> anyhow::Result<PalitraReadV2> {
+    let palitra = palitra::Entity::find_by_id(palitra_id)
+        .one(txn)
+        .await
+        .c(h!())?
+        .c(h!())?
+        .into_active_model();
+
+    let palitra = update_palitra_from_v2_req(req, palitra, txn)
+        .await
+        .c(h!())?;
+    render_palitra_v2(Either::Left(palitra), txn).await.c(h!())
+}
+
 pub async fn list_all_palitras_detailed(
     login: String,
     dbx: &DatabaseConnection,
@@ -101,6 +197,38 @@ pub async fn list_all_palitras_detailed(
     let palitra_ids = collect_palitra_ids(login, dbx).await.c(h!())?;
     let result = render_palitra_details(dbx, palitra_ids).await.c(h!())?;
     Ok(result)
+}
+
+pub async fn list_all_palitras_v2(
+    login: String,
+    dbx: &DatabaseConnection,
+) -> anyhow::Result<Vec<PalitraReadV2>> {
+    let palitra_ids = collect_palitra_ids(login, dbx).await.c(h!())?;
+    let mut result = Vec::with_capacity(palitra_ids.len());
+    for palitra_id in palitra_ids {
+        result.push(
+            render_palitra_v2_without_points(Either::Right(palitra_id), dbx)
+                .await
+                .c(h!())?,
+        );
+    }
+    Ok(result)
+}
+
+pub async fn read_palitra_v2(
+    login: String,
+    palitra_id: i64,
+    dbx: &DatabaseConnection,
+) -> anyhow::Result<PalitraReadV2> {
+    let palitra_ids = collect_palitra_ids(login, dbx).await.c(h!())?;
+    if !palitra_ids.contains(&palitra_id) {
+        anyhow::bail!(
+            "Palitra {palitra_id} is not accessible for current user"
+        );
+    }
+    render_palitra_v2(Either::Right(palitra_id), dbx)
+        .await
+        .c(h!())
 }
 
 pub async fn search_palitra_points_by_labels(
@@ -119,39 +247,53 @@ pub async fn search_palitra_points_by_labels(
     if palitra_ids.is_empty() {
         return Ok(vec![]);
     }
-    dbg!("{:?}", &palitra_ids);
 
-    let mut normalized_labels: Vec<String> = req
+    let label_patterns: Vec<LabelPattern> = req
         .point_labels
         .iter()
-        .filter_map(|label| normalize_label_cache(label))
-        .map(|label| label.to_lowercase())
+        .filter_map(|point| LabelPattern::parse(point))
         .collect();
-    if normalized_labels.len() > 1 {
-        let combined_label = normalized_labels.join(" ");
-        if !normalized_labels.contains(&combined_label) {
-            normalized_labels.push(combined_label);
-        }
-    }
-    if normalized_labels.is_empty() {
+    if label_patterns.is_empty() {
         return Ok(vec![]);
     }
 
     let mut label_condition = Condition::any();
-    for label in &normalized_labels {
-        label_condition = label_condition.add(Expr::cust_with_values(
-            "lower(label) = $1",
-            vec![label.clone()],
-        ));
+    for pattern in &label_patterns {
+        label_condition = label_condition.add(pattern.to_expr());
+    }
+
+    let palitra_geometries = palitra_geometry::Entity::find()
+        .filter(palitra_geometry::Column::PalitraId.is_in(palitra_ids.clone()))
+        .filter(palitra_geometry::Column::Deleted.eq(false))
+        .select_only()
+        .column(palitra_geometry::Column::Id)
+        .column(palitra_geometry::Column::PalitraId)
+        .into_tuple::<(i64, i64)>()
+        .all(dbx)
+        .await
+        .c(h!())?;
+    let palitra_geometry_id_to_palitra_id = palitra_geometries
+        .iter()
+        .copied()
+        .collect::<HashMap<_, _>>();
+    let palitra_geometry_ids = palitra_geometries
+        .into_iter()
+        .map(|(id, _)| id)
+        .collect_vec();
+    if palitra_geometry_ids.is_empty() {
+        return Ok(vec![]);
     }
 
     let points = palitra_point::Entity::find()
         .select_only()
-        .column(palitra_point::Column::PalitraId)
+        .column(palitra_point::Column::PalitraGeometryId)
         .column(palitra_point::Column::Lat)
         .column(palitra_point::Column::Lng)
         .column(palitra_point::Column::Label)
-        .filter(palitra_point::Column::PalitraId.eq_any(palitra_ids.clone()))
+        .filter(
+            palitra_point::Column::PalitraGeometryId
+                .is_in(palitra_geometry_ids.clone()),
+        )
         .filter(palitra_point::Column::Deleted.eq(false))
         .filter(palitra_point::Column::Label.is_not_null())
         .filter(label_condition)
@@ -160,22 +302,56 @@ pub async fn search_palitra_points_by_labels(
         .await
         .c(h!())?;
 
-    let mut points_by_id: HashMap<i64, Vec<PalitraPoint>> = HashMap::new();
-    for (palitra_id, lat, lng, label) in points {
-        points_by_id
-            .entry(palitra_id)
-            .or_default()
-            .push(PalitraPoint {
+    let mut points_by_palitra_id: HashMap<i64, Vec<PalitraPoint>> =
+        HashMap::new();
+    for (palitra_geometry_id, lat, lng, label) in points {
+        let Some(palitra_id) = palitra_geometry_id_to_palitra_id
+            .get(&palitra_geometry_id)
+            .copied()
+        else {
+            warn!(
+                "palitra_geometry {} is missing palitra_id mapping while searching points by labels",
+                palitra_geometry_id
+            );
+            continue;
+        };
+        if let Some(label_value) = label.clone() {
+            if let Some(normalized_label) = normalize_label_cache(&label_value)
+            {
+                let mut matched_any = false;
+                for pattern in &label_patterns {
+                    if pattern.matches(&normalized_label) {
+                        matched_any = true;
+                    }
+                }
+                if !matched_any {
+                    continue;
+                }
+            } else {
+                continue;
+            }
+        } else {
+            continue;
+        }
+
+        points_by_palitra_id.entry(palitra_id).or_default().push(
+            PalitraPoint {
                 label,
                 coords: Coords { lat, lng },
-            });
+                color: None,
+            },
+        );
     }
 
     let result = palitra_ids
         .into_iter()
-        .map(|palitra_id| PalitraPoints {
-            palitra_id,
-            points: points_by_id.remove(&palitra_id).unwrap_or_default(),
+        .filter_map(|palitra_id| {
+            let points =
+                points_by_palitra_id.remove(&palitra_id).unwrap_or_default();
+            if points.is_empty() {
+                return None;
+            }
+            Some(PalitraPoints { palitra_id, points })
         })
         .collect();
     Ok(result)
@@ -206,15 +382,40 @@ pub async fn suggest_palitra_point_labels(
     let normalized_prefix = prefix.to_lowercase();
     let prefix_pattern = build_label_pattern(&normalized_prefix, false);
 
+    let palitra_geometries = palitra_geometry::Entity::find()
+        .filter(palitra_geometry::Column::PalitraId.is_in(palitra_ids))
+        .filter(palitra_geometry::Column::Deleted.eq(false))
+        .select_only()
+        .column(palitra_geometry::Column::Id)
+        .column(palitra_geometry::Column::PalitraId)
+        .into_tuple::<(i64, i64)>()
+        .all(dbx)
+        .await
+        .c(h!())?;
+    let palitra_geometry_id_to_palitra_id = palitra_geometries
+        .iter()
+        .copied()
+        .collect::<HashMap<_, _>>();
+    let palitra_geometry_ids = palitra_geometries
+        .into_iter()
+        .map(|(id, _)| id)
+        .collect_vec();
+    if palitra_geometry_ids.is_empty() {
+        return Ok(vec![]);
+    }
+
     let labels = palitra_point::Entity::find()
         .select_only()
-        .column(palitra_point::Column::PalitraId)
+        .column(palitra_point::Column::PalitraGeometryId)
         .column(palitra_point::Column::Label)
-        .filter(palitra_point::Column::PalitraId.eq_any(palitra_ids.clone()))
+        .filter(
+            palitra_point::Column::PalitraGeometryId
+                .is_in(palitra_geometry_ids.clone()),
+        )
         .filter(palitra_point::Column::Deleted.eq(false))
         .filter(palitra_point::Column::Label.is_not_null())
         .filter(Expr::cust_with_values(
-            "lower(label) LIKE $1",
+            "lower(label) LIKE $1 ESCAPE '\\'",
             vec![prefix_pattern],
         ))
         .order_by_asc(palitra_point::Column::Label)
@@ -227,9 +428,14 @@ pub async fn suggest_palitra_point_labels(
 
     let mut labels: Vec<PalitraPointLabelSuggestRsp> = labels
         .into_iter()
-        .map(|(palitra_id, label)| PalitraPointLabelSuggestRsp {
-            palitra_id,
-            label: label.unwrap_or_default(),
+        .filter_map(|(palitra_geometry_id, label)| {
+            palitra_geometry_id_to_palitra_id
+                .get(&palitra_geometry_id)
+                .copied()
+                .map(|palitra_id| PalitraPointLabelSuggestRsp {
+                    palitra_id,
+                    label: label.unwrap_or_default(),
+                })
         })
         .collect();
 
@@ -238,13 +444,16 @@ pub async fn suggest_palitra_point_labels(
         let similar_pattern = build_label_pattern(&normalized_prefix, true);
         let mut similar_query = palitra_point::Entity::find()
             .select_only()
-            .column(palitra_point::Column::PalitraId)
+            .column(palitra_point::Column::PalitraGeometryId)
             .column(palitra_point::Column::Label)
-            .filter(palitra_point::Column::PalitraId.eq_any(palitra_ids))
+            .filter(
+                palitra_point::Column::PalitraGeometryId
+                    .is_in(palitra_geometry_ids),
+            )
             .filter(palitra_point::Column::Deleted.eq(false))
             .filter(palitra_point::Column::Label.is_not_null())
             .filter(Expr::cust_with_values(
-                "lower(label) LIKE $1",
+                "lower(label) LIKE $1 ESCAPE '\\'",
                 vec![similar_pattern],
             ))
             .order_by_asc(palitra_point::Column::Label)
@@ -264,14 +473,21 @@ pub async fn suggest_palitra_point_labels(
             .await
             .c(h!())?;
 
-        labels.extend(similar.into_iter().map(|(palitra_id, label)| {
-            PalitraPointLabelSuggestRsp {
-                palitra_id,
-                label: label.unwrap_or_default(),
-            }
-        }));
+        labels.extend(similar.into_iter().filter_map(
+            |(palitra_geometry_id, label)| {
+                palitra_geometry_id_to_palitra_id
+                    .get(&palitra_geometry_id)
+                    .copied()
+                    .map(|palitra_id| PalitraPointLabelSuggestRsp {
+                        palitra_id,
+                        label: label.unwrap_or_default(),
+                    })
+            },
+        ));
     }
 
+    let mut seen = HashSet::new();
+    labels.retain(|item| seen.insert((item.palitra_id, item.label.clone())));
     Ok(labels)
 }
 
@@ -288,10 +504,18 @@ fn normalize_label_cache(label: &str) -> Option<String> {
     }
 }
 
+fn escape_like(input: &str) -> String {
+    input
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
+}
+
 fn build_label_pattern(label: &str, surround: bool) -> String {
     let pattern = label
         .split_whitespace()
         .filter(|part| !part.is_empty())
+        .map(escape_like)
         .join("%");
     if surround {
         format!("%{}%", pattern)
@@ -377,13 +601,36 @@ pub async fn list_palitra_points_by_viewport_bounds(
         .into_iter()
         .filter(|id| allowed_palitra_ids.contains(id))
         .collect();
-    if palitra_ids.is_empty() {
+
+    let palitra_geometries = palitra_geometry::Entity::find()
+        .filter(palitra_geometry::Column::PalitraId.is_in(palitra_ids.clone()))
+        .filter(palitra_geometry::Column::Deleted.eq(false))
+        .select_only()
+        .column(palitra_geometry::Column::Id)
+        .column(palitra_geometry::Column::PalitraId)
+        .into_tuple::<(i64, i64)>()
+        .all(dbx)
+        .await
+        .c(h!())?;
+    let palitra_geometry_id_to_palitra_id = palitra_geometries
+        .iter()
+        .copied()
+        .collect::<HashMap<_, _>>();
+    let palitra_geometry_ids = palitra_geometries
+        .into_iter()
+        .map(|(id, _)| id)
+        .collect_vec();
+
+    if palitra_geometry_ids.is_empty() {
         return Ok(vec![]);
     }
 
     let viewport_bounds = normalize_viewport_bounds(req.viewport_bounds);
     let points = palitra_point::Entity::find()
-        .filter(palitra_point::Column::PalitraId.eq_any(palitra_ids.clone()))
+        .filter(
+            palitra_point::Column::PalitraGeometryId
+                .eq_any(palitra_geometry_ids.clone()),
+        )
         .filter(palitra_point::Column::Deleted.eq(false))
         .filter(palitra_point::Column::Lat.gte(viewport_bounds.min_lat))
         .filter(palitra_point::Column::Lat.lte(viewport_bounds.max_lat))
@@ -393,25 +640,38 @@ pub async fn list_palitra_points_by_viewport_bounds(
         .await
         .c(h!())?;
 
-    let mut points_by_id: HashMap<i64, Vec<PalitraPoint>> = HashMap::new();
+    let mut points_by_palitra_id: HashMap<i64, Vec<PalitraPoint>> =
+        HashMap::new();
     for point in points {
-        points_by_id
-            .entry(point.palitra_id)
-            .or_default()
-            .push(PalitraPoint {
+        let Some(palitra_id) = palitra_geometry_id_to_palitra_id
+            .get(&point.palitra_geometry_id)
+            .copied()
+        else {
+            warn!(
+                "palitra_geometry {} is missing palitra_id mapping while listing points by viewport",
+                point.palitra_geometry_id
+            );
+            continue;
+        };
+        points_by_palitra_id.entry(palitra_id).or_default().push(
+            PalitraPoint {
                 label: point.label,
                 coords: Coords {
                     lat: point.lat,
                     lng: point.lng,
                 },
-            });
+                color: None,
+            },
+        );
     }
 
     let result = palitra_ids
         .into_iter()
         .map(|palitra_id| PalitraPoints {
             palitra_id,
-            points: points_by_id.remove(&palitra_id).unwrap_or_default(),
+            points: points_by_palitra_id
+                .remove(&palitra_id)
+                .unwrap_or_default(),
         })
         .collect();
     Ok(result)
@@ -433,6 +693,8 @@ pub async fn list_all_palitras(
 pub async fn delete_palitra(
     id: i64,
     txn: &DatabaseTransaction,
+    existing_access: PalitraAccess,
+    env: &Data<Env>,
 ) -> anyhow::Result<()> {
     palitra::Entity::update_many()
         .filter(palitra::Column::Id.eq(id))
@@ -441,15 +703,47 @@ pub async fn delete_palitra(
         .exec(txn)
         .await
         .c(h!())?;
-    delete_existing_palitra_points(id, txn).await.c(h!())?;
+    let palitra_geometries = palitra_geometry::Entity::find()
+        .filter(palitra_geometry::Column::PalitraId.eq(id))
+        .filter(palitra_geometry::Column::Deleted.eq(false))
+        .all(txn)
+        .await
+        .c(h!())?;
+    let mut palitra_geometry_ids = vec![];
+    for geometry in palitra_geometries {
+        palitra_geometry_ids.push(geometry.id);
+        sync_delete_palitra_from_connected_organisms(
+            &env.dbx, // even if transaction rolls back we must save these changes to db because they perform some changes to filesystem
+            &existing_access,
+            &geometry.source_file_name,
+        )
+        .await
+        .c(h!())?;
+    }
+
+    palitra_geometry::Entity::update_many()
+        .filter(palitra_geometry::Column::PalitraId.eq(id))
+        .filter(palitra_geometry::Column::Deleted.eq(false))
+        .col_expr(palitra_geometry::Column::Deleted, Expr::value(true))
+        .exec(txn)
+        .await
+        .c(h!())?;
+    for palitra_geometry_id in palitra_geometry_ids {
+        delete_existing_palitra_points(palitra_geometry_id, txn)
+            .await
+            .c(h!())?;
+    }
     Ok(())
 }
 
-pub async fn create_palitra(
+pub async fn create_palitra<'a, 'async_trait, C>(
     author_login: String,
     req: CreatePalitraReq,
-    dbx: &DatabaseConnection,
-) -> anyhow::Result<Palitra> {
+    dbx: &'a C,
+) -> anyhow::Result<Palitra>
+where
+    C: ConnectionTrait + 'async_trait,
+{
     let palitra_am = palitra::ActiveModel {
         author: Set(Some(author_login)),
         ..Default::default()
@@ -472,26 +766,79 @@ async fn render_palitra_details<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
-    let points = palitra_point::Entity::find()
-        .filter(palitra_point::Column::PalitraId.eq_any(palitra_ids.clone()))
-        .filter(palitra_point::Column::Deleted.eq(false))
+    let palitra_geometries = palitra_geometry::Entity::find()
+        .filter(palitra_geometry::Column::PalitraId.is_in(palitra_ids.clone()))
+        .filter(palitra_geometry::Column::Deleted.eq(false))
+        .select_only()
+        .column(palitra_geometry::Column::Id)
+        .column(palitra_geometry::Column::PalitraId)
+        .into_tuple::<(i64, i64)>()
         .all(txn)
         .await
         .c(h!())?;
-    let mut result = vec![];
-    for id in palitra_ids {
-        let points = points
-            .iter()
-            .filter(|p| p.palitra_id.eq(&id))
-            .map(|p| PalitraPoint {
-                label: p.label.clone(),
+    let palitra_geometry_id_to_palitra_id = palitra_geometries
+        .iter()
+        .copied()
+        .collect::<HashMap<_, _>>();
+    let mut palitra_geometry_ids_by_palitra_id: HashMap<i64, Vec<i64>> =
+        HashMap::new();
+    for (palitra_geometry_id, palitra_id) in palitra_geometries {
+        palitra_geometry_ids_by_palitra_id
+            .entry(palitra_id)
+            .or_default()
+            .push(palitra_geometry_id);
+    }
+
+    let all_palitra_geometry_ids = palitra_geometry_id_to_palitra_id
+        .keys()
+        .copied()
+        .collect_vec();
+    let points = if all_palitra_geometry_ids.is_empty() {
+        vec![]
+    } else {
+        palitra_point::Entity::find()
+            .filter(
+                palitra_point::Column::PalitraGeometryId
+                    .is_in(all_palitra_geometry_ids),
+            )
+            .filter(palitra_point::Column::Deleted.eq(false))
+            .all(txn)
+            .await
+            .c(h!())?
+    };
+
+    let mut points_by_palitra_id: HashMap<i64, Vec<PalitraPoint>> =
+        HashMap::new();
+    for point in points {
+        let Some(palitra_id) = palitra_geometry_id_to_palitra_id
+            .get(&point.palitra_geometry_id)
+            .copied()
+        else {
+            warn!(
+                "palitra_geometry {} is missing palitra_id mapping while rendering palitra details",
+                point.palitra_geometry_id
+            );
+            continue;
+        };
+        points_by_palitra_id.entry(palitra_id).or_default().push(
+            PalitraPoint {
+                label: point.label,
                 coords: Coords {
-                    lat: p.lat,
-                    lng: p.lng,
+                    lat: point.lat,
+                    lng: point.lng,
                 },
-            })
-            .collect_vec();
-        let palitra = render_palitra(Either::Right(id), txn).await.c(h!())?;
+                color: None,
+            },
+        );
+    }
+
+    let mut result = vec![];
+    for palitra_id in palitra_ids {
+        let points =
+            points_by_palitra_id.remove(&palitra_id).unwrap_or_default();
+        let palitra = render_palitra(Either::Right(palitra_id), txn)
+            .await
+            .c(h!())?;
         result.push(PalitraDetails { palitra, points });
     }
     Ok(result)
@@ -514,33 +861,46 @@ fn normalize_viewport_bounds(
 
 async fn recalculate_center<'a, 'async_trait, C>(
     dbx: &'a C,
-    palitra_id: i64,
+    palitra_geometry_id: i64,
 ) -> anyhow::Result<()>
 where
     C: ConnectionTrait + 'async_trait,
 {
-    let query = r"
-        UPDATE palitra as p
+    let reset_query = r"
+        UPDATE palitra_geometry
+        SET center = NULL
+        WHERE id = $1;
+    ";
+    dbx.execute(Statement::from_sql_and_values(
+        DbBackend::Postgres,
+        reset_query,
+        [palitra_geometry_id.into()],
+    ))
+    .await
+    .context(h!())?;
+
+    let calculate_query = r"
+        UPDATE palitra_geometry as p
         SET center = sub.calculated_center
         FROM (
             SELECT
-                palitra_id,
+                palitra_geometry_id,
                 ST_Centroid(ST_Collect(ST_SetSRID(ST_MakePoint(lng, lat), 4326))) AS calculated_center
             FROM
                 palitra_point
             WHERE
                 deleted = FALSE
             GROUP BY
-                palitra_id
+                palitra_geometry_id
         ) AS sub
         WHERE
             p.id = $1
-            AND p.id = sub.palitra_id;
+            AND p.id = sub.palitra_geometry_id;
     ";
     dbx.execute(Statement::from_sql_and_values(
         DbBackend::Postgres,
-        query,
-        [palitra_id.into()],
+        calculate_query,
+        [palitra_geometry_id.into()],
     ))
     .await
     .context(h!())?;
@@ -550,13 +910,26 @@ where
 /// calculates outer perimeter for points in palitra
 async fn recalculate_convex_hull<'a, 'async_trait, C>(
     dbx: &'a C,
-    palitra_id: i64,
+    palitra_geometry_id: i64,
 ) -> anyhow::Result<()>
 where
     C: ConnectionTrait + 'async_trait,
 {
-    let query = r"
-        UPDATE palitra
+    let reset_query = r"
+        UPDATE palitra_geometry
+        SET convex_hull = NULL
+        WHERE id = $1;
+    ";
+    dbx.execute(Statement::from_sql_and_values(
+        DbBackend::Postgres,
+        reset_query,
+        [palitra_geometry_id.into()],
+    ))
+    .await
+    .context(h!())?;
+
+    let calculate_query = r"
+        UPDATE palitra_geometry
         SET convex_hull = (
             SELECT
                 ST_ExteriorRing(
@@ -567,7 +940,7 @@ where
             FROM
                 palitra_point
             WHERE
-                palitra_id = $1
+                palitra_geometry_id = $1
                 AND deleted = FALSE
             HAVING COUNT(id) > 2
         )
@@ -576,8 +949,8 @@ where
     ";
     dbx.execute(Statement::from_sql_and_values(
         DbBackend::Postgres,
-        query,
-        [palitra_id.into()],
+        calculate_query,
+        [palitra_geometry_id.into()],
     ))
     .await
     .context(h!())?;
@@ -586,7 +959,7 @@ where
 
 async fn read_palitra_convex_hull<'a, 'async_trait, C>(
     dbx: &'a C,
-    palitra_id: i64,
+    palitra_geometry_id: i64,
 ) -> anyhow::Result<Vec<Coords>>
 where
     C: ConnectionTrait + 'async_trait,
@@ -603,11 +976,11 @@ where
             ST_X(dp.geom) AS lon,
             ST_Y(dp.geom) AS lat
         FROM
-            palitra,
-            ST_DumpPoints(palitra.convex_hull) AS dp
+            palitra_geometry,
+            ST_DumpPoints(palitra_geometry.convex_hull) AS dp
         WHERE
-            palitra.id = $1
-            and palitra.convex_hull is not null
+            palitra_geometry.id = $1
+            and palitra_geometry.convex_hull is not null
         ORDER BY
             sequence_index;
     ";
@@ -615,7 +988,7 @@ where
         Geometry::find_by_statement(Statement::from_sql_and_values(
             DbBackend::Postgres,
             query,
-            [palitra_id.into()],
+            [palitra_geometry_id.into()],
         ))
         .all(dbx)
         .await
@@ -632,7 +1005,7 @@ where
 
 async fn read_palitra_center<'a, 'async_trait, C>(
     dbx: &'a C,
-    palitra_id: i64,
+    palitra_geometry_id: i64,
 ) -> anyhow::Result<Option<Coords>>
 where
     C: ConnectionTrait + 'async_trait,
@@ -647,15 +1020,15 @@ where
             ST_Y(center) AS lat,
             ST_X(center) AS lon
         FROM
-            palitra
+            palitra_geometry
         WHERE
-            palitra.id = $1
+            palitra_geometry.id = $1
             and center is not null;
     ";
     let center = Geometry::find_by_statement(Statement::from_sql_and_values(
         DbBackend::Postgres,
         query,
-        [palitra_id.into()],
+        [palitra_geometry_id.into()],
     ))
     .one(dbx)
     .await
@@ -667,37 +1040,54 @@ where
 }
 
 pub async fn rewrite_palitra_points(
-    palitra_id: i64,
+    palitra_geometry_id: i64,
     coords: Vec<PalitraPoint>,
     txn: &DatabaseTransaction,
+    rq: &reqwest::Client,
 ) -> anyhow::Result<()> {
-    let now = Utc::now().naive_utc();
-    palitra::Entity::update_many()
-        .filter(palitra::Column::Id.eq(palitra_id))
-        .col_expr(palitra::Column::LastUploadedAt, Expr::value(now))
-        .exec(txn)
-        .await
-        .c(h!())?;
-    delete_existing_palitra_points(palitra_id, txn)
+    let palitra_geometry =
+        palitra_geometry::Entity::find_by_id(palitra_geometry_id)
+            .one(txn)
+            .await
+            .c(h!())?;
+    let Some(palitra_geometry) = palitra_geometry else {
+        error!("palitra_geometry not found by id {palitra_geometry_id}");
+        return Ok(());
+    };
+    delete_existing_palitra_points(palitra_geometry_id, txn)
         .await
         .c(h!())?;
     let mut points_batch =
         Vec::with_capacity(crate::config::PALITRA_POINTS_INSERT_BATCH_SIZE);
+    let mut points_with_fallback_color = 0usize;
+    let mut skipped_points_with_unexpected_color = 0usize;
     for point in coords {
+        let point_color = point.color.unwrap_or_else(|| {
+            crate::config::PALITRA_POINT_FALLBACK_COLOR_HEX.to_string()
+        });
+        let is_fallback_color =
+            point_color == crate::config::PALITRA_POINT_FALLBACK_COLOR_HEX;
+        if is_fallback_color {
+            points_with_fallback_color += 1;
+        }
+        if !is_fallback_color && !palitra_geometry.hex.eq(&point_color) {
+            skipped_points_with_unexpected_color += 1;
+            continue;
+        }
         points_batch.push(palitra_point::ActiveModel {
             id: NotSet,
             label: Set(point.label),
-            palitra_id: Set(palitra_id),
+            palitra_geometry_id: Set(palitra_geometry_id),
             lat: Set(point.coords.lat),
             lng: Set(point.coords.lng),
             deleted: NotSet,
             deleted_at: NotSet,
             created_at: NotSet,
+            palitra_id_legacy: NotSet,
         });
         if points_batch.len() >= crate::config::PALITRA_POINTS_INSERT_BATCH_SIZE
         {
-            palitra_point::Entity::insert_many(points_batch)
-                .exec(txn)
+            insert_many_points(points_batch, txn, rq)
                 .await
                 .context(h!())?;
             points_batch = Vec::with_capacity(
@@ -705,24 +1095,122 @@ pub async fn rewrite_palitra_points(
             );
         }
     }
+    if points_with_fallback_color > 0 {
+        error!(
+            "palitra geometry {} received {} points with fallback color {} while mapping KMZ data",
+            palitra_geometry_id,
+            points_with_fallback_color,
+            crate::config::PALITRA_POINT_FALLBACK_COLOR_HEX
+        );
+    }
+    if skipped_points_with_unexpected_color > 0 {
+        warn!(
+            "skipped {} points in geometry {} due to color mismatch with selected geometry color {}",
+            skipped_points_with_unexpected_color,
+            palitra_geometry_id,
+            palitra_geometry.hex
+        );
+    }
     if !points_batch.is_empty() {
-        palitra_point::Entity::insert_many(points_batch)
-            .exec(txn)
+        insert_many_points(points_batch, txn, rq)
             .await
             .context(h!())?;
     }
-    recalculate_center(txn, palitra_id).await.c(h!())?;
-    recalculate_convex_hull(txn, palitra_id).await.c(h!())?;
+    recalculate_center(txn, palitra_geometry_id).await.c(h!())?;
+    recalculate_convex_hull(txn, palitra_geometry_id)
+        .await
+        .c(h!())?;
+    Ok(())
+}
+
+async fn insert_many_points(
+    points_batch: Vec<palitra_point::ActiveModel>,
+    txn: &DatabaseTransaction,
+    rq: &reqwest::Client,
+) -> anyhow::Result<()> {
+    let mut point_lexeme_actives: Vec<palitra_point_lexeme::ActiveModel> =
+        Vec::new();
+    let inserted_points = palitra_point::Entity::insert_many(points_batch)
+        .exec_with_returning_many(txn)
+        .await
+        .context(h!())?;
+
+    let mut palitra_point_ids = Vec::new();
+    let mut palitra_point_labels = Vec::new();
+
+    for point in inserted_points.into_iter() {
+        if let Some(label) = point.label {
+            palitra_point_ids.push(point.id);
+            palitra_point_labels.push(label);
+        }
+    }
+
+    let lexemes_batch = nlp::token_lexemes_batch(rq, palitra_point_labels)
+        .await
+        .context(h!())?;
+    let mut uniq = HashSet::new();
+
+    for (point_id, lexemes) in palitra_point_ids.into_iter().zip(lexemes_batch)
+    {
+        for lexeme in lexemes {
+            let lexeme = lexeme.to_lowercase().trim().to_string();
+            if !uniq.contains(&lexeme) {
+                uniq.insert(lexeme.clone());
+                point_lexeme_actives.push(palitra_point_lexeme::ActiveModel {
+                    palitra_point_id: Set(point_id),
+                    lexeme: Set(lexeme),
+                    ..Default::default()
+                });
+            }
+        }
+        uniq.clear();
+    }
+
+    if point_lexeme_actives.is_empty() {
+        return Ok(());
+    }
+    palitra_point_lexeme::Entity::insert_many(point_lexeme_actives)
+        .on_conflict(
+            OnConflict::columns([
+                palitra_point_lexeme::Column::PalitraPointId,
+                palitra_point_lexeme::Column::Lexeme,
+            ])
+            .do_nothing()
+            .to_owned(),
+        )
+        .exec(txn)
+        .await
+        .context(h!())?;
+
+    Ok(())
+}
+
+pub async fn soft_delete_palitra_geometry(
+    palitra_geometry_id: i64,
+    txn: &DatabaseTransaction,
+) -> anyhow::Result<()> {
+    palitra_geometry::Entity::update_many()
+        .filter(palitra_geometry::Column::Id.eq(palitra_geometry_id))
+        .filter(palitra_geometry::Column::Deleted.eq(false))
+        .col_expr(palitra_geometry::Column::Deleted, Expr::value(true))
+        .exec(txn)
+        .await
+        .c(h!())?;
+    delete_existing_palitra_points(palitra_geometry_id, txn)
+        .await
+        .c(h!())?;
     Ok(())
 }
 
 async fn delete_existing_palitra_points(
-    palitra_id: i64,
+    palitra_geometry_id: i64,
     txn: &DatabaseTransaction,
 ) -> anyhow::Result<()> {
     let now = Utc::now().naive_utc();
     palitra_point::Entity::update_many()
-        .filter(palitra_point::Column::PalitraId.eq(palitra_id))
+        .filter(
+            palitra_point::Column::PalitraGeometryId.eq(palitra_geometry_id),
+        )
         .filter(palitra_point::Column::Deleted.eq(false))
         .col_expr(palitra_point::Column::Deleted, Expr::value(true))
         .col_expr(palitra_point::Column::DeletedAt, Expr::value(now))
@@ -730,6 +1218,29 @@ async fn delete_existing_palitra_points(
         .await
         .context(h!())?;
     Ok(())
+}
+
+fn order_by_primary_geometry(
+    query: Select<palitra_geometry::Entity>,
+) -> Select<palitra_geometry::Entity> {
+    query
+        .order_by_desc(palitra_geometry::Column::UpdatedAt)
+        .order_by_desc(palitra_geometry::Column::Id)
+}
+
+async fn read_latest_palitra_geometry_with_warning<'a, 'async_trait, C>(
+    dbx: &'a C,
+    palitra_id: i64,
+) -> anyhow::Result<Option<palitra_geometry::Model>>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    order_by_primary_geometry(palitra_geometry::Entity::find())
+        .filter(palitra_geometry::Column::PalitraId.eq(palitra_id))
+        .filter(palitra_geometry::Column::Deleted.eq(false))
+        .one(dbx)
+        .await
+        .c(h!())
 }
 
 async fn render_palitra<'a, 'async_trait, C>(
@@ -748,16 +1259,47 @@ where
             .c(h!())?,
     };
     let palitra_id = palitra_model.id;
-    let last_uploaded_at_ts = palitra_model
-        .last_uploaded_at
-        .map(|ts| ts.and_utc().timestamp_millis());
-    let center = read_palitra_center(dbx, palitra_id).await.c(h!())?;
-    let convex_hull = match read_palitra_convex_hull(dbx, palitra_id).await {
-        Ok(c) => Some(c),
-        Err(e) => {
-            error!("failed to calculate convex hull center: {e:#?}");
-            None
+    let (
+        color_hex,
+        source_file_name,
+        last_uploaded_at_ts,
+        m_palitra_geometry_id,
+    ) = match read_latest_palitra_geometry_with_warning(dbx, palitra_id)
+        .await
+        .c(h!())?
+    {
+        None => {
+            error!("no palitra geometry found for palitra {palitra_id}!");
+            ("#ff0000".to_string(), None, None, None)
         }
+        Some(pg) => (
+            pg.hex,
+            pg.source_file_name,
+            pg.last_uploaded_at
+                .map(|ts| ts.and_utc().timestamp_millis()),
+            Some(pg.id),
+        ),
+    };
+    let (center, convex_hull) = match m_palitra_geometry_id {
+        Some(palitra_geometry_id) => {
+            let center = read_palitra_center(dbx, palitra_geometry_id)
+                .await
+                .c(h!())?;
+            let convex_hull = match read_palitra_convex_hull(
+                dbx,
+                palitra_geometry_id,
+            )
+            .await
+            {
+                Ok(c) => Some(c),
+                Err(e) => {
+                    error!("failed to calculate convex hull center: {e:#?}");
+                    None
+                }
+            };
+            (center, convex_hull)
+        }
+        None => (None, None),
     };
     let geometry = match (center, convex_hull) {
         (Some(center), Some(perimeter_linear_ring)) => Some(Geometry {
@@ -777,14 +1319,139 @@ where
     Ok(Palitra {
         id: palitra_id,
         name: palitra_model.name,
-        color_hex: palitra_model.hex,
+        color_hex,
         author: palitra_model.author,
-        source_file_name: palitra_model.source_file_name,
+        source_file_name,
         last_uploaded_at_ts,
         geometry,
         access_aor_id: access_aor_ids,
         access_organism_ids,
         access_logins,
+    })
+}
+
+async fn render_palitra_v2<'a, 'async_trait, C>(
+    e_palitra_model: Either<palitra::Model, i64>,
+    dbx: &'a C,
+) -> anyhow::Result<PalitraReadV2>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    render_palitra_v2_inner(e_palitra_model, dbx, true)
+        .await
+        .c(h!())
+}
+
+async fn render_palitra_v2_without_points<'a, 'async_trait, C>(
+    e_palitra_model: Either<palitra::Model, i64>,
+    dbx: &'a C,
+) -> anyhow::Result<PalitraReadV2>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    render_palitra_v2_inner(e_palitra_model, dbx, false)
+        .await
+        .c(h!())
+}
+
+async fn render_palitra_v2_inner<'a, 'async_trait, C>(
+    e_palitra_model: Either<palitra::Model, i64>,
+    dbx: &'a C,
+    include_points: bool,
+) -> anyhow::Result<PalitraReadV2>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let palitra = render_palitra(e_palitra_model, dbx).await.c(h!())?;
+    let palitra_geometry_models =
+        order_by_primary_geometry(palitra_geometry::Entity::find())
+            .filter(palitra_geometry::Column::PalitraId.eq(palitra.id))
+            .filter(palitra_geometry::Column::Deleted.eq(false))
+            .all(dbx)
+            .await
+            .c(h!())?;
+    let palitra_geometry_ids = palitra_geometry_models
+        .iter()
+        .map(|palitra_geometry| palitra_geometry.id)
+        .collect_vec();
+    let points = if !include_points || palitra_geometry_ids.is_empty() {
+        vec![]
+    } else {
+        palitra_point::Entity::find()
+            .filter(
+                palitra_point::Column::PalitraGeometryId
+                    .is_in(palitra_geometry_ids),
+            )
+            .filter(palitra_point::Column::Deleted.eq(false))
+            .all(dbx)
+            .await
+            .c(h!())?
+    };
+    let mut points_by_palitra_geometry_id: HashMap<i64, Vec<PalitraPoint>> =
+        HashMap::new();
+    for point in points {
+        points_by_palitra_geometry_id
+            .entry(point.palitra_geometry_id)
+            .or_default()
+            .push(PalitraPoint {
+                label: point.label,
+                coords: Coords {
+                    lat: point.lat,
+                    lng: point.lng,
+                },
+                color: None,
+            });
+    }
+
+    let mut geometries = Vec::with_capacity(palitra_geometry_models.len());
+    for palitra_geometry in palitra_geometry_models {
+        let palitra_geometry_id = palitra_geometry.id;
+        let color_hex = palitra_geometry.hex.clone();
+        let center = read_palitra_center(dbx, palitra_geometry_id)
+            .await
+            .c(h!())?;
+        let convex_hull = match read_palitra_convex_hull(
+            dbx,
+            palitra_geometry_id,
+        )
+        .await
+        {
+            Ok(convex_hull) => Some(convex_hull),
+            Err(e) => {
+                error!(
+                        "failed to calculate convex hull for palitra geometry {}: {e:#?}",
+                        palitra_geometry_id
+                    );
+                None
+            }
+        };
+        let geometry = match (center, convex_hull) {
+            (Some(center), Some(perimeter_linear_ring)) => Some(Geometry {
+                center,
+                perimeter_linear_ring,
+            }),
+            _ => None,
+        };
+        let mut points = points_by_palitra_geometry_id
+            .remove(&palitra_geometry_id)
+            .unwrap_or_default();
+        for point in &mut points {
+            point.color = Some(color_hex.clone());
+        }
+        geometries.push(PalitraGeometryDetails {
+            id: palitra_geometry_id,
+            color_hex: palitra_geometry.hex,
+            source_file_name: palitra_geometry.source_file_name,
+            last_uploaded_at_ts: palitra_geometry
+                .last_uploaded_at
+                .map(|ts| ts.and_utc().timestamp_millis()),
+            geometry,
+            points,
+        });
+    }
+    Ok(PalitraReadV2 {
+        palitra,
+        geometries,
     })
 }
 
@@ -867,104 +1534,459 @@ where
     C: ConnectionTrait + 'async_trait,
 {
     info!("updating palitra:\n old value {palitra_val:?}\n changes requested: {req:?}");
+    let request = req.clone();
     let mut palitra = palitra_val;
     palitra.name = Set(req.name);
-    palitra.hex = Set(req.color_hex);
-    let parse_uploaded_at = |ts| {
-        DateTime::from_timestamp_millis(ts)
-            .map(|dt| dt.naive_utc())
-            .ok_or_else(|| anyhow::anyhow!("Invalid timestamp: {ts}"))
-    };
-    match action {
-        PalitraUpdateAction::Update => {
-            if let Some(source_file_name) = req.source_file_name {
-                palitra.source_file_name = Set(Some(source_file_name));
-            }
-            if let Some(last_uploaded_at_ts) = req.last_uploaded_at_ts {
-                palitra.last_uploaded_at =
-                    Set(Some(parse_uploaded_at(last_uploaded_at_ts).c(h!())?));
-            }
-        }
-        PalitraUpdateAction::Insert => {
-            palitra.source_file_name = Set(req.source_file_name);
-            palitra.last_uploaded_at = Set(req
-                .last_uploaded_at_ts
-                .map(parse_uploaded_at)
-                .transpose()
-                .c(h!())?);
-        }
-    }
     let palitra = match action {
         PalitraUpdateAction::Update => palitra.update(txn).await.c(h!())?,
         PalitraUpdateAction::Insert => palitra.insert(txn).await.c(h!())?,
     };
+    let palitra_id = palitra.id;
+    let last_uploaded_at_ts =
+        parse_uploaded_at_ts(req.last_uploaded_at_ts).c(h!())?;
+    let now = Utc::now().naive_utc();
+    let _palitra_geometry = match action {
+        PalitraUpdateAction::Insert => insert_new_palitra_geometry(
+            &request,
+            txn,
+            &palitra,
+            last_uploaded_at_ts,
+        )
+        .await
+        .c(h!())?,
+        PalitraUpdateAction::Update => {
+            let palitra_geometries =
+                order_by_primary_geometry(palitra_geometry::Entity::find())
+                    .filter(palitra_geometry::Column::PalitraId.eq(palitra_id))
+                    .filter(palitra_geometry::Column::Deleted.eq(false))
+                    .all(txn)
+                    .await
+                    .c(h!())?;
+            let palitra_geometry = palitra_geometries
+                .iter()
+                .find(|geometry| geometry.hex == req.color_hex)
+                .cloned()
+                .or_else(|| palitra_geometries.into_iter().next());
+            if let Some(palitra_geometry) = palitra_geometry {
+                let mut palitra_geometry = palitra_geometry.into_active_model();
+                palitra_geometry.hex = Set(req.color_hex.clone());
+                if let Some(source_file_name) = request.source_file_name.clone()
+                {
+                    palitra_geometry.source_file_name =
+                        Set(Some(source_file_name));
+                }
+                if let Some(last_uploaded_at) = last_uploaded_at_ts {
+                    palitra_geometry.last_uploaded_at =
+                        Set(Some(last_uploaded_at));
+                }
+                palitra_geometry.updated_at = Set(now);
+                palitra_geometry.update(txn).await.c(h!())?
+            } else {
+                insert_new_palitra_geometry(
+                    &request,
+                    txn,
+                    &palitra,
+                    last_uploaded_at_ts,
+                )
+                .await
+                .c(h!())?
+            }
+        }
+    };
+    replace_palitra_access(txn, palitra.id, req.access)
+        .await
+        .c(h!())?;
+    Ok(palitra)
+}
+
+async fn update_palitra_from_v2_req<'a, 'async_trait, C>(
+    req: UpdatePalitraV2Req,
+    palitra_val: palitra::ActiveModel,
+    txn: &'a C,
+) -> anyhow::Result<palitra::Model>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    info!("updating palitra via v2:\n old value {palitra_val:?}\n changes requested: {req:?}");
+    let mut palitra = palitra_val;
+    palitra.name = Set(req.name);
+    let palitra = palitra.update(txn).await.c(h!())?;
+    let last_uploaded_at_ts =
+        parse_uploaded_at_ts(req.last_uploaded_at_ts).c(h!())?;
+    let palitra_geometry =
+        palitra_geometry::Entity::find_by_id(req.geometry_id)
+            .filter(palitra_geometry::Column::PalitraId.eq(palitra.id))
+            .filter(palitra_geometry::Column::Deleted.eq(false))
+            .one(txn)
+            .await
+            .c(h!())?
+            .with_context(|| {
+                format!(
+                    "No active geometry {} for palitra {}",
+                    req.geometry_id, palitra.id
+                )
+            })
+            .c(h!())?;
+
+    let mut palitra_geometry = palitra_geometry.into_active_model();
+    palitra_geometry.hex = Set(req.color_hex);
+    if let Some(source_file_name) = req.source_file_name {
+        palitra_geometry.source_file_name = Set(Some(source_file_name));
+    }
+    if let Some(last_uploaded_at) = last_uploaded_at_ts {
+        palitra_geometry.last_uploaded_at = Set(Some(last_uploaded_at));
+    }
+    palitra_geometry.updated_at = Set(Utc::now().naive_utc());
+    palitra_geometry.update(txn).await.c(h!())?;
+
+    replace_palitra_access(txn, palitra.id, req.access)
+        .await
+        .c(h!())?;
+    Ok(palitra)
+}
+
+fn parse_uploaded_at_ts(
+    uploaded_at_ts: Option<i64>,
+) -> anyhow::Result<Option<NaiveDateTime>> {
+    uploaded_at_ts
+        .map(|ts| {
+            DateTime::from_timestamp_millis(ts)
+                .map(|dt| dt.naive_utc())
+                .ok_or_else(|| anyhow::anyhow!("Invalid timestamp: {ts}"))
+        })
+        .transpose()
+}
+
+async fn replace_palitra_access<'a, 'async_trait, C>(
+    txn: &'a C,
+    palitra_id: i64,
+    access: PalitraAccess,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait + 'async_trait,
+{
     palitra_access_login::Entity::delete_many()
-        .filter(palitra_access_login::Column::PalitraId.eq(palitra.id))
+        .filter(palitra_access_login::Column::PalitraId.eq(palitra_id))
         .exec(txn)
         .await
         .c(h!())?;
     palitra_access_organism::Entity::delete_many()
-        .filter(palitra_access_organism::Column::PalitraId.eq(palitra.id))
+        .filter(palitra_access_organism::Column::PalitraId.eq(palitra_id))
         .exec(txn)
         .await
         .c(h!())?;
     palitra_access_aor::Entity::delete_many()
-        .filter(palitra_access_aor::Column::PalitraId.eq(palitra.id))
+        .filter(palitra_access_aor::Column::PalitraId.eq(palitra_id))
         .exec(txn)
         .await
         .c(h!())?;
-    match req.access {
+    match access {
         PalitraAccess::ByLogins { logins } => {
-            if !logins.is_empty() {
-                let logins = logins
-                    .into_iter()
-                    .map(|login| palitra_access_login::ActiveModel {
-                        id: NotSet,
-                        palitra_id: Set(palitra.id),
-                        login: Set(login),
-                        created_at: NotSet,
-                    })
-                    .collect_vec();
-                palitra_access_login::Entity::insert_many(logins)
-                    .exec(txn)
-                    .await
-                    .c(h!())?;
+            if logins.is_empty() {
+                return Ok(());
             }
+            let logins = logins
+                .into_iter()
+                .map(|login| palitra_access_login::ActiveModel {
+                    id: NotSet,
+                    palitra_id: Set(palitra_id),
+                    login: Set(login),
+                    created_at: NotSet,
+                })
+                .collect_vec();
+            palitra_access_login::Entity::insert_many(logins)
+                .exec(txn)
+                .await
+                .c(h!())?;
         }
         PalitraAccess::ByOrganisms { organism_ids } => {
-            if !organism_ids.is_empty() {
-                let organisms = organism_ids
-                    .into_iter()
-                    .map(|organism_id| palitra_access_organism::ActiveModel {
-                        id: NotSet,
-                        palitra_id: Set(palitra.id),
-                        organism_id: Set(organism_id),
-                        created_at: NotSet,
-                    })
-                    .collect_vec();
-                palitra_access_organism::Entity::insert_many(organisms)
-                    .exec(txn)
-                    .await
-                    .c(h!())?;
+            if organism_ids.is_empty() {
+                return Ok(());
             }
+            let organisms = organism_ids
+                .into_iter()
+                .map(|organism_id| palitra_access_organism::ActiveModel {
+                    id: NotSet,
+                    palitra_id: Set(palitra_id),
+                    organism_id: Set(organism_id),
+                    created_at: NotSet,
+                })
+                .collect_vec();
+            palitra_access_organism::Entity::insert_many(organisms)
+                .exec(txn)
+                .await
+                .c(h!())?;
         }
         PalitraAccess::ByAor { aor_ids } => {
-            if !aor_ids.is_empty() {
-                let aors = aor_ids
-                    .into_iter()
-                    .map(|aor_id| palitra_access_aor::ActiveModel {
-                        id: NotSet,
-                        palitra_id: Set(palitra.id),
-                        aor_id: Set(aor_id),
-                        created_at: NotSet,
-                    })
-                    .collect_vec();
-                palitra_access_aor::Entity::insert_many(aors)
-                    .exec(txn)
-                    .await
-                    .c(h!())?;
+            if aor_ids.is_empty() {
+                return Ok(());
             }
+            let aors = aor_ids
+                .into_iter()
+                .map(|aor_id| palitra_access_aor::ActiveModel {
+                    id: NotSet,
+                    palitra_id: Set(palitra_id),
+                    aor_id: Set(aor_id),
+                    created_at: NotSet,
+                })
+                .collect_vec();
+            palitra_access_aor::Entity::insert_many(aors)
+                .exec(txn)
+                .await
+                .c(h!())?;
         }
     }
-    Ok(palitra)
+    Ok(())
+}
+
+async fn insert_new_palitra_geometry<'a, 'async_trait, C>(
+    req: &CreatePalitraReq,
+    txn: &'a C,
+    palitra: &palitra::Model,
+    last_uploaded_at_ts: Option<NaiveDateTime>,
+) -> anyhow::Result<palitra_geometry::Model>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    palitra_geometry::ActiveModel {
+        id: NotSet,
+        palitra_id: Set(palitra.id),
+        hex: Set(req.color_hex.clone()),
+        source_file_name: Set(req.source_file_name.clone()),
+        deleted: NotSet,
+        created_at: NotSet,
+        last_uploaded_at: Set(last_uploaded_at_ts),
+        updated_at: NotSet,
+    }
+    .insert(txn)
+    .await
+    .c(h!())
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::entities::palitra_geometry;
+    use crate::functest::tests::{
+        cleanup, find_test_login, find_test_palitra, mk_palitra_point,
+    };
+    use crate::palitra::bl::{
+        search_palitra_points_by_labels, update_palitra, update_palitra_v2,
+    };
+    use crate::palitra::types::{
+        CreatePalitraReq, PalitraAccess, PalitraSearchPointsReq,
+        UpdatePalitraV2Req,
+    };
+    use sea_orm::{
+        ActiveModelTrait, ColumnTrait, EntityTrait, NotSet, QueryFilter, Set,
+        TransactionTrait,
+    };
+    use serial_test::serial;
+
+    #[serial]
+    #[tokio::test]
+    async fn test_palitra_search_full_phrase() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+
+        let label = "лісосмуга 12".to_string();
+        let palitra = find_test_palitra(&env.dbx).await.unwrap();
+        mk_palitra_point(label.clone(), palitra.id, &env.dbx)
+            .await
+            .unwrap();
+
+        let req =
+            create_palitra_search_request(palitra.id, vec![label.clone()])
+                .await;
+        let res = search_palitra_points_by_labels(login.login, req, &env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(res.len(), 1);
+        assert_eq!(res[0].points.len(), 1);
+        assert_eq!(res[0].points[0].label.as_deref(), Some("лісосмуга 12"));
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_palitra_search_prefix() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+
+        let labels = ["1лісосмуга 12".to_string(), "2лісосмуга 12".to_string()];
+        let label_search = "*лісосмуга 12".to_string();
+        let palitra = find_test_palitra(&env.dbx).await.unwrap();
+        mk_palitra_point(labels[0].clone(), palitra.id, &env.dbx)
+            .await
+            .unwrap();
+        mk_palitra_point(labels[1].clone(), palitra.id, &env.dbx)
+            .await
+            .unwrap();
+
+        let req = create_palitra_search_request(
+            palitra.id,
+            vec![label_search.clone()],
+        )
+        .await;
+        let res = search_palitra_points_by_labels(login.login, req, &env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(res.len(), 1);
+        assert_eq!(res[0].points.len(), 2);
+        assert_eq!(res[0].points[0].label.as_deref(), Some("1лісосмуга 12"));
+        assert_eq!(res[0].points[1].label.as_deref(), Some("2лісосмуга 12"));
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_palitra_search_suffix() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+
+        let labels = ["лісосмуга 12".to_string(), "лісосмуга 13".to_string()];
+        let label_search = "лісосмуга 1*".to_string();
+        let palitra = find_test_palitra(&env.dbx).await.unwrap();
+        mk_palitra_point(labels[0].clone(), palitra.id, &env.dbx)
+            .await
+            .unwrap();
+        mk_palitra_point(labels[1].clone(), palitra.id, &env.dbx)
+            .await
+            .unwrap();
+
+        let req = create_palitra_search_request(
+            palitra.id,
+            vec![label_search.clone()],
+        )
+        .await;
+        let res = search_palitra_points_by_labels(login.login, req, &env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(res.len(), 1);
+        assert_eq!(res[0].points.len(), 2);
+        assert_eq!(res[0].points[0].label.as_deref(), Some("лісосмуга 12"));
+        assert_eq!(res[0].points[1].label.as_deref(), Some("лісосмуга 13"));
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_palitra_search_prefix_and_suffix() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+
+        let labels = ["1лісосмуга 12".to_string(), "2лісосмуга 13".to_string()];
+        let label_search = "*лісосмуга 1*".to_string();
+        let palitra = find_test_palitra(&env.dbx).await.unwrap();
+        mk_palitra_point(labels[0].clone(), palitra.id, &env.dbx)
+            .await
+            .unwrap();
+        mk_palitra_point(labels[1].clone(), palitra.id, &env.dbx)
+            .await
+            .unwrap();
+
+        let req = create_palitra_search_request(
+            palitra.id,
+            vec![label_search.clone()],
+        )
+        .await;
+        let res = search_palitra_points_by_labels(login.login, req, &env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(res.len(), 1);
+        assert_eq!(res[0].points.len(), 2);
+        assert_eq!(res[0].points[0].label.as_deref(), Some("1лісосмуга 12"));
+        assert_eq!(res[0].points[1].label.as_deref(), Some("2лісосмуга 13"));
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_update_palitra_changes_primary_geometry_without_creating_new_one(
+    ) {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let palitra = find_test_palitra(&env.dbx).await.unwrap();
+        let req = CreatePalitraReq {
+            name: "Updated Palitra".to_string(),
+            color_hex: "#00ff00".to_string(),
+            access: PalitraAccess::ByLogins {
+                logins: vec![login.login.clone()],
+            },
+            source_file_name: None,
+            last_uploaded_at_ts: None,
+        };
+
+        let txn = env.dbx.begin().await.unwrap();
+        let _result = update_palitra(palitra.id, req, &txn).await.unwrap();
+        txn.commit().await.unwrap();
+
+        let active_palitra_geometries = palitra_geometry::Entity::find()
+            .filter(palitra_geometry::Column::PalitraId.eq(palitra.id))
+            .filter(palitra_geometry::Column::Deleted.eq(false))
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(active_palitra_geometries.len(), 1);
+        assert_eq!(active_palitra_geometries[0].hex, "#00ff00");
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_update_palitra_v2_updates_requested_geometry() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let palitra = find_test_palitra(&env.dbx).await.unwrap();
+        let extra_geometry = palitra_geometry::ActiveModel {
+            id: NotSet,
+            palitra_id: Set(palitra.id),
+            hex: Set("#123456".to_string()),
+            source_file_name: Set(None),
+            deleted: NotSet,
+            created_at: NotSet,
+            last_uploaded_at: NotSet,
+            updated_at: NotSet,
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let req = UpdatePalitraV2Req {
+            geometry_id: extra_geometry.id,
+            name: "Updated Palitra V2".to_string(),
+            color_hex: "#abcdef".to_string(),
+            access: PalitraAccess::ByLogins {
+                logins: vec![login.login.clone()],
+            },
+            source_file_name: Some("updated-file.kmz".to_string()),
+            last_uploaded_at_ts: None,
+        };
+
+        let txn = env.dbx.begin().await.unwrap();
+        let result = update_palitra_v2(palitra.id, req, &txn).await.unwrap();
+        txn.commit().await.unwrap();
+
+        let updated_geometry = result
+            .geometries
+            .iter()
+            .find(|geometry| geometry.id == extra_geometry.id)
+            .unwrap();
+        assert_eq!(updated_geometry.color_hex, "#abcdef");
+        assert_eq!(
+            updated_geometry.source_file_name.as_deref(),
+            Some("updated-file.kmz")
+        );
+
+        let active_palitra_geometries = palitra_geometry::Entity::find()
+            .filter(palitra_geometry::Column::PalitraId.eq(palitra.id))
+            .filter(palitra_geometry::Column::Deleted.eq(false))
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(active_palitra_geometries.len(), 2);
+    }
+
+    async fn create_palitra_search_request(
+        palitra_id: i64,
+        labels: Vec<String>,
+    ) -> PalitraSearchPointsReq {
+        PalitraSearchPointsReq {
+            palitra_ids: vec![palitra_id],
+            point_labels: labels,
+        }
+    }
 }

@@ -8,7 +8,7 @@ import Core.Auth
 import Core.Types exposing (ApiError)
 import Core.UnitHierarchy
 import Debounce exposing (Debounce)
-import Dict exposing (Dict)
+import Dict
 import Effect as E exposing (Effect)
 import File.Download as Download
 import Html exposing (..)
@@ -22,7 +22,7 @@ import Page exposing (Page)
 import Route exposing (Route)
 import Route.Path
 import Select
-import Set exposing (Set)
+import Set
 import Shared
 import Shared.Components.Button as Button
 import Shared.Components.Checkbox as Checkbox
@@ -35,11 +35,10 @@ import Shared.Components.Table as Table
 import Shared.Components.Table.Column as TableColumn
 import Shared.Components.Table.Config as TableConfig
 import Shared.Components.Tag as Tag
-import Shared.Components.Watermark as Watermark exposing (Watermark)
+import Shared.Components.Watermark as Watermark
 import Shared.Model exposing (isDarkMode)
 import Task
 import Time
-import TimeZone
 import Utils.Api.ErrorHandling
 import Utils.EnumeratedList as EL exposing (EnumeratedList)
 import Utils.RemoteData exposing (RemoteData(..))
@@ -61,10 +60,10 @@ page user shared req =
 
 
 toLayout : Auth.User -> Model -> Layouts.Layout Msg
-toLayout user model =
+toLayout user _ =
     Layouts.Navbar
         { user = user
-        , activeName = "rer"
+        , activeName = "callsigns"
         }
 
 
@@ -115,8 +114,7 @@ type alias Model =
 
 
 type ShowAllPopupFor
-    = ShowAllUnits
-    | ShowAllComment
+    = ShowAllComment
 
 
 type SortingOrder
@@ -486,7 +484,7 @@ filterUnitDebounceConfig =
 
 
 update : Route () -> Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
-update req shared msg model =
+update _ shared msg model =
     case msg of
         InitGotTime now_ ->
             let
@@ -626,18 +624,16 @@ update req shared msg model =
                         ( mAction, iState, iCmd ) =
                             Select.update selMsg editState.inpUnitSelState
                     in
-                    ( { model
-                        | editState =
-                            case Utils.Select.singleUpd mAction (Just editState.inpUnitId) of
-                                Nothing ->
-                                    Nothing
-
-                                Just unitId ->
-                                    Just
-                                        { editState
-                                            | inpUnitSelState = iState
-                                            , inpUnitId = unitId
-                                        }
+                        ( { model
+                            | editState =
+                                Utils.Select.singleUpd mAction (Just editState.inpUnitId)
+                                    |> Maybe.map
+                                        (\unitId ->
+                                            { editState
+                                                | inpUnitSelState = iState
+                                                , inpUnitId = unitId
+                                            }
+                                        )
                       }
                     , E.sendCmd <| Cmd.map EditUnitSelMsg iCmd
                     )
@@ -667,6 +663,7 @@ update req shared msg model =
                                                         , comment = addState.inpComment
                                                         , unitId = unitId
                                                         , sourceId = Just sourceId
+                                                        , callsignAdditionalSources = []
                                                         , developing = addState.inpDeveloping
                                                         , radioFreq = Just addState.inpRadioFreq
                                                         }
@@ -761,6 +758,7 @@ update req shared msg model =
                                         , comment = editState.inpComment
                                         , unitId = editState.inpUnitId
                                         , sourceId = editState.inpSourceId
+                                        , callsignAdditionalSources = []
                                         , createdAt = callsign.createdAt
                                         , developing = editState.inpDeveloping
                                         , radioFreq = Just editState.inpRadioFreq
@@ -798,7 +796,7 @@ update req shared msg model =
             , E.none
             )
 
-        EditCallsignCancel id ->
+        EditCallsignCancel _ ->
             ( { model | editState = Nothing }, E.none )
 
         DeleteCallsign id ->
@@ -1268,6 +1266,7 @@ update req shared msg model =
                                         , comment = editState.inpComment
                                         , unitId = editState.inpUnitId
                                         , sourceId = editState.inpSourceId
+                                        , callsignAdditionalSources = []
                                         , createdAt = callsign.createdAt
                                         , developing = editState.inpDeveloping
                                         , radioFreq = Just editState.inpRadioFreq
@@ -1342,7 +1341,7 @@ update req shared msg model =
 
 
 subscriptions : Model -> Sub Msg
-subscriptions model =
+subscriptions _ =
     Sub.none
 
 
@@ -1622,9 +1621,9 @@ callsignsTableConfig shared model user =
 
 
 editSidebarContent : Model -> Shared.Model -> Auth.User -> List (Html Msg)
-editSidebarContent model shared user =
+editSidebarContent model shared _ =
     case model.editingCallsign of
-        Just callsign ->
+        Just _ ->
             case model.editState of
                 Just editState ->
                     [ div [ class "p-6 flex flex-col gap-6 h-full" ]
@@ -2067,7 +2066,7 @@ contentBlock shared model user =
                                 , option [ value "all" ] [ text "Усі" ]
                                 ]
                             ]
-                                ++ [ button
+                                ++ (button
                                         [ class "px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-700"
                                         , onClick ToggleSidebar
                                         , attribute "title"
@@ -2079,8 +2078,8 @@ contentBlock shared model user =
                                             )
                                         ]
                                         [ text "Підрозділи" ]
-                                   ]
-                                ++ if hasUnitEditorRole then
+                                   )
+                                    :: (if hasUnitEditorRole then
                                         [ button
                                             [ class "px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-700 flex items-center gap-2 ml-4"
                                             , onClick (DownloadCsv hasUnitEditorRole)
@@ -2088,8 +2087,8 @@ contentBlock shared model user =
                                             , attribute "title" "Завантажити CSV з обраними фільтрами"
                                             , style "margin-left" "12px"
                                             ]
-                                            ([ text "Завантажити csv" ]
-                                                ++ (if model.downloadCsvInProgress then
+                                            ((text "Завантажити csv")
+                                                :: (if model.downloadCsvInProgress then
                                                         [ Shared.Components.Spinner.loadingSpinner2Sm ]
 
                                                     else
@@ -2100,15 +2099,16 @@ contentBlock shared model user =
 
                                     else
                                         []
-                                ++ if hasUnitEditorRole then
+                                       )
+                                ++ (if hasUnitEditorRole then
                                         [ button
                                             [ class "px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-700 flex items-center gap-2"
                                             , onClick (DownloadXlsx hasUnitEditorRole)
                                             , Attr.disabled model.downloadXlsxInProgress
                                             , attribute "title" "Завантажити XLSX з обраними фільтрами"
                                             ]
-                                            ([ text "Завантажити XLSX" ]
-                                                ++ (if model.downloadXlsxInProgress then
+                                            ((text "Завантажити XLSX")
+                                                :: (if model.downloadXlsxInProgress then
                                                         [ Shared.Components.Spinner.loadingSpinner2Sm ]
 
                                                     else
@@ -2119,6 +2119,7 @@ contentBlock shared model user =
 
                                     else
                                         []
+                                   )
                         , div [ class "flex items-center gap-4" ]
                             [ div [ class "flex items-center gap-2" ]
                                 [ div [ class "flex items-center gap-1" ]
@@ -2408,8 +2409,8 @@ processTabDelimitedInput input =
 
 
 view : Bool -> Shared.Model -> B.User -> Model -> View Msg
-view dark shared user model =
-    { title = "позивні"
+view _ shared user model =
+    { title = "позивні (стара)"
     , body =
         [ div [ class "flex justify-start items-start app-shell-fill-height" ]
             [ if model.showSidebar then
@@ -2437,7 +2438,7 @@ view dark shared user model =
                     )
                 ]
                 [ h1 [ class "py-2 ps-4" ]
-                    [ span [ class "me-2" ] [ text "позивні" ]
+                    [ span [ class "me-2" ] [ text "позивні (стара)" ]
                     , button
                         [ type_ "button"
                         , class "inline-block btn btn-outline-secondary me-2"

@@ -25,7 +25,8 @@ import Pages_.RerAnalysis.FiltersReloading as FiltersReloading exposing (FilterD
 import Pages_.RerAnalysis.MainBody
 import Pages_.RerAnalysis.Model exposing (..)
 import Pages_.RerAnalysis.Msg exposing (..)
-import Pages_.RerAnalysis.Query as Query
+import Pages_.RerAnalysis.Query as Query exposing (emptyQueryState)
+import Pages_.RerAnalysis.Utils as RerAnalysisUtils
 import Pages_.RerDuty.Waterfall.Filters
 import Process
 import Route exposing (Route)
@@ -74,7 +75,17 @@ init route _ =
 
         initialQueryState : B.RerAnalysisQueryState
         initialQueryState =
-            Maybe.withDefault Query.emptyQueryState ms
+            case ms of
+                Just state ->
+                    state
+
+                Nothing ->
+                    case Dict.get "search" route.query of
+                        Just s ->
+                            { emptyQueryState | search = s }
+
+                        Nothing ->
+                            emptyQueryState
 
         model : Model
         model =
@@ -182,6 +193,7 @@ init route _ =
                     ]
                 , selected = B.Docx
                 }
+            , reportReoNoComments = False
 
             -- , reportIframeUrl = Nothing
             , reportActiveNetworksAorsSelect =
@@ -222,6 +234,7 @@ init route _ =
             , mapPoints = NotAsked
             , mapNetworkUnits = []
             , mapOpenMessages = NotAsked
+            , mapOpenMessagesRequestId = 0
             , adjacentFreqsRangeSelect =
                 { state = Select.initState (Select.selectIdentifier "selectAdjacentFreqsRange")
                 , items = Config.adjacentFreqsRangeOptions |> List.map (\x -> Select.basicMenuItem { item = x, label = String.fromFloat (x * 1000) ++ " кГц" })
@@ -238,12 +251,7 @@ init route _ =
             }
 
         m2 =
-            case ms of
-                Just state ->
-                    Query.updModelFromQueryState model state
-
-                Nothing ->
-                    model
+            Query.updModelFromQueryState model initialQueryState
 
         m3 =
             case Dict.get "showMap" route.query of
@@ -313,6 +321,7 @@ getInboxReq model =
     , highlightKeywords = Nothing
     , highlightSignals = Nothing
     , highlightSearchres = Just True
+    , highlightPoints = Just True
     , sortBy = Nothing
     , reportTagsOnlyThisUnit = Just model.reportTagsOnlyThisUnit
     , ignoreImportedCoords = Nothing
@@ -401,7 +410,7 @@ loadPalitrasIfNeeded model =
         case model.palitras of
             NotAsked ->
                 ( { model | palitras = Loading }
-                , E.sendCmd <| Api.palitra_list GotPalitras
+                , E.sendCmd <| Api.palitra_list_v2 GotPalitras
                 )
 
             _ ->
@@ -409,13 +418,6 @@ loadPalitrasIfNeeded model =
 
     else
         ( model, E.none )
-
-
-palitraToDetails : B.Palitra -> B.PalitraDetails
-palitraToDetails palitra =
-    { palitra = palitra
-    , points = []
-    }
 
 
 loadSumTableOnly : Model -> ( Model, Effect Msg )
@@ -1472,6 +1474,27 @@ update user shared route msg model =
                     , networks = networksForView shared model
                     , masterUnits = masterUnitsDict
                     , currentRoute = Just route
+                    , pointTokenClickUrlFor =
+                        let
+                            palitraTagIds =
+                                model.tags
+                                    |> List.filterMap
+                                        (\( id, t ) ->
+                                            if t.isPalitra then
+                                                Just id
+                                            else
+                                                Nothing
+                                        )
+                            messageTagIds m =
+                                m.tags |> Maybe.withDefault []
+                            hasPalitraTag m =
+                                List.any (\tid -> List.member tid palitraTagIds) (messageTagIds m)
+                        in
+                        \message ->
+                            if hasPalitraTag message then
+                                Just (\etalon -> insertShowMapToQuery (RerAnalysisUtils.updateQueryWithSearch etalon route))
+                            else
+                                Nothing
                     }
 
                 res =
@@ -1563,6 +1586,7 @@ update user shared route msg model =
                 , highlightSignals = Nothing
                 , highlightKeywords = Nothing
                 , highlightSearchres = Just True
+                , highlightPoints = Just True
                 , sortBy = Nothing
                 , reportTagsOnlyThisUnit = Just model.reportTagsOnlyThisUnit
                 , ignoreImportedCoords = Nothing
@@ -1859,7 +1883,18 @@ update user shared route msg model =
             )
 
         GotPalitras (Ok palitras) ->
-            ( { model | palitras = Success (List.map palitraToDetails palitras) }
+            let
+                palitrasNoPoints =
+                    List.map
+                        (\palitraRead ->
+                            { palitraRead
+                                | geometries =
+                                    List.map (\geometry -> { geometry | points = [] }) palitraRead.geometries
+                            }
+                        )
+                        palitras
+            in
+            ( { model | palitras = Success palitrasNoPoints }
             , E.none
             )
 
@@ -2192,7 +2227,7 @@ update user shared route msg model =
                 Just now ->
                     let
                         m2 =
-                            Query.updModelFromQueryState model Query.emptyQueryState
+                            Query.updModelFromQueryState model emptyQueryState
 
                         ( from, to ) =
                             Shared.Components.DateTime.initAnalysisRanges
@@ -3110,6 +3145,11 @@ update user shared route msg model =
             , E.none
             )
 
+        ReportReoNoCommentsToggle ->
+            ( { model | reportReoNoComments = not model.reportReoNoComments }
+            , E.none
+            )
+
         ReportTagsWithoutBotTagsToggle ->
             ( if model.withoutModelTags then
                 { model | withoutModelTags = False }
@@ -3343,7 +3383,7 @@ update user shared route msg model =
             )
 
         GotMapPoints (Err err) ->
-            ( model
+            ( { model | mapPoints = Failure err }
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження точок карти" err
             )
 
@@ -3367,20 +3407,31 @@ update user shared route msg model =
 
         LoadMessagesForMap ids ->
             let
+                requestId =
+                    model.mapOpenMessagesRequestId + 1
+
                 m2 =
-                    { model | mapOpenMessages = Loading }
+                    { model | mapOpenMessages = Loading, mapOpenMessagesRequestId = requestId }
             in
-            ( m2, E.getMessagesByIds GotMessagesForMap { messageIds = ids } )
+            ( m2, E.getMessagesByIds (GotMessagesForMap requestId) { messageIds = ids } )
 
-        GotMessagesForMap (Ok rsp) ->
-            ( { model | mapOpenMessages = Success rsp.messages }
-            , loadNetworksForMessages shared model rsp.messages
-            )
+        GotMessagesForMap requestId (Ok rsp) ->
+            if requestId /= model.mapOpenMessagesRequestId then
+                ( model, E.none )
 
-        GotMessagesForMap (Err err) ->
-            ( model
-            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження повідомлень для карти" err
-            )
+            else
+                ( { model | mapOpenMessages = Success rsp.messages }
+                , loadNetworksForMessages shared model rsp.messages
+                )
+
+        GotMessagesForMap requestId (Err err) ->
+            if requestId /= model.mapOpenMessagesRequestId then
+                ( model, E.none )
+
+            else
+                ( model
+                , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження повідомлень для карти" err
+                )
 
         GotFreqActivityDaily (Ok r) ->
             ( { model | groupsMessageCountByDay = Success r }, E.none )
@@ -3653,7 +3704,9 @@ reportTemplateToApiType model template =
         RTReo ->
             Just
                 (B.Reo
-                    { adjacentFreqsDistance = model.reportAdjacentFreqsRangeSelect.selected }
+                    { adjacentFreqsDistance = model.reportAdjacentFreqsRangeSelect.selected
+                    , noComments = model.reportReoNoComments
+                    }
                     model.reportReoFileTypeSelect.selected
                 )
 

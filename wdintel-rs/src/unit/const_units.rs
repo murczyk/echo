@@ -1,6 +1,6 @@
 use itertools::Itertools;
 use lazy_static::lazy_static;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::iter::{IntoIterator, Iterator};
 
 #[derive(Clone, Debug, Copy, Ord, Eq, PartialOrd, PartialEq)]
@@ -17,11 +17,20 @@ pub enum UnitType {
     ARMY = 5,
 }
 
+pub fn list_named_unit_names() -> &'static BTreeSet<String> {
+    lazy_static! {
+        static ref UNIQUE: BTreeSet<String> =
+            collect_set(unique_unit_names_arr().into_iter().collect_vec());
+    }
+    &UNIQUE
+}
+
 pub fn list_standalone() -> &'static Vec<String> {
     lazy_static! {
         static ref STANDALONE: Vec<String> =
             collect_set(standalone_arr().into_iter().collect_vec())
                 .into_iter()
+                .map(|x| x.to_lowercase())
                 .collect_vec();
     }
     &STANDALONE
@@ -67,7 +76,92 @@ pub fn list_battalions() -> &'static BTreeSet<String> {
     &BATTALIONS
 }
 
-fn companies_arr() -> [&'static str; 168] {
+pub fn apply_unit_name_fixes(text: String) -> String {
+    let mut text = text;
+    for (old, new) in list_fixes() {
+        if !text.contains(old) {
+            continue;
+        }
+
+        let token = format!("{old} ");
+        if text.starts_with(&token) {
+            text = text.replace(&token, &format!("{new} "));
+        }
+
+        let token = format!(" {old} ");
+        if text.contains(&token) {
+            text = text.replace(&token, &format!(" {new} "));
+        }
+
+        let token = format!(" {old}");
+        if text.ends_with(&token) {
+            text = text.replace(&token, &format!(" {new}"));
+        }
+    }
+    text
+}
+
+pub fn extract_named_units(text: String) -> (String, Vec<String>) {
+    let mut text = text
+        .replace("\"", "")
+        .replace("“", "")
+        .replace("”", "")
+        .replace("«", "")
+        .replace("»", "")
+        .to_lowercase();
+    let mut matches = vec![];
+    for name in list_named_unit_names() {
+        let nm = name.to_lowercase();
+        if !text.contains(&nm) {
+            continue;
+        }
+
+        if text.eq(&nm) {
+            text = "".to_string();
+            matches.push(name.clone());
+            continue;
+        }
+
+        let token = format!("{} ", nm);
+        if text.starts_with(&token) {
+            text = text.replace(&token, "");
+            matches.push(name.clone());
+            continue;
+        }
+
+        let token = format!(" {} ", nm);
+        if text.contains(&token) {
+            text = text.replace(&token, "");
+            matches.push(name.clone());
+            continue;
+        }
+
+        let token = format!(" {}", nm);
+        if text.ends_with(&token) {
+            text = text.replace(&token, "");
+            matches.push(name.clone());
+        }
+    }
+    (text, matches)
+}
+
+fn list_fixes() -> &'static BTreeMap<String, String> {
+    fn mk_fixes() -> BTreeMap<String, String> {
+        let mut result = BTreeMap::new();
+        result.insert("ц МТЗ".to_string(), "цМТЗ".to_string());
+        result.insert("брз (тер)".to_string(), "брз".to_string());
+        result.insert("абр БМ".to_string(), "абрБМ".to_string());
+        result.insert("УВ (с)".to_string(), "УВ".to_string());
+        result.insert("Центр БпЛА РУБИКОН".to_string(), "РУБИКОН".to_string());
+        result
+    }
+    lazy_static! {
+        static ref FIXES: BTreeMap<String, String> = mk_fixes();
+    }
+    &FIXES
+}
+
+fn companies_arr() -> [&'static str; 174] {
     [
         "автр",
         "авто",
@@ -81,6 +175,7 @@ fn companies_arr() -> [&'static str; 168] {
         "вуна",
         "вунад",
         "рдо",
+        "дро",
         "вдо",
         "рмо",
         "тхр",
@@ -121,6 +216,7 @@ fn companies_arr() -> [&'static str; 168] {
         "гсо",
         "дшр",
         "дшв",
+        "дшз",
         "дшо",
         "заградеск",
         "заградотряд",
@@ -177,6 +273,7 @@ fn companies_arr() -> [&'static str; 168] {
         "орс",
         "ору",
         "орхз",
+        "орвп",
         "орхр",
         "оес",
         "опес",
@@ -219,6 +316,8 @@ fn companies_arr() -> [&'static str; 168] {
         "рємв",
         "рпк",
         "ррп",
+        "рспн",
+        "рспп",
         "сапр",
         "спе",
         "сае",
@@ -237,15 +336,16 @@ fn companies_arr() -> [&'static str; 168] {
         "хозв",
         "хозо",
         "штрафб",
+        "шр",
     ]
 }
 
-fn regiments_arr() -> [&'static str; 119] {
+fn regiments_arr() -> [&'static str; 132] {
     [
         "аап",
         "абр",
         "ап",
-        "абр БМ",
+        "абр",
         "бап",
         "брдк",
         "бріз",
@@ -258,6 +358,10 @@ fn regiments_arr() -> [&'static str; 119] {
         "брс",
         "пс",
         "брп",
+        "бру",
+        "бро",
+        "брз",
+        "брк",
         "брпск",
         "брхз",
         "брРХБЗ",
@@ -267,6 +371,7 @@ fn regiments_arr() -> [&'static str; 119] {
         "гап",
         "гсп",
         "дкбр",
+        "дршбр",
         "дшбр",
         "дшп",
         "ждбр",
@@ -313,15 +418,21 @@ fn regiments_arr() -> [&'static str; 119] {
         "мпомп",
         "мшісбр",
         "обвп",
+        "омбр",
+        "омсбр",
         "овп",
+        "оібр",
         "отбвп",
         "оллбр",
+        "обрспн",
+        "обрспп",
         "опрос",
         "п",
         "пабр",
         "пап",
         "пдп",
         "понмбр",
+        "поп",
         "помп",
         "птабр",
         "птап",
@@ -334,6 +445,7 @@ fn regiments_arr() -> [&'static str; 119] {
         "рабр",
         "рбр",
         "рєабр",
+        "реабр",
         "рєап",
         "ртбр",
         "сабр",
@@ -347,6 +459,7 @@ fn regiments_arr() -> [&'static str; 119] {
         "сбр",
         "сп",
         "тбр",
+        "трб", // Техническая ракетная база (ТРБ) — часть специальных войск ракетной дивизии, предназначена для поддержания технической готовности ракетных комплексов
         "тп",
         "ттп",
         "тбап",
@@ -363,11 +476,13 @@ fn regiments_arr() -> [&'static str; 119] {
         "шісбр",
     ]
 }
-fn divisions_arr() -> [&'static str; 38] {
+fn divisions_arr() -> [&'static str; 45] {
     [
         "ад",
+        "адн",
         "бад",
         "вдд",
+        "пдд",
         "втад",
         "гсд",
         "дбо",
@@ -385,6 +500,7 @@ fn divisions_arr() -> [&'static str; 38] {
         "кд",
         "гкд",
         "кд",
+        "крц",
         "мєхд",
         "мд",
         "мрад",
@@ -393,6 +509,8 @@ fn divisions_arr() -> [&'static str; 38] {
         "нбад",
         "нббад",
         "нтбад",
+        "оброп",
+        "опзаб",
         "пулад",
         "рд",
         "сад",
@@ -402,10 +520,12 @@ fn divisions_arr() -> [&'static str; 38] {
         "ттд",
         "тбад",
         "тпад",
+        "ц МТЗ",
+        "цМТЗ",
         "шад",
     ]
 }
-fn armies_arr() -> [&'static str; 32] {
+fn armies_arr() -> [&'static str; 30] {
     [
         "А",
         "ЗВА",
@@ -427,7 +547,6 @@ fn armies_arr() -> [&'static str; 32] {
         "МєхА",
         "мєхк",
         "бак",
-        "ОА ПВО",
         "Отд. А",
         "орк",
         "РА",
@@ -438,11 +557,10 @@ fn armies_arr() -> [&'static str; 32] {
         "ОВА",
         "ОВДА",
         "Фл",
-        "фсвнг", //Національна гвардія Росії
     ]
 }
 
-fn battalions_arr() -> [&'static str; 105] {
+fn battalions_arr() -> [&'static str; 111] {
     [
         "автобат",
         "бар",
@@ -460,6 +578,7 @@ fn battalions_arr() -> [&'static str; 105] {
         "батрПТУР",
         "бПТУР",
         "батрПТРК",
+        "ббпла",
         "бдо",
         "бмо",
         "бмп",
@@ -474,10 +593,13 @@ fn battalions_arr() -> [&'static str; 105] {
         "дшб",
         "дшбу",
         "ждб",
+        "об",
+        "обон",
         "жєлдорбат",
         "зобс",
         "адн",
         "гадн",
+        "гсадн",
         "зєнабатр",
         "зрабатр",
         "зраб",
@@ -513,6 +635,8 @@ fn battalions_arr() -> [&'static str; 105] {
         "омд",
         "оптб",
         "орад",
+        "озспп",
+        "озспн",
         "осб",
         "падн",
         "пабатр",
@@ -552,8 +676,59 @@ fn battalions_arr() -> [&'static str; 105] {
     ]
 }
 
-fn standalone_arr() -> [&'static str; 3] {
-    ["КаФл", "РХБЗ", r"БАРС(-\d{1,2})?"]
+fn standalone_arr() -> [&'static str; 30] {
+    [
+        "ВМФ",
+        "КаФл",
+        "ДК",
+        "ТРВ",
+        "ПВО",
+        "ППО",
+        "ВДВ",
+        "ПДВ",
+        "ПКС",
+        "ШТОРМ.ОСЕТИЯ",
+        "Шторм Z",
+        "Шторм V",
+        "РУБИКОН",
+        "РХБЗ",
+        r"БАРС(-\d{1,2})?",
+        "БАРС-И",
+        "БАРС-БРЯНСК",
+        "ЛВО",   // ленінградський воєнний округ
+        "МВО",   // московський воєнний округ
+        "ЦВО",   // центральний воєнний округ
+        "ЮВО",   // южний воєнний округ
+        "ВВО",   // восточний воєнний округ
+        "фсвнг", // Національна гвардія рф
+        "ОБТФ",  //днр
+        "УВ Запад",
+        "УВ Север",
+        "УВ Сєвєр",
+        "УВ Белгород",
+        "УВ Бєлгород",
+        "УВ Харків",
+    ]
+}
+
+fn unique_unit_names_arr() -> [&'static str; 15] {
+    [
+        "ВОЛКИ",
+        "Днепр",
+        "Эспаньола",
+        "дшрг Русич",
+        "оршз Клуни",
+        "Бастион",
+        "Святой Георгий",
+        "Ветераны",
+        "ДРО Алания",
+        "РЫСЬ РЕДУТ",
+        "Восток V",
+        "оршз Буран",
+        "Русь",
+        "Великий князь Владимир",
+        "Батя-Ахмат",
+    ]
 }
 
 fn collect_set(data: Vec<&str>) -> BTreeSet<String> {

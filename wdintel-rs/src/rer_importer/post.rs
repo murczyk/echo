@@ -4,7 +4,6 @@ use lazy_static::lazy_static;
 use regex::Regex;
 
 pub fn extract_post(inp: &str) -> Result<Option<String>, AppError> {
-    let mut transit_post = None;
     // Only inspect the first N lines to avoid false positives deep in dialogues
     let scan_inp = inp
         .lines()
@@ -12,56 +11,9 @@ pub fn extract_post(inp: &str) -> Result<Option<String>, AppError> {
         .collect::<Vec<_>>()
         .join("\n");
 
-    // Extract transit_post_name if message has Отримано з постів ... header.
-    // Take the last post name, but continue scan to find a more specific original post.
-    '_if: {
-        let Some(line) = scan_inp
-            .lines()
-            .find(|line| line.contains("Отримано з постів"))
-        else {
-            break '_if;
-        };
-        let Some(post) = extract_last_post_from_posts_header(line) else {
-            break '_if;
-        };
-        transit_post = Some(normalize_post_name(&post));
-    }
-
-    // Extract transit_post_name if message has Отримано з поста "transit_post_name" substring.
-    // But continue scan to find original post name
-    // Return transit_post_name only if nothing else found
-    '_if: {
-        lazy_static! {
-            static ref RE: Regex = Regex::new(
-                r#"Отримано з поста "(?P<post>[a-zA-Zа-яіїА-ЯІЇ0-9)(_/ \.\-\*']+)""#
-            )
-            .unwrap();
-        }
-        let Some(capts) = RE.captures(&scan_inp) else {
-            break '_if;
-        };
-        let Some(post) = m_cap_s(&capts, "post") else {
-            break '_if;
-        };
-        transit_post = Some(normalize_post_name(&post));
-    }
-
-    // Extract transit_post_name for unquoted form: Отримано з поста <name>
-    // Keep scanning afterwards to find a more specific original post name, if present
-    '_if: {
-        lazy_static! {
-            static ref RE: Regex = Regex::new(
-                r#"Отримано з поста (?P<post>[a-zA-Zа-яіїА-ЯІЇ0-9)(_/ \.\-]+)"#
-            )
-            .unwrap();
-        }
-        let Some(capts) = RE.captures(&scan_inp) else {
-            break '_if;
-        };
-        let Some(post) = m_cap_s(&capts, "post") else {
-            break '_if;
-        };
-        transit_post = Some(normalize_post_name(&post));
+    // If message explicitly states source post, treat it as authoritative.
+    if let Some(post) = extract_post_from_otrymano_header(&scan_inp) {
+        return Ok(Some(post));
     }
 
     // like: П54 or ЦФП157
@@ -142,7 +94,59 @@ pub fn extract_post(inp: &str) -> Result<Option<String>, AppError> {
         return Ok(Some(normalize_post_name(&post)));
     }
 
-    Ok(transit_post)
+    Ok(None)
+}
+
+fn extract_post_from_otrymano_header(scan_inp: &str) -> Option<String> {
+    // Extract transit_post_name if message has Отримано з постів ... header.
+    '_if: {
+        let Some(line) = scan_inp
+            .lines()
+            .find(|line| line.contains("Отримано з постів"))
+        else {
+            break '_if;
+        };
+        let Some(post) = extract_last_post_from_posts_header(line) else {
+            break '_if;
+        };
+        return Some(post);
+    }
+
+    // Extract transit_post_name if message has Отримано з поста "transit_post_name" substring.
+    '_if: {
+        lazy_static! {
+            static ref RE: Regex = Regex::new(
+                r#"Отримано з поста "(?P<post>[a-zA-Zа-яіїА-ЯІЇ0-9)(_/ \.\-\*']+)""#
+            )
+            .unwrap();
+        }
+        let Some(capts) = RE.captures(scan_inp) else {
+            break '_if;
+        };
+        let Some(post) = m_cap_s(&capts, "post") else {
+            break '_if;
+        };
+        return Some(normalize_post_name(&post));
+    }
+
+    // Extract transit_post_name for unquoted form: Отримано з поста <name>
+    '_if: {
+        lazy_static! {
+            static ref RE: Regex = Regex::new(
+                r#"Отримано з поста (?P<post>[a-zA-Zа-яіїА-ЯІЇ0-9)(_/ \.\-]+)"#
+            )
+            .unwrap();
+        }
+        let Some(capts) = RE.captures(scan_inp) else {
+            break '_if;
+        };
+        let Some(post) = m_cap_s(&capts, "post") else {
+            break '_if;
+        };
+        return Some(normalize_post_name(&post));
+    }
+
+    None
 }
 
 fn extract_last_post_from_posts_header(line: &str) -> Option<String> {
@@ -391,7 +395,7 @@ Zenit
 — Гвозди мне принесите.
 "#;
         let res = extract_post(body).unwrap();
-        assert_eq!(res.unwrap(), "ЦФП 80".to_string())
+        assert_eq!(res.unwrap(), "rer108".to_string())
     }
 
     #[test]
@@ -590,6 +594,28 @@ Kupol80
 - Ожидайте, едут к вам на помощь"#;
         let res = extract_post(body).unwrap();
         assert_eq!(res.unwrap(), "ЦФП10-М6".to_string())
+    }
+
+    #[test]
+    fn extract_post_otrymano_cfp_should_not_parse_dialog_jsp() {
+        let body = r#"4.03.2026_08:44 F=148.2500(МГц)
+Отримано з поста "ЦФП21"
+р/м управління підрозділу зі складу 1444 мсп 74 омсбр 41 ЗВА (Н-К НОВОХАТСЬКЕ - ІВАНІВКА)
+НВ
+НВ
+- Я у тебя уже как кость в горле. Ну, надо маленько крепануться, сейчас запишешь?
+- Головель-2 У Р Р О Р Г У следующая А Р О Я Г П О ЖСП...
+- ...2 У Р Р Я П Г П следующая А Р О Я О Т И ЖСП-2, как принял?
+- Кисточка Гипнолог У Р Р Я П Т Е следующая А Р О О Я Г У ЖСП-1, записал?
+- да да
+- Кисточка Глицын У Р И Г П А следующая А Р О О Л К И ЖСП-1, как принял?
+- ФИЛ МУДРЫЙ Кисточка ГУСЯ-6 У Р Р С Р П Р, следующая А Р О Л Л Г ЖСП-1, записал?
+- Да да давай
+- ...1 У Р Р Г Г Г И следующая А Р О Г И И А ЖСП-2, записал?
+- ..... У Р Р А О И О следующая А Р О У П Л Л ЖСП-2, как принял?
+- ДАЛ-5 У Р Р А Р Я Л следующая А Р О Т А Г Г ЖСП-2, как принял?"#;
+        let res = extract_post(body).unwrap();
+        assert_eq!(res.unwrap(), "ЦФП21".to_string())
     }
 
     #[test]

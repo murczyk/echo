@@ -89,8 +89,8 @@ pub const REDIS_SESSIONS_KEY: &str = "echo-sessions";
 pub const SESSION_STREAM_LIFETIME_SEC: i64 = 180;
 pub const SESSION_ACTIVITY_QUEUE_CAPACITY_DEFAULT: usize = 2048;
 pub const SESSION_ACTIVITY_PAYLOAD_MAX_BYTES_DEFAULT: usize = 4096;
-pub const SESSION_ACTIVITY_GREPTIME_GET_TIMEOUT_MS_DEFAULT: u64 = 500;
-pub const SESSION_ACTIVITY_GREPTIME_QUERY_TIMEOUT_MS_DEFAULT: u64 = 1000;
+pub const SESSION_ACTIVITY_GREPTIME_GET_TIMEOUT_MS_DEFAULT: u64 = 2_000;
+pub const SESSION_ACTIVITY_GREPTIME_QUERY_TIMEOUT_MS_DEFAULT: u64 = 5_000;
 pub const INACTIVE_USERS_DEACTIVATE_DURATION_SEC: u64 = 3600;
 pub const INACTIVE_USERS_DEACTIVATE_AFTER_DAYS: i64 = 30;
 /// Default root prefix for encrypted messenger media stored on S3
@@ -118,6 +118,8 @@ pub const ONEOFF_COUNT_BATCHES_SIZE: u64 = 10000;
 pub const PALITRA_STORAGE_DIR_NAME: &str = "palitra_assets";
 pub const PALITRA_KMZ_TOP_COLORS_LIMIT: usize = 20;
 pub const PALITRA_POINTS_INSERT_BATCH_SIZE: usize = 10_000;
+pub const PALITRA_POINT_LEXEME_BACKFILL_BATCH_SIZE: usize = 5_000;
+pub const PALITRA_POINT_FALLBACK_COLOR_HEX: &str = "#060606";
 /// Global limit when since_id_noninclusive and since_date_inclusive_ms is not set, safety measure
 pub const RER_DUTY_MAX_DAYS: i64 = 3;
 pub const RER_IMPORTER_BOOKMARK_LIST_LIMIT: u64 = 100;
@@ -131,6 +133,10 @@ pub const TAG_SUGGEST_WORKER_REGEX_CONFIDENCE: f64 = 0.8;
 pub const MAX_FIX_WHATSAPP_SENDERS_MESSAGE_DAYS: i64 = 30;
 pub const PALITRA_POINT_SEARCH_CACHE_TTL_SEC: u64 = 60;
 pub const PALITRA_POINT_LABEL_SUGGEST_CACHE_TTL_SEC: u64 = 120;
+pub const ORGANISM_GOI_SSH_PORT_DEFAULT: i32 = 22;
+pub const ORGANISM_GOI_PATH_DEFAULT: &str = "/etc/goi/data/palettes";
+pub const ORGANISM_GOI_SSH_TIMEOUT_MS: u32 = 10_000;
+pub const ORGANISM_GOI_SSH_LIST_LIMIT: usize = 20;
 pub const NETWORK_INBOX_WORKER_DEFAULT_SLEEP: u64 = 30;
 pub const NETWORK_INBOX_FRESH_WORKER_CUTOFF_DAYS: i64 = 40; // to ensure month reports are valid at all times
 pub const NETWORK_INBOX_OLD_WORKER_CUTOFF_DAYS: i64 = 365;
@@ -152,6 +158,8 @@ pub const ENCRYPTION_KEY_PLACEHOLDER: &str = "🔑";
 pub const ENCRYPTION_KEY_DESCRIPTION_PLACEHOLDER: &str = "...";
 pub const NETWORKS_IMPORT_TUI_ROWS_NUM_PAGE_SIZE: usize = 10;
 
+pub const NETWORK_INVALIDATION_TASK_MAX_TASKS: u64 = 1_000_000;
+pub const NETWORK_INVALIDATION_TASK_WAIT_SLEEP_SEC: u64 = 600;
 pub const NETWORK_INVALIDATION_TASK_TAG_OLD: &str = "old";
 pub const NETWORK_INVALIDATION_TASK_TAG_RECENT: &str = "recent";
 pub const NETWORK_INVALIDATION_TASK_TAG_UNASSIGNED: &str = "unassigned";
@@ -195,6 +203,10 @@ pub struct Config {
     pub greptime_user: Option<String>,
     pub greptime_password: Option<String>,
     pub greptime_dbname: Option<String>,
+    /// Enable secondary logs stream to Signoz from Vector (journald -> Signoz JSON receiver).
+    pub signoz_logs_enabled: Option<bool>,
+    /// Signoz JSON receiver endpoint, e.g. http://signoz-echo.eagle-atria.ts.net:8082.
+    pub signoz_logs_endpoint: Option<String>,
     pub session_activity_queue_capacity: Option<usize>,
     pub session_activity_payload_max_bytes: Option<usize>,
     pub session_activity_greptime_get_timeout_ms: Option<u64>,

@@ -28,7 +28,7 @@ import Task
 import TimeZone
 import Url
 import Utils.Api.Temp exposing (leExpectJson)
-import Utils.RemoteData as RD exposing (RemoteData(..))
+import Utils.RemoteData exposing (RemoteData(..))
 
 
 type alias Flags =
@@ -51,7 +51,7 @@ type alias Model =
 
 
 init : Result Json.Decode.Error Flags -> Route () -> ( Model, Effect Msg )
-init flagsResult route =
+init flagsResult _ =
     let
         flags =
             case flagsResult of
@@ -149,6 +149,7 @@ update req msg model =
                     , aorIds = Nothing
                     , ids = Nothing
                     , limit = Nothing
+                    , offset = Nothing
                     }
                 ]
             )
@@ -171,10 +172,7 @@ update req msg model =
 
         SetThemeMode themeMode ->
             ( { model | themeMode = themeMode }
-            , E.batch
-                [ E.sendCmd <| Ports.shared_saveThemeMode (Shared.Model.themeModeToString themeMode)
-                , E.sendCmd <| Ports.shared_toggleDarkMode ()
-                ]
+            , E.sendCmd <| Ports.shared_saveThemeMode (Shared.Model.themeModeToString themeMode)
             )
 
         ThemeModeLoaded themeModeStr ->
@@ -234,7 +232,7 @@ update req msg model =
             , E.none
             )
 
-        CallsignsInfoReturnedByApi (Err e) ->
+        CallsignsInfoReturnedByApi (Err _) ->
             ( model, E.none )
 
         CallsignsInfoReturnedByApi (Ok callsigns) ->
@@ -282,7 +280,7 @@ update req msg model =
             , E.none
             )
 
-        PostsReturnedByApi (Err err) ->
+        PostsReturnedByApi (Err _) ->
             ( model, E.none )
 
         ToastMsg toastMsg ->
@@ -428,6 +426,7 @@ update req msg model =
                         , aorIds = Nothing
                         , ids = Nothing
                         , limit = Nothing
+                        , offset = Nothing
                         }
                     )
 

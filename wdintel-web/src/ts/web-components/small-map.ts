@@ -49,37 +49,38 @@ export class SmallMap extends LitElement {
 			}
 
 
-			const kmz = kmzLayerFactory(null, { bindTooltip: true, bindPopup: false })
-			kmz.addTo(map);
-			kmz.parse(kmzData, {})
+				if (kmzData) {
+					const kmz = kmzLayerFactory(null, { bindTooltip: true, bindPopup: false })
+					kmz.addTo(map);
+					kmz.parse(kmzData, {})
 
-			fullScreenControl.on("fullscreen-toggled", (e) => {
-				const isMapOpened = map.getSize().x > 250
-				kmz.eachLayer((layer: any) => {
-					layer.eachLayer((l: any) => {
-						if (l.feature.properties.name) {
-							l.unbindTooltip();
-							if (isMapOpened) {
-								l.bindTooltip('<b>' + l.feature.properties.name + '</b>', {
-									permanent: true,
-									direction: 'center',
-									opacity: 0
-								});
+					fullScreenControl.on("fullscreen-toggled", () => {
+						const isMapOpened = map.getSize().x > 250
+						kmz.eachLayer((layer: any) => {
+							layer.eachLayer((l: any) => {
+								if (l.feature.properties.name) {
+									l.unbindTooltip();
+									if (isMapOpened) {
+										l.bindTooltip('<b>' + l.feature.properties.name + '</b>', {
+											permanent: true,
+											direction: 'center',
+											opacity: 0
+										});
 
-							} else {
-								l.bindTooltip('<b>' + l.feature.properties.name + '</b>', {
-									permanent: false,
-									direction: 'center',
-									opacity: 0
-								});
+									} else {
+										l.bindTooltip('<b>' + l.feature.properties.name + '</b>', {
+											permanent: false,
+											direction: 'center',
+											opacity: 0
+										});
 
-							}
-						}
+									}
+								}
 
+							})
+						})
 					})
-				})
-
-			})
+				}
 		} else {
 			throw new Error("Map container is not found");
 		}

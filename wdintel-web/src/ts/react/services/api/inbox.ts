@@ -1,4 +1,5 @@
 import type {
+  AnalysisStatsReq,
   AreaOfResponsibility,
   BookmarkAddReq,
   BookmarkRmReq,
@@ -13,7 +14,8 @@ import type {
   InboxMessageTagsRmReq,
   InboxMessagesReq,
   InboxMessagesRsp,
-  RerDutyFeedFilterState,
+  PostStatsRsp,
+  RerDutyQueryStateWf as RerDutyFeedFilterState,
   SavedFilterDuty,
   SavedFilterDutyUpsertReq,
   SignalGroupEntry,
@@ -26,6 +28,7 @@ const defaultGroupStats: SignalGroupStats = {
   activityLastDay: 0,
   activityLastWeek: 0,
 };
+import { transformSnakeToCamel, transformCamelToSnake } from '../../../snake-to-camel';
 import { postJson, postVoid } from './client';
 
 /** Raw API response (snake_case) */
@@ -81,6 +84,7 @@ function normalizeInboxMessage(
     location?: string | null;
     extended_form?: string | null;
     inbox_tags?: InboxMessageTagRaw[] | null;
+    text_marked?: InboxMessageType['textMarked'];
   }
 ): InboxMessageType {
   const raw = m as Record<string, unknown>;
@@ -93,7 +97,8 @@ function normalizeInboxMessage(
     rawInboxTags != null && Array.isArray(rawInboxTags)
       ? rawInboxTags.map(normalizeInboxMessageTag)
       : null;
-  return { ...m, groupMasterKey, networkIds, location, extendedForm, inboxTags };
+  const textMarked = (raw.text_marked ?? m.textMarked ?? null) as InboxMessageType['textMarked'];
+  return { ...m, groupMasterKey, networkIds, location, extendedForm, inboxTags, textMarked };
 }
 
 function normalizeSignalGroupEntry(g: InboxMessagesRspRaw['signal_groups'][number]): SignalGroupEntry {
@@ -162,6 +167,7 @@ function inboxMsgtoSnakeBody(req: InboxMessagesReq): Object {
     highlight_keywords: req.highlightKeywords,
     highlight_searchres: req.highlightSearchres,
     highlight_signals: req.highlightSignals,
+    highlight_points: req.highlightPoints,
     selected_tags: req.selectedTags,
     selected_aors: req.selectedAors,
     selected_networks: req.selectedNetworks,
@@ -294,22 +300,14 @@ export async function savedFilterDelete(filterId: number): Promise<void> {
 // --- Filter metadata (tags, senders, frequencies, groups) ---
 
 /** Tags list for display (tagId -> label). Fetched from POST /api/tags/tags-list. */
-export async function getTagsList(): Promise<Record<number, string>> {
-  const raw = await postJson<Array<[number, Tag]> | Array<{ tag_id: number; label: string }>>(
-    '/api/tags/tags-list',
-    {}
-  );
-  const map: Record<number, string> = {};
-  if (Array.isArray(raw)) {
-    raw.forEach((entry) => {
-      if (Array.isArray(entry)) {
-        const [id, tag] = entry;
-        map[Number(id)] = (tag as Tag)?.label ?? `#${id}`;
-      } else if (entry && typeof entry === 'object' && 'tag_id' in entry) {
-        map[entry.tag_id] = entry.label ?? `#${entry.tag_id}`;
-      }
-    });
+export async function getTagsMapForDisplay(): Promise<Record<number, Tag>> {
+  const raw = await postJson<Array<[number, Tag]>>('/api/tags/tags-list', {});
+  const map: Record<number, Tag> = {};
+  for (const [i, tagRecord] of Object.entries(raw)) {
+    const nTag = transformSnakeToCamel<Tag>(tagRecord[1]);
+    map[Number(tagRecord[0])] = nTag;
   }
+
   return map;
 }
 
@@ -340,6 +338,41 @@ export async function getLatestSenders(): Promise<SignalProfilesRsp> {
 export async function getLatestFrequencies(): Promise<string[]> {
   const raw = await postJson<string[]>('/api/sigint/latest-frequencies', {});
   return Array.isArray(raw) ? raw : [];
+}
+
+/** Posts list for duty filter (from analysis stats). */
+export async function getPostsList(): Promise<string[]> {
+  const now = Date.now();
+  const sinceMs = now - 14 * 24 * 60 * 60 * 1000;
+  const tillMs = now + 24 * 60 * 60 * 1000;
+  const body: AnalysisStatsReq = {
+    sinceDateInclusiveMs: sinceMs,
+    tillDateNoninclusiveMs: tillMs,
+    selectedGroups: null,
+    selectedSenders: null,
+    selectedFreqs: null,
+    selectedPosts: null,
+    selectedCallsigns: null,
+    selectedUnits: null,
+    selectedLocations: null,
+    selectedAors: null,
+    orWithExtendedForm: null,
+    orBookmarked: null,
+    orImportant: null,
+    orWithCoords: null,
+    search: null,
+    selectedTags: null,
+    selectedNetworks: null,
+    includePelengLocations: null,
+    unitsExactMatchOnly: null,
+    filterTagsOption: null,
+    withoutModelTags: null,
+    reportTagsOnlyThisUnit: null,
+  };
+  const snakeBody = transformCamelToSnake<AnalysisStatsReq>(body);
+  const raw = await postJson<PostStatsRsp>('/api/rer/analysis/stats/posts', snakeBody);
+  const posts = raw?.posts ?? [];
+  return posts.map((p) => p.post);
 }
 
 /** User's sigint group keys (e.g. for filter dropdown). sinceDateInclusiveMs: optional ms, e.g. 2 days ago. */

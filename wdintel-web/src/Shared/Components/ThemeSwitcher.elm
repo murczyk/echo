@@ -9,6 +9,7 @@ import Shared.Model exposing (ThemeMode(..))
 type alias Props msg =
     { currentTheme : ThemeMode
     , onThemeChange : ThemeMode -> msg
+    , triggerClass : String
     }
 
 
@@ -16,12 +17,12 @@ themeSwitcher : Props msg -> Html msg
 themeSwitcher props =
     div [ class "relative group" ]
         [ div
-            [ class "cursor-pointer p-2 rounded-lg hover:bg-[var(--color-column)] transition-all duration-200"
+            [ class ("cursor-pointer " ++ props.triggerClass)
             , onClick (props.onThemeChange (getNextTheme props.currentTheme))
             ]
             [ i
                 [ class
-                    ("bi text-lg text-white "
+                    ("bi text-lg text-current "
                         ++ (case props.currentTheme of
                                 Light ->
                                     "bi-sun"
@@ -35,7 +36,7 @@ themeSwitcher props =
                 []
             ]
         , div [ class "absolute right-0 pt-2 z-500" ]
-            [ div [ class "w-48 bg-[var(--color-card)] rounded-lg shadow-lg border border-[var(--color-border)] hidden group-hover:block transition-all duration-200" ]
+            [ div [ class "w-56 bg-[var(--color-card)] rounded-lg shadow-lg border border-[var(--color-border)] hidden group-hover:block transition-all duration-200" ]
                 [ div [ class "py-2" ]
                     [ themeOption props Light "bi-sun" "Світла тема"
                     , themeOption props Dark "bi-moon" "Темна тема"
@@ -53,7 +54,7 @@ themeOption props theme iconClass label =
         , onClick (props.onThemeChange theme)
         ]
         [ i [ class ("bi " ++ iconClass ++ " mr-3 text-lg") ] []
-        , span [ class "text-[var(--color-text)]" ] [ text label ]
+        , span [ class "text-[var(--color-text)] whitespace-nowrap" ] [ text label ]
         , if props.currentTheme == theme then
             i [ class "bi bi-check ml-auto text-[var(--color-primary)]" ] []
           else
@@ -78,4 +79,5 @@ colorThemeSwitcher msg isDark =
     themeSwitcher
         { currentTheme = if isDark then Dark else Light
         , onThemeChange = \_ -> msg
+        , triggerClass = "p-2 rounded transition-all duration-200"
         }

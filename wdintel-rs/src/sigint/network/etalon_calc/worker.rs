@@ -10,6 +10,7 @@ use echo_migration::Expr;
 use log::{debug, error, info, warn};
 use sea_orm::*;
 use std::collections::{BTreeSet, HashMap, HashSet};
+use std::thread;
 use std::time::{Duration, Instant};
 // Worker that keeps recent inbox items aligned with network definitions by
 // picking pending invalidation tasks, normalizing them (split/merge), and
@@ -125,6 +126,7 @@ async fn run_old_inbox_network_worker_inner(mode: Mode) -> anyhow::Result<()> {
 
     let db = new_pg_pool_from_mode(mode).await.c(h!())?;
     wait_until_worker_shift_start(&config).await;
+    try_cleanup(&db).await.c(h!())?;
     info!("run_old_inbox_network_worker_once started");
     if let Err(e) = run_inbox_network_worker_once(&db, true, &config).await {
         error!("run_old_inbox_network_worker_once failed: {e:#?}");
@@ -138,6 +140,28 @@ async fn run_old_inbox_network_worker_inner(mode: Mode) -> anyhow::Result<()> {
     )
     .await
     .c(h!())?;
+    Ok(())
+}
+
+// if we have too much tasks for some reason - drop them all, wait 5 min for the triage and then proceed
+async fn try_cleanup(db: &DatabaseConnection) -> anyhow::Result<()> {
+    if network_invalidation_task::Entity::find()
+        .count(db)
+        .await
+        .c(h!())?
+        > NETWORK_INVALIDATION_TASK_WAIT_SLEEP_SEC
+    {
+        network_invalidation_task::Entity::delete_many()
+            .exec(db)
+            .await
+            .c(h!())?;
+        crate::sigint::network::etalon_calc::oneoff::backfill_inbox_networks(
+            db, None, None,
+        )
+        .await
+        .c(h!())?;
+        thread::sleep(Duration::from_secs(120));
+    }
     Ok(())
 }
 
@@ -688,11 +712,28 @@ async fn run_network_invalidation_tasks(
 ) -> anyhow::Result<()> {
     let mut started_tasks = vec![];
     let mut task_filters = Vec::new();
+    let mut network_ids = HashSet::new();
+    let mut needs_all_networks = false;
+    let mut min_since_ts: Option<NaiveDateTime> = None;
+    let mut max_till_ts: Option<NaiveDateTime> = None;
     for task in tasks {
         if task.started_at.is_some() {
             warn!("task {} was already started!", task.id);
         }
         let task = mark_task_started(&task, dbx).await.c(h!())?;
+        min_since_ts = match min_since_ts {
+            Some(prev) => Some(prev.min(task.since_ts)),
+            None => Some(task.since_ts),
+        };
+        max_till_ts = match max_till_ts {
+            Some(prev) => Some(prev.max(task.till_ts)),
+            None => Some(task.till_ts),
+        };
+        if let Some(network_id) = task.sigint_network_id {
+            network_ids.insert(network_id);
+        } else {
+            needs_all_networks = true;
+        }
         started_tasks.push(task.clone());
         task_filters.extend(build_task_filters(&task, signal_group_aors));
     }
@@ -700,6 +741,29 @@ async fn run_network_invalidation_tasks(
     process_task_filters(task_filters, processed_items, dbx)
         .await
         .c(h!())?;
+
+    if let (Some(since_ts), Some(till_ts)) = (min_since_ts, max_till_ts) {
+        let since_date = crate::stats::get_local_date(since_ts);
+        let till_date = crate::stats::get_local_date(till_ts);
+        let since_ts = crate::stats::start_of_day(since_date).c(h!())?;
+        let till_ts =
+            crate::stats::start_of_day(till_date + chrono::Duration::days(1))
+                .c(h!())?;
+        let network_ids = if needs_all_networks {
+            None
+        } else {
+            Some(&network_ids)
+        };
+        crate::stats::recalculate_network_stats(
+            dbx,
+            since_ts,
+            till_ts,
+            network_ids,
+        )
+        .await
+        .c(h!())?;
+    }
+
     let completed_at = Some(Utc::now().naive_utc());
     mark_tasks_completed(started_tasks, completed_at, dbx)
         .await

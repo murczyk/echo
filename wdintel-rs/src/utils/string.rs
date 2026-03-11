@@ -5,7 +5,7 @@ use regex::Regex;
 use unicode_segmentation::UnicodeSegmentation;
 
 pub fn cline_len(inp: &str) -> usize {
-    inp.chars().collect::<Vec<char>>().len()
+    inp.chars().count()
 }
 
 /// Searches for words, returns char-indices
@@ -28,7 +28,7 @@ pub fn byte_to_char_index(inp: &str, b_index: usize) -> usize {
         if pos >= b_index {
             return chars;
         }
-        pos += c.to_string().len();
+        pos += c.len_utf8();
         chars += 1;
     }
     chars
@@ -71,6 +71,29 @@ pub fn m_str_trim(s: &Option<String>) -> Option<String> {
                 Some(v.to_string())
             }
         }
+    }
+}
+
+pub fn normalize_optional_trimmed(value: Option<String>) -> Option<String> {
+    value.and_then(|value| {
+        let value = value.trim().to_string();
+        if value.is_empty() {
+            None
+        } else {
+            Some(value)
+        }
+    })
+}
+
+pub fn normalize_trimmed_or_default(
+    value: String,
+    default_value: &str,
+) -> String {
+    let value = value.trim().to_string();
+    if value.is_empty() {
+        default_value.to_string()
+    } else {
+        value
     }
 }
 

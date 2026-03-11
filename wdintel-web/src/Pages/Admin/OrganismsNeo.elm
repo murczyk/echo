@@ -59,7 +59,7 @@ update msg model =
 
 
 subscriptions : Model -> Sub Msg
-subscriptions model =
+subscriptions _ =
     Sub.none
 
 
@@ -81,5 +81,5 @@ toLayout : Auth.User -> Model -> Layouts.Layout Msg
 toLayout user _ =
     Layouts.Navbar
         { user = user
-        , activeName = "admin"
+        , activeName = "organisms-neo"
         }

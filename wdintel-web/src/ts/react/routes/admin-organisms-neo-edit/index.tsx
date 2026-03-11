@@ -17,13 +17,17 @@ import { Button } from '../../components/mui-customized/button';
 import { listAors } from '../../services/api/aor';
 import {
   addGroupToOrganism,
+  checkOrganismGoiConnection,
   computeAvailableGroups,
   computeAvailableGroupsForNew,
   createOrganism,
+  getOrganismGoiSettings,
   listOrganismGroups,
   listOrganisms,
   listSignalGroups,
   removeGroupFromOrganism,
+  type UpdateOrganismGoiSettingsReq,
+  updateOrganismGoiSettings,
   updateOrganism,
 } from '../../services/api/organisms';
 import { navigateWithinSpa } from '../../utils/browser';
@@ -39,7 +43,14 @@ type OrganismFormState = {
   enabled: boolean;
   limitGroups: boolean;
   groupIds: string[];
+  goiSshHost: string;
+  goiSshUser: string;
+  goiSshPort: number;
+  goiPath: string;
 };
+
+const GOI_SSH_PORT_DEFAULT = 22;
+const GOI_PATH_DEFAULT = '/etc/goi/data/palettes';
 
 const ROLE_OPTIONS = ['Admin', 'Rer', 'Bpla', 'Full', 'Basic', 'UnitsEditor', 'CallsignsEditor'];
 
@@ -51,6 +62,10 @@ const emptyFormState: OrganismFormState = {
   enabled: true,
   limitGroups: false,
   groupIds: [],
+  goiSshHost: '',
+  goiSshUser: '',
+  goiSshPort: GOI_SSH_PORT_DEFAULT,
+  goiPath: GOI_PATH_DEFAULT,
 };
 
 function formatErrorMessage(error: unknown): string {
@@ -145,6 +160,7 @@ type OrganismFormFieldsProps = {
   form: OrganismFormState;
   formErrors: Record<string, string>;
   isSubmitting: boolean;
+  isCheckingGoiConnection: boolean;
   isNew: boolean;
   organisms: Organism[];
   groups: SignalGroupFull[];
@@ -152,8 +168,10 @@ type OrganismFormFieldsProps = {
   aors: AreaOfResponsibility[];
   computedGroups: SignalGroupFull[] | null;
   computeError: string | null;
+  goiConnectionStatus: StatusMessage;
   isComputing: boolean;
   groupsValidation: string[];
+  onCheckGoiConnection: () => void;
   onChange: (patch: Partial<OrganismFormState>) => void;
 };
 
@@ -346,6 +364,75 @@ function OrganismFormFields(props: OrganismFormFieldsProps) {
           />
         </div>
       ) : null}
+
+      <Box className="space-y-4 border-t border-gray-200 dark:border-gray-700 pt-6">
+        <Typography variant="h6" className="!font-semibold">
+          ГОІ
+        </Typography>
+        <Alert severity="info">
+          Для організму можна запустити контейнер з ПЗ ГОІ, після чого налаштувати їхню інтеграцію. ГОІ має слабкий
+          захист та не підтримує повноцінну авторизацію, але має дуже потужну роботу з палітрами. Для налаштування
+          необхідно буде вказати деталі SSH-доступу. При завантаженні палітри в організм ЕХО -- вона з&apos;являтиметься
+          в ГОІ.
+        </Alert>
+
+        <TextField
+          label="SSH хост"
+          value={props.form.goiSshHost}
+          onChange={(event) => props.onChange({ goiSshHost: event.target.value })}
+          fullWidth
+          disabled={props.isSubmitting || props.isCheckingGoiConnection}
+        />
+
+        <TextField
+          label="SSH юзер"
+          value={props.form.goiSshUser}
+          onChange={(event) => props.onChange({ goiSshUser: event.target.value })}
+          fullWidth
+          disabled={props.isSubmitting || props.isCheckingGoiConnection}
+        />
+
+        <TextField
+          label="SSH порт"
+          type="number"
+          value={props.form.goiSshPort}
+          onChange={(event) =>
+            props.onChange({
+              goiSshPort: Number.isFinite(Number(event.target.value))
+                ? Number(event.target.value)
+                : GOI_SSH_PORT_DEFAULT,
+            })
+          }
+          fullWidth
+          inputProps={{ min: 1, max: 65535 }}
+          error={Boolean(props.formErrors.goiSshPort)}
+          helperText={props.formErrors.goiSshPort || ' '}
+          disabled={props.isSubmitting || props.isCheckingGoiConnection}
+        />
+
+        <TextField
+          label="Шлях"
+          value={props.form.goiPath}
+          onChange={(event) => props.onChange({ goiPath: event.target.value })}
+          fullWidth
+          disabled={props.isSubmitting || props.isCheckingGoiConnection}
+        />
+
+        <div className="flex items-center gap-3">
+          <Button
+            variant="outlined"
+            onClick={props.onCheckGoiConnection}
+            disabled={props.isSubmitting || props.isCheckingGoiConnection}
+          >
+            {props.isCheckingGoiConnection ? 'Перевірка...' : "Перевірити з'єднання"}
+          </Button>
+          {props.isCheckingGoiConnection ? <CircularProgress size={20} /> : null}
+        </div>
+
+        {props.goiConnectionStatus ? (
+          <Alert severity={props.goiConnectionStatus.kind}>{props.goiConnectionStatus.message}</Alert>
+        ) : null}
+      </Box>
     </div>
   );
 }
@@ -368,6 +455,8 @@ function AdminOrganismsNeoEditPageBody(props: AdminOrganismsNeoEditPageProps) {
   const [computedGroups, setComputedGroups] = React.useState<SignalGroupFull[] | null>(null);
   const [computeError, setComputeError] = React.useState<string | null>(null);
   const [isComputing, setIsComputing] = React.useState(false);
+  const [goiConnectionStatus, setGoiConnectionStatus] = React.useState<StatusMessage>(null);
+  const [isCheckingGoiConnection, setIsCheckingGoiConnection] = React.useState(false);
 
   const backToPath = React.useMemo(getBackToPath, []);
 
@@ -404,6 +493,7 @@ function AdminOrganismsNeoEditPageBody(props: AdminOrganismsNeoEditPageProps) {
         if (isNew) {
           setForm(emptyFormState);
           setOriginalGroupKeys([]);
+          setGoiConnectionStatus(null);
           setLoadStatus('success');
           return;
         }
@@ -423,6 +513,9 @@ function AdminOrganismsNeoEditPageBody(props: AdminOrganismsNeoEditPageProps) {
         }
 
         const groupKeys = getOrganismGroupKeys(target.id, organismGroupsData);
+        const goiSettings = await getOrganismGoiSettings(parsedId);
+        if (isCancelled) return;
+
         setOriginalGroupKeys(groupKeys);
         setForm({
           name: target.name,
@@ -432,7 +525,12 @@ function AdminOrganismsNeoEditPageBody(props: AdminOrganismsNeoEditPageProps) {
           enabled: target.enabled,
           limitGroups: groupKeys.length > 0,
           groupIds: groupKeys,
+          goiSshHost: goiSettings.sshHost,
+          goiSshUser: goiSettings.sshUser,
+          goiSshPort: goiSettings.sshPort,
+          goiPath: goiSettings.path,
         });
+        setGoiConnectionStatus(null);
         setLoadStatus('success');
       } catch (error) {
         if (isCancelled) return;
@@ -510,6 +608,14 @@ function AdminOrganismsNeoEditPageBody(props: AdminOrganismsNeoEditPageProps) {
   }, [form.aorIds, form.parentId, isNew, loadStatus, props.organismId]);
 
   function handleChange(patch: Partial<OrganismFormState>) {
+    if (
+      patch.goiSshHost !== undefined ||
+      patch.goiSshUser !== undefined ||
+      patch.goiSshPort !== undefined ||
+      patch.goiPath !== undefined
+    ) {
+      setGoiConnectionStatus(null);
+    }
     setForm((prev) => ({ ...prev, ...patch }));
   }
 
@@ -522,8 +628,57 @@ function AdminOrganismsNeoEditPageBody(props: AdminOrganismsNeoEditPageProps) {
     if (!form.name.trim()) {
       errors.name = 'Заповніть назву';
     }
+    if (!Number.isInteger(form.goiSshPort) || form.goiSshPort < 1 || form.goiSshPort > 65535) {
+      errors.goiSshPort = 'Вкажіть коректний SSH порт (1-65535)';
+    }
     setFormErrors(errors);
     return Object.keys(errors).length === 0;
+  }
+
+  function buildGoiSettingsReq(organismId: number, nextForm: OrganismFormState): UpdateOrganismGoiSettingsReq {
+    return {
+      organismId,
+      sshHost: nextForm.goiSshHost.trim(),
+      sshUser: nextForm.goiSshUser.trim(),
+      sshPort: nextForm.goiSshPort,
+      path: nextForm.goiPath.trim() || GOI_PATH_DEFAULT,
+    };
+  }
+
+  async function handleCheckGoiConnection() {
+    setIsCheckingGoiConnection(true);
+    setGoiConnectionStatus(null);
+    try {
+      const response = await checkOrganismGoiConnection({
+        sshHost: form.goiSshHost.trim(),
+        sshUser: form.goiSshUser.trim(),
+        sshPort: form.goiSshPort,
+        path: form.goiPath.trim() || GOI_PATH_DEFAULT,
+      });
+      if (!response.ok || response.error) {
+        setGoiConnectionStatus({
+          kind: 'error',
+          message: response.error
+            ? `Помилка перевірки з'єднання: ${response.error}`
+            : "Помилка перевірки з'єднання: Невідома помилка",
+        });
+        return;
+      }
+      const preview = response.listedEntries.slice(0, 5).join(', ');
+      setGoiConnectionStatus({
+        kind: 'success',
+        message: preview
+          ? `З'єднання успішне. Файли в каталозі: ${preview}`
+          : "З'єднання успішне. Каталог доступний.",
+      });
+    } catch (error) {
+      setGoiConnectionStatus({
+        kind: 'error',
+        message: `Помилка перевірки з'єднання: ${formatErrorMessage(error)}`,
+      });
+    } finally {
+      setIsCheckingGoiConnection(false);
+    }
   }
 
   async function handleSubmit() {
@@ -535,7 +690,9 @@ function AdminOrganismsNeoEditPageBody(props: AdminOrganismsNeoEditPageProps) {
     try {
       const trimmedName = form.name.trim();
       const nextForm = { ...form, name: trimmedName };
-      const selectedGroupIds = nextForm.limitGroups ? nextForm.groupIds : [];
+      const selectedGroupIds = nextForm.limitGroups
+        ? nextForm.groupIds
+        : [];
 
       if (isNew) {
         const createReq: CreateOrganismReq = {
@@ -548,9 +705,18 @@ function AdminOrganismsNeoEditPageBody(props: AdminOrganismsNeoEditPageProps) {
 
         if (selectedGroupIds.length > 0) {
           await Promise.all(
-            selectedGroupIds.map((groupId) => addGroupToOrganism({ organismId: created.id, groupName: groupId })),
+            selectedGroupIds.map((groupId) =>
+              addGroupToOrganism({
+                organismId: created.id,
+                groupName: groupId,
+              }),
+            ),
           );
         }
+
+        await updateOrganismGoiSettings(
+          buildGoiSettingsReq(created.id, nextForm),
+        );
       } else {
         const parsedId = Number(props.organismId);
         if (!Number.isFinite(parsedId)) {
@@ -580,6 +746,10 @@ function AdminOrganismsNeoEditPageBody(props: AdminOrganismsNeoEditPageProps) {
             toRemove.map((groupId) => removeGroupFromOrganism({ organismId: parsedId, groupName: groupId })),
           );
         }
+
+        await updateOrganismGoiSettings(
+          buildGoiSettingsReq(parsedId, nextForm),
+        );
       }
 
       navigateBack();
@@ -643,6 +813,7 @@ function AdminOrganismsNeoEditPageBody(props: AdminOrganismsNeoEditPageProps) {
           form={form}
           formErrors={formErrors}
           isSubmitting={isSubmitting}
+          isCheckingGoiConnection={isCheckingGoiConnection}
           isNew={isNew}
           organisms={organisms}
           groups={groups}
@@ -650,16 +821,18 @@ function AdminOrganismsNeoEditPageBody(props: AdminOrganismsNeoEditPageProps) {
           aors={aors}
           computedGroups={computedGroups}
           computeError={computeError}
+          goiConnectionStatus={goiConnectionStatus}
           isComputing={isComputing}
           groupsValidation={groupsValidation}
+          onCheckGoiConnection={handleCheckGoiConnection}
           onChange={handleChange}
         />
 
         <div className="flex justify-end gap-3">
-          <Button variant="outlined" onClick={navigateBack} disabled={isSubmitting}>
+          <Button variant="outlined" onClick={navigateBack} disabled={isSubmitting || isCheckingGoiConnection}>
             Скасувати
           </Button>
-          <Button variant="contained" onClick={handleSubmit} disabled={isSubmitting}>
+          <Button variant="contained" onClick={handleSubmit} disabled={isSubmitting || isCheckingGoiConnection}>
             {isNew ? 'Створити' : 'Зберегти'}
           </Button>
         </div>

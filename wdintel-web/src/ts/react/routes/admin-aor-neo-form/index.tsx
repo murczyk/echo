@@ -151,7 +151,7 @@ function AorFormFields(props: { form: AorFormState; onChange: (next: AorFormStat
           onChange={(event) => update({ leftBound: event.target.value })}
           fullWidth
           type="number"
-          inputProps={{ step: 0.1 }}
+          slotProps={{ htmlInput: { step: 0.1 } }}
         />
         <TextField
           label="Права межа *"
@@ -159,7 +159,7 @@ function AorFormFields(props: { form: AorFormState; onChange: (next: AorFormStat
           onChange={(event) => update({ rightBound: event.target.value })}
           fullWidth
           type="number"
-          inputProps={{ step: 0.1 }}
+          slotProps={{ htmlInput: { step: 0.1 } }}
         />
       </div>
       <div className="space-y-3">
@@ -173,7 +173,7 @@ function AorFormFields(props: { form: AorFormState; onChange: (next: AorFormStat
             onChange={(event) => update({ leftLatitude: event.target.value })}
             fullWidth
             type="number"
-            inputProps={{ step: 0.000001 }}
+            slotProps={{ htmlInput: { step: 0.000001 } }}
           />
           <TextField
             label="Довгота"
@@ -181,7 +181,7 @@ function AorFormFields(props: { form: AorFormState; onChange: (next: AorFormStat
             onChange={(event) => update({ leftLongitude: event.target.value })}
             fullWidth
             type="number"
-            inputProps={{ step: 0.000001 }}
+            slotProps={{ htmlInput: { step: 0.000001 } }}
           />
           <TextField
             label="Населений пункт"
@@ -202,7 +202,7 @@ function AorFormFields(props: { form: AorFormState; onChange: (next: AorFormStat
             onChange={(event) => update({ rightLatitude: event.target.value })}
             fullWidth
             type="number"
-            inputProps={{ step: 0.000001 }}
+            slotProps={{ htmlInput: { step: 0.000001 } }}
           />
           <TextField
             label="Довгота"
@@ -210,7 +210,7 @@ function AorFormFields(props: { form: AorFormState; onChange: (next: AorFormStat
             onChange={(event) => update({ rightLongitude: event.target.value })}
             fullWidth
             type="number"
-            inputProps={{ step: 0.000001 }}
+            slotProps={{ htmlInput: { step: 0.000001 } }}
           />
           <TextField
             label="Населений пункт"

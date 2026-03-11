@@ -39,6 +39,7 @@ except:
     thresholds = {key: 0.5 for key in models}
 
 
+
 @app.route("/")
 def hello_world():
     return "<p>Hello, World!</p>"
@@ -56,12 +57,26 @@ def tokenize_words():
     return jsonify({"words": words})
 
 
+def token_normal_form_impl(token: str):
+    res = morph.parse(token)[0]
+    return {"lexeme": [x.word for x in res.lexeme]}
+
+
 @app.post("/api/token/lexeme")
 def token_normal_form():
     req = request.get_json()
     token = req["token"]
-    res = morph.parse(token)[0]
-    return jsonify({"lexeme": [x.word for x in res.lexeme]})
+    res = token_normal_form_impl(token)
+    return jsonify(res)
+
+
+@app.post("/api/token/lexeme/batch")
+def token_normal_form_batch():
+    req = request.get_json()
+    tokens = req["tokens"]
+
+    res = [token_normal_form_impl(token) for token in tokens]
+    return jsonify(res)
 
 
 @app.post("/api/extract/numbers")

@@ -14,18 +14,17 @@ import Core.Types exposing (..)
 import Effect as E exposing (Effect)
 import Html exposing (..)
 import Html.Attributes exposing (..)
-import Html.Events exposing (onCheck, onClick, onInput)
+import Html.Events exposing (onClick, onInput)
 import Layouts
 import Page exposing (Page)
 import Route exposing (Route)
 import Shared
-import Shared.Model exposing (isDarkMode)
 import Utils.Api.ErrorHandling
 import View exposing (View)
 
 
 page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
-page user shared route =
+page user _ _ =
     Page.new
         { init = init
         , update = update
@@ -36,7 +35,7 @@ page user shared route =
 
 
 toLayout : Auth.User -> Model -> Layouts.Layout Msg
-toLayout user model =
+toLayout user _ =
     Layouts.Navbar
         { user = user
         , activeName = "areasOfResponsibility"
@@ -373,7 +372,7 @@ submitEditForm form =
 
 
 subscriptions : Model -> Sub Msg
-subscriptions model =
+subscriptions _ =
     Sub.none
 
 
@@ -382,7 +381,7 @@ subscriptions model =
 
 
 aorTableConfig : List B.AreaOfResponsibility -> Table.Config B.AreaOfResponsibility Msg
-aorTableConfig aors =
+aorTableConfig _ =
     let
         defaultCustomizations =
             Table.defaultCustomizations

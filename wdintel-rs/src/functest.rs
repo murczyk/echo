@@ -37,6 +37,7 @@ pub mod tests {
     const TEST_LOGIN: &str = "Tester";
     const TEST_DATASOURCE_GROUP_NAME: &str = "TestDatasourceGroup";
     const TEST_TAG_LABEL_BPLA: &str = "бпла";
+    const TEST_PALITRA_NAME: &str = "TestPalitra";
 
     pub async fn cleanup() -> Result<Arc<Env>, AppError> {
         MIGRATE
@@ -233,6 +234,18 @@ pub mod tests {
             .exec(&env.dbx)
             .await
             .context(h!())?;
+        palitra_point::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
+        palitra_access_login::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
+        palitra::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
 
         fill_initial_data(&env.dbx).await?;
 
@@ -390,7 +403,55 @@ pub mod tests {
         .await
         .context(h!())?;
 
+        let palitra = mk_palitra(
+            dbx,
+            palitra::ActiveModel {
+                name: Set(TEST_PALITRA_NAME.to_string()),
+                hex_legacy: Set(Some("#ffffff".into())),
+                author: Set(Some(TEST_LOGIN.to_string())),
+                deleted: Set(false),
+                created_at: Set(Utc::now().naive_utc()),
+                ..Default::default()
+            },
+        )
+        .await
+        .context(h!())?;
+        mk_palitra_geometry(
+            dbx,
+            palitra_geometry::ActiveModel {
+                palitra_id: Set(palitra.id),
+                hex: Set("#ffffff".into()),
+                deleted: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .context(h!())?;
+
+        mk_palitra_access(
+            dbx,
+            palitra_access_login::ActiveModel {
+                palitra_id: Set(palitra.id),
+                login: Set(TEST_LOGIN.to_string()),
+                created_at: Set(Utc::now().naive_utc()),
+                ..Default::default()
+            },
+        )
+        .await
+        .context(h!())?;
+
         Ok(())
+    }
+
+    pub async fn find_test_palitra(
+        dbx: &DatabaseConnection,
+    ) -> Result<palitra::Model, AppError> {
+        Ok(palitra::Entity::find()
+            .filter(palitra::Column::Name.eq(TEST_PALITRA_NAME))
+            .one(dbx)
+            .await
+            .context(h!())?
+            .context(h!())?)
     }
 
     pub async fn find_test_aor(
@@ -576,6 +637,79 @@ pub mod tests {
         Ok(out)
     }
 
+    pub async fn mk_palitra<'a, 'async_trait, C>(
+        txn: &'a C,
+        inp: palitra::ActiveModel,
+    ) -> Result<palitra::Model, AppError>
+    where
+        C: ConnectionTrait + 'async_trait,
+    {
+        let out = inp.insert(txn).await.context(h!())?;
+        Ok(out)
+    }
+
+    pub async fn mk_palitra_access<'a, 'async_trait, C>(
+        txn: &'a C,
+        inp: palitra_access_login::ActiveModel,
+    ) -> Result<palitra_access_login::Model, AppError>
+    where
+        C: ConnectionTrait + 'async_trait,
+    {
+        let out = inp.insert(txn).await.context(h!())?;
+        Ok(out)
+    }
+
+    pub async fn mk_palitra_geometry<'a, 'async_trait, C>(
+        txn: &'a C,
+        inp: palitra_geometry::ActiveModel,
+    ) -> Result<palitra_geometry::Model, AppError>
+    where
+        C: ConnectionTrait + 'async_trait,
+    {
+        let out = inp.insert(txn).await.context(h!())?;
+        Ok(out)
+    }
+
+    fn build_palitra_point(
+        label: String,
+        palitra_id: i64,
+        palitra_geometry_id: i64,
+    ) -> palitra_point::ActiveModel {
+        palitra_point::ActiveModel {
+            palitra_id_legacy: Set(Some(palitra_id)),
+            palitra_geometry_id: Set(palitra_geometry_id),
+            lat: Set(10.0),
+            lng: Set(20.0),
+            deleted: Set(false),
+            created_at: Set(Utc::now().naive_utc()),
+            label: Set(Some(label)),
+            ..Default::default()
+        }
+    }
+
+    pub async fn mk_palitra_point<'a, 'async_trait, C>(
+        label: String,
+        palitra_id: i64,
+        txn: &'a C,
+    ) -> Result<palitra_point::Model, AppError>
+    where
+        C: ConnectionTrait + 'async_trait,
+    {
+        let palitra_geometry = palitra_geometry::Entity::find()
+            .filter(palitra_geometry::Column::PalitraId.eq(palitra_id))
+            .filter(palitra_geometry::Column::Deleted.eq(false))
+            .order_by_desc(palitra_geometry::Column::UpdatedAt)
+            .one(txn)
+            .await
+            .context(h!())?
+            .context(h!())?;
+        let out = build_palitra_point(label, palitra_id, palitra_geometry.id)
+            .insert(txn)
+            .await
+            .context(h!())?;
+        Ok(out)
+    }
+
     fn build_sigint_zone(
         inp: sigint_zone::ActiveModel,
     ) -> sigint_zone::ActiveModel {
@@ -706,6 +840,23 @@ pub mod tests {
         }
         if out.deleted_permanently == NotSet {
             out.deleted_permanently = Set(false);
+        }
+        if out.goi_ssh_host == NotSet {
+            out.goi_ssh_host = Set(None);
+        }
+        if out.goi_ssh_user == NotSet {
+            out.goi_ssh_user = Set(None);
+        }
+        if out.goi_ssh_password == NotSet {
+            out.goi_ssh_password = Set(None);
+        }
+        if out.goi_ssh_port == NotSet {
+            out.goi_ssh_port =
+                Set(crate::config::ORGANISM_GOI_SSH_PORT_DEFAULT);
+        }
+        if out.goi_path == NotSet {
+            out.goi_path =
+                Set(crate::config::ORGANISM_GOI_PATH_DEFAULT.to_string());
         }
         out
     }

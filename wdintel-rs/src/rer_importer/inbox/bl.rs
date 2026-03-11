@@ -11,9 +11,11 @@ use crate::location::utils;
 use crate::location::utils::to_location_list;
 use crate::messenger::group::types::SignalGroupEntry;
 use crate::messenger::group::{collect_groups, CollectGroupsOpts};
+use crate::palitra::types::PalitraAccess;
 use crate::rer_importer::collect_profiles_data;
 use crate::rer_importer::highlight::*;
 use crate::rer_importer::inbox::query::build_inbox_query;
+use crate::rer_importer::points::build_palitra_access_filter;
 use crate::rer_importer::signals::*;
 use crate::storage::mk_media_url;
 use crate::types::*;
@@ -165,10 +167,9 @@ pub async fn aggregate_to_inbox_messages(
             .push((entry, related_group));
     }
 
-    let messages_networks =
-        load_messages_networks(&messages, &groups_map, &env.dbx)
-            .await
-            .context(h!())?;
+    let messages_networks = load_messages_networks(&messages, &env.dbx)
+        .await
+        .context(h!())?;
     let media_entries = signal_message_media::Entity::find()
         .filter(
             signal_message_media::Column::SignalMessageId
@@ -186,12 +187,26 @@ pub async fn aggregate_to_inbox_messages(
             .push(media);
     }
 
+    let highlight_points = req.highlight_points.unwrap_or(false);
+    let mut palitra_points_by_message = if highlight_points {
+        get_palitra_points_by_message(
+            &env.dbx,
+            login.to_string(),
+            message_ids.clone(),
+        )
+        .await
+        .context(h!())?
+    } else {
+        Default::default()
+    };
+
     for message in messages {
         // for message in messages {
         // let m_inbox: Option<sigint_inbox_item::Model> =
         //     SigintInboxItem::find_by_id(message.id)
         //         .one(&env.dbx)
         //         .await.c(h!())?;
+
         let media = media_by_message
             .get(&message.id)
             .cloned()
@@ -232,6 +247,31 @@ pub async fn aggregate_to_inbox_messages(
                 None => None,
                 Some(jv) => Some(serde_json::from_value(jv).context(h!())?),
             };
+        let without_model_tags = req.without_model_tags.unwrap_or(false);
+        let m_inbox_tags: Option<Vec<InboxMessageTag>> =
+            match message.inbox_tags {
+                None => None,
+                Some(jv) => Some(
+                    serde_json::from_value::<Vec<InboxMessageTag>>(jv)
+                        .context(h!())?
+                        .into_iter()
+                        .filter(|tag| {
+                            tag.confidence >= TAG_MINIMUM_CONFIDENCE
+                                && (!without_model_tags || tag.model.is_none())
+                        })
+                        .collect(),
+                ),
+            };
+        let inbox_tag_ids = m_inbox_tags
+            .as_ref()
+            .map(|tags| tags.iter().map(|tag| tag.tag_id).collect::<Vec<_>>());
+
+        let m_point_tokens = if highlight_points {
+            palitra_points_by_message.remove(&message.id)
+        } else {
+            None
+        };
+
         let m_signal_tokens: Option<Vec<CNSignal>> = match message.signal_tokens
         {
             None => None,
@@ -262,12 +302,14 @@ pub async fn aggregate_to_inbox_messages(
             &body,
             Some(&no_headers_body),
             &m_callsign_tokens.clone().unwrap_or_default(),
+            &m_point_tokens.clone().unwrap_or_default(),
             &m_keyword_tokens.clone().unwrap_or_default(),
             &m_signal_tokens.clone().unwrap_or_default(),
             ts_headline,
             crate::rer_importer::highlight::HighlightOpts {
                 highlight_callsigns: req.highlight_callsigns,
                 highlight_keywords: req.highlight_keywords,
+                highlight_points: req.highlight_points,
                 highlight_signals: req.highlight_signals,
                 highlight_searchres: req.highlight_searchres,
             },
@@ -283,24 +325,6 @@ pub async fn aggregate_to_inbox_messages(
             Some(location) => Some(to_location_list(&location).join(", ")),
         };
         let network_ids = messages_networks.get(&message.id).cloned();
-        let without_model_tags = req.without_model_tags.unwrap_or(false);
-        let m_inbox_tags: Option<Vec<InboxMessageTag>> =
-            match message.inbox_tags {
-                None => None,
-                Some(jv) => Some(
-                    serde_json::from_value::<Vec<InboxMessageTag>>(jv)
-                        .context(h!())?
-                        .into_iter()
-                        .filter(|tag| {
-                            tag.confidence >= TAG_MINIMUM_CONFIDENCE
-                                && (!without_model_tags || tag.model.is_none())
-                        })
-                        .collect(),
-                ),
-            };
-        let inbox_tag_ids = m_inbox_tags
-            .as_ref()
-            .map(|tags| tags.iter().map(|tag| tag.tag_id).collect::<Vec<_>>());
 
         res.push((
             message.id,
@@ -329,6 +353,7 @@ pub async fn aggregate_to_inbox_messages(
                 unit: message.unit_v2.clone(),
                 no_headers_body: Some(no_headers_body),
                 callsign_tokens: m_callsign_tokens,
+                point_tokens: m_point_tokens,
                 keyword_tokens: m_keyword_tokens,
                 signal_tokens: m_signal_tokens,
                 text_marked: Some(text_marked),
@@ -388,222 +413,128 @@ pub async fn fill_callsigns(
     Ok(())
 }
 
-#[derive(Debug, FromQueryResult)]
-struct NetworkFreqResult {
-    pub network_id: i64,
-    pub freq: String,
-    pub freq_active_from: Option<NaiveDateTime>,
-    pub freq_active_to: Option<NaiveDateTime>,
-    pub network_active_from: Option<NaiveDateTime>,
-    pub network_active_to: Option<NaiveDateTime>,
+async fn get_palitra_points_by_message(
+    dbx: &DatabaseConnection,
+    login: String,
+    message_ids: Vec<i64>,
+) -> Result<HashMap<i64, Vec<CNPoint>>, AppError> {
+    let access = PalitraAccess::ByLogins {
+        logins: vec![login],
+    };
+    let exact = false;
+    let palitra_cond = build_palitra_access_filter(access, exact);
+    let palitra_points = sigint_inbox_item_point_token::Entity::find()
+        .filter(
+            sigint_inbox_item_point_token::Column::SigintInboxItemId
+                .eq_any(message_ids),
+        )
+        .join(
+            JoinType::InnerJoin,
+            sigint_inbox_item_point_token::Relation::Palitra.def(),
+        )
+        .filter(palitra::Column::Deleted.eq(false))
+        .filter(palitra_cond)
+        .select_only()
+        .column(sigint_inbox_item_point_token::Column::SigintInboxItemId)
+        .column(sigint_inbox_item_point_token::Column::PointTokens)
+        .into_tuple::<(i64, serde_json::Value)>()
+        .all(dbx)
+        .await
+        .context(h!())?;
+    let mut palitra_points_by_message: HashMap<i64, Vec<CNPoint>> =
+        HashMap::new();
+    for (sigint_inbox_item_id, points) in palitra_points {
+        let mut points: Vec<CNPoint> = serde_json::from_value(points)
+            .map_err(|e| anyhow::anyhow!("json convert error: {e}"))?;
+        palitra_points_by_message
+            .entry(sigint_inbox_item_id)
+            .or_default()
+            .append(&mut points);
+    }
+    for points in palitra_points_by_message.values_mut() {
+        points.sort();
+        points.dedup();
+    }
+    Ok(palitra_points_by_message)
 }
 
 pub async fn load_messages_networks(
     messages: &Vec<InboxMessageDesc>,
-    groups_map: &HashMap<
-        i64,
-        Vec<(signal_message_group::Model, Option<datasource_group::Model>)>,
-    >,
     dbx: &DatabaseConnection,
 ) -> Result<HashMap<i64, Vec<i64>>, AppError> {
-    // Step 1: Collect group_ids and freqs from messages
-    let mut group_master_keys = HashSet::new();
-    let mut freqs = HashSet::new();
-    for msg in messages {
-        if let Some(freq) = &msg.freq {
-            freqs.insert(freq.clone());
-        }
-        if let Some(entries) = groups_map.get(&msg.id) {
-            for (entry, _) in entries {
-                if let Some(group_master_key) = entry.group_master_key.clone() {
-                    group_master_keys.insert(group_master_key);
-                }
-            }
-        }
+    let message_ids = messages.iter().map(|m| m.id).collect_vec();
+    if message_ids.is_empty() {
+        return Ok(HashMap::new());
     }
 
-    // Step 2. Load groups bounds
-    let groups_with_aors = signal_group_aor::Entity::find()
-        .find_with_related(area_of_responsibility::Entity)
-        .filter(
-            signal_group_aor::Column::MasterKey
-                .eq_any(group_master_keys.into_iter().collect()),
-        )
-        .filter(area_of_responsibility::Column::Deleted.eq(false))
-        .all(dbx)
+    let result = backfill_missing_messages_networks(&message_ids, dbx)
         .await
         .context(h!())?;
-
-    let mut group_bounds_map: HashMap<String, Vec<(f64, f64)>> = HashMap::new();
-    for (group_aor, aors) in groups_with_aors {
-        for aor in aors {
-            group_bounds_map
-                .entry(group_aor.master_key.clone())
-                .or_default()
-                .push((aor.left_bound, aor.right_bound));
-        }
-    }
-
-    // Step 3: Load network_freq + networks, collect network_ids
-    let networks_freqs = sigint_network_freq::Entity::find()
-        .inner_join(sigint_network::Entity)
-        .select_only()
-        .column(sigint_network_freq::Column::NetworkId)
-        .column(sigint_network_freq::Column::Freq)
-        .column_as(sigint_network_freq::Column::ActiveFrom, "freq_active_from")
-        .column_as(sigint_network_freq::Column::ActiveTo, "freq_active_to")
-        .column_as(sigint_network::Column::ActiveFrom, "network_active_from")
-        .column_as(sigint_network::Column::ActiveTo, "network_active_to")
-        .filter(
-            sigint_network_freq::Column::Freq
-                .eq_any(freqs.into_iter().collect()),
-        )
-        .filter(sigint_network_freq::Column::Deleted.eq(false))
-        .filter(sigint_network::Column::Deleted.eq(false))
-        .into_model::<NetworkFreqResult>()
-        .all(dbx)
-        .await
-        .context(h!())?;
-
-    let mut network_ids = HashSet::new();
-    let mut freq_networks_map: HashMap<String, Vec<NetworkFreqResult>> =
-        HashMap::new();
-    for nf in networks_freqs {
-        network_ids.insert(nf.network_id);
-        freq_networks_map
-            .entry(nf.freq.clone())
-            .or_default()
-            .push(nf);
-    }
-
-    // Step 5: Load AORs for networks
-    let network_aors = sigint_network_aor::Entity::find()
-        .find_with_related(area_of_responsibility::Entity)
-        .filter(area_of_responsibility::Column::Deleted.eq(false))
-        .filter(
-            sigint_network_aor::Column::NetworkId
-                .eq_any(network_ids.into_iter().collect()),
-        )
-        .all(dbx)
-        .await
-        .context(h!())?;
-
-    let mut network_bounds_map: HashMap<i64, Vec<(f64, f64)>> = HashMap::new();
-    for (na, aors) in network_aors {
-        for aor in aors {
-            network_bounds_map
-                .entry(na.network_id)
-                .or_default()
-                .push((aor.left_bound, aor.right_bound));
-        }
-    }
-
-    // Step 6: Match messages to networks
-    let res = match_network_ids_for_messages(
-        messages,
-        groups_map,
-        &group_bounds_map,
-        &network_bounds_map,
-        &freq_networks_map,
-    )
-    .context(h!())?;
-
-    Ok(res)
+    Ok(result)
 }
 
-fn match_network_ids_for_messages(
-    messages: &Vec<InboxMessageDesc>,
-    groups_map: &HashMap<
-        i64,
-        Vec<(signal_message_group::Model, Option<datasource_group::Model>)>,
-    >,
-    group_bounds_map: &HashMap<String, Vec<(f64, f64)>>,
-    network_bounds_map: &HashMap<i64, Vec<(f64, f64)>>,
-    freq_networks_map: &HashMap<String, Vec<NetworkFreqResult>>,
+async fn backfill_missing_messages_networks(
+    message_ids: &[i64],
+    dbx: &DatabaseConnection,
 ) -> Result<HashMap<i64, Vec<i64>>, AppError> {
-    let mut result = HashMap::new();
-
-    fn is_active_at(
-        dt: NaiveDateTime,
-        active_from: Option<NaiveDateTime>,
-        active_to: Option<NaiveDateTime>,
-    ) -> bool {
-        let from_ok = active_from.map(|from| from <= dt).unwrap_or(true);
-        let to_ok = active_to.map(|to| to >= dt).unwrap_or(true);
-        from_ok && to_ok
-    }
-
-    for msg in messages {
-        let Some(entries) = groups_map.get(&msg.id) else {
-            continue;
-        };
-        let Some(group_master_key) = entries
-            .iter()
-            .min_by_key(|(entry, _)| entry.id)
-            .and_then(|(entry, _)| entry.group_master_key.clone())
-        else {
-            continue;
-        };
-        let Some(freq) = &msg.freq else { continue };
-
-        let Some(group_bounds) = group_bounds_map.get(&group_master_key) else {
-            continue;
-        };
-
-        let Some(candidate_networks) = freq_networks_map.get(freq) else {
-            continue;
-        };
-
-        let msg_dt = msg.timestamp.unwrap_or_else(|| Utc::now().naive_utc());
-        let mut matched = HashSet::new();
-
-        for candidate in candidate_networks {
-            let network_id = candidate.network_id;
-            if !is_active_at(
-                msg_dt,
-                candidate.network_active_from,
-                candidate.network_active_to,
-            ) {
-                continue;
-            }
-            if !is_active_at(
-                msg_dt,
-                candidate.freq_active_from,
-                candidate.freq_active_to,
-            ) {
-                continue;
-            }
-            if let Some(net_bounds) = network_bounds_map.get(&network_id) {
-                for (gl, gr) in group_bounds {
-                    for (nl, nr) in net_bounds {
-                        // 1. Group starts inside network
-                        // Network: |----[nl=======nr]-------|
-                        // Group:   |----------[gl=====gr]---|
-
-                        // 2. Group ends inside network
-                        // Network: |------[nl========nr]----|
-                        // Group:   |--[gl======gr]----------|
-
-                        // 3. Group covers network
-                        // Network: |-------[nl==nr]---------|
-                        // Group:   |---[gl===========gr]----|
-
-                        if (gl >= nl && gl <= nr)                   // group left inside network
-                            || (gr >= nl && gr <= nr)               // group right inside network
-                            || (gl <= nl && gr >= nr)
-                        // group fully covers network
-                        {
-                            matched.insert(network_id);
-                            break;
-                        }
-                    }
+    let mut result: HashMap<i64, Vec<i64>> = HashMap::new();
+    let mut existing_message_ids = HashSet::new();
+    let mut processed_message_networks = HashSet::new();
+    for ids in message_ids.chunks(20000) {
+        sigint_inbox_item_network::Entity::find()
+            .select_only()
+            .column(sigint_inbox_item_network::Column::SigintInboxItemId)
+            .column(sigint_inbox_item_network::Column::SigintNetworkId)
+            .filter(
+                sigint_inbox_item_network::Column::SigintInboxItemId
+                    .is_in(ids.to_vec()),
+            )
+            .into_tuple::<(i64, i64)>()
+            .all(dbx)
+            .await
+            .context(h!())?
+            .into_iter()
+            .for_each(|(item_id, network_id)| {
+                existing_message_ids.insert(item_id);
+                if !processed_message_networks.insert((item_id, network_id)) {
+                    return;
                 }
-            }
-        }
-
-        result.insert(msg.id, matched.into_iter().collect::<Vec<_>>());
+                result.entry(item_id).or_default().push(network_id);
+            });
+    }
+    let missing_message_ids = message_ids
+        .iter()
+        .filter(|id| !existing_message_ids.contains(id))
+        .copied()
+        .collect_vec();
+    if missing_message_ids.is_empty() {
+        return Ok(result);
     }
 
+    let mut items_to_recalculate = vec![];
+    for ids in missing_message_ids.chunks(20000) {
+        sigint_inbox_item::Entity::find()
+            .filter(sigint_inbox_item::Column::Id.is_in(ids.to_vec()))
+            .all(dbx)
+            .await
+            .context(h!())?
+            .into_iter()
+            .for_each(|r| items_to_recalculate.push(r));
+    }
+
+    if items_to_recalculate.is_empty() {
+        return Ok(result);
+    }
+
+    let new_entries = crate::sigint::network::etalon_calc::calculate_sigint_inbox_item_networks(
+        items_to_recalculate,
+        dbx,
+    )
+    .await
+    .context(h!())?;
+    for (id, ids) in new_entries {
+        result.insert(id, ids.into_iter().unique().collect_vec());
+    }
     Ok(result)
 }
 
@@ -611,18 +542,41 @@ pub async fn load_inbox_callsigns(
     inbox_items: &Vec<(i64, InboxMessage)>,
     env: &Data<Env>,
 ) -> Result<Vec<CallsignInfoRes>, AppError> {
-    let callsigns = inbox_items
+    let mut callsigns: HashMap<String, Vec<i64>> = HashMap::new();
+    inbox_items
         .iter()
-        .flat_map(|x| {
-            x.1.callsigns
+        .map(|(_id, item)| {
+            let callsigns = item
+                .callsigns
                 .clone()
                 .into_iter()
-                .chain(x.1.callsigns_alg2.clone().into_iter())
+                .chain(item.callsigns_alg2.clone().into_iter())
+                .unique()
+                .collect_vec();
+            (item.network_ids.clone(), callsigns)
         })
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect_vec();
-    let data = crate::rer_importer::gdoc::load_callsigns(env, callsigns)
+        .for_each(|(network_ids, callsigns_vec)| {
+            if let Some(network_ids) = network_ids {
+                for c in callsigns_vec {
+                    callsigns
+                        .entry(c.clone())
+                        .and_modify(|ns| {
+                            for network_id in &network_ids {
+                                ns.push(*network_id)
+                            }
+                        })
+                        .or_insert(network_ids.clone());
+                }
+            }
+        });
+    let mut callsigns_data = vec![];
+    for (callsign, network_ids) in callsigns {
+        callsigns_data.push(CallsignNetworks {
+            network_ids: network_ids.into_iter().unique().collect_vec(),
+            callsign,
+        });
+    }
+    let data = crate::rer_importer::gdoc::load_callsigns(env, callsigns_data)
         .await
         .context(h!())?;
     Ok(data)
@@ -749,7 +703,7 @@ pub fn aggregate_network_units(
 }
 
 pub async fn submit_upsert_inbox_item(
-    settlements: Arc<RwLock<crate::location::SettlementsData>>,
+    settlements: Arc<RwLock<crate::location::SettlementsDataConfig>>,
     txn: &DatabaseTransaction,
     id: i64,
     message: &InboxMessage,
@@ -859,11 +813,31 @@ pub async fn submit_upsert_inbox_item(
     }
 
     let location = message.location.clone();
+    let m_aor_id = match message.group_master_key.clone() {
+        Some(group_master_key) => signal_group_aor::Entity::find()
+            .join(
+                JoinType::InnerJoin,
+                signal_group_aor::Relation::AreaOfResponsibility.def(),
+            )
+            .filter(signal_group_aor::Column::MasterKey.eq(group_master_key))
+            .filter(area_of_responsibility::Column::Deleted.eq(false))
+            .order_by_asc(signal_group_aor::Column::Id)
+            .select_only()
+            .column(signal_group_aor::Column::AorId)
+            .into_tuple::<i64>()
+            .one(txn)
+            .await
+            .c(h!())?,
+        None => None,
+    };
     let location_v2 = match location.clone() {
         Some(location) => {
-            let locations =
-                crate::location::parse_location(settlements.clone(), location)
-                    .context(h!())?;
+            let locations = crate::location::parse_location_with_aor(
+                settlements.clone(),
+                location,
+                m_aor_id,
+            )
+            .context(h!())?;
             Some(utils::format_settlements_list(locations))
         }
         None => location.clone(), //fallback

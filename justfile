@@ -812,6 +812,14 @@ restore-pgbackrest server backup_name="":
 copy-db-local:
     #!/bin/bash
     set -euxo pipefail
+    just dt1={{ dt1 }} pgdb={{ pgdb }} copy-db-download
+    just dt1={{ dt1 }} pgdb={{ pgdb }} restore-db-local
+    sudo rm /var/tmp/wd-{{ dt1 }}.pgrestore
+    ssh -t {{ server }} '(rm /var/tmp/wd-{{ dt1 }}.pgrestore) | echo "ok"'
+
+copy-db-download:
+    #!/bin/bash
+    set -euxo pipefail
     if [[ "{{ server }}" == "" ]]; then
          just _print-servers; exit 1;
     fi
@@ -820,9 +828,6 @@ copy-db-local:
     ssh -t {{ server }} '(cd /var/tmp && PGPASSWORD="{{ pgpwd }}" pg_dump --user wd -Fc wd > wd-{{ dt1 }}.pgrestore && ls -lah wd-{{ dt1 }}.pgrestore)'
     scp {{ server }}:/var/tmp/wd-{{ dt1 }}.pgrestore /var/tmp/
     ssh -t {{ server }} '(rm ~/Downloads/wd-{{ dt1 }}.pgrestore) | echo "ok"'
-    just dt1={{ dt1 }} pgdb={{ pgdb }} restore-db-local
-    sudo rm /var/tmp/wd-{{ dt1 }}.pgrestore
-    ssh -t {{ server }} '(rm /var/tmp/wd-{{ dt1 }}.pgrestore) | echo "ok"'
 
 restore-db-local:
     sudo -u postgres psql -c 'drop database {{ pgdb }} with (FORCE)' | echo 'ok'
@@ -1076,14 +1081,14 @@ ziggy-echo-build-local builder="echo-build-local" server="echo-staging" branch="
     PADD='$HOME/.local/bin:$HOME/.cargo/bin'
 
     echo "🔄 Pulling latest code on ${BUILDER}..."
-    ssh "${BUILDER}" 'set -euxo pipefail; cd workspace/echo && git fetch origin '"${BRANCH}"' && git checkout '"${BRANCH}"' && git pull --ff-only origin '"${BRANCH}"' && PATH='"$PADD"':$PATH cargo build --release'
+    ssh -A "${BUILDER}" 'set -euxo pipefail; cd workspace/echo && git fetch origin '"${BRANCH}"' && git checkout '"${BRANCH}"' && git pull --ff-only origin '"${BRANCH}"' && PATH='"$PADD"':$PATH cargo build --release'
 
     echo "📦 Copying wdintel-rs binary from ${BUILDER} to ${TARGET}..."
     rsync --info=progress2 "${BUILDER}:workspace/echo/target/release/wdintel-rs" /var/tmp/
     rsync --info=progress2 /var/tmp/wdintel-rs "${TARGET}:/var/tmp/"
 
     echo "🚀 Updating binary on ${TARGET} and restarting wdintel-rs..."
-    ssh "${TARGET}" 'set -euxo pipefail; sudo mv /var/tmp/wdintel-rs /usr/bin/wdintel-rs && sudo systemctl restart wdintel-rs'
+    ssh -A "${TARGET}" 'set -euxo pipefail; sudo mv /var/tmp/wdintel-rs /usr/bin/wdintel-rs && sudo systemctl restart wdintel-rs'
 
 build-geo-screenshot:
     ssh {{ builder }} '(cd workspace/map-bot && git fetch origin && git clean -df && git checkout {{ branch }} && git pull)'

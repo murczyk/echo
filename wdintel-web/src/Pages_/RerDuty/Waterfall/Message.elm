@@ -914,6 +914,10 @@ leftColumn ( messageId, message ) ps model =
 
 rightColumn : ( Int, B.InboxMessage ) -> ViewParams -> Model -> Html Msg
 rightColumn ( messageId, message ) ps model =
+    let
+        uniqueMessageNetworkIds =
+            ListX.unique ps.messageNetworkIds
+    in
     div
         [ class "mb-2 rounded-3 px-2 pt-2 pb-2 basis-3/4 flex-1 message-div bg-card relative"
         , style "z-index" "200"
@@ -1028,7 +1032,7 @@ rightColumn ( messageId, message ) ps model =
                                                             [ title <| "ID мережі " ++ String.fromInt networkId ]
                                                             [ text "Невідома мережа" ]
                                             )
-                                            ps.messageNetworkIds
+                                            uniqueMessageNetworkIds
 
                     metaFields =
                         let
@@ -1155,13 +1159,33 @@ rightColumn ( messageId, message ) ps model =
                                                     -- Немає мережі → MessageContext не показує каталог
 
                                                 else
-                                                    Just ps.messageNetworkIds
+                                                    Just uniqueMessageNetworkIds
 
                                             -- Є мережа → показуємо тільки мережеві підказки
                                             }
 
+                                        callsignsForHints =
+                                            let
+                                                callsignsFromMarkedText =
+                                                    textMarked
+                                                        |> List.filterMap
+                                                            (\contentNode ->
+                                                                case contentNode of
+                                                                    B.CnCallsignC callsignContent ->
+                                                                        Just callsignContent.text
+
+                                                                    _ ->
+                                                                        Nothing
+                                                            )
+                                            in
+                                            if List.isEmpty callsignsFromMarkedText then
+                                                message.callsigns
+
+                                            else
+                                                callsignsFromMarkedText
+
                                         hintResultsDict =
-                                            message.callsigns
+                                            callsignsForHints
                                                 |> List.foldl
                                                     (\callsign dict ->
                                                         let
@@ -1173,12 +1197,12 @@ rightColumn ( messageId, message ) ps model =
                                                                     context
                                                                     callsign
                                                         in
-                                                        Dict.insert callsign hintResult dict
+                                                        Dict.insert (String.toLower callsign) hintResult dict
                                                     )
                                                     Dict.empty
                                     in
                                     Shared.MarkedText.new textMarked
-                                        |> Shared.MarkedText.viewWithHintResults hintResultsDict (Just ps.signals) (Dict.values ps.networks) message.freq
+                                        |> Shared.MarkedText.viewWithHintResults hintResultsDict (Just ps.signals) (Dict.values ps.networks) message.freq message.text Nothing
 
                                 Nothing ->
                                     msgToHtml message.text

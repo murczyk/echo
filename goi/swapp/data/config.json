@@ -1,0 +1,6 @@
+{
+  "clientPort": 4002,
+  "signalPort": 8080,
+  "signalMode": "json-rpc",
+  "signalName": "swapp-signal"
+}

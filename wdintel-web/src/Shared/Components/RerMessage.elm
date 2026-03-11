@@ -46,6 +46,7 @@ type alias ViewParams =
     , networks : Dict Int B.Network
     , masterUnits : Dict Int B.Unit
     , currentRoute : Maybe (Route ())
+    , pointTokenClickUrlFor : B.InboxMessage -> Maybe (String -> String)
     }
 
 
@@ -1369,7 +1370,8 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                   <|
                     case message.textMarked of
                         Just textMarked ->
-                            Shared.MarkedText.new textMarked |> Shared.MarkedText.view Dict.empty Nothing [] Nothing
+                            Shared.MarkedText.new textMarked
+                                |> Shared.MarkedText.viewWithHintResults Dict.empty Nothing (Dict.values vps.networks) message.freq message.text (vps.pointTokenClickUrlFor message)
 
                         Nothing ->
                             msgToHtml message.text

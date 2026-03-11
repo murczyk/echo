@@ -124,6 +124,7 @@ type Msg
     | ReportTagsOnlyThisUnitForReportToggle
     | ReportTagsWithoutBotTagsToggle
     | ReportAdvancedSendersToggle
+    | ReportReoNoCommentsToggle
     | DeleteMessageConfirm
     | DeleteMessageCancel
     | DeleteMessageDone Int (Result ApiError ())
@@ -143,7 +144,7 @@ type Msg
     | MapClosed
     | MapPeriodChanged { startDate : Int, endDate : Int }
     | LoadMessagesForMap (List Int)
-    | GotMessagesForMap (Result ApiError B.MessageIdsRsp)
+    | GotMessagesForMap Int (Result ApiError B.MessageIdsRsp)
     | GotFreqActivityDaily (Result ApiError B.FreqDailyActivityCount)
     | SetUnitFilterFromMap String
     | SelectFilterAdjacentFreqsRange (Select.Msg Float)
@@ -157,5 +158,5 @@ type Msg
     | SaveEditSidebar
     | EditSidebarUpdate Int (B.InboxMessage -> B.InboxMessage)
     | EditSidebarSaveDone Int (Result ApiError ())
-    | GotPalitras (Result ApiError (List B.Palitra))
+    | GotPalitras (Result ApiError (List B.PalitraReadV2))
     | GotAllAors (Result ApiError (List B.AreaOfResponsibility))

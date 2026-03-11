@@ -1,5 +1,6 @@
 use crate::location::trie::Trie;
 use crate::location::types::Language;
+pub use crate::location::types::SettlementsDataConfig;
 pub(crate) use crate::location::types::{
     FindSettlementReq, SettlementDetails, SettlementFileRow,
 };
@@ -11,6 +12,7 @@ use lazy_static::lazy_static;
 use regex::Regex;
 use std::fs;
 
+pub mod aor_config;
 pub mod peleng;
 pub mod trie;
 pub mod types;
@@ -39,47 +41,76 @@ async fn find_locations(
         req.query,
         req.region,
         req.related_coordinates,
+        req.aor_id,
     )
     .c(h!())?;
     Ok(Json(locations))
+}
+
+#[derive(Debug, Deserialize)]
+struct FetchRegionsReq {
+    aor_id: Option<i64>,
 }
 
 #[get("/api/location/regions")]
 async fn fetch_regions(
     user: actix_identity::Identity,
     _http_req: HttpRequest,
+    req: actix_web::web::Query<FetchRegionsReq>,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<Vec<String>>, AppError> {
     crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
         .await
         .c(h!())?;
-    let region_names = get_region_names(env.settlements.clone()).c(h!())?;
+    let region_names =
+        get_region_names(env.settlements.clone(), req.aor_id).c(h!())?;
     Ok(Json(region_names))
 }
 
+fn select_settlements_data(
+    config: &SettlementsDataConfig,
+    m_aor_id: Option<i64>,
+) -> &SettlementsData {
+    match m_aor_id {
+        Some(aor_id) => match config.aor_id_to_settlements_data.get(&aor_id) {
+            Some(data) => data.as_ref(),
+            None => {
+                warn!(
+                    "no settlements config found for aor_id={}, using default settlements list from config.toml",
+                    aor_id
+                );
+                config.default_settlements_data.as_ref()
+            }
+        },
+        None => config.default_settlements_data.as_ref(),
+    }
+}
+
 fn get_region_names(
-    settlements: Arc<RwLock<SettlementsData>>,
+    settlements: Arc<RwLock<SettlementsDataConfig>>,
+    m_aor_id: Option<i64>,
 ) -> anyhow::Result<Vec<String>> {
     let settlements_lock = settlements
         .read()
         .map_err(|e| AppError::from(format!("{e:?}")))
         .c(h!())?;
-    let config: &SettlementsData = &settlements_lock;
+    let config = select_settlements_data(&settlements_lock, m_aor_id);
     let (region_names, _, _, _) = config;
     Ok(region_names.clone())
 }
 
 fn find_locations_by_name(
-    settlements: Arc<RwLock<SettlementsData>>,
+    settlements: Arc<RwLock<SettlementsDataConfig>>,
     query: String,
     m_region: Option<String>,
     m_src_coords: Option<(f64, f64)>,
+    m_aor_id: Option<i64>,
 ) -> anyhow::Result<Vec<SettlementDetails>> {
     let settlements_lock = settlements
         .read()
         .map_err(|e| AppError::from(format!("{e:?}")))
         .c(h!())?;
-    let config: &SettlementsData = &settlements_lock;
+    let config = select_settlements_data(&settlements_lock, m_aor_id);
     let (_, _, _, settlements) = config;
     let mut matches: Vec<SettlementDetails> = Vec::new();
     for s in settlements.values() {
@@ -123,14 +154,16 @@ fn find_locations_by_name(
     Ok(matches)
 }
 
-pub fn parse_location(
-    settlements: Arc<RwLock<SettlementsData>>,
+pub fn parse_location_with_aor(
+    settlements: Arc<RwLock<SettlementsDataConfig>>,
     location: String,
+    m_aor_id: Option<i64>,
 ) -> anyhow::Result<Vec<SettlementDetails>> {
     let settlements_lock = settlements
         .read()
         .map_err(|e| AppError::from(format!("{e:?}")))
         .c(h!())?;
+    let settlements_data = select_settlements_data(&settlements_lock, m_aor_id);
     lazy_static! {
         static ref JUNK_CHAR_RE: Regex =
             Regex::new(r#"[ \(\)\.\-\,\/\:";!\?\*\%\$@0-9]"#).unwrap();
@@ -146,6 +179,7 @@ pub fn parse_location(
         .replace("РАЙ.", "РАЙОН")
         .replace("Р-Н. ", "РАЙОН ")
         .replace("Р-Н ", "РАЙОН ")
+        .replace("Н.П.", " ")
         .replace("ОБ-ТЬ", "ОБЛАСТЬ");
     let location = JUNK_CHAR_RE.replace_all(&location, " ").to_string();
     let location = JUNK_WORD_RE.replace_all(&location, " ").to_string();
@@ -155,7 +189,7 @@ pub fn parse_location(
         .split_whitespace()
         .map(|x| x.to_string())
         .collect_vec();
-    let result = find_matching_settlements(words, &settlements_lock).c(h!())?;
+    let result = find_matching_settlements(words, settlements_data).c(h!())?;
     if result.is_empty() {
         return Ok(vec![]);
     }
@@ -308,9 +342,12 @@ fn handle_three_words_group(
 }
 
 fn trim(string: String) -> String {
-    let mut string = string.replace("    ", " ").replace("   ", " ");
+    let mut string = string;
     while string.contains("  ") {
-        string = string.replace("  ", " ");
+        string = string
+            .replace("    ", " ")
+            .replace("   ", " ")
+            .replace("  ", " ");
     }
     String::from(string.trim())
 }
@@ -328,20 +365,15 @@ pub fn load_from_file(
     let mut settlements = BTreeMap::new();
 
     for source in settlements_paths {
-        // info!("[{}] loading source", &source);
-        // let path = format!("{}/{}", dir, source.clone());
         let path = root_dir.join(source.clone());
-        let text = match path.exists() {
-            true => fs::read_to_string(path.clone()).c(h!())?,
-            false => {
-                warn!(
-                    "[{}] cannot load source at {}, loading settlements.json",
-                    &source,
-                    path.display()
-                );
-                fs::read_to_string("/etc/echo/settlements.json").c(h!())?
-            }
-        };
+        if !path.exists() {
+            return Err(anyhow!(
+                "[{}] cannot load settlements source at {}",
+                &source,
+                path.display()
+            ));
+        }
+        let text = fs::read_to_string(path.clone()).c(h!())?;
         if mode != Mode::Test {
             debug!("[{}] loaded source successfully", &source);
         }
@@ -403,6 +435,30 @@ pub fn load_from_file(
     Ok((region_names, regions, trie, settlements))
 }
 
+pub fn load_settlements_data_config(
+    settlements_paths: Vec<String>,
+    mode: Mode,
+) -> anyhow::Result<SettlementsDataConfig> {
+    let default_settlements_data =
+        Arc::new(load_from_file(settlements_paths.clone(), mode).c(h!())?);
+    let mut settlements_data_by_config = HashMap::new();
+    for source in settlements_paths.iter() {
+        let settlements_data =
+            load_from_file(vec![source.clone()], mode).c(h!())?;
+        settlements_data_by_config
+            .insert(source.clone(), Arc::new(settlements_data));
+    }
+    Ok(SettlementsDataConfig {
+        aor_id_to_settlements_data: HashMap::new(),
+        aor_id_to_config_names: HashMap::new(),
+        default_settlements_data,
+        default_settlements_files: settlements_paths.clone(),
+        settlements_data_by_config,
+        available_settlements_configs: settlements_paths,
+        mode,
+    })
+}
+
 fn match_settlement(
     query: &str,
     trie: &Trie<SettlementDetails>,
@@ -460,7 +516,8 @@ fn collect_blacklist() -> Vec<&'static str> {
         "ТАНКОВОГО",
         "ПІХОТНОГО",
         "СТРІЛЕЦЬКОГО",
-        r#"ІМ\."#,
+        r#"ІМ"#,
+        r#"ЙМ"#,
         "ВІЙСЬКОВА",
         "ВІЙСЬКОВУ",
         "ВІЙСЬКОВОЇ",
@@ -507,6 +564,13 @@ fn deduplicate_settlement_names(
 mod tests {
     use super::*;
 
+    fn parse_location_with_aor_id(
+        settlements: Arc<RwLock<SettlementsDataConfig>>,
+        location: String,
+    ) -> anyhow::Result<Vec<SettlementDetails>> {
+        parse_location_with_aor(settlements, location, None)
+    }
+
     fn test_settlements_array(data: Vec<SettlementDetails>) -> Vec<String> {
         let mut result = vec![];
         for row in data {
@@ -521,11 +585,17 @@ mod tests {
     pub fn test1() {
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            load_from_file(config.settlement_paths().unwrap(), Mode::Test)
-                .unwrap(),
+            load_settlements_data_config(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
-        let result =
-            parse_location(settlements, String::from("\"location\"")).unwrap();
+        let result = parse_location_with_aor_id(
+            settlements,
+            String::from("\"location\""),
+        )
+        .unwrap();
         assert!(result.is_empty());
     }
 
@@ -533,10 +603,13 @@ mod tests {
     pub fn test2() {
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            load_from_file(config.settlement_paths().unwrap(), Mode::Test)
-                .unwrap(),
+            load_settlements_data_config(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
-        let result = parse_location(
+        let result = parse_location_with_aor_id(
             settlements,
             String::from("СТЕПНЕ - МИРНЕ-НЕСТЕРЯНКА"),
         )
@@ -549,11 +622,17 @@ mod tests {
     pub fn test3() {
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            load_from_file(config.settlement_paths().unwrap(), Mode::Test)
-                .unwrap(),
+            load_settlements_data_config(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
-        let result =
-            parse_location(settlements, String::from("рн Миколаївка")).unwrap();
+        let result = parse_location_with_aor_id(
+            settlements,
+            String::from("рн Миколаївка"),
+        )
+        .unwrap();
         let result = test_settlements_array(result);
         assert_eq!(vec!["МИКОЛАЇВКА",], result);
     }
@@ -562,12 +641,17 @@ mod tests {
     pub fn test4() {
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            load_from_file(config.settlement_paths().unwrap(), Mode::Test)
-                .unwrap(),
+            load_settlements_data_config(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
-        let result =
-            parse_location(settlements, String::from("УКРАЇНСЬКЕ-БАГАТЕ"))
-                .unwrap();
+        let result = parse_location_with_aor_id(
+            settlements,
+            String::from("УКРАЇНСЬКЕ-БАГАТЕ"),
+        )
+        .unwrap();
         let result = test_settlements_array(result);
         assert_eq!(vec!["БАГАТЕ", "УКРАЇНСЬКЕ",], result);
     }
@@ -576,11 +660,15 @@ mod tests {
     pub fn test5() {
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            load_from_file(config.settlement_paths().unwrap(), Mode::Test)
-                .unwrap(),
+            load_settlements_data_config(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
         let result =
-            parse_location(settlements, String::from("ПОРТЛЕНД")).unwrap();
+            parse_location_with_aor_id(settlements, String::from("ПОРТЛЕНД"))
+                .unwrap();
         assert!(result.is_empty());
     }
 
@@ -588,10 +676,13 @@ mod tests {
     pub fn test6() {
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            load_from_file(config.settlement_paths().unwrap(), Mode::Test)
-                .unwrap(),
+            load_settlements_data_config(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
-        let result = parse_location(
+        let result = parse_location_with_aor_id(
             settlements,
             String::from("РЕМІВКА-СТЕПОВЕ-ПРИЮТНЕ"),
         )
@@ -604,11 +695,15 @@ mod tests {
     pub fn test8() {
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            load_from_file(config.settlement_paths().unwrap(), Mode::Test)
-                .unwrap(),
+            load_settlements_data_config(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
         let result =
-            parse_location(settlements, String::from("СТЕПОВЕ")).unwrap();
+            parse_location_with_aor_id(settlements, String::from("СТЕПОВЕ"))
+                .unwrap();
         let result = test_settlements_array(result);
         assert_eq!(vec!["СТЕПОВЕ",], result);
     }
@@ -617,10 +712,13 @@ mod tests {
     pub fn test9() {
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            load_from_file(config.settlement_paths().unwrap(), Mode::Test)
-                .unwrap(),
+            load_settlements_data_config(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
-        let result = parse_location(
+        let result = parse_location_with_aor_id(
             settlements,
             String::from("Завітне Бажання, Старомлинівка"),
         )
@@ -633,10 +731,13 @@ mod tests {
     pub fn test10() {
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            load_from_file(config.settlement_paths().unwrap(), Mode::Test)
-                .unwrap(),
+            load_settlements_data_config(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
-        let result = parse_location(
+        let result = parse_location_with_aor_id(
             settlements,
             String::from("3123132 vsd сх. Соледар, Донецька обл"),
         )
@@ -655,10 +756,13 @@ mod tests {
         let man = std::env!("CARGO_MANIFEST_DIR");
         println!("> man: {man}");
         let settlements = Arc::new(RwLock::new(
-            load_from_file(config.settlement_paths().unwrap(), Mode::Test)
-                .unwrap(),
+            load_settlements_data_config(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
-        let result = parse_location(
+        let result = parse_location_with_aor_id(
             settlements,
             String::from("сх. Соледар, Донецька обл."),
         )
@@ -671,10 +775,13 @@ mod tests {
     pub fn test12() {
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            load_from_file(config.settlement_paths().unwrap(), Mode::Test)
-                .unwrap(),
+            load_settlements_data_config(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
-        let result = parse_location(
+        let result = parse_location_with_aor_id(
             settlements,
             String::from("ОЧЕРЕТУВАТЕ-СОЛОДКА БАЛКА"),
         )
@@ -687,12 +794,17 @@ mod tests {
     pub fn test13() {
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            load_from_file(config.settlement_paths().unwrap(), Mode::Test)
-                .unwrap(),
+            load_settlements_data_config(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
-        let result =
-            parse_location(settlements, String::from("Півд. Мала Токмачка"))
-                .unwrap();
+        let result = parse_location_with_aor_id(
+            settlements,
+            String::from("Півд. Мала Токмачка"),
+        )
+        .unwrap();
         let result = test_settlements_array(result);
         assert_eq!(vec!["МАЛА ТОКМАЧКА",], result);
     }
@@ -701,12 +813,17 @@ mod tests {
     pub fn test14() {
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            load_from_file(config.settlement_paths().unwrap(), Mode::Test)
-                .unwrap(),
+            load_settlements_data_config(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
-        let result =
-            parse_location(settlements, String::from("ЛУГОВЕ - ЖЕРЕБ"))
-                .unwrap();
+        let result = parse_location_with_aor_id(
+            settlements,
+            String::from("ЛУГОВЕ - ЖЕРЕБ"),
+        )
+        .unwrap();
         let result = test_settlements_array(result);
         assert_eq!(vec!["ЛУГОВЕ",], result);
     }
@@ -715,11 +832,15 @@ mod tests {
     pub fn test15() {
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            load_from_file(config.settlement_paths().unwrap(), Mode::Test)
-                .unwrap(),
+            load_settlements_data_config(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
         let result =
-            parse_location(settlements, String::from("Робоботине")).unwrap();
+            parse_location_with_aor_id(settlements, String::from("Робоботине"))
+                .unwrap();
         let result = test_settlements_array(result);
         assert_eq!(vec!["РОБОТИНЕ",], result);
     }
@@ -728,10 +849,13 @@ mod tests {
     pub fn test16() {
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            load_from_file(config.settlement_paths().unwrap(), Mode::Test)
-                .unwrap(),
+            load_settlements_data_config(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
-        let result = parse_location(
+        let result = parse_location_with_aor_id(
             settlements,
             String::from("Соледар, Донцька обл., Завітне Бажання"),
         )
@@ -744,10 +868,13 @@ mod tests {
     pub fn test17() {
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            load_from_file(config.settlement_paths().unwrap(), Mode::Test)
-                .unwrap(),
+            load_settlements_data_config(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
-        let result = parse_location(
+        let result = parse_location_with_aor_id(
             settlements,
             String::from("Соледар, Донецкая обл., Завітне Божання"),
         )
@@ -760,10 +887,13 @@ mod tests {
     pub fn test18() {
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            load_from_file(config.settlement_paths().unwrap(), Mode::Test)
-                .unwrap(),
+            load_settlements_data_config(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
-        let result = parse_location(
+        let result = parse_location_with_aor_id(
             settlements,
             String::from("Завітне Божання, Соледар, Донецьк. обл."),
         )
@@ -776,10 +906,13 @@ mod tests {
     pub fn test19() {
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            load_from_file(config.settlement_paths().unwrap(), Mode::Test)
-                .unwrap(),
+            load_settlements_data_config(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
-        let result = parse_location(
+        let result = parse_location_with_aor_id(
             settlements,
             String::from("Соледар, Донецька обл., Зивітне Божання"),
         )
@@ -792,10 +925,13 @@ mod tests {
     pub fn test20() {
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            load_from_file(config.settlement_paths().unwrap(), Mode::Test)
-                .unwrap(),
+            load_settlements_data_config(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
-        let result = parse_location(
+        let result = parse_location_with_aor_id(
             settlements,
             String::from("Зивітне Божання, Qоледар, Донецька обл."),
         )
@@ -808,10 +944,13 @@ mod tests {
     pub fn test21() {
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            load_from_file(config.settlement_paths().unwrap(), Mode::Test)
-                .unwrap(),
+            load_settlements_data_config(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
-        let result = parse_location(
+        let result = parse_location_with_aor_id(
             settlements,
             String::from(
                 "Dmre (йм. 5 омбр 4 А) (йм. р-н Новоселівка-Сміле-Гоголівка)",
@@ -826,11 +965,17 @@ mod tests {
     pub fn test22() {
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            load_from_file(config.settlement_paths().unwrap(), Mode::Test)
-                .unwrap(),
+            load_settlements_data_config(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
-        let result =
-            parse_location(settlements, String::from("р-н Бабиного")).unwrap();
+        let result = parse_location_with_aor_id(
+            settlements,
+            String::from("р-н Бабиного"),
+        )
+        .unwrap();
         let result = test_settlements_array(result);
         assert_eq!(vec!["БАБИНЕ",], result);
     }
@@ -839,10 +984,13 @@ mod tests {
     pub fn test23() {
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            load_from_file(config.settlement_paths().unwrap(), Mode::Test)
-                .unwrap(),
+            load_settlements_data_config(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
-        let result = parse_location(settlements, String::from(r#"УКХ р\м НВ підрозділу 435.25 йм. західніше Роботиного, та Вербове-Романівське"#)).unwrap();
+        let result = parse_location_with_aor_id(settlements, String::from(r#"УКХ р\м НВ підрозділу 435.25 йм. західніше Роботиного, та Вербове-Романівське"#)).unwrap();
         let result = test_settlements_array(result);
         assert_eq!(vec!["ВЕРБОВЕ", "РОБОТИНЕ", "РОМАНІВСЬКЕ"], result);
     }
@@ -851,10 +999,13 @@ mod tests {
     pub fn test24() {
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            load_from_file(config.settlement_paths().unwrap(), Mode::Test)
-                .unwrap(),
+            load_settlements_data_config(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
-        let result = parse_location(
+        let result = parse_location_with_aor_id(
             settlements,
             String::from("ОГІРЦЕВЕ-ГАТИЩЕ-ВОВЧАНСЬК"),
         )
@@ -867,10 +1018,13 @@ mod tests {
     pub fn test_pidar1() {
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            load_from_file(config.settlement_paths().unwrap(), Mode::Test)
-                .unwrap(),
+            load_settlements_data_config(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
-        let result = parse_location(settlements, String::from(r#"УКХ Центр ( гсабатр гсадн 30 мсп 72 мсд 44 АК ЛВО ров (р-н Щебекіно))"#)).unwrap();
+        let result = parse_location_with_aor_id(settlements, String::from(r#"УКХ Центр ( гсабатр гсадн 30 мсп 72 мсд 44 АК ЛВО ров (р-н Щебекіно))"#)).unwrap();
         let result = test_settlements_array(result);
         assert_eq!(vec!["ШЕБЕКИНО"], result);
     }
@@ -879,10 +1033,13 @@ mod tests {
     pub fn test_pidar2() {
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            load_from_file(config.settlement_paths().unwrap(), Mode::Test)
-                .unwrap(),
+            load_settlements_data_config(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
-        let result = parse_location(settlements, String::from(
+        let result = parse_location_with_aor_id(settlements, String::from(
             r#"УКХ р/м НВ арт. підрозділу ( Пеленг Яснізорі- Устинка) Analog"#,
         ))
             .unwrap();
@@ -894,10 +1051,49 @@ mod tests {
     pub fn test_pidar3() {
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            load_from_file(config.settlement_paths().unwrap(), Mode::Test)
-                .unwrap(),
+            load_settlements_data_config(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
-        let result = parse_location(
+        let result = parse_location_with_aor_id(settlements, String::from(
+            r#"  УКХ р/м артилерійський підрозділ йм. 9 мсп (р-н йм. УСТІНКА) (05.07.2025)"#,
+        ))
+            .unwrap();
+        let result = test_settlements_array(result);
+        assert_eq!(vec!["УСТІНКА"], result);
+    }
+
+    #[test]
+    pub fn test_pidar4() {
+        let config = crate::config::read_config(Mode::Test).unwrap();
+        let settlements = Arc::new(RwLock::new(
+            load_settlements_data_config(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
+        ));
+        let result = parse_location_with_aor_id(settlements, String::from(
+            r#"  УКХ р/м артилерійський підрозділ йм. 9 мсп (р-н йм. н.п. УСТІНКА) (05.07.2025)"#,
+        ))
+            .unwrap();
+        let result = test_settlements_array(result);
+        assert_eq!(vec!["УСТІНКА"], result);
+    }
+
+    #[test]
+    pub fn test_pidar5() {
+        let config = crate::config::read_config(Mode::Test).unwrap();
+        let settlements = Arc::new(RwLock::new(
+            load_settlements_data_config(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
+        ));
+        let result = parse_location_with_aor_id(
             settlements,
             String::from(r#"    УКХ р/м ім. ТГр 45 абр ВП"#),
         )
@@ -910,11 +1106,15 @@ mod tests {
     pub fn test_failure() {
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            load_from_file(config.settlement_paths().unwrap(), Mode::Test)
-                .unwrap(),
+            load_settlements_data_config(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
         let result =
-            parse_location(settlements, String::from("ФРАНКА")).unwrap();
+            parse_location_with_aor_id(settlements, String::from("ФРАНКА"))
+                .unwrap();
         assert!(result.is_empty());
     }
 
@@ -922,11 +1122,17 @@ mod tests {
     pub fn test_regexp1() {
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            load_from_file(config.settlement_paths().unwrap(), Mode::Test)
-                .unwrap(),
+            load_settlements_data_config(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
-        let result =
-            parse_location(settlements, String::from("р-н Водяного")).unwrap();
+        let result = parse_location_with_aor_id(
+            settlements,
+            String::from("р-н Водяного"),
+        )
+        .unwrap();
         let result = test_settlements_array(result);
         assert_eq!(vec!["ВОДЯНЕ",], result);
     }
@@ -935,12 +1141,17 @@ mod tests {
     pub fn test_regexp2() {
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            load_from_file(config.settlement_paths().unwrap(), Mode::Test)
-                .unwrap(),
+            load_settlements_data_config(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
-        let result =
-            parse_location(settlements, String::from("рай. Кремінної"))
-                .unwrap();
+        let result = parse_location_with_aor_id(
+            settlements,
+            String::from("рай. Кремінної"),
+        )
+        .unwrap();
         let result = test_settlements_array(result);
         assert_eq!(vec!["КРЕМІННА",], result);
     }
@@ -949,12 +1160,17 @@ mod tests {
     pub fn test_regexp3() {
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            load_from_file(config.settlement_paths().unwrap(), Mode::Test)
-                .unwrap(),
+            load_settlements_data_config(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
-        let result =
-            parse_location(settlements, String::from("район Вугледара"))
-                .unwrap();
+        let result = parse_location_with_aor_id(
+            settlements,
+            String::from("район Вугледара"),
+        )
+        .unwrap();
         let result = test_settlements_array(result);
         assert_eq!(vec!["ВУГЛЕДАР",], result);
     }
@@ -963,12 +1179,17 @@ mod tests {
     pub fn test_regexp4() {
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            load_from_file(config.settlement_paths().unwrap(), Mode::Test)
-                .unwrap(),
+            load_settlements_data_config(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
-        let result =
-            parse_location(settlements, String::from("укх   йм район Пісків"))
-                .unwrap();
+        let result = parse_location_with_aor_id(
+            settlements,
+            String::from("укх   йм район Пісків"),
+        )
+        .unwrap();
         let result = test_settlements_array(result);
         assert_eq!(vec!["ПІСКИ",], result);
     }
@@ -977,11 +1198,17 @@ mod tests {
     pub fn test_regexp5() {
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            load_from_file(config.settlement_paths().unwrap(), Mode::Test)
-                .unwrap(),
+            load_settlements_data_config(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
-        let result =
-            parse_location(settlements, String::from("біля Бабиного")).unwrap();
+        let result = parse_location_with_aor_id(
+            settlements,
+            String::from("біля Бабиного"),
+        )
+        .unwrap();
         let result = test_settlements_array(result);
         assert_eq!(vec!["БАБИНЕ",], result);
     }
@@ -990,10 +1217,13 @@ mod tests {
     pub fn test_regexp6() {
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            load_from_file(config.settlement_paths().unwrap(), Mode::Test)
-                .unwrap(),
+            load_settlements_data_config(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
-        let result = parse_location(
+        let result = parse_location_with_aor_id(
             settlements,
             String::from("УКХ р/м Не встановлена мережа (ЦфП_101)"),
         )
@@ -1006,15 +1236,90 @@ mod tests {
     pub fn test_regexp7() {
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            load_from_file(config.settlement_paths().unwrap(), Mode::Test)
-                .unwrap(),
+            load_settlements_data_config(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
-        let result = parse_location(
+        let result = parse_location_with_aor_id(
             settlements,
             String::from("13 зсб 252 мсп (урочище Новоєгорівка - Долгоє)"),
         )
         .unwrap();
         let result = test_settlements_array(result);
         assert_eq!(vec!["ДОЛГОЄ", "НОВОЄГОРІВКА"], result);
+    }
+
+    #[test]
+    pub fn test_parse_with_different_aor_configs() {
+        let config = crate::config::read_config(Mode::Test).unwrap();
+        let settlements = Arc::new(RwLock::new(
+            load_settlements_data_config(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
+        ));
+
+        let alpha = "КВАДРОЗЕБРААЛЬФА".to_string();
+        let beta = "МЕТЕОРБЕТАОМЕГА".to_string();
+
+        {
+            let mut settlements_lock = settlements.write().unwrap();
+
+            let mut settlements_data_alpha = load_from_file(
+                settlements_lock.default_settlements_files.clone(),
+                Mode::Test,
+            )
+            .unwrap();
+            let alpha_details = SettlementDetails {
+                id: Some(9_000_001),
+                name: alpha.clone(),
+                region: "ТЕСТОВА ОБЛАСТЬ".to_string(),
+                language: Language::Ua,
+                coords: Some((48.0, 33.0)),
+            };
+            settlements_data_alpha
+                .3
+                .insert(alpha_details.id.unwrap(), alpha_details.clone());
+            settlements_data_alpha.2.insert(&alpha, alpha_details);
+
+            let mut settlements_data_beta = load_from_file(
+                settlements_lock.default_settlements_files.clone(),
+                Mode::Test,
+            )
+            .unwrap();
+            let beta_details = SettlementDetails {
+                id: Some(9_000_002),
+                name: beta.clone(),
+                region: "ТЕСТОВА ОБЛАСТЬ".to_string(),
+                language: Language::Ua,
+                coords: Some((49.0, 34.0)),
+            };
+            settlements_data_beta
+                .3
+                .insert(beta_details.id.unwrap(), beta_details.clone());
+            settlements_data_beta.2.insert(&beta, beta_details);
+
+            settlements_lock
+                .aor_id_to_settlements_data
+                .insert(1, Arc::new(settlements_data_alpha));
+            settlements_lock
+                .aor_id_to_settlements_data
+                .insert(2, Arc::new(settlements_data_beta));
+        }
+
+        let aor1 = parse_location_with_aor(
+            settlements.clone(),
+            alpha.clone(),
+            Some(1),
+        )
+        .unwrap();
+        let aor2 = parse_location_with_aor(settlements, alpha.clone(), Some(2))
+            .unwrap();
+
+        assert_eq!(test_settlements_array(aor1), vec![alpha]);
+        assert!(aor2.is_empty());
     }
 }

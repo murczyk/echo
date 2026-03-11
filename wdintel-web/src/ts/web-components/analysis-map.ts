@@ -5,9 +5,9 @@ import "leaflet.markercluster/dist/leaflet.markercluster.js"
 import { loadKmzData } from '../maps/maps'
 import { KMZLayer, kmzLayerFactory } from '../maps/leaflet-kmz'
 import { MapPointDetailed } from '../maps/types';
-import { messagesCountText } from '../maps/language-utils';
+import { messagesCountText } from '../maps/utils/language-utils';
 import { loadRerAnalysisQueryState, RerAnalysisQueryState, saveRerAnalysisQueryState } from '../rer-analysis-query-state';
-import { TimeswitchControl, FeatureToggleState, createLayerSwitchControl, createTimeswitchControl, createAttributionControl, createPalitrasControl, FeatureName, LayerSwitchControl, createSearchControl, createMapZoomControl, SearchControl, createMapWindowControl, MapWindowControl } from '../maps/controls';
+import { TimeswitchControl, FeatureToggleState, createLayerSwitchControl, createTimeswitchControl, createAttributionControl, createPalitrasControl, FeatureName, LayerSwitchControl, createSearchControl, createMapZoomControl, SearchControl, createMapWindowControl, MapWindowControl, PalitrasLoadState } from '../maps/controls';
 import { AnalysisMapStateStore, AnalysisMapStoredState } from '../maps/analysis-map-state';
 import { parseCoordinateInput } from '../maps/coordinate-search';
 import { PalitraManager } from '../maps/palitra-manager';
@@ -27,6 +27,7 @@ type Message = [
     network_ids?: number[] | null;
   }
 ]
+
 
 export class DataCircleMarker extends L.CircleMarker {
   data: { messageId: number };
@@ -107,7 +108,7 @@ function getPointPopupTemplate(sortedMessages: Message[], networkUnits: NetworkU
 
 
 class AnalysisMap extends HTMLElement {
-  static observedAttributes = ["points", "daterange", "messages", "visibility", "network-units", "selected-units", "palitras", "palitras-loaded"]
+  static observedAttributes = ["points", "daterange", "daterange-loading", "messages", "visibility", "network-units", "selected-units", "palitras", "palitras-loaded", "search-query", "palitras-load-state"]
 
   private _map: L.Map | null = null;
   private _daterange: { startDate: number, endDate: number } = { startDate: new Date().getDate(), endDate: new Date().getDate() };
@@ -118,6 +119,7 @@ class AnalysisMap extends HTMLElement {
 
   private _markersGroup: L.MarkerClusterGroup | null = null;
   private _clickedPoint: DataCircleMarker | null = null;
+  private _clickedLatLng: L.LatLng | null = null;
   private _boundedAlready = false;
   private _initialized = false;
   private _kmzLayer: KMZLayer | null = null;
@@ -129,6 +131,7 @@ class AnalysisMap extends HTMLElement {
   private _palitras: PalitraDetails[] = [];
   private _visiblePalitraIds: number[] = [];
   private _palitrasLoaded = false;
+  private _palitrasLoadState: PalitrasLoadState = 'idle';
   private _palitrasEnabled = true;
   private _kmzEnabled = true;
   private _pelengsEnabled = true;
@@ -138,7 +141,13 @@ class AnalysisMap extends HTMLElement {
   private _coordinateSearchMarker: L.CircleMarker | null = null;
   private _isFullscreen = false;
   private _mapWindowControl: MapWindowControl | null = null;
+  private _isBackgroundPointsLoading = false;
+  private _isDateRangeLoading = false;
+  private _isSearchLoading = false;
   private _searchPointsHandler = (e: CustomEvent<string>) => {
+    if (this._isSearchInteractionLocked()) {
+      return;
+    }
     const value = (e.detail ?? '').trim();
     const coords = parseCoordinateInput(value);
     if (coords && this._map) {
@@ -163,7 +172,16 @@ class AnalysisMap extends HTMLElement {
     this._applyState(this._stateStore.getState());
   }
 
+  private _sameVisibleIds(left: number[], right: number[]): boolean {
+    if (left.length !== right.length) {
+      return false;
+    }
+    return left.every((value, index) => value === right[index]);
+  }
+
   connectedCallback() {
+    this._palitrasLoadState = this._parsePalitrasLoadState(this.getAttribute('palitras-load-state'));
+    this._isDateRangeLoading = this._parseBooleanAttribute(this.getAttribute('daterange-loading'));
     this.addEventListener('search-points', this._searchPointsHandler);
     window.addEventListener('keydown', this._escapeHandler);
   }
@@ -225,11 +243,15 @@ class AnalysisMap extends HTMLElement {
         this._switchTimeControl.updateDates(this._daterange);
       }
     }
+    if (name === 'daterange-loading') {
+      this._isDateRangeLoading = this._parseBooleanAttribute(newValue);
+      this._syncAsyncInteractionState();
+    }
     if (name === 'messages') {
       const parsed = JSON.parse(newValue);
       this._messages = parsed['messages']
       this._networkUnits = parsed['networkUnits']
-      if (this._clickedPoint && this._messages.length > 0) {
+      if ((this._clickedPoint || this._clickedLatLng) && this._messages.length > 0) {
 
         const unitClickedCallback = (element: Element) => {
           const event = new CustomEvent('message-unit-clicked', {
@@ -240,8 +262,13 @@ class AnalysisMap extends HTMLElement {
             composed: true
           });
           this.dispatchEvent(event);
-          this._clickedPoint?.closePopup();
+          if (this._clickedPoint) {
+            this._clickedPoint.closePopup();
+          } else {
+            this._map?.closePopup();
+          }
           this._clickedPoint = null;
+          this._clickedLatLng = null;
         }
         const sortedMessages = [...this._messages].sort((message1, message2) => {
           const datetime1 = new Date(`${message1[1].date}T${message1[1].time} `);
@@ -250,10 +277,25 @@ class AnalysisMap extends HTMLElement {
         });
 
         const popupContent = getPointPopupTemplate(sortedMessages, this._networkUnits, this._selectedUnits)
-        this._clickedPoint.bindPopup(popupContent)
-        this._clickedPoint.openPopup()
+        const clickedMessageId = sortedMessages[0]?.[0];
+        const restoredPoint =
+          clickedMessageId !== undefined ? this._findPointMarkerByMessageId(clickedMessageId) : null;
 
-        //this._markersGroup.refreshClusters(this._clickedPoint)
+        const canOpenOnRestoredPoint = restoredPoint ? restoredPoint.getElement() !== null : false;
+        if (restoredPoint && canOpenOnRestoredPoint) {
+          this._clickedPoint = restoredPoint;
+          this._clickedLatLng = restoredPoint.getLatLng();
+          this._clickedPoint.bindPopup(popupContent)
+          this._clickedPoint.openPopup()
+        } else if (this._map && this._clickedLatLng) {
+          L.popup()
+            .setLatLng(this._clickedLatLng)
+            .setContent(popupContent)
+            .openOn(this._map);
+          this._clickedPoint = null;
+        } else {
+          return;
+        }
 
         const a = document.querySelectorAll('[id^="map-message-id-"]')
         const handlersMap = new Map<string, () => void>();
@@ -263,7 +305,7 @@ class AnalysisMap extends HTMLElement {
           handlersMap.set(x.id, handleClick)
         })
 
-        this._clickedPoint.once('popupclose', () => {
+        const clearPopupHandlers = () => {
           a.forEach(x => {
             const handler = handlersMap.get(x.id)
             if (handler) {
@@ -271,7 +313,15 @@ class AnalysisMap extends HTMLElement {
               handlersMap.delete(x.id)
             }
           })
-        })
+          this._clickedPoint = null;
+          this._clickedLatLng = null;
+        };
+
+        if (this._clickedPoint) {
+          this._clickedPoint.once('popupclose', clearPopupHandlers);
+        } else if (this._map) {
+          this._map.once('popupclose', clearPopupHandlers);
+        }
       }
     }
     if (name === 'selected-units') {
@@ -285,6 +335,7 @@ class AnalysisMap extends HTMLElement {
       if (this._palitraManager) {
         this._palitraManager.updatePalitras(palitras);
         this._palitraManager.updateVisibleIds(this._visiblePalitraIds);
+        this._runSearchQueryIfSet();
       }
     }
     if (name === 'palitras-loaded') {
@@ -295,6 +346,31 @@ class AnalysisMap extends HTMLElement {
         this._palitraManager.updateVisibleIds(this._visiblePalitraIds);
       }
     }
+    if (name === 'search-query') {
+      this._applySearchQuery(newValue ?? '');
+    }
+    if (name === 'palitras-load-state') {
+      this._palitrasLoadState = this._parsePalitrasLoadState(newValue);
+      this._palitraManager?.setLoadState(this._palitrasLoadState);
+      this._syncAsyncInteractionState();
+    }
+  }
+
+  private _applySearchQuery(query: string) {
+    const trimmed = query.trim();
+    if (!trimmed) return;
+    const searchEl = this.querySelector('analysis-map-search');
+    if (searchEl) {
+      searchEl.setAttribute('initial-query', trimmed);
+    }
+    this._runSearchQueryIfSet();
+  }
+
+  /** Run search when we have a search-query attribute. */
+  private _runSearchQueryIfSet() {
+    const query = (this.getAttribute('search-query') ?? '').trim();
+    if (!query || !this._palitraManager) return;
+    this._palitraManager.setSearchQuery(query);
   }
 
 
@@ -353,6 +429,12 @@ class AnalysisMap extends HTMLElement {
          },
          onSearchLoadingChanged: (isLoading) => {
            this._searchControl?.updateSearchLoading(isLoading);
+           this._isSearchLoading = isLoading;
+           this._syncAsyncInteractionState();
+         },
+         onBackgroundPointsLoadingChanged: (isLoading) => {
+           this._isBackgroundPointsLoading = isLoading;
+           this._syncAsyncInteractionState();
          }
        }
      );
@@ -360,6 +442,8 @@ class AnalysisMap extends HTMLElement {
      // Set the control after manager is created
      console.log('[AnalysisMap] Setting control, _palitrasEnabled:', this._palitrasEnabled, 'stored palitras:', this._palitras.length, 'visible IDs:', this._visiblePalitraIds.length);
      this._palitraManager.setControl(result.palitrasControl);
+     this._palitraManager.setLoadState(this._palitrasLoadState);
+     this._syncAsyncInteractionState();
      
      // Update manager with any palitras that arrived before initialization
      if (this._palitras.length > 0) {
@@ -375,7 +459,24 @@ class AnalysisMap extends HTMLElement {
 
      this._pelengsLayerGroup = L.layerGroup();
      this._applyPelengVisibility();
+     this._map.on('zoomend', () => this._replacePointsOnMap(this._points));
+
+    const searchQuery = this.getAttribute('search-query');
+    if (searchQuery) {
+      this._applySearchQuery(searchQuery);
     }
+    }
+  }
+
+  private _parsePalitrasLoadState(value: string | null): PalitrasLoadState {
+    if (value === 'loading' || value === 'success' || value === 'error') {
+      return value;
+    }
+    return 'idle';
+  }
+
+  private _parseBooleanAttribute(value: string | null): boolean {
+    return value === 'true';
   }
 
   private _initializeControls(map: L.Map, tileLayers: { openStreetMap: L.TileLayer, googleHybrid: L.TileLayer }) {
@@ -390,18 +491,23 @@ class AnalysisMap extends HTMLElement {
       this.dispatchEvent(event);
     }
 
-    const palitraToggleCallback = (palitraId: number) => {
-      this._togglePalitraVisibility(palitraId);
+    const palitrasVisibleIdsCallback = (visibleIds: number[]) => {
+      const state = this._stateStore.setVisiblePalitraIds(visibleIds);
+      this._applyState(state);
+      if (this._palitraManager) {
+        this._palitraManager.updateVisibleIds(this._visiblePalitraIds);
+      }
     }
 
     const featureToggleCallback = (feature: FeatureName, enabled: boolean) => {
       this._setFeatureEnabled(feature, enabled);
     }
 
-    const switchTimeControl = createTimeswitchControl(this._daterange);
+    const switchTimeControl = createTimeswitchControl(this._daterange, this._isDateRangeInteractionLocked());
     const searchControl = createSearchControl();
     map.addControl(searchControl);
     this._searchControl = searchControl;
+    this._syncAsyncInteractionState();
     map.addControl(switchTimeControl)
 
     const mapWindowControl = createMapWindowControl(exitCallback, () => this._toggleFullscreen(), this._isFullscreen);
@@ -413,7 +519,7 @@ class AnalysisMap extends HTMLElement {
     map.addControl(createMapZoomControl());
     map.addControl(createAttributionControl());
 
-    const palitrasControl = createPalitrasControl([], [], palitraToggleCallback);
+    const palitrasControl = createPalitrasControl([], [], palitrasVisibleIdsCallback);
 
     return { map, switchTimeControl, palitrasControl };
   }
@@ -474,6 +580,51 @@ class AnalysisMap extends HTMLElement {
     L.DomEvent.on(mapContainer, 'mousedown', patchedOnMouseDown, keyboardHandler);
   }
 
+  private _updateSearchControlState() {
+    if (!this._searchControl) {
+      return;
+    }
+
+    const isPalitrasLoading = this._palitrasLoadState === 'loading';
+    const isSearchDisabled = this._isSearchInteractionLocked();
+    this._searchControl.updateSearchDisabled(isSearchDisabled);
+
+    if (this._isDateRangeLoading) {
+      this._searchControl.updatePlaceholder('Оновлення інтервалу...');
+      return;
+    }
+
+    if (this._isBackgroundPointsLoading) {
+      this._searchControl.updatePlaceholder('Завантаження точок...');
+      return;
+    }
+
+    if (isPalitrasLoading) {
+      this._searchControl.updatePlaceholder('Завантаження палітр...');
+      return;
+    }
+
+    this._searchControl.updatePlaceholder('Точка, лісосмуга або координати');
+  }
+
+  private _isDateRangeInteractionLocked(): boolean {
+    return this._isDateRangeLoading || this._isSearchLoading || this._palitrasLoadState === 'loading';
+  }
+
+  private _isSearchInteractionLocked(): boolean {
+    return this._isDateRangeLoading || this._isBackgroundPointsLoading || this._palitrasLoadState === 'loading';
+  }
+
+  private _isPalitraSelectionInteractionLocked(): boolean {
+    return this._isDateRangeLoading || this._isSearchLoading;
+  }
+
+  private _syncAsyncInteractionState(): void {
+    this._updateSearchControlState();
+    this._switchTimeControl?.updateLoading(this._isDateRangeInteractionLocked());
+    this._palitraManager?.setInteractionDisabled(this._isPalitraSelectionInteractionLocked());
+  }
+
   private _replacePointsOnMap(points: MapPointDetailed[]) {
     if (this._markersGroup) {
       this._markersGroup.off();
@@ -481,17 +632,49 @@ class AnalysisMap extends HTMLElement {
       this._pelengsLayerGroup?.removeLayer(this._markersGroup);
       this._map?.removeLayer(this._markersGroup)
     }
+    if (!this._shouldRenderPointsAtCurrentZoom()) {
+      this._fitBoundsOnInitialLowZoom(points);
+      this._markersGroup = null;
+      return;
+    }
     const { bounds, markersGroup } = this._addPointsMarkersGroup(points);
     this._markersGroup = markersGroup;
 
     this._pelengsLayerGroup?.addLayer(this._markersGroup);
     this._applyPelengVisibility();
 
-    if (bounds.isValid() && !this._boundedAlready) {
-      this._map?.fitBounds(bounds);
+    if (bounds.isValid() && !this._boundedAlready && this._map) {
+      // Only auto-fit on initial coarse zoom to avoid jump when user zooms in
+      // and points become visible on penultimate/max zoom levels.
+      if (this._map.getZoom() <= 10) {
+        this._map.fitBounds(bounds);
+      }
       this._boundedAlready = true;
     }
 
+  }
+
+  private _fitBoundsOnInitialLowZoom(points: MapPointDetailed[]): void {
+    if (!this._map || this._boundedAlready || this._map.getZoom() > 10 || points.length === 0) {
+      return;
+    }
+
+    const bounds = L.latLngBounds(points.map((point) => [point.lat, point.lng] as [number, number]));
+    if (!bounds.isValid()) {
+      return;
+    }
+
+    this._map.fitBounds(bounds);
+    this._boundedAlready = true;
+  }
+
+  private _shouldRenderPointsAtCurrentZoom(): boolean {
+    if (!this._map) {
+      return false;
+    }
+    const maxZoom = this._map.getMaxZoom();
+    const minVisibleZoom = Number.isFinite(maxZoom) ? maxZoom - 1 : 16;
+    return this._map.getZoom() >= minVisibleZoom;
   }
 
   private _addPointsMarkersGroup(points: MapPointDetailed[]) {
@@ -523,6 +706,7 @@ class AnalysisMap extends HTMLElement {
       })
 
       circle.on('click', () => {
+        this._clickedLatLng = circle.getLatLng();
         this._emitLoadMessagesDescriptions([point.message_id])
         this._clickedPoint = circle;
       })
@@ -540,7 +724,13 @@ class AnalysisMap extends HTMLElement {
       const allChildMarkers = leafletEvent.layer.getAllChildMarkers();
       const messageIds = allChildMarkers.map(dataCircle => dataCircle.data.messageId)
       console.log(leafletEvent, 'leafletEvent')
-      this._clickedPoint = leafletEvent.propagatedFrom
+      this._clickedPoint = null
+      const clusterLatLng =
+        (leafletEvent as L.LeafletMouseEvent).latlng ??
+        (typeof (leafletEvent.layer as { getLatLng?: () => L.LatLng }).getLatLng === 'function'
+          ? (leafletEvent.layer as { getLatLng: () => L.LatLng }).getLatLng()
+          : null);
+      this._clickedLatLng = clusterLatLng;
       this._emitLoadMessagesDescriptions(messageIds)
     });
     return {
@@ -559,6 +749,22 @@ class AnalysisMap extends HTMLElement {
     });
     this.dispatchEvent(event);
 
+  }
+
+  private _findPointMarkerByMessageId(messageId: number): DataCircleMarker | null {
+    if (!this._markersGroup) {
+      return null;
+    }
+    let found: DataCircleMarker | null = null;
+    this._markersGroup.eachLayer((layer: L.Layer) => {
+      if (found) {
+        return;
+      }
+      if (layer instanceof DataCircleMarker && layer.getData().messageId === messageId) {
+        found = layer;
+      }
+    });
+    return found;
   }
 
   private _getFeatureToggleState(): FeatureToggleState {
@@ -595,14 +801,6 @@ class AnalysisMap extends HTMLElement {
       this._applyPelengVisibility();
     }
     this._updateLayerSwitchControl();
-  }
-
-  private _togglePalitraVisibility(palitraId: number) {
-    const state = this._stateStore.toggleVisiblePalitraId(palitraId);
-    this._applyState(state);
-    if (this._palitraManager) {
-      this._palitraManager.updateVisibleIds(this._visiblePalitraIds);
-    }
   }
 
   private _syncVisiblePalitraIds() {
@@ -649,6 +847,9 @@ class AnalysisMap extends HTMLElement {
     this._kmzLoading = (async () => {
       try {
         const kmzData = await loadKmzData();
+        if (!kmzData) {
+          return;
+        }
         this._kmzLayer = kmzLayerFactory(null, { bindTooltip: true, bindPopup: false, permanentTooltip: true });
         if (this._map && this._kmzEnabled) {
           this._kmzLayer.addTo(this._map);

@@ -1,14 +1,33 @@
 import type {
   InboxMessage,
   InboxMessagesReq,
-  RerDutyState,
-  RerDutyFeedFilterState,
+  RerDutyQueryStateWf as RerDutyFeedFilterState,
   SignalGroupEntry,
   SignalProfileEntry,
 } from '../../../../Bindings';
+import type { Network, Unit } from '../../../../Bindings';
+
+export type RerDutyState = {
+  messageFeeds: [string, RerDutyFeedFilterState][];
+};
+
+/** Elm-style network display text: "р/м " + name + " " + unit names + optional " (LOCATION)". */
+export function createMasterUnitText(network: Network, unitsMap: Record<number, Unit>): string {
+  const unitIds = network.unitIds ?? [];
+  const unitNames = unitIds.map((id) => {
+    const u = unitsMap[id];
+    return u?.name ?? `Невідомий підрозділ (id=${id})`;
+  });
+  const locationPart =
+    network.location && network.location.trim() !== ''
+      ? ` (${network.location.trim().toUpperCase()})`
+      : '';
+  return `р/м ${network.name} ${unitNames.join(', ')}${locationPart}`;
+}
 
 export const PAGE_ID = 'rer-duty-neo';
-export const LOAD_NEWER_INTERVAL_MS = 5000;
+/** Poll get-inbox-count every 2s; load newer (get-inbox) only when count > 0. */
+export const INBOX_COUNT_POLL_INTERVAL_MS = 1000;
 
 export function emptyFilter(): RerDutyFeedFilterState {
   return {
@@ -23,6 +42,30 @@ export function emptyFilter(): RerDutyFeedFilterState {
   };
 }
 
+/** Options for "автоматично додавати частоти в діапазоні" (MHz). */
+export const ADJACENT_FREQS_RANGE_OPTIONS = [0, 0.0005, 0.002, 0.005] as const;
+
+function isInRange(selectedS: string, freqS: string, range: number): boolean {
+  const selected = parseFloat(selectedS);
+  const freq = parseFloat(freqS);
+  if (Number.isNaN(selected) || Number.isNaN(freq)) return false;
+  return freq >= selected - range && freq <= selected + range;
+}
+
+/** Expand selected freqs with adjacent within range (MHz). */
+export function findAllAdjacentFreqs(
+  allFrequencies: string[],
+  selectedFrequencies: string[],
+  range: number
+): string[] {
+  if (range <= 0) return [];
+  return allFrequencies.filter(
+    (freq) =>
+      !selectedFrequencies.includes(freq) &&
+      selectedFrequencies.some((selected) => isInRange(selected, freq, range))
+  );
+}
+
 export function buildInboxReq(opts: {
   loadLatest?: boolean;
   beforeIdNoninclusive?: number | null;
@@ -30,8 +73,15 @@ export function buildInboxReq(opts: {
   sinceDateInclusiveMs?: number | null;
   nolimit?: boolean;
   filter: RerDutyFeedFilterState;
+  /** Expanded freqs (selected + adjacent); if not set, filter.freqsSelected is used. */
+  expandedFreqsSelected?: string[] | null;
+  expandedFreqsDenied?: string[] | null;
+  highlightSignals?: boolean | null;
+  reportTagsOnlyThisUnit?: boolean | null;
 }): InboxMessagesReq {
   const f = opts.filter;
+  const selectedFreqs = opts.expandedFreqsSelected ?? f.freqsSelected ?? null;
+  const deniedFreqs = opts.expandedFreqsDenied ?? f.freqsDenied ?? null;
   return {
     sinceIdNoninclusive: opts.sinceIdNoninclusive ?? null,
     beforeIdNoninclusive: opts.beforeIdNoninclusive ?? null,
@@ -42,10 +92,10 @@ export function buildInboxReq(opts: {
     selectedGroups: f.groupsSelected ?? null,
     selectedSenders: f.sendersSelected ?? null,
     deniedSenders: f.deniedSenders ?? null,
-    selectedFreqs: f.freqsSelected ?? null,
+    selectedFreqs,
     selectedPosts: f.postsSelected ?? null,
     deniedPosts: f.postsDenied ?? null,
-    deniedFreqs: f.freqsDenied ?? null,
+    deniedFreqs,
     selectedCallsigns: null,
     selectedUnits: null,
     selectedLocations: null,
@@ -58,15 +108,17 @@ export function buildInboxReq(opts: {
     orWithCoords: null,
     newestFirst: null,
     search: null,
+    // Match Elm Waterfall: highlightCallsigns/Keywords/Searchres always true; highlightSignals from opts; highlightPoints false
     highlightCallsigns: true,
     highlightKeywords: true,
     highlightSearchres: true,
-    highlightSignals: false,
+    highlightSignals: opts.highlightSignals ?? false,
+    highlightPoints: false,
     selectedTags: null,
     selectedAors: null,
     selectedNetworks: null,
     sortBy: 'IMSTimestamp',
-    reportTagsOnlyThisUnit: null,
+    reportTagsOnlyThisUnit: opts.reportTagsOnlyThisUnit ?? null,
     ignoreImportedCoords: true,
     includePelengLocations: null,
     unitsExactMatchOnly: null,
@@ -147,6 +199,25 @@ export function formatDateNoYear(date: string | null): string {
   return `${day}.${month.toString().padStart(2, '0')}`;
 }
 
+/** Relative time from event to now, same logic */
+export function messageRenderDistance(eventMs: number, nowMs: number): string {
+  const secsAgo = Math.floor((nowMs - eventMs) / 1000);
+  if (secsAgo < 5) return 'щойно';
+  if (secsAgo < 60) return `${secsAgo} сек`;
+  const minsAgo = Math.floor(secsAgo / 60);
+  if (minsAgo < 60) return `${minsAgo} хв`;
+  const hoursAgo = Math.floor(minsAgo / 60);
+  const eventDate = new Date(eventMs);
+  const nowDate = new Date(nowMs);
+  const sameDay =
+    eventDate.getFullYear() === nowDate.getFullYear() &&
+    eventDate.getMonth() === nowDate.getMonth() &&
+    eventDate.getDate() === nowDate.getDate();
+  if (sameDay || hoursAgo < 24) return `${hoursAgo} год`;
+  const daysAgo = Math.floor((nowMs - eventMs) / (24 * 60 * 60 * 1000));
+  return `${daysAgo} дн`;
+}
+
 export function toDateStr(d: Date): string {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -189,14 +260,52 @@ export function buildAnalysisHref(msg: InboxMessage, showMap: boolean): string {
 
 export type MessageItem = [number, InboxMessage];
 
+/** Sort message items by time ascending (oldest first), like Elm duty. Uses timestamp then id as tiebreaker. */
+export function sortMessageItemsByTime(items: MessageItem[]): MessageItem[] {
+  return [...items].sort(([idA, a], [idB, b]) => {
+    const tsA = a.timestamp ?? 0;
+    const tsB = b.timestamp ?? 0;
+    if (tsA !== tsB) return tsA - tsB;
+    return idA - idB;
+  });
+}
+
+/** Deduplicate by message id (first occurrence wins). Prevents duplicate key warnings when API or merge returns same id twice. */
+export function dedupeMessageItems(items: MessageItem[]): MessageItem[] {
+  const seen = new Set<number>();
+  return items.filter(([id]) => {
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+}
+
+/** Initial firstItemIndex for Virtuoso; decreased when we prepend so scroll position is preserved. */
+export const VIRTUOSO_FIRST_ITEM_INDEX_INITIAL = 10_000;
+
 export type MessageFeedState = {
   id: string;
   filter: RerDutyFeedFilterState;
   items: MessageItem[];
   loading: boolean;
-  loadingEarlier: boolean;
-  /** True after "load earlier" returned 0 new items — nothing older to fetch */
+  loadingOlder: boolean;
+  /** True after "load older" returned 0 new items — nothing older to fetch */
   hasReachedStart: boolean;
+  /** Virtuoso firstItemIndex: start at VIRTUOSO_FIRST_ITEM_INDEX_INITIAL, decrease by N when prepending N items (infinite scroll). */
+  firstItemIndex: number;
+  /** Reference time (ms) for relative "time ago" in message cards; set when feed items are loaded. */
+  referenceTimeMs: number | null;
+  /** Message IDs that have been "read" (entered viewport). Unread count = items not in this set. */
+  readIds: Set<number>;
+  unreadCount: number;
+  /** When true, the left column (freq, date/time, buttons) is hidden for all messages in this feed. */
+  leftSideCollapsed: boolean;
+  /** Auto-add freqs in range (MHz); 0 = off. */
+  adjacentFreqsRange: number;
+  /** Підсвічувати сигнали (додатково). */
+  highlightSignalsEnabled: boolean;
+  /** Лише теги мого підрозділу (додатково). */
+  onlyMyUnitTagsEnabled: boolean;
 };
 
 export function toQueryState(messageFeeds: MessageFeedState[]): RerDutyState {

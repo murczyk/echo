@@ -4,7 +4,6 @@ import EditIcon from '@mui/icons-material/Edit';
 import {
   Alert,
   Autocomplete,
-  Chip,
   CircularProgress,
   Dialog,
   DialogActions,
@@ -36,6 +35,7 @@ import {
 } from '../../../../Bindings';
 import { Button } from '../../components/mui-customized/button';
 import { IconButton } from '../../components/mui-customized/icon-button';
+import { PowerChip } from '../../components/PowerChip';
 import { CUSTOM_STYLES } from '../../components/mui-customized/table/custom-styles';
 import { TableTopToolbar } from '../../components/mui-customized/table/components/table-top-toolbar';
 import {
@@ -161,6 +161,8 @@ const ORPHAN_GROUPS_TABLE_MAX_HEIGHT = 500;
 const DEFAULT_ACTIVITY_DAY_SORTING: MRT_SortingState = [
   { id: 'activityDay', desc: true },
 ];
+const EMPTY_AOR_FILTER_VALUE = '—';
+const EMPTY_AOR_FILTER_LABEL = '—';
 
 const orphanDefaultMRTOptions = getDefaultMRTOptions<OrphanSignalGroupEntry>();
 const zoneDefaultMRTOptions = getDefaultMRTOptions<ZoneGroupRow>();
@@ -211,9 +213,27 @@ function buildAorLabels(
   return aors.map((aor) => aor.name).join(', ');
 }
 
+function buildAorNames(
+  aors: AreaOfResponsibility[] | null | undefined
+): string[] {
+  if (!aors || aors.length === 0) return [EMPTY_AOR_FILTER_VALUE];
+  return aors.map((aor) => aor.name);
+}
+
+function buildAorFilterOptions(
+  aors: AreaOfResponsibility[]
+): { text: string; value: string }[] {
+  const uniqueNames = Array.from(new Set(aors.map((aor) => aor.name)));
+  return [
+    { text: EMPTY_AOR_FILTER_LABEL, value: EMPTY_AOR_FILTER_VALUE },
+    ...uniqueNames.map((name) => ({ text: name, value: name })),
+  ];
+}
+
 function OrphanGroupsTable(props: {
   data: OrphanSignalGroupEntry[];
   datasourceById: Map<number, Datasource>;
+  aorFilterOptions: { text: string; value: string }[];
   onAssign: (group: OrphanSignalGroupEntry) => void;
   onEdit: (group: OrphanSignalGroupEntry) => void;
 }) {
@@ -267,7 +287,7 @@ function OrphanGroupsTable(props: {
       {
         header: 'Смуги',
         id: 'aors',
-        accessorFn: (row) => buildAorLabels(row.areasOfResponsibility),
+        accessorFn: (row) => buildAorNames(row.areasOfResponsibility),
         Cell: ({ row }) => {
           const label = buildAorLabels(row.original.areasOfResponsibility);
           return (
@@ -276,6 +296,9 @@ function OrphanGroupsTable(props: {
             </Tooltip>
           );
         },
+        filterVariant: 'multi-select',
+        filterSelectOptions: props.aorFilterOptions,
+        filterFn: 'arrIncludesSome',
         size: 240,
       },
       {
@@ -317,7 +340,7 @@ function OrphanGroupsTable(props: {
         size: 140,
       },
     ],
-    [props.datasourceById]
+    [props.datasourceById, props.aorFilterOptions]
   );
 
   const basePaperProps = CUSTOM_STYLES.muiTablePaperProps;
@@ -419,6 +442,7 @@ function ZoneGroupsTable(props: {
   rows: ZoneGroupRow[];
   datasourceById: Map<number, Datasource>;
   groupInfos: Map<string, SignalGroupEntry>;
+  aorFilterOptions: { text: string; value: string }[];
   onEdit: (
     zoneId: number,
     datasourceId: number,
@@ -452,7 +476,15 @@ function ZoneGroupsTable(props: {
                   <span>{groupName}</span>
                 </Tooltip>
                 {row.original.group.isGroupSecret ? (
-                  <Chip size="small" color="warning" label="прихована" />
+                  <PowerChip
+                    size="small"
+                    label="прихована"
+                    interactive={false}
+                    unselectedOpacity={1}
+                    unselectedBackgroundColor="warning.main"
+                    unselectedTextColor="warning.contrastText"
+                    unselectedBorderColor="warning.main"
+                  />
                 ) : null}
               </div>
             </div>
@@ -526,7 +558,7 @@ function ZoneGroupsTable(props: {
       {
         header: 'Смуги',
         id: 'aors',
-        accessorFn: (row) => buildAorLabels(row.group.areasOfResponsibility),
+        accessorFn: (row) => buildAorNames(row.group.areasOfResponsibility),
         Cell: ({ row }) => {
           const label = buildAorLabels(
             row.original.group.areasOfResponsibility
@@ -537,6 +569,9 @@ function ZoneGroupsTable(props: {
             </Tooltip>
           );
         },
+        filterVariant: 'multi-select',
+        filterSelectOptions: props.aorFilterOptions,
+        filterFn: 'arrIncludesSome',
         size: 240,
       },
       {
@@ -580,7 +615,7 @@ function ZoneGroupsTable(props: {
         size: 260,
       },
     ],
-    [props.datasourceById, props.groupInfos]
+    [props.datasourceById, props.groupInfos, props.aorFilterOptions]
   );
 
   const basePaperProps = CUSTOM_STYLES.muiTablePaperProps;
@@ -699,6 +734,7 @@ function ZoneGroupsTable(props: {
 function OrphanGroupsSection(props: {
   data: OrphanSignalGroupEntry[];
   datasourceById: Map<number, Datasource>;
+  aorFilterOptions: { text: string; value: string }[];
   onAssign: (group: OrphanSignalGroupEntry) => void;
   onEdit: (group: OrphanSignalGroupEntry) => void;
 }) {
@@ -713,6 +749,7 @@ function OrphanGroupsSection(props: {
         <OrphanGroupsTable
           data={props.data}
           datasourceById={props.datasourceById}
+          aorFilterOptions={props.aorFilterOptions}
           onAssign={props.onAssign}
           onEdit={props.onEdit}
         />
@@ -726,6 +763,7 @@ function ZoneGroupsSection(props: {
   rows: ZoneGroupRow[];
   datasourceById: Map<number, Datasource>;
   groupInfos: Map<string, SignalGroupEntry>;
+  aorFilterOptions: { text: string; value: string }[];
   onEdit: (
     zoneId: number,
     datasourceId: number,
@@ -749,6 +787,7 @@ function ZoneGroupsSection(props: {
           rows={props.rows}
           datasourceById={props.datasourceById}
           groupInfos={props.groupInfos}
+          aorFilterOptions={props.aorFilterOptions}
           onEdit={props.onEdit}
           onDelete={props.onDelete}
         />
@@ -795,6 +834,10 @@ function AdminNeoPageBody() {
     [datasources]
   );
   const aorOptions = React.useMemo(() => aors, [aors]);
+  const aorFilterOptions = React.useMemo(
+    () => buildAorFilterOptions(aors),
+    [aors]
+  );
 
   async function ensureLoginsLoaded() {
     if (loginsStatus === 'loading' || loginsStatus === 'success') return;
@@ -923,9 +966,12 @@ function AdminNeoPageBody() {
   }
 
   function openAssignDialog(group: OrphanSignalGroupEntry) {
+    const preselectedZones =
+      zones.length === 1 ? zones : [];
+
     setAssignDialog({
       group,
-      selectedZones: [],
+      selectedZones: preselectedZones,
       isSecret: false,
       selectedUsers: [],
       isSaving: false,
@@ -1181,6 +1227,7 @@ function AdminNeoPageBody() {
       <OrphanGroupsSection
         data={orphanGroups}
         datasourceById={datasourceById}
+        aorFilterOptions={aorFilterOptions}
         onAssign={openAssignDialog}
         onEdit={openOrphanEditDialog}
       />
@@ -1239,6 +1286,7 @@ function AdminNeoPageBody() {
               rows={filteredRows}
               datasourceById={datasourceById}
               groupInfos={groupInfos}
+              aorFilterOptions={aorFilterOptions}
               onEdit={openEditDialog}
               onDelete={openDeleteDialog}
             />

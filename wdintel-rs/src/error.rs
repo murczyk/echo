@@ -122,6 +122,13 @@ impl actix_web::error::ResponseError for AppError {
                     serde_json::to_string(&Vec::from_iter(es.iter())).unwrap(),
                 )
             }
+            AppError::BL { msg } => {
+                warn!(target: "business_error", "Business logic error: {msg}");
+                actix_web::HttpResponseBuilder::new(
+                    actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
+                )
+                .body("Internal server error")
+            }
             _ => {
                 error!("Internal server error: {self:?}");
                 println!("Internal server error: {self:?}");

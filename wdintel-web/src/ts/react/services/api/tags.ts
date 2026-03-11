@@ -1,6 +1,13 @@
-import { TagAdmin, TagKeyword, TagKeywordAddReq, TagModelError, TagModelErrorFE, TagUpsertReq, toTagModelErrorFE } from '../../../../Bindings';
+import { TagAdmin, TagKeyword, TagKeywordAddReq, TagUpsertReq } from '../../../../Bindings';
 
 import { deleteVoid, getJson, postJson, putJson, putVoid } from './client';
+
+export type TagModelErrorFE = {
+  id: number;
+  body: string;
+  removedAt: number;
+  removedByLogin: string;
+};
 
 type TagKeywordLike = {
   tagKeywordId?: number;
@@ -14,6 +21,15 @@ type TagKeywordLike = {
   keyword_negative_forms?: string[];
 };
 
+type TagModelErrorRaw = {
+  id?: number;
+  body?: string;
+  removedAt?: number;
+  removed_at?: number;
+  removedByLogin?: string;
+  removed_by_login?: string;
+};
+
 type TagAdminLike = {
   tagId?: number;
   tag_id?: number;
@@ -21,6 +37,8 @@ type TagAdminLike = {
   extra?: boolean | null;
   ord?: number | null;
   enabled?: boolean;
+  isPalitra?: boolean;
+  is_palitra?: boolean;
   keywords?: TagKeywordLike[] | null;
 };
 
@@ -48,6 +66,7 @@ function normalizeTagAdmin(raw: TagAdminLike): TagAdmin {
     extra: raw.extra ?? null,
     ord: raw.ord ?? null,
     enabled: raw.enabled ?? false,
+    isPalitra: raw.isPalitra ?? raw.is_palitra ?? false,
     keywords: (raw.keywords ?? []).map(normalizeTagKeyword),
   };
 }
@@ -61,23 +80,42 @@ function toTagKeywordAddReqBody(req: TagKeywordAddReq): TagKeywordAddReqBody {
   };
 }
 
+function normalizeTagModelError(raw: TagModelErrorRaw): TagModelErrorFE {
+  return {
+    id: raw.id ?? 0,
+    body: raw.body ?? '',
+    removedAt: raw.removedAt ?? raw.removed_at ?? 0,
+    removedByLogin: raw.removedByLogin ?? raw.removed_by_login ?? '',
+  };
+}
+
 export async function listTags(): Promise<TagAdmin[]> {
   const data = await postJson<TagAdminLike[]>('/api/admin/tags/list');
   return (data || []).map(normalizeTagAdmin);
 }
 
 export async function getTagModelErrors(tagId: number): Promise<TagModelErrorFE[]> {
-  const data = await getJson<TagModelError[]>(`/api/tags/${tagId}/model-errors`);
-  return data.map(toTagModelErrorFE);
+  const data = await getJson<TagModelErrorRaw[]>(`/api/tags/${tagId}/model-errors`);
+  return data.map(normalizeTagModelError);
+}
+
+function toTagUpsertReqBody(req: TagUpsertReq): Record<string, any> {
+  return {
+    label: req.label,
+    extra: req.extra,
+    ord: req.ord,
+    enabled: req.enabled,
+    is_palitra: req.isPalitra,
+  };
 }
 
 export async function createTag(req: TagUpsertReq): Promise<TagAdmin> {
-  const data = await postJson<TagAdminLike>('/api/admin/tags', req);
+  const data = await postJson<TagAdminLike>('/api/admin/tags', toTagUpsertReqBody(req));
   return normalizeTagAdmin(data);
 }
 
 export async function updateTag(tagId: number, req: TagUpsertReq): Promise<TagAdmin> {
-  const data = await putJson<TagAdminLike>(`/api/admin/tags/${tagId}`, req);
+  const data = await putJson<TagAdminLike>(`/api/admin/tags/${tagId}`, toTagUpsertReqBody(req));
   return normalizeTagAdmin(data);
 }
 

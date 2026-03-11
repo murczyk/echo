@@ -11,6 +11,7 @@ use crate::types::Mode;
 use crate::utils::orm::ArrayColumnOps;
 use anyhow::Context;
 use dialoguer::{theme::ColorfulTheme, Confirm};
+use itertools::Itertools;
 use log::*;
 use sea_orm::*;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -24,10 +25,13 @@ pub mod types;
 pub async fn oneoff_export_etalon_data(
     mode: Mode,
     destination_path: String,
+    only_sigint_unit_id: Option<i64>,
 ) -> Result<(), AppError> {
     info!("exporting etalon...");
     let dbx = crate::new_pg_pool_from_mode(mode).await.context(h!())?;
-    let etalon = export_etalon_data(&dbx, true).await.context(h!())?;
+    let etalon = export_etalon_data(&dbx, true, only_sigint_unit_id)
+        .await
+        .context(h!())?;
     let content = serde_json::to_string(&etalon).context(h!())?;
     let mut file =
         File::create(destination_path.clone()).await.context(h!())?;
@@ -183,19 +187,48 @@ fn print_import_stats<ID: Id>(import_stats: &ImportResult<ID>) -> String {
 async fn export_etalon_data<'a, 'async_trait, C>(
     txn: &'a C,
     include_deleted: bool,
+    only_sigint_unit_id: Option<i64>,
 ) -> anyhow::Result<EtalonData>
 where
     C: ConnectionTrait + 'async_trait,
 {
-    let sigint_unit =
-        sigint_unit::Entity::find().all(txn).await.context(h!())?;
-    let sigint_signal_changelog = sigint_signal_changelog::Entity::find()
-        .all(txn)
-        .await
-        .context(h!())?;
-    let sigint_signal =
-        sigint_signal::Entity::find().all(txn).await.context(h!())?;
-    let mut sigint_network_q = sigint_network::Entity::find();
+    let sigint_unit = match &only_sigint_unit_id {
+        None => sigint_unit::Entity::find(),
+        Some(id) => sigint_unit::Entity::find_by_id(*id),
+    }
+    .all(txn)
+    .await
+    .context(h!())?;
+
+    let sigint_signal = match &only_sigint_unit_id {
+        None => sigint_signal::Entity::find(),
+        Some(id) => sigint_signal::Entity::find()
+            .filter(sigint_signal::Column::Unit.eq(*id)),
+    }
+    .all(txn)
+    .await
+    .context(h!())?;
+
+    let signal_ids = sigint_signal.iter().map(|x| x.id).collect::<Vec<_>>();
+    let sigint_signal_changelog = match &only_sigint_unit_id {
+        None => sigint_signal_changelog::Entity::find(),
+        Some(_) => sigint_signal_changelog::Entity::find().filter(
+            sigint_signal_changelog::Column::SigintSignalId.is_in(signal_ids),
+        ),
+    }
+    .all(txn)
+    .await
+    .context(h!())?;
+
+    let mut sigint_network_q = match &only_sigint_unit_id {
+        None => sigint_network::Entity::find(),
+        Some(id) => sigint_network::Entity::find()
+            .join(
+                JoinType::InnerJoin,
+                sigint_network::Relation::SigintNetworkUnit.def(),
+            )
+            .filter(sigint_network_unit::Column::UnitId.eq(*id)),
+    };
     if !include_deleted {
         sigint_network_q =
             sigint_network_q.filter(sigint_network::Column::Deleted.eq(false));
@@ -211,6 +244,10 @@ where
         .map(|network| network.id)
         .collect::<HashSet<_>>();
     let sigint_network_changelog = sigint_network_changelog::Entity::find()
+        .filter(
+            sigint_network_changelog::Column::SigintNetworkId
+                .is_in(sigint_network_ids.clone()),
+        )
         .all(txn)
         .await
         .context(h!())?;
@@ -255,21 +292,43 @@ where
             .await
             .context(h!())?
     };
+    let sigint_network_unit_ids =
+        sigint_network_unit.iter().map(|x| x.id).collect_vec();
     let sigint_network_unit_changelog =
         sigint_network_unit_changelog::Entity::find()
+            .filter(
+                sigint_network_unit_changelog::Column::Id
+                    .is_in(sigint_network_unit_ids),
+            )
             .all(txn)
             .await
             .context(h!())?;
-    let sigint_callsign = sigint_callsign::Entity::find()
-        .all(txn)
-        .await
-        .context(h!())?;
-    let source = source::Entity::find().all(txn).await.context(h!())?;
-    let modulation = modulation::Entity::find().all(txn).await.context(h!())?;
+    let sigint_callsign = match &only_sigint_unit_id {
+        None => sigint_callsign::Entity::find(),
+        Some(id) => sigint_callsign::Entity::find()
+            .filter(sigint_callsign::Column::UnitId.eq(*id)),
+    }
+    .all(txn)
+    .await
+    .context(h!())?;
+    let sigint_callsign_ids =
+        sigint_callsign.iter().map(|x| x.id).collect_vec();
     let sigint_callsign_changelog = sigint_callsign_changelog::Entity::find()
+        .filter(
+            sigint_callsign_changelog::Column::SigintCallsignId
+                .is_in(sigint_callsign_ids),
+        )
         .all(txn)
         .await
         .context(h!())?;
+    let source = match &only_sigint_unit_id {
+        None => source::Entity::find().all(txn).await.context(h!())?,
+        Some(_) => vec![],
+    };
+    let modulation = match &only_sigint_unit_id {
+        None => modulation::Entity::find().all(txn).await.context(h!())?,
+        Some(_) => vec![],
+    };
     let sigint_post =
         sigint_post::Entity::find().all(txn).await.context(h!())?;
     let mut sigint_network_post = if sigint_network_ids.is_empty() {
@@ -296,8 +355,14 @@ where
             .await
             .context(h!())?
     };
+    let sigint_network_callsign_ids =
+        sigint_network_callsign.iter().map(|x| x.id).collect_vec();
     let sigint_network_callsign_changelog =
         sigint_network_callsign_changelog::Entity::find()
+            .filter(
+                sigint_network_callsign_changelog::Column::Id
+                    .is_in(sigint_network_callsign_ids),
+            )
             .all(txn)
             .await
             .context(h!())?;

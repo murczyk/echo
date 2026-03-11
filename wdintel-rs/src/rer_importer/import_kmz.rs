@@ -116,7 +116,7 @@ pub struct DeltaKmzFreqRec {
 }
 
 pub async fn rer_delta_kmz_import_go(
-    settlements: Arc<RwLock<crate::location::SettlementsData>>,
+    settlements: Arc<RwLock<crate::location::SettlementsDataConfig>>,
     dbx: &sea_orm::DatabaseConnection,
     config: &Config,
     redis: &mut redis::aio::ConnectionManager,

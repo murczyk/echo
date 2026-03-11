@@ -220,6 +220,8 @@ pub struct ListNetworksReq {
     pub ids: Option<Vec<i64>>,
     /// Optional limit, applied when no filters are provided
     pub limit: Option<i64>,
+    /// Optional offset for pagination (0-based)
+    pub offset: Option<i64>,
     pub sort_by: Option<Vec<ListNetworksSortBy>>,
 }
 

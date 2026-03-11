@@ -57,8 +57,7 @@ sudo -u postgres psql -c "CREATE USER wd WITH PASSWORD 'fee_-_-_-FnoeKFBeebu87bf
 sudo -u postgres psql -c "CREATE DATABASE wd OWNER wd;"
 sudo -u postgres psql -c "CREATE EXTENSION IF NOT EXISTS postgis WITH SCHEMA public;" wd
 sudo -u postgres psql -c "ALTER TABLE public.spatial_ref_sys OWNER TO wd;" wd
-PGPASSWORD=fee_-_-_-FnoeKFBeebu87bf pg_restore -U wd -d wd --clean deploy/wd-init.pgrestore 
-
+sudo -u postgres pg_restore --verbose -d wd < deploy/wd-init.pgrestore
 ```
 
 ## Build and start backend (dev-back)
@@ -72,7 +71,8 @@ just dev-back
 cargo run --bin=wdintel-rs -- --mode debug oneoff-register-user --login admin --password fee_-_-_-FnoeKFBeebu87bf --role Admin --sigint-zone 1
 # assign default organism to user
 PGPASSWORD=fee_-_-_-FnoeKFBeebu87bf psql -U wd -c "UPDATE login SET organism_id = 6 WHERE login = 'admin';" wd
-
+# disable echo-im locally (when restoring external backups)
+cargo run --bin=wdintel-rs -- --mode debug oneoff-disable-im
 ```
 
 ## Build and start frontend (dev-front2)
@@ -127,15 +127,23 @@ server {
     location /api {
         proxy_pass http://localhost:8081;
         proxy_set_header Host $host;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection  "upgrade";
     }
     location /api-public {
         proxy_pass http://localhost:8081/api-public;
         proxy_set_header Host $host;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection  "upgrade";
     }
     location / {
         proxy_pass http://localhost:1234;
         proxy_set_header Host $host;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection  "upgrade";
     }
 }
 ```
-

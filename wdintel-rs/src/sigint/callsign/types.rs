@@ -12,6 +12,8 @@ pub struct Callsign {
     pub unit_id: i64,
     pub active: bool,
     pub source_id: Option<i32>,
+    #[serde(default)]
+    pub callsign_additional_sources: Vec<i64>,
     pub created_at: i64,
     pub developing: bool,
     /// Set when source_id points to "radio" (id=2)
@@ -73,6 +75,8 @@ pub struct CreateCallsignReq {
     pub comment: String,
     pub unit_id: i64,
     pub source_id: Option<i32>,
+    #[serde(default)]
+    pub callsign_additional_sources: Vec<i64>,
     pub developing: bool,
     pub radio_freq: Option<String>,
 }

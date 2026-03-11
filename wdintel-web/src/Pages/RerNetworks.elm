@@ -42,7 +42,6 @@ import Shared.Components.Table.Config as TableConfig
 import Shared.Model exposing (isDarkMode)
 import Task
 import Time exposing (Posix)
-import TimeZone
 import Utils.Api.ErrorHandling
 import Utils.NetworksUtils as EUtils
 import Utils.RemoteData as RD exposing (RemoteData(..))
@@ -64,6 +63,9 @@ type alias Model =
     , to : Shared.Components.DateTime.Model
     , networksGroupsActivity : RemoteData ApiError GroupsActivityPerDayRsp
     , networks : RemoteData ApiError (List B.Network)
+    , loadingMore : Bool
+    , noMoreToLoad : Bool
+    , networksOffset : Int
     , currentRequestTracker : Maybe String
     , requestCounter : Int
     , networksMergeStatus : NetworksMergeStatus
@@ -119,6 +121,9 @@ init _ =
             , from = Shared.Components.DateTime.init ()
             , to = Shared.Components.DateTime.init ()
             , networks = NotAsked
+            , loadingMore = False
+            , noMoreToLoad = True
+            , networksOffset = 0
             , currentRequestTracker = Nothing
             , requestCounter = 0
             , networksMergeStatus = NotCalculatedSuggestionsYet
@@ -178,30 +183,111 @@ filterStateDebounceConfig =
     }
 
 
+networkListPageSize : Int
+networkListPageSize =
+    100
+
+
+noAorFilterId : Int
+noAorFilterId =
+    -1
+
+
+noAorFilterLabel : String
+noAorFilterLabel =
+    "—"
+
+
+selectedAorIdsForApi : List Int -> Maybe (List Int)
+selectedAorIdsForApi selectedAorIds =
+    let
+        hasNoAorSelected =
+            List.member noAorFilterId selectedAorIds
+
+        regularAorIds =
+            selectedAorIds |> List.filter (\aid -> aid /= noAorFilterId)
+    in
+    if hasNoAorSelected || List.isEmpty regularAorIds then
+        Nothing
+
+    else
+        Just regularAorIds
+
+
+filterNetworksByAorSelection : List Int -> List B.Network -> List B.Network
+filterNetworksByAorSelection selectedAorIds networks =
+    if List.isEmpty selectedAorIds then
+        networks
+
+    else
+        let
+            hasNoAorSelected =
+                List.member noAorFilterId selectedAorIds
+
+            regularAorIds =
+                selectedAorIds |> List.filter (\aid -> aid /= noAorFilterId)
+
+            isNoAorNetwork network =
+                List.isEmpty network.aorIds
+
+            hasRegularAor network =
+                network.aorIds |> List.any (\aid -> List.member aid regularAorIds)
+        in
+        networks
+            |> List.filter
+                (\network ->
+                    if hasNoAorSelected then
+                        isNoAorNetwork network || hasRegularAor network
+
+                    else
+                        hasRegularAor network
+                )
+
+
+resetNetworksPagination : Model -> Model
+resetNetworksPagination model =
+    { model
+        | networksOffset = 0
+        , loadingMore = False
+        , noMoreToLoad = True
+    }
+
+
+listNetworksReq : Model -> B.ListNetworksReq
+listNetworksReq model =
+    { filterFreq = emptySToNothing model.filterState.freq
+    , filterUnit = emptySToNothing model.filterState.unit
+    , sortBy = Nothing
+    , showOnlyFurtherInverstigation =
+        if model.showOnlyInvestigating then
+            Just True
+
+        else
+            Nothing
+    , showInactive = Just (not model.showOnlyActive)
+    , showOnlyDeleted = Just model.showArchived
+    , aorIds = selectedAorIdsForApi model.aorFilterSelect.selected
+    , ids = Nothing
+    , limit = Just networkListPageSize
+    , offset = Just model.networksOffset
+    }
+
+
+loadedNetworksCount : Model -> Int
+loadedNetworksCount model =
+    model.networks
+        |> RD.withDefault []
+        |> List.length
+
+
 loadNetworks : Model -> ( Model, Effect Msg )
 loadNetworks model =
-    ( { model | networks = Loading }
-    , E.getNetworksList NetworksReturnedByApi
-        { filterFreq = emptySToNothing model.filterState.freq
-        , filterUnit = emptySToNothing model.filterState.unit
-        , sortBy = Nothing
-        , showOnlyFurtherInverstigation =
-            if model.showOnlyInvestigating then
-                Just True
-
-            else
-                Nothing
-        , showInactive = Just (not model.showOnlyActive)
-        , showOnlyDeleted = Just model.showArchived
-        , aorIds =
-            if List.isEmpty model.aorFilterSelect.selected then
-                Nothing
-
-            else
-                Just model.aorFilterSelect.selected
-        , ids = Nothing
-        , limit = Nothing
-        }
+    let
+        model2 =
+            { model | networks = Loading, loadingMore = False }
+    in
+    ( model2
+    , E.getNetworksList NetworksReturnedByApi (listNetworksReq model2)
     )
 
 
@@ -209,31 +295,32 @@ loadNetworksWithTracker : Model -> String -> Cmd Msg
 loadNetworksWithTracker model tracker =
     Api.get_networks_list_with_tracker NetworksReturnedByApi
         tracker
-        { filterFreq = emptySToNothing model.filterState.freq
-        , filterUnit = emptySToNothing model.filterState.unit
-        , sortBy = Nothing
-        , showOnlyFurtherInverstigation =
-            if model.showOnlyInvestigating then
-                Just True
+        (listNetworksReq model)
 
-            else
-                Nothing
-        , showInactive = Just (not model.showOnlyActive)
-        , showOnlyDeleted = Just model.showArchived
-        , aorIds =
-            if List.isEmpty model.aorFilterSelect.selected then
-                Nothing
 
-            else
-                Just model.aorFilterSelect.selected
-        , ids = Nothing
-        , limit = Nothing
-        }
+loadNetworksFirstPage : Model -> ( Model, Effect Msg )
+loadNetworksFirstPage model =
+    loadNetworks (resetNetworksPagination model)
+
+
+loadMoreNetworks : Model -> ( Model, Effect Msg )
+loadMoreNetworks model =
+    let
+        model2 =
+            { model
+                | loadingMore = True
+                , networksOffset = loadedNetworksCount model
+            }
+    in
+    ( model2
+    , E.getNetworksList NetworksReturnedByApi (listNetworksReq model2)
+    )
 
 
 type Msg
     = GotTime Posix
     | NetworksReturnedByApi (Result ApiError (List B.Network))
+    | NetworksLoadMore
     | NetworksGroupsActivityReturnedByApi (Result ApiError GroupsActivityPerDayRsp)
     | NetworkPointsReturnedByApi Int (Result ApiError B.ListNetworkPointsRsp)
     | NetworksMergeStart
@@ -382,25 +469,48 @@ update shared msg model =
                         , reportToDate = reportToDate
                     }
             in
-            loadNetworks m2
+            loadNetworksFirstPage m2
 
         NetworksReturnedByApi (Err err) ->
-            ( { model | networks = Failure err, currentRequestTracker = Nothing }
+            ( { model
+                | networks =
+                    if model.loadingMore then
+                        model.networks
+
+                    else
+                        Failure err
+                , loadingMore = False
+                , currentRequestTracker = Nothing
+              }
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження мереж" err
             )
 
         NetworksReturnedByApi (Ok networks) ->
+            let
+                mergedNetworks =
+                    if model.loadingMore then
+                        RD.withDefault [] model.networks ++ networks
+
+                    else
+                        networks
+
+                nextOffset =
+                    List.length mergedNetworks
+            in
             ( { model
                 | networks =
-                    Success networks
+                    Success mergedNetworks
+                , loadingMore = False
+                , noMoreToLoad = List.length networks < networkListPageSize
+                , networksOffset = nextOffset
                 , currentRequestTracker = Nothing
-                , networksMergeStatus = CalculatedSuggestions (findSuggestedToMergeNetworks networks)
+                , networksMergeStatus = CalculatedSuggestions (findSuggestedToMergeNetworks mergedNetworks)
               }
             , case ( model.from.datePosix, model.to.datePosix ) of
                 ( Just _, Just dtToPosix ) ->
                     E.batch
                         [ E.getNetworksGroupsActivity NetworksGroupsActivityReturnedByApi
-                            { networkIds = networks |> List.map .id
+                            { networkIds = mergedNetworks |> List.map .id
                             , tillDateNoninclusiveMs = Just <| Time.posixToMillis dtToPosix
                             }
                         ]
@@ -408,6 +518,9 @@ update shared msg model =
                 _ ->
                     E.none
             )
+
+        NetworksLoadMore ->
+            loadMoreNetworks model
 
         NetworksGroupsActivityReturnedByApi (Err err) ->
             ( { model | networksGroupsActivity = Failure err }
@@ -488,6 +601,9 @@ update shared msg model =
 
         FilterStateDebounceMsg imsg ->
             let
+                paginatedModel =
+                    resetNetworksPagination model
+
                 tracker =
                     "networks-" ++ String.fromInt (model.requestCounter + 1)
 
@@ -502,12 +618,12 @@ update shared msg model =
                 ( debounce, debounceCmd ) =
                     Debounce.update
                         filterStateDebounceConfig
-                        (Debounce.takeLast (\_ -> loadNetworksWithTracker model tracker))
+                        (Debounce.takeLast (\_ -> loadNetworksWithTracker paginatedModel tracker))
                         imsg
-                        model.filterStateDebounce
+                        paginatedModel.filterStateDebounce
 
                 model2 =
-                    { model
+                    { paginatedModel
                         | filterStateDebounce = debounce
                         , networks = Loading
                         , currentRequestTracker = Just tracker
@@ -533,7 +649,7 @@ update shared msg model =
                         }
 
                 ( m3, eff3 ) =
-                    loadNetworks m2
+                    loadNetworksFirstPage m2
             in
             ( m3
             , E.batch
@@ -554,7 +670,7 @@ update shared msg model =
                         }
 
                 ( m3, eff3 ) =
-                    loadNetworks m2
+                    loadNetworksFirstPage m2
             in
             ( m3
             , E.batch
@@ -603,14 +719,10 @@ update shared msg model =
                             Nothing
                     , showInactive = Just (not model.showOnlyActive)
                     , showOnlyDeleted = Just model.showArchived
-                    , aorIds =
-                        if List.isEmpty model.aorFilterSelect.selected then
-                            Nothing
-
-                        else
-                            Just model.aorFilterSelect.selected
+                    , aorIds = selectedAorIdsForApi model.aorFilterSelect.selected
                     , ids = Nothing
                     , limit = Nothing
+                    , offset = Nothing
                     }
 
                 apiCall reportType ctx =
@@ -736,7 +848,7 @@ update shared msg model =
                     { model | showOnlyInvestigating = val, filterState = newFilterState }
 
                 ( m3, eff ) =
-                    loadNetworks m2
+                    loadNetworksFirstPage m2
             in
             ( m3, eff )
 
@@ -746,7 +858,7 @@ update shared msg model =
                     { model | showOnlyActive = val }
 
                 ( m3, eff ) =
-                    loadNetworks m2
+                    loadNetworksFirstPage m2
             in
             ( m3, eff )
 
@@ -756,7 +868,7 @@ update shared msg model =
                     { model | showArchived = val }
 
                 ( m3, eff ) =
-                    loadNetworks m2
+                    loadNetworksFirstPage m2
             in
             ( m3, eff )
 
@@ -934,7 +1046,7 @@ update shared msg model =
                     { model | filterState = newFilterState, showOnlyInvestigating = False }
 
                 ( m3, eff ) =
-                    loadNetworks m2
+                    loadNetworksFirstPage m2
             in
             ( m3, eff )
 
@@ -958,7 +1070,7 @@ update shared msg model =
                     }
 
                 ( m3, eff ) =
-                    loadNetworks m2
+                    loadNetworksFirstPage m2
             in
             ( m3, eff )
 
@@ -974,7 +1086,8 @@ update shared msg model =
                     aors |> List.filter .isTopLevel
 
                 items =
-                    topLevelAors |> List.map (\a -> Select.basicMenuItem { item = a.id, label = a.name })
+                    Select.basicMenuItem { item = noAorFilterId, label = noAorFilterLabel }
+                        :: (topLevelAors |> List.map (\a -> Select.basicMenuItem { item = a.id, label = a.name }))
 
                 oldAorSelect =
                     model.aorFilterSelect
@@ -982,7 +1095,7 @@ update shared msg model =
                 -- keep only selected AORs that are top-level
                 selectedFiltered =
                     oldAorSelect.selected
-                        |> List.filter (\id -> List.any (\a -> a.id == id) topLevelAors)
+                        |> List.filter (\id -> id == noAorFilterId || List.any (\a -> a.id == id) topLevelAors)
 
                 newAorSelect =
                     { oldAorSelect | items = items, selected = selectedFiltered }
@@ -1049,7 +1162,7 @@ update shared msg model =
 
                 ( m3, eff ) =
                     if shouldReload && valueChanged then
-                        loadNetworks { m2 | aorFilterFocusedBefore = Nothing }
+                        loadNetworksFirstPage { m2 | aorFilterFocusedBefore = Nothing }
 
                     else if shouldReload then
                         ( { m2 | aorFilterFocusedBefore = Nothing }, E.none )
@@ -1465,15 +1578,19 @@ filterPanel user shared model =
                         model.aorFilterSelect.selected
                             |> List.filterMap
                                 (\aid ->
-                                    case model.aorList of
-                                        Success aors ->
-                                            aors
-                                                |> List.filter (\a -> a.id == aid)
-                                                |> List.head
-                                                |> Maybe.map (\a -> Select.basicMenuItem { item = a.id, label = a.name })
+                                    if aid == noAorFilterId then
+                                        Just (Select.basicMenuItem { item = noAorFilterId, label = noAorFilterLabel })
 
-                                        _ ->
-                                            Nothing
+                                    else
+                                        case model.aorList of
+                                            Success aors ->
+                                                aors
+                                                    |> List.filter (\a -> a.id == aid)
+                                                    |> List.head
+                                                    |> Maybe.map (\a -> Select.basicMenuItem { item = a.id, label = a.name })
+
+                                            _ ->
+                                                Nothing
                                 )
                 in
                 div [ style "min-width" "210px", style "width" "210px" ]
@@ -1564,11 +1681,34 @@ contentBlock user shared model =
             ]
         , case model.networks of
             Success networks ->
-                mainContent
-                    user
-                    networks
-                    shared
-                    model
+                let
+                    filteredNetworks =
+                        filterNetworksByAorSelection model.aorFilterSelect.selected networks
+                in
+                div []
+                    [ mainContent
+                        user
+                        filteredNetworks
+                        shared
+                        model
+                    , div [ class "flex justify-center mt-3 mb-3" ] <|
+                        if not model.noMoreToLoad then
+                            [ Button.new { label = "Завантажити ще", onClick = NetworksLoadMore }
+                                |> Button.withStyleSecondary
+                                |> Button.withDisabled model.loadingMore
+                                |> Button.withIcon
+                                    (if model.loadingMore then
+                                        [ Shared.Components.Spinner.loadingSpinner2Sm ]
+
+                                     else
+                                        []
+                                    )
+                                |> Button.view
+                            ]
+
+                        else
+                            []
+                    ]
 
             _ ->
                 div [ class "flex items-center justify-center w-full h-full" ] [ Shared.Components.Spinner.loadingSpinner ]
@@ -1702,7 +1842,7 @@ view _ shared user model =
                       div [ class "flex gap-[16px]" ] buttons
                     ]
                 , case model.networksMergeStatus of
-                    CalculatedSuggestions (_ :: xs) ->
+                    CalculatedSuggestions (_ :: _) ->
                         -- div [ class "w-full bg-[#F5F28A]/[40%] h-[70px] mb-[16px] border-1 border-[#F5F28A] rounded-lg flex justify-between items-center px-[16px] py-[8px] font-medium" ]
                         --     [ text <| (String.fromInt (List.length xs + 1) ++ " неопрацьованих пропозицій по злиттю мереж")
                         --     , Button.new { label = "Поєднати мережі", onClick = NetworksMergeStart }
@@ -1859,5 +1999,5 @@ toLayout : Auth.User -> Model -> Layouts.Layout Msg
 toLayout user _ =
     Layouts.Navbar
         { user = user
-        , activeName = "rer"
+        , activeName = "networks"
         }

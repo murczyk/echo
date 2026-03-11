@@ -27,7 +27,7 @@ import View exposing (View)
 
 
 page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
-page user shared req =
+page user shared _ =
     Page.new
         { init = init
         , update = update
@@ -38,7 +38,7 @@ page user shared req =
 
 
 toLayout : Auth.User -> Model -> Layouts.Layout Msg
-toLayout user model =
+toLayout user _ =
     Layouts.Navbar
         { user = user
         , activeName = "alpinequest-kmz"
@@ -150,7 +150,7 @@ ensureKmzName name =
 
 
 subscriptions : Model -> Sub Msg
-subscriptions model =
+subscriptions _ =
     Sub.none
 
 
@@ -183,9 +183,11 @@ pageBlock model =
                   code [ class "font-mono font-semibold" ] [ text ext ]
           in
           p [ class "mb-3 text-sm text-[var(--color-subtle-text)]" ]
-              ([ text "Конвертує файли у форматі " ]
-                  ++ List.intersperse (text " ") (List.map renderExtension extensions)
+              ((text "Конвертує файли у форматі ")
+                  :: List.intersperse (text " ") (List.map renderExtension extensions)
               )
+        , blockquote [ class "mb-3 text-sm text-yellow-600 border-l-4 border-yellow-600 pl-4" ]
+              [ p [] [ text "ⓘ Формат .pgd наразі підтримується в експериментальному режимі" ] ]
         , Button.new { label = " додати файл", onClick = UploadAlpinequestFile }
             |> Button.withIcon [ buttonIcon ]
             |> Button.view
@@ -194,7 +196,7 @@ pageBlock model =
 
 
 view : Bool -> Shared.Model -> B.User -> Model -> View Msg
-view dark shared user model =
+view _ _ _ model =
     { title = "alpinequest в kmz"
     , body =
         [ div [ class "w-4/5 mx-auto px-4" ]

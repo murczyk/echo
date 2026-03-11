@@ -51,6 +51,7 @@ import Shared.Components.Toast
 import Shared.Components.Toggle as Toggle
 import Shared.Components.Tooltip as Tooltip
 import Shared.Model exposing (isDarkMode)
+import String
 import Task
 import Time exposing (Posix)
 import TimeZone
@@ -418,6 +419,7 @@ getBasicInboxParams model =
     , highlightSignals = Just model.highlightSignalsEnabled
     , highlightKeywords = Just True
     , highlightSearchres = Just True
+    , highlightPoints = Just False
     , sortBy = Just B.ImsTimestamp
     , reportTagsOnlyThisUnit = Nothing
     , ignoreImportedCoords = Just True
@@ -664,6 +666,30 @@ updateFreqsAndCallsigns messages model =
             E.none
         ]
     )
+
+
+mergeCallsignsInfo :
+    List B.CallsignInfoRes
+    ->
+        { a
+            | callsignsInfo : Dict String (List B.CallsignInfo)
+        }
+    ->
+        { a
+            | callsignsInfo : Dict String (List B.CallsignInfo)
+        }
+mergeCallsignsInfo callsigns model =
+    List.foldl
+        (\callsign m ->
+            { m
+                | callsignsInfo =
+                    Dict.insert (String.toLower callsign.callsign)
+                        callsign.res
+                        m.callsignsInfo
+            }
+        )
+        model
+        callsigns
 
 
 networksForView : Shared.Model -> Model -> Dict Int B.Network
@@ -1388,13 +1414,16 @@ update shared user msg model =
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження повідомлень" e
             )
 
-        GotInitialInbox reload (Ok { inboxItems }) ->
+        GotInitialInbox reload (Ok inboxRsp) ->
             let
                 messages =
-                    inboxItems
+                    inboxRsp.inboxItems
+
+                m0 =
+                    mergeCallsignsInfo inboxRsp.callsigns model
 
                 ( m1, eff1 ) =
-                    updateFreqsAndCallsigns messages model
+                    updateFreqsAndCallsigns messages m0
 
                 m2 =
                     { m1
@@ -1436,13 +1465,16 @@ update shared user msg model =
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження старіших повідомлень" e
             )
 
-        GotInboxEarlier (Ok { inboxItems }) ->
+        GotInboxEarlier (Ok inboxRsp) ->
             let
                 messages =
-                    inboxItems
+                    inboxRsp.inboxItems
+
+                m0 =
+                    mergeCallsignsInfo inboxRsp.callsigns model
 
                 ( m1, eff1 ) =
-                    updateFreqsAndCallsigns messages model
+                    updateFreqsAndCallsigns messages m0
 
                 m2 =
                     { m1
@@ -1698,10 +1730,10 @@ update shared user msg model =
             , E.sendCmd <| Task.perform (\_ -> InboxLoopSleptBeforeLoadNewer) (Process.sleep loadingNewMessagesInterval)
             )
 
-        InboxLoopGotMessages once (Ok { inboxItems }) ->
+        InboxLoopGotMessages once (Ok inboxRsp) ->
             let
                 messages =
-                    inboxItems
+                    inboxRsp.inboxItems
             in
             case model.loadingStrategy of
                 ManualScroll _ ->
@@ -1720,8 +1752,11 @@ update shared user msg model =
                                             []
                             }
 
+                        m2WithCallsigns =
+                            mergeCallsignsInfo inboxRsp.callsigns m2
+
                         ( m3, eff3 ) =
-                            updateFreqsAndCallsigns messages m2
+                            updateFreqsAndCallsigns messages m2WithCallsigns
                     in
                     ( { m3
                         | loadingInboxMessages =
@@ -1766,8 +1801,11 @@ update shared user msg model =
                                         AutoScrollToLatest Done
                             }
 
+                        m2WithCallsigns =
+                            mergeCallsignsInfo inboxRsp.callsigns m2
+
                         ( m3, eff3 ) =
-                            updateFreqsAndCallsigns messages m2
+                            updateFreqsAndCallsigns messages m2WithCallsigns
                     in
                     ( m3
                     , E.batch <|
@@ -1808,8 +1846,11 @@ update shared user msg model =
                                             model.lastViewedMessageId
                             }
 
+                        m2WithCallsigns =
+                            mergeCallsignsInfo inboxRsp.callsigns m2
+
                         ( m3, eff3 ) =
-                            updateFreqsAndCallsigns messages m2
+                            updateFreqsAndCallsigns messages m2WithCallsigns
                     in
                     ( m3
                     , E.batch <|
@@ -2047,21 +2088,7 @@ update shared user msg model =
             ( model, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження інформації про позивні" e )
 
         GotCallsignsInfo (Ok callsigns) ->
-            let
-                m2 =
-                    List.foldl
-                        (\callsign m ->
-                            { m
-                                | callsignsInfo =
-                                    Dict.insert callsign.callsign
-                                        callsign.res
-                                        m.callsignsInfo
-                            }
-                        )
-                        model
-                        callsigns
-            in
-            ( m2, E.none )
+            ( mergeCallsignsInfo callsigns model, E.none )
 
         GotNetworksInfo (Err e) ->
             ( model, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження мереж" e )
@@ -2107,7 +2134,7 @@ update shared user msg model =
                                 messageNetworkIds =
                                     case message_.networkIds of
                                         Just networkIds ->
-                                            networkIds
+                                            ListX.unique networkIds
 
                                         Nothing ->
                                             []
@@ -2465,7 +2492,7 @@ waterfallDiv user isDarkMode duplicates datasources serverInfo masterUnits model
                                                 messageNetworkIds =
                                                     case message.networkIds of
                                                         Just networkIds ->
-                                                            networkIds
+                                                            ListX.unique networkIds
 
                                                         Nothing ->
                                                             []

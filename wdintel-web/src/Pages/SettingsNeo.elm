@@ -61,7 +61,7 @@ view : Shared.Model -> Model -> View Msg
 view _ _ =
     { title = "налаштування"
     , body =
-        [ div [ class "mt-4 px-4 w-4/5 mx-auto" ]
+        [ div [ class "app-shell-fill-height box-border min-h-0 pt-6 px-6 w-4/5 mx-auto" ]
             [ node "settings-neo" [] [] ]
         ]
     }

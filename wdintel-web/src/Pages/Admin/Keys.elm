@@ -32,7 +32,7 @@ import View exposing (View)
 
 
 page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
-page user shared req =
+page user shared _ =
     Page.new
         { init = init
         , update = update
@@ -43,10 +43,10 @@ page user shared req =
 
 
 toLayout : Auth.User -> Model -> Layouts.Layout Msg
-toLayout user model =
+toLayout user _ =
     Layouts.Navbar
         { user = user
-        , activeName = "admin"
+        , activeName = "keys"
         }
 
 
@@ -380,7 +380,7 @@ validateCreateForm form =
 
 
 subscriptions : Model -> Sub Msg
-subscriptions model =
+subscriptions _ =
     Sub.none
 
 

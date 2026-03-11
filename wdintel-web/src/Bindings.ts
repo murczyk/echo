@@ -354,6 +354,7 @@ export type InboxMessage = {
   unit: string | null;
   callsignTokens: Array<CnCallsign> | null;
   signalTokens: Array<CnSignal> | null;
+  pointTokens: Array<CnPoint> | null;
   noHeadersBody: NoHeadersBody | null;
   keywordTokens: Array<CnHighlight> | null;
   textMarked: Array<ContentNode> | null;
@@ -413,6 +414,7 @@ export type InboxMessagesReq = {
   highlightKeywords: boolean | null;
   highlightSearchres: boolean | null;
   highlightSignals: boolean | null;
+  highlightPoints: boolean | null;
   selectedTags: Array<number> | null;
   selectedAors: Array<number> | null;
   selectedNetworks: Array<number> | null;
@@ -833,7 +835,7 @@ export type SavedFilter = {
 export type SavedFilterDuty = {
   id: number;
   name: string;
-  req: RerDutyFeedFilterState;
+  req: RerDutyQueryStateWf;
 };
 
 export type SavedFilterUpsertReq = {
@@ -843,7 +845,7 @@ export type SavedFilterUpsertReq = {
 
 export type SavedFilterDutyUpsertReq = {
   name: string;
-  req: RerDutyFeedFilterState;
+  req: RerDutyQueryStateWf;
 };
 
 export type SavedFilterRenameReq = {
@@ -851,11 +853,11 @@ export type SavedFilterRenameReq = {
   name: string;
 };
 
-export type RerDutyState = {
-  messageFeeds: Array<[string, RerDutyFeedFilterState]> | null;
+export type RerDutyQueryState = {
+  waterfalls: Array<[string, RerDutyQueryStateWf]> | null;
 };
 
-export type RerDutyFeedFilterState = {
+export type RerDutyQueryStateWf = {
   groupsSelected: Array<string> | null;
   sendersSelected: Array<string> | null;
   deniedSenders: Array<string> | null;
@@ -1016,9 +1018,24 @@ export type PalitraDetails = {
   points: Array<PalitraPoint>;
 };
 
+export type PalitraGeometryDetails = {
+  id: number;
+  colorHex: string;
+  sourceFileName: string | null;
+  lastUploadedAtTs: number | null;
+  geometry: Geometry | null;
+  points: Array<PalitraPoint>;
+};
+
+export type PalitraReadV2 = {
+  palitra: Palitra;
+  geometries: Array<PalitraGeometryDetails>;
+};
+
 export type PalitraPoint = {
   coords: Coords;
   label: string | null;
+  color: string | null;
 };
 
 export type PalitraPointsReq = {
@@ -1051,6 +1068,7 @@ export type Coords = {
 export type KmzColorInfo = {
   colorHex: string;
   count: number;
+  suggestedSuffix: string | null;
 };
 
 export type AnalyzeKmzResponse = {
@@ -1107,6 +1125,13 @@ export type CnCallsign = {
   text: string;
 };
 
+export type CnPoint = {
+  begin: number;
+  end: number;
+  etalon: string;
+  text: string;
+};
+
 export type CnHighlight = {
   text: string;
   begin: number;
@@ -1119,6 +1144,7 @@ export type ContentNode =
   | { CNCallsignC: CnCallsign }
   | { CNHighlightC: CnHighlight }
   | { CNSignalC: CnSignal }
+  | { CNPointC: CnPoint }
 ;
 
 export type CnSignal = {
@@ -1399,6 +1425,7 @@ export type Tag = {
   extra: boolean | null;
   ord: number | null;
   keywords: Array<TagKeyword> | null;
+  isPalitra: boolean;
 };
 
 export type TagKeyword = {
@@ -1423,6 +1450,7 @@ export type TagAdmin = {
   ord: number | null;
   enabled: boolean;
   keywords: Array<TagKeyword>;
+  isPalitra: boolean;
 };
 
 export type TagUpsertReq = {
@@ -1430,6 +1458,7 @@ export type TagUpsertReq = {
   extra: boolean | null;
   ord: number | null;
   enabled: boolean;
+  isPalitra: boolean;
 };
 
 export type InboxMessageTagsAddReq = {
@@ -1454,6 +1483,7 @@ export type RestartEchoRequest = {
 
 export type ReoReportSettings = {
   adjacentFreqsDistance: number;
+  noComments: boolean;
 };
 
 export type ReoReportFileType =
@@ -1617,6 +1647,7 @@ export type Callsign = {
   unitId: number;
   active: boolean;
   sourceId: number | null;
+  callsignAdditionalSources: Array<number>;
   createdAt: number;
   developing: boolean;
   radioFreq: string | null;
@@ -1699,6 +1730,7 @@ export type CreateCallsignReq = {
   comment: string;
   unitId: number;
   sourceId: number | null;
+  callsignAdditionalSources: Array<number>;
   developing: boolean;
   radioFreq: string | null;
 };
@@ -2135,6 +2167,7 @@ export type ListNetworksReq = {
   aorIds: Array<number> | null;
   ids: Array<number> | null;
   limit: number | null;
+  offset: number | null;
   sortBy: Array<ListNetworksSortBy> | null;
 };
 
@@ -2399,85 +2432,6 @@ export type LongPollRsp = {
   lastEventId: string | null;
 };
 
-export type TagModelError = {
-  id: number;
-  sigint_inbox_item_id: number;
-  model: string;
-  model_login: string | null;
-  confidence: number;
-  removed_by_login: string;
-  removed_at: number;
-  body: string;
-  timestamp: number | null;
-  coords: string | null;
-  freq: string | null;
-  post_id: string | null;
-  datetime: number | null;
-  location_v2: string | null;
-  post_name: string | null;
-};
-
-export type TagModelErrorFE = {
-  id: number;
-  sigintInboxItemId: number;
-  model: string;
-  modelLogin: string | null;
-  confidence: number;
-  removedByLogin: string;
-  removedAt: number;
-  body: string;
-  timestamp: number | null;
-  coords: string | null;
-  freq: string | null;
-  postId: string | null;
-  datetime: number | null;
-  locationV2: string | null;
-  postName: string | null;
-}
-
-export function toTagModelErrorFE(error: TagModelError): TagModelErrorFE {
-  return {
-    id: error.id,
-    sigintInboxItemId: error.sigint_inbox_item_id,
-    model: error.model,
-    modelLogin: error.model_login,
-    confidence: error.confidence,
-    removedByLogin: error.removed_by_login,
-    removedAt: error.removed_at,
-    body: error.body,
-    timestamp: error.timestamp,
-    coords: error.coords, 
-    freq: error.freq,
-    postId: error.post_id,
-    datetime: error.datetime,
-    locationV2: error.location_v2,
-    postName: error.post_name,
-  };
-}
-
-export type EchoAccount = {
-  id: number;
-  area_of_responsibility: AreaOfResponsibility | null;
-  status: string;
-  created_at: number;
-  client_id: number | null;
-  display_name: string;
-  system_service_name: string | null;
-  description: string | null;
-  messenger: string;
-  phone_number: string;
-  api_login: string | null;
-  api_endpoint: string | null;
-  is_linked: boolean;
-  is_imported: boolean;
-  signal_port: string | null;
-  process_name: string | null;
-  attachments_path: string | null;
-  echo_client_id: string | null;
-  echo_account_id: string | null;
-  echo_client_lock_id: string | null;
-};
-
 export type EchoAccountF1 = {
   id: number;
   areaOfResponsibility: AreaOfResponsibility | null;
@@ -2510,7 +2464,7 @@ export type QrCodeRsp = {
 };
 
 export type AccountsRsp = {
-  accounts: Array<EchoAccount>;
+  accounts: Array<EchoAccountF1>;
 };
 
 export type IsAccountLinkedReq = {

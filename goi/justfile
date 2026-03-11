@@ -1,0 +1,203 @@
+set positional-arguments := false
+
+goi_dir := justfile_directory()
+goi_app_dir := "/etc/goi"
+
+default:
+    @just --list
+
+[arg('server', long='server')]
+setup-dev-container-scripts server:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    SERVER="{{ server }}"
+    REMOTE_HOME="$(ssh "$SERVER" 'printf %s "$HOME"')"
+    TARGET_DIR="${REMOTE_HOME}/workspace/goi-container/deploy"
+    TARGET_SCRIPT="${TARGET_DIR}/goi-dev-post-clone.sh"
+    TARGET_BUNDLE_DIR="${TARGET_DIR}/goi-dev-container"
+
+    echo "Preparing ${SERVER}:${TARGET_DIR}..."
+    ssh "$SERVER" "mkdir -p '${TARGET_BUNDLE_DIR}'"
+
+    echo "Uploading GOI post-clone script to ${SERVER}:${TARGET_SCRIPT}..."
+    echo-install-utils ssh-sync-file --take-a "{{ goi_dir }}/deploy/goi-dev-post-clone.sh" "${SERVER}:${TARGET_SCRIPT}"
+    echo-install-utils ssh-sync-file --take-a "{{ goi_dir }}/deploy/goi-dev-post-clone.sh" "${SERVER}:${TARGET_BUNDLE_DIR}/goi-dev-post-clone.sh"
+    ssh "$SERVER" "chmod 0755 '${TARGET_SCRIPT}'"
+
+    echo "Uploading GOI bundle files to ${SERVER}:${TARGET_BUNDLE_DIR}..."
+    echo-install-utils ssh-sync-file --take-a "{{ goi_dir }}/deploy/goi.service" "${SERVER}:${TARGET_BUNDLE_DIR}/goi.service"
+    echo-install-utils ssh-sync-file --take-a "{{ goi_dir }}/deploy/goi-npm-start.sh" "${SERVER}:${TARGET_BUNDLE_DIR}/goi-npm-start.sh"
+    echo-install-utils ssh-sync-file --take-a "{{ goi_dir }}/deploy/goi-renew-tailscale-cert.sh" "${SERVER}:${TARGET_BUNDLE_DIR}/goi-renew-tailscale-cert.sh"
+    echo-install-utils ssh-sync-file --take-a "{{ goi_dir }}/deploy/goi-renew-tailscale-cert.service" "${SERVER}:${TARGET_BUNDLE_DIR}/goi-renew-tailscale-cert.service"
+    echo-install-utils ssh-sync-file --take-a "{{ goi_dir }}/deploy/goi-renew-tailscale-cert.timer" "${SERVER}:${TARGET_BUNDLE_DIR}/goi-renew-tailscale-cert.timer"
+    ssh "$SERVER" "set -euo pipefail
+      chmod 0755 '${TARGET_BUNDLE_DIR}/goi-dev-post-clone.sh' '${TARGET_BUNDLE_DIR}/goi-npm-start.sh' '${TARGET_BUNDLE_DIR}/goi-renew-tailscale-cert.sh'
+      chmod 0644 '${TARGET_BUNDLE_DIR}/goi.service' '${TARGET_BUNDLE_DIR}/goi-renew-tailscale-cert.service' '${TARGET_BUNDLE_DIR}/goi-renew-tailscale-cert.timer'
+    "
+
+    echo "Done."
+    echo "Script path on ${SERVER}: ${TARGET_SCRIPT}"
+    echo "Bundle dir on ${SERVER}: ${TARGET_BUNDLE_DIR}"
+    echo "Example next step:"
+    echo "  incus exec \"\$MACHINE\" -- mkdir -p /var/tmp/goi-dev-container"
+    echo "  for f in goi-dev-post-clone.sh goi.service goi-npm-start.sh goi-renew-tailscale-cert.sh goi-renew-tailscale-cert.service goi-renew-tailscale-cert.timer; do incus file push ${TARGET_BUNDLE_DIR}/\$f \"\$MACHINE/var/tmp/goi-dev-container/\$f\"; done"
+    echo "  incus exec \"\$MACHINE\" -- /var/tmp/goi-dev-container/goi-dev-post-clone.sh --ts-key \"\$TS_KEY\" --machine \"\$MACHINE\" --domain \"\$DOMAIN\""
+
+[arg('server', long='server')]
+setup server:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    SERVER="{{ server }}"
+    APP_DIR="{{ goi_app_dir }}"
+
+    echo "Inspecting current state on ${SERVER}..."
+    ssh "$SERVER" 'set -euo pipefail
+      echo "host=$(hostname) user=$(whoami)"
+      if sudo systemctl list-unit-files goi.service >/dev/null 2>&1; then
+        echo "goi.service enabled=$(sudo systemctl is-enabled goi.service 2>/dev/null || true) active=$(sudo systemctl is-active goi.service 2>/dev/null || true)"
+      fi
+      sudo ls -la /etc/goi || true
+      command -v nginx >/dev/null 2>&1 && nginx -v || true
+    '
+
+    echo "Installing nvm for user echo (if needed) and setting default Node..."
+    ssh "$SERVER" 'set -euo pipefail
+      if ! id -u echo >/dev/null 2>&1; then
+        echo "user '\''echo'\'' not found" >&2
+        exit 1
+      fi
+      sudo -u echo bash -lc '"'"'
+        set -euo pipefail
+        export TERM=xterm
+        if [[ ! -s "$HOME/.nvm/nvm.sh" ]]; then
+          curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.4/install.sh | bash
+        fi
+        export NVM_DIR="$HOME/.nvm"
+        . "$NVM_DIR/nvm.sh"
+        nvm install --lts
+        nvm alias default "lts/*"
+        nvm use --silent default >/dev/null
+        node -v
+        npm -v
+      '"'"'
+    '
+
+    echo "Installing nginx..."
+    ssh "$SERVER" 'set -euo pipefail
+      sudo apt-get update
+      sudo DEBIAN_FRONTEND=noninteractive apt-get install -y nginx rsync
+    '
+
+    echo "Preparing ${APP_DIR}..."
+    ssh "$SERVER" "set -euo pipefail
+      sudo mkdir -p '${APP_DIR}'
+      sudo chown -R echo:echo '${APP_DIR}'
+    "
+
+    echo "Syncing goi service files..."
+    echo-install-utils ssh-sync-file --take-a "{{ goi_dir }}/deploy/goi.service" "${SERVER}:/etc/systemd/system/goi.service"
+    echo-install-utils ssh-sync-file --take-a "{{ goi_dir }}/deploy/goi-npm-start.sh" "${SERVER}:${APP_DIR}/goi-npm-start.sh"
+    echo-install-utils ssh-sync-file --take-a "{{ goi_dir }}/deploy/goi-renew-tailscale-cert.sh" "${SERVER}:/usr/local/sbin/goi-renew-tailscale-cert.sh"
+    echo-install-utils ssh-sync-file --take-a "{{ goi_dir }}/deploy/goi-renew-tailscale-cert.service" "${SERVER}:/etc/systemd/system/goi-renew-tailscale-cert.service"
+    echo-install-utils ssh-sync-file --take-a "{{ goi_dir }}/deploy/goi-renew-tailscale-cert.timer" "${SERVER}:/etc/systemd/system/goi-renew-tailscale-cert.timer"
+
+    ssh "$SERVER" "set -euo pipefail
+      sudo chown root:root /etc/systemd/system/goi.service
+      sudo chmod 0644 /etc/systemd/system/goi.service
+      sudo chown echo:echo '${APP_DIR}/goi-npm-start.sh'
+      sudo chmod 0755 '${APP_DIR}/goi-npm-start.sh'
+      sudo chown root:root /usr/local/sbin/goi-renew-tailscale-cert.sh
+      sudo chmod 0755 /usr/local/sbin/goi-renew-tailscale-cert.sh
+      sudo chown root:root /etc/systemd/system/goi-renew-tailscale-cert.service
+      sudo chmod 0644 /etc/systemd/system/goi-renew-tailscale-cert.service
+      sudo chown root:root /etc/systemd/system/goi-renew-tailscale-cert.timer
+      sudo chmod 0644 /etc/systemd/system/goi-renew-tailscale-cert.timer
+      sudo systemctl daemon-reload
+      sudo systemctl enable --now goi-renew-tailscale-cert.timer
+      sudo systemctl start goi-renew-tailscale-cert.service
+      renew_active=\$(sudo systemctl is-active goi-renew-tailscale-cert.service 2>/dev/null || true)
+      renew_result=\$(sudo systemctl show goi-renew-tailscale-cert.service -p Result --value 2>/dev/null || true)
+      timer_active=\$(sudo systemctl is-active goi-renew-tailscale-cert.timer 2>/dev/null || true)
+      echo goi-renew-tailscale-cert.service active=\${renew_active} result=\${renew_result}
+      echo goi-renew-tailscale-cert.timer active=\${timer_active}
+      sudo systemctl enable goi.service
+      goi_enabled=\$(sudo systemctl is-enabled goi.service 2>/dev/null || true)
+      goi_active=\$(sudo systemctl is-active goi.service 2>/dev/null || true)
+      echo goi.service enabled=\${goi_enabled} active=\${goi_active}
+    "
+
+[arg('server', long='server')]
+deploy server:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    SERVER="{{ server }}"
+    APP_DIR="{{ goi_app_dir }}"
+    SRC_DIR="{{ goi_dir }}/goi/goi-1.0.11/"
+
+    echo "Ensuring ${APP_DIR} exists on ${SERVER}..."
+    ssh "$SERVER" "set -euo pipefail
+      sudo mkdir -p '${APP_DIR}'
+      sudo chown -R echo:echo '${APP_DIR}'
+    "
+
+    echo "Cleaning stale prebuilt externals in ${APP_DIR}..."
+    ssh "$SERVER" "set -euo pipefail
+      sudo rm -rf '${APP_DIR}/.next/node_modules'
+    "
+
+    echo "Syncing GOI source into ${SERVER}:${APP_DIR}..."
+    rsync -az --delete \
+      --delete-after \
+      --force \
+      --exclude '.git/' \
+      --exclude '/node_modules/' \
+      --exclude '.runtime/' \
+      --exclude '.bootstrap/' \
+      --exclude '.output/' \
+      --exclude 'dist/' \
+      --filter 'P goi-npm-start.sh' \
+      --exclude '*.log' \
+      --exclude 'npm-debug.log*' \
+      --exclude 'yarn-debug.log*' \
+      --exclude 'yarn-error.log*' \
+      --exclude 'pnpm-debug.log*' \
+      "${SRC_DIR}" "${SERVER}:${APP_DIR}/"
+
+    echo "Syncing goi service files..."
+    echo-install-utils ssh-sync-file --take-a "{{ goi_dir }}/deploy/goi-npm-start.sh" "${SERVER}:${APP_DIR}/goi-npm-start.sh"
+    echo-install-utils ssh-sync-file --take-a "{{ goi_dir }}/deploy/goi.service" "${SERVER}:/etc/systemd/system/goi.service"
+
+    ssh "$SERVER" "set -euo pipefail
+      sudo chown echo:echo '${APP_DIR}/goi-npm-start.sh'
+      sudo chmod 0755 '${APP_DIR}/goi-npm-start.sh'
+      sudo chown root:root /etc/systemd/system/goi.service
+      sudo chmod 0644 /etc/systemd/system/goi.service
+    "
+
+    echo "Installing npm dependencies on ${SERVER}..."
+    ssh "$SERVER" "sudo -u echo bash -lc '
+      set -euo pipefail
+      export NVM_DIR=\"\$HOME/.nvm\"
+      . \"\$NVM_DIR/nvm.sh\"
+      nvm use --silent default >/dev/null
+      cd \"${APP_DIR}\"
+      if [[ ! -d .next ]]; then
+        echo \"missing .next in ${APP_DIR}; this deploy expects prebuilt Next.js artifacts\" >&2
+        exit 1
+      fi
+      if [[ -f package-lock.json ]]; then
+        npm ci --no-audit --no-fund
+      else
+        npm install --no-audit --no-fund
+      fi
+    '"
+
+    echo "Restarting goi.service on ${SERVER}..."
+    ssh "$SERVER" "set -euo pipefail
+      sudo systemctl daemon-reload
+      sudo systemctl restart goi.service
+      sudo systemctl status goi.service --no-pager
+    "

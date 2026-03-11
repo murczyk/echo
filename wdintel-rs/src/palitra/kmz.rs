@@ -1,4 +1,6 @@
-use crate::config::PALITRA_STORAGE_DIR_NAME;
+use crate::config::{
+    PALITRA_POINT_FALLBACK_COLOR_HEX, PALITRA_STORAGE_DIR_NAME,
+};
 use crate::h;
 use crate::kml::types::*;
 use crate::palitra::types::*;
@@ -136,9 +138,15 @@ pub async fn load_coordinates_from_kml(
                 }
             }
             Node::Placemark(p) => {
+                let m_color = get_placemark_color(&p);
                 let label = p.name.or(p.description);
                 let point = p.point.and_then(|p| p.coordinates);
-                m_add_coordinates(&mut values, label.clone(), point);
+                m_add_coordinates(
+                    &mut values,
+                    label.clone(),
+                    point,
+                    m_color.clone(),
+                );
 
                 let polygon_point = p
                     .polygon
@@ -146,7 +154,12 @@ pub async fn load_coordinates_from_kml(
                     .and_then(|o| o.linear_ring)
                     .and_then(|l| l.coordinates)
                     .and_then(|l| l.body);
-                m_add_coordinates(&mut values, label.clone(), polygon_point);
+                m_add_coordinates(
+                    &mut values,
+                    label.clone(),
+                    polygon_point,
+                    m_color.clone(),
+                );
 
                 let mut line_strings =
                     p.multi_geometry.map(|p| p.line_strings).unwrap_or(vec![]);
@@ -157,7 +170,12 @@ pub async fn load_coordinates_from_kml(
                 for line_string in line_strings {
                     let coordinates =
                         line_string.coordinates.and_then(|c| c.body);
-                    m_add_coordinates(&mut values, label.clone(), coordinates);
+                    m_add_coordinates(
+                        &mut values,
+                        label.clone(),
+                        coordinates,
+                        m_color.clone(),
+                    );
                 }
             }
             _ => continue,
@@ -166,10 +184,27 @@ pub async fn load_coordinates_from_kml(
     Ok(values)
 }
 
+fn get_placemark_color(p: &Placemark) -> Option<String> {
+    let Some(style) = &p.style else {
+        return None;
+    };
+    if let Some(s) = &style.icon_style {
+        return s.color.clone().and_then(|c| kml_color_to_hex(&c.body).ok());
+    }
+    if let Some(s) = &style.poly_style {
+        return s.color.clone().and_then(|c| kml_color_to_hex(&c.body).ok());
+    }
+    if let Some(s) = &style.line_style {
+        return s.color.clone().and_then(|c| kml_color_to_hex(&c.body).ok());
+    }
+    None
+}
+
 fn m_add_coordinates(
     values: &mut Vec<PalitraPoint>,
     label: Option<String>,
     coordinates: Option<String>,
+    m_color: Option<String>,
 ) {
     if let Some(c) = coordinates {
         match Coords::list_from_kml_coordinates(&c) {
@@ -178,6 +213,9 @@ fn m_add_coordinates(
                     let point = PalitraPoint {
                         coords,
                         label: label.clone(),
+                        color: Some(m_color.clone().unwrap_or_else(|| {
+                            PALITRA_POINT_FALLBACK_COLOR_HEX.to_string()
+                        })),
                     };
                     values.push(point);
                 }
@@ -200,7 +238,6 @@ struct StyleIndexes {
 }
 
 /// Extracts colors from KML placemarks and counts items per color.
-/// Also suggests suffix by taking the dominant parent folder for each color.
 pub async fn extract_top_colors_from_kmz(
     kmz_path: &Path,
 ) -> anyhow::Result<Vec<KmzColorInfo>> {
@@ -605,12 +642,8 @@ fn extract_top_colors_from_aggregates(
 fn pick_suggested_suffix(
     parent_folder_counts: &HashMap<String, i32>,
 ) -> Option<String> {
-    let mut folder_vec: Vec<(&String, &i32)> =
-        parent_folder_counts.iter().collect();
-    folder_vec.sort_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
-    folder_vec
-        .first()
-        .map(|(folder_name, _)| (*folder_name).clone())
+    let _ = parent_folder_counts;
+    None
 }
 
 #[cfg(test)]

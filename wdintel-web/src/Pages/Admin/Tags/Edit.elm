@@ -33,6 +33,7 @@ type alias Model =
     , extra : Maybe Bool
     , ordInput : String
     , enabled : Bool
+    , isPalitra : Bool
     , keywords : List B.TagKeyword
     , loading : Bool
     , saving : Bool
@@ -47,6 +48,7 @@ type Msg
     | LabelChanged String
     | ToggleExtra Bool
     | ToggleEnabled Bool
+    | ToggleIsPalitra Bool
     | OrdChanged String
     | Save
     | Saved (Result ApiError B.TagAdmin)
@@ -57,7 +59,7 @@ type Msg
 
 
 page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
-page user shared route =
+page user _ route =
     Page.new
         { init = init route
         , update = update
@@ -71,7 +73,7 @@ toLayout : Auth.User -> Model -> Layouts.Layout Msg
 toLayout user _ =
     Layouts.Navbar
         { user = user
-        , activeName = "admin"
+        , activeName = "tags"
         }
 
 
@@ -98,6 +100,7 @@ init route _ =
             , extra = Nothing
             , ordInput = ""
             , enabled = True
+            , isPalitra = False
             , keywords = []
             , loading = False
             , saving = False
@@ -164,6 +167,9 @@ update msg model =
 
         ToggleEnabled flag ->
             ( { model | enabled = flag }, E.none )
+
+        ToggleIsPalitra flag ->
+            ( { model | isPalitra = flag }, E.none )
 
         OrdChanged v ->
             ( { model | ordInput = v }, E.none )
@@ -292,6 +298,7 @@ applyTag tag model =
         , extra = tag.extra
         , ordInput = tag.ord |> Maybe.map String.fromFloat |> Maybe.withDefault ""
         , enabled = tag.enabled
+        , isPalitra = tag.isPalitra
         , keywords = tag.keywords
         , loading = False
         , loadError = Nothing
@@ -334,6 +341,7 @@ buildRequest model =
             , extra = model.extra
             , ord = ordValue
             , enabled = model.enabled
+            , isPalitra = model.isPalitra
             }
         )
 
@@ -342,7 +350,7 @@ buildRequest model =
 
 
 view : Auth.User -> Model -> View Msg
-view user model =
+view _ model =
     { title = "Адмін · Тег"
     , body =
         [ div [ class "container py-4" ]
@@ -454,6 +462,17 @@ formView model =
                     ]
                     []
                 , label [ class "form-check-label" ] [ text "Активний" ]
+                ]
+            , div [ class "mb-3 flex items-center gap-2" ]
+                [ input
+                    [ type_ "checkbox"
+                    , class "form-check-input"
+                    , checked model.isPalitra
+                    , onCheck ToggleIsPalitra
+                    , disabled model.saving
+                    ]
+                    []
+                , label [ class "form-check-label" ] [ text "Палітра" ]
                 ]
             , div [ class "flex gap-2" ]
                 [ button
