@@ -6,6 +6,7 @@ import mlflow
 import mlflow.models
 import numpy as np
 import pandas as pd
+from fasttext.FastText import _FastText
 from mlflow.data.pandas_dataset import from_pandas
 from mlflow.data.sources import LocalArtifactDatasetSource  # pyright: ignore
 from mlflow.entities.logged_model_input import LoggedModelInput
@@ -13,109 +14,114 @@ from mlflow.pyfunc import PyFuncModel
 from sklearn.metrics import average_precision_score, precision_recall_curve
 
 POSITIVE_LABEL_NAME = "__label__1"
+TARGET_RECALL = 0.8
 
 
-def run_evaluate_model(
-    experiment_id: str,
-    run_id: str,
-    label_name: str,
-    model_uri: str,
-    split_csv: dict[str, str],
+def get_meter_metrics(
+    fasttext_model: _FastText, dataset_path: str, pred_threshold: float | None = None
 ):
-    metrics = {}
-    mlflow.set_experiment(experiment_id=experiment_id)
-    with mlflow.start_run(run_id=run_id):
-        metrics = evaluate_model(label_name, model_uri, split_csv)
-    return metrics
+    meter = fasttext_model.get_meter(dataset_path, k=-1)
+    label_id = fasttext_model.get_label_id(POSITIVE_LABEL_NAME)
+    precision_at_recall = meter.m.precisionAtRecallLabel(label_id, TARGET_RECALL)
+
+    y_score, y_true = zip(*meter.m.scoreVsTrue(label_id))
+
+    y_score = np.array(y_score)
+    y_true = np.array(y_true)
+    ap = average_precision_score(y_true, y_score)
+    precision, recall, threshold = precision_recall_curve(y_true, y_score)
+    threshold = np.array(threshold)
+
+    if pred_threshold is None or np.isnan(pred_threshold):
+        mask = np.argwhere(recall >= TARGET_RECALL)
+        pred_threshold = np.max(threshold[mask])
+
+    y_pred = np.where(y_score > pred_threshold, 1.0, 0.0)
+
+    metrics = {
+        "ap": ap,
+        "target_recall": TARGET_RECALL,
+        "precision_at_recall": precision_at_recall,
+        "threshold_at_recall": pred_threshold,
+    }
+    predictions = pd.DataFrame(
+        {
+            "y_true": pd.Categorical(y_true, categories=[0.0, 1.0], copy=False),
+            "y_pred": pd.Categorical(y_pred, categories=[0.0, 1.0], copy=False),
+        },
+        copy=False,
+    )
+    plot_data = {
+        "recall": recall,
+        "precision": precision,
+        "threshold": threshold,
+    }
+    return {"metrics": metrics, "predictions": predictions, "plot_data": plot_data}
 
 
-def evaluate_model(label_name: str, model_uri: str, split_csv: dict[str, str]):
+def evaluate_trained_model(label_name: str, model_uri: str, split_csv: dict[str, str]):
+    labels = [label_name]
     model = mlflow.pyfunc.load_model(model_uri)
     mlflow.set_active_model(model_id=model.model_id)
-    results = _do_evaluate_model(label_name, model, split_csv)
-    labels = [label_name]
 
-    train_results = results["train"]
+    validation_results = do_evaluate_split(
+        label_name, model, "validation", split_csv["validation"]
+    )
+    validation_metrics = validation_results["metrics"]
+    plot_precision_recall(labels, "validation", [validation_results])
+    plot_threshold_recall(labels, "validation", [validation_results])
+
+    pred_threshold = validation_metrics["threshold_at_recall"]
+
+    test_results = do_evaluate_split(
+        label_name, model, "test", split_csv["test"], pred_threshold
+    )
+    plot_precision_recall(labels, "test", [test_results])
+    plot_threshold_recall(labels, "test", [test_results])
+
+    train_results = do_evaluate_split(
+        label_name, model, "train", split_csv["train"], pred_threshold
+    )
     plot_precision_recall(labels, "train", [train_results])
     plot_threshold_recall(labels, "train", [train_results])
 
-    test_results = results.get("test")
-    if test_results:
-        plot_precision_recall(labels, "test", [test_results])
-        plot_threshold_recall(labels, "test", [test_results])
-
-    validation_results = results.get("validation")
-    if validation_results:
-        plot_precision_recall(labels, "validation", [validation_results])
-        plot_threshold_recall(labels, "validation", [validation_results])
-
-    return results
+    return {
+        "train": train_results,
+        "validation": validation_results,
+        "test": test_results,
+    }
 
 
-def _do_evaluate_model(
+def do_evaluate_split(
     label_name: str,
     model: PyFuncModel,
-    split_csv: dict[str, str],
-    target_recall=0.8,
+    split: str,
+    dataset_path: str,
+    pred_threshold: float | None = None,
 ) -> dict[str, Any]:
-    results = {}
     fasttext_model = model.get_raw_model()
-    for split, dataset_path in split_csv.items():
-        if not dataset_path:
-            continue
+    print(
+        f"evaluating model for label {label_name} split {split} on with '{dataset_path}'"
+    )
 
-        print(
-            f"evaluating model for label {label_name} split {split} on with '{dataset_path}'"
-        )
+    meter = get_meter_metrics(fasttext_model, dataset_path, pred_threshold)
+    metrics = meter["metrics"]
+    precision_at_recall = metrics["precision_at_recall"]
 
-        meter = fasttext_model.get_meter(dataset_path, k=-1)
-        label_id = fasttext_model.get_label_id(POSITIVE_LABEL_NAME)
-        precision_at_recall = meter.m.precisionAtRecallLabel(label_id, target_recall)
-        print(
-            f"precision_at_recall ({target_recall:.2f}) for {split} on with '{dataset_path}' is: {precision_at_recall:.3f}"
-        )
-        y_score, y_true = zip(*meter.m.scoreVsTrue(label_id))
+    print(
+        f"precision_at_recall ({TARGET_RECALL:.2f}) for {split} on with '{dataset_path}' is: {precision_at_recall:.3f}"
+    )
 
-        y_score = np.array(y_score)
-        y_true = np.array(y_true)
-        ap = average_precision_score(y_true, y_score)
-        precision, recall, threshold = precision_recall_curve(y_true, y_score)
-        threshold = np.array(threshold)
+    if split == "test":
+        predictions = meter["predictions"]
 
-        mask = np.argwhere(recall >= target_recall)
-        pred_threshold = np.max(threshold[mask])
-        y_pred = np.where(y_score > pred_threshold, 1.0, 0.0)
-
-        metrics = {
-            "ap": ap,
-            "target_recall": target_recall,
-            "precision_at_recall": precision_at_recall,
-            "threshold_at_recall": pred_threshold,
-        }
-        plot_data = {
-            "recall": recall,
-            "precision": precision,
-            "threshold": threshold,
-        }
-        results[split] = {"metrics": metrics, "plot_data": plot_data}
-        if split != "test":
-            continue
-
-        df = pd.DataFrame(
-            {
-                "y_true": pd.Categorical(y_true, categories=[0.0, 1.0], copy=False),
-                "y_pred": pd.Categorical(y_pred, categories=[0.0, 1.0], copy=False),
-            },
-            copy=False,
-        )
-        df.info(verbose=True)
         dataset_name = f"{label_name}.{split}"
         dataset_digest = (
             Path(dataset_path).stem.replace(f"{dataset_name}.", "").replace(".txt", "")
         )
 
         dataset = from_pandas(
-            df,
+            predictions,
             name=dataset_name,
             source=LocalArtifactDatasetSource(dataset_path),
             digest=dataset_digest,
@@ -137,7 +143,7 @@ def _do_evaluate_model(
                 "pos_label": 1,
             },
         )
-    return results
+    return meter
 
 
 def plot_precision_recall(labels: list[str], split: str, results: list[dict]):

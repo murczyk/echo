@@ -9,7 +9,7 @@ from mlflow.entities.logged_model_input import LoggedModelInput
 
 from echo_ai import arrow, quack
 from echo_ai.evaluate import (
-    evaluate_model,
+    evaluate_trained_model,
     plot_precision_recall,
     plot_threshold_recall,
 )
@@ -194,7 +194,7 @@ def train_supervised(
                 split_csv["validation"] = validation_path
             if len_test > 0:
                 split_csv["test"] = test_path
-            eval_results = evaluate_model(label_name, model_uri, split_csv)
+            eval_results = evaluate_trained_model(label_name, model_uri, split_csv)
             results_per_split.append(eval_results)
 
     results_test = [item["test"] for item in results_per_split]
