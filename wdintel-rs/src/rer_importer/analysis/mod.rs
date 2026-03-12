@@ -1007,6 +1007,39 @@ where
     }
 }
 
+fn normalized_metadata_values(
+    values: &Option<Vec<String>>,
+) -> Option<Vec<String>> {
+    values.as_ref().and_then(|values| {
+        let values = values
+            .iter()
+            .filter_map(|value| m_str_trim(&Some(value.clone())))
+            .collect_vec();
+        if values.is_empty() {
+            None
+        } else {
+            Some(values)
+        }
+    })
+}
+
+fn metadata_text_match_any_expr<C>(
+    column: C,
+    values: &[String],
+    exact: bool,
+) -> Option<SimpleExpr>
+where
+    C: IntoColumnRef + Clone,
+{
+    values.iter().fold(None, |acc, value| {
+        let expr = metadata_text_match_expr(column.clone(), value, exact);
+        Some(match acc {
+            Some(acc) => acc.or(expr),
+            None => expr,
+        })
+    })
+}
+
 fn metadata_sender_match_expr(
     alias: Alias,
     value: &str,
@@ -1044,15 +1077,43 @@ fn metadata_receiver_match_expr(
     ))
 }
 
+fn metadata_sender_match_any_expr(
+    alias: Alias,
+    values: &[String],
+    exact: bool,
+) -> Option<SimpleExpr> {
+    values.iter().fold(None, |acc, value| {
+        let expr = metadata_sender_match_expr(alias.clone(), value, exact);
+        Some(match acc {
+            Some(acc) => acc.or(expr),
+            None => expr,
+        })
+    })
+}
+
+fn metadata_receiver_match_any_expr(
+    alias: Alias,
+    values: &[String],
+    exact: bool,
+) -> Option<SimpleExpr> {
+    values.iter().fold(None, |acc, value| {
+        let expr = metadata_receiver_match_expr(alias.clone(), value, exact);
+        Some(match acc {
+            Some(acc) => acc.or(expr),
+            None => expr,
+        })
+    })
+}
+
 pub fn filter_selected_metadata<Q>(
     q: Q,
-    metadata_cc: &Option<String>,
+    metadata_cc: &Option<Vec<String>>,
     metadata_cc_exact: &Option<bool>,
-    metadata_sender: &Option<String>,
+    metadata_sender: &Option<Vec<String>>,
     metadata_sender_exact: &Option<bool>,
-    metadata_receiver: &Option<String>,
+    metadata_receiver: &Option<Vec<String>>,
     metadata_receiver_exact: &Option<bool>,
-    metadata_hash: &Option<String>,
+    metadata_hash: &Option<Vec<String>>,
     metadata_hash_exact: &Option<bool>,
     without_metadata: &Option<bool>,
 ) -> Result<Q, AppError>
@@ -1060,10 +1121,10 @@ where
     Q: QueryFilter,
 {
     let without_metadata = without_metadata.unwrap_or(false);
-    let metadata_cc = m_str_trim(metadata_cc);
-    let metadata_sender = m_str_trim(metadata_sender);
-    let metadata_receiver = m_str_trim(metadata_receiver);
-    let metadata_hash = m_str_trim(metadata_hash);
+    let metadata_cc = normalized_metadata_values(metadata_cc);
+    let metadata_sender = normalized_metadata_values(metadata_sender);
+    let metadata_receiver = normalized_metadata_values(metadata_receiver);
+    let metadata_hash = normalized_metadata_values(metadata_hash);
 
     if !without_metadata
         && metadata_cc.is_none()
@@ -1088,41 +1149,49 @@ where
         );
 
     if let Some(metadata_cc) = metadata_cc.as_ref() {
-        subquery.and_where(metadata_text_match_expr(
+        if let Some(expr) = metadata_text_match_any_expr(
             (
                 metadata_alias.clone(),
                 sigint_inbox_item_metadata::Column::ColorCode,
             ),
             metadata_cc,
             metadata_cc_exact.unwrap_or(false),
-        ));
+        ) {
+            subquery.and_where(expr);
+        }
     }
 
     if let Some(metadata_sender) = metadata_sender.as_ref() {
-        subquery.and_where(metadata_sender_match_expr(
+        if let Some(expr) = metadata_sender_match_any_expr(
             metadata_alias.clone(),
             metadata_sender,
             metadata_sender_exact.unwrap_or(false),
-        ));
+        ) {
+            subquery.and_where(expr);
+        }
     }
 
     if let Some(metadata_receiver) = metadata_receiver.as_ref() {
-        subquery.and_where(metadata_receiver_match_expr(
+        if let Some(expr) = metadata_receiver_match_any_expr(
             metadata_alias.clone(),
             metadata_receiver,
             metadata_receiver_exact.unwrap_or(false),
-        ));
+        ) {
+            subquery.and_where(expr);
+        }
     }
 
     if let Some(metadata_hash) = metadata_hash.as_ref() {
-        subquery.and_where(metadata_text_match_expr(
+        if let Some(expr) = metadata_text_match_any_expr(
             (
                 metadata_alias.clone(),
                 sigint_inbox_item_metadata::Column::HashId,
             ),
             metadata_hash,
             metadata_hash_exact.unwrap_or(false),
-        ));
+        ) {
+            subquery.and_where(expr);
+        }
     }
 
     let metadata_exists = Expr::exists(subquery.to_owned());
@@ -2779,6 +2848,26 @@ async fn callsign_stats(
         .await
         .context(h!())?;
     Ok(Json(CallsignStatsRsp { callsigns }))
+}
+
+#[post("/api/rer/analysis/stats/metadata")]
+async fn metadata_stats(
+    user: Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<AnalysisStatsReq>,
+) -> Result<Json<MetadataStatsRsp>, AppError> {
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .c(h!())?;
+    let login = user.id().c(h!())?;
+    let master_keys =
+        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
+            .await
+            .c(h!())?;
+    let metadata = stats::fetch_metadata_stats(&req, &user, &env, master_keys)
+        .await
+        .context(h!())?;
+    Ok(Json(metadata))
 }
 
 #[post("/api/rer/analysis/stats/tags")]

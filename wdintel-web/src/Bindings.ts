@@ -418,13 +418,13 @@ export type InboxMessagesReq = {
   selectedTags: Array<number> | null;
   selectedAors: Array<number> | null;
   selectedNetworks: Array<number> | null;
-  metadataCc: string | null;
+  metadataCc: Array<string> | null;
   metadataCcExact: boolean | null;
-  metadataSender: string | null;
+  metadataSender: Array<string> | null;
   metadataSenderExact: boolean | null;
-  metadataReceiver: string | null;
+  metadataReceiver: Array<string> | null;
   metadataReceiverExact: boolean | null;
-  metadataHash: string | null;
+  metadataHash: Array<string> | null;
   metadataHashExact: boolean | null;
   withoutMetadata: boolean | null;
   sortBy: InboxMessagesSortBy | null;
@@ -614,13 +614,13 @@ export type AnalysisStatsReq = {
   search: string | null;
   selectedTags: Array<number> | null;
   selectedNetworks: Array<number> | null;
-  metadataCc: string | null;
+  metadataCc: Array<string> | null;
   metadataCcExact: boolean | null;
-  metadataSender: string | null;
+  metadataSender: Array<string> | null;
   metadataSenderExact: boolean | null;
-  metadataReceiver: string | null;
+  metadataReceiver: Array<string> | null;
   metadataReceiverExact: boolean | null;
-  metadataHash: string | null;
+  metadataHash: Array<string> | null;
   metadataHashExact: boolean | null;
   withoutMetadata: boolean | null;
   includePelengLocations: boolean | null;
@@ -752,13 +752,13 @@ export type CallsignsGraphReq = {
   selectedTags: Array<number> | null;
   selectedAors: Array<number> | null;
   selectedNetworks: Array<number> | null;
-  metadataCc: string | null;
+  metadataCc: Array<string> | null;
   metadataCcExact: boolean | null;
-  metadataSender: string | null;
+  metadataSender: Array<string> | null;
   metadataSenderExact: boolean | null;
-  metadataReceiver: string | null;
+  metadataReceiver: Array<string> | null;
   metadataReceiverExact: boolean | null;
-  metadataHash: string | null;
+  metadataHash: Array<string> | null;
   metadataHashExact: boolean | null;
   withoutMetadata: boolean | null;
   includePelengLocations: boolean | null;
@@ -836,13 +836,13 @@ export type RerAnalysisQueryState = {
   orImportant: boolean;
   orWithCoords: boolean;
   search: string;
-  metadataCc: string;
+  metadataCc: Array<string>;
   metadataCcExact: boolean;
-  metadataSender: string;
+  metadataSender: Array<string>;
   metadataSenderExact: boolean;
-  metadataReceiver: string;
+  metadataReceiver: Array<string>;
   metadataReceiverExact: boolean;
-  metadataHash: string;
+  metadataHash: Array<string>;
   metadataHashExact: boolean;
   withoutMetadata: boolean;
   tags: Array<number>;
@@ -2412,6 +2412,18 @@ export type FreqStatsRsp = {
 
 export type CallsignStatsRsp = {
   callsigns: Array<AnalysisStatsCallsign>;
+};
+
+export type AnalysisStatsMetadataValue = {
+  value: string;
+  count: number;
+};
+
+export type MetadataStatsRsp = {
+  ccs: Array<AnalysisStatsMetadataValue>;
+  senders: Array<AnalysisStatsMetadataValue>;
+  receivers: Array<AnalysisStatsMetadataValue>;
+  hashes: Array<AnalysisStatsMetadataValue>;
 };
 
 export type TagStatsRsp = {

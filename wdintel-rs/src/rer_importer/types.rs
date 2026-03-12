@@ -223,13 +223,13 @@ pub struct InboxMessagesReq {
     pub selected_tags: Option<Vec<i64>>,
     pub selected_aors: Option<Vec<i64>>,
     pub selected_networks: Option<Vec<i64>>,
-    pub metadata_cc: Option<String>,
+    pub metadata_cc: Option<Vec<String>>,
     pub metadata_cc_exact: Option<bool>,
-    pub metadata_sender: Option<String>,
+    pub metadata_sender: Option<Vec<String>>,
     pub metadata_sender_exact: Option<bool>,
-    pub metadata_receiver: Option<String>,
+    pub metadata_receiver: Option<Vec<String>>,
     pub metadata_receiver_exact: Option<bool>,
-    pub metadata_hash: Option<String>,
+    pub metadata_hash: Option<Vec<String>>,
     pub metadata_hash_exact: Option<bool>,
     pub without_metadata: Option<bool>,
     pub sort_by: Option<InboxMessagesSortBy>,
@@ -478,13 +478,13 @@ pub struct AnalysisStatsReq {
     pub search: Option<String>,
     pub selected_tags: Option<Vec<i64>>,
     pub selected_networks: Option<Vec<i64>>,
-    pub metadata_cc: Option<String>,
+    pub metadata_cc: Option<Vec<String>>,
     pub metadata_cc_exact: Option<bool>,
-    pub metadata_sender: Option<String>,
+    pub metadata_sender: Option<Vec<String>>,
     pub metadata_sender_exact: Option<bool>,
-    pub metadata_receiver: Option<String>,
+    pub metadata_receiver: Option<Vec<String>>,
     pub metadata_receiver_exact: Option<bool>,
-    pub metadata_hash: Option<String>,
+    pub metadata_hash: Option<Vec<String>>,
     pub metadata_hash_exact: Option<bool>,
     pub without_metadata: Option<bool>,
     pub include_peleng_locations: Option<bool>,
@@ -516,13 +516,13 @@ pub struct CallsignsGraphReq {
     pub selected_tags: Option<Vec<i64>>,
     pub selected_aors: Option<Vec<i64>>,
     pub selected_networks: Option<Vec<i64>>,
-    pub metadata_cc: Option<String>,
+    pub metadata_cc: Option<Vec<String>>,
     pub metadata_cc_exact: Option<bool>,
-    pub metadata_sender: Option<String>,
+    pub metadata_sender: Option<Vec<String>>,
     pub metadata_sender_exact: Option<bool>,
-    pub metadata_receiver: Option<String>,
+    pub metadata_receiver: Option<Vec<String>>,
     pub metadata_receiver_exact: Option<bool>,
-    pub metadata_hash: Option<String>,
+    pub metadata_hash: Option<Vec<String>>,
     pub metadata_hash_exact: Option<bool>,
     pub without_metadata: Option<bool>,
     pub include_peleng_locations: Option<bool>,
@@ -662,6 +662,24 @@ pub struct PostStatsRsp {
 )]
 pub struct CallsignStatsRsp {
     pub callsigns: Vec<AnalysisStatsCallsign>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct AnalysisStatsMetadataValue {
+    pub value: String,
+    pub count: i64,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct MetadataStatsRsp {
+    pub ccs: Vec<AnalysisStatsMetadataValue>,
+    pub senders: Vec<AnalysisStatsMetadataValue>,
+    pub receivers: Vec<AnalysisStatsMetadataValue>,
+    pub hashes: Vec<AnalysisStatsMetadataValue>,
 }
 
 #[derive(
@@ -912,13 +930,13 @@ pub struct RerAnalysisQueryState {
     pub or_important: bool,
     pub or_with_coords: bool,
     pub search: String,
-    pub metadata_cc: String,
+    pub metadata_cc: Vec<String>,
     pub metadata_cc_exact: bool,
-    pub metadata_sender: String,
+    pub metadata_sender: Vec<String>,
     pub metadata_sender_exact: bool,
-    pub metadata_receiver: String,
+    pub metadata_receiver: Vec<String>,
     pub metadata_receiver_exact: bool,
-    pub metadata_hash: String,
+    pub metadata_hash: Vec<String>,
     pub metadata_hash_exact: bool,
     pub without_metadata: bool,
     pub tags: Vec<i64>,

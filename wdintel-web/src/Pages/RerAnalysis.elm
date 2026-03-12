@@ -153,13 +153,13 @@ init route _ =
             , savedFilterEditInp = Dict.empty
             , savedFilterMenuOpen = Nothing
             , searchInput = ""
-            , metadataCc = ""
+            , metadataCc = []
             , metadataCcExact = False
-            , metadataSender = ""
+            , metadataSender = []
             , metadataSenderExact = False
-            , metadataReceiver = ""
+            , metadataReceiver = []
             , metadataReceiverExact = False
-            , metadataHash = ""
+            , metadataHash = []
             , metadataHashExact = False
             , withoutMetadata = False
             , nolimitShown = False
@@ -182,6 +182,14 @@ init route _ =
             , selUnitMenu = []
             , selNetworkState = Select.initState (Select.selectIdentifier "selNetworkState")
             , selNetworkMenu = []
+            , selMetadataCcState = Select.initState (Select.selectIdentifier "selMetadataCcState")
+            , selMetadataCcMenu = []
+            , selMetadataSenderState = Select.initState (Select.selectIdentifier "selMetadataSenderState")
+            , selMetadataSenderMenu = []
+            , selMetadataReceiverState = Select.initState (Select.selectIdentifier "selMetadataReceiverState")
+            , selMetadataReceiverMenu = []
+            , selMetadataHashState = Select.initState (Select.selectIdentifier "selMetadataHashState")
+            , selMetadataHashMenu = []
             , filterUnits = ""
             , now = Nothing
             , tags = []
@@ -236,6 +244,7 @@ init route _ =
             , units = NotAsked
             , counts = NotAsked
             , networksStats = NotAsked
+            , metadataStats = NotAsked
             , networkNames = []
             , networksSelected = []
             , posts = NotAsked
@@ -327,13 +336,13 @@ getInboxReq model =
     , orWithCoords = Just model.orWithCoords
     , newestFirst = Just model.newestFirst
     , search = emptySToNothing model.searchInput
-    , metadataCc = emptySToNothing model.metadataCc
+    , metadataCc = emptyToNothing model.metadataCc
     , metadataCcExact = Just model.metadataCcExact
-    , metadataSender = emptySToNothing model.metadataSender
+    , metadataSender = emptyToNothing model.metadataSender
     , metadataSenderExact = Just model.metadataSenderExact
-    , metadataReceiver = emptySToNothing model.metadataReceiver
+    , metadataReceiver = emptyToNothing model.metadataReceiver
     , metadataReceiverExact = Just model.metadataReceiverExact
-    , metadataHash = emptySToNothing model.metadataHash
+    , metadataHash = emptyToNothing model.metadataHash
     , metadataHashExact = Just model.metadataHashExact
     , withoutMetadata = Just model.withoutMetadata
     , highlightCallsigns = Nothing
@@ -403,13 +412,13 @@ cmdLoadCallsignGraph model { dtFromPosix, dtToPosix } =
             , orWithCoords = Just model.orWithCoords
             , nolimit = Just model.callsignGraphNolimit
             , search = Just model.searchInput
-            , metadataCc = emptySToNothing model.metadataCc
+            , metadataCc = emptyToNothing model.metadataCc
             , metadataCcExact = Just model.metadataCcExact
-            , metadataSender = emptySToNothing model.metadataSender
+            , metadataSender = emptyToNothing model.metadataSender
             , metadataSenderExact = Just model.metadataSenderExact
-            , metadataReceiver = emptySToNothing model.metadataReceiver
+            , metadataReceiver = emptyToNothing model.metadataReceiver
             , metadataReceiverExact = Just model.metadataReceiverExact
-            , metadataHash = emptySToNothing model.metadataHash
+            , metadataHash = emptyToNothing model.metadataHash
             , metadataHashExact = Just model.metadataHashExact
             , withoutMetadata = Just model.withoutMetadata
             , selectedTags = emptyToNothing model.tagsSelected
@@ -448,9 +457,38 @@ loadPalitrasIfNeeded model =
         ( model, E.none )
 
 
+emptyMetadataStatsRsp : B.MetadataStatsRsp
+emptyMetadataStatsRsp =
+    { ccs = []
+    , senders = []
+    , receivers = []
+    , hashes = []
+    }
+
+
+markMetadataStatsStale : Model -> Model
+markMetadataStatsStale model =
+    { model
+        | metadataStats =
+            NeedsReload (RD.withDefault emptyMetadataStatsRsp model.metadataStats)
+    }
+
+
+loadMetadataStatsIfNeeded : Model -> Effect Msg
+loadMetadataStatsIfNeeded model =
+    case ( model.unfoldMetadataFilter, model.from.datePosix, model.to.datePosix ) of
+        ( True, Just dtFromPosix, Just dtToPosix ) ->
+            E.getMetadataStats GotStatsMetadata
+                (Query.analysisStatsParams dtFromPosix dtToPosix model)
+
+        _ ->
+            E.none
+
+
 invalidateOptionFilters : Model -> Model
 invalidateOptionFilters model =
-    { model
+    markMetadataStatsStale
+        { model
         | locations = NeedsReload (RD.withDefault [] model.locations)
         , senders = NeedsReload (RD.withDefault [] model.senders)
         , units = NeedsReload (RD.withDefault [] model.units)
@@ -460,7 +498,7 @@ invalidateOptionFilters model =
         , groups = NeedsReload (RD.withDefault [] model.groups)
         , aors = NeedsReload (RD.withDefault [] model.aors)
         , networksStats = NeedsReload (RD.withDefault [] model.networksStats)
-    }
+        }
 
 
 loadSumTableOnly : Model -> ( Model, Effect Msg )
@@ -636,6 +674,12 @@ loadCoreStats model =
                 , nolimitShown = False
                 , correlatedFreqs = NotAsked
                 , counts = counts
+                , metadataStats =
+                    if model.unfoldMetadataFilter then
+                        Loading
+
+                    else
+                        m4.metadataStats
               }
             , E.batch
                 [ if loadingCounts then
@@ -649,6 +693,7 @@ loadCoreStats model =
                     (getInboxReq model)
                 , cmdLoadSummaryTable loadingSumTable
                 , cmdLoadCallsignGraph model { dtFromPosix = dtFromPosix, dtToPosix = dtToPosix }
+                , loadMetadataStatsIfNeeded model
                 , eff2
                 , eff3
                 , palitrasEff
@@ -1378,6 +1423,54 @@ update user shared route msg model =
             , E.none
             )
 
+        GotStatsMetadata (Err e) ->
+            ( { model | metadataStats = Failure e }
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження метаданих" e
+            )
+
+        GotStatsMetadata (Ok rsp) ->
+            ( { model
+                | metadataStats = Success rsp
+                , selMetadataCcMenu =
+                    List.map
+                        (\entry ->
+                            Select.basicMenuItem
+                                { item = entry.value
+                                , label = entry.value
+                                }
+                        )
+                        rsp.ccs
+                , selMetadataSenderMenu =
+                    List.map
+                        (\entry ->
+                            Select.basicMenuItem
+                                { item = entry.value
+                                , label = entry.value
+                                }
+                        )
+                        rsp.senders
+                , selMetadataReceiverMenu =
+                    List.map
+                        (\entry ->
+                            Select.basicMenuItem
+                                { item = entry.value
+                                , label = entry.value
+                                }
+                        )
+                        rsp.receivers
+                , selMetadataHashMenu =
+                    List.map
+                        (\entry ->
+                            Select.basicMenuItem
+                                { item = entry.value
+                                , label = entry.value
+                                }
+                        )
+                        rsp.hashes
+              }
+            , E.none
+            )
+
         GotStatsGroups (Err e) ->
             ( model
             , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження груп" e
@@ -1912,8 +2005,23 @@ update user shared route msg model =
             )
 
         ToggleUnfoldMetadataFilter ->
-            ( { model | unfoldMetadataFilter = not model.unfoldMetadataFilter }
-            , E.none
+            let
+                m2 =
+                    { model | unfoldMetadataFilter = not model.unfoldMetadataFilter }
+
+                m3 =
+                    if m2.unfoldMetadataFilter then
+                        { m2 | metadataStats = Loading }
+
+                    else
+                        m2
+            in
+            ( m3
+            , if m3.unfoldMetadataFilter then
+                loadMetadataStatsIfNeeded m3
+
+              else
+                E.none
             )
 
         ToggleUnfoldPostsFilter ->
@@ -2521,33 +2629,17 @@ update user shared route msg model =
             , E.none
             )
 
-        MetadataCcChanged str ->
-            loadCoreStatsAndPushUrl <|
-                invalidateOptionFilters { model | metadataCc = str }
-
         MetadataCcExactChanged checked ->
             loadCoreStatsAndPushUrl <|
                 invalidateOptionFilters { model | metadataCcExact = checked }
-
-        MetadataSenderChanged str ->
-            loadCoreStatsAndPushUrl <|
-                invalidateOptionFilters { model | metadataSender = str }
 
         MetadataSenderExactChanged checked ->
             loadCoreStatsAndPushUrl <|
                 invalidateOptionFilters { model | metadataSenderExact = checked }
 
-        MetadataReceiverChanged str ->
-            loadCoreStatsAndPushUrl <|
-                invalidateOptionFilters { model | metadataReceiver = str }
-
         MetadataReceiverExactChanged checked ->
             loadCoreStatsAndPushUrl <|
                 invalidateOptionFilters { model | metadataReceiverExact = checked }
-
-        MetadataHashChanged str ->
-            loadCoreStatsAndPushUrl <|
-                invalidateOptionFilters { model | metadataHash = str }
 
         MetadataHashExactChanged checked ->
             loadCoreStatsAndPushUrl <|
@@ -2556,6 +2648,214 @@ update user shared route msg model =
         WithoutMetadataChanged checked ->
             loadCoreStatsAndPushUrl <|
                 invalidateOptionFilters { model | withoutMetadata = checked }
+
+        SelMetadataCcMsg imsg ->
+            case ( model.from.datePosix, model.to.datePosix ) of
+                ( Just dtFromPosix, Just dtToPosix ) ->
+                    let
+                        ( mAction, imodel2, icmd ) =
+                            Select.update imsg model.selMetadataCcState
+
+                        ( updatedSelectedItems, state ) =
+                            Utils.Select.multiUpdMenuOpen mAction model.metadataCc imodel2
+
+                        m2 =
+                            { model
+                                | selMetadataCcState = state
+                                , metadataCc = updatedSelectedItems
+                            }
+
+                        result =
+                            FiltersReloading.handleFilterState m2.focusedFilterItemsBeforeChange mAction m2.metadataCc m2.metadataStats
+
+                        ( m3, eff3 ) =
+                            case result of
+                                BeforeInteraction Outdated ->
+                                    ( { m2 | focusedFilterItemsBeforeChange = Just model.metadataCc, metadataStats = Loading }
+                                    , E.getMetadataStats GotStatsMetadata (Query.analysisStatsParams dtFromPosix dtToPosix m2)
+                                    )
+
+                                BeforeInteraction UpToDate ->
+                                    ( { m2 | focusedFilterItemsBeforeChange = Just model.metadataCc }, E.none )
+
+                                AfterInteraction Outdated ->
+                                    let
+                                        ( m_, eff_ ) =
+                                            loadCoreStatsAndPushUrl m2
+                                    in
+                                    ( { m_ | focusedFilterItemsBeforeChange = Nothing }, eff_ )
+
+                                AfterInteraction UpToDate ->
+                                    ( { m2 | focusedFilterItemsBeforeChange = Nothing }, E.none )
+
+                                _ ->
+                                    ( m2, E.none )
+                    in
+                    ( m3
+                    , E.batch
+                        [ E.sendCmd <| Cmd.map SelMetadataCcMsg icmd
+                        , eff3
+                        ]
+                    )
+
+                _ ->
+                    ( model, E.none )
+
+        SelMetadataSenderMsg imsg ->
+            case ( model.from.datePosix, model.to.datePosix ) of
+                ( Just dtFromPosix, Just dtToPosix ) ->
+                    let
+                        ( mAction, imodel2, icmd ) =
+                            Select.update imsg model.selMetadataSenderState
+
+                        ( updatedSelectedItems, state ) =
+                            Utils.Select.multiUpdMenuOpen mAction model.metadataSender imodel2
+
+                        m2 =
+                            { model
+                                | selMetadataSenderState = state
+                                , metadataSender = updatedSelectedItems
+                            }
+
+                        result =
+                            FiltersReloading.handleFilterState m2.focusedFilterItemsBeforeChange mAction m2.metadataSender m2.metadataStats
+
+                        ( m3, eff3 ) =
+                            case result of
+                                BeforeInteraction Outdated ->
+                                    ( { m2 | focusedFilterItemsBeforeChange = Just model.metadataSender, metadataStats = Loading }
+                                    , E.getMetadataStats GotStatsMetadata (Query.analysisStatsParams dtFromPosix dtToPosix m2)
+                                    )
+
+                                BeforeInteraction UpToDate ->
+                                    ( { m2 | focusedFilterItemsBeforeChange = Just model.metadataSender }, E.none )
+
+                                AfterInteraction Outdated ->
+                                    let
+                                        ( m_, eff_ ) =
+                                            loadCoreStatsAndPushUrl m2
+                                    in
+                                    ( { m_ | focusedFilterItemsBeforeChange = Nothing }, eff_ )
+
+                                AfterInteraction UpToDate ->
+                                    ( { m2 | focusedFilterItemsBeforeChange = Nothing }, E.none )
+
+                                _ ->
+                                    ( m2, E.none )
+                    in
+                    ( m3
+                    , E.batch
+                        [ E.sendCmd <| Cmd.map SelMetadataSenderMsg icmd
+                        , eff3
+                        ]
+                    )
+
+                _ ->
+                    ( model, E.none )
+
+        SelMetadataReceiverMsg imsg ->
+            case ( model.from.datePosix, model.to.datePosix ) of
+                ( Just dtFromPosix, Just dtToPosix ) ->
+                    let
+                        ( mAction, imodel2, icmd ) =
+                            Select.update imsg model.selMetadataReceiverState
+
+                        ( updatedSelectedItems, state ) =
+                            Utils.Select.multiUpdMenuOpen mAction model.metadataReceiver imodel2
+
+                        m2 =
+                            { model
+                                | selMetadataReceiverState = state
+                                , metadataReceiver = updatedSelectedItems
+                            }
+
+                        result =
+                            FiltersReloading.handleFilterState m2.focusedFilterItemsBeforeChange mAction m2.metadataReceiver m2.metadataStats
+
+                        ( m3, eff3 ) =
+                            case result of
+                                BeforeInteraction Outdated ->
+                                    ( { m2 | focusedFilterItemsBeforeChange = Just model.metadataReceiver, metadataStats = Loading }
+                                    , E.getMetadataStats GotStatsMetadata (Query.analysisStatsParams dtFromPosix dtToPosix m2)
+                                    )
+
+                                BeforeInteraction UpToDate ->
+                                    ( { m2 | focusedFilterItemsBeforeChange = Just model.metadataReceiver }, E.none )
+
+                                AfterInteraction Outdated ->
+                                    let
+                                        ( m_, eff_ ) =
+                                            loadCoreStatsAndPushUrl m2
+                                    in
+                                    ( { m_ | focusedFilterItemsBeforeChange = Nothing }, eff_ )
+
+                                AfterInteraction UpToDate ->
+                                    ( { m2 | focusedFilterItemsBeforeChange = Nothing }, E.none )
+
+                                _ ->
+                                    ( m2, E.none )
+                    in
+                    ( m3
+                    , E.batch
+                        [ E.sendCmd <| Cmd.map SelMetadataReceiverMsg icmd
+                        , eff3
+                        ]
+                    )
+
+                _ ->
+                    ( model, E.none )
+
+        SelMetadataHashMsg imsg ->
+            case ( model.from.datePosix, model.to.datePosix ) of
+                ( Just dtFromPosix, Just dtToPosix ) ->
+                    let
+                        ( mAction, imodel2, icmd ) =
+                            Select.update imsg model.selMetadataHashState
+
+                        ( updatedSelectedItems, state ) =
+                            Utils.Select.multiUpdMenuOpen mAction model.metadataHash imodel2
+
+                        m2 =
+                            { model
+                                | selMetadataHashState = state
+                                , metadataHash = updatedSelectedItems
+                            }
+
+                        result =
+                            FiltersReloading.handleFilterState m2.focusedFilterItemsBeforeChange mAction m2.metadataHash m2.metadataStats
+
+                        ( m3, eff3 ) =
+                            case result of
+                                BeforeInteraction Outdated ->
+                                    ( { m2 | focusedFilterItemsBeforeChange = Just model.metadataHash, metadataStats = Loading }
+                                    , E.getMetadataStats GotStatsMetadata (Query.analysisStatsParams dtFromPosix dtToPosix m2)
+                                    )
+
+                                BeforeInteraction UpToDate ->
+                                    ( { m2 | focusedFilterItemsBeforeChange = Just model.metadataHash }, E.none )
+
+                                AfterInteraction Outdated ->
+                                    let
+                                        ( m_, eff_ ) =
+                                            loadCoreStatsAndPushUrl m2
+                                    in
+                                    ( { m_ | focusedFilterItemsBeforeChange = Nothing }, eff_ )
+
+                                AfterInteraction UpToDate ->
+                                    ( { m2 | focusedFilterItemsBeforeChange = Nothing }, E.none )
+
+                                _ ->
+                                    ( m2, E.none )
+                    in
+                    ( m3
+                    , E.batch
+                        [ E.sendCmd <| Cmd.map SelMetadataHashMsg icmd
+                        , eff3
+                        ]
+                    )
+
+                _ ->
+                    ( model, E.none )
 
         SearchDo ->
             loadCoreStatsAndPushUrl (invalidateOptionFilters model)

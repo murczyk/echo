@@ -95,13 +95,13 @@ type Msg
     | SavedFilterDeleteDone (Result ApiError ())
     | SavedFilterSelect Int
     | SearchInput String
-    | MetadataCcChanged String
+    | SelMetadataCcMsg (Select.Msg String)
     | MetadataCcExactChanged Bool
-    | MetadataSenderChanged String
+    | SelMetadataSenderMsg (Select.Msg String)
     | MetadataSenderExactChanged Bool
-    | MetadataReceiverChanged String
+    | SelMetadataReceiverMsg (Select.Msg String)
     | MetadataReceiverExactChanged Bool
-    | MetadataHashChanged String
+    | SelMetadataHashMsg (Select.Msg String)
     | MetadataHashExactChanged Bool
     | WithoutMetadataChanged Bool
     | SearchDo
@@ -148,6 +148,7 @@ type Msg
     | GotStatsUnits (Result ApiError B.UnitStatsRsp)
     | GotStatsSenders (Result ApiError B.SenderStatsRsp)
     | GotStatsNetworks (Result ApiError B.NetworkStatsRsp)
+    | GotStatsMetadata (Result ApiError B.MetadataStatsRsp)
     | GotGdocCallsignsForSumTable (Result ApiError (List B.CallsignInfoRes))
     | GotStatsGroups (Result ApiError B.GroupStatsRsp)
     | GotMapPoints (Result ApiError B.MapPointsRsp)

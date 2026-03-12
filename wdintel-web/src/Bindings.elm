@@ -1098,13 +1098,13 @@ type alias InboxMessagesReq =
     , selectedTags : Maybe (List Int)
     , selectedAors : Maybe (List Int)
     , selectedNetworks : Maybe (List Int)
-    , metadataCc : Maybe String
+    , metadataCc : Maybe (List String)
     , metadataCcExact : Maybe Bool
-    , metadataSender : Maybe String
+    , metadataSender : Maybe (List String)
     , metadataSenderExact : Maybe Bool
-    , metadataReceiver : Maybe String
+    , metadataReceiver : Maybe (List String)
     , metadataReceiverExact : Maybe Bool
-    , metadataHash : Maybe String
+    , metadataHash : Maybe (List String)
     , metadataHashExact : Maybe Bool
     , withoutMetadata : Maybe Bool
     , sortBy : Maybe InboxMessagesSortBy
@@ -1156,13 +1156,13 @@ inboxMessagesReqEncoder struct =
         , ( "selected_tags", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.int)) struct.selectedTags )
         , ( "selected_aors", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.int)) struct.selectedAors )
         , ( "selected_networks", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.int)) struct.selectedNetworks )
-        , ( "metadata_cc", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.metadataCc )
+        , ( "metadata_cc", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.string)) struct.metadataCc )
         , ( "metadata_cc_exact", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.metadataCcExact )
-        , ( "metadata_sender", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.metadataSender )
+        , ( "metadata_sender", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.string)) struct.metadataSender )
         , ( "metadata_sender_exact", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.metadataSenderExact )
-        , ( "metadata_receiver", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.metadataReceiver )
+        , ( "metadata_receiver", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.string)) struct.metadataReceiver )
         , ( "metadata_receiver_exact", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.metadataReceiverExact )
-        , ( "metadata_hash", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.metadataHash )
+        , ( "metadata_hash", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.string)) struct.metadataHash )
         , ( "metadata_hash_exact", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.metadataHashExact )
         , ( "without_metadata", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.withoutMetadata )
         , ( "sort_by", (Maybe.withDefault Json.Encode.null << Maybe.map inboxMessagesSortByEncoder) struct.sortBy )
@@ -1630,13 +1630,13 @@ type alias AnalysisStatsReq =
     , search : Maybe String
     , selectedTags : Maybe (List Int)
     , selectedNetworks : Maybe (List Int)
-    , metadataCc : Maybe String
+    , metadataCc : Maybe (List String)
     , metadataCcExact : Maybe Bool
-    , metadataSender : Maybe String
+    , metadataSender : Maybe (List String)
     , metadataSenderExact : Maybe Bool
-    , metadataReceiver : Maybe String
+    , metadataReceiver : Maybe (List String)
     , metadataReceiverExact : Maybe Bool
-    , metadataHash : Maybe String
+    , metadataHash : Maybe (List String)
     , metadataHashExact : Maybe Bool
     , withoutMetadata : Maybe Bool
     , includePelengLocations : Maybe Bool
@@ -1667,13 +1667,13 @@ analysisStatsReqEncoder struct =
         , ( "search", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.search )
         , ( "selected_tags", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.int)) struct.selectedTags )
         , ( "selected_networks", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.int)) struct.selectedNetworks )
-        , ( "metadata_cc", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.metadataCc )
+        , ( "metadata_cc", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.string)) struct.metadataCc )
         , ( "metadata_cc_exact", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.metadataCcExact )
-        , ( "metadata_sender", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.metadataSender )
+        , ( "metadata_sender", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.string)) struct.metadataSender )
         , ( "metadata_sender_exact", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.metadataSenderExact )
-        , ( "metadata_receiver", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.metadataReceiver )
+        , ( "metadata_receiver", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.string)) struct.metadataReceiver )
         , ( "metadata_receiver_exact", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.metadataReceiverExact )
-        , ( "metadata_hash", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.metadataHash )
+        , ( "metadata_hash", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.string)) struct.metadataHash )
         , ( "metadata_hash_exact", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.metadataHashExact )
         , ( "without_metadata", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.withoutMetadata )
         , ( "include_peleng_locations", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.includePelengLocations )
@@ -1977,13 +1977,13 @@ type alias CallsignsGraphReq =
     , selectedTags : Maybe (List Int)
     , selectedAors : Maybe (List Int)
     , selectedNetworks : Maybe (List Int)
-    , metadataCc : Maybe String
+    , metadataCc : Maybe (List String)
     , metadataCcExact : Maybe Bool
-    , metadataSender : Maybe String
+    , metadataSender : Maybe (List String)
     , metadataSenderExact : Maybe Bool
-    , metadataReceiver : Maybe String
+    , metadataReceiver : Maybe (List String)
     , metadataReceiverExact : Maybe Bool
-    , metadataHash : Maybe String
+    , metadataHash : Maybe (List String)
     , metadataHashExact : Maybe Bool
     , withoutMetadata : Maybe Bool
     , includePelengLocations : Maybe Bool
@@ -2015,13 +2015,13 @@ callsignsGraphReqEncoder struct =
         , ( "selected_tags", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.int)) struct.selectedTags )
         , ( "selected_aors", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.int)) struct.selectedAors )
         , ( "selected_networks", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.int)) struct.selectedNetworks )
-        , ( "metadata_cc", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.metadataCc )
+        , ( "metadata_cc", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.string)) struct.metadataCc )
         , ( "metadata_cc_exact", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.metadataCcExact )
-        , ( "metadata_sender", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.metadataSender )
+        , ( "metadata_sender", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.string)) struct.metadataSender )
         , ( "metadata_sender_exact", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.metadataSenderExact )
-        , ( "metadata_receiver", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.metadataReceiver )
+        , ( "metadata_receiver", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.string)) struct.metadataReceiver )
         , ( "metadata_receiver_exact", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.metadataReceiverExact )
-        , ( "metadata_hash", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.metadataHash )
+        , ( "metadata_hash", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.string)) struct.metadataHash )
         , ( "metadata_hash_exact", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.metadataHashExact )
         , ( "without_metadata", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.withoutMetadata )
         , ( "include_peleng_locations", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.includePelengLocations )
@@ -2192,13 +2192,13 @@ type alias RerAnalysisQueryState =
     , orImportant : Bool
     , orWithCoords : Bool
     , search : String
-    , metadataCc : String
+    , metadataCc : List String
     , metadataCcExact : Bool
-    , metadataSender : String
+    , metadataSender : List String
     , metadataSenderExact : Bool
-    , metadataReceiver : String
+    , metadataReceiver : List String
     , metadataReceiverExact : Bool
-    , metadataHash : String
+    , metadataHash : List String
     , metadataHashExact : Bool
     , withoutMetadata : Bool
     , tags : List Int
@@ -2227,13 +2227,13 @@ rerAnalysisQueryStateEncoder struct =
         , ( "or_important", Json.Encode.bool struct.orImportant )
         , ( "or_with_coords", Json.Encode.bool struct.orWithCoords )
         , ( "search", Json.Encode.string struct.search )
-        , ( "metadata_cc", Json.Encode.string struct.metadataCc )
+        , ( "metadata_cc", Json.Encode.list Json.Encode.string struct.metadataCc )
         , ( "metadata_cc_exact", Json.Encode.bool struct.metadataCcExact )
-        , ( "metadata_sender", Json.Encode.string struct.metadataSender )
+        , ( "metadata_sender", Json.Encode.list Json.Encode.string struct.metadataSender )
         , ( "metadata_sender_exact", Json.Encode.bool struct.metadataSenderExact )
-        , ( "metadata_receiver", Json.Encode.string struct.metadataReceiver )
+        , ( "metadata_receiver", Json.Encode.list Json.Encode.string struct.metadataReceiver )
         , ( "metadata_receiver_exact", Json.Encode.bool struct.metadataReceiverExact )
-        , ( "metadata_hash", Json.Encode.string struct.metadataHash )
+        , ( "metadata_hash", Json.Encode.list Json.Encode.string struct.metadataHash )
         , ( "metadata_hash_exact", Json.Encode.bool struct.metadataHashExact )
         , ( "without_metadata", Json.Encode.bool struct.withoutMetadata )
         , ( "tags", Json.Encode.list Json.Encode.int struct.tags )
@@ -6392,6 +6392,38 @@ callsignStatsRspEncoder struct =
         ]
 
 
+type alias AnalysisStatsMetadataValue =
+    { value : String
+    , count : Int
+    }
+
+
+analysisStatsMetadataValueEncoder : AnalysisStatsMetadataValue -> Json.Encode.Value
+analysisStatsMetadataValueEncoder struct =
+    Json.Encode.object
+        [ ( "value", Json.Encode.string struct.value )
+        , ( "count", Json.Encode.int struct.count )
+        ]
+
+
+type alias MetadataStatsRsp =
+    { ccs : List AnalysisStatsMetadataValue
+    , senders : List AnalysisStatsMetadataValue
+    , receivers : List AnalysisStatsMetadataValue
+    , hashes : List AnalysisStatsMetadataValue
+    }
+
+
+metadataStatsRspEncoder : MetadataStatsRsp -> Json.Encode.Value
+metadataStatsRspEncoder struct =
+    Json.Encode.object
+        [ ( "ccs", Json.Encode.list analysisStatsMetadataValueEncoder struct.ccs )
+        , ( "senders", Json.Encode.list analysisStatsMetadataValueEncoder struct.senders )
+        , ( "receivers", Json.Encode.list analysisStatsMetadataValueEncoder struct.receivers )
+        , ( "hashes", Json.Encode.list analysisStatsMetadataValueEncoder struct.hashes )
+        ]
+
+
 type alias TagStatsRsp =
     { tags : List AnalysisStatsTag
     }
@@ -7526,13 +7558,13 @@ inboxMessagesReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_tags" (Json.Decode.nullable (Json.Decode.list Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_aors" (Json.Decode.nullable (Json.Decode.list Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_networks" (Json.Decode.nullable (Json.Decode.list Json.Decode.int))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_cc" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_cc" (Json.Decode.nullable (Json.Decode.list Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_cc_exact" (Json.Decode.nullable Json.Decode.bool)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_sender" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_sender" (Json.Decode.nullable (Json.Decode.list Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_sender_exact" (Json.Decode.nullable Json.Decode.bool)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_receiver" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_receiver" (Json.Decode.nullable (Json.Decode.list Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_receiver_exact" (Json.Decode.nullable Json.Decode.bool)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_hash" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_hash" (Json.Decode.nullable (Json.Decode.list Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_hash_exact" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "without_metadata" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sort_by" (Json.Decode.nullable inboxMessagesSortByDecoder)))
@@ -7713,13 +7745,13 @@ analysisStatsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "search" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_tags" (Json.Decode.nullable (Json.Decode.list Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_networks" (Json.Decode.nullable (Json.Decode.list Json.Decode.int))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_cc" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_cc" (Json.Decode.nullable (Json.Decode.list Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_cc_exact" (Json.Decode.nullable Json.Decode.bool)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_sender" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_sender" (Json.Decode.nullable (Json.Decode.list Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_sender_exact" (Json.Decode.nullable Json.Decode.bool)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_receiver" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_receiver" (Json.Decode.nullable (Json.Decode.list Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_receiver_exact" (Json.Decode.nullable Json.Decode.bool)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_hash" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_hash" (Json.Decode.nullable (Json.Decode.list Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_hash_exact" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "without_metadata" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_peleng_locations" (Json.Decode.nullable Json.Decode.bool)))
@@ -7887,13 +7919,13 @@ callsignsGraphReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_tags" (Json.Decode.nullable (Json.Decode.list Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_aors" (Json.Decode.nullable (Json.Decode.list Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_networks" (Json.Decode.nullable (Json.Decode.list Json.Decode.int))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_cc" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_cc" (Json.Decode.nullable (Json.Decode.list Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_cc_exact" (Json.Decode.nullable Json.Decode.bool)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_sender" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_sender" (Json.Decode.nullable (Json.Decode.list Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_sender_exact" (Json.Decode.nullable Json.Decode.bool)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_receiver" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_receiver" (Json.Decode.nullable (Json.Decode.list Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_receiver_exact" (Json.Decode.nullable Json.Decode.bool)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_hash" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_hash" (Json.Decode.nullable (Json.Decode.list Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_hash_exact" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "without_metadata" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_peleng_locations" (Json.Decode.nullable Json.Decode.bool)))
@@ -8012,13 +8044,13 @@ rerAnalysisQueryStateDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "or_important" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "or_with_coords" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "search" Json.Decode.string))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_cc" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_cc" (Json.Decode.list Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_cc_exact" Json.Decode.bool))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_sender" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_sender" (Json.Decode.list Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_sender_exact" Json.Decode.bool))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_receiver" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_receiver" (Json.Decode.list Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_receiver_exact" Json.Decode.bool))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_hash" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_hash" (Json.Decode.list Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_hash_exact" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "without_metadata" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tags" (Json.Decode.list Json.Decode.int)))
@@ -10512,6 +10544,22 @@ callsignStatsRspDecoder : Json.Decode.Decoder CallsignStatsRsp
 callsignStatsRspDecoder =
     Json.Decode.succeed CallsignStatsRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsigns" (Json.Decode.list analysisStatsCallsignDecoder)))
+
+
+analysisStatsMetadataValueDecoder : Json.Decode.Decoder AnalysisStatsMetadataValue
+analysisStatsMetadataValueDecoder =
+    Json.Decode.succeed AnalysisStatsMetadataValue
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "value" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "count" Json.Decode.int))
+
+
+metadataStatsRspDecoder : Json.Decode.Decoder MetadataStatsRsp
+metadataStatsRspDecoder =
+    Json.Decode.succeed MetadataStatsRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ccs" (Json.Decode.list analysisStatsMetadataValueDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "senders" (Json.Decode.list analysisStatsMetadataValueDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "receivers" (Json.Decode.list analysisStatsMetadataValueDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "hashes" (Json.Decode.list analysisStatsMetadataValueDecoder)))
 
 
 tagStatsRspDecoder : Json.Decode.Decoder TagStatsRsp

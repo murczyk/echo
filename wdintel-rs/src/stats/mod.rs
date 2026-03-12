@@ -216,36 +216,16 @@ pub fn should_read_stats_aggregated(
     if req.without_metadata.unwrap_or(false) {
         return Ok(false);
     }
-    if req
-        .metadata_cc
-        .as_ref()
-        .map(|value| !value.trim().is_empty())
-        .unwrap_or(false)
-    {
+    if !is_filter_empty(&req.metadata_cc) {
         return Ok(false);
     }
-    if req
-        .metadata_sender
-        .as_ref()
-        .map(|value| !value.trim().is_empty())
-        .unwrap_or(false)
-    {
+    if !is_filter_empty(&req.metadata_sender) {
         return Ok(false);
     }
-    if req
-        .metadata_receiver
-        .as_ref()
-        .map(|value| !value.trim().is_empty())
-        .unwrap_or(false)
-    {
+    if !is_filter_empty(&req.metadata_receiver) {
         return Ok(false);
     }
-    if req
-        .metadata_hash
-        .as_ref()
-        .map(|value| !value.trim().is_empty())
-        .unwrap_or(false)
-    {
+    if !is_filter_empty(&req.metadata_hash) {
         return Ok(false);
     }
     match req.search.clone() {
