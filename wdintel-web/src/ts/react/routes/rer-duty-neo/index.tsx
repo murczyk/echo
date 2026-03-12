@@ -38,7 +38,6 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
     handleToggleTag,
     handleArrowClick,
     handleVisibleMessageIds,
-    handleToggleLeftSide,
     commentMessageId,
     commentText,
     setCommentText,
@@ -98,8 +97,7 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
                 columnRefsRef.current[w.id] = el;
               }}
               feed={w}
-              leftSideCollapsed={w.leftSideCollapsed}
-              onToggleLeftSide={() => handleToggleLeftSide(w.id)}
+              feedCount={messageFeeds.length}
               unreadCount={
                 w.items.length > 0
                   ? Math.max(w.unreadCount, w.items.filter(([id]) => !w.readIds.has(id)).length)
@@ -124,9 +122,9 @@ export function RerDutyNeoPage({ authUserName: authUserNameProp = null }: RerDut
                 messageFeeds.length >= 4
                   ? 'calc((100% - 2rem) / 4)'
                   : messageFeeds.length === 3
-                    ? 'calc((100% - 2rem - 48px) / 3)'
+                    ? 'calc((100% - 2rem) / 3)'
                     : messageFeeds.length === 2
-                      ? 'calc((90% - 2rem - 48px) / 2)'
+                      ? 'calc((90% - 2rem) / 2)'
                       : '45%'
               }
               authUserName={authUserName}

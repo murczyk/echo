@@ -83,7 +83,6 @@ export function useRerDutyFeeds(authUserName: string | null) {
     handleToggleTag: actions.handleToggleTag,
     handleArrowClick: actions.handleArrowClick,
     handleVisibleMessageIds: actions.handleVisibleMessageIds,
-    handleToggleLeftSide: actions.handleToggleLeftSide,
     commentMessageId: actions.commentMessageId,
     commentText: actions.commentText,
     setCommentText: actions.setCommentText,

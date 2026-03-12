@@ -17,6 +17,8 @@ export type MessageCardProps = {
   id: number;
   msg: InboxMessage;
   feedId: string;
+  /** Number of feeds (columns). When >= 3, header columns use differential shrink (left 3, center 2, right 0). When 1 or 2, all columns shrink equally. */
+  feedCount?: number;
   /** Reference time (ms) for "time ago" in top-right; set when feed was loaded. */
   referenceTimeMs: number | null;
   /** Auth user display name for background watermark */
@@ -32,14 +34,13 @@ export type MessageCardProps = {
   onCopyFreq: () => void;
   onComment: () => void;
   onToggleTag: (tagId: number) => void;
-  /** When true, hide the left column (date/time, actions, freq, etc.). Set per feed. */
-  leftSideCollapsed?: boolean;
 };
 
 export function MessageCard({
   id,
   msg,
   feedId: _feedId,
+  feedCount = 1,
   referenceTimeMs,
   authUserName,
   groupName,
@@ -53,201 +54,196 @@ export function MessageCard({
   onCopyFreq,
   onComment,
   onToggleTag,
-  leftSideCollapsed = true,
 }: MessageCardProps) {
   const networkIds = Array.from(new Set(msg.networkIds ?? []));
   const pointEtalons = getPointEtalonsFromMessage(msg);
-  const mapHref =
-    pointEtalons.length > 0 ? buildAnalysisMapHrefWithSearch(pointEtalons) : buildAnalysisHref(msg, true);
+  const mapHref = pointEtalons.length > 0 ? buildAnalysisMapHrefWithSearch(pointEtalons) : buildAnalysisHref(msg, true);
+
+  const narrowColumns = feedCount >= 3;
+  const colLeft = narrowColumns
+    ? 'flex flex-col gap-1 pt-1.5 pl-2 pr-2 flex-1 shrink-3 border-r border-border min-w-[105px]'
+    : 'flex flex-col gap-1 pt-1.5 pl-2 pr-2 flex-1 min-w-0 border-r border-border';
+  const colCenter = narrowColumns
+    ? 'flex flex-col gap-1 pt-1.5 px-2 min-w-0 flex-1 shrink-2 text-xs border-r border-border min-w-[62px]'
+    : 'flex flex-col gap-1 pt-1.5 px-2 min-w-0 flex-1 text-xs border-r border-border';
+  const colRight = narrowColumns
+    ? 'flex flex-col gap-1 pt-1.5 pl-2 pr-2 flex-1 shrink-0 basis-auto text-xs'
+    : 'flex flex-col gap-1 pt-1.5 pl-2 pr-2 flex-1 min-w-0 text-xs';
 
   return (
-    <Box component="li" className="list-none flex pr-0 pl-2 rer-duty-message mb-2 font-size-[13px]">
-      {/* Left column: date/time, actions, group, sender, freq — hidden when leftSideCollapsed */}
-      {!leftSideCollapsed && (
-        <div
-          className="min-w-[120px] mr-2 basis-1/4 mb-[8px]"
-          style={{ minWidth: 120, marginRight: 8, flex: '0 0 25%', marginBottom: 8 }}
-        >
-          <div
-            className="flex justify-around w-full text-center mb-1"
-            style={{
-              fontSize: '.75rem',
-              display: 'flex',
-              justifyContent: 'space-around',
-              width: '100%',
-              textAlign: 'center',
-              marginBottom: 4,
-            }}
-          >
-            <span>
-              <i className="bi bi-clock mr-1 text-icons" style={{ marginRight: 4 }} />
-              {formatTime(msg.time)}
-            </span>
-            {msg.date != null && (
-              <span>
-                <i className="bi bi-calendar mr-1 text-icons" style={{ marginRight: 4 }} />
-                {formatDateNoYear(msg.date)}
+    <Box component="li" className="list-none flex flex-col pr-0 pl-2 rer-duty-message mb-2 font-size-[13px] pb-2">
+      <div className="flex flex-col w-full bg-card rounded-t-sm p-2  border-b border-border">
+        <div className="flex items-stretch w-full">
+          <div className={colLeft}>
+            <div className="flex items-center justify-around" style={{ fontSize: '.75rem' }}>
+              <span className="flex items-center gap-1 pr-2">
+                <i className="bi bi-clock text-icons" />
+                {formatTime(msg.time)}
               </span>
-            )}
-          </div>
-          <div
-            className="flex justify-around mb-2"
-            style={{ display: 'flex', justifyContent: 'space-around', marginBottom: 8 }}
-          >
-            <span
-              role="button"
-              tabIndex={0}
-              title={msg.bookmarked ? 'Прибрати закладку' : 'Додати в закладки'}
-              className="me-1 cursor-pointer"
-              style={{ fontSize: '1rem' }}
-              onClick={onBookmark}
-              onKeyDown={(e) => e.key === 'Enter' && onBookmark()}
-            >
-              <i
-                className={
-                  msg.bookmarked ? 'bi bi-bookmark-fill text-action' : 'bi bi-bookmark text-action cursor-pointer'
-                }
-              />
-            </span>
-            <span
-              role="button"
-              tabIndex={0}
-              title={msg.important ? 'Прибрати важливе' : 'Помітити як важливе'}
-              className="me-1 cursor-pointer"
-              style={{ fontSize: '1rem' }}
-              onClick={onImportant}
-              onKeyDown={(e) => e.key === 'Enter' && onImportant()}
-            >
-              <i
-                className={
-                  msg.important
-                    ? 'bi bi-exclamation-triangle-fill text-action'
-                    : 'bi bi-exclamation-triangle text-action'
-                }
-              />
-            </span>
-            <span
-              role="button"
-              tabIndex={0}
-              title="редагувати коментар"
-              className="me-1 cursor-pointer"
-              style={{ fontSize: '1rem' }}
-              onClick={onComment}
-              onKeyDown={(e) => e.key === 'Enter' && onComment()}
-            >
-              <i className="bi bi-chat-square text-action" />
-            </span>
-            <span
-              role="button"
-              tabIndex={0}
-              title="Копіювати"
-              className="cursor-pointer text-normal"
-              onClick={onCopyText}
-              onKeyDown={(e) => e.key === 'Enter' && onCopyText()}
-            >
-              <i
-                className={
-                  copiedFeedbackId === `text-${id}`
-                    ? 'bi bi-clipboard-check-fill text-action cursor-pointer'
-                    : 'bi bi-clipboard text-action cursor-pointer'
-                }
-              />
-            </span>
-          </div>
-          {groupName != null && (
-            <div className="bg-card rounded-sm text-sm">
-              <div className="flex items-center px-2 py-1 border-b-2 border-border">
-                <i className="bi bi-signal mr-1 text-icons leading-none" title="Група" />
-                <span>{groupName}</span>
-              </div>
-            </div>
-          )}
-          {senderName != null && (
-            <div className="py-1 px-2 flex items-center bg-card rounded-sm text-sm mb-2">
-              <i className="bi bi-person-circle mr-1 text-icons leading-none" title="Відправник" />
-              <span>{senderName}</span>
-            </div>
-          )}
-          {msg.freq != null && (
-            <div className="bg-card text-sm mb-2 rounded-sm">
-              <div className="flex justify-between items-center py-1 px-2 border-b-2 border-border">
-                <div className="flex items-center">
-                  <i className="bi bi-broadcast mr-1 text-icons leading-none" title="Частота" />
-                  <span className="font-semibold">{msg.freq}</span>
-                </div>
-                <span
-                  role="button"
-                  tabIndex={0}
-                  title="Копіювати частоту"
-                  className="cursor-pointer text-action text-sm"
-                  onClick={onCopyFreq}
-                  onKeyDown={(e) => e.key === 'Enter' && onCopyFreq()}
-                >
-                  <i
-                    className={
-                      copiedFeedbackId === `freq-${id}`
-                        ? 'bi bi-clipboard-check-fill cursor-pointer'
-                        : 'bi bi-clipboard cursor-pointer'
-                    }
-                  />
+              {msg.date != null && (
+                <span className="flex items-center gap-1">
+                  <i className="bi bi-calendar text-icons" />
+                  {formatDateNoYear(msg.date)}
                 </span>
-              </div>
-              <div className="flex justify-between items-center py-1 px-2 border-b-2 border-border">
-                <div className="flex items-center">
-                  <i className="bi bi-bar-chart-line mr-1 text-icons leading-none" title="Аналіз" />
-                  <span>Аналіз</span>
-                </div>
-                <a
-                  href={buildAnalysisHref(msg, false)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  title="Відкрити повідомлення в Аналізі"
-                  className="text-action text-sm text-inherit"
+              )}
+            </div>
+            <div className="flex items-stretch justify-around" style={{ fontSize: 14 }}>
+              <span
+                role="button"
+                tabIndex={0}
+                title={msg.bookmarked ? 'Прибрати закладку' : 'Додати в закладки'}
+                className="cursor-pointer"
+                onClick={onBookmark}
+                onKeyDown={(e) => e.key === 'Enter' && onBookmark()}
+              >
+                <i
+                  className={
+                    msg.bookmarked ? 'bi bi-bookmark-fill text-action' : 'bi bi-bookmark text-action cursor-pointer'
+                  }
+                />
+              </span>
+              <span
+                role="button"
+                tabIndex={0}
+                title={msg.important ? 'Прибрати важливе' : 'Помітити як важливе'}
+                className="cursor-pointer"
+                onClick={onImportant}
+                onKeyDown={(e) => e.key === 'Enter' && onImportant()}
+              >
+                <i
+                  className={
+                    msg.important
+                      ? 'bi bi-exclamation-triangle-fill text-action'
+                      : 'bi bi-exclamation-triangle text-action'
+                  }
+                />
+              </span>
+              <span
+                role="button"
+                tabIndex={0}
+                title="редагувати коментар"
+                className="cursor-pointer"
+                onClick={onComment}
+                onKeyDown={(e) => e.key === 'Enter' && onComment()}
+              >
+                <i className="bi bi-chat-square text-action" />
+              </span>
+              <span
+                role="button"
+                tabIndex={0}
+                title="Копіювати"
+                className="cursor-pointer"
+                onClick={onCopyText}
+                onKeyDown={(e) => e.key === 'Enter' && onCopyText()}
+              >
+                <i
+                  className={
+                    copiedFeedbackId === `text-${id}`
+                      ? 'bi bi-clipboard-check-fill text-action cursor-pointer'
+                      : 'bi bi-clipboard text-action cursor-pointer'
+                  }
+                />
+              </span>
+            </div>
+          </div>
+
+          {/* Center: row1 group, row2 sender — native title shows full text on hover when clipped */}
+          <div className={colCenter}>
+            <div className="flex items-center min-w-0">
+              {groupName != null ? (
+                <span
+                  className="flex items-center gap-1 truncate min-w-0 cursor-default"
+                  title={groupName}
                 >
-                  <i className="bi bi-box-arrow-up-right cursor-pointer" />
-                </a>
-              </div>
+                  <i className="bi bi-signal text-icons shrink-0" title="Група" />
+                  <span className="truncate">{groupName}</span>
+                </span>
+              ) : (
+                <span className="text-icons/70">—</span>
+              )}
+            </div>
+            <div className="flex items-center min-w-0">
+              {senderName != null ? (
+                <span
+                  className="flex items-center gap-1 truncate min-w-0 cursor-default"
+                  title={senderName}
+                >
+                  <i className="bi bi-person-circle text-icons shrink-0" title="Відправник" />
+                  <span className="truncate">{senderName}</span>
+                </span>
+              ) : (
+                <span className="text-icons/70">—</span>
+              )}
+            </div>
+          </div>
+
+          {/* Right: row1 frequency, row2 analysis + map */}
+          <div className={colRight} style={narrowColumns ? { minWidth: 'min-content' } : undefined}>
+            <div className="flex items-center gap-1.5 min-w-0">
+              {msg.freq != null ? (
+                <>
+                  <span className="flex items-center gap-1 font-semibold truncate">
+                    <i className="bi bi-broadcast text-icons shrink-0" title="Частота" />
+                    {msg.freq}
+                  </span>
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    title="Копіювати частоту"
+                    className="cursor-pointer shrink-0"
+                    onClick={onCopyFreq}
+                    onKeyDown={(e) => e.key === 'Enter' && onCopyFreq()}
+                  >
+                    <i
+                      className={
+                        copiedFeedbackId === `freq-${id}`
+                          ? 'bi bi-clipboard-check-fill cursor-pointer'
+                          : 'bi bi-clipboard cursor-pointer'
+                      }
+                    />
+                  </span>
+                </>
+              ) : (
+                <span className="text-icons/70">—</span>
+              )}
+            </div>
+            <div className="flex items-center justify-between gap-2 flex-nowrap text-xs min-w-[70px]">
+              <a
+                href={buildAnalysisHref(msg, false)}
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Відкрити повідомлення в Аналізі"
+                className="inline-flex items-center gap-1 whitespace-nowrap shrink-0"
+              >
+                <i className="bi bi-bar-chart-line" />
+                <span>Аналіз</span>
+                <i className="bi bi-box-arrow-up-right text-xs" />
+              </a>
               <a
                 href={mapHref}
                 target="_blank"
                 rel="noopener noreferrer"
                 title="Відкрити повідомлення на карті в аналізі"
-                className="text-action text-sm text-inherit"
+                className="inline-flex items-center gap-1 whitespace-nowrap shrink-0"
               >
-                <div className="flex justify-between py-1 px-2 w-full">
-                  <div>
-                    <i
-                      className="bi bi-map text-icons leading-none mr-2 text-sm"
-                      title="Відкрити повідомлення на карті"
-                    />
-                    <span className="text-xs">Карта</span>
-                  </div>
-                  <i className="bi bi-box-arrow-up-right cursor-pointer leading-none" />
-                </div>
+                <i className="bi bi-map" />
+                <span>Карта</span>
+                <i className="bi bi-box-arrow-up-right text-xs" />
               </a>
             </div>
-          )}
+          </div>
+        </div>
+      </div>
 
-          {msg.extendedForm != null && msg.extendedForm.trim() !== '' && (
-            <div className="bg-card text-sm rounded-sm">
-              <div className="flex justify-between items-center py-1 px-2 border-border">
-                <div className="flex items-center">
-                  <i className="bi bi-chat-text mr-1 text-icons leading-none" title="Коментар" />
-                  <span className="text-xs">Коментар</span>
-                </div>
-              </div>
-              <div className="flex justify-between items-center py-1 pl-6 pr-2">
-                <div className="flex items-center">
-                  <span className="font-semibold text-xs">{msg.extendedForm}</span>
-                </div>
-              </div>
-            </div>
-          )}
+      {msg.extendedForm != null && msg.extendedForm.trim() !== '' && (
+        <div className="px-2 py-1 border-b border-border bg-card/50" style={{ fontSize: '.75rem' }}>
+          <i className="bi bi-chat-text text-icons mr-1" title="Коментар" />
+          <span className="font-semibold text-xs">{msg.extendedForm}</span>
         </div>
       )}
 
-      {/* Right column: message card */}
-      <div className="mb-2 rounded-sm px-2 pt-2 pb-2 basis-3/4 flex-1 message-div bg-card relative min-w-0 break-words overflow-hidden">
+      {/* Message body */}
+      <div className="mb-2 rounded-b-sm px-2 pt-2 pb-2 message-div bg-card relative min-w-0 break-words overflow-hidden">
         {/* Auth user name watermark in bg, twice same diagonal */}
         {(authUserName ?? '').trim() !== '' && (
           <div

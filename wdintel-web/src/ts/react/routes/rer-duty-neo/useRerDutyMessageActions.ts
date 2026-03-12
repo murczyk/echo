@@ -373,12 +373,6 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
     [setMessageFeeds],
   );
 
-  const handleToggleLeftSide = React.useCallback((feedId: string) => {
-    setMessageFeeds((prev) =>
-      prev.map((f) => (f.id === feedId ? { ...f, leftSideCollapsed: !f.leftSideCollapsed } : f)),
-    );
-  }, [setMessageFeeds]);
-
   return {
     handleSaveFilter,
     handleApplySavedFilter,
@@ -394,7 +388,6 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
     handleToggleTag,
     handleArrowClick,
     handleVisibleMessageIds,
-    handleToggleLeftSide,
     commentMessageId,
     commentText,
     setCommentText,
