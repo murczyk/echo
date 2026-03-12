@@ -1024,9 +1024,9 @@ setup-echo-ai-train server='echo-ai-train':
     ensure_nonempty "server" "$SERVER"
 
     rsync --delete -rlpt -i -c -h --info=progress2 --filter=':- echo-ai/.gitignore' echo-ai/ "$SERVER:echo-ai/"
-    ssh -t "$SERVER" echo-ai/deploy.sh
     ssh "$SERVER" 'sudo mkdir -p /usr/local/echo-ai-train/'
     echo-install-utils bw-sync "$SERVER" "echo-ai-$SERVER-models-dotenv" "/usr/local/echo-ai-train/.env.train" --no-restart
+    ssh -t "$SERVER" echo-ai/deploy.sh
 
 # [positional-arguments]
 [arg('branch', long='branch')]

@@ -71,6 +71,10 @@ def refresh_from_db(lake: Lake, db: str):
     lake.merge_tags(db)
     print(f"finished merging tags from '{db}'", flush=True)
 
+    print(f"merging tags keywords from '{db}'", flush=True)
+    lake.merge_tag_keywords(db)
+    print(f"finished merging tag keywords from '{db}'", flush=True)
+
     print(f"merging inbox item tags from '{db}'", flush=True)
     lake.merge_inbox_item_tags(db)
     print(f"finished merging inbox item tags from '{db}'", flush=True)

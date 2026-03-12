@@ -46,6 +46,41 @@ class Lake:
 
         return file_name
 
+    def merge_tag_keywords(self, db: str):
+        self.conn.execute(f"""
+        CREATE OR REPLACE TEMPORARY TABLE tmp_tag_keyword AS
+        SELECT
+            '{db}' AS source,
+            *
+        FROM postgres_query('{db}', $$
+            SELECT
+                tag_keyword_id
+                , tag_id
+                , keyword
+                , keyword_forms
+                , is_regex
+                , keyword_negative_forms
+            FROM
+                tag_keyword
+        $$);
+
+        MERGE INTO tag_keyword AS tgt
+        USING tmp_tag_keyword AS src ON (
+            tgt.source = src.source
+            AND tgt.tag_keyword_id = src.tag_keyword_id
+        )
+        WHEN MATCHED THEN UPDATE
+        WHEN NOT MATCHED BY TARGET THEN INSERT;
+
+        -- not possible to use both UPDATE and DELETE at same time
+        MERGE INTO tag_keyword AS tgt
+        USING tmp_tag_keyword AS src ON (
+            tgt.source = src.source
+            AND tgt.tag_keyword_id = src.tag_keyword_id
+        )
+        WHEN NOT MATCHED BY SOURCE AND tgt.source = '{db}' THEN DELETE
+        """)
+
     def merge_tags(self, db: str):
         self.conn.execute(f"""
         WITH cte AS (

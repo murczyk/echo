@@ -30,6 +30,17 @@ CREATE TABLE IF NOT EXISTS tag (
 );
 ALTER TABLE tag SET PARTITIONED BY (source);
 
+CREATE TABLE IF NOT EXISTS tag_keyword (
+      source VARCHAR NOT NULL,
+      tag_keyword_id BIGINT NOT NULL,
+      tag_id BIGINT NOT NULL,
+      keyword VARCHAR NOT NULL,
+      keyword_forms VARCHAR[] NOT NULL,
+      is_regex BOOLEAN NOT NULL,
+      keyword_negative_forms VARCHAR[] NOT NULL
+);
+ALTER TABLE tag_keyword SET PARTITIONED BY (source);
+
 CREATE TABLE IF NOT EXISTS sigint_inbox_item_tag (
     source VARCHAR NOT NULL,
     sigint_inbox_item_id BIGINT NOT NULL,
