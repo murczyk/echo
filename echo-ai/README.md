@@ -17,9 +17,6 @@ Training scripts are set-up using [MLflow projects](https://mlflow.org/docs/late
 
 Default values for parameters are stored in `.env` and `MLProject`.
 
-### Database access
-
-To keep 
 
 ### Starting training (remote)
 
@@ -37,5 +34,3 @@ journalctl --user -u echo-ai-train -f
 just ai-mlflow-server
 just ai-mlflow-run --databases
 ```
-
-### Legacy training models

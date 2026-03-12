@@ -68,3 +68,15 @@ s3_endpoint = "https://s3.eu-central-003.backblazeb2.com"
 s3_region = "eu-central-003"
 s3_bucket = "echouastaging"
 strongbox_key = ""
+
+# feature_refresh_ai_models = false
+# [ai_models_config]
+# prefix = "lfs/echo-ai/models-v2/"
+#
+# [ai_models_config.s3_config]
+# s3_access_key_id = "003f325aff5dd5c000000001c"
+# s3_secret_access_key = "K003uL32BhqEzo+9UCp+kOFUvTVoPfg"
+# s3_endpoint = "https://s3.eu-central-003.backblazeb2.com"
+# s3_region = "eu-central-003"
+# s3_bucket = "echouastaging"
+# strongbox_key = ""

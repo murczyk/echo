@@ -321,15 +321,18 @@ fn spawn_background_workers(
             .await;
         });
     }
-    if let Some(model_config) = env.config.models_config.clone() {
-        let token = cancel_token.clone();
-        spawn_named_worker("refresh_models_worker", bg_set, async move {
-            crate::tags::worker::refresh_models_worker_nofail(
-                model_config,
-                token,
-            )
-            .await;
-        });
+
+    if config.feature_refresh_ai_models.unwrap_or(false) {
+        if let Some(model_config) = env.config.ai_models_config.clone() {
+            let token = cancel_token.clone();
+            spawn_named_worker("refresh_models_worker", bg_set, async move {
+                crate::tags::worker::refresh_models_worker_nofail(
+                    model_config,
+                    token,
+                )
+                .await;
+            });
+        }
     }
 
     let rq3 = env.rq.clone();
