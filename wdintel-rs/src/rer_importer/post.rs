@@ -152,7 +152,7 @@ fn extract_post_from_otrymano_header(scan_inp: &str) -> Option<String> {
 fn extract_last_post_from_posts_header(line: &str) -> Option<String> {
     lazy_static! {
         static ref RE_QUOTED_POST: Regex =
-            Regex::new(r#""(?P<post>[a-zA-Zа-яіїА-ЯІЇ0-9)(_/ \.\-\*']+)""#)
+            Regex::new(r#""(?P<post>[a-zA-Zа-яіїА-ЯІЇ0-9)(_/ ,\.\-\*']+)""#)
                 .unwrap();
     }
     let last_quoted = RE_QUOTED_POST
