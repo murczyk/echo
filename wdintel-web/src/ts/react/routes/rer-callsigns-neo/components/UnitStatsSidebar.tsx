@@ -1,6 +1,8 @@
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import ClearIcon from '@mui/icons-material/Clear';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
+import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import SearchIcon from '@mui/icons-material/Search';
 import { CircularProgress, Collapse, Divider, IconButton, InputAdornment, List, ListItemButton, ListItemText, Paper, Stack, TextField, Typography } from '@mui/material';
 import React from 'react';
@@ -14,6 +16,7 @@ type Props = {
   open: boolean;
   loading: boolean;
   onPickUnitFilter: (unitName: string) => void;
+  onToggleOpen?: () => void;
   selectedUnitFilter?: string;
 };
 
@@ -225,7 +228,7 @@ function UnitTreeItem({ node, depth, expandedIds, onToggle, onPickUnitFilter, se
   );
 }
 
-export function UnitStatsSidebar({ stats, open, loading, onPickUnitFilter, selectedUnitFilter }: Props) {
+export function UnitStatsSidebar({ stats, open, loading, onPickUnitFilter, onToggleOpen, selectedUnitFilter }: Props) {
   const [searchInput, setSearchInput] = React.useState('');
   const debouncedSearchInput = useDebouncedValue(searchInput, SIDEBAR_FILTER_DEBOUNCE_MS);
   const normalizedSearchQuery = React.useMemo(() => normalizeSearchQuery(debouncedSearchInput), [debouncedSearchInput]);
@@ -256,7 +259,33 @@ export function UnitStatsSidebar({ stats, open, loading, onPickUnitFilter, selec
     setExpandedIds(new Set(path));
   }, [open, tree, selectedUnitFilter, normalizedSearchQuery]);
 
-  if (!open) return null;
+  if (!open) {
+    return (
+      <Paper
+        variant="outlined"
+        sx={{
+          display: { xs: 'flex', lg: 'none' },
+          width: '100%',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          p: 2,
+          borderRadius: 0,
+        }}
+      >
+        <Typography variant="h6">Підрозділи</Typography>
+        {onToggleOpen ? (
+          <IconButton
+            onClick={onToggleOpen}
+            aria-label="Показати панель підрозділів"
+            title="Показати панель підрозділів"
+            sx={{ color: 'common.white' }}
+          >
+            <KeyboardArrowDownIcon />
+          </IconButton>
+        ) : null}
+      </Paper>
+    );
+  }
 
   function onToggle(nodeId: string) {
     setExpandedIds((prev) => {
@@ -288,6 +317,19 @@ export function UnitStatsSidebar({ stats, open, loading, onPickUnitFilter, selec
       <Stack spacing={1.5} sx={{ p: 2 }}>
         <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
           <Typography variant="h6">Підрозділи</Typography>
+          {onToggleOpen ? (
+            <IconButton
+              onClick={onToggleOpen}
+              aria-label="Сховати панель підрозділів"
+              title="Сховати панель підрозділів"
+              sx={{
+                display: { xs: 'inline-flex', lg: 'none' },
+                color: 'common.white',
+              }}
+            >
+              <KeyboardArrowUpIcon />
+            </IconButton>
+          ) : null}
         </Stack>
         <TextField
           size="small"

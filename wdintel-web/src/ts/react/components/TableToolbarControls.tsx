@@ -11,10 +11,14 @@ type Props = {
   trailingActionsBeforeInternal?: React.ReactNode;
   trailingActions?: React.ReactNode;
   trailingActionsAfterInternal?: React.ReactNode;
+  desktopBreakpoint?: 'sm' | 'md' | 'lg' | 'xl';
+  leadingDesktopBreakpoint?: 'sm' | 'md' | 'lg' | 'xl';
 };
 
 export function TableToolbarControls(props: Props) {
   const tableStateContext = useTableStateContext();
+  const desktopBreakpoint = props.desktopBreakpoint ?? 'lg';
+  const leadingDesktopBreakpoint = props.leadingDesktopBreakpoint ?? desktopBreakpoint;
   const hasLeadingControls = Boolean((props.withGlobalTextFilter && !props.hideGlobalTextFilter) || props.filter);
   const hasTrailingActions = Boolean(
     props.trailingActionsBeforeInternal || props.trailingActions || props.trailingActionsAfterInternal,
@@ -26,12 +30,17 @@ export function TableToolbarControls(props: Props) {
 
   return (
     <Stack
-      direction={{ xs: 'column', sm: 'row' }}
+      direction={{ xs: 'column', [desktopBreakpoint]: 'row' }}
       spacing={2}
-      alignItems={{ xs: 'stretch', sm: 'center' }}
+      alignItems={{ xs: 'stretch', [desktopBreakpoint]: 'center' }}
       justifyContent="space-between"
     >
-      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ xs: 'stretch', sm: 'center' }} sx={{ flex: 1, minWidth: 0 }}>
+      <Stack
+        direction={{ xs: 'column', [leadingDesktopBreakpoint]: 'row' }}
+        spacing={2}
+        alignItems={{ xs: 'stretch', [leadingDesktopBreakpoint]: 'center' }}
+        sx={{ flex: 1, minWidth: 0 }}
+      >
         {props.withGlobalTextFilter && !props.hideGlobalTextFilter ? (
           <Box sx={{ width: { xs: '100%', sm: 360 }, maxWidth: '100%' }}>
             <GlobalFilterTextField
@@ -45,15 +54,51 @@ export function TableToolbarControls(props: Props) {
       </Stack>
       {hasTrailingActions ? (
         <Stack
-          direction="row"
+          direction={{ xs: 'column', sm: 'row' }}
           spacing={1.5}
-          alignItems="center"
+          alignItems={{ xs: 'stretch', sm: 'center' }}
           useFlexGap
-          sx={{ ml: { sm: 'auto' }, alignSelf: { xs: 'flex-end', sm: 'auto' } }}
+          sx={{
+            ml: { [desktopBreakpoint]: 'auto' },
+            alignSelf: { xs: 'stretch', sm: 'auto' },
+            width: { xs: '100%', [desktopBreakpoint]: '100%' },
+            flex: { [desktopBreakpoint]: 1 },
+            minWidth: 0,
+            justifyContent: { xs: 'flex-start', [desktopBreakpoint]: 'space-between' },
+          }}
         >
-          {props.trailingActionsBeforeInternal}
-          {props.trailingActions}
-          {props.trailingActionsAfterInternal}
+          {props.trailingActionsBeforeInternal ? (
+            <Stack
+              direction={{ xs: 'column', sm: 'row' }}
+              spacing={1.5}
+              alignItems={{ xs: 'stretch', sm: 'center' }}
+              useFlexGap
+              sx={{
+                flexWrap: { xs: 'wrap', [desktopBreakpoint]: 'nowrap' },
+                minWidth: 0,
+                flexShrink: 0,
+              }}
+            >
+              {props.trailingActionsBeforeInternal}
+            </Stack>
+          ) : null}
+          {(props.trailingActions || props.trailingActionsAfterInternal) ? (
+            <Stack
+              direction="row"
+              spacing={1.5}
+              alignItems="center"
+              useFlexGap
+              sx={{
+                flexWrap: 'wrap',
+                ml: { [desktopBreakpoint]: 'auto' },
+                justifyContent: { xs: 'flex-start', [desktopBreakpoint]: 'flex-end' },
+                flexShrink: 0,
+              }}
+            >
+              {props.trailingActions}
+              {props.trailingActionsAfterInternal}
+            </Stack>
+          ) : null}
         </Stack>
       ) : null}
     </Stack>
