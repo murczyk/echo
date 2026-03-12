@@ -1278,12 +1278,12 @@ pub async fn callsigns_graph(
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
     // .filter(sigint_inbox_item::Column::Checked.eq(Some(true)));
-    let q = filter_selected_groups_with_access(
+    let q = filter_selected_groups_and_senders_with_access(
         q,
         &req.selected_groups,
+        &req.selected_senders,
         &sigint_groups,
     )?;
-    let q = filter_selected_senders(q, &req.selected_senders)?;
     let q = filter_selected_freqs(q, &req.selected_freqs)?;
     let q = filter_selected_posts(q, &req.selected_posts)?;
     let q = filter_selected_units(

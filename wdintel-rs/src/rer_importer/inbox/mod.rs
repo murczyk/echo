@@ -811,7 +811,8 @@ mod tests {
     use super::*;
     use crate::entities::{
         datasource_group, login, organism, sigint_inbox_item,
-        sigint_inbox_item_tag, signal_message, signal_message_group, tag,
+        sigint_inbox_item_tag, sigint_zone_datasource, signal_group,
+        signal_message, signal_message_group, tag,
     };
     use crate::functest::tests::*;
     use chrono::Utc;
@@ -1006,6 +1007,153 @@ mod tests {
                 .any(|t| t.login == Some(other_login.login.clone())
                     && t.organism_id == Some(other_org.id)),
             "expected tag from other login with its organism id"
+        );
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_get_inbox_messages_matches_sender_in_selected_group() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let datasource_group =
+            find_test_datasource_group(&env.dbx).await.unwrap();
+        let now = Utc::now().naive_utc();
+
+        let other_group = mk_signal_group(
+            &env.dbx,
+            signal_group::ActiveModel {
+                datasource_id: Set(Some(datasource_group.datasource_id)),
+                deleted: Set(false),
+                created_at: Set(now),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let other_datasource_group = mk_datasource_group(
+            &env.dbx,
+            datasource_group::ActiveModel {
+                group_master_key: Set(other_group.master_key.clone()),
+                datasource_id: Set(datasource_group.datasource_id),
+                created_at: Set(now),
+                last_sync_at: Set(now),
+                deleted: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_zone_datasource(
+            &env.dbx,
+            sigint_zone_datasource::ActiveModel {
+                sigint_zone_id: Set(login.sigint_zone_id.unwrap()),
+                datasource_id: Set(datasource_group.datasource_id),
+                group_master_key: Set(other_group.master_key.clone()),
+                created_at: Set(now),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let uid =
+            format!("uid-cross-group-{}", now.and_utc().timestamp_millis());
+        let message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some("cross-group sender test".to_string())),
+                created_at: Set(now),
+                timestamp: Set(Some(now)),
+                sender: Set(Some("sender-c".to_string())),
+                message_uid: Set(Some(uid.clone())),
+                datasource_group_id: Set(Some(datasource_group.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        signal_message_group::ActiveModel {
+            signal_message_id: Set(message.id),
+            group_master_key: Set(Some(
+                datasource_group.group_master_key.clone(),
+            )),
+            sender: Set(Some("sender-c".to_string())),
+            message_uid: Set(Some(format!("{uid}-x"))),
+            datasource_group_id: Set(Some(datasource_group.id)),
+            created_at: Set(now),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        signal_message_group::ActiveModel {
+            signal_message_id: Set(message.id),
+            group_master_key: Set(Some(other_group.master_key.clone())),
+            sender: Set(Some("sender-a".to_string())),
+            message_uid: Set(Some(format!("{uid}-y"))),
+            datasource_group_id: Set(Some(other_datasource_group.id)),
+            created_at: Set(now),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        mk_sigint_inbox_item(
+            &env.dbx,
+            sigint_inbox_item::ActiveModel {
+                id: Set(message.id),
+                freq: Set(Some("123.45".to_string())),
+                date: Set(Some(now.date().to_string())),
+                time: Set(Some(now.time().format("%H:%M:%S").to_string())),
+                reviewed: Set(Some(true)),
+                parsed_unit_v2: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let logins = vec![login.login.clone()];
+        let wrong_sender_req = InboxMessagesReq {
+            nolimit: Some(true),
+            selected_groups: Some(vec![datasource_group
+                .group_master_key
+                .clone()]),
+            selected_senders: Some(vec!["sender-a".to_string()]),
+            ..Default::default()
+        };
+        let wrong_sender_messages =
+            get_inbox_messages(&login.login, &logins, &env, &wrong_sender_req)
+                .await
+                .unwrap();
+        assert!(
+            wrong_sender_messages.is_empty(),
+            "message matched sender from another group row"
+        );
+
+        let matching_sender_req = InboxMessagesReq {
+            nolimit: Some(true),
+            selected_groups: Some(vec![datasource_group
+                .group_master_key
+                .clone()]),
+            selected_senders: Some(vec!["sender-c".to_string()]),
+            ..Default::default()
+        };
+        let matching_sender_messages = get_inbox_messages(
+            &login.login,
+            &logins,
+            &env,
+            &matching_sender_req,
+        )
+        .await
+        .unwrap();
+        assert_eq!(matching_sender_messages.len(), 1);
+        assert_eq!(
+            matching_sender_messages[0].1.sender.as_deref(),
+            Some("sender-c")
         );
     }
 }
