@@ -350,6 +350,7 @@ fn build_analysis_stats_req(
         metadata_sender: None,
         metadata_receiver: None,
         metadata_hash: None,
+        only_with_metadata: None,
         without_metadata: None,
         include_peleng_locations: None,
         units_exact_match_only: None,

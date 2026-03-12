@@ -1126,6 +1126,7 @@ pub async fn callsigns_graph(
         metadata_sender: req.metadata_sender.clone(),
         metadata_receiver: req.metadata_receiver.clone(),
         metadata_hash: req.metadata_hash.clone(),
+        only_with_metadata: req.only_with_metadata,
         without_metadata: req.without_metadata,
         include_peleng_locations: req.include_peleng_locations,
         units_exact_match_only: req.units_exact_match_only,

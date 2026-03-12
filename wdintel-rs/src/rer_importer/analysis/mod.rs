@@ -1111,18 +1111,25 @@ pub fn filter_selected_metadata<Q>(
     metadata_sender: &Option<Vec<String>>,
     metadata_receiver: &Option<Vec<String>>,
     metadata_hash: &Option<Vec<String>>,
+    only_with_metadata: &Option<bool>,
     without_metadata: &Option<bool>,
 ) -> Result<Q, AppError>
 where
     Q: QueryFilter,
 {
+    let only_with_metadata = only_with_metadata.unwrap_or(false);
     let without_metadata = without_metadata.unwrap_or(false);
     let metadata_cc = normalized_metadata_values(metadata_cc);
     let metadata_sender = normalized_metadata_values(metadata_sender);
     let metadata_receiver = normalized_metadata_values(metadata_receiver);
     let metadata_hash = normalized_metadata_values(metadata_hash);
 
+    if without_metadata && only_with_metadata {
+        return Ok(q.filter(Expr::cust("FALSE")));
+    }
+
     if !without_metadata
+        && !only_with_metadata
         && metadata_cc.is_none()
         && metadata_sender.is_none()
         && metadata_receiver.is_none()
@@ -1212,6 +1219,7 @@ where
         &req.metadata_sender,
         &req.metadata_receiver,
         &req.metadata_hash,
+        &req.only_with_metadata,
         &req.without_metadata,
     )
 }
@@ -1229,6 +1237,7 @@ where
         &req.metadata_sender,
         &req.metadata_receiver,
         &req.metadata_hash,
+        &req.only_with_metadata,
         &req.without_metadata,
     )
 }
@@ -1246,6 +1255,7 @@ where
         &req.metadata_sender,
         &req.metadata_receiver,
         &req.metadata_hash,
+        &req.only_with_metadata,
         &req.without_metadata,
     )
 }

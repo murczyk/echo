@@ -891,6 +891,7 @@ leftColumn ( messageId, message ) ps model =
                                         , metadataSender = []
                                         , metadataReceiver = []
                                         , metadataHash = []
+                                        , onlyWithMetadata = False
                                         , withoutMetadata = False
                                         , tags = []
                                         , unitsExactMatchOnly = True

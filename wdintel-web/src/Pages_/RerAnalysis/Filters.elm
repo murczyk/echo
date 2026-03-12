@@ -340,7 +340,17 @@ view isDark user model =
                                     , class "accent-toggle-selected"
                                     ]
                                     []
-                                , text "тільки без метаданих"
+                                , text " тільки без метаданих"
+                                ]
+                            , label [ class "ml-2 mt-2 flex items-center gap-2 text-sm text-[var(--color-text)]" ]
+                                [ input
+                                    [ type_ "checkbox"
+                                    , checked model.onlyWithMetadata
+                                    , onCheck OnlyWithMetadataChanged
+                                    , class "accent-toggle-selected"
+                                    ]
+                                    []
+                                , text " тільки з метаданими"
                                 ]
                             ]
                         ]

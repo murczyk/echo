@@ -432,6 +432,7 @@ export type InboxMessagesReq = {
   metadataSender: Array<string> | null;
   metadataReceiver: Array<string> | null;
   metadataHash: Array<string> | null;
+  onlyWithMetadata: boolean | null;
   withoutMetadata: boolean | null;
   sortBy: InboxMessagesSortBy | null;
   reportTagsOnlyThisUnit: boolean | null;
@@ -624,6 +625,7 @@ export type AnalysisStatsReq = {
   metadataSender: Array<string> | null;
   metadataReceiver: Array<string> | null;
   metadataHash: Array<string> | null;
+  onlyWithMetadata: boolean | null;
   withoutMetadata: boolean | null;
   includePelengLocations: boolean | null;
   unitsExactMatchOnly: boolean | null;
@@ -758,6 +760,7 @@ export type CallsignsGraphReq = {
   metadataSender: Array<string> | null;
   metadataReceiver: Array<string> | null;
   metadataHash: Array<string> | null;
+  onlyWithMetadata: boolean | null;
   withoutMetadata: boolean | null;
   includePelengLocations: boolean | null;
   unitsExactMatchOnly: boolean | null;
@@ -838,6 +841,7 @@ export type RerAnalysisQueryState = {
   metadataSender: Array<string>;
   metadataReceiver: Array<string>;
   metadataHash: Array<string>;
+  onlyWithMetadata: boolean;
   withoutMetadata: boolean;
   tags: Array<number>;
   includePelengLocations: boolean;

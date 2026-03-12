@@ -121,6 +121,7 @@ createAnalysisQueryState shared network callsign =
     , metadataSender = []
     , metadataReceiver = []
     , metadataHash = []
+    , onlyWithMetadata = False
     , withoutMetadata = False
     , tags = []
     , unitsExactMatchOnly = True

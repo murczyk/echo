@@ -70,6 +70,7 @@ pub async fn bl_babak_report(
         metadata_sender: inbox_req.metadata_sender,
         metadata_receiver: inbox_req.metadata_receiver,
         metadata_hash: inbox_req.metadata_hash,
+        only_with_metadata: inbox_req.only_with_metadata,
         without_metadata: inbox_req.without_metadata,
         include_peleng_locations: inbox_req.include_peleng_locations,
         units_exact_match_only: inbox_req.units_exact_match_only,

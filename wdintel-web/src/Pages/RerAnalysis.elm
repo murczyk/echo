@@ -157,6 +157,7 @@ init route _ =
             , metadataSender = []
             , metadataReceiver = []
             , metadataHash = []
+            , onlyWithMetadata = False
             , withoutMetadata = False
             , nolimitShown = False
             , menuTab = TabFilters
@@ -336,6 +337,7 @@ getInboxReq model =
     , metadataSender = emptyToNothing model.metadataSender
     , metadataReceiver = emptyToNothing model.metadataReceiver
     , metadataHash = emptyToNothing model.metadataHash
+    , onlyWithMetadata = Just model.onlyWithMetadata
     , withoutMetadata = Just model.withoutMetadata
     , highlightCallsigns = Nothing
     , highlightKeywords = Nothing
@@ -408,6 +410,7 @@ cmdLoadCallsignGraph model { dtFromPosix, dtToPosix } =
             , metadataSender = emptyToNothing model.metadataSender
             , metadataReceiver = emptyToNothing model.metadataReceiver
             , metadataHash = emptyToNothing model.metadataHash
+            , onlyWithMetadata = Just model.onlyWithMetadata
             , withoutMetadata = Just model.withoutMetadata
             , selectedTags = emptyToNothing model.tagsSelected
             , filterTagsOption = Just model.filterTagsOption
@@ -2617,9 +2620,31 @@ update user shared route msg model =
             , E.none
             )
 
+        OnlyWithMetadataChanged checked ->
+            loadCoreStatsAndPushUrl <|
+                invalidateOptionFilters
+                    { model
+                        | onlyWithMetadata = checked
+                        , withoutMetadata =
+                            if checked then
+                                False
+
+                            else
+                                model.withoutMetadata
+                    }
+
         WithoutMetadataChanged checked ->
             loadCoreStatsAndPushUrl <|
-                invalidateOptionFilters { model | withoutMetadata = checked }
+                invalidateOptionFilters
+                    { model
+                        | withoutMetadata = checked
+                        , onlyWithMetadata =
+                            if checked then
+                                False
+
+                            else
+                                model.onlyWithMetadata
+                    }
 
         SelMetadataCcMsg imsg ->
             case ( model.from.datePosix, model.to.datePosix ) of

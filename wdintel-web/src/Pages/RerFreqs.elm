@@ -1616,6 +1616,7 @@ freqsTableConfig shared model user =
                                     , metadataSender = []
                                     , metadataReceiver = []
                                     , metadataHash = []
+                                    , onlyWithMetadata = False
                                     , withoutMetadata = False
                                     , tags = []
                                     , unitsExactMatchOnly = True

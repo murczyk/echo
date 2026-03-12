@@ -87,6 +87,7 @@ type alias Model =
     , metadataSender : List String
     , metadataReceiver : List String
     , metadataHash : List String
+    , onlyWithMetadata : Bool
     , withoutMetadata : Bool
     , nolimitShown : Bool
     , menuTab : MenuTab

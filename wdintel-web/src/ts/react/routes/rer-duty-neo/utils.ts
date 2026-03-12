@@ -121,6 +121,7 @@ export function buildInboxReq(opts: {
     metadataSender: null,
     metadataReceiver: null,
     metadataHash: null,
+    onlyWithMetadata: null,
     withoutMetadata: null,
     sortBy: 'IMSTimestamp',
     reportTagsOnlyThisUnit: opts.reportTagsOnlyThisUnit ?? null,

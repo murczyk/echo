@@ -99,6 +99,7 @@ type Msg
     | SelMetadataSenderMsg (Select.Msg String)
     | SelMetadataReceiverMsg (Select.Msg String)
     | SelMetadataHashMsg (Select.Msg String)
+    | OnlyWithMetadataChanged Bool
     | WithoutMetadataChanged Bool
     | SearchDo
     | SearchInputKeyDown Int

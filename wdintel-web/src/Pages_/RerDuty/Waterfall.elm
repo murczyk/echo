@@ -424,6 +424,7 @@ getBasicInboxParams model =
     , metadataSender = Nothing
     , metadataReceiver = Nothing
     , metadataHash = Nothing
+    , onlyWithMetadata = Nothing
     , withoutMetadata = Nothing
     , sortBy = Just B.ImsTimestamp
     , reportTagsOnlyThisUnit = Nothing
