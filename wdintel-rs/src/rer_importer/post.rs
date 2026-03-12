@@ -158,7 +158,7 @@ fn extract_last_post_from_posts_header(line: &str) -> Option<String> {
     let last_quoted = RE_QUOTED_POST
         .captures_iter(line)
         .filter_map(|capts| m_cap_s(&capts, "post"))
-        .map(|post| normalize_post_name(&post))
+        .filter_map(|post| extract_last_post_from_posts_header_segment(&post))
         .last();
     if last_quoted.is_some() {
         return last_quoted;
@@ -166,11 +166,18 @@ fn extract_last_post_from_posts_header(line: &str) -> Option<String> {
 
     let start = line.find("Отримано з постів")?;
     let rest = &line[start + "Отримано з постів".len()..];
-    let last = rest.split(',').next_back()?.trim();
-    if last.is_empty() {
-        return None;
-    }
-    Some(normalize_post_name(last))
+    extract_last_post_from_posts_header_segment(rest)
+}
+
+fn extract_last_post_from_posts_header_segment(
+    segment: &str,
+) -> Option<String> {
+    let post = segment
+        .split(',')
+        .rev()
+        .map(str::trim)
+        .find(|post| !post.is_empty())?;
+    Some(normalize_post_name(post))
 }
 
 fn normalize_post_name(post: &str) -> String {
@@ -665,6 +672,23 @@ Kupol80
 "#;
         let res = extract_post(body).unwrap();
         assert_eq!(res.unwrap(), "Сорока 12".to_string())
+    }
+
+    #[test]
+    fn extract_post_strip_double_quotes2() {
+        let body = r#"
+Отримано з постів " Khartiia, Khartiia"
+--------------------------------------
+12.03.2026, 17:05:58
+168.6150
+УКХ р/м НВ підрозділ спостереження за БпЛА (р-н н.п. УСТІНКА - ПЕТРІВКА) (17.12.2025)᛭
+НВ
+НВ
+
+— 55 47, это сторона Устинки? Погляди.
+"#;
+        let res = extract_post(body).unwrap();
+        assert_eq!(res.unwrap(), "Khartiia".to_string())
     }
 
     #[test]
