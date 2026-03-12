@@ -4457,6 +4457,14 @@ callsignActivityRecordEncoder struct =
 type ListCallsignsSortBy
     = CallsignAsc
     | CallsignDesc
+    | CallsignPositionAsc
+    | CallsignPositionDesc
+    | CallsignCommentAsc
+    | CallsignCommentDesc
+    | CallsignSourceAsc
+    | CallsignSourceDesc
+    | CallsignRadioFreqAsc
+    | CallsignRadioFreqDesc
     | CallsignCreatedAtAsc
     | CallsignCreatedAtDesc
     | CallsignUnitAsc
@@ -4471,6 +4479,30 @@ listCallsignsSortByEncoder enum =
 
         CallsignDesc ->
             Json.Encode.string "CallsignDesc"
+
+        CallsignPositionAsc ->
+            Json.Encode.string "CallsignPositionAsc"
+
+        CallsignPositionDesc ->
+            Json.Encode.string "CallsignPositionDesc"
+
+        CallsignCommentAsc ->
+            Json.Encode.string "CallsignCommentAsc"
+
+        CallsignCommentDesc ->
+            Json.Encode.string "CallsignCommentDesc"
+
+        CallsignSourceAsc ->
+            Json.Encode.string "CallsignSourceAsc"
+
+        CallsignSourceDesc ->
+            Json.Encode.string "CallsignSourceDesc"
+
+        CallsignRadioFreqAsc ->
+            Json.Encode.string "CallsignRadioFreqAsc"
+
+        CallsignRadioFreqDesc ->
+            Json.Encode.string "CallsignRadioFreqDesc"
 
         CallsignCreatedAtAsc ->
             Json.Encode.string "CallsignCreatedAtAsc"
@@ -9292,6 +9324,86 @@ listCallsignsSortByDecoder =
                     case x of
                         "CallsignDesc" ->
                             Json.Decode.succeed CallsignDesc
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "CallsignPositionAsc" ->
+                            Json.Decode.succeed CallsignPositionAsc
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "CallsignPositionDesc" ->
+                            Json.Decode.succeed CallsignPositionDesc
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "CallsignCommentAsc" ->
+                            Json.Decode.succeed CallsignCommentAsc
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "CallsignCommentDesc" ->
+                            Json.Decode.succeed CallsignCommentDesc
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "CallsignSourceAsc" ->
+                            Json.Decode.succeed CallsignSourceAsc
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "CallsignSourceDesc" ->
+                            Json.Decode.succeed CallsignSourceDesc
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "CallsignRadioFreqAsc" ->
+                            Json.Decode.succeed CallsignRadioFreqAsc
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "CallsignRadioFreqDesc" ->
+                            Json.Decode.succeed CallsignRadioFreqDesc
 
                         unexpected ->
                             Json.Decode.fail <| "Unexpected variant " ++ unexpected

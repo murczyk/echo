@@ -1,13 +1,6 @@
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
-import {
-  Box,
-  Button,
-  CircularProgress,
-  Stack,
-  Tooltip,
-  Typography,
-} from '@mui/material';
+import { Box, Button, CircularProgress, Stack, Tooltip, Typography } from '@mui/material';
 import {
   MRT_ColumnDef,
   MRT_ColumnFiltersState,
@@ -19,6 +12,7 @@ import React from 'react';
 
 import { MrtRowActionButton, MrtRowActions, mrtRowActionsColumnSize } from '../../../components/MrtRowActionButton';
 import type { DevelopingFilter } from '../../../../../Bindings';
+import { formatMrtCellTextValue } from '../../../components/formatMrtCellTextValue';
 import { PowerChip } from '../../../components/PowerChip';
 import { SectionLoadingOverlay } from '../../../components/SectionLoadingOverlay';
 import { TableEmptyState } from '../../../components/TableEmptyState';
@@ -42,7 +36,7 @@ const STATUS_FILTER_OPTIONS = ['Відомий', 'В дорозвідці', 'У�
 export const DEFAULT_CALLSIGNS_TABLE_COLUMN_VISIBILITY = {
   callsign: true,
   position: true,
-  commentForView: true,
+  comment: true,
   unit: true,
   sourceName: true,
   radioFreq: true,
@@ -51,7 +45,7 @@ export const DEFAULT_CALLSIGNS_TABLE_COLUMN_VISIBILITY = {
 };
 
 export const DEFAULT_CALLSIGNS_TABLE_COLUMN_ORDER = buildDefaultColumnOrder({
-  dataColumnIds: ['callsign', 'position', 'commentForView', 'unit', 'sourceName', 'radioFreq', 'developing', 'createdAt'],
+  dataColumnIds: ['callsign', 'position', 'comment', 'unit', 'sourceName', 'radioFreq', 'developing', 'createdAt'],
   withRowSelection: true,
   withRowNumbers: true,
   withRowActions: true,
@@ -64,7 +58,6 @@ type Props = {
   refreshing: boolean;
   loadingMore: boolean;
   showLoadMore: boolean;
-  canUseCursorPagination: boolean;
   hasActiveFilters: boolean;
   inFlightDeleteId: number | null;
   bulkDeleteInFlight: boolean;
@@ -83,13 +76,14 @@ type Props = {
 type Updater<T> = T | ((prev: T) => T);
 
 function CommentCell({ comment }: { comment: string }) {
-  if (!comment) return <Typography variant="body2">—</Typography>;
-  if (comment.length <= 80) return <Typography variant="body2">{comment}</Typography>;
+  const text = formatMrtCellTextValue(comment);
+  if (text === '—') return <Typography variant="body2">{text}</Typography>;
+  if (text.length <= 80) return <Typography variant="body2">{text}</Typography>;
 
   return (
-    <Tooltip title={comment} placement="top-start">
+    <Tooltip title={text} placement="top-start">
       <Typography variant="body2" sx={{ maxWidth: 280 }} noWrap>
-        {comment}
+        {text}
       </Typography>
     </Tooltip>
   );
@@ -125,7 +119,6 @@ export function CallsignsTable({
   refreshing,
   loadingMore,
   showLoadMore,
-  canUseCursorPagination,
   hasActiveFilters,
   inFlightDeleteId,
   bulkDeleteInFlight,
@@ -152,7 +145,7 @@ export function CallsignsTable({
         size: 160,
         Cell: ({ row }) => (
           <Typography variant="body2" fontWeight={600}>
-            {row.original.callsign}
+            {formatMrtCellTextValue(row.original.callsign)}
           </Typography>
         ),
       },
@@ -162,12 +155,12 @@ export function CallsignsTable({
         id: 'position',
         enableColumnFilter: false,
         size: 170,
-        Cell: ({ row }) => row.original.position || '—',
+        Cell: ({ row }) => formatMrtCellTextValue(row.original.position),
       },
       {
         header: 'Коментар',
         accessorKey: 'commentForView',
-        id: 'commentForView',
+        id: 'comment',
         enableColumnFilter: false,
         size: 240,
         Cell: ({ row }) => <CommentCell comment={row.original.commentForView} />,
@@ -223,7 +216,7 @@ export function CallsignsTable({
         id: 'radioFreq',
         enableColumnFilter: false,
         size: 130,
-        Cell: ({ row }) => row.original.radioFreq?.trim() ? row.original.radioFreq : '—',
+        Cell: ({ row }) => formatMrtCellTextValue(row.original.radioFreq),
       },
       {
         header: 'Статус',
@@ -310,7 +303,16 @@ export function CallsignsTable({
       const nextSorting = resolveUpdater(updater, toMrtSorting(sort));
       const next = nextSorting[0];
       if (!next) return;
-      const nextColumn = next.id === 'callsign' || next.id === 'unit' || next.id === 'createdAt' ? next.id : sort.column;
+      const nextColumn =
+        next.id === 'callsign' ||
+        next.id === 'position' ||
+        next.id === 'comment' ||
+        next.id === 'unit' ||
+        next.id === 'sourceName' ||
+        next.id === 'radioFreq' ||
+        next.id === 'createdAt'
+          ? next.id
+          : sort.column;
       const nextDirection = next.desc ? 'desc' : 'asc';
       if (nextColumn === sort.column && nextDirection === sort.direction) return;
       onSort(nextColumn);
@@ -487,18 +489,14 @@ export function CallsignsTable({
               p: '10px',
             }}
           >
-            <Tooltip title={!canUseCursorPagination ? 'Доступно лише при сортуванні Підрозділ за зростанням' : ''}>
-              <span>
-                <Button
-                  variant="outlined"
-                  onClick={onLoadMore}
-                  disabled={loading || loadingMore || !canUseCursorPagination}
-                  startIcon={loadingMore ? <CircularProgress color="inherit" size={16} /> : null}
-                >
-                  {loadingMore ? 'Завантаження…' : 'Завантажити ще'}
-                </Button>
-              </span>
-            </Tooltip>
+            <Button
+              variant="outlined"
+              onClick={onLoadMore}
+              disabled={loading || loadingMore}
+              startIcon={loadingMore ? <CircularProgress color="inherit" size={16} /> : null}
+            >
+              {loadingMore ? 'Завантаження…' : 'Завантажити ще'}
+            </Button>
           </Box>
         ) : null}
       </Box>

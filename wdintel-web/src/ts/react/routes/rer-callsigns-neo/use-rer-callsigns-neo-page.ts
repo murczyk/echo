@@ -28,7 +28,6 @@ import {
   getExportPermission,
   getExportPermissionFromRoles,
   hasAnyDraftValue,
-  isCursorPaginationSortCompatible,
   isAbortError,
   makeCreatePayload,
   makeUpdatePayload,
@@ -80,7 +79,16 @@ function readInitialCallsignsSortFromUrl(): CallsignsSortState {
   const column = params.get('sort_col');
   const direction = params.get('sort_dir');
 
-  const validColumn = column === 'callsign' || column === 'createdAt' || column === 'unit' ? column : DEFAULT_SORT.column;
+  const validColumn =
+    column === 'callsign' ||
+    column === 'position' ||
+    column === 'comment' ||
+    column === 'createdAt' ||
+    column === 'unit' ||
+    column === 'sourceName' ||
+    column === 'radioFreq'
+      ? column
+      : DEFAULT_SORT.column;
   const validDirection = direction === 'asc' || direction === 'desc' ? direction : DEFAULT_SORT.direction;
 
   return {
@@ -188,6 +196,10 @@ function hasAnyCallsignInput(rows: CallsignDraftRow[]): boolean {
   return rows.some((row) => row.callsign.trim() !== '');
 }
 
+function getReloadPageSize(callsignsCount: number) {
+  return Math.max(getDefaultPageSize(), callsignsCount);
+}
+
 export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?: string[] }) {
   const [user, setUser] = React.useState<User | null>(null);
   const [units, setUnits] = React.useState<Unit[]>([]);
@@ -247,13 +259,15 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
     };
   }, [user, authUserRoles]);
 
-  const sortedCallsigns = React.useMemo(() => sortRowsClientSide(callsigns, sort, unitsById), [callsigns, sort, unitsById]);
+  const sortedCallsigns = React.useMemo(
+    () => sortRowsClientSide(callsigns, sort, unitsById, sourcesById),
+    [callsigns, sort, unitsById, sourcesById],
+  );
   const rows = React.useMemo(
     () => buildRowViews(sortedCallsigns, unitsById, sourcesById).rows,
     [sortedCallsigns, unitsById, sourcesById],
   );
   const unitStatsView = React.useMemo(() => mergeUnitStatsWithUnits(unitStats, unitsById), [unitStats, unitsById]);
-  const canUseCursorPagination = React.useMemo(() => isCursorPaginationSortCompatible(sort), [sort]);
   const addPotentialDuplicates = React.useMemo(() => {
     if (!addDuplicateHintsEnabled || addSubmitting) return [];
 
@@ -297,6 +311,7 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
   async function runListFetch({ append, afterId, announceLoading }: { append: boolean; afterId: number | null; announceLoading: boolean }) {
     const seq = ++listRequestSeqRef.current;
     if (!append) {
+      const limit = getReloadPageSize(callsigns.length);
       setLoadingMore(false);
       clearListRequest();
       const controller = new AbortController();
@@ -305,7 +320,7 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
 
       try {
         const rsp = await listCallsigns(
-          buildListCallsignsReq({ filters, sort, query: { afterId, limit: getDefaultPageSize() } }),
+          buildListCallsignsReq({ filters, sort, query: { afterId, limit } }),
           controller.signal,
         );
         if (listRequestSeqRef.current !== seq) return;
@@ -328,14 +343,6 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
     }
 
     if (announceLoading) setLoadingMore(true);
-
-    if (!canUseCursorPagination) {
-      setShowLoadMore(false);
-      if (listRequestSeqRef.current === seq) {
-        setLoadingMore(false);
-      }
-      return;
-    }
 
     try {
       const rsp = await listCallsigns(buildListCallsignsReq({ filters, sort, query: { afterId, limit: getDefaultPageSize() } }));
@@ -461,7 +468,7 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
     });
   }
 
-  function onSort(column: 'callsign' | 'createdAt' | 'unit') {
+  function onSort(column: 'callsign' | 'position' | 'comment' | 'createdAt' | 'unit' | 'sourceName' | 'radioFreq') {
     setSort((prev) => nextSortState(prev, column));
   }
 
@@ -818,7 +825,7 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
   }
 
   async function onLoadMore() {
-    if (!canUseCursorPagination || loadingMore || !showLoadMore || callsigns.length === 0) return;
+    if (loadingMore || !showLoadMore || callsigns.length === 0) return;
     const last = callsigns[callsigns.length - 1];
     if (!last) return;
     await runListFetch({ append: true, afterId: last.id, announceLoading: true });
@@ -841,7 +848,6 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
     loadingMore,
     refreshing,
     showLoadMore,
-    canUseCursorPagination,
     status,
     filters,
     sidebarOpen,
