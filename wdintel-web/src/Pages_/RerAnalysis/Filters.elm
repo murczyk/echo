@@ -326,32 +326,43 @@ view isDark user model =
                         ]
 
                 tabFiltersMetadata =
+                    let
+                        metadataToggleCheckbox extraClasses labelText isChecked onToggle isDisabled =
+                            label
+                                [ class ("ml-2 flex items-center gap-2 text-sm text-[var(--color-text)] " ++ extraClasses)
+                                , classList
+                                    [ ( "opacity-50 cursor-not-allowed", isDisabled )
+                                    ]
+                                ]
+                                [ input
+                                    [ type_ "checkbox"
+                                    , checked isChecked
+                                    , onCheck onToggle
+                                    , disabled isDisabled
+                                    , class "accent-toggle-selected"
+                                    ]
+                                    []
+                                , text (" " ++ labelText)
+                                ]
+                    in
                     div [ class "py-2 px-3" ]
                         [ metadataField "cc" model.metadataCc model.selMetadataCcState model.selMetadataCcMenu SelMetadataCcMsg
                         , metadataField "відправник" model.metadataSender model.selMetadataSenderState model.selMetadataSenderMenu SelMetadataSenderMsg
                         , metadataField "отримувач" model.metadataReceiver model.selMetadataReceiverState model.selMetadataReceiverMenu SelMetadataReceiverMsg
                         , metadataField "хеш" model.metadataHash model.selMetadataHashState model.selMetadataHashMenu SelMetadataHashMsg
                         , div [ class "pt-1" ]
-                            [ label [ class "ml-2 flex items-center gap-2 text-sm text-[var(--color-text)]" ]
-                                [ input
-                                    [ type_ "checkbox"
-                                    , checked model.withoutMetadata
-                                    , onCheck WithoutMetadataChanged
-                                    , class "accent-toggle-selected"
-                                    ]
-                                    []
-                                , text " тільки без метаданих"
-                                ]
-                            , label [ class "ml-2 mt-2 flex items-center gap-2 text-sm text-[var(--color-text)]" ]
-                                [ input
-                                    [ type_ "checkbox"
-                                    , checked model.onlyWithMetadata
-                                    , onCheck OnlyWithMetadataChanged
-                                    , class "accent-toggle-selected"
-                                    ]
-                                    []
-                                , text " тільки з метаданими"
-                                ]
+                            [ metadataToggleCheckbox
+                                ""
+                                "тільки без метаданих"
+                                model.withoutMetadata
+                                WithoutMetadataChanged
+                                model.onlyWithMetadata
+                            , metadataToggleCheckbox
+                                "mt-2"
+                                "тільки з метаданими"
+                                model.onlyWithMetadata
+                                OnlyWithMetadataChanged
+                                model.withoutMetadata
                             ]
                         ]
             in

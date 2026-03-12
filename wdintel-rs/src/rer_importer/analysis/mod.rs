@@ -1105,6 +1105,22 @@ fn metadata_receiver_match_any_expr(
     })
 }
 
+fn metadata_exists_subquery() -> SelectStatement {
+    let metadata_alias = Alias::new("metadata_filter");
+    let mut subquery = Query::select();
+    subquery
+        .expr(Expr::value(1))
+        .from_as(sigint_inbox_item_metadata::Entity, metadata_alias.clone())
+        .and_where(
+            Expr::col((
+                metadata_alias,
+                sigint_inbox_item_metadata::Column::SigintInboxItemId,
+            ))
+            .equals((signal_message::Entity, signal_message::Column::Id)),
+        );
+    subquery.to_owned()
+}
+
 pub fn filter_selected_metadata<Q>(
     q: Q,
     metadata_cc: &Option<Vec<String>>,
@@ -1128,6 +1144,11 @@ where
         return Ok(q.filter(Expr::cust("FALSE")));
     }
 
+    if without_metadata {
+        let metadata_exists = Expr::exists(metadata_exists_subquery());
+        return Ok(q.filter(metadata_exists.not()));
+    }
+
     if !without_metadata
         && !only_with_metadata
         && metadata_cc.is_none()
@@ -1139,17 +1160,7 @@ where
     }
 
     let metadata_alias = Alias::new("metadata_filter");
-    let mut subquery = Query::select();
-    subquery
-        .expr(Expr::value(1))
-        .from_as(sigint_inbox_item_metadata::Entity, metadata_alias.clone())
-        .and_where(
-            Expr::col((
-                metadata_alias.clone(),
-                sigint_inbox_item_metadata::Column::SigintInboxItemId,
-            ))
-            .equals((signal_message::Entity, signal_message::Column::Id)),
-        );
+    let mut subquery = metadata_exists_subquery();
 
     if let Some(metadata_cc) = metadata_cc.as_ref() {
         if let Some(expr) = metadata_text_match_any_expr(
@@ -1199,11 +1210,7 @@ where
 
     let metadata_exists = Expr::exists(subquery.to_owned());
 
-    if without_metadata {
-        Ok(q.filter(metadata_exists.not()))
-    } else {
-        Ok(q.filter(metadata_exists))
-    }
+    Ok(q.filter(metadata_exists))
 }
 
 pub fn filter_selected_metadata_for_analysis_stats<Q>(
@@ -1258,6 +1265,32 @@ where
         &req.only_with_metadata,
         &req.without_metadata,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn filter_selected_metadata_without_metadata_ignores_concrete_filters() {
+        let q = signal_message::Entity::find();
+        let q = filter_selected_metadata(
+            q,
+            &None,
+            &Some(vec!["123".to_string()]),
+            &None,
+            &None,
+            &Some(false),
+            &Some(true),
+        )
+        .unwrap();
+
+        let sql = q.build(DbBackend::Postgres).to_string();
+
+        assert!(sql.contains("NOT EXISTS"));
+        assert!(!sql.contains("sender_id"));
+        assert!(!sql.contains("sender_name"));
+    }
 }
 
 pub fn filter_search<Q>(q: Q, search: &Option<String>) -> Result<Q, AppError>

@@ -183,54 +183,61 @@ pub fn should_read_stats_aggregated(
     if !can_read_stats_aggregated(&env.config, dt_since, dt_till) {
         return Ok(false);
     }
+    Ok(req_allows_stats_aggregated(req))
+}
+
+fn req_allows_stats_aggregated(req: &AnalysisStatsReq) -> bool {
     if !is_filter_empty(&req.selected_groups) {
-        return Ok(false);
+        return false;
     }
     if !is_filter_empty(&req.selected_senders) {
-        return Ok(false);
+        return false;
     }
     if !is_filter_empty(&req.selected_freqs) {
-        return Ok(false);
+        return false;
     }
     if !is_filter_empty(&req.selected_posts) {
-        return Ok(false);
+        return false;
     }
     if !is_filter_empty(&req.selected_callsigns) {
-        return Ok(false);
+        return false;
     }
     if !is_filter_empty(&req.selected_units) {
-        return Ok(false);
+        return false;
     }
     if !is_filter_empty(&req.selected_locations) {
-        return Ok(false);
+        return false;
     }
     if !is_filter_empty(&req.selected_aors) {
-        return Ok(false);
+        return false;
     }
     if !is_filter_empty(&req.selected_tags) {
-        return Ok(false);
+        return false;
     }
     if !is_filter_empty(&req.selected_networks) {
-        return Ok(false);
+        return false;
     }
     if req.without_metadata.unwrap_or(false) {
-        return Ok(false);
+        return false;
+    }
+    if req.only_with_metadata.unwrap_or(false) {
+        return false;
     }
     if !is_filter_empty(&req.metadata_cc) {
-        return Ok(false);
+        return false;
     }
     if !is_filter_empty(&req.metadata_sender) {
-        return Ok(false);
+        return false;
     }
     if !is_filter_empty(&req.metadata_receiver) {
-        return Ok(false);
+        return false;
     }
     if !is_filter_empty(&req.metadata_hash) {
-        return Ok(false);
+        return false;
     }
     match req.search.clone() {
-        None => Ok(true),
-        Some(q) => Ok(q.is_empty()),
+        None => true,
+        Some(q) => q.is_empty(),
     }
 }
 
@@ -3025,6 +3032,40 @@ mod tests {
     use crate::functest::tests::*;
     use sea_orm::ActiveValue::Set;
     use serial_test::serial;
+
+    fn analysis_stats_req0() -> AnalysisStatsReq {
+        AnalysisStatsReq {
+            since_date_inclusive_ms: 0,
+            till_date_noninclusive_ms: 0,
+            selected_groups: None,
+            selected_senders: None,
+            selected_freqs: None,
+            selected_posts: None,
+            selected_callsigns: None,
+            selected_units: None,
+            selected_locations: None,
+            selected_aors: None,
+            or_with_extended_form: None,
+            or_bookmarked: None,
+            or_important: None,
+            or_with_coords: None,
+            search: None,
+            selected_tags: None,
+            selected_networks: None,
+            metadata_cc: None,
+            metadata_sender: None,
+            metadata_receiver: None,
+            metadata_hash: None,
+            only_with_metadata: None,
+            without_metadata: None,
+            include_peleng_locations: None,
+            units_exact_match_only: None,
+            filter_tags_option: None,
+            without_model_tags: None,
+            report_tags_only_this_unit: None,
+        }
+    }
+
     #[test]
     fn test_get_local_date() {
         let utc_date = NaiveDate::from_ymd_opt(2025, 6, 6).unwrap();
@@ -3078,6 +3119,16 @@ mod tests {
         );
         let actual_ts = start_of_day(dt).unwrap();
         assert_eq!(actual_ts, expected_ts);
+    }
+
+    #[test]
+    fn test_should_read_stats_aggregated_false_for_only_with_metadata() {
+        let req = AnalysisStatsReq {
+            only_with_metadata: Some(true),
+            ..analysis_stats_req0()
+        };
+
+        assert!(!req_allows_stats_aggregated(&req));
     }
 
     #[test]
