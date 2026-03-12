@@ -239,6 +239,23 @@ fn message_has_sender_exists(senders: &[String]) -> SimpleExpr {
     Expr::exists(subquery)
 }
 
+fn message_has_peleng_exists() -> SimpleExpr {
+    let subquery = sigint_peleng::Entity::find()
+        .select_only()
+        .expr(Expr::value(1))
+        .filter(
+            Expr::col((
+                sigint_peleng::Entity,
+                sigint_peleng::Column::SourceInboxItemId,
+            ))
+            .equals((sigint_inbox_item::Entity, sigint_inbox_item::Column::Id)),
+        )
+        .filter(sigint_peleng::Column::Deleted.eq(false))
+        .into_query();
+
+    Expr::exists(subquery)
+}
+
 pub fn filter_selected_posts<Q>(
     q: Q,
     selected_posts: &Option<Vec<String>>,
@@ -767,9 +784,7 @@ where
             .or(Some(important_exists_expr.clone()));
     }
     if or_with_coords == &Some(true) {
-        let y = sigint_inbox_item::Column::Lat
-            .is_not_null()
-            .and(sigint_inbox_item::Column::Lng.is_not_null());
+        let y = message_has_peleng_exists();
         m_inner_expr =
             m_inner_expr.map(|x| x.or(y.clone())).or(Some(y.clone()));
     }
