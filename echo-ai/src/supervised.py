@@ -42,6 +42,7 @@ def resolve_pretrain(pretrained_vectors, args):
         )
         if models_with_complex_filter:
             model = models_with_complex_filter[0]
+            # for now only local files are supported
             path = f"{model.artifact_location}/{pretrained_vectors}"
             if os.path.isfile(path):
                 print(f"found pretrained vectors at {path}", flush=True)

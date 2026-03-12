@@ -320,16 +320,16 @@ fn spawn_background_workers(
             )
             .await;
         });
-        if let Some(model_config) = env.config.models_config.clone() {
-            let token = cancel_token.clone();
-            spawn_named_worker("refresh_models_worker", bg_set, async move {
-                crate::tags::worker::refresh_models_worker_nofail(
-                    model_config,
-                    token,
-                )
-                .await;
-            });
-        }
+    }
+    if let Some(model_config) = env.config.models_config.clone() {
+        let token = cancel_token.clone();
+        spawn_named_worker("refresh_models_worker", bg_set, async move {
+            crate::tags::worker::refresh_models_worker_nofail(
+                model_config,
+                token,
+            )
+            .await;
+        });
     }
 
     let rq3 = env.rq.clone();

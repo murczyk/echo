@@ -18,7 +18,7 @@ class TrainedModel:
         self.run = run
         run_artifacts = mlflow.artifacts.download_artifacts(run_id=run.info.run_id)
         self.run_artifacts = Path(run_artifacts)
-        [model_output] = run.outputs.model_outputs
+        model_output = run.outputs.model_outputs[0]
         self.model = mlflow.get_logged_model(model_id=model_output.model_id)
         model_artifacts = mlflow.artifacts.download_artifacts(
             artifact_uri=f"models:/{model_output.model_id}"
