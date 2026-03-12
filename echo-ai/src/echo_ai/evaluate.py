@@ -76,6 +76,38 @@ def evaluate_trained_model(label_name: str, model_uri: str, split_csv: dict[str,
     test_results = do_evaluate_split(
         label_name, model, "test", split_csv["test"], pred_threshold
     )
+
+    test_dataset_name = f"{label_name}.test"
+    test_dataset_path = split_csv["test"]
+    test_dataset_digest = (
+        Path(test_dataset_path)
+        .stem.replace(f"{test_dataset_name}.", "")
+        .replace(".txt", "")
+    )
+
+    dataset = from_pandas(
+        test_results["predictions"],
+        name=test_dataset_name,
+        source=LocalArtifactDatasetSource(test_dataset_path),
+        digest=test_dataset_digest,
+        targets="y_true",
+        predictions="y_pred",
+    )
+
+    logged_model = LoggedModelInput(model_id=str(model.model_id))
+    mlflow.log_input(dataset, context="testing", model=logged_model)
+    mlflow.log_metrics(test_results["metrics"], dataset=dataset)
+
+    mlflow.models.evaluate(
+        data=dataset,
+        model_id=model.model_id,
+        model_type="classifier",
+        evaluators="default",
+        evaluator_config={
+            "label_list": [0, 1],
+            "pos_label": 1,
+        },
+    )
     plot_precision_recall(labels, "test", [test_results])
     plot_threshold_recall(labels, "test", [test_results])
 
@@ -90,6 +122,30 @@ def evaluate_trained_model(label_name: str, model_uri: str, split_csv: dict[str,
         "validation": validation_results,
         "test": test_results,
     }
+
+
+def evaluate_model(model_id: str, split: str, dataset_path: str):
+    logged_model = mlflow.get_logged_model(model_id=model_id)
+    model = mlflow.pyfunc.load_model(logged_model.model_uri)
+
+    metrics = logged_model.metrics or []
+    pred_threshold = None
+    for metric in metrics:
+        if (
+            metric.key == "threshold_at_recall"
+            and metric.dataset_name
+            and split in metric.dataset_name
+        ):
+            pred_threshold = float(metric.value)
+            break
+
+    label_name = logged_model.params["label_name"]
+
+    split_results = do_evaluate_split(
+        label_name, model, split, dataset_path, pred_threshold
+    )
+
+    return split_results
 
 
 def do_evaluate_split(
@@ -112,37 +168,6 @@ def do_evaluate_split(
         f"precision_at_recall ({TARGET_RECALL:.2f}) for {split} on with '{dataset_path}' is: {precision_at_recall:.3f}"
     )
 
-    if split == "test":
-        predictions = meter["predictions"]
-
-        dataset_name = f"{label_name}.{split}"
-        dataset_digest = (
-            Path(dataset_path).stem.replace(f"{dataset_name}.", "").replace(".txt", "")
-        )
-
-        dataset = from_pandas(
-            predictions,
-            name=dataset_name,
-            source=LocalArtifactDatasetSource(dataset_path),
-            digest=dataset_digest,
-            targets="y_true",
-            predictions="y_pred",
-        )
-
-        logged_model = LoggedModelInput(model_id=str(model.model_id))
-        mlflow.log_input(dataset, context="testing", model=logged_model)
-        mlflow.log_metrics(metrics, dataset=dataset)
-
-        mlflow.models.evaluate(
-            data=dataset,
-            model_id=model.model_id,
-            model_type="classifier",
-            evaluators="default",
-            evaluator_config={
-                "label_list": [0, 1],
-                "pos_label": 1,
-            },
-        )
     return meter
 
 

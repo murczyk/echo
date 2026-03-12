@@ -14,8 +14,6 @@ def main() -> None:
     parser.add_argument("run_id", type=str)
     parser.add_argument("bucket", type=str)
     parser.add_argument("prefix", type=str)
-    parser.add_argument("--ap_limit", type=float, default=-0.05)
-    parser.add_argument("--pr_limit", type=float, default=-0.05)
     args = vars(parser.parse_args())
 
     tags = {"task": "upload"}

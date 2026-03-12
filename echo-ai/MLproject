@@ -8,8 +8,6 @@ entry_points:
       run_id: string
       bucket: { type: string, default: "echouastorage" }
       prefix: { type: string, default: "lfs/echo-ai/models-v2/" }
-      ap_limit: { type: float, default: -0.05 }
-      pr_limit: { type: float, default: -0.05 }
     command: "python src/upload.py {run_id} {bucket} {prefix}"
   scheduled:
     parameters:
@@ -31,7 +29,7 @@ entry_points:
       python src/supervised.py --dim {dim} --epoch {epoch} --wordNgrams {wordNgrams}
       --pretrainedVectors {pretrainedVectors}
       --autotuneModelSize {autotuneModelSize}
-      --autotuneMetric {autotuneMetric} --autotunePredictions {autotunePredictions} --autotuneDuration {autotuneDuration}
+      # --autotuneMetric {autotuneMetric} --autotunePredictions {autotunePredictions} --autotuneDuration {autotuneDuration}
   unsupervised:
     parameters:
       dim: { type: int, default: 100 }

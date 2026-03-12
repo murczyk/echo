@@ -9,11 +9,13 @@ from mlflow.entities.logged_model_input import LoggedModelInput
 
 from echo_ai import arrow, quack
 from echo_ai.evaluate import (
+    evaluate_model,
     evaluate_trained_model,
     plot_precision_recall,
     plot_threshold_recall,
 )
 from echo_ai.lake import Lake
+from echo_ai.registry import TrainedModel
 
 from .fasttext_model import (
     SUPERVISED_ARGS,
@@ -189,13 +191,12 @@ def train_supervised(
             mlflow.log_input(pd_validation, context="validation", model=logged_model)
             split_csv = {
                 "train": train_path,
+                "validation": validation_path,
+                "test": test_path,
             }
-            if len_validation > 0:
-                split_csv["validation"] = validation_path
-            if len_test > 0:
-                split_csv["test"] = test_path
             eval_results = evaluate_trained_model(label_name, model_uri, split_csv)
             results_per_split.append(eval_results)
+            process_eval_results(run.info.run_id, eval_results, split_csv)
 
     results_test = [item["test"] for item in results_per_split]
     results_train = [item["train"] for item in results_per_split]
@@ -204,3 +205,57 @@ def train_supervised(
     plot_threshold_recall(labels, "test", results_test)
     plot_precision_recall(labels, "train", results_train)
     plot_threshold_recall(labels, "train", results_train)
+
+
+def process_eval_results(run_id: str, eval_results: dict, split_csv):
+    stored_run = mlflow.get_run(run_id=run_id)
+    trained_model = TrainedModel(run=stored_run)
+    registered_model = trained_model.find_registered_model()
+    if registered_model:
+        trained_results = eval_results["test"]
+        trained_metrics = trained_results["metrics"]
+
+        if compare_models(trained_metrics, registered_model, split_csv):
+            promote(trained_model)
+    else:
+        promote(trained_model)
+
+
+def compare_models(
+    trained_metrics: dict,
+    registered_model: TrainedModel,
+    split_csv,
+) -> bool:
+    registered_results = evaluate_model(
+        registered_model.model_id, "test", split_csv["test"]
+    )
+    registered_metrics = registered_results["metrics"]
+
+    trained_ap = float(trained_metrics["ap"])
+    registered_ap = float(registered_metrics["ap"])
+    trained_precision_at_recall = float(trained_metrics["precision_at_recall"])
+    registered_precision_at_recall = float(trained_metrics["precision_at_recall"])
+
+    ap_improvement = (trained_ap - registered_ap) / registered_ap
+    pr_improvement = (
+        trained_precision_at_recall - registered_precision_at_recall
+    ) / registered_precision_at_recall
+
+    stats = {
+        "ap_improvement": ap_improvement,
+        "pr_improvement": pr_improvement,
+    }
+    if registered_model.version:
+        stats["compare_to_version"] = float(registered_model.version.version)
+
+    mlflow.log_metrics(stats)
+
+    return (
+        trained_ap > registered_ap
+        and trained_precision_at_recall > registered_precision_at_recall
+    )
+
+
+def promote(trained_model: TrainedModel):
+    # TODO: retrain
+    trained_model.register()
