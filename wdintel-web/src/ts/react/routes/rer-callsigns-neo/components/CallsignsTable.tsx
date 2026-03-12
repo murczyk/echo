@@ -1,5 +1,6 @@
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
+import FullscreenExitIcon from '@mui/icons-material/FullscreenExit';
 import { Box, Button, CircularProgress, Stack, Tooltip, Typography } from '@mui/material';
 import {
   MRT_ColumnDef,
@@ -59,6 +60,12 @@ type Props = {
   loadingMore: boolean;
   showLoadMore: boolean;
   hasActiveFilters: boolean;
+  textFilters: {
+    filterCallsign: string;
+    filterPosition: string;
+    filterComment: string;
+    filterUnit: string;
+  };
   inFlightDeleteId: number | null;
   bulkDeleteInFlight: boolean;
   selectedCallsignIds: number[];
@@ -66,6 +73,12 @@ type Props = {
   statusFilter: DevelopingFilter;
   onSort: (column: SortColumn) => void;
   onStatusFilterChange: (value: DevelopingFilter) => void;
+  onTextColumnFiltersChange: (next: {
+    filterCallsign: string;
+    filterPosition: string;
+    filterComment: string;
+    filterUnit: string;
+  }) => void;
   onClearFilters: () => void;
   onSetSelectedCallsignIds: (callsignIds: number[]) => void;
   onLoadMore: () => void;
@@ -108,6 +121,11 @@ function fromStatusFilterValue(value: unknown): DevelopingFilter {
   return 'OnlyNonDeveloping';
 }
 
+function getStringColumnFilterValue(filters: MRT_ColumnFiltersState, id: string) {
+  const value = filters.find((item) => item.id === id)?.value;
+  return typeof value === 'string' ? value : '';
+}
+
 function resolveUpdater<T>(value: Updater<T>, current: T): T {
   return typeof value === 'function' ? (value as (prev: T) => T)(current) : value;
 }
@@ -120,6 +138,7 @@ export function CallsignsTable({
   loadingMore,
   showLoadMore,
   hasActiveFilters,
+  textFilters,
   inFlightDeleteId,
   bulkDeleteInFlight,
   selectedCallsignIds,
@@ -127,6 +146,7 @@ export function CallsignsTable({
   statusFilter,
   onSort,
   onStatusFilterChange,
+  onTextColumnFiltersChange,
   onClearFilters,
   onSetSelectedCallsignIds,
   onLoadMore,
@@ -134,6 +154,13 @@ export function CallsignsTable({
   onDelete,
 }: Props) {
   const tableStateContext = useTableStateContext();
+  const scrollContainerRef = React.useRef<HTMLDivElement | null>(null);
+  const [overlayViewport, setOverlayViewport] = React.useState({
+    top: 0,
+    left: 0,
+    width: 0,
+    height: 0,
+  });
 
   const columns = React.useMemo<MRT_ColumnDef<CallsignRowView>[]>(
     () => [
@@ -141,7 +168,7 @@ export function CallsignsTable({
         header: 'Позивний',
         accessorKey: 'callsign',
         id: 'callsign',
-        enableColumnFilter: false,
+        enableColumnFilter: true,
         size: 160,
         Cell: ({ row }) => (
           <Typography variant="body2" fontWeight={600}>
@@ -153,7 +180,7 @@ export function CallsignsTable({
         header: 'Посада',
         accessorKey: 'position',
         id: 'position',
-        enableColumnFilter: false,
+        enableColumnFilter: true,
         size: 170,
         Cell: ({ row }) => formatMrtCellTextValue(row.original.position),
       },
@@ -161,7 +188,7 @@ export function CallsignsTable({
         header: 'Коментар',
         accessorKey: 'commentForView',
         id: 'comment',
-        enableColumnFilter: false,
+        enableColumnFilter: true,
         size: 240,
         Cell: ({ row }) => <CommentCell comment={row.original.commentForView} />,
       },
@@ -169,11 +196,11 @@ export function CallsignsTable({
         header: 'Підрозділ',
         accessorKey: 'unitName',
         id: 'unit',
-        enableColumnFilter: false,
+        enableColumnFilter: true,
         size: 240,
         Cell: ({ row }) => (
           <Typography variant="body2" sx={{ maxWidth: 260 }} noWrap title={row.original.unitName}>
-            {row.original.unitName}
+            {formatMrtCellTextValue(row.original.unitName)}
           </Typography>
         ),
       },
@@ -185,7 +212,7 @@ export function CallsignsTable({
         size: 260,
         Cell: ({ row }) => (
           <Stack spacing={0.75}>
-            <Typography variant="body2">{row.original.sourceName}</Typography>
+            <Typography variant="body2">{formatMrtCellTextValue(row.original.sourceName)}</Typography>
             {row.original.callsignAdditionalSourceNames.length > 0 ? (
               <>
                 <Typography variant="caption" color="text.secondary">
@@ -264,10 +291,33 @@ export function CallsignsTable({
     [rows, selectedCallsignIds],
   );
   const columnFilters = React.useMemo<MRT_ColumnFiltersState>(
-    () => [{ id: 'developing', value: toStatusFilterValue(statusFilter) }],
-    [statusFilter],
+    () => [
+      ...(textFilters.filterCallsign.trim() ? [{ id: 'callsign', value: textFilters.filterCallsign }] : []),
+      ...(textFilters.filterPosition.trim() ? [{ id: 'position', value: textFilters.filterPosition }] : []),
+      ...(textFilters.filterComment.trim() ? [{ id: 'comment', value: textFilters.filterComment }] : []),
+      ...(textFilters.filterUnit.trim() ? [{ id: 'unit', value: textFilters.filterUnit }] : []),
+      { id: 'developing', value: toStatusFilterValue(statusFilter) },
+    ],
+    [statusFilter, textFilters.filterCallsign, textFilters.filterComment, textFilters.filterPosition, textFilters.filterUnit],
   );
   const showTableOverlay = loading || refreshing || loadingMore;
+  const isInitialLoading = loading && rows.length === 0;
+
+  const syncOverlayViewport = React.useCallback(() => {
+    const element = scrollContainerRef.current;
+    if (!element) return;
+
+    setOverlayViewport({
+      top: element.scrollTop,
+      left: element.scrollLeft,
+      width: element.clientWidth,
+      height: element.clientHeight,
+    });
+  }, []);
+
+  React.useEffect(() => {
+    syncOverlayViewport();
+  }, [syncOverlayViewport, showTableOverlay]);
 
   const table = useMaterialReactTable({
     columns,
@@ -320,6 +370,12 @@ export function CallsignsTable({
     onColumnFiltersChange: (updater) => {
       const nextFilters = resolveUpdater(updater, columnFilters);
       const nextStatusFilter = nextFilters.find((item) => item.id === 'developing');
+      onTextColumnFiltersChange({
+        filterCallsign: getStringColumnFilterValue(nextFilters, 'callsign'),
+        filterPosition: getStringColumnFilterValue(nextFilters, 'position'),
+        filterComment: getStringColumnFilterValue(nextFilters, 'comment'),
+        filterUnit: getStringColumnFilterValue(nextFilters, 'unit'),
+      });
       onStatusFilterChange(fromStatusFilterValue(nextStatusFilter?.value));
     },
     onRowSelectionChange: (updater) => {
@@ -361,6 +417,12 @@ export function CallsignsTable({
       size: 180,
       renderColumnActionsMenuItems,
     },
+    initialState: {
+      pagination: {
+        pageIndex: 0,
+        pageSize: 20,
+      },
+    },
     localization: {
       ...defaultMRTOptions.localization,
       select: '',
@@ -381,23 +443,25 @@ export function CallsignsTable({
         sx: {
           ...(baseProps as { sx?: object })?.sx,
           ...FULL_WIDTH_TABLE_PAPER_SX,
-          height: 'auto',
+          height: isInitialLoading ? '100%' : 'auto',
+          minHeight: isInitialLoading ? '100%' : undefined,
           overflow: 'visible',
         },
       };
     },
-    muiTableContainerProps: {
+    muiTableContainerProps: () => ({
       sx: {
         ...(CUSTOM_STYLES.muiTableContainerProps as { sx?: object })?.sx,
         ...PAGE_SCROLL_TABLE_CONTAINER_SX,
         border: 0,
-        height: 'auto',
+        height: isInitialLoading ? '100%' : 'auto',
+        ...(isInitialLoading ? { minHeight: '100%' } : {}),
         maxHeight: 'none',
         overflowX: 'visible',
         overflowY: 'visible',
         overflow: 'visible',
       },
-    },
+    }),
     muiTableBodyRowProps: ({ row }) => ({
       hover: true,
       sx: {
@@ -428,6 +492,7 @@ export function CallsignsTable({
       columnFilters,
       rowSelection,
       isLoading: loading,
+      showSkeletons: loading,
       showProgressBars: !loading && (refreshing || loadingMore),
     },
   });
@@ -436,14 +501,18 @@ export function CallsignsTable({
     tableStateContext.onTableInitialized(table);
   }, [table, tableStateContext]);
 
+  const isFullScreen = table.getState().isFullScreen;
+
   return (
     <Box
+      ref={scrollContainerRef}
+      onScroll={showTableOverlay ? undefined : syncOverlayViewport}
       sx={{
         position: 'relative',
         height: '100%',
         minHeight: 0,
-        overflowY: 'auto',
-        overflowX: 'auto',
+        overflowY: showTableOverlay ? 'hidden' : 'auto',
+        overflowX: showTableOverlay ? 'hidden' : 'auto',
         border: '1px solid',
         borderColor: 'var(--bs-border-color)',
         backgroundColor: 'var(--bs-body-bg)',
@@ -467,14 +536,45 @@ export function CallsignsTable({
         },
       }}
     >
-      <Box sx={{ position: 'relative', minHeight: '100%' }}>
-        {showTableOverlay ? (
-          <SectionLoadingOverlay
-            open={showTableOverlay}
-            ariaLabel={loading ? 'Завантаження позивних' : loadingMore ? 'Завантаження позивних' : 'Оновлення позивних'}
-            spinnerMode="sticky"
-            sx={{ zIndex: 12 }}
-          />
+      {showTableOverlay ? (
+        <SectionLoadingOverlay
+          open={showTableOverlay}
+          ariaLabel={loading ? 'Завантаження позивних' : loadingMore ? 'Завантаження позивних' : 'Оновлення позивних'}
+          spinnerMode="center"
+          sx={{
+            inset: 'auto',
+            top: `${overlayViewport.top}px`,
+            left: `${overlayViewport.left}px`,
+            width: `${overlayViewport.width}px`,
+            height: `${overlayViewport.height}px`,
+            zIndex: 12,
+          }}
+        />
+      ) : null}
+
+      <Box sx={{ position: 'relative', minHeight: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
+        {isFullScreen ? (
+          <Tooltip title="Вийти з повноекранного режиму">
+            <Button
+              onClick={() => table.setIsFullScreen(false)}
+              aria-label="Вийти з повноекранного режиму"
+              variant="outlined"
+              startIcon={<FullscreenExitIcon />}
+              sx={{
+                position: 'fixed',
+                bottom: 16,
+                right: 16,
+                zIndex: 1401,
+                backgroundColor: 'var(--bs-body-bg)',
+                whiteSpace: 'nowrap',
+                '&:hover': {
+                  backgroundColor: 'var(--bs-body-bg)',
+                },
+              }}
+            >
+              Вийти з повноекранного
+            </Button>
+          </Tooltip>
         ) : null}
 
         <MaterialReactTable table={table} />

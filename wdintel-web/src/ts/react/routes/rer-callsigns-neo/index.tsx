@@ -11,7 +11,6 @@ import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 
 import { BulkDeleteConfirmDialog } from '../../components/BulkDeleteConfirmDialog';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
-import { TableToolbarControls } from '../../components/TableToolbarControls';
 import { InternalTableActions } from '../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions';
 import { TableStateProvider } from '../../components/mui-customized/table/table-state-provider';
 import { AddCallsignsDrawer } from './components/AddCallsignsDrawer';
@@ -32,11 +31,113 @@ function RerCallsignsNeoPageBody({ authUserRoles = [] }: { authUserRoles?: strin
   const shellPermissions = getExportPermissionFromRoles(authUserRoles);
   const controlsDisabled =
     page.loading || page.refreshing || page.loadingMore || page.addSubmitting || page.editSubmitting || page.deleteSubmitting;
-  const showExportButtons = page.permissions.canExport || (page.loading && shellPermissions.canExport);
+  const showExportButtons = shellPermissions.canExport || page.permissions.canExport;
+  const showExportPlaceholders = page.loading && !showExportButtons;
   const hasActiveFilters =
     page.filters.filterText.trim() !== '' ||
+    page.filters.filterCallsign.trim() !== '' ||
+    page.filters.filterPosition.trim() !== '' ||
+    page.filters.filterComment.trim() !== '' ||
+    page.filters.filterUnit.trim() !== '' ||
     page.filters.filterDeveloping !== 'OnlyNonDeveloping' ||
     !page.filters.isIgnoringDateFilter;
+  const sidebarAction = (
+    <Button
+      startIcon={page.sidebarOpen ? <ChevronLeftIcon /> : <ChevronRightIcon />}
+      onClick={() => page.setSidebarOpen((prev: boolean) => !prev)}
+      variant="outlined"
+      aria-pressed={page.sidebarOpen}
+      aria-label={page.sidebarOpen ? 'Сховати підрозділи' : 'Показати підрозділи'}
+      title={page.sidebarOpen ? 'Сховати підрозділи' : 'Показати підрозділи'}
+      sx={{
+        whiteSpace: 'nowrap',
+        display: { xs: 'none', lg: 'inline-flex' },
+      }}
+    >
+      {page.sidebarOpen ? 'Сховати підрозділи' : 'Показати підрозділи'}
+    </Button>
+  );
+  const exportActions = showExportButtons || showExportPlaceholders ? (
+    <Stack direction="row" spacing={1.5} alignItems="center" useFlexGap sx={{ flexWrap: 'wrap' }}>
+      <Button
+        startIcon={page.downloadInProgress === 'csv' ? <CircularProgress size={16} color="inherit" /> : <DownloadIcon />}
+        onClick={page.onDownloadCsv}
+        disabled={showExportPlaceholders || controlsDisabled || page.downloadInProgress !== null}
+        variant="outlined"
+        aria-label={page.downloadInProgress === 'csv' ? 'Завантаження CSV…' : 'Завантажити CSV'}
+        title={page.downloadInProgress === 'csv' ? 'Завантаження CSV…' : 'Завантажити CSV'}
+        sx={{ whiteSpace: 'nowrap' }}
+      >
+        <Box component="span" sx={{ display: { xs: 'none', md: 'inline' } }}>
+          {page.downloadInProgress === 'csv' ? 'Завантаження CSV…' : 'Завантажити CSV'}
+        </Box>
+        <Box component="span" sx={{ display: { xs: 'inline', md: 'none' } }}>
+          {page.downloadInProgress === 'csv' ? 'CSV…' : 'CSV'}
+        </Box>
+      </Button>
+      <Button
+        startIcon={page.downloadInProgress === 'xlsx' ? <CircularProgress size={16} color="inherit" /> : <DownloadIcon />}
+        onClick={page.onDownloadXlsx}
+        disabled={showExportPlaceholders || controlsDisabled || page.downloadInProgress !== null}
+        variant="outlined"
+        aria-label={page.downloadInProgress === 'xlsx' ? 'Завантаження XLSX…' : 'Завантажити XLSX'}
+        title={page.downloadInProgress === 'xlsx' ? 'Завантаження XLSX…' : 'Завантажити XLSX'}
+        sx={{ whiteSpace: 'nowrap' }}
+      >
+        <Box component="span" sx={{ display: { xs: 'none', md: 'inline' } }}>
+          {page.downloadInProgress === 'xlsx' ? 'Завантаження XLSX…' : 'Завантажити XLSX'}
+        </Box>
+        <Box component="span" sx={{ display: { xs: 'inline', md: 'none' } }}>
+          {page.downloadInProgress === 'xlsx' ? 'XLSX…' : 'XLSX'}
+        </Box>
+      </Button>
+    </Stack>
+  ) : null;
+  const mergedExportActions = showExportButtons || showExportPlaceholders ? (
+    <Stack direction="row" spacing={1.5} alignItems="center" useFlexGap sx={{ flexWrap: 'nowrap' }}>
+      <Button
+        startIcon={page.downloadInProgress === 'csv' ? <CircularProgress size={16} color="inherit" /> : <DownloadIcon />}
+        onClick={page.onDownloadCsv}
+        disabled={showExportPlaceholders || controlsDisabled || page.downloadInProgress !== null}
+        variant="outlined"
+        aria-label={page.downloadInProgress === 'csv' ? 'Завантаження CSV…' : 'Завантажити CSV'}
+        title={page.downloadInProgress === 'csv' ? 'Завантаження CSV…' : 'Завантажити CSV'}
+        sx={{ whiteSpace: 'nowrap' }}
+      >
+        <Box component="span" sx={{ display: { xs: 'none', md: 'inline' } }}>
+          {page.downloadInProgress === 'csv' ? 'Завантаження CSV…' : 'Завантажити CSV'}
+        </Box>
+        <Box component="span" sx={{ display: { xs: 'inline', md: 'none' } }}>
+          {page.downloadInProgress === 'csv' ? 'CSV…' : 'CSV'}
+        </Box>
+      </Button>
+      <Button
+        startIcon={page.downloadInProgress === 'xlsx' ? <CircularProgress size={16} color="inherit" /> : <DownloadIcon />}
+        onClick={page.onDownloadXlsx}
+        disabled={showExportPlaceholders || controlsDisabled || page.downloadInProgress !== null}
+        variant="outlined"
+        aria-label={page.downloadInProgress === 'xlsx' ? 'Завантаження XLSX…' : 'Завантажити XLSX'}
+        title={page.downloadInProgress === 'xlsx' ? 'Завантаження XLSX…' : 'Завантажити XLSX'}
+        sx={{ whiteSpace: 'nowrap' }}
+      >
+        <Box component="span" sx={{ display: { xs: 'none', md: 'inline' } }}>
+          {page.downloadInProgress === 'xlsx' ? 'Завантаження XLSX…' : 'Завантажити XLSX'}
+        </Box>
+        <Box component="span" sx={{ display: { xs: 'inline', md: 'none' } }}>
+          {page.downloadInProgress === 'xlsx' ? 'XLSX…' : 'XLSX'}
+        </Box>
+      </Button>
+    </Stack>
+  ) : null;
+  const whiteActions = (
+    <InternalTableActions
+      densityDisabled={page.loading}
+      columnsVisibilityDisabled={page.loading}
+      filtersHidden
+      fullScreenEnabled
+      fullScreenDisabled={page.loading}
+    />
+  );
 
   return (
     <Box className="w-full" sx={{ height: { xs: 'auto', lg: '100%' }, minHeight: 0, overflow: { xs: 'visible', lg: 'hidden' } }}>
@@ -87,59 +188,79 @@ function RerCallsignsNeoPageBody({ authUserRoles = [] }: { authUserRoles?: strin
             open={page.sidebarOpen}
             loading={page.refreshing || (page.loading && page.unitStatsView.length === 0)}
             onPickUnitFilter={page.onPickUnitFilter}
+            onToggleOpen={() => page.setSidebarOpen((prev: boolean) => !prev)}
             selectedUnitFilter={page.selectedSidebarUnitName ?? undefined}
           />
 
           <Stack spacing={2} useFlexGap sx={{ flex: 1, minWidth: 0, minHeight: { xs: 'auto', lg: 0 } }}>
-            <TableToolbarControls
-              filter={
+            <Stack
+              spacing={2}
+              useFlexGap
+              sx={{
+                display: { xs: 'none', lg: 'flex' },
+              }}
+            >
+              <Stack direction="row" spacing={2} alignItems="center" sx={{ minWidth: 0 }}>
                 <CallsignsFilters
                   filters={page.filters}
                   filtersDisabled={controlsDisabled}
                   onFiltersChange={page.onFiltersChange}
                 />
-              }
-              trailingActionsBeforeInternal={
-                <Stack direction="row" spacing={1.5} alignItems="center" useFlexGap>
-                  <Button
-                    startIcon={page.sidebarOpen ? <ChevronLeftIcon /> : <ChevronRightIcon />}
-                    onClick={() => page.setSidebarOpen((prev: boolean) => !prev)}
-                    variant="outlined"
-                    aria-pressed={page.sidebarOpen}
-                    sx={{ whiteSpace: 'nowrap' }}
-                  >
-                    {page.sidebarOpen ? 'Сховати підрозділи' : 'Показати підрозділи'}
-                  </Button>
-                  {showExportButtons ? (
-                    <>
-                      <Button
-                        startIcon={page.downloadInProgress === 'csv' ? <CircularProgress size={16} color="inherit" /> : <DownloadIcon />}
-                        onClick={page.onDownloadCsv}
-                        disabled={controlsDisabled || page.downloadInProgress !== null}
-                        variant="outlined"
-                      >
-                        {page.downloadInProgress === 'csv' ? 'Завантаження CSV…' : 'Завантажити CSV'}
-                      </Button>
-                      <Button
-                        startIcon={page.downloadInProgress === 'xlsx' ? <CircularProgress size={16} color="inherit" /> : <DownloadIcon />}
-                        onClick={page.onDownloadXlsx}
-                        disabled={controlsDisabled || page.downloadInProgress !== null}
-                        variant="outlined"
-                      >
-                        {page.downloadInProgress === 'xlsx' ? 'Завантаження XLSX…' : 'Завантажити XLSX'}
-                      </Button>
-                    </>
-                  ) : null}
-                </Stack>
-              }
-              trailingActions={
-                <InternalTableActions
-                  densityDisabled={page.loading}
-                  columnsVisibilityDisabled={page.loading}
-                  filtersHidden
-                />
-              }
-            />
+                <Box
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1.5,
+                    ml: 'auto',
+                    flex: '0 0 auto',
+                  }}
+                >
+                  <Stack direction="row" spacing={1.5} alignItems="center" useFlexGap sx={{ flexWrap: 'nowrap' }}>
+                    {sidebarAction}
+                    {mergedExportActions}
+                  </Stack>
+                  <Box sx={{ display: 'flex', alignItems: 'center' }}>{whiteActions}</Box>
+                </Box>
+              </Stack>
+            </Stack>
+            <Stack
+              spacing={2}
+              useFlexGap
+              sx={{
+                display: { xs: 'flex', lg: 'none' },
+              }}
+            >
+              <CallsignsFilters
+                filters={page.filters}
+                filtersDisabled={controlsDisabled}
+                onFiltersChange={page.onFiltersChange}
+              />
+              <Box
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 1.5,
+                  minWidth: 0,
+                  justifyContent: 'space-between',
+                }}
+              >
+                <Box sx={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
+                  {sidebarAction}
+                </Box>
+                <Box
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1.5,
+                    minWidth: 0,
+                    ml: 'auto',
+                  }}
+                >
+                  {exportActions}
+                  <Box sx={{ display: 'flex', alignItems: 'center' }}>{whiteActions}</Box>
+                </Box>
+              </Box>
+            </Stack>
             <Box sx={{ flex: 1, minHeight: { xs: 'auto', lg: 0 } }}>
               <CallsignsTable
                 canEdit={page.permissions.canEdit}
@@ -149,6 +270,12 @@ function RerCallsignsNeoPageBody({ authUserRoles = [] }: { authUserRoles?: strin
                 loadingMore={page.loadingMore}
                 showLoadMore={page.showLoadMore}
                 hasActiveFilters={hasActiveFilters}
+                textFilters={{
+                  filterCallsign: page.filters.filterCallsign,
+                  filterPosition: page.filters.filterPosition,
+                  filterComment: page.filters.filterComment,
+                  filterUnit: page.filters.filterUnit,
+                }}
                 inFlightDeleteId={page.deleteInFlightId}
                 bulkDeleteInFlight={page.bulkDeleteInFlight}
                 selectedCallsignIds={page.selectedCallsignIds}
@@ -156,6 +283,12 @@ function RerCallsignsNeoPageBody({ authUserRoles = [] }: { authUserRoles?: strin
                 statusFilter={page.filters.filterDeveloping}
                 onSort={page.onSort}
                 onStatusFilterChange={(filterDeveloping) => page.onFiltersChange((prev) => ({ ...prev, filterDeveloping }))}
+                onTextColumnFiltersChange={(nextTextFilters) =>
+                  page.onFiltersChange((prev) => ({
+                    ...prev,
+                    ...nextTextFilters,
+                  }))
+                }
                 onClearFilters={page.onClearFilters}
                 onSetSelectedCallsignIds={page.setSelectedCallsignIds}
                 onLoadMore={page.onLoadMore}

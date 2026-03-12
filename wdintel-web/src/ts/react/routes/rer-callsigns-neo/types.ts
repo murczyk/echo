@@ -19,6 +19,10 @@ export type CallsignsSortState = {
 
 export type CallsignsFilterState = {
   filterText: string;
+  filterCallsign: string;
+  filterPosition: string;
+  filterComment: string;
+  filterUnit: string;
   filterDeveloping: DevelopingFilter;
   isIgnoringDateFilter: boolean;
   fromDateTimeLocal: string;

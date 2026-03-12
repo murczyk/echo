@@ -39,6 +39,7 @@ import { MrtRowActionButton, MrtRowActions, mrtRowActionsColumnSize } from '../.
 import { PageErrorState } from '../../components/PageErrorState';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
 import { TableContentState } from '../../components/TableContentState';
+import { formatMrtCellTextValue } from '../../components/formatMrtCellTextValue';
 import { Info } from '../../components/info';
 import { Button } from '../../components/mui-customized/button';
 import {
@@ -391,7 +392,7 @@ function useMessengerColumns(): MRT_ColumnDef<EchoAccountF1>[] {
         accessorKey: 'systemServiceName',
         Cell: ({ cell }) => (
           <span className="text-sm">
-            {(cell.getValue<string>() || '').trim() || '—'}
+            {formatMrtCellTextValue(cell.getValue<string>())}
           </span>
         ),
         size: 160,
@@ -481,9 +482,9 @@ function useMessengerColumns(): MRT_ColumnDef<EchoAccountF1>[] {
       {
         header: 'Смуга відповідальності',
         accessorKey: 'aor',
-        accessorFn: (row) => row.areaOfResponsibility?.name || '—',
+        accessorFn: (row) => formatMrtCellTextValue(row.areaOfResponsibility?.name),
         Cell: ({ row }) => (
-          <span>{row.original.areaOfResponsibility?.name || '—'}</span>
+          <span>{formatMrtCellTextValue(row.original.areaOfResponsibility?.name)}</span>
         ),
         size: 160,
       },

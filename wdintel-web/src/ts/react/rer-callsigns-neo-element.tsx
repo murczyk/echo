@@ -34,6 +34,16 @@ function RerCallsignsNeoRoot({ authUserRoles }: { authUserRoles: string[] }) {
 class RerCallsignsNeoElement extends HTMLElement {
   private root: Root | null = null;
 
+  static get observedAttributes() {
+    return ['data-auth-user-roles'];
+  }
+
+  private renderRoot() {
+    if (!this.root) return;
+    const authUserRoles = getAuthUserRolesFromShell(this);
+    this.root.render(<RerCallsignsNeoRoot authUserRoles={authUserRoles} />);
+  }
+
   connectedCallback() {
     if (!this.root) {
       this.style.display = 'block';
@@ -42,8 +52,13 @@ class RerCallsignsNeoElement extends HTMLElement {
       this.root = createRoot(this);
     }
 
-    const authUserRoles = getAuthUserRolesFromShell(this);
-    this.root.render(<RerCallsignsNeoRoot authUserRoles={authUserRoles} />);
+    this.renderRoot();
+  }
+
+  attributeChangedCallback(name: string, oldValue: string | null, newValue: string | null) {
+    if (name === 'data-auth-user-roles' && oldValue !== newValue) {
+      this.renderRoot();
+    }
   }
 
   disconnectedCallback() {

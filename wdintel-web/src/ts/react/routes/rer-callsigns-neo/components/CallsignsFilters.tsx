@@ -1,8 +1,8 @@
 import {
-  FormControlLabel,
   Stack,
   Switch,
   TextField,
+  Typography,
 } from '@mui/material';
 
 import { GlobalFilterTextField } from '../../../components/mui-customized/table/components/table-top-toolbar/components/global-filter-text-field';
@@ -32,20 +32,42 @@ export function CallsignsFilters({
 
   const dateControls = (
     <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} alignItems={{ md: 'center' }} useFlexGap>
-      <FormControlLabel
-        control={
-          <Switch
-            checked={!filters.isIgnoringDateFilter}
-            onChange={(event) => onFiltersChange((prev) => ({ ...prev, isIgnoringDateFilter: !event.target.checked }))}
-            disabled={filtersDisabled}
-          />
-        }
-        label="Фільтр за датою"
-        sx={{
-          ml: 0,
-          mr: 0,
-        }}
-      />
+      <Stack
+        direction="row"
+        spacing={1}
+        alignItems="center"
+        sx={{ width: 'fit-content', pr: 1 }}
+      >
+        <Switch
+          checked={!filters.isIgnoringDateFilter}
+          onChange={(event) => onFiltersChange((prev) => ({ ...prev, isIgnoringDateFilter: !event.target.checked }))}
+          disabled={filtersDisabled}
+          inputProps={{ 'aria-label': 'Фільтр за датою' }}
+        />
+        <Typography
+          component="button"
+          type="button"
+          onClick={() =>
+            onFiltersChange((prev) => ({
+              ...prev,
+              isIgnoringDateFilter: !prev.isIgnoringDateFilter,
+            }))
+          }
+          disabled={filtersDisabled}
+          sx={{
+            whiteSpace: 'nowrap',
+            background: 'none',
+            border: 0,
+            p: 0,
+            m: 0,
+            color: 'inherit',
+            font: 'inherit',
+            cursor: filtersDisabled ? 'default' : 'pointer',
+          }}
+        >
+          Фільтр за датою
+        </Typography>
+      </Stack>
       {!filters.isIgnoringDateFilter ? (
         <>
           <TextField
@@ -72,7 +94,7 @@ export function CallsignsFilters({
   );
 
   return (
-    <Stack direction={{ xs: 'column', xl: 'row' }} spacing={1.5} alignItems={{ xl: 'center' }} useFlexGap sx={{ flex: '1 1 auto', minWidth: 0 }}>
+    <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} alignItems={{ md: 'center' }} useFlexGap sx={{ flex: '1 1 auto', minWidth: 0 }}>
       {globalFilterField}
       {dateControls}
     </Stack>

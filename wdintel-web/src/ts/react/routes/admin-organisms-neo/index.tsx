@@ -11,6 +11,7 @@ import { MrtRowActionButton, MrtRowActions, mrtRowActionsColumnSize } from '../.
 import { PageErrorState } from '../../components/PageErrorState';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
 import { TableContentState } from '../../components/TableContentState';
+import { formatMrtCellTextValue } from '../../components/formatMrtCellTextValue';
 import { Button } from '../../components/mui-customized/button';
 import {
   CUSTOM_CELL_STYLES,
@@ -169,10 +170,10 @@ function useOrganismColumns(lookup: OrganismLookup, computedGroupsStatus: Loadin
         {
           header: 'Батьківський',
           id: 'parent',
-          accessorFn: (row) => (row.parentId ? lookup.parentById.get(row.parentId) ?? '—' : '—'),
+          accessorFn: (row) => formatMrtCellTextValue(row.parentId ? lookup.parentById.get(row.parentId) : null),
           Cell: ({ row }) => {
             const parentName = row.original.parentId ? lookup.parentById.get(row.original.parentId) : null;
-            return <span>{parentName || '—'}</span>;
+            return <span>{formatMrtCellTextValue(parentName)}</span>;
           },
           size: 200,
         },

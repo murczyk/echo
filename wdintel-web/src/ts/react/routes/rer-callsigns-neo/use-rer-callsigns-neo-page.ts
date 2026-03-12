@@ -55,15 +55,14 @@ function readInitialCallsignsFiltersFromUrl(): CallsignsFilterState {
   const params = new URLSearchParams(window.location.search);
   const developing = params.get('developing');
   const sortDateEnabled = params.get('date_filter') === '1';
-  const legacyFilterText =
-    params.get('callsign') ??
-    params.get('position') ??
-    params.get('comment') ??
-    params.get('unit');
 
   return {
     ...defaults,
-    filterText: params.get('filter') ?? legacyFilterText ?? defaults.filterText,
+    filterText: params.get('filter') ?? defaults.filterText,
+    filterCallsign: params.get('callsign') ?? defaults.filterCallsign,
+    filterPosition: params.get('position') ?? defaults.filterPosition,
+    filterComment: params.get('comment') ?? defaults.filterComment,
+    filterUnit: params.get('unit') ?? defaults.filterUnit,
     filterDeveloping:
       developing === 'OnlyDeveloping' || developing === 'OnlyNonDeveloping' || developing === 'All'
         ? developing
@@ -115,7 +114,6 @@ function syncCallsignsStateToUrl(
   filters: CallsignsFilterState,
   sort: CallsignsSortState,
   sidebarOpen: boolean,
-  selectedSidebarUnitName: string | null,
 ) {
   updateUrlSearchParams((params) => {
     const setOrDelete = (key: string, value: string | null | undefined) => {
@@ -127,13 +125,10 @@ function syncCallsignsStateToUrl(
     };
 
     setOrDelete('filter', filters.filterText.trim() || null);
-    params.delete('callsign');
-    params.delete('position');
-    params.delete('comment');
-    setOrDelete(
-      'unit',
-      selectedSidebarUnitName && selectedSidebarUnitName === filters.filterText.trim() ? selectedSidebarUnitName : null,
-    );
+    setOrDelete('callsign', filters.filterCallsign.trim() || null);
+    setOrDelete('position', filters.filterPosition.trim() || null);
+    setOrDelete('comment', filters.filterComment.trim() || null);
+    setOrDelete('unit', filters.filterUnit.trim() || null);
 
     if (filters.filterDeveloping !== 'OnlyNonDeveloping') {
       params.set('developing', filters.filterDeveloping);
@@ -451,8 +446,8 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
   }, [filters, sort]);
 
   React.useEffect(() => {
-    syncCallsignsStateToUrl(filters, sort, sidebarOpen, selectedSidebarUnitName);
-  }, [filters, sort, sidebarOpen, selectedSidebarUnitName]);
+    syncCallsignsStateToUrl(filters, sort, sidebarOpen);
+  }, [filters, sort, sidebarOpen]);
 
   React.useEffect(() => {
     setSelectedCallsignIds((prev) => prev.filter((id) => callsigns.some((callsign) => callsign.id === id)));
@@ -461,7 +456,7 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
   function onFiltersChange(updater: (prev: CallsignsFilterState) => CallsignsFilterState) {
     setFilters((prev) => {
       const next = updater(prev);
-      if (selectedSidebarUnitName && next.filterText.trim() !== selectedSidebarUnitName) {
+      if (selectedSidebarUnitName && next.filterUnit.trim() !== selectedSidebarUnitName) {
         setSelectedSidebarUnitName(null);
       }
       return next;
@@ -833,7 +828,7 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
 
   function onPickUnitFilter(unitName: string) {
     setSelectedSidebarUnitName(unitName);
-    setFilters((prev) => ({ ...prev, filterText: unitName }));
+    setFilters((prev) => ({ ...prev, filterUnit: unitName }));
   }
 
   return {
