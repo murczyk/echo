@@ -226,7 +226,7 @@ class AnalysisMap extends HTMLElement {
         setTimeout(() => {
           this.render();
           this._initializeMap();
-          //this._replacePointsOnMap();
+          this._replacePointsOnMap(this._points);
           this._initialized = true;
         }, 0)
       }
@@ -467,7 +467,7 @@ class AnalysisMap extends HTMLElement {
 
      this._pelengsLayerGroup = L.layerGroup();
      this._applyPelengVisibility();
-     this._map.on('zoomend', () => this._replacePointsOnMap(this._points));
+     // Get-inbox-map points are always visible; no need to re-apply on zoom.
 
     // Set search input from URL; run search once when palitras are ready (palitras-load-state handler)
     this._applySearchQueryFromUrl();
@@ -641,11 +641,8 @@ class AnalysisMap extends HTMLElement {
       this._pelengsLayerGroup?.removeLayer(this._markersGroup);
       this._map?.removeLayer(this._markersGroup)
     }
-    if (!this._shouldRenderPointsAtCurrentZoom()) {
-      this._fitBoundsOnInitialLowZoom(points);
-      this._markersGroup = null;
-      return;
-    }
+    // Get-inbox-map points are always visible (no zoom restriction).
+    this._fitBoundsOnInitialLowZoom(points);
     const { bounds, markersGroup } = this._addPointsMarkersGroup(points);
     this._markersGroup = markersGroup;
 
@@ -653,14 +650,11 @@ class AnalysisMap extends HTMLElement {
     this._applyPelengVisibility();
 
     if (bounds.isValid() && !this._boundedAlready && this._map) {
-      // Only auto-fit on initial coarse zoom to avoid jump when user zooms in
-      // and points become visible on penultimate/max zoom levels.
       if (this._map.getZoom() <= 10) {
         this._map.fitBounds(bounds);
       }
       this._boundedAlready = true;
     }
-
   }
 
   private _fitBoundsOnInitialLowZoom(points: MapPointDetailed[]): void {
@@ -675,15 +669,6 @@ class AnalysisMap extends HTMLElement {
 
     this._map.fitBounds(bounds);
     this._boundedAlready = true;
-  }
-
-  private _shouldRenderPointsAtCurrentZoom(): boolean {
-    if (!this._map) {
-      return false;
-    }
-    const maxZoom = this._map.getMaxZoom();
-    const minVisibleZoom = Number.isFinite(maxZoom) ? maxZoom - 1 : 16;
-    return this._map.getZoom() >= minVisibleZoom;
   }
 
   private _addPointsMarkersGroup(points: MapPointDetailed[]) {
@@ -712,7 +697,17 @@ class AnalysisMap extends HTMLElement {
         fillOpacity: 1,
         radius: 4,
         weight: 1
-      })
+      });
+
+      const freqLabel = (point as MapPointDetailed & { freq?: string | null }).freq ?? '';
+      if (freqLabel) {
+        circle.bindTooltip(freqLabel, {
+          permanent: true,
+          direction: 'top',
+          offset: [0, -8],
+          className: 'palitra-point-label'
+        });
+      }
 
       circle.on('click', () => {
         this._clickedLatLng = circle.getLatLng();
