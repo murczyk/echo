@@ -96,13 +96,9 @@ type Msg
     | SavedFilterSelect Int
     | SearchInput String
     | SelMetadataCcMsg (Select.Msg String)
-    | MetadataCcExactChanged Bool
     | SelMetadataSenderMsg (Select.Msg String)
-    | MetadataSenderExactChanged Bool
     | SelMetadataReceiverMsg (Select.Msg String)
-    | MetadataReceiverExactChanged Bool
     | SelMetadataHashMsg (Select.Msg String)
-    | MetadataHashExactChanged Bool
     | WithoutMetadataChanged Bool
     | SearchDo
     | SearchInputKeyDown Int

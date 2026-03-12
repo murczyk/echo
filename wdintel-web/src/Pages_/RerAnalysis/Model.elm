@@ -84,13 +84,9 @@ type alias Model =
     , savedFilterMenuOpen : Maybe Int
     , searchInput : String
     , metadataCc : List String
-    , metadataCcExact : Bool
     , metadataSender : List String
-    , metadataSenderExact : Bool
     , metadataReceiver : List String
-    , metadataReceiverExact : Bool
     , metadataHash : List String
-    , metadataHashExact : Bool
     , withoutMetadata : Bool
     , nolimitShown : Bool
     , menuTab : MenuTab

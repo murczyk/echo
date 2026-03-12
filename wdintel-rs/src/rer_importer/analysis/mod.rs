@@ -1108,13 +1108,9 @@ fn metadata_receiver_match_any_expr(
 pub fn filter_selected_metadata<Q>(
     q: Q,
     metadata_cc: &Option<Vec<String>>,
-    metadata_cc_exact: &Option<bool>,
     metadata_sender: &Option<Vec<String>>,
-    metadata_sender_exact: &Option<bool>,
     metadata_receiver: &Option<Vec<String>>,
-    metadata_receiver_exact: &Option<bool>,
     metadata_hash: &Option<Vec<String>>,
-    metadata_hash_exact: &Option<bool>,
     without_metadata: &Option<bool>,
 ) -> Result<Q, AppError>
 where
@@ -1155,7 +1151,7 @@ where
                 sigint_inbox_item_metadata::Column::ColorCode,
             ),
             metadata_cc,
-            metadata_cc_exact.unwrap_or(false),
+            true,
         ) {
             subquery.and_where(expr);
         }
@@ -1165,7 +1161,7 @@ where
         if let Some(expr) = metadata_sender_match_any_expr(
             metadata_alias.clone(),
             metadata_sender,
-            metadata_sender_exact.unwrap_or(false),
+            true,
         ) {
             subquery.and_where(expr);
         }
@@ -1175,7 +1171,7 @@ where
         if let Some(expr) = metadata_receiver_match_any_expr(
             metadata_alias.clone(),
             metadata_receiver,
-            metadata_receiver_exact.unwrap_or(false),
+            true,
         ) {
             subquery.and_where(expr);
         }
@@ -1188,7 +1184,7 @@ where
                 sigint_inbox_item_metadata::Column::HashId,
             ),
             metadata_hash,
-            metadata_hash_exact.unwrap_or(false),
+            true,
         ) {
             subquery.and_where(expr);
         }
@@ -1213,13 +1209,9 @@ where
     filter_selected_metadata(
         q,
         &req.metadata_cc,
-        &req.metadata_cc_exact,
         &req.metadata_sender,
-        &req.metadata_sender_exact,
         &req.metadata_receiver,
-        &req.metadata_receiver_exact,
         &req.metadata_hash,
-        &req.metadata_hash_exact,
         &req.without_metadata,
     )
 }
@@ -1234,13 +1226,9 @@ where
     filter_selected_metadata(
         q,
         &req.metadata_cc,
-        &req.metadata_cc_exact,
         &req.metadata_sender,
-        &req.metadata_sender_exact,
         &req.metadata_receiver,
-        &req.metadata_receiver_exact,
         &req.metadata_hash,
-        &req.metadata_hash_exact,
         &req.without_metadata,
     )
 }
@@ -1255,13 +1243,9 @@ where
     filter_selected_metadata(
         q,
         &req.metadata_cc,
-        &req.metadata_cc_exact,
         &req.metadata_sender,
-        &req.metadata_sender_exact,
         &req.metadata_receiver,
-        &req.metadata_receiver_exact,
         &req.metadata_hash,
-        &req.metadata_hash_exact,
         &req.without_metadata,
     )
 }

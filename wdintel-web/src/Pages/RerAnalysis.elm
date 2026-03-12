@@ -154,13 +154,9 @@ init route _ =
             , savedFilterMenuOpen = Nothing
             , searchInput = ""
             , metadataCc = []
-            , metadataCcExact = False
             , metadataSender = []
-            , metadataSenderExact = False
             , metadataReceiver = []
-            , metadataReceiverExact = False
             , metadataHash = []
-            , metadataHashExact = False
             , withoutMetadata = False
             , nolimitShown = False
             , menuTab = TabFilters
@@ -337,13 +333,9 @@ getInboxReq model =
     , newestFirst = Just model.newestFirst
     , search = emptySToNothing model.searchInput
     , metadataCc = emptyToNothing model.metadataCc
-    , metadataCcExact = Just model.metadataCcExact
     , metadataSender = emptyToNothing model.metadataSender
-    , metadataSenderExact = Just model.metadataSenderExact
     , metadataReceiver = emptyToNothing model.metadataReceiver
-    , metadataReceiverExact = Just model.metadataReceiverExact
     , metadataHash = emptyToNothing model.metadataHash
-    , metadataHashExact = Just model.metadataHashExact
     , withoutMetadata = Just model.withoutMetadata
     , highlightCallsigns = Nothing
     , highlightKeywords = Nothing
@@ -413,13 +405,9 @@ cmdLoadCallsignGraph model { dtFromPosix, dtToPosix } =
             , nolimit = Just model.callsignGraphNolimit
             , search = Just model.searchInput
             , metadataCc = emptyToNothing model.metadataCc
-            , metadataCcExact = Just model.metadataCcExact
             , metadataSender = emptyToNothing model.metadataSender
-            , metadataSenderExact = Just model.metadataSenderExact
             , metadataReceiver = emptyToNothing model.metadataReceiver
-            , metadataReceiverExact = Just model.metadataReceiverExact
             , metadataHash = emptyToNothing model.metadataHash
-            , metadataHashExact = Just model.metadataHashExact
             , withoutMetadata = Just model.withoutMetadata
             , selectedTags = emptyToNothing model.tagsSelected
             , filterTagsOption = Just model.filterTagsOption
@@ -2628,22 +2616,6 @@ update user shared route msg model =
             ( { model | searchInput = str }
             , E.none
             )
-
-        MetadataCcExactChanged checked ->
-            loadCoreStatsAndPushUrl <|
-                invalidateOptionFilters { model | metadataCcExact = checked }
-
-        MetadataSenderExactChanged checked ->
-            loadCoreStatsAndPushUrl <|
-                invalidateOptionFilters { model | metadataSenderExact = checked }
-
-        MetadataReceiverExactChanged checked ->
-            loadCoreStatsAndPushUrl <|
-                invalidateOptionFilters { model | metadataReceiverExact = checked }
-
-        MetadataHashExactChanged checked ->
-            loadCoreStatsAndPushUrl <|
-                invalidateOptionFilters { model | metadataHashExact = checked }
 
         WithoutMetadataChanged checked ->
             loadCoreStatsAndPushUrl <|

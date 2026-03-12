@@ -292,7 +292,7 @@ view isDark user model =
                         _ ->
                             ""
 
-                metadataField labelText selectedItems state menuItems selectMsg exactValue onExact =
+                metadataField labelText selectedItems state menuItems selectMsg =
                     let
                         isDisabled =
                             model.withoutMetadata
@@ -309,41 +309,28 @@ view isDark user model =
                     in
                     div [ class "mb-3" ]
                         [ div [ class "mb-1 text-xs font-medium text-[var(--color-text)] uppercase tracking-wide" ] [ text labelText ]
-                        , div [ class "flex flex-col gap-2 lg:flex-row lg:items-center" ]
-                            [ div [ class "flex-1" ]
-                                [ Html.map selectMsg
-                                    (Html.Styled.toUnstyled <|
-                                        Utils.Select.renderSelectVirtual
-                                            selectedMenuItems
-                                            state
-                                            menuItems
-                                            "всі"
-                                            { loading = RD.isLoading model.metadataStats
-                                            , disabled = isDisabled
-                                            , isDark = isDark
-                                            }
-                                    )
-                                ]
-                            , label [ class "ml-2 flex items-center gap-2 text-sm text-[var(--color-text)] whitespace-nowrap" ]
-                                [ input
-                                    [ type_ "checkbox"
-                                    , checked exactValue
-                                    , onCheck onExact
-                                    , disabled isDisabled
-                                    , class "accent-toggle-selected"
-                                    ]
-                                    []
-                                , text "точний збіг"
-                                ]
+                        , div [ class "flex-1" ]
+                            [ Html.map selectMsg
+                                (Html.Styled.toUnstyled <|
+                                    Utils.Select.renderSelectVirtual
+                                        selectedMenuItems
+                                        state
+                                        menuItems
+                                        "всі"
+                                        { loading = RD.isLoading model.metadataStats
+                                        , disabled = isDisabled
+                                        , isDark = isDark
+                                        }
+                                )
                             ]
                         ]
 
                 tabFiltersMetadata =
                     div [ class "py-2 px-3" ]
-                        [ metadataField "cc" model.metadataCc model.selMetadataCcState model.selMetadataCcMenu SelMetadataCcMsg model.metadataCcExact MetadataCcExactChanged
-                        , metadataField "відправник" model.metadataSender model.selMetadataSenderState model.selMetadataSenderMenu SelMetadataSenderMsg model.metadataSenderExact MetadataSenderExactChanged
-                        , metadataField "отримувач" model.metadataReceiver model.selMetadataReceiverState model.selMetadataReceiverMenu SelMetadataReceiverMsg model.metadataReceiverExact MetadataReceiverExactChanged
-                        , metadataField "хеш" model.metadataHash model.selMetadataHashState model.selMetadataHashMenu SelMetadataHashMsg model.metadataHashExact MetadataHashExactChanged
+                        [ metadataField "cc" model.metadataCc model.selMetadataCcState model.selMetadataCcMenu SelMetadataCcMsg
+                        , metadataField "відправник" model.metadataSender model.selMetadataSenderState model.selMetadataSenderMenu SelMetadataSenderMsg
+                        , metadataField "отримувач" model.metadataReceiver model.selMetadataReceiverState model.selMetadataReceiverMenu SelMetadataReceiverMsg
+                        , metadataField "хеш" model.metadataHash model.selMetadataHashState model.selMetadataHashMenu SelMetadataHashMsg
                         , div [ class "pt-1" ]
                             [ label [ class "ml-2 flex items-center gap-2 text-sm text-[var(--color-text)]" ]
                                 [ input
