@@ -64,6 +64,8 @@ pub enum Relation {
         on_delete = "NoAction"
     )]
     Nominatimres,
+    #[sea_orm(has_many = "super::sigint_inbox_item_metadata::Entity")]
+    SigintInboxItemMetadata,
     #[sea_orm(has_many = "super::sigint_inbox_item_network::Entity")]
     SigintInboxItemNetwork,
     #[sea_orm(has_many = "super::sigint_inbox_item_point_token::Entity")]
@@ -106,6 +108,12 @@ pub enum Relation {
 impl Related<super::nominatimres::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Nominatimres.def()
+    }
+}
+
+impl Related<super::sigint_inbox_item_metadata::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintInboxItemMetadata.def()
     }
 }
 

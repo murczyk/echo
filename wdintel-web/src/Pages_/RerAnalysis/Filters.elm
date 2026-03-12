@@ -90,6 +90,27 @@ filterMenuBlockCountOutOf config content =
         ]
 
 
+filterMenuBlock : { unfold : Bool, toggleMsg : msg, label : String } -> Html msg -> Html msg
+filterMenuBlock config content =
+    div [ class "bg-[var(--color-card)] border border-[var(--color-border)] rounded mb-2 shadow-sm hover:shadow transition-shadow duration-150" ]
+        [ div
+            [ class "flex items-center px-3 py-2 cursor-pointer hover:bg-[var(--color-bg-muted)] transition-colors duration-150"
+            , onClick config.toggleMsg
+            ]
+            [ div [ class "flex items-center gap-2 flex-grow" ]
+                [ span [ classList [ ( "font-medium text-[var(--color-text)] text-sm", config.unfold ), ( "font-normal text-[var(--color-text)] text-sm", not config.unfold ) ] ] [ text config.label ]
+                ]
+            , i
+                [ class "bi text-xs transition-transform duration-150 ml-2 text-[var(--color-text)]"
+                , classList [ ( "bi-chevron-up", config.unfold ) ]
+                , classList [ ( "bi-chevron-down", not config.unfold ) ]
+                ]
+                []
+            ]
+        , HtmlX.viewIf config.unfold content
+        ]
+
+
 view : Bool -> B.User -> Model -> Html Msg
 view isDark user model =
     let
@@ -270,6 +291,80 @@ view isDark user model =
 
                         _ ->
                             ""
+
+                metadataField labelText selectedItems state menuItems selectMsg =
+                    let
+                        isDisabled =
+                            model.withoutMetadata
+
+                        selectedMenuItems =
+                            List.map
+                                (\item ->
+                                    Select.basicMenuItem
+                                        { item = item
+                                        , label = item
+                                        }
+                                )
+                                selectedItems
+                    in
+                    div [ class "mb-3" ]
+                        [ div [ class "mb-1 text-xs font-medium text-[var(--color-text)] uppercase tracking-wide" ] [ text labelText ]
+                        , div [ class "flex-1" ]
+                            [ Html.map selectMsg
+                                (Html.Styled.toUnstyled <|
+                                    Utils.Select.renderSelectVirtual
+                                        selectedMenuItems
+                                        state
+                                        menuItems
+                                        "всі"
+                                        { loading = RD.isLoading model.metadataStats
+                                        , disabled = isDisabled
+                                        , isDark = isDark
+                                        }
+                                )
+                            ]
+                        ]
+
+                tabFiltersMetadata =
+                    let
+                        metadataToggleCheckbox extraClasses labelText isChecked onToggle isDisabled =
+                            label
+                                [ class ("ml-2 flex items-center gap-2 text-sm text-[var(--color-text)] " ++ extraClasses)
+                                , classList
+                                    [ ( "opacity-50 cursor-not-allowed", isDisabled )
+                                    ]
+                                ]
+                                [ input
+                                    [ type_ "checkbox"
+                                    , checked isChecked
+                                    , onCheck onToggle
+                                    , disabled isDisabled
+                                    , class "accent-toggle-selected"
+                                    ]
+                                    []
+                                , text (" " ++ labelText)
+                                ]
+                    in
+                    div [ class "py-2 px-3" ]
+                        [ metadataField "cc" model.metadataCc model.selMetadataCcState model.selMetadataCcMenu SelMetadataCcMsg
+                        , metadataField "відправник" model.metadataSender model.selMetadataSenderState model.selMetadataSenderMenu SelMetadataSenderMsg
+                        , metadataField "отримувач" model.metadataReceiver model.selMetadataReceiverState model.selMetadataReceiverMenu SelMetadataReceiverMsg
+                        , metadataField "хеш" model.metadataHash model.selMetadataHashState model.selMetadataHashMenu SelMetadataHashMsg
+                        , div [ class "pt-1" ]
+                            [ metadataToggleCheckbox
+                                ""
+                                "тільки без метаданих"
+                                model.withoutMetadata
+                                WithoutMetadataChanged
+                                model.onlyWithMetadata
+                            , metadataToggleCheckbox
+                                "mt-2"
+                                "тільки з метаданими"
+                                model.onlyWithMetadata
+                                OnlyWithMetadataChanged
+                                model.withoutMetadata
+                            ]
+                        ]
             in
             filterMenuBlockCountOutOf
                 { unfold = model.unfoldAorsFilter
@@ -352,6 +447,12 @@ view isDark user model =
                         , withGreenCircle = False
                         }
                         tabFiltersNetworks
+                   , filterMenuBlock
+                        { unfold = model.unfoldMetadataFilter
+                        , toggleMsg = ToggleUnfoldMetadataFilter
+                        , label = "метадані"
+                        }
+                        tabFiltersMetadata
                    , filterMenuBlockCountOutOf
                         { unfold = model.unfoldTagsFilter
                         , toggleMsg = ToggleUnfoldTagsFilter

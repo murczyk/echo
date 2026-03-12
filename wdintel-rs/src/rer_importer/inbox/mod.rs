@@ -22,6 +22,7 @@ use sea_orm::*;
 use std::collections::BTreeSet;
 
 pub(crate) mod bl;
+pub(crate) mod metadata;
 pub mod query;
 
 #[post("/api/rer-importer/get-inbox-map")]
@@ -236,14 +237,23 @@ async fn messages_by_id_bl(
         )
         .group_by(sigint_inbox_item_tag::Column::SigintInboxItemId)
         .into_query();
+    let query_metadata = build_inbox_metadata_lateral_query();
 
     let q_tags = "q_tags";
+    let q_metadata = "q_metadata";
 
     let (sql, values) = messages
         .into_query()
         .join_lateral(JoinType::LeftJoin, query_tags, q_tags, Expr::value(true))
+        .join_lateral(
+            JoinType::LeftJoin,
+            query_metadata,
+            q_metadata,
+            Expr::value(true),
+        )
         .column((q_tags, "tags"))
         .column((q_tags, "inbox_tags"))
+        .column((q_metadata, "metadata"))
         .build(PostgresQueryBuilder);
 
     let messages = InboxMessageDesc::find_by_statement(

@@ -25,6 +25,12 @@ emptyQueryState =
     , orImportant = False
     , orWithCoords = False
     , search = ""
+    , metadataCc = []
+    , metadataSender = []
+    , metadataReceiver = []
+    , metadataHash = []
+    , onlyWithMetadata = False
+    , withoutMetadata = False
     , tags = []
     , unitsExactMatchOnly = True
     , adjacentFreqsRange = 0
@@ -32,89 +38,149 @@ emptyQueryState =
     }
 
 
+normalizeQueryStateMetadata : B.RerAnalysisQueryState -> B.RerAnalysisQueryState
+normalizeQueryStateMetadata queryState =
+    if queryState.withoutMetadata then
+        { queryState
+            | metadataCc = []
+            , metadataSender = []
+            , metadataReceiver = []
+            , metadataHash = []
+            , onlyWithMetadata = False
+        }
+
+    else if queryState.onlyWithMetadata then
+        { queryState | withoutMetadata = False }
+
+    else
+        queryState
+
+
+normalizeAnalysisStatsReqMetadata : B.AnalysisStatsReq -> B.AnalysisStatsReq
+normalizeAnalysisStatsReqMetadata req =
+    if req.withoutMetadata == Just True then
+        { req
+            | metadataCc = Nothing
+            , metadataSender = Nothing
+            , metadataReceiver = Nothing
+            , metadataHash = Nothing
+            , onlyWithMetadata = Just False
+        }
+
+    else if req.onlyWithMetadata == Just True then
+        { req | withoutMetadata = Just False }
+
+    else
+        req
+
+
 modelQueryState : Model -> B.RerAnalysisQueryState
 modelQueryState model =
-    { dateFromStr = model.from.dateStr
-    , timeFromStr = model.from.timeStr
-    , dateToStr = model.to.dateStr
-    , timeToStr = model.to.timeStr
-    , groupsSelected = model.groupsSelected
-    , sendersSelected = model.sendersSelected
-    , freqsSelected = model.freqsSelected
-    , callsignsSelected = model.callsignsSelected
-    , unitsSelected = model.unitsSelected
-    , locationsSelected = model.locationsSelected
-    , includePelengLocations = model.includePelengLocations
-    , orWithExtendedForm = model.orWithExtendedForm
-    , orBookmarked = model.orBookmarked
-    , orImportant = model.orImportant
-    , orWithCoords = model.orWithCoords
-    , search = model.searchInput
-    , tags = model.tagsSelected
-    , unitsExactMatchOnly = model.unitsExactMatchOnly
-    , adjacentFreqsRange = model.adjacentFreqsRangeSelect.selected
-    , withoutModelTags = model.withoutModelTags
-    }
+    normalizeQueryStateMetadata
+        { dateFromStr = model.from.dateStr
+        , timeFromStr = model.from.timeStr
+        , dateToStr = model.to.dateStr
+        , timeToStr = model.to.timeStr
+        , groupsSelected = model.groupsSelected
+        , sendersSelected = model.sendersSelected
+        , freqsSelected = model.freqsSelected
+        , callsignsSelected = model.callsignsSelected
+        , unitsSelected = model.unitsSelected
+        , locationsSelected = model.locationsSelected
+        , includePelengLocations = model.includePelengLocations
+        , orWithExtendedForm = model.orWithExtendedForm
+        , orBookmarked = model.orBookmarked
+        , orImportant = model.orImportant
+        , orWithCoords = model.orWithCoords
+        , search = model.searchInput
+        , metadataCc = model.metadataCc
+        , metadataSender = model.metadataSender
+        , metadataReceiver = model.metadataReceiver
+        , metadataHash = model.metadataHash
+        , onlyWithMetadata = model.onlyWithMetadata
+        , withoutMetadata = model.withoutMetadata
+        , tags = model.tagsSelected
+        , unitsExactMatchOnly = model.unitsExactMatchOnly
+        , adjacentFreqsRange = model.adjacentFreqsRangeSelect.selected
+        , withoutModelTags = model.withoutModelTags
+        }
 
 
 updModelFromQueryState : Model -> B.RerAnalysisQueryState -> Model
 updModelFromQueryState model ms =
+    let
+        queryState =
+            normalizeQueryStateMetadata ms
+    in
     { model
-        | from = Shared.Components.DateTime.initFromDt { dateStr = ms.dateFromStr, timeStr = ms.timeFromStr }
-        , to = Shared.Components.DateTime.initFromDt { dateStr = ms.dateToStr, timeStr = ms.timeToStr }
-        , groupsSelected = ms.groupsSelected
-        , sendersSelected = ms.sendersSelected
-        , freqsSelected = ms.freqsSelected
-        , callsignsSelected = ms.callsignsSelected
-        , unitsSelected = ms.unitsSelected
-        , locationsSelected = ms.locationsSelected
-        , includePelengLocations = ms.includePelengLocations
-        , tagsSelected = ms.tags
-        , orWithExtendedForm = ms.orWithExtendedForm
-        , orBookmarked = ms.orBookmarked
-        , searchInput = ms.search
-        , unitsExactMatchOnly = ms.unitsExactMatchOnly
-        , withoutModelTags = ms.withoutModelTags
+        | from = Shared.Components.DateTime.initFromDt { dateStr = queryState.dateFromStr, timeStr = queryState.timeFromStr }
+        , to = Shared.Components.DateTime.initFromDt { dateStr = queryState.dateToStr, timeStr = queryState.timeToStr }
+        , groupsSelected = queryState.groupsSelected
+        , sendersSelected = queryState.sendersSelected
+        , freqsSelected = queryState.freqsSelected
+        , callsignsSelected = queryState.callsignsSelected
+        , unitsSelected = queryState.unitsSelected
+        , locationsSelected = queryState.locationsSelected
+        , includePelengLocations = queryState.includePelengLocations
+        , tagsSelected = queryState.tags
+        , orWithExtendedForm = queryState.orWithExtendedForm
+        , orBookmarked = queryState.orBookmarked
+        , searchInput = queryState.search
+        , metadataCc = queryState.metadataCc
+        , metadataSender = queryState.metadataSender
+        , metadataReceiver = queryState.metadataReceiver
+        , metadataHash = queryState.metadataHash
+        , onlyWithMetadata = queryState.onlyWithMetadata
+        , withoutMetadata = queryState.withoutMetadata
+        , unitsExactMatchOnly = queryState.unitsExactMatchOnly
+        , withoutModelTags = queryState.withoutModelTags
         , adjacentFreqsRangeSelect =
             let
                 current =
                     model.adjacentFreqsRangeSelect
             in
-            { current | selected = ms.adjacentFreqsRange }
+            { current | selected = queryState.adjacentFreqsRange }
     }
 
 
 analysisStatsParams : Posix -> Posix -> Model -> B.AnalysisStatsReq
 analysisStatsParams dtFromPosix dtToPosix model =
-    { sinceDateInclusiveMs = Time.posixToMillis dtFromPosix
-    , tillDateNoninclusiveMs = Time.posixToMillis dtToPosix
-    , selectedGroups = emptyToNothing model.groupsSelected
-    , selectedSenders = emptyToNothing model.sendersSelected
-    , selectedFreqs = emptyToNothing (model.freqsSelected ++ model.filterSelectedAdjacentFreqs)
-    , selectedCallsigns = emptyToNothing model.callsignsSelected
-    , selectedUnits = emptyToNothing model.unitsSelected
-    , selectedLocations = emptyToNothing model.locationsSelected
-    , selectedPosts = emptyToNothing model.postsSelected
-    , selectedAors =
-        model.aorsSelected
-            |> List.filterMap String.toInt
-            |> emptyToNothing
-    , includePelengLocations = Just model.includePelengLocations
-    , orWithExtendedForm = Just model.orWithExtendedForm
-    , orBookmarked = Just model.orBookmarked
-    , orImportant = Just model.orImportant
-    , orWithCoords = Just model.orWithCoords
-    , search = Just model.searchInput
-    , selectedTags = emptyToNothing model.tagsSelected
-    , selectedNetworks = 
-        model.networksSelected
-            |> List.filterMap String.toInt
-            |> emptyToNothing
-    , filterTagsOption = Nothing
-    , unitsExactMatchOnly = Just model.unitsExactMatchOnly
-    , withoutModelTags = Just model.withoutModelTags
-    , reportTagsOnlyThisUnit = Just model.reportTagsOnlyThisUnit
-    }
+    normalizeAnalysisStatsReqMetadata
+        { sinceDateInclusiveMs = Time.posixToMillis dtFromPosix
+        , tillDateNoninclusiveMs = Time.posixToMillis dtToPosix
+        , selectedGroups = emptyToNothing model.groupsSelected
+        , selectedSenders = emptyToNothing model.sendersSelected
+        , selectedFreqs = emptyToNothing (model.freqsSelected ++ model.filterSelectedAdjacentFreqs)
+        , selectedCallsigns = emptyToNothing model.callsignsSelected
+        , selectedUnits = emptyToNothing model.unitsSelected
+        , selectedLocations = emptyToNothing model.locationsSelected
+        , selectedPosts = emptyToNothing model.postsSelected
+        , selectedAors =
+            model.aorsSelected
+                |> List.filterMap String.toInt
+                |> emptyToNothing
+        , includePelengLocations = Just model.includePelengLocations
+        , orWithExtendedForm = Just model.orWithExtendedForm
+        , orBookmarked = Just model.orBookmarked
+        , orImportant = Just model.orImportant
+        , orWithCoords = Just model.orWithCoords
+        , search = Just model.searchInput
+        , metadataCc = emptyToNothing model.metadataCc
+        , metadataSender = emptyToNothing model.metadataSender
+        , metadataReceiver = emptyToNothing model.metadataReceiver
+        , metadataHash = emptyToNothing model.metadataHash
+        , onlyWithMetadata = Just model.onlyWithMetadata
+        , withoutMetadata = Just model.withoutMetadata
+        , selectedTags = emptyToNothing model.tagsSelected
+        , selectedNetworks =
+            model.networksSelected
+                |> List.filterMap String.toInt
+                |> emptyToNothing
+        , filterTagsOption = Nothing
+        , unitsExactMatchOnly = Just model.unitsExactMatchOnly
+        , withoutModelTags = Just model.withoutModelTags
+        , reportTagsOnlyThisUnit = Just model.reportTagsOnlyThisUnit
+        }
 
 
 analysisStatsDefaultParams : Posix -> Posix -> B.AnalysisStatsReq
@@ -135,6 +201,12 @@ analysisStatsDefaultParams dtFromPosix dtToPosix =
     , orImportant = Nothing
     , orWithCoords = Nothing
     , search = Nothing
+    , metadataCc = Nothing
+    , metadataSender = Nothing
+    , metadataReceiver = Nothing
+    , metadataHash = Nothing
+    , onlyWithMetadata = Nothing
+    , withoutMetadata = Nothing
     , selectedTags = Nothing
     , selectedNetworks = Nothing
     , filterTagsOption = Nothing
@@ -146,19 +218,29 @@ analysisStatsDefaultParams dtFromPosix dtToPosix =
 
 updModelFromRerAnalysisStatsReq : Model -> B.AnalysisStatsReq -> Model
 updModelFromRerAnalysisStatsReq model req =
+    let
+        normalizedReq =
+            normalizeAnalysisStatsReqMetadata req
+    in
     { model
-        | groupsSelected = req.selectedGroups |> def []
-        , sendersSelected = req.selectedSenders |> def []
-        , freqsSelected = req.selectedFreqs |> def []
-        , callsignsSelected = req.selectedCallsigns |> def []
-        , unitsSelected = req.selectedUnits |> def []
-        , orWithExtendedForm = req.orWithExtendedForm |> def False
-        , orBookmarked = req.orBookmarked |> def False
-        , withoutModelTags = req.withoutModelTags |> def False
-        , includePelengLocations = req.includePelengLocations |> def True
-        , locationsSelected = req.selectedLocations |> def []
-        , postsSelected = req.selectedPosts |> def []
-        , reportTagsOnlyThisUnit = req.reportTagsOnlyThisUnit |> def False
+        | groupsSelected = normalizedReq.selectedGroups |> def []
+        , sendersSelected = normalizedReq.selectedSenders |> def []
+        , freqsSelected = normalizedReq.selectedFreqs |> def []
+        , callsignsSelected = normalizedReq.selectedCallsigns |> def []
+        , unitsSelected = normalizedReq.selectedUnits |> def []
+        , orWithExtendedForm = normalizedReq.orWithExtendedForm |> def False
+        , orBookmarked = normalizedReq.orBookmarked |> def False
+        , withoutModelTags = normalizedReq.withoutModelTags |> def False
+        , includePelengLocations = normalizedReq.includePelengLocations |> def True
+        , metadataCc = normalizedReq.metadataCc |> def []
+        , metadataSender = normalizedReq.metadataSender |> def []
+        , metadataReceiver = normalizedReq.metadataReceiver |> def []
+        , metadataHash = normalizedReq.metadataHash |> def []
+        , onlyWithMetadata = normalizedReq.onlyWithMetadata |> def False
+        , withoutMetadata = normalizedReq.withoutMetadata |> def False
+        , locationsSelected = normalizedReq.selectedLocations |> def []
+        , postsSelected = normalizedReq.selectedPosts |> def []
+        , reportTagsOnlyThisUnit = normalizedReq.reportTagsOnlyThisUnit |> def False
     }
 
 

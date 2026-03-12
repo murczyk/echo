@@ -88,6 +88,7 @@ pub async fn rer_analysis_download_kmz(
         filter_selected_aors(items, &req.selected_aors).context(h!())?;
     let items = filter_selected_networks(items, &req.selected_networks)
         .context(h!())?;
+    let items = filter_selected_metadata_for_analysis_stats(items, &req)?;
     let items = filter_search(items, &req.search)?;
     let items = items.group_by(Expr::cust("1, 2, 3"));
     // println!(
