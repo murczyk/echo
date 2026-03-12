@@ -383,18 +383,49 @@ pub async fn refresh_models_worker_nofail(
         }
         let _loop_guard = worker_watch::loop_guard("refresh_models_worker");
 
-        if let Err(e) = do_refresh_models(&s3_config, &model_dir).await {
-            error!("failed to refresh models: {:#}", e);
+        match do_refresh_models(&s3_config, &model_dir).await {
+            Ok(updated) => {
+                if updated {
+                    if let Err(e) = crate::oneoff::restart_process("wdintel-py")
+                    {
+                        error!("failed to restart wdintel-py: {:#}", e);
+                    };
+                }
+            }
+            Err(e) => error!("failed to refresh models: {:#}", e),
         }
 
         tokio::time::sleep(std::time::Duration::from_mins(30)).await;
     }
 }
 
+pub async fn oneoff_refresh_models(mode: Mode) -> Result<(), AppError> {
+    let config = read_config(mode).context(h!())?;
+    let models_config = config
+        .ai_models_config
+        .expect("ai_models_config is missing");
+    let s3_config =
+        S3Config::with_prefix(&models_config.s3_config, models_config.prefix);
+
+    let model_dir = models_config
+        .directory
+        .or_else(|| std::env::var("WD_FASTTEXT_MODELS").ok())
+        .unwrap_or_else(|| "/usr/share/wdintel-py/fasttext-models".to_string());
+
+    let changed = do_refresh_models(&s3_config, &model_dir).await?;
+    if changed {
+        println!("downloaded new models");
+    } else {
+        println!("no changes to models detected");
+    }
+
+    Ok(())
+}
+
 async fn do_refresh_models(
     s3_config: &storage::S3Config,
     model_dir: &str,
-) -> Result<(), anyhow::Error> {
+) -> Result<bool, anyhow::Error> {
     let destination_path = PathBuf::from(model_dir);
     std::fs::create_dir_all(&destination_path)?;
     let destination = destination_path.to_str().unwrap();
@@ -444,7 +475,6 @@ async fn do_refresh_models(
             info!("downloading model file '{}'...", remote_name);
 
             let mut writer: Option<opendal::Writer> = None;
-
             let mut stream = reader.into_bytes_stream(..).await.c(h!())?;
 
             while let Some(chunk) = stream.next().await {
@@ -480,13 +510,14 @@ async fn do_refresh_models(
             if let Some(w) = &mut writer {
                 w.close().await.c(h!())?;
                 updated = true;
+                if let Some(modified) = item.metadata().last_modified() {
+                    let local_path = destination_path.join(remote_name);
+                    let file = std::fs::File::open(&local_path)?;
+                    file.set_modified(modified.into())?;
+                }
             }
         }
     }
 
-    if updated {
-        crate::oneoff::restart_process("wdintel-py").c(h!())?;
-    }
-
-    Ok(())
+    Ok(updated)
 }

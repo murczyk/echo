@@ -642,6 +642,7 @@ enum Cmd {
     OneoffBackfillPalitraPointLexemes,
     OneoffReprocessInboxPosts(OneoffReprocessInboxPostsPs),
     OneoffRestartEcho(OneoffRestartEchoPs),
+    OneoffRefreshAiModels,
 }
 
 #[derive(clap::Parser, Debug)]
@@ -1119,6 +1120,7 @@ async fn async_main(
         },
         Cmd::OneoffHighlightInboxMessagePalitra(ps) => {
             palitra::oneoff::oneoff_highlight_inbox_message_palitra_points(mode, &ps).await
-        }
+        },
+        Cmd::OneoffRefreshAiModels => tags::worker::oneoff_refresh_models(mode).await,
     }
 }
