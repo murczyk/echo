@@ -9,7 +9,7 @@ import type {
   User,
 } from '../../../../Bindings';
 
-export type SortColumn = 'callsign' | 'createdAt' | 'unit';
+export type SortColumn = 'callsign' | 'position' | 'comment' | 'unit' | 'sourceName' | 'radioFreq' | 'createdAt';
 export type SortDirection = 'asc' | 'desc';
 
 export type CallsignsSortState = {
@@ -99,7 +99,6 @@ export type CallsignsPageState = {
   lookups: BootstrapLookups;
   callsigns: Callsign[];
   showLoadMore: boolean;
-  canUseCursorPagination: boolean;
   loading: boolean;
   loadingMore: boolean;
   refreshing: boolean;

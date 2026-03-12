@@ -148,7 +148,6 @@ function RerCallsignsNeoPageBody({ authUserRoles = [] }: { authUserRoles?: strin
                 refreshing={page.refreshing}
                 loadingMore={page.loadingMore}
                 showLoadMore={page.showLoadMore}
-                canUseCursorPagination={page.canUseCursorPagination}
                 hasActiveFilters={hasActiveFilters}
                 inFlightDeleteId={page.deleteInFlightId}
                 bulkDeleteInFlight={page.bulkDeleteInFlight}

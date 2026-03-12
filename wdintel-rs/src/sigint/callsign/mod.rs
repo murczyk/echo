@@ -51,10 +51,15 @@ pub async fn list_callsigns(
         .c(h!())?;
 
     let limit = *req.limit.get_or_insert(1000);
-    let res = list_callsigns_impl(&env.dbx, &req.0).await.c(h!())?;
+    req.limit = Some(limit + 1);
+    let mut res = list_callsigns_impl(&env.dbx, &req.0).await.c(h!())?;
+    let show_load_more = res.len() > limit as usize;
+    if show_load_more {
+        res.truncate(limit as usize);
+    }
 
     Ok(Json(ListCallsignsRsp {
-        show_load_more: res.len() as u64 == limit,
+        show_load_more,
         callsigns: res,
     }))
 }
@@ -265,34 +270,15 @@ async fn list_callsigns_impl(
     dbx: &DatabaseConnection,
     req: &ListCallsignsReq,
 ) -> Result<Vec<Callsign>, AppError> {
+    let sort_by = effective_callsigns_sort(req);
     let mut callsigns = sigint_callsign::Entity::find()
         .find_also_related(sigint_unit::Entity)
         .filter(sigint_callsign::Column::Deleted.eq(false));
-    // just one sort_by supported for now
     if let Some(after_id) = &req.after_id {
-        let after_callsign = find_callsign(dbx, *after_id).await.c(h!())?;
-        let after_unit =
-            crate::sigint::unit::find_unit(dbx, after_callsign.unit_id)
-                .await
-                .c(h!())?;
-        callsigns = callsigns.filter(
-            Expr::tuple([
-                sigint_unit::Column::Army.into_column_ref().into(),
-                sigint_unit::Column::Division.into_column_ref().into(),
-                sigint_unit::Column::Regiment.into_column_ref().into(),
-                sigint_unit::Column::Battalion.into_column_ref().into(),
-                sigint_unit::Column::Company.into_column_ref().into(),
-                sigint_callsign::Column::Callsign.into_column_ref().into(),
-            ])
-            .gt(SimpleExpr::Tuple(vec![
-                after_unit.army.into(),
-                after_unit.division.into(),
-                after_unit.regiment.into(),
-                after_unit.battalion.into(),
-                after_unit.company.into(),
-                after_callsign.callsign.into(),
-            ])),
-        );
+        let after_cursor =
+            load_callsign_seek_cursor(dbx, *after_id).await.c(h!())?;
+        callsigns =
+            apply_callsigns_after_cursor(callsigns, &sort_by, &after_cursor);
     }
     if let Some(filter_text) = &req.filter_text {
         if !filter_text.is_empty() {
@@ -375,45 +361,7 @@ async fn list_callsigns_impl(
         );
     }
 
-    // Apply sorting based on request
-    callsigns =
-        if let Some(sort_by) = &req.sort_by {
-            sort_by
-                .iter()
-                .fold(callsigns, |callsigns, sort_by| match sort_by {
-                    ListCallsignsSortBy::CallsignAsc => callsigns
-                        .order_by_asc(sigint_callsign::Column::Callsign),
-                    ListCallsignsSortBy::CallsignDesc => callsigns
-                        .order_by_desc(sigint_callsign::Column::Callsign),
-                    ListCallsignsSortBy::CallsignCreatedAtAsc => callsigns
-                        .order_by_asc(sigint_callsign::Column::CreatedAt),
-                    ListCallsignsSortBy::CallsignCreatedAtDesc => callsigns
-                        .order_by_desc(sigint_callsign::Column::CreatedAt),
-                    ListCallsignsSortBy::CallsignUnitAsc => callsigns
-                        .order_by_asc(sigint_unit::Column::Army)
-                        .order_by_asc(sigint_unit::Column::Division)
-                        .order_by_asc(sigint_unit::Column::Regiment)
-                        .order_by_asc(sigint_unit::Column::Battalion)
-                        .order_by_asc(sigint_unit::Column::Company)
-                        .order_by_asc(sigint_callsign::Column::Callsign),
-                    ListCallsignsSortBy::CallsignUnitDesc => callsigns
-                        .order_by_desc(sigint_unit::Column::Army)
-                        .order_by_desc(sigint_unit::Column::Division)
-                        .order_by_desc(sigint_unit::Column::Regiment)
-                        .order_by_desc(sigint_unit::Column::Battalion)
-                        .order_by_desc(sigint_unit::Column::Company)
-                        .order_by_desc(sigint_callsign::Column::Callsign),
-                })
-        } else {
-            // Default sorting (original behavior)
-            callsigns
-                .order_by_asc(sigint_unit::Column::Army)
-                .order_by_asc(sigint_unit::Column::Division)
-                .order_by_asc(sigint_unit::Column::Regiment)
-                .order_by_asc(sigint_unit::Column::Battalion)
-                .order_by_asc(sigint_unit::Column::Company)
-                .order_by_asc(sigint_callsign::Column::Callsign)
-        };
+    callsigns = apply_callsigns_sort(callsigns, &sort_by);
     // println!(
     //     "> callsigns sql: {}",
     //     callsigns.build(DbBackend::Postgres).to_string()
@@ -450,6 +398,323 @@ async fn list_callsigns_impl(
     }
 
     Ok(res)
+}
+
+#[derive(Clone)]
+struct CallsignSeekCursor {
+    callsign: sigint_callsign::Model,
+    unit: sigint_unit::Model,
+    sort_created_at: chrono::NaiveDateTime,
+    sort_position: String,
+    sort_comment: String,
+    sort_source_name: String,
+    sort_radio_freq: String,
+}
+
+fn effective_callsigns_sort(req: &ListCallsignsReq) -> ListCallsignsSortBy {
+    req.sort_by
+        .as_ref()
+        .and_then(|sort_by| sort_by.first())
+        .cloned()
+        .unwrap_or(ListCallsignsSortBy::CallsignUnitAsc)
+}
+
+fn callsigns_sort_created_at_expr() -> SimpleExpr {
+    Expr::cust(
+        "COALESCE((SELECT MAX(sigint_callsign_changelog.created_at) \
+         FROM sigint_callsign_changelog \
+         WHERE sigint_callsign_changelog.sigint_callsign_id = sigint_callsign.id), \
+         sigint_callsign.created_at)",
+    )
+    .into()
+}
+
+fn callsigns_sort_source_name_expr() -> SimpleExpr {
+    Expr::cust(
+        "COALESCE((SELECT source.name FROM source WHERE source.id = sigint_callsign.source_id), '—')",
+    )
+    .into()
+}
+
+fn callsigns_sort_radio_freq_expr() -> SimpleExpr {
+    Expr::cust("COALESCE(NULLIF(sigint_callsign.radio_freq, ''), '—')").into()
+}
+
+fn callsigns_id_expr() -> SimpleExpr {
+    Expr::col((sigint_callsign::Entity, sigint_callsign::Column::Id)).into()
+}
+
+async fn load_callsign_seek_cursor(
+    dbx: &DatabaseConnection,
+    callsign_id: i64,
+) -> Result<CallsignSeekCursor, AppError> {
+    let callsign = find_callsign(dbx, callsign_id).await.c(h!())?;
+    let unit = crate::sigint::unit::find_unit(dbx, callsign.unit_id)
+        .await
+        .c(h!())?;
+    let latest_changelog = sigint_callsign_changelog::Entity::find()
+        .filter(
+            sigint_callsign_changelog::Column::SigintCallsignId.eq(callsign_id),
+        )
+        .order_by_desc(sigint_callsign_changelog::Column::CreatedAt)
+        .one(dbx)
+        .await
+        .c(h!())?;
+    let source_name = if let Some(source_id) = callsign.source_id {
+        source::Entity::find_by_id(source_id as i64)
+            .one(dbx)
+            .await
+            .c(h!())?
+            .map(|source| source.name)
+            .unwrap_or_else(|| "—".to_string())
+    } else {
+        "—".to_string()
+    };
+
+    Ok(CallsignSeekCursor {
+        sort_created_at: latest_changelog
+            .map(|changelog| changelog.created_at)
+            .unwrap_or(callsign.created_at),
+        sort_position: callsign.position.clone(),
+        sort_comment: callsign.comment.clone(),
+        sort_source_name: source_name,
+        sort_radio_freq: if callsign.radio_freq.trim().is_empty() {
+            "—".to_string()
+        } else {
+            callsign.radio_freq.clone()
+        },
+        callsign,
+        unit,
+    })
+}
+
+fn apply_callsigns_after_cursor(
+    callsigns: SelectTwo<sigint_callsign::Entity, sigint_unit::Entity>,
+    sort_by: &ListCallsignsSortBy,
+    cursor: &CallsignSeekCursor,
+) -> SelectTwo<sigint_callsign::Entity, sigint_unit::Entity> {
+    match sort_by {
+        ListCallsignsSortBy::CallsignAsc => callsigns.filter(
+            Expr::tuple([
+                sigint_callsign::Column::Callsign.into_column_ref().into(),
+                callsigns_id_expr(),
+            ])
+            .gt(SimpleExpr::Tuple(vec![
+                cursor.callsign.callsign.clone().into(),
+                cursor.callsign.id.into(),
+            ])),
+        ),
+        ListCallsignsSortBy::CallsignDesc => callsigns.filter(
+            Expr::tuple([
+                sigint_callsign::Column::Callsign.into_column_ref().into(),
+                callsigns_id_expr(),
+            ])
+            .lt(SimpleExpr::Tuple(vec![
+                cursor.callsign.callsign.clone().into(),
+                cursor.callsign.id.into(),
+            ])),
+        ),
+        ListCallsignsSortBy::CallsignPositionAsc => callsigns.filter(
+            Expr::tuple([
+                sigint_callsign::Column::Position.into_column_ref().into(),
+                callsigns_id_expr(),
+            ])
+            .gt(SimpleExpr::Tuple(vec![
+                cursor.sort_position.clone().into(),
+                cursor.callsign.id.into(),
+            ])),
+        ),
+        ListCallsignsSortBy::CallsignPositionDesc => callsigns.filter(
+            Expr::tuple([
+                sigint_callsign::Column::Position.into_column_ref().into(),
+                callsigns_id_expr(),
+            ])
+            .lt(SimpleExpr::Tuple(vec![
+                cursor.sort_position.clone().into(),
+                cursor.callsign.id.into(),
+            ])),
+        ),
+        ListCallsignsSortBy::CallsignCommentAsc => callsigns.filter(
+            Expr::tuple([
+                sigint_callsign::Column::Comment.into_column_ref().into(),
+                callsigns_id_expr(),
+            ])
+            .gt(SimpleExpr::Tuple(vec![
+                cursor.sort_comment.clone().into(),
+                cursor.callsign.id.into(),
+            ])),
+        ),
+        ListCallsignsSortBy::CallsignCommentDesc => callsigns.filter(
+            Expr::tuple([
+                sigint_callsign::Column::Comment.into_column_ref().into(),
+                callsigns_id_expr(),
+            ])
+            .lt(SimpleExpr::Tuple(vec![
+                cursor.sort_comment.clone().into(),
+                cursor.callsign.id.into(),
+            ])),
+        ),
+        ListCallsignsSortBy::CallsignSourceAsc => callsigns.filter(
+            Expr::tuple([
+                callsigns_sort_source_name_expr(),
+                callsigns_id_expr(),
+            ])
+            .gt(SimpleExpr::Tuple(vec![
+                cursor.sort_source_name.clone().into(),
+                cursor.callsign.id.into(),
+            ])),
+        ),
+        ListCallsignsSortBy::CallsignSourceDesc => callsigns.filter(
+            Expr::tuple([
+                callsigns_sort_source_name_expr(),
+                callsigns_id_expr(),
+            ])
+            .lt(SimpleExpr::Tuple(vec![
+                cursor.sort_source_name.clone().into(),
+                cursor.callsign.id.into(),
+            ])),
+        ),
+        ListCallsignsSortBy::CallsignRadioFreqAsc => callsigns.filter(
+            Expr::tuple([
+                callsigns_sort_radio_freq_expr(),
+                callsigns_id_expr(),
+            ])
+            .gt(SimpleExpr::Tuple(vec![
+                cursor.sort_radio_freq.clone().into(),
+                cursor.callsign.id.into(),
+            ])),
+        ),
+        ListCallsignsSortBy::CallsignRadioFreqDesc => callsigns.filter(
+            Expr::tuple([
+                callsigns_sort_radio_freq_expr(),
+                callsigns_id_expr(),
+            ])
+            .lt(SimpleExpr::Tuple(vec![
+                cursor.sort_radio_freq.clone().into(),
+                cursor.callsign.id.into(),
+            ])),
+        ),
+        ListCallsignsSortBy::CallsignCreatedAtAsc => callsigns.filter(
+            Expr::tuple([
+                callsigns_sort_created_at_expr(),
+                callsigns_id_expr(),
+            ])
+            .gt(SimpleExpr::Tuple(vec![
+                cursor.sort_created_at.into(),
+                cursor.callsign.id.into(),
+            ])),
+        ),
+        ListCallsignsSortBy::CallsignCreatedAtDesc => callsigns.filter(
+            Expr::tuple([
+                callsigns_sort_created_at_expr(),
+                callsigns_id_expr(),
+            ])
+            .lt(SimpleExpr::Tuple(vec![
+                cursor.sort_created_at.into(),
+                cursor.callsign.id.into(),
+            ])),
+        ),
+        ListCallsignsSortBy::CallsignUnitAsc => callsigns.filter(
+            Expr::tuple([
+                sigint_unit::Column::Army.into_column_ref().into(),
+                sigint_unit::Column::Division.into_column_ref().into(),
+                sigint_unit::Column::Regiment.into_column_ref().into(),
+                sigint_unit::Column::Battalion.into_column_ref().into(),
+                sigint_unit::Column::Company.into_column_ref().into(),
+                sigint_callsign::Column::Callsign.into_column_ref().into(),
+                callsigns_id_expr(),
+            ])
+            .gt(SimpleExpr::Tuple(vec![
+                cursor.unit.army.clone().into(),
+                cursor.unit.division.clone().into(),
+                cursor.unit.regiment.clone().into(),
+                cursor.unit.battalion.clone().into(),
+                cursor.unit.company.clone().into(),
+                cursor.callsign.callsign.clone().into(),
+                cursor.callsign.id.into(),
+            ])),
+        ),
+        ListCallsignsSortBy::CallsignUnitDesc => callsigns.filter(
+            Expr::tuple([
+                sigint_unit::Column::Army.into_column_ref().into(),
+                sigint_unit::Column::Division.into_column_ref().into(),
+                sigint_unit::Column::Regiment.into_column_ref().into(),
+                sigint_unit::Column::Battalion.into_column_ref().into(),
+                sigint_unit::Column::Company.into_column_ref().into(),
+                sigint_callsign::Column::Callsign.into_column_ref().into(),
+                callsigns_id_expr(),
+            ])
+            .lt(SimpleExpr::Tuple(vec![
+                cursor.unit.army.clone().into(),
+                cursor.unit.division.clone().into(),
+                cursor.unit.regiment.clone().into(),
+                cursor.unit.battalion.clone().into(),
+                cursor.unit.company.clone().into(),
+                cursor.callsign.callsign.clone().into(),
+                cursor.callsign.id.into(),
+            ])),
+        ),
+    }
+}
+
+fn apply_callsigns_sort(
+    callsigns: SelectTwo<sigint_callsign::Entity, sigint_unit::Entity>,
+    sort_by: &ListCallsignsSortBy,
+) -> SelectTwo<sigint_callsign::Entity, sigint_unit::Entity> {
+    match sort_by {
+        ListCallsignsSortBy::CallsignAsc => callsigns
+            .order_by_asc(sigint_callsign::Column::Callsign)
+            .order_by_asc(sigint_callsign::Column::Id),
+        ListCallsignsSortBy::CallsignDesc => callsigns
+            .order_by_desc(sigint_callsign::Column::Callsign)
+            .order_by_desc(sigint_callsign::Column::Id),
+        ListCallsignsSortBy::CallsignPositionAsc => callsigns
+            .order_by_asc(sigint_callsign::Column::Position)
+            .order_by_asc(sigint_callsign::Column::Id),
+        ListCallsignsSortBy::CallsignPositionDesc => callsigns
+            .order_by_desc(sigint_callsign::Column::Position)
+            .order_by_desc(sigint_callsign::Column::Id),
+        ListCallsignsSortBy::CallsignCommentAsc => callsigns
+            .order_by_asc(sigint_callsign::Column::Comment)
+            .order_by_asc(sigint_callsign::Column::Id),
+        ListCallsignsSortBy::CallsignCommentDesc => callsigns
+            .order_by_desc(sigint_callsign::Column::Comment)
+            .order_by_desc(sigint_callsign::Column::Id),
+        ListCallsignsSortBy::CallsignSourceAsc => callsigns
+            .order_by_asc(callsigns_sort_source_name_expr())
+            .order_by_asc(sigint_callsign::Column::Id),
+        ListCallsignsSortBy::CallsignSourceDesc => callsigns
+            .order_by_desc(callsigns_sort_source_name_expr())
+            .order_by_desc(sigint_callsign::Column::Id),
+        ListCallsignsSortBy::CallsignRadioFreqAsc => callsigns
+            .order_by_asc(callsigns_sort_radio_freq_expr())
+            .order_by_asc(sigint_callsign::Column::Id),
+        ListCallsignsSortBy::CallsignRadioFreqDesc => callsigns
+            .order_by_desc(callsigns_sort_radio_freq_expr())
+            .order_by_desc(sigint_callsign::Column::Id),
+        ListCallsignsSortBy::CallsignCreatedAtAsc => callsigns
+            .order_by_asc(callsigns_sort_created_at_expr())
+            .order_by_asc(sigint_callsign::Column::Id),
+        ListCallsignsSortBy::CallsignCreatedAtDesc => callsigns
+            .order_by_desc(callsigns_sort_created_at_expr())
+            .order_by_desc(sigint_callsign::Column::Id),
+        ListCallsignsSortBy::CallsignUnitAsc => callsigns
+            .order_by_asc(sigint_unit::Column::Army)
+            .order_by_asc(sigint_unit::Column::Division)
+            .order_by_asc(sigint_unit::Column::Regiment)
+            .order_by_asc(sigint_unit::Column::Battalion)
+            .order_by_asc(sigint_unit::Column::Company)
+            .order_by_asc(sigint_callsign::Column::Callsign)
+            .order_by_asc(sigint_callsign::Column::Id),
+        ListCallsignsSortBy::CallsignUnitDesc => callsigns
+            .order_by_desc(sigint_unit::Column::Army)
+            .order_by_desc(sigint_unit::Column::Division)
+            .order_by_desc(sigint_unit::Column::Regiment)
+            .order_by_desc(sigint_unit::Column::Battalion)
+            .order_by_desc(sigint_unit::Column::Company)
+            .order_by_desc(sigint_callsign::Column::Callsign)
+            .order_by_desc(sigint_callsign::Column::Id),
+    }
 }
 
 #[post("/api/sigint/callsigns-with-units-from-inbox")]
