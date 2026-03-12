@@ -306,7 +306,7 @@ pub fn parse_metadata(message: &str) -> Vec<InboxMetadata> {
         .map(WorkingMetadata::into_public)
         .filter(InboxMetadata::has_some_value)
         .collect();
-    reduce_metadata_list(result)
+    reduce_metadata_list(expand_multi_source_ids(result))
 }
 
 fn parse_color_code(line: &str) -> Option<String> {
@@ -326,7 +326,7 @@ fn parse_mid(line: &str) -> Option<String> {
     }
     lazy_static! {
         static ref RE_SOURCE_ID: Regex =
-            Regex::new(r#"SOURCE\s+ID\s*:\s*(\d+)"#).unwrap();
+            Regex::new(r#"SOURCE\s+ID\s*:\s*([\d,\s]+)"#).unwrap();
     }
     parse_numeric_value_from_standalone_regexes(line, &[&RE_ID]).or_else(|| {
         parse_numeric_value_from_regexes(line, &[&RE_CG, &RE_SOURCE_ID])
@@ -631,6 +631,44 @@ fn push_metadata_if_nonempty(
     }
 }
 
+fn expand_multi_source_ids(items: Vec<InboxMetadata>) -> Vec<InboxMetadata> {
+    let mut result = vec![];
+    for item in items {
+        let Some(ids) = split_multi_source_id(item.id.as_deref()) else {
+            result.push(item);
+            continue;
+        };
+
+        for id in ids {
+            let mut item = item.clone();
+            item.id = Some(id);
+            result.push(item);
+        }
+    }
+    result
+}
+
+fn split_multi_source_id(id: Option<&str>) -> Option<Vec<String>> {
+    let id = id?;
+    if !id.contains(',') {
+        return None;
+    }
+
+    let ids = id
+        .split(',')
+        .filter_map(normalize_metadata_value)
+        .collect::<Vec<_>>();
+    if ids.len() <= 1
+        || ids
+            .iter()
+            .any(|id| !id.chars().all(|ch| ch.is_ascii_digit()))
+    {
+        return None;
+    }
+
+    Some(ids)
+}
+
 fn reduce_metadata_list(mut items: Vec<InboxMetadata>) -> Vec<InboxMetadata> {
     loop {
         if items.len() <= 1 {
@@ -810,6 +848,32 @@ ID(CG)⬅️:50📣",
     }
 
     #[test]
+    fn parse_metadata_handles_multiple_source_ids_variant() {
+        let metadata = parse_metadata("CC:23 SOURCE ID: 1, 33; GROUP ID: 6");
+        assert_eq!(
+            metadata,
+            vec![
+                InboxMetadata {
+                    cc: Some("23".to_string()),
+                    cg: Some("6".to_string()),
+                    cg_name: None,
+                    id: Some("1".to_string()),
+                    id_name: None,
+                    hash_id: None,
+                },
+                InboxMetadata {
+                    cc: Some("23".to_string()),
+                    cg: Some("6".to_string()),
+                    cg_name: None,
+                    id: Some("33".to_string()),
+                    id_name: None,
+                    hash_id: None,
+                }
+            ]
+        );
+    }
+
+    #[test]
     fn parse_metadata_line_handles_source_id_variant() {
         let metadata = parse_metadata_line(" SOURCE ID: 0 ");
         assert_eq!(
@@ -824,6 +888,37 @@ ID(CG)⬅️:50📣",
                 id_name: None,
                 hash_id: None,
             }]
+        );
+    }
+
+    #[test]
+    fn parse_metadata_line_handles_multiple_source_ids_variant() {
+        let metadata =
+            parse_metadata_line(" CC:23 SOURCE ID: 1, 33; GROUP ID: 6 ");
+        assert_eq!(
+            metadata,
+            vec![
+                WorkingMetadata {
+                    cc: Some("23".to_string()),
+                    receiver: None,
+                    receiver_name: None,
+                    receiver_group: None,
+                    receiver_group_name: None,
+                    id: Some("1, 33".to_string()),
+                    id_name: None,
+                    hash_id: None,
+                },
+                WorkingMetadata {
+                    cc: None,
+                    receiver: None,
+                    receiver_name: None,
+                    receiver_group: Some("6".to_string()),
+                    receiver_group_name: None,
+                    id: None,
+                    id_name: None,
+                    hash_id: None,
+                }
+            ]
         );
     }
 

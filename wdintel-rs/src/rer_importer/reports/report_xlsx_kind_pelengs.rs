@@ -309,6 +309,7 @@ pub async fn get_inbox_messages_report(
                     callsigns_alg2: vec![],
                     network_ids: None,
                     inbox_tags: None,
+                    metadata: vec![],
                 },
             ));
         }

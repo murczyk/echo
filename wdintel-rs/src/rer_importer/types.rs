@@ -50,6 +50,7 @@ pub struct InboxMessage {
     pub tags: Option<Vec<i64>>,
     pub network_ids: Option<Vec<i64>>,
     pub inbox_tags: Option<Vec<InboxMessageTag>>,
+    pub metadata: Vec<InboxMessageMetadata>,
 }
 
 #[derive(
@@ -73,6 +74,18 @@ pub struct InboxMessageTag {
     pub login: Option<String>,
     pub model: Option<String>,
     pub organism_id: Option<i64>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct InboxMessageMetadata {
+    pub color_code: Option<String>,
+    pub call_group_id: Option<String>,
+    pub call_group_name: Option<String>,
+    pub sender_id: Option<String>,
+    pub sender_name: Option<String>,
+    pub hash_id: Option<String>,
 }
 
 #[derive(

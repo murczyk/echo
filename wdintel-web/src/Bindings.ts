@@ -363,6 +363,16 @@ export type InboxMessage = {
   tags: Array<number> | null;
   networkIds: Array<number> | null;
   inboxTags: Array<InboxMessageTag> | null;
+  metadata: Array<InboxMessageMetadata>;
+};
+
+export type InboxMessageMetadata = {
+  colorCode: string | null;
+  callGroupId: string | null;
+  callGroupName: string | null;
+  senderId: string | null;
+  senderName: string | null;
+  hashId: string | null;
 };
 
 export type InboxMessageTag = {
