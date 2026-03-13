@@ -24,7 +24,6 @@ class UsersNeoElement extends HTMLElement {
       this.style.height = '100%';
       this.root = createRoot(this);
     }
-
     this.root.render(<UsersNeoRoot />);
   }
 
