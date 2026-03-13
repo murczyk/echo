@@ -13,7 +13,8 @@ use std::error::Error as StdError;
 
 use crate::entities::sigint_inbox_item::Entity;
 use crate::entities::{
-    sigint_inbox_item, sigint_post, signal_message, signal_message_group,
+    sigint_inbox_item, sigint_inbox_item_metadata, sigint_post, signal_message,
+    signal_message_group,
 };
 use crate::error::AppError;
 use crate::h;
@@ -83,9 +84,10 @@ where
 {
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
-    let query = filter_selected_groups_with_access(
+    let query = filter_selected_groups_and_senders_with_access(
         query,
         &req.selected_groups,
+        &req.selected_senders,
         &master_keys,
     )
     .context(h!())?;
@@ -122,6 +124,7 @@ where
     .context(h!())?;
     let query = filter_selected_networks(query, &req.selected_networks)
         .context(h!())?;
+    let query = apply_metadata_filters(query, &req.0)?;
     let query = filter_search(query, &req.search).context(h!())?;
     let query =
         filter_selected_aors(query, &req.selected_aors).context(h!())?;
@@ -129,6 +132,19 @@ where
         return Ok(query.filter(message_in_groups_exists(master_keys)));
     }
     Ok(query)
+}
+
+fn apply_metadata_filters<E>(
+    query: Select<E>,
+    req: &AnalysisStatsReq,
+) -> Result<Select<E>, AppError>
+where
+    E: EntityTrait,
+{
+    Ok(
+        filter_selected_metadata_for_analysis_stats(query, req)
+            .context(h!())?,
+    )
 }
 
 pub async fn count_groups(
@@ -217,6 +233,7 @@ fn build_groups_query(
     let groups_res =
         filter_selected_networks(groups_res, &req.selected_networks)
             .context(h!())?;
+    let groups_res = apply_metadata_filters(groups_res, &req.0)?;
     let groups_res = filter_search(groups_res, &req.search).context(h!())?;
     let groups_res = filter_selected_tags(
         groups_res,
@@ -440,9 +457,10 @@ fn build_senders_query(
         // .filter(sigint_inbox_item::Column::Checked.eq(Some(true)))
         .group_by(preferred_sender_expr(None));
     // .group_by(SimpleExpr::Custom("(SELECT signal_profile.given_name FROM signal_profile WHERE signal_profile.uuid = signal_message.sender)".to_string()));
-    let senders_res = filter_selected_groups_with_access(
+    let senders_res = filter_selected_groups_and_senders_with_access(
         senders_res,
         &req.selected_groups,
+        &req.selected_senders,
         &master_keys,
     )
     .context(h!())?;
@@ -481,6 +499,7 @@ fn build_senders_query(
     let senders_res =
         filter_selected_networks(senders_res, &req.selected_networks)
             .context(h!())?;
+    let senders_res = apply_metadata_filters(senders_res, &req.0)?;
     let senders_res = filter_search(senders_res, &req.search).context(h!())?;
     let senders_res =
         filter_selected_aors(senders_res, &req.selected_aors).context(h!())?;
@@ -583,14 +602,13 @@ fn build_posts_query(
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
         // .filter(sigint_inbox_item::Column::Checked.eq(Some(true)))
         .group_by(Expr::cust("1"));
-    let post_res = filter_selected_groups_with_access(
+    let post_res = filter_selected_groups_and_senders_with_access(
         post_res,
         &req.selected_groups,
+        &req.selected_senders,
         &master_keys,
     )
     .context(h!())?;
-    let post_res = filter_selected_senders(post_res, &req.selected_senders)
-        .context(h!())?;
     let post_res = filter_selected_units(
         post_res,
         &req.selected_units,
@@ -624,6 +642,7 @@ fn build_posts_query(
     .context(h!())?;
     let post_res = filter_selected_networks(post_res, &req.selected_networks)
         .context(h!())?;
+    let post_res = apply_metadata_filters(post_res, &req.0)?;
     let post_res = filter_search(post_res, &req.search).context(h!())?;
     let post_res =
         filter_selected_aors(post_res, &req.selected_aors).context(h!())?;
@@ -781,14 +800,13 @@ fn build_freqs_query(
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
         // .filter(sigint_inbox_item::Column::Checked.eq(Some(true)))
         .group_by(Expr::cust("1"));
-    let freqs_res = filter_selected_groups_with_access(
+    let freqs_res = filter_selected_groups_and_senders_with_access(
         freqs_res,
         &req.selected_groups,
+        &req.selected_senders,
         &master_keys,
     )
     .context(h!())?;
-    let freqs_res = filter_selected_senders(freqs_res, &req.selected_senders)
-        .context(h!())?;
     let freqs_res = filter_selected_units(
         freqs_res,
         &req.selected_units,
@@ -820,6 +838,7 @@ fn build_freqs_query(
     .context(h!())?;
     let freqs_res = filter_selected_networks(freqs_res, &req.selected_networks)
         .context(h!())?;
+    let freqs_res = apply_metadata_filters(freqs_res, &req.0)?;
     let freqs_res = filter_search(freqs_res, &req.search).context(h!())?;
     let freqs_res =
         filter_selected_aors(freqs_res, &req.selected_aors).context(h!())?;
@@ -892,6 +911,175 @@ pub async fn count_callsigns(
     Ok(count as i64)
 }
 
+pub async fn fetch_metadata_stats(
+    req: &Json<AnalysisStatsReq>,
+    user: &Identity,
+    env: &actix_web::web::Data<Env>,
+    master_keys: Vec<String>,
+) -> Result<MetadataStatsRsp, AppError> {
+    let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
+    let dt_till =
+        dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
+    let messages_q = build_metadata_messages_query(
+        req,
+        user,
+        dt_since,
+        dt_till,
+        master_keys,
+    )
+    .context(h!())?;
+
+    let ccs = fetch_metadata_value_stats(
+        &env.dbx,
+        messages_q.clone(),
+        sigint_inbox_item_metadata::Column::ColorCode,
+    )
+    .await
+    .context(h!())?;
+    let hashes = fetch_metadata_value_stats(
+        &env.dbx,
+        messages_q.clone(),
+        sigint_inbox_item_metadata::Column::HashId,
+    )
+    .await
+    .context(h!())?;
+    let senders = merge_metadata_value_stats(vec![
+        fetch_metadata_value_stats(
+            &env.dbx,
+            messages_q.clone(),
+            sigint_inbox_item_metadata::Column::SenderId,
+        )
+        .await
+        .context(h!())?,
+        fetch_metadata_value_stats(
+            &env.dbx,
+            messages_q.clone(),
+            sigint_inbox_item_metadata::Column::SenderName,
+        )
+        .await
+        .context(h!())?,
+    ]);
+    let receivers = merge_metadata_value_stats(vec![
+        fetch_metadata_value_stats(
+            &env.dbx,
+            messages_q.clone(),
+            sigint_inbox_item_metadata::Column::CallGroupId,
+        )
+        .await
+        .context(h!())?,
+        fetch_metadata_value_stats(
+            &env.dbx,
+            messages_q,
+            sigint_inbox_item_metadata::Column::CallGroupName,
+        )
+        .await
+        .context(h!())?,
+    ]);
+
+    Ok(MetadataStatsRsp {
+        ccs,
+        senders,
+        receivers,
+        hashes,
+    })
+}
+
+fn build_metadata_messages_query(
+    req: &Json<AnalysisStatsReq>,
+    user: &Identity,
+    dt_since: NaiveDateTime,
+    dt_till: NaiveDateTime,
+    master_keys: Vec<String>,
+) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
+    let messages_q = build_join_for_sigint_inbox_item()
+        .filter(signal_message::Column::Deleted.eq(false))
+        .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
+        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
+    apply_sender_filters(messages_q, req, user, master_keys)
+}
+
+#[derive(FromQueryResult)]
+struct MetadataValueRes {
+    value: Option<String>,
+    count: i64,
+}
+
+async fn fetch_metadata_value_stats(
+    db: &DatabaseConnection,
+    messages_q: Select<sigint_inbox_item::Entity>,
+    column: sigint_inbox_item_metadata::Column,
+) -> Result<Vec<AnalysisStatsMetadataValue>, AppError> {
+    let messages_subquery = messages_q
+        .select_only()
+        .column(sigint_inbox_item::Column::Id)
+        .to_owned()
+        .into_query();
+    let metadata_res: Vec<MetadataValueRes> = sigint_inbox_item_metadata::Entity::find()
+        .select_only()
+        .column_as(
+            Expr::col((sigint_inbox_item_metadata::Entity, column)).if_null(""),
+            "value",
+        )
+        .column_as(
+            Expr::cust(r#"COUNT(DISTINCT "sigint_inbox_item_metadata"."sigint_inbox_item_id")"#),
+            "count",
+        )
+        .filter(
+            sigint_inbox_item_metadata::Column::SigintInboxItemId
+                .in_subquery(messages_subquery),
+        )
+        .filter(Expr::col((sigint_inbox_item_metadata::Entity, column)).is_not_null())
+        .filter(
+            Expr::col((sigint_inbox_item_metadata::Entity, column)).ne(""),
+        )
+        .group_by(Expr::cust("1"))
+        .order_by_desc(Expr::cust("2"))
+        .order_by_asc(Expr::cust("1"))
+        .into_model::<MetadataValueRes>()
+        .all(db)
+        .await
+        .context(h!())?;
+
+    Ok(metadata_res
+        .into_iter()
+        .filter_map(|row| {
+            row.value.and_then(|value| {
+                let value = value.trim().to_string();
+                if value.is_empty() {
+                    None
+                } else {
+                    Some(AnalysisStatsMetadataValue {
+                        value,
+                        count: row.count,
+                    })
+                }
+            })
+        })
+        .collect())
+}
+
+fn merge_metadata_value_stats(
+    groups: Vec<Vec<AnalysisStatsMetadataValue>>,
+) -> Vec<AnalysisStatsMetadataValue> {
+    let mut counts: BTreeMap<String, i64> = BTreeMap::new();
+    for group in groups {
+        for entry in group {
+            counts
+                .entry(entry.value)
+                .and_modify(|count| *count += entry.count)
+                .or_insert(entry.count);
+        }
+    }
+    let mut values = counts
+        .into_iter()
+        .map(|(value, count)| AnalysisStatsMetadataValue { value, count })
+        .collect_vec();
+    values.sort_by(|a, b| {
+        b.count.cmp(&a.count).then_with(|| a.value.cmp(&b.value))
+    });
+    values
+}
+
 fn build_callsigns_query(
     req: &&Json<AnalysisStatsReq>,
     dt_since: NaiveDateTime,
@@ -924,13 +1112,12 @@ fn build_callsigns_query(
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
         // .filter(sigint_inbox_item::Column::Checked.eq(Some(true)))
         .group_by(SimpleExpr::Custom("callsign".to_string()));
-    let callsigns_res = filter_selected_groups_with_access(
+    let callsigns_res = filter_selected_groups_and_senders_with_access(
         callsigns_res,
         &req.selected_groups,
+        &req.selected_senders,
         &master_keys,
     )?;
-    let callsigns_res =
-        filter_selected_senders(callsigns_res, &req.selected_senders)?;
     let callsigns_res =
         filter_selected_freqs(callsigns_res, &req.selected_freqs)?;
     let callsigns_res =
@@ -948,6 +1135,7 @@ fn build_callsigns_query(
     let callsigns_res =
         filter_selected_networks(callsigns_res, &req.selected_networks)
             .context(h!())?;
+    let callsigns_res = apply_metadata_filters(callsigns_res, &req.0)?;
     let callsigns_res = filter_search(callsigns_res, &req.search)?;
     let callsigns_res = filter_selected_aors(callsigns_res, &req.selected_aors)
         .context(h!())?;
@@ -1066,12 +1254,12 @@ fn build_tags_query(
         tags_res =
             tags_res.filter(sigint_inbox_item_tag::Column::Model.is_null());
     }
-    let tags_res = filter_selected_groups_with_access(
+    let tags_res = filter_selected_groups_and_senders_with_access(
         tags_res,
         &req.selected_groups,
+        &req.selected_senders,
         &master_keys,
     )?;
-    let tags_res = filter_selected_senders(tags_res, &req.selected_senders)?;
     let tags_res = filter_selected_freqs(tags_res, &req.selected_freqs)?;
     let tags_res = filter_selected_posts(tags_res, &req.selected_posts)?;
     let tags_res = filter_selected_units(
@@ -1086,6 +1274,7 @@ fn build_tags_query(
     )?;
     let tags_res = filter_selected_networks(tags_res, &req.selected_networks)
         .context(h!())?;
+    let tags_res = apply_metadata_filters(tags_res, &req.0)?;
     let tags_res = filter_search(tags_res, &req.search)?;
     let tags_res =
         filter_selected_aors(tags_res, &req.selected_aors).context(h!())?;
@@ -1195,14 +1384,13 @@ fn build_units_query(
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
         // .filter(sigint_inbox_item::Column::Checked.eq(Some(true)))
         .group_by(Expr::cust("1"));
-    let units_res = filter_selected_groups_with_access(
+    let units_res = filter_selected_groups_and_senders_with_access(
         units_res,
         &req.selected_groups,
+        &req.selected_senders,
         &master_keys,
     )
     .context(h!())?;
-    let units_res = filter_selected_senders(units_res, &req.selected_senders)
-        .context(h!())?;
     let units_res =
         filter_selected_freqs(units_res, &req.selected_freqs).context(h!())?;
     let units_res =
@@ -1231,6 +1419,7 @@ fn build_units_query(
     .context(h!())?;
     let units_res = filter_selected_networks(units_res, &req.selected_networks)
         .context(h!())?;
+    let units_res = apply_metadata_filters(units_res, &req.0)?;
     let units_res = filter_search(units_res, &req.search).context(h!())?;
     let units_res =
         filter_selected_aors(units_res, &req.selected_aors).context(h!())?;
@@ -1340,15 +1529,13 @@ fn build_locations_query(
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
         // .filter(sigint_inbox_item::Column::Checked.eq(Some(true)))
         .group_by(Expr::cust("1"));
-    let locations_res = filter_selected_groups_with_access(
+    let locations_res = filter_selected_groups_and_senders_with_access(
         locations_res,
         &req.selected_groups,
+        &req.selected_senders,
         &master_keys,
     )
     .context(h!())?;
-    let locations_res =
-        filter_selected_senders(locations_res, &req.selected_senders)
-            .context(h!())?;
     let locations_res = filter_selected_units(
         locations_res,
         &req.selected_units,
@@ -1380,6 +1567,7 @@ fn build_locations_query(
     let locations_res =
         filter_selected_networks(locations_res, &req.selected_networks)
             .context(h!())?;
+    let locations_res = apply_metadata_filters(locations_res, &req.0)?;
     let locations_res =
         filter_search(locations_res, &req.search).context(h!())?;
     let locations_res = filter_selected_aors(locations_res, &req.selected_aors)
@@ -1504,14 +1692,13 @@ fn build_aors_query(
         .filter(area_of_responsibility::Column::Deleted.eq(false))
         .filter(area_of_responsibility::Column::IsTopLevel.eq(true))
         .group_by(Expr::cust("1"));
-    let aors_res = filter_selected_groups_with_access(
+    let aors_res = filter_selected_groups_and_senders_with_access(
         aors_res,
         &req.selected_groups,
+        &req.selected_senders,
         &master_keys,
     )
     .context(h!())?;
-    let aors_res = filter_selected_senders(aors_res, &req.selected_senders)
-        .context(h!())?;
     let aors_res =
         filter_selected_freqs(aors_res, &req.selected_freqs).context(h!())?;
     let aors_res =
@@ -1538,6 +1725,7 @@ fn build_aors_query(
     )
     .context(h!())?;
     let aors_res = filter_search(aors_res, &req.search).context(h!())?;
+    let aors_res = apply_metadata_filters(aors_res, &req.0)?;
     let aors_res =
         filter_selected_aors(aors_res, &req.selected_aors).context(h!())?;
     Ok(aors_res)
@@ -1768,6 +1956,7 @@ fn build_networks_query_for_login(
     let messages_q =
         filter_selected_networks(messages_q, &req.selected_networks)
             .context(h!())?;
+    let messages_q = apply_metadata_filters(messages_q, req)?;
     let messages_q = filter_search(messages_q, &req.search).context(h!())?;
     let messages_q = filter_selected_tags(
         messages_q,
@@ -1967,15 +2156,13 @@ async fn fetch_counts_for_login_with_conn(
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
     // .filter(sigint_inbox_item::Column::Checked.eq(Some(true)));
-    let selected_count_res = filter_selected_groups_with_access(
+    let selected_count_res = filter_selected_groups_and_senders_with_access(
         selected_count_res,
         &req.selected_groups,
+        &req.selected_senders,
         &master_keys,
     )
     .context(h!())?;
-    let selected_count_res =
-        filter_selected_senders(selected_count_res, &req.selected_senders)
-            .context(h!())?;
     let selected_count_res =
         filter_selected_freqs(selected_count_res, &req.selected_freqs)
             .context(h!())?;
@@ -2013,6 +2200,8 @@ async fn fetch_counts_for_login_with_conn(
     let selected_count_res =
         filter_selected_networks(selected_count_res, &req.selected_networks)
             .context(h!())?;
+    let selected_count_res =
+        apply_metadata_filters(selected_count_res, &req.0)?;
     let selected_count_res =
         filter_search(selected_count_res, &req.search).context(h!())?;
     let selected_count_res =

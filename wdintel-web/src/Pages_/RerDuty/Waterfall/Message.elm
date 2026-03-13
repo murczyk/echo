@@ -351,6 +351,42 @@ inboxTagsFor message =
     message.inboxTags |> Maybe.withDefault []
 
 
+getPointEtalonsFromMessage : B.InboxMessage -> List String
+getPointEtalonsFromMessage message =
+    case message.pointTokens of
+        Just tokens ->
+            List.map .etalon tokens
+
+        Nothing ->
+            message.textMarked
+                |> Maybe.withDefault []
+                |> List.filterMap
+                    (\node ->
+                        case node of
+                            B.CnPointC c ->
+                                Just c.etalon
+
+                            _ ->
+                                Nothing
+                    )
+
+
+buildAnalysisMapUrlWithSearch : List String -> String
+buildAnalysisMapUrlWithSearch etalons =
+    let
+        stateStr =
+            Encode.encode 0
+                (Encode.object
+                    [ ( "search", Encode.string (String.join "," etalons) )
+                    ]
+                )
+    in
+    Url.Builder.absolute [ "rer-analysis" ]
+        [ Url.Builder.string "state" stateStr
+        , Url.Builder.string "showMap" "true"
+        ]
+
+
 hasUserTag : Int -> String -> B.InboxMessage -> Bool
 hasUserTag tagId login message =
     inboxTagsFor message
@@ -851,6 +887,12 @@ leftColumn ( messageId, message ) ps model =
                                         , orImportant = False
                                         , orWithCoords = False
                                         , search = ""
+                                        , metadataCc = []
+                                        , metadataSender = []
+                                        , metadataReceiver = []
+                                        , metadataHash = []
+                                        , onlyWithMetadata = False
+                                        , withoutMetadata = False
                                         , tags = []
                                         , unitsExactMatchOnly = True
                                         , adjacentFreqsRange = 0
@@ -1202,7 +1244,7 @@ rightColumn ( messageId, message ) ps model =
                                                     Dict.empty
                                     in
                                     Shared.MarkedText.new textMarked
-                                        |> Shared.MarkedText.viewWithHintResults hintResultsDict (Just ps.signals) (Dict.values ps.networks) message.freq message.text Nothing
+                                        |> Shared.MarkedText.viewWithHintResults hintResultsDict (Just ps.signals) (Dict.values ps.networks) message.freq message.text (Just (\_ -> buildAnalysisMapUrlWithSearch (getPointEtalonsFromMessage message)))
 
                                 Nothing ->
                                     msgToHtml message.text

@@ -1122,6 +1122,12 @@ pub async fn callsigns_graph(
         or_with_coords: req.or_with_coords,
         search: req.search.clone(),
         selected_tags: req.selected_tags.clone(),
+        metadata_cc: req.metadata_cc.clone(),
+        metadata_sender: req.metadata_sender.clone(),
+        metadata_receiver: req.metadata_receiver.clone(),
+        metadata_hash: req.metadata_hash.clone(),
+        only_with_metadata: req.only_with_metadata,
+        without_metadata: req.without_metadata,
         include_peleng_locations: req.include_peleng_locations,
         units_exact_match_only: req.units_exact_match_only,
         filter_tags_option: req.filter_tags_option,
@@ -1278,12 +1284,12 @@ pub async fn callsigns_graph(
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
     // .filter(sigint_inbox_item::Column::Checked.eq(Some(true)));
-    let q = filter_selected_groups_with_access(
+    let q = filter_selected_groups_and_senders_with_access(
         q,
         &req.selected_groups,
+        &req.selected_senders,
         &sigint_groups,
     )?;
-    let q = filter_selected_senders(q, &req.selected_senders)?;
     let q = filter_selected_freqs(q, &req.selected_freqs)?;
     let q = filter_selected_posts(q, &req.selected_posts)?;
     let q = filter_selected_units(
@@ -1292,6 +1298,7 @@ pub async fn callsigns_graph(
         &req.units_exact_match_only,
     )?;
     let q = filter_selected_callsigns(q, &req.selected_callsigns)?;
+    let q = filter_selected_metadata_for_callsigns_graph(q, &req)?;
     // println!(
     //     "> callsigns_graph q: {}",
     //     q.build(DbBackend::Postgres).to_string()

@@ -108,7 +108,7 @@ function getPointPopupTemplate(sortedMessages: Message[], networkUnits: NetworkU
 
 
 class AnalysisMap extends HTMLElement {
-  static observedAttributes = ["points", "daterange", "daterange-loading", "messages", "visibility", "network-units", "selected-units", "palitras", "palitras-loaded", "search-query", "palitras-load-state"]
+  static observedAttributes = ["points", "daterange", "daterange-loading", "messages", "visibility", "network-units", "selected-units", "palitras", "palitras-loaded", "search", "palitras-load-state"]
 
   private _map: L.Map | null = null;
   private _daterange: { startDate: number, endDate: number } = { startDate: new Date().getDate(), endDate: new Date().getDate() };
@@ -335,7 +335,6 @@ class AnalysisMap extends HTMLElement {
       if (this._palitraManager) {
         this._palitraManager.updatePalitras(palitras);
         this._palitraManager.updateVisibleIds(this._visiblePalitraIds);
-        this._runSearchQueryIfSet();
       }
     }
     if (name === 'palitras-loaded') {
@@ -346,29 +345,38 @@ class AnalysisMap extends HTMLElement {
         this._palitraManager.updateVisibleIds(this._visiblePalitraIds);
       }
     }
-    if (name === 'search-query') {
-      this._applySearchQuery(newValue ?? '');
+    if (name === 'search') {
+      this._applySearchQueryFromUrl();
     }
     if (name === 'palitras-load-state') {
       this._palitrasLoadState = this._parsePalitrasLoadState(newValue);
       this._palitraManager?.setLoadState(this._palitrasLoadState);
       this._syncAsyncInteractionState();
+      // Re-run search from URL when palitras finish loading so the initial query runs after search is enabled
+      if (this._palitrasLoadState === 'success' || this._palitrasLoadState === 'error') {
+        this._runSearchQueryIfSet();
+      }
     }
   }
 
-  private _applySearchQuery(query: string) {
-    const trimmed = query.trim();
-    if (!trimmed) return;
+  /** Get search query from URL only */
+  private _getEffectiveSearchQuery(): string {
+    return (getSearchQueryFromCurrentUrl() ?? '').trim();
+  }
+
+  /** Set search input value from URL. Does not trigger search (search runs once when palitras are ready). */
+  private _applySearchQueryFromUrl() {
+    const query = this._getEffectiveSearchQuery();
+    if (!query) return;
     const searchEl = this.querySelector('analysis-map-search');
     if (searchEl) {
-      searchEl.setAttribute('initial-query', trimmed);
+      searchEl.setAttribute('initial-query', query);
     }
-    this._runSearchQueryIfSet();
   }
 
-  /** Run search when we have a search-query attribute. */
+  /** Run search using query from URL. */
   private _runSearchQueryIfSet() {
-    const query = (this.getAttribute('search-query') ?? '').trim();
+    const query = this._getEffectiveSearchQuery();
     if (!query || !this._palitraManager) return;
     this._palitraManager.setSearchQuery(query);
   }
@@ -461,9 +469,10 @@ class AnalysisMap extends HTMLElement {
      this._applyPelengVisibility();
      this._map.on('zoomend', () => this._replacePointsOnMap(this._points));
 
-    const searchQuery = this.getAttribute('search-query');
-    if (searchQuery) {
-      this._applySearchQuery(searchQuery);
+    // Set search input from URL; run search once when palitras are ready (palitras-load-state handler)
+    this._applySearchQueryFromUrl();
+    if (this._palitrasLoadState === 'success' || this._palitrasLoadState === 'error') {
+      this._runSearchQueryIfSet();
     }
     }
   }
@@ -904,6 +913,18 @@ function parseStateFromUrl(stateParam: string | null): RerAnalysisQueryState | n
     }
   }
 
+  return null;
+}
+
+/** Read search query from current page URL: top-level search param or state.search. */
+function getSearchQueryFromCurrentUrl(): string | null {
+  if (typeof window === 'undefined') return null;
+  const params = new URL(window.location.href).searchParams;
+  const fromParam = params.get('search');
+  if (fromParam != null && String(fromParam).trim() !== '') return String(fromParam).trim();
+  const state = parseStateFromUrl(params.get('state'));
+  const fromState = state?.['search'];
+  if (fromState != null && String(fromState).trim() !== '') return String(fromState).trim();
   return null;
 }
 

@@ -1010,7 +1010,7 @@ view user model shared route =
                                  else
                                     "false"
                                 )
-                            , attribute "search-query" model.searchInput
+                            , attribute "search" model.searchInput
                             , Events.on "exit" (Decode.succeed MapClosed)
                             , Events.on "date-range-changed" (Decode.map MapPeriodChanged dateRangeDecoder)
                             , Events.on "load-messages-description" (Decode.map LoadMessagesForMap messagesIdsDecoder)

@@ -12,7 +12,7 @@ use chrono::prelude::*;
 use echo_migration::IntoCondition;
 use itertools::Itertools;
 use sea_orm::{prelude::Expr, sea_query::SimpleExpr, *};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use geoconvert::{LatLon, Mgrs};
 use std::path::PathBuf;
@@ -170,12 +170,12 @@ pub async fn get_inbox_messages_report(
     if req.checked_only == Some(true) {
         q = q.filter(sigint_inbox_item::Column::Checked.eq(Some(true)));
     }
-    let q = filter_selected_groups_with_access(
+    let q = filter_selected_groups_and_senders_with_access(
         q,
         &req.selected_groups,
+        &req.selected_senders,
         &sigint_groups,
     )?;
-    let q = filter_selected_senders(q, &req.selected_senders)?;
     let q = filter_denied_senders(q, &req.denied_senders)?;
     let q = filter_selected_freqs(q, &req.selected_freqs)?;
     let q = filter_selected_posts(q, &req.selected_posts)?;
@@ -207,6 +207,7 @@ pub async fn get_inbox_messages_report(
     let q = filter_selected_aors(q, &req.selected_aors).context(h!())?;
     let q =
         filter_selected_networks(q, &req.selected_networks).context(h!())?;
+    let q = filter_selected_metadata_for_inbox_messages(q, req)?;
 
     info!(
         "[get_inbox_messages_report] query: {}",
@@ -217,7 +218,7 @@ pub async fn get_inbox_messages_report(
     let messages: Vec<Message> =
         q.into_model::<Message>().all(&read_db).await.c(h!())?;
 
-    let messages = deduplicate(&messages).context(h!())?;
+    let messages = deduplicate_by_id(&messages);
 
     let mut item_ids = vec![];
     let mut sigint_pelengs = vec![];
@@ -308,6 +309,7 @@ pub async fn get_inbox_messages_report(
                     callsigns_alg2: vec![],
                     network_ids: None,
                     inbox_tags: None,
+                    metadata: vec![],
                 },
             ));
         }
@@ -317,15 +319,15 @@ pub async fn get_inbox_messages_report(
     Ok(res)
 }
 
-fn deduplicate(messages: &Vec<Message>) -> Result<Vec<Message>, AppError> {
-    let mut seen: BTreeSet<String> = BTreeSet::new();
+fn deduplicate_by_id(messages: &[Message]) -> Vec<Message> {
+    let mut seen: BTreeSet<i64> = BTreeSet::new();
     let mut res = vec![];
     for msg in messages {
-        if seen.insert(msg.body.clone()) {
+        if seen.insert(msg.id) {
             res.push(msg.clone());
         }
     }
-    Ok(res)
+    res
 }
 
 fn xls_title() -> rust_xlsxwriter::Format {
@@ -590,5 +592,48 @@ fn translate_direction(dir: String) -> anyhow::Result<String> {
             }
             _ => bail!("failed to parse: {dir}"),
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn deduplicate_by_id_keeps_same_body_from_different_messages() {
+        let messages = vec![
+            Message {
+                id: 1,
+                body: "same body".to_string(),
+                timestamp: None,
+                sender: None,
+                date: None,
+                time: None,
+                freq: None,
+                callsigns: None,
+                checked: None,
+                unit: None,
+                location: None,
+            },
+            Message {
+                id: 2,
+                body: "same body".to_string(),
+                timestamp: None,
+                sender: None,
+                date: None,
+                time: None,
+                freq: None,
+                callsigns: None,
+                checked: None,
+                unit: None,
+                location: None,
+            },
+        ];
+
+        let actual = deduplicate_by_id(&messages);
+
+        assert_eq!(actual.len(), 2);
+        assert_eq!(actual[0].id, 1);
+        assert_eq!(actual[1].id, 2);
     }
 }

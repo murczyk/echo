@@ -72,12 +72,12 @@ pub async fn rer_analysis_download_geojson(
         .filter(sigint_inbox_item::Column::Lng.is_not_null());
     let items = filter_selected_freqs(items, &req.selected_freqs)?;
     let items = filter_selected_posts(items, &req.selected_posts)?;
-    let items = filter_selected_groups_with_access(
+    let items = filter_selected_groups_and_senders_with_access(
         items,
         &req.selected_groups,
+        &req.selected_senders,
         &sigint_groups,
     )?;
-    let items = filter_selected_senders(items, &req.selected_senders)?;
     let items = filter_selected_units(
         items,
         &req.selected_units,
@@ -100,6 +100,7 @@ pub async fn rer_analysis_download_geojson(
         filter_selected_aors(items, &req.selected_aors).context(h!())?;
     let items = filter_selected_networks(items, &req.selected_networks)
         .context(h!())?;
+    let items = filter_selected_metadata_for_analysis_stats(items, &req)?;
     let items = filter_search(items, &req.search)?;
     let items = filter_selected_locations(
         items,

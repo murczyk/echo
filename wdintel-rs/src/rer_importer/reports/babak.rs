@@ -66,6 +66,12 @@ pub async fn bl_babak_report(
         search: inbox_req.search,
         selected_tags: inbox_req.selected_tags,
         selected_networks: inbox_req.selected_networks,
+        metadata_cc: inbox_req.metadata_cc,
+        metadata_sender: inbox_req.metadata_sender,
+        metadata_receiver: inbox_req.metadata_receiver,
+        metadata_hash: inbox_req.metadata_hash,
+        only_with_metadata: inbox_req.only_with_metadata,
+        without_metadata: inbox_req.without_metadata,
         include_peleng_locations: inbox_req.include_peleng_locations,
         units_exact_match_only: inbox_req.units_exact_match_only,
         filter_tags_option: inbox_req.filter_tags_option,
@@ -761,12 +767,12 @@ pub async fn get_inbox_messages_report_unit(
     }
 
     // let q = q.filter(signal_message::Column::DuplicateOf.is_null());
-    let q = filter_selected_groups_with_access(
+    let q = filter_selected_groups_and_senders_with_access(
         q,
         &req.selected_groups,
+        &req.selected_senders,
         &sigint_groups,
     )?;
-    let q = filter_selected_senders(q, &req.selected_senders)?;
     let q = filter_denied_senders(q, &req.denied_senders)?;
     let q = filter_selected_freqs(q, &req.selected_freqs)?;
     let q = filter_selected_posts(q, &req.selected_posts)?;
@@ -774,6 +780,7 @@ pub async fn get_inbox_messages_report_unit(
     let q = filter_selected_callsigns(q, &req.selected_callsigns)?;
     let q =
         filter_selected_networks(q, &req.selected_networks).context(h!())?;
+    let q = filter_selected_metadata_for_inbox_messages(q, req)?;
     let q = filter_search(q, &req.search)?;
     let q = filter_selected_units(
         q,

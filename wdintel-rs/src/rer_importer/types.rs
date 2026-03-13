@@ -50,6 +50,7 @@ pub struct InboxMessage {
     pub tags: Option<Vec<i64>>,
     pub network_ids: Option<Vec<i64>>,
     pub inbox_tags: Option<Vec<InboxMessageTag>>,
+    pub metadata: Vec<InboxMessageMetadata>,
 }
 
 #[derive(
@@ -73,6 +74,18 @@ pub struct InboxMessageTag {
     pub login: Option<String>,
     pub model: Option<String>,
     pub organism_id: Option<i64>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct InboxMessageMetadata {
+    pub color_code: Option<String>,
+    pub call_group_id: Option<String>,
+    pub call_group_name: Option<String>,
+    pub sender_id: Option<String>,
+    pub sender_name: Option<String>,
+    pub hash_id: Option<String>,
 }
 
 #[derive(
@@ -223,6 +236,12 @@ pub struct InboxMessagesReq {
     pub selected_tags: Option<Vec<i64>>,
     pub selected_aors: Option<Vec<i64>>,
     pub selected_networks: Option<Vec<i64>>,
+    pub metadata_cc: Option<Vec<String>>,
+    pub metadata_sender: Option<Vec<String>>,
+    pub metadata_receiver: Option<Vec<String>>,
+    pub metadata_hash: Option<Vec<String>>,
+    pub only_with_metadata: Option<bool>,
+    pub without_metadata: Option<bool>,
     pub sort_by: Option<InboxMessagesSortBy>,
     /// report type "tags" specific param:
     pub report_tags_only_this_unit: Option<bool>,
@@ -469,6 +488,12 @@ pub struct AnalysisStatsReq {
     pub search: Option<String>,
     pub selected_tags: Option<Vec<i64>>,
     pub selected_networks: Option<Vec<i64>>,
+    pub metadata_cc: Option<Vec<String>>,
+    pub metadata_sender: Option<Vec<String>>,
+    pub metadata_receiver: Option<Vec<String>>,
+    pub metadata_hash: Option<Vec<String>>,
+    pub only_with_metadata: Option<bool>,
+    pub without_metadata: Option<bool>,
     pub include_peleng_locations: Option<bool>,
     pub units_exact_match_only: Option<bool>,
     pub filter_tags_option: Option<TagFilterOption>,
@@ -498,6 +523,12 @@ pub struct CallsignsGraphReq {
     pub selected_tags: Option<Vec<i64>>,
     pub selected_aors: Option<Vec<i64>>,
     pub selected_networks: Option<Vec<i64>>,
+    pub metadata_cc: Option<Vec<String>>,
+    pub metadata_sender: Option<Vec<String>>,
+    pub metadata_receiver: Option<Vec<String>>,
+    pub metadata_hash: Option<Vec<String>>,
+    pub only_with_metadata: Option<bool>,
+    pub without_metadata: Option<bool>,
     pub include_peleng_locations: Option<bool>,
     pub units_exact_match_only: Option<bool>,
     pub filter_tags_option: Option<TagFilterOption>,
@@ -635,6 +666,24 @@ pub struct PostStatsRsp {
 )]
 pub struct CallsignStatsRsp {
     pub callsigns: Vec<AnalysisStatsCallsign>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct AnalysisStatsMetadataValue {
+    pub value: String,
+    pub count: i64,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct MetadataStatsRsp {
+    pub ccs: Vec<AnalysisStatsMetadataValue>,
+    pub senders: Vec<AnalysisStatsMetadataValue>,
+    pub receivers: Vec<AnalysisStatsMetadataValue>,
+    pub hashes: Vec<AnalysisStatsMetadataValue>,
 }
 
 #[derive(
@@ -885,6 +934,12 @@ pub struct RerAnalysisQueryState {
     pub or_important: bool,
     pub or_with_coords: bool,
     pub search: String,
+    pub metadata_cc: Vec<String>,
+    pub metadata_sender: Vec<String>,
+    pub metadata_receiver: Vec<String>,
+    pub metadata_hash: Vec<String>,
+    pub only_with_metadata: bool,
+    pub without_metadata: bool,
     pub tags: Vec<i64>,
     pub include_peleng_locations: bool,
     pub units_exact_match_only: bool,

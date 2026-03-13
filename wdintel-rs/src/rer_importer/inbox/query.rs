@@ -63,12 +63,12 @@ pub(crate) async fn build_inbox_query(
     if req.checked_only == Some(true) {
         q = q.filter(sigint_inbox_item::Column::Checked.eq(Some(true)));
     }
-    let q = filter_selected_groups_with_access(
+    let q = filter_selected_groups_and_senders_with_access(
         q,
         &req.selected_groups,
+        &req.selected_senders,
         &sigint_groups,
     )?;
-    let q = filter_selected_senders(q, &req.selected_senders)?;
     let q = filter_denied_senders(q, &req.denied_senders)?;
     let q = filter_selected_freqs(q, &req.selected_freqs)?;
     let q = filter_denied_freqs(q, &req.denied_freqs)?;
@@ -103,6 +103,7 @@ pub(crate) async fn build_inbox_query(
         &req.selected_locations,
         include_peleng_locations,
     )?;
+    q = filter_selected_metadata_for_inbox_messages(q, req)?;
 
     if req.since_id_noninclusive.is_none()
         && req.since_date_inclusive_ms.is_none()
@@ -198,6 +199,7 @@ pub(crate) async fn build_inbox_query(
         )
         .group_by(sigint_inbox_item_tag::Column::SigintInboxItemId)
         .into_query();
+    let query_metadata = build_inbox_metadata_lateral_query();
 
     let mut query = q.into_query();
     if req.nolimit != Some(true) {
@@ -205,10 +207,18 @@ pub(crate) async fn build_inbox_query(
     }
 
     let q_tags = "q_tags";
+    let q_metadata = "q_metadata";
     let sql = query
         .join_lateral(JoinType::LeftJoin, query_tags, q_tags, Expr::value(true))
+        .join_lateral(
+            JoinType::LeftJoin,
+            query_metadata,
+            q_metadata,
+            Expr::value(true),
+        )
         .column((q_tags, "tags"))
         .column((q_tags, "inbox_tags"))
+        .column((q_metadata, "metadata"))
         .to_string(PostgresQueryBuilder);
 
     // println!("> Inbox items query: {sql}");
@@ -638,4 +648,61 @@ where
         .column_as(sigint_inbox_item::Column::PostId, "post_id")
         .column_as(sigint_inbox_item::Column::Datetime, "datetime")
         .column_as(sigint_post::Column::Name, "post_name")
+}
+
+pub fn build_inbox_metadata_lateral_query() -> SelectStatement {
+    sigint_inbox_item_metadata::Entity::find()
+        .select_only()
+        .expr_as(
+            Expr::cust_with_exprs(
+                "jsonb_agg(jsonb_build_object('color_code', $1, 'call_group_id', $2, 'call_group_name', $3, 'sender_id', $4, 'sender_name', $5, 'hash_id', $6) ORDER BY $7)",
+                [
+                    Expr::col((
+                        sigint_inbox_item_metadata::Entity,
+                        sigint_inbox_item_metadata::Column::ColorCode,
+                    ))
+                    .into_simple_expr(),
+                    Expr::col((
+                        sigint_inbox_item_metadata::Entity,
+                        sigint_inbox_item_metadata::Column::CallGroupId,
+                    ))
+                    .into_simple_expr(),
+                    Expr::col((
+                        sigint_inbox_item_metadata::Entity,
+                        sigint_inbox_item_metadata::Column::CallGroupName,
+                    ))
+                    .into_simple_expr(),
+                    Expr::col((
+                        sigint_inbox_item_metadata::Entity,
+                        sigint_inbox_item_metadata::Column::SenderId,
+                    ))
+                    .into_simple_expr(),
+                    Expr::col((
+                        sigint_inbox_item_metadata::Entity,
+                        sigint_inbox_item_metadata::Column::SenderName,
+                    ))
+                    .into_simple_expr(),
+                    Expr::col((
+                        sigint_inbox_item_metadata::Entity,
+                        sigint_inbox_item_metadata::Column::HashId,
+                    ))
+                    .into_simple_expr(),
+                    Expr::col((
+                        sigint_inbox_item_metadata::Entity,
+                        sigint_inbox_item_metadata::Column::Id,
+                    ))
+                    .into_simple_expr(),
+                ],
+            ),
+            "metadata",
+        )
+        .filter(
+            Expr::col((
+                sigint_inbox_item_metadata::Entity,
+                sigint_inbox_item_metadata::Column::SigintInboxItemId,
+            ))
+            .equals((signal_message::Entity, signal_message::Column::Id)),
+        )
+        .group_by(sigint_inbox_item_metadata::Column::SigintInboxItemId)
+        .into_query()
 }

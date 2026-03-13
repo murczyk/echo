@@ -58,6 +58,7 @@ type alias Model =
     , unfoldLocationsFilter : Bool
     , unfoldTagsFilter : Bool
     , unfoldNetworksFilter : Bool
+    , unfoldMetadataFilter : Bool
     , unfoldSumTable : Bool
     , unfoldCallsignGraph : Bool
     , unfoldGraphs : Bool
@@ -82,6 +83,12 @@ type alias Model =
     , savedFilterEditInp : Dict Int String
     , savedFilterMenuOpen : Maybe Int
     , searchInput : String
+    , metadataCc : List String
+    , metadataSender : List String
+    , metadataReceiver : List String
+    , metadataHash : List String
+    , onlyWithMetadata : Bool
+    , withoutMetadata : Bool
     , nolimitShown : Bool
     , menuTab : MenuTab
     , selAorState : Select.State
@@ -102,6 +109,14 @@ type alias Model =
     , selUnitMenu : List (Select.MenuItem String)
     , selNetworkState : Select.State
     , selNetworkMenu : List (Select.MenuItem String)
+    , selMetadataCcState : Select.State
+    , selMetadataCcMenu : List (Select.MenuItem String)
+    , selMetadataSenderState : Select.State
+    , selMetadataSenderMenu : List (Select.MenuItem String)
+    , selMetadataReceiverState : Select.State
+    , selMetadataReceiverMenu : List (Select.MenuItem String)
+    , selMetadataHashState : Select.State
+    , selMetadataHashMenu : List (Select.MenuItem String)
     , filterUnits : String
     , now : Maybe Time.Posix
     , tags : List ( Int, B.Tag )
@@ -152,6 +167,7 @@ type alias Model =
     , senders : RemoteData ApiError (List B.AnalysisStatsSender)
     , groups : RemoteData ApiError (List B.AnalysisStatsGroup)
     , networksStats : RemoteData ApiError (List B.AnalysisStatsNetwork)
+    , metadataStats : RemoteData ApiError B.MetadataStatsRsp
     , networkNames : List B.NetworkEntry
     , networksSelected : List String
     , focusedFilterItemsBeforeChange : Maybe (List String)

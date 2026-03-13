@@ -133,11 +133,11 @@ pub async fn report_docx_kind_revo(
     info!("get_organism_logins took: {:?}", start.elapsed());
 
     let start = Instant::now();
-    let report_tags_only_this_unit =
+    let only_comments_from_current_organism =
         req.report_tags_only_this_unit.unwrap_or(false);
     let mut current_req = req.req.clone();
-    current_req.report_tags_only_this_unit = req.report_tags_only_this_unit;
-    let mut messages: Vec<(i64, InboxMessage)> =
+    current_req.report_tags_only_this_unit = Some(false);
+    let messages: Vec<(i64, InboxMessage)> =
         crate::rer_importer::inbox::get_inbox_messages_with_conn(
             &read_db,
             &login,
@@ -147,13 +147,6 @@ pub async fn report_docx_kind_revo(
         )
         .await
         .context(h!())?;
-    if report_tags_only_this_unit {
-        messages = merge_messages_with_comment_rules(
-            &read_db, messages, &login, &logins, env, req,
-        )
-        .await
-        .context(h!())?;
-    }
     info!(
         "get_inbox_messages_with_conn took: {:?}, messages count: {}",
         start.elapsed(),
@@ -178,7 +171,7 @@ pub async fn report_docx_kind_revo(
         env,
         &read_db,
         range_khz,
-        report_tags_only_this_unit,
+        only_comments_from_current_organism,
         no_comments,
     )
     .await
@@ -658,7 +651,7 @@ async fn collect_report(
     env: &Env,
     dbx: &DatabaseConnection,
     range_khz: f64,
-    report_tags_only_this_unit: bool,
+    only_comments_from_current_organism: bool,
     no_comments: bool,
 ) -> anyhow::Result<Report> {
     let start_collect = Instant::now();
@@ -682,7 +675,7 @@ async fn collect_report(
                 .column(sigint_comment::Column::Comment)
                 .order_by_asc(sigint_comment::Column::SignalMessageId)
                 .order_by_asc(sigint_comment::Column::CreatedAt);
-            if report_tags_only_this_unit {
+            if only_comments_from_current_organism {
                 query =
                     query.filter(sigint_comment::Column::Login.eq_any(logins));
             }
@@ -712,7 +705,7 @@ async fn collect_report(
                     .column(sigint_comment::Column::Comment)
                     .order_by_asc(sigint_comment::Column::SignalMessageId)
                     .order_by_asc(sigint_comment::Column::CreatedAt);
-                if report_tags_only_this_unit {
+                if only_comments_from_current_organism {
                     query = query
                         .filter(sigint_comment::Column::Login.is_in(&logins));
                 }
@@ -1053,163 +1046,6 @@ async fn collect_report(
         start_collect.elapsed()
     );
     Ok(report)
-}
-
-async fn filter_messages_by_logins(
-    dbx: &DatabaseConnection,
-    messages: Vec<(i64, InboxMessage)>,
-    logins: &[String],
-) -> anyhow::Result<Vec<(i64, InboxMessage)>> {
-    let message_ids: Vec<i64> = messages.iter().map(|(id, _)| *id).collect();
-    if message_ids.is_empty() {
-        return Ok(messages);
-    }
-    let mut allowed_ids = HashSet::new();
-    if message_ids.len() <= 20000 {
-        sigint_comment::Entity::find()
-            .filter(sigint_comment::Column::SignalMessageId.eq_any(message_ids))
-            .filter(sigint_comment::Column::Login.is_in(logins))
-            .filter(non_empty_comment_filter())
-            .select_only()
-            .column(sigint_comment::Column::SignalMessageId)
-            .into_tuple::<i64>()
-            .all(dbx)
-            .await
-            .context(h!())?
-            .into_iter()
-            .for_each(|id| {
-                allowed_ids.insert(id);
-            });
-    } else {
-        for ids in message_ids.chunks(20000) {
-            sigint_comment::Entity::find()
-                .filter(
-                    sigint_comment::Column::SignalMessageId
-                        .eq_any(ids.to_vec()),
-                )
-                .filter(sigint_comment::Column::Login.is_in(logins))
-                .filter(non_empty_comment_filter())
-                .select_only()
-                .column(sigint_comment::Column::SignalMessageId)
-                .into_tuple::<i64>()
-                .all(dbx)
-                .await
-                .context(h!())?
-                .into_iter()
-                .for_each(|id| {
-                    allowed_ids.insert(id);
-                });
-        }
-    }
-    Ok(messages
-        .into_iter()
-        .filter(|(id, _)| allowed_ids.contains(id))
-        .collect())
-}
-
-// We need this merge to enforce report data validation: include records with
-// current-unit comments or tags, but exclude those where a current-unit tag is
-// paired only with a non-empty comment from another unit.
-async fn merge_messages_with_comment_rules(
-    dbx: &DatabaseConnection,
-    messages: Vec<(i64, InboxMessage)>,
-    login: &str,
-    logins: &Vec<String>,
-    env: &Env,
-    req: &super::types::ReportPreviewReq,
-) -> anyhow::Result<Vec<(i64, InboxMessage)>> {
-    let tag_message_ids: HashSet<i64> =
-        messages.iter().map(|(id, _)| *id).collect();
-    let mut comment_req = req.req.clone();
-    comment_req.report_tags_only_this_unit = Some(false);
-    let comment_messages =
-        crate::rer_importer::inbox::get_inbox_messages_with_conn(
-            dbx,
-            login,
-            logins,
-            env,
-            &comment_req,
-        )
-        .await
-        .context(h!())?;
-    let comment_messages =
-        filter_messages_by_logins(dbx, comment_messages, logins)
-            .await
-            .context(h!())?;
-    let comment_message_ids: HashSet<i64> =
-        comment_messages.iter().map(|(id, _)| *id).collect();
-    let other_comment_ids =
-        message_ids_with_nonempty_comments_from_other_logins(
-            dbx,
-            &tag_message_ids,
-            logins,
-        )
-        .await
-        .context(h!())?;
-    let mut merged_messages = HashMap::new();
-    for (id, msg) in messages {
-        let include = if comment_message_ids.contains(&id) {
-            true
-        } else {
-            !other_comment_ids.contains(&id)
-        };
-        if include {
-            merged_messages.insert(id, msg);
-        }
-    }
-    for (id, msg) in comment_messages {
-        merged_messages.entry(id).or_insert(msg);
-    }
-    Ok(merged_messages.into_iter().collect())
-}
-
-async fn message_ids_with_nonempty_comments_from_other_logins(
-    dbx: &DatabaseConnection,
-    message_ids: &HashSet<i64>,
-    logins: &Vec<String>,
-) -> anyhow::Result<HashSet<i64>> {
-    if message_ids.is_empty() {
-        return Ok(HashSet::new());
-    }
-    let mut other_ids = HashSet::new();
-    let message_ids: Vec<i64> = message_ids.iter().copied().collect();
-    if message_ids.len() <= 20000 {
-        sigint_comment::Entity::find()
-            .filter(sigint_comment::Column::SignalMessageId.eq_any(message_ids))
-            .filter(sigint_comment::Column::Login.is_not_in(logins))
-            .filter(non_empty_comment_filter())
-            .select_only()
-            .column(sigint_comment::Column::SignalMessageId)
-            .into_tuple::<i64>()
-            .all(dbx)
-            .await
-            .context(h!())?
-            .into_iter()
-            .for_each(|id| {
-                other_ids.insert(id);
-            });
-    } else {
-        for ids in message_ids.chunks(20000) {
-            sigint_comment::Entity::find()
-                .filter(
-                    sigint_comment::Column::SignalMessageId
-                        .eq_any(ids.to_vec()),
-                )
-                .filter(sigint_comment::Column::Login.is_not_in(logins))
-                .filter(non_empty_comment_filter())
-                .select_only()
-                .column(sigint_comment::Column::SignalMessageId)
-                .into_tuple::<i64>()
-                .all(dbx)
-                .await
-                .context(h!())?
-                .into_iter()
-                .for_each(|id| {
-                    other_ids.insert(id);
-                });
-        }
-    }
-    Ok(other_ids)
 }
 
 async fn collect_message_networks(

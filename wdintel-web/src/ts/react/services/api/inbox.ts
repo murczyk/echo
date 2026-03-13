@@ -85,6 +85,7 @@ function normalizeInboxMessage(
     extended_form?: string | null;
     inbox_tags?: InboxMessageTagRaw[] | null;
     text_marked?: InboxMessageType['textMarked'];
+    point_tokens?: InboxMessageType['pointTokens'];
   }
 ): InboxMessageType {
   const raw = m as Record<string, unknown>;
@@ -98,7 +99,10 @@ function normalizeInboxMessage(
       ? rawInboxTags.map(normalizeInboxMessageTag)
       : null;
   const textMarked = (raw.text_marked ?? m.textMarked ?? null) as InboxMessageType['textMarked'];
-  return { ...m, groupMasterKey, networkIds, location, extendedForm, inboxTags, textMarked };
+  const rawPointTokens = (raw.point_tokens ?? m.pointTokens ?? null) as InboxMessageType['pointTokens'];
+  const pointTokens =
+    rawPointTokens != null && Array.isArray(rawPointTokens) ? rawPointTokens : null;
+  return { ...m, groupMasterKey, networkIds, location, extendedForm, inboxTags, textMarked, pointTokens };
 }
 
 function normalizeSignalGroupEntry(g: InboxMessagesRspRaw['signal_groups'][number]): SignalGroupEntry {
@@ -171,6 +175,12 @@ function inboxMsgtoSnakeBody(req: InboxMessagesReq): Object {
     selected_tags: req.selectedTags,
     selected_aors: req.selectedAors,
     selected_networks: req.selectedNetworks,
+    metadata_cc: req.metadataCc,
+    metadata_sender: req.metadataSender,
+    metadata_receiver: req.metadataReceiver,
+    metadata_hash: req.metadataHash,
+    only_with_metadata: req.onlyWithMetadata,
+    without_metadata: req.withoutMetadata,
     sort_by: req.sortBy,
     report_tags_only_this_unit: req.reportTagsOnlyThisUnit,
     ignore_imported_coords: req.ignoreImportedCoords,
@@ -363,6 +373,12 @@ export async function getPostsList(): Promise<string[]> {
     search: null,
     selectedTags: null,
     selectedNetworks: null,
+    metadataCc: null,
+    metadataSender: null,
+    metadataReceiver: null,
+    metadataHash: null,
+    onlyWithMetadata: null,
+    withoutMetadata: null,
     includePelengLocations: null,
     unitsExactMatchOnly: null,
     filterTagsOption: null,
