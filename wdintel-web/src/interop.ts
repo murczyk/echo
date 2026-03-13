@@ -304,6 +304,7 @@ function createNavbarHeightSync() {
     window.addEventListener('resize', scheduleSync, { passive: true });
     window.addEventListener('orientationchange', scheduleSync, { passive: true });
 
+    syncNavbar();
     requestAnimationFrame(() => {
         scheduleSync();
         setTimeout(scheduleSync, 350);
@@ -388,7 +389,6 @@ export const flags = ({ env }) => {
 // to your Elm application, or subscribe to incoming
 // messages from Elm
 export const onReady = ({ app, env }) => {
-
     // Apply initial theme based on localStorage or system preference
     applyCurrentTheme();
     const syncNavbarHeight = createNavbarHeightSync();
