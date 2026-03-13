@@ -692,12 +692,12 @@ fn parse_cg_parts(line: &NormalizedLine) -> Vec<(usize, WorkingMetadata)> {
     }
     lazy_static! {
         static ref RE_RECEIVER_ID: Regex =
-            Regex::new(r#"[іІiI]D\([cCсС]G\)\s*:\s*(\d+)(?:\s*\(([^)]+)\))?"#)
+            Regex::new(r#"(?i:[iі]d\([cс]g\))\s*:\s*(\d+)(?:\s*\(([^)]+)\))?"#)
                 .unwrap();
     }
     lazy_static! {
         static ref RE_RECEIVER_GROUP: Regex =
-            Regex::new(r#"[cCсС]G\s*:\s*(\d+)(?:\s*\(([^)]+)\))?"#).unwrap();
+            Regex::new(r#"(?i:[cс]g)\s*:\s*(\d+)(?:\s*\(([^)]+)\))?"#).unwrap();
     }
     lazy_static! {
         static ref RE_RECEIVER_GROUP_EN: Regex =
@@ -706,7 +706,7 @@ fn parse_cg_parts(line: &NormalizedLine) -> Vec<(usize, WorkingMetadata)> {
     }
     lazy_static! {
         static ref RE_RECEIVER_GROUP_X: Regex =
-            Regex::new(r#"[cCсС]G\s*:[xXхХ]\s*:\s*(\d+)(?:\s*\(([^)]+)\))?"#)
+            Regex::new(r#"(?i:[cс]g)\s*:(?i:[xх])\s*:\s*(\d+)(?:\s*\(([^)]+)\))?"#)
                 .unwrap();
     }
 
@@ -1226,6 +1226,26 @@ ID(CG)⬅️:50📣",
                     ..Default::default()
                 }
             ]
+        );
+    }
+
+    #[test]
+    fn parse_metadata_handles_lowercase_cg_forms() {
+        assert_eq!(
+            metadata_without_spans(parse_metadata("cc:1 cg:10")),
+            vec![InboxMetadata {
+                cc: Some("1".to_string()),
+                cg: Some("10".to_string()),
+                ..Default::default()
+            }]
+        );
+
+        assert_eq!(
+            metadata_without_spans(parse_metadata("id(cg):50")),
+            vec![InboxMetadata {
+                cg: Some("50".to_string()),
+                ..Default::default()
+            }]
         );
     }
 

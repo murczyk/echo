@@ -510,9 +510,8 @@
 }
 
 .text-marked .content-token--metadata {
-    border-bottom: 3px solid var(--color-success);
-    color: var(--color-success-dark);
-    transition: border-bottom-color 1s ease, color 1s ease;
+    border-bottom: 3px solid #1b8057;
+    transition: border-bottom-color 1s ease;
 }
 
 
