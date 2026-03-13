@@ -202,6 +202,7 @@ fn build_groups_query(
             signal_message_group::Column::GroupMasterKey
                 .eq_any(accessible_groups.clone()),
         )
+        .filter(signal_message::Column::Deleted.eq(false))
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
         .group_by(Expr::col((
@@ -676,6 +677,7 @@ fn build_posts_query(
             "count",
         )
         .filter(message_in_groups_exists(master_keys.clone()))
+        .filter(signal_message::Column::Deleted.eq(false))
         // .filter(signal_message::Column::DuplicateOf.is_null())
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
@@ -874,6 +876,7 @@ fn build_freqs_query(
             "count",
         )
         .filter(message_in_groups_exists(master_keys.clone()))
+        .filter(signal_message::Column::Deleted.eq(false))
         // .filter(signal_message::Column::DuplicateOf.is_null())
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
@@ -1186,6 +1189,7 @@ fn build_callsigns_query(
             "count",
         )
         .filter(message_in_groups_exists(master_keys.clone()))
+        .filter(signal_message::Column::Deleted.eq(false))
         // .filter(signal_message::Column::DuplicateOf.is_null())
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
@@ -1324,6 +1328,7 @@ fn build_tags_query(
         .column(sigint_inbox_item_tag::Column::TagId)
         .column_as(Expr::count(Expr::val(1)), "count")
         .filter(message_in_groups_exists(master_keys.clone()))
+        .filter(signal_message::Column::Deleted.eq(false))
         // .filter(signal_message::Column::DuplicateOf.is_null())
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
@@ -1458,6 +1463,7 @@ fn build_units_query(
             "count",
         )
         .filter(message_in_groups_exists(master_keys.clone()))
+        .filter(signal_message::Column::Deleted.eq(false))
         // .filter(signal_message::Column::DuplicateOf.is_null())
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
@@ -1603,6 +1609,7 @@ fn build_locations_query(
             "count",
         )
         .filter(message_in_groups_exists(master_keys.clone()))
+        .filter(signal_message::Column::Deleted.eq(false))
         // .filter(signal_message::Column::DuplicateOf.is_null())
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
@@ -1766,6 +1773,7 @@ fn build_aors_query(
             "count",
         )
         .filter(message_in_groups_exists(master_keys.clone()))
+        .filter(signal_message::Column::Deleted.eq(false))
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
         .filter(area_of_responsibility::Column::Deleted.eq(false))
@@ -2386,4 +2394,5 @@ fn build_join_for_sigint_inbox_item() -> Select<Entity> {
             JoinType::LeftJoin,
             sigint_inbox_item::Relation::SigintPost.def(),
         )
+        .filter(signal_message::Column::Deleted.eq(false))
 }
