@@ -208,8 +208,8 @@ fn build_groups_query(
             signal_message_group::Entity,
             signal_message_group::Column::GroupMasterKey,
         )));
-    let groups_res = filter_selected_senders(groups_res, &req.selected_senders)
-        .context(h!())?;
+    let groups_res =
+        apply_group_row_sender_filter(groups_res, &req.selected_senders);
     let groups_res =
         filter_selected_freqs(groups_res, &req.selected_freqs).context(h!())?;
     let groups_res =
@@ -250,6 +250,22 @@ fn build_groups_query(
     let groups_res =
         filter_selected_aors(groups_res, &req.selected_aors).context(h!())?;
     Ok(groups_res)
+}
+
+fn apply_group_row_sender_filter(
+    query: Select<sigint_inbox_item::Entity>,
+    selected_senders: &Option<Vec<String>>,
+) -> Select<sigint_inbox_item::Entity> {
+    match selected_senders
+        .as_ref()
+        .filter(|senders| !senders.is_empty())
+    {
+        Some(selected_senders) => query.filter(
+            signal_message_group::Column::Sender
+                .eq_any(selected_senders.clone()),
+        ),
+        None => query,
+    }
 }
 
 pub async fn fetch_senders(
