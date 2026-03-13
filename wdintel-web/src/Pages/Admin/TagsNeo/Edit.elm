@@ -89,7 +89,7 @@ view route _ =
     in
     { title = "Адмін: теги (neo)"
     , body =
-        [ div [ class "mt-4 w-full" ]
+        [ div [ class "pt-4 pb-6 w-full" ]
             [ node "tags-neo-edit" tagIdAttrs [] ]
         ]
     }

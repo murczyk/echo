@@ -1193,169 +1193,179 @@ function AdminMessengerNeoPageBody() {
         </Box>
 
         {linkStep === 'form' ? (
-          <Box className="flex-1 overflow-y-auto p-6 space-y-5">
-            <Box className="flex gap-2">
-              <Button
-                variant={linkMode === 'phone' ? 'contained' : 'outlined'}
-                onClick={() => switchLinkMode('phone')}
-              >
-                Телефон
-              </Button>
-              <Button
-                variant={linkMode === 'api' ? 'contained' : 'outlined'}
-                onClick={() => switchLinkMode('api')}
-              >
-                API
-              </Button>
-            </Box>
+          <Box className="flex-1 overflow-y-auto p-6 space-y-6">
+            <div className="space-y-6">
+              <Box className="flex gap-3">
+                <Button
+                  variant={linkMode === 'phone' ? 'contained' : 'outlined'}
+                  onClick={() => switchLinkMode('phone')}
+                >
+                  Телефон
+                </Button>
+                <Button
+                  variant={linkMode === 'api' ? 'contained' : 'outlined'}
+                  onClick={() => switchLinkMode('api')}
+                >
+                  API
+                </Button>
+              </Box>
 
-            {linkMode === 'phone' ? (
-              <div className="space-y-4">
-                <TextField
-                  select
-                  label="Тип месенджера"
-                  value={phoneForm.messengerType}
-                  onChange={(event) =>
+              <div>
+                {linkMode === 'phone' ? (
+                  <>
+                    <TextField
+                      select
+                      label="Тип месенджера"
+                      value={phoneForm.messengerType}
+                      onChange={(event) =>
+                        setPhoneForm((prev) => ({
+                          ...prev,
+                          messengerType: event.target.value,
+                        }))
+                      }
+                      fullWidth
+                    >
+                      <MenuItem value="signal">Signal</MenuItem>
+                      <MenuItem value="whatsapp">WhatsApp</MenuItem>
+                      <MenuItem value="echo_operator">ЕХО Оператор</MenuItem>
+                    </TextField>
+                    <div className="pt-6">
+                      <TextField
+                        label="Номер телефону"
+                        value={phoneForm.phoneNumber}
+                        onChange={(event) =>
+                          setPhoneForm((prev) => ({
+                            ...prev,
+                            phoneNumber: event.target.value,
+                          }))
+                        }
+                        placeholder="+380XXXXXXXXX"
+                        fullWidth
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <TextField
+                      label="API посилання"
+                      value={apiForm.apiEndpoint}
+                      onChange={(event) => {
+                        setApiForm((prev) => ({
+                          ...prev,
+                          apiEndpoint: event.target.value,
+                        }));
+                        setFormErrors((prev) => ({ ...prev, apiEndpoint: '' }));
+                      }}
+                      placeholder="https://api.example.com/webhook"
+                      error={Boolean(formErrors.apiEndpoint)}
+                      helperText={formErrors.apiEndpoint}
+                      fullWidth
+                    />
+                    <div className="pt-6">
+                      <TextField
+                        select
+                        label="API Користувач"
+                        value={apiForm.apiLogin || ''}
+                        onChange={(event) => {
+                          setApiForm((prev) => ({
+                            ...prev,
+                            apiLogin: event.target.value || null,
+                          }));
+                          setFormErrors((prev) => ({ ...prev, apiUser: '' }));
+                        }}
+                        fullWidth
+                        disabled={apiUsersStatus === 'loading'}
+                        error={Boolean(formErrors.apiUser)}
+                        helperText={formErrors.apiUser}
+                      >
+                        {apiUsersStatus === 'loading' ? (
+                          <MenuItem value="">Завантаження...</MenuItem>
+                        ) : (
+                          apiUserOptions
+                        )}
+                      </TextField>
+                    </div>
+                  </>
+                )}
+
+                <div className="pt-6">
+                  <TextField
+                    label="Назва акаунту"
+                    value={linkMode === 'phone' ? phoneForm.name : apiForm.name}
+                    onChange={(event) => {
+                      if (linkMode === 'phone') {
+                        setPhoneForm((prev) => ({
+                          ...prev,
+                          name: event.target.value,
+                        }));
+                      } else {
+                        setApiForm((prev) => ({ ...prev, name: event.target.value }));
+                      }
+                      setFormErrors((prev) => ({ ...prev, displayName: '' }));
+                    }}
+                    error={Boolean(formErrors.displayName)}
+                    helperText={formErrors.displayName}
+                    fullWidth
+                  />
+                </div>
+              </div>
+
+              <TextField
+                select
+                label="Смуга відповідальності"
+                value={
+                  linkMode === 'phone'
+                    ? phoneForm.aorId ?? ''
+                    : apiForm.aorId ?? ''
+                }
+                onChange={(event) => {
+                  const value = event.target.value
+                    ? Number(event.target.value)
+                    : null;
+                  if (linkMode === 'phone') {
+                    setPhoneForm((prev) => ({ ...prev, aorId: value }));
+                  } else {
+                    setApiForm((prev) => ({ ...prev, aorId: value }));
+                  }
+                  setFormErrors((prev) => ({ ...prev, aorId: '' }));
+                }}
+                fullWidth
+                error={Boolean(formErrors.aorId)}
+                helperText={formErrors.aorId || ' '}
+                disabled={aorsStatus === 'loading'}
+              >
+                {aorsStatus === 'loading' ? (
+                  <MenuItem value="">Завантаження...</MenuItem>
+                ) : (
+                  aorOptions
+                )}
+              </TextField>
+
+              <TextField
+                label="Опис (необов'язково)"
+                value={
+                  linkMode === 'phone'
+                    ? phoneForm.description
+                    : apiForm.description
+                }
+                onChange={(event) => {
+                  if (linkMode === 'phone') {
                     setPhoneForm((prev) => ({
                       ...prev,
-                      messengerType: event.target.value,
-                    }))
-                  }
-                  fullWidth
-                >
-                  <MenuItem value="signal">Signal</MenuItem>
-                  <MenuItem value="whatsapp">WhatsApp</MenuItem>
-                  <MenuItem value="echo_operator">ЕХО Оператор</MenuItem>
-                </TextField>
-                <TextField
-                  label="Номер телефону"
-                  value={phoneForm.phoneNumber}
-                  onChange={(event) =>
-                    setPhoneForm((prev) => ({
-                      ...prev,
-                      phoneNumber: event.target.value,
-                    }))
-                  }
-                  placeholder="+380XXXXXXXXX"
-                  fullWidth
-                />
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <TextField
-                  label="API посилання"
-                  value={apiForm.apiEndpoint}
-                  onChange={(event) => {
+                      description: event.target.value,
+                    }));
+                  } else {
                     setApiForm((prev) => ({
                       ...prev,
-                      apiEndpoint: event.target.value,
+                      description: event.target.value,
                     }));
-                    setFormErrors((prev) => ({ ...prev, apiEndpoint: '' }));
-                  }}
-                  placeholder="https://api.example.com/webhook"
-                  error={Boolean(formErrors.apiEndpoint)}
-                  helperText={formErrors.apiEndpoint}
-                  fullWidth
-                />
-                <TextField
-                  select
-                  label="API Користувач"
-                  value={apiForm.apiLogin || ''}
-                  onChange={(event) => {
-                    setApiForm((prev) => ({
-                      ...prev,
-                      apiLogin: event.target.value || null,
-                    }));
-                    setFormErrors((prev) => ({ ...prev, apiUser: '' }));
-                  }}
-                  fullWidth
-                  disabled={apiUsersStatus === 'loading'}
-                  error={Boolean(formErrors.apiUser)}
-                  helperText={formErrors.apiUser}
-                >
-                  {apiUsersStatus === 'loading' ? (
-                    <MenuItem value="">Завантаження...</MenuItem>
-                  ) : (
-                    apiUserOptions
-                  )}
-                </TextField>
-              </div>
-            )}
-
-            <TextField
-              label="Назва акаунту"
-              value={linkMode === 'phone' ? phoneForm.name : apiForm.name}
-              onChange={(event) => {
-                if (linkMode === 'phone') {
-                  setPhoneForm((prev) => ({
-                    ...prev,
-                    name: event.target.value,
-                  }));
-                } else {
-                  setApiForm((prev) => ({ ...prev, name: event.target.value }));
-                }
-                setFormErrors((prev) => ({ ...prev, displayName: '' }));
-              }}
-              error={Boolean(formErrors.displayName)}
-              helperText={formErrors.displayName}
-              fullWidth
-            />
-
-            <TextField
-              select
-              label="Смуга відповідальності"
-              value={
-                linkMode === 'phone'
-                  ? phoneForm.aorId ?? ''
-                  : apiForm.aorId ?? ''
-              }
-              onChange={(event) => {
-                const value = event.target.value
-                  ? Number(event.target.value)
-                  : null;
-                if (linkMode === 'phone') {
-                  setPhoneForm((prev) => ({ ...prev, aorId: value }));
-                } else {
-                  setApiForm((prev) => ({ ...prev, aorId: value }));
-                }
-                setFormErrors((prev) => ({ ...prev, aorId: '' }));
-              }}
-              fullWidth
-              error={Boolean(formErrors.aorId)}
-              helperText={formErrors.aorId}
-              disabled={aorsStatus === 'loading'}
-            >
-              {aorsStatus === 'loading' ? (
-                <MenuItem value="">Завантаження...</MenuItem>
-              ) : (
-                aorOptions
-              )}
-            </TextField>
-
-            <TextField
-              label="Опис (необов'язково)"
-              value={
-                linkMode === 'phone'
-                  ? phoneForm.description
-                  : apiForm.description
-              }
-              onChange={(event) => {
-                if (linkMode === 'phone') {
-                  setPhoneForm((prev) => ({
-                    ...prev,
-                    description: event.target.value,
-                  }));
-                } else {
-                  setApiForm((prev) => ({
-                    ...prev,
-                    description: event.target.value,
-                  }));
-                }
-              }}
-              multiline
-              rows={3}
-              fullWidth
-            />
+                  }
+                }}
+                multiline
+                rows={3}
+                fullWidth
+              />
+            </div>
 
             {linkStatus?.kind === 'error' ? (
               <Info text={linkStatus.message} color="error" />
@@ -1419,8 +1429,17 @@ function AdminMessengerNeoPageBody() {
         ) : null}
 
         {linkStep === 'form' ? (
-          <Box className="p-6 border-t border-border flex gap-3">
-            <Button variant="outlined" onClick={closeLinkSidebar}>
+          <Box
+            sx={{
+              p: 2.5,
+              borderTop: '1px solid',
+              borderColor: 'divider',
+              display: 'flex',
+              justifyContent: 'flex-end',
+              gap: 2,
+            }}
+          >
+            <Button onClick={closeLinkSidebar}>
               Скасувати
             </Button>
             <Button
