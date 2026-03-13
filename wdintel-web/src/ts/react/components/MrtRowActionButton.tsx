@@ -66,7 +66,7 @@ export function MrtRowActions({ children, layout = 'row' }: GroupProps) {
   return (
     <Stack
       direction={layout === 'grid' ? undefined : 'row'}
-      spacing={0.5}
+      spacing={1}
       alignItems="center"
       justifyContent="center"
       useFlexGap
@@ -75,7 +75,7 @@ export function MrtRowActions({ children, layout = 'row' }: GroupProps) {
           ? {
               display: 'grid',
               gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-              gap: 0.5,
+              gap: 1,
               justifyItems: 'center',
             }
           : undefined

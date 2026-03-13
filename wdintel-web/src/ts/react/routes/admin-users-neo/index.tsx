@@ -1074,11 +1074,8 @@ function AdminUsersNeoPageBody() {
         internalActionsDisabled={status === 'loading'}
         actions={
           <div className="flex gap-3">
-            <Button variant="outlined" onClick={loadLogins} disabled={status === 'loading'}>
-              Оновити
-            </Button>
             <Button variant="contained" onClick={() => setCreateOpen(true)}>
-              Додати
+              Додати користувача
             </Button>
           </div>
         }

@@ -20,6 +20,7 @@ import { MrtRowActionButton, mrtRowActionsColumnSize } from '../../components/Mr
 import { PageErrorState } from '../../components/PageErrorState';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
 import { TableContentState } from '../../components/TableContentState';
+import { ConfirmDangerDialog } from '../../components/ConfirmDangerDialog';
 import { Button } from '../../components/mui-customized/button';
 import {
   CUSTOM_STYLES,
@@ -378,11 +379,8 @@ function AdminKeysNeoPageBody() {
         internalActionsDisabled={status === 'loading'}
         actions={
           <div className="flex gap-3">
-            <Button variant="outlined" onClick={loadPolicies} disabled={status === 'loading'}>
-              Оновити
-            </Button>
             <Button variant="contained" onClick={openCreateDialog}>
-              Додати
+              Додати політику
             </Button>
           </div>
         }
@@ -441,25 +439,20 @@ function AdminKeysNeoPageBody() {
         </DialogActions>
       </Dialog>
 
-      <Dialog open={Boolean(deleteState)} onClose={() => setDeleteState(null)} maxWidth="sm" fullWidth>
-        <DialogTitle>Підтвердження видалення</DialogTitle>
-        <DialogContent className="space-y-3">
+      <ConfirmDangerDialog
+        open={Boolean(deleteState)}
+        onClose={() => setDeleteState(null)}
+        onConfirm={handleDelete}
+        submitting={Boolean(deleteState?.isDeleting)}
+        disabled={!deleteState}
+      >
           {deleteState?.error ? <Alert severity="error">{deleteState.error}</Alert> : null}
           <Typography variant="body2" className="text-muted-foreground">
             {deleteState
               ? `Видалити політику для ${getOrganismLabel(deleteState.policy.grantFrom, organismNames)} → ${getOrganismLabel(deleteState.policy.grantTo, organismNames)}?`
               : ''}
           </Typography>
-        </DialogContent>
-        <DialogActions>
-          <Button variant="outlined" onClick={() => setDeleteState(null)} disabled={deleteState?.isDeleting}>
-            Скасувати
-          </Button>
-          <Button variant="contained" onClick={handleDelete} disabled={deleteState?.isDeleting}>
-            Видалити
-          </Button>
-        </DialogActions>
-      </Dialog>
+      </ConfirmDangerDialog>
     </div>
   );
 }

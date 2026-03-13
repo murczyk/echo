@@ -248,11 +248,8 @@ function AdminTagsNeoPageBody() {
         internalActionsDisabled={status === 'loading'}
         actions={
           <div className="flex gap-3">
-            <Button variant="outlined" onClick={loadTags} disabled={status === 'loading'}>
-              Оновити
-            </Button>
             <Button variant="contained" onClick={() => navigateWithinSpa(buildCreateHref())}>
-              Створити
+              Створити тег
             </Button>
           </div>
         }
