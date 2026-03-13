@@ -509,6 +509,12 @@
     transition: border-bottom-color 1s ease;
 }
 
+.text-marked .content-token--metadata {
+    border-bottom: 3px solid var(--color-success);
+    color: var(--color-success-dark);
+    transition: border-bottom-color 1s ease, color 1s ease;
+}
+
 
 .text-marked .content-token--PROPN {
     border-bottom: 3px solid #a2b870;

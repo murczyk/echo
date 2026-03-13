@@ -331,7 +331,7 @@ metadataLinkNode href_ linkText =
 
     else
         [ a
-            [ class "content-token--metadata badge-highlighed-token badge-highlighed-token--callsign"
+            [ class "content-token--metadata hover:cursor-pointer"
             , href href_
             ]
             [ text linkText ]
